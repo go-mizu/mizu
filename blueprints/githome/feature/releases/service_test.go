@@ -1,8 +1,3 @@
-//go:build ignore
-// +build ignore
-
-// This test file is excluded from build until releases store is implemented in duckdb store.
-
 package releases_test
 
 import (
@@ -20,9 +15,8 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*releases.Service, *duckdb.Store, string, func()) {
+func setupTestService(t *testing.T) (*releases.Service, *sql.DB, *duckdb.UsersStore, *duckdb.ReposStore, *duckdb.ReleasesStore, string, func()) {
 	t.Helper()
-	t.Skip("releases store not yet implemented in duckdb store")
 
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
@@ -40,6 +34,10 @@ func setupTestService(t *testing.T) (*releases.Service, *duckdb.Store, string, f
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
+	releasesStore := duckdb.NewReleasesStore(db)
+
 	// Create temp storage directory
 	storagePath, err := os.MkdirTemp("", "releases-test-*")
 	if err != nil {
@@ -47,17 +45,17 @@ func setupTestService(t *testing.T) (*releases.Service, *duckdb.Store, string, f
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 
-	service := releases.NewService(store.Releases(), store.Repos(), store.Users(), "https://api.example.com", storagePath)
+	service := releases.NewService(releasesStore, reposStore, usersStore, "https://api.example.com", storagePath)
 
 	cleanup := func() {
 		os.RemoveAll(storagePath)
 		store.Close()
 	}
 
-	return service, store, storagePath, cleanup
+	return service, db, usersStore, reposStore, releasesStore, storagePath, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -66,13 +64,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -82,7 +80,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -104,11 +102,11 @@ func createTestRelease(t *testing.T, service *releases.Service, owner, repo stri
 // Release Creation Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	rel, err := service.Create(context.Background(), "owner", "testrepo", owner.ID, &releases.CreateIn{
 		TagName: "v1.0.0",
@@ -152,11 +150,11 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_Draft(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	rel, err := service.Create(context.Background(), "owner", "testrepo", owner.ID, &releases.CreateIn{
 		TagName: "v1.0.0",
@@ -175,11 +173,11 @@ func TestService_Create_Draft(t *testing.T) {
 }
 
 func TestService_Create_Prerelease(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	rel, err := service.Create(context.Background(), "owner", "testrepo", owner.ID, &releases.CreateIn{
 		TagName:    "v1.0.0-beta",
@@ -195,11 +193,11 @@ func TestService_Create_Prerelease(t *testing.T) {
 }
 
 func TestService_Create_DuplicateTag(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
@@ -212,10 +210,10 @@ func TestService_Create_DuplicateTag(t *testing.T) {
 }
 
 func TestService_Create_RepoNotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
 
 	_, err := service.Create(context.Background(), "owner", "unknown", owner.ID, &releases.CreateIn{
 		TagName: "v1.0.0",
@@ -228,11 +226,11 @@ func TestService_Create_RepoNotFound(t *testing.T) {
 // Release Retrieval Tests
 
 func TestService_Get_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	rel, err := service.Get(context.Background(), "owner", "testrepo", created.ID)
@@ -249,11 +247,11 @@ func TestService_Get_Success(t *testing.T) {
 }
 
 func TestService_Get_NotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.Get(context.Background(), "owner", "testrepo", 99999)
 	if err != releases.ErrNotFound {
@@ -262,11 +260,11 @@ func TestService_Get_NotFound(t *testing.T) {
 }
 
 func TestService_GetByTag_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	rel, err := service.GetByTag(context.Background(), "owner", "testrepo", "v1.0.0")
@@ -280,11 +278,11 @@ func TestService_GetByTag_Success(t *testing.T) {
 }
 
 func TestService_GetByTag_NotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.GetByTag(context.Background(), "owner", "testrepo", "nonexistent")
 	if err != releases.ErrNotFound {
@@ -293,11 +291,11 @@ func TestService_GetByTag_NotFound(t *testing.T) {
 }
 
 func TestService_GetLatest(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v2.0.0")
 
@@ -313,11 +311,11 @@ func TestService_GetLatest(t *testing.T) {
 }
 
 func TestService_GetLatest_NoReleases(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.GetLatest(context.Background(), "owner", "testrepo")
 	if err != releases.ErrNotFound {
@@ -326,11 +324,11 @@ func TestService_GetLatest_NoReleases(t *testing.T) {
 }
 
 func TestService_List(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.1.0")
 	createTestRelease(t, service, "owner", "testrepo", owner.ID, "v2.0.0")
@@ -346,11 +344,11 @@ func TestService_List(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	for i := 0; i < 5; i++ {
 		createTestRelease(t, service, "owner", "testrepo", owner.ID, "v"+string(rune('a'+i)))
@@ -372,11 +370,11 @@ func TestService_List_Pagination(t *testing.T) {
 // Release Update Tests
 
 func TestService_Update_Name(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	newName := "Updated Release Name"
@@ -393,11 +391,11 @@ func TestService_Update_Name(t *testing.T) {
 }
 
 func TestService_Update_Body(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	newBody := "Updated release body"
@@ -414,11 +412,11 @@ func TestService_Update_Body(t *testing.T) {
 }
 
 func TestService_Update_NotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	newName := "newname"
 	_, err := service.Update(context.Background(), "owner", "testrepo", 99999, &releases.UpdateIn{
@@ -432,11 +430,11 @@ func TestService_Update_NotFound(t *testing.T) {
 // Release Delete Tests
 
 func TestService_Delete_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	created := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	err := service.Delete(context.Background(), "owner", "testrepo", created.ID)
@@ -452,11 +450,11 @@ func TestService_Delete_Success(t *testing.T) {
 }
 
 func TestService_Delete_NotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	err := service.Delete(context.Background(), "owner", "testrepo", 99999)
 	if err != releases.ErrNotFound {
@@ -467,11 +465,11 @@ func TestService_Delete_NotFound(t *testing.T) {
 // Asset Tests
 
 func TestService_UploadAsset_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	content := []byte("binary content")
@@ -509,11 +507,11 @@ func TestService_UploadAsset_Success(t *testing.T) {
 }
 
 func TestService_UploadAsset_ReleaseNotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	reader := bytes.NewReader([]byte("content"))
 
@@ -524,11 +522,11 @@ func TestService_UploadAsset_ReleaseNotFound(t *testing.T) {
 }
 
 func TestService_GetAsset_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	reader := bytes.NewReader([]byte("content"))
@@ -545,11 +543,11 @@ func TestService_GetAsset_Success(t *testing.T) {
 }
 
 func TestService_GetAsset_NotFound(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.GetAsset(context.Background(), "owner", "testrepo", 99999)
 	if err != releases.ErrAssetNotFound {
@@ -558,11 +556,11 @@ func TestService_GetAsset_NotFound(t *testing.T) {
 }
 
 func TestService_ListAssets(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	_, _ = service.UploadAsset(context.Background(), "owner", "testrepo", rel.ID, owner.ID, "app1.zip", "application/zip", bytes.NewReader([]byte("1")))
@@ -579,11 +577,11 @@ func TestService_ListAssets(t *testing.T) {
 }
 
 func TestService_UpdateAsset(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	reader := bytes.NewReader([]byte("content"))
@@ -608,11 +606,11 @@ func TestService_UpdateAsset(t *testing.T) {
 }
 
 func TestService_DeleteAsset_Success(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	reader := bytes.NewReader([]byte("content"))
@@ -631,11 +629,11 @@ func TestService_DeleteAsset_Success(t *testing.T) {
 }
 
 func TestService_DownloadAsset(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	content := []byte("binary content here")
@@ -663,11 +661,11 @@ func TestService_DownloadAsset(t *testing.T) {
 // Generate Notes Tests
 
 func TestService_GenerateNotes(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	notes, err := service.GenerateNotes(context.Background(), "owner", "testrepo", &releases.GenerateNotesIn{
 		TagName:         "v2.0.0",
@@ -688,11 +686,11 @@ func TestService_GenerateNotes(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	rel := createTestRelease(t, service, "owner", "testrepo", owner.ID, "v1.0.0")
 
 	if rel.URL == "" {
@@ -721,12 +719,12 @@ func TestService_PopulateURLs(t *testing.T) {
 // Integration Test - Releases Across Repos
 
 func TestService_ReleasesAcrossRepos(t *testing.T) {
-	service, store, _, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "repo1")
-	createTestRepo(t, store, owner, "repo2")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
+	createTestRepo(t, reposStore, owner, "repo2")
 
 	// Same tag in different repos should work
 	rel1 := createTestRelease(t, service, "owner", "repo1", owner.ID, "v1.0.0")

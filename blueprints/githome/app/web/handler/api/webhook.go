@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/webhooks"
+	"github.com/go-mizu/mizu"
 )
 
 // WebhookHandler handles webhook endpoints
@@ -19,673 +20,579 @@ func NewWebhookHandler(webhooks webhooks.API, repos repos.API) *WebhookHandler {
 }
 
 // ListRepoWebhooks handles GET /repos/{owner}/{repo}/hooks
-func (h *WebhookHandler) ListRepoWebhooks(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) ListRepoWebhooks(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &webhooks.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	hookList, err := h.webhooks.ListForRepo(r.Context(), owner, repoName, opts)
+	hookList, err := h.webhooks.ListForRepo(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, hookList)
+	return c.JSON(http.StatusOK, hookList)
 }
 
 // GetRepoWebhook handles GET /repos/{owner}/{repo}/hooks/{hook_id}
-func (h *WebhookHandler) GetRepoWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) GetRepoWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	hook, err := h.webhooks.GetForRepo(r.Context(), owner, repoName, hookID)
+	hook, err := h.webhooks.GetForRepo(c.Context(), owner, repoName, hookID)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, hook)
+	return c.JSON(http.StatusOK, hook)
 }
 
 // CreateRepoWebhook handles POST /repos/{owner}/{repo}/hooks
-func (h *WebhookHandler) CreateRepoWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) CreateRepoWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	var in webhooks.CreateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	hook, err := h.webhooks.CreateForRepo(r.Context(), owner, repoName, &in)
+	hook, err := h.webhooks.CreateForRepo(c.Context(), owner, repoName, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, hook)
+	return Created(c, hook)
 }
 
 // UpdateRepoWebhook handles PATCH /repos/{owner}/{repo}/hooks/{hook_id}
-func (h *WebhookHandler) UpdateRepoWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) UpdateRepoWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
 	var in webhooks.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	hook, err := h.webhooks.UpdateForRepo(r.Context(), owner, repoName, hookID, &in)
+	hook, err := h.webhooks.UpdateForRepo(c.Context(), owner, repoName, hookID, &in)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, hook)
+	return c.JSON(http.StatusOK, hook)
 }
 
 // DeleteRepoWebhook handles DELETE /repos/{owner}/{repo}/hooks/{hook_id}
-func (h *WebhookHandler) DeleteRepoWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) DeleteRepoWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	if err := h.webhooks.DeleteForRepo(r.Context(), owner, repoName, hookID); err != nil {
+	if err := h.webhooks.DeleteForRepo(c.Context(), owner, repoName, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // PingRepoWebhook handles POST /repos/{owner}/{repo}/hooks/{hook_id}/pings
-func (h *WebhookHandler) PingRepoWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) PingRepoWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	if err := h.webhooks.PingRepo(r.Context(), owner, repoName, hookID); err != nil {
+	if err := h.webhooks.PingRepo(c.Context(), owner, repoName, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // TestRepoWebhook handles POST /repos/{owner}/{repo}/hooks/{hook_id}/tests
-func (h *WebhookHandler) TestRepoWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) TestRepoWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	if err := h.webhooks.TestRepo(r.Context(), owner, repoName, hookID); err != nil {
+	if err := h.webhooks.TestRepo(c.Context(), owner, repoName, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListWebhookDeliveries handles GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries
-func (h *WebhookHandler) ListWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) ListWebhookDeliveries(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &webhooks.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	deliveries, err := h.webhooks.ListDeliveriesForRepo(r.Context(), owner, repoName, hookID, opts)
+	deliveries, err := h.webhooks.ListDeliveriesForRepo(c.Context(), owner, repoName, hookID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, deliveries)
+	return c.JSON(http.StatusOK, deliveries)
 }
 
 // GetWebhookDelivery handles GET /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}
-func (h *WebhookHandler) GetWebhookDelivery(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) GetWebhookDelivery(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	deliveryID, err := PathParamInt64(r, "delivery_id")
+	deliveryID, err := ParamInt64(c, "delivery_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid delivery ID")
-		return
+		return BadRequest(c, "Invalid delivery ID")
 	}
 
-	delivery, err := h.webhooks.GetDeliveryForRepo(r.Context(), owner, repoName, hookID, deliveryID)
+	delivery, err := h.webhooks.GetDeliveryForRepo(c.Context(), owner, repoName, hookID, deliveryID)
 	if err != nil {
 		if err == webhooks.ErrDeliveryNotFound {
-			WriteNotFound(w, "Delivery")
-			return
+			return NotFound(c, "Delivery")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, delivery)
+	return c.JSON(http.StatusOK, delivery)
 }
 
 // RedeliverWebhook handles POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts
-func (h *WebhookHandler) RedeliverWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) RedeliverWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	hookID, err := PathParamInt64(r, "hook_id")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	deliveryID, err := PathParamInt64(r, "delivery_id")
+	deliveryID, err := ParamInt64(c, "delivery_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid delivery ID")
-		return
+		return BadRequest(c, "Invalid delivery ID")
 	}
 
-	delivery, err := h.webhooks.RedeliverForRepo(r.Context(), owner, repoName, hookID, deliveryID)
+	delivery, err := h.webhooks.RedeliverForRepo(c.Context(), owner, repoName, hookID, deliveryID)
 	if err != nil {
 		if err == webhooks.ErrDeliveryNotFound {
-			WriteNotFound(w, "Delivery")
-			return
+			return NotFound(c, "Delivery")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteAccepted(w, delivery)
+	return Accepted(c, delivery)
 }
 
 // ListOrgWebhooks handles GET /orgs/{org}/hooks
-func (h *WebhookHandler) ListOrgWebhooks(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) ListOrgWebhooks(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	pagination := GetPaginationParams(r)
+	org := c.Param("org")
+	pagination := GetPagination(c)
 	opts := &webhooks.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	hookList, err := h.webhooks.ListForOrg(r.Context(), org, opts)
+	hookList, err := h.webhooks.ListForOrg(c.Context(), org, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, hookList)
+	return c.JSON(http.StatusOK, hookList)
 }
 
 // GetOrgWebhook handles GET /orgs/{org}/hooks/{hook_id}
-func (h *WebhookHandler) GetOrgWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) GetOrgWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	hook, err := h.webhooks.GetForOrg(r.Context(), org, hookID)
+	hook, err := h.webhooks.GetForOrg(c.Context(), org, hookID)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, hook)
+	return c.JSON(http.StatusOK, hook)
 }
 
 // CreateOrgWebhook handles POST /orgs/{org}/hooks
-func (h *WebhookHandler) CreateOrgWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) CreateOrgWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
+	org := c.Param("org")
 
 	var in webhooks.CreateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	hook, err := h.webhooks.CreateForOrg(r.Context(), org, &in)
+	hook, err := h.webhooks.CreateForOrg(c.Context(), org, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, hook)
+	return Created(c, hook)
 }
 
 // UpdateOrgWebhook handles PATCH /orgs/{org}/hooks/{hook_id}
-func (h *WebhookHandler) UpdateOrgWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) UpdateOrgWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
 	var in webhooks.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	hook, err := h.webhooks.UpdateForOrg(r.Context(), org, hookID, &in)
+	hook, err := h.webhooks.UpdateForOrg(c.Context(), org, hookID, &in)
 	if err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, hook)
+	return c.JSON(http.StatusOK, hook)
 }
 
 // DeleteOrgWebhook handles DELETE /orgs/{org}/hooks/{hook_id}
-func (h *WebhookHandler) DeleteOrgWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) DeleteOrgWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	if err := h.webhooks.DeleteForOrg(r.Context(), org, hookID); err != nil {
+	if err := h.webhooks.DeleteForOrg(c.Context(), org, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // PingOrgWebhook handles POST /orgs/{org}/hooks/{hook_id}/pings
-func (h *WebhookHandler) PingOrgWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) PingOrgWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	if err := h.webhooks.PingOrg(r.Context(), org, hookID); err != nil {
+	if err := h.webhooks.PingOrg(c.Context(), org, hookID); err != nil {
 		if err == webhooks.ErrNotFound {
-			WriteNotFound(w, "Hook")
-			return
+			return NotFound(c, "Hook")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListOrgWebhookDeliveries handles GET /orgs/{org}/hooks/{hook_id}/deliveries
-func (h *WebhookHandler) ListOrgWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) ListOrgWebhookDeliveries(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &webhooks.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	deliveries, err := h.webhooks.ListDeliveriesForOrg(r.Context(), org, hookID, opts)
+	deliveries, err := h.webhooks.ListDeliveriesForOrg(c.Context(), org, hookID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, deliveries)
+	return c.JSON(http.StatusOK, deliveries)
 }
 
 // GetOrgWebhookDelivery handles GET /orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}
-func (h *WebhookHandler) GetOrgWebhookDelivery(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) GetOrgWebhookDelivery(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	deliveryID, err := PathParamInt64(r, "delivery_id")
+	deliveryID, err := ParamInt64(c, "delivery_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid delivery ID")
-		return
+		return BadRequest(c, "Invalid delivery ID")
 	}
 
-	delivery, err := h.webhooks.GetDeliveryForOrg(r.Context(), org, hookID, deliveryID)
+	delivery, err := h.webhooks.GetDeliveryForOrg(c.Context(), org, hookID, deliveryID)
 	if err != nil {
 		if err == webhooks.ErrDeliveryNotFound {
-			WriteNotFound(w, "Delivery")
-			return
+			return NotFound(c, "Delivery")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, delivery)
+	return c.JSON(http.StatusOK, delivery)
 }
 
 // RedeliverOrgWebhook handles POST /orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}/attempts
-func (h *WebhookHandler) RedeliverOrgWebhook(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *WebhookHandler) RedeliverOrgWebhook(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	hookID, err := PathParamInt64(r, "hook_id")
+	org := c.Param("org")
+	hookID, err := ParamInt64(c, "hook_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid hook ID")
-		return
+		return BadRequest(c, "Invalid hook ID")
 	}
 
-	deliveryID, err := PathParamInt64(r, "delivery_id")
+	deliveryID, err := ParamInt64(c, "delivery_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid delivery ID")
-		return
+		return BadRequest(c, "Invalid delivery ID")
 	}
 
-	delivery, err := h.webhooks.RedeliverForOrg(r.Context(), org, hookID, deliveryID)
+	delivery, err := h.webhooks.RedeliverForOrg(c.Context(), org, hookID, deliveryID)
 	if err != nil {
 		if err == webhooks.ErrDeliveryNotFound {
-			WriteNotFound(w, "Delivery")
-			return
+			return NotFound(c, "Delivery")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteAccepted(w, delivery)
+	return Accepted(c, delivery)
 }

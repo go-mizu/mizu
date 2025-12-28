@@ -17,7 +17,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*branches.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*branches.Service, *duckdb.Store, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -36,18 +36,20 @@ func setupTestService(t *testing.T) (*branches.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	branchesStore := duckdb.NewBranchesStore(db)
-	service := branches.NewService(branchesStore, store.Repos(), "https://api.example.com", "")
+	service := branches.NewService(branchesStore, reposStore, "https://api.example.com", "")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, store, usersStore, reposStore, cleanup
 }
 
 // setupTestServiceWithGit creates a test service with a real git repository
-func setupTestServiceWithGit(t *testing.T) (*branches.Service, *duckdb.Store, string, func()) {
+func setupTestServiceWithGit(t *testing.T) (*branches.Service, *duckdb.Store, *duckdb.UsersStore, *duckdb.ReposStore, string, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -65,6 +67,9 @@ func setupTestServiceWithGit(t *testing.T) (*branches.Service, *duckdb.Store, st
 		store.Close()
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
+
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 
 	// Create temp directory for git repos
 	reposDir, err := os.MkdirTemp("", "branches-test-*")
@@ -74,14 +79,14 @@ func setupTestServiceWithGit(t *testing.T) (*branches.Service, *duckdb.Store, st
 	}
 
 	branchesStore := duckdb.NewBranchesStore(db)
-	service := branches.NewService(branchesStore, store.Repos(), "https://api.example.com", reposDir)
+	service := branches.NewService(branchesStore, reposStore, "https://api.example.com", reposDir)
 
 	cleanup := func() {
 		store.Close()
 		os.RemoveAll(reposDir)
 	}
 
-	return service, store, reposDir, cleanup
+	return service, store, usersStore, reposStore, reposDir, cleanup
 }
 
 // createGitRepo creates a bare git repository with an initial commit
@@ -108,7 +113,7 @@ func createGitRepo(t *testing.T, reposDir, owner, repoName string) string {
 	return repoPath
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -117,13 +122,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -133,7 +138,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -142,11 +147,11 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 // Branch Listing Tests (Mock behavior)
 
 func TestService_List_ReturnsDefaultBranch(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 	repo.DefaultBranch = "main"
 
 	list, err := service.List(context.Background(), "testowner", "testrepo", nil)
@@ -163,7 +168,7 @@ func TestService_List_ReturnsDefaultBranch(t *testing.T) {
 }
 
 func TestService_List_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.List(context.Background(), "unknown", "repo", nil)
@@ -173,11 +178,11 @@ func TestService_List_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Get_ReturnsBranch(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	branch, err := service.Get(context.Background(), "testowner", "testrepo", "main")
 	if err != nil {
@@ -197,7 +202,7 @@ func TestService_Get_ReturnsBranch(t *testing.T) {
 }
 
 func TestService_Get_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Get(context.Background(), "unknown", "repo", "main")
@@ -207,11 +212,11 @@ func TestService_Get_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Get_WithProtection(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Set protection on the branch
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -229,11 +234,11 @@ func TestService_Get_WithProtection(t *testing.T) {
 }
 
 func TestService_Rename_Success(t *testing.T) {
-	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create git repository with main branch
 	createGitRepo(t, reposDir, user.Login, repo.Name)
@@ -271,11 +276,11 @@ func TestService_Rename_Success(t *testing.T) {
 }
 
 func TestService_Rename_BranchNotFound(t *testing.T) {
-	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create git repository
 	createGitRepo(t, reposDir, user.Login, repo.Name)
@@ -288,11 +293,11 @@ func TestService_Rename_BranchNotFound(t *testing.T) {
 }
 
 func TestService_Rename_TargetExists(t *testing.T) {
-	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create git repository with main branch
 	repoPath := createGitRepo(t, reposDir, user.Login, repo.Name)
@@ -310,11 +315,11 @@ func TestService_Rename_TargetExists(t *testing.T) {
 }
 
 func TestService_Rename_ProtectedBranch(t *testing.T) {
-	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create git repository
 	createGitRepo(t, reposDir, user.Login, repo.Name)
@@ -332,7 +337,7 @@ func TestService_Rename_ProtectedBranch(t *testing.T) {
 }
 
 func TestService_Rename_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Rename(context.Background(), "unknown", "repo", "main", "master")
@@ -344,11 +349,11 @@ func TestService_Rename_RepoNotFound(t *testing.T) {
 // Branch Protection Tests
 
 func TestService_GetProtection_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	_, err := service.GetProtection(context.Background(), "testowner", "testrepo", "main")
 	if err != branches.ErrNotFound {
@@ -357,7 +362,7 @@ func TestService_GetProtection_NotFound(t *testing.T) {
 }
 
 func TestService_GetProtection_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetProtection(context.Background(), "unknown", "repo", "main")
@@ -367,11 +372,11 @@ func TestService_GetProtection_RepoNotFound(t *testing.T) {
 }
 
 func TestService_UpdateProtection_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	protection, err := service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
 		EnforceAdmins:         true,
@@ -397,7 +402,7 @@ func TestService_UpdateProtection_Success(t *testing.T) {
 }
 
 func TestService_UpdateProtection_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.UpdateProtection(context.Background(), "unknown", "repo", "main", &branches.UpdateProtectionIn{
@@ -409,11 +414,11 @@ func TestService_UpdateProtection_RepoNotFound(t *testing.T) {
 }
 
 func TestService_UpdateProtection_WithStatusChecks(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	protection, err := service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
 		RequiredStatusChecks: &branches.RequiredStatusChecksIn{
@@ -437,11 +442,11 @@ func TestService_UpdateProtection_WithStatusChecks(t *testing.T) {
 }
 
 func TestService_UpdateProtection_WithPRReviews(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	protection, err := service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
 		RequiredPullRequestReviews: &branches.RequiredPullRequestReviewsIn{
@@ -466,11 +471,11 @@ func TestService_UpdateProtection_WithPRReviews(t *testing.T) {
 }
 
 func TestService_UpdateProtection_WithForcePushes(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	allowForce := true
 	protection, err := service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -486,11 +491,11 @@ func TestService_UpdateProtection_WithForcePushes(t *testing.T) {
 }
 
 func TestService_DeleteProtection_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// First create protection
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -511,7 +516,7 @@ func TestService_DeleteProtection_Success(t *testing.T) {
 }
 
 func TestService_DeleteProtection_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	err := service.DeleteProtection(context.Background(), "unknown", "repo", "main")
@@ -523,11 +528,11 @@ func TestService_DeleteProtection_RepoNotFound(t *testing.T) {
 // Required Status Checks Tests
 
 func TestService_GetRequiredStatusChecks_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create protection with status checks
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -548,11 +553,11 @@ func TestService_GetRequiredStatusChecks_Success(t *testing.T) {
 }
 
 func TestService_GetRequiredStatusChecks_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create protection without status checks
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -566,11 +571,11 @@ func TestService_GetRequiredStatusChecks_NotFound(t *testing.T) {
 }
 
 func TestService_UpdateRequiredStatusChecks_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create initial protection
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -597,11 +602,11 @@ func TestService_UpdateRequiredStatusChecks_Success(t *testing.T) {
 }
 
 func TestService_RemoveRequiredStatusChecks_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create protection with status checks
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -625,11 +630,11 @@ func TestService_RemoveRequiredStatusChecks_Success(t *testing.T) {
 // Required Signatures Tests
 
 func TestService_GetRequiredSignatures_Default(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create protection without signatures
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -647,11 +652,11 @@ func TestService_GetRequiredSignatures_Default(t *testing.T) {
 }
 
 func TestService_CreateRequiredSignatures_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create initial protection
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -669,11 +674,11 @@ func TestService_CreateRequiredSignatures_Success(t *testing.T) {
 }
 
 func TestService_DeleteRequiredSignatures_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create protection with signatures enabled
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
@@ -695,11 +700,11 @@ func TestService_DeleteRequiredSignatures_Success(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateProtectionURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	protection, err := service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{
 		EnforceAdmins: true,
@@ -743,11 +748,11 @@ func TestService_PopulateProtectionURLs(t *testing.T) {
 // Multi-branch Tests
 
 func TestService_Protection_MultipleBranches(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Protect main
 	_, _ = service.UpdateProtection(context.Background(), "testowner", "testrepo", "main", &branches.UpdateProtectionIn{

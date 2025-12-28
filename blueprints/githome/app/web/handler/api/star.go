@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/stars"
+	"github.com/go-mizu/mizu"
 )
 
 // StarHandler handles star endpoints
@@ -19,204 +20,182 @@ func NewStarHandler(stars stars.API, repos repos.API) *StarHandler {
 }
 
 // ListStargazers handles GET /repos/{owner}/{repo}/stargazers
-func (h *StarHandler) ListStargazers(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *StarHandler) ListStargazers(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &stars.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
 	// Check if timestamps are requested via Accept header
-	accept := r.Header.Get("Accept")
+	req := c.Request()
+	accept := req.Header.Get("Accept")
 	if accept == "application/vnd.github.v3.star+json" {
-		stargazers, err := h.stars.ListStargazersWithTimestamps(r.Context(), owner, repoName, opts)
+		stargazers, err := h.stars.ListStargazersWithTimestamps(c.Context(), owner, repoName, opts)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, err.Error())
-			return
+			return WriteError(c, http.StatusInternalServerError, err.Error())
 		}
-		WriteJSON(w, http.StatusOK, stargazers)
-		return
+		return c.JSON(http.StatusOK, stargazers)
 	}
 
-	stargazers, err := h.stars.ListStargazers(r.Context(), owner, repoName, opts)
+	stargazers, err := h.stars.ListStargazers(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, stargazers)
+	return c.JSON(http.StatusOK, stargazers)
 }
 
 // ListStarredRepos handles GET /users/{username}/starred
-func (h *StarHandler) ListStarredRepos(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
-	pagination := GetPaginationParams(r)
+func (h *StarHandler) ListStarredRepos(c *mizu.Ctx) error {
+	username := c.Param("username")
+	pagination := GetPagination(c)
 	opts := &stars.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
 	}
 
 	// Check if timestamps are requested via Accept header
-	accept := r.Header.Get("Accept")
+	req := c.Request()
+	accept := req.Header.Get("Accept")
 	if accept == "application/vnd.github.v3.star+json" {
-		repoList, err := h.stars.ListForUserWithTimestamps(r.Context(), username, opts)
+		repoList, err := h.stars.ListForUserWithTimestamps(c.Context(), username, opts)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, err.Error())
-			return
+			return WriteError(c, http.StatusInternalServerError, err.Error())
 		}
-		WriteJSON(w, http.StatusOK, repoList)
-		return
+		return c.JSON(http.StatusOK, repoList)
 	}
 
-	repoList, err := h.stars.ListForUser(r.Context(), username, opts)
+	repoList, err := h.stars.ListForUser(c.Context(), username, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, repoList)
+	return c.JSON(http.StatusOK, repoList)
 }
 
 // ListAuthenticatedUserStarredRepos handles GET /user/starred
-func (h *StarHandler) ListAuthenticatedUserStarredRepos(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *StarHandler) ListAuthenticatedUserStarredRepos(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &stars.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
 	}
 
 	// Check if timestamps are requested via Accept header
-	accept := r.Header.Get("Accept")
+	req := c.Request()
+	accept := req.Header.Get("Accept")
 	if accept == "application/vnd.github.v3.star+json" {
-		repoList, err := h.stars.ListForAuthenticatedUserWithTimestamps(r.Context(), user.ID, opts)
+		repoList, err := h.stars.ListForAuthenticatedUserWithTimestamps(c.Context(), user.ID, opts)
 		if err != nil {
-			WriteError(w, http.StatusInternalServerError, err.Error())
-			return
+			return WriteError(c, http.StatusInternalServerError, err.Error())
 		}
-		WriteJSON(w, http.StatusOK, repoList)
-		return
+		return c.JSON(http.StatusOK, repoList)
 	}
 
-	repoList, err := h.stars.ListForAuthenticatedUser(r.Context(), user.ID, opts)
+	repoList, err := h.stars.ListForAuthenticatedUser(c.Context(), user.ID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, repoList)
+	return c.JSON(http.StatusOK, repoList)
 }
 
 // CheckRepoStarred handles GET /user/starred/{owner}/{repo}
-func (h *StarHandler) CheckRepoStarred(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *StarHandler) CheckRepoStarred(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	isStarred, err := h.stars.IsStarred(r.Context(), user.ID, owner, repoName)
+	isStarred, err := h.stars.IsStarred(c.Context(), user.ID, owner, repoName)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isStarred {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Star")
+		return NoContent(c)
 	}
+	return NotFound(c, "Star")
 }
 
 // StarRepo handles PUT /user/starred/{owner}/{repo}
-func (h *StarHandler) StarRepo(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *StarHandler) StarRepo(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	if err := h.stars.Star(r.Context(), user.ID, owner, repoName); err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := h.stars.Star(c.Context(), user.ID, owner, repoName); err != nil {
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // UnstarRepo handles DELETE /user/starred/{owner}/{repo}
-func (h *StarHandler) UnstarRepo(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *StarHandler) UnstarRepo(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	if err := h.stars.Unstar(r.Context(), user.ID, owner, repoName); err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := h.stars.Unstar(c.Context(), user.ID, owner, repoName); err != nil {
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }

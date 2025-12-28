@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/activities"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // ActivityHandler handles activity/event endpoints
@@ -19,240 +20,223 @@ func NewActivityHandler(activities activities.API, repos repos.API) *ActivityHan
 }
 
 // ListPublicEvents handles GET /events
-func (h *ActivityHandler) ListPublicEvents(w http.ResponseWriter, r *http.Request) {
-	pagination := GetPaginationParams(r)
+func (h *ActivityHandler) ListPublicEvents(c *mizu.Ctx) error {
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListPublic(r.Context(), opts)
+	events, err := h.activities.ListPublic(c.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListRepoEvents handles GET /repos/{owner}/{repo}/events
-func (h *ActivityHandler) ListRepoEvents(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ActivityHandler) ListRepoEvents(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListForRepo(r.Context(), owner, repoName, opts)
+	events, err := h.activities.ListForRepo(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListRepoNetworkEvents handles GET /networks/{owner}/{repo}/events
-func (h *ActivityHandler) ListRepoNetworkEvents(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *ActivityHandler) ListRepoNetworkEvents(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListNetworkEvents(r.Context(), owner, repoName, opts)
+	events, err := h.activities.ListNetworkEvents(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListOrgEvents handles GET /orgs/{org}/events
-func (h *ActivityHandler) ListOrgEvents(w http.ResponseWriter, r *http.Request) {
-	org := PathParam(r, "org")
+func (h *ActivityHandler) ListOrgEvents(c *mizu.Ctx) error {
+	org := c.Param("org")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListForOrg(r.Context(), org, opts)
+	events, err := h.activities.ListForOrg(c.Context(), org, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListUserReceivedEvents handles GET /users/{username}/received_events
-func (h *ActivityHandler) ListUserReceivedEvents(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
+func (h *ActivityHandler) ListUserReceivedEvents(c *mizu.Ctx) error {
+	username := c.Param("username")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListReceivedEvents(r.Context(), username, opts)
+	events, err := h.activities.ListReceivedEvents(c.Context(), username, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListUserReceivedPublicEvents handles GET /users/{username}/received_events/public
-func (h *ActivityHandler) ListUserReceivedPublicEvents(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
+func (h *ActivityHandler) ListUserReceivedPublicEvents(c *mizu.Ctx) error {
+	username := c.Param("username")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListPublicReceivedEvents(r.Context(), username, opts)
+	events, err := h.activities.ListPublicReceivedEvents(c.Context(), username, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListUserEvents handles GET /users/{username}/events
-func (h *ActivityHandler) ListUserEvents(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
+func (h *ActivityHandler) ListUserEvents(c *mizu.Ctx) error {
+	username := c.Param("username")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListForUser(r.Context(), username, opts)
+	events, err := h.activities.ListForUser(c.Context(), username, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListUserPublicEvents handles GET /users/{username}/events/public
-func (h *ActivityHandler) ListUserPublicEvents(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
+func (h *ActivityHandler) ListUserPublicEvents(c *mizu.Ctx) error {
+	username := c.Param("username")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListPublicForUser(r.Context(), username, opts)
+	events, err := h.activities.ListPublicForUser(c.Context(), username, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListUserOrgEvents handles GET /users/{username}/events/orgs/{org}
-func (h *ActivityHandler) ListUserOrgEvents(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ActivityHandler) ListUserOrgEvents(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	username := PathParam(r, "username")
-	org := PathParam(r, "org")
+	username := c.Param("username")
+	org := c.Param("org")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListOrgEventsForUser(r.Context(), username, org, opts)
+	events, err := h.activities.ListOrgEventsForUser(c.Context(), username, org, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListAuthenticatedUserEvents handles GET /users/{username}/events (authenticated)
-func (h *ActivityHandler) ListAuthenticatedUserEvents(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ActivityHandler) ListAuthenticatedUserEvents(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &activities.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.activities.ListForUser(r.Context(), user.Login, opts)
+	events, err := h.activities.ListForUser(c.Context(), user.Login, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
 }
 
 // ListFeeds handles GET /feeds
-func (h *ActivityHandler) ListFeeds(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *ActivityHandler) ListFeeds(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 
 	var userID int64
 	if user != nil {
 		userID = user.ID
 	}
 
-	feeds, err := h.activities.GetFeeds(r.Context(), userID)
+	feeds, err := h.activities.GetFeeds(c.Context(), userID)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, feeds)
+	return c.JSON(http.StatusOK, feeds)
 }

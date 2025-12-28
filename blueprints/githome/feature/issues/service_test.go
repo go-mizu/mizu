@@ -13,7 +13,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*issues.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*issues.Service, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -32,19 +32,21 @@ func setupTestService(t *testing.T) (*issues.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	issuesStore := duckdb.NewIssuesStore(db)
 	orgsStore := duckdb.NewOrgsStore(db)
 	collabStore := duckdb.NewCollaboratorsStore(db)
-	service := issues.NewService(issuesStore, store.Repos(), store.Users(), orgsStore, collabStore, "https://api.example.com")
+	service := issues.NewService(issuesStore, reposStore, usersStore, orgsStore, collabStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, reposStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -53,13 +55,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -70,7 +72,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		DefaultBranch: "main",
 		HasIssues:     true,
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -91,11 +93,11 @@ func createTestIssue(t *testing.T, service *issues.Service, owner, repo string, 
 // Issue Creation Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	issue, err := service.Create(context.Background(), "testowner", "testrepo", user.ID, &issues.CreateIn{
 		Title: "Test Issue",
@@ -129,10 +131,10 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
 
 	_, err := service.Create(context.Background(), "unknown", "repo", user.ID, &issues.CreateIn{
 		Title: "Test Issue",
@@ -143,29 +145,29 @@ func TestService_Create_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Create_IncrementsOpenIssues(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create issues
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 1")
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 2")
 
 	// Check repo counter
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.OpenIssuesCount != 2 {
 		t.Errorf("expected open_issues_count 2, got %d", updatedRepo.OpenIssuesCount)
 	}
 }
 
 func TestService_Create_NumbersIncrement(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	issue1 := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 1")
 	issue2 := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 2")
@@ -185,11 +187,11 @@ func TestService_Create_NumbersIncrement(t *testing.T) {
 // Issue Retrieval Tests
 
 func TestService_Get_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	issue, err := service.Get(context.Background(), "testowner", "testrepo", created.Number)
@@ -206,11 +208,11 @@ func TestService_Get_Success(t *testing.T) {
 }
 
 func TestService_Get_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	_, err := service.Get(context.Background(), "testowner", "testrepo", 999)
 	if err != issues.ErrNotFound {
@@ -219,7 +221,7 @@ func TestService_Get_NotFound(t *testing.T) {
 }
 
 func TestService_Get_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Get(context.Background(), "unknown", "repo", 1)
@@ -229,11 +231,11 @@ func TestService_Get_RepoNotFound(t *testing.T) {
 }
 
 func TestService_ListForRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 1")
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 2")
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue 3")
@@ -249,11 +251,11 @@ func TestService_ListForRepo(t *testing.T) {
 }
 
 func TestService_ListForRepo_FilterByState(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Open Issue 1")
 	createTestIssue(t, service, "testowner", "testrepo", user.ID, "Open Issue 2")
 	issue3 := createTestIssue(t, service, "testowner", "testrepo", user.ID, "To Close")
@@ -290,11 +292,11 @@ func TestService_ListForRepo_FilterByState(t *testing.T) {
 }
 
 func TestService_ListForRepo_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	for i := 0; i < 5; i++ {
 		createTestIssue(t, service, "testowner", "testrepo", user.ID, "Issue")
 	}
@@ -315,11 +317,11 @@ func TestService_ListForRepo_Pagination(t *testing.T) {
 // Issue Update Tests
 
 func TestService_Update_Title(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Original Title")
 
 	newTitle := "Updated Title"
@@ -336,11 +338,11 @@ func TestService_Update_Title(t *testing.T) {
 }
 
 func TestService_Update_Body(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	newBody := "Updated body content"
@@ -357,11 +359,11 @@ func TestService_Update_Body(t *testing.T) {
 }
 
 func TestService_Update_Close(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	closedState := "closed"
@@ -380,18 +382,18 @@ func TestService_Update_Close(t *testing.T) {
 	}
 
 	// Check repo counter decremented
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.OpenIssuesCount != 0 {
 		t.Errorf("expected open_issues_count 0, got %d", updatedRepo.OpenIssuesCount)
 	}
 }
 
 func TestService_Update_Reopen(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	// Close
@@ -414,18 +416,18 @@ func TestService_Update_Reopen(t *testing.T) {
 	}
 
 	// Check repo counter incremented back
-	updatedRepo, _ := store.Repos().GetByID(context.Background(), repo.ID)
+	updatedRepo, _ := reposStore.GetByID(context.Background(), repo.ID)
 	if updatedRepo.OpenIssuesCount != 1 {
 		t.Errorf("expected open_issues_count 1, got %d", updatedRepo.OpenIssuesCount)
 	}
 }
 
 func TestService_Update_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	newTitle := "Updated"
 	_, err := service.Update(context.Background(), "testowner", "testrepo", 999, &issues.UpdateIn{
@@ -439,11 +441,11 @@ func TestService_Update_NotFound(t *testing.T) {
 // Lock/Unlock Tests
 
 func TestService_Lock_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	err := service.Lock(context.Background(), "testowner", "testrepo", created.Number, "off-topic")
@@ -461,11 +463,11 @@ func TestService_Lock_Success(t *testing.T) {
 }
 
 func TestService_Unlock_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	created := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	// Lock first
@@ -486,11 +488,11 @@ func TestService_Unlock_Success(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 	issue := createTestIssue(t, service, "testowner", "testrepo", user.ID, "Test Issue")
 
 	if issue.URL != "https://api.example.com/api/v3/repos/testowner/testrepo/issues/1" {
@@ -510,12 +512,12 @@ func TestService_PopulateURLs(t *testing.T) {
 // Integration Test - Multiple Repos Isolation
 
 func TestService_MultipleRepos(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "repo1")
-	createTestRepo(t, store, user, "repo2")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "repo1")
+	createTestRepo(t, reposStore, user, "repo2")
 
 	// Create issues in different repos
 	issue1 := createTestIssue(t, service, "testowner", "repo1", user.ID, "Issue in repo1")

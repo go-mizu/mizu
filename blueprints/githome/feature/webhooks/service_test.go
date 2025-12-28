@@ -1,8 +1,3 @@
-//go:build ignore
-// +build ignore
-
-// This test file is excluded from build until webhooks store is implemented in duckdb store.
-
 package webhooks_test
 
 import (
@@ -19,9 +14,16 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*webhooks.Service, *duckdb.Store, func()) {
+// testStores holds all the stores needed for tests
+type testStores struct {
+	users    *duckdb.UsersStore
+	repos    *duckdb.ReposStore
+	orgs     *duckdb.OrgsStore
+	webhooks *duckdb.WebhooksStore
+}
+
+func setupTestService(t *testing.T) (*webhooks.Service, *testStores, func()) {
 	t.Helper()
-	t.Skip("webhooks store not yet implemented in duckdb store")
 
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
@@ -39,16 +41,28 @@ func setupTestService(t *testing.T) (*webhooks.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
-	service := webhooks.NewService(store.Webhooks(), store.Repos(), store.Orgs(), "https://api.example.com")
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
+	orgsStore := duckdb.NewOrgsStore(db)
+	webhooksStore := duckdb.NewWebhooksStore(db)
+
+	stores := &testStores{
+		users:    usersStore,
+		repos:    reposStore,
+		orgs:     orgsStore,
+		webhooks: webhooksStore,
+	}
+
+	service := webhooks.NewService(webhooksStore, reposStore, orgsStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, stores, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, stores *testStores, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -57,13 +71,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := stores.users.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, stores *testStores, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -73,13 +87,13 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := stores.repos.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
 }
 
-func createTestOrg(t *testing.T, store *duckdb.Store, login string) *orgs.Organization {
+func createTestOrg(t *testing.T, stores *testStores, login string) *orgs.Organization {
 	t.Helper()
 	// First create user with Organization type
 	user := &users.User{
@@ -89,7 +103,7 @@ func createTestOrg(t *testing.T, store *duckdb.Store, login string) *orgs.Organi
 		PasswordHash: "",
 		Type:         "Organization",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := stores.users.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test org user: %v", err)
 	}
 
@@ -99,7 +113,7 @@ func createTestOrg(t *testing.T, store *duckdb.Store, login string) *orgs.Organi
 		Email: login + "@example.com",
 		Type:  "Organization",
 	}
-	if err := store.Orgs().Create(context.Background(), org); err != nil {
+	if err := stores.orgs.Create(context.Background(), org); err != nil {
 		t.Fatalf("failed to create test org: %v", err)
 	}
 	return org
@@ -123,11 +137,11 @@ func createTestWebhookForRepo(t *testing.T, service *webhooks.Service, owner, re
 // Repository Webhook Tests
 
 func TestService_CreateForRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	hook, err := service.CreateForRepo(context.Background(), "owner", "testrepo", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -162,11 +176,11 @@ func TestService_CreateForRepo_Success(t *testing.T) {
 }
 
 func TestService_CreateForRepo_DefaultEvents(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	hook, err := service.CreateForRepo(context.Background(), "owner", "testrepo", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -183,11 +197,11 @@ func TestService_CreateForRepo_DefaultEvents(t *testing.T) {
 }
 
 func TestService_CreateForRepo_Inactive(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	active := false
 	hook, err := service.CreateForRepo(context.Background(), "owner", "testrepo", &webhooks.CreateIn{
@@ -206,10 +220,10 @@ func TestService_CreateForRepo_Inactive(t *testing.T) {
 }
 
 func TestService_CreateForRepo_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestUser(t, store, "owner", "owner@example.com")
+	createTestUser(t, stores, "owner", "owner@example.com")
 
 	_, err := service.CreateForRepo(context.Background(), "owner", "unknown", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -222,11 +236,11 @@ func TestService_CreateForRepo_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetForRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 	created := createTestWebhookForRepo(t, service, "owner", "testrepo")
 
 	hook, err := service.GetForRepo(context.Background(), "owner", "testrepo", created.ID)
@@ -240,11 +254,11 @@ func TestService_GetForRepo_Success(t *testing.T) {
 }
 
 func TestService_GetForRepo_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	_, err := service.GetForRepo(context.Background(), "owner", "testrepo", 99999)
 	if err != webhooks.ErrNotFound {
@@ -253,11 +267,11 @@ func TestService_GetForRepo_NotFound(t *testing.T) {
 }
 
 func TestService_ListForRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	createTestWebhookForRepo(t, service, "owner", "testrepo")
 	createTestWebhookForRepo(t, service, "owner", "testrepo")
@@ -273,11 +287,11 @@ func TestService_ListForRepo(t *testing.T) {
 }
 
 func TestService_ListForRepo_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	for i := 0; i < 5; i++ {
 		createTestWebhookForRepo(t, service, "owner", "testrepo")
@@ -297,11 +311,11 @@ func TestService_ListForRepo_Pagination(t *testing.T) {
 }
 
 func TestService_UpdateForRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 	created := createTestWebhookForRepo(t, service, "owner", "testrepo")
 
 	active := false
@@ -319,11 +333,11 @@ func TestService_UpdateForRepo_Success(t *testing.T) {
 }
 
 func TestService_UpdateForRepo_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	active := false
 	_, err := service.UpdateForRepo(context.Background(), "owner", "testrepo", 99999, &webhooks.UpdateIn{
@@ -335,11 +349,11 @@ func TestService_UpdateForRepo_NotFound(t *testing.T) {
 }
 
 func TestService_DeleteForRepo_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 	created := createTestWebhookForRepo(t, service, "owner", "testrepo")
 
 	err := service.DeleteForRepo(context.Background(), "owner", "testrepo", created.ID)
@@ -355,11 +369,11 @@ func TestService_DeleteForRepo_Success(t *testing.T) {
 }
 
 func TestService_DeleteForRepo_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 
 	err := service.DeleteForRepo(context.Background(), "owner", "testrepo", 99999)
 	if err != webhooks.ErrNotFound {
@@ -370,10 +384,10 @@ func TestService_DeleteForRepo_NotFound(t *testing.T) {
 // Organization Webhook Tests
 
 func TestService_CreateForOrg_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	hook, err := service.CreateForOrg(context.Background(), "testorg", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -409,10 +423,10 @@ func TestService_CreateForOrg_OrgNotFound(t *testing.T) {
 }
 
 func TestService_GetForOrg_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	created, _ := service.CreateForOrg(context.Background(), "testorg", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -431,10 +445,10 @@ func TestService_GetForOrg_Success(t *testing.T) {
 }
 
 func TestService_GetForOrg_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	_, err := service.GetForOrg(context.Background(), "testorg", 99999)
 	if err != webhooks.ErrNotFound {
@@ -443,10 +457,10 @@ func TestService_GetForOrg_NotFound(t *testing.T) {
 }
 
 func TestService_ListForOrg(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	_, _ = service.CreateForOrg(context.Background(), "testorg", &webhooks.CreateIn{
 		Config: &webhooks.Config{URL: "https://example.com/webhook1"},
@@ -466,10 +480,10 @@ func TestService_ListForOrg(t *testing.T) {
 }
 
 func TestService_UpdateForOrg_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	created, _ := service.CreateForOrg(context.Background(), "testorg", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -491,10 +505,10 @@ func TestService_UpdateForOrg_Success(t *testing.T) {
 }
 
 func TestService_DeleteForOrg_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	created, _ := service.CreateForOrg(context.Background(), "testorg", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -517,11 +531,11 @@ func TestService_DeleteForOrg_Success(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateRepoURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "testrepo")
 	hook := createTestWebhookForRepo(t, service, "owner", "testrepo")
 
 	if hook.URL == "" {
@@ -536,10 +550,10 @@ func TestService_PopulateRepoURLs(t *testing.T) {
 }
 
 func TestService_PopulateOrgURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestOrg(t, store, "testorg")
+	createTestOrg(t, stores, "testorg")
 
 	hook, _ := service.CreateForOrg(context.Background(), "testorg", &webhooks.CreateIn{
 		Config: &webhooks.Config{
@@ -561,13 +575,13 @@ func TestService_PopulateOrgURLs(t *testing.T) {
 // Integration Test - Webhooks Isolated Between Repos and Orgs
 
 func TestService_WebhooksIsolation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, stores, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "repo1")
-	createTestRepo(t, store, owner, "repo2")
-	createTestOrg(t, store, "testorg")
+	owner := createTestUser(t, stores, "owner", "owner@example.com")
+	createTestRepo(t, stores, owner, "repo1")
+	createTestRepo(t, stores, owner, "repo2")
+	createTestOrg(t, stores, "testorg")
 
 	// Create webhooks for different owners
 	repoHook1 := createTestWebhookForRepo(t, service, "owner", "repo1")

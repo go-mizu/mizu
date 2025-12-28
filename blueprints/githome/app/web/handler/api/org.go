@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-mizu/blueprints/githome/feature/orgs"
+	"github.com/go-mizu/mizu"
 )
 
 // OrgHandler handles organization endpoints
@@ -17,407 +19,372 @@ func NewOrgHandler(orgs orgs.API) *OrgHandler {
 }
 
 // ListOrgs handles GET /organizations
-func (h *OrgHandler) ListOrgs(w http.ResponseWriter, r *http.Request) {
-	pagination := GetPaginationParams(r)
+func (h *OrgHandler) ListOrgs(c *mizu.Ctx) error {
+	pagination := GetPagination(c)
 	opts := &orgs.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	if since := QueryParam(r, "since"); since != "" {
-		if n, err := PathParamInt64(r, "since"); err == nil {
+	if since := c.Query("since"); since != "" {
+		if n, err := strconv.ParseInt(since, 10, 64); err == nil {
 			opts.Since = n
 		}
 	}
 
-	orgList, err := h.orgs.List(r.Context(), opts)
+	orgList, err := h.orgs.List(c.Context(), opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, orgList)
+	return c.JSON(http.StatusOK, orgList)
 }
 
 // GetOrg handles GET /orgs/{org}
-func (h *OrgHandler) GetOrg(w http.ResponseWriter, r *http.Request) {
-	orgLogin := PathParam(r, "org")
+func (h *OrgHandler) GetOrg(c *mizu.Ctx) error {
+	orgLogin := c.Param("org")
 
-	org, err := h.orgs.Get(r.Context(), orgLogin)
+	org, err := h.orgs.Get(c.Context(), orgLogin)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
+			return NotFound(c, "Organization")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, org)
+	return c.JSON(http.StatusOK, org)
 }
 
 // UpdateOrg handles PATCH /orgs/{org}
-func (h *OrgHandler) UpdateOrg(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) UpdateOrg(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
+	orgLogin := c.Param("org")
 
 	var in orgs.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.orgs.Update(r.Context(), orgLogin, &in)
+	updated, err := h.orgs.Update(c.Context(), orgLogin, &in)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
+			return NotFound(c, "Organization")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, updated)
+	return c.JSON(http.StatusOK, updated)
 }
 
 // ListAuthenticatedUserOrgs handles GET /user/orgs
-func (h *OrgHandler) ListAuthenticatedUserOrgs(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) ListAuthenticatedUserOrgs(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &orgs.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	orgList, err := h.orgs.ListForUser(r.Context(), user.Login, opts)
+	orgList, err := h.orgs.ListForUser(c.Context(), user.Login, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, orgList)
+	return c.JSON(http.StatusOK, orgList)
 }
 
 // ListUserOrgs handles GET /users/{username}/orgs
-func (h *OrgHandler) ListUserOrgs(w http.ResponseWriter, r *http.Request) {
-	username := PathParam(r, "username")
-	pagination := GetPaginationParams(r)
+func (h *OrgHandler) ListUserOrgs(c *mizu.Ctx) error {
+	username := c.Param("username")
+	pagination := GetPagination(c)
 	opts := &orgs.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	orgList, err := h.orgs.ListForUser(r.Context(), username, opts)
+	orgList, err := h.orgs.ListForUser(c.Context(), username, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, orgList)
+	return c.JSON(http.StatusOK, orgList)
 }
 
 // ListOrgMembers handles GET /orgs/{org}/members
-func (h *OrgHandler) ListOrgMembers(w http.ResponseWriter, r *http.Request) {
-	orgLogin := PathParam(r, "org")
-	pagination := GetPaginationParams(r)
+func (h *OrgHandler) ListOrgMembers(c *mizu.Ctx) error {
+	orgLogin := c.Param("org")
+	pagination := GetPagination(c)
 	opts := &orgs.ListMembersOpts{
 		ListOpts: orgs.ListOpts{
 			Page:    pagination.Page,
 			PerPage: pagination.PerPage,
 		},
-		Filter: QueryParam(r, "filter"),
-		Role:   QueryParam(r, "role"),
+		Filter: c.Query("filter"),
+		Role:   c.Query("role"),
 	}
 
-	members, err := h.orgs.ListMembers(r.Context(), orgLogin, opts)
+	members, err := h.orgs.ListMembers(c.Context(), orgLogin, opts)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
+			return NotFound(c, "Organization")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, members)
+	return c.JSON(http.StatusOK, members)
 }
 
 // CheckOrgMember handles GET /orgs/{org}/members/{username}
-func (h *OrgHandler) CheckOrgMember(w http.ResponseWriter, r *http.Request) {
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+func (h *OrgHandler) CheckOrgMember(c *mizu.Ctx) error {
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	isMember, err := h.orgs.IsMember(r.Context(), orgLogin, username)
+	isMember, err := h.orgs.IsMember(c.Context(), orgLogin, username)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
+			return NotFound(c, "Organization")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isMember {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Member")
+		return NoContent(c)
 	}
+	return NotFound(c, "Member")
 }
 
 // RemoveOrgMember handles DELETE /orgs/{org}/members/{username}
-func (h *OrgHandler) RemoveOrgMember(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) RemoveOrgMember(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	if err := h.orgs.RemoveMember(r.Context(), orgLogin, username); err != nil {
+	if err := h.orgs.RemoveMember(c.Context(), orgLogin, username); err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Member")
-			return
+			return NotFound(c, "Member")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetOrgMembership handles GET /orgs/{org}/memberships/{username}
-func (h *OrgHandler) GetOrgMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) GetOrgMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	membership, err := h.orgs.GetMembership(r.Context(), orgLogin, username)
+	membership, err := h.orgs.GetMembership(c.Context(), orgLogin, username)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Membership")
-			return
+			return NotFound(c, "Membership")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, membership)
+	return c.JSON(http.StatusOK, membership)
 }
 
 // SetOrgMembership handles PUT /orgs/{org}/memberships/{username}
-func (h *OrgHandler) SetOrgMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) SetOrgMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
 	var in struct {
 		Role string `json:"role"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	membership, err := h.orgs.SetMembership(r.Context(), orgLogin, username, in.Role)
+	membership, err := h.orgs.SetMembership(c.Context(), orgLogin, username, in.Role)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, membership)
+	return c.JSON(http.StatusOK, membership)
 }
 
 // RemoveOrgMembership handles DELETE /orgs/{org}/memberships/{username}
-func (h *OrgHandler) RemoveOrgMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) RemoveOrgMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	if err := h.orgs.RemoveMember(r.Context(), orgLogin, username); err != nil {
+	if err := h.orgs.RemoveMember(c.Context(), orgLogin, username); err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Membership")
-			return
+			return NotFound(c, "Membership")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListPublicOrgMembers handles GET /orgs/{org}/public_members
-func (h *OrgHandler) ListPublicOrgMembers(w http.ResponseWriter, r *http.Request) {
-	orgLogin := PathParam(r, "org")
-	pagination := GetPaginationParams(r)
+func (h *OrgHandler) ListPublicOrgMembers(c *mizu.Ctx) error {
+	orgLogin := c.Param("org")
+	pagination := GetPagination(c)
 	opts := &orgs.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	members, err := h.orgs.ListPublicMembers(r.Context(), orgLogin, opts)
+	members, err := h.orgs.ListPublicMembers(c.Context(), orgLogin, opts)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
+			return NotFound(c, "Organization")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, members)
+	return c.JSON(http.StatusOK, members)
 }
 
 // CheckPublicOrgMember handles GET /orgs/{org}/public_members/{username}
-func (h *OrgHandler) CheckPublicOrgMember(w http.ResponseWriter, r *http.Request) {
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+func (h *OrgHandler) CheckPublicOrgMember(c *mizu.Ctx) error {
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	isPublic, err := h.orgs.IsPublicMember(r.Context(), orgLogin, username)
+	isPublic, err := h.orgs.IsPublicMember(c.Context(), orgLogin, username)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Organization")
-			return
+			return NotFound(c, "Organization")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isPublic {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Member")
+		return NoContent(c)
 	}
+	return NotFound(c, "Member")
 }
 
 // PublicizeMembership handles PUT /orgs/{org}/public_members/{username}
-func (h *OrgHandler) PublicizeMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) PublicizeMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	if err := h.orgs.PublicizeMembership(r.Context(), orgLogin, username); err != nil {
+	if err := h.orgs.PublicizeMembership(c.Context(), orgLogin, username); err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Membership")
-			return
+			return NotFound(c, "Membership")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ConcealMembership handles DELETE /orgs/{org}/public_members/{username}
-func (h *OrgHandler) ConcealMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) ConcealMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
-	username := PathParam(r, "username")
+	orgLogin := c.Param("org")
+	username := c.Param("username")
 
-	if err := h.orgs.ConcealMembership(r.Context(), orgLogin, username); err != nil {
+	if err := h.orgs.ConcealMembership(c.Context(), orgLogin, username); err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Membership")
-			return
+			return NotFound(c, "Membership")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetAuthenticatedUserOrgMembership handles GET /user/memberships/orgs/{org}
-func (h *OrgHandler) GetAuthenticatedUserOrgMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) GetAuthenticatedUserOrgMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
+	orgLogin := c.Param("org")
 
-	membership, err := h.orgs.GetMembership(r.Context(), orgLogin, user.Login)
+	membership, err := h.orgs.GetMembership(c.Context(), orgLogin, user.Login)
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Membership")
-			return
+			return NotFound(c, "Membership")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, membership)
+	return c.JSON(http.StatusOK, membership)
 }
 
 // UpdateAuthenticatedUserOrgMembership handles PATCH /user/memberships/orgs/{org}
-func (h *OrgHandler) UpdateAuthenticatedUserOrgMembership(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *OrgHandler) UpdateAuthenticatedUserOrgMembership(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	orgLogin := PathParam(r, "org")
+	orgLogin := c.Param("org")
 
 	var in struct {
 		State string `json:"state"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
 	// Use SetMembership - when accepting an invite, state becomes "active"
-	// The API accepts state to transition pending -> active
-	membership, err := h.orgs.SetMembership(r.Context(), orgLogin, user.Login, "member")
+	membership, err := h.orgs.SetMembership(c.Context(), orgLogin, user.Login, "member")
 	if err != nil {
 		if err == orgs.ErrNotFound {
-			WriteNotFound(w, "Membership")
-			return
+			return NotFound(c, "Membership")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, membership)
+	return c.JSON(http.StatusOK, membership)
+}
+
+// ListOutsideCollaborators handles GET /orgs/{org}/outside_collaborators
+func (h *OrgHandler) ListOutsideCollaborators(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
+	if user == nil {
+		return Unauthorized(c)
+	}
+
+	// TODO: Implement when orgs.API.ListOutsideCollaborators is available
+	// For now, return empty list
+	return c.JSON(http.StatusOK, []any{})
 }

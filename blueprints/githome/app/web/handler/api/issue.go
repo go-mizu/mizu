@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/issues"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // IssueHandler handles issue endpoints
@@ -19,510 +20,464 @@ func NewIssueHandler(issues issues.API, repos repos.API) *IssueHandler {
 }
 
 // ListRepoIssues handles GET /repos/{owner}/{repo}/issues
-func (h *IssueHandler) ListRepoIssues(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *IssueHandler) ListRepoIssues(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &issues.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		State:     QueryParam(r, "state"),
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
-		Labels:    QueryParam(r, "labels"),
-		Milestone: QueryParam(r, "milestone"),
-		Assignee:  QueryParam(r, "assignee"),
-		Creator:   QueryParam(r, "creator"),
-		Mentioned: QueryParam(r, "mentioned"),
+		State:     c.Query("state"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
+		Labels:    c.Query("labels"),
+		Milestone: c.Query("milestone"),
+		Assignee:  c.Query("assignee"),
+		Creator:   c.Query("creator"),
+		Mentioned: c.Query("mentioned"),
 	}
 
-	issueList, err := h.issues.ListForRepo(r.Context(), owner, repoName, opts)
+	issueList, err := h.issues.ListForRepo(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, issueList)
+	return c.JSON(http.StatusOK, issueList)
 }
 
 // GetIssue handles GET /repos/{owner}/{repo}/issues/{issue_number}
-func (h *IssueHandler) GetIssue(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *IssueHandler) GetIssue(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	issue, err := h.issues.Get(r.Context(), owner, repoName, issueNumber)
+	issue, err := h.issues.Get(c.Context(), owner, repoName, issueNumber)
 	if err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, issue)
+	return c.JSON(http.StatusOK, issue)
 }
 
 // CreateIssue handles POST /repos/{owner}/{repo}/issues
-func (h *IssueHandler) CreateIssue(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) CreateIssue(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	var in issues.CreateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	issue, err := h.issues.Create(r.Context(), owner, repoName, user.ID, &in)
+	issue, err := h.issues.Create(c.Context(), owner, repoName, user.ID, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, issue)
+	return Created(c, issue)
 }
 
 // UpdateIssue handles PATCH /repos/{owner}/{repo}/issues/{issue_number}
-func (h *IssueHandler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) UpdateIssue(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in issues.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.issues.Update(r.Context(), owner, repoName, issueNumber, &in)
+	updated, err := h.issues.Update(c.Context(), owner, repoName, issueNumber, &in)
 	if err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, updated)
+	return c.JSON(http.StatusOK, updated)
 }
 
 // LockIssue handles PUT /repos/{owner}/{repo}/issues/{issue_number}/lock
-func (h *IssueHandler) LockIssue(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) LockIssue(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in struct {
 		LockReason string `json:"lock_reason,omitempty"`
 	}
-	DecodeJSON(r, &in) // optional body
+	c.BindJSON(&in, 1<<20) // optional body
 
-	if err := h.issues.Lock(r.Context(), owner, repoName, issueNumber, in.LockReason); err != nil {
+	if err := h.issues.Lock(c.Context(), owner, repoName, issueNumber, in.LockReason); err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // UnlockIssue handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/lock
-func (h *IssueHandler) UnlockIssue(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) UnlockIssue(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	if err := h.issues.Unlock(r.Context(), owner, repoName, issueNumber); err != nil {
+	if err := h.issues.Unlock(c.Context(), owner, repoName, issueNumber); err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListIssueAssignees handles GET /repos/{owner}/{repo}/assignees
-func (h *IssueHandler) ListIssueAssignees(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *IssueHandler) ListIssueAssignees(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	assignees, err := h.issues.ListAssignees(r.Context(), owner, repoName)
+	assignees, err := h.issues.ListAssignees(c.Context(), owner, repoName)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, assignees)
+	return c.JSON(http.StatusOK, assignees)
 }
 
 // CheckAssignee handles GET /repos/{owner}/{repo}/assignees/{assignee}
-func (h *IssueHandler) CheckAssignee(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *IssueHandler) CheckAssignee(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	assignee := PathParam(r, "assignee")
+	assignee := c.Param("assignee")
 
-	isAssignable, err := h.issues.CheckAssignee(r.Context(), owner, repoName, assignee)
+	isAssignable, err := h.issues.CheckAssignee(c.Context(), owner, repoName, assignee)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isAssignable {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Assignee")
+		return NoContent(c)
 	}
+	return NotFound(c, "Assignee")
 }
 
 // AddAssignees handles POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
-func (h *IssueHandler) AddAssignees(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) AddAssignees(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in struct {
 		Assignees []string `json:"assignees"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.issues.AddAssignees(r.Context(), owner, repoName, issueNumber, in.Assignees)
+	updated, err := h.issues.AddAssignees(c.Context(), owner, repoName, issueNumber, in.Assignees)
 	if err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, updated)
+	return Created(c, updated)
 }
 
 // RemoveAssignees handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/assignees
-func (h *IssueHandler) RemoveAssignees(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) RemoveAssignees(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in struct {
 		Assignees []string `json:"assignees"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.issues.RemoveAssignees(r.Context(), owner, repoName, issueNumber, in.Assignees)
+	updated, err := h.issues.RemoveAssignees(c.Context(), owner, repoName, issueNumber, in.Assignees)
 	if err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, updated)
+	return c.JSON(http.StatusOK, updated)
 }
 
 // ListAuthenticatedUserIssues handles GET /user/issues
-func (h *IssueHandler) ListAuthenticatedUserIssues(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) ListAuthenticatedUserIssues(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &issues.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		State:     QueryParam(r, "state"),
-		Labels:    QueryParam(r, "labels"),
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
+		State:     c.Query("state"),
+		Labels:    c.Query("labels"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
 	}
 
-	issueList, err := h.issues.ListForUser(r.Context(), user.ID, opts)
+	issueList, err := h.issues.ListForUser(c.Context(), user.ID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, issueList)
+	return c.JSON(http.StatusOK, issueList)
 }
 
 // ListIssues handles GET /issues (global issues for authenticated user)
-func (h *IssueHandler) ListIssues(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) ListIssues(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &issues.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		State:     QueryParam(r, "state"),
-		Labels:    QueryParam(r, "labels"),
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
+		State:     c.Query("state"),
+		Labels:    c.Query("labels"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
 	}
 
-	issueList, err := h.issues.ListForUser(r.Context(), user.ID, opts)
+	issueList, err := h.issues.ListForUser(c.Context(), user.ID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, issueList)
+	return c.JSON(http.StatusOK, issueList)
 }
 
 // ListOrgIssues handles GET /orgs/{org}/issues
-func (h *IssueHandler) ListOrgIssues(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *IssueHandler) ListOrgIssues(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	org := PathParam(r, "org")
-	pagination := GetPaginationParams(r)
+	org := c.Param("org")
+	pagination := GetPagination(c)
 	opts := &issues.ListOpts{
 		Page:      pagination.Page,
 		PerPage:   pagination.PerPage,
-		State:     QueryParam(r, "state"),
-		Labels:    QueryParam(r, "labels"),
-		Sort:      QueryParam(r, "sort"),
-		Direction: QueryParam(r, "direction"),
+		State:     c.Query("state"),
+		Labels:    c.Query("labels"),
+		Sort:      c.Query("sort"),
+		Direction: c.Query("direction"),
 	}
 
-	issueList, err := h.issues.ListForOrg(r.Context(), org, opts)
+	issueList, err := h.issues.ListForOrg(c.Context(), org, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, issueList)
+	return c.JSON(http.StatusOK, issueList)
 }
 
 // ListIssueEvents handles GET /repos/{owner}/{repo}/issues/{issue_number}/events
-func (h *IssueHandler) ListIssueEvents(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *IssueHandler) ListIssueEvents(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &issues.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	events, err := h.issues.ListEvents(r.Context(), owner, repoName, issueNumber, opts)
+	events, err := h.issues.ListEvents(c.Context(), owner, repoName, issueNumber, opts)
 	if err != nil {
 		if err == issues.ErrNotFound {
-			WriteNotFound(w, "Issue")
-			return
+			return NotFound(c, "Issue")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, events)
+	return c.JSON(http.StatusOK, events)
+}
+
+// GetIssueEvent handles GET /repos/{owner}/{repo}/issues/events/{event_id}
+func (h *IssueHandler) GetIssueEvent(c *mizu.Ctx) error {
+	// TODO: Implement when service method is available
+	return NotFound(c, "Issue event")
+}
+
+// ListRepoIssueEvents handles GET /repos/{owner}/{repo}/issues/events
+func (h *IssueHandler) ListRepoIssueEvents(c *mizu.Ctx) error {
+	// TODO: Implement when service method is available
+	return c.JSON(http.StatusOK, []any{})
+}
+
+// ListIssueTimeline handles GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
+func (h *IssueHandler) ListIssueTimeline(c *mizu.Ctx) error {
+	// TODO: Implement when service method is available
+	return c.JSON(http.StatusOK, []any{})
 }

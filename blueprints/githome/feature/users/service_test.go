@@ -30,7 +30,8 @@ func setupTestService(t *testing.T) (*users.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
-	service := users.NewService(store.Users(), "https://api.example.com")
+	usersStore := duckdb.NewUsersStore(db)
+	service := users.NewService(usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()

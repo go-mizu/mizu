@@ -12,7 +12,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*orgs.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*orgs.Service, *duckdb.UsersStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -31,17 +31,18 @@ func setupTestService(t *testing.T) (*orgs.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
 	orgsStore := duckdb.NewOrgsStore(db)
-	service := orgs.NewService(orgsStore, store.Users(), "https://api.example.com")
+	service := orgs.NewService(orgsStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -50,7 +51,7 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
@@ -72,10 +73,10 @@ func createTestOrg(t *testing.T, service *orgs.Service, creatorID int64, login s
 // Organization Creation Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org, err := service.Create(context.Background(), creator.ID, &orgs.CreateIn{
 		Login:       "testorg",
 		Email:       "org@example.com",
@@ -110,10 +111,10 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_DuplicateLogin(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	createTestOrg(t, service, creator.ID, "testorg")
 
 	_, err := service.Create(context.Background(), creator.ID, &orgs.CreateIn{
@@ -128,10 +129,10 @@ func TestService_Create_DuplicateLogin(t *testing.T) {
 // Organization Retrieval Tests
 
 func TestService_Get_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	created := createTestOrg(t, service, creator.ID, "testorg")
 
 	org, err := service.Get(context.Background(), "testorg")
@@ -158,10 +159,10 @@ func TestService_Get_NotFound(t *testing.T) {
 }
 
 func TestService_GetByID_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	created := createTestOrg(t, service, creator.ID, "testorg")
 
 	org, err := service.GetByID(context.Background(), created.ID)
@@ -185,10 +186,10 @@ func TestService_GetByID_NotFound(t *testing.T) {
 }
 
 func TestService_List(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	createTestOrg(t, service, creator.ID, "org1")
 	createTestOrg(t, service, creator.ID, "org2")
 	createTestOrg(t, service, creator.ID, "org3")
@@ -204,10 +205,10 @@ func TestService_List(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	for i := 0; i < 5; i++ {
 		createTestOrg(t, service, creator.ID, "org"+string(rune('a'+i)))
 	}
@@ -228,10 +229,10 @@ func TestService_List_Pagination(t *testing.T) {
 // Organization Update Tests
 
 func TestService_Update_Description(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	created := createTestOrg(t, service, creator.ID, "testorg")
 
 	newDesc := "Updated description"
@@ -248,10 +249,10 @@ func TestService_Update_Description(t *testing.T) {
 }
 
 func TestService_Update_Name(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	created := createTestOrg(t, service, creator.ID, "testorg")
 
 	newName := "New Org Name"
@@ -270,10 +271,10 @@ func TestService_Update_Name(t *testing.T) {
 // Organization Delete Tests
 
 func TestService_Delete_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	created := createTestOrg(t, service, creator.ID, "testorg")
 
 	err := service.Delete(context.Background(), created.Login)
@@ -291,11 +292,11 @@ func TestService_Delete_Success(t *testing.T) {
 // Membership Tests
 
 func TestService_SetMembership_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	newMember := createTestUser(t, store, "newmember", "newmember@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	newMember := createTestUser(t, usersStore, "newmember", "newmember@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Add the new member using SetMembership
@@ -319,10 +320,10 @@ func TestService_SetMembership_Success(t *testing.T) {
 }
 
 func TestService_SetMembership_OrgNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testuser", "test@example.com")
+	user := createTestUser(t, usersStore, "testuser", "test@example.com")
 
 	_, err := service.SetMembership(context.Background(), "nonexistent", user.Login, "member")
 	if err != orgs.ErrNotFound {
@@ -331,10 +332,10 @@ func TestService_SetMembership_OrgNotFound(t *testing.T) {
 }
 
 func TestService_SetMembership_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	_, err := service.SetMembership(context.Background(), org.Login, "nonexistent", "member")
@@ -344,11 +345,11 @@ func TestService_SetMembership_UserNotFound(t *testing.T) {
 }
 
 func TestService_SetMembership_UpdateRole(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	member := createTestUser(t, store, "member", "member@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	member := createTestUser(t, usersStore, "member", "member@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Add as member first
@@ -369,10 +370,10 @@ func TestService_SetMembership_UpdateRole(t *testing.T) {
 }
 
 func TestService_GetMembership_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Creator should be an admin member
@@ -390,11 +391,11 @@ func TestService_GetMembership_Success(t *testing.T) {
 }
 
 func TestService_GetMembership_NotMember(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	nonMember := createTestUser(t, store, "nonmember", "nonmember@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	nonMember := createTestUser(t, usersStore, "nonmember", "nonmember@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	_, err := service.GetMembership(context.Background(), org.Login, nonMember.Login)
@@ -404,11 +405,11 @@ func TestService_GetMembership_NotMember(t *testing.T) {
 }
 
 func TestService_RemoveMember_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	member := createTestUser(t, store, "member", "member@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	member := createTestUser(t, usersStore, "member", "member@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Add member
@@ -431,10 +432,10 @@ func TestService_RemoveMember_Success(t *testing.T) {
 }
 
 func TestService_RemoveMember_LastOwner(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Try to remove the last owner
@@ -445,12 +446,12 @@ func TestService_RemoveMember_LastOwner(t *testing.T) {
 }
 
 func TestService_ListMembers(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	member1 := createTestUser(t, store, "member1", "member1@example.com")
-	member2 := createTestUser(t, store, "member2", "member2@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	member1 := createTestUser(t, usersStore, "member1", "member1@example.com")
+	member2 := createTestUser(t, usersStore, "member2", "member2@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Add members
@@ -469,15 +470,15 @@ func TestService_ListMembers(t *testing.T) {
 }
 
 func TestService_ListMembers_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	// Add multiple members
 	for i := 0; i < 5; i++ {
-		member := createTestUser(t, store, "member"+string(rune('a'+i)), "member"+string(rune('a'+i))+"@example.com")
+		member := createTestUser(t, usersStore, "member"+string(rune('a'+i)), "member"+string(rune('a'+i))+"@example.com")
 		_, _ = service.SetMembership(context.Background(), org.Login, member.Login, "member")
 	}
 
@@ -495,10 +496,10 @@ func TestService_ListMembers_Pagination(t *testing.T) {
 }
 
 func TestService_IsMember_True(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	isMember, err := service.IsMember(context.Background(), org.Login, creator.Login)
@@ -511,11 +512,11 @@ func TestService_IsMember_True(t *testing.T) {
 }
 
 func TestService_IsMember_False(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	nonMember := createTestUser(t, store, "nonmember", "nonmember@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	nonMember := createTestUser(t, usersStore, "nonmember", "nonmember@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	isMember, err := service.IsMember(context.Background(), org.Login, nonMember.Login)
@@ -530,10 +531,10 @@ func TestService_IsMember_False(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
 	org := createTestOrg(t, service, creator.ID, "testorg")
 
 	if org.URL != "https://api.example.com/api/v3/orgs/testorg" {
@@ -556,11 +557,11 @@ func TestService_PopulateURLs(t *testing.T) {
 // List User's Orgs Tests
 
 func TestService_ListForUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	creator := createTestUser(t, store, "creator", "creator@example.com")
-	otherUser := createTestUser(t, store, "other", "other@example.com")
+	creator := createTestUser(t, usersStore, "creator", "creator@example.com")
+	otherUser := createTestUser(t, usersStore, "other", "other@example.com")
 
 	// Create orgs where creator is a member
 	createTestOrg(t, service, creator.ID, "org1")
@@ -592,10 +593,10 @@ func TestService_ListForUser_UserNotFound(t *testing.T) {
 }
 
 func TestService_ListForUser_NoOrgs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "lonely", "lonely@example.com")
+	user := createTestUser(t, usersStore, "lonely", "lonely@example.com")
 
 	userOrgs, err := service.ListForUser(context.Background(), user.Login, nil)
 	if err != nil {

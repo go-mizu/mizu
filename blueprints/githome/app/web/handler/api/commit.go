@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/commits"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // CommitHandler handles commit endpoints
@@ -19,52 +20,49 @@ func NewCommitHandler(commits commits.API, repos repos.API) *CommitHandler {
 }
 
 // ListCommits handles GET /repos/{owner}/{repo}/commits
-func (h *CommitHandler) ListCommits(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *CommitHandler) ListCommits(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &commits.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
-		SHA:     QueryParam(r, "sha"),
-		Path:    QueryParam(r, "path"),
-		Author:  QueryParam(r, "author"),
+		SHA:     c.Query("sha"),
+		Path:    c.Query("path"),
+		Author:  c.Query("author"),
 	}
 
-	commitList, err := h.commits.List(r.Context(), owner, repoName, opts)
+	commitList, err := h.commits.List(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, commitList)
+	return c.JSON(http.StatusOK, commitList)
 }
 
 // GetCommit handles GET /repos/{owner}/{repo}/commits/{ref}
-func (h *CommitHandler) GetCommit(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+func (h *CommitHandler) GetCommit(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
-	commit, err := h.commits.Get(r.Context(), owner, repoName, ref)
+	commit, err := h.commits.Get(c.Context(), owner, repoName, ref)
 	if err != nil {
 		if err == commits.ErrNotFound {
-			WriteNotFound(w, "Commit")
-			return
+			return NotFound(c, "Commit")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, commit)
+	return c.JSON(http.StatusOK, commit)
 }
 
 // CompareCommits handles GET /repos/{owner}/{repo}/compare/{basehead}
-func (h *CommitHandler) CompareCommits(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	basehead := PathParam(r, "basehead")
+func (h *CommitHandler) CompareCommits(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	basehead := c.Param("basehead")
 
 	// basehead format: base...head
 	var base, head string
@@ -76,118 +74,108 @@ func (h *CommitHandler) CompareCommits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if base == "" || head == "" {
-		WriteBadRequest(w, "Invalid basehead format. Expected: base...head")
-		return
+		return BadRequest(c, "Invalid basehead format. Expected: base...head")
 	}
 
-	comparison, err := h.commits.Compare(r.Context(), owner, repoName, base, head)
+	comparison, err := h.commits.Compare(c.Context(), owner, repoName, base, head)
 	if err != nil {
 		if err == commits.ErrNotFound {
-			WriteNotFound(w, "Commit")
-			return
+			return NotFound(c, "Commit")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, comparison)
+	return c.JSON(http.StatusOK, comparison)
 }
 
 // ListBranchesForHead handles GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head
-func (h *CommitHandler) ListBranchesForHead(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	commitSHA := PathParam(r, "commit_sha")
+func (h *CommitHandler) ListBranchesForHead(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	commitSHA := c.Param("commit_sha")
 
-	branches, err := h.commits.ListBranchesForHead(r.Context(), owner, repoName, commitSHA)
+	branches, err := h.commits.ListBranchesForHead(c.Context(), owner, repoName, commitSHA)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, branches)
+	return c.JSON(http.StatusOK, branches)
 }
 
 // ListPullsForCommit handles GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls
-func (h *CommitHandler) ListPullsForCommit(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	commitSHA := PathParam(r, "commit_sha")
+func (h *CommitHandler) ListPullsForCommit(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	commitSHA := c.Param("commit_sha")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &commits.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	pulls, err := h.commits.ListPullsForCommit(r.Context(), owner, repoName, commitSHA, opts)
+	pulls, err := h.commits.ListPullsForCommit(c.Context(), owner, repoName, commitSHA, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, pulls)
+	return c.JSON(http.StatusOK, pulls)
 }
 
 // GetCombinedStatus handles GET /repos/{owner}/{repo}/commits/{ref}/status
-func (h *CommitHandler) GetCombinedStatus(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+func (h *CommitHandler) GetCombinedStatus(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
-	status, err := h.commits.GetCombinedStatus(r.Context(), owner, repoName, ref)
+	status, err := h.commits.GetCombinedStatus(c.Context(), owner, repoName, ref)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, status)
+	return c.JSON(http.StatusOK, status)
 }
 
 // ListStatuses handles GET /repos/{owner}/{repo}/commits/{ref}/statuses
-func (h *CommitHandler) ListStatuses(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	ref := PathParam(r, "ref")
+func (h *CommitHandler) ListStatuses(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &commits.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	statuses, err := h.commits.ListStatuses(r.Context(), owner, repoName, ref, opts)
+	statuses, err := h.commits.ListStatuses(c.Context(), owner, repoName, ref, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, statuses)
+	return c.JSON(http.StatusOK, statuses)
 }
 
 // CreateStatus handles POST /repos/{owner}/{repo}/statuses/{sha}
-func (h *CommitHandler) CreateStatus(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CommitHandler) CreateStatus(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
-	sha := PathParam(r, "sha")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	sha := c.Param("sha")
 
 	var in commits.CreateStatusIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	status, err := h.commits.CreateStatus(r.Context(), owner, repoName, sha, user.ID, &in)
+	status, err := h.commits.CreateStatus(c.Context(), owner, repoName, sha, user.ID, &in)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, status)
+	return Created(c, status)
 }

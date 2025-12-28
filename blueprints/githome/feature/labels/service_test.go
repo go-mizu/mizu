@@ -13,7 +13,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*labels.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*labels.Service, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -32,19 +32,21 @@ func setupTestService(t *testing.T) (*labels.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	labelsStore := duckdb.NewLabelsStore(db)
 	issuesStore := duckdb.NewIssuesStore(db)
 	milestonesStore := duckdb.NewMilestonesStore(db)
-	service := labels.NewService(labelsStore, store.Repos(), issuesStore, milestonesStore, "https://api.example.com")
+	service := labels.NewService(labelsStore, reposStore, issuesStore, milestonesStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, reposStore, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -53,13 +55,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -69,7 +71,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -91,11 +93,11 @@ func createTestLabel(t *testing.T, service *labels.Service, owner, repo, name, c
 // Label Creation Tests
 
 func TestService_Create_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	label, err := service.Create(context.Background(), "owner", "testrepo", &labels.CreateIn{
 		Name:        "bug",
@@ -124,11 +126,11 @@ func TestService_Create_Success(t *testing.T) {
 }
 
 func TestService_Create_DuplicateName(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
@@ -142,7 +144,7 @@ func TestService_Create_DuplicateName(t *testing.T) {
 }
 
 func TestService_Create_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Create(context.Background(), "unknown", "repo", &labels.CreateIn{
@@ -157,11 +159,11 @@ func TestService_Create_RepoNotFound(t *testing.T) {
 // Label Retrieval Tests
 
 func TestService_Get_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
 	label, err := service.Get(context.Background(), "owner", "testrepo", "bug")
@@ -175,11 +177,11 @@ func TestService_Get_Success(t *testing.T) {
 }
 
 func TestService_Get_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	_, err := service.Get(context.Background(), "owner", "testrepo", "nonexistent")
 	if err != labels.ErrNotFound {
@@ -188,11 +190,11 @@ func TestService_Get_NotFound(t *testing.T) {
 }
 
 func TestService_List(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 	createTestLabel(t, service, "owner", "testrepo", "enhancement", "a2eeef")
 	createTestLabel(t, service, "owner", "testrepo", "documentation", "0075ca")
@@ -208,11 +210,11 @@ func TestService_List(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	for i := 0; i < 5; i++ {
 		createTestLabel(t, service, "owner", "testrepo", "label"+string(rune('a'+i)), "ffffff")
@@ -234,11 +236,11 @@ func TestService_List_Pagination(t *testing.T) {
 // Label Update Tests
 
 func TestService_Update_Name(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
 	newName := "bugfix"
@@ -261,11 +263,11 @@ func TestService_Update_Name(t *testing.T) {
 }
 
 func TestService_Update_Color(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
 	newColor := "ff0000"
@@ -282,11 +284,11 @@ func TestService_Update_Color(t *testing.T) {
 }
 
 func TestService_Update_Description(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
 	newDesc := "Updated description"
@@ -303,11 +305,11 @@ func TestService_Update_Description(t *testing.T) {
 }
 
 func TestService_Update_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	newName := "newname"
 	_, err := service.Update(context.Background(), "owner", "testrepo", "nonexistent", &labels.UpdateIn{
@@ -321,11 +323,11 @@ func TestService_Update_NotFound(t *testing.T) {
 // Label Delete Tests
 
 func TestService_Delete_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
 	err := service.Delete(context.Background(), "owner", "testrepo", "bug")
@@ -341,11 +343,11 @@ func TestService_Delete_Success(t *testing.T) {
 }
 
 func TestService_Delete_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 
 	err := service.Delete(context.Background(), "owner", "testrepo", "nonexistent")
 	if err != labels.ErrNotFound {
@@ -356,11 +358,11 @@ func TestService_Delete_NotFound(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo")
 	label := createTestLabel(t, service, "owner", "testrepo", "bug", "d73a4a")
 
 	if label.URL != "https://api.example.com/api/v3/repos/owner/testrepo/labels/bug" {
@@ -374,12 +376,12 @@ func TestService_PopulateURLs(t *testing.T) {
 // Integration Test - Labels Across Repos
 
 func TestService_LabelsAcrossRepos(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "repo1")
-	createTestRepo(t, store, owner, "repo2")
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "repo1")
+	createTestRepo(t, reposStore, owner, "repo2")
 
 	// Same label name in different repos should work
 	label1 := createTestLabel(t, service, "owner", "repo1", "bug", "d73a4a")

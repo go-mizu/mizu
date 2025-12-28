@@ -155,6 +155,12 @@ func (s *Service) Create(ctx context.Context, org string, in *CreateIn) (*Team, 
 		_ = s.store.IncrementMembers(ctx, t.ID, 1)
 	}
 
+	// Refetch to get updated counts
+	t, err = s.store.GetByID(ctx, t.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	s.populateURLs(t, org)
 	return t, nil
 }

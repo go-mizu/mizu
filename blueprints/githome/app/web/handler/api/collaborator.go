@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/collaborators"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // CollaboratorHandler handles collaborator endpoints
@@ -19,383 +20,333 @@ func NewCollaboratorHandler(collaborators collaborators.API, repos repos.API) *C
 }
 
 // ListCollaborators handles GET /repos/{owner}/{repo}/collaborators
-func (h *CollaboratorHandler) ListCollaborators(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) ListCollaborators(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &collaborators.ListOpts{
 		Page:        pagination.Page,
 		PerPage:     pagination.PerPage,
-		Affiliation: QueryParam(r, "affiliation"),
-		Permission:  QueryParam(r, "permission"),
+		Affiliation: c.Query("affiliation"),
+		Permission:  c.Query("permission"),
 	}
 
-	collabList, err := h.collaborators.List(r.Context(), owner, repoName, opts)
+	collabList, err := h.collaborators.List(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, collabList)
+	return c.JSON(http.StatusOK, collabList)
 }
 
 // CheckCollaborator handles GET /repos/{owner}/{repo}/collaborators/{username}
-func (h *CollaboratorHandler) CheckCollaborator(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *CollaboratorHandler) CheckCollaborator(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	username := PathParam(r, "username")
+	username := c.Param("username")
 
-	isCollaborator, err := h.collaborators.IsCollaborator(r.Context(), owner, repoName, username)
+	isCollaborator, err := h.collaborators.IsCollaborator(c.Context(), owner, repoName, username)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if isCollaborator {
-		WriteNoContent(w)
-	} else {
-		WriteNotFound(w, "Collaborator")
+		return NoContent(c)
 	}
+	return NotFound(c, "Collaborator")
 }
 
 // AddCollaborator handles PUT /repos/{owner}/{repo}/collaborators/{username}
-func (h *CollaboratorHandler) AddCollaborator(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) AddCollaborator(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	username := PathParam(r, "username")
+	username := c.Param("username")
 
 	var in struct {
 		Permission string `json:"permission,omitempty"`
 	}
-	DecodeJSON(r, &in) // optional
+	c.BindJSON(&in, 1<<20) // optional
 
 	if in.Permission == "" {
 		in.Permission = "push"
 	}
 
-	invitation, err := h.collaborators.Add(r.Context(), owner, repoName, username, in.Permission)
+	invitation, err := h.collaborators.Add(c.Context(), owner, repoName, username, in.Permission)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	if invitation != nil {
-		WriteCreated(w, invitation)
-	} else {
-		WriteNoContent(w)
+		return Created(c, invitation)
 	}
+	return NoContent(c)
 }
 
 // RemoveCollaborator handles DELETE /repos/{owner}/{repo}/collaborators/{username}
-func (h *CollaboratorHandler) RemoveCollaborator(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) RemoveCollaborator(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	username := PathParam(r, "username")
+	username := c.Param("username")
 
-	if err := h.collaborators.Remove(r.Context(), owner, repoName, username); err != nil {
+	if err := h.collaborators.Remove(c.Context(), owner, repoName, username); err != nil {
 		if err == collaborators.ErrNotFound {
-			WriteNotFound(w, "Collaborator")
-			return
+			return NotFound(c, "Collaborator")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetCollaboratorPermission handles GET /repos/{owner}/{repo}/collaborators/{username}/permission
-func (h *CollaboratorHandler) GetCollaboratorPermission(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) GetCollaboratorPermission(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	username := PathParam(r, "username")
+	username := c.Param("username")
 
-	permission, err := h.collaborators.GetPermission(r.Context(), owner, repoName, username)
+	permission, err := h.collaborators.GetPermission(c.Context(), owner, repoName, username)
 	if err != nil {
 		if err == collaborators.ErrNotFound {
-			WriteNotFound(w, "User")
-			return
+			return NotFound(c, "User")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, permission)
+	return c.JSON(http.StatusOK, permission)
 }
 
 // ListInvitations handles GET /repos/{owner}/{repo}/invitations
-func (h *CollaboratorHandler) ListInvitations(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) ListInvitations(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &collaborators.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	invitations, err := h.collaborators.ListInvitations(r.Context(), owner, repoName, opts)
+	invitations, err := h.collaborators.ListInvitations(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, invitations)
+	return c.JSON(http.StatusOK, invitations)
 }
 
 // UpdateInvitation handles PATCH /repos/{owner}/{repo}/invitations/{invitation_id}
-func (h *CollaboratorHandler) UpdateInvitation(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) UpdateInvitation(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	invitationID, err := PathParamInt64(r, "invitation_id")
+	invitationID, err := ParamInt64(c, "invitation_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid invitation ID")
-		return
+		return BadRequest(c, "Invalid invitation ID")
 	}
 
 	var in struct {
 		Permissions string `json:"permissions"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	invitation, err := h.collaborators.UpdateInvitation(r.Context(), owner, repoName, invitationID, in.Permissions)
+	invitation, err := h.collaborators.UpdateInvitation(c.Context(), owner, repoName, invitationID, in.Permissions)
 	if err != nil {
 		if err == collaborators.ErrNotFound {
-			WriteNotFound(w, "Invitation")
-			return
+			return NotFound(c, "Invitation")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, invitation)
+	return c.JSON(http.StatusOK, invitation)
 }
 
 // DeleteInvitation handles DELETE /repos/{owner}/{repo}/invitations/{invitation_id}
-func (h *CollaboratorHandler) DeleteInvitation(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) DeleteInvitation(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	invitationID, err := PathParamInt64(r, "invitation_id")
+	invitationID, err := ParamInt64(c, "invitation_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid invitation ID")
-		return
+		return BadRequest(c, "Invalid invitation ID")
 	}
 
-	if err := h.collaborators.DeleteInvitation(r.Context(), owner, repoName, invitationID); err != nil {
+	if err := h.collaborators.DeleteInvitation(c.Context(), owner, repoName, invitationID); err != nil {
 		if err == collaborators.ErrNotFound {
-			WriteNotFound(w, "Invitation")
-			return
+			return NotFound(c, "Invitation")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListUserInvitations handles GET /user/repository_invitations
-func (h *CollaboratorHandler) ListUserInvitations(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) ListUserInvitations(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &collaborators.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	invitations, err := h.collaborators.ListUserInvitations(r.Context(), user.ID, opts)
+	invitations, err := h.collaborators.ListUserInvitations(c.Context(), user.ID, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, invitations)
+	return c.JSON(http.StatusOK, invitations)
 }
 
 // AcceptInvitation handles PATCH /user/repository_invitations/{invitation_id}
-func (h *CollaboratorHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) AcceptInvitation(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	invitationID, err := PathParamInt64(r, "invitation_id")
+	invitationID, err := ParamInt64(c, "invitation_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid invitation ID")
-		return
+		return BadRequest(c, "Invalid invitation ID")
 	}
 
-	if err := h.collaborators.AcceptInvitation(r.Context(), user.ID, invitationID); err != nil {
+	if err := h.collaborators.AcceptInvitation(c.Context(), user.ID, invitationID); err != nil {
 		if err == collaborators.ErrNotFound {
-			WriteNotFound(w, "Invitation")
-			return
+			return NotFound(c, "Invitation")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // DeclineInvitation handles DELETE /user/repository_invitations/{invitation_id}
-func (h *CollaboratorHandler) DeclineInvitation(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *CollaboratorHandler) DeclineInvitation(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	invitationID, err := PathParamInt64(r, "invitation_id")
+	invitationID, err := ParamInt64(c, "invitation_id")
 	if err != nil {
-		WriteBadRequest(w, "Invalid invitation ID")
-		return
+		return BadRequest(c, "Invalid invitation ID")
 	}
 
-	if err := h.collaborators.DeclineInvitation(r.Context(), user.ID, invitationID); err != nil {
+	if err := h.collaborators.DeclineInvitation(c.Context(), user.ID, invitationID); err != nil {
 		if err == collaborators.ErrNotFound {
-			WriteNotFound(w, "Invitation")
-			return
+			return NotFound(c, "Invitation")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }

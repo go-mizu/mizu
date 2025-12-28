@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/teams"
@@ -71,17 +72,25 @@ func (s *TeamsStore) GetBySlug(ctx context.Context, orgID int64, slug string) (*
 }
 
 func (s *TeamsStore) Update(ctx context.Context, id int64, in *teams.UpdateIn) error {
+	// Compute new slug if name is being updated
+	var slugPtr *string
+	if in.Name != nil {
+		slug := slugifyTeamName(*in.Name)
+		slugPtr = &slug
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE teams SET
 			name = COALESCE($2, name),
+			slug = COALESCE($7, slug),
 			description = COALESCE($3, description),
 			privacy = COALESCE($4, privacy),
 			permission = COALESCE($5, permission),
 			parent_id = COALESCE($6, parent_id),
-			updated_at = $7
+			updated_at = $8
 		WHERE id = $1
 	`, id, nullStringPtr(in.Name), nullStringPtr(in.Description), nullStringPtr(in.Privacy),
-		nullStringPtr(in.Permission), nullInt64Ptr(in.ParentTeamID), time.Now())
+		nullStringPtr(in.Permission), nullInt64Ptr(in.ParentTeamID), nullStringPtr(slugPtr), time.Now())
 	return err
 }
 
@@ -350,4 +359,11 @@ func scanTeams(rows *sql.Rows) ([]*teams.Team, error) {
 		list = append(list, t)
 	}
 	return list, rows.Err()
+}
+
+// slugifyTeamName converts a team name to a URL-friendly slug
+func slugifyTeamName(name string) string {
+	slug := strings.ToLower(name)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	return slug
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*collaborators.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*collaborators.Service, *duckdb.UsersStore, *duckdb.ReposStore, *sql.DB, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -32,17 +32,19 @@ func setupTestService(t *testing.T) (*collaborators.Service, *duckdb.Store, func
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	collaboratorsStore := duckdb.NewCollaboratorsStore(db)
-	service := collaborators.NewService(collaboratorsStore, store.Repos(), store.Users(), "https://api.example.com")
+	service := collaborators.NewService(collaboratorsStore, reposStore, usersStore, "https://api.example.com")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, usersStore, reposStore, db, cleanup
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -51,13 +53,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string, private bool) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string, private bool) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -71,7 +73,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 	if private {
 		repo.Visibility = "private"
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -80,11 +82,11 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 // Permission Tests
 
 func TestService_GetPermission_Owner(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	perm, err := service.GetPermission(context.Background(), "owner", "testrepo", "owner")
 	if err != nil {
@@ -103,12 +105,12 @@ func TestService_GetPermission_Owner(t *testing.T) {
 }
 
 func TestService_GetPermission_PublicRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	_ = createTestUser(t, store, "other", "other@example.com")
-	createTestRepo(t, store, owner, "testrepo", false) // public
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	_ = createTestUser(t, usersStore, "other", "other@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false) // public
 
 	perm, err := service.GetPermission(context.Background(), "owner", "testrepo", "other")
 	if err != nil {
@@ -121,12 +123,12 @@ func TestService_GetPermission_PublicRepo(t *testing.T) {
 }
 
 func TestService_GetPermission_PrivateRepo(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	_ = createTestUser(t, store, "other", "other@example.com")
-	createTestRepo(t, store, owner, "testrepo", true) // private
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	_ = createTestUser(t, usersStore, "other", "other@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", true) // private
 
 	perm, err := service.GetPermission(context.Background(), "owner", "testrepo", "other")
 	if err != nil {
@@ -139,15 +141,15 @@ func TestService_GetPermission_PrivateRepo(t *testing.T) {
 }
 
 func TestService_GetPermission_Collaborator(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, db, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	collab := createTestUser(t, store, "collab", "collab@example.com")
-	createTestRepo(t, store, owner, "testrepo", true)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	collab := createTestUser(t, usersStore, "collab", "collab@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", true)
 
 	// Add as collaborator directly
-	_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab.ID, "push")
+	_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab.ID, "push")
 
 	perm, err := service.GetPermission(context.Background(), "owner", "testrepo", "collab")
 	if err != nil {
@@ -160,10 +162,10 @@ func TestService_GetPermission_Collaborator(t *testing.T) {
 }
 
 func TestService_GetPermission_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestUser(t, store, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "owner", "owner@example.com")
 
 	_, err := service.GetPermission(context.Background(), "owner", "unknown", "owner")
 	if err != repos.ErrNotFound {
@@ -172,11 +174,11 @@ func TestService_GetPermission_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetPermission_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	_, err := service.GetPermission(context.Background(), "owner", "testrepo", "unknown")
 	if err != users.ErrNotFound {
@@ -187,15 +189,15 @@ func TestService_GetPermission_UserNotFound(t *testing.T) {
 // IsCollaborator Tests
 
 func TestService_IsCollaborator_True(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, db, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	collab := createTestUser(t, store, "collab", "collab@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	collab := createTestUser(t, usersStore, "collab", "collab@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	// Add as collaborator directly
-	_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab.ID, "push")
+	_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab.ID, "push")
 
 	isCollab, err := service.IsCollaborator(context.Background(), "owner", "testrepo", "collab")
 	if err != nil {
@@ -208,12 +210,12 @@ func TestService_IsCollaborator_True(t *testing.T) {
 }
 
 func TestService_IsCollaborator_False(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "other", "other@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "other", "other@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	isCollab, err := service.IsCollaborator(context.Background(), "owner", "testrepo", "other")
 	if err != nil {
@@ -226,11 +228,11 @@ func TestService_IsCollaborator_False(t *testing.T) {
 }
 
 func TestService_IsCollaborator_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	isCollab, err := service.IsCollaborator(context.Background(), "owner", "testrepo", "unknown")
 	if err != nil {
@@ -245,12 +247,12 @@ func TestService_IsCollaborator_UserNotFound(t *testing.T) {
 // Add/Remove Collaborator Tests
 
 func TestService_Add_CreatesInvitation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	invitee := createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	invitee := createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, err := service.Add(context.Background(), "owner", "testrepo", "invitee", "push")
 	if err != nil {
@@ -275,15 +277,15 @@ func TestService_Add_CreatesInvitation(t *testing.T) {
 }
 
 func TestService_Add_UpdatesExistingCollaborator(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, db, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	collab := createTestUser(t, store, "collab", "collab@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	collab := createTestUser(t, usersStore, "collab", "collab@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	// Add as collaborator first
-	_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab.ID, "pull")
+	_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab.ID, "pull")
 
 	// Try to add again with different permission - should update
 	inv, err := service.Add(context.Background(), "owner", "testrepo", "collab", "push")
@@ -304,12 +306,12 @@ func TestService_Add_UpdatesExistingCollaborator(t *testing.T) {
 }
 
 func TestService_Add_DefaultPermission(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, err := service.Add(context.Background(), "owner", "testrepo", "invitee", "")
 	if err != nil {
@@ -322,11 +324,11 @@ func TestService_Add_DefaultPermission(t *testing.T) {
 }
 
 func TestService_Add_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "invitee", "invitee@example.com")
+	createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "invitee", "invitee@example.com")
 
 	_, err := service.Add(context.Background(), "owner", "unknown", "invitee", "push")
 	if err != repos.ErrNotFound {
@@ -335,11 +337,11 @@ func TestService_Add_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Add_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	_, err := service.Add(context.Background(), "owner", "testrepo", "unknown", "push")
 	if err != users.ErrNotFound {
@@ -348,15 +350,15 @@ func TestService_Add_UserNotFound(t *testing.T) {
 }
 
 func TestService_Remove_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, db, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	collab := createTestUser(t, store, "collab", "collab@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	collab := createTestUser(t, usersStore, "collab", "collab@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	// Add first
-	_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab.ID, "push")
+	_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab.ID, "push")
 
 	err := service.Remove(context.Background(), "owner", "testrepo", "collab")
 	if err != nil {
@@ -371,11 +373,11 @@ func TestService_Remove_Success(t *testing.T) {
 }
 
 func TestService_Remove_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "collab", "collab@example.com")
+	createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "collab", "collab@example.com")
 
 	err := service.Remove(context.Background(), "owner", "unknown", "collab")
 	if err != repos.ErrNotFound {
@@ -384,11 +386,11 @@ func TestService_Remove_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Remove_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	err := service.Remove(context.Background(), "owner", "testrepo", "unknown")
 	if err != users.ErrNotFound {
@@ -399,16 +401,16 @@ func TestService_Remove_UserNotFound(t *testing.T) {
 // List Tests
 
 func TestService_List(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, db, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	collab1 := createTestUser(t, store, "collab1", "collab1@example.com")
-	collab2 := createTestUser(t, store, "collab2", "collab2@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	collab1 := createTestUser(t, usersStore, "collab1", "collab1@example.com")
+	collab2 := createTestUser(t, usersStore, "collab2", "collab2@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
-	_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab1.ID, "push")
-	_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab2.ID, "admin")
+	_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab1.ID, "push")
+	_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab2.ID, "admin")
 
 	list, err := service.List(context.Background(), "owner", "testrepo", nil)
 	if err != nil {
@@ -421,15 +423,15 @@ func TestService_List(t *testing.T) {
 }
 
 func TestService_List_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, db, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	for i := 0; i < 5; i++ {
-		collab := createTestUser(t, store, "collab"+string(rune('a'+i)), "collab"+string(rune('a'+i))+"@example.com")
-		_ = duckdb.NewCollaboratorsStore(store.DB()).Add(context.Background(), 1, collab.ID, "push")
+		collab := createTestUser(t, usersStore, "collab"+string(rune('a'+i)), "collab"+string(rune('a'+i))+"@example.com")
+		_ = duckdb.NewCollaboratorsStore(db).Add(context.Background(), 1, collab.ID, "push")
 	}
 
 	list, err := service.List(context.Background(), "owner", "testrepo", &collaborators.ListOpts{
@@ -446,7 +448,7 @@ func TestService_List_Pagination(t *testing.T) {
 }
 
 func TestService_List_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.List(context.Background(), "unknown", "repo", nil)
@@ -458,13 +460,13 @@ func TestService_List_RepoNotFound(t *testing.T) {
 // Invitation Tests
 
 func TestService_ListInvitations(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "invitee1", "invitee1@example.com")
-	createTestUser(t, store, "invitee2", "invitee2@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "invitee1", "invitee1@example.com")
+	createTestUser(t, usersStore, "invitee2", "invitee2@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	_, _ = service.Add(context.Background(), "owner", "testrepo", "invitee1", "push")
 	_, _ = service.Add(context.Background(), "owner", "testrepo", "invitee2", "admin")
@@ -480,12 +482,12 @@ func TestService_ListInvitations(t *testing.T) {
 }
 
 func TestService_UpdateInvitation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, _ := service.Add(context.Background(), "owner", "testrepo", "invitee", "pull")
 
@@ -500,11 +502,11 @@ func TestService_UpdateInvitation(t *testing.T) {
 }
 
 func TestService_UpdateInvitation_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	_, err := service.UpdateInvitation(context.Background(), "owner", "testrepo", 99999, "admin")
 	if err != collaborators.ErrInvitationNotFound {
@@ -513,12 +515,12 @@ func TestService_UpdateInvitation_NotFound(t *testing.T) {
 }
 
 func TestService_DeleteInvitation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, _ := service.Add(context.Background(), "owner", "testrepo", "invitee", "push")
 
@@ -535,11 +537,11 @@ func TestService_DeleteInvitation(t *testing.T) {
 }
 
 func TestService_DeleteInvitation_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	err := service.DeleteInvitation(context.Background(), "owner", "testrepo", 99999)
 	if err != collaborators.ErrInvitationNotFound {
@@ -550,12 +552,12 @@ func TestService_DeleteInvitation_NotFound(t *testing.T) {
 // Accept/Decline Invitation Tests
 
 func TestService_AcceptInvitation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	invitee := createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	invitee := createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, _ := service.Add(context.Background(), "owner", "testrepo", "invitee", "push")
 
@@ -578,10 +580,10 @@ func TestService_AcceptInvitation(t *testing.T) {
 }
 
 func TestService_AcceptInvitation_NotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	invitee := createTestUser(t, store, "invitee", "invitee@example.com")
+	invitee := createTestUser(t, usersStore, "invitee", "invitee@example.com")
 
 	err := service.AcceptInvitation(context.Background(), invitee.ID, 99999)
 	if err != collaborators.ErrInvitationNotFound {
@@ -590,13 +592,13 @@ func TestService_AcceptInvitation_NotFound(t *testing.T) {
 }
 
 func TestService_AcceptInvitation_WrongUser(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	_ = createTestUser(t, store, "invitee", "invitee@example.com")
-	other := createTestUser(t, store, "other", "other@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	_ = createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	other := createTestUser(t, usersStore, "other", "other@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, _ := service.Add(context.Background(), "owner", "testrepo", "invitee", "push")
 
@@ -608,12 +610,12 @@ func TestService_AcceptInvitation_WrongUser(t *testing.T) {
 }
 
 func TestService_DeclineInvitation(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	invitee := createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "testrepo", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	invitee := createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "testrepo", false)
 
 	inv, _ := service.Add(context.Background(), "owner", "testrepo", "invitee", "push")
 
@@ -636,13 +638,13 @@ func TestService_DeclineInvitation(t *testing.T) {
 }
 
 func TestService_ListUserInvitations(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, usersStore, reposStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	owner := createTestUser(t, store, "owner", "owner@example.com")
-	invitee := createTestUser(t, store, "invitee", "invitee@example.com")
-	createTestRepo(t, store, owner, "repo1", false)
-	createTestRepo(t, store, owner, "repo2", false)
+	owner := createTestUser(t, usersStore, "owner", "owner@example.com")
+	invitee := createTestUser(t, usersStore, "invitee", "invitee@example.com")
+	createTestRepo(t, reposStore, owner, "repo1", false)
+	createTestRepo(t, reposStore, owner, "repo2", false)
 
 	_, _ = service.Add(context.Background(), "owner", "repo1", "invitee", "push")
 	_, _ = service.Add(context.Background(), "owner", "repo2", "invitee", "admin")

@@ -18,7 +18,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 )
 
-func setupTestService(t *testing.T) (*commits.Service, *duckdb.Store, func()) {
+func setupTestService(t *testing.T) (*commits.Service, *duckdb.Store, *duckdb.UsersStore, *duckdb.ReposStore, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -37,18 +37,20 @@ func setupTestService(t *testing.T) (*commits.Service, *duckdb.Store, func()) {
 		t.Fatalf("failed to ensure schema: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	commitsStore := duckdb.NewCommitsStore(db)
-	service := commits.NewService(commitsStore, store.Repos(), store.Users(), "https://api.example.com", "")
+	service := commits.NewService(commitsStore, reposStore, usersStore, "https://api.example.com", "")
 
 	cleanup := func() {
 		store.Close()
 	}
 
-	return service, store, cleanup
+	return service, store, usersStore, reposStore, cleanup
 }
 
 // setupTestServiceWithGit creates a test service with a real git repository
-func setupTestServiceWithGit(t *testing.T) (*commits.Service, *duckdb.Store, string, func()) {
+func setupTestServiceWithGit(t *testing.T) (*commits.Service, *duckdb.Store, *duckdb.UsersStore, *duckdb.ReposStore, string, func()) {
 	t.Helper()
 
 	db, err := sql.Open("duckdb", "")
@@ -74,15 +76,17 @@ func setupTestServiceWithGit(t *testing.T) (*commits.Service, *duckdb.Store, str
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 
+	usersStore := duckdb.NewUsersStore(db)
+	reposStore := duckdb.NewReposStore(db)
 	commitsStore := duckdb.NewCommitsStore(db)
-	service := commits.NewService(commitsStore, store.Repos(), store.Users(), "https://api.example.com", reposDir)
+	service := commits.NewService(commitsStore, reposStore, usersStore, "https://api.example.com", reposDir)
 
 	cleanup := func() {
 		store.Close()
 		os.RemoveAll(reposDir)
 	}
 
-	return service, store, reposDir, cleanup
+	return service, store, usersStore, reposStore, reposDir, cleanup
 }
 
 // createGitRepo creates a bare git repository with an initial commit and returns the commit SHA
@@ -109,7 +113,7 @@ func createGitRepo(t *testing.T, reposDir, owner, repoName string) string {
 	return commitSHA
 }
 
-func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *users.User {
+func createTestUser(t *testing.T, usersStore *duckdb.UsersStore, login, email string) *users.User {
 	t.Helper()
 	user := &users.User{
 		Login:        login,
@@ -118,13 +122,13 @@ func createTestUser(t *testing.T, store *duckdb.Store, login, email string) *use
 		PasswordHash: "hash",
 		Type:         "User",
 	}
-	if err := store.Users().Create(context.Background(), user); err != nil {
+	if err := usersStore.Create(context.Background(), user); err != nil {
 		t.Fatalf("failed to create test user: %v", err)
 	}
 	return user
 }
 
-func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name string) *repos.Repository {
+func createTestRepo(t *testing.T, reposStore *duckdb.ReposStore, owner *users.User, name string) *repos.Repository {
 	t.Helper()
 	repo := &repos.Repository{
 		Name:          name,
@@ -134,7 +138,7 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 		Visibility:    "public",
 		DefaultBranch: "main",
 	}
-	if err := store.Repos().Create(context.Background(), repo); err != nil {
+	if err := reposStore.Create(context.Background(), repo); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 	return repo
@@ -143,11 +147,11 @@ func createTestRepo(t *testing.T, store *duckdb.Store, owner *users.User, name s
 // Commit Status Tests (Production Ready)
 
 func TestService_CreateStatus_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	status, err := service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
 		State:       "success",
@@ -183,10 +187,10 @@ func TestService_CreateStatus_Success(t *testing.T) {
 }
 
 func TestService_CreateStatus_RepoNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, _, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
 
 	_, err := service.CreateStatus(context.Background(), "unknown", "repo", "abc123", user.ID, &commits.CreateStatusIn{
 		State: "success",
@@ -197,11 +201,11 @@ func TestService_CreateStatus_RepoNotFound(t *testing.T) {
 }
 
 func TestService_CreateStatus_UserNotFound(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	_, err := service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", 99999, &commits.CreateStatusIn{
 		State: "success",
@@ -212,11 +216,11 @@ func TestService_CreateStatus_UserNotFound(t *testing.T) {
 }
 
 func TestService_CreateStatus_DefaultContext(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	status, err := service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
 		State: "pending",
@@ -232,11 +236,11 @@ func TestService_CreateStatus_DefaultContext(t *testing.T) {
 }
 
 func TestService_ListStatuses_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create multiple statuses
 	_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
@@ -263,11 +267,11 @@ func TestService_ListStatuses_Success(t *testing.T) {
 }
 
 func TestService_ListStatuses_Pagination(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create 5 statuses
 	for i := 0; i < 5; i++ {
@@ -291,11 +295,11 @@ func TestService_ListStatuses_Pagination(t *testing.T) {
 }
 
 func TestService_ListStatuses_Empty(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	statuses, err := service.ListStatuses(context.Background(), "testowner", "testrepo", "abc123", nil)
 	if err != nil {
@@ -311,7 +315,7 @@ func TestService_ListStatuses_Empty(t *testing.T) {
 }
 
 func TestService_ListStatuses_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListStatuses(context.Background(), "unknown", "repo", "abc123", nil)
@@ -321,11 +325,11 @@ func TestService_ListStatuses_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_Pending(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	combined, err := service.GetCombinedStatus(context.Background(), "testowner", "testrepo", "abc123")
 	if err != nil {
@@ -344,11 +348,11 @@ func TestService_GetCombinedStatus_Pending(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_Success(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create all success statuses
 	_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
@@ -374,11 +378,11 @@ func TestService_GetCombinedStatus_Success(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_Failure(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create mixed statuses with one failure
 	_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
@@ -401,11 +405,11 @@ func TestService_GetCombinedStatus_Failure(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_Error(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create status with error state
 	_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
@@ -424,11 +428,11 @@ func TestService_GetCombinedStatus_Error(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_WithPending(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create mixed statuses with pending
 	_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
@@ -451,7 +455,7 @@ func TestService_GetCombinedStatus_WithPending(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.GetCombinedStatus(context.Background(), "unknown", "repo", "abc123")
@@ -461,11 +465,11 @@ func TestService_GetCombinedStatus_RepoNotFound(t *testing.T) {
 }
 
 func TestService_GetCombinedStatus_URLsPopulated(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	combined, err := service.GetCombinedStatus(context.Background(), "testowner", "testrepo", "abc123")
 	if err != nil {
@@ -486,11 +490,11 @@ func TestService_GetCombinedStatus_URLsPopulated(t *testing.T) {
 // Mock Behavior Tests - Verify services work with placeholder implementations
 
 func TestService_List_ReturnsEmpty(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	list, err := service.List(context.Background(), "testowner", "testrepo", nil)
 	if err != nil {
@@ -504,7 +508,7 @@ func TestService_List_ReturnsEmpty(t *testing.T) {
 }
 
 func TestService_List_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.List(context.Background(), "unknown", "repo", nil)
@@ -514,11 +518,11 @@ func TestService_List_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Get_ReturnsPlaceholder(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Without a real git repository, Get returns ErrNotFound
 	_, err := service.Get(context.Background(), "testowner", "testrepo", "abc123")
@@ -528,7 +532,7 @@ func TestService_Get_ReturnsPlaceholder(t *testing.T) {
 }
 
 func TestService_Get_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Get(context.Background(), "unknown", "repo", "abc123")
@@ -538,11 +542,11 @@ func TestService_Get_RepoNotFound(t *testing.T) {
 }
 
 func TestService_Compare_ReturnsEmpty(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Without a real git repository, Compare returns ErrNotFound
 	_, err := service.Compare(context.Background(), "testowner", "testrepo", "main", "feature")
@@ -552,7 +556,7 @@ func TestService_Compare_ReturnsEmpty(t *testing.T) {
 }
 
 func TestService_Compare_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.Compare(context.Background(), "unknown", "repo", "main", "feature")
@@ -562,11 +566,11 @@ func TestService_Compare_RepoNotFound(t *testing.T) {
 }
 
 func TestService_ListBranchesForHead_ReturnsEmpty(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	branches, err := service.ListBranchesForHead(context.Background(), "testowner", "testrepo", "abc123")
 	if err != nil {
@@ -580,7 +584,7 @@ func TestService_ListBranchesForHead_ReturnsEmpty(t *testing.T) {
 }
 
 func TestService_ListBranchesForHead_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListBranchesForHead(context.Background(), "unknown", "repo", "abc123")
@@ -590,11 +594,11 @@ func TestService_ListBranchesForHead_RepoNotFound(t *testing.T) {
 }
 
 func TestService_ListPullsForCommit_ReturnsEmpty(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	prs, err := service.ListPullsForCommit(context.Background(), "testowner", "testrepo", "abc123", nil)
 	if err != nil {
@@ -608,7 +612,7 @@ func TestService_ListPullsForCommit_ReturnsEmpty(t *testing.T) {
 }
 
 func TestService_ListPullsForCommit_RepoNotFound(t *testing.T) {
-	service, _, cleanup := setupTestService(t)
+	service, _, _, _, cleanup := setupTestService(t)
 	defer cleanup()
 
 	_, err := service.ListPullsForCommit(context.Background(), "unknown", "repo", "abc123", nil)
@@ -620,11 +624,11 @@ func TestService_ListPullsForCommit_RepoNotFound(t *testing.T) {
 // URL Population Tests
 
 func TestService_PopulateURLs(t *testing.T) {
-	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create git repository with a commit
 	commitSHA := createGitRepo(t, reposDir, user.Login, repo.Name)
@@ -665,11 +669,11 @@ func TestService_PopulateURLs(t *testing.T) {
 }
 
 func TestService_PopulateURLs_InList(t *testing.T) {
-	service, store, reposDir, cleanup := setupTestServiceWithGit(t)
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	repo := createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create git repository
 	createGitRepo(t, reposDir, user.Login, repo.Name)
@@ -699,11 +703,11 @@ func TestService_PopulateURLs_InList(t *testing.T) {
 }
 
 func TestService_PopulateStatusURLs(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	status, _ := service.CreateStatus(context.Background(), "testowner", "testrepo", "abc123", user.ID, &commits.CreateStatusIn{
 		State:   "success",
@@ -721,11 +725,11 @@ func TestService_PopulateStatusURLs(t *testing.T) {
 // Different SHA Tests - Ensure statuses are scoped to SHA
 
 func TestService_Statuses_ScopedToSHA(t *testing.T) {
-	service, store, cleanup := setupTestService(t)
+	service, _, usersStore, reposStore, cleanup := setupTestService(t)
 	defer cleanup()
 
-	user := createTestUser(t, store, "testowner", "owner@example.com")
-	createTestRepo(t, store, user, "testrepo")
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	createTestRepo(t, reposStore, user, "testrepo")
 
 	// Create statuses for different SHAs
 	_, _ = service.CreateStatus(context.Background(), "testowner", "testrepo", "sha1", user.ID, &commits.CreateStatusIn{

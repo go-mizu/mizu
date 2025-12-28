@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/labels"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // LabelHandler handles label endpoints
@@ -19,414 +20,359 @@ func NewLabelHandler(labels labels.API, repos repos.API) *LabelHandler {
 }
 
 // ListRepoLabels handles GET /repos/{owner}/{repo}/labels
-func (h *LabelHandler) ListRepoLabels(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *LabelHandler) ListRepoLabels(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &labels.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	labelList, err := h.labels.List(r.Context(), owner, repoName, opts)
+	labelList, err := h.labels.List(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, labelList)
+	return c.JSON(http.StatusOK, labelList)
 }
 
 // GetLabel handles GET /repos/{owner}/{repo}/labels/{name}
-func (h *LabelHandler) GetLabel(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *LabelHandler) GetLabel(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	name := PathParam(r, "name")
+	name := c.Param("name")
 
-	label, err := h.labels.Get(r.Context(), owner, repoName, name)
+	label, err := h.labels.Get(c.Context(), owner, repoName, name)
 	if err != nil {
 		if err == labels.ErrNotFound {
-			WriteNotFound(w, "Label")
-			return
+			return NotFound(c, "Label")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, label)
+	return c.JSON(http.StatusOK, label)
 }
 
 // CreateLabel handles POST /repos/{owner}/{repo}/labels
-func (h *LabelHandler) CreateLabel(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) CreateLabel(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
 	var in labels.CreateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	label, err := h.labels.Create(r.Context(), owner, repoName, &in)
+	label, err := h.labels.Create(c.Context(), owner, repoName, &in)
 	if err != nil {
 		if err == labels.ErrLabelExists {
-			WriteConflict(w, "Label already exists")
-			return
+			return Conflict(c, "Label already exists")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, label)
+	return Created(c, label)
 }
 
 // UpdateLabel handles PATCH /repos/{owner}/{repo}/labels/{name}
-func (h *LabelHandler) UpdateLabel(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) UpdateLabel(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	name := PathParam(r, "name")
+	name := c.Param("name")
 
 	var in labels.UpdateIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	updated, err := h.labels.Update(r.Context(), owner, repoName, name, &in)
+	updated, err := h.labels.Update(c.Context(), owner, repoName, name, &in)
 	if err != nil {
 		if err == labels.ErrNotFound {
-			WriteNotFound(w, "Label")
-			return
+			return NotFound(c, "Label")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, updated)
+	return c.JSON(http.StatusOK, updated)
 }
 
 // DeleteLabel handles DELETE /repos/{owner}/{repo}/labels/{name}
-func (h *LabelHandler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) DeleteLabel(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	name := PathParam(r, "name")
+	name := c.Param("name")
 
-	if err := h.labels.Delete(r.Context(), owner, repoName, name); err != nil {
+	if err := h.labels.Delete(c.Context(), owner, repoName, name); err != nil {
 		if err == labels.ErrNotFound {
-			WriteNotFound(w, "Label")
-			return
+			return NotFound(c, "Label")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListIssueLabels handles GET /repos/{owner}/{repo}/issues/{issue_number}/labels
-func (h *LabelHandler) ListIssueLabels(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *LabelHandler) ListIssueLabels(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &labels.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	labelList, err := h.labels.ListForIssue(r.Context(), owner, repoName, issueNumber, opts)
+	labelList, err := h.labels.ListForIssue(c.Context(), owner, repoName, issueNumber, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, labelList)
+	return c.JSON(http.StatusOK, labelList)
 }
 
 // AddIssueLabels handles POST /repos/{owner}/{repo}/issues/{issue_number}/labels
-func (h *LabelHandler) AddIssueLabels(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) AddIssueLabels(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in struct {
 		Labels []string `json:"labels"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	labelList, err := h.labels.AddToIssue(r.Context(), owner, repoName, issueNumber, in.Labels)
+	labelList, err := h.labels.AddToIssue(c.Context(), owner, repoName, issueNumber, in.Labels)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, labelList)
+	return c.JSON(http.StatusOK, labelList)
 }
 
 // SetIssueLabels handles PUT /repos/{owner}/{repo}/issues/{issue_number}/labels
-func (h *LabelHandler) SetIssueLabels(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) SetIssueLabels(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
 	var in struct {
 		Labels []string `json:"labels"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	labelList, err := h.labels.SetForIssue(r.Context(), owner, repoName, issueNumber, in.Labels)
+	labelList, err := h.labels.SetForIssue(c.Context(), owner, repoName, issueNumber, in.Labels)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, labelList)
+	return c.JSON(http.StatusOK, labelList)
 }
 
 // RemoveAllIssueLabels handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels
-func (h *LabelHandler) RemoveAllIssueLabels(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) RemoveAllIssueLabels(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	if err := h.labels.RemoveAllFromIssue(r.Context(), owner, repoName, issueNumber); err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+	if err := h.labels.RemoveAllFromIssue(c.Context(), owner, repoName, issueNumber); err != nil {
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // RemoveIssueLabel handles DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}
-func (h *LabelHandler) RemoveIssueLabel(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *LabelHandler) RemoveIssueLabel(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	issueNumber, err := PathParamInt(r, "issue_number")
+	issueNumber, err := ParamInt(c, "issue_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid issue number")
-		return
+		return BadRequest(c, "Invalid issue number")
 	}
 
-	name := PathParam(r, "name")
+	name := c.Param("name")
 
-	if err := h.labels.RemoveFromIssue(r.Context(), owner, repoName, issueNumber, name); err != nil {
+	if err := h.labels.RemoveFromIssue(c.Context(), owner, repoName, issueNumber, name); err != nil {
 		if err == labels.ErrNotFound {
-			WriteNotFound(w, "Label")
-			return
+			return NotFound(c, "Label")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // ListLabelsForMilestone handles GET /repos/{owner}/{repo}/milestones/{milestone_number}/labels
-func (h *LabelHandler) ListLabelsForMilestone(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *LabelHandler) ListLabelsForMilestone(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	milestoneNumber, err := PathParamInt(r, "milestone_number")
+	milestoneNumber, err := ParamInt(c, "milestone_number")
 	if err != nil {
-		WriteBadRequest(w, "Invalid milestone number")
-		return
+		return BadRequest(c, "Invalid milestone number")
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	opts := &labels.ListOpts{
 		Page:    pagination.Page,
 		PerPage: pagination.PerPage,
 	}
 
-	labelList, err := h.labels.ListForMilestone(r.Context(), owner, repoName, milestoneNumber, opts)
+	labelList, err := h.labels.ListForMilestone(c.Context(), owner, repoName, milestoneNumber, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, labelList)
+	return c.JSON(http.StatusOK, labelList)
 }

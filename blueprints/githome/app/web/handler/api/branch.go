@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/branches"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/mizu"
 )
 
 // BranchHandler handles branch endpoints
@@ -19,24 +20,22 @@ func NewBranchHandler(branches branches.API, repos repos.API) *BranchHandler {
 }
 
 // ListBranches handles GET /repos/{owner}/{repo}/branches
-func (h *BranchHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *BranchHandler) ListBranches(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	pagination := GetPaginationParams(r)
+	pagination := GetPagination(c)
 	var protected *bool
-	if r.URL.Query().Has("protected") {
-		p := QueryParamBool(r, "protected")
+	if c.Query("protected") != "" {
+		p := QueryBool(c, "protected")
 		protected = &p
 	}
 	opts := &branches.ListOpts{
@@ -45,422 +44,363 @@ func (h *BranchHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
 		Protected: protected,
 	}
 
-	branchList, err := h.branches.List(r.Context(), owner, repoName, opts)
+	branchList, err := h.branches.List(c.Context(), owner, repoName, opts)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, branchList)
+	return c.JSON(http.StatusOK, branchList)
 }
 
 // GetBranch handles GET /repos/{owner}/{repo}/branches/{branch}
-func (h *BranchHandler) GetBranch(w http.ResponseWriter, r *http.Request) {
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+func (h *BranchHandler) GetBranch(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	branch, err := h.branches.Get(r.Context(), owner, repoName, branchName)
+	branch, err := h.branches.Get(c.Context(), owner, repoName, branchName)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch")
-			return
+			return NotFound(c, "Branch")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, branch)
+	return c.JSON(http.StatusOK, branch)
 }
 
 // RenameBranch handles POST /repos/{owner}/{repo}/branches/{branch}/rename
-func (h *BranchHandler) RenameBranch(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) RenameBranch(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
 	var in struct {
 		NewName string `json:"new_name"`
 	}
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	branch, err := h.branches.Rename(r.Context(), owner, repoName, branchName, in.NewName)
+	branch, err := h.branches.Rename(c.Context(), owner, repoName, branchName, in.NewName)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch")
-			return
+			return NotFound(c, "Branch")
 		}
 		if err == branches.ErrBranchExists {
-			WriteConflict(w, "Branch already exists")
-			return
+			return Conflict(c, "Branch already exists")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteCreated(w, branch)
+	return Created(c, branch)
 }
 
 // GetBranchProtection handles GET /repos/{owner}/{repo}/branches/{branch}/protection
-func (h *BranchHandler) GetBranchProtection(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) GetBranchProtection(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	protection, err := h.branches.GetProtection(r.Context(), owner, repoName, branchName)
+	protection, err := h.branches.GetProtection(c.Context(), owner, repoName, branchName)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch protection")
-			return
+			return NotFound(c, "Branch protection")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, protection)
+	return c.JSON(http.StatusOK, protection)
 }
 
 // UpdateBranchProtection handles PUT /repos/{owner}/{repo}/branches/{branch}/protection
-func (h *BranchHandler) UpdateBranchProtection(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) UpdateBranchProtection(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
 	var in branches.UpdateProtectionIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	protection, err := h.branches.UpdateProtection(r.Context(), owner, repoName, branchName, &in)
+	protection, err := h.branches.UpdateProtection(c.Context(), owner, repoName, branchName, &in)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch")
-			return
+			return NotFound(c, "Branch")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, protection)
+	return c.JSON(http.StatusOK, protection)
 }
 
 // DeleteBranchProtection handles DELETE /repos/{owner}/{repo}/branches/{branch}/protection
-func (h *BranchHandler) DeleteBranchProtection(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) DeleteBranchProtection(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	if err := h.branches.DeleteProtection(r.Context(), owner, repoName, branchName); err != nil {
+	if err := h.branches.DeleteProtection(c.Context(), owner, repoName, branchName); err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch protection")
-			return
+			return NotFound(c, "Branch protection")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetRequiredStatusChecks handles GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks
-func (h *BranchHandler) GetRequiredStatusChecks(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) GetRequiredStatusChecks(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	checks, err := h.branches.GetRequiredStatusChecks(r.Context(), owner, repoName, branchName)
+	checks, err := h.branches.GetRequiredStatusChecks(c.Context(), owner, repoName, branchName)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Required status checks")
-			return
+			return NotFound(c, "Required status checks")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, checks)
+	return c.JSON(http.StatusOK, checks)
 }
 
 // UpdateRequiredStatusChecks handles PATCH /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks
-func (h *BranchHandler) UpdateRequiredStatusChecks(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) UpdateRequiredStatusChecks(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
 	var in branches.RequiredStatusChecksIn
-	if err := DecodeJSON(r, &in); err != nil {
-		WriteBadRequest(w, "Invalid request body")
-		return
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return BadRequest(c, "Invalid request body")
 	}
 
-	checks, err := h.branches.UpdateRequiredStatusChecks(r.Context(), owner, repoName, branchName, &in)
+	checks, err := h.branches.UpdateRequiredStatusChecks(c.Context(), owner, repoName, branchName, &in)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch protection")
-			return
+			return NotFound(c, "Branch protection")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, checks)
+	return c.JSON(http.StatusOK, checks)
 }
 
 // DeleteRequiredStatusChecks handles DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks
-func (h *BranchHandler) DeleteRequiredStatusChecks(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) DeleteRequiredStatusChecks(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	if err := h.branches.RemoveRequiredStatusChecks(r.Context(), owner, repoName, branchName); err != nil {
+	if err := h.branches.RemoveRequiredStatusChecks(c.Context(), owner, repoName, branchName); err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Required status checks")
-			return
+			return NotFound(c, "Required status checks")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
 
 // GetRequiredSignatures handles GET /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures
-func (h *BranchHandler) GetRequiredSignatures(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) GetRequiredSignatures(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	setting, err := h.branches.GetRequiredSignatures(r.Context(), owner, repoName, branchName)
+	setting, err := h.branches.GetRequiredSignatures(c.Context(), owner, repoName, branchName)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Required signatures")
-			return
+			return NotFound(c, "Required signatures")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, setting)
+	return c.JSON(http.StatusOK, setting)
 }
 
 // CreateRequiredSignatures handles POST /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures
-func (h *BranchHandler) CreateRequiredSignatures(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) CreateRequiredSignatures(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	setting, err := h.branches.CreateRequiredSignatures(r.Context(), owner, repoName, branchName)
+	setting, err := h.branches.CreateRequiredSignatures(c.Context(), owner, repoName, branchName)
 	if err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Branch protection")
-			return
+			return NotFound(c, "Branch protection")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteJSON(w, http.StatusOK, setting)
+	return c.JSON(http.StatusOK, setting)
 }
 
 // DeleteRequiredSignatures handles DELETE /repos/{owner}/{repo}/branches/{branch}/protection/required_signatures
-func (h *BranchHandler) DeleteRequiredSignatures(w http.ResponseWriter, r *http.Request) {
-	user := GetUser(r.Context())
+func (h *BranchHandler) DeleteRequiredSignatures(c *mizu.Ctx) error {
+	user := GetUserFromCtx(c)
 	if user == nil {
-		WriteUnauthorized(w)
-		return
+		return Unauthorized(c)
 	}
 
-	owner := PathParam(r, "owner")
-	repoName := PathParam(r, "repo")
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
 
-	_, err := h.repos.Get(r.Context(), owner, repoName)
+	_, err := h.repos.Get(c.Context(), owner, repoName)
 	if err != nil {
 		if err == repos.ErrNotFound {
-			WriteNotFound(w, "Repository")
-			return
+			return NotFound(c, "Repository")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	branchName := PathParam(r, "branch")
+	branchName := c.Param("branch")
 
-	if err := h.branches.DeleteRequiredSignatures(r.Context(), owner, repoName, branchName); err != nil {
+	if err := h.branches.DeleteRequiredSignatures(c.Context(), owner, repoName, branchName); err != nil {
 		if err == branches.ErrNotFound {
-			WriteNotFound(w, "Required signatures")
-			return
+			return NotFound(c, "Required signatures")
 		}
-		WriteError(w, http.StatusInternalServerError, err.Error())
-		return
+		return WriteError(c, http.StatusInternalServerError, err.Error())
 	}
 
-	WriteNoContent(w)
+	return NoContent(c)
 }
