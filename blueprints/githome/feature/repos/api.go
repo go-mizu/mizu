@@ -57,6 +57,10 @@ type Repository struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	PushedAt       time.Time `json:"pushed_at,omitempty"`
+
+	// Language detection (computed from git analysis or GitHub import)
+	Language      string `json:"language,omitempty"`
+	LanguageColor string `json:"language_color,omitempty"`
 }
 
 // Collaborator represents a repository collaborator

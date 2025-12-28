@@ -22,9 +22,9 @@ func NewReposStore(db *sql.DB) *ReposStore {
 // Create creates a new repository
 func (s *ReposStore) Create(ctx context.Context, r *repos.Repository) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO repositories (id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
-	`, r.ID, r.OwnerActorID, r.Name, r.Slug, r.Description, r.Website, r.DefaultBranch, r.IsPrivate, r.IsArchived, r.IsTemplate, r.IsFork, nullString(r.ForkedFromID), r.StarCount, r.ForkCount, r.WatcherCount, r.OpenIssueCount, r.OpenPRCount, r.SizeKB, r.License, r.HasIssues, r.HasWiki, r.HasProjects, r.CreatedAt, r.UpdatedAt, nullTime(r.PushedAt))
+		INSERT INTO repositories (id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, language, language_color, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+	`, r.ID, r.OwnerActorID, r.Name, r.Slug, r.Description, r.Website, r.DefaultBranch, r.IsPrivate, r.IsArchived, r.IsTemplate, r.IsFork, nullString(r.ForkedFromID), r.StarCount, r.ForkCount, r.WatcherCount, r.OpenIssueCount, r.OpenPRCount, r.SizeKB, r.License, r.Language, r.LanguageColor, r.HasIssues, r.HasWiki, r.HasProjects, r.CreatedAt, r.UpdatedAt, nullTime(r.PushedAt))
 	if err != nil {
 		return err
 	}
@@ -48,9 +48,9 @@ func (s *ReposStore) GetByID(ctx context.Context, id string) (*repos.Repository,
 	var pushedAt sql.NullTime
 	var forkedFromID sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
+		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, language, language_color, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
 		FROM repositories WHERE id = $1
-	`, id).Scan(&r.ID, &r.OwnerActorID, &r.Name, &r.Slug, &r.Description, &r.Website, &r.DefaultBranch, &r.IsPrivate, &r.IsArchived, &r.IsTemplate, &r.IsFork, &forkedFromID, &r.StarCount, &r.ForkCount, &r.WatcherCount, &r.OpenIssueCount, &r.OpenPRCount, &r.SizeKB, &r.License, &r.HasIssues, &r.HasWiki, &r.HasProjects, &r.CreatedAt, &r.UpdatedAt, &pushedAt)
+	`, id).Scan(&r.ID, &r.OwnerActorID, &r.Name, &r.Slug, &r.Description, &r.Website, &r.DefaultBranch, &r.IsPrivate, &r.IsArchived, &r.IsTemplate, &r.IsFork, &forkedFromID, &r.StarCount, &r.ForkCount, &r.WatcherCount, &r.OpenIssueCount, &r.OpenPRCount, &r.SizeKB, &r.License, &r.Language, &r.LanguageColor, &r.HasIssues, &r.HasWiki, &r.HasProjects, &r.CreatedAt, &r.UpdatedAt, &pushedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -76,9 +76,9 @@ func (s *ReposStore) GetByOwnerAndName(ctx context.Context, ownerActorID, _, nam
 	var pushedAt sql.NullTime
 	var forkedFromID sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
+		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, language, language_color, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
 		FROM repositories WHERE owner_actor_id = $1 AND slug = $2
-	`, ownerActorID, name).Scan(&r.ID, &r.OwnerActorID, &r.Name, &r.Slug, &r.Description, &r.Website, &r.DefaultBranch, &r.IsPrivate, &r.IsArchived, &r.IsTemplate, &r.IsFork, &forkedFromID, &r.StarCount, &r.ForkCount, &r.WatcherCount, &r.OpenIssueCount, &r.OpenPRCount, &r.SizeKB, &r.License, &r.HasIssues, &r.HasWiki, &r.HasProjects, &r.CreatedAt, &r.UpdatedAt, &pushedAt)
+	`, ownerActorID, name).Scan(&r.ID, &r.OwnerActorID, &r.Name, &r.Slug, &r.Description, &r.Website, &r.DefaultBranch, &r.IsPrivate, &r.IsArchived, &r.IsTemplate, &r.IsFork, &forkedFromID, &r.StarCount, &r.ForkCount, &r.WatcherCount, &r.OpenIssueCount, &r.OpenPRCount, &r.SizeKB, &r.License, &r.Language, &r.LanguageColor, &r.HasIssues, &r.HasWiki, &r.HasProjects, &r.CreatedAt, &r.UpdatedAt, &pushedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -102,9 +102,9 @@ func (s *ReposStore) GetByOwnerAndName(ctx context.Context, ownerActorID, _, nam
 func (s *ReposStore) Update(ctx context.Context, r *repos.Repository) error {
 	r.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE repositories SET name = $2, slug = $3, description = $4, website = $5, default_branch = $6, is_private = $7, is_archived = $8, is_template = $9, star_count = $10, fork_count = $11, watcher_count = $12, open_issue_count = $13, open_pr_count = $14, size_kb = $15, license = $16, has_issues = $17, has_wiki = $18, has_projects = $19, updated_at = $20, pushed_at = $21
+		UPDATE repositories SET name = $2, slug = $3, description = $4, website = $5, default_branch = $6, is_private = $7, is_archived = $8, is_template = $9, star_count = $10, fork_count = $11, watcher_count = $12, open_issue_count = $13, open_pr_count = $14, size_kb = $15, license = $16, language = $17, language_color = $18, has_issues = $19, has_wiki = $20, has_projects = $21, updated_at = $22, pushed_at = $23
 		WHERE id = $1
-	`, r.ID, r.Name, r.Slug, r.Description, r.Website, r.DefaultBranch, r.IsPrivate, r.IsArchived, r.IsTemplate, r.StarCount, r.ForkCount, r.WatcherCount, r.OpenIssueCount, r.OpenPRCount, r.SizeKB, r.License, r.HasIssues, r.HasWiki, r.HasProjects, r.UpdatedAt, nullTime(r.PushedAt))
+	`, r.ID, r.Name, r.Slug, r.Description, r.Website, r.DefaultBranch, r.IsPrivate, r.IsArchived, r.IsTemplate, r.StarCount, r.ForkCount, r.WatcherCount, r.OpenIssueCount, r.OpenPRCount, r.SizeKB, r.License, r.Language, r.LanguageColor, r.HasIssues, r.HasWiki, r.HasProjects, r.UpdatedAt, nullTime(r.PushedAt))
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (s *ReposStore) Delete(ctx context.Context, id string) error {
 // ListByOwner lists repositories by owner actor ID
 func (s *ReposStore) ListByOwner(ctx context.Context, ownerActorID, _ string, limit, offset int) ([]*repos.Repository, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
+		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, language, language_color, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
 		FROM repositories WHERE owner_actor_id = $1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3
 	`, ownerActorID, limit, offset)
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *ReposStore) ListByOwner(ctx context.Context, ownerActorID, _ string, li
 // ListPublic lists public repositories
 func (s *ReposStore) ListPublic(ctx context.Context, limit, offset int) ([]*repos.Repository, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
+		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, language, language_color, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
 		FROM repositories WHERE is_private = FALSE ORDER BY star_count DESC, updated_at DESC LIMIT $1 OFFSET $2
 	`, limit, offset)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *ReposStore) ListByIDs(ctx context.Context, ids []string) ([]*repos.Repo
 
 	// Build query with placeholders
 	query := `
-		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
+		SELECT id, owner_actor_id, name, slug, description, website, default_branch, is_private, is_archived, is_template, is_fork, forked_from_repo_id, star_count, fork_count, watcher_count, open_issue_count, open_pr_count, size_kb, license, language, language_color, has_issues, has_wiki, has_projects, created_at, updated_at, pushed_at
 		FROM repositories WHERE id IN (`
 	args := make([]interface{}, len(ids))
 	for i, id := range ids {
@@ -193,7 +193,7 @@ func (s *ReposStore) scanRepos(ctx context.Context, rows *sql.Rows) ([]*repos.Re
 		r := &repos.Repository{}
 		var pushedAt sql.NullTime
 		var forkedFromID sql.NullString
-		if err := rows.Scan(&r.ID, &r.OwnerActorID, &r.Name, &r.Slug, &r.Description, &r.Website, &r.DefaultBranch, &r.IsPrivate, &r.IsArchived, &r.IsTemplate, &r.IsFork, &forkedFromID, &r.StarCount, &r.ForkCount, &r.WatcherCount, &r.OpenIssueCount, &r.OpenPRCount, &r.SizeKB, &r.License, &r.HasIssues, &r.HasWiki, &r.HasProjects, &r.CreatedAt, &r.UpdatedAt, &pushedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.OwnerActorID, &r.Name, &r.Slug, &r.Description, &r.Website, &r.DefaultBranch, &r.IsPrivate, &r.IsArchived, &r.IsTemplate, &r.IsFork, &forkedFromID, &r.StarCount, &r.ForkCount, &r.WatcherCount, &r.OpenIssueCount, &r.OpenPRCount, &r.SizeKB, &r.License, &r.Language, &r.LanguageColor, &r.HasIssues, &r.HasWiki, &r.HasProjects, &r.CreatedAt, &r.UpdatedAt, &pushedAt); err != nil {
 			return nil, err
 		}
 		if pushedAt.Valid {
@@ -252,7 +252,7 @@ func (s *ReposStore) IsStarred(ctx context.Context, userID, repoID string) (bool
 // ListStarredByUser lists repositories starred by a user
 func (s *ReposStore) ListStarredByUser(ctx context.Context, userID string, limit, offset int) ([]*repos.Repository, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id, r.owner_actor_id, r.name, r.slug, r.description, r.website, r.default_branch, r.is_private, r.is_archived, r.is_template, r.is_fork, r.forked_from_repo_id, r.star_count, r.fork_count, r.watcher_count, r.open_issue_count, r.open_pr_count, r.size_kb, r.license, r.has_issues, r.has_wiki, r.has_projects, r.created_at, r.updated_at, r.pushed_at
+		SELECT r.id, r.owner_actor_id, r.name, r.slug, r.description, r.website, r.default_branch, r.is_private, r.is_archived, r.is_template, r.is_fork, r.forked_from_repo_id, r.star_count, r.fork_count, r.watcher_count, r.open_issue_count, r.open_pr_count, r.size_kb, r.license, r.language, r.language_color, r.has_issues, r.has_wiki, r.has_projects, r.created_at, r.updated_at, r.pushed_at
 		FROM repositories r
 		JOIN stars s ON r.id = s.repo_id
 		WHERE s.user_id = $1
