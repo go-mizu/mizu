@@ -6,13 +6,11 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/watches"
-	"github.com/oklog/ulid/v2"
 )
 
 func createTestWatch(t *testing.T, store *WatchesStore, userID, repoID string) *watches.Watch {
 	t.Helper()
 	w := &watches.Watch{
-		ID:        ulid.Make().String(),
 		UserID:    userID,
 		RepoID:    repoID,
 		Level:     "watching",
@@ -36,7 +34,6 @@ func TestWatchesStore_Create(t *testing.T) {
 	watchesStore := NewWatchesStore(store.DB())
 
 	w := &watches.Watch{
-		ID:        ulid.Make().String(),
 		UserID:    userID,
 		RepoID:    repoID,
 		Level:     "watching",
@@ -69,26 +66,34 @@ func TestWatchesStore_Create_WithDifferentLevels(t *testing.T) {
 	watchesStore := NewWatchesStore(store.DB())
 
 	user := createTestUser(t, usersStore)
-	repo1 := createTestRepo(t, reposStore, user.ID)
-	repo2 := createTestRepo(t, reposStore, user.ID)
-	repo3 := createTestRepo(t, reposStore, user.ID)
+	actorID := createActorForUser(t, store.DB(), user.ID)
+	repo1 := createTestRepo(t, reposStore, actorID)
+	repo2 := createTestRepo(t, reposStore, actorID)
+	repo3 := createTestRepo(t, reposStore, actorID)
 
 	levels := []string{"watching", "ignoring", "releases_only"}
 	repos := []string{repo1.ID, repo2.ID, repo3.ID}
 
 	for i, level := range levels {
 		w := &watches.Watch{
-			ID:        ulid.Make().String(),
 			UserID:    user.ID,
 			RepoID:    repos[i],
 			Level:     level,
 			CreatedAt: time.Now(),
 		}
-		watchesStore.Create(context.Background(), w)
+		if err := watchesStore.Create(context.Background(), w); err != nil {
+			t.Fatalf("Create failed for level %s: %v", level, err)
+		}
 	}
 
 	for i, level := range levels {
-		got, _ := watchesStore.Get(context.Background(), user.ID, repos[i])
+		got, err := watchesStore.Get(context.Background(), user.ID, repos[i])
+		if err != nil {
+			t.Fatalf("Get failed for repo %s: %v", repos[i], err)
+		}
+		if got == nil {
+			t.Fatalf("expected watch for level %s, got nil", level)
+		}
 		if got.Level != level {
 			t.Errorf("got level %q, want %q", got.Level, level)
 		}

@@ -25,8 +25,8 @@ const (
 )
 
 // Collaborator represents a repository collaborator
+// Uses composite PK (repo_id, user_id) - no ID field
 type Collaborator struct {
-	ID         string    `json:"id"`
 	RepoID     string    `json:"repo_id"`
 	UserID     string    `json:"user_id"`
 	Permission string    `json:"permission"`

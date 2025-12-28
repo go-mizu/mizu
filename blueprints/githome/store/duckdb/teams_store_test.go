@@ -288,7 +288,6 @@ func TestTeamsStore_AddMember(t *testing.T) {
 	team := createTestTeam(t, teamsStore, org.ID)
 
 	member := &teams.TeamMember{
-		ID:        ulid.Make().String(),
 		TeamID:    team.ID,
 		UserID:    user.ID,
 		Role:      "member",
@@ -322,7 +321,6 @@ func TestTeamsStore_UpdateMember(t *testing.T) {
 	team := createTestTeam(t, teamsStore, org.ID)
 
 	member := &teams.TeamMember{
-		ID:        ulid.Make().String(),
 		TeamID:    team.ID,
 		UserID:    user.ID,
 		Role:      "member",
@@ -355,7 +353,6 @@ func TestTeamsStore_RemoveMember(t *testing.T) {
 	team := createTestTeam(t, teamsStore, org.ID)
 
 	member := &teams.TeamMember{
-		ID:        ulid.Make().String(),
 		TeamID:    team.ID,
 		UserID:    user.ID,
 		Role:      "member",
@@ -388,7 +385,6 @@ func TestTeamsStore_ListMembers(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		user := createTestUser(t, usersStore)
 		member := &teams.TeamMember{
-			ID:        ulid.Make().String(),
 			TeamID:    team.ID,
 			UserID:    user.ID,
 			Role:      "member",
@@ -420,7 +416,6 @@ func TestTeamsStore_ListByUser(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		team := createTestTeam(t, teamsStore, org.ID)
 		member := &teams.TeamMember{
-			ID:        ulid.Make().String(),
 			TeamID:    team.ID,
 			UserID:    user.ID,
 			Role:      "member",
@@ -457,7 +452,6 @@ func TestTeamsStore_AddRepo(t *testing.T) {
 	team := createTestTeam(t, teamsStore, org.ID)
 
 	teamRepo := &teams.TeamRepo{
-		ID:         ulid.Make().String(),
 		TeamID:     team.ID,
 		RepoID:     repo.ID,
 		Permission: "write",
@@ -493,7 +487,6 @@ func TestTeamsStore_UpdateRepo(t *testing.T) {
 	team := createTestTeam(t, teamsStore, org.ID)
 
 	teamRepo := &teams.TeamRepo{
-		ID:         ulid.Make().String(),
 		TeamID:     team.ID,
 		RepoID:     repo.ID,
 		Permission: "read",
@@ -528,7 +521,6 @@ func TestTeamsStore_RemoveRepo(t *testing.T) {
 	team := createTestTeam(t, teamsStore, org.ID)
 
 	teamRepo := &teams.TeamRepo{
-		ID:         ulid.Make().String(),
 		TeamID:     team.ID,
 		RepoID:     repo.ID,
 		Permission: "write",
@@ -563,7 +555,6 @@ func TestTeamsStore_ListRepos(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		repo := createTestRepo(t, reposStore, user.ID)
 		teamRepo := &teams.TeamRepo{
-			ID:         ulid.Make().String(),
 			TeamID:     team.ID,
 			RepoID:     repo.ID,
 			Permission: "read",

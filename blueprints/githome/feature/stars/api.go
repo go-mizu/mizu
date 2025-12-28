@@ -14,8 +14,8 @@ var (
 )
 
 // Star represents a repository star
+// Uses composite PK (user_id, repo_id) - no ID field
 type Star struct {
-	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
 	RepoID    string    `json:"repo_id"`
 	CreatedAt time.Time `json:"created_at"`

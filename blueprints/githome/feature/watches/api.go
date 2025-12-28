@@ -21,8 +21,8 @@ const (
 )
 
 // Watch represents a repository watch subscription
+// Uses composite PK (user_id, repo_id) - no ID field
 type Watch struct {
-	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
 	RepoID    string    `json:"repo_id"`
 	Level     string    `json:"level"`

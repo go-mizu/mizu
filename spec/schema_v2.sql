@@ -19,6 +19,9 @@
 -- USERS + AUTH
 -- ============================================================
 
+-- Users are never hard-deleted in a Git hosting system.
+-- We keep is_active and avoid cascade deletes from users to the world.
+-- This preserves repos, issues, PRs, audit logs, and references.
 CREATE TABLE IF NOT EXISTS users (
     id            VARCHAR PRIMARY KEY,
     username      VARCHAR NOT NULL UNIQUE,
@@ -39,9 +42,10 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Sessions are ephemeral and safe to cascade with user.
 CREATE TABLE IF NOT EXISTS sessions (
     id             VARCHAR PRIMARY KEY,
-    user_id        VARCHAR NOT NULL,
+    user_id        VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at     TIMESTAMP NOT NULL,
     user_agent     VARCHAR DEFAULT '',
     ip_address     VARCHAR DEFAULT '',
@@ -49,12 +53,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Minimal indexes: session lookups and expiration sweeps.
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 
+-- SSH keys are user-scoped; fingerprint is unique per user to prevent duplicates.
+-- Optionally add UNIQUE(fingerprint) if you want global uniqueness.
 CREATE TABLE IF NOT EXISTS ssh_keys (
     id           VARCHAR PRIMARY KEY,
-    user_id      VARCHAR NOT NULL,
+    user_id      VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name         VARCHAR NOT NULL,
     public_key   TEXT NOT NULL,
     fingerprint  VARCHAR NOT NULL,
@@ -66,9 +73,10 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
 
 CREATE INDEX IF NOT EXISTS idx_ssh_keys_user_id ON ssh_keys(user_id);
 
+-- API tokens are user-scoped; store token_hash only (never store raw token).
 CREATE TABLE IF NOT EXISTS api_tokens (
     id           VARCHAR PRIMARY KEY,
-    user_id      VARCHAR NOT NULL,
+    user_id      VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name         VARCHAR NOT NULL,
     token_hash   VARCHAR NOT NULL,
     expires_at   TIMESTAMP,
@@ -80,8 +88,10 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);
 
+-- Token scopes are normalized instead of storing CSV in api_tokens.
+-- Decision: use (token_id, scope) composite PK for idempotent insert.
 CREATE TABLE IF NOT EXISTS api_token_scopes (
-    token_id   VARCHAR NOT NULL,
+    token_id   VARCHAR NOT NULL REFERENCES api_tokens(id) ON DELETE CASCADE,
     scope      VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -93,6 +103,7 @@ CREATE TABLE IF NOT EXISTS api_token_scopes (
 -- ORGS + ACTORS
 -- ============================================================
 
+-- Organizations are separate from users.
 CREATE TABLE IF NOT EXISTS organizations (
     id           VARCHAR PRIMARY KEY,
     name         VARCHAR NOT NULL UNIQUE,
@@ -108,11 +119,20 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Actors unify "owner" across users and orgs.
+-- Decision: repos/activities reference actors so they can FK cleanly.
+-- Deletion decision:
+--   - If you hard-delete users/orgs, you likely DO NOT want repos deleted.
+--   - Prefer soft-deleting users (is_active=false). Therefore, avoid
+--     cascade from users/orgs to actors (use RESTRICT / NO ACTION).
+--
+-- DuckDB does not always enforce ON DELETE RESTRICT explicitly, but leaving
+-- it unspecified is safer than CASCADE for hosting metadata.
 CREATE TABLE IF NOT EXISTS actors (
     id         VARCHAR PRIMARY KEY,
     actor_type VARCHAR NOT NULL,
-    user_id    VARCHAR,
-    org_id     VARCHAR,
+    user_id    VARCHAR REFERENCES users(id),
+    org_id     VARCHAR REFERENCES organizations(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     CHECK (actor_type IN ('user', 'org')),
@@ -128,9 +148,10 @@ CREATE TABLE IF NOT EXISTS actors (
 CREATE INDEX IF NOT EXISTS idx_actors_user_id ON actors(user_id);
 CREATE INDEX IF NOT EXISTS idx_actors_org_id ON actors(org_id);
 
+-- Org membership is link-table with composite PK to prevent duplicates.
 CREATE TABLE IF NOT EXISTS org_members (
-    org_id      VARCHAR NOT NULL,
-    user_id     VARCHAR NOT NULL,
+    org_id      VARCHAR NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id     VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role        VARCHAR NOT NULL DEFAULT 'member',
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -144,14 +165,16 @@ CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON org_members(user_id);
 -- TEAMS
 -- ============================================================
 
+-- Teams are scoped to an org.
+-- Decision: UNIQUE(org_id, slug) to support routing like /orgs/:org/teams/:slug
 CREATE TABLE IF NOT EXISTS teams (
     id          VARCHAR PRIMARY KEY,
-    org_id      VARCHAR NOT NULL,
+    org_id      VARCHAR NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name        VARCHAR NOT NULL,
     slug        VARCHAR NOT NULL,
     description TEXT DEFAULT '',
     permission  VARCHAR NOT NULL DEFAULT 'read',
-    parent_id   VARCHAR,
+    parent_id   VARCHAR REFERENCES teams(id) ON DELETE SET NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -162,9 +185,10 @@ CREATE TABLE IF NOT EXISTS teams (
 CREATE INDEX IF NOT EXISTS idx_teams_org_id ON teams(org_id);
 CREATE INDEX IF NOT EXISTS idx_teams_parent_id ON teams(parent_id);
 
+-- Team members composite PK for idempotent add/remove.
 CREATE TABLE IF NOT EXISTS team_members (
-    team_id    VARCHAR NOT NULL,
-    user_id    VARCHAR NOT NULL,
+    team_id    VARCHAR NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role       VARCHAR NOT NULL DEFAULT 'member',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -178,10 +202,14 @@ CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id);
 -- REPOSITORIES
 -- ============================================================
 
+-- Repositories belong to an actor (user or org).
+-- Decision: repo name and slug uniqueness is per owner, not global.
+-- We enforce UNIQUE(owner_actor_id, slug). Optionally also UNIQUE(owner_actor_id, name)
+-- if you want case-sensitive "name" to be the canonical identifier.
 CREATE TABLE IF NOT EXISTS repositories (
     id                  VARCHAR PRIMARY KEY,
 
-    owner_actor_id       VARCHAR NOT NULL,
+    owner_actor_id       VARCHAR NOT NULL REFERENCES actors(id),
 
     name                VARCHAR NOT NULL,
     slug                VARCHAR NOT NULL,
@@ -193,8 +221,10 @@ CREATE TABLE IF NOT EXISTS repositories (
     is_archived         BOOLEAN DEFAULT FALSE,
     is_template         BOOLEAN DEFAULT FALSE,
     is_fork             BOOLEAN DEFAULT FALSE,
-    forked_from_repo_id VARCHAR,
+    forked_from_repo_id VARCHAR REFERENCES repositories(id) ON DELETE SET NULL,
 
+    -- Cached counters only: treat as non-authoritative.
+    -- Decision: keep for UI speed, but recompute periodically from source tables.
     star_count          INTEGER DEFAULT 0,
     fork_count          INTEGER DEFAULT 0,
     watcher_count       INTEGER DEFAULT 0,
@@ -217,11 +247,14 @@ CREATE TABLE IF NOT EXISTS repositories (
     UNIQUE(owner_actor_id, slug)
 );
 
+-- Minimal indexes for owner listing and fork graph.
 CREATE INDEX IF NOT EXISTS idx_repos_owner_actor ON repositories(owner_actor_id);
 CREATE INDEX IF NOT EXISTS idx_repos_forked_from ON repositories(forked_from_repo_id);
 
+-- Repo topics are normalized.
+-- Decision: composite PK avoids duplicates and supports idempotent upsert logic.
 CREATE TABLE IF NOT EXISTS repo_topics (
-    repo_id     VARCHAR NOT NULL,
+    repo_id     VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     topic       VARCHAR NOT NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -229,8 +262,10 @@ CREATE TABLE IF NOT EXISTS repo_topics (
     CHECK (topic <> '')
 );
 
+-- Repo storage maps repo metadata to where git objects live.
+-- Decision: keep git data out of DuckDB; store a pointer to FS/S3-like backend.
 CREATE TABLE IF NOT EXISTS repo_storage (
-    repo_id          VARCHAR PRIMARY KEY,
+    repo_id          VARCHAR PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE,
     storage_backend  VARCHAR NOT NULL DEFAULT 'fs',
     storage_path     VARCHAR NOT NULL,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -239,9 +274,10 @@ CREATE TABLE IF NOT EXISTS repo_storage (
     CHECK (storage_path <> '')
 );
 
+-- Collaborators represent explicit user access to a repo.
 CREATE TABLE IF NOT EXISTS collaborators (
-    repo_id    VARCHAR NOT NULL,
-    user_id    VARCHAR NOT NULL,
+    repo_id    VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     permission VARCHAR NOT NULL DEFAULT 'read',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -251,9 +287,10 @@ CREATE TABLE IF NOT EXISTS collaborators (
 
 CREATE INDEX IF NOT EXISTS idx_collaborators_user_id ON collaborators(user_id);
 
+-- Team access to repos.
 CREATE TABLE IF NOT EXISTS team_repos (
-    team_id    VARCHAR NOT NULL,
-    repo_id    VARCHAR NOT NULL,
+    team_id    VARCHAR NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    repo_id    VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     permission VARCHAR NOT NULL DEFAULT 'read',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -263,9 +300,10 @@ CREATE TABLE IF NOT EXISTS team_repos (
 
 CREATE INDEX IF NOT EXISTS idx_team_repos_repo_id ON team_repos(repo_id);
 
+-- Stars and watches are canonical source-of-truth tables.
 CREATE TABLE IF NOT EXISTS stars (
-    user_id    VARCHAR NOT NULL,
-    repo_id    VARCHAR NOT NULL,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    repo_id    VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY(user_id, repo_id)
@@ -274,12 +312,12 @@ CREATE TABLE IF NOT EXISTS stars (
 CREATE INDEX IF NOT EXISTS idx_stars_repo_id ON stars(repo_id);
 
 CREATE TABLE IF NOT EXISTS watches (
-    user_id    VARCHAR NOT NULL,
-    repo_id    VARCHAR NOT NULL,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    repo_id    VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     level      VARCHAR NOT NULL DEFAULT 'watching',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    CHECK (level IN ('watching', 'releases_only', 'ignoring')),
+    CHECK (level IN ('watching', 'releases_only', 'ignore')),
     PRIMARY KEY(user_id, repo_id)
 );
 
@@ -289,9 +327,10 @@ CREATE INDEX IF NOT EXISTS idx_watches_repo_id ON watches(repo_id);
 -- LABELS + MILESTONES
 -- ============================================================
 
+-- Labels are per-repo; UNIQUE(repo_id, name) enforces GitHub semantics.
 CREATE TABLE IF NOT EXISTS labels (
     id          VARCHAR PRIMARY KEY,
-    repo_id     VARCHAR NOT NULL,
+    repo_id     VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     name        VARCHAR NOT NULL,
     color       VARCHAR NOT NULL DEFAULT '0366d6',
     description TEXT DEFAULT '',
@@ -304,9 +343,10 @@ CREATE TABLE IF NOT EXISTS labels (
 
 CREATE INDEX IF NOT EXISTS idx_labels_repo_id ON labels(repo_id);
 
+-- Milestones are per-repo and numbered.
 CREATE TABLE IF NOT EXISTS milestones (
     id          VARCHAR PRIMARY KEY,
-    repo_id     VARCHAR NOT NULL,
+    repo_id     VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     number      INTEGER NOT NULL,
     title       VARCHAR NOT NULL,
     description TEXT DEFAULT '',
@@ -328,28 +368,32 @@ CREATE INDEX IF NOT EXISTS idx_milestones_repo_id ON milestones(repo_id);
 -- ISSUES
 -- ============================================================
 
+-- Issues are numbered per repo.
+-- Decision: keep milestone_id FK, but enforce "milestone must belong to same repo"
+-- in service layer (cross-table constraint).
 CREATE TABLE IF NOT EXISTS issues (
     id              VARCHAR PRIMARY KEY,
-    repo_id         VARCHAR NOT NULL,
+    repo_id         VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     number          INTEGER NOT NULL,
     title           VARCHAR NOT NULL,
     body            TEXT DEFAULT '',
-    author_id       VARCHAR NOT NULL,
+    author_id       VARCHAR NOT NULL REFERENCES users(id),
 
     state           VARCHAR NOT NULL DEFAULT 'open',
     state_reason    VARCHAR DEFAULT '',
     is_locked       BOOLEAN DEFAULT FALSE,
     lock_reason     VARCHAR DEFAULT '',
 
-    milestone_id    VARCHAR,
+    milestone_id    VARCHAR REFERENCES milestones(id) ON DELETE SET NULL,
 
+    -- Cached counters
     comment_count   INTEGER DEFAULT 0,
     reactions_count INTEGER DEFAULT 0,
 
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     closed_at       TIMESTAMP,
-    closed_by_id    VARCHAR,
+    closed_by_id    VARCHAR REFERENCES users(id) ON DELETE SET NULL,
 
     CHECK (number > 0),
     CHECK (title <> ''),
@@ -360,9 +404,10 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE INDEX IF NOT EXISTS idx_issues_repo_state_updated ON issues(repo_id, state, updated_at);
 CREATE INDEX IF NOT EXISTS idx_issues_author_id ON issues(author_id);
 
+-- Many-to-many issue labels: composite PK prevents duplicates.
 CREATE TABLE IF NOT EXISTS issue_labels (
-    issue_id   VARCHAR NOT NULL,
-    label_id   VARCHAR NOT NULL,
+    issue_id   VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    label_id   VARCHAR NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY(issue_id, label_id)
@@ -370,9 +415,10 @@ CREATE TABLE IF NOT EXISTS issue_labels (
 
 CREATE INDEX IF NOT EXISTS idx_issue_labels_label_id ON issue_labels(label_id);
 
+-- Issue assignees: composite PK prevents duplicates.
 CREATE TABLE IF NOT EXISTS issue_assignees (
-    issue_id   VARCHAR NOT NULL,
-    user_id    VARCHAR NOT NULL,
+    issue_id   VARCHAR NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY(issue_id, user_id)
@@ -384,15 +430,19 @@ CREATE INDEX IF NOT EXISTS idx_issue_assignees_user_id ON issue_assignees(user_i
 -- PULL REQUESTS
 -- ============================================================
 
+-- Pull requests are numbered per repo.
+-- Decision: include lock_reason for symmetry with issues and to support API.
+-- Decision: merge_method stored but mergeability is still computed in service
+-- (conflicts + branch rules + statuses). mergeable fields are effectively cached.
 CREATE TABLE IF NOT EXISTS pull_requests (
     id               VARCHAR PRIMARY KEY,
-    repo_id          VARCHAR NOT NULL,
+    repo_id          VARCHAR NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     number           INTEGER NOT NULL,
     title            VARCHAR NOT NULL,
     body             TEXT DEFAULT '',
-    author_id        VARCHAR NOT NULL,
+    author_id        VARCHAR NOT NULL REFERENCES users(id),
 
-    head_repo_id     VARCHAR,
+    head_repo_id     VARCHAR REFERENCES repositories(id) ON DELETE SET NULL,
     head_branch      VARCHAR NOT NULL,
     head_sha         VARCHAR NOT NULL,
     base_branch      VARCHAR NOT NULL,
@@ -410,7 +460,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     merge_message    TEXT DEFAULT '',
 
     merged_at        TIMESTAMP,
-    merged_by_id     VARCHAR,
+    merged_by_id     VARCHAR REFERENCES users(id) ON DELETE SET NULL,
 
     additions        INTEGER DEFAULT 0,
     deletions        INTEGER DEFAULT 0,
@@ -420,7 +470,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     review_comments  INTEGER DEFAULT 0,
     commits          INTEGER DEFAULT 0,
 
-    milestone_id     VARCHAR,
+    milestone_id     VARCHAR REFERENCES milestones(id) ON DELETE SET NULL,
 
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -436,9 +486,10 @@ CREATE TABLE IF NOT EXISTS pull_requests (
 CREATE INDEX IF NOT EXISTS idx_prs_repo_state_updated ON pull_requests(repo_id, state, updated_at);
 CREATE INDEX IF NOT EXISTS idx_prs_author_id ON pull_requests(author_id);
 
+-- PR labels: composite PK for idempotent label add/remove.
 CREATE TABLE IF NOT EXISTS pr_labels (
-    pr_id      VARCHAR NOT NULL,
-    label_id   VARCHAR NOT NULL,
+    pr_id      VARCHAR NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    label_id   VARCHAR NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY(pr_id, label_id)
@@ -446,9 +497,10 @@ CREATE TABLE IF NOT EXISTS pr_labels (
 
 CREATE INDEX IF NOT EXISTS idx_pr_labels_label_id ON pr_labels(label_id);
 
+-- PR assignees: composite PK for idempotent assignee add/remove.
 CREATE TABLE IF NOT EXISTS pr_assignees (
-    pr_id      VARCHAR NOT NULL,
-    user_id    VARCHAR NOT NULL,
+    pr_id      VARCHAR NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY(pr_id, user_id)
@@ -456,9 +508,13 @@ CREATE TABLE IF NOT EXISTS pr_assignees (
 
 CREATE INDEX IF NOT EXISTS idx_pr_assignees_user_id ON pr_assignees(user_id);
 
+-- PR reviewers represent active review requests.
+-- Decision: only keep active requests; remove means DELETE row.
+-- Therefore, "state" can remain simple as 'pending' or you can drop it.
+-- We keep it to support future transitions like 'reviewed' if you want.
 CREATE TABLE IF NOT EXISTS pr_reviewers (
-    pr_id      VARCHAR NOT NULL,
-    user_id    VARCHAR NOT NULL,
+    pr_id      VARCHAR NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    user_id    VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     state      VARCHAR NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -468,10 +524,11 @@ CREATE TABLE IF NOT EXISTS pr_reviewers (
 
 CREATE INDEX IF NOT EXISTS idx_pr_reviewers_user_id ON pr_reviewers(user_id);
 
+-- PR reviews are immutable events with optional submission time.
 CREATE TABLE IF NOT EXISTS pr_reviews (
     id           VARCHAR PRIMARY KEY,
-    pr_id        VARCHAR NOT NULL,
-    user_id      VARCHAR NOT NULL,
+    pr_id        VARCHAR NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    user_id      VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body         TEXT DEFAULT '',
     state        VARCHAR NOT NULL,
     commit_sha   VARCHAR,
@@ -482,181 +539,4 @@ CREATE TABLE IF NOT EXISTS pr_reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pr_reviews_pr_id ON pr_reviews(pr_id);
-CREATE INDEX IF NOT EXISTS idx_pr_reviews_user_id ON pr_reviews(user_id);
-
-CREATE TABLE IF NOT EXISTS review_comments (
-    id                VARCHAR PRIMARY KEY,
-    review_id         VARCHAR NOT NULL,
-    user_id           VARCHAR NOT NULL,
-    path              VARCHAR NOT NULL,
-    position          INTEGER,
-    original_position INTEGER,
-    diff_hunk         TEXT,
-    line              INTEGER,
-    original_line     INTEGER,
-    side              VARCHAR DEFAULT 'RIGHT',
-    body              TEXT NOT NULL,
-    in_reply_to_id    VARCHAR,
-    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_review_comments_review_id ON review_comments(review_id);
-
--- ============================================================
--- COMMENTS (for issues and PRs)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS comments (
-    id          VARCHAR PRIMARY KEY,
-    target_type VARCHAR NOT NULL,
-    target_id   VARCHAR NOT NULL,
-    user_id     VARCHAR NOT NULL,
-    body        TEXT NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    CHECK (target_type IN ('issue', 'pull_request'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_comments_target ON comments(target_type, target_id);
-
--- ============================================================
--- RELEASES
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS releases (
-    id               VARCHAR PRIMARY KEY,
-    repo_id          VARCHAR NOT NULL,
-    tag_name         VARCHAR NOT NULL,
-    target_commitish VARCHAR NOT NULL DEFAULT 'main',
-    name             VARCHAR DEFAULT '',
-    body             TEXT DEFAULT '',
-    is_draft         BOOLEAN DEFAULT FALSE,
-    is_prerelease    BOOLEAN DEFAULT FALSE,
-    author_id        VARCHAR NOT NULL,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    published_at     TIMESTAMP,
-
-    UNIQUE(repo_id, tag_name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_releases_repo_id ON releases(repo_id);
-
-CREATE TABLE IF NOT EXISTS release_assets (
-    id             VARCHAR PRIMARY KEY,
-    release_id     VARCHAR NOT NULL,
-    name           VARCHAR NOT NULL,
-    label          VARCHAR DEFAULT '',
-    content_type   VARCHAR NOT NULL,
-    size_bytes     INTEGER NOT NULL,
-    download_count INTEGER DEFAULT 0,
-    uploader_id    VARCHAR NOT NULL,
-    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_release_assets_release_id ON release_assets(release_id);
-
--- ============================================================
--- WEBHOOKS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS webhooks (
-    id                 VARCHAR PRIMARY KEY,
-    repo_id            VARCHAR,
-    org_id             VARCHAR,
-    url                VARCHAR NOT NULL,
-    secret             VARCHAR DEFAULT '',
-    content_type       VARCHAR DEFAULT 'json',
-    events             VARCHAR NOT NULL DEFAULT 'push',
-    active             BOOLEAN DEFAULT TRUE,
-    insecure_ssl       BOOLEAN DEFAULT FALSE,
-    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_response_code INTEGER,
-    last_response_at   TIMESTAMP,
-
-    CHECK (repo_id IS NOT NULL OR org_id IS NOT NULL)
-);
-
-CREATE INDEX IF NOT EXISTS idx_webhooks_repo_id ON webhooks(repo_id);
-CREATE INDEX IF NOT EXISTS idx_webhooks_org_id ON webhooks(org_id);
-
-CREATE TABLE IF NOT EXISTS webhook_deliveries (
-    id               VARCHAR PRIMARY KEY,
-    webhook_id       VARCHAR NOT NULL,
-    event            VARCHAR NOT NULL,
-    guid             VARCHAR NOT NULL,
-    payload          TEXT NOT NULL,
-    request_headers  TEXT,
-    response_headers TEXT,
-    response_body    TEXT,
-    status_code      INTEGER,
-    delivered        BOOLEAN DEFAULT FALSE,
-    duration_ms      INTEGER,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
-
--- ============================================================
--- NOTIFICATIONS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS notifications (
-    id           VARCHAR PRIMARY KEY,
-    user_id      VARCHAR NOT NULL,
-    repo_id      VARCHAR,
-    type         VARCHAR NOT NULL,
-    actor_id     VARCHAR,
-    target_type  VARCHAR NOT NULL,
-    target_id    VARCHAR NOT NULL,
-    title        VARCHAR NOT NULL,
-    reason       VARCHAR NOT NULL,
-    unread       BOOLEAN DEFAULT TRUE,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_read_at TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, unread);
-
--- ============================================================
--- ACTIVITY FEED
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS activities (
-    id          VARCHAR PRIMARY KEY,
-    actor_id    VARCHAR NOT NULL,
-    event_type  VARCHAR NOT NULL,
-    repo_id     VARCHAR,
-    target_type VARCHAR,
-    target_id   VARCHAR,
-    ref         VARCHAR DEFAULT '',
-    ref_type    VARCHAR DEFAULT '',
-    payload     TEXT DEFAULT '{}',
-    is_public   BOOLEAN DEFAULT TRUE,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_activities_actor ON activities(actor_id);
-CREATE INDEX IF NOT EXISTS idx_activities_repo ON activities(repo_id);
-CREATE INDEX IF NOT EXISTS idx_activities_created ON activities(created_at);
-
--- ============================================================
--- REACTIONS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS reactions (
-    user_id     VARCHAR NOT NULL,
-    target_type VARCHAR NOT NULL,
-    target_id   VARCHAR NOT NULL,
-    content     VARCHAR NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    CHECK (content IN ('+1', '-1', 'laugh', 'confused', 'heart', 'hooray', 'rocket', 'eyes')),
-    PRIMARY KEY(user_id, target_type, target_id, content)
-);
-
-CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_pr_reviews_user_id ON pr_reviews(user_

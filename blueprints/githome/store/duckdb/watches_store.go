@@ -17,12 +17,12 @@ func NewWatchesStore(db *sql.DB) *WatchesStore {
 	return &WatchesStore{db: db}
 }
 
-// Create creates a new watch
+// Create creates a new watch - uses composite PK (user_id, repo_id)
 func (s *WatchesStore) Create(ctx context.Context, w *watches.Watch) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO watches (id, user_id, repo_id, level, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, w.ID, w.UserID, w.RepoID, w.Level, w.CreatedAt)
+		INSERT INTO watches (user_id, repo_id, level, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, w.UserID, w.RepoID, w.Level, w.CreatedAt)
 	return err
 }
 
@@ -45,9 +45,9 @@ func (s *WatchesStore) Delete(ctx context.Context, userID, repoID string) error 
 func (s *WatchesStore) Get(ctx context.Context, userID, repoID string) (*watches.Watch, error) {
 	w := &watches.Watch{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, user_id, repo_id, level, created_at
+		SELECT user_id, repo_id, level, created_at
 		FROM watches WHERE user_id = $1 AND repo_id = $2
-	`, userID, repoID).Scan(&w.ID, &w.UserID, &w.RepoID, &w.Level, &w.CreatedAt)
+	`, userID, repoID).Scan(&w.UserID, &w.RepoID, &w.Level, &w.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -67,7 +67,7 @@ func (s *WatchesStore) ListByRepo(ctx context.Context, repoID string, limit, off
 
 	// Get watches
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, repo_id, level, created_at
+		SELECT user_id, repo_id, level, created_at
 		FROM watches WHERE repo_id = $1 AND level != 'ignoring'
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
@@ -80,7 +80,7 @@ func (s *WatchesStore) ListByRepo(ctx context.Context, repoID string, limit, off
 	var list []*watches.Watch
 	for rows.Next() {
 		w := &watches.Watch{}
-		if err := rows.Scan(&w.ID, &w.UserID, &w.RepoID, &w.Level, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.UserID, &w.RepoID, &w.Level, &w.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		list = append(list, w)
@@ -101,7 +101,7 @@ func (s *WatchesStore) ListByUser(ctx context.Context, userID string, limit, off
 
 	// Get watches
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, user_id, repo_id, level, created_at
+		SELECT user_id, repo_id, level, created_at
 		FROM watches WHERE user_id = $1 AND level != 'ignoring'
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
@@ -114,7 +114,7 @@ func (s *WatchesStore) ListByUser(ctx context.Context, userID string, limit, off
 	var list []*watches.Watch
 	for rows.Next() {
 		w := &watches.Watch{}
-		if err := rows.Scan(&w.ID, &w.UserID, &w.RepoID, &w.Level, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.UserID, &w.RepoID, &w.Level, &w.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		list = append(list, w)

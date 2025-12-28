@@ -60,7 +60,6 @@ func (s *Service) Create(ctx context.Context, repoID, authorID string, in *Creat
 	// Add labels
 	for _, labelID := range in.Labels {
 		pl := &PRLabel{
-			ID:        ulid.New(),
 			PRID:      pr.ID,
 			LabelID:   labelID,
 			CreatedAt: now,
@@ -71,7 +70,6 @@ func (s *Service) Create(ctx context.Context, repoID, authorID string, in *Creat
 	// Add assignees
 	for _, userID := range in.Assignees {
 		pa := &PRAssignee{
-			ID:        ulid.New(),
 			PRID:      pr.ID,
 			UserID:    userID,
 			CreatedAt: now,
@@ -82,7 +80,6 @@ func (s *Service) Create(ctx context.Context, repoID, authorID string, in *Creat
 	// Request reviews
 	for _, userID := range in.Reviewers {
 		prr := &PRReviewer{
-			ID:        ulid.New(),
 			PRID:      pr.ID,
 			UserID:    userID,
 			State:     "pending",
@@ -343,7 +340,6 @@ func (s *Service) AddLabels(ctx context.Context, id string, labelIDs []string) e
 	now := time.Now()
 	for _, labelID := range labelIDs {
 		pl := &PRLabel{
-			ID:        ulid.New(),
 			PRID:      id,
 			LabelID:   labelID,
 			CreatedAt: now,
@@ -372,7 +368,6 @@ func (s *Service) AddAssignees(ctx context.Context, id string, userIDs []string)
 	now := time.Now()
 	for _, userID := range userIDs {
 		pa := &PRAssignee{
-			ID:        ulid.New(),
 			PRID:      id,
 			UserID:    userID,
 			CreatedAt: now,
@@ -395,7 +390,6 @@ func (s *Service) RequestReview(ctx context.Context, id string, userIDs []string
 	now := time.Now()
 	for _, userID := range userIDs {
 		prr := &PRReviewer{
-			ID:        ulid.New(),
 			PRID:      id,
 			UserID:    userID,
 			State:     "pending",

@@ -21,9 +21,9 @@ func NewPullsStore(db *sql.DB) *PullsStore {
 // Create creates a new pull request
 func (s *PullsStore) Create(ctx context.Context, pr *pulls.PullRequest) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO pull_requests (id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, mergeable, mergeable_state, merge_commit_sha, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
-	`, pr.ID, pr.RepoID, pr.Number, pr.Title, pr.Body, pr.AuthorID, nullString(pr.HeadRepoID), pr.HeadBranch, pr.HeadSHA, pr.BaseBranch, pr.BaseSHA, pr.State, pr.IsDraft, pr.IsLocked, pr.Mergeable, pr.MergeableState, pr.MergeCommitSHA, pr.MergedAt, nullString(pr.MergedByID), pr.Additions, pr.Deletions, pr.ChangedFiles, pr.CommentCount, pr.ReviewComments, pr.Commits, nullString(pr.MilestoneID), pr.CreatedAt, pr.UpdatedAt, pr.ClosedAt)
+		INSERT INTO pull_requests (id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, lock_reason, mergeable, mergeable_state, merge_method, merge_commit_sha, merge_message, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+	`, pr.ID, pr.RepoID, pr.Number, pr.Title, pr.Body, pr.AuthorID, nullString(pr.HeadRepoID), pr.HeadBranch, pr.HeadSHA, pr.BaseBranch, pr.BaseSHA, pr.State, pr.IsDraft, pr.IsLocked, pr.LockReason, pr.Mergeable, pr.MergeableState, pr.MergeMethod, pr.MergeCommitSHA, pr.MergeMessage, pr.MergedAt, nullString(pr.MergedByID), pr.Additions, pr.Deletions, pr.ChangedFiles, pr.CommentCount, pr.ReviewComments, pr.Commits, nullString(pr.MilestoneID), pr.CreatedAt, pr.UpdatedAt, pr.ClosedAt)
 	return err
 }
 
@@ -33,9 +33,9 @@ func (s *PullsStore) GetByID(ctx context.Context, id string) (*pulls.PullRequest
 	var headRepoID, mergedByID, milestoneID sql.NullString
 	var mergedAt, closedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, mergeable, mergeable_state, merge_commit_sha, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at
+		SELECT id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, lock_reason, mergeable, mergeable_state, merge_method, merge_commit_sha, merge_message, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at
 		FROM pull_requests WHERE id = $1
-	`, id).Scan(&pr.ID, &pr.RepoID, &pr.Number, &pr.Title, &pr.Body, &pr.AuthorID, &headRepoID, &pr.HeadBranch, &pr.HeadSHA, &pr.BaseBranch, &pr.BaseSHA, &pr.State, &pr.IsDraft, &pr.IsLocked, &pr.Mergeable, &pr.MergeableState, &pr.MergeCommitSHA, &mergedAt, &mergedByID, &pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.CommentCount, &pr.ReviewComments, &pr.Commits, &milestoneID, &pr.CreatedAt, &pr.UpdatedAt, &closedAt)
+	`, id).Scan(&pr.ID, &pr.RepoID, &pr.Number, &pr.Title, &pr.Body, &pr.AuthorID, &headRepoID, &pr.HeadBranch, &pr.HeadSHA, &pr.BaseBranch, &pr.BaseSHA, &pr.State, &pr.IsDraft, &pr.IsLocked, &pr.LockReason, &pr.Mergeable, &pr.MergeableState, &pr.MergeMethod, &pr.MergeCommitSHA, &pr.MergeMessage, &mergedAt, &mergedByID, &pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.CommentCount, &pr.ReviewComments, &pr.Commits, &milestoneID, &pr.CreatedAt, &pr.UpdatedAt, &closedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -52,9 +52,9 @@ func (s *PullsStore) GetByNumber(ctx context.Context, repoID string, number int)
 	var headRepoID, mergedByID, milestoneID sql.NullString
 	var mergedAt, closedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, mergeable, mergeable_state, merge_commit_sha, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at
+		SELECT id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, lock_reason, mergeable, mergeable_state, merge_method, merge_commit_sha, merge_message, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at
 		FROM pull_requests WHERE repo_id = $1 AND number = $2
-	`, repoID, number).Scan(&pr.ID, &pr.RepoID, &pr.Number, &pr.Title, &pr.Body, &pr.AuthorID, &headRepoID, &pr.HeadBranch, &pr.HeadSHA, &pr.BaseBranch, &pr.BaseSHA, &pr.State, &pr.IsDraft, &pr.IsLocked, &pr.Mergeable, &pr.MergeableState, &pr.MergeCommitSHA, &mergedAt, &mergedByID, &pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.CommentCount, &pr.ReviewComments, &pr.Commits, &milestoneID, &pr.CreatedAt, &pr.UpdatedAt, &closedAt)
+	`, repoID, number).Scan(&pr.ID, &pr.RepoID, &pr.Number, &pr.Title, &pr.Body, &pr.AuthorID, &headRepoID, &pr.HeadBranch, &pr.HeadSHA, &pr.BaseBranch, &pr.BaseSHA, &pr.State, &pr.IsDraft, &pr.IsLocked, &pr.LockReason, &pr.Mergeable, &pr.MergeableState, &pr.MergeMethod, &pr.MergeCommitSHA, &pr.MergeMessage, &mergedAt, &mergedByID, &pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.CommentCount, &pr.ReviewComments, &pr.Commits, &milestoneID, &pr.CreatedAt, &pr.UpdatedAt, &closedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -87,9 +87,9 @@ func (s *PullsStore) populateNullables(pr *pulls.PullRequest, headRepoID, merged
 func (s *PullsStore) Update(ctx context.Context, pr *pulls.PullRequest) error {
 	pr.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE pull_requests SET title = $2, body = $3, base_branch = $4, state = $5, is_draft = $6, is_locked = $7, mergeable = $8, mergeable_state = $9, merge_commit_sha = $10, merged_at = $11, merged_by_id = $12, milestone_id = $13, updated_at = $14, closed_at = $15
+		UPDATE pull_requests SET title = $2, body = $3, base_branch = $4, state = $5, is_draft = $6, is_locked = $7, lock_reason = $8, mergeable = $9, mergeable_state = $10, merge_method = $11, merge_commit_sha = $12, merge_message = $13, merged_at = $14, merged_by_id = $15, milestone_id = $16, updated_at = $17, closed_at = $18
 		WHERE id = $1
-	`, pr.ID, pr.Title, pr.Body, pr.BaseBranch, pr.State, pr.IsDraft, pr.IsLocked, pr.Mergeable, pr.MergeableState, pr.MergeCommitSHA, pr.MergedAt, nullString(pr.MergedByID), nullString(pr.MilestoneID), pr.UpdatedAt, pr.ClosedAt)
+	`, pr.ID, pr.Title, pr.Body, pr.BaseBranch, pr.State, pr.IsDraft, pr.IsLocked, pr.LockReason, pr.Mergeable, pr.MergeableState, pr.MergeMethod, pr.MergeCommitSHA, pr.MergeMessage, pr.MergedAt, nullString(pr.MergedByID), nullString(pr.MilestoneID), pr.UpdatedAt, pr.ClosedAt)
 	return err
 }
 
@@ -115,7 +115,7 @@ func (s *PullsStore) List(ctx context.Context, repoID string, state string, limi
 
 	// Get pull requests
 	query := `
-		SELECT id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, mergeable, mergeable_state, merge_commit_sha, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at
+		SELECT id, repo_id, number, title, body, author_id, head_repo_id, head_branch, head_sha, base_branch, base_sha, state, is_draft, is_locked, lock_reason, mergeable, mergeable_state, merge_method, merge_commit_sha, merge_message, merged_at, merged_by_id, additions, deletions, changed_files, comment_count, review_comments, commits, milestone_id, created_at, updated_at, closed_at
 		FROM pull_requests WHERE repo_id = $1`
 	if state != "" && state != "all" {
 		query += ` AND state = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`
@@ -136,7 +136,7 @@ func (s *PullsStore) List(ctx context.Context, repoID string, state string, limi
 		pr := &pulls.PullRequest{}
 		var headRepoID, mergedByID, milestoneID sql.NullString
 		var mergedAt, closedAt sql.NullTime
-		if err := rows.Scan(&pr.ID, &pr.RepoID, &pr.Number, &pr.Title, &pr.Body, &pr.AuthorID, &headRepoID, &pr.HeadBranch, &pr.HeadSHA, &pr.BaseBranch, &pr.BaseSHA, &pr.State, &pr.IsDraft, &pr.IsLocked, &pr.Mergeable, &pr.MergeableState, &pr.MergeCommitSHA, &mergedAt, &mergedByID, &pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.CommentCount, &pr.ReviewComments, &pr.Commits, &milestoneID, &pr.CreatedAt, &pr.UpdatedAt, &closedAt); err != nil {
+		if err := rows.Scan(&pr.ID, &pr.RepoID, &pr.Number, &pr.Title, &pr.Body, &pr.AuthorID, &headRepoID, &pr.HeadBranch, &pr.HeadSHA, &pr.BaseBranch, &pr.BaseSHA, &pr.State, &pr.IsDraft, &pr.IsLocked, &pr.LockReason, &pr.Mergeable, &pr.MergeableState, &pr.MergeMethod, &pr.MergeCommitSHA, &pr.MergeMessage, &mergedAt, &mergedByID, &pr.Additions, &pr.Deletions, &pr.ChangedFiles, &pr.CommentCount, &pr.ReviewComments, &pr.Commits, &milestoneID, &pr.CreatedAt, &pr.UpdatedAt, &closedAt); err != nil {
 			return nil, 0, err
 		}
 		s.populateNullables(pr, headRepoID, mergedByID, milestoneID, mergedAt, closedAt)
@@ -160,12 +160,12 @@ func (s *PullsStore) GetNextNumber(ctx context.Context, repoID string) (int, err
 	return int(maxNum.Int64) + 1, nil
 }
 
-// AddLabel adds a label to a PR
+// AddLabel adds a label to a PR - uses composite PK (pr_id, label_id)
 func (s *PullsStore) AddLabel(ctx context.Context, pl *pulls.PRLabel) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO pr_labels (id, pr_id, label_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, pl.ID, pl.PRID, pl.LabelID, pl.CreatedAt)
+		INSERT INTO pr_labels (pr_id, label_id, created_at)
+		VALUES ($1, $2, $3)
+	`, pl.PRID, pl.LabelID, pl.CreatedAt)
 	return err
 }
 
@@ -194,12 +194,12 @@ func (s *PullsStore) ListLabels(ctx context.Context, prID string) ([]string, err
 	return labels, rows.Err()
 }
 
-// AddAssignee adds an assignee to a PR
+// AddAssignee adds an assignee to a PR - uses composite PK (pr_id, user_id)
 func (s *PullsStore) AddAssignee(ctx context.Context, pa *pulls.PRAssignee) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO pr_assignees (id, pr_id, user_id, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, pa.ID, pa.PRID, pa.UserID, pa.CreatedAt)
+		INSERT INTO pr_assignees (pr_id, user_id, created_at)
+		VALUES ($1, $2, $3)
+	`, pa.PRID, pa.UserID, pa.CreatedAt)
 	return err
 }
 
@@ -228,12 +228,12 @@ func (s *PullsStore) ListAssignees(ctx context.Context, prID string) ([]string, 
 	return assignees, rows.Err()
 }
 
-// AddReviewer adds a reviewer to a PR
+// AddReviewer adds a reviewer to a PR - uses composite PK (pr_id, user_id)
 func (s *PullsStore) AddReviewer(ctx context.Context, pr *pulls.PRReviewer) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO pr_reviewers (id, pr_id, user_id, state, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, pr.ID, pr.PRID, pr.UserID, pr.State, pr.CreatedAt)
+		INSERT INTO pr_reviewers (pr_id, user_id, state, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, pr.PRID, pr.UserID, pr.State, pr.CreatedAt)
 	return err
 }
 
@@ -246,7 +246,7 @@ func (s *PullsStore) RemoveReviewer(ctx context.Context, prID, userID string) er
 // ListReviewers lists reviewers for a PR
 func (s *PullsStore) ListReviewers(ctx context.Context, prID string) ([]*pulls.PRReviewer, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, pr_id, user_id, state, created_at
+		SELECT pr_id, user_id, state, created_at
 		FROM pr_reviewers WHERE pr_id = $1
 	`, prID)
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *PullsStore) ListReviewers(ctx context.Context, prID string) ([]*pulls.P
 	var list []*pulls.PRReviewer
 	for rows.Next() {
 		pr := &pulls.PRReviewer{}
-		if err := rows.Scan(&pr.ID, &pr.PRID, &pr.UserID, &pr.State, &pr.CreatedAt); err != nil {
+		if err := rows.Scan(&pr.PRID, &pr.UserID, &pr.State, &pr.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, pr)

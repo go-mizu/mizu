@@ -3,8 +3,6 @@ package collaborators
 import (
 	"context"
 	"time"
-
-	"github.com/go-mizu/blueprints/githome/pkg/ulid"
 )
 
 // Service implements the collaborators API
@@ -38,7 +36,6 @@ func (s *Service) Add(ctx context.Context, repoID, userID string, permission str
 	}
 
 	collab := &Collaborator{
-		ID:         ulid.New(),
 		RepoID:     repoID,
 		UserID:     userID,
 		Permission: permission,

@@ -427,7 +427,6 @@ func TestPullsStore_AddLabel(t *testing.T) {
 	pr := createTestPullRequest(t, pullsStore, repoID, userID, 1)
 
 	label := &pulls.PRLabel{
-		ID:        ulid.Make().String(),
 		PRID:      pr.ID,
 		LabelID:   "label-123",
 		CreatedAt: time.Now(),
@@ -457,7 +456,6 @@ func TestPullsStore_RemoveLabel(t *testing.T) {
 	pr := createTestPullRequest(t, pullsStore, repoID, userID, 1)
 
 	label := &pulls.PRLabel{
-		ID:        ulid.Make().String(),
 		PRID:      pr.ID,
 		LabelID:   "to-remove",
 		CreatedAt: time.Now(),
@@ -491,7 +489,6 @@ func TestPullsStore_AddAssignee(t *testing.T) {
 	assignee := createTestUser(t, usersStore)
 
 	prAssignee := &pulls.PRAssignee{
-		ID:        ulid.Make().String(),
 		PRID:      pr.ID,
 		UserID:    assignee.ID,
 		CreatedAt: time.Now(),
@@ -520,7 +517,6 @@ func TestPullsStore_RemoveAssignee(t *testing.T) {
 	assignee := createTestUser(t, usersStore)
 
 	prAssignee := &pulls.PRAssignee{
-		ID:        ulid.Make().String(),
 		PRID:      pr.ID,
 		UserID:    assignee.ID,
 		CreatedAt: time.Now(),
@@ -554,7 +550,6 @@ func TestPullsStore_AddReviewer(t *testing.T) {
 	reviewer := createTestUser(t, usersStore)
 
 	prReviewer := &pulls.PRReviewer{
-		ID:        ulid.Make().String(),
 		PRID:      pr.ID,
 		UserID:    reviewer.ID,
 		State:     "pending",
@@ -587,7 +582,6 @@ func TestPullsStore_RemoveReviewer(t *testing.T) {
 	reviewer := createTestUser(t, usersStore)
 
 	prReviewer := &pulls.PRReviewer{
-		ID:        ulid.Make().String(),
 		PRID:      pr.ID,
 		UserID:    reviewer.ID,
 		State:     "pending",

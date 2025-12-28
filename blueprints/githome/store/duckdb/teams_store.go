@@ -131,12 +131,12 @@ func (s *TeamsStore) scanTeams(rows *sql.Rows) ([]*teams.Team, error) {
 	return list, rows.Err()
 }
 
-// AddMember adds a member to a team
+// AddMember adds a member to a team - uses composite PK (team_id, user_id)
 func (s *TeamsStore) AddMember(ctx context.Context, m *teams.TeamMember) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO team_members (id, team_id, user_id, role, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, m.ID, m.TeamID, m.UserID, m.Role, m.CreatedAt)
+		INSERT INTO team_members (team_id, user_id, role, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, m.TeamID, m.UserID, m.Role, m.CreatedAt)
 	return err
 }
 
@@ -155,13 +155,13 @@ func (s *TeamsStore) UpdateMember(ctx context.Context, m *teams.TeamMember) erro
 	return err
 }
 
-// GetMember retrieves a team member
+// GetMember retrieves a team member - uses composite PK lookup
 func (s *TeamsStore) GetMember(ctx context.Context, teamID, userID string) (*teams.TeamMember, error) {
 	m := &teams.TeamMember{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, team_id, user_id, role, created_at
+		SELECT team_id, user_id, role, created_at
 		FROM team_members WHERE team_id = $1 AND user_id = $2
-	`, teamID, userID).Scan(&m.ID, &m.TeamID, &m.UserID, &m.Role, &m.CreatedAt)
+	`, teamID, userID).Scan(&m.TeamID, &m.UserID, &m.Role, &m.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -171,7 +171,7 @@ func (s *TeamsStore) GetMember(ctx context.Context, teamID, userID string) (*tea
 // ListMembers lists members of a team
 func (s *TeamsStore) ListMembers(ctx context.Context, teamID string, limit, offset int) ([]*teams.TeamMember, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, team_id, user_id, role, created_at
+		SELECT team_id, user_id, role, created_at
 		FROM team_members WHERE team_id = $1
 		ORDER BY created_at ASC
 		LIMIT $2 OFFSET $3
@@ -184,7 +184,7 @@ func (s *TeamsStore) ListMembers(ctx context.Context, teamID string, limit, offs
 	var list []*teams.TeamMember
 	for rows.Next() {
 		m := &teams.TeamMember{}
-		if err := rows.Scan(&m.ID, &m.TeamID, &m.UserID, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.TeamID, &m.UserID, &m.Role, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, m)
@@ -209,12 +209,12 @@ func (s *TeamsStore) ListByUser(ctx context.Context, orgID, userID string) ([]*t
 	return s.scanTeams(rows)
 }
 
-// AddRepo adds a repository to a team
+// AddRepo adds a repository to a team - uses composite PK (team_id, repo_id)
 func (s *TeamsStore) AddRepo(ctx context.Context, tr *teams.TeamRepo) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO team_repos (id, team_id, repo_id, permission, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, tr.ID, tr.TeamID, tr.RepoID, tr.Permission, tr.CreatedAt)
+		INSERT INTO team_repos (team_id, repo_id, permission, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, tr.TeamID, tr.RepoID, tr.Permission, tr.CreatedAt)
 	return err
 }
 
@@ -233,13 +233,13 @@ func (s *TeamsStore) UpdateRepo(ctx context.Context, tr *teams.TeamRepo) error {
 	return err
 }
 
-// GetRepo retrieves a team's repository access
+// GetRepo retrieves a team's repository access - uses composite PK lookup
 func (s *TeamsStore) GetRepo(ctx context.Context, teamID, repoID string) (*teams.TeamRepo, error) {
 	tr := &teams.TeamRepo{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, team_id, repo_id, permission, created_at
+		SELECT team_id, repo_id, permission, created_at
 		FROM team_repos WHERE team_id = $1 AND repo_id = $2
-	`, teamID, repoID).Scan(&tr.ID, &tr.TeamID, &tr.RepoID, &tr.Permission, &tr.CreatedAt)
+	`, teamID, repoID).Scan(&tr.TeamID, &tr.RepoID, &tr.Permission, &tr.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -249,7 +249,7 @@ func (s *TeamsStore) GetRepo(ctx context.Context, teamID, repoID string) (*teams
 // ListRepos lists repositories a team has access to
 func (s *TeamsStore) ListRepos(ctx context.Context, teamID string, limit, offset int) ([]*teams.TeamRepo, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, team_id, repo_id, permission, created_at
+		SELECT team_id, repo_id, permission, created_at
 		FROM team_repos WHERE team_id = $1
 		ORDER BY created_at ASC
 		LIMIT $2 OFFSET $3
@@ -262,7 +262,7 @@ func (s *TeamsStore) ListRepos(ctx context.Context, teamID string, limit, offset
 	var list []*teams.TeamRepo
 	for rows.Next() {
 		tr := &teams.TeamRepo{}
-		if err := rows.Scan(&tr.ID, &tr.TeamID, &tr.RepoID, &tr.Permission, &tr.CreatedAt); err != nil {
+		if err := rows.Scan(&tr.TeamID, &tr.RepoID, &tr.Permission, &tr.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, tr)

@@ -42,8 +42,8 @@ type Organization struct {
 }
 
 // Member represents an organization member
+// Uses composite PK (org_id, user_id) - no ID field
 type Member struct {
-	ID        string    `json:"id"`
 	OrgID     string    `json:"org_id"`
 	UserID    string    `json:"user_id"`
 	Role      string    `json:"role"`

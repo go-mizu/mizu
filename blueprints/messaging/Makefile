@@ -58,11 +58,6 @@ lint: ## Run golangci-lint
 .PHONY: help
 help: ## Show available commands
 	@echo ""
-	@echo "Messaging Blueprint - WhatsApp/Telegram-style messaging"
-	@echo ""
-	@echo "  Binary:   $(BINARY)"
-	@echo "  Data:     $(DATA_DIR)"
-	@echo ""
-	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | \
-	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
+	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""

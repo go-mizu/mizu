@@ -167,7 +167,6 @@ func (s *Service) AddMember(ctx context.Context, teamID, userID string, role str
 	}
 
 	member := &TeamMember{
-		ID:        ulid.New(),
 		TeamID:    teamID,
 		UserID:    userID,
 		Role:      role,
@@ -248,7 +247,6 @@ func (s *Service) AddRepo(ctx context.Context, teamID, repoID string, permission
 	}
 
 	teamRepo := &TeamRepo{
-		ID:         ulid.New(),
 		TeamID:     teamID,
 		RepoID:     repoID,
 		Permission: permission,
