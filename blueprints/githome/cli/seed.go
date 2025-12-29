@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/go-mizu/blueprints/githome/feature/issues"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
+	"github.com/go-mizu/blueprints/githome/pkg/seed/github"
 	"github.com/go-mizu/blueprints/githome/pkg/seed/local"
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
 	"github.com/spf13/cobra"
@@ -23,12 +25,14 @@ func newSeedCmd() *cobra.Command {
 
 Available sources:
   demo   Create sample users, repositories, and issues
-  local  Import git repositories from your local filesystem`,
+  local  Import git repositories from your local filesystem
+  github Import issues, PRs, comments from a GitHub repository`,
 	}
 
 	seedCmd.AddCommand(
 		newSeedDemoCmd(),
 		newSeedLocalCmd(),
+		newSeedGitHubCmd(),
 	)
 
 	return seedCmd
@@ -275,6 +279,131 @@ Repositories are linked (not copied) to their local paths.`,
 
 	cmd.Flags().StringVar(&scanDir, "scan-dir", defaultScanDir, "Directory to scan for git repositories")
 	cmd.Flags().BoolVar(&isPublic, "public", true, "Make imported repositories public")
+
+	return cmd
+}
+
+func newSeedGitHubCmd() *cobra.Command {
+	var token string
+	var baseURL string
+	var isPublic bool
+	var maxIssues int
+	var maxPRs int
+	var maxComments int
+	var noComments bool
+	var noPRs bool
+
+	cmd := &cobra.Command{
+		Use:   "github <owner/repo>",
+		Short: "Import issues, PRs, comments from a GitHub repository",
+		Long: `Import issues, pull requests, comments, labels, and milestones from a
+GitHub repository into GitHome for offline viewing.
+
+Requires a GitHub repository in the format 'owner/repo'.
+For higher rate limits, provide a GitHub personal access token via --token or GITHUB_TOKEN env var.
+
+Note: Without authentication, GitHub API allows 60 requests/hour.
+With a token, this increases to 5,000 requests/hour.`,
+		Example: `  githome seed github golang/go
+  githome seed github golang/go --token $GITHUB_TOKEN
+  githome seed github golang/go --max-issues 100 --max-prs 50
+  githome seed github golang/go --no-comments
+  githome seed github mycompany/repo --base-url https://github.mycompany.com/api/v3`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Parse owner/repo
+			parts := strings.SplitN(args[0], "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid repository format, expected 'owner/repo'")
+			}
+			owner, repo := parts[0], parts[1]
+
+			// Get token from env if not provided
+			if token == "" {
+				token = os.Getenv("GITHUB_TOKEN")
+			}
+
+			dbPath := dataDir + "/githome.db"
+			db, err := sql.Open("duckdb", dbPath)
+			if err != nil {
+				return fmt.Errorf("open database: %w", err)
+			}
+			defer db.Close()
+
+			_, err = duckdb.New(db)
+			if err != nil {
+				return fmt.Errorf("create store: %w", err)
+			}
+
+			ctx := context.Background()
+
+			// Ensure admin user exists
+			usersStore := duckdb.NewUsersStore(db)
+			adminUserID, err := github.EnsureAdminUser(ctx, usersStore)
+			if err != nil {
+				return fmt.Errorf("ensure admin user: %w", err)
+			}
+
+			// Create config
+			config := github.DefaultConfig(owner, repo)
+			config.Token = token
+			config.AdminUserID = adminUserID
+			config.IsPublic = isPublic
+			config.MaxIssues = maxIssues
+			config.MaxPRs = maxPRs
+			config.MaxCommentsPerItem = maxComments
+			config.ImportComments = !noComments
+			config.ImportPRs = !noPRs
+
+			if baseURL != "" {
+				config.BaseURL = baseURL
+			}
+
+			// Create seeder and run
+			seeder := github.NewSeeder(db, config)
+			result, err := seeder.Seed(ctx)
+			if err != nil {
+				return fmt.Errorf("seed github: %w", err)
+			}
+
+			// Print summary
+			slog.Info("GitHub seeding complete",
+				"repo_created", result.RepoCreated,
+				"org_created", result.OrgCreated,
+				"users_created", result.UsersCreated,
+				"issues_created", result.IssuesCreated,
+				"issues_skipped", result.IssuesSkipped,
+				"prs_created", result.PRsCreated,
+				"prs_skipped", result.PRsSkipped,
+				"comments_created", result.CommentsCreated,
+				"labels_created", result.LabelsCreated,
+				"milestones_created", result.MilestonesCreated)
+
+			if result.RateLimitRemaining < 100 {
+				slog.Warn("rate limit running low",
+					"remaining", result.RateLimitRemaining,
+					"reset", result.RateLimitReset.Format("15:04:05"))
+			}
+
+			if len(result.Errors) > 0 {
+				slog.Warn("some errors occurred during seeding", "count", len(result.Errors))
+				for _, e := range result.Errors {
+					slog.Warn("seed error", "error", e)
+				}
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&token, "token", "", "GitHub personal access token (or GITHUB_TOKEN env)")
+	cmd.Flags().StringVar(&baseURL, "base-url", "", "GitHub API base URL (for GitHub Enterprise)")
+	cmd.Flags().BoolVar(&isPublic, "public", true, "Make imported repository public")
+	cmd.Flags().IntVar(&maxIssues, "max-issues", 0, "Maximum issues to import (0 = all)")
+	cmd.Flags().IntVar(&maxPRs, "max-prs", 0, "Maximum PRs to import (0 = all)")
+	cmd.Flags().IntVar(&maxComments, "max-comments", 0, "Maximum comments per issue/PR (0 = all)")
+	cmd.Flags().BoolVar(&noComments, "no-comments", false, "Skip importing comments")
+	cmd.Flags().BoolVar(&noPRs, "no-prs", false, "Skip importing pull requests")
 
 	return cmd
 }
