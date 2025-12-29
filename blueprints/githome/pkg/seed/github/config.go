@@ -68,4 +68,7 @@ type Result struct {
 	// Rate limit info
 	RateLimitRemaining int
 	RateLimitReset     time.Time
+
+	// Fallback info
+	UsedCrawler bool // True if crawler fallback was used due to API rate limit or auth failure
 }

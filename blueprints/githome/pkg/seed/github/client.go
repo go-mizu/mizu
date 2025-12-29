@@ -3,13 +3,44 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// Error types for fallback detection.
+var (
+	ErrRateLimited    = errors.New("rate limit exceeded")
+	ErrUnauthorized   = errors.New("unauthorized: invalid or expired token")
+	ErrForbidden      = errors.New("forbidden: access denied")
+	ErrNotFound       = errors.New("not found")
+)
+
+// IsRateLimitError returns true if the error is due to rate limiting.
+func IsRateLimitError(err error) bool {
+	return errors.Is(err, ErrRateLimited)
+}
+
+// IsAuthError returns true if the error is due to authentication failure.
+func IsAuthError(err error) bool {
+	return errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden)
+}
+
+// IsFallbackError returns true if the error should trigger crawler fallback.
+func IsFallbackError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return IsRateLimitError(err) || IsAuthError(err) ||
+		strings.Contains(err.Error(), "rate limit") ||
+		strings.Contains(err.Error(), "401") ||
+		strings.Contains(err.Error(), "403")
+}
 
 // Client wraps GitHub API interactions.
 type Client struct {
@@ -294,10 +325,16 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values) 
 	}
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, rateInfo, fmt.Errorf("not found: %s", path)
+		return nil, rateInfo, fmt.Errorf("%w: %s", ErrNotFound, path)
 	}
-	if resp.StatusCode == http.StatusForbidden && rateInfo.Remaining == 0 {
-		return nil, rateInfo, fmt.Errorf("rate limit exceeded, resets at %s", rateInfo.Reset.Format(time.RFC3339))
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, rateInfo, fmt.Errorf("%w: %s", ErrUnauthorized, string(body))
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		if rateInfo.Remaining == 0 {
+			return nil, rateInfo, fmt.Errorf("%w: resets at %s", ErrRateLimited, rateInfo.Reset.Format(time.RFC3339))
+		}
+		return nil, rateInfo, fmt.Errorf("%w: %s", ErrForbidden, string(body))
 	}
 	if resp.StatusCode >= 400 {
 		return nil, rateInfo, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))

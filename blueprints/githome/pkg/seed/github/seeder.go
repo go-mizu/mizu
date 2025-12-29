@@ -14,9 +14,13 @@ import (
 
 // Seeder imports GitHub repository data into GitHome.
 type Seeder struct {
-	db     *sql.DB
-	client *Client
-	config Config
+	db      *sql.DB
+	client  *Client
+	crawler *Crawler
+	config  Config
+
+	// useCrawler indicates we should use the crawler instead of the API
+	useCrawler bool
 
 	// Stores
 	usersStore      *duckdb.UsersStore
@@ -37,10 +41,12 @@ type Seeder struct {
 // NewSeeder creates a new GitHub seeder.
 func NewSeeder(db *sql.DB, config Config) *Seeder {
 	client := NewClient(config.BaseURL, config.Token)
+	crawler := NewCrawler(config.BaseURL)
 
 	return &Seeder{
 		db:              db,
 		client:          client,
+		crawler:         crawler,
 		config:          config,
 		usersStore:      duckdb.NewUsersStore(db),
 		orgsStore:       duckdb.NewOrgsStore(db),
@@ -78,7 +84,17 @@ func (s *Seeder) Seed(ctx context.Context) (*Result, error) {
 	// 1. Fetch repository metadata
 	ghRepo, rateInfo, err := s.client.GetRepository(ctx, s.config.Owner, s.config.Repo)
 	if err != nil {
-		return nil, fmt.Errorf("fetch repository: %w", err)
+		if IsFallbackError(err) {
+			slog.Warn("API failed, switching to crawler fallback", "error", err)
+			s.useCrawler = true
+			result.UsedCrawler = true
+			ghRepo, err = s.crawler.FetchRepository(ctx, s.config.Owner, s.config.Repo)
+			if err != nil {
+				return nil, fmt.Errorf("fetch repository (crawler): %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("fetch repository: %w", err)
+		}
 	}
 	s.updateRateInfo(result, rateInfo)
 
@@ -137,7 +153,8 @@ func (s *Seeder) Seed(ctx context.Context) (*Result, error) {
 		"labels", result.LabelsCreated,
 		"milestones", result.MilestonesCreated,
 		"users", result.UsersCreated,
-		"errors", len(result.Errors))
+		"errors", len(result.Errors),
+		"usedCrawler", result.UsedCrawler)
 
 	return result, nil
 }
@@ -242,11 +259,27 @@ func (s *Seeder) ensureRepository(ctx context.Context, gh *ghRepository, ownerID
 func (s *Seeder) importLabels(ctx context.Context, repoID int64, result *Result) error {
 	page := 1
 	for {
-		ghLabels, rateInfo, err := s.client.ListLabels(ctx, s.config.Owner, s.config.Repo, &ListOptions{
-			Page:    page,
-			PerPage: 100,
-		})
-		s.updateRateInfo(result, rateInfo)
+		var ghLabels []*ghLabel
+		var err error
+
+		if s.useCrawler {
+			ghLabels, err = s.crawler.FetchLabels(ctx, s.config.Owner, s.config.Repo)
+		} else {
+			var rateInfo *RateLimitInfo
+			ghLabels, rateInfo, err = s.client.ListLabels(ctx, s.config.Owner, s.config.Repo, &ListOptions{
+				Page:    page,
+				PerPage: 100,
+			})
+			s.updateRateInfo(result, rateInfo)
+
+			// Switch to crawler on rate limit or auth error
+			if IsFallbackError(err) {
+				slog.Warn("API failed during labels import, switching to crawler", "error", err)
+				s.useCrawler = true
+				result.UsedCrawler = true
+				ghLabels, err = s.crawler.FetchLabels(ctx, s.config.Owner, s.config.Repo)
+			}
+		}
 		if err != nil {
 			return err
 		}
@@ -279,7 +312,8 @@ func (s *Seeder) importLabels(ctx context.Context, repoID int64, result *Result)
 			slog.Debug("created label", "name", label.Name)
 		}
 
-		if len(ghLabels) < 100 {
+		// Crawler fetches all at once, break after first iteration
+		if s.useCrawler || len(ghLabels) < 100 {
 			break
 		}
 		page++
@@ -291,6 +325,12 @@ func (s *Seeder) importLabels(ctx context.Context, repoID int64, result *Result)
 
 // importMilestones fetches and imports all milestones.
 func (s *Seeder) importMilestones(ctx context.Context, repoID int64, result *Result) error {
+	// Milestones are not supported via crawler, skip if in crawler mode
+	if s.useCrawler {
+		slog.Info("skipping milestones import (crawler mode)")
+		return nil
+	}
+
 	page := 1
 	for {
 		ghMilestones, rateInfo, err := s.client.ListMilestones(ctx, s.config.Owner, s.config.Repo, &ListOptions{
@@ -299,6 +339,14 @@ func (s *Seeder) importMilestones(ctx context.Context, repoID int64, result *Res
 			State:   "all",
 		})
 		s.updateRateInfo(result, rateInfo)
+
+		// Switch to crawler on rate limit or auth error (but skip milestones)
+		if IsFallbackError(err) {
+			slog.Warn("API failed during milestones import, switching to crawler (skipping milestones)", "error", err)
+			s.useCrawler = true
+			result.UsedCrawler = true
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -362,12 +410,28 @@ func (s *Seeder) importIssues(ctx context.Context, repoID int64, result *Result)
 			break
 		}
 
-		ghIssues, rateInfo, err := s.client.ListIssues(ctx, s.config.Owner, s.config.Repo, &ListOptions{
-			Page:    page,
-			PerPage: 100,
-			State:   "all",
-		})
-		s.updateRateInfo(result, rateInfo)
+		var ghIssues []*ghIssue
+		var err error
+
+		if s.useCrawler {
+			ghIssues, err = s.crawler.FetchIssues(ctx, s.config.Owner, s.config.Repo, page, "all")
+		} else {
+			var rateInfo *RateLimitInfo
+			ghIssues, rateInfo, err = s.client.ListIssues(ctx, s.config.Owner, s.config.Repo, &ListOptions{
+				Page:    page,
+				PerPage: 100,
+				State:   "all",
+			})
+			s.updateRateInfo(result, rateInfo)
+
+			// Switch to crawler on rate limit or auth error
+			if IsFallbackError(err) {
+				slog.Warn("API failed during issues import, switching to crawler", "error", err)
+				s.useCrawler = true
+				result.UsedCrawler = true
+				ghIssues, err = s.crawler.FetchIssues(ctx, s.config.Owner, s.config.Repo, page, "all")
+			}
+		}
 		if err != nil {
 			return err
 		}
@@ -480,13 +544,33 @@ func (s *Seeder) importIssueComments(ctx context.Context, repoID, issueID int64,
 			break
 		}
 
-		ghComments, rateInfo, err := s.client.ListIssueComments(ctx, s.config.Owner, s.config.Repo, issueNumber, &ListOptions{
-			Page:    page,
-			PerPage: 100,
-		})
-		s.updateRateInfo(result, rateInfo)
-		if err != nil {
-			return err
+		var ghComments []*ghComment
+		var err error
+
+		if s.useCrawler {
+			// Crawler fetches all comments at once
+			ghComments, err = s.crawler.FetchComments(ctx, s.config.Owner, s.config.Repo, issueNumber)
+			if err != nil {
+				return err
+			}
+		} else {
+			var rateInfo *RateLimitInfo
+			ghComments, rateInfo, err = s.client.ListIssueComments(ctx, s.config.Owner, s.config.Repo, issueNumber, &ListOptions{
+				Page:    page,
+				PerPage: 100,
+			})
+			s.updateRateInfo(result, rateInfo)
+
+			// Switch to crawler on rate limit or auth error
+			if IsFallbackError(err) {
+				slog.Warn("API failed during comments import, switching to crawler", "error", err)
+				s.useCrawler = true
+				result.UsedCrawler = true
+				ghComments, err = s.crawler.FetchComments(ctx, s.config.Owner, s.config.Repo, issueNumber)
+			}
+			if err != nil {
+				return err
+			}
 		}
 
 		if len(ghComments) == 0 {
@@ -521,7 +605,8 @@ func (s *Seeder) importIssueComments(ctx context.Context, repoID, issueID int64,
 			total++
 		}
 
-		if len(ghComments) < 100 {
+		// Crawler fetches all at once, break after first iteration
+		if s.useCrawler || len(ghComments) < 100 {
 			break
 		}
 		page++
@@ -540,12 +625,28 @@ func (s *Seeder) importPullRequests(ctx context.Context, repoID int64, result *R
 			break
 		}
 
-		ghPRs, rateInfo, err := s.client.ListPullRequests(ctx, s.config.Owner, s.config.Repo, &ListOptions{
-			Page:    page,
-			PerPage: 100,
-			State:   "all",
-		})
-		s.updateRateInfo(result, rateInfo)
+		var ghPRs []*ghPullRequest
+		var err error
+
+		if s.useCrawler {
+			ghPRs, err = s.crawler.FetchPullRequests(ctx, s.config.Owner, s.config.Repo, page, "all")
+		} else {
+			var rateInfo *RateLimitInfo
+			ghPRs, rateInfo, err = s.client.ListPullRequests(ctx, s.config.Owner, s.config.Repo, &ListOptions{
+				Page:    page,
+				PerPage: 100,
+				State:   "all",
+			})
+			s.updateRateInfo(result, rateInfo)
+
+			// Switch to crawler on rate limit or auth error
+			if IsFallbackError(err) {
+				slog.Warn("API failed during PRs import, switching to crawler", "error", err)
+				s.useCrawler = true
+				result.UsedCrawler = true
+				ghPRs, err = s.crawler.FetchPullRequests(ctx, s.config.Owner, s.config.Repo, page, "all")
+			}
+		}
 		if err != nil {
 			return err
 		}
