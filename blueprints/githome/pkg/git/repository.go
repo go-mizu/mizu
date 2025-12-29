@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -946,26 +948,20 @@ type TreeEntryWithCommit struct {
 
 // GetTreeWithLastCommits returns tree entries with the last commit that modified each entry
 func (r *Repository) GetTreeWithLastCommits(sha string, maxCommits int) ([]*TreeEntryWithCommit, error) {
-	// Get the basic tree first
-	tree, err := r.GetTree(sha)
-	if err != nil {
-		return nil, err
-	}
-
 	if maxCommits <= 0 {
 		maxCommits = 500 // Default limit
 	}
 
-	// Get commit for the tree SHA
+	// Get commit object first
 	commit, err := r.repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
-		// If sha is a tree SHA, not a commit SHA, we can't get commit info
-		// Return entries without commit info
-		entries := make([]*TreeEntryWithCommit, len(tree.Entries))
-		for i, e := range tree.Entries {
-			entries[i] = &TreeEntryWithCommit{TreeEntry: e}
-		}
-		return entries, nil
+		return nil, fmt.Errorf("get commit: %w", err)
+	}
+
+	// Get tree from commit
+	tree, err := r.GetTree(commit.TreeHash.String())
+	if err != nil {
+		return nil, err
 	}
 
 	// Map to track last commit per file
@@ -975,7 +971,7 @@ func (r *Repository) GetTreeWithLastCommits(sha string, maxCommits int) ([]*Tree
 		remainingFiles[e.Name] = true
 	}
 
-	// Walk commit history to find last commit for each file
+	// Phase 1: Walk recent commit history to find last commit for recently changed files
 	iter, err := r.repo.Log(&git.LogOptions{From: commit.Hash})
 	if err != nil {
 		return nil, fmt.Errorf("log: %w", err)
@@ -1038,8 +1034,179 @@ func (r *Repository) GetTreeWithLastCommits(sha string, maxCommits int) ([]*Tree
 		return nil
 	})
 
+	// Phase 2: For files not found in recent commits, use native git command (much faster)
+	if len(remainingFiles) > 0 {
+		type result struct {
+			fileName string
+			commit   *object.Commit
+		}
+		results := make(chan result, len(remainingFiles))
+		var wg sync.WaitGroup
+
+		for fileName := range remainingFiles {
+			wg.Add(1)
+			go func(fn string) {
+				defer wg.Done()
+				// Use native git log command - much faster than go-git for file history
+				cmd := exec.Command("git", "log", "-1", "--format=%H", "--", fn)
+				cmd.Dir = r.path
+				output, err := cmd.Output()
+				if err != nil {
+					return
+				}
+				sha := strings.TrimSpace(string(output))
+				if sha == "" {
+					return
+				}
+				// Get the commit object from go-git
+				if c, err := r.repo.CommitObject(plumbing.NewHash(sha)); err == nil {
+					results <- result{fileName: fn, commit: c}
+				}
+			}(fileName)
+		}
+
+		// Close results channel when all goroutines complete
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		// Collect results
+		for r := range results {
+			lastCommits[r.fileName] = r.commit
+		}
+	}
+
 	if err != nil && err != storer.ErrStop {
 		return nil, fmt.Errorf("iterate commits: %w", err)
+	}
+
+	// Build result
+	entries := make([]*TreeEntryWithCommit, len(tree.Entries))
+	for i, e := range tree.Entries {
+		entry := &TreeEntryWithCommit{TreeEntry: e}
+		if c, ok := lastCommits[e.Name]; ok {
+			parents := make([]string, 0, c.NumParents())
+			for _, p := range c.ParentHashes {
+				parents = append(parents, p.String())
+			}
+			entry.LastCommit = &Commit{
+				SHA:     c.Hash.String(),
+				TreeSHA: c.TreeHash.String(),
+				Parents: parents,
+				Author: Signature{
+					Name:  c.Author.Name,
+					Email: c.Author.Email,
+					When:  c.Author.When,
+				},
+				Committer: Signature{
+					Name:  c.Committer.Name,
+					Email: c.Committer.Email,
+					When:  c.Committer.When,
+				},
+				Message: c.Message,
+			}
+		}
+		entries[i] = entry
+	}
+
+	return entries, nil
+}
+
+// GetTreeWithLastCommitsForPath returns tree entries for a specific path with last commit info
+func (r *Repository) GetTreeWithLastCommitsForPath(sha, dirPath string) ([]*TreeEntryWithCommit, error) {
+	// Get commit object first
+	commit, err := r.repo.CommitObject(plumbing.NewHash(sha))
+	if err != nil {
+		return nil, fmt.Errorf("get commit: %w", err)
+	}
+
+	// Get tree from commit
+	commitTree, err := commit.Tree()
+	if err != nil {
+		return nil, err
+	}
+
+	// Navigate to target directory
+	dirPath = strings.TrimPrefix(dirPath, "/")
+	dirPath = strings.TrimSuffix(dirPath, "/")
+
+	var targetTree *object.Tree
+	if dirPath == "" {
+		targetTree = commitTree
+	} else {
+		targetTree, err = commitTree.Tree(dirPath)
+		if err != nil {
+			return nil, fmt.Errorf("tree not found: %w", err)
+		}
+	}
+
+	// Build basic tree entries
+	tree := &Tree{Entries: make([]TreeEntry, 0, len(targetTree.Entries))}
+	for _, entry := range targetTree.Entries {
+		entryType := ObjectBlob
+		mode := ModeFile
+		if entry.Mode == filemode.Dir {
+			entryType = ObjectTree
+			mode = ModeDir
+		} else if entry.Mode == filemode.Executable {
+			mode = ModeExecutable
+		} else if entry.Mode == filemode.Symlink {
+			mode = ModeSymlink
+		} else if entry.Mode == filemode.Submodule {
+			mode = ModeSubmodule
+		}
+		tree.Entries = append(tree.Entries, TreeEntry{
+			Name: entry.Name,
+			Mode: mode,
+			Type: entryType,
+			SHA:  entry.Hash.String(),
+		})
+	}
+
+	// Get last commit info for each entry using native git (fast)
+	lastCommits := make(map[string]*object.Commit)
+	type result struct {
+		fileName string
+		commit   *object.Commit
+	}
+	results := make(chan result, len(tree.Entries))
+	var wg sync.WaitGroup
+
+	for _, e := range tree.Entries {
+		wg.Add(1)
+		go func(fn string) {
+			defer wg.Done()
+			// Build full path for git log
+			fullPath := fn
+			if dirPath != "" {
+				fullPath = dirPath + "/" + fn
+			}
+			// Use native git log command - much faster than go-git
+			cmd := exec.Command("git", "log", "-1", "--format=%H", "--", fullPath)
+			cmd.Dir = r.path
+			output, err := cmd.Output()
+			if err != nil {
+				return
+			}
+			sha := strings.TrimSpace(string(output))
+			if sha == "" {
+				return
+			}
+			// Get the commit object from go-git
+			if c, err := r.repo.CommitObject(plumbing.NewHash(sha)); err == nil {
+				results <- result{fileName: fn, commit: c}
+			}
+		}(e.Name)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for r := range results {
+		lastCommits[r.fileName] = r.commit
 	}
 
 	// Build result

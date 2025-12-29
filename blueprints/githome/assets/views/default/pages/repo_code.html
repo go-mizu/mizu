@@ -113,7 +113,7 @@
         {{if .Tree}}
         <div class="Box mb-4">
             <div class="Box-header d-flex flex-items-center" style="padding: 8px 16px;">
-                <span class="color-fg-muted f6">Latest commit</span>
+                <span class="color-fg-muted f6">Files</span>
             </div>
             {{range .Tree}}
             <div class="Box-row Box-row--hover-blue d-flex flex-items-center" style="padding: 8px 16px;">
@@ -124,11 +124,18 @@
                     <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688Z"/>
                     {{end}}
                 </svg>
-                <a href="/{{$.Repo.FullName}}/{{if eq .Type "dir"}}tree{{else}}blob{{end}}/{{$.CurrentBranch}}/{{.Path}}" class="Link--primary flex-1">
+                <a href="/{{$.Repo.FullName}}/{{if eq .Type "dir"}}tree{{else}}blob{{end}}/{{$.CurrentBranch}}/{{.Path}}" class="Link--primary" style="min-width: 180px;">
                     {{.Name}}
                 </a>
-                {{if .LastCommit}}
-                <span class="color-fg-muted f6 text-right" style="min-width: 200px;">{{.LastCommit}}</span>
+                {{if .LastCommitMessage}}
+                <a href="/{{$.Repo.FullName}}/commit/{{.LastCommitSHA}}" class="Link--secondary flex-1 text-truncate ml-3" title="{{.LastCommitMessage}}">
+                    {{.LastCommitMessage}}
+                </a>
+                {{else}}
+                <span class="flex-1"></span>
+                {{end}}
+                {{if .LastCommitDate}}
+                <span class="color-fg-muted f6 text-right text-nowrap ml-3" style="min-width: 100px;">{{.LastCommitDate}}</span>
                 {{end}}
             </div>
             {{end}}
