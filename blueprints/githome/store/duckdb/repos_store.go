@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/repos"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // ReposStore handles repository data access.
@@ -394,6 +395,84 @@ func (s *ReposStore) IncrementForks(ctx context.Context, repoID int64, delta int
 		UPDATE repositories SET forks_count = forks_count + $2, updated_at = $3 WHERE id = $1
 	`, repoID, delta, time.Now())
 	return err
+}
+
+// ListSeededContributors returns contributors seeded from GitHub for a repository.
+func (s *ReposStore) ListSeededContributors(ctx context.Context, repoID int64, opts *repos.ListOpts) ([]*repos.Contributor, error) {
+	page, perPage := 1, 30
+	if opts != nil {
+		if opts.Page > 0 {
+			page = opts.Page
+		}
+		if opts.PerPage > 0 {
+			perPage = opts.PerPage
+		}
+	}
+
+	query := `
+		SELECT u.id, u.node_id, u.login, u.name, u.email, u.avatar_url, u.type, u.site_admin, rc.contributions
+		FROM repo_contributors rc
+		JOIN users u ON rc.user_id = u.id
+		WHERE rc.repo_id = $1
+		ORDER BY rc.contributions DESC`
+	query = applyPagination(query, page, perPage)
+
+	rows, err := s.db.QueryContext(ctx, query, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contributors []*repos.Contributor
+	for rows.Next() {
+		var id int64
+		var nodeID, login, name, avatarURL, userType string
+		var email sql.NullString
+		var siteAdmin bool
+		var contributions int
+
+		if err := rows.Scan(&id, &nodeID, &login, &name, &email, &avatarURL, &userType, &siteAdmin, &contributions); err != nil {
+			return nil, err
+		}
+
+		emailStr := ""
+		if email.Valid {
+			emailStr = email.String
+		}
+
+		contributors = append(contributors, &repos.Contributor{
+			SimpleUser: &users.SimpleUser{
+				ID:        id,
+				NodeID:    nodeID,
+				Login:     login,
+				Name:      name,
+				Email:     emailStr,
+				AvatarURL: avatarURL,
+				Type:      userType,
+				SiteAdmin: siteAdmin,
+			},
+			Contributions: contributions,
+		})
+	}
+	return contributors, rows.Err()
+}
+
+// CountSeededContributors returns the total number of seeded contributors for a repository.
+func (s *ReposStore) CountSeededContributors(ctx context.Context, repoID int64) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM repo_contributors WHERE repo_id = $1
+	`, repoID).Scan(&count)
+	return count, err
+}
+
+// HasSeededContributors checks if a repository has seeded contributors.
+func (s *ReposStore) HasSeededContributors(ctx context.Context, repoID int64) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM repo_contributors WHERE repo_id = $1)
+	`, repoID).Scan(&exists)
+	return exists, err
 }
 
 // Helper function

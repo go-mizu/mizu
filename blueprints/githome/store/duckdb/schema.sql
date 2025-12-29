@@ -684,3 +684,15 @@ CREATE TABLE IF NOT EXISTS commit_statuses (
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- Repository Contributors (seeded from GitHub)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS repo_contributors (
+    repo_id       BIGINT NOT NULL,
+    user_id       BIGINT NOT NULL,
+    contributions INTEGER NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (repo_id, user_id)
+);

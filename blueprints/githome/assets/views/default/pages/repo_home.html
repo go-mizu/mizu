@@ -377,9 +377,9 @@
                                 {{.Repo.License}} license
                             </a>
                             {{end}}
-                            <a href="/{{.Repo.FullName}}/activity" class="Link--muted d-flex flex-items-center py-1">
+                            <a href="/{{.Repo.FullName}}/pulse" class="Link--muted d-flex flex-items-center py-1">
                                 <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                                    <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/>
+                                    <path d="M6 2c.306 0 .582.187.696.471L10 10.731l1.304-3.26A.751.751 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5h-2.742l-1.812 4.528a.751.751 0 0 1-1.392 0L6 4.77 4.696 8.03A.75.75 0 0 1 4 8.5H.75a.75.75 0 0 1 0-1.5h2.742l1.812-4.529A.751.751 0 0 1 6 2Z"/>
                                 </svg>
                                 Activity
                             </a>
@@ -391,34 +391,29 @@
                                 <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                     <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>
                                 </svg>
-                                <span class="text-bold">{{.Repo.StargazersCount}}</span>&nbsp;stars
+                                <span class="text-bold">{{formatCount .Repo.StargazersCount}}</span>&nbsp;stars
                             </a>
                             <a href="/{{.Repo.FullName}}/watchers" class="Link--muted d-flex flex-items-center py-1">
                                 <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                     <path d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C11.67 13.008 9.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2Z"/>
                                 </svg>
-                                <span class="text-bold">{{.Repo.WatchersCount}}</span>&nbsp;watching
+                                <span class="text-bold">{{formatCount .Repo.WatchersCount}}</span>&nbsp;watching
                             </a>
                             <a href="/{{.Repo.FullName}}/forks" class="Link--muted d-flex flex-items-center py-1">
                                 <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                     <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/>
                                 </svg>
-                                <span class="text-bold">{{.Repo.ForksCount}}</span>&nbsp;forks
+                                <span class="text-bold">{{formatCount .Repo.ForksCount}}</span>&nbsp;forks
                             </a>
                         </div>
                     </div>
                 </div>
 
                 <!-- Releases Section -->
-                {{if .LatestRelease}}
                 <div class="BorderGrid-row">
                     <div class="BorderGrid-cell">
-                        <h2 class="h4 mb-3">
-                            <a href="/{{.Repo.FullName}}/releases" class="Link--primary">Releases</a>
-                            {{if .ReleaseCount}}
-                            <span class="Counter ml-1">{{.ReleaseCount}}</span>
-                            {{end}}
-                        </h2>
+                        <h2 class="h4 mb-3">Releases</h2>
+                        {{if .LatestRelease}}
                         <a href="/{{.Repo.FullName}}/releases/tag/{{.LatestRelease.TagName}}" class="Link--primary d-flex flex-items-center">
                             <svg class="octicon mr-2 color-fg-success" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                 <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/>
@@ -427,34 +422,55 @@
                             <span class="Label Label--success ml-2">Latest</span>
                         </a>
                         <span class="color-fg-muted f6 d-block mt-1">{{.LatestRelease.TimeAgo}}</span>
+                        {{if gt .TagCount 0}}
+                        <a href="/{{.Repo.FullName}}/tags" class="Link--muted f6 mt-2 d-flex flex-items-center">
+                            <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/>
+                            </svg>
+                            <span class="text-bold">{{.TagCount}}</span>&nbsp;tags
+                        </a>
+                        {{end}}
+                        {{else}}
+                        {{if gt .TagCount 0}}
+                        <a href="/{{.Repo.FullName}}/tags" class="Link--muted d-flex flex-items-center">
+                            <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                <path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25ZM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/>
+                            </svg>
+                            <span class="text-bold">{{.TagCount}}</span>&nbsp;tags
+                        </a>
+                        {{else}}
+                        <p class="color-fg-muted f6">No releases published</p>
+                        {{end}}
+                        {{end}}
                     </div>
                 </div>
-                {{end}}
 
                 <!-- Contributors Section -->
                 {{if .Contributors}}
                 <div class="BorderGrid-row">
                     <div class="BorderGrid-cell">
                         <h2 class="h4 mb-3">
-                            <a href="/{{.Repo.FullName}}/graphs/contributors" class="Link--primary">Contributors</a>
+                            <a href="/{{.Repo.FullName}}/graphs/contributors" class="Link--primary text-normal">Contributors</a>
                             {{if .ContributorCount}}
-                            <span class="Counter ml-1">{{.ContributorCount}}</span>
+                            <span class="Counter ml-1">{{formatCountComma .ContributorCount}}</span>
                             {{end}}
                         </h2>
-                        <div class="d-flex flex-wrap">
+                        <ul class="list-style-none d-flex flex-wrap mb-n1">
                             {{range .Contributors}}
-                            <a href="/{{.Login}}" class="mr-1 mb-1" title="{{.Login}}">
-                                {{if .AvatarURL}}
-                                <img src="{{.AvatarURL}}" alt="@{{.Login}}" class="Avatar Avatar--small" width="32" height="32" style="border-radius: 50%;">
-                                {{else}}
-                                <span class="Avatar Avatar--small Avatar--letter" style="--avatar-color: #6e40c9; width: 32px; height: 32px;">{{firstChar .Login}}</span>
-                                {{end}}
-                            </a>
+                            <li class="mr-1 mb-1">
+                                <a href="/{{.Login}}" title="{{.Login}}">
+                                    {{if .AvatarURL}}
+                                    <img src="{{.AvatarURL}}" alt="@{{.Login}}" class="avatar avatar-user" width="32" height="32" style="border-radius: 50%;">
+                                    {{else}}
+                                    <span class="avatar avatar-user" style="--avatar-color: #6e40c9; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: #6e40c9; color: white; font-size: 14px; font-weight: 500;">{{firstChar .Login}}</span>
+                                    {{end}}
+                                </a>
+                            </li>
                             {{end}}
-                        </div>
-                        {{if gt .ContributorCount 10}}
-                        <a href="/{{.Repo.FullName}}/graphs/contributors" class="Link--muted f6 mt-2 d-block">
-                            + {{subtract .ContributorCount 10}} contributors
+                        </ul>
+                        {{if gt .ContributorCount 14}}
+                        <a href="/{{.Repo.FullName}}/graphs/contributors" class="Link--primary f6 mt-2 d-block">
+                            + {{formatCountComma (subtract .ContributorCount 14)}} contributors
                         </a>
                         {{end}}
                     </div>
@@ -472,15 +488,12 @@
                         </div>
                         <!-- Language list -->
                         <ul class="list-style-none">
-                            {{range $lang, $info := .Languages}}
+                            {{range $lang, $bytes := .Languages}}
                             <li class="d-inline-flex flex-items-center mr-3 mb-1">
                                 <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" style="color: {{if eq $lang "Go"}}#00ADD8{{else if eq $lang "JavaScript"}}#f1e05a{{else if eq $lang "TypeScript"}}#3178c6{{else if eq $lang "Python"}}#3572A5{{else if eq $lang "Rust"}}#dea584{{else if eq $lang "Java"}}#b07219{{else if eq $lang "C"}}#555555{{else if eq $lang "C++"}}#f34b7d{{else if eq $lang "Ruby"}}#701516{{else if eq $lang "PHP"}}#4F5D95{{else if eq $lang "Swift"}}#F05138{{else if eq $lang "Kotlin"}}#A97BFF{{else if eq $lang "Shell"}}#89e051{{else if eq $lang "HTML"}}#e34c26{{else if eq $lang "CSS"}}#563d7c{{else}}#8b8b8b{{end}};">
                                     <path fill="currentColor" d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/>
                                 </svg>
                                 <span class="color-fg-default text-bold ml-1">{{$lang}}</span>
-                                {{if $info.Percentage}}
-                                <span class="color-fg-muted ml-1">{{$info.Percentage}}%</span>
-                                {{end}}
                             </li>
                             {{end}}
                         </ul>

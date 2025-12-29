@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"embed"
 	"encoding/hex"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"path/filepath"
@@ -193,6 +194,40 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		},
 		"formatNumber": func(n int) string {
 			// Format numbers with thousand separators (e.g., 1,234,567)
+			str := strconv.Itoa(n)
+			if n < 1000 {
+				return str
+			}
+			// Insert commas from right to left
+			var result []byte
+			for i, c := range str {
+				if i > 0 && (len(str)-i)%3 == 0 {
+					result = append(result, ',')
+				}
+				result = append(result, byte(c))
+			}
+			return string(result)
+		},
+		"formatCount": func(n int) string {
+			// Format large numbers like GitHub (e.g., 132k, 18.7k)
+			if n >= 1000000 {
+				val := float64(n) / 1000000.0
+				if val == float64(int(val)) {
+					return fmt.Sprintf("%dm", int(val))
+				}
+				return fmt.Sprintf("%.1fm", val)
+			}
+			if n >= 1000 {
+				val := float64(n) / 1000.0
+				if val == float64(int(val)) {
+					return fmt.Sprintf("%dk", int(val))
+				}
+				return fmt.Sprintf("%.1fk", val)
+			}
+			return strconv.Itoa(n)
+		},
+		"formatCountComma": func(n int) string {
+			// Format numbers with thousand separators (e.g., 2,276)
 			str := strconv.Itoa(n)
 			if n < 1000 {
 				return str

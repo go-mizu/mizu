@@ -147,12 +147,21 @@ func (s *Seeder) Seed(ctx context.Context) (*Result, error) {
 		}
 	}
 
+	// 8. Import contributors
+	if s.config.ImportContributors {
+		if err := s.importContributors(ctx, repo.ID, result); err != nil {
+			slog.Warn("failed to import contributors", "error", err)
+			result.Errors = append(result.Errors, fmt.Errorf("import contributors: %w", err))
+		}
+	}
+
 	slog.Info("GitHub seed complete",
 		"issues", result.IssuesCreated,
 		"prs", result.PRsCreated,
 		"comments", result.CommentsCreated,
 		"labels", result.LabelsCreated,
 		"milestones", result.MilestonesCreated,
+		"contributors", result.ContributorsCreated,
 		"users", result.UsersCreated,
 		"errors", len(result.Errors),
 		"usedCrawler", result.UsedCrawler)
@@ -1281,6 +1290,96 @@ func (s *Seeder) addPRAssignee(ctx context.Context, prID, userID int64) error {
 		ON CONFLICT DO NOTHING
 	`, prID, userID)
 	return err
+}
+
+// importContributors fetches and imports all contributors.
+func (s *Seeder) importContributors(ctx context.Context, repoID int64, result *Result) error {
+	// Contributors are not supported via crawler, skip if in crawler mode
+	if s.useCrawler {
+		slog.Info("skipping contributors import (crawler mode)")
+		return nil
+	}
+
+	page := 1
+	total := 0
+	for {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			slog.Info("contributors import cancelled")
+			return ctx.Err()
+		default:
+		}
+
+		// Check max limit
+		if s.config.MaxContributors > 0 && total >= s.config.MaxContributors {
+			break
+		}
+
+		ghContributors, rateInfo, err := s.client.ListContributors(ctx, s.config.Owner, s.config.Repo, &ListOptions{
+			Page:    page,
+			PerPage: 100,
+		})
+		s.updateRateInfo(result, rateInfo)
+
+		// Switch to crawler on rate limit or auth error (but skip contributors)
+		if IsFallbackError(err) {
+			slog.Warn("API failed during contributors import, switching to crawler (skipping contributors)", "error", err)
+			s.useCrawler = true
+			result.UsedCrawler = true
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		if len(ghContributors) == 0 {
+			break
+		}
+
+		for _, ghContrib := range ghContributors {
+			// Check max limit
+			if s.config.MaxContributors > 0 && total >= s.config.MaxContributors {
+				break
+			}
+
+			// Ensure user exists
+			ghUser := &ghUser{
+				ID:        ghContrib.ID,
+				Login:     ghContrib.Login,
+				AvatarURL: ghContrib.AvatarURL,
+				HTMLURL:   ghContrib.HTMLURL,
+				Type:      ghContrib.Type,
+			}
+			userID, err := s.ensureUser(ctx, ghUser, result)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("ensure contributor %s: %w", ghContrib.Login, err))
+				continue
+			}
+
+			// Insert contributor record
+			_, err = s.db.ExecContext(ctx, `
+				INSERT INTO repo_contributors (repo_id, user_id, contributions)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (repo_id, user_id) DO UPDATE SET contributions = $3
+			`, repoID, userID, ghContrib.Contributions)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("create contributor %s: %w", ghContrib.Login, err))
+				continue
+			}
+
+			result.ContributorsCreated++
+			total++
+		}
+
+		if len(ghContributors) < 100 {
+			break
+		}
+		page++
+	}
+
+	slog.Info("imported contributors", "count", result.ContributorsCreated)
+	return nil
 }
 
 // updateRateInfo updates the result with rate limit information.

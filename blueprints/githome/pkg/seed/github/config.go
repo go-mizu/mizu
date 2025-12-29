@@ -17,16 +17,18 @@ type Config struct {
 	IsPublic    bool   // Make imported repo public (default: true)
 
 	// Import options
-	ImportIssues     bool // Import issues (default: true)
-	ImportPRs        bool // Import pull requests (default: true)
-	ImportComments   bool // Import comments (default: true)
-	ImportLabels     bool // Import labels (default: true)
-	ImportMilestones bool // Import milestones (default: true)
+	ImportIssues       bool // Import issues (default: true)
+	ImportPRs          bool // Import pull requests (default: true)
+	ImportComments     bool // Import comments (default: true)
+	ImportLabels       bool // Import labels (default: true)
+	ImportMilestones   bool // Import milestones (default: true)
+	ImportContributors bool // Import contributors (default: true)
 
 	// Limits
 	MaxIssues          int // Max issues to import (0 = all)
 	MaxPRs             int // Max PRs to import (0 = all)
 	MaxCommentsPerItem int // Max comments per issue/PR (0 = all)
+	MaxContributors    int // Max contributors to import (0 = all)
 
 	// Single item import
 	SingleIssue int // Import only this issue number (0 = all)
@@ -36,30 +38,32 @@ type Config struct {
 // DefaultConfig returns a config with sensible defaults.
 func DefaultConfig(owner, repo string) Config {
 	return Config{
-		Owner:            owner,
-		Repo:             repo,
-		BaseURL:          "https://api.github.com",
-		AdminUserID:      1,
-		IsPublic:         true,
-		ImportIssues:     true,
-		ImportPRs:        true,
-		ImportComments:   true,
-		ImportLabels:     true,
-		ImportMilestones: true,
+		Owner:              owner,
+		Repo:               repo,
+		BaseURL:            "https://api.github.com",
+		AdminUserID:        1,
+		IsPublic:           true,
+		ImportIssues:       true,
+		ImportPRs:          true,
+		ImportComments:     true,
+		ImportLabels:       true,
+		ImportMilestones:   true,
+		ImportContributors: true,
 	}
 }
 
 // Result contains the result of a GitHub seeding operation.
 type Result struct {
 	// Counts
-	RepoCreated       bool
-	OrgCreated        bool
-	UsersCreated      int
-	IssuesCreated     int
-	PRsCreated        int
-	CommentsCreated   int
-	LabelsCreated     int
-	MilestonesCreated int
+	RepoCreated         bool
+	OrgCreated          bool
+	UsersCreated        int
+	IssuesCreated       int
+	PRsCreated          int
+	CommentsCreated     int
+	LabelsCreated       int
+	MilestonesCreated   int
+	ContributorsCreated int
 
 	// PR-specific counts
 	PRCommitsCreated int

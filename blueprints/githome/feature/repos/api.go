@@ -323,6 +323,9 @@ type API interface {
 	// ListContributors returns repository contributors
 	ListContributors(ctx context.Context, owner, repo string, opts *ListOpts) ([]*Contributor, error)
 
+	// CountContributors returns the total number of contributors for a repository
+	CountContributors(ctx context.Context, owner, repo string) (int, error)
+
 	// GetReadme returns the README content
 	GetReadme(ctx context.Context, owner, repo, ref string) (*Content, error)
 
@@ -388,4 +391,9 @@ type Store interface {
 	IncrementStargazers(ctx context.Context, repoID int64, delta int) error
 	IncrementWatchers(ctx context.Context, repoID int64, delta int) error
 	IncrementForks(ctx context.Context, repoID int64, delta int) error
+
+	// Seeded contributors (from GitHub import)
+	ListSeededContributors(ctx context.Context, repoID int64, opts *ListOpts) ([]*Contributor, error)
+	CountSeededContributors(ctx context.Context, repoID int64) (int, error)
+	HasSeededContributors(ctx context.Context, repoID int64) (bool, error)
 }
