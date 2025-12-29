@@ -265,3 +265,75 @@ func mapPRIssueComment(gh *ghComment, prID, repoID, creatorID int64) *comments.I
 		UpdatedAt: gh.UpdatedAt,
 	}
 }
+
+// mapPRCommit maps a GitHub commit to a GitHome PR commit.
+func mapPRCommit(gh *ghCommit, authorID, committerID *int64) *pulls.Commit {
+	commit := &pulls.Commit{
+		SHA:    gh.SHA,
+		NodeID: gh.NodeID,
+	}
+
+	if gh.Commit != nil {
+		commit.Commit = &pulls.CommitData{
+			Message: gh.Commit.Message,
+		}
+		if gh.Commit.Author != nil {
+			commit.Commit.Author = &pulls.CommitAuthor{
+				Name:  gh.Commit.Author.Name,
+				Email: gh.Commit.Author.Email,
+				Date:  gh.Commit.Author.Date,
+			}
+		}
+		if gh.Commit.Committer != nil {
+			commit.Commit.Committer = &pulls.CommitAuthor{
+				Name:  gh.Commit.Committer.Name,
+				Email: gh.Commit.Committer.Email,
+				Date:  gh.Commit.Committer.Date,
+			}
+		}
+		if gh.Commit.Tree != nil {
+			commit.Commit.Tree = &pulls.CommitRef{
+				SHA: gh.Commit.Tree.SHA,
+				URL: gh.Commit.Tree.URL,
+			}
+		}
+	}
+
+	// Map parent commits
+	if len(gh.Parents) > 0 {
+		commit.Parents = make([]*pulls.CommitRef, len(gh.Parents))
+		for i, p := range gh.Parents {
+			commit.Parents[i] = &pulls.CommitRef{
+				SHA: p.SHA,
+				URL: p.URL,
+			}
+		}
+	}
+
+	// Set author/committer user info if available
+	if authorID != nil {
+		commit.Author = &users.SimpleUser{ID: *authorID}
+	}
+	if committerID != nil {
+		commit.Committer = &users.SimpleUser{ID: *committerID}
+	}
+
+	return commit
+}
+
+// mapPRFile maps a GitHub PR file to a GitHome PR file.
+func mapPRFile(gh *ghPRFile) *pulls.PRFile {
+	return &pulls.PRFile{
+		SHA:              gh.SHA,
+		Filename:         gh.Filename,
+		Status:           gh.Status,
+		Additions:        gh.Additions,
+		Deletions:        gh.Deletions,
+		Changes:          gh.Changes,
+		BlobURL:          gh.BlobURL,
+		RawURL:           gh.RawURL,
+		ContentsURL:      gh.ContentsURL,
+		Patch:            gh.Patch,
+		PreviousFilename: gh.PreviousFilename,
+	}
+}

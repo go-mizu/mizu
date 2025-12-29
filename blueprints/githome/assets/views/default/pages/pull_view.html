@@ -97,41 +97,32 @@
         </div>
     </div>
 
-    <!-- PR Tabs (Conversation, Commits, Checks, Files changed) -->
+    <!-- PR Tabs (Conversation, Commits, Files changed) -->
     <div class="tabnav mt-3">
         <nav class="tabnav-tabs">
-            <a href="#conversation" class="tabnav-tab selected" aria-current="page">
+            <a href="/{{.Repo.FullName}}/pulls/{{.Pull.Number}}" class="tabnav-tab{{if eq .ActiveTab "conversation"}} selected{{end}}">
                 <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                     <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
                 </svg>
-                <span data-content="Conversation">Conversation</span>
+                <span>Conversation</span>
                 {{if gt .Pull.Comments 0}}
                 <span class="Counter">{{.Pull.Comments}}</span>
                 {{end}}
             </a>
-            <a href="#commits" class="tabnav-tab">
+            <a href="/{{.Repo.FullName}}/pulls/{{.Pull.Number}}/commits" class="tabnav-tab{{if eq .ActiveTab "commits"}} selected{{end}}">
                 <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                     <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/>
                 </svg>
-                <span data-content="Commits">Commits</span>
+                <span>Commits</span>
                 {{if gt .Pull.Commits 0}}
                 <span class="Counter">{{.Pull.Commits}}</span>
                 {{end}}
             </a>
-            <a href="#checks" class="tabnav-tab">
-                <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z"/>
-                </svg>
-                <span data-content="Checks">Checks</span>
-                {{if gt (len .Checks) 0}}
-                <span class="Counter">{{len .Checks}}</span>
-                {{end}}
-            </a>
-            <a href="#files-changed" class="tabnav-tab">
+            <a href="/{{.Repo.FullName}}/pulls/{{.Pull.Number}}/files" class="tabnav-tab{{if eq .ActiveTab "files"}} selected{{end}}">
                 <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                     <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/>
                 </svg>
-                <span data-content="Files changed">Files changed</span>
+                <span>Files changed</span>
                 {{if gt .Pull.ChangedFiles 0}}
                 <span class="Counter">{{.Pull.ChangedFiles}}</span>
                 {{end}}
@@ -258,94 +249,6 @@
                     </div>
                 </div>
                 {{end}}
-            </div>
-            {{end}}
-
-            <!-- Commits Section -->
-            {{if .Commits}}
-            <div id="commits" class="mt-4">
-                <h3 class="f4 mb-3">Commits</h3>
-                <div class="Box">
-                    {{range .Commits}}
-                    <div class="Box-row d-flex">
-                        <div class="flex-auto min-width-0">
-                            <a href="/{{$.Repo.FullName}}/commit/{{.SHA}}" class="Link--primary text-bold">
-                                {{if .Commit}}{{truncate .Commit.Message 72}}{{else}}{{truncate .SHA 7}}{{end}}
-                            </a>
-                            <div class="color-fg-muted f6 mt-1">
-                                {{if .Author}}
-                                <a href="/{{.Author.Login}}" class="Link--secondary">{{.Author.Login}}</a>
-                                {{else if .Commit}}
-                                {{.Commit.Author.Name}}
-                                {{end}}
-                                committed
-                                {{if .Commit}}<span title="{{.Commit.Author.Date}}">{{formatTimeAgo .Commit.Author.Date}}</span>{{end}}
-                            </div>
-                        </div>
-                        <div class="flex-shrink-0 ml-2">
-                            <a href="/{{$.Repo.FullName}}/commit/{{.SHA}}" class="f6 Link--secondary text-mono">{{truncate .SHA 7}}</a>
-                        </div>
-                    </div>
-                    {{end}}
-                </div>
-            </div>
-            {{end}}
-
-            <!-- Files Changed Section -->
-            {{if .FileViews}}
-            <div id="files-changed" class="mt-4">
-                <h3 class="f4 mb-3">Files changed ({{len .FileViews}})</h3>
-                <div class="files-changed-list">
-                    {{range .FileViews}}
-                    <div class="file-diff Box mb-3">
-                        <div class="file-header Box-header d-flex flex-items-center">
-                            <div class="file-info flex-auto">
-                                <span class="diffstat-icon">
-                                    {{if eq .Status "added"}}
-                                    <span class="color-fg-success">+</span>
-                                    {{else if eq .Status "removed"}}
-                                    <span class="color-fg-danger">-</span>
-                                    {{else}}
-                                    <span class="color-fg-muted">~</span>
-                                    {{end}}
-                                </span>
-                                <span class="file-diffstat">
-                                    <span class="color-fg-success">+{{.Additions}}</span>
-                                    <span class="color-fg-danger">-{{.Deletions}}</span>
-                                </span>
-                                <a href="#{{.Filename}}" class="Link--primary text-bold">{{.Filename}}</a>
-                            </div>
-                        </div>
-                        {{if .IsBinary}}
-                        <div class="Box-body">
-                            <p class="color-fg-muted text-center py-4">Binary file not shown</p>
-                        </div>
-                        {{else if .TooLarge}}
-                        <div class="Box-body">
-                            <p class="color-fg-muted text-center py-4">Diff too large to display</p>
-                        </div>
-                        {{else if .DiffLines}}
-                        <div class="Box-body p-0">
-                            <table class="diff-table">
-                                <tbody>
-                                    {{range .DiffLines}}
-                                    <tr class="diff-line diff-line-{{.Type}}">
-                                        <td class="diff-line-num">{{if .OldLineNum}}{{.OldLineNum}}{{end}}</td>
-                                        <td class="diff-line-num">{{if .NewLineNum}}{{.NewLineNum}}{{end}}</td>
-                                        <td class="diff-line-content">{{.Content}}</td>
-                                    </tr>
-                                    {{end}}
-                                </tbody>
-                            </table>
-                        </div>
-                        {{else if .Patch}}
-                        <div class="Box-body">
-                            <pre class="diff-patch"><code>{{.Patch}}</code></pre>
-                        </div>
-                        {{end}}
-                    </div>
-                    {{end}}
-                </div>
             </div>
             {{end}}
 
