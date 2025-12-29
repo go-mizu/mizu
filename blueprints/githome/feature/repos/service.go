@@ -906,6 +906,319 @@ func (s *Service) ListTreeEntries(ctx context.Context, owner, repoName, path, re
 	return entries, nil
 }
 
+// ListTreeEntriesWithCommits returns directory entries with last commit info
+func (s *Service) ListTreeEntriesWithCommits(ctx context.Context, owner, repoName, path, ref string) ([]*TreeEntry, error) {
+	repo, err := s.store.GetByFullName(ctx, owner, repoName)
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, ErrNotFound
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Determine ref to use
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+
+	// Resolve ref to commit SHA
+	sha, err := gitRepo.ResolveRef(ref)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get commit
+	commit, err := gitRepo.GetCommit(sha)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get root tree
+	treeSHA := commit.TreeSHA
+
+	// Navigate to target path if not root
+	path = strings.TrimPrefix(path, "/")
+	if path != "" {
+		tree, err := gitRepo.GetTree(treeSHA)
+		if err != nil {
+			return nil, ErrNotFound
+		}
+		parts := strings.Split(path, "/")
+		for _, part := range parts {
+			found := false
+			for _, entry := range tree.Entries {
+				if entry.Name == part {
+					if entry.Type == pkggit.ObjectTree {
+						treeSHA = entry.SHA
+						subTree, err := gitRepo.GetTree(entry.SHA)
+						if err != nil {
+							return nil, ErrNotFound
+						}
+						tree = subTree
+						found = true
+						break
+					} else {
+						return nil, ErrNotFound
+					}
+				}
+			}
+			if !found {
+				return nil, ErrNotFound
+			}
+		}
+	}
+
+	// Get tree entries with last commit info
+	// Pass the commit SHA (not tree SHA) so it can walk the history
+	gitEntries, err := gitRepo.GetTreeWithLastCommits(sha, 500)
+	if err != nil {
+		// Fall back to simple tree listing if last commit info fails
+		return s.ListTreeEntries(ctx, owner, repoName, path, ref)
+	}
+
+	// If we navigated to a subdirectory, we need to filter entries
+	// The GetTreeWithLastCommits returns root tree entries, so for subdirs we need different logic
+	if path != "" {
+		// For subdirectories, get tree from the resolved tree SHA and then get commits per entry
+		tree, err := gitRepo.GetTree(treeSHA)
+		if err != nil {
+			return nil, ErrNotFound
+		}
+		gitEntries = make([]*pkggit.TreeEntryWithCommit, len(tree.Entries))
+		for i, e := range tree.Entries {
+			gitEntries[i] = &pkggit.TreeEntryWithCommit{TreeEntry: e}
+		}
+		// Try to get last commits for these entries
+		entriesWithCommits, err := gitRepo.GetTreeWithLastCommits(sha, 500)
+		if err == nil {
+			// Build map of entry names to commits from the walk result
+			commitMap := make(map[string]*pkggit.Commit)
+			for _, e := range entriesWithCommits {
+				// For subdirectory, look for entries with matching path prefix
+				if strings.HasPrefix(e.Name, path+"/") {
+					subName := strings.TrimPrefix(e.Name, path+"/")
+					if !strings.Contains(subName, "/") {
+						commitMap[subName] = e.LastCommit
+					}
+				} else if e.Name == path {
+					// Directory itself
+					commitMap[e.Name] = e.LastCommit
+				}
+			}
+			// Apply commits to our entries
+			for i, e := range gitEntries {
+				if c, ok := commitMap[e.Name]; ok {
+					gitEntries[i].LastCommit = c
+				}
+			}
+		}
+	}
+
+	// Convert git entries to TreeEntry structs
+	entries := make([]*TreeEntry, 0, len(gitEntries))
+	for _, e := range gitEntries {
+		entryPath := e.Name
+		if path != "" {
+			entryPath = path + "/" + e.Name
+		}
+
+		entryType := "file"
+		mode := "100644"
+		if e.Type == pkggit.ObjectTree {
+			entryType = "dir"
+			mode = "040000"
+		} else if e.Mode == pkggit.ModeExecutable {
+			mode = "100755"
+		} else if e.Mode == pkggit.ModeSymlink {
+			entryType = "symlink"
+			mode = "120000"
+		} else if e.Mode == pkggit.ModeSubmodule {
+			entryType = "submodule"
+			mode = "160000"
+		}
+
+		entry := &TreeEntry{
+			Name:    e.Name,
+			Path:    entryPath,
+			SHA:     e.SHA,
+			Size:    int64(e.Size),
+			Type:    entryType,
+			Mode:    mode,
+			URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s?ref=%s", s.baseURL, owner, repoName, entryPath, ref),
+			HTMLURL: fmt.Sprintf("%s/%s/%s/%s/%s/%s", s.baseURL, owner, repoName, entryType, ref, entryPath),
+		}
+
+		if entryType == "file" {
+			entry.DownloadURL = fmt.Sprintf("%s/%s/%s/raw/%s/%s", s.baseURL, owner, repoName, ref, entryPath)
+			entry.HTMLURL = fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repoName, ref, entryPath)
+		} else if entryType == "dir" {
+			entry.HTMLURL = fmt.Sprintf("%s/%s/%s/tree/%s/%s", s.baseURL, owner, repoName, ref, entryPath)
+		}
+
+		// Add last commit info if available
+		if e.LastCommit != nil {
+			entry.LastCommitSHA = e.LastCommit.SHA
+			entry.LastCommitMessage = strings.Split(e.LastCommit.Message, "\n")[0] // First line only
+			entry.LastCommitAuthor = e.LastCommit.Author.Name
+			entry.LastCommitDate = e.LastCommit.Author.When
+		}
+
+		entries = append(entries, entry)
+	}
+
+	// Sort: directories first, then alphabetically
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Type == "dir" && entries[j].Type != "dir" {
+			return true
+		}
+		if entries[i].Type != "dir" && entries[j].Type == "dir" {
+			return false
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
+
+	return entries, nil
+}
+
+// GetBlame returns blame information for a file
+func (s *Service) GetBlame(ctx context.Context, owner, repoName, ref, path string) (*BlameResult, error) {
+	repo, err := s.store.GetByFullName(ctx, owner, repoName)
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, ErrNotFound
+	}
+
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+
+	blameResult, err := gitRepo.Blame(ref, path)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	lines := make([]*BlameLine, len(blameResult.Lines))
+	for i, line := range blameResult.Lines {
+		lines[i] = &BlameLine{
+			LineNumber: line.LineNumber,
+			Content:    line.Content,
+			CommitSHA:  line.CommitSHA,
+			Author:     line.Author.Name,
+			AuthorMail: line.Author.Email,
+			Date:       line.Author.When,
+		}
+	}
+
+	return &BlameResult{
+		Path:  path,
+		Lines: lines,
+	}, nil
+}
+
+// GetCommitCount returns the total number of commits from a ref
+func (s *Service) GetCommitCount(ctx context.Context, owner, repoName, ref string) (int, error) {
+	repo, err := s.store.GetByFullName(ctx, owner, repoName)
+	if err != nil {
+		return 0, err
+	}
+	if repo == nil {
+		return 0, ErrNotFound
+	}
+
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
+
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+
+	return gitRepo.CommitCount(ref)
+}
+
+// GetLatestCommit returns the latest commit for a ref
+func (s *Service) GetLatestCommit(ctx context.Context, owner, repoName, ref string) (*Commit, error) {
+	repo, err := s.store.GetByFullName(ctx, owner, repoName)
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, ErrNotFound
+	}
+
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+
+	commits, err := gitRepo.Log(ref, 1)
+	if err != nil || len(commits) == 0 {
+		return nil, ErrNotFound
+	}
+
+	c := commits[0]
+	parents := make([]*TreeRef, 0, len(c.Parents))
+	for _, p := range c.Parents {
+		parents = append(parents, &TreeRef{
+			SHA: p,
+			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/commits/%s", s.baseURL, owner, repoName, p),
+		})
+	}
+
+	return &Commit{
+		SHA:    c.SHA,
+		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", c.SHA))),
+		URL:    fmt.Sprintf("%s/api/v3/repos/%s/%s/git/commits/%s", s.baseURL, owner, repoName, c.SHA),
+		HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repoName, c.SHA),
+		Author: &CommitAuthor{
+			Name:  c.Author.Name,
+			Email: c.Author.Email,
+			Date:  c.Author.When,
+		},
+		Committer: &CommitAuthor{
+			Name:  c.Committer.Name,
+			Email: c.Committer.Email,
+			Date:  c.Committer.When,
+		},
+		Message: c.Message,
+		Tree: &TreeRef{
+			SHA: c.TreeSHA,
+			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repoName, c.TreeSHA),
+		},
+		Parents: parents,
+	}, nil
+}
+
 // CreateOrUpdateFile creates or updates a file
 func (s *Service) CreateOrUpdateFile(ctx context.Context, owner, repoName, path, message, contentBase64, sha, branch string, author *CommitAuthor) (*FileCommit, error) {
 	repo, err := s.store.GetByFullName(ctx, owner, repoName)

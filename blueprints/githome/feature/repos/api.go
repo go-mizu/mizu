@@ -212,6 +212,27 @@ type TreeEntry struct {
 	URL         string `json:"url"`
 	HTMLURL     string `json:"html_url"`
 	DownloadURL string `json:"download_url,omitempty"`
+	// Last commit info (optional, populated when requested)
+	LastCommitSHA     string    `json:"last_commit_sha,omitempty"`
+	LastCommitMessage string    `json:"last_commit_message,omitempty"`
+	LastCommitAuthor  string    `json:"last_commit_author,omitempty"`
+	LastCommitDate    time.Time `json:"last_commit_date,omitempty"`
+}
+
+// BlameLine represents a line with blame information
+type BlameLine struct {
+	LineNumber int       `json:"line_number"`
+	Content    string    `json:"content"`
+	CommitSHA  string    `json:"commit_sha"`
+	Author     string    `json:"author"`
+	AuthorMail string    `json:"author_mail"`
+	Date       time.Time `json:"date"`
+}
+
+// BlameResult contains blame information for a file
+type BlameResult struct {
+	Path  string       `json:"path"`
+	Lines []*BlameLine `json:"lines"`
 }
 
 // FileCommit represents the result of a file operation
@@ -310,6 +331,18 @@ type API interface {
 
 	// ListTreeEntries returns directory entries
 	ListTreeEntries(ctx context.Context, owner, repo, path, ref string) ([]*TreeEntry, error)
+
+	// ListTreeEntriesWithCommits returns directory entries with last commit info
+	ListTreeEntriesWithCommits(ctx context.Context, owner, repo, path, ref string) ([]*TreeEntry, error)
+
+	// GetBlame returns blame information for a file
+	GetBlame(ctx context.Context, owner, repo, ref, path string) (*BlameResult, error)
+
+	// GetCommitCount returns the total number of commits from a ref
+	GetCommitCount(ctx context.Context, owner, repo, ref string) (int, error)
+
+	// GetLatestCommit returns the latest commit for a ref
+	GetLatestCommit(ctx context.Context, owner, repo, ref string) (*Commit, error)
 
 	// CreateOrUpdateFile creates or updates a file
 	CreateOrUpdateFile(ctx context.Context, owner, repo, path string, message, content, sha, branch string, author *CommitAuthor) (*FileCommit, error)

@@ -122,7 +122,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 	mainPages := []string{
 		"home", "explore", "new_repo", "notifications",
 		"user_profile",
-		"repo_home", "repo_code", "repo_blob", "repo_issues", "issue_view", "new_issue", "repo_settings",
+		"repo_home", "repo_code", "repo_blob", "repo_blame", "repo_issues", "issue_view", "new_issue", "repo_settings",
 	}
 	for _, name := range mainPages {
 		pageBytes, err := viewsFS.ReadFile("views/" + theme + "/pages/" + name + ".html")

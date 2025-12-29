@@ -70,15 +70,45 @@
             <div class="file-navigation mb-3">
                 <div class="d-flex flex-justify-between">
                     <div class="d-flex flex-items-center">
-                        <button class="btn btn-sm mr-2">
+                        <div class="branch-select-menu position-relative">
+                            <button class="btn btn-sm mr-2" id="branchSelector">
+                                <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                    <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z"/>
+                                </svg>
+                                <span>{{.CurrentBranch}}</span>
+                                <span class="dropdown-caret"></span>
+                            </button>
+                            <div class="SelectMenu branch-menu" id="branchMenu" style="display: none;">
+                                <div class="SelectMenu-modal">
+                                    <header class="SelectMenu-header">
+                                        <h3 class="SelectMenu-title">Switch branches/tags</h3>
+                                        <button class="SelectMenu-closeButton" type="button" onclick="closeBranchMenu()">×</button>
+                                    </header>
+                                    <div class="SelectMenu-list">
+                                        {{range .Branches}}
+                                        <a class="SelectMenu-item{{if eq .Name $.CurrentBranch}} selected{{end}}" href="/{{$.Repo.FullName}}/tree/{{.Name}}">
+                                            {{.Name}}
+                                        </a>
+                                        {{end}}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {{if .Branches}}
+                        <a href="/{{.Repo.FullName}}/branches" class="Link--muted f6 mr-3">
                             <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                 <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z"/>
                             </svg>
-                            <span>{{.CurrentBranch}}</span>
-                            <span class="dropdown-caret"></span>
-                        </button>
-                        {{if .Branches}}
-                        <span class="color-fg-muted f6">{{len .Branches}} branches</span>
+                            <strong>{{len .Branches}}</strong> branches
+                        </a>
+                        {{end}}
+                        {{if .CommitCount}}
+                        <a href="/{{.Repo.FullName}}/commits/{{.CurrentBranch}}" class="Link--muted f6">
+                            <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                <path d="M1.643 3.143.427 1.927A.25.25 0 0 0 0 2.104V5.75c0 .138.112.25.25.25h3.646a.25.25 0 0 0 .177-.427L2.715 4.215a6.5 6.5 0 1 1-1.18 4.458.75.75 0 1 0-1.493.154 8.001 8.001 0 1 0 1.6-5.684ZM7.75 4a.75.75 0 0 1 .75.75v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5A.75.75 0 0 1 7.75 4Z"/>
+                            </svg>
+                            <strong>{{.CommitCount}}</strong> commits
+                        </a>
                         {{end}}
                     </div>
 
@@ -97,9 +127,23 @@
 
             {{if .Tree}}
             <div class="Box mb-4">
+                {{if .LatestCommit}}
                 <div class="Box-header d-flex flex-items-center" style="padding: 8px 16px;">
-                    <span class="color-fg-muted f6">Latest commit</span>
+                    <img src="https://avatars.githubusercontent.com/u/0" alt="" class="avatar avatar-user mr-2" width="24" height="24" style="border-radius: 50%;">
+                    <a href="/{{.LatestCommit.Author}}" class="text-bold Link--primary mr-2">{{.LatestCommit.Author}}</a>
+                    <a href="/{{.Repo.FullName}}/commit/{{.LatestCommit.SHA}}" class="Link--secondary flex-1 text-truncate" title="{{.LatestCommit.Message}}">
+                        {{.LatestCommit.MessageTitle}}
+                    </a>
+                    <a href="/{{.Repo.FullName}}/commit/{{.LatestCommit.SHA}}" class="Link--secondary ml-2 f6" style="font-family: monospace;">
+                        {{.LatestCommit.ShortSHA}}
+                    </a>
+                    <span class="color-fg-muted f6 ml-2">{{.LatestCommit.TimeAgo}}</span>
                 </div>
+                {{else}}
+                <div class="Box-header d-flex flex-items-center" style="padding: 8px 16px;">
+                    <span class="color-fg-muted f6">Files</span>
+                </div>
+                {{end}}
                 {{range .Tree}}
                 <div class="Box-row Box-row--hover-blue d-flex flex-items-center" style="padding: 8px 16px;">
                     <svg class="octicon color-fg-muted mr-3 flex-shrink-0" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
@@ -109,11 +153,18 @@
                         <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688Z"/>
                         {{end}}
                     </svg>
-                    <a href="/{{$.Repo.FullName}}/{{if eq .Type "dir"}}tree{{else}}blob{{end}}/{{$.CurrentBranch}}/{{.Path}}" class="Link--primary flex-1">
+                    <a href="/{{$.Repo.FullName}}/{{if eq .Type "dir"}}tree{{else}}blob{{end}}/{{$.CurrentBranch}}/{{.Path}}" class="Link--primary" style="min-width: 180px;">
                         {{.Name}}
                     </a>
-                    {{if .LastCommit}}
-                    <span class="color-fg-muted f6 text-right" style="min-width: 200px;">{{.LastCommit}}</span>
+                    {{if .LastCommitMessage}}
+                    <a href="/{{$.Repo.FullName}}/commit/{{.LastCommitSHA}}" class="Link--secondary flex-1 text-truncate ml-3" title="{{.LastCommitMessage}}">
+                        {{.LastCommitMessage}}
+                    </a>
+                    {{else}}
+                    <span class="flex-1"></span>
+                    {{end}}
+                    {{if .LastCommitDate}}
+                    <span class="color-fg-muted f6 text-right text-nowrap ml-3" style="min-width: 100px;">{{.LastCommitDate}}</span>
                     {{end}}
                 </div>
                 {{end}}
@@ -205,4 +256,116 @@
         </div>
     </div>
 </div>
+
+<style>
+/* Branch selector dropdown */
+.branch-select-menu {
+    position: relative;
+}
+
+.branch-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    margin-top: 4px;
+    min-width: 300px;
+}
+
+.SelectMenu-modal {
+    background-color: var(--color-canvas-overlay, #fff);
+    border: 1px solid var(--color-border-default, #d0d7de);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+    overflow: hidden;
+}
+
+.SelectMenu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--color-border-default, #d0d7de);
+    background-color: var(--color-canvas-subtle, #f6f8fa);
+}
+
+.SelectMenu-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.SelectMenu-closeButton {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--color-fg-muted, #656d76);
+}
+
+.SelectMenu-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.SelectMenu-item {
+    display: block;
+    padding: 8px 16px;
+    color: var(--color-fg-default, #1f2328);
+    text-decoration: none;
+    border-bottom: 1px solid var(--color-border-muted, #d8dee4);
+}
+
+.SelectMenu-item:hover {
+    background-color: var(--color-canvas-subtle, #f6f8fa);
+}
+
+.SelectMenu-item.selected {
+    font-weight: 600;
+    background-color: var(--color-accent-subtle, #ddf4ff);
+}
+
+.SelectMenu-item:last-child {
+    border-bottom: none;
+}
+
+/* Text utilities */
+.text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.text-nowrap {
+    white-space: nowrap;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const branchSelector = document.getElementById('branchSelector');
+    const branchMenu = document.getElementById('branchMenu');
+
+    if (branchSelector && branchMenu) {
+        branchSelector.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const isVisible = branchMenu.style.display !== 'none';
+            branchMenu.style.display = isVisible ? 'none' : 'block';
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!branchMenu.contains(e.target) && e.target !== branchSelector) {
+                branchMenu.style.display = 'none';
+            }
+        });
+    }
+});
+
+function closeBranchMenu() {
+    const branchMenu = document.getElementById('branchMenu');
+    if (branchMenu) {
+        branchMenu.style.display = 'none';
+    }
+}
+</script>
 {{end}}
