@@ -1,10 +1,13 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-mizu/blueprints/githome/app/web/handler"
 	"github.com/go-mizu/blueprints/githome/app/web/handler/api"
@@ -163,9 +166,46 @@ func New(cfg Config) (*App, error) {
 	}, nil
 }
 
-// Run starts the HTTP server.
+// Run starts the HTTP server (blocks until error).
+// Deprecated: Use RunContext for graceful shutdown support.
 func (a *App) Run() error {
-	return http.ListenAndServe(a.config.Addr, a.server.Handler())
+	return a.RunContext(context.Background())
+}
+
+// RunContext starts the HTTP server with context-aware graceful shutdown.
+// The server will shut down gracefully when the context is cancelled.
+func (a *App) RunContext(ctx context.Context) error {
+	srv := &http.Server{
+		Addr:    a.config.Addr,
+		Handler: a.server.Handler(),
+	}
+
+	// Start server in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+		close(errCh)
+	}()
+
+	// Wait for context cancellation or server error
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		// Graceful shutdown with 15 second timeout
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		slog.Info("shutting down server")
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("graceful shutdown incomplete", "error", err)
+			return srv.Close()
+		}
+		slog.Info("server stopped gracefully")
+		return nil
+	}
 }
 
 // Close closes the database connection.

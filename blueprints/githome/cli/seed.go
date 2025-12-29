@@ -19,7 +19,11 @@ func newSeedCmd() *cobra.Command {
 	seedCmd := &cobra.Command{
 		Use:   "seed",
 		Short: "Seed data into GitHome",
-		Long:  "Seed demo data or import repositories from various sources",
+		Long: `Seed data into GitHome from various sources.
+
+Available sources:
+  demo   Create sample users, repositories, and issues
+  local  Import git repositories from your local filesystem`,
 	}
 
 	seedCmd.AddCommand(
@@ -33,7 +37,14 @@ func newSeedCmd() *cobra.Command {
 func newSeedDemoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "demo",
-		Short: "Seed demo data (users, repos, issues)",
+		Short: "Create sample users, repositories, and issues",
+		Long: `Create sample data for testing and demonstration.
+
+Creates:
+  - admin user (login: admin, password: password123)
+  - demo user (login: demo, password: demo1234)
+  - Sample repositories with issues`,
+		Example: "  githome seed demo",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dbPath := dataDir + "/githome.db"
 			db, err := sql.Open("duckdb", dbPath)
@@ -191,19 +202,22 @@ func newSeedLocalCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "local",
-		Short: "Import local git repositories from $HOME/github",
-		Long: `Scan a directory for git repositories in the format $ORG/$REPO and import them into GitHome.
+		Short: "Import git repositories from local filesystem",
+		Long: `Import git repositories from your local filesystem into GitHome.
 
-By default, scans $HOME/github for repositories organized as:
-  $HOME/github/
+Scans a directory for repositories organized as:
+  <scan-dir>/
     org1/
       repo1/
       repo2/
     org2/
       repo3/
 
-Each unique org directory becomes an organization in GitHome,
-and each repository is linked (not copied) to its local path.`,
+Each org directory becomes an organization in GitHome.
+Repositories are linked (not copied) to their local paths.`,
+		Example: `  githome seed local
+  githome seed local --scan-dir ~/projects
+  githome seed local --public=false`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dbPath := dataDir + "/githome.db"
 			db, err := sql.Open("duckdb", dbPath)
