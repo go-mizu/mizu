@@ -354,6 +354,8 @@ func (s *Server) setupRoutes() {
 	pages.Get("/{owner}/{repo}/issues", pageHandler.RepoIssues)
 	pages.Get("/{owner}/{repo}/issues/new", pageHandler.NewIssue)
 	pages.Get("/{owner}/{repo}/issues/{number}", pageHandler.IssueDetail)
+	pages.Get("/{owner}/{repo}/pulls", pageHandler.RepoPulls)
+	pages.Get("/{owner}/{repo}/pulls/{number}", pageHandler.PullDetail)
 	pages.Get("/{owner}/{repo}/commits", pageHandler.RepoCommits)
 	pages.Get("/{owner}/{repo}/commits/{ref}", pageHandler.RepoCommits)
 	pages.Get("/{owner}/{repo}/commit/{sha}", pageHandler.CommitDetail)

@@ -278,6 +278,70 @@ type ghReviewComment struct {
 	StartSide           string     `json:"start_side"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
+	AuthorAssociation   string     `json:"author_association"`
+}
+
+// ghCommit represents a commit from the GitHub API.
+type ghCommit struct {
+	SHA       string        `json:"sha"`
+	NodeID    string        `json:"node_id"`
+	Commit    *ghCommitData `json:"commit"`
+	URL       string        `json:"url"`
+	HTMLURL   string        `json:"html_url"`
+	Author    *ghUser       `json:"author"`
+	Committer *ghUser       `json:"committer"`
+	Parents   []*ghCommitRef `json:"parents"`
+}
+
+// ghCommitData contains the commit metadata.
+type ghCommitData struct {
+	Author    *ghCommitAuthor `json:"author"`
+	Committer *ghCommitAuthor `json:"committer"`
+	Message   string          `json:"message"`
+	Tree      *ghCommitRef    `json:"tree"`
+	URL       string          `json:"url"`
+}
+
+// ghCommitAuthor represents commit author/committer info.
+type ghCommitAuthor struct {
+	Name  string    `json:"name"`
+	Email string    `json:"email"`
+	Date  time.Time `json:"date"`
+}
+
+// ghCommitRef represents a commit reference.
+type ghCommitRef struct {
+	SHA string `json:"sha"`
+	URL string `json:"url"`
+}
+
+// ghPRFile represents a file changed in a pull request.
+type ghPRFile struct {
+	SHA              string `json:"sha"`
+	Filename         string `json:"filename"`
+	Status           string `json:"status"` // added, removed, modified, renamed, copied, changed, unchanged
+	Additions        int    `json:"additions"`
+	Deletions        int    `json:"deletions"`
+	Changes          int    `json:"changes"`
+	BlobURL          string `json:"blob_url"`
+	RawURL           string `json:"raw_url"`
+	ContentsURL      string `json:"contents_url"`
+	Patch            string `json:"patch"`
+	PreviousFilename string `json:"previous_filename"`
+}
+
+// ghReview represents a pull request review.
+type ghReview struct {
+	ID                int64     `json:"id"`
+	NodeID            string    `json:"node_id"`
+	User              *ghUser   `json:"user"`
+	Body              string    `json:"body"`
+	State             string    `json:"state"` // APPROVED, CHANGES_REQUESTED, COMMENTED, PENDING, DISMISSED
+	HTMLURL           string    `json:"html_url"`
+	PullRequestURL    string    `json:"pull_request_url"`
+	CommitID          string    `json:"commit_id"`
+	SubmittedAt       time.Time `json:"submitted_at"`
+	AuthorAssociation string    `json:"author_association"`
 }
 
 // do performs an HTTP request and returns the response body.
@@ -538,6 +602,92 @@ func (c *Client) ListMilestones(ctx context.Context, owner, repo string, opts *L
 	var result []*ghMilestone
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, rateInfo, fmt.Errorf("unmarshal milestones: %w", err)
+	}
+	return result, rateInfo, nil
+}
+
+// GetPullRequest fetches a single pull request with full details.
+func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, number int) (*ghPullRequest, *RateLimitInfo, error) {
+	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d", owner, repo, number), nil)
+	if err != nil {
+		return nil, rateInfo, err
+	}
+
+	var result ghPullRequest
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, rateInfo, fmt.Errorf("unmarshal pull request: %w", err)
+	}
+	return &result, rateInfo, nil
+}
+
+// ListPRCommits fetches commits for a pull request.
+func (c *Client) ListPRCommits(ctx context.Context, owner, repo string, number int, opts *ListOptions) ([]*ghCommit, *RateLimitInfo, error) {
+	query := url.Values{}
+	if opts != nil {
+		if opts.Page > 0 {
+			query.Set("page", strconv.Itoa(opts.Page))
+		}
+		if opts.PerPage > 0 {
+			query.Set("per_page", strconv.Itoa(opts.PerPage))
+		}
+	}
+
+	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d/commits", owner, repo, number), query)
+	if err != nil {
+		return nil, rateInfo, err
+	}
+
+	var result []*ghCommit
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, rateInfo, fmt.Errorf("unmarshal commits: %w", err)
+	}
+	return result, rateInfo, nil
+}
+
+// ListPRFiles fetches files changed in a pull request.
+func (c *Client) ListPRFiles(ctx context.Context, owner, repo string, number int, opts *ListOptions) ([]*ghPRFile, *RateLimitInfo, error) {
+	query := url.Values{}
+	if opts != nil {
+		if opts.Page > 0 {
+			query.Set("page", strconv.Itoa(opts.Page))
+		}
+		if opts.PerPage > 0 {
+			query.Set("per_page", strconv.Itoa(opts.PerPage))
+		}
+	}
+
+	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d/files", owner, repo, number), query)
+	if err != nil {
+		return nil, rateInfo, err
+	}
+
+	var result []*ghPRFile
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, rateInfo, fmt.Errorf("unmarshal pr files: %w", err)
+	}
+	return result, rateInfo, nil
+}
+
+// ListPRReviews fetches reviews for a pull request.
+func (c *Client) ListPRReviews(ctx context.Context, owner, repo string, number int, opts *ListOptions) ([]*ghReview, *RateLimitInfo, error) {
+	query := url.Values{}
+	if opts != nil {
+		if opts.Page > 0 {
+			query.Set("page", strconv.Itoa(opts.Page))
+		}
+		if opts.PerPage > 0 {
+			query.Set("per_page", strconv.Itoa(opts.PerPage))
+		}
+	}
+
+	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews", owner, repo, number), query)
+	if err != nil {
+		return nil, rateInfo, err
+	}
+
+	var result []*ghReview
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, rateInfo, fmt.Errorf("unmarshal reviews: %w", err)
 	}
 	return result, rateInfo, nil
 }

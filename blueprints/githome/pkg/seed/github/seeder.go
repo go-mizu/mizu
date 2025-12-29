@@ -729,6 +729,11 @@ func (s *Seeder) importIssueComments(ctx context.Context, repoID, issueID int64,
 
 // importPullRequests fetches and imports all pull requests.
 func (s *Seeder) importPullRequests(ctx context.Context, repoID int64, result *Result) error {
+	// Handle single PR import
+	if s.config.SinglePR > 0 {
+		return s.importSinglePR(ctx, repoID, s.config.SinglePR, result)
+	}
+
 	page := 1
 	total := 0
 	for {
@@ -909,6 +914,276 @@ func (s *Seeder) importPRComments(ctx context.Context, prID int64, prNumber int,
 	}
 
 	return nil
+}
+
+// importSinglePR fetches and imports a single pull request with full details.
+func (s *Seeder) importSinglePR(ctx context.Context, repoID int64, prNumber int, result *Result) error {
+	slog.Info("fetching single pull request", "number", prNumber)
+
+	// Fetch full PR details (includes commits, additions, deletions, changed_files)
+	ghPR, rateInfo, err := s.client.GetPullRequest(ctx, s.config.Owner, s.config.Repo, prNumber)
+	s.updateRateInfo(result, rateInfo)
+	if err != nil {
+		return fmt.Errorf("fetch PR #%d: %w", prNumber, err)
+	}
+
+	slog.Info("fetched PR details",
+		"number", ghPR.Number,
+		"commits", ghPR.Commits,
+		"additions", ghPR.Additions,
+		"deletions", ghPR.Deletions,
+		"changed_files", ghPR.ChangedFiles,
+		"comments", ghPR.Comments,
+		"review_comments", ghPR.ReviewComments)
+
+	// Ensure creator exists
+	creatorID := s.config.AdminUserID
+	if ghPR.User != nil {
+		id, err := s.ensureUser(ctx, ghPR.User, result)
+		if err != nil {
+			slog.Warn("failed to ensure PR creator", "error", err)
+		} else {
+			creatorID = id
+		}
+	}
+
+	// Check if PR exists
+	existing, err := s.pullsStore.GetByNumber(ctx, repoID, ghPR.Number)
+	if err != nil {
+		return fmt.Errorf("check PR #%d: %w", ghPR.Number, err)
+	}
+
+	var prID int64
+	if existing != nil {
+		slog.Info("PR already exists, updating with latest data", "number", ghPR.Number)
+		prID = existing.ID
+
+		// Update PR with full details - update additions, deletions, changed_files, commits count
+		_, err = s.db.ExecContext(ctx, `
+			UPDATE pull_requests SET
+				title = $2,
+				body = $3,
+				state = $4,
+				draft = $5,
+				commits = $6,
+				additions = $7,
+				deletions = $8,
+				changed_files = $9,
+				comments = $10,
+				review_comments = $11,
+				updated_at = $12
+			WHERE id = $1
+		`, prID, ghPR.Title, ghPR.Body, ghPR.State, ghPR.Draft,
+			ghPR.Commits, ghPR.Additions, ghPR.Deletions, ghPR.ChangedFiles,
+			ghPR.Comments, ghPR.ReviewComments, time.Now())
+		if err != nil {
+			slog.Warn("failed to update PR", "error", err)
+		}
+
+		result.PRsSkipped++
+	} else {
+		// Create PR
+		pr := mapPullRequest(ghPR, repoID, creatorID)
+		if err := s.pullsStore.Create(ctx, pr); err != nil {
+			return fmt.Errorf("create PR #%d: %w", ghPR.Number, err)
+		}
+		prID = pr.ID
+		result.PRsCreated++
+
+		// Handle merged PRs
+		if ghPR.Merged && ghPR.MergedAt != nil {
+			mergedByID := s.config.AdminUserID
+			if ghPR.MergedBy != nil {
+				id, err := s.ensureUser(ctx, ghPR.MergedBy, result)
+				if err == nil {
+					mergedByID = id
+				}
+			}
+			if err := s.pullsStore.SetMerged(ctx, prID, *ghPR.MergedAt, ghPR.MergeCommitSHA, mergedByID); err != nil {
+				slog.Warn("failed to set PR merged status", "pr", ghPR.Number, "error", err)
+			}
+		}
+	}
+
+	// Add labels
+	for _, ghLabel := range ghPR.Labels {
+		if labelID, ok := s.labelCache[ghLabel.Name]; ok {
+			if err := s.addPRLabel(ctx, prID, labelID); err != nil {
+				slog.Warn("failed to add label to PR", "pr", ghPR.Number, "label", ghLabel.Name, "error", err)
+			}
+		}
+	}
+
+	// Add assignees
+	for _, assignee := range ghPR.Assignees {
+		assigneeID, err := s.ensureUser(ctx, assignee, result)
+		if err != nil {
+			continue
+		}
+		if err := s.addPRAssignee(ctx, prID, assigneeID); err != nil {
+			slog.Warn("failed to add assignee to PR", "pr", ghPR.Number, "assignee", assignee.Login, "error", err)
+		}
+	}
+
+	// Import PR reviews
+	if err := s.importPRReviews(ctx, prID, prNumber, result); err != nil {
+		slog.Warn("failed to import PR reviews", "pr", prNumber, "error", err)
+	}
+
+	// Import PR review comments (inline comments)
+	if s.config.ImportComments {
+		if err := s.importPRComments(ctx, prID, prNumber, result); err != nil {
+			slog.Warn("failed to import PR review comments", "pr", prNumber, "error", err)
+		}
+	}
+
+	// Import issue comments (PR conversation comments use issue comments API)
+	if s.config.ImportComments && ghPR.Comments > 0 {
+		if err := s.importPRIssueComments(ctx, repoID, prID, prNumber, result); err != nil {
+			slog.Warn("failed to import PR issue comments", "pr", prNumber, "error", err)
+		}
+	}
+
+	slog.Info("imported single PR",
+		"number", prNumber,
+		"commits", ghPR.Commits,
+		"additions", ghPR.Additions,
+		"deletions", ghPR.Deletions,
+		"changed_files", ghPR.ChangedFiles,
+		"reviews", result.PRReviewsCreated,
+		"comments", ghPR.Comments+ghPR.ReviewComments)
+
+	return nil
+}
+
+// importPRReviews fetches and imports reviews for a PR.
+func (s *Seeder) importPRReviews(ctx context.Context, prID int64, prNumber int, result *Result) error {
+	page := 1
+	for {
+		ghReviews, rateInfo, err := s.client.ListPRReviews(ctx, s.config.Owner, s.config.Repo, prNumber, &ListOptions{
+			Page:    page,
+			PerPage: 100,
+		})
+		s.updateRateInfo(result, rateInfo)
+		if err != nil {
+			return err
+		}
+
+		if len(ghReviews) == 0 {
+			break
+		}
+
+		for _, ghReview := range ghReviews {
+			// Ensure reviewer exists
+			reviewerID := s.config.AdminUserID
+			if ghReview.User != nil {
+				id, err := s.ensureUser(ctx, ghReview.User, result)
+				if err != nil {
+					slog.Warn("failed to ensure reviewer", "error", err)
+				} else {
+					reviewerID = id
+				}
+			}
+
+			// Create review
+			review := mapReview(ghReview, prID, reviewerID)
+			if err := s.pullsStore.CreateReview(ctx, review); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("create review for PR #%d: %w", prNumber, err))
+				continue
+			}
+
+			result.PRReviewsCreated++
+		}
+
+		if len(ghReviews) < 100 {
+			break
+		}
+		page++
+	}
+
+	return nil
+}
+
+// importPRIssueComments fetches and imports issue comments for a PR (PR conversation).
+func (s *Seeder) importPRIssueComments(ctx context.Context, repoID, prID int64, prNumber int, result *Result) error {
+	page := 1
+	total := 0
+	for {
+		// Check max limit
+		if s.config.MaxCommentsPerItem > 0 && total >= s.config.MaxCommentsPerItem {
+			break
+		}
+
+		ghComments, rateInfo, err := s.client.ListIssueComments(ctx, s.config.Owner, s.config.Repo, prNumber, &ListOptions{
+			Page:    page,
+			PerPage: 100,
+		})
+		s.updateRateInfo(result, rateInfo)
+		if err != nil {
+			return err
+		}
+
+		if len(ghComments) == 0 {
+			break
+		}
+
+		for _, ghComment := range ghComments {
+			// Check max limit
+			if s.config.MaxCommentsPerItem > 0 && total >= s.config.MaxCommentsPerItem {
+				break
+			}
+
+			// Ensure creator exists
+			creatorID := s.config.AdminUserID
+			if ghComment.User != nil {
+				id, err := s.ensureUser(ctx, ghComment.User, result)
+				if err != nil {
+					slog.Warn("failed to ensure PR comment creator", "error", err)
+				} else {
+					creatorID = id
+				}
+			}
+
+			// Create comment - we store PR conversation comments as issue comments
+			// but link them to the PR by using the PR ID as the issue ID
+			// This matches GitHub's API behavior where PR conversations are fetched via issues API
+			comment := mapPRIssueComment(ghComment, prID, repoID, creatorID)
+			if err := s.commentsStore.CreateIssueComment(ctx, comment); err != nil {
+				result.Errors = append(result.Errors, fmt.Errorf("create PR issue comment for #%d: %w", prNumber, err))
+				continue
+			}
+
+			result.CommentsCreated++
+			total++
+		}
+
+		if len(ghComments) < 100 {
+			break
+		}
+		page++
+	}
+
+	return nil
+}
+
+// addPRLabel adds a label to a PR.
+func (s *Seeder) addPRLabel(ctx context.Context, prID, labelID int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO pr_labels (pr_id, label_id)
+		VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, prID, labelID)
+	return err
+}
+
+// addPRAssignee adds an assignee to a PR.
+func (s *Seeder) addPRAssignee(ctx context.Context, prID, userID int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO pr_assignees (pr_id, user_id)
+		VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, prID, userID)
+	return err
 }
 
 // updateRateInfo updates the result with rate limit information.

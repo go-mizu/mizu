@@ -51,12 +51,14 @@ func (s *PullsStore) Create(ctx context.Context, pr *pulls.PullRequest) error {
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO pull_requests (node_id, repo_id, number, state, locked, title, body, creator_id,
 			head_ref, head_sha, head_label, base_ref, base_sha, base_label, draft, maintainer_can_modify,
-			milestone_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			milestone_id, commits, additions, deletions, changed_files, comments, review_comments,
+			created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 		RETURNING id
 	`, "", pr.RepoID, pr.Number, pr.State, pr.Locked, pr.Title, pr.Body, pr.CreatorID,
 		headRef, headSHA, headLabel, baseRef, baseSHA, baseLabel,
 		pr.Draft, pr.MaintainerCanModify, nullInt64Ptr(milestoneID),
+		pr.Commits, pr.Additions, pr.Deletions, pr.ChangedFiles, pr.Comments, pr.ReviewComments,
 		pr.CreatedAt, pr.UpdatedAt).Scan(&pr.ID)
 	if err != nil {
 		return err

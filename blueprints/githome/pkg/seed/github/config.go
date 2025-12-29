@@ -61,6 +61,11 @@ type Result struct {
 	LabelsCreated     int
 	MilestonesCreated int
 
+	// PR-specific counts
+	PRCommitsCreated int
+	PRFilesCreated   int
+	PRReviewsCreated int
+
 	// Skipped (already exist)
 	IssuesSkipped   int
 	PRsSkipped      int
