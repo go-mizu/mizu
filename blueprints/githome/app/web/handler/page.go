@@ -460,24 +460,31 @@ type PullView struct {
 	LabelViews  []*LabelView
 	StatusIcon  string
 	StatusColor string
+	BodyHTML    template.HTML
 }
 
 // RepoPullsData holds data for PR list.
 type RepoPullsData struct {
-	Title        string
-	User         *users.User
-	Repo         *RepoView
-	PullRequests []*PullView
-	OpenCount    int
-	ClosedCount  int
-	Labels       []*labels.Label
-	CurrentState string
-	CurrentSort  string
-	Page         int
-	HasNext      bool
-	Breadcrumbs  []Breadcrumb
-	UnreadCount  int
-	ActiveNav    string
+	Title            string
+	User             *users.User
+	Repo             *RepoView
+	PullRequests     []*PullView
+	OpenCount        int
+	ClosedCount      int
+	Labels           []*labels.Label
+	Milestones       []*milestones.Milestone
+	Assignees        []*users.SimpleUser
+	CurrentState     string
+	CurrentLabel     string
+	CurrentMilestone string
+	CurrentSort      string
+	Page             int
+	TotalPages       int
+	HasNext          bool
+	HasPrev          bool
+	Breadcrumbs      []Breadcrumb
+	UnreadCount      int
+	ActiveNav        string
 }
 
 // CheckStatus represents a CI check.
@@ -496,9 +503,16 @@ type PullDetailData struct {
 	Pull           *PullView
 	Commits        []*pulls.Commit
 	Files          []*pulls.PRFile
+	FileViews      []*FileChangeView
 	Reviews        []*pulls.Review
 	Comments       []*CommentView
 	Timeline       []*TimelineEvent
+	Labels         []*labels.Label
+	Milestones     []*milestones.Milestone
+	Assignees      []*users.SimpleUser
+	Participants   []*users.SimpleUser
+	CanEdit        bool
+	CanClose       bool
 	CanMerge       bool
 	MergeableState string
 	Checks         []*CheckStatus
@@ -1186,6 +1200,294 @@ func (h *Page) NewIssue(c *mizu.Ctx) error {
 			{Label: repo.FullName, URL: "/" + repo.FullName},
 			{Label: "Issues", URL: "/" + repo.FullName + "/issues"},
 			{Label: "New", URL: ""},
+		},
+		ActiveNav: "",
+	})
+}
+
+// RepoPulls renders the pull requests list page.
+func (h *Page) RepoPulls(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "pulls")
+
+	state := c.Query("state")
+	if state == "" {
+		state = "open"
+	}
+
+	labelFilter := c.Query("label")
+	sortParam := c.Query("sort")
+
+	// Map sort param to ListOpts sort/direction
+	sort := "created"
+	direction := "desc"
+	switch sortParam {
+	case "created-asc":
+		sort = "created"
+		direction = "asc"
+	case "updated-desc":
+		sort = "updated"
+		direction = "desc"
+	default:
+		sortParam = "created-desc"
+	}
+
+	page := parseInt(c.Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage := 30
+
+	pullList, _ := h.pulls.List(ctx, owner, repoName, &pulls.ListOpts{
+		State:     state,
+		Sort:      sort,
+		Direction: direction,
+		Page:      page,
+		PerPage:   perPage + 1,
+	})
+
+	// Determine if there are more results
+	hasNext := len(pullList) > perPage
+	if hasNext {
+		pullList = pullList[:perPage]
+	}
+	hasPrev := page > 1
+
+	// Count open and closed PRs
+	openCount := 0
+	closedCount := 0
+	allPRs, _ := h.pulls.List(ctx, owner, repoName, &pulls.ListOpts{State: "all", PerPage: 1000})
+	for _, pr := range allPRs {
+		if pr.State == "open" {
+			openCount++
+		} else {
+			closedCount++
+		}
+	}
+
+	// Calculate total pages
+	totalCount := openCount
+	if state == "closed" {
+		totalCount = closedCount
+	}
+	totalPages := (totalCount + perPage - 1) / perPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	pullViews := make([]*PullView, len(pullList))
+	for i, pr := range pullList {
+		statusIcon := "git-pull-request"
+		statusColor := "color-fg-success"
+		if pr.Draft {
+			statusIcon = "git-pull-request-draft"
+			statusColor = "color-fg-muted"
+		} else if pr.Merged {
+			statusIcon = "git-merge"
+			statusColor = "color-fg-done"
+		} else if pr.State == "closed" {
+			statusIcon = "git-pull-request-closed"
+			statusColor = "color-fg-danger"
+		}
+
+		pullViews[i] = &PullView{
+			PullRequest: pr,
+			TimeAgo:     timeAgo(pr.CreatedAt),
+			StatusIcon:  statusIcon,
+			StatusColor: statusColor,
+		}
+	}
+
+	labelList, _ := h.labels.List(ctx, owner, repoName, nil)
+	milestoneList, _ := h.milestones.List(ctx, owner, repoName, nil)
+
+	var user *users.User
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+	}
+
+	return render(h, c, "repo_pulls", RepoPullsData{
+		Title:        "Pull Requests",
+		User:         user,
+		Repo:         repoView,
+		PullRequests: pullViews,
+		OpenCount:    openCount,
+		ClosedCount:  closedCount,
+		Labels:       labelList,
+		Milestones:   milestoneList,
+		CurrentState: state,
+		CurrentLabel: labelFilter,
+		CurrentSort:  sortParam,
+		Page:         page,
+		TotalPages:   totalPages,
+		HasNext:      hasNext,
+		HasPrev:      hasPrev,
+		Breadcrumbs: []Breadcrumb{
+			{Label: repo.FullName, URL: "/" + repo.FullName},
+			{Label: "Pull requests", URL: ""},
+		},
+		ActiveNav: "",
+	})
+}
+
+// PullDetail renders the single pull request view.
+func (h *Page) PullDetail(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	number := parseInt(c.Param("number"))
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	pr, err := h.pulls.Get(ctx, owner, repoName, number)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Pull request not found")
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "pulls")
+
+	// Render PR body markdown
+	var prBodyHTML template.HTML
+	if pr.Body != "" {
+		prBodyHTML = template.HTML(renderMarkdown([]byte(pr.Body)))
+	}
+
+	// Determine status icon and color
+	statusIcon := "git-pull-request"
+	statusColor := "color-fg-success"
+	if pr.Draft {
+		statusIcon = "git-pull-request-draft"
+		statusColor = "color-fg-muted"
+	} else if pr.Merged {
+		statusIcon = "git-merge"
+		statusColor = "color-fg-done"
+	} else if pr.State == "closed" {
+		statusIcon = "git-pull-request-closed"
+		statusColor = "color-fg-danger"
+	}
+
+	pullView := &PullView{
+		PullRequest: pr,
+		TimeAgo:     timeAgo(pr.CreatedAt),
+		StatusIcon:  statusIcon,
+		StatusColor: statusColor,
+		BodyHTML:    prBodyHTML,
+	}
+
+	// Get commits
+	commitList, _ := h.pulls.ListCommits(ctx, owner, repoName, number, nil)
+
+	// Get files changed
+	fileList, _ := h.pulls.ListFiles(ctx, owner, repoName, number, nil)
+
+	// Convert files to FileChangeView for diff display
+	var fileViews []*FileChangeView
+	for _, f := range fileList {
+		diffLines := parsePatch(f.Patch)
+		isBinary := f.Patch == "" && f.Status == "modified" && f.Additions == 0 && f.Deletions == 0
+		tooLarge := len(f.Patch) > 100000
+
+		fileViews = append(fileViews, &FileChangeView{
+			SHA:       f.SHA,
+			Filename:  f.Filename,
+			Status:    f.Status,
+			Additions: f.Additions,
+			Deletions: f.Deletions,
+			Changes:   f.Changes,
+			BlobURL:   f.BlobURL,
+			RawURL:    f.RawURL,
+			Patch:     f.Patch,
+			DiffLines: diffLines,
+			IsBinary:  isBinary,
+			TooLarge:  tooLarge,
+		})
+	}
+
+	// Get reviews
+	reviewList, _ := h.pulls.ListReviews(ctx, owner, repoName, number, nil)
+
+	// Get comments (use issue comments for the PR conversation)
+	commentList, _ := h.comments.ListForIssue(ctx, owner, repoName, number, &comments.ListOpts{PerPage: 100})
+	commentViews := make([]*CommentView, len(commentList))
+
+	// Build unique participants list (PR author + unique commenters)
+	participantMap := make(map[string]*users.SimpleUser)
+	if pr.User != nil {
+		participantMap[pr.User.Login] = pr.User
+	}
+
+	for i, comment := range commentList {
+		var commentBodyHTML template.HTML
+		if comment.Body != "" {
+			commentBodyHTML = template.HTML(renderMarkdown([]byte(comment.Body)))
+		}
+		commentViews[i] = &CommentView{
+			IssueComment: comment,
+			TimeAgo:      formatTimeAgo(comment.CreatedAt),
+			BodyHTML:     commentBodyHTML,
+		}
+		if comment.User != nil && comment.User.Login != "" {
+			if _, exists := participantMap[comment.User.Login]; !exists {
+				participantMap[comment.User.Login] = comment.User
+			}
+		}
+	}
+
+	participants := make([]*users.SimpleUser, 0, len(participantMap))
+	for _, p := range participantMap {
+		participants = append(participants, p)
+	}
+
+	labelList, _ := h.labels.List(ctx, owner, repoName, nil)
+	milestoneList, _ := h.milestones.List(ctx, owner, repoName, nil)
+
+	var user *users.User
+	canEdit := false
+	canClose := false
+	canMerge := false
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+		canEdit = userID == pr.CreatorID || repoView.CanAdmin
+		canClose = canEdit || repoView.CanPush
+		canMerge = repoView.CanPush && pr.State == "open" && !pr.Merged
+	}
+
+	return render(h, c, "pull_view", PullDetailData{
+		Title:          fmt.Sprintf("%s #%d", pr.Title, pr.Number),
+		User:           user,
+		Repo:           repoView,
+		Pull:           pullView,
+		Commits:        commitList,
+		Files:          fileList,
+		FileViews:      fileViews,
+		Reviews:        reviewList,
+		Comments:       commentViews,
+		Labels:         labelList,
+		Milestones:     milestoneList,
+		Participants:   participants,
+		CanEdit:        canEdit,
+		CanClose:       canClose,
+		CanMerge:       canMerge,
+		MergeableState: pr.MergeableState,
+		Breadcrumbs: []Breadcrumb{
+			{Label: repo.FullName, URL: "/" + repo.FullName},
+			{Label: "Pull requests", URL: "/" + repo.FullName + "/pulls"},
+			{Label: fmt.Sprintf("#%d", pr.Number), URL: ""},
 		},
 		ActiveNav: "",
 	})

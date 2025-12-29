@@ -96,6 +96,14 @@ func (s *Service) Get(ctx context.Context, owner, repo string, number int) (*Pul
 		return nil, ErrNotFound
 	}
 
+	// Populate user info
+	if pr.CreatorID > 0 {
+		user, err := s.userStore.GetByID(ctx, pr.CreatorID)
+		if err == nil && user != nil {
+			pr.User = user.ToSimple()
+		}
+	}
+
 	s.populateURLs(pr, owner, repo)
 	return pr, nil
 }

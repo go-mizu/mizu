@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 //go:embed static/*
@@ -113,14 +114,57 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"subtract": func(a, b int) int {
 			return a - b
 		},
-		"mul": func(a, b int) int {
-			return a * b
-		},
-		"div": func(a, b int) int {
-			if b == 0 {
-				return 0
+		"mul": func(a, b interface{}) interface{} {
+			// Support both int and float multiplication
+			switch av := a.(type) {
+			case int:
+				if bv, ok := b.(int); ok {
+					return av * bv
+				}
+				if bv, ok := b.(float64); ok {
+					return float64(av) * bv
+				}
+			case float64:
+				if bv, ok := b.(int); ok {
+					return av * float64(bv)
+				}
+				if bv, ok := b.(float64); ok {
+					return av * bv
+				}
 			}
-			return a / b
+			return 0
+		},
+		"div": func(a, b interface{}) interface{} {
+			// Support both int and float division
+			switch av := a.(type) {
+			case int:
+				if bv, ok := b.(int); ok {
+					if bv == 0 {
+						return 0
+					}
+					return av / bv
+				}
+				if bv, ok := b.(float64); ok {
+					if bv == 0 {
+						return float64(0)
+					}
+					return float64(av) / bv
+				}
+			case float64:
+				if bv, ok := b.(int); ok {
+					if bv == 0 {
+						return float64(0)
+					}
+					return av / float64(bv)
+				}
+				if bv, ok := b.(float64); ok {
+					if bv == 0 {
+						return float64(0)
+					}
+					return av / bv
+				}
+			}
+			return 0
 		},
 		"mod": func(a, b int) int {
 			return a % b
@@ -185,6 +229,57 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			return "#ffffff" // White text
 		},
 		"assetURL": AssetURL,
+		"toFloat": func(n int) float64 {
+			return float64(n)
+		},
+		"formatTimeAgo": func(t interface{}) string {
+			var when time.Time
+			switch v := t.(type) {
+			case time.Time:
+				when = v
+			default:
+				return ""
+			}
+			if when.IsZero() {
+				return ""
+			}
+			now := time.Now()
+			diff := now.Sub(when)
+			switch {
+			case diff < time.Minute:
+				return "just now"
+			case diff < time.Hour:
+				mins := int(diff.Minutes())
+				if mins == 1 {
+					return "1 minute ago"
+				}
+				return strconv.Itoa(mins) + " minutes ago"
+			case diff < 24*time.Hour:
+				hours := int(diff.Hours())
+				if hours == 1 {
+					return "1 hour ago"
+				}
+				return strconv.Itoa(hours) + " hours ago"
+			case diff < 30*24*time.Hour:
+				days := int(diff.Hours() / 24)
+				if days == 1 {
+					return "yesterday"
+				}
+				return strconv.Itoa(days) + " days ago"
+			case diff < 365*24*time.Hour:
+				months := int(diff.Hours() / 24 / 30)
+				if months == 1 {
+					return "1 month ago"
+				}
+				return strconv.Itoa(months) + " months ago"
+			default:
+				years := int(diff.Hours() / 24 / 365)
+				if years == 1 {
+					return "1 year ago"
+				}
+				return strconv.Itoa(years) + " years ago"
+			}
+		},
 	}
 
 	// Read the main layout for the theme
@@ -215,6 +310,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"user_profile",
 		"repo_home", "repo_code", "repo_blob", "repo_blame", "repo_issues", "issue_view", "new_issue", "repo_settings",
 		"repo_commits", "commit_detail",
+		"repo_pulls", "pull_view",
 	}
 	for _, name := range mainPages {
 		pageBytes, err := viewsFS.ReadFile("views/" + theme + "/pages/" + name + ".html")

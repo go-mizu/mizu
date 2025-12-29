@@ -210,6 +210,7 @@ func mapReviewComment(gh *ghReviewComment, prID int64, creatorID int64) *pulls.R
 		InReplyToID:         gh.InReplyToID,
 		Side:                gh.Side,
 		StartSide:           gh.StartSide,
+		AuthorAssociation:   gh.AuthorAssociation,
 		CreatedAt:           gh.CreatedAt,
 		UpdatedAt:           gh.UpdatedAt,
 	}
@@ -238,4 +239,29 @@ func mapReviewComment(gh *ghReviewComment, prID int64, creatorID int64) *pulls.R
 	}
 
 	return rc
+}
+
+// mapReview maps a GitHub PR review to a GitHome review.
+func mapReview(gh *ghReview, prID int64, reviewerID int64) *pulls.Review {
+	return &pulls.Review{
+		PRID:              prID,
+		UserID:            reviewerID,
+		Body:              gh.Body,
+		State:             gh.State,
+		CommitID:          gh.CommitID,
+		AuthorAssociation: gh.AuthorAssociation,
+		SubmittedAt:       gh.SubmittedAt,
+	}
+}
+
+// mapPRIssueComment maps a GitHub comment to a GitHome issue comment for PR conversation.
+func mapPRIssueComment(gh *ghComment, prID, repoID, creatorID int64) *comments.IssueComment {
+	return &comments.IssueComment{
+		IssueID:   prID, // Store PR ID in issue_id field for PR comments
+		RepoID:    repoID,
+		CreatorID: creatorID,
+		Body:      gh.Body,
+		CreatedAt: gh.CreatedAt,
+		UpdatedAt: gh.UpdatedAt,
+	}
 }
