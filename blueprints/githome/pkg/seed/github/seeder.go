@@ -62,6 +62,19 @@ func (s *Seeder) Seed(ctx context.Context) (*Result, error) {
 
 	slog.Info("starting GitHub seed", "owner", s.config.Owner, "repo", s.config.Repo)
 
+	// Validate token if provided
+	if s.config.Token != "" {
+		valid, err := s.client.ValidateToken(ctx)
+		if err != nil {
+			slog.Warn("failed to validate token, proceeding anyway", "error", err)
+		} else if !valid {
+			slog.Warn("GitHub token is invalid or expired, falling back to unauthenticated API (60 requests/hour)")
+			s.client.ClearToken()
+		} else {
+			slog.Info("GitHub token validated successfully")
+		}
+	}
+
 	// 1. Fetch repository metadata
 	ghRepo, rateInfo, err := s.client.GetRepository(ctx, s.config.Owner, s.config.Repo)
 	if err != nil {
