@@ -115,9 +115,18 @@
             <div class="Box-header d-flex flex-items-center" style="padding: 8px 16px;">
                 <span class="color-fg-muted f6">Files</span>
             </div>
-            {{range .Tree}}
+            {{if .ParentPath}}
             <div class="Box-row Box-row--hover-blue d-flex flex-items-center" style="padding: 8px 16px;">
                 <svg class="octicon color-fg-muted mr-3 flex-shrink-0" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"/>
+                </svg>
+                <a href="{{.ParentPath}}" class="Link--primary" style="min-width: 180px;">..</a>
+                <span class="flex-1"></span>
+            </div>
+            {{end}}
+            {{range .Tree}}
+            <div class="Box-row Box-row--hover-blue d-flex flex-items-center" style="padding: 8px 16px;">
+                <svg class="octicon {{if eq .Type "dir"}}color-directory{{else}}color-fg-muted{{end}} mr-3 flex-shrink-0" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                     {{if eq .Type "dir"}}
                     <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75Z"/>
                     {{else}}

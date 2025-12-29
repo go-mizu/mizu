@@ -191,6 +191,7 @@ type RepoCodeData struct {
 	FileSizeHuman string
 	CurrentBranch string
 	CurrentPath   string
+	ParentPath    string // URL to go up one directory
 	Branches      []*branches.Branch
 	Breadcrumbs   []Breadcrumb
 	UnreadCount   int
@@ -1080,10 +1081,11 @@ func (h *Page) RepoTree(c *mizu.Ctx) error {
 		user, _ = h.users.GetByID(ctx, userID)
 	}
 
-	// Build breadcrumbs
+	// Build breadcrumbs and parent path
 	breadcrumbs := []Breadcrumb{
 		{Label: repo.FullName, URL: "/" + repo.FullName},
 	}
+	var parentPath string
 	if path != "" {
 		parts := splitPath(path)
 		currentPath := ""
@@ -1096,6 +1098,14 @@ func (h *Page) RepoTree(c *mizu.Ctx) error {
 			breadcrumbs = append(breadcrumbs, Breadcrumb{Label: part, URL: url})
 			currentPath += "/"
 		}
+		// Calculate parent path
+		if len(parts) == 1 {
+			// At top level of subdirectory, parent is repo root
+			parentPath = "/" + repo.FullName
+		} else {
+			// Parent is one level up
+			parentPath = fmt.Sprintf("/%s/tree/%s/%s", repo.FullName, ref, strings.Join(parts[:len(parts)-1], "/"))
+		}
 	}
 
 	return render(h, c, "repo_code", RepoCodeData{
@@ -1105,6 +1115,7 @@ func (h *Page) RepoTree(c *mizu.Ctx) error {
 		Tree:          tree,
 		CurrentBranch: ref,
 		CurrentPath:   path,
+		ParentPath:    parentPath,
 		Branches:      branchList,
 		Breadcrumbs:   breadcrumbs,
 		ActiveNav:     "",
@@ -1593,6 +1604,7 @@ func formatTimeAgo(t interface{}) string {
 
 	now := time.Now()
 	diff := now.Sub(when)
+	days := int(diff.Hours() / 24)
 
 	if diff < time.Minute {
 		return "just now"
@@ -1608,23 +1620,24 @@ func formatTimeAgo(t interface{}) string {
 			return "1 hour ago"
 		}
 		return fmt.Sprintf("%d hours ago", hours)
-	} else if diff < 30*24*time.Hour {
-		days := int(diff.Hours() / 24)
-		if days == 1 {
-			return "yesterday"
-		}
+	} else if days == 1 {
+		return "yesterday"
+	} else if days < 7 {
 		return fmt.Sprintf("%d days ago", days)
-	} else if diff < 365*24*time.Hour {
-		months := int(diff.Hours() / 24 / 30)
-		if months == 1 {
-			return "last month"
-		}
+	} else if days < 14 {
+		return "last week"
+	} else if days < 30 {
+		weeks := days / 7
+		return fmt.Sprintf("%d weeks ago", weeks)
+	} else if days < 60 {
+		return "last month"
+	} else if days < 365 {
+		months := days / 30
 		return fmt.Sprintf("%d months ago", months)
-	}
-	years := int(diff.Hours() / 24 / 365)
-	if years == 1 {
+	} else if days < 730 {
 		return "last year"
 	}
+	years := days / 365
 	return fmt.Sprintf("%d years ago", years)
 }
 

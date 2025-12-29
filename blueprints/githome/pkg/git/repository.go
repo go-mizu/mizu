@@ -948,10 +948,6 @@ type TreeEntryWithCommit struct {
 
 // GetTreeWithLastCommits returns tree entries with the last commit that modified each entry
 func (r *Repository) GetTreeWithLastCommits(sha string, maxCommits int) ([]*TreeEntryWithCommit, error) {
-	if maxCommits <= 0 {
-		maxCommits = 500 // Default limit
-	}
-
 	// Get commit object first
 	commit, err := r.repo.CommitObject(plumbing.NewHash(sha))
 	if err != nil {
@@ -964,121 +960,42 @@ func (r *Repository) GetTreeWithLastCommits(sha string, maxCommits int) ([]*Tree
 		return nil, err
 	}
 
-	// Map to track last commit per file
+	// Use native git commands for all files - much faster than go-git for file history
 	lastCommits := make(map[string]*object.Commit)
-	remainingFiles := make(map[string]bool)
+	type result struct {
+		fileName string
+		commit   *object.Commit
+	}
+	results := make(chan result, len(tree.Entries))
+	var wg sync.WaitGroup
+
 	for _, e := range tree.Entries {
-		remainingFiles[e.Name] = true
-	}
-
-	// Phase 1: Walk recent commit history to find last commit for recently changed files
-	iter, err := r.repo.Log(&git.LogOptions{From: commit.Hash})
-	if err != nil {
-		return nil, fmt.Errorf("log: %w", err)
-	}
-
-	commitCount := 0
-	err = iter.ForEach(func(c *object.Commit) error {
-		if len(remainingFiles) == 0 || commitCount >= maxCommits {
-			return storer.ErrStop
-		}
-		commitCount++
-
-		// Get the tree for this commit
-		commitTree, err := c.Tree()
-		if err != nil {
-			return nil
-		}
-
-		// Get parent tree (if any)
-		var parentTree *object.Tree
-		if c.NumParents() > 0 {
-			parent, err := c.Parent(0)
-			if err == nil {
-				parentTree, _ = parent.Tree()
-			}
-		}
-
-		// Check each remaining file
-		for fileName := range remainingFiles {
-			changed := false
-
-			// Get entry from current tree
-			entry, err := commitTree.FindEntry(fileName)
+		wg.Add(1)
+		go func(fn string) {
+			defer wg.Done()
+			cmd := exec.Command("git", "log", "-1", "--format=%H", "--", fn)
+			cmd.Dir = r.path
+			output, err := cmd.Output()
 			if err != nil {
-				// File doesn't exist in this commit, must have been added later
-				continue
+				return
 			}
-
-			if parentTree == nil {
-				// Initial commit - file was added here
-				changed = true
-			} else {
-				// Check if file exists in parent and has same hash
-				parentEntry, err := parentTree.FindEntry(fileName)
-				if err != nil {
-					// File doesn't exist in parent - was added in this commit
-					changed = true
-				} else if parentEntry.Hash != entry.Hash {
-					// File content changed
-					changed = true
-				}
+			commitSHA := strings.TrimSpace(string(output))
+			if commitSHA == "" {
+				return
 			}
-
-			if changed {
-				lastCommits[fileName] = c
-				delete(remainingFiles, fileName)
+			if c, err := r.repo.CommitObject(plumbing.NewHash(commitSHA)); err == nil {
+				results <- result{fileName: fn, commit: c}
 			}
-		}
-
-		return nil
-	})
-
-	// Phase 2: For files not found in recent commits, use native git command (much faster)
-	if len(remainingFiles) > 0 {
-		type result struct {
-			fileName string
-			commit   *object.Commit
-		}
-		results := make(chan result, len(remainingFiles))
-		var wg sync.WaitGroup
-
-		for fileName := range remainingFiles {
-			wg.Add(1)
-			go func(fn string) {
-				defer wg.Done()
-				// Use native git log command - much faster than go-git for file history
-				cmd := exec.Command("git", "log", "-1", "--format=%H", "--", fn)
-				cmd.Dir = r.path
-				output, err := cmd.Output()
-				if err != nil {
-					return
-				}
-				sha := strings.TrimSpace(string(output))
-				if sha == "" {
-					return
-				}
-				// Get the commit object from go-git
-				if c, err := r.repo.CommitObject(plumbing.NewHash(sha)); err == nil {
-					results <- result{fileName: fn, commit: c}
-				}
-			}(fileName)
-		}
-
-		// Close results channel when all goroutines complete
-		go func() {
-			wg.Wait()
-			close(results)
-		}()
-
-		// Collect results
-		for r := range results {
-			lastCommits[r.fileName] = r.commit
-		}
+		}(e.Name)
 	}
 
-	if err != nil && err != storer.ErrStop {
-		return nil, fmt.Errorf("iterate commits: %w", err)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for r := range results {
+		lastCommits[r.fileName] = r.commit
 	}
 
 	// Build result
@@ -1347,25 +1264,17 @@ func (r *Repository) Blame(ref, path string) (*BlameResult, error) {
 
 // CommitCount returns the total number of commits from a ref
 func (r *Repository) CommitCount(ref string) (int, error) {
-	sha, err := r.ResolveRef(ref)
+	// Use native git command - much faster than iterating through all commits
+	cmd := exec.Command("git", "rev-list", "--count", ref)
+	cmd.Dir = r.path
+	output, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("rev-list: %w", err)
 	}
-
-	hash := plumbing.NewHash(sha)
-	iter, err := r.repo.Log(&git.LogOptions{From: hash})
+	var count int
+	_, err = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &count)
 	if err != nil {
-		return 0, fmt.Errorf("log: %w", err)
+		return 0, fmt.Errorf("parse count: %w", err)
 	}
-
-	count := 0
-	err = iter.ForEach(func(c *object.Commit) error {
-		count++
-		return nil
-	})
-	if err != nil {
-		return 0, fmt.Errorf("iterate commits: %w", err)
-	}
-
 	return count, nil
 }

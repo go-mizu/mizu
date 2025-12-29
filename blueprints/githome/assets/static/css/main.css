@@ -831,6 +831,7 @@ textarea.form-control {
 .color-fg-subtle { color: var(--color-fg-subtle) !important; }
 .color-fg-success { color: var(--color-success-fg) !important; }
 .color-fg-danger { color: var(--color-danger-fg) !important; }
+.color-directory { color: #54aeff !important; }
 
 .Link--primary { color: var(--color-accent-fg) !important; }
 .Link--secondary { color: var(--color-fg-muted) !important; }
@@ -862,6 +863,18 @@ textarea.form-control {
 
 .p-3 { padding: var(--space-3) !important; }
 .p-4 { padding: var(--space-4) !important; }
+
+.flex-shrink-0 { flex-shrink: 0 !important; }
+
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-nowrap {
+  white-space: nowrap;
+}
 
 .clearfix::after {
   display: block;
