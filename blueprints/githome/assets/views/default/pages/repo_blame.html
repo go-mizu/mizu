@@ -1,0 +1,189 @@
+{{define "content"}}
+<div class="repo-header">
+    <div class="repo-header-content">
+        <div class="repo-header-title">
+            <svg class="octicon color-fg-muted mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                {{if .Repo.Private}}
+                <path fill-rule="evenodd" d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z"/>
+                {{else}}
+                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/>
+                {{end}}
+            </svg>
+            <a href="/{{.Repo.Owner.Login}}" class="repo-owner">{{.Repo.Owner.Login}}</a>
+            <span class="repo-separator">/</span>
+            <a href="/{{.Repo.FullName}}" class="repo-name">{{.Repo.Name}}</a>
+            <span class="Label Label--secondary ml-2">{{if .Repo.Private}}Private{{else}}Public{{end}}</span>
+        </div>
+    </div>
+</div>
+
+<nav class="UnderlineNav">
+    <div class="UnderlineNav-body">
+        {{range .Repo.Tabs}}
+        <a href="{{.URL}}" class="UnderlineNav-item{{if .Active}} selected{{end}}">
+            <span>{{.Name}}</span>
+            {{if gt .Count 0}}
+            <span class="Counter">{{.Count}}</span>
+            {{end}}
+        </a>
+        {{end}}
+    </div>
+</nav>
+
+<div class="container-xl">
+    <div class="mt-4">
+        <!-- File Navigation -->
+        <div class="file-navigation mb-3">
+            <div class="d-flex flex-justify-between">
+                <div class="d-flex flex-items-center">
+                    <button class="btn btn-sm mr-2">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Z"/>
+                        </svg>
+                        <span>{{.CurrentBranch}}</span>
+                        <span class="dropdown-caret"></span>
+                    </button>
+                    {{if .Branches}}
+                    <span class="color-fg-muted f6">{{len .Branches}} branches</span>
+                    {{end}}
+                </div>
+
+                <div class="d-flex flex-items-center">
+                    <a href="/{{.Repo.FullName}}/blob/{{.CurrentBranch}}/{{.FilePath}}" class="btn btn-sm mr-2">Normal</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Breadcrumb Navigation -->
+        <nav class="breadcrumb-nav mb-3">
+            {{range $i, $b := .Breadcrumbs}}
+            {{if $i}} / {{end}}
+            {{if $b.URL}}
+            <a href="{{$b.URL}}" class="Link--primary">{{$b.Label}}</a>
+            {{else}}
+            <strong>{{$b.Label}}</strong>
+            {{end}}
+            {{end}}
+        </nav>
+
+        <!-- Blame Content -->
+        <div class="Box">
+            <div class="Box-header d-flex flex-items-center flex-justify-between" style="padding: 8px 16px;">
+                <div class="d-flex flex-items-center">
+                    <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688Z"/>
+                    </svg>
+                    <span class="text-bold">{{.FileName}}</span>
+                    <span class="color-fg-muted ml-2 f6">{{.LineCount}} lines</span>
+                </div>
+            </div>
+
+            <div class="Box-body p-0">
+                <div class="blame-view">
+                    <table class="blame-table">
+                        <tbody>
+                            {{range .Lines}}
+                            <tr id="L{{.LineNumber}}">
+                                <td class="blame-info">
+                                    <div class="blame-commit">
+                                        <a href="/{{$.Repo.FullName}}/commit/{{.CommitSHA}}" class="blame-sha Link--secondary" title="{{.CommitSHA}}">{{.ShortSHA}}</a>
+                                    </div>
+                                    <div class="blame-author" title="{{.Author}}">{{.Author}}</div>
+                                    <div class="blame-date">{{.TimeAgo}}</div>
+                                </td>
+                                <td class="blame-line-number" data-line-number="{{.LineNumber}}">{{.LineNumber}}</td>
+                                <td class="blame-line-content">
+                                    <pre>{{.Content}}</pre>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.blame-view {
+    overflow-x: auto;
+}
+
+.blame-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-size: 12px;
+    line-height: 20px;
+}
+
+.blame-info {
+    width: 250px;
+    min-width: 250px;
+    padding: 4px 8px;
+    background-color: var(--color-canvas-subtle, #f6f8fa);
+    border-right: 1px solid var(--color-border-default, #d0d7de);
+    vertical-align: top;
+}
+
+.blame-commit {
+    display: inline-block;
+}
+
+.blame-sha {
+    font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    font-size: 11px;
+}
+
+.blame-author {
+    display: inline-block;
+    margin-left: 8px;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-fg-default, #1f2328);
+    font-size: 11px;
+}
+
+.blame-date {
+    display: inline-block;
+    margin-left: 8px;
+    color: var(--color-fg-muted, #656d76);
+    font-size: 11px;
+}
+
+.blame-line-number {
+    width: 1%;
+    min-width: 50px;
+    padding: 0 16px 0 16px;
+    text-align: right;
+    color: var(--color-fg-muted, #656d76);
+    background-color: var(--color-canvas-subtle, #f6f8fa);
+    vertical-align: top;
+    user-select: none;
+    border-right: 1px solid var(--color-border-default, #d0d7de);
+}
+
+.blame-line-content {
+    padding: 0 16px;
+    white-space: pre;
+    vertical-align: top;
+}
+
+.blame-line-content pre {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+}
+
+.breadcrumb-nav {
+    font-size: 14px;
+}
+</style>
+{{end}}

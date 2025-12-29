@@ -937,3 +937,268 @@ func InitWithCommit(path string, author Signature, message string) (*Repository,
 
 	return r, commitSHA, nil
 }
+
+// TreeEntryWithCommit extends TreeEntry with last commit info
+type TreeEntryWithCommit struct {
+	TreeEntry
+	LastCommit *Commit
+}
+
+// GetTreeWithLastCommits returns tree entries with the last commit that modified each entry
+func (r *Repository) GetTreeWithLastCommits(sha string, maxCommits int) ([]*TreeEntryWithCommit, error) {
+	// Get the basic tree first
+	tree, err := r.GetTree(sha)
+	if err != nil {
+		return nil, err
+	}
+
+	if maxCommits <= 0 {
+		maxCommits = 500 // Default limit
+	}
+
+	// Get commit for the tree SHA
+	commit, err := r.repo.CommitObject(plumbing.NewHash(sha))
+	if err != nil {
+		// If sha is a tree SHA, not a commit SHA, we can't get commit info
+		// Return entries without commit info
+		entries := make([]*TreeEntryWithCommit, len(tree.Entries))
+		for i, e := range tree.Entries {
+			entries[i] = &TreeEntryWithCommit{TreeEntry: e}
+		}
+		return entries, nil
+	}
+
+	// Map to track last commit per file
+	lastCommits := make(map[string]*object.Commit)
+	remainingFiles := make(map[string]bool)
+	for _, e := range tree.Entries {
+		remainingFiles[e.Name] = true
+	}
+
+	// Walk commit history to find last commit for each file
+	iter, err := r.repo.Log(&git.LogOptions{From: commit.Hash})
+	if err != nil {
+		return nil, fmt.Errorf("log: %w", err)
+	}
+
+	commitCount := 0
+	err = iter.ForEach(func(c *object.Commit) error {
+		if len(remainingFiles) == 0 || commitCount >= maxCommits {
+			return storer.ErrStop
+		}
+		commitCount++
+
+		// Get the tree for this commit
+		commitTree, err := c.Tree()
+		if err != nil {
+			return nil
+		}
+
+		// Get parent tree (if any)
+		var parentTree *object.Tree
+		if c.NumParents() > 0 {
+			parent, err := c.Parent(0)
+			if err == nil {
+				parentTree, _ = parent.Tree()
+			}
+		}
+
+		// Check each remaining file
+		for fileName := range remainingFiles {
+			changed := false
+
+			// Get entry from current tree
+			entry, err := commitTree.FindEntry(fileName)
+			if err != nil {
+				// File doesn't exist in this commit, must have been added later
+				continue
+			}
+
+			if parentTree == nil {
+				// Initial commit - file was added here
+				changed = true
+			} else {
+				// Check if file exists in parent and has same hash
+				parentEntry, err := parentTree.FindEntry(fileName)
+				if err != nil {
+					// File doesn't exist in parent - was added in this commit
+					changed = true
+				} else if parentEntry.Hash != entry.Hash {
+					// File content changed
+					changed = true
+				}
+			}
+
+			if changed {
+				lastCommits[fileName] = c
+				delete(remainingFiles, fileName)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil && err != storer.ErrStop {
+		return nil, fmt.Errorf("iterate commits: %w", err)
+	}
+
+	// Build result
+	entries := make([]*TreeEntryWithCommit, len(tree.Entries))
+	for i, e := range tree.Entries {
+		entry := &TreeEntryWithCommit{TreeEntry: e}
+		if c, ok := lastCommits[e.Name]; ok {
+			parents := make([]string, 0, c.NumParents())
+			for _, p := range c.ParentHashes {
+				parents = append(parents, p.String())
+			}
+			entry.LastCommit = &Commit{
+				SHA:     c.Hash.String(),
+				TreeSHA: c.TreeHash.String(),
+				Parents: parents,
+				Author: Signature{
+					Name:  c.Author.Name,
+					Email: c.Author.Email,
+					When:  c.Author.When,
+				},
+				Committer: Signature{
+					Name:  c.Committer.Name,
+					Email: c.Committer.Email,
+					When:  c.Committer.When,
+				},
+				Message: c.Message,
+			}
+		}
+		entries[i] = entry
+	}
+
+	return entries, nil
+}
+
+// FileLog returns commits that modified a specific file
+func (r *Repository) FileLog(ref, path string, limit int) ([]*Commit, error) {
+	sha, err := r.ResolveRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	hash := plumbing.NewHash(sha)
+	iter, err := r.repo.Log(&git.LogOptions{
+		From:     hash,
+		FileName: &path,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("log: %w", err)
+	}
+
+	var commits []*Commit
+	err = iter.ForEach(func(c *object.Commit) error {
+		if limit > 0 && len(commits) >= limit {
+			return storer.ErrStop
+		}
+
+		parents := make([]string, 0, c.NumParents())
+		for _, p := range c.ParentHashes {
+			parents = append(parents, p.String())
+		}
+
+		commits = append(commits, &Commit{
+			SHA:     c.Hash.String(),
+			TreeSHA: c.TreeHash.String(),
+			Parents: parents,
+			Author: Signature{
+				Name:  c.Author.Name,
+				Email: c.Author.Email,
+				When:  c.Author.When,
+			},
+			Committer: Signature{
+				Name:  c.Committer.Name,
+				Email: c.Committer.Email,
+				When:  c.Committer.When,
+			},
+			Message: c.Message,
+		})
+		return nil
+	})
+	if err != nil && err != storer.ErrStop {
+		return nil, fmt.Errorf("iterate commits: %w", err)
+	}
+
+	return commits, nil
+}
+
+// BlameLine represents a line with blame information
+type BlameLine struct {
+	LineNumber int
+	Content    string
+	CommitSHA  string
+	Author     Signature
+}
+
+// BlameResult contains blame information for a file
+type BlameResult struct {
+	Path  string
+	Lines []*BlameLine
+}
+
+// Blame returns blame information for a file
+func (r *Repository) Blame(ref, path string) (*BlameResult, error) {
+	sha, err := r.ResolveRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	commit, err := r.repo.CommitObject(plumbing.NewHash(sha))
+	if err != nil {
+		return nil, fmt.Errorf("get commit: %w", err)
+	}
+
+	// Use go-git's blame
+	blameResult, err := git.Blame(commit, path)
+	if err != nil {
+		return nil, fmt.Errorf("blame: %w", err)
+	}
+
+	lines := make([]*BlameLine, len(blameResult.Lines))
+	for i, line := range blameResult.Lines {
+		lines[i] = &BlameLine{
+			LineNumber: i + 1,
+			Content:    line.Text,
+			CommitSHA:  line.Hash.String(),
+			Author: Signature{
+				Name:  line.AuthorName,
+				Email: line.Author, // Author field in go-git Line is the email
+				When:  line.Date,
+			},
+		}
+	}
+
+	return &BlameResult{
+		Path:  path,
+		Lines: lines,
+	}, nil
+}
+
+// CommitCount returns the total number of commits from a ref
+func (r *Repository) CommitCount(ref string) (int, error) {
+	sha, err := r.ResolveRef(ref)
+	if err != nil {
+		return 0, err
+	}
+
+	hash := plumbing.NewHash(sha)
+	iter, err := r.repo.Log(&git.LogOptions{From: hash})
+	if err != nil {
+		return 0, fmt.Errorf("log: %w", err)
+	}
+
+	count := 0
+	err = iter.ForEach(func(c *object.Commit) error {
+		count++
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("iterate commits: %w", err)
+	}
+
+	return count, nil
+}

@@ -308,6 +308,7 @@ func (s *Server) setupRoutes() {
 	pages.Get("/{owner}/{repo}/tree/{ref}/{path...}", pageHandler.RepoTree)
 	pages.Get("/{owner}/{repo}/blob/{ref}/{path...}", pageHandler.RepoBlob)
 	pages.Get("/{owner}/{repo}/raw/{ref}/{path...}", pageHandler.RepoRaw)
+	pages.Get("/{owner}/{repo}/blame/{ref}/{path...}", pageHandler.RepoBlame)
 	pages.Get("/{owner}/{repo}/issues", pageHandler.RepoIssues)
 	pages.Get("/{owner}/{repo}/issues/new", pageHandler.NewIssue)
 	pages.Get("/{owner}/{repo}/issues/{number}", pageHandler.IssueDetail)

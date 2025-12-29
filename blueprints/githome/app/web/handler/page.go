@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-mizu/mizu"
 	"github.com/yuin/goldmark"
@@ -126,12 +127,27 @@ type RepoView struct {
 
 // TreeEntry represents a file/directory in repo.
 type TreeEntry struct {
-	Name       string
-	Path       string
-	Type       string // file, dir, submodule, symlink
-	Size       int64
-	SHA        string
-	LastCommit string
+	Name              string
+	Path              string
+	Type              string // file, dir, submodule, symlink
+	Size              int64
+	SHA               string
+	LastCommitSHA     string
+	LastCommitMessage string
+	LastCommitAuthor  string
+	LastCommitDate    string // formatted as "2 days ago"
+}
+
+// CommitView represents a commit for display
+type CommitView struct {
+	SHA             string
+	ShortSHA        string
+	Message         string
+	MessageTitle    string
+	Author          string
+	AuthorEmail     string
+	Date            string
+	TimeAgo         string
 }
 
 // RepoHomeData holds data for repository home page.
@@ -151,6 +167,8 @@ type RepoHomeData struct {
 	Breadcrumbs   []Breadcrumb
 	UnreadCount   int
 	ActiveNav     string
+	LatestCommit  *CommitView
+	CommitCount   int
 }
 
 // RepoCodeData holds data for file browser.
@@ -165,6 +183,7 @@ type RepoCodeData struct {
 	IsFile        bool
 	IsBinary      bool
 	IsMarkdown    bool
+	IsImage       bool
 	MarkdownHTML  template.HTML
 	Language      string
 	LineCount     int
@@ -172,6 +191,32 @@ type RepoCodeData struct {
 	FileSizeHuman string
 	CurrentBranch string
 	CurrentPath   string
+	Branches      []*branches.Branch
+	Breadcrumbs   []Breadcrumb
+	UnreadCount   int
+	ActiveNav     string
+}
+
+// BlameLineView represents a line with blame info for display
+type BlameLineView struct {
+	LineNumber int
+	Content    string
+	CommitSHA  string
+	ShortSHA   string
+	Author     string
+	TimeAgo    string
+}
+
+// RepoBlameData holds data for blame view.
+type RepoBlameData struct {
+	Title         string
+	User          *users.User
+	Repo          *RepoView
+	Lines         []*BlameLineView
+	FilePath      string
+	FileName      string
+	LineCount     int
+	CurrentBranch string
 	Branches      []*branches.Branch
 	Breadcrumbs   []Breadcrumb
 	UnreadCount   int
@@ -624,16 +669,21 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 		if branch == "" {
 			continue
 		}
-		entries, err := h.repos.ListTreeEntries(ctx, owner, repoName, "", branch)
+		// Use ListTreeEntriesWithCommits to get last commit info per file
+		entries, err := h.repos.ListTreeEntriesWithCommits(ctx, owner, repoName, "", branch)
 		if err == nil && entries != nil && len(entries) > 0 {
 			tree = make([]*TreeEntry, len(entries))
 			for i, e := range entries {
 				tree[i] = &TreeEntry{
-					Name: e.Name,
-					Path: e.Path,
-					Type: e.Type,
-					Size: e.Size,
-					SHA:  e.SHA,
+					Name:              e.Name,
+					Path:              e.Path,
+					Type:              e.Type,
+					Size:              e.Size,
+					SHA:               e.SHA,
+					LastCommitSHA:     e.LastCommitSHA,
+					LastCommitMessage: e.LastCommitMessage,
+					LastCommitAuthor:  e.LastCommitAuthor,
+					LastCommitDate:    formatTimeAgo(e.LastCommitDate),
 				}
 			}
 			usedBranch = branch
@@ -645,6 +695,23 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 	if usedBranch != "" {
 		currentBranch = usedBranch
 	}
+
+	// Get latest commit and commit count
+	var latestCommit *CommitView
+	var commitCount int
+	if commit, err := h.repos.GetLatestCommit(ctx, owner, repoName, currentBranch); err == nil && commit != nil {
+		latestCommit = &CommitView{
+			SHA:          commit.SHA,
+			ShortSHA:     shortSHA(commit.SHA),
+			Message:      commit.Message,
+			MessageTitle: firstLine(commit.Message),
+			Author:       commit.Author.Name,
+			AuthorEmail:  commit.Author.Email,
+			Date:         commit.Author.Date.Format("Jan 2, 2006"),
+			TimeAgo:      formatTimeAgo(commit.Author.Date),
+		}
+	}
+	commitCount, _ = h.repos.GetCommitCount(ctx, owner, repoName, currentBranch)
 
 	// Fetch and render README using the correct branch
 	var readmeHTML template.HTML
@@ -667,6 +734,8 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 		CurrentBranch: currentBranch,
 		Languages:     languages,
 		ActiveNav:     "",
+		LatestCommit:  latestCommit,
+		CommitCount:   commitCount,
 	})
 }
 
@@ -981,9 +1050,9 @@ func (h *Page) RepoTree(c *mizu.Ctx) error {
 		ref = repo.DefaultBranch
 	}
 
-	// Get directory tree entries
+	// Get directory tree entries with last commit info
 	var tree []*TreeEntry
-	entries, err := h.repos.ListTreeEntries(ctx, owner, repoName, path, ref)
+	entries, err := h.repos.ListTreeEntriesWithCommits(ctx, owner, repoName, path, ref)
 	if err != nil {
 		return c.Text(http.StatusNotFound, "Path not found")
 	}
@@ -991,11 +1060,15 @@ func (h *Page) RepoTree(c *mizu.Ctx) error {
 	tree = make([]*TreeEntry, len(entries))
 	for i, e := range entries {
 		tree[i] = &TreeEntry{
-			Name: e.Name,
-			Path: e.Path,
-			Type: e.Type,
-			Size: e.Size,
-			SHA:  e.SHA,
+			Name:              e.Name,
+			Path:              e.Path,
+			Type:              e.Type,
+			Size:              e.Size,
+			SHA:               e.SHA,
+			LastCommitSHA:     e.LastCommitSHA,
+			LastCommitMessage: e.LastCommitMessage,
+			LastCommitAuthor:  e.LastCommitAuthor,
+			LastCommitDate:    formatTimeAgo(e.LastCommitDate),
 		}
 	}
 
@@ -1078,6 +1151,9 @@ func (h *Page) RepoBlob(c *mizu.Ctx) error {
 	// Detect language from file extension
 	language := detectLanguage(path)
 
+	// Check if this is an image file
+	isImage := isImageFile(path)
+
 	// Check if binary (check decoded content)
 	isBinary := isBinaryContent(decodedContent)
 
@@ -1118,6 +1194,7 @@ func (h *Page) RepoBlob(c *mizu.Ctx) error {
 		IsFile:        true,
 		IsBinary:      isBinary,
 		IsMarkdown:    isMarkdown,
+		IsImage:       isImage,
 		MarkdownHTML:  markdownHTML,
 		Language:      language,
 		LineCount:     lineCount,
@@ -1159,6 +1236,80 @@ func (h *Page) RepoRaw(c *mizu.Ctx) error {
 	c.Header().Set("X-Content-Type-Options", "nosniff")
 
 	return c.Bytes(http.StatusOK, []byte(decodedContent), contentType)
+}
+
+// RepoBlame renders the blame view for a file.
+func (h *Page) RepoBlame(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
+	path := c.Param("path")
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "code")
+	branchList, _ := h.branches.List(ctx, owner, repoName, nil)
+
+	var user *users.User
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+	}
+
+	// Get blame info
+	blameResult, err := h.repos.GetBlame(ctx, owner, repoName, ref, path)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Could not generate blame for this file")
+	}
+
+	// Convert to view models
+	lines := make([]*BlameLineView, len(blameResult.Lines))
+	for i, line := range blameResult.Lines {
+		lines[i] = &BlameLineView{
+			LineNumber: line.LineNumber,
+			Content:    line.Content,
+			CommitSHA:  line.CommitSHA,
+			ShortSHA:   shortSHA(line.CommitSHA),
+			Author:     line.Author,
+			TimeAgo:    formatTimeAgo(line.Date),
+		}
+	}
+
+	// Build breadcrumbs
+	fileName := filepath.Base(path)
+	breadcrumbs := []Breadcrumb{
+		{Label: repo.FullName, URL: "/" + repo.FullName},
+	}
+	parts := splitPath(path)
+	currentPath := ""
+	for i, part := range parts {
+		currentPath += part
+		url := fmt.Sprintf("/%s/tree/%s/%s", repo.FullName, ref, currentPath)
+		if i == len(parts)-1 {
+			url = "" // Current file, no link
+		}
+		breadcrumbs = append(breadcrumbs, Breadcrumb{Label: part, URL: url})
+		currentPath += "/"
+	}
+
+	return render(h, c, "repo_blame", RepoBlameData{
+		Title:         "Blame: " + fileName + " - " + repo.FullName,
+		User:          user,
+		Repo:          repoView,
+		Lines:         lines,
+		FilePath:      path,
+		FileName:      fileName,
+		LineCount:     len(lines),
+		CurrentBranch: ref,
+		Branches:      branchList,
+		Breadcrumbs:   breadcrumbs,
+		ActiveNav:     "",
+	})
 }
 
 // detectContentType detects the MIME type from file extension and content
@@ -1424,4 +1575,87 @@ func humanizeBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// formatTimeAgo formats a time as a human-readable relative string
+func formatTimeAgo(t interface{}) string {
+	var when time.Time
+	switch v := t.(type) {
+	case time.Time:
+		when = v
+	default:
+		return ""
+	}
+
+	if when.IsZero() {
+		return ""
+	}
+
+	now := time.Now()
+	diff := now.Sub(when)
+
+	if diff < time.Minute {
+		return "just now"
+	} else if diff < time.Hour {
+		mins := int(diff.Minutes())
+		if mins == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", mins)
+	} else if diff < 24*time.Hour {
+		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	} else if diff < 30*24*time.Hour {
+		days := int(diff.Hours() / 24)
+		if days == 1 {
+			return "yesterday"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	} else if diff < 365*24*time.Hour {
+		months := int(diff.Hours() / 24 / 30)
+		if months == 1 {
+			return "last month"
+		}
+		return fmt.Sprintf("%d months ago", months)
+	}
+	years := int(diff.Hours() / 24 / 365)
+	if years == 1 {
+		return "last year"
+	}
+	return fmt.Sprintf("%d years ago", years)
+}
+
+// shortSHA returns the first 7 characters of a SHA
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
+}
+
+// firstLine returns the first line of a string
+func firstLine(s string) string {
+	if idx := strings.Index(s, "\n"); idx >= 0 {
+		return s[:idx]
+	}
+	return s
+}
+
+// isImageFile checks if a file path is an image file
+func isImageFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	imageExtensions := map[string]bool{
+		".png":  true,
+		".jpg":  true,
+		".jpeg": true,
+		".gif":  true,
+		".svg":  true,
+		".webp": true,
+		".ico":  true,
+		".bmp":  true,
+	}
+	return imageExtensions[ext]
 }

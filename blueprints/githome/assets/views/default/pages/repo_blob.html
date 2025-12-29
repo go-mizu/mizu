@@ -135,7 +135,13 @@
                 </div>
             </div>
 
-            {{if .IsBinary}}
+            {{if .IsImage}}
+            <div class="Box-body text-center p-4" style="background-color: var(--color-canvas-subtle, #f6f8fa);">
+                <img src="/{{.Repo.FullName}}/raw/{{.CurrentBranch}}/{{.FilePath}}"
+                     alt="{{.FileName}}"
+                     style="max-width: 100%; max-height: 80vh; border: 1px solid var(--color-border-default, #d0d7de); border-radius: 6px;">
+            </div>
+            {{else if .IsBinary}}
             <div class="Box-body blankslate">
                 <h3>Binary file not shown</h3>
                 <p>This file is binary and cannot be displayed.</p>
