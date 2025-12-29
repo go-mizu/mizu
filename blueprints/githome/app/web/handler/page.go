@@ -3,7 +3,9 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -1883,6 +1885,8 @@ func (h *Page) RepoCommits(c *mizu.Ctx) error {
 			authorView.Name = commit.Commit.Author.Name
 			authorView.Email = commit.Commit.Author.Email
 		}
+		// Ensure avatar URL is set
+		authorView.AvatarURL = ensureAvatarURL(authorView.AvatarURL, authorView.Email, authorView.Login)
 
 		// Build committer view
 		committerView := &UserView{}
@@ -1895,6 +1899,8 @@ func (h *Page) RepoCommits(c *mizu.Ctx) error {
 			committerView.Name = commit.Commit.Committer.Name
 			committerView.Email = commit.Commit.Committer.Email
 		}
+		// Ensure avatar URL is set
+		committerView.AvatarURL = ensureAvatarURL(committerView.AvatarURL, committerView.Email, committerView.Login)
 
 		// Check if same author
 		isSame := authorView.Email == committerView.Email
@@ -1987,6 +1993,8 @@ func (h *Page) CommitDetail(c *mizu.Ctx) error {
 		authorView.Name = commit.Commit.Author.Name
 		authorView.Email = commit.Commit.Author.Email
 	}
+	// Ensure avatar URL is set
+	authorView.AvatarURL = ensureAvatarURL(authorView.AvatarURL, authorView.Email, authorView.Login)
 
 	// Build committer view
 	committerView := &UserView{}
@@ -1999,6 +2007,8 @@ func (h *Page) CommitDetail(c *mizu.Ctx) error {
 		committerView.Name = commit.Commit.Committer.Name
 		committerView.Email = commit.Commit.Committer.Email
 	}
+	// Ensure avatar URL is set
+	committerView.AvatarURL = ensureAvatarURL(committerView.AvatarURL, committerView.Email, committerView.Login)
 
 	isSame := authorView.Email == committerView.Email
 
@@ -2182,4 +2192,28 @@ func restOfMessage(s string) string {
 		return strings.TrimSpace(s[idx+1:])
 	}
 	return ""
+}
+
+// gravatarURL generates a Gravatar URL from an email address.
+func gravatarURL(email string) string {
+	email = strings.TrimSpace(strings.ToLower(email))
+	hash := md5.Sum([]byte(email))
+	return fmt.Sprintf("https://www.gravatar.com/avatar/%s?d=identicon&s=40", hex.EncodeToString(hash[:]))
+}
+
+// ensureAvatarURL returns the provided URL if not empty, otherwise generates a Gravatar URL.
+func ensureAvatarURL(avatarURL, email, login string) string {
+	if avatarURL != "" {
+		return avatarURL
+	}
+	// If we have a GitHub login, use GitHub avatar
+	if login != "" {
+		return fmt.Sprintf("https://avatars.githubusercontent.com/%s?s=40", login)
+	}
+	// Fall back to Gravatar
+	if email != "" {
+		return gravatarURL(email)
+	}
+	// Default avatar
+	return "https://avatars.githubusercontent.com/u/0?s=40"
 }

@@ -68,7 +68,7 @@
 
         <!-- Blame Content -->
         <div class="Box">
-            <div class="Box-header d-flex flex-items-center flex-justify-between" style="padding: 8px 16px;">
+            <div class="Box-header d-flex flex-items-center flex-justify-between">
                 <div class="d-flex flex-items-center">
                     <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                         <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688Z"/>
@@ -85,16 +85,12 @@
                             {{range .Lines}}
                             <tr id="L{{.LineNumber}}">
                                 <td class="blame-info">
-                                    <div class="blame-commit">
-                                        <a href="/{{$.Repo.FullName}}/commit/{{.CommitSHA}}" class="blame-sha Link--secondary" title="{{.CommitSHA}}">{{.ShortSHA}}</a>
-                                    </div>
-                                    <div class="blame-author" title="{{.Author}}">{{.Author}}</div>
-                                    <div class="blame-date">{{.TimeAgo}}</div>
+                                    <a href="/{{$.Repo.FullName}}/commit/{{.CommitSHA}}" class="blame-sha" title="{{.CommitSHA}}">{{.ShortSHA}}</a>
+                                    <a href="/{{.Author}}" class="blame-author">{{.Author}}</a>
+                                    <span class="blame-date">{{.TimeAgo}}</span>
                                 </td>
-                                <td class="blame-line-number" data-line-number="{{.LineNumber}}">{{.LineNumber}}</td>
-                                <td class="blame-line-content">
-                                    <pre>{{.Content}}</pre>
-                                </td>
+                                <td class="blame-line-number" data-line-number="{{.LineNumber}}"></td>
+                                <td class="blame-line-content"><span class="blame-code">{{.Content}}</span></td>
                             </tr>
                             {{end}}
                         </tbody>
@@ -105,6 +101,10 @@
     </div>
 </div>
 
+<!-- Highlight.js for syntax highlighting -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
 <style>
 .blame-view {
     overflow-x: auto;
@@ -113,77 +113,102 @@
 .blame-table {
     width: 100%;
     border-collapse: collapse;
+    border-spacing: 0;
     font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
     font-size: 12px;
     line-height: 20px;
+    tab-size: 4;
 }
 
 .blame-info {
-    width: 250px;
-    min-width: 250px;
-    padding: 4px 8px;
+    width: 280px;
+    min-width: 280px;
+    padding: 0 16px;
     background-color: var(--color-canvas-subtle, #f6f8fa);
     border-right: 1px solid var(--color-border-default, #d0d7de);
     vertical-align: top;
-}
-
-.blame-commit {
-    display: inline-block;
+    white-space: nowrap;
 }
 
 .blame-sha {
     font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
-    font-size: 11px;
+    font-size: 12px;
+    color: var(--color-accent-fg, #0969da);
+    text-decoration: none;
+}
+
+.blame-sha:hover {
+    text-decoration: underline;
 }
 
 .blame-author {
-    display: inline-block;
     margin-left: 8px;
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: var(--color-fg-default, #1f2328);
-    font-size: 11px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.blame-author:hover {
+    color: var(--color-accent-fg, #0969da);
+    text-decoration: underline;
 }
 
 .blame-date {
-    display: inline-block;
     margin-left: 8px;
     color: var(--color-fg-muted, #656d76);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .blame-line-number {
     width: 1%;
     min-width: 50px;
-    padding: 0 16px 0 16px;
+    padding: 0 10px;
     text-align: right;
     color: var(--color-fg-muted, #656d76);
-    background-color: var(--color-canvas-subtle, #f6f8fa);
     vertical-align: top;
     user-select: none;
-    border-right: 1px solid var(--color-border-default, #d0d7de);
+    white-space: nowrap;
+}
+
+.blame-line-number::before {
+    content: attr(data-line-number);
 }
 
 .blame-line-content {
-    padding: 0 16px;
+    padding: 0 10px;
     white-space: pre;
     vertical-align: top;
+    overflow-x: visible;
+    word-wrap: normal;
 }
 
-.blame-line-content pre {
-    margin: 0;
+.blame-code {
+    white-space: pre;
+}
+
+/* Highlight.js overrides */
+.blame-code .hljs {
+    display: inline;
+    background: transparent;
     padding: 0;
-    background: none;
-    border: none;
-    font-family: inherit;
-    font-size: inherit;
-    line-height: inherit;
 }
 
 .breadcrumb-nav {
     font-size: 14px;
 }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Apply syntax highlighting to each line
+    const language = '{{.Language}}';
+    if (language && hljs.getLanguage(language)) {
+        document.querySelectorAll('.blame-code').forEach((el) => {
+            const result = hljs.highlight(el.textContent, { language: language });
+            el.innerHTML = result.value;
+        });
+    }
+});
+</script>
 {{end}}
