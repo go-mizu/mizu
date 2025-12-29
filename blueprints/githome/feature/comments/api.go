@@ -98,6 +98,7 @@ type API interface {
 	ListForRepo(ctx context.Context, owner, repo string, opts *ListOpts) ([]*IssueComment, error)
 	ListForIssue(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*IssueComment, error)
 	ListForPR(ctx context.Context, owner, repo string, prID int64, opts *ListOpts) ([]*IssueComment, error)
+	ListUniqueCommentersForIssue(ctx context.Context, owner, repo string, number int) ([]*users.SimpleUser, error)
 	GetIssueComment(ctx context.Context, owner, repo string, commentID int64) (*IssueComment, error)
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, creatorID int64, body string) (*IssueComment, error)
 	UpdateIssueComment(ctx context.Context, owner, repo string, commentID int64, body string) (*IssueComment, error)
@@ -121,6 +122,7 @@ type Store interface {
 	DeleteIssueComment(ctx context.Context, id int64) error
 	ListIssueCommentsForRepo(ctx context.Context, repoID int64, opts *ListOpts) ([]*IssueComment, error)
 	ListIssueCommentsForIssue(ctx context.Context, issueID int64, opts *ListOpts) ([]*IssueComment, error)
+	ListUniqueCommenters(ctx context.Context, issueID int64) ([]*users.SimpleUser, error)
 
 	// Commit comments
 	CreateCommitComment(ctx context.Context, c *CommitComment) error

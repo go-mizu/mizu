@@ -21,8 +21,13 @@ func NewCommentsStore(db *sql.DB) *CommentsStore {
 
 func (s *CommentsStore) CreateIssueComment(ctx context.Context, c *comments.IssueComment) error {
 	now := time.Now()
-	c.CreatedAt = now
-	c.UpdatedAt = now
+	// Only set timestamps if not already set (preserves original timestamps during seeding)
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = now
+	}
+	if c.UpdatedAt.IsZero() {
+		c.UpdatedAt = now
+	}
 
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO issue_comments (node_id, issue_id, repo_id, creator_id, body, created_at, updated_at)
@@ -255,6 +260,23 @@ func scanIssueCommentsWithUser(rows *sql.Rows) ([]*comments.IssueComment, error)
 		list = append(list, c)
 	}
 	return list, rows.Err()
+}
+
+// ListUniqueCommenters returns unique users who commented on an issue
+func (s *CommentsStore) ListUniqueCommenters(ctx context.Context, issueID int64) ([]*users.SimpleUser, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT u.id, u.node_id, u.login, u.name, u.email, u.avatar_url, u.type, u.site_admin
+		FROM issue_comments c
+		JOIN users u ON c.creator_id = u.id
+		WHERE c.issue_id = $1
+		ORDER BY u.login
+	`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanSimpleUsers(rows)
 }
 
 func scanCommitComments(rows *sql.Rows) ([]*comments.CommitComment, error) {

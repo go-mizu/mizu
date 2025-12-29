@@ -25,7 +25,9 @@ func (s *PullsStore) Create(ctx context.Context, pr *pulls.PullRequest) error {
 	if pr.CreatedAt.IsZero() {
 		pr.CreatedAt = now
 	}
-	pr.UpdatedAt = now
+	if pr.UpdatedAt.IsZero() {
+		pr.UpdatedAt = now
+	}
 
 	headSHA := ""
 	baseSHA := ""
@@ -334,7 +336,9 @@ func (s *PullsStore) CreateReviewComment(ctx context.Context, c *pulls.ReviewCom
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = now
 	}
-	c.UpdatedAt = now
+	if c.UpdatedAt.IsZero() {
+		c.UpdatedAt = now
+	}
 
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO pr_review_comments (node_id, pr_id, review_id, user_id, diff_hunk, path, position,

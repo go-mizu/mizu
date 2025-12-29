@@ -1124,11 +1124,6 @@ func (h *Page) IssueDetail(c *mizu.Ctx) error {
 		_ = err
 	}
 	commentViews := make([]*CommentView, len(commentList))
-	// Build unique participants list (issue author + unique commenters)
-	participantMap := make(map[string]*users.SimpleUser)
-	if issue.User != nil {
-		participantMap[issue.User.Login] = issue.User
-	}
 	for i, comment := range commentList {
 		// Render comment body markdown
 		var commentBodyHTML template.HTML
@@ -1140,14 +1135,21 @@ func (h *Page) IssueDetail(c *mizu.Ctx) error {
 			TimeAgo:      formatTimeAgo(comment.CreatedAt),
 			BodyHTML:     commentBodyHTML,
 		}
-		// Add unique participants
-		if comment.User != nil && comment.User.Login != "" {
-			if _, exists := participantMap[comment.User.Login]; !exists {
-				participantMap[comment.User.Login] = comment.User
+	}
+
+	// Fetch unique participants via SQL (includes all commenters, not just first page)
+	commenters, _ := h.comments.ListUniqueCommentersForIssue(ctx, owner, repoName, number)
+	participantMap := make(map[string]*users.SimpleUser)
+	if issue.User != nil {
+		participantMap[issue.User.Login] = issue.User
+	}
+	for _, u := range commenters {
+		if u != nil && u.Login != "" {
+			if _, exists := participantMap[u.Login]; !exists {
+				participantMap[u.Login] = u
 			}
 		}
 	}
-	// Convert map to slice
 	participants := make([]*users.SimpleUser, 0, len(participantMap))
 	for _, p := range participantMap {
 		participants = append(participants, p)

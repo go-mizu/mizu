@@ -125,6 +125,27 @@ func (s *Service) ListForPR(ctx context.Context, owner, repo string, prID int64,
 	return comments, nil
 }
 
+// ListUniqueCommentersForIssue returns unique users who commented on an issue
+func (s *Service) ListUniqueCommentersForIssue(ctx context.Context, owner, repo string, number int) ([]*users.SimpleUser, error) {
+	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, repos.ErrNotFound
+	}
+
+	issue, err := s.issueStore.GetByNumber(ctx, r.ID, number)
+	if err != nil {
+		return nil, err
+	}
+	if issue == nil {
+		return nil, issues.ErrNotFound
+	}
+
+	return s.store.ListUniqueCommenters(ctx, issue.ID)
+}
+
 // GetIssueComment retrieves an issue comment by ID
 func (s *Service) GetIssueComment(ctx context.Context, owner, repo string, commentID int64) (*IssueComment, error) {
 	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
