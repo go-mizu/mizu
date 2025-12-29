@@ -161,3 +161,22 @@ type CloneOptions struct {
 	Depth  int
 	Branch string
 }
+
+// DiffStat represents diff statistics
+type DiffStat struct {
+	Additions int
+	Deletions int
+	Total     int
+}
+
+// DiffFile represents a file in a diff
+type DiffFile struct {
+	SHA              string
+	Filename         string
+	Status           string // added, removed, modified, renamed, copied
+	Additions        int
+	Deletions        int
+	Changes          int
+	Patch            string
+	PreviousFilename string // for renamed files
+}

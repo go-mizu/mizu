@@ -2,11 +2,22 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/commits"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/mizu"
 )
+
+// parseTime parses an ISO 8601 timestamp (GitHub API format)
+func parseTime(s string) (time.Time, error) {
+	// Try RFC3339 first (2006-01-02T15:04:05Z)
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	// Try date-only format
+	return time.Parse("2006-01-02", s)
+}
 
 // CommitHandler handles commit endpoints
 type CommitHandler struct {
@@ -26,11 +37,24 @@ func (h *CommitHandler) ListCommits(c *mizu.Ctx) error {
 
 	pagination := GetPagination(c)
 	opts := &commits.ListOpts{
-		Page:    pagination.Page,
-		PerPage: pagination.PerPage,
-		SHA:     c.Query("sha"),
-		Path:    c.Query("path"),
-		Author:  c.Query("author"),
+		Page:      pagination.Page,
+		PerPage:   pagination.PerPage,
+		SHA:       c.Query("sha"),
+		Path:      c.Query("path"),
+		Author:    c.Query("author"),
+		Committer: c.Query("committer"),
+	}
+
+	// Parse since/until time filters
+	if since := c.Query("since"); since != "" {
+		if t, err := parseTime(since); err == nil {
+			opts.Since = t
+		}
+	}
+	if until := c.Query("until"); until != "" {
+		if t, err := parseTime(until); err == nil {
+			opts.Until = t
+		}
 	}
 
 	commitList, err := h.commits.List(c.Context(), owner, repoName, opts)

@@ -1278,3 +1278,253 @@ func (r *Repository) CommitCount(ref string) (int, error) {
 	}
 	return count, nil
 }
+
+// DiffStats returns the diff statistics between two commits
+// If fromSHA is empty, uses the parent of toSHA (or empty tree for root commits)
+func (r *Repository) DiffStats(fromSHA, toSHA string) (*DiffStat, error) {
+	args := []string{"diff", "--numstat"}
+	if fromSHA == "" {
+		// For root commit, compare against empty tree
+		args = append(args, "4b825dc642cb6eb9a060e54bf8d69288fbee4904", toSHA)
+	} else {
+		args = append(args, fromSHA, toSHA)
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = r.path
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("diff numstat: %w", err)
+	}
+
+	stat := &DiffStat{}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		// Handle binary files (marked as -)
+		if fields[0] != "-" {
+			var add int
+			fmt.Sscanf(fields[0], "%d", &add)
+			stat.Additions += add
+		}
+		if fields[1] != "-" {
+			var del int
+			fmt.Sscanf(fields[1], "%d", &del)
+			stat.Deletions += del
+		}
+	}
+	stat.Total = stat.Additions + stat.Deletions
+	return stat, nil
+}
+
+// DiffFiles returns detailed file changes between two commits
+// If fromSHA is empty, uses the parent of toSHA (or empty tree for root commits)
+func (r *Repository) DiffFiles(fromSHA, toSHA string) ([]*DiffFile, error) {
+	// Empty tree SHA for comparing root commits
+	emptyTree := "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	if fromSHA == "" {
+		fromSHA = emptyTree
+	}
+
+	// Get file status with rename detection
+	statusArgs := []string{"diff", "--name-status", "-M", fromSHA, toSHA}
+	cmd := exec.Command("git", statusArgs...)
+	cmd.Dir = r.path
+	statusOutput, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("diff name-status: %w", err)
+	}
+
+	// Get numstat for line counts
+	numstatArgs := []string{"diff", "--numstat", "-M", fromSHA, toSHA}
+	cmd = exec.Command("git", numstatArgs...)
+	cmd.Dir = r.path
+	numstatOutput, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("diff numstat: %w", err)
+	}
+
+	// Parse numstat into map
+	numstatMap := make(map[string][2]int) // filename -> [additions, deletions]
+	for _, line := range strings.Split(strings.TrimSpace(string(numstatOutput)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		var add, del int
+		if fields[0] != "-" {
+			fmt.Sscanf(fields[0], "%d", &add)
+		}
+		if fields[1] != "-" {
+			fmt.Sscanf(fields[1], "%d", &del)
+		}
+		// For renames, the filename is the new name (last field)
+		filename := fields[len(fields)-1]
+		numstatMap[filename] = [2]int{add, del}
+	}
+
+	// Parse status output
+	var files []*DiffFile
+	for _, line := range strings.Split(strings.TrimSpace(string(statusOutput)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		file := &DiffFile{}
+
+		// Parse status code
+		statusCode := fields[0]
+		switch {
+		case statusCode == "A":
+			file.Status = "added"
+			file.Filename = fields[1]
+		case statusCode == "D":
+			file.Status = "removed"
+			file.Filename = fields[1]
+		case statusCode == "M":
+			file.Status = "modified"
+			file.Filename = fields[1]
+		case strings.HasPrefix(statusCode, "R"):
+			file.Status = "renamed"
+			file.PreviousFilename = fields[1]
+			file.Filename = fields[2]
+		case strings.HasPrefix(statusCode, "C"):
+			file.Status = "copied"
+			file.PreviousFilename = fields[1]
+			file.Filename = fields[2]
+		default:
+			file.Status = "modified"
+			file.Filename = fields[1]
+		}
+
+		// Get line counts from numstat
+		if stats, ok := numstatMap[file.Filename]; ok {
+			file.Additions = stats[0]
+			file.Deletions = stats[1]
+			file.Changes = stats[0] + stats[1]
+		}
+
+		// Get blob SHA for the file
+		if file.Status != "removed" {
+			blobArgs := []string{"ls-tree", toSHA, "--", file.Filename}
+			cmd = exec.Command("git", blobArgs...)
+			cmd.Dir = r.path
+			blobOutput, err := cmd.Output()
+			if err == nil {
+				blobFields := strings.Fields(string(blobOutput))
+				if len(blobFields) >= 3 {
+					file.SHA = blobFields[2]
+				}
+			}
+		}
+
+		// Get patch content
+		patchArgs := []string{"diff", fromSHA, toSHA, "--", file.Filename}
+		if file.PreviousFilename != "" {
+			patchArgs = []string{"diff", fromSHA, toSHA, "--", file.PreviousFilename, file.Filename}
+		}
+		cmd = exec.Command("git", patchArgs...)
+		cmd.Dir = r.path
+		patchOutput, err := cmd.Output()
+		if err == nil {
+			file.Patch = extractPatchHunks(string(patchOutput))
+		}
+
+		files = append(files, file)
+	}
+
+	return files, nil
+}
+
+// extractPatchHunks extracts just the hunk content from a patch (without diff header)
+func extractPatchHunks(patch string) string {
+	lines := strings.Split(patch, "\n")
+	var hunks []string
+	inHunk := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			inHunk = true
+		}
+		if inHunk {
+			hunks = append(hunks, line)
+		}
+	}
+	return strings.Join(hunks, "\n")
+}
+
+// LogWithSkip returns commit history with offset support for pagination
+func (r *Repository) LogWithSkip(ref string, limit, skip int) ([]*Commit, error) {
+	sha, err := r.ResolveRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use native git for pagination support
+	args := []string{"log", "--format=%H", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("-n%d", limit), sha}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = r.path
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("log: %w", err)
+	}
+
+	shas := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]*Commit, 0, len(shas))
+	for _, commitSHA := range shas {
+		if commitSHA == "" {
+			continue
+		}
+		commit, err := r.GetCommit(commitSHA)
+		if err != nil {
+			continue
+		}
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}
+
+// FileLogWithSkip returns commits that modified a specific file with pagination
+func (r *Repository) FileLogWithSkip(ref, path string, limit, skip int) ([]*Commit, error) {
+	sha, err := r.ResolveRef(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use native git for pagination support
+	args := []string{"log", "--format=%H", fmt.Sprintf("--skip=%d", skip), fmt.Sprintf("-n%d", limit), sha, "--", path}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = r.path
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("log: %w", err)
+	}
+
+	shas := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]*Commit, 0, len(shas))
+	for _, commitSHA := range shas {
+		if commitSHA == "" {
+			continue
+		}
+		commit, err := r.GetCommit(commitSHA)
+		if err != nil {
+			continue
+		}
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}

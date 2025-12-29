@@ -55,13 +55,16 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 	}
 
 	if opts == nil {
-		opts = &ListOpts{PerPage: 30}
+		opts = &ListOpts{PerPage: 30, Page: 1}
 	}
 	if opts.PerPage == 0 {
 		opts.PerPage = 30
 	}
 	if opts.PerPage > 100 {
 		opts.PerPage = 100
+	}
+	if opts.Page == 0 {
+		opts.Page = 1
 	}
 
 	// Try to open git repository
@@ -79,8 +82,17 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 		ref = r.DefaultBranch
 	}
 
-	// Get commit log
-	gitCommits, err := gitRepo.Log(ref, opts.PerPage)
+	// Calculate offset for pagination
+	skip := (opts.Page - 1) * opts.PerPage
+
+	// Get commit log with pagination
+	var gitCommits []*pkggit.Commit
+	if opts.Path != "" {
+		// Use file-specific log for path filtering
+		gitCommits, err = gitRepo.FileLogWithSkip(ref, opts.Path, opts.PerPage, skip)
+	} else {
+		gitCommits, err = gitRepo.LogWithSkip(ref, opts.PerPage, skip)
+	}
 	if err != nil {
 		if err == pkggit.ErrRefNotFound || err == pkggit.ErrEmptyRepository {
 			return []*Commit{}, nil
@@ -96,6 +108,11 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 			continue
 		}
 
+		// Apply committer filter
+		if opts.Committer != "" && !strings.Contains(gc.Committer.Email, opts.Committer) && !strings.Contains(gc.Committer.Name, opts.Committer) {
+			continue
+		}
+
 		// Apply time filters
 		if !opts.Since.IsZero() && gc.Author.When.Before(opts.Since) {
 			continue
@@ -107,8 +124,9 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 		parents := make([]*CommitRef, 0, len(gc.Parents))
 		for _, p := range gc.Parents {
 			parents = append(parents, &CommitRef{
-				SHA: p,
-				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+				SHA:     p,
+				URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+				HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repo, p),
 			})
 		}
 
@@ -116,7 +134,8 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 			SHA:    gc.SHA,
 			NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
 			Commit: &CommitData{
-				Message: gc.Message,
+				Message:      gc.Message,
+				CommentCount: 0,
 				Author: &CommitAuthor{
 					Name:  gc.Author.Name,
 					Email: gc.Author.Email,
@@ -130,6 +149,10 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 				Tree: &TreeRef{
 					SHA: gc.TreeSHA,
 					URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, gc.TreeSHA),
+				},
+				Verification: &Verification{
+					Verified: false,
+					Reason:   "unsigned",
 				},
 			},
 			Parents: parents,
@@ -196,8 +219,9 @@ func (s *Service) Get(ctx context.Context, owner, repo, ref string) (*Commit, er
 	parents := make([]*CommitRef, 0, len(gc.Parents))
 	for _, p := range gc.Parents {
 		parents = append(parents, &CommitRef{
-			SHA: p,
-			URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+			SHA:     p,
+			URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, p),
+			HTMLURL: fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repo, p),
 		})
 	}
 
@@ -205,7 +229,8 @@ func (s *Service) Get(ctx context.Context, owner, repo, ref string) (*Commit, er
 		SHA:    gc.SHA,
 		NodeID: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Commit:%s", gc.SHA))),
 		Commit: &CommitData{
-			Message: gc.Message,
+			Message:      gc.Message,
+			CommentCount: 0,
 			Author: &CommitAuthor{
 				Name:  gc.Author.Name,
 				Email: gc.Author.Email,
@@ -220,8 +245,49 @@ func (s *Service) Get(ctx context.Context, owner, repo, ref string) (*Commit, er
 				SHA: gc.TreeSHA,
 				URL: fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, gc.TreeSHA),
 			},
+			Verification: &Verification{
+				Verified: false,
+				Reason:   "unsigned",
+			},
 		},
 		Parents: parents,
+	}
+
+	// Get stats and files for single commit view
+	var parentSHA string
+	if len(gc.Parents) > 0 {
+		parentSHA = gc.Parents[0]
+	}
+
+	// Get diff stats
+	stats, err := gitRepo.DiffStats(parentSHA, sha)
+	if err == nil {
+		commit.Stats = &CommitStats{
+			Additions: stats.Additions,
+			Deletions: stats.Deletions,
+			Total:     stats.Total,
+		}
+	}
+
+	// Get diff files
+	diffFiles, err := gitRepo.DiffFiles(parentSHA, sha)
+	if err == nil {
+		files := make([]*CommitFile, 0, len(diffFiles))
+		for _, df := range diffFiles {
+			file := &CommitFile{
+				SHA:              df.SHA,
+				Filename:         df.Filename,
+				Status:           df.Status,
+				Additions:        df.Additions,
+				Deletions:        df.Deletions,
+				Changes:          df.Changes,
+				Patch:            df.Patch,
+				PreviousFilename: df.PreviousFilename,
+			}
+			s.populateFileURLs(file, owner, repo, sha)
+			files = append(files, file)
+		}
+		commit.Files = files
 	}
 
 	// Try to find matching user by email
@@ -606,6 +672,15 @@ func (s *Service) populateURLs(c *Commit, owner, repo string) {
 	if c.Commit != nil {
 		c.Commit.URL = c.URL
 	}
+}
+
+// populateFileURLs fills in the URL fields for a commit file
+func (s *Service) populateFileURLs(f *CommitFile, owner, repo, sha string) {
+	// URL-encode the filename for paths with special characters
+	encodedFilename := strings.ReplaceAll(f.Filename, "/", "%2F")
+	f.BlobURL = fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repo, sha, f.Filename)
+	f.RawURL = fmt.Sprintf("%s/%s/%s/raw/%s/%s", s.baseURL, owner, repo, sha, f.Filename)
+	f.ContentsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s?ref=%s", s.baseURL, owner, repo, encodedFilename, sha)
 }
 
 // populateStatusURLs fills in the URL fields for a status
