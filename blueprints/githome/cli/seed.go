@@ -292,6 +292,8 @@ func newSeedGitHubCmd() *cobra.Command {
 	var maxComments int
 	var noComments bool
 	var noPRs bool
+	var issueNumber int
+	var prNumber int
 
 	cmd := &cobra.Command{
 		Use:   "github <owner/repo>",
@@ -303,14 +305,21 @@ Requires a GitHub repository in the format 'owner/repo'.
 For higher rate limits, provide a GitHub personal access token via --token or GITHUB_TOKEN env var.
 
 Note: Without authentication, GitHub API allows 60 requests/hour.
-With a token, this increases to 5,000 requests/hour.`,
+With a token, this increases to 5,000 requests/hour.
+
+Supports Ctrl+C to cancel the import at any time.`,
 		Example: `  githome seed github golang/go
   githome seed github golang/go --token $GITHUB_TOKEN
   githome seed github golang/go --max-issues 100 --max-prs 50
   githome seed github golang/go --no-comments
+  githome seed github golang/go --issue 21498        # Import single issue
+  githome seed github golang/go --pr 12345           # Import single PR
   githome seed github mycompany/repo --base-url https://github.mycompany.com/api/v3`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Use command context for Ctrl+C cancellation
+			ctx := cmd.Context()
+
 			// Parse owner/repo
 			parts := strings.SplitN(args[0], "/", 2)
 			if len(parts) != 2 {
@@ -337,7 +346,13 @@ With a token, this increases to 5,000 requests/hour.`,
 				return fmt.Errorf("create store: %w", err)
 			}
 
-			ctx := context.Background()
+			// Check for context cancellation
+			select {
+			case <-ctx.Done():
+				slog.Info("seeding cancelled")
+				return ctx.Err()
+			default:
+			}
 
 			// Ensure admin user exists
 			usersStore := duckdb.NewUsersStore(db)
@@ -357,6 +372,22 @@ With a token, this increases to 5,000 requests/hour.`,
 			config.ImportComments = !noComments
 			config.ImportPRs = !noPRs
 
+			// Single issue/PR mode
+			config.SingleIssue = issueNumber
+			config.SinglePR = prNumber
+
+			// If importing single issue/PR, disable the other imports
+			if issueNumber > 0 {
+				config.ImportPRs = false
+				config.MaxIssues = 1
+				slog.Info("importing single issue", "number", issueNumber)
+			}
+			if prNumber > 0 {
+				config.ImportIssues = false
+				config.MaxPRs = 1
+				slog.Info("importing single PR", "number", prNumber)
+			}
+
 			if baseURL != "" {
 				config.BaseURL = baseURL
 			}
@@ -365,6 +396,10 @@ With a token, this increases to 5,000 requests/hour.`,
 			seeder := github.NewSeeder(db, config)
 			result, err := seeder.Seed(ctx)
 			if err != nil {
+				if ctx.Err() != nil {
+					slog.Info("seeding cancelled by user")
+					return nil
+				}
 				return fmt.Errorf("seed github: %w", err)
 			}
 
@@ -406,6 +441,8 @@ With a token, this increases to 5,000 requests/hour.`,
 	cmd.Flags().IntVar(&maxComments, "max-comments", 0, "Maximum comments per issue/PR (0 = all)")
 	cmd.Flags().BoolVar(&noComments, "no-comments", false, "Skip importing comments")
 	cmd.Flags().BoolVar(&noPRs, "no-prs", false, "Skip importing pull requests")
+	cmd.Flags().IntVar(&issueNumber, "issue", 0, "Import a single issue by number")
+	cmd.Flags().IntVar(&prNumber, "pr", 0, "Import a single pull request by number")
 
 	return cmd
 }

@@ -27,6 +27,10 @@ type Config struct {
 	MaxIssues          int // Max issues to import (0 = all)
 	MaxPRs             int // Max PRs to import (0 = all)
 	MaxCommentsPerItem int // Max comments per issue/PR (0 = all)
+
+	// Single item import
+	SingleIssue int // Import only this issue number (0 = all)
+	SinglePR    int // Import only this PR number (0 = all)
 }
 
 // DefaultConfig returns a config with sensible defaults.

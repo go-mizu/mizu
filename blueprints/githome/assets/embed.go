@@ -2,11 +2,14 @@
 package assets
 
 import (
+	"crypto/md5"
 	"embed"
+	"encoding/hex"
 	"html/template"
 	"io/fs"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 //go:embed static/*
@@ -17,6 +20,51 @@ var viewsFS embed.FS
 
 // Available themes
 var Themes = []string{"default"}
+
+// Asset hashes for cache busting
+var (
+	assetHashes     = make(map[string]string)
+	assetHashesMu   sync.RWMutex
+	assetHashesOnce sync.Once
+)
+
+// computeAssetHashes calculates MD5 hashes for static assets
+func computeAssetHashes() {
+	assetHashesMu.Lock()
+	defer assetHashesMu.Unlock()
+
+	// Compute hashes for known assets
+	assets := []string{
+		"css/main.css",
+		"js/app.js",
+	}
+
+	for _, asset := range assets {
+		data, err := staticFS.ReadFile("static/" + asset)
+		if err != nil {
+			continue
+		}
+		hash := md5.Sum(data)
+		assetHashes[asset] = hex.EncodeToString(hash[:])[:8] // Use first 8 chars
+	}
+}
+
+// GetAssetHash returns the hash for a given asset path
+func GetAssetHash(path string) string {
+	assetHashesOnce.Do(computeAssetHashes)
+	assetHashesMu.RLock()
+	defer assetHashesMu.RUnlock()
+	return assetHashes[path]
+}
+
+// AssetURL returns the asset URL with cache busting hash
+func AssetURL(path string) string {
+	hash := GetAssetHash(path)
+	if hash != "" {
+		return "/_assets/" + path + "?v=" + hash
+	}
+	return "/_assets/" + path
+}
 
 // Static returns the static files filesystem.
 func Static() fs.FS {
@@ -98,6 +146,22 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"split": func(s, sep string) []string {
 			return strings.Split(s, sep)
 		},
+		"formatNumber": func(n int) string {
+			// Format numbers with thousand separators (e.g., 1,234,567)
+			str := strconv.Itoa(n)
+			if n < 1000 {
+				return str
+			}
+			// Insert commas from right to left
+			var result []byte
+			for i, c := range str {
+				if i > 0 && (len(str)-i)%3 == 0 {
+					result = append(result, ',')
+				}
+				result = append(result, byte(c))
+			}
+			return string(result)
+		},
 		"contrastColor": func(hexColor string) string {
 			// Calculate the best contrasting text color (white or black) for a given background
 			// Remove # prefix if present
@@ -120,6 +184,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 			}
 			return "#ffffff" // White text
 		},
+		"assetURL": AssetURL,
 	}
 
 	// Read the main layout for the theme

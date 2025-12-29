@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/go-mizu/blueprints/githome/feature/issues"
 	"github.com/go-mizu/blueprints/githome/feature/repos"
 	"github.com/go-mizu/blueprints/githome/feature/users"
 	"github.com/go-mizu/blueprints/githome/store/duckdb"
@@ -402,9 +403,22 @@ func (s *Seeder) importMilestones(ctx context.Context, repoID int64, result *Res
 
 // importIssues fetches and imports all issues.
 func (s *Seeder) importIssues(ctx context.Context, repoID int64, result *Result) error {
+	// Handle single issue import
+	if s.config.SingleIssue > 0 {
+		return s.importSingleIssue(ctx, repoID, s.config.SingleIssue, result)
+	}
+
 	page := 1
 	total := 0
 	for {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			slog.Info("issues import cancelled")
+			return ctx.Err()
+		default:
+		}
+
 		// Check max limit
 		if s.config.MaxIssues > 0 && total >= s.config.MaxIssues {
 			break
@@ -441,6 +455,14 @@ func (s *Seeder) importIssues(ctx context.Context, repoID int64, result *Result)
 		}
 
 		for _, ghIssue := range ghIssues {
+			// Check for context cancellation
+			select {
+			case <-ctx.Done():
+				slog.Info("issues import cancelled")
+				return ctx.Err()
+			default:
+			}
+
 			// Skip if it's a PR (GitHub API returns PRs in issues list)
 			if ghIssue.PullRequest != nil {
 				continue
@@ -531,6 +553,96 @@ func (s *Seeder) importIssues(ctx context.Context, repoID int64, result *Result)
 	}
 
 	slog.Info("imported issues", "created", result.IssuesCreated, "skipped", result.IssuesSkipped)
+	return nil
+}
+
+// importSingleIssue fetches and imports a single issue by number.
+func (s *Seeder) importSingleIssue(ctx context.Context, repoID int64, issueNumber int, result *Result) error {
+	slog.Info("fetching single issue", "number", issueNumber)
+
+	ghIssue, rateInfo, err := s.client.GetIssue(ctx, s.config.Owner, s.config.Repo, issueNumber)
+	s.updateRateInfo(result, rateInfo)
+	if err != nil {
+		return fmt.Errorf("fetch issue #%d: %w", issueNumber, err)
+	}
+
+	// Check if issue exists
+	existing, err := s.issuesStore.GetByNumber(ctx, repoID, ghIssue.Number)
+	if err != nil {
+		return fmt.Errorf("check issue #%d: %w", ghIssue.Number, err)
+	}
+	if existing != nil {
+		slog.Info("issue already exists, updating", "number", ghIssue.Number)
+		// Update existing issue
+		updateIn := &issues.UpdateIn{
+			Title: &ghIssue.Title,
+			Body:  &ghIssue.Body,
+			State: &ghIssue.State,
+		}
+		if err := s.issuesStore.Update(ctx, existing.ID, updateIn); err != nil {
+			slog.Warn("failed to update issue", "error", err)
+		}
+		result.IssuesSkipped++
+	} else {
+		// Ensure creator exists
+		creatorID := s.config.AdminUserID
+		if ghIssue.User != nil {
+			id, err := s.ensureUser(ctx, ghIssue.User, result)
+			if err != nil {
+				slog.Warn("failed to ensure issue creator", "error", err)
+			} else {
+				creatorID = id
+			}
+		}
+
+		// Create issue
+		issue := mapIssue(ghIssue, repoID, creatorID)
+		if err := s.issuesStore.Create(ctx, issue); err != nil {
+			return fmt.Errorf("create issue #%d: %w", ghIssue.Number, err)
+		}
+
+		result.IssuesCreated++
+
+		// Add labels
+		for _, ghLabel := range ghIssue.Labels {
+			if labelID, ok := s.labelCache[ghLabel.Name]; ok {
+				if err := s.labelsStore.AddToIssue(ctx, issue.ID, labelID); err != nil {
+					slog.Warn("failed to add label to issue", "issue", issue.Number, "label", ghLabel.Name, "error", err)
+				}
+			}
+		}
+
+		// Set milestone
+		if ghIssue.Milestone != nil {
+			if milestoneID, ok := s.milestoneCache[ghIssue.Milestone.Number]; ok {
+				if err := s.issuesStore.SetMilestone(ctx, issue.ID, &milestoneID); err != nil {
+					slog.Warn("failed to set milestone", "issue", issue.Number, "error", err)
+				}
+			}
+		}
+
+		// Add assignees
+		for _, assignee := range ghIssue.Assignees {
+			assigneeID, err := s.ensureUser(ctx, assignee, result)
+			if err != nil {
+				continue
+			}
+			if err := s.issuesStore.AddAssignee(ctx, issue.ID, assigneeID); err != nil {
+				slog.Warn("failed to add assignee", "issue", issue.Number, "assignee", assignee.Login, "error", err)
+			}
+		}
+
+		existing = issue
+	}
+
+	// Import comments
+	if s.config.ImportComments && ghIssue.Comments > 0 {
+		if err := s.importIssueComments(ctx, repoID, existing.ID, ghIssue.Number, result); err != nil {
+			slog.Warn("failed to import issue comments", "issue", ghIssue.Number, "error", err)
+		}
+	}
+
+	slog.Info("imported single issue", "number", issueNumber, "comments", ghIssue.Comments)
 	return nil
 }
 
