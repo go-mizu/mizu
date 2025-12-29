@@ -82,10 +82,11 @@ type CommitFile struct {
 
 // Verification represents signature verification
 type Verification struct {
-	Verified  bool   `json:"verified"`
-	Reason    string `json:"reason"`
-	Signature string `json:"signature,omitempty"`
-	Payload   string `json:"payload,omitempty"`
+	Verified   bool    `json:"verified"`
+	Reason     string  `json:"reason"`
+	Signature  *string `json:"signature"`
+	Payload    *string `json:"payload"`
+	VerifiedAt *string `json:"verified_at"`
 }
 
 // Comparison represents a commit comparison
@@ -157,13 +158,14 @@ type CreateStatusIn struct {
 
 // ListOpts contains options for listing commits
 type ListOpts struct {
-	Page    int       `json:"page,omitempty"`
-	PerPage int       `json:"per_page,omitempty"`
-	SHA     string    `json:"sha,omitempty"`
-	Path    string    `json:"path,omitempty"`
-	Author  string    `json:"author,omitempty"`
-	Since   time.Time `json:"since,omitempty"`
-	Until   time.Time `json:"until,omitempty"`
+	Page      int       `json:"page,omitempty"`
+	PerPage   int       `json:"per_page,omitempty"`
+	SHA       string    `json:"sha,omitempty"`
+	Path      string    `json:"path,omitempty"`
+	Author    string    `json:"author,omitempty"`
+	Committer string    `json:"committer,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
+	Until     time.Time `json:"until,omitempty"`
 }
 
 // API defines the commits service interface

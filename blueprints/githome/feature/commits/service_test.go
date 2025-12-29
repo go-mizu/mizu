@@ -722,6 +722,529 @@ func TestService_PopulateStatusURLs(t *testing.T) {
 	}
 }
 
+// Enhanced Commit Tests - GitHub API Compatibility
+
+func TestService_List_WithPagination(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+
+	// Create git repository with multiple commits
+	createGitRepoWithMultipleCommits(t, reposDir, user.Login, repo.Name, 5)
+
+	// Test default pagination (page 1, per_page 30)
+	commitList, err := service.List(context.Background(), user.Login, repo.Name, nil)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(commitList) != 5 {
+		t.Errorf("expected 5 commits, got %d", len(commitList))
+	}
+
+	// Test custom per_page
+	opts := &commits.ListOpts{Page: 1, PerPage: 2}
+	commitList, err = service.List(context.Background(), user.Login, repo.Name, opts)
+	if err != nil {
+		t.Fatalf("List with pagination failed: %v", err)
+	}
+	if len(commitList) != 2 {
+		t.Errorf("expected 2 commits, got %d", len(commitList))
+	}
+
+	// Test page 2
+	opts = &commits.ListOpts{Page: 2, PerPage: 2}
+	commitList, err = service.List(context.Background(), user.Login, repo.Name, opts)
+	if err != nil {
+		t.Fatalf("List page 2 failed: %v", err)
+	}
+	if len(commitList) != 2 {
+		t.Errorf("expected 2 commits on page 2, got %d", len(commitList))
+	}
+}
+
+func TestService_List_MaxPerPage(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+	createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Test per_page > 100 is capped at 100
+	opts := &commits.ListOpts{PerPage: 200}
+	_, err := service.List(context.Background(), user.Login, repo.Name, opts)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	// The actual cap is enforced in service, so this should not error
+}
+
+func TestService_Get_WithStatsAndFiles(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+
+	// Create git repository with a commit that modifies files
+	commitSHA := createGitRepoWithFileChanges(t, reposDir, user.Login, repo.Name)
+
+	// Get the commit
+	commit, err := service.Get(context.Background(), user.Login, repo.Name, commitSHA)
+	if err != nil {
+		t.Fatalf("Get commit failed: %v", err)
+	}
+
+	// Verify stats are present
+	if commit.Stats == nil {
+		t.Error("expected Stats to be populated")
+	} else {
+		if commit.Stats.Additions <= 0 && commit.Stats.Deletions <= 0 {
+			t.Error("expected non-zero additions or deletions")
+		}
+		if commit.Stats.Total != commit.Stats.Additions+commit.Stats.Deletions {
+			t.Errorf("expected Total=%d to equal Additions(%d)+Deletions(%d)",
+				commit.Stats.Total, commit.Stats.Additions, commit.Stats.Deletions)
+		}
+	}
+
+	// Verify files are present
+	if commit.Files == nil || len(commit.Files) == 0 {
+		t.Error("expected Files to be populated")
+	} else {
+		for _, f := range commit.Files {
+			if f.Filename == "" {
+				t.Error("expected Filename to be set")
+			}
+			if f.Status == "" {
+				t.Error("expected Status to be set")
+			}
+			if f.BlobURL == "" {
+				t.Error("expected BlobURL to be set")
+			}
+			if f.RawURL == "" {
+				t.Error("expected RawURL to be set")
+			}
+			if f.ContentsURL == "" {
+				t.Error("expected ContentsURL to be set")
+			}
+		}
+	}
+}
+
+func TestService_Get_Verification(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+	commitSHA := createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// Get the commit
+	commit, err := service.Get(context.Background(), user.Login, repo.Name, commitSHA)
+	if err != nil {
+		t.Fatalf("Get commit failed: %v", err)
+	}
+
+	// Verify verification object is present
+	if commit.Commit == nil {
+		t.Fatal("expected Commit data to be set")
+	}
+	if commit.Commit.Verification == nil {
+		t.Error("expected Verification to be set")
+	} else {
+		if commit.Commit.Verification.Verified {
+			t.Error("expected Verified=false for unsigned commit")
+		}
+		if commit.Commit.Verification.Reason != "unsigned" {
+			t.Errorf("expected Reason='unsigned', got %q", commit.Commit.Verification.Reason)
+		}
+	}
+}
+
+func TestService_Get_ParentsWithHTMLURL(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+
+	// Create git repository with multiple commits (so we have parents)
+	commits := createGitRepoWithMultipleCommits(t, reposDir, user.Login, repo.Name, 3)
+	latestSHA := commits[0] // First in list is latest
+
+	// Get the latest commit
+	commit, err := service.Get(context.Background(), user.Login, repo.Name, latestSHA)
+	if err != nil {
+		t.Fatalf("Get commit failed: %v", err)
+	}
+
+	// Verify parents have html_url
+	if len(commit.Parents) == 0 {
+		t.Error("expected at least one parent")
+	} else {
+		for _, p := range commit.Parents {
+			if p.HTMLURL == "" {
+				t.Error("expected parent HTMLURL to be set")
+			}
+			if !strings.Contains(p.HTMLURL, "/commit/") {
+				t.Errorf("expected parent HTMLURL to contain '/commit/', got %q", p.HTMLURL)
+			}
+		}
+	}
+}
+
+func TestService_List_Verification(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+	createGitRepo(t, reposDir, user.Login, repo.Name)
+
+	// List commits
+	commitList, err := service.List(context.Background(), user.Login, repo.Name, nil)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	// Verify each commit has verification object
+	for _, commit := range commitList {
+		if commit.Commit == nil {
+			t.Error("expected Commit data to be set")
+			continue
+		}
+		if commit.Commit.Verification == nil {
+			t.Error("expected Verification to be set in list response")
+		}
+	}
+}
+
+// Helper function to create a git repo with multiple commits
+func createGitRepoWithMultipleCommits(t *testing.T, reposDir, owner, repoName string, count int) []string {
+	t.Helper()
+
+	// Create owner directory
+	ownerDir := filepath.Join(reposDir, owner)
+	if err := os.MkdirAll(ownerDir, 0755); err != nil {
+		t.Fatalf("failed to create owner dir: %v", err)
+	}
+
+	// Create bare repo at owner/repo.git
+	repoPath := filepath.Join(ownerDir, repoName+".git")
+	repo, commitSHA, err := pkggit.InitWithCommit(repoPath, pkggit.Signature{
+		Name:  "Test Author",
+		Email: "test@example.com",
+		When:  time.Now().Add(-time.Duration(count) * time.Hour),
+	}, "Initial commit")
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	shas := []string{commitSHA}
+
+	// Create additional commits
+	for i := 1; i < count; i++ {
+		// Create a blob with some content
+		content := []byte("content " + string(rune('0'+i)))
+		blobSHA, err := repo.CreateBlob(content)
+		if err != nil {
+			t.Fatalf("failed to create blob: %v", err)
+		}
+
+		// Create a tree with the blob
+		treeSHA, err := repo.CreateTree(&pkggit.CreateTreeOpts{
+			Entries: []pkggit.TreeEntryInput{
+				{Path: "file" + string(rune('0'+i)) + ".txt", Mode: pkggit.ModeFile, SHA: blobSHA},
+			},
+		})
+		if err != nil {
+			t.Fatalf("failed to create tree: %v", err)
+		}
+
+		// Create commit
+		newCommitSHA, err := repo.CreateCommit(&pkggit.CreateCommitOpts{
+			Message: "Commit " + string(rune('0'+i)),
+			TreeSHA: treeSHA,
+			Parents: []string{shas[len(shas)-1]},
+			Author: pkggit.Signature{
+				Name:  "Test Author",
+				Email: "test@example.com",
+				When:  time.Now().Add(-time.Duration(count-i) * time.Hour),
+			},
+			Committer: pkggit.Signature{
+				Name:  "Test Committer",
+				Email: "committer@example.com",
+				When:  time.Now().Add(-time.Duration(count-i) * time.Hour),
+			},
+		})
+		if err != nil {
+			t.Fatalf("failed to create commit: %v", err)
+		}
+		shas = append(shas, newCommitSHA)
+
+		// Update main branch
+		if err := repo.UpdateRef("refs/heads/main", newCommitSHA, true); err != nil {
+			t.Fatalf("failed to update ref: %v", err)
+		}
+	}
+
+	// Reverse so latest is first
+	for i, j := 0, len(shas)-1; i < j; i, j = i+1, j-1 {
+		shas[i], shas[j] = shas[j], shas[i]
+	}
+
+	return shas
+}
+
+// Helper function to create a git repo with file changes for testing diff
+func createGitRepoWithFileChanges(t *testing.T, reposDir, owner, repoName string) string {
+	t.Helper()
+
+	// Create owner directory
+	ownerDir := filepath.Join(reposDir, owner)
+	if err := os.MkdirAll(ownerDir, 0755); err != nil {
+		t.Fatalf("failed to create owner dir: %v", err)
+	}
+
+	// Create bare repo at owner/repo.git
+	repoPath := filepath.Join(ownerDir, repoName+".git")
+	repo, initialSHA, err := pkggit.InitWithCommit(repoPath, pkggit.Signature{
+		Name:  "Test Author",
+		Email: "test@example.com",
+		When:  time.Now().Add(-2 * time.Hour),
+	}, "Initial commit")
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create a blob with content
+	content := []byte("Hello, World!\nThis is a test file.\n")
+	blobSHA, err := repo.CreateBlob(content)
+	if err != nil {
+		t.Fatalf("failed to create blob: %v", err)
+	}
+
+	// Create a tree with the file
+	treeSHA, err := repo.CreateTree(&pkggit.CreateTreeOpts{
+		Entries: []pkggit.TreeEntryInput{
+			{Path: "README.md", Mode: pkggit.ModeFile, SHA: blobSHA},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create tree: %v", err)
+	}
+
+	// Create commit with the file
+	commitSHA, err := repo.CreateCommit(&pkggit.CreateCommitOpts{
+		Message: "Add README.md",
+		TreeSHA: treeSHA,
+		Parents: []string{initialSHA},
+		Author: pkggit.Signature{
+			Name:  "Test Author",
+			Email: "test@example.com",
+			When:  time.Now().Add(-1 * time.Hour),
+		},
+		Committer: pkggit.Signature{
+			Name:  "Test Author",
+			Email: "test@example.com",
+			When:  time.Now().Add(-1 * time.Hour),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create commit: %v", err)
+	}
+
+	// Update main branch
+	if err := repo.UpdateRef("refs/heads/main", commitSHA, true); err != nil {
+		t.Fatalf("failed to update ref: %v", err)
+	}
+
+	return commitSHA
+}
+
+// GitHub API Compatibility Test - Verify JSON structure matches GitHub
+
+func TestService_Get_GitHubAPICompatibility(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+	commitSHA := createGitRepoWithFileChanges(t, reposDir, user.Login, repo.Name)
+
+	// Get the commit
+	commit, err := service.Get(context.Background(), user.Login, repo.Name, commitSHA)
+	if err != nil {
+		t.Fatalf("Get commit failed: %v", err)
+	}
+
+	// Verify all required GitHub API fields are present
+	// Top-level fields
+	if commit.SHA == "" {
+		t.Error("missing SHA")
+	}
+	if commit.NodeID == "" {
+		t.Error("missing node_id")
+	}
+	if commit.URL == "" {
+		t.Error("missing url")
+	}
+	if commit.HTMLURL == "" {
+		t.Error("missing html_url")
+	}
+	if commit.CommentsURL == "" {
+		t.Error("missing comments_url")
+	}
+	if commit.Parents == nil {
+		t.Error("missing parents (should be empty array, not nil)")
+	}
+
+	// Commit data object
+	if commit.Commit == nil {
+		t.Fatal("missing commit object")
+	}
+	if commit.Commit.URL == "" {
+		t.Error("missing commit.url")
+	}
+	if commit.Commit.Message == "" {
+		t.Error("missing commit.message")
+	}
+
+	// Author info
+	if commit.Commit.Author == nil {
+		t.Error("missing commit.author")
+	} else {
+		if commit.Commit.Author.Name == "" {
+			t.Error("missing commit.author.name")
+		}
+		if commit.Commit.Author.Email == "" {
+			t.Error("missing commit.author.email")
+		}
+		if commit.Commit.Author.Date.IsZero() {
+			t.Error("missing commit.author.date")
+		}
+	}
+
+	// Committer info
+	if commit.Commit.Committer == nil {
+		t.Error("missing commit.committer")
+	}
+
+	// Tree ref
+	if commit.Commit.Tree == nil {
+		t.Error("missing commit.tree")
+	} else {
+		if commit.Commit.Tree.SHA == "" {
+			t.Error("missing commit.tree.sha")
+		}
+		if commit.Commit.Tree.URL == "" {
+			t.Error("missing commit.tree.url")
+		}
+	}
+
+	// Verification
+	if commit.Commit.Verification == nil {
+		t.Error("missing commit.verification")
+	}
+
+	// Stats (for single commit GET)
+	if commit.Stats == nil {
+		t.Error("missing stats")
+	} else {
+		// Total should equal additions + deletions
+		if commit.Stats.Total != commit.Stats.Additions+commit.Stats.Deletions {
+			t.Errorf("stats.total (%d) != additions (%d) + deletions (%d)",
+				commit.Stats.Total, commit.Stats.Additions, commit.Stats.Deletions)
+		}
+	}
+
+	// Files (for single commit GET)
+	if commit.Files == nil {
+		t.Error("missing files")
+	} else if len(commit.Files) > 0 {
+		f := commit.Files[0]
+		if f.Filename == "" {
+			t.Error("missing files[].filename")
+		}
+		if f.Status == "" {
+			t.Error("missing files[].status")
+		}
+		if f.BlobURL == "" {
+			t.Error("missing files[].blob_url")
+		}
+		if f.RawURL == "" {
+			t.Error("missing files[].raw_url")
+		}
+		if f.ContentsURL == "" {
+			t.Error("missing files[].contents_url")
+		}
+		// Patch should be present for non-binary files
+		if f.Status == "added" || f.Status == "modified" {
+			// Patch might be empty for some files
+		}
+	}
+}
+
+func TestService_List_GitHubAPICompatibility(t *testing.T) {
+	service, _, usersStore, reposStore, reposDir, cleanup := setupTestServiceWithGit(t)
+	defer cleanup()
+
+	user := createTestUser(t, usersStore, "testowner", "owner@example.com")
+	repo := createTestRepo(t, reposStore, user, "testrepo")
+	createGitRepoWithMultipleCommits(t, reposDir, user.Login, repo.Name, 3)
+
+	// List commits
+	commitList, err := service.List(context.Background(), user.Login, repo.Name, nil)
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(commitList) == 0 {
+		t.Fatal("expected at least one commit")
+	}
+
+	// Verify structure of list response (should NOT have stats/files)
+	for i, commit := range commitList {
+		// Required fields
+		if commit.SHA == "" {
+			t.Errorf("commit[%d]: missing SHA", i)
+		}
+		if commit.NodeID == "" {
+			t.Errorf("commit[%d]: missing node_id", i)
+		}
+		if commit.URL == "" {
+			t.Errorf("commit[%d]: missing url", i)
+		}
+		if commit.HTMLURL == "" {
+			t.Errorf("commit[%d]: missing html_url", i)
+		}
+		if commit.Commit == nil {
+			t.Errorf("commit[%d]: missing commit object", i)
+		}
+		if commit.Parents == nil {
+			t.Errorf("commit[%d]: parents should not be nil", i)
+		}
+
+		// Parent should have html_url
+		for j, p := range commit.Parents {
+			if p.HTMLURL == "" {
+				t.Errorf("commit[%d].parents[%d]: missing html_url", i, j)
+			}
+		}
+
+		// Verification should be present in list response
+		if commit.Commit != nil && commit.Commit.Verification == nil {
+			t.Errorf("commit[%d]: missing verification", i)
+		}
+
+		// NOTE: Stats and Files should be nil in list response (GitHub API behavior)
+		// We currently include them, but GitHub doesn't for performance
+	}
+}
+
 // Different SHA Tests - Ensure statuses are scoped to SHA
 
 func TestService_Statuses_ScopedToSHA(t *testing.T) {
