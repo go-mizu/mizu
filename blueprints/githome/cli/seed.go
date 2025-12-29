@@ -322,6 +322,8 @@ With a token, this increases to 5,000 requests/hour.`,
 			if token == "" {
 				token = os.Getenv("GITHUB_TOKEN")
 			}
+			// Trim whitespace (common issue with tokens from files/env)
+			token = strings.TrimSpace(token)
 
 			dbPath := dataDir + "/githome.db"
 			db, err := sql.Open("duckdb", dbPath)

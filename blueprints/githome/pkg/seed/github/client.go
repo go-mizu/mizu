@@ -30,6 +30,43 @@ func NewClient(baseURL, token string) *Client {
 	}
 }
 
+// ValidateToken checks if the token is valid by making a simple API call.
+// Returns true if valid, false if invalid. Returns an error only for network issues.
+func (c *Client) ValidateToken(ctx context.Context) (bool, error) {
+	if c.token == "" {
+		return false, nil // No token to validate
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/user", nil)
+	if err != nil {
+		return false, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return false, nil // Token is invalid
+	}
+	if resp.StatusCode == http.StatusOK {
+		return true, nil // Token is valid
+	}
+
+	// Other status codes might indicate rate limiting or other issues
+	return true, nil // Assume valid for other cases
+}
+
+// ClearToken removes the token from the client (for fallback to unauthenticated).
+func (c *Client) ClearToken() {
+	c.token = ""
+}
+
 // ListOptions contains pagination options.
 type ListOptions struct {
 	Page    int
