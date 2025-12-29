@@ -79,7 +79,7 @@
 
   /* Layout */
   --container-max-width: 1280px;
-  --header-height: 62px;
+  --header-height: 64px;
 }
 
 /* Dark mode */
@@ -163,20 +163,24 @@ p {
 
 /* Header */
 .Header {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
   position: sticky;
   top: 0;
   z-index: 32;
-  padding: 0 var(--space-3);
+  padding: var(--space-3);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
   background-color: var(--color-header-bg);
-  box-shadow: var(--shadow-md);
 }
 
 .Header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: 1;
   max-width: var(--container-max-width);
-  height: var(--header-height);
   margin: 0 auto;
 }
 
@@ -303,7 +307,7 @@ p {
 /* Layout */
 .Layout {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-4);
 }
 
@@ -321,7 +325,7 @@ p {
   order: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1011px) {
   .Layout {
     flex-direction: column;
   }
@@ -484,7 +488,7 @@ p {
 }
 
 .Box-header {
-  padding: var(--space-3);
+  padding: 8px 16px;
   background-color: var(--color-bg-subtle);
   border-bottom: 1px solid var(--color-border-default);
   border-top-left-radius: var(--border-radius-md);
@@ -511,7 +515,7 @@ p {
 }
 
 .Box-row {
-  padding: var(--space-3);
+  padding: 8px 16px;
   border-bottom: 1px solid var(--color-border-muted);
 }
 
@@ -530,13 +534,13 @@ p {
   overflow-y: hidden;
   border-bottom: 1px solid var(--color-border-muted);
   justify-content: flex-start;
-  box-shadow: var(--shadow-inset);
+  background-color: var(--color-bg-default);
 }
 
 .UnderlineNav-body {
   display: flex;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
+  gap: 0;
+  padding: 0 var(--space-4);
   margin: 0 auto;
   max-width: var(--container-max-width);
   width: 100%;
@@ -545,13 +549,14 @@ p {
 .UnderlineNav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
+  padding: 8px 16px;
   font-size: var(--font-size-base);
   color: var(--color-fg-muted);
   white-space: nowrap;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  line-height: 30px;
 }
 
 .UnderlineNav-item:hover {
@@ -563,7 +568,7 @@ p {
 .UnderlineNav-item.selected {
   font-weight: 600;
   color: var(--color-fg-default);
-  border-bottom-color: var(--color-accent-emphasis);
+  border-bottom-color: #fd8c73;
 }
 
 .UnderlineNav-octicon {
@@ -572,30 +577,28 @@ p {
 
 /* BorderGrid */
 .BorderGrid {
-  display: table;
+  display: block;
   width: 100%;
-  margin-top: var(--space-3);
-  table-layout: fixed;
-  border-collapse: collapse;
+  margin-top: 0;
 }
 
 .BorderGrid--spacious .BorderGrid-row {
-  padding: var(--space-4) 0;
+  padding: var(--space-3) 0;
 }
 
 .BorderGrid-row {
-  display: table-row;
+  display: block;
 }
 
 .BorderGrid-cell {
-  display: table-cell;
+  display: block;
   padding: var(--space-3) 0;
   border-top: 1px solid var(--color-border-muted);
-  vertical-align: top;
 }
 
 .BorderGrid-row:first-child .BorderGrid-cell {
   border-top: 0;
+  padding-top: 0;
 }
 
 /* Forms */
@@ -672,8 +675,7 @@ textarea.form-control {
 /* Repository Header */
 .repo-header {
   padding: var(--space-3) 0;
-  background-color: var(--color-bg-subtle);
-  border-bottom: 1px solid var(--color-border-muted);
+  background-color: var(--color-bg-default);
 }
 
 .repo-header-content {
@@ -684,13 +686,13 @@ textarea.form-control {
   gap: var(--space-3);
   max-width: var(--container-max-width);
   margin: 0 auto;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
 }
 
 .repo-header-title {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 4px;
   font-size: var(--font-size-xl);
 }
 
@@ -701,6 +703,7 @@ textarea.form-control {
 
 .repo-separator {
   color: var(--color-fg-muted);
+  margin: 0 2px;
 }
 
 .repo-name {
@@ -1501,30 +1504,30 @@ textarea.form-control {
 .diff-table {
   width: 100%;
   border-collapse: collapse;
+  border-spacing: 0;
   font-family: var(--font-family-mono);
   font-size: 12px;
   line-height: 20px;
-  table-layout: fixed;
+  tab-size: 4;
 }
 
 .diff-table td {
-  padding: 0 10px;
   vertical-align: top;
 }
 
 /* Line numbers */
 .diff-line-num {
-  width: 1%;
-  min-width: 50px;
-  padding: 0 10px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  padding: 0 8px;
   text-align: right;
   color: var(--color-fg-muted);
-  background-color: var(--color-bg-subtle);
   user-select: none;
   vertical-align: top;
-  border-right: 1px solid var(--color-border-muted);
   font-size: 12px;
   line-height: 20px;
+  white-space: nowrap;
 }
 
 .diff-line-num:hover {
@@ -1547,32 +1550,30 @@ textarea.form-control {
   line-height: 20px;
 }
 
-/* Addition line */
+/* Addition line - GitHub exact colors */
 .diff-addition {
-  background-color: rgba(46, 160, 67, 0.15);
+  background-color: #dafbe1;
 }
 
 .diff-addition .diff-line-num {
-  background-color: rgba(46, 160, 67, 0.2);
-  border-color: rgba(46, 160, 67, 0.3);
+  background-color: #ccffd8;
 }
 
 .diff-addition .diff-line-code {
-  background-color: rgba(46, 160, 67, 0.15);
+  background-color: #dafbe1;
 }
 
-/* Deletion line */
+/* Deletion line - GitHub exact colors */
 .diff-deletion {
-  background-color: rgba(248, 81, 73, 0.15);
+  background-color: #ffebe9;
 }
 
 .diff-deletion .diff-line-num {
-  background-color: rgba(248, 81, 73, 0.2);
-  border-color: rgba(248, 81, 73, 0.3);
+  background-color: #ffd7d5;
 }
 
 .diff-deletion .diff-line-code {
-  background-color: rgba(248, 81, 73, 0.15);
+  background-color: #ffebe9;
 }
 
 /* Hunk header */
