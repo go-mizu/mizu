@@ -1,5 +1,112 @@
 {{define "content"}}
-<div class="repo-issues">
-    <h1>Issues</h1>
+<div class="repo-header">
+    <div class="repo-header-content">
+        <div class="repo-header-title">
+            <svg class="octicon color-fg-muted mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Z"/>
+            </svg>
+            <a href="/{{.Repo.Owner.Login}}" class="repo-owner">{{.Repo.Owner.Login}}</a>
+            <span class="repo-separator">/</span>
+            <a href="/{{.Repo.FullName}}" class="repo-name">{{.Repo.Name}}</a>
+        </div>
+    </div>
+</div>
+
+<nav class="UnderlineNav">
+    <div class="UnderlineNav-body">
+        {{range .Repo.Tabs}}
+        <a href="{{.URL}}" class="UnderlineNav-item{{if .Active}} selected{{end}}">
+            <span>{{.Name}}</span>
+            {{if gt .Count 0}}
+            <span class="Counter">{{.Count}}</span>
+            {{end}}
+        </a>
+        {{end}}
+    </div>
+</nav>
+
+<div class="container-xl mt-4">
+    <div class="d-flex flex-justify-between mb-4">
+        <div class="d-flex flex-items-center">
+            <div class="BtnGroup mr-2">
+                <a href="/{{.Repo.FullName}}/issues?state=open" class="btn btn-sm BtnGroup-item{{if eq .CurrentState "open"}} selected{{end}}">
+                    <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                        <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                    </svg>
+                    {{.OpenCount}} Open
+                </a>
+                <a href="/{{.Repo.FullName}}/issues?state=closed" class="btn btn-sm BtnGroup-item{{if eq .CurrentState "closed"}} selected{{end}}">
+                    <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/>
+                        <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/>
+                    </svg>
+                    {{.ClosedCount}} Closed
+                </a>
+            </div>
+        </div>
+        <div>
+            <a href="/{{.Repo.FullName}}/issues/new" class="btn btn-primary">New issue</a>
+        </div>
+    </div>
+
+    {{if .Issues}}
+    <div class="Box">
+        {{range .Issues}}
+        <div class="Box-row issue-list-item">
+            <div class="issue-list-item-icon">
+                {{if eq .State "open"}}
+                <svg class="octicon color-fg-success" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                </svg>
+                {{else}}
+                <svg class="octicon" style="color: var(--color-closed-fg);" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/>
+                    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/>
+                </svg>
+                {{end}}
+            </div>
+            <div class="issue-list-item-content">
+                <a href="/{{$.Repo.FullName}}/issues/{{.Number}}" class="issue-list-item-title">
+                    {{.Title}}
+                </a>
+                {{if .Labels}}
+                <span class="ml-2">
+                    {{range .Labels}}
+                    <span class="IssueLabel" style="background-color: #{{.Color}}; color: {{if .TextColor}}{{.TextColor}}{{else}}#fff{{end}};">
+                        {{.Name}}
+                    </span>
+                    {{end}}
+                </span>
+                {{end}}
+                <div class="issue-list-item-meta">
+                    #{{.Number}} opened {{.TimeAgo}} by {{.User.Login}}
+                    {{if gt .Comments 0}}
+                    <a href="/{{$.Repo.FullName}}/issues/{{.Number}}#comments" class="Link--secondary ml-2">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Z"/>
+                        </svg>
+                        {{.Comments}}
+                    </a>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="blankslate">
+        <svg class="octicon mb-3" viewBox="0 0 24 24" width="48" height="48" fill="currentColor">
+            <path d="M12 1c6.075 0 11 4.925 11 11s-4.925 11-11 11S1 18.075 1 12 5.925 1 12 1ZM2.5 12a9.5 9.5 0 0 0 9.5 9.5 9.5 9.5 0 0 0 9.5-9.5A9.5 9.5 0 0 0 12 2.5 9.5 9.5 0 0 0 2.5 12Zm9.5 2a2 2 0 1 1-.001-3.999A2 2 0 0 1 12 14Z"/>
+        </svg>
+        <h3>There aren't any {{if eq .CurrentState "open"}}open{{else}}closed{{end}} issues.</h3>
+        <p>
+            {{if eq .CurrentState "open"}}
+            <a href="/{{.Repo.FullName}}/issues/new" class="btn btn-primary mt-3">New issue</a>
+            {{end}}
+        </p>
+    </div>
+    {{end}}
 </div>
 {{end}}

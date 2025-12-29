@@ -1,10 +1,80 @@
 {{define "content"}}
-<div class="new-issue">
-    <h1>New Issue</h1>
-    <form method="POST">
-        <input type="text" name="title" placeholder="Title" required>
-        <textarea name="body" placeholder="Leave a comment"></textarea>
-        <button type="submit">Submit new issue</button>
-    </form>
+<div class="container-xl mt-4">
+    <div class="Layout">
+        <div class="Layout-main">
+            <h1 class="h4 mb-4">Create new issue</h1>
+
+            {{if .Error}}
+            <div class="flash flash-error mb-4">
+                {{.Error}}
+            </div>
+            {{end}}
+
+            <form method="POST" action="/{{.Repo.FullName}}/issues">
+                <div class="Box">
+                    <div class="Box-body">
+                        <div class="form-group">
+                            <input type="text" name="title" class="form-control" placeholder="Title" required autofocus style="font-size: 20px; padding: 10px 12px;">
+                        </div>
+                        <div class="form-group mb-0">
+                            <textarea name="body" class="form-control" rows="12" placeholder="Leave a comment"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-justify-end mt-3">
+                    <a href="/{{.Repo.FullName}}/issues" class="btn mr-2">Cancel</a>
+                    <button type="submit" class="btn btn-primary">Submit new issue</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="Layout-sidebar">
+            <div class="BorderGrid BorderGrid--spacious">
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <h3 class="f6 text-bold mb-2">Assignees</h3>
+                        <button type="button" class="btn btn-sm btn-block text-left" style="color: var(--color-fg-muted);">
+                            No one - assign yourself
+                        </button>
+                    </div>
+                </div>
+
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <h3 class="f6 text-bold mb-2">Labels</h3>
+                        {{if .Labels}}
+                        <div class="mb-2">
+                            {{range .Labels}}
+                            <label class="d-flex flex-items-center mb-1">
+                                <input type="checkbox" name="labels" value="{{.Name}}" class="mr-2">
+                                <span class="IssueLabel" style="background-color: #{{.Color}};">{{.Name}}</span>
+                            </label>
+                            {{end}}
+                        </div>
+                        {{else}}
+                        <p class="color-fg-muted f6">None yet</p>
+                        {{end}}
+                    </div>
+                </div>
+
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <h3 class="f6 text-bold mb-2">Milestone</h3>
+                        {{if .Milestones}}
+                        <select name="milestone" class="form-control">
+                            <option value="">No milestone</option>
+                            {{range .Milestones}}
+                            <option value="{{.Number}}">{{.Title}}</option>
+                            {{end}}
+                        </select>
+                        {{else}}
+                        <p class="color-fg-muted f6">No milestone</p>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {{end}}

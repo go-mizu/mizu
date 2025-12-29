@@ -1,6 +1,84 @@
 {{define "content"}}
-<div class="home">
-    <h1>Welcome to GitHome</h1>
-    <p>Self-hosted GitHub clone</p>
+<div class="container-xl">
+    <div class="Layout">
+        <div class="Layout-sidebar">
+            <div class="mb-3">
+                <div class="d-flex flex-items-center flex-justify-between mb-2">
+                    <h2 class="f5 text-bold">Repositories</h2>
+                    <a href="/new" class="btn btn-sm btn-primary">New</a>
+                </div>
+                <input type="text" placeholder="Find a repository..." class="form-control mb-2">
+                {{if .Repositories}}
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                    {{range .Repositories}}
+                    <li style="padding: 8px 0; border-bottom: 1px solid var(--color-border-muted);">
+                        <a href="/{{.FullName}}" class="Link--primary text-bold">
+                            {{.Name}}
+                        </a>
+                        {{if .Private}}
+                        <span class="Label Label--secondary ml-1">Private</span>
+                        {{end}}
+                        {{if .Language}}
+                        <span class="d-block f6 color-fg-muted mt-1">
+                            <span class="repo-language-color" style="background-color: #00ADD8;"></span>
+                            {{.Language}}
+                        </span>
+                        {{end}}
+                    </li>
+                    {{end}}
+                </ul>
+                {{else}}
+                <p class="color-fg-muted f6">No repositories yet.</p>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="Layout-main">
+            <h2 class="f4 mb-3">Home</h2>
+
+            {{if .Notifications}}
+            <div class="Box mb-4">
+                <div class="Box-header">
+                    <h3 class="Box-title">
+                        <svg class="octicon mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M8 16a2 2 0 0 0 1.985-1.75c.017-.137-.097-.25-.235-.25h-3.5c-.138 0-.252.113-.235.25A2 2 0 0 0 8 16ZM3 5a5 5 0 0 1 10 0v2.947c0 .05.015.098.042.139l1.703 2.555A1.519 1.519 0 0 1 13.482 13H2.518a1.516 1.516 0 0 1-1.263-2.36l1.703-2.554A.255.255 0 0 0 3 7.947Z"/>
+                        </svg>
+                        Recent notifications
+                    </h3>
+                </div>
+                <div class="Box-body p-0">
+                    {{range .Notifications}}
+                    <div class="Box-row d-flex flex-items-center">
+                        <svg class="octicon color-fg-muted mr-3" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                        </svg>
+                        <div class="flex-1">
+                            <a href="{{.Subject.URL}}" class="Link--primary text-bold">{{.Subject.Title}}</a>
+                            <span class="f6 color-fg-muted d-block">{{.Repository.FullName}}</span>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+
+            <div class="Box">
+                <div class="Box-header">
+                    <h3 class="Box-title">Getting started</h3>
+                </div>
+                <div class="Box-body">
+                    <p>Welcome to GitHome! Here are some things you can do:</p>
+                    <ul>
+                        <li><a href="/new">Create a new repository</a></li>
+                        <li><a href="/explore">Explore public repositories</a></li>
+                        {{if .User}}
+                        <li><a href="/{{.User.Login}}">View your profile</a></li>
+                        {{end}}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {{end}}

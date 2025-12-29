@@ -1,6 +1,80 @@
 {{define "content"}}
-<div class="explore">
-    <h1>Explore</h1>
-    <p>Discover repositories</p>
+<div class="container-xl">
+    <h1 class="h4 mb-4">Explore repositories</h1>
+
+    <div class="d-flex flex-justify-between mb-4">
+        <div class="d-flex flex-items-center">
+            <input type="text" placeholder="Search repositories..." class="form-control" style="width: 300px;" value="{{.Query}}">
+        </div>
+        <div class="d-flex flex-items-center">
+            <span class="color-fg-muted mr-2">Sort:</span>
+            <select class="form-control" style="width: auto;">
+                <option value="stars" {{if eq .Sort "stars"}}selected{{end}}>Most stars</option>
+                <option value="forks" {{if eq .Sort "forks"}}selected{{end}}>Most forks</option>
+                <option value="updated" {{if eq .Sort "updated"}}selected{{end}}>Recently updated</option>
+            </select>
+        </div>
+    </div>
+
+    {{if .Repositories}}
+    <div class="Box">
+        {{range .Repositories}}
+        <div class="Box-row">
+            <div class="d-flex flex-items-center flex-justify-between">
+                <div class="flex-1">
+                    <h3 class="mb-1">
+                        <a href="/{{.FullName}}" class="Link--primary text-bold">{{.FullName}}</a>
+                        {{if .Private}}
+                        <span class="Label Label--secondary ml-1">Private</span>
+                        {{else}}
+                        <span class="Label Label--secondary ml-1">Public</span>
+                        {{end}}
+                    </h3>
+                    {{if .Description}}
+                    <p class="color-fg-muted mb-2">{{.Description}}</p>
+                    {{end}}
+                    <div class="d-flex flex-items-center f6 color-fg-muted">
+                        {{if .Language}}
+                        <span class="d-inline-flex flex-items-center mr-3">
+                            <span class="repo-language-color" style="background-color: #00ADD8;"></span>
+                            {{.Language}}
+                        </span>
+                        {{end}}
+                        <a href="/{{.FullName}}/stargazers" class="Link--secondary mr-3">
+                            <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>
+                            </svg>
+                            {{.StargazersCount}}
+                        </a>
+                        <a href="/{{.FullName}}/network/members" class="Link--secondary mr-3">
+                            <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/>
+                            </svg>
+                            {{.ForksCount}}
+                        </a>
+                    </div>
+                </div>
+                <div>
+                    <button class="btn btn-sm">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>
+                        </svg>
+                        Star
+                    </button>
+                </div>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="blankslate">
+        <svg class="octicon mb-3" viewBox="0 0 24 24" width="48" height="48" fill="currentColor">
+            <path d="M2.5 10.5a8 8 0 1 1 16 0 8 8 0 0 1-16 0Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Z"/>
+            <path d="m17.293 16.293 5.5 5.5a1 1 0 0 1-1.414 1.414l-5.5-5.5a1 1 0 0 1 1.414-1.414Z"/>
+        </svg>
+        <h3>No repositories found</h3>
+        <p>Try adjusting your search or filter to find what you're looking for.</p>
+    </div>
+    {{end}}
 </div>
 {{end}}

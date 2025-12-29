@@ -1,6 +1,178 @@
 {{define "content"}}
-<div class="issue-view">
-    <h1>{{.Issue.Title}}</h1>
-    <p>{{.Issue.Body}}</p>
+<div class="repo-header">
+    <div class="repo-header-content">
+        <div class="repo-header-title">
+            <svg class="octicon color-fg-muted mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Z"/>
+            </svg>
+            <a href="/{{.Repo.Owner.Login}}" class="repo-owner">{{.Repo.Owner.Login}}</a>
+            <span class="repo-separator">/</span>
+            <a href="/{{.Repo.FullName}}" class="repo-name">{{.Repo.Name}}</a>
+        </div>
+    </div>
+</div>
+
+<nav class="UnderlineNav">
+    <div class="UnderlineNav-body">
+        {{range .Repo.Tabs}}
+        <a href="{{.URL}}" class="UnderlineNav-item{{if .Active}} selected{{end}}">
+            <span>{{.Name}}</span>
+            {{if gt .Count 0}}
+            <span class="Counter">{{.Count}}</span>
+            {{end}}
+        </a>
+        {{end}}
+    </div>
+</nav>
+
+<div class="container-xl mt-4">
+    <div class="Layout">
+        <div class="Layout-main">
+            <div class="mb-4">
+                <h1 class="mb-2" style="font-size: 32px; font-weight: 400;">
+                    {{.Issue.Title}}
+                    <span class="color-fg-muted">#{{.Issue.Number}}</span>
+                </h1>
+                <div class="d-flex flex-items-center">
+                    {{if eq .Issue.State "open"}}
+                    <span class="State State--open">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                        </svg>
+                        Open
+                    </span>
+                    {{else}}
+                    <span class="State State--closed">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/>
+                            <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/>
+                        </svg>
+                        Closed
+                    </span>
+                    {{end}}
+                    <span class="color-fg-muted ml-2">
+                        <a href="/{{.Issue.User.Login}}" class="Link--secondary text-bold">{{.Issue.User.Login}}</a>
+                        opened this issue {{.Issue.TimeAgo}} &middot; {{.Issue.Comments}} comments
+                    </span>
+                </div>
+            </div>
+
+            <div class="timeline-comment mb-4">
+                <div class="timeline-comment-header">
+                    {{if .Issue.User.AvatarURL}}
+                    <img src="{{.Issue.User.AvatarURL}}" alt="{{.Issue.User.Login}}" class="Avatar Avatar--medium mr-2">
+                    {{else}}
+                    <span class="Avatar Avatar--medium mr-2" style="background: #6e40c9; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600;">{{firstChar .Issue.User.Login}}</span>
+                    {{end}}
+                    <a href="/{{.Issue.User.Login}}" class="Link--primary text-bold">{{.Issue.User.Login}}</a>
+                    <span class="color-fg-muted ml-1">commented {{.Issue.TimeAgo}}</span>
+                </div>
+                <div class="timeline-comment-body markdown-body">
+                    {{if .Issue.Body}}
+                    {{.Issue.Body}}
+                    {{else}}
+                    <p class="color-fg-muted"><em>No description provided.</em></p>
+                    {{end}}
+                </div>
+            </div>
+
+            {{range .Comments}}
+            <div class="timeline-comment mb-4">
+                <div class="timeline-comment-header">
+                    {{if .Author}}
+                    {{if .Author.AvatarURL}}
+                    <img src="{{.Author.AvatarURL}}" alt="{{.Author.Login}}" class="Avatar Avatar--medium mr-2">
+                    {{else}}
+                    <span class="Avatar Avatar--medium mr-2" style="background: #6e40c9; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600;">{{firstChar .Author.Login}}</span>
+                    {{end}}
+                    <a href="/{{.Author.Login}}" class="Link--primary text-bold">{{.Author.Login}}</a>
+                    {{end}}
+                    <span class="color-fg-muted ml-1">commented {{.TimeAgo}}</span>
+                </div>
+                <div class="timeline-comment-body markdown-body">
+                    {{.Body}}
+                </div>
+            </div>
+            {{end}}
+
+            {{if .User}}
+            <div class="Box mt-4">
+                <div class="Box-header">
+                    <h3 class="Box-title">Add a comment</h3>
+                </div>
+                <div class="Box-body">
+                    <form method="POST" action="/{{.Repo.FullName}}/issues/{{.Issue.Number}}/comments">
+                        <div class="form-group">
+                            <textarea name="body" class="form-control" rows="6" placeholder="Leave a comment"></textarea>
+                        </div>
+                        <div class="d-flex flex-justify-end">
+                            {{if .CanClose}}
+                            {{if eq .Issue.State "open"}}
+                            <button type="submit" name="action" value="close" class="btn mr-2">Close issue</button>
+                            {{else}}
+                            <button type="submit" name="action" value="reopen" class="btn mr-2">Reopen issue</button>
+                            {{end}}
+                            {{end}}
+                            <button type="submit" class="btn btn-primary">Comment</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {{end}}
+        </div>
+
+        <div class="Layout-sidebar">
+            <div class="BorderGrid BorderGrid--spacious">
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <h3 class="f6 text-bold mb-2">Assignees</h3>
+                        {{if .Issue.Assignees}}
+                        {{range .Issue.Assignees}}
+                        <div class="d-flex flex-items-center mb-2">
+                            {{if .AvatarURL}}
+                            <img src="{{.AvatarURL}}" alt="{{.Login}}" class="Avatar Avatar--small mr-2">
+                            {{end}}
+                            <a href="/{{.Login}}" class="Link--primary">{{.Login}}</a>
+                        </div>
+                        {{end}}
+                        {{else}}
+                        <p class="color-fg-muted f6">No one assigned</p>
+                        {{end}}
+                    </div>
+                </div>
+
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <h3 class="f6 text-bold mb-2">Labels</h3>
+                        {{if .Issue.Labels}}
+                        <div>
+                            {{range .Issue.Labels}}
+                            <span class="IssueLabel mb-1" style="background-color: #{{.Color}};">
+                                {{.Name}}
+                            </span>
+                            {{end}}
+                        </div>
+                        {{else}}
+                        <p class="color-fg-muted f6">None yet</p>
+                        {{end}}
+                    </div>
+                </div>
+
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <h3 class="f6 text-bold mb-2">Milestone</h3>
+                        {{if .Issue.Milestone}}
+                        <a href="/{{.Repo.FullName}}/milestone/{{.Issue.Milestone.Number}}" class="Link--primary">
+                            {{.Issue.Milestone.Title}}
+                        </a>
+                        {{else}}
+                        <p class="color-fg-muted f6">No milestone</p>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {{end}}

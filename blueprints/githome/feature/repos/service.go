@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,9 +35,16 @@ func NewService(store Store, userStore users.Store, orgStore orgs.Store, baseURL
 	}
 }
 
-// getRepoPath returns the filesystem path for a repository
+// getRepoPath returns the filesystem path for a repository.
+// It checks for both bare repos ({owner}/{repo}.git) and regular repos ({owner}/{repo}).
 func (s *Service) getRepoPath(owner, repo string) string {
-	return filepath.Join(s.reposDir, owner, repo+".git")
+	// First check for bare repo with .git suffix
+	barePath := filepath.Join(s.reposDir, owner, repo+".git")
+	if _, err := os.Stat(barePath); err == nil {
+		return barePath
+	}
+	// Fall back to regular repo (no .git suffix)
+	return filepath.Join(s.reposDir, owner, repo)
 }
 
 // openRepo opens a git repository
@@ -181,6 +189,24 @@ func (s *Service) Get(ctx context.Context, owner, repoName string) (*Repository,
 	if repo == nil {
 		return nil, ErrNotFound
 	}
+	// Populate owner
+	if repo.OwnerType == "User" {
+		user, _ := s.userStore.GetByID(ctx, repo.OwnerID)
+		if user != nil {
+			repo.Owner = user.ToSimple()
+		}
+	} else {
+		org, _ := s.orgStore.GetByID(ctx, repo.OwnerID)
+		if org != nil {
+			repo.Owner = &users.SimpleUser{
+				ID:        org.ID,
+				NodeID:    org.NodeID,
+				Login:     org.Login,
+				AvatarURL: org.AvatarURL,
+				Type:      "Organization",
+			}
+		}
+	}
 	s.populateURLs(repo, owner)
 	return repo, nil
 }
@@ -195,17 +221,25 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*Repository, error) {
 		return nil, ErrNotFound
 	}
 
-	// Get owner login
+	// Get owner login and populate owner
 	var ownerLogin string
 	if repo.OwnerType == "User" {
 		user, _ := s.userStore.GetByID(ctx, repo.OwnerID)
 		if user != nil {
 			ownerLogin = user.Login
+			repo.Owner = user.ToSimple()
 		}
 	} else {
 		org, _ := s.orgStore.GetByID(ctx, repo.OwnerID)
 		if org != nil {
 			ownerLogin = org.Login
+			repo.Owner = &users.SimpleUser{
+				ID:        org.ID,
+				NodeID:    org.NodeID,
+				Login:     org.Login,
+				AvatarURL: org.AvatarURL,
+				Type:      "Organization",
+			}
 		}
 	}
 
@@ -741,6 +775,135 @@ func (s *Service) GetContents(ctx context.Context, owner, repoName, path, ref st
 		URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/contents", s.baseURL, owner, repoName),
 		HTMLURL: fmt.Sprintf("%s/%s/%s/tree/%s", s.baseURL, owner, repoName, ref),
 	}, nil
+}
+
+// ListTreeEntries returns all entries in a directory
+func (s *Service) ListTreeEntries(ctx context.Context, owner, repoName, path, ref string) ([]*TreeEntry, error) {
+	repo, err := s.store.GetByFullName(ctx, owner, repoName)
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, ErrNotFound
+	}
+
+	// Try to open git repository
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	// Determine ref to use
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+
+	// Resolve ref to commit SHA
+	sha, err := gitRepo.ResolveRef(ref)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get commit
+	commit, err := gitRepo.GetCommit(sha)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Get root tree
+	tree, err := gitRepo.GetTree(commit.TreeSHA)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+
+	// Navigate to target path if not root
+	path = strings.TrimPrefix(path, "/")
+	if path != "" {
+		parts := strings.Split(path, "/")
+		for _, part := range parts {
+			found := false
+			for _, entry := range tree.Entries {
+				if entry.Name == part {
+					if entry.Type == pkggit.ObjectTree {
+						subTree, err := gitRepo.GetTree(entry.SHA)
+						if err != nil {
+							return nil, ErrNotFound
+						}
+						tree = subTree
+						found = true
+						break
+					} else {
+						// Not a directory
+						return nil, ErrNotFound
+					}
+				}
+			}
+			if !found {
+				return nil, ErrNotFound
+			}
+		}
+	}
+
+	// Convert git entries to TreeEntry structs
+	entries := make([]*TreeEntry, 0, len(tree.Entries))
+	for _, e := range tree.Entries {
+		entryPath := e.Name
+		if path != "" {
+			entryPath = path + "/" + e.Name
+		}
+
+		entryType := "file"
+		mode := "100644"
+		if e.Type == pkggit.ObjectTree {
+			entryType = "dir"
+			mode = "040000"
+		} else if e.Mode == pkggit.ModeExecutable {
+			mode = "100755"
+		} else if e.Mode == pkggit.ModeSymlink {
+			entryType = "symlink"
+			mode = "120000"
+		} else if e.Mode == pkggit.ModeSubmodule {
+			entryType = "submodule"
+			mode = "160000"
+		}
+
+		entry := &TreeEntry{
+			Name:    e.Name,
+			Path:    entryPath,
+			SHA:     e.SHA,
+			Size:    int64(e.Size),
+			Type:    entryType,
+			Mode:    mode,
+			URL:     fmt.Sprintf("%s/api/v3/repos/%s/%s/contents/%s?ref=%s", s.baseURL, owner, repoName, entryPath, ref),
+			HTMLURL: fmt.Sprintf("%s/%s/%s/%s/%s/%s", s.baseURL, owner, repoName, entryType, ref, entryPath),
+		}
+
+		if entryType == "file" {
+			entry.DownloadURL = fmt.Sprintf("%s/%s/%s/raw/%s/%s", s.baseURL, owner, repoName, ref, entryPath)
+			// Fix HTMLURL for files (use "blob" not "file")
+			entry.HTMLURL = fmt.Sprintf("%s/%s/%s/blob/%s/%s", s.baseURL, owner, repoName, ref, entryPath)
+		} else if entryType == "dir" {
+			entry.HTMLURL = fmt.Sprintf("%s/%s/%s/tree/%s/%s", s.baseURL, owner, repoName, ref, entryPath)
+		}
+
+		entries = append(entries, entry)
+	}
+
+	// Sort: directories first, then alphabetically
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Type == "dir" && entries[j].Type != "dir" {
+			return true
+		}
+		if entries[i].Type != "dir" && entries[j].Type == "dir" {
+			return false
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
+
+	return entries, nil
 }
 
 // CreateOrUpdateFile creates or updates a file

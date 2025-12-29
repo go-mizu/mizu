@@ -1,11 +1,29 @@
 {{define "content"}}
-<div class="register-form">
-    <h2>Create your account</h2>
+<h1 class="auth-title">Create your account</h1>
+<div class="auth-form">
+    {{if .Error}}
+    <div class="flash flash-error mb-3">
+        {{.Error}}
+    </div>
+    {{end}}
     <form method="POST" action="/register">
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="email" name="email" placeholder="Email" required>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Create account</button>
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" name="username" id="username" class="form-control" required autofocus pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, underscores and hyphens">
+        </div>
+        <div class="form-group">
+            <label for="email">Email address</label>
+            <input type="email" name="email" id="email" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" name="password" id="password" class="form-control" required minlength="8">
+            <p class="f6 color-fg-muted mt-2">Make sure it's at least 8 characters.</p>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Create account</button>
     </form>
+</div>
+<div class="auth-footer">
+    Already have an account? <a href="/login">Sign in</a>
 </div>
 {{end}}

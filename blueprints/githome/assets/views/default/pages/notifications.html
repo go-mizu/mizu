@@ -1,0 +1,70 @@
+{{define "content"}}
+<div class="container-xl mt-4">
+    <div class="d-flex flex-items-center flex-justify-between mb-4">
+        <h1 class="h4">Notifications</h1>
+        <div class="BtnGroup">
+            <a href="/notifications?filter=unread" class="btn btn-sm BtnGroup-item{{if eq .Filter "unread"}} selected{{end}}">Unread</a>
+            <a href="/notifications?filter=all" class="btn btn-sm BtnGroup-item{{if eq .Filter "all"}} selected{{end}}">All</a>
+        </div>
+    </div>
+
+    {{if .Notifications}}
+    <div class="Box">
+        {{range .Notifications}}
+        <div class="Box-row d-flex flex-items-center{{if .Unread}} bg-color-neutral-subtle{{end}}">
+            <div class="mr-3">
+                {{if eq .Subject.Type "Issue"}}
+                <svg class="octicon color-fg-success" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                </svg>
+                {{else if eq .Subject.Type "PullRequest"}}
+                <svg class="octicon color-fg-success" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354Z"/>
+                </svg>
+                {{else}}
+                <svg class="octicon color-fg-muted" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M8 16a2 2 0 0 0 1.985-1.75c.017-.137-.097-.25-.235-.25h-3.5c-.138 0-.252.113-.235.25A2 2 0 0 0 8 16ZM3 5a5 5 0 0 1 10 0v2.947c0 .05.015.098.042.139l1.703 2.555A1.519 1.519 0 0 1 13.482 13H2.518a1.516 1.516 0 0 1-1.263-2.36l1.703-2.554A.255.255 0 0 0 3 7.947Z"/>
+                </svg>
+                {{end}}
+            </div>
+            <div class="flex-1">
+                <a href="{{.Subject.URL}}" class="Link--primary text-bold">{{.Subject.Title}}</a>
+                <span class="d-block f6 color-fg-muted">
+                    {{.Repository.FullName}} &middot; {{.TimeAgo}}
+                    {{if .Reason}}
+                    &middot; {{.Reason}}
+                    {{end}}
+                </span>
+            </div>
+            <div>
+                <form method="POST" action="/notifications/{{.ID}}/done">
+                    <button type="submit" class="btn btn-sm" title="Mark as done">
+                        <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    {{if gt .UnreadCount 0}}
+    <div class="mt-4 text-center">
+        <form method="POST" action="/notifications/mark-read">
+            <button type="submit" class="btn">Mark all as read</button>
+        </form>
+    </div>
+    {{end}}
+    {{else}}
+    <div class="blankslate">
+        <svg class="octicon mb-3" viewBox="0 0 24 24" width="48" height="48" fill="currentColor">
+            <path d="M12 1c6.075 0 11 4.925 11 11s-4.925 11-11 11S1 18.075 1 12 5.925 1 12 1ZM2.5 12a9.5 9.5 0 0 0 9.5 9.5 9.5 9.5 0 0 0 9.5-9.5A9.5 9.5 0 0 0 12 2.5 9.5 9.5 0 0 0 2.5 12Zm10.25 2.75a.75.75 0 0 1-1.5 0V8a.75.75 0 0 1 1.5 0ZM12 18a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/>
+        </svg>
+        <h3>All caught up!</h3>
+        <p>You have no {{if eq .Filter "unread"}}unread{{end}} notifications.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}
