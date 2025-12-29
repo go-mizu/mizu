@@ -21,6 +21,7 @@ import (
 	"github.com/go-mizu/blueprints/githome/feature/branches"
 	"github.com/go-mizu/blueprints/githome/feature/comments"
 	"github.com/go-mizu/blueprints/githome/feature/commits"
+	"github.com/go-mizu/blueprints/githome/feature/git"
 	"github.com/go-mizu/blueprints/githome/feature/issues"
 	"github.com/go-mizu/blueprints/githome/feature/labels"
 	"github.com/go-mizu/blueprints/githome/feature/milestones"
@@ -274,25 +275,38 @@ type CommitDetailData struct {
 	ActiveNav   string
 }
 
+// ReleaseView represents a release for template rendering.
+type ReleaseView struct {
+	ID      int64
+	TagName string
+	Name    string
+	TimeAgo string
+}
+
 // RepoHomeData holds data for repository home page.
 type RepoHomeData struct {
-	Title         string
-	User          *users.User
-	Repo          *RepoView
-	Readme        template.HTML
-	Tree          []*TreeEntry
-	Branches      []*branches.Branch
-	Releases      []*releases.Release
-	CurrentBranch string
-	CurrentPath   string
-	License       string
-	Languages     map[string]int
-	Contributors  []*repos.Contributor
-	Breadcrumbs   []Breadcrumb
-	UnreadCount   int
-	ActiveNav     string
-	LatestCommit  *CommitView
-	CommitCount   int
+	Title            string
+	User             *users.User
+	Repo             *RepoView
+	Readme           template.HTML
+	Tree             []*TreeEntry
+	Branches         []*branches.Branch
+	Releases         []*releases.Release
+	CurrentBranch    string
+	CurrentPath      string
+	License          string
+	Languages        map[string]int
+	Contributors     []*repos.Contributor
+	Breadcrumbs      []Breadcrumb
+	UnreadCount      int
+	ActiveNav        string
+	LatestCommit     *CommitView
+	CommitCount      int
+	Host             string
+	TagCount         int
+	ReleaseCount     int
+	ContributorCount int
+	LatestRelease    *ReleaseView
 }
 
 // RepoCodeData holds data for file browser.
@@ -341,6 +355,7 @@ type RepoBlameData struct {
 	FilePath      string
 	FileName      string
 	LineCount     int
+	Language      string
 	CurrentBranch string
 	Branches      []*branches.Branch
 	Breadcrumbs   []Breadcrumb
@@ -558,6 +573,7 @@ type Page struct {
 	releases      releases.API
 	labels        labels.API
 	milestones    milestones.API
+	git           git.API
 	getUserID     func(*mizu.Ctx) int64
 }
 
@@ -578,6 +594,7 @@ func NewPage(
 	releasesAPI releases.API,
 	labelsAPI labels.API,
 	milestonesAPI milestones.API,
+	gitAPI git.API,
 	getUserID func(*mizu.Ctx) int64,
 ) *Page {
 	return &Page{
@@ -596,6 +613,7 @@ func NewPage(
 		releases:      releasesAPI,
 		labels:        labelsAPI,
 		milestones:    milestonesAPI,
+		git:           gitAPI,
 		getUserID:     getUserID,
 	}
 }
@@ -852,18 +870,53 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 		readmeHTML = template.HTML(rendered)
 	}
 
+	// Get tag count
+	var tagCount int
+	if tags, err := h.git.ListTags(ctx, owner, repoName, nil); err == nil {
+		tagCount = len(tags)
+	}
+
+	// Get contributors
+	contributors, _ := h.repos.ListContributors(ctx, owner, repoName, nil)
+	contributorCount := len(contributors)
+
+	// Get latest release
+	var latestRelease *ReleaseView
+	var releaseCount int
+	if releaseList, err := h.releases.List(ctx, owner, repoName, nil); err == nil {
+		releaseCount = len(releaseList)
+		if len(releaseList) > 0 {
+			r := releaseList[0]
+			latestRelease = &ReleaseView{
+				ID:      r.ID,
+				TagName: r.TagName,
+				Name:    r.Name,
+				TimeAgo: formatTimeAgo(r.CreatedAt),
+			}
+		}
+	}
+
+	// Get host from request
+	host := c.Request().Host
+
 	return render(h, c, "repo_home", RepoHomeData{
-		Title:         repo.FullName,
-		User:          user,
-		Repo:          repoView,
-		Readme:        readmeHTML,
-		Tree:          tree,
-		Branches:      branchList,
-		CurrentBranch: currentBranch,
-		Languages:     languages,
-		ActiveNav:     "",
-		LatestCommit:  latestCommit,
-		CommitCount:   commitCount,
+		Title:            repo.FullName,
+		User:             user,
+		Repo:             repoView,
+		Readme:           readmeHTML,
+		Tree:             tree,
+		Branches:         branchList,
+		CurrentBranch:    currentBranch,
+		Languages:        languages,
+		ActiveNav:        "",
+		LatestCommit:     latestCommit,
+		CommitCount:      commitCount,
+		Host:             host,
+		TagCount:         tagCount,
+		ReleaseCount:     releaseCount,
+		ContributorCount: contributorCount,
+		LatestRelease:    latestRelease,
+		Contributors:     contributors,
 	})
 }
 
@@ -1435,6 +1488,9 @@ func (h *Page) RepoBlame(c *mizu.Ctx) error {
 		currentPath += "/"
 	}
 
+	// Detect language from file extension
+	language := detectLanguage(path)
+
 	return render(h, c, "repo_blame", RepoBlameData{
 		Title:         "Blame: " + fileName + " - " + repo.FullName,
 		User:          user,
@@ -1443,6 +1499,7 @@ func (h *Page) RepoBlame(c *mizu.Ctx) error {
 		FilePath:      path,
 		FileName:      fileName,
 		LineCount:     len(lines),
+		Language:      language,
 		CurrentBranch: ref,
 		Branches:      branchList,
 		Breadcrumbs:   breadcrumbs,
