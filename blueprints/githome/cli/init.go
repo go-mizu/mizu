@@ -15,6 +15,16 @@ func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize the database",
+		Long: `Initialize the GitHome database and create required directories.
+
+This command creates:
+  - Data directory for the database
+  - Repos directory for git repositories
+  - DuckDB database with the required schema
+
+Safe to run multiple times - existing data is preserved.`,
+		Example: `  githome init
+  githome init --data-dir /var/lib/githome`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create data directory
 			if err := os.MkdirAll(dataDir, 0755); err != nil {
