@@ -21,8 +21,13 @@ func NewIssuesStore(db *sql.DB) *IssuesStore {
 
 func (s *IssuesStore) Create(ctx context.Context, i *issues.Issue) error {
 	now := time.Now()
-	i.CreatedAt = now
-	i.UpdatedAt = now
+	// Only set timestamps if not already set (preserves original timestamps during seeding)
+	if i.CreatedAt.IsZero() {
+		i.CreatedAt = now
+	}
+	if i.UpdatedAt.IsZero() {
+		i.UpdatedAt = now
+	}
 
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO issues (node_id, repo_id, number, state, state_reason, title, body,
