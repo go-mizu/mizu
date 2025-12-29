@@ -421,6 +421,41 @@ CREATE TABLE IF NOT EXISTS pr_requested_teams (
     PRIMARY KEY (pr_id, team_id)
 );
 
+CREATE TABLE IF NOT EXISTS pr_commits (
+    pr_id         BIGINT NOT NULL,
+    sha           VARCHAR NOT NULL,
+    node_id       VARCHAR NOT NULL DEFAULT '',
+    message       VARCHAR NOT NULL,
+    author_name   VARCHAR NOT NULL DEFAULT '',
+    author_email  VARCHAR NOT NULL DEFAULT '',
+    author_date   TIMESTAMP,
+    author_id     BIGINT,
+    committer_name  VARCHAR NOT NULL DEFAULT '',
+    committer_email VARCHAR NOT NULL DEFAULT '',
+    committer_date  TIMESTAMP,
+    committer_id    BIGINT,
+    tree_sha      VARCHAR NOT NULL DEFAULT '',
+    parent_shas   VARCHAR NOT NULL DEFAULT '', -- JSON array
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (pr_id, sha)
+);
+
+CREATE TABLE IF NOT EXISTS pr_files (
+    pr_id         BIGINT NOT NULL,
+    sha           VARCHAR NOT NULL DEFAULT '',
+    filename      VARCHAR NOT NULL,
+    status        VARCHAR NOT NULL DEFAULT 'modified',
+    additions     INTEGER NOT NULL DEFAULT 0,
+    deletions     INTEGER NOT NULL DEFAULT 0,
+    changes       INTEGER NOT NULL DEFAULT 0,
+    blob_url      VARCHAR NOT NULL DEFAULT '',
+    raw_url       VARCHAR NOT NULL DEFAULT '',
+    contents_url  VARCHAR NOT NULL DEFAULT '',
+    patch         VARCHAR NOT NULL DEFAULT '',
+    previous_filename VARCHAR NOT NULL DEFAULT '',
+    PRIMARY KEY (pr_id, filename)
+);
+
 -- ============================================================
 -- Stars
 -- ============================================================

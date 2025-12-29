@@ -101,6 +101,30 @@ func (s *Service) ListForIssue(ctx context.Context, owner, repo string, number i
 	return comments, nil
 }
 
+// ListForPR returns comments for a pull request using PR ID directly
+func (s *Service) ListForPR(ctx context.Context, owner, repo string, prID int64, opts *ListOpts) ([]*IssueComment, error) {
+	if opts == nil {
+		opts = &ListOpts{PerPage: 30}
+	}
+	if opts.PerPage == 0 {
+		opts.PerPage = 30
+	}
+	if opts.PerPage > 100 {
+		opts.PerPage = 100
+	}
+
+	// PR comments are stored with issue_id = prID
+	comments, err := s.store.ListIssueCommentsForIssue(ctx, prID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, c := range comments {
+		s.populateIssueCommentURLs(c, owner, repo)
+	}
+	return comments, nil
+}
+
 // GetIssueComment retrieves an issue comment by ID
 func (s *Service) GetIssueComment(ctx context.Context, owner, repo string, commentID int64) (*IssueComment, error) {
 	r, err := s.repoStore.GetByFullName(ctx, owner, repo)

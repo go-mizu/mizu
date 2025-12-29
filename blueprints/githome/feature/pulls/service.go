@@ -221,6 +221,40 @@ func (s *Service) ListCommits(ctx context.Context, owner, repo string, number in
 		opts.PerPage = 100
 	}
 
+	// First try to get commits from the database (seeded data)
+	dbCommits, err := s.store.ListCommits(ctx, pr.ID, opts)
+	if err == nil && len(dbCommits) > 0 {
+		// Populate URLs and user info for database commits
+		for _, c := range dbCommits {
+			c.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/commits/%s", s.baseURL, owner, repo, c.SHA)
+			c.HTMLURL = fmt.Sprintf("%s/%s/%s/commit/%s", s.baseURL, owner, repo, c.SHA)
+			if c.Commit != nil && c.Commit.Tree != nil {
+				c.Commit.Tree.URL = fmt.Sprintf("%s/api/v3/repos/%s/%s/git/trees/%s", s.baseURL, owner, repo, c.Commit.Tree.SHA)
+			}
+			// Look up users if we have author/committer IDs
+			if c.Author != nil && c.Author.ID > 0 {
+				if user, _ := s.userStore.GetByID(ctx, c.Author.ID); user != nil {
+					c.Author = user.ToSimple()
+				}
+			} else if c.Commit != nil && c.Commit.Author != nil && c.Commit.Author.Email != "" {
+				if user, _ := s.userStore.GetByEmail(ctx, c.Commit.Author.Email); user != nil {
+					c.Author = user.ToSimple()
+				}
+			}
+			if c.Committer != nil && c.Committer.ID > 0 {
+				if user, _ := s.userStore.GetByID(ctx, c.Committer.ID); user != nil {
+					c.Committer = user.ToSimple()
+				}
+			} else if c.Commit != nil && c.Commit.Committer != nil && c.Commit.Committer.Email != "" {
+				if user, _ := s.userStore.GetByEmail(ctx, c.Commit.Committer.Email); user != nil {
+					c.Committer = user.ToSimple()
+				}
+			}
+		}
+		return dbCommits, nil
+	}
+
+	// Fall back to git repository if no database commits
 	// Need head and base refs to find commits
 	if pr.Head == nil || pr.Base == nil {
 		return []*Commit{}, nil
@@ -319,6 +353,58 @@ func (s *Service) ListCommits(ctx context.Context, owner, repo string, number in
 	return commits, nil
 }
 
+// GetCommitBySHA retrieves a PR commit by its SHA (from pr_commits table)
+func (s *Service) GetCommitBySHA(ctx context.Context, owner, repo, sha string) (*Commit, error) {
+	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, repos.ErrNotFound
+	}
+
+	commit, err := s.store.GetCommitBySHA(ctx, r.ID, sha)
+	if err != nil {
+		return nil, err
+	}
+	if commit == nil {
+		return nil, nil
+	}
+
+	// Populate user info
+	if commit.Author != nil && commit.Author.ID != 0 {
+		if user, _ := s.userStore.GetByID(ctx, commit.Author.ID); user != nil {
+			commit.Author = user.ToSimple()
+		}
+	} else if commit.Commit != nil && commit.Commit.Author != nil && commit.Commit.Author.Email != "" {
+		if user, _ := s.userStore.GetByEmail(ctx, commit.Commit.Author.Email); user != nil {
+			commit.Author = user.ToSimple()
+		}
+	}
+
+	if commit.Committer != nil && commit.Committer.ID != 0 {
+		if user, _ := s.userStore.GetByID(ctx, commit.Committer.ID); user != nil {
+			commit.Committer = user.ToSimple()
+		}
+	} else if commit.Commit != nil && commit.Commit.Committer != nil && commit.Commit.Committer.Email != "" {
+		if user, _ := s.userStore.GetByEmail(ctx, commit.Commit.Committer.Email); user != nil {
+			commit.Committer = user.ToSimple()
+		}
+	}
+
+	// Populate URLs
+	commit.URL = fmt.Sprintf("/repos/%s/%s/git/commits/%s", owner, repo, sha)
+	commit.HTMLURL = fmt.Sprintf("/%s/%s/commit/%s", owner, repo, sha)
+	if commit.Commit != nil && commit.Commit.Tree != nil {
+		commit.Commit.Tree.URL = fmt.Sprintf("/repos/%s/%s/git/trees/%s", owner, repo, commit.Commit.Tree.SHA)
+	}
+	for _, p := range commit.Parents {
+		p.URL = fmt.Sprintf("/%s/%s/commit/%s", owner, repo, p.SHA)
+	}
+
+	return commit, nil
+}
+
 // ListFiles returns files in a PR
 func (s *Service) ListFiles(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*PRFile, error) {
 	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
@@ -338,15 +424,22 @@ func (s *Service) ListFiles(ctx context.Context, owner, repo string, number int,
 	}
 
 	if opts == nil {
-		opts = &ListOpts{PerPage: 30}
+		opts = &ListOpts{PerPage: 100}
 	}
 	if opts.PerPage == 0 {
-		opts.PerPage = 30
-	}
-	if opts.PerPage > 100 {
 		opts.PerPage = 100
 	}
+	if opts.PerPage > 300 {
+		opts.PerPage = 300
+	}
 
+	// First try to get files from the database (seeded data)
+	dbFiles, err := s.store.ListFiles(ctx, pr.ID, opts)
+	if err == nil && len(dbFiles) > 0 {
+		return dbFiles, nil
+	}
+
+	// Fall back to git repository if no database files
 	// Need head and base refs to diff
 	if pr.Head == nil || pr.Base == nil {
 		return []*PRFile{}, nil
@@ -404,6 +497,19 @@ func (s *Service) ListFiles(ctx context.Context, owner, repo string, number int,
 	}
 
 	return files[start:end], nil
+}
+
+// ListFilesByCommitSHA returns files for the PR that contains the given commit
+func (s *Service) ListFilesByCommitSHA(ctx context.Context, owner, repo, sha string) ([]*PRFile, error) {
+	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, repos.ErrNotFound
+	}
+
+	return s.store.ListFilesByCommitSHA(ctx, r.ID, sha)
 }
 
 // parseDiffFiles parses a diff string to extract file information

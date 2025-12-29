@@ -97,6 +97,7 @@ type API interface {
 	// Issue comments
 	ListForRepo(ctx context.Context, owner, repo string, opts *ListOpts) ([]*IssueComment, error)
 	ListForIssue(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*IssueComment, error)
+	ListForPR(ctx context.Context, owner, repo string, prID int64, opts *ListOpts) ([]*IssueComment, error)
 	GetIssueComment(ctx context.Context, owner, repo string, commentID int64) (*IssueComment, error)
 	CreateIssueComment(ctx context.Context, owner, repo string, number int, creatorID int64, body string) (*IssueComment, error)
 	UpdateIssueComment(ctx context.Context, owner, repo string, commentID int64, body string) (*IssueComment, error)

@@ -1044,6 +1044,20 @@ func (s *Seeder) importSinglePR(ctx context.Context, repoID int64, prNumber int,
 		}
 	}
 
+	// Import PR commits
+	if ghPR.Commits > 0 {
+		if err := s.importPRCommits(ctx, prID, prNumber, result); err != nil {
+			slog.Warn("failed to import PR commits", "pr", prNumber, "error", err)
+		}
+	}
+
+	// Import PR files
+	if ghPR.ChangedFiles > 0 {
+		if err := s.importPRFiles(ctx, prID, prNumber, result); err != nil {
+			slog.Warn("failed to import PR files", "pr", prNumber, "error", err)
+		}
+	}
+
 	slog.Info("imported single PR",
 		"number", prNumber,
 		"commits", ghPR.Commits,
@@ -1052,6 +1066,89 @@ func (s *Seeder) importSinglePR(ctx context.Context, repoID int64, prNumber int,
 		"changed_files", ghPR.ChangedFiles,
 		"reviews", result.PRReviewsCreated,
 		"comments", ghPR.Comments+ghPR.ReviewComments)
+
+	return nil
+}
+
+// importPRCommits fetches and imports commits for a PR.
+func (s *Seeder) importPRCommits(ctx context.Context, prID int64, prNumber int, result *Result) error {
+	page := 1
+	for {
+		ghCommits, rateInfo, err := s.client.ListPRCommits(ctx, s.config.Owner, s.config.Repo, prNumber, &ListOptions{
+			Page:    page,
+			PerPage: 100,
+		})
+		s.updateRateInfo(result, rateInfo)
+		if err != nil {
+			return err
+		}
+
+		if len(ghCommits) == 0 {
+			break
+		}
+
+		for _, ghCommit := range ghCommits {
+			// Look up author and committer IDs if available
+			var authorID, committerID *int64
+			if ghCommit.Author != nil {
+				if id, err := s.ensureUser(ctx, ghCommit.Author, result); err == nil {
+					authorID = &id
+				}
+			}
+			if ghCommit.Committer != nil {
+				if id, err := s.ensureUser(ctx, ghCommit.Committer, result); err == nil {
+					committerID = &id
+				}
+			}
+
+			commit := mapPRCommit(ghCommit, authorID, committerID)
+			if err := s.pullsStore.CreateCommit(ctx, prID, commit); err != nil {
+				slog.Warn("failed to create PR commit", "pr", prNumber, "sha", ghCommit.SHA, "error", err)
+				continue
+			}
+			result.PRCommitsCreated++
+		}
+
+		if len(ghCommits) < 100 {
+			break
+		}
+		page++
+	}
+
+	return nil
+}
+
+// importPRFiles fetches and imports files for a PR.
+func (s *Seeder) importPRFiles(ctx context.Context, prID int64, prNumber int, result *Result) error {
+	page := 1
+	for {
+		ghFiles, rateInfo, err := s.client.ListPRFiles(ctx, s.config.Owner, s.config.Repo, prNumber, &ListOptions{
+			Page:    page,
+			PerPage: 100,
+		})
+		s.updateRateInfo(result, rateInfo)
+		if err != nil {
+			return err
+		}
+
+		if len(ghFiles) == 0 {
+			break
+		}
+
+		for _, ghFile := range ghFiles {
+			file := mapPRFile(ghFile)
+			if err := s.pullsStore.CreateFile(ctx, prID, file); err != nil {
+				slog.Warn("failed to create PR file", "pr", prNumber, "file", ghFile.Filename, "error", err)
+				continue
+			}
+			result.PRFilesCreated++
+		}
+
+		if len(ghFiles) < 100 {
+			break
+		}
+		page++
+	}
 
 	return nil
 }

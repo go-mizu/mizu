@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/pulls"
@@ -528,4 +529,302 @@ func (s *PullsStore) ListRequestedTeams(ctx context.Context, prID int64) ([]*pul
 		list = append(list, t)
 	}
 	return list, rows.Err()
+}
+
+func (s *PullsStore) CreateCommit(ctx context.Context, prID int64, commit *pulls.Commit) error {
+	authorName := ""
+	authorEmail := ""
+	var authorDate *time.Time
+	committerName := ""
+	committerEmail := ""
+	var committerDate *time.Time
+	treeSHA := ""
+
+	if commit.Commit != nil {
+		if commit.Commit.Author != nil {
+			authorName = commit.Commit.Author.Name
+			authorEmail = commit.Commit.Author.Email
+			if !commit.Commit.Author.Date.IsZero() {
+				authorDate = &commit.Commit.Author.Date
+			}
+		}
+		if commit.Commit.Committer != nil {
+			committerName = commit.Commit.Committer.Name
+			committerEmail = commit.Commit.Committer.Email
+			if !commit.Commit.Committer.Date.IsZero() {
+				committerDate = &commit.Commit.Committer.Date
+			}
+		}
+		if commit.Commit.Tree != nil {
+			treeSHA = commit.Commit.Tree.SHA
+		}
+	}
+
+	var authorID, committerID *int64
+	if commit.Author != nil {
+		authorID = &commit.Author.ID
+	}
+	if commit.Committer != nil {
+		committerID = &commit.Committer.ID
+	}
+
+	// Build parent SHAs as JSON array
+	parentSHAs := "[]"
+	if len(commit.Parents) > 0 {
+		shas := make([]string, len(commit.Parents))
+		for i, p := range commit.Parents {
+			shas[i] = p.SHA
+		}
+		parentSHAs = `["` + joinStrings(shas, `","`) + `"]`
+	}
+
+	message := ""
+	if commit.Commit != nil {
+		message = commit.Commit.Message
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO pr_commits (pr_id, sha, node_id, message, author_name, author_email, author_date, author_id,
+			committer_name, committer_email, committer_date, committer_id, tree_sha, parent_shas)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (pr_id, sha) DO UPDATE SET
+			message = EXCLUDED.message,
+			author_name = EXCLUDED.author_name,
+			author_email = EXCLUDED.author_email,
+			author_date = EXCLUDED.author_date,
+			author_id = EXCLUDED.author_id,
+			committer_name = EXCLUDED.committer_name,
+			committer_email = EXCLUDED.committer_email,
+			committer_date = EXCLUDED.committer_date,
+			committer_id = EXCLUDED.committer_id,
+			tree_sha = EXCLUDED.tree_sha,
+			parent_shas = EXCLUDED.parent_shas
+	`, prID, commit.SHA, commit.NodeID, message, authorName, authorEmail, authorDate, authorID,
+		committerName, committerEmail, committerDate, committerID, treeSHA, parentSHAs)
+	return err
+}
+
+func (s *PullsStore) ListCommits(ctx context.Context, prID int64, opts *pulls.ListOpts) ([]*pulls.Commit, error) {
+	page, perPage := 1, 30
+	if opts != nil {
+		if opts.Page > 0 {
+			page = opts.Page
+		}
+		if opts.PerPage > 0 {
+			perPage = opts.PerPage
+		}
+	}
+
+	query := `
+		SELECT sha, node_id, message, author_name, author_email, author_date, author_id,
+			committer_name, committer_email, committer_date, committer_id, tree_sha
+		FROM pr_commits
+		WHERE pr_id = $1
+		ORDER BY author_date DESC`
+	query = applyPagination(query, page, perPage)
+
+	rows, err := s.db.QueryContext(ctx, query, prID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*pulls.Commit
+	for rows.Next() {
+		c := &pulls.Commit{
+			Commit: &pulls.CommitData{
+				Author:    &pulls.CommitAuthor{},
+				Committer: &pulls.CommitAuthor{},
+				Tree:      &pulls.CommitRef{},
+			},
+		}
+		var authorID, committerID sql.NullInt64
+		var authorDate, committerDate sql.NullTime
+		if err := rows.Scan(
+			&c.SHA, &c.NodeID, &c.Commit.Message,
+			&c.Commit.Author.Name, &c.Commit.Author.Email, &authorDate, &authorID,
+			&c.Commit.Committer.Name, &c.Commit.Committer.Email, &committerDate, &committerID,
+			&c.Commit.Tree.SHA,
+		); err != nil {
+			return nil, err
+		}
+		if authorDate.Valid {
+			c.Commit.Author.Date = authorDate.Time
+		}
+		if committerDate.Valid {
+			c.Commit.Committer.Date = committerDate.Time
+		}
+		if authorID.Valid {
+			c.Author = &users.SimpleUser{ID: authorID.Int64}
+		}
+		if committerID.Valid {
+			c.Committer = &users.SimpleUser{ID: committerID.Int64}
+		}
+		list = append(list, c)
+	}
+	return list, rows.Err()
+}
+
+func (s *PullsStore) GetCommitBySHA(ctx context.Context, repoID int64, sha string) (*pulls.Commit, error) {
+	c := &pulls.Commit{
+		Commit: &pulls.CommitData{
+			Author:    &pulls.CommitAuthor{},
+			Committer: &pulls.CommitAuthor{},
+			Tree:      &pulls.CommitRef{},
+		},
+	}
+	var authorID, committerID sql.NullInt64
+	var authorDate, committerDate sql.NullTime
+	var parentSHAs string
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT c.sha, c.node_id, c.message, c.author_name, c.author_email, c.author_date, c.author_id,
+			c.committer_name, c.committer_email, c.committer_date, c.committer_id, c.tree_sha, c.parent_shas
+		FROM pr_commits c
+		JOIN pull_requests pr ON pr.id = c.pr_id
+		WHERE pr.repo_id = $1 AND c.sha = $2
+		LIMIT 1
+	`, repoID, sha).Scan(
+		&c.SHA, &c.NodeID, &c.Commit.Message,
+		&c.Commit.Author.Name, &c.Commit.Author.Email, &authorDate, &authorID,
+		&c.Commit.Committer.Name, &c.Commit.Committer.Email, &committerDate, &committerID,
+		&c.Commit.Tree.SHA, &parentSHAs,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if authorDate.Valid {
+		c.Commit.Author.Date = authorDate.Time
+	}
+	if committerDate.Valid {
+		c.Commit.Committer.Date = committerDate.Time
+	}
+	if authorID.Valid {
+		c.Author = &users.SimpleUser{ID: authorID.Int64}
+	}
+	if committerID.Valid {
+		c.Committer = &users.SimpleUser{ID: committerID.Int64}
+	}
+
+	// Parse parent SHAs from JSON array
+	if parentSHAs != "" && parentSHAs != "[]" {
+		// Simple parsing of ["sha1","sha2"] format
+		trimmed := strings.Trim(parentSHAs, "[]")
+		if trimmed != "" {
+			parts := strings.Split(trimmed, ",")
+			for _, p := range parts {
+				sha := strings.Trim(p, `"`)
+				if sha != "" {
+					c.Parents = append(c.Parents, &pulls.CommitRef{SHA: sha})
+				}
+			}
+		}
+	}
+
+	return c, nil
+}
+
+func (s *PullsStore) CreateFile(ctx context.Context, prID int64, file *pulls.PRFile) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO pr_files (pr_id, sha, filename, status, additions, deletions, changes, blob_url, raw_url, contents_url, patch, previous_filename)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT (pr_id, filename) DO UPDATE SET
+			sha = EXCLUDED.sha,
+			status = EXCLUDED.status,
+			additions = EXCLUDED.additions,
+			deletions = EXCLUDED.deletions,
+			changes = EXCLUDED.changes,
+			blob_url = EXCLUDED.blob_url,
+			raw_url = EXCLUDED.raw_url,
+			contents_url = EXCLUDED.contents_url,
+			patch = EXCLUDED.patch,
+			previous_filename = EXCLUDED.previous_filename
+	`, prID, file.SHA, file.Filename, file.Status, file.Additions, file.Deletions, file.Changes,
+		file.BlobURL, file.RawURL, file.ContentsURL, file.Patch, file.PreviousFilename)
+	return err
+}
+
+func (s *PullsStore) ListFiles(ctx context.Context, prID int64, opts *pulls.ListOpts) ([]*pulls.PRFile, error) {
+	page, perPage := 1, 100
+	if opts != nil {
+		if opts.Page > 0 {
+			page = opts.Page
+		}
+		if opts.PerPage > 0 {
+			perPage = opts.PerPage
+		}
+	}
+
+	query := `
+		SELECT sha, filename, status, additions, deletions, changes, blob_url, raw_url, contents_url, patch, previous_filename
+		FROM pr_files
+		WHERE pr_id = $1
+		ORDER BY filename ASC`
+	query = applyPagination(query, page, perPage)
+
+	rows, err := s.db.QueryContext(ctx, query, prID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*pulls.PRFile
+	for rows.Next() {
+		f := &pulls.PRFile{}
+		if err := rows.Scan(
+			&f.SHA, &f.Filename, &f.Status, &f.Additions, &f.Deletions, &f.Changes,
+			&f.BlobURL, &f.RawURL, &f.ContentsURL, &f.Patch, &f.PreviousFilename,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, f)
+	}
+	return list, rows.Err()
+}
+
+// ListFilesByCommitSHA returns files for the PR that contains the given commit SHA
+func (s *PullsStore) ListFilesByCommitSHA(ctx context.Context, repoID int64, sha string) ([]*pulls.PRFile, error) {
+	query := `
+		SELECT f.sha, f.filename, f.status, f.additions, f.deletions, f.changes,
+		       f.blob_url, f.raw_url, f.contents_url, f.patch, f.previous_filename
+		FROM pr_files f
+		JOIN pr_commits c ON c.pr_id = f.pr_id
+		JOIN pull_requests pr ON pr.id = c.pr_id
+		WHERE pr.repo_id = $1 AND c.sha = $2
+		ORDER BY f.filename ASC`
+
+	rows, err := s.db.QueryContext(ctx, query, repoID, sha)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*pulls.PRFile
+	for rows.Next() {
+		f := &pulls.PRFile{}
+		if err := rows.Scan(
+			&f.SHA, &f.Filename, &f.Status, &f.Additions, &f.Deletions, &f.Changes,
+			&f.BlobURL, &f.RawURL, &f.ContentsURL, &f.Patch, &f.PreviousFilename,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, f)
+	}
+	return list, rows.Err()
+}
+
+// joinStrings joins strings with a separator.
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
 }

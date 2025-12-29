@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"html/template"
 	"io/fs"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,6 +233,25 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"toFloat": func(n int) float64 {
 			return float64(n)
 		},
+		"iterate": func(count interface{}) []int {
+			var n int
+			switch v := count.(type) {
+			case int:
+				n = v
+			case float64:
+				n = int(v)
+			default:
+				n = 0
+			}
+			if n < 0 {
+				n = 0
+			}
+			result := make([]int, n)
+			for i := range result {
+				result[i] = i
+			}
+			return result
+		},
 		"formatTimeAgo": func(t interface{}) string {
 			var when time.Time
 			switch v := t.(type) {
@@ -280,6 +300,96 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 				return strconv.Itoa(years) + " years ago"
 			}
 		},
+		"fileLanguage": func(filename string) string {
+			// Get language name for Prism.js from filename extension
+			ext := strings.ToLower(filepath.Ext(filename))
+			switch ext {
+			case ".go":
+				return "go"
+			case ".js", ".mjs", ".cjs":
+				return "javascript"
+			case ".ts", ".mts":
+				return "typescript"
+			case ".jsx":
+				return "jsx"
+			case ".tsx":
+				return "tsx"
+			case ".py":
+				return "python"
+			case ".rb":
+				return "ruby"
+			case ".rs":
+				return "rust"
+			case ".java":
+				return "java"
+			case ".c", ".h":
+				return "c"
+			case ".cpp", ".cc", ".cxx", ".hpp", ".hxx":
+				return "cpp"
+			case ".cs":
+				return "csharp"
+			case ".php":
+				return "php"
+			case ".swift":
+				return "swift"
+			case ".kt", ".kts":
+				return "kotlin"
+			case ".scala":
+				return "scala"
+			case ".html", ".htm":
+				return "html"
+			case ".css":
+				return "css"
+			case ".scss":
+				return "scss"
+			case ".sass":
+				return "sass"
+			case ".less":
+				return "less"
+			case ".json":
+				return "json"
+			case ".yaml", ".yml":
+				return "yaml"
+			case ".toml":
+				return "toml"
+			case ".xml":
+				return "xml"
+			case ".md", ".markdown":
+				return "markdown"
+			case ".sql":
+				return "sql"
+			case ".sh", ".bash", ".zsh":
+				return "bash"
+			case ".ps1":
+				return "powershell"
+			case ".dockerfile":
+				return "docker"
+			case ".lua":
+				return "lua"
+			case ".perl", ".pl":
+				return "perl"
+			case ".r":
+				return "r"
+			case ".asm", ".s":
+				return "asm6502"
+			case ".vim":
+				return "vim"
+			case ".diff", ".patch":
+				return "diff"
+			default:
+				// Check filename without extension
+				base := strings.ToLower(filepath.Base(filename))
+				switch base {
+				case "dockerfile":
+					return "docker"
+				case "makefile", "gnumakefile":
+					return "makefile"
+				case ".gitignore", ".dockerignore":
+					return "gitignore"
+				}
+				return "none"
+			}
+		},
 	}
 
 	// Read the main layout for the theme
@@ -310,7 +420,7 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		"user_profile",
 		"repo_home", "repo_code", "repo_blob", "repo_blame", "repo_issues", "issue_view", "new_issue", "repo_settings",
 		"repo_commits", "commit_detail",
-		"repo_pulls", "pull_view",
+		"repo_pulls", "pull_view", "pull_commits", "pull_files",
 	}
 	for _, name := range mainPages {
 		pageBytes, err := viewsFS.ReadFile("views/" + theme + "/pages/" + name + ".html")

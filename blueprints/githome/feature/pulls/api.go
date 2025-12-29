@@ -167,16 +167,17 @@ type ReviewComment struct {
 
 // PRFile represents a file in a PR
 type PRFile struct {
-	SHA         string `json:"sha"`
-	Filename    string `json:"filename"`
-	Status      string `json:"status"` // added, removed, modified, renamed, copied, changed, unchanged
-	Additions   int    `json:"additions"`
-	Deletions   int    `json:"deletions"`
-	Changes     int    `json:"changes"`
-	BlobURL     string `json:"blob_url"`
-	RawURL      string `json:"raw_url"`
-	ContentsURL string `json:"contents_url"`
-	Patch       string `json:"patch,omitempty"`
+	SHA              string `json:"sha"`
+	Filename         string `json:"filename"`
+	Status           string `json:"status"` // added, removed, modified, renamed, copied, changed, unchanged
+	Additions        int    `json:"additions"`
+	Deletions        int    `json:"deletions"`
+	Changes          int    `json:"changes"`
+	BlobURL          string `json:"blob_url"`
+	RawURL           string `json:"raw_url"`
+	ContentsURL      string `json:"contents_url"`
+	Patch            string `json:"patch,omitempty"`
+	PreviousFilename string `json:"previous_filename,omitempty"`
 }
 
 // MergeResult represents the result of a merge operation
@@ -255,8 +256,14 @@ type API interface {
 	// ListCommits returns commits in a PR
 	ListCommits(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*Commit, error)
 
+	// GetCommitBySHA retrieves a PR commit by SHA (from pr_commits table)
+	GetCommitBySHA(ctx context.Context, owner, repo, sha string) (*Commit, error)
+
 	// ListFiles returns files in a PR
 	ListFiles(ctx context.Context, owner, repo string, number int, opts *ListOpts) ([]*PRFile, error)
+
+	// ListFilesByCommitSHA returns files for the PR that contains the given commit
+	ListFilesByCommitSHA(ctx context.Context, owner, repo, sha string) ([]*PRFile, error)
 
 	// IsMerged checks if a PR is merged
 	IsMerged(ctx context.Context, owner, repo string, number int) (bool, error)
@@ -367,4 +374,14 @@ type Store interface {
 	AddRequestedTeam(ctx context.Context, prID, teamID int64) error
 	RemoveRequestedTeam(ctx context.Context, prID, teamID int64) error
 	ListRequestedTeams(ctx context.Context, prID int64) ([]*TeamSimple, error)
+
+	// Commits
+	CreateCommit(ctx context.Context, prID int64, commit *Commit) error
+	ListCommits(ctx context.Context, prID int64, opts *ListOpts) ([]*Commit, error)
+	GetCommitBySHA(ctx context.Context, repoID int64, sha string) (*Commit, error)
+
+	// Files
+	CreateFile(ctx context.Context, prID int64, file *PRFile) error
+	ListFiles(ctx context.Context, prID int64, opts *ListOpts) ([]*PRFile, error)
+	ListFilesByCommitSHA(ctx context.Context, repoID int64, sha string) ([]*PRFile, error)
 }

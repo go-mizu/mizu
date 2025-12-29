@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -495,6 +496,22 @@ type CheckStatus struct {
 	Description string
 }
 
+// PullCommitView extends pull commit with display fields for PR commits tab.
+type PullCommitView struct {
+	*pulls.Commit
+	MessageTitle string // First line of commit message
+	MessageBody  string // Rest of commit message
+	IsTruncated  bool   // Message > 72 chars
+	DateShort    string // "Sep 27"
+}
+
+// PullCommitGroup represents commits grouped by date for PR commits tab.
+type PullCommitGroup struct {
+	Date    string            // "Sep 27, 2025"
+	DateKey string            // "2025-09-27" for sorting
+	Commits []*PullCommitView // Commits in this group
+}
+
 // PullDetailData holds data for single PR view.
 type PullDetailData struct {
 	Title          string
@@ -502,6 +519,7 @@ type PullDetailData struct {
 	Repo           *RepoView
 	Pull           *PullView
 	Commits        []*pulls.Commit
+	CommitGroups   []*PullCommitGroup
 	Files          []*pulls.PRFile
 	FileViews      []*FileChangeView
 	Reviews        []*pulls.Review
@@ -519,6 +537,7 @@ type PullDetailData struct {
 	Breadcrumbs    []Breadcrumb
 	UnreadCount    int
 	ActiveNav      string
+	ActiveTab      string // "conversation", "commits", or "files"
 }
 
 // NewRepoData holds data for create repository form.
@@ -1421,8 +1440,8 @@ func (h *Page) PullDetail(c *mizu.Ctx) error {
 	// Get reviews
 	reviewList, _ := h.pulls.ListReviews(ctx, owner, repoName, number, nil)
 
-	// Get comments (use issue comments for the PR conversation)
-	commentList, _ := h.comments.ListForIssue(ctx, owner, repoName, number, &comments.ListOpts{PerPage: 100})
+	// Get comments (PR comments are stored with issue_id = pr.ID)
+	commentList, _ := h.comments.ListForPR(ctx, owner, repoName, pr.ID, &comments.ListOpts{PerPage: 100})
 	commentViews := make([]*CommentView, len(commentList))
 
 	// Build unique participants list (PR author + unique commenters)
@@ -1490,7 +1509,236 @@ func (h *Page) PullDetail(c *mizu.Ctx) error {
 			{Label: fmt.Sprintf("#%d", pr.Number), URL: ""},
 		},
 		ActiveNav: "",
+		ActiveTab: "conversation",
 	})
+}
+
+// PullCommits renders the PR commits tab.
+func (h *Page) PullCommits(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	number := parseInt(c.Param("number"))
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	pr, err := h.pulls.Get(ctx, owner, repoName, number)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Pull request not found")
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "pulls")
+
+	// Render PR body markdown
+	var prBodyHTML template.HTML
+	if pr.Body != "" {
+		prBodyHTML = template.HTML(renderMarkdown([]byte(pr.Body)))
+	}
+
+	// Determine status
+	statusIcon := "git-pull-request"
+	statusColor := "color-fg-success"
+	if pr.Draft {
+		statusIcon = "git-pull-request-draft"
+		statusColor = "color-fg-muted"
+	} else if pr.Merged {
+		statusIcon = "git-merge"
+		statusColor = "color-fg-done"
+	} else if pr.State == "closed" {
+		statusIcon = "git-pull-request-closed"
+		statusColor = "color-fg-danger"
+	}
+
+	pullView := &PullView{
+		PullRequest: pr,
+		TimeAgo:     timeAgo(pr.CreatedAt),
+		StatusIcon:  statusIcon,
+		StatusColor: statusColor,
+		BodyHTML:    prBodyHTML,
+	}
+
+	// Get commits and group by date
+	commitList, _ := h.pulls.ListCommits(ctx, owner, repoName, number, nil)
+	commitGroups := groupCommitsByDateForPR(commitList)
+
+	var user *users.User
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+	}
+
+	return render(h, c, "pull_commits", PullDetailData{
+		Title:        fmt.Sprintf("Commits · %s #%d", pr.Title, pr.Number),
+		User:         user,
+		Repo:         repoView,
+		Pull:         pullView,
+		Commits:      commitList,
+		CommitGroups: commitGroups,
+		Breadcrumbs: []Breadcrumb{
+			{Label: repo.FullName, URL: "/" + repo.FullName},
+			{Label: "Pull requests", URL: "/" + repo.FullName + "/pulls"},
+			{Label: fmt.Sprintf("#%d", pr.Number), URL: "/" + repo.FullName + "/pulls/" + fmt.Sprint(pr.Number)},
+			{Label: "Commits", URL: ""},
+		},
+		ActiveNav: "",
+		ActiveTab: "commits",
+	})
+}
+
+// PullFiles renders the PR files changed tab.
+func (h *Page) PullFiles(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	number := parseInt(c.Param("number"))
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	pr, err := h.pulls.Get(ctx, owner, repoName, number)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Pull request not found")
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "pulls")
+
+	// Render PR body markdown
+	var prBodyHTML template.HTML
+	if pr.Body != "" {
+		prBodyHTML = template.HTML(renderMarkdown([]byte(pr.Body)))
+	}
+
+	// Determine status
+	statusIcon := "git-pull-request"
+	statusColor := "color-fg-success"
+	if pr.Draft {
+		statusIcon = "git-pull-request-draft"
+		statusColor = "color-fg-muted"
+	} else if pr.Merged {
+		statusIcon = "git-merge"
+		statusColor = "color-fg-done"
+	} else if pr.State == "closed" {
+		statusIcon = "git-pull-request-closed"
+		statusColor = "color-fg-danger"
+	}
+
+	pullView := &PullView{
+		PullRequest: pr,
+		TimeAgo:     timeAgo(pr.CreatedAt),
+		StatusIcon:  statusIcon,
+		StatusColor: statusColor,
+		BodyHTML:    prBodyHTML,
+	}
+
+	// Get commits for "All commits" dropdown
+	commitList, _ := h.pulls.ListCommits(ctx, owner, repoName, number, nil)
+
+	// Get files changed
+	fileList, _ := h.pulls.ListFiles(ctx, owner, repoName, number, nil)
+
+	// Convert files to FileChangeView for diff display
+	var fileViews []*FileChangeView
+	for _, f := range fileList {
+		diffLines := parsePatch(f.Patch)
+		isBinary := f.Patch == "" && f.Status == "modified" && f.Additions == 0 && f.Deletions == 0
+		tooLarge := len(f.Patch) > 100000
+
+		fileViews = append(fileViews, &FileChangeView{
+			SHA:       f.SHA,
+			Filename:  f.Filename,
+			Status:    f.Status,
+			Additions: f.Additions,
+			Deletions: f.Deletions,
+			Changes:   f.Changes,
+			BlobURL:   f.BlobURL,
+			RawURL:    f.RawURL,
+			Patch:     f.Patch,
+			DiffLines: diffLines,
+			IsBinary:  isBinary,
+			TooLarge:  tooLarge,
+		})
+	}
+
+	var user *users.User
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+	}
+
+	return render(h, c, "pull_files", PullDetailData{
+		Title:     fmt.Sprintf("Files changed · %s #%d", pr.Title, pr.Number),
+		User:      user,
+		Repo:      repoView,
+		Pull:      pullView,
+		Commits:   commitList,
+		Files:     fileList,
+		FileViews: fileViews,
+		Breadcrumbs: []Breadcrumb{
+			{Label: repo.FullName, URL: "/" + repo.FullName},
+			{Label: "Pull requests", URL: "/" + repo.FullName + "/pulls"},
+			{Label: fmt.Sprintf("#%d", pr.Number), URL: "/" + repo.FullName + "/pulls/" + fmt.Sprint(pr.Number)},
+			{Label: "Files changed", URL: ""},
+		},
+		ActiveNav: "",
+		ActiveTab: "files",
+	})
+}
+
+// groupCommitsByDateForPR groups commits by their date for PR commits tab.
+func groupCommitsByDateForPR(commits []*pulls.Commit) []*PullCommitGroup {
+	if len(commits) == 0 {
+		return nil
+	}
+
+	groups := make(map[string]*PullCommitGroup)
+	var order []string
+
+	for _, c := range commits {
+		if c.Commit == nil || c.Commit.Author == nil {
+			continue
+		}
+
+		date := c.Commit.Author.Date.Format("Jan 2, 2006")
+		key := c.Commit.Author.Date.Format("2006-01-02")
+
+		if _, ok := groups[key]; !ok {
+			groups[key] = &PullCommitGroup{Date: date, DateKey: key}
+			order = append(order, key)
+		}
+
+		// Extract first line of commit message
+		msg := c.Commit.Message
+		msgTitle := msg
+		msgBody := ""
+		if idx := strings.Index(msg, "\n"); idx != -1 {
+			msgTitle = msg[:idx]
+			msgBody = strings.TrimSpace(msg[idx+1:])
+		}
+
+		groups[key].Commits = append(groups[key].Commits, &PullCommitView{
+			Commit:       c,
+			MessageTitle: msgTitle,
+			MessageBody:  msgBody,
+			IsTruncated:  len(msgTitle) > 72,
+			DateShort:    c.Commit.Author.Date.Format("Jan 2"),
+		})
+	}
+
+	// Sort by date (newest first)
+	sort.Sort(sort.Reverse(sort.StringSlice(order)))
+
+	result := make([]*PullCommitGroup, len(order))
+	for i, k := range order {
+		result[i] = groups[k]
+	}
+	return result
 }
 
 // NewRepo renders the create repository form.
@@ -2436,7 +2684,75 @@ func (h *Page) CommitDetail(c *mizu.Ctx) error {
 	// Get the commit with files
 	commit, err := h.commits.Get(ctx, owner, repoName, sha)
 	if err != nil {
-		return c.Text(http.StatusNotFound, "Commit not found")
+		// Fallback: try to get from PR commits (seeded repos)
+		prCommit, prErr := h.pulls.GetCommitBySHA(ctx, owner, repoName, sha)
+		if prErr != nil || prCommit == nil {
+			return c.Text(http.StatusNotFound, "Commit not found")
+		}
+		// Convert pulls.Commit to commits.Commit
+		commit = &commits.Commit{
+			SHA:     prCommit.SHA,
+			NodeID:  prCommit.NodeID,
+			URL:     prCommit.URL,
+			HTMLURL: prCommit.HTMLURL,
+		}
+		if prCommit.Commit != nil {
+			commit.Commit = &commits.CommitData{
+				Message: prCommit.Commit.Message,
+			}
+			if prCommit.Commit.Author != nil {
+				commit.Commit.Author = &commits.CommitAuthor{
+					Name:  prCommit.Commit.Author.Name,
+					Email: prCommit.Commit.Author.Email,
+					Date:  prCommit.Commit.Author.Date,
+				}
+			}
+			if prCommit.Commit.Committer != nil {
+				commit.Commit.Committer = &commits.CommitAuthor{
+					Name:  prCommit.Commit.Committer.Name,
+					Email: prCommit.Commit.Committer.Email,
+					Date:  prCommit.Commit.Committer.Date,
+				}
+			}
+			if prCommit.Commit.Tree != nil {
+				commit.Commit.Tree = &commits.TreeRef{
+					SHA: prCommit.Commit.Tree.SHA,
+					URL: prCommit.Commit.Tree.URL,
+				}
+			}
+		}
+		if prCommit.Author != nil {
+			commit.Author = prCommit.Author
+		}
+		if prCommit.Committer != nil {
+			commit.Committer = prCommit.Committer
+		}
+		for _, p := range prCommit.Parents {
+			commit.Parents = append(commit.Parents, &commits.CommitRef{
+				SHA: p.SHA,
+				URL: p.URL,
+			})
+		}
+		// Get files from PR for this commit
+		prFiles, _ := h.pulls.ListFilesByCommitSHA(ctx, owner, repoName, sha)
+		if len(prFiles) > 0 {
+			commit.Files = make([]*commits.CommitFile, len(prFiles))
+			for i, pf := range prFiles {
+				commit.Files[i] = &commits.CommitFile{
+					SHA:              pf.SHA,
+					Filename:         pf.Filename,
+					Status:           pf.Status,
+					Additions:        pf.Additions,
+					Deletions:        pf.Deletions,
+					Changes:          pf.Changes,
+					BlobURL:          pf.BlobURL,
+					RawURL:           pf.RawURL,
+					ContentsURL:      pf.ContentsURL,
+					Patch:            pf.Patch,
+					PreviousFilename: pf.PreviousFilename,
+				}
+			}
+		}
 	}
 
 	// Build author view
