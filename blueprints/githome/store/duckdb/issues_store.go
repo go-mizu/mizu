@@ -387,6 +387,21 @@ func (s *IssuesStore) IncrementComments(ctx context.Context, issueID int64, delt
 	return err
 }
 
+// CountByState returns the count of issues for a given state (open, closed, or all).
+func (s *IssuesStore) CountByState(ctx context.Context, repoID int64, state string) (int, error) {
+	var count int
+	query := `SELECT COUNT(*) FROM issues WHERE repo_id = $1`
+	args := []any{repoID}
+
+	if state != "all" && state != "" {
+		query += ` AND state = $2`
+		args = append(args, state)
+	}
+
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
 // Helper function
 
 func scanIssues(rows *sql.Rows) ([]*issues.Issue, error) {

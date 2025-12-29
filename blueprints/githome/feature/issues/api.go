@@ -209,6 +209,9 @@ type API interface {
 
 	// CreateEvent creates an event (internal use)
 	CreateEvent(ctx context.Context, issueID, actorID int64, eventType string, data map[string]interface{}) (*IssueEvent, error)
+
+	// CountByState returns the count of issues for a given state
+	CountByState(ctx context.Context, owner, repo, state string) (int, error)
 }
 
 // Store defines the data access interface for issues
@@ -246,4 +249,7 @@ type Store interface {
 
 	// Comments count
 	IncrementComments(ctx context.Context, issueID int64, delta int) error
+
+	// Count issues by state
+	CountByState(ctx context.Context, repoID int64, state string) (int, error)
 }

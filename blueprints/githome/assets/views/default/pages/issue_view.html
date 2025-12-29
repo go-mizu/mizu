@@ -28,12 +28,13 @@
 <div class="container-xl mt-4">
     <div class="Layout">
         <div class="Layout-main">
-            <div class="mb-4">
-                <h1 class="mb-2" style="font-size: 32px; font-weight: 400;">
-                    {{.Issue.Title}}
-                    <span class="color-fg-muted">#{{.Issue.Number}}</span>
+            <!-- Issue Header -->
+            <div class="issue-header mb-4">
+                <h1 class="issue-title">
+                    <span class="issue-title-text">{{.Issue.Title}}</span>
+                    <span class="issue-number color-fg-muted">#{{.Issue.Number}}</span>
                 </h1>
-                <div class="d-flex flex-items-center">
+                <div class="issue-meta d-flex flex-items-center mt-2">
                     {{if eq .Issue.State "open"}}
                     <span class="State State--open">
                         <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
@@ -51,44 +52,95 @@
                         Closed
                     </span>
                     {{end}}
-                    <span class="color-fg-muted ml-2">
+                    <span class="issue-meta-text color-fg-muted ml-2">
                         <a href="/{{.Issue.User.Login}}" class="Link--secondary text-bold">{{.Issue.User.Login}}</a>
-                        opened this issue {{.Issue.TimeAgo}} &middot; {{.Issue.Comments}} comments
+                        opened this issue {{.Issue.TimeAgo}} &middot; {{.Issue.Comments}} comment{{if ne .Issue.Comments 1}}s{{end}}
                     </span>
                 </div>
             </div>
 
-            <div class="timeline-comment mb-4">
+            <!-- Issue Body (First Comment) -->
+            <div class="timeline-comment mb-3">
                 <div class="timeline-comment-header">
-                    {{if .Issue.User.AvatarURL}}
-                    <img src="{{.Issue.User.AvatarURL}}" alt="{{.Issue.User.Login}}" class="Avatar Avatar--medium mr-2">
-                    {{else}}
-                    <span class="Avatar Avatar--medium mr-2" style="background: #6e40c9; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600;">{{firstChar .Issue.User.Login}}</span>
+                    <a href="/{{.Issue.User.Login}}" class="d-inline-flex flex-items-center">
+                        {{if .Issue.User.AvatarURL}}
+                        <img src="{{.Issue.User.AvatarURL}}" alt="@{{.Issue.User.Login}}" class="Avatar Avatar--medium mr-2">
+                        {{else}}
+                        <span class="Avatar Avatar--medium Avatar--letter mr-2">{{firstChar .Issue.User.Login}}</span>
+                        {{end}}
+                    </a>
+                    <span class="timeline-comment-header-text">
+                        <a href="/{{.Issue.User.Login}}" class="Link--primary text-bold">{{.Issue.User.Login}}</a>
+                        <span class="color-fg-muted">commented {{.Issue.TimeAgo}}</span>
+                    </span>
+                    {{if .Issue.AuthorAssociation}}
+                    {{if ne .Issue.AuthorAssociation "NONE"}}
+                    <span class="Label Label--secondary ml-2">{{.Issue.AuthorAssociation}}</span>
                     {{end}}
-                    <a href="/{{.Issue.User.Login}}" class="Link--primary text-bold">{{.Issue.User.Login}}</a>
-                    <span class="color-fg-muted ml-1">commented {{.Issue.TimeAgo}}</span>
+                    {{end}}
                 </div>
                 <div class="timeline-comment-body markdown-body">
                     {{if .Issue.Body}}
-                    {{.Issue.Body}}
+                    <div class="issue-body-content">{{.Issue.Body}}</div>
                     {{else}}
                     <p class="color-fg-muted"><em>No description provided.</em></p>
                     {{end}}
                 </div>
             </div>
 
+            <!-- Timeline Events -->
+            {{if .Timeline}}
+            {{range .Timeline}}
+            <div class="timeline-event d-flex flex-items-center py-2">
+                <div class="timeline-event-icon">
+                    <svg class="octicon color-fg-muted" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M8 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/>
+                    </svg>
+                </div>
+                <div class="timeline-event-content ml-2">
+                    {{if .Actor}}
+                    <a href="/{{.Actor.Login}}" class="Link--primary text-bold">{{.Actor.Login}}</a>
+                    {{end}}
+                    <span class="color-fg-muted">{{.Type}} {{.TimeAgo}}</span>
+                </div>
+            </div>
+            {{end}}
+            {{end}}
+
+            <!-- Comments -->
             {{range .Comments}}
-            <div class="timeline-comment mb-4">
+            <div class="timeline-comment mb-3" id="comment-{{.ID}}">
                 <div class="timeline-comment-header">
-                    {{if .Author}}
-                    {{if .Author.AvatarURL}}
-                    <img src="{{.Author.AvatarURL}}" alt="{{.Author.Login}}" class="Avatar Avatar--medium mr-2">
-                    {{else}}
-                    <span class="Avatar Avatar--medium mr-2" style="background: #6e40c9; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600;">{{firstChar .Author.Login}}</span>
+                    {{if .User}}
+                    <a href="/{{.User.Login}}" class="d-inline-flex flex-items-center">
+                        {{if .User.AvatarURL}}
+                        <img src="{{.User.AvatarURL}}" alt="@{{.User.Login}}" class="Avatar Avatar--medium mr-2">
+                        {{else}}
+                        <span class="Avatar Avatar--medium Avatar--letter mr-2">{{firstChar .User.Login}}</span>
+                        {{end}}
+                    </a>
+                    <span class="timeline-comment-header-text">
+                        <a href="/{{.User.Login}}" class="Link--primary text-bold">{{.User.Login}}</a>
+                        <span class="color-fg-muted">commented {{.TimeAgo}}</span>
+                    </span>
+                    {{else if .Author}}
+                    <a href="/{{.Author.Login}}" class="d-inline-flex flex-items-center">
+                        {{if .Author.AvatarURL}}
+                        <img src="{{.Author.AvatarURL}}" alt="@{{.Author.Login}}" class="Avatar Avatar--medium mr-2">
+                        {{else}}
+                        <span class="Avatar Avatar--medium Avatar--letter mr-2">{{firstChar .Author.Login}}</span>
+                        {{end}}
+                    </a>
+                    <span class="timeline-comment-header-text">
+                        <a href="/{{.Author.Login}}" class="Link--primary text-bold">{{.Author.Login}}</a>
+                        <span class="color-fg-muted">commented {{.TimeAgo}}</span>
+                    </span>
                     {{end}}
-                    <a href="/{{.Author.Login}}" class="Link--primary text-bold">{{.Author.Login}}</a>
+                    {{if .AuthorAssociation}}
+                    {{if ne .AuthorAssociation "NONE"}}
+                    <span class="Label Label--secondary ml-2">{{.AuthorAssociation}}</span>
                     {{end}}
-                    <span class="color-fg-muted ml-1">commented {{.TimeAgo}}</span>
+                    {{end}}
                 </div>
                 <div class="timeline-comment-body markdown-body">
                     {{.Body}}
@@ -96,79 +148,250 @@
             </div>
             {{end}}
 
+            <!-- New Comment Form -->
             {{if .User}}
-            <div class="Box mt-4">
-                <div class="Box-header">
-                    <h3 class="Box-title">Add a comment</h3>
-                </div>
-                <div class="Box-body">
-                    <form method="POST" action="/{{.Repo.FullName}}/issues/{{.Issue.Number}}/comments">
-                        <div class="form-group">
-                            <textarea name="body" class="form-control" rows="6" placeholder="Leave a comment"></textarea>
+            <div class="new-comment-form mt-4" id="new-comment">
+                <div class="d-flex">
+                    <div class="timeline-comment-avatar mr-3">
+                        {{if .User.AvatarURL}}
+                        <img src="{{.User.AvatarURL}}" alt="@{{.User.Login}}" class="Avatar Avatar--medium">
+                        {{else}}
+                        <span class="Avatar Avatar--medium Avatar--letter">{{firstChar .User.Login}}</span>
+                        {{end}}
+                    </div>
+                    <div class="flex-1">
+                        <div class="Box">
+                            <div class="Box-header">
+                                <div class="d-flex flex-items-center">
+                                    <span class="tab-link selected">Write</span>
+                                    <span class="tab-link ml-2">Preview</span>
+                                </div>
+                            </div>
+                            <div class="Box-body">
+                                <form method="POST" action="/{{.Repo.FullName}}/issues/{{.Issue.Number}}/comments">
+                                    <div class="form-group mb-3">
+                                        <textarea name="body" class="form-control comment-textarea" rows="6" placeholder="Leave a comment"></textarea>
+                                    </div>
+                                    <div class="d-flex flex-justify-between flex-items-center">
+                                        <span class="text-small color-fg-muted">
+                                            <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                                <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
+                                            </svg>
+                                            Styling with Markdown is supported
+                                        </span>
+                                        <div class="d-flex flex-items-center">
+                                            {{if .CanClose}}
+                                            {{if eq .Issue.State "open"}}
+                                            <button type="submit" name="action" value="close" class="btn mr-2">
+                                                <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                                    <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/>
+                                                    <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/>
+                                                </svg>
+                                                Close issue
+                                            </button>
+                                            {{else}}
+                                            <button type="submit" name="action" value="reopen" class="btn mr-2">
+                                                <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                                    <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                                                    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                                                </svg>
+                                                Reopen issue
+                                            </button>
+                                            {{end}}
+                                            {{end}}
+                                            <button type="submit" class="btn btn-primary">
+                                                Comment
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
-                        <div class="d-flex flex-justify-end">
-                            {{if .CanClose}}
-                            {{if eq .Issue.State "open"}}
-                            <button type="submit" name="action" value="close" class="btn mr-2">Close issue</button>
-                            {{else}}
-                            <button type="submit" name="action" value="reopen" class="btn mr-2">Reopen issue</button>
-                            {{end}}
-                            {{end}}
-                            <button type="submit" class="btn btn-primary">Comment</button>
-                        </div>
-                    </form>
+                    </div>
                 </div>
+            </div>
+            {{else}}
+            <div class="flash flash-warn mt-4">
+                <a href="/login?return_to=/{{.Repo.FullName}}/issues/{{.Issue.Number}}">Sign in</a> to comment on this issue.
             </div>
             {{end}}
         </div>
 
+        <!-- Sidebar -->
         <div class="Layout-sidebar">
             <div class="BorderGrid BorderGrid--spacious">
+                <!-- Assignees -->
                 <div class="BorderGrid-row">
                     <div class="BorderGrid-cell">
-                        <h3 class="f6 text-bold mb-2">Assignees</h3>
+                        <div class="sidebar-section-header d-flex flex-justify-between flex-items-center">
+                            <h3 class="f6 text-bold mb-0">Assignees</h3>
+                            {{if .CanEdit}}
+                            <button class="btn-link color-fg-muted" type="button">
+                                <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                    <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"/>
+                                </svg>
+                            </button>
+                            {{end}}
+                        </div>
                         {{if .Issue.Assignees}}
-                        {{range .Issue.Assignees}}
-                        <div class="d-flex flex-items-center mb-2">
-                            {{if .AvatarURL}}
-                            <img src="{{.AvatarURL}}" alt="{{.Login}}" class="Avatar Avatar--small mr-2">
+                        <div class="mt-2">
+                            {{range .Issue.Assignees}}
+                            <a href="/{{.Login}}" class="d-flex flex-items-center mb-2 text-decoration-none">
+                                {{if .AvatarURL}}
+                                <img src="{{.AvatarURL}}" alt="@{{.Login}}" class="Avatar Avatar--small mr-2">
+                                {{else}}
+                                <span class="Avatar Avatar--small Avatar--letter mr-2">{{firstChar .Login}}</span>
+                                {{end}}
+                                <span class="Link--primary">{{.Login}}</span>
+                            </a>
                             {{end}}
-                            <a href="/{{.Login}}" class="Link--primary">{{.Login}}</a>
                         </div>
-                        {{end}}
                         {{else}}
-                        <p class="color-fg-muted f6">No one assigned</p>
+                        <p class="color-fg-muted f6 mt-2">
+                            No one&mdash;{{if .CanEdit}}<a href="#" class="Link--secondary">assign yourself</a>{{else}}assign yourself{{end}}
+                        </p>
                         {{end}}
                     </div>
                 </div>
 
+                <!-- Labels -->
                 <div class="BorderGrid-row">
                     <div class="BorderGrid-cell">
-                        <h3 class="f6 text-bold mb-2">Labels</h3>
+                        <div class="sidebar-section-header d-flex flex-justify-between flex-items-center">
+                            <h3 class="f6 text-bold mb-0">Labels</h3>
+                            {{if .CanEdit}}
+                            <button class="btn-link color-fg-muted" type="button">
+                                <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                    <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"/>
+                                </svg>
+                            </button>
+                            {{end}}
+                        </div>
                         {{if .Issue.Labels}}
-                        <div>
+                        <div class="mt-2">
                             {{range .Issue.Labels}}
-                            <span class="IssueLabel mb-1" style="background-color: #{{.Color}};">
+                            <a href="/{{$.Repo.FullName}}/issues?label={{.Name}}" class="IssueLabel mb-1 d-inline-block" style="background-color: #{{.Color}};">
                                 {{.Name}}
-                            </span>
+                            </a>
                             {{end}}
                         </div>
                         {{else}}
-                        <p class="color-fg-muted f6">None yet</p>
+                        <p class="color-fg-muted f6 mt-2">None yet</p>
                         {{end}}
                     </div>
                 </div>
 
+                <!-- Projects -->
                 <div class="BorderGrid-row">
                     <div class="BorderGrid-cell">
-                        <h3 class="f6 text-bold mb-2">Milestone</h3>
+                        <div class="sidebar-section-header d-flex flex-justify-between flex-items-center">
+                            <h3 class="f6 text-bold mb-0">Projects</h3>
+                        </div>
+                        <p class="color-fg-muted f6 mt-2">None yet</p>
+                    </div>
+                </div>
+
+                <!-- Milestone -->
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <div class="sidebar-section-header d-flex flex-justify-between flex-items-center">
+                            <h3 class="f6 text-bold mb-0">Milestone</h3>
+                            {{if .CanEdit}}
+                            <button class="btn-link color-fg-muted" type="button">
+                                <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                    <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"/>
+                                </svg>
+                            </button>
+                            {{end}}
+                        </div>
                         {{if .Issue.Milestone}}
-                        <a href="/{{.Repo.FullName}}/milestone/{{.Issue.Milestone.Number}}" class="Link--primary">
-                            {{.Issue.Milestone.Title}}
-                        </a>
+                        <div class="mt-2">
+                            <a href="/{{.Repo.FullName}}/milestone/{{.Issue.Milestone.Number}}" class="Link--primary d-flex flex-items-center">
+                                <svg class="octicon mr-1 color-fg-muted" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                    <path d="M7.75 0a.75.75 0 0 1 .75.75V3h3.634c.414 0 .814.147 1.13.414l2.07 1.75a1.75 1.75 0 0 1 0 2.672l-2.07 1.75a1.75 1.75 0 0 1-1.13.414H8.5v5.25a.75.75 0 0 1-1.5 0V10H2.75A1.75 1.75 0 0 1 1 8.25v-3.5C1 3.784 1.784 3 2.75 3H7V.75A.75.75 0 0 1 7.75 0Zm4.384 8.5a.25.25 0 0 0 .161-.059l2.07-1.75a.25.25 0 0 0 0-.382l-2.07-1.75a.25.25 0 0 0-.161-.059H2.75a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h9.384Z"/>
+                                </svg>
+                                {{.Issue.Milestone.Title}}
+                            </a>
+                        </div>
                         {{else}}
-                        <p class="color-fg-muted f6">No milestone</p>
+                        <p class="color-fg-muted f6 mt-2">No milestone</p>
                         {{end}}
+                    </div>
+                </div>
+
+                <!-- Development -->
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <div class="sidebar-section-header">
+                            <h3 class="f6 text-bold mb-0">Development</h3>
+                        </div>
+                        <p class="color-fg-muted f6 mt-2">
+                            <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z"/>
+                            </svg>
+                            No branches or pull requests
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Notifications -->
+                {{if .User}}
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <div class="sidebar-section-header">
+                            <h3 class="f6 text-bold mb-0">Notifications</h3>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-block">
+                                <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                    <path d="M8 16a2 2 0 0 0 1.985-1.75c.017-.137-.097-.25-.235-.25h-3.5c-.138 0-.252.113-.235.25A2 2 0 0 0 8 16ZM3 5a5 5 0 0 1 10 0v2.947c0 .05.015.098.042.139l1.703 2.555A1.519 1.519 0 0 1 13.482 13H2.518a1.516 1.516 0 0 1-1.263-2.36l1.703-2.554A.255.255 0 0 0 3 7.947Zm5-3.5A3.5 3.5 0 0 0 4.5 5v2.947c0 .346-.102.683-.294.97l-1.703 2.556a.017.017 0 0 0-.003.01l.001.006c0 .002.002.004.004.006l.006.004.007.001h10.964l.007-.001.006-.004.004-.006.001-.007a.017.017 0 0 0-.003-.01l-1.703-2.554a1.745 1.745 0 0 1-.294-.97V5A3.5 3.5 0 0 0 8 1.5Z"/>
+                                </svg>
+                                Subscribe
+                            </button>
+                            <p class="f6 color-fg-muted mt-2">
+                                You're not receiving notifications from this thread.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+
+                <!-- Participants -->
+                <div class="BorderGrid-row">
+                    <div class="BorderGrid-cell">
+                        <div class="sidebar-section-header">
+                            <h3 class="f6 text-bold mb-0">
+                                {{len .Comments | add 1}} participant{{if gt (len .Comments | add 1) 1}}s{{end}}
+                            </h3>
+                        </div>
+                        <div class="mt-2 d-flex flex-wrap">
+                            <a href="/{{.Issue.User.Login}}" title="@{{.Issue.User.Login}}" class="mr-1 mb-1">
+                                {{if .Issue.User.AvatarURL}}
+                                <img src="{{.Issue.User.AvatarURL}}" alt="@{{.Issue.User.Login}}" class="Avatar Avatar--small">
+                                {{else}}
+                                <span class="Avatar Avatar--small Avatar--letter">{{firstChar .Issue.User.Login}}</span>
+                                {{end}}
+                            </a>
+                            {{range .Comments}}
+                            {{if .User}}
+                            <a href="/{{.User.Login}}" title="@{{.User.Login}}" class="mr-1 mb-1">
+                                {{if .User.AvatarURL}}
+                                <img src="{{.User.AvatarURL}}" alt="@{{.User.Login}}" class="Avatar Avatar--small">
+                                {{else}}
+                                <span class="Avatar Avatar--small Avatar--letter">{{firstChar .User.Login}}</span>
+                                {{end}}
+                            </a>
+                            {{else if .Author}}
+                            <a href="/{{.Author.Login}}" title="@{{.Author.Login}}" class="mr-1 mb-1">
+                                {{if .Author.AvatarURL}}
+                                <img src="{{.Author.AvatarURL}}" alt="@{{.Author.Login}}" class="Avatar Avatar--small">
+                                {{else}}
+                                <span class="Avatar Avatar--small Avatar--letter">{{firstChar .Author.Login}}</span>
+                                {{end}}
+                            </a>
+                            {{end}}
+                            {{end}}
+                        </div>
                     </div>
                 </div>
             </div>
