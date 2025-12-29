@@ -917,8 +917,8 @@ func (h *Page) RepoHome(c *mizu.Ctx) error {
 	}
 
 	// Get contributors
-	contributors, _ := h.repos.ListContributors(ctx, owner, repoName, nil)
-	contributorCount := len(contributors)
+	contributors, _ := h.repos.ListContributors(ctx, owner, repoName, &repos.ListOpts{PerPage: 14})
+	contributorCount, _ := h.repos.CountContributors(ctx, owner, repoName)
 
 	// Get latest release
 	var latestRelease *ReleaseView
@@ -2341,10 +2341,13 @@ func (h *Page) buildRepoView(ctx context.Context, repo *repos.Repository, userID
 		ActiveTab:  activeTab,
 	}
 
+	// Get open PR count for the Pull requests tab
+	prCount, _ := h.pulls.CountOpen(ctx, repo.Owner.Login, repo.Name)
+
 	view.Tabs = []RepoTab{
 		{Name: "Code", URL: fmt.Sprintf("/%s", repo.FullName), Icon: "code", Active: activeTab == "code"},
 		{Name: "Issues", URL: fmt.Sprintf("/%s/issues", repo.FullName), Icon: "issue-opened", Count: repo.OpenIssuesCount, Active: activeTab == "issues"},
-		{Name: "Pull requests", URL: fmt.Sprintf("/%s/pulls", repo.FullName), Icon: "git-pull-request", Active: activeTab == "pulls"},
+		{Name: "Pull requests", URL: fmt.Sprintf("/%s/pulls", repo.FullName), Icon: "git-pull-request", Count: prCount, Active: activeTab == "pulls"},
 	}
 
 	if repo.HasWiki {

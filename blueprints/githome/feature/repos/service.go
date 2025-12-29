@@ -2,7 +2,9 @@ package repos
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -541,7 +543,9 @@ func (s *Service) ReplaceTopics(ctx context.Context, owner, repoName string, top
 	return topics, nil
 }
 
-// ListContributors returns repository contributors
+// ListContributors returns repository contributors.
+// If the repository has seeded contributors from GitHub, returns those.
+// Otherwise, falls back to computing contributors from git commit history.
 func (s *Service) ListContributors(ctx context.Context, owner, repoName string, opts *ListOpts) ([]*Contributor, error) {
 	repo, err := s.store.GetByFullName(ctx, owner, repoName)
 	if err != nil {
@@ -561,7 +565,13 @@ func (s *Service) ListContributors(ctx context.Context, owner, repoName string, 
 		opts.PerPage = 100
 	}
 
-	// Try to open git repository
+	// Check if we have seeded contributors from GitHub
+	hasSeeded, err := s.store.HasSeededContributors(ctx, repo.ID)
+	if err == nil && hasSeeded {
+		return s.store.ListSeededContributors(ctx, repo.ID, opts)
+	}
+
+	// Fall back to computing contributors from git commit history
 	gitRepo, err := s.openRepo(owner, repoName)
 	if err != nil {
 		if err == pkggit.ErrNotARepository {
@@ -583,18 +593,22 @@ func (s *Service) ListContributors(ctx context.Context, owner, repoName string, 
 		if contrib, exists := contributions[email]; exists {
 			contrib.Contributions++
 		} else {
-			// Try to find user by email
+			// Try to find user by email first
 			user, _ := s.userStore.GetByEmail(ctx, email)
+			// If not found by email, try by login (author name might be GitHub username)
+			if user == nil {
+				user, _ = s.userStore.GetByLogin(ctx, c.Author.Name)
+			}
 			contrib := &Contributor{
 				Contributions: 1,
 			}
 			if user != nil {
 				contrib.SimpleUser = user.ToSimple()
 			} else {
-				// Create a placeholder SimpleUser
+				// Create a placeholder SimpleUser with gravatar-based avatar
 				contrib.SimpleUser = &users.SimpleUser{
 					Login:     c.Author.Name,
-					AvatarURL: "",
+					AvatarURL: gravatarURL(c.Author.Email),
 					Type:      "User",
 				}
 			}
@@ -625,6 +639,46 @@ func (s *Service) ListContributors(ctx context.Context, owner, repoName string, 
 	}
 
 	return result[start:end], nil
+}
+
+// CountContributors returns the total number of contributors for a repository.
+// If the repository has seeded contributors from GitHub, returns that count.
+// Otherwise, falls back to computing from git commit history.
+func (s *Service) CountContributors(ctx context.Context, owner, repoName string) (int, error) {
+	repo, err := s.store.GetByFullName(ctx, owner, repoName)
+	if err != nil {
+		return 0, err
+	}
+	if repo == nil {
+		return 0, ErrNotFound
+	}
+
+	// Check if we have seeded contributors from GitHub
+	hasSeeded, err := s.store.HasSeededContributors(ctx, repo.ID)
+	if err == nil && hasSeeded {
+		return s.store.CountSeededContributors(ctx, repo.ID)
+	}
+
+	// Fall back to computing from git commit history
+	gitRepo, err := s.openRepo(owner, repoName)
+	if err != nil {
+		if err == pkggit.ErrNotARepository {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	commits, err := gitRepo.Log(repo.DefaultBranch, 1000)
+	if err != nil {
+		return 0, nil
+	}
+
+	// Count unique emails
+	emails := make(map[string]bool)
+	for _, c := range commits {
+		emails[c.Author.Email] = true
+	}
+	return len(emails), nil
 }
 
 // GetReadme returns the README content
@@ -1486,4 +1540,10 @@ func defaultBool(ptr *bool, def bool) bool {
 		return def
 	}
 	return *ptr
+}
+
+// gravatarURL generates a Gravatar URL from an email address.
+func gravatarURL(email string) string {
+	hash := md5.Sum([]byte(strings.ToLower(strings.TrimSpace(email))))
+	return fmt.Sprintf("https://www.gravatar.com/avatar/%s?d=identicon&s=40", hex.EncodeToString(hash[:]))
 }

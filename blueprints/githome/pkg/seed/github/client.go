@@ -691,3 +691,37 @@ func (c *Client) ListPRReviews(ctx context.Context, owner, repo string, number i
 	}
 	return result, rateInfo, nil
 }
+
+// ghContributor represents a GitHub contributor from the API.
+type ghContributor struct {
+	ID            int64  `json:"id"`
+	Login         string `json:"login"`
+	AvatarURL     string `json:"avatar_url"`
+	HTMLURL       string `json:"html_url"`
+	Type          string `json:"type"`
+	Contributions int    `json:"contributions"`
+}
+
+// ListContributors fetches contributors for a repository.
+func (c *Client) ListContributors(ctx context.Context, owner, repo string, opts *ListOptions) ([]*ghContributor, *RateLimitInfo, error) {
+	query := url.Values{}
+	if opts != nil {
+		if opts.Page > 0 {
+			query.Set("page", strconv.Itoa(opts.Page))
+		}
+		if opts.PerPage > 0 {
+			query.Set("per_page", strconv.Itoa(opts.PerPage))
+		}
+	}
+
+	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/contributors", owner, repo), query)
+	if err != nil {
+		return nil, rateInfo, err
+	}
+
+	var result []*ghContributor
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, rateInfo, fmt.Errorf("unmarshal contributors: %w", err)
+	}
+	return result, rateInfo, nil
+}

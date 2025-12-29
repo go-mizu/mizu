@@ -244,6 +244,9 @@ type API interface {
 	// List returns PRs for a repository
 	List(ctx context.Context, owner, repo string, opts *ListOpts) ([]*PullRequest, error)
 
+	// CountOpen returns the count of open PRs for a repository
+	CountOpen(ctx context.Context, owner, repo string) (int, error)
+
 	// Get retrieves a PR by number
 	Get(ctx context.Context, owner, repo string, number int) (*PullRequest, error)
 
@@ -347,6 +350,7 @@ type Store interface {
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, repoID int64, opts *ListOpts) ([]*PullRequest, error)
 	NextNumber(ctx context.Context, repoID int64) (int, error)
+	CountOpen(ctx context.Context, repoID int64) (int, error)
 
 	// Merge
 	SetMerged(ctx context.Context, id int64, mergedAt time.Time, mergeCommitSHA string, mergedByID int64) error

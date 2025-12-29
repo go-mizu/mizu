@@ -78,6 +78,18 @@ func (s *Service) List(ctx context.Context, owner, repo string, opts *ListOpts) 
 	return prs, nil
 }
 
+// CountOpen returns the count of open PRs for a repository
+func (s *Service) CountOpen(ctx context.Context, owner, repo string) (int, error) {
+	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
+	if err != nil {
+		return 0, err
+	}
+	if r == nil {
+		return 0, repos.ErrNotFound
+	}
+	return s.store.CountOpen(ctx, r.ID)
+}
+
 // Get retrieves a PR by number
 func (s *Service) Get(ctx context.Context, owner, repo string, number int) (*PullRequest, error) {
 	r, err := s.repoStore.GetByFullName(ctx, owner, repo)

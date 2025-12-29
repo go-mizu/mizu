@@ -219,6 +219,14 @@ func (s *PullsStore) NextNumber(ctx context.Context, repoID int64) (int, error) 
 	return 1, nil
 }
 
+func (s *PullsStore) CountOpen(ctx context.Context, repoID int64) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM pull_requests WHERE repo_id = $1 AND state = 'open'
+	`, repoID).Scan(&count)
+	return count, err
+}
+
 func (s *PullsStore) SetMerged(ctx context.Context, id int64, mergedAt time.Time, mergeCommitSHA string, mergedByID int64) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE pull_requests SET
