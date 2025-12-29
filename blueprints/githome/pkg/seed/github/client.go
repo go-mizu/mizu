@@ -371,6 +371,20 @@ func (c *Client) GetUser(ctx context.Context, login string) (*ghUser, *RateLimit
 	return &result, rateInfo, nil
 }
 
+// GetIssue fetches a single issue by number.
+func (c *Client) GetIssue(ctx context.Context, owner, repo string, number int) (*ghIssue, *RateLimitInfo, error) {
+	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/issues/%d", owner, repo, number), nil)
+	if err != nil {
+		return nil, rateInfo, err
+	}
+
+	var result ghIssue
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, rateInfo, fmt.Errorf("unmarshal issue: %w", err)
+	}
+	return &result, rateInfo, nil
+}
+
 // ListIssues fetches issues for a repository.
 func (c *Client) ListIssues(ctx context.Context, owner, repo string, opts *ListOptions) ([]*ghIssue, *RateLimitInfo, error) {
 	query := url.Values{}
@@ -385,8 +399,8 @@ func (c *Client) ListIssues(ctx context.Context, owner, repo string, opts *ListO
 			query.Set("state", opts.State)
 		}
 	}
-	query.Set("sort", "created")
-	query.Set("direction", "asc")
+	query.Set("sort", "updated")
+	query.Set("direction", "desc")
 
 	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/issues", owner, repo), query)
 	if err != nil {
@@ -414,8 +428,8 @@ func (c *Client) ListPullRequests(ctx context.Context, owner, repo string, opts 
 			query.Set("state", opts.State)
 		}
 	}
-	query.Set("sort", "created")
-	query.Set("direction", "asc")
+	query.Set("sort", "updated")
+	query.Set("direction", "desc")
 
 	body, rateInfo, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s/pulls", owner, repo), query)
 	if err != nil {

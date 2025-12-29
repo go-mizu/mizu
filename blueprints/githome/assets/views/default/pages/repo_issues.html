@@ -16,6 +16,27 @@
     <div class="UnderlineNav-body">
         {{range .Repo.Tabs}}
         <a href="{{.URL}}" class="UnderlineNav-item{{if .Active}} selected{{end}}">
+            {{if eq .Icon "code"}}
+            <svg class="octicon UnderlineNav-octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="m11.28 3.22 4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L13.94 8l-3.72-3.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215Zm-6.56 0a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L2.06 8l3.72 3.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L.47 8.53a.75.75 0 0 1 0-1.06Z"/>
+            </svg>
+            {{else if eq .Icon "issue-opened"}}
+            <svg class="octicon UnderlineNav-octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+            </svg>
+            {{else if eq .Icon "git-pull-request"}}
+            <svg class="octicon UnderlineNav-octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/>
+            </svg>
+            {{else if eq .Icon "book"}}
+            <svg class="octicon UnderlineNav-octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/>
+            </svg>
+            {{else if eq .Icon "gear"}}
+            <svg class="octicon UnderlineNav-octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.04.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.04-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z"/>
+            </svg>
+            {{end}}
             <span>{{.Name}}</span>
             {{if gt .Count 0}}
             <span class="Counter">{{.Count}}</span>
@@ -33,47 +54,91 @@
             <div class="issues-search-wrapper">
                 <form action="/{{.Repo.FullName}}/issues" method="GET" class="issues-search-form">
                     <div class="issues-search-input-group">
-                        <span class="issues-search-icon">
+                        <input type="text" name="q" class="issues-search-input"
+                               placeholder="is:issue state:{{.CurrentState}}"
+                               value="{{if .Query}}{{.Query}}{{end}}"
+                               autocomplete="off">
+                        <button type="submit" class="issues-search-button">
                             <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                 <path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/>
                             </svg>
-                        </span>
-                        <input type="text" name="q" class="issues-search-input"
-                               placeholder="is:issue is:{{.CurrentState}}"
-                               value="{{if .Query}}{{.Query}}{{end}}"
-                               autocomplete="off">
+                        </button>
                     </div>
                 </form>
             </div>
 
             <!-- Filter Buttons -->
             <div class="issues-filter-buttons">
-                <div class="issues-filter-dropdown">
-                    <button class="btn btn-sm" type="button">
+                <details class="details-reset details-overlay">
+                    <summary class="btn btn-sm">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M2.5 7.775V2.75a.25.25 0 0 1 .25-.25h5.025a.25.25 0 0 1 .177.073l6.25 6.25a.25.25 0 0 1 0 .354l-5.025 5.025a.25.25 0 0 1-.354 0l-6.25-6.25a.25.25 0 0 1-.073-.177Zm-1.5 0V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775ZM6 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"/>
+                        </svg>
                         Labels
                         <span class="dropdown-caret"></span>
-                    </button>
-                </div>
-                <div class="issues-filter-dropdown">
-                    <button class="btn btn-sm" type="button">
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by label</span>
+                            </header>
+                            <div class="SelectMenu-filter">
+                                <input type="text" class="SelectMenu-input form-control" placeholder="Filter labels" autocomplete="off">
+                            </div>
+                            <div class="SelectMenu-list">
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}" class="SelectMenu-item{{if not .CurrentLabel}} selected{{end}}">
+                                    Unlabeled
+                                </a>
+                                {{range .Labels}}
+                                <a href="/{{$.Repo.FullName}}/issues?state={{$.CurrentState}}&label={{.Name}}" class="SelectMenu-item{{if eq $.CurrentLabel .Name}} selected{{end}}">
+                                    <span class="labels-color-dot mr-2" style="background-color: #{{.Color}};"></span>
+                                    <span class="SelectMenu-item-text">{{.Name}}</span>
+                                </a>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                <details class="details-reset details-overlay">
+                    <summary class="btn btn-sm">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M7.75 0a.75.75 0 0 1 .75.75V3h3.634c.414 0 .814.147 1.13.414l2.07 1.75a1.75 1.75 0 0 1 0 2.672l-2.07 1.75a1.75 1.75 0 0 1-1.13.414H8.5v5.25a.75.75 0 0 1-1.5 0V10H2.75A1.75 1.75 0 0 1 1 8.25v-3.5C1 3.784 1.784 3 2.75 3H7V.75A.75.75 0 0 1 7.75 0Zm4.384 8.5a.25.25 0 0 0 .161-.059l2.07-1.75a.25.25 0 0 0 0-.382l-2.07-1.75a.25.25 0 0 0-.161-.059H2.75a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h9.384Z"/>
+                        </svg>
                         Milestones
                         <span class="dropdown-caret"></span>
-                    </button>
-                </div>
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by milestone</span>
+                            </header>
+                            <div class="SelectMenu-filter">
+                                <input type="text" class="SelectMenu-input form-control" placeholder="Filter milestones" autocomplete="off">
+                            </div>
+                            <div class="SelectMenu-list">
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}" class="SelectMenu-item{{if not .CurrentMilestone}} selected{{end}}">
+                                    Issues with no milestone
+                                </a>
+                                {{range .Milestones}}
+                                <a href="/{{$.Repo.FullName}}/issues?state={{$.CurrentState}}&milestone={{.Title}}" class="SelectMenu-item{{if eq $.CurrentMilestone .Title}} selected{{end}}">
+                                    {{.Title}}
+                                </a>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </details>
             </div>
         </div>
 
         <div class="issues-header-right">
             <a href="/{{.Repo.FullName}}/issues/new" class="btn btn-primary">
-                <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                    <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/>
-                </svg>
                 New issue
             </a>
         </div>
     </div>
 
-    <!-- State Toggle Bar -->
+    <!-- State Toggle Bar (Box) -->
     <div class="Box mt-3">
         <div class="Box-header issues-state-header">
             <div class="issues-state-toggle">
@@ -82,30 +147,200 @@
                         <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
                         <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
                     </svg>
-                    <span class="issues-state-count">{{.OpenCount}}</span> Open
+                    <span class="issues-state-count">{{formatNumber .OpenCount}}</span> Open
                 </a>
                 <a href="/{{.Repo.FullName}}/issues?state=closed" class="issues-state-toggle-item{{if eq .CurrentState "closed"}} selected{{end}}">
                     <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                         <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/>
                         <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/>
                     </svg>
-                    <span class="issues-state-count">{{.ClosedCount}}</span> Closed
+                    <span class="issues-state-count">{{formatNumber .ClosedCount}}</span> Closed
                 </a>
             </div>
 
-            <div class="issues-sort-dropdown">
-                <details class="details-reset details-overlay">
+            <!-- Filter Dropdowns -->
+            <div class="issues-filters-right">
+                <!-- Author Filter -->
+                <details class="details-reset details-overlay d-inline-block">
                     <summary class="btn-link">
-                        Sort
+                        Author
                         <span class="dropdown-caret"></span>
                     </summary>
-                    <div class="SelectMenu">
+                    <div class="SelectMenu SelectMenu--right">
                         <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by author</span>
+                            </header>
+                            <div class="SelectMenu-filter">
+                                <input type="text" class="SelectMenu-input form-control" placeholder="Filter users" autocomplete="off">
+                            </div>
                             <div class="SelectMenu-list">
-                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=created-desc" class="SelectMenu-item">Newest</a>
-                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=created-asc" class="SelectMenu-item">Oldest</a>
-                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=comments-desc" class="SelectMenu-item">Most commented</a>
-                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=updated-desc" class="SelectMenu-item">Recently updated</a>
+                                {{if .Assignees}}
+                                {{range .Assignees}}
+                                <a href="/{{$.Repo.FullName}}/issues?state={{$.CurrentState}}&creator={{.Login}}" class="SelectMenu-item">
+                                    {{if .AvatarURL}}
+                                    <img src="{{.AvatarURL}}" alt="@{{.Login}}" class="Avatar Avatar--small mr-2">
+                                    {{else}}
+                                    <span class="Avatar Avatar--small Avatar--letter mr-2">{{firstChar .Login}}</span>
+                                    {{end}}
+                                    <span class="SelectMenu-item-text">{{.Login}}</span>
+                                </a>
+                                {{end}}
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Labels Filter -->
+                <details class="details-reset details-overlay d-inline-block">
+                    <summary class="btn-link">
+                        Labels
+                        <span class="dropdown-caret"></span>
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by label</span>
+                            </header>
+                            <div class="SelectMenu-filter">
+                                <input type="text" class="SelectMenu-input form-control" placeholder="Filter labels" autocomplete="off">
+                            </div>
+                            <div class="SelectMenu-list">
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}" class="SelectMenu-item{{if not .CurrentLabel}} selected{{end}}">
+                                    Unlabeled
+                                </a>
+                                {{range .Labels}}
+                                <a href="/{{$.Repo.FullName}}/issues?state={{$.CurrentState}}&label={{.Name}}" class="SelectMenu-item{{if eq $.CurrentLabel .Name}} selected{{end}}">
+                                    <span class="labels-color-dot mr-2" style="background-color: #{{.Color}};"></span>
+                                    <span class="SelectMenu-item-text">{{.Name}}</span>
+                                </a>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Projects Filter (placeholder) -->
+                <details class="details-reset details-overlay d-inline-block">
+                    <summary class="btn-link">
+                        Projects
+                        <span class="dropdown-caret"></span>
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by project</span>
+                            </header>
+                            <div class="SelectMenu-list">
+                                <div class="SelectMenu-item color-fg-muted">No projects</div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Milestones Filter -->
+                <details class="details-reset details-overlay d-inline-block">
+                    <summary class="btn-link">
+                        Milestones
+                        <span class="dropdown-caret"></span>
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by milestone</span>
+                            </header>
+                            <div class="SelectMenu-filter">
+                                <input type="text" class="SelectMenu-input form-control" placeholder="Filter milestones" autocomplete="off">
+                            </div>
+                            <div class="SelectMenu-list">
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}" class="SelectMenu-item{{if not .CurrentMilestone}} selected{{end}}">
+                                    Issues with no milestone
+                                </a>
+                                {{range .Milestones}}
+                                <a href="/{{$.Repo.FullName}}/issues?state={{$.CurrentState}}&milestone={{.Title}}" class="SelectMenu-item{{if eq $.CurrentMilestone .Title}} selected{{end}}">
+                                    {{.Title}}
+                                </a>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Assignees Filter -->
+                <details class="details-reset details-overlay d-inline-block">
+                    <summary class="btn-link">
+                        Assignees
+                        <span class="dropdown-caret"></span>
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Filter by who's assigned</span>
+                            </header>
+                            <div class="SelectMenu-filter">
+                                <input type="text" class="SelectMenu-input form-control" placeholder="Filter users" autocomplete="off">
+                            </div>
+                            <div class="SelectMenu-list">
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&assignee=none" class="SelectMenu-item">
+                                    Assigned to nobody
+                                </a>
+                                {{if .Assignees}}
+                                {{range .Assignees}}
+                                <a href="/{{$.Repo.FullName}}/issues?state={{$.CurrentState}}&assignee={{.Login}}" class="SelectMenu-item">
+                                    {{if .AvatarURL}}
+                                    <img src="{{.AvatarURL}}" alt="@{{.Login}}" class="Avatar Avatar--small mr-2">
+                                    {{else}}
+                                    <span class="Avatar Avatar--small Avatar--letter mr-2">{{firstChar .Login}}</span>
+                                    {{end}}
+                                    <span class="SelectMenu-item-text">{{.Login}}</span>
+                                </a>
+                                {{end}}
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Sort Dropdown -->
+                <details class="details-reset details-overlay d-inline-block">
+                    <summary class="btn-link">
+                        <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M15 8a.75.75 0 0 1-.75.75H2.56l3.22 3.22a.749.749 0 1 1-1.06 1.06l-4.5-4.5a.75.75 0 0 1 0-1.06l4.5-4.5a.749.749 0 1 1 1.06 1.06L2.56 7.25h11.69A.75.75 0 0 1 15 8Z"/>
+                        </svg>
+                        {{if eq .CurrentSort "created-asc"}}Oldest{{else if eq .CurrentSort "comments-desc"}}Most commented{{else if eq .CurrentSort "updated-desc"}}Recently updated{{else}}Newest{{end}}
+                        <span class="dropdown-caret"></span>
+                    </summary>
+                    <div class="SelectMenu SelectMenu--right">
+                        <div class="SelectMenu-modal">
+                            <header class="SelectMenu-header">
+                                <span class="SelectMenu-title">Sort by</span>
+                            </header>
+                            <div class="SelectMenu-list">
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=created-desc" class="SelectMenu-item{{if or (eq .CurrentSort "created-desc") (not .CurrentSort)}} selected{{end}}">
+                                    <svg class="octicon SelectMenu-icon{{if or (eq .CurrentSort "created-desc") (not .CurrentSort)}}{{else}} v-hidden{{end}}" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+                                    </svg>
+                                    <span class="SelectMenu-item-text">Newest</span>
+                                </a>
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=created-asc" class="SelectMenu-item{{if eq .CurrentSort "created-asc"}} selected{{end}}">
+                                    <svg class="octicon SelectMenu-icon{{if eq .CurrentSort "created-asc"}}{{else}} v-hidden{{end}}" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+                                    </svg>
+                                    <span class="SelectMenu-item-text">Oldest</span>
+                                </a>
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=comments-desc" class="SelectMenu-item{{if eq .CurrentSort "comments-desc"}} selected{{end}}">
+                                    <svg class="octicon SelectMenu-icon{{if eq .CurrentSort "comments-desc"}}{{else}} v-hidden{{end}}" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+                                    </svg>
+                                    <span class="SelectMenu-item-text">Most commented</span>
+                                </a>
+                                <a href="/{{$.Repo.FullName}}/issues?state={{.CurrentState}}&sort=updated-desc" class="SelectMenu-item{{if eq .CurrentSort "updated-desc"}} selected{{end}}">
+                                    <svg class="octicon SelectMenu-icon{{if eq .CurrentSort "updated-desc"}}{{else}} v-hidden{{end}}" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                                        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>
+                                    </svg>
+                                    <span class="SelectMenu-item-text">Recently updated</span>
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -148,17 +383,18 @@
                     </div>
                     <div class="issues-list-item-meta">
                         <span class="issues-list-item-meta-item">
-                            #{{.Number}}
+                            #{{.Number}} ·
+                            {{if .User}}<a href="/{{.User.Login}}" class="issues-list-item-meta-link">{{.User.Login}}</a>{{else}}someone{{end}}
                             {{if eq .State "open"}}opened{{else}}closed{{end}}
                             {{.TimeAgo}}
-                            by <a href="/{{.User.Login}}" class="issues-list-item-meta-link">{{.User.Login}}</a>
                         </span>
                         {{if .Milestone}}
-                        <span class="issues-list-item-meta-item">
+                        <span class="issues-list-item-meta-item issues-list-item-milestone">
+                            ·
                             <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
                                 <path d="M7.75 0a.75.75 0 0 1 .75.75V3h3.634c.414 0 .814.147 1.13.414l2.07 1.75a1.75 1.75 0 0 1 0 2.672l-2.07 1.75a1.75 1.75 0 0 1-1.13.414H8.5v5.25a.75.75 0 0 1-1.5 0V10H2.75A1.75 1.75 0 0 1 1 8.25v-3.5C1 3.784 1.784 3 2.75 3H7V.75A.75.75 0 0 1 7.75 0Zm4.384 8.5a.25.25 0 0 0 .161-.059l2.07-1.75a.25.25 0 0 0 0-.382l-2.07-1.75a.25.25 0 0 0-.161-.059H2.75a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h9.384Z"/>
                             </svg>
-                            {{.Milestone.Title}}
+                            <a href="/{{$.Repo.FullName}}/issues?milestone={{.Milestone.Title}}" class="issues-list-item-meta-link">{{.Milestone.Title}}</a>
                         </span>
                         {{end}}
                     </div>
@@ -199,9 +435,6 @@
             <h3 class="blankslate-heading">Welcome to issues!</h3>
             <p>Issues are used to track todos, bugs, feature requests, and more.</p>
             <a href="/{{.Repo.FullName}}/issues/new" class="btn btn-primary">
-                <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                    <path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"/>
-                </svg>
                 New issue
             </a>
             {{else}}
@@ -212,13 +445,64 @@
         {{end}}
     </div>
 
-    {{if .HasNext}}
-    <div class="pagination mt-4">
-        {{if gt .Page 1}}
-        <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{sub .Page 1}}" class="btn btn-sm">Previous</a>
-        {{end}}
-        <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{add .Page 1}}" class="btn btn-sm">Next</a>
-    </div>
+    <!-- Pagination -->
+    {{if gt .TotalPages 1}}
+    <nav class="paginate-container mt-4" aria-label="Pagination">
+        <div class="pagination">
+            {{if .HasPrev}}
+            <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{sub .Page 1}}{{if .CurrentSort}}&sort={{.CurrentSort}}{{end}}{{if .CurrentLabel}}&label={{.CurrentLabel}}{{end}}" class="previous_page" rel="prev" aria-label="Previous Page">Previous</a>
+            {{else}}
+            <span class="previous_page disabled" aria-disabled="true">Previous</span>
+            {{end}}
+
+            {{/* First page */}}
+            {{if eq .Page 1}}
+            <em class="current" aria-current="page">1</em>
+            {{else}}
+            <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page=1{{if .CurrentSort}}&sort={{.CurrentSort}}{{end}}{{if .CurrentLabel}}&label={{.CurrentLabel}}{{end}}" aria-label="Page 1">1</a>
+            {{end}}
+
+            {{/* Gap after first page */}}
+            {{if gt .Page 3}}
+            <span class="gap">…</span>
+            {{end}}
+
+            {{/* Page before current (if not already shown) */}}
+            {{if and (gt .Page 2) (gt (sub .Page 1) 1)}}
+            <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{sub .Page 1}}{{if .CurrentSort}}&sort={{.CurrentSort}}{{end}}{{if .CurrentLabel}}&label={{.CurrentLabel}}{{end}}" aria-label="Page {{sub .Page 1}}">{{sub .Page 1}}</a>
+            {{end}}
+
+            {{/* Current page (if not first or last) */}}
+            {{if and (gt .Page 1) (lt .Page .TotalPages)}}
+            <em class="current" aria-current="page">{{.Page}}</em>
+            {{end}}
+
+            {{/* Page after current (if not last) */}}
+            {{if and (lt .Page (sub .TotalPages 1)) (lt (add .Page 1) .TotalPages)}}
+            <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{add .Page 1}}{{if .CurrentSort}}&sort={{.CurrentSort}}{{end}}{{if .CurrentLabel}}&label={{.CurrentLabel}}{{end}}" aria-label="Page {{add .Page 1}}">{{add .Page 1}}</a>
+            {{end}}
+
+            {{/* Gap before last page */}}
+            {{if lt .Page (sub .TotalPages 2)}}
+            <span class="gap">…</span>
+            {{end}}
+
+            {{/* Last page (if more than 1 page) */}}
+            {{if gt .TotalPages 1}}
+            {{if eq .Page .TotalPages}}
+            <em class="current" aria-current="page">{{.TotalPages}}</em>
+            {{else}}
+            <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{.TotalPages}}{{if .CurrentSort}}&sort={{.CurrentSort}}{{end}}{{if .CurrentLabel}}&label={{.CurrentLabel}}{{end}}" aria-label="Page {{.TotalPages}}">{{.TotalPages}}</a>
+            {{end}}
+            {{end}}
+
+            {{if .HasNext}}
+            <a href="/{{.Repo.FullName}}/issues?state={{.CurrentState}}&page={{add .Page 1}}{{if .CurrentSort}}&sort={{.CurrentSort}}{{end}}{{if .CurrentLabel}}&label={{.CurrentLabel}}{{end}}" class="next_page" rel="next" aria-label="Next Page">Next</a>
+            {{else}}
+            <span class="next_page disabled" aria-disabled="true">Next</span>
+            {{end}}
+        </div>
+    </nav>
     {{end}}
 </div>
 {{end}}

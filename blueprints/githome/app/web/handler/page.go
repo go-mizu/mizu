@@ -374,28 +374,32 @@ type IssueView struct {
 	*issues.Issue
 	TimeAgo    string
 	LabelViews []*LabelView
+	BodyHTML   template.HTML
 }
 
 // RepoIssuesData holds data for issues list.
 type RepoIssuesData struct {
-	Title         string
-	User          *users.User
-	Repo          *RepoView
-	Issues        []*IssueView
-	OpenCount     int
-	ClosedCount   int
-	Labels        []*labels.Label
-	Milestones    []*milestones.Milestone
-	Assignees     []*users.SimpleUser
-	CurrentState  string
-	CurrentLabel  string
-	CurrentSort   string
-	Query         string
-	Page          int
-	HasNext       bool
-	Breadcrumbs   []Breadcrumb
-	UnreadCount   int
-	ActiveNav     string
+	Title            string
+	User             *users.User
+	Repo             *RepoView
+	Issues           []*IssueView
+	OpenCount        int
+	ClosedCount      int
+	Labels           []*labels.Label
+	Milestones       []*milestones.Milestone
+	Assignees        []*users.SimpleUser
+	CurrentState     string
+	CurrentLabel     string
+	CurrentMilestone string
+	CurrentSort      string
+	Query            string
+	Page             int
+	TotalPages       int
+	HasNext          bool
+	HasPrev          bool
+	Breadcrumbs      []Breadcrumb
+	UnreadCount      int
+	ActiveNav        string
 }
 
 // CommentView wraps a comment with author info.
@@ -404,6 +408,7 @@ type CommentView struct {
 	Author   *users.SimpleUser
 	TimeAgo  string
 	IsEdited bool
+	BodyHTML template.HTML
 }
 
 // TimelineEvent represents an issue timeline event.
@@ -417,20 +422,21 @@ type TimelineEvent struct {
 
 // IssueDetailData holds data for single issue view.
 type IssueDetailData struct {
-	Title       string
-	User        *users.User
-	Repo        *RepoView
-	Issue       *IssueView
-	Comments    []*CommentView
-	Timeline    []*TimelineEvent
-	Labels      []*labels.Label
-	Milestones  []*milestones.Milestone
-	Assignees   []*users.SimpleUser
-	CanEdit     bool
-	CanClose    bool
-	Breadcrumbs []Breadcrumb
-	UnreadCount int
-	ActiveNav   string
+	Title        string
+	User         *users.User
+	Repo         *RepoView
+	Issue        *IssueView
+	Comments     []*CommentView
+	Timeline     []*TimelineEvent
+	Labels       []*labels.Label
+	Milestones   []*milestones.Milestone
+	Assignees    []*users.SimpleUser
+	Participants []*users.SimpleUser
+	CanEdit      bool
+	CanClose     bool
+	Breadcrumbs  []Breadcrumb
+	UnreadCount  int
+	ActiveNav    string
 }
 
 // NewIssueData holds data for create issue form.
@@ -942,6 +948,27 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 	}
 
 	query := c.Query("q")
+	labelFilter := c.Query("label")
+	milestoneFilter := c.Query("milestone")
+	sortParam := c.Query("sort")
+
+	// Map sort param to ListOpts sort/direction
+	sort := "created"
+	direction := "desc"
+	switch sortParam {
+	case "created-asc":
+		sort = "created"
+		direction = "asc"
+	case "comments-desc":
+		sort = "comments"
+		direction = "desc"
+	case "updated-desc":
+		sort = "updated"
+		direction = "desc"
+	default:
+		sortParam = "created-desc"
+	}
+
 	page := parseInt(c.Query("page"))
 	if page < 1 {
 		page = 1
@@ -949,9 +976,13 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 	perPage := 30
 
 	issueList, _ := h.issues.ListForRepo(ctx, owner, repoName, &issues.ListOpts{
-		State:   state,
-		Page:    page,
-		PerPage: perPage + 1, // Request one extra to check if there's a next page
+		State:     state,
+		Labels:    labelFilter,
+		Milestone: milestoneFilter,
+		Sort:      sort,
+		Direction: direction,
+		Page:      page,
+		PerPage:   perPage + 1, // Request one extra to check if there's a next page
 	})
 
 	// Determine if there are more results
@@ -959,10 +990,21 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 	if hasNext {
 		issueList = issueList[:perPage] // Trim to the requested page size
 	}
+	hasPrev := page > 1
 
 	// Get accurate counts for open and closed issues
 	openCount, _ := h.issues.CountByState(ctx, owner, repoName, "open")
 	closedCount, _ := h.issues.CountByState(ctx, owner, repoName, "closed")
+
+	// Calculate total pages based on current state
+	totalCount := openCount
+	if state == "closed" {
+		totalCount = closedCount
+	}
+	totalPages := (totalCount + perPage - 1) / perPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
 
 	issueViews := make([]*IssueView, len(issueList))
 	for i, issue := range issueList {
@@ -975,24 +1017,33 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 	labelList, _ := h.labels.List(ctx, owner, repoName, nil)
 	milestoneList, _ := h.milestones.List(ctx, owner, repoName, nil)
 
+	// Get list of assignable users (collaborators + owner)
+	assignees, _ := h.issues.ListAssignees(ctx, owner, repoName)
+
 	var user *users.User
 	if userID != 0 {
 		user, _ = h.users.GetByID(ctx, userID)
 	}
 
 	return render(h, c, "repo_issues", RepoIssuesData{
-		Title:        "Issues",
-		User:         user,
-		Repo:         repoView,
-		Issues:       issueViews,
-		OpenCount:    openCount,
-		ClosedCount:  closedCount,
-		Labels:       labelList,
-		Milestones:   milestoneList,
-		CurrentState: state,
-		Query:        query,
-		Page:         page,
-		HasNext:      hasNext,
+		Title:            "Issues",
+		User:             user,
+		Repo:             repoView,
+		Issues:           issueViews,
+		OpenCount:        openCount,
+		ClosedCount:      closedCount,
+		Labels:           labelList,
+		Milestones:       milestoneList,
+		Assignees:        assignees,
+		CurrentState:     state,
+		CurrentLabel:     labelFilter,
+		CurrentMilestone: milestoneFilter,
+		CurrentSort:      sortParam,
+		Query:            query,
+		Page:             page,
+		TotalPages:       totalPages,
+		HasNext:          hasNext,
+		HasPrev:          hasPrev,
 		Breadcrumbs: []Breadcrumb{
 			{Label: repo.FullName, URL: "/" + repo.FullName},
 			{Label: "Issues", URL: ""},
@@ -1022,18 +1073,51 @@ func (h *Page) IssueDetail(c *mizu.Ctx) error {
 
 	repoView := h.buildRepoView(ctx, repo, userID, "issues")
 
-	issueView := &IssueView{
-		Issue:   issue,
-		TimeAgo: timeAgo(issue.CreatedAt),
+	// Render issue body markdown
+	var issueBodyHTML template.HTML
+	if issue.Body != "" {
+		issueBodyHTML = template.HTML(renderMarkdown([]byte(issue.Body)))
 	}
 
-	commentList, _ := h.comments.ListForIssue(ctx, owner, repoName, number, nil)
+	issueView := &IssueView{
+		Issue:    issue,
+		TimeAgo:  timeAgo(issue.CreatedAt),
+		BodyHTML: issueBodyHTML,
+	}
+
+	commentList, err := h.comments.ListForIssue(ctx, owner, repoName, number, &comments.ListOpts{PerPage: 100})
+	if err != nil {
+		// Log error but continue - comments are optional
+		_ = err
+	}
 	commentViews := make([]*CommentView, len(commentList))
+	// Build unique participants list (issue author + unique commenters)
+	participantMap := make(map[string]*users.SimpleUser)
+	if issue.User != nil {
+		participantMap[issue.User.Login] = issue.User
+	}
 	for i, comment := range commentList {
+		// Render comment body markdown
+		var commentBodyHTML template.HTML
+		if comment.Body != "" {
+			commentBodyHTML = template.HTML(renderMarkdown([]byte(comment.Body)))
+		}
 		commentViews[i] = &CommentView{
 			IssueComment: comment,
-			TimeAgo:      timeAgo(comment.CreatedAt),
+			TimeAgo:      formatTimeAgo(comment.CreatedAt),
+			BodyHTML:     commentBodyHTML,
 		}
+		// Add unique participants
+		if comment.User != nil && comment.User.Login != "" {
+			if _, exists := participantMap[comment.User.Login]; !exists {
+				participantMap[comment.User.Login] = comment.User
+			}
+		}
+	}
+	// Convert map to slice
+	participants := make([]*users.SimpleUser, 0, len(participantMap))
+	for _, p := range participantMap {
+		participants = append(participants, p)
 	}
 
 	labelList, _ := h.labels.List(ctx, owner, repoName, nil)
@@ -1049,15 +1133,16 @@ func (h *Page) IssueDetail(c *mizu.Ctx) error {
 	}
 
 	return render(h, c, "issue_view", IssueDetailData{
-		Title:      fmt.Sprintf("%s #%d", issue.Title, issue.Number),
-		User:       user,
-		Repo:       repoView,
-		Issue:      issueView,
-		Comments:   commentViews,
-		Labels:     labelList,
-		Milestones: milestoneList,
-		CanEdit:    canEdit,
-		CanClose:   canClose,
+		Title:        fmt.Sprintf("%s #%d", issue.Title, issue.Number),
+		User:         user,
+		Repo:         repoView,
+		Issue:        issueView,
+		Comments:     commentViews,
+		Labels:       labelList,
+		Milestones:   milestoneList,
+		Participants: participants,
+		CanEdit:      canEdit,
+		CanClose:     canClose,
 		Breadcrumbs: []Breadcrumb{
 			{Label: repo.FullName, URL: "/" + repo.FullName},
 			{Label: "Issues", URL: "/" + repo.FullName + "/issues"},
@@ -1735,8 +1820,7 @@ func (h *Page) buildRepoView(ctx context.Context, repo *repos.Repository, userID
 
 // timeAgo returns a human-readable time difference.
 func timeAgo(t interface{}) string {
-	// Simple implementation - can be enhanced
-	return "recently"
+	return formatTimeAgo(t)
 }
 
 // parseInt parses a string to int.
@@ -1753,6 +1837,7 @@ func renderMarkdown(content []byte) string {
 		goldmark.WithRendererOptions(
 			html.WithHardWraps(),
 			html.WithXHTML(),
+			html.WithUnsafe(), // Allow raw HTML like <pre> tags from GitHub issues
 		),
 	)
 	var buf bytes.Buffer

@@ -2484,10 +2484,74 @@ textarea.form-control {
 }
 
 /* Pagination */
+.paginate-container {
+  text-align: center;
+  margin-top: var(--space-4);
+}
+
 .pagination {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-2);
+  display: inline-flex;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-default);
+}
+
+.pagination a,
+.pagination em,
+.pagination span {
+  display: inline-block;
+  padding: 7px 12px;
+  font-size: var(--font-size-base);
+  line-height: 20px;
+  color: var(--color-fg-default);
+  text-decoration: none;
+  background-color: transparent;
+  border-right: 1px solid var(--color-border-default);
+  transition: background-color 0.1s ease;
+}
+
+.pagination a:last-child,
+.pagination em:last-child,
+.pagination span:last-child {
+  border-right: none;
+}
+
+.pagination a:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+.pagination em.current {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--color-fg-on-emphasis);
+  background-color: var(--color-accent-emphasis);
+}
+
+.pagination .disabled {
+  color: var(--color-fg-muted);
+  cursor: not-allowed;
+  background-color: var(--color-bg-subtle);
+}
+
+.pagination .gap {
+  color: var(--color-fg-muted);
+  cursor: default;
+}
+
+.pagination .previous_page,
+.pagination .next_page {
+  font-weight: 500;
+}
+
+.pagination .previous_page {
+  border-radius: var(--border-radius-md) 0 0 var(--border-radius-md);
+}
+
+.pagination .next_page {
+  border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
 }
 
 /* Link utilities */
@@ -2676,6 +2740,174 @@ textarea.form-control {
 }
 
 /* ============================================
+   ENHANCED ISSUES PAGE STYLES
+   ============================================ */
+
+/* Search Button */
+.issues-search-button {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  height: 100%;
+  color: var(--color-fg-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.issues-search-button:hover {
+  color: var(--color-fg-default);
+}
+
+/* Filter dropdowns in header row */
+.issues-filters-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.issues-filters-right .btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.issues-filters-right .btn-link:hover {
+  color: var(--color-fg-default);
+  text-decoration: none;
+}
+
+/* Details reset for dropdown menus */
+.details-reset > summary {
+  list-style: none;
+}
+
+.details-reset > summary::before,
+.details-reset > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Details overlay positioning */
+.details-overlay {
+  position: relative;
+}
+
+.details-overlay > summary {
+  cursor: pointer;
+}
+
+.details-overlay[open] > summary::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 80;
+  cursor: default;
+}
+
+/* SelectMenu positioning when in details */
+.details-overlay > .SelectMenu {
+  display: none;
+}
+
+.details-overlay[open] > .SelectMenu {
+  display: block;
+}
+
+/* SelectMenu header */
+.SelectMenu-header {
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.SelectMenu-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-fg-default);
+}
+
+/* Labels color dot */
+.labels-color-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Visibility utility for checkmark icons */
+.v-hidden {
+  visibility: hidden;
+}
+
+/* SelectMenu checkmark icon */
+.SelectMenu-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* SelectMenu filter input styling */
+.SelectMenu-filter {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.SelectMenu-input {
+  width: 100%;
+  padding: 5px 12px;
+  font-size: var(--font-size-sm);
+  line-height: 20px;
+  color: var(--color-fg-default);
+  background-color: var(--color-bg-default);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+}
+
+.SelectMenu-input:focus {
+  border-color: var(--color-accent-emphasis);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-muted);
+}
+
+/* SelectMenu item with avatar */
+.SelectMenu-item {
+  display: flex;
+  align-items: center;
+}
+
+.SelectMenu-item .Avatar--small {
+  flex-shrink: 0;
+}
+
+/* Milestone in issue meta */
+.issues-list-item-milestone {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.issues-list-item-milestone .octicon {
+  color: var(--color-fg-muted);
+}
+
+/* ============================================
    RESPONSIVE ADJUSTMENTS
    ============================================ */
 
@@ -2729,4 +2961,344 @@ textarea.form-control {
   .issues-list-item-icon {
     display: none;
   }
+}
+
+/* ============================================
+   GITHUB-LIKE ISSUE PAGE STYLES
+   ============================================ */
+
+/* Issue Header */
+.gh-header {
+  margin-bottom: var(--space-3);
+}
+
+.gh-header-title {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.25;
+  word-wrap: break-word;
+}
+
+.gh-header-title .color-fg-muted {
+  font-weight: 300;
+}
+
+/* Timeline Layout */
+.TimelineItem {
+  position: relative;
+  display: flex;
+  padding: var(--space-3) 0;
+}
+
+.TimelineItem::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 19px;
+  width: 2px;
+  background-color: var(--color-border-muted);
+}
+
+.TimelineItem:first-child::before {
+  top: 50px;
+}
+
+.TimelineItem:last-child::before {
+  display: none;
+}
+
+.TimelineItem-avatar {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 40px;
+  margin-right: var(--space-3);
+}
+
+.TimelineItem-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.TimelineItem--condensed {
+  padding: var(--space-2) 0;
+}
+
+.TimelineItem--condensed::before {
+  left: 19px;
+}
+
+.TimelineItem-badge {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-right: var(--space-2);
+  margin-left: 4px;
+  color: var(--color-fg-muted);
+  background-color: var(--color-bg-default);
+  border: 2px solid var(--color-bg-default);
+  border-radius: 50%;
+}
+
+/* Timeline Comment Box */
+.timeline-comment-group {
+  position: relative;
+}
+
+.timeline-comment {
+  position: relative;
+  background-color: var(--color-bg-default);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+}
+
+/* Arrow/Caret pointing to avatar */
+.timeline-comment::before,
+.timeline-comment::after {
+  position: absolute;
+  top: 11px;
+  right: 100%;
+  left: -8px;
+  display: block;
+  width: 8px;
+  height: 16px;
+  pointer-events: none;
+  content: "";
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+
+.timeline-comment::before {
+  background-color: var(--color-border-default);
+}
+
+.timeline-comment::after {
+  margin-left: 1px;
+  background-color: var(--color-bg-subtle);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+
+.timeline-comment-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border-muted);
+  border-top-left-radius: var(--border-radius-md);
+  border-top-right-radius: var(--border-radius-md);
+}
+
+.timeline-comment-header h3 {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 400;
+}
+
+.timeline-new-comment::before,
+.timeline-new-comment::after {
+  background-color: var(--color-bg-subtle);
+}
+
+.comment-body {
+  padding: var(--space-3);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+.comment-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Avatar styles */
+.avatar {
+  display: inline-block;
+  overflow: hidden;
+  line-height: 1;
+  vertical-align: middle;
+  background-color: var(--color-bg-subtle);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.avatar-user {
+  border-radius: 50%;
+}
+
+.avatar-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--color-fg-on-emphasis);
+  background-color: var(--color-accent-emphasis);
+}
+
+/* Reaction buttons */
+.social-reaction-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: var(--font-size-sm);
+  line-height: 18px;
+  color: var(--color-fg-muted);
+  background-color: transparent;
+  border: 1px solid var(--color-border-default);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.social-reaction-summary-item:hover {
+  background-color: var(--color-bg-subtle);
+  border-color: var(--color-border-default);
+}
+
+g-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Discussion sidebar */
+.discussion-sidebar-item {
+  font-size: var(--font-size-sm);
+}
+
+.discussion-sidebar-heading {
+  margin-bottom: var(--space-1);
+}
+
+/* Progress bar */
+.Progress {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  background-color: var(--color-neutral-muted);
+  border-radius: var(--border-radius-md);
+}
+
+.Progress-item {
+  outline: 2px solid transparent;
+}
+
+.color-bg-success-emphasis {
+  background-color: var(--color-success-emphasis) !important;
+}
+
+/* Sidebar sections */
+.sidebar-assignee .assignee:hover .Link--primary,
+.sidebar-labels a:hover,
+.sidebar-milestone a:hover {
+  color: var(--color-accent-fg);
+}
+
+.participant-avatar {
+  display: inline-block;
+  transition: transform 0.1s ease;
+}
+
+.participant-avatar:hover {
+  transform: translateY(-2px);
+}
+
+/* Layout sidebar position */
+.Layout--sidebarPosition-end {
+  flex-direction: row;
+}
+
+.Layout--sidebarPosition-end > .Layout-sidebar {
+  order: 1;
+}
+
+.Layout--sidebarPosition-end > .Layout-main {
+  order: 0;
+}
+
+/* Responsive layout */
+@media (max-width: 768px) {
+  .Layout--flowRow-until-md {
+    flex-direction: column;
+  }
+
+  .Layout--flowRow-until-md > .Layout-sidebar {
+    width: 100%;
+    order: 0;
+    margin-bottom: var(--space-3);
+  }
+
+  .Layout--flowRow-until-md > .Layout-main {
+    width: 100%;
+    order: 1;
+  }
+
+  .TimelineItem::before {
+    display: none;
+  }
+
+  .TimelineItem-avatar {
+    width: 32px;
+  }
+
+  .timeline-comment::before,
+  .timeline-comment::after {
+    display: none;
+  }
+}
+
+/* UnderlineNav in comment form */
+.timeline-new-comment .UnderlineNav {
+  border: none;
+  background: transparent;
+}
+
+.timeline-new-comment .UnderlineNav-body {
+  gap: 0;
+}
+
+.timeline-new-comment .UnderlineNav-item {
+  padding: 4px 12px;
+  font-size: var(--font-size-sm);
+  border-bottom: 2px solid transparent;
+  background: transparent;
+}
+
+.timeline-new-comment .UnderlineNav-item[aria-selected="true"] {
+  border-bottom-color: var(--color-accent-emphasis);
+  font-weight: 600;
+}
+
+/* Comment form textarea */
+.comment-form-textarea {
+  width: 100%;
+  padding: var(--space-2);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--color-fg-default);
+  background-color: var(--color-bg-default);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  resize: vertical;
+}
+
+.comment-form-textarea:focus {
+  border-color: var(--color-accent-emphasis);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-muted);
+}
+
+/* Input contrast */
+.input-contrast {
+  background-color: var(--color-bg-inset);
+}
+
+.input-contrast:focus {
+  background-color: var(--color-bg-default);
 }

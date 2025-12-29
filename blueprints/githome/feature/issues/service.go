@@ -125,6 +125,7 @@ func (s *Service) Get(ctx context.Context, owner, repo string, number int) (*Iss
 	}
 
 	s.populateURLs(issue, owner, repo)
+	s.populateUser(ctx, issue)
 	return issue, nil
 }
 
@@ -266,6 +267,7 @@ func (s *Service) ListForRepo(ctx context.Context, owner, repo string, opts *Lis
 
 	for _, issue := range issues {
 		s.populateURLs(issue, owner, repo)
+		s.populateUser(ctx, issue)
 	}
 	return issues, nil
 }
@@ -577,6 +579,24 @@ func (s *Service) populateURLs(issue *Issue, owner, repo string) {
 	issue.CommentsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/%d/comments", s.baseURL, owner, repo, issue.Number)
 	issue.EventsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/%d/events", s.baseURL, owner, repo, issue.Number)
 	issue.HTMLURL = fmt.Sprintf("%s/%s/%s/issues/%d", s.baseURL, owner, repo, issue.Number)
+}
+
+func (s *Service) populateUser(ctx context.Context, issue *Issue) {
+	if issue.CreatorID == 0 {
+		return
+	}
+	u, err := s.userStore.GetByID(ctx, issue.CreatorID)
+	if err != nil || u == nil {
+		return
+	}
+	issue.User = &users.SimpleUser{
+		ID:        u.ID,
+		Login:     u.Login,
+		Name:      u.Name,
+		AvatarURL: u.AvatarURL,
+		HTMLURL:   fmt.Sprintf("%s/%s", s.baseURL, u.Login),
+		Type:      u.Type,
+	}
 }
 
 // CountByState returns the count of issues for a given state

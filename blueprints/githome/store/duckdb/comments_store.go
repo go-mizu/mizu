@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/githome/feature/comments"
+	"github.com/go-mizu/blueprints/githome/feature/users"
 )
 
 // CommentsStore handles comment data access.
@@ -99,9 +100,12 @@ func (s *CommentsStore) ListIssueCommentsForIssue(ctx context.Context, issueID i
 	}
 
 	query := `
-		SELECT id, node_id, issue_id, repo_id, creator_id, body, created_at, updated_at
-		FROM issue_comments WHERE issue_id = $1
-		ORDER BY created_at ASC`
+		SELECT c.id, c.node_id, c.issue_id, c.repo_id, c.creator_id, c.body, c.created_at, c.updated_at,
+			   u.id, u.login, u.avatar_url
+		FROM issue_comments c
+		LEFT JOIN users u ON c.creator_id = u.id
+		WHERE c.issue_id = $1
+		ORDER BY c.created_at ASC`
 	query = applyPagination(query, page, perPage)
 
 	rows, err := s.db.QueryContext(ctx, query, issueID)
@@ -110,7 +114,7 @@ func (s *CommentsStore) ListIssueCommentsForIssue(ctx context.Context, issueID i
 	}
 	defer rows.Close()
 
-	return scanIssueComments(rows)
+	return scanIssueCommentsWithUser(rows)
 }
 
 func (s *CommentsStore) CreateCommitComment(ctx context.Context, c *comments.CommitComment) error {
@@ -223,6 +227,30 @@ func scanIssueComments(rows *sql.Rows) ([]*comments.IssueComment, error) {
 		c := &comments.IssueComment{}
 		if err := rows.Scan(&c.ID, &c.NodeID, &c.IssueID, &c.RepoID, &c.CreatorID, &c.Body, &c.CreatedAt, &c.UpdatedAt); err != nil {
 			return nil, err
+		}
+		list = append(list, c)
+	}
+	return list, rows.Err()
+}
+
+func scanIssueCommentsWithUser(rows *sql.Rows) ([]*comments.IssueComment, error) {
+	var list []*comments.IssueComment
+	for rows.Next() {
+		c := &comments.IssueComment{}
+		var userID sql.NullInt64
+		var userLogin, userAvatarURL sql.NullString
+		if err := rows.Scan(
+			&c.ID, &c.NodeID, &c.IssueID, &c.RepoID, &c.CreatorID, &c.Body, &c.CreatedAt, &c.UpdatedAt,
+			&userID, &userLogin, &userAvatarURL,
+		); err != nil {
+			return nil, err
+		}
+		if userID.Valid {
+			c.User = &users.SimpleUser{
+				ID:        userID.Int64,
+				Login:     userLogin.String,
+				AvatarURL: userAvatarURL.String,
+			}
 		}
 		list = append(list, c)
 	}
