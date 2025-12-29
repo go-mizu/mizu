@@ -100,13 +100,13 @@
                 <!-- Avatar Stack -->
                 <div class="AvatarStack">
                     {{if $commit.Author.AvatarURL}}
-                    <img class="Avatar" src="{{$commit.Author.AvatarURL}}" alt="{{$commit.Author.Login}}" width="20" height="20">
+                    <img class="Avatar Avatar--small" src="{{$commit.Author.AvatarURL}}" alt="{{$commit.Author.Login}}">
                     {{else}}
-                    <img class="Avatar" src="https://avatars.githubusercontent.com/u/0?v=4" alt="{{$commit.Author.Name}}" width="20" height="20">
+                    <img class="Avatar Avatar--small" src="https://avatars.githubusercontent.com/u/0?v=4" alt="{{$commit.Author.Name}}">
                     {{end}}
                     {{if not $commit.IsSameAuthor}}
                     {{if $commit.Committer.AvatarURL}}
-                    <img class="Avatar" src="{{$commit.Committer.AvatarURL}}" alt="{{$commit.Committer.Login}}" width="20" height="20">
+                    <img class="Avatar Avatar--small" src="{{$commit.Committer.AvatarURL}}" alt="{{$commit.Committer.Login}}">
                     {{end}}
                     {{end}}
                 </div>
@@ -120,7 +120,7 @@
                         {{if $commit.Author.Login}}
                         <a href="/{{$commit.Author.Login}}">{{$commit.Author.Login}}</a>
                         {{else}}
-                        {{$commit.Author.Name}}
+                        <span class="text-bold">{{$commit.Author.Name}}</span>
                         {{end}}
                         {{if $commit.IsSameAuthor}}
                         committed {{$commit.TimeAgo}}
@@ -129,7 +129,7 @@
                         {{if $commit.Committer.Login}}
                         <a href="/{{$commit.Committer.Login}}">{{$commit.Committer.Login}}</a>
                         {{else}}
-                        {{$commit.Committer.Name}}
+                        <span class="text-bold">{{$commit.Committer.Name}}</span>
                         {{end}}
                         committed {{$commit.TimeAgo}}
                         {{end}}

@@ -1090,8 +1090,8 @@ textarea.form-control {
   background-color: var(--color-bg-subtle);
   border: 1px solid var(--color-border-default);
   border-bottom: 0;
-  font-weight: 600;
-  font-size: var(--font-size-base);
+  font-weight: 400;
+  font-size: 14px;
   color: var(--color-fg-default);
 }
 
@@ -1100,14 +1100,21 @@ textarea.form-control {
   border-top-right-radius: var(--border-radius-md);
 }
 
+.commits-list .TimelineItem-header:not(:first-child) {
+  margin-top: 16px;
+  border-top-left-radius: var(--border-radius-md);
+  border-top-right-radius: var(--border-radius-md);
+}
+
 /* Commit entry */
 .commit-entry {
   display: flex;
   align-items: flex-start;
-  padding: var(--space-3);
+  padding: 16px;
   border: 1px solid var(--color-border-default);
   border-top: 0;
   background-color: var(--color-bg-default);
+  gap: 0;
 }
 
 .commit-entry:hover {
@@ -1123,7 +1130,8 @@ textarea.form-control {
 .AvatarStack {
   display: flex;
   flex-shrink: 0;
-  margin-right: var(--space-3);
+  margin-right: 16px;
+  padding-left: 2px;
 }
 
 .AvatarStack .Avatar {
@@ -1133,8 +1141,14 @@ textarea.form-control {
   box-sizing: content-box;
 }
 
+.AvatarStack .Avatar.Avatar--small {
+  width: 20px;
+  height: 20px;
+}
+
 .AvatarStack .Avatar + .Avatar {
-  margin-left: -10px;
+  margin-left: -8px;
+  position: relative;
 }
 
 /* Commit content area */
@@ -1146,9 +1160,11 @@ textarea.form-control {
 /* Commit message link */
 .commit-message {
   font-weight: 600;
+  font-size: 14px;
   color: var(--color-fg-default);
   word-break: break-word;
   display: block;
+  line-height: 1.4;
 }
 
 .commit-message:hover {
@@ -1158,13 +1174,15 @@ textarea.form-control {
 
 /* Commit metadata */
 .commit-meta {
-  font-size: var(--font-size-sm);
+  font-size: 12px;
   color: var(--color-fg-muted);
-  margin-top: var(--space-1);
+  margin-top: 4px;
+  line-height: 1.5;
 }
 
 .commit-meta a {
   color: var(--color-fg-default);
+  font-weight: 600;
 }
 
 .commit-meta a:hover {
@@ -1183,12 +1201,14 @@ textarea.form-control {
 
 .commit-sha {
   font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  padding: 4px 8px;
+  font-size: 12px;
+  padding: 5px 10px;
   color: var(--color-fg-default);
   background-color: var(--color-bg-subtle);
-  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
   text-decoration: none;
+  line-height: 20px;
 }
 
 .commit-sha:hover {
@@ -1201,12 +1221,13 @@ textarea.form-control {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 3px 8px;
   color: var(--color-fg-muted);
   background-color: var(--color-bg-subtle);
   border: 1px solid var(--color-border-default);
-  border-radius: var(--border-radius-sm);
+  border-radius: 6px;
   cursor: pointer;
+  height: 28px;
 }
 
 .commit-btn-icon:hover {
@@ -1242,28 +1263,28 @@ textarea.form-control {
 
 /* Commit header box */
 .commit-header-box {
-  padding: var(--space-3);
-  background-color: var(--color-bg-subtle);
+  padding: 16px;
+  background-color: var(--color-bg-default);
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-md);
-  margin-bottom: var(--space-3);
+  margin-bottom: 16px;
 }
 
 .commit-header-title {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--font-size-base);
+  gap: 8px;
+  font-size: 14px;
   color: var(--color-fg-muted);
-  margin-bottom: var(--space-3);
+  margin-bottom: 8px;
 }
 
 /* Commit title (first line of message) */
 .commit-title {
-  font-size: var(--font-size-2xl);
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 400;
   line-height: 1.25;
-  margin-bottom: var(--space-3);
+  margin-bottom: 16px;
   word-break: break-word;
   color: var(--color-fg-default);
 }
@@ -1273,14 +1294,16 @@ textarea.form-control {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  font-size: var(--font-size-base);
+  gap: 6px;
+  font-size: 14px;
   color: var(--color-fg-muted);
+  line-height: 20px;
 }
 
 .commit-author-info .Avatar {
   width: 20px;
   height: 20px;
+  vertical-align: middle;
 }
 
 .commit-author-info a {
@@ -1378,10 +1401,14 @@ textarea.form-control {
 
 /* File diff container */
 .file-diff-container {
-  margin-bottom: var(--space-3);
+  margin-bottom: 16px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--border-radius-md);
   overflow: hidden;
+}
+
+.diff-content {
+  overflow-x: auto;
 }
 
 /* File header */
@@ -1488,7 +1515,7 @@ textarea.form-control {
 /* Line numbers */
 .diff-line-num {
   width: 1%;
-  min-width: 40px;
+  min-width: 50px;
   padding: 0 10px;
   text-align: right;
   color: var(--color-fg-muted);
@@ -1496,6 +1523,8 @@ textarea.form-control {
   user-select: none;
   vertical-align: top;
   border-right: 1px solid var(--color-border-muted);
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .diff-line-num:hover {
@@ -1512,8 +1541,10 @@ textarea.form-control {
 .diff-line-code {
   padding: 0 10px;
   white-space: pre;
-  overflow-x: auto;
+  overflow-x: visible;
   word-wrap: normal;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 /* Addition line */
