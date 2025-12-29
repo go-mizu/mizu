@@ -1,0 +1,278 @@
+{{define "content"}}
+<div class="repo-header">
+    <div class="repo-header-content">
+        <div class="repo-header-title">
+            <svg class="octicon color-fg-muted mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                {{if .Repo.Private}}
+                <path fill-rule="evenodd" d="M4 4a4 4 0 0 1 8 0v2h.25c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 12.25 15h-8.5A1.75 1.75 0 0 1 2 13.25v-5.5C2 6.784 2.784 6 3.75 6H4Zm8.25 3.5h-8.5a.25.25 0 0 0-.25.25v5.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25ZM10.5 6V4a2.5 2.5 0 1 0-5 0v2Z"/>
+                {{else}}
+                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/>
+                {{end}}
+            </svg>
+            <a href="/{{.Repo.Owner.Login}}" class="repo-owner">{{.Repo.Owner.Login}}</a>
+            <span class="repo-separator">/</span>
+            <a href="/{{.Repo.FullName}}" class="repo-name">{{.Repo.Name}}</a>
+            <span class="Label Label--secondary ml-2">{{if .Repo.Private}}Private{{else}}Public{{end}}</span>
+        </div>
+
+        {{if .User}}
+        <div class="repo-header-actions">
+            <div class="BtnGroup">
+                <button class="btn btn-sm BtnGroup-item{{if .Repo.IsWatching}} selected{{end}}">
+                    <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M1.679 7.932c.412-.621 1.242-1.75 2.366-2.717C5.175 4.242 6.527 3.5 8 3.5c1.473 0 2.825.742 3.955 1.715 1.124.967 1.954 2.096 2.366 2.717a.119.119 0 0 1 0 .136c-.412.621-1.242 1.75-2.366 2.717C10.825 11.758 9.473 12.5 8 12.5c-1.473 0-2.825-.742-3.955-1.715C2.921 9.818 2.091 8.69 1.679 8.068a.119.119 0 0 1 0-.136ZM8 2c-1.981 0-3.67.992-4.933 2.078C1.797 5.169.88 6.423.43 7.1a1.619 1.619 0 0 0 0 1.798c.45.678 1.367 1.932 2.637 3.024C4.329 13.008 6.019 14 8 14c1.981 0 3.67-.992 4.933-2.078 1.27-1.091 2.187-2.345 2.637-3.023a1.619 1.619 0 0 0 0-1.798c-.45-.678-1.367-1.932-2.637-3.023C11.671 2.992 9.981 2 8 2Z"/>
+                    </svg>
+                    Watch
+                </button>
+                <span class="Counter BtnGroup-item">{{.Repo.WatchersCount}}</span>
+            </div>
+
+            <div class="BtnGroup ml-2">
+                <button class="btn btn-sm BtnGroup-item{{if .Repo.IsStarred}} selected{{end}}">
+                    <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>
+                    </svg>
+                    Star
+                </button>
+                <span class="Counter BtnGroup-item">{{.Repo.StargazersCount}}</span>
+            </div>
+
+            <div class="BtnGroup ml-2">
+                <button class="btn btn-sm BtnGroup-item">
+                    <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0Z"/>
+                    </svg>
+                    Fork
+                </button>
+                <span class="Counter BtnGroup-item">{{.Repo.ForksCount}}</span>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<nav class="UnderlineNav">
+    <div class="UnderlineNav-body">
+        {{range .Repo.Tabs}}
+        <a href="{{.URL}}" class="UnderlineNav-item{{if .Active}} selected{{end}}">
+            <span>{{.Name}}</span>
+            {{if gt .Count 0}}
+            <span class="Counter">{{.Count}}</span>
+            {{end}}
+        </a>
+        {{end}}
+    </div>
+</nav>
+
+<div class="container-xl">
+    <div class="mt-4">
+        <!-- Commit Header Box -->
+        <div class="commit-header-box">
+            <div class="commit-header-title">
+                <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                    <path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/>
+                </svg>
+                <span>Commit {{.Commit.ShortSHA}}</span>
+            </div>
+
+            <!-- Commit Title -->
+            <h1 class="commit-title">{{.Commit.MessageTitle}}</h1>
+
+            <!-- Author Info -->
+            <div class="commit-author-info">
+                {{if .Commit.Author.AvatarURL}}
+                <img class="Avatar" src="{{.Commit.Author.AvatarURL}}" alt="{{.Commit.Author.Login}}" width="20" height="20">
+                {{else}}
+                <img class="Avatar" src="https://avatars.githubusercontent.com/u/0?v=4" alt="{{.Commit.Author.Name}}" width="20" height="20">
+                {{end}}
+
+                {{if .Commit.Author.Login}}
+                <a href="/{{.Commit.Author.Login}}">{{.Commit.Author.Login}}</a>
+                {{else}}
+                <span>{{.Commit.Author.Name}}</span>
+                {{end}}
+
+                {{if .Commit.IsSameAuthor}}
+                <span>committed {{.Commit.TimeAgo}}</span>
+                {{else}}
+                <span>authored</span>
+                <span>and</span>
+                {{if .Commit.Committer.AvatarURL}}
+                <img class="Avatar" src="{{.Commit.Committer.AvatarURL}}" alt="{{.Commit.Committer.Login}}" width="20" height="20">
+                {{end}}
+                {{if .Commit.Committer.Login}}
+                <a href="/{{.Commit.Committer.Login}}">{{.Commit.Committer.Login}}</a>
+                {{else}}
+                <span>{{.Commit.Committer.Name}}</span>
+                {{end}}
+                <span>committed {{.Commit.TimeAgo}}</span>
+                {{end}}
+
+                <span class="ml-2">
+                    <button class="commit-btn-icon" onclick="copySHA('{{.Commit.SHA}}', this)" title="Copy full SHA">
+                        <svg class="octicon" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>
+                            <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>
+                        </svg>
+                    </button>
+                    <code class="commit-sha" style="background: none; padding: 0;">{{.Commit.SHA}}</code>
+                </span>
+            </div>
+
+            <!-- Parent Commits -->
+            {{if .Commit.Parents}}
+            <div class="commit-parents">
+                <span>{{len .Commit.Parents}} parent{{if gt (len .Commit.Parents) 1}}s{{end}}</span>
+                {{range .Commit.Parents}}
+                <a href="/{{$.Repo.FullName}}/commit/{{.SHA}}" class="commit-parent-sha">{{.ShortSHA}}</a>
+                {{end}}
+
+                <a href="/{{.Repo.FullName}}/tree/{{.Commit.SHA}}" class="btn btn-sm btn-browse-files">
+                    <svg class="octicon mr-1" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="m11.28 3.22 4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L13.94 8l-3.72-3.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215Zm-6.56 0a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L2.06 8l3.72 3.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L.47 8.53a.75.75 0 0 1 0-1.06Z"/>
+                    </svg>
+                    Browse files
+                </a>
+            </div>
+            {{end}}
+
+            <!-- Full commit message body if multiline -->
+            {{if .Commit.MessageBody}}
+            <div class="commit-body">{{.Commit.MessageBody}}</div>
+            {{end}}
+        </div>
+
+        <!-- Stats Summary -->
+        <div class="diffstat-summary">
+            <div class="diffstat-text">
+                Showing <strong>{{.Stats.FilesChanged}}</strong> changed file{{if ne .Stats.FilesChanged 1}}s{{end}}
+                with <span class="diffstat-add">{{.Stats.Additions}} addition{{if ne .Stats.Additions 1}}s{{end}}</span>
+                and <span class="diffstat-del">{{.Stats.Deletions}} deletion{{if ne .Stats.Deletions 1}}s{{end}}</span>.
+            </div>
+        </div>
+
+        <!-- File Changes -->
+        {{range $idx, $file := .Files}}
+        <div class="file-diff-container" id="diff-{{$idx}}">
+            <!-- File Header -->
+            <div class="file-header">
+                <button class="file-toggle" onclick="toggleFileDiff({{$idx}})" title="Toggle file contents">
+                    <svg class="octicon octicon-chevron-down" viewBox="0 0 12 12" width="12" height="12" fill="currentColor">
+                        <path d="M6 8.825c-.2 0-.4-.1-.5-.2l-3.3-3.3c-.3-.3-.3-.8 0-1.1.3-.3.8-.3 1.1 0l2.7 2.7 2.7-2.7c.3-.3.8-.3 1.1 0 .3.3.3.8 0 1.1l-3.2 3.2c-.2.2-.4.3-.6.3Z"/>
+                    </svg>
+                </button>
+                <div class="file-info">
+                    <!-- File status icon -->
+                    {{if eq $file.Status "added"}}
+                    <svg class="octicon file-status-added" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M2.75 1.5a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V4.664a.25.25 0 0 0-.073-.177l-2.914-2.914a.25.25 0 0 0-.177-.073ZM2.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 12.25 16H2.75A1.75 1.75 0 0 1 1 14.25V1.75C1 .784 1.784 0 2.75 0Z"/>
+                    </svg>
+                    {{else if eq $file.Status "removed"}}
+                    <svg class="octicon file-status-removed" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M2.75 1.5a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V4.664a.25.25 0 0 0-.073-.177l-2.914-2.914a.25.25 0 0 0-.177-.073ZM2.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 12.25 16H2.75A1.75 1.75 0 0 1 1 14.25V1.75C1 .784 1.784 0 2.75 0ZM5 9.25a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Z"/>
+                    </svg>
+                    {{else if eq $file.Status "renamed"}}
+                    <svg class="octicon file-status-renamed" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"/>
+                    </svg>
+                    {{else}}
+                    <svg class="octicon file-status-modified" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                        <path d="M2.75 1.5a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V4.664a.25.25 0 0 0-.073-.177l-2.914-2.914a.25.25 0 0 0-.177-.073ZM2.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 12.25 16H2.75A1.75 1.75 0 0 1 1 14.25V1.75C1 .784 1.784 0 2.75 0Z"/>
+                    </svg>
+                    {{end}}
+
+                    <span class="file-path">
+                        {{if $file.PreviousFilename}}
+                        {{$file.PreviousFilename}} → {{$file.Filename}}
+                        {{else}}
+                        <a href="/{{$.Repo.FullName}}/blob/{{$.Commit.SHA}}/{{$file.Filename}}">{{$file.Filename}}</a>
+                        {{end}}
+                    </span>
+                </div>
+                <div class="file-stats">
+                    {{if gt $file.Additions 0}}
+                    <span class="file-stats-add">+{{$file.Additions}}</span>
+                    {{end}}
+                    {{if gt $file.Deletions 0}}
+                    <span class="file-stats-del">-{{$file.Deletions}}</span>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Diff Content -->
+            <div class="diff-content" id="diff-content-{{$idx}}">
+                {{if $file.IsBinary}}
+                <div class="binary-notice">
+                    Binary file not shown.
+                </div>
+                {{else if $file.TooLarge}}
+                <div class="binary-notice">
+                    Large diffs are not rendered by default.
+                    <a href="/{{$.Repo.FullName}}/blob/{{$.Commit.SHA}}/{{$file.Filename}}">View file</a>
+                </div>
+                {{else}}
+                <table class="diff-table">
+                    <tbody>
+                        {{range $file.DiffLines}}
+                        {{if eq .Type "hunk"}}
+                        <tr class="diff-hunk">
+                            <td class="diff-line-num"></td>
+                            <td class="diff-line-num"></td>
+                            <td class="diff-line-code">{{.Content}}</td>
+                        </tr>
+                        {{else if eq .Type "addition"}}
+                        <tr class="diff-addition">
+                            <td class="diff-line-num"></td>
+                            <td class="diff-line-num">{{if gt .NewLineNum 0}}{{.NewLineNum}}{{end}}</td>
+                            <td class="diff-line-code"><span class="diff-marker diff-marker-add">+</span>{{.Content}}</td>
+                        </tr>
+                        {{else if eq .Type "deletion"}}
+                        <tr class="diff-deletion">
+                            <td class="diff-line-num">{{if gt .OldLineNum 0}}{{.OldLineNum}}{{end}}</td>
+                            <td class="diff-line-num"></td>
+                            <td class="diff-line-code"><span class="diff-marker diff-marker-del">-</span>{{.Content}}</td>
+                        </tr>
+                        {{else}}
+                        <tr>
+                            <td class="diff-line-num">{{if gt .OldLineNum 0}}{{.OldLineNum}}{{end}}</td>
+                            <td class="diff-line-num">{{if gt .NewLineNum 0}}{{.NewLineNum}}{{end}}</td>
+                            <td class="diff-line-code"><span class="diff-marker"> </span>{{.Content}}</td>
+                        </tr>
+                        {{end}}
+                        {{end}}
+                    </tbody>
+                </table>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<script>
+function copySHA(sha, button) {
+    navigator.clipboard.writeText(sha).then(() => {
+        const icon = button.querySelector('.octicon');
+        const originalHTML = icon.innerHTML;
+        icon.innerHTML = '<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>';
+        setTimeout(() => {
+            icon.innerHTML = originalHTML;
+        }, 2000);
+    });
+}
+
+function toggleFileDiff(idx) {
+    const content = document.getElementById('diff-content-' + idx);
+    const container = document.getElementById('diff-' + idx);
+    const toggle = container.querySelector('.file-toggle');
+
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        toggle.classList.remove('collapsed');
+    } else {
+        content.style.display = 'none';
+        toggle.classList.add('collapsed');
+    }
+}
+</script>
+{{end}}

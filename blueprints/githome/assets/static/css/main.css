@@ -1066,6 +1066,547 @@ textarea.form-control {
   color: var(--color-fg-muted);
 }
 
+/* ============================================
+   COMMIT LIST PAGE STYLES
+   ============================================ */
+
+/* Commits page header */
+.commits-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.commits-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-fg-default);
+}
+
+/* Date group header */
+.TimelineItem-header {
+  padding: 8px 16px;
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-default);
+  border-bottom: 0;
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  color: var(--color-fg-default);
+}
+
+.TimelineItem-header:first-child {
+  border-top-left-radius: var(--border-radius-md);
+  border-top-right-radius: var(--border-radius-md);
+}
+
+/* Commit entry */
+.commit-entry {
+  display: flex;
+  align-items: flex-start;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-default);
+  border-top: 0;
+  background-color: var(--color-bg-default);
+}
+
+.commit-entry:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+.commit-entry:last-child {
+  border-bottom-left-radius: var(--border-radius-md);
+  border-bottom-right-radius: var(--border-radius-md);
+}
+
+/* Avatar stack for author/committer */
+.AvatarStack {
+  display: flex;
+  flex-shrink: 0;
+  margin-right: var(--space-3);
+}
+
+.AvatarStack .Avatar {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-bg-default);
+  box-sizing: content-box;
+}
+
+.AvatarStack .Avatar + .Avatar {
+  margin-left: -10px;
+}
+
+/* Commit content area */
+.commit-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Commit message link */
+.commit-message {
+  font-weight: 600;
+  color: var(--color-fg-default);
+  word-break: break-word;
+  display: block;
+}
+
+.commit-message:hover {
+  color: var(--color-accent-fg);
+  text-decoration: underline;
+}
+
+/* Commit metadata */
+.commit-meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-muted);
+  margin-top: var(--space-1);
+}
+
+.commit-meta a {
+  color: var(--color-fg-default);
+}
+
+.commit-meta a:hover {
+  color: var(--color-accent-fg);
+  text-decoration: underline;
+}
+
+/* SHA and actions */
+.commit-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.commit-sha {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  padding: 4px 8px;
+  color: var(--color-fg-default);
+  background-color: var(--color-bg-subtle);
+  border-radius: var(--border-radius-sm);
+  text-decoration: none;
+}
+
+.commit-sha:hover {
+  color: var(--color-accent-fg);
+  background-color: var(--color-accent-subtle);
+  text-decoration: none;
+}
+
+.commit-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  color: var(--color-fg-muted);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+}
+
+.commit-btn-icon:hover {
+  color: var(--color-accent-fg);
+  background-color: var(--color-accent-subtle);
+  border-color: var(--color-accent-emphasis);
+}
+
+/* Pagination */
+.commits-pagination {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-3) 0;
+  margin-top: var(--space-3);
+}
+
+.commits-pagination a {
+  color: var(--color-accent-fg);
+}
+
+.commits-pagination a:hover {
+  text-decoration: underline;
+}
+
+.commits-pagination .disabled {
+  color: var(--color-fg-muted);
+  pointer-events: none;
+}
+
+/* ============================================
+   SINGLE COMMIT VIEW STYLES
+   ============================================ */
+
+/* Commit header box */
+.commit-header-box {
+  padding: var(--space-3);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  margin-bottom: var(--space-3);
+}
+
+.commit-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-base);
+  color: var(--color-fg-muted);
+  margin-bottom: var(--space-3);
+}
+
+/* Commit title (first line of message) */
+.commit-title {
+  font-size: var(--font-size-2xl);
+  font-weight: 600;
+  line-height: 1.25;
+  margin-bottom: var(--space-3);
+  word-break: break-word;
+  color: var(--color-fg-default);
+}
+
+/* Author info section */
+.commit-author-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--font-size-base);
+  color: var(--color-fg-muted);
+}
+
+.commit-author-info .Avatar {
+  width: 20px;
+  height: 20px;
+}
+
+.commit-author-info a {
+  color: var(--color-fg-default);
+  font-weight: 600;
+}
+
+.commit-author-info a:hover {
+  color: var(--color-accent-fg);
+  text-decoration: underline;
+}
+
+/* Verified badge */
+.commit-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-success-fg);
+  background-color: var(--color-success-subtle);
+  border: 1px solid var(--color-success-emphasis);
+  border-radius: 2em;
+}
+
+/* Parent commits section */
+.commit-parents {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-muted);
+  font-size: var(--font-size-base);
+  color: var(--color-fg-muted);
+}
+
+.commit-parent-sha {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  padding: 2px 6px;
+  background-color: var(--color-bg-subtle);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-accent-fg);
+  text-decoration: none;
+}
+
+.commit-parent-sha:hover {
+  background-color: var(--color-accent-subtle);
+  text-decoration: underline;
+}
+
+/* Commit message body (multiline) */
+.commit-body {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-base);
+  white-space: pre-wrap;
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  color: var(--color-fg-default);
+}
+
+/* Stats summary bar */
+.diffstat-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 12px var(--space-3);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  margin-bottom: var(--space-3);
+}
+
+.diffstat-text {
+  font-size: var(--font-size-base);
+  color: var(--color-fg-default);
+}
+
+.diffstat-add {
+  color: var(--color-success-fg);
+  font-weight: 600;
+}
+
+.diffstat-del {
+  color: var(--color-danger-fg);
+  font-weight: 600;
+}
+
+/* File diff container */
+.file-diff-container {
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+}
+
+/* File header */
+.file-header {
+  display: flex;
+  align-items: center;
+  padding: 10px var(--space-3);
+  background-color: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  color: var(--color-fg-muted);
+}
+
+/* File status icons */
+.file-status-added { color: var(--color-success-fg); }
+.file-status-modified { color: var(--color-warning-fg); }
+.file-status-removed { color: var(--color-danger-fg); }
+.file-status-renamed { color: var(--color-fg-muted); }
+
+.file-path {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-fg-default);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.file-path a {
+  color: var(--color-fg-default);
+}
+
+.file-path a:hover {
+  color: var(--color-accent-fg);
+  text-decoration: underline;
+}
+
+.file-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.file-stats-add {
+  color: var(--color-success-fg);
+}
+
+.file-stats-del {
+  color: var(--color-danger-fg);
+}
+
+/* Toggle button for file diff */
+.file-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  margin-right: var(--space-2);
+  color: var(--color-fg-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+}
+
+.file-toggle:hover {
+  color: var(--color-accent-fg);
+  background-color: var(--color-accent-subtle);
+}
+
+.file-toggle.collapsed .octicon-chevron-down {
+  transform: rotate(-90deg);
+}
+
+/* Diff table */
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  line-height: 20px;
+  table-layout: fixed;
+}
+
+.diff-table td {
+  padding: 0 10px;
+  vertical-align: top;
+}
+
+/* Line numbers */
+.diff-line-num {
+  width: 1%;
+  min-width: 40px;
+  padding: 0 10px;
+  text-align: right;
+  color: var(--color-fg-muted);
+  background-color: var(--color-bg-subtle);
+  user-select: none;
+  vertical-align: top;
+  border-right: 1px solid var(--color-border-muted);
+}
+
+.diff-line-num:hover {
+  color: var(--color-accent-fg);
+  cursor: pointer;
+}
+
+.diff-line-num a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Line content */
+.diff-line-code {
+  padding: 0 10px;
+  white-space: pre;
+  overflow-x: auto;
+  word-wrap: normal;
+}
+
+/* Addition line */
+.diff-addition {
+  background-color: rgba(46, 160, 67, 0.15);
+}
+
+.diff-addition .diff-line-num {
+  background-color: rgba(46, 160, 67, 0.2);
+  border-color: rgba(46, 160, 67, 0.3);
+}
+
+.diff-addition .diff-line-code {
+  background-color: rgba(46, 160, 67, 0.15);
+}
+
+/* Deletion line */
+.diff-deletion {
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+.diff-deletion .diff-line-num {
+  background-color: rgba(248, 81, 73, 0.2);
+  border-color: rgba(248, 81, 73, 0.3);
+}
+
+.diff-deletion .diff-line-code {
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+/* Hunk header */
+.diff-hunk {
+  color: var(--color-fg-muted);
+  background-color: var(--color-accent-subtle);
+}
+
+.diff-hunk .diff-line-num {
+  background-color: var(--color-accent-subtle);
+  border-color: var(--color-accent-muted);
+}
+
+.diff-hunk .diff-line-code {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent-fg);
+}
+
+/* Diff marker (+/-) */
+.diff-marker {
+  display: inline-block;
+  width: 1ch;
+  user-select: none;
+}
+
+.diff-marker-add {
+  color: var(--color-success-fg);
+}
+
+.diff-marker-del {
+  color: var(--color-danger-fg);
+}
+
+/* Expand/collapse for diff */
+.diff-expander {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  background-color: var(--color-bg-subtle);
+  border-top: 1px solid var(--color-border-muted);
+  border-bottom: 1px solid var(--color-border-muted);
+  color: var(--color-fg-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.diff-expander:hover {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent-fg);
+}
+
+/* Binary file notice */
+.binary-notice {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-fg-muted);
+  background-color: var(--color-bg-subtle);
+}
+
+/* Browse files button */
+.btn-browse-files {
+  margin-left: auto;
+}
+
 /* Responsive */
 @media (max-width: 544px) {
   .Header-nav {

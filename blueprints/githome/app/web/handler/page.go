@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-mizu/blueprints/githome/feature/branches"
 	"github.com/go-mizu/blueprints/githome/feature/comments"
+	"github.com/go-mizu/blueprints/githome/feature/commits"
 	"github.com/go-mizu/blueprints/githome/feature/issues"
 	"github.com/go-mizu/blueprints/githome/feature/labels"
 	"github.com/go-mizu/blueprints/githome/feature/milestones"
@@ -148,6 +149,127 @@ type CommitView struct {
 	AuthorEmail     string
 	Date            string
 	TimeAgo         string
+}
+
+// UserView represents a user for commit display
+type UserView struct {
+	Login     string
+	Name      string
+	Email     string
+	AvatarURL string
+	HTMLURL   string
+}
+
+// CommitViewItem represents a commit item in the list
+type CommitViewItem struct {
+	SHA          string
+	ShortSHA     string
+	Message      string
+	MessageTitle string
+	MessageBody  string
+	Author       *UserView
+	Committer    *UserView
+	AuthorDate   time.Time
+	TimeAgo      string
+	IsSameAuthor bool
+	TreeURL      string
+	CommitURL    string
+}
+
+// CommitGroup represents commits grouped by date
+type CommitGroup struct {
+	Date    string
+	Commits []*CommitViewItem
+}
+
+// RepoCommitsData holds data for commits list page
+type RepoCommitsData struct {
+	Title         string
+	User          *users.User
+	Repo          *RepoView
+	CommitGroups  []*CommitGroup
+	CurrentBranch string
+	Branches      []*branches.Branch
+	Page          int
+	HasNext       bool
+	HasPrev       bool
+	Breadcrumbs   []Breadcrumb
+	UnreadCount   int
+	ActiveNav     string
+}
+
+// ParentCommit represents a parent commit reference
+type ParentCommit struct {
+	SHA      string
+	ShortSHA string
+	HTMLURL  string
+}
+
+// CommitViewDetail represents full commit details for single commit view
+type CommitViewDetail struct {
+	SHA          string
+	ShortSHA     string
+	Message      string
+	MessageTitle string
+	MessageBody  string
+	Author       *UserView
+	Committer    *UserView
+	AuthorDate   time.Time
+	TimeAgo      string
+	IsSameAuthor bool
+	Parents      []*ParentCommit
+	TreeSHA      string
+	TreeURL      string
+	Verified     bool
+	HTMLURL      string
+}
+
+// DiffLine represents a single line in a diff
+type DiffLine struct {
+	Type       string // context, addition, deletion, hunk
+	OldLineNum int
+	NewLineNum int
+	Content    string
+}
+
+// FileChangeView represents a changed file in commit view
+type FileChangeView struct {
+	SHA              string
+	Filename         string
+	PreviousFilename string
+	Status           string // added, removed, modified, renamed
+	Additions        int
+	Deletions        int
+	Changes          int
+	BlobURL          string
+	RawURL           string
+	Patch            string
+	DiffLines        []*DiffLine
+	IsBinary         bool
+	TooLarge         bool
+}
+
+// StatsView represents commit statistics
+type StatsView struct {
+	FilesChanged int
+	Additions    int
+	Deletions    int
+	Total        int
+}
+
+// CommitDetailData holds data for single commit view
+type CommitDetailData struct {
+	Title       string
+	User        *users.User
+	Repo        *RepoView
+	Commit      *CommitViewDetail
+	Files       []*FileChangeView
+	Stats       *StatsView
+	Branches    []*branches.Branch
+	Tags        []string
+	Breadcrumbs []Breadcrumb
+	UnreadCount int
+	ActiveNav   string
 }
 
 // RepoHomeData holds data for repository home page.
@@ -425,6 +547,7 @@ type Page struct {
 	issues        issues.API
 	pulls         pulls.API
 	comments      comments.API
+	commits       commits.API
 	orgs          orgs.API
 	notifications notifications.API
 	stars         stars.API
@@ -444,6 +567,7 @@ func NewPage(
 	issuesAPI issues.API,
 	pullsAPI pulls.API,
 	commentsAPI comments.API,
+	commitsAPI commits.API,
 	orgsAPI orgs.API,
 	notificationsAPI notifications.API,
 	starsAPI stars.API,
@@ -461,6 +585,7 @@ func NewPage(
 		issues:        issuesAPI,
 		pulls:         pullsAPI,
 		comments:      commentsAPI,
+		commits:       commitsAPI,
 		orgs:          orgsAPI,
 		notifications: notificationsAPI,
 		stars:         starsAPI,
@@ -1671,4 +1796,390 @@ func isImageFile(path string) bool {
 		".bmp":  true,
 	}
 	return imageExtensions[ext]
+}
+
+// RepoCommits renders the commits list page
+func (h *Page) RepoCommits(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	ref := c.Param("ref")
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	// Default to main branch if ref is empty
+	if ref == "" {
+		ref = repo.DefaultBranch
+		if ref == "" {
+			ref = "master"
+		}
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "code")
+	branchList, _ := h.branches.List(ctx, owner, repoName, nil)
+
+	var user *users.User
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+	}
+
+	// Parse page number
+	page := 1
+	if pageStr := c.Query("page"); pageStr != "" {
+		fmt.Sscanf(pageStr, "%d", &page)
+		if page < 1 {
+			page = 1
+		}
+	}
+
+	perPage := 35
+
+	// Get commits from the service
+	commitList, err := h.commits.List(ctx, owner, repoName, &commits.ListOpts{
+		SHA:     ref,
+		Page:    page,
+		PerPage: perPage + 1, // Get one extra to check for next page
+	})
+	if err != nil {
+		return c.Text(http.StatusInternalServerError, "Failed to load commits")
+	}
+
+	// Check if there are more pages
+	hasNext := len(commitList) > perPage
+	if hasNext {
+		commitList = commitList[:perPage]
+	}
+	hasPrev := page > 1
+
+	// Group commits by date
+	groups := make(map[string][]*CommitViewItem)
+	dateOrder := []string{}
+
+	for _, commit := range commitList {
+		// Get author date for grouping
+		var authorDate time.Time
+		if commit.Commit != nil && commit.Commit.Author != nil {
+			authorDate = commit.Commit.Author.Date
+		}
+
+		dateKey := authorDate.Format("Jan 2, 2006")
+		if _, exists := groups[dateKey]; !exists {
+			dateOrder = append(dateOrder, dateKey)
+		}
+
+		// Build author view
+		authorView := &UserView{}
+		if commit.Author != nil {
+			authorView.Login = commit.Author.Login
+			authorView.AvatarURL = commit.Author.AvatarURL
+			authorView.HTMLURL = commit.Author.HTMLURL
+		}
+		if commit.Commit != nil && commit.Commit.Author != nil {
+			authorView.Name = commit.Commit.Author.Name
+			authorView.Email = commit.Commit.Author.Email
+		}
+
+		// Build committer view
+		committerView := &UserView{}
+		if commit.Committer != nil {
+			committerView.Login = commit.Committer.Login
+			committerView.AvatarURL = commit.Committer.AvatarURL
+			committerView.HTMLURL = commit.Committer.HTMLURL
+		}
+		if commit.Commit != nil && commit.Commit.Committer != nil {
+			committerView.Name = commit.Commit.Committer.Name
+			committerView.Email = commit.Commit.Committer.Email
+		}
+
+		// Check if same author
+		isSame := authorView.Email == committerView.Email
+
+		message := ""
+		if commit.Commit != nil {
+			message = commit.Commit.Message
+		}
+
+		item := &CommitViewItem{
+			SHA:          commit.SHA,
+			ShortSHA:     shortSHA(commit.SHA),
+			Message:      message,
+			MessageTitle: firstLine(message),
+			Author:       authorView,
+			Committer:    committerView,
+			AuthorDate:   authorDate,
+			TimeAgo:      formatTimeAgo(authorDate),
+			IsSameAuthor: isSame,
+			TreeURL:      fmt.Sprintf("/%s/tree/%s", repo.FullName, commit.SHA),
+			CommitURL:    fmt.Sprintf("/%s/commit/%s", repo.FullName, commit.SHA),
+		}
+
+		groups[dateKey] = append(groups[dateKey], item)
+	}
+
+	// Build ordered commit groups
+	var commitGroups []*CommitGroup
+	for _, date := range dateOrder {
+		commitGroups = append(commitGroups, &CommitGroup{
+			Date:    date,
+			Commits: groups[date],
+		})
+	}
+
+	return render(h, c, "repo_commits", RepoCommitsData{
+		Title:         "Commits - " + repo.FullName,
+		User:          user,
+		Repo:          repoView,
+		CommitGroups:  commitGroups,
+		CurrentBranch: ref,
+		Branches:      branchList,
+		Page:          page,
+		HasNext:       hasNext,
+		HasPrev:       hasPrev,
+		Breadcrumbs: []Breadcrumb{
+			{Label: repo.FullName, URL: "/" + repo.FullName},
+			{Label: "Commits", URL: ""},
+		},
+		ActiveNav: "",
+	})
+}
+
+// CommitDetail renders a single commit view
+func (h *Page) CommitDetail(c *mizu.Ctx) error {
+	owner := c.Param("owner")
+	repoName := c.Param("repo")
+	sha := c.Param("sha")
+
+	ctx := c.Request().Context()
+	userID := h.getUserID(c)
+
+	repo, err := h.repos.Get(ctx, owner, repoName)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Repository not found")
+	}
+
+	repoView := h.buildRepoView(ctx, repo, userID, "code")
+	branchList, _ := h.branches.List(ctx, owner, repoName, nil)
+
+	var user *users.User
+	if userID != 0 {
+		user, _ = h.users.GetByID(ctx, userID)
+	}
+
+	// Get the commit with files
+	commit, err := h.commits.Get(ctx, owner, repoName, sha)
+	if err != nil {
+		return c.Text(http.StatusNotFound, "Commit not found")
+	}
+
+	// Build author view
+	authorView := &UserView{}
+	if commit.Author != nil {
+		authorView.Login = commit.Author.Login
+		authorView.AvatarURL = commit.Author.AvatarURL
+		authorView.HTMLURL = commit.Author.HTMLURL
+	}
+	if commit.Commit != nil && commit.Commit.Author != nil {
+		authorView.Name = commit.Commit.Author.Name
+		authorView.Email = commit.Commit.Author.Email
+	}
+
+	// Build committer view
+	committerView := &UserView{}
+	if commit.Committer != nil {
+		committerView.Login = commit.Committer.Login
+		committerView.AvatarURL = commit.Committer.AvatarURL
+		committerView.HTMLURL = commit.Committer.HTMLURL
+	}
+	if commit.Commit != nil && commit.Commit.Committer != nil {
+		committerView.Name = commit.Commit.Committer.Name
+		committerView.Email = commit.Commit.Committer.Email
+	}
+
+	isSame := authorView.Email == committerView.Email
+
+	message := ""
+	messageTitle := ""
+	messageBody := ""
+	var authorDate time.Time
+	var treeSHA string
+
+	if commit.Commit != nil {
+		message = commit.Commit.Message
+		messageTitle = firstLine(message)
+		if idx := strings.Index(message, "\n"); idx >= 0 {
+			messageBody = strings.TrimSpace(message[idx+1:])
+		}
+		if commit.Commit.Author != nil {
+			authorDate = commit.Commit.Author.Date
+		}
+		if commit.Commit.Tree != nil {
+			treeSHA = commit.Commit.Tree.SHA
+		}
+	}
+
+	// Build parent commits
+	var parents []*ParentCommit
+	for _, p := range commit.Parents {
+		parents = append(parents, &ParentCommit{
+			SHA:      p.SHA,
+			ShortSHA: shortSHA(p.SHA),
+			HTMLURL:  fmt.Sprintf("/%s/commit/%s", repo.FullName, p.SHA),
+		})
+	}
+
+	commitDetail := &CommitViewDetail{
+		SHA:          commit.SHA,
+		ShortSHA:     shortSHA(commit.SHA),
+		Message:      message,
+		MessageTitle: messageTitle,
+		MessageBody:  messageBody,
+		Author:       authorView,
+		Committer:    committerView,
+		AuthorDate:   authorDate,
+		TimeAgo:      formatTimeAgo(authorDate),
+		IsSameAuthor: isSame,
+		Parents:      parents,
+		TreeSHA:      treeSHA,
+		TreeURL:      fmt.Sprintf("/%s/tree/%s", repo.FullName, commit.SHA),
+		HTMLURL:      fmt.Sprintf("/%s/commit/%s", repo.FullName, commit.SHA),
+	}
+
+	// Build file changes
+	var files []*FileChangeView
+	var totalAdditions, totalDeletions int
+
+	for _, f := range commit.Files {
+		// Parse patch into diff lines
+		diffLines := parsePatch(f.Patch)
+
+		// Check if binary or too large
+		isBinary := f.Patch == "" && f.Status == "modified" && f.Additions == 0 && f.Deletions == 0
+		tooLarge := len(f.Patch) > 100000 // 100KB limit
+
+		file := &FileChangeView{
+			SHA:              f.SHA,
+			Filename:         f.Filename,
+			PreviousFilename: f.PreviousFilename,
+			Status:           f.Status,
+			Additions:        f.Additions,
+			Deletions:        f.Deletions,
+			Changes:          f.Changes,
+			BlobURL:          f.BlobURL,
+			RawURL:           f.RawURL,
+			Patch:            f.Patch,
+			DiffLines:        diffLines,
+			IsBinary:         isBinary,
+			TooLarge:         tooLarge,
+		}
+		files = append(files, file)
+
+		totalAdditions += f.Additions
+		totalDeletions += f.Deletions
+	}
+
+	stats := &StatsView{
+		FilesChanged: len(files),
+		Additions:    totalAdditions,
+		Deletions:    totalDeletions,
+		Total:        totalAdditions + totalDeletions,
+	}
+
+	return render(h, c, "commit_detail", CommitDetailData{
+		Title:   fmt.Sprintf("Commit %s - %s", shortSHA(commit.SHA), repo.FullName),
+		User:    user,
+		Repo:    repoView,
+		Commit:  commitDetail,
+		Files:   files,
+		Stats:   stats,
+		Branches: branchList,
+		Breadcrumbs: []Breadcrumb{
+			{Label: repo.FullName, URL: "/" + repo.FullName},
+			{Label: "Commits", URL: "/" + repo.FullName + "/commits"},
+			{Label: shortSHA(commit.SHA), URL: ""},
+		},
+		ActiveNav: "",
+	})
+}
+
+// parsePatch parses a unified diff patch into DiffLines
+func parsePatch(patch string) []*DiffLine {
+	if patch == "" {
+		return nil
+	}
+
+	var lines []*DiffLine
+	patchLines := strings.Split(patch, "\n")
+
+	var oldLine, newLine int
+
+	for _, line := range patchLines {
+		if line == "" {
+			continue
+		}
+
+		dl := &DiffLine{}
+
+		if strings.HasPrefix(line, "@@") {
+			// Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+			dl.Type = "hunk"
+			dl.Content = line
+
+			// Parse line numbers from hunk header
+			var oldStart, oldCount, newStart, newCount int
+			fmt.Sscanf(line, "@@ -%d,%d +%d,%d @@", &oldStart, &oldCount, &newStart, &newCount)
+			if oldStart == 0 {
+				fmt.Sscanf(line, "@@ -%d +%d,%d @@", &oldStart, &newStart, &newCount)
+			}
+			if oldStart == 0 {
+				fmt.Sscanf(line, "@@ -%d,%d +%d @@", &oldStart, &oldCount, &newStart)
+			}
+			if oldStart == 0 {
+				fmt.Sscanf(line, "@@ -%d +%d @@", &oldStart, &newStart)
+			}
+			oldLine = oldStart
+			newLine = newStart
+		} else if strings.HasPrefix(line, "+") {
+			dl.Type = "addition"
+			dl.NewLineNum = newLine
+			dl.Content = line[1:]
+			newLine++
+		} else if strings.HasPrefix(line, "-") {
+			dl.Type = "deletion"
+			dl.OldLineNum = oldLine
+			dl.Content = line[1:]
+			oldLine++
+		} else if strings.HasPrefix(line, " ") {
+			dl.Type = "context"
+			dl.OldLineNum = oldLine
+			dl.NewLineNum = newLine
+			dl.Content = line[1:]
+			oldLine++
+			newLine++
+		} else {
+			// No prefix, treat as context
+			dl.Type = "context"
+			dl.OldLineNum = oldLine
+			dl.NewLineNum = newLine
+			dl.Content = line
+			oldLine++
+			newLine++
+		}
+
+		lines = append(lines, dl)
+	}
+
+	return lines
+}
+
+// restOfMessage returns everything after the first line
+func restOfMessage(s string) string {
+	if idx := strings.Index(s, "\n"); idx >= 0 {
+		return strings.TrimSpace(s[idx+1:])
+	}
+	return ""
 }
