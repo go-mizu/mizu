@@ -977,50 +977,16 @@ func (s *Service) ListTreeEntriesWithCommits(ctx context.Context, owner, repoNam
 		}
 	}
 
-	// Get tree entries with last commit info
-	// Pass the commit SHA (not tree SHA) so it can walk the history
-	gitEntries, err := gitRepo.GetTreeWithLastCommits(sha, 500)
+	// Get tree entries with last commit info for both root and subdirectories
+	var gitEntries []*pkggit.TreeEntryWithCommit
+	if path == "" {
+		gitEntries, err = gitRepo.GetTreeWithLastCommits(sha, 500)
+	} else {
+		gitEntries, err = gitRepo.GetTreeWithLastCommitsForPath(sha, path)
+	}
 	if err != nil {
 		// Fall back to simple tree listing if last commit info fails
 		return s.ListTreeEntries(ctx, owner, repoName, path, ref)
-	}
-
-	// If we navigated to a subdirectory, we need to filter entries
-	// The GetTreeWithLastCommits returns root tree entries, so for subdirs we need different logic
-	if path != "" {
-		// For subdirectories, get tree from the resolved tree SHA and then get commits per entry
-		tree, err := gitRepo.GetTree(treeSHA)
-		if err != nil {
-			return nil, ErrNotFound
-		}
-		gitEntries = make([]*pkggit.TreeEntryWithCommit, len(tree.Entries))
-		for i, e := range tree.Entries {
-			gitEntries[i] = &pkggit.TreeEntryWithCommit{TreeEntry: e}
-		}
-		// Try to get last commits for these entries
-		entriesWithCommits, err := gitRepo.GetTreeWithLastCommits(sha, 500)
-		if err == nil {
-			// Build map of entry names to commits from the walk result
-			commitMap := make(map[string]*pkggit.Commit)
-			for _, e := range entriesWithCommits {
-				// For subdirectory, look for entries with matching path prefix
-				if strings.HasPrefix(e.Name, path+"/") {
-					subName := strings.TrimPrefix(e.Name, path+"/")
-					if !strings.Contains(subName, "/") {
-						commitMap[subName] = e.LastCommit
-					}
-				} else if e.Name == path {
-					// Directory itself
-					commitMap[e.Name] = e.LastCommit
-				}
-			}
-			// Apply commits to our entries
-			for i, e := range gitEntries {
-				if c, ok := commitMap[e.Name]; ok {
-					gitEntries[i].LastCommit = c
-				}
-			}
-		}
 	}
 
 	// Convert git entries to TreeEntry structs
