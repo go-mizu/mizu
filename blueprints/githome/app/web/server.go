@@ -325,6 +325,7 @@ func (s *Server) setupRoutes() {
 		s.services.Releases,
 		s.services.Labels,
 		s.services.Milestones,
+		s.services.Git,
 		getUserID,
 	)
 
