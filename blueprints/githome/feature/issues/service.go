@@ -578,3 +578,16 @@ func (s *Service) populateURLs(issue *Issue, owner, repo string) {
 	issue.EventsURL = fmt.Sprintf("%s/api/v3/repos/%s/%s/issues/%d/events", s.baseURL, owner, repo, issue.Number)
 	issue.HTMLURL = fmt.Sprintf("%s/%s/%s/issues/%d", s.baseURL, owner, repo, issue.Number)
 }
+
+// CountByState returns the count of issues for a given state
+func (s *Service) CountByState(ctx context.Context, owner, repo, state string) (int, error) {
+	r, err := s.repoStore.GetByFullName(ctx, owner, repo)
+	if err != nil {
+		return 0, err
+	}
+	if r == nil {
+		return 0, repos.ErrNotFound
+	}
+
+	return s.store.CountByState(ctx, r.ID, state)
+}

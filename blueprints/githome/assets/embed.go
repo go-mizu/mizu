@@ -5,6 +5,7 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"strconv"
 	"strings"
 )
 
@@ -96,6 +97,28 @@ func TemplatesForTheme(theme string) (map[string]*template.Template, error) {
 		},
 		"split": func(s, sep string) []string {
 			return strings.Split(s, sep)
+		},
+		"contrastColor": func(hexColor string) string {
+			// Calculate the best contrasting text color (white or black) for a given background
+			// Remove # prefix if present
+			hexColor = strings.TrimPrefix(hexColor, "#")
+			if len(hexColor) < 6 {
+				return "#ffffff"
+			}
+
+			r, _ := strconv.ParseInt(hexColor[0:2], 16, 64)
+			g, _ := strconv.ParseInt(hexColor[2:4], 16, 64)
+			b, _ := strconv.ParseInt(hexColor[4:6], 16, 64)
+
+			// Calculate relative luminance using sRGB
+			// Using a simplified formula: (R*299 + G*587 + B*114) / 1000
+			luminance := (float64(r)*299 + float64(g)*587 + float64(b)*114) / 1000
+
+			// Return white for dark backgrounds, black for light backgrounds
+			if luminance > 128 {
+				return "#24292f" // Dark text
+			}
+			return "#ffffff" // White text
 		},
 	}
 

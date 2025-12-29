@@ -390,6 +390,7 @@ type RepoIssuesData struct {
 	CurrentState  string
 	CurrentLabel  string
 	CurrentSort   string
+	Query         string
 	Page          int
 	HasNext       bool
 	Breadcrumbs   []Breadcrumb
@@ -940,18 +941,28 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 		state = "open"
 	}
 
+	query := c.Query("q")
+	page := parseInt(c.Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage := 30
+
 	issueList, _ := h.issues.ListForRepo(ctx, owner, repoName, &issues.ListOpts{
 		State:   state,
-		PerPage: 30,
+		Page:    page,
+		PerPage: perPage + 1, // Request one extra to check if there's a next page
 	})
 
-	openCount := 0
-	closedCount := 0
-	if state == "open" {
-		openCount = len(issueList)
-	} else {
-		closedCount = len(issueList)
+	// Determine if there are more results
+	hasNext := len(issueList) > perPage
+	if hasNext {
+		issueList = issueList[:perPage] // Trim to the requested page size
 	}
+
+	// Get accurate counts for open and closed issues
+	openCount, _ := h.issues.CountByState(ctx, owner, repoName, "open")
+	closedCount, _ := h.issues.CountByState(ctx, owner, repoName, "closed")
 
 	issueViews := make([]*IssueView, len(issueList))
 	for i, issue := range issueList {
@@ -979,7 +990,9 @@ func (h *Page) RepoIssues(c *mizu.Ctx) error {
 		Labels:       labelList,
 		Milestones:   milestoneList,
 		CurrentState: state,
-		Page:         1,
+		Query:        query,
+		Page:         page,
+		HasNext:      hasNext,
 		Breadcrumbs: []Breadcrumb{
 			{Label: repo.FullName, URL: "/" + repo.FullName},
 			{Label: "Issues", URL: ""},
