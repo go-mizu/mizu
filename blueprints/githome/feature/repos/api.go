@@ -201,6 +201,19 @@ type Content struct {
 	SubmoduleGitURL string `json:"submodule_git_url,omitempty"`
 }
 
+// TreeEntry represents a file or directory entry in a tree listing
+type TreeEntry struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	SHA         string `json:"sha"`
+	Size        int64  `json:"size"`
+	Type        string `json:"type"` // "file", "dir", "symlink", "submodule"
+	Mode        string `json:"mode"` // "100644", "100755", "040000", etc.
+	URL         string `json:"url"`
+	HTMLURL     string `json:"html_url"`
+	DownloadURL string `json:"download_url,omitempty"`
+}
+
 // FileCommit represents the result of a file operation
 type FileCommit struct {
 	Content *Content `json:"content"`
@@ -294,6 +307,9 @@ type API interface {
 
 	// GetContents returns file or directory contents
 	GetContents(ctx context.Context, owner, repo, path, ref string) (*Content, error)
+
+	// ListTreeEntries returns directory entries
+	ListTreeEntries(ctx context.Context, owner, repo, path, ref string) ([]*TreeEntry, error)
 
 	// CreateOrUpdateFile creates or updates a file
 	CreateOrUpdateFile(ctx context.Context, owner, repo, path string, message, content, sha, branch string, author *CommitAuthor) (*FileCommit, error)

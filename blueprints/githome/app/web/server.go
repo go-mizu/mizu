@@ -3,9 +3,12 @@ package web
 import (
 	"database/sql"
 	"fmt"
+	"html/template"
 	"net/http"
 
+	"github.com/go-mizu/blueprints/githome/app/web/handler"
 	"github.com/go-mizu/blueprints/githome/app/web/handler/api"
+	"github.com/go-mizu/blueprints/githome/assets"
 	"github.com/go-mizu/blueprints/githome/feature/activities"
 	"github.com/go-mizu/blueprints/githome/feature/branches"
 	"github.com/go-mizu/blueprints/githome/feature/collaborators"
@@ -130,7 +133,28 @@ func New(cfg Config) (*App, error) {
 		Activities:    activitiesSvc,
 	}
 
-	server := NewServer(services)
+	// Load templates
+	templates, err := assets.Templates()
+	if err != nil {
+		return nil, fmt.Errorf("load templates: %w", err)
+	}
+
+	server := NewServer(services, templates)
+
+	// Serve static files with explicit paths to avoid conflicts with /{owner}/{repo} patterns
+	// Literal paths always take precedence over wildcard patterns in ServeMux
+	staticFS := http.FS(assets.Static())
+	serveFile := func(path string) mizu.Handler {
+		return func(c *mizu.Ctx) error {
+			c.Writer().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			c.Request().URL.Path = path
+			http.FileServer(staticFS).ServeHTTP(c.Writer(), c.Request())
+			return nil
+		}
+	}
+
+	server.app.Get("/_assets/css/main.css", serveFile("/css/main.css"))
+	server.app.Get("/_assets/js/app.js", serveFile("/js/app.js"))
 
 	return &App{
 		server: server,
@@ -176,15 +200,17 @@ type Services struct {
 
 // Server represents the HTTP server
 type Server struct {
-	app      *mizu.App
-	services *Services
+	app       *mizu.App
+	services  *Services
+	templates map[string]*template.Template
 }
 
 // NewServer creates a new server with all routes configured
-func NewServer(services *Services) *Server {
+func NewServer(services *Services, templates map[string]*template.Template) *Server {
 	s := &Server{
-		app:      mizu.New(),
-		services: services,
+		app:       mizu.New(),
+		services:  services,
+		templates: templates,
 	}
 	s.setupRoutes()
 	return s
@@ -231,370 +257,363 @@ func (s *Server) setupRoutes() {
 	optionalAuth := api.OptionalAuth(s.services.Users)
 
 	r := s.app.Router
-	auth := r.With(requireAuth)
-	optAuth := r.With(optionalAuth)
+
+	// Helper to get user ID from context
+	getUserID := func(c *mizu.Ctx) int64 {
+		if user, ok := c.Request().Context().Value(api.UserContextKey).(*users.User); ok && user != nil {
+			return user.ID
+		}
+		return 0
+	}
 
 	// ==========================================================================
-	// Authentication
+	// Page Routes (HTML)
 	// ==========================================================================
-	r.Post("/login", authHandler.Login)
-	r.Post("/register", authHandler.Register)
+	pageHandler := handler.NewPage(
+		s.templates,
+		s.services.Users,
+		s.services.Repos,
+		s.services.Issues,
+		s.services.Pulls,
+		s.services.Comments,
+		s.services.Orgs,
+		s.services.Notifications,
+		s.services.Stars,
+		s.services.Watches,
+		s.services.Branches,
+		s.services.Releases,
+		s.services.Labels,
+		s.services.Milestones,
+		getUserID,
+	)
+
+	// Health check endpoint
+	r.Get("/health", func(c *mizu.Ctx) error {
+		return c.JSON(200, map[string]string{"status": "ok"})
+	})
+
+	// Auth pages
+	r.Get("/login", pageHandler.Login)
+	r.Get("/register", pageHandler.Register)
+
+	// Main pages (with optional auth for user context)
+	pages := r.With(optionalAuth)
+	pages.Get("/", pageHandler.Home)
+	pages.Get("/explore", pageHandler.Explore)
+	pages.Get("/notifications", pageHandler.Notifications)
+	pages.Get("/new", pageHandler.NewRepo)
+	pages.Get("/{owner}", pageHandler.UserProfile)
+	pages.Get("/{owner}/{repo}", pageHandler.RepoHome)
+	pages.Get("/{owner}/{repo}/tree/{ref}", pageHandler.RepoTree)
+	pages.Get("/{owner}/{repo}/tree/{ref}/{path...}", pageHandler.RepoTree)
+	pages.Get("/{owner}/{repo}/blob/{ref}/{path...}", pageHandler.RepoBlob)
+	pages.Get("/{owner}/{repo}/raw/{ref}/{path...}", pageHandler.RepoRaw)
+	pages.Get("/{owner}/{repo}/issues", pageHandler.RepoIssues)
+	pages.Get("/{owner}/{repo}/issues/new", pageHandler.NewIssue)
+	pages.Get("/{owner}/{repo}/issues/{number}", pageHandler.IssueDetail)
+	pages.Get("/{owner}/{repo}/settings", pageHandler.RepoSettings)
 
 	// ==========================================================================
-	// Users
+	// API Routes (prefixed with /api/v3 to avoid conflicts with page routes)
 	// ==========================================================================
-	auth.Get("/user", userHandler.GetAuthenticatedUser)
-	auth.Patch("/user", userHandler.UpdateAuthenticatedUser)
-	r.Get("/users", userHandler.ListUsers)
-	r.Get("/users/{username}", userHandler.GetUser)
-	r.Get("/users/{username}/followers", userHandler.ListFollowers)
-	r.Get("/users/{username}/following", userHandler.ListFollowing)
-	r.Get("/users/{username}/following/{target_user}", userHandler.CheckFollowing)
-	auth.Get("/user/followers", userHandler.ListAuthenticatedUserFollowers)
-	auth.Get("/user/following", userHandler.ListAuthenticatedUserFollowing)
-	auth.Get("/user/following/{username}", userHandler.CheckAuthenticatedUserFollowing)
-	auth.Put("/user/following/{username}", userHandler.FollowUser)
-	auth.Delete("/user/following/{username}", userHandler.UnfollowUser)
+	// Create prefixed routers for API routes
+	r.Group("/api/v3", func(api *mizu.Router) {
+		apiAuth := api.With(requireAuth)
+		apiOptAuth := api.With(optionalAuth)
+		_ = apiOptAuth // silence unused warning
 
-	// ==========================================================================
-	// Organizations
-	// ==========================================================================
-	r.Get("/organizations", orgHandler.ListOrgs)
-	r.Get("/orgs/{org}", orgHandler.GetOrg)
-	auth.Patch("/orgs/{org}", orgHandler.UpdateOrg)
-	auth.Get("/user/orgs", orgHandler.ListAuthenticatedUserOrgs)
-	r.Get("/users/{username}/orgs", orgHandler.ListUserOrgs)
-	r.Get("/orgs/{org}/members", orgHandler.ListOrgMembers)
-	r.Get("/orgs/{org}/members/{username}", orgHandler.CheckOrgMember)
-	auth.Delete("/orgs/{org}/members/{username}", orgHandler.RemoveOrgMember)
-	auth.Get("/orgs/{org}/memberships/{username}", orgHandler.GetOrgMembership)
-	auth.Put("/orgs/{org}/memberships/{username}", orgHandler.SetOrgMembership)
-	auth.Delete("/orgs/{org}/memberships/{username}", orgHandler.RemoveOrgMembership)
-	auth.Get("/orgs/{org}/outside_collaborators", orgHandler.ListOutsideCollaborators)
-	r.Get("/orgs/{org}/public_members", orgHandler.ListPublicOrgMembers)
-	r.Get("/orgs/{org}/public_members/{username}", orgHandler.CheckPublicOrgMember)
-	auth.Put("/orgs/{org}/public_members/{username}", orgHandler.PublicizeMembership)
-	auth.Delete("/orgs/{org}/public_members/{username}", orgHandler.ConcealMembership)
-	auth.Get("/user/memberships/orgs/{org}", orgHandler.GetAuthenticatedUserOrgMembership)
-	auth.Patch("/user/memberships/orgs/{org}", orgHandler.UpdateAuthenticatedUserOrgMembership)
+		// API: Authentication
+		api.Post("/login", authHandler.Login)
+		api.Post("/register", authHandler.Register)
 
-	// ==========================================================================
-	// Repositories
-	// ==========================================================================
-	r.Get("/repositories", repoHandler.ListPublicRepos)
-	auth.Get("/user/repos", repoHandler.ListAuthenticatedUserRepos)
-	auth.Post("/user/repos", repoHandler.CreateAuthenticatedUserRepo)
-	r.Get("/users/{username}/repos", repoHandler.ListUserRepos)
-	r.Get("/orgs/{org}/repos", repoHandler.ListOrgRepos)
-	auth.Post("/orgs/{org}/repos", repoHandler.CreateOrgRepo)
-	optAuth.Get("/repos/{owner}/{repo}", repoHandler.GetRepo)
-	auth.Patch("/repos/{owner}/{repo}", repoHandler.UpdateRepo)
-	auth.Delete("/repos/{owner}/{repo}", repoHandler.DeleteRepo)
-	r.Get("/repos/{owner}/{repo}/topics", repoHandler.ListRepoTopics)
-	auth.Put("/repos/{owner}/{repo}/topics", repoHandler.ReplaceRepoTopics)
-	r.Get("/repos/{owner}/{repo}/languages", repoHandler.ListRepoLanguages)
-	r.Get("/repos/{owner}/{repo}/contributors", repoHandler.ListRepoContributors)
-	r.Get("/repos/{owner}/{repo}/tags", repoHandler.ListRepoTags)
-	auth.Post("/repos/{owner}/{repo}/transfer", repoHandler.TransferRepo)
-	r.Get("/repos/{owner}/{repo}/readme", repoHandler.GetRepoReadme)
-	r.Get("/repos/{owner}/{repo}/contents/{path...}", repoHandler.GetRepoContent)
-	auth.Put("/repos/{owner}/{repo}/contents/{path...}", repoHandler.CreateOrUpdateFileContent)
-	auth.Delete("/repos/{owner}/{repo}/contents/{path...}", repoHandler.DeleteFileContent)
-	auth.Post("/repos/{owner}/{repo}/forks", repoHandler.ForkRepo)
-	r.Get("/repos/{owner}/{repo}/forks", repoHandler.ListForks)
+		// Users
+		apiAuth.Get("/user", userHandler.GetAuthenticatedUser)
+		apiAuth.Patch("/user", userHandler.UpdateAuthenticatedUser)
+		api.Get("/users", userHandler.ListUsers)
+		api.Get("/users/{username}", userHandler.GetUser)
+		api.Get("/users/{username}/followers", userHandler.ListFollowers)
+		api.Get("/users/{username}/following", userHandler.ListFollowing)
+		api.Get("/users/{username}/following/{target_user}", userHandler.CheckFollowing)
+		apiAuth.Get("/user/followers", userHandler.ListAuthenticatedUserFollowers)
+		apiAuth.Get("/user/following", userHandler.ListAuthenticatedUserFollowing)
+		apiAuth.Get("/user/following/{username}", userHandler.CheckAuthenticatedUserFollowing)
+		apiAuth.Put("/user/following/{username}", userHandler.FollowUser)
+		apiAuth.Delete("/user/following/{username}", userHandler.UnfollowUser)
 
-	// ==========================================================================
-	// Issues
-	// ==========================================================================
-	auth.Get("/issues", issueHandler.ListIssues)
-	auth.Get("/user/issues", issueHandler.ListAuthenticatedUserIssues)
-	auth.Get("/orgs/{org}/issues", issueHandler.ListOrgIssues)
-	r.Get("/repos/{owner}/{repo}/issues", issueHandler.ListRepoIssues)
-	r.Get("/repos/{owner}/{repo}/issues/{issue_number}", issueHandler.GetIssue)
-	auth.Post("/repos/{owner}/{repo}/issues", issueHandler.CreateIssue)
-	auth.Patch("/repos/{owner}/{repo}/issues/{issue_number}", issueHandler.UpdateIssue)
-	auth.Put("/repos/{owner}/{repo}/issues/{issue_number}/lock", issueHandler.LockIssue)
-	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/lock", issueHandler.UnlockIssue)
-	r.Get("/repos/{owner}/{repo}/assignees", issueHandler.ListIssueAssignees)
-	r.Get("/repos/{owner}/{repo}/assignees/{assignee}", issueHandler.CheckAssignee)
-	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/assignees", issueHandler.AddAssignees)
-	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/assignees", issueHandler.RemoveAssignees)
-	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/events", issueHandler.ListIssueEvents)
-	r.Get("/repos/{owner}/{repo}/issues/events/{event_id}", issueHandler.GetIssueEvent)
-	r.Get("/repos/{owner}/{repo}/issues/events", issueHandler.ListRepoIssueEvents)
-	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/timeline", issueHandler.ListIssueTimeline)
+		// Organizations
+		api.Get("/organizations", orgHandler.ListOrgs)
+		api.Get("/orgs/{org}", orgHandler.GetOrg)
+		apiAuth.Patch("/orgs/{org}", orgHandler.UpdateOrg)
+		apiAuth.Get("/user/orgs", orgHandler.ListAuthenticatedUserOrgs)
+		api.Get("/users/{username}/orgs", orgHandler.ListUserOrgs)
+		api.Get("/orgs/{org}/members", orgHandler.ListOrgMembers)
+		api.Get("/orgs/{org}/members/{username}", orgHandler.CheckOrgMember)
+		apiAuth.Delete("/orgs/{org}/members/{username}", orgHandler.RemoveOrgMember)
+		apiAuth.Get("/orgs/{org}/memberships/{username}", orgHandler.GetOrgMembership)
+		apiAuth.Put("/orgs/{org}/memberships/{username}", orgHandler.SetOrgMembership)
+		apiAuth.Delete("/orgs/{org}/memberships/{username}", orgHandler.RemoveOrgMembership)
+		apiAuth.Get("/orgs/{org}/outside_collaborators", orgHandler.ListOutsideCollaborators)
+		api.Get("/orgs/{org}/public_members", orgHandler.ListPublicOrgMembers)
+		api.Get("/orgs/{org}/public_members/{username}", orgHandler.CheckPublicOrgMember)
+		apiAuth.Put("/orgs/{org}/public_members/{username}", orgHandler.PublicizeMembership)
+		apiAuth.Delete("/orgs/{org}/public_members/{username}", orgHandler.ConcealMembership)
+		apiAuth.Get("/user/memberships/orgs/{org}", orgHandler.GetAuthenticatedUserOrgMembership)
+		apiAuth.Patch("/user/memberships/orgs/{org}", orgHandler.UpdateAuthenticatedUserOrgMembership)
 
-	// ==========================================================================
-	// Pull Requests
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/pulls", pullHandler.ListPulls)
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.GetPull)
-	auth.Post("/repos/{owner}/{repo}/pulls", pullHandler.CreatePull)
-	auth.Patch("/repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.UpdatePull)
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/commits", pullHandler.ListPullCommits)
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/files", pullHandler.ListPullFiles)
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.CheckPullMerged)
-	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.MergePull)
-	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/update-branch", pullHandler.UpdatePullBranch)
+		// Repositories
+		api.Get("/repositories", repoHandler.ListPublicRepos)
+		apiAuth.Get("/user/repos", repoHandler.ListAuthenticatedUserRepos)
+		apiAuth.Post("/user/repos", repoHandler.CreateAuthenticatedUserRepo)
+		api.Get("/users/{username}/repos", repoHandler.ListUserRepos)
+		api.Get("/orgs/{org}/repos", repoHandler.ListOrgRepos)
+		apiAuth.Post("/orgs/{org}/repos", repoHandler.CreateOrgRepo)
+		apiOptAuth.Get("/repos/{owner}/{repo}", repoHandler.GetRepo)
+		apiAuth.Patch("/repos/{owner}/{repo}", repoHandler.UpdateRepo)
+		apiAuth.Delete("/repos/{owner}/{repo}", repoHandler.DeleteRepo)
+		api.Get("/repos/{owner}/{repo}/topics", repoHandler.ListRepoTopics)
+		apiAuth.Put("/repos/{owner}/{repo}/topics", repoHandler.ReplaceRepoTopics)
+		api.Get("/repos/{owner}/{repo}/languages", repoHandler.ListRepoLanguages)
+		api.Get("/repos/{owner}/{repo}/contributors", repoHandler.ListRepoContributors)
+		api.Get("/repos/{owner}/{repo}/tags", repoHandler.ListRepoTags)
+		apiAuth.Post("/repos/{owner}/{repo}/transfer", repoHandler.TransferRepo)
+		api.Get("/repos/{owner}/{repo}/readme", repoHandler.GetRepoReadme)
+		api.Get("/repos/{owner}/{repo}/contents/{path...}", repoHandler.GetRepoContent)
+		apiAuth.Put("/repos/{owner}/{repo}/contents/{path...}", repoHandler.CreateOrUpdateFileContent)
+		apiAuth.Delete("/repos/{owner}/{repo}/contents/{path...}", repoHandler.DeleteFileContent)
+		apiAuth.Post("/repos/{owner}/{repo}/forks", repoHandler.ForkRepo)
+		api.Get("/repos/{owner}/{repo}/forks", repoHandler.ListForks)
 
-	// Pull Request Reviews
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.ListPullReviews)
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.GetPullReview)
-	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.CreatePullReview)
-	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.UpdatePullReview)
-	auth.Delete("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.DeletePullReview)
-	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events", pullHandler.SubmitPullReview)
-	auth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals", pullHandler.DismissPullReview)
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", pullHandler.ListReviewComments)
+		// Issues
+		apiAuth.Get("/issues", issueHandler.ListIssues)
+		apiAuth.Get("/user/issues", issueHandler.ListAuthenticatedUserIssues)
+		apiAuth.Get("/orgs/{org}/issues", issueHandler.ListOrgIssues)
+		api.Get("/repos/{owner}/{repo}/issues", issueHandler.ListRepoIssues)
+		api.Get("/repos/{owner}/{repo}/issues/{issue_number}", issueHandler.GetIssue)
+		apiAuth.Post("/repos/{owner}/{repo}/issues", issueHandler.CreateIssue)
+		apiAuth.Patch("/repos/{owner}/{repo}/issues/{issue_number}", issueHandler.UpdateIssue)
+		apiAuth.Put("/repos/{owner}/{repo}/issues/{issue_number}/lock", issueHandler.LockIssue)
+		apiAuth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/lock", issueHandler.UnlockIssue)
+		api.Get("/repos/{owner}/{repo}/assignees", issueHandler.ListIssueAssignees)
+		api.Get("/repos/{owner}/{repo}/assignees/{assignee}", issueHandler.CheckAssignee)
+		apiAuth.Post("/repos/{owner}/{repo}/issues/{issue_number}/assignees", issueHandler.AddAssignees)
+		apiAuth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/assignees", issueHandler.RemoveAssignees)
+		api.Get("/repos/{owner}/{repo}/issues/{issue_number}/events", issueHandler.ListIssueEvents)
+		api.Get("/repos/{owner}/{repo}/issues/events", issueHandler.ListRepoIssueEvents)
+		api.Get("/repos/{owner}/{repo}/issues/{issue_number}/timeline", issueHandler.ListIssueTimeline)
 
-	// Pull Request Review Comments
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.ListPullReviewComments)
-	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.CreatePullReviewComment)
-	r.Get("/repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.GetPullReviewComment)
-	auth.Patch("/repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.UpdatePullReviewComment)
-	auth.Delete("/repos/{owner}/{repo}/pulls/comments/{comment_id}", pullHandler.DeletePullReviewComment)
+		// Pull Requests
+		api.Get("/repos/{owner}/{repo}/pulls", pullHandler.ListPulls)
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.GetPull)
+		apiAuth.Post("/repos/{owner}/{repo}/pulls", pullHandler.CreatePull)
+		apiAuth.Patch("/repos/{owner}/{repo}/pulls/{pull_number}", pullHandler.UpdatePull)
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/commits", pullHandler.ListPullCommits)
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/files", pullHandler.ListPullFiles)
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.CheckPullMerged)
+		apiAuth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/merge", pullHandler.MergePull)
+		apiAuth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/update-branch", pullHandler.UpdatePullBranch)
 
-	// Requested Reviewers
-	r.Get("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.ListRequestedReviewers)
-	auth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.RequestReviewers)
-	auth.Delete("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.RemoveRequestedReviewers)
+		// Pull Request Reviews
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.ListPullReviews)
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.GetPullReview)
+		apiAuth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/reviews", pullHandler.CreatePullReview)
+		apiAuth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.UpdatePullReview)
+		apiAuth.Delete("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}", pullHandler.DeletePullReview)
+		apiAuth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/events", pullHandler.SubmitPullReview)
+		apiAuth.Put("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals", pullHandler.DismissPullReview)
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments", pullHandler.ListReviewComments)
 
-	// ==========================================================================
-	// Labels
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/labels", labelHandler.ListRepoLabels)
-	r.Get("/repos/{owner}/{repo}/labels/{name}", labelHandler.GetLabel)
-	auth.Post("/repos/{owner}/{repo}/labels", labelHandler.CreateLabel)
-	auth.Patch("/repos/{owner}/{repo}/labels/{name}", labelHandler.UpdateLabel)
-	auth.Delete("/repos/{owner}/{repo}/labels/{name}", labelHandler.DeleteLabel)
-	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.ListIssueLabels)
-	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.AddIssueLabels)
-	auth.Put("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.SetIssueLabels)
-	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.RemoveAllIssueLabels)
-	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", labelHandler.RemoveIssueLabel)
-	r.Get("/repos/{owner}/{repo}/milestones/{milestone_number}/labels", labelHandler.ListLabelsForMilestone)
+		// Pull Request Review Comments
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.ListPullReviewComments)
+		apiAuth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/comments", pullHandler.CreatePullReviewComment)
 
-	// ==========================================================================
-	// Milestones
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/milestones", milestoneHandler.ListMilestones)
-	r.Get("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.GetMilestone)
-	auth.Post("/repos/{owner}/{repo}/milestones", milestoneHandler.CreateMilestone)
-	auth.Patch("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.UpdateMilestone)
-	auth.Delete("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.DeleteMilestone)
+		// Requested Reviewers
+		api.Get("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.ListRequestedReviewers)
+		apiAuth.Post("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.RequestReviewers)
+		apiAuth.Delete("/repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", pullHandler.RemoveRequestedReviewers)
 
-	// ==========================================================================
-	// Comments (Issue & Commit)
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.ListIssueComments)
-	r.Get("/repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.GetIssueComment)
-	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.CreateIssueComment)
-	auth.Patch("/repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.UpdateIssueComment)
-	auth.Delete("/repos/{owner}/{repo}/issues/comments/{comment_id}", commentHandler.DeleteIssueComment)
-	r.Get("/repos/{owner}/{repo}/issues/comments", commentHandler.ListRepoComments)
-	r.Get("/repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.ListCommitComments)
-	auth.Post("/repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.CreateCommitComment)
-	r.Get("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.GetCommitComment)
-	auth.Patch("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.UpdateCommitComment)
-	auth.Delete("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.DeleteCommitComment)
-	r.Get("/repos/{owner}/{repo}/comments", commentHandler.ListRepoCommitComments)
+		// Labels
+		api.Get("/repos/{owner}/{repo}/labels", labelHandler.ListRepoLabels)
+		api.Get("/repos/{owner}/{repo}/labels/{name}", labelHandler.GetLabel)
+		apiAuth.Post("/repos/{owner}/{repo}/labels", labelHandler.CreateLabel)
+		apiAuth.Patch("/repos/{owner}/{repo}/labels/{name}", labelHandler.UpdateLabel)
+		apiAuth.Delete("/repos/{owner}/{repo}/labels/{name}", labelHandler.DeleteLabel)
+		api.Get("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.ListIssueLabels)
+		apiAuth.Post("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.AddIssueLabels)
+		apiAuth.Put("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.SetIssueLabels)
+		apiAuth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/labels", labelHandler.RemoveAllIssueLabels)
+		apiAuth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", labelHandler.RemoveIssueLabel)
+		api.Get("/repos/{owner}/{repo}/milestones/{milestone_number}/labels", labelHandler.ListLabelsForMilestone)
 
-	// ==========================================================================
-	// Teams
-	// ==========================================================================
-	r.Get("/orgs/{org}/teams", teamHandler.ListOrgTeams)
-	r.Get("/orgs/{org}/teams/{team_slug}", teamHandler.GetOrgTeam)
-	auth.Post("/orgs/{org}/teams", teamHandler.CreateTeam)
-	auth.Patch("/orgs/{org}/teams/{team_slug}", teamHandler.UpdateTeam)
-	auth.Delete("/orgs/{org}/teams/{team_slug}", teamHandler.DeleteTeam)
-	r.Get("/orgs/{org}/teams/{team_slug}/members", teamHandler.ListTeamMembers)
-	auth.Get("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.GetTeamMembership)
-	auth.Put("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.AddTeamMember)
-	auth.Delete("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.RemoveTeamMember)
-	r.Get("/orgs/{org}/teams/{team_slug}/repos", teamHandler.ListTeamRepos)
-	r.Get("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.CheckTeamRepoPermission)
-	auth.Put("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.AddTeamRepo)
-	auth.Delete("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.RemoveTeamRepo)
-	r.Get("/orgs/{org}/teams/{team_slug}/teams", teamHandler.ListChildTeams)
-	auth.Get("/user/teams", teamHandler.ListAuthenticatedUserTeams)
+		// Milestones
+		api.Get("/repos/{owner}/{repo}/milestones", milestoneHandler.ListMilestones)
+		api.Get("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.GetMilestone)
+		apiAuth.Post("/repos/{owner}/{repo}/milestones", milestoneHandler.CreateMilestone)
+		apiAuth.Patch("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.UpdateMilestone)
+		apiAuth.Delete("/repos/{owner}/{repo}/milestones/{milestone_number}", milestoneHandler.DeleteMilestone)
 
-	// ==========================================================================
-	// Releases
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/releases", releaseHandler.ListReleases)
-	r.Get("/repos/{owner}/{repo}/releases/{release_id}", releaseHandler.GetRelease)
-	r.Get("/repos/{owner}/{repo}/releases/latest", releaseHandler.GetLatestRelease)
-	r.Get("/repos/{owner}/{repo}/releases/tags/{tag}", releaseHandler.GetReleaseByTag)
-	auth.Post("/repos/{owner}/{repo}/releases", releaseHandler.CreateRelease)
-	auth.Patch("/repos/{owner}/{repo}/releases/{release_id}", releaseHandler.UpdateRelease)
-	auth.Delete("/repos/{owner}/{repo}/releases/{release_id}", releaseHandler.DeleteRelease)
-	auth.Post("/repos/{owner}/{repo}/releases/generate-notes", releaseHandler.GenerateReleaseNotes)
-	r.Get("/repos/{owner}/{repo}/releases/{release_id}/assets", releaseHandler.ListReleaseAssets)
-	r.Get("/repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.GetReleaseAsset)
-	auth.Patch("/repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.UpdateReleaseAsset)
-	auth.Delete("/repos/{owner}/{repo}/releases/assets/{asset_id}", releaseHandler.DeleteReleaseAsset)
-	auth.Post("/repos/{owner}/{repo}/releases/{release_id}/assets", releaseHandler.UploadReleaseAsset)
-	r.Get("/repos/{owner}/{repo}/releases/assets/{asset_id}/download", releaseHandler.DownloadReleaseAsset)
+		// Comments (Issue & Commit)
+		api.Get("/repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.ListIssueComments)
+		apiAuth.Post("/repos/{owner}/{repo}/issues/{issue_number}/comments", commentHandler.CreateIssueComment)
+		api.Get("/repos/{owner}/{repo}/issues/comments", commentHandler.ListRepoComments)
+		api.Get("/repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.ListCommitComments)
+		apiAuth.Post("/repos/{owner}/{repo}/commits/{commit_sha}/comments", commentHandler.CreateCommitComment)
+		api.Get("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.GetCommitComment)
+		apiAuth.Patch("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.UpdateCommitComment)
+		apiAuth.Delete("/repos/{owner}/{repo}/comments/{comment_id}", commentHandler.DeleteCommitComment)
+		api.Get("/repos/{owner}/{repo}/comments", commentHandler.ListRepoCommitComments)
 
-	// ==========================================================================
-	// Stars
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/stargazers", starHandler.ListStargazers)
-	r.Get("/users/{username}/starred", starHandler.ListStarredRepos)
-	auth.Get("/user/starred", starHandler.ListAuthenticatedUserStarredRepos)
-	auth.Get("/user/starred/{owner}/{repo}", starHandler.CheckRepoStarred)
-	auth.Put("/user/starred/{owner}/{repo}", starHandler.StarRepo)
-	auth.Delete("/user/starred/{owner}/{repo}", starHandler.UnstarRepo)
+		// Teams
+		api.Get("/orgs/{org}/teams", teamHandler.ListOrgTeams)
+		api.Get("/orgs/{org}/teams/{team_slug}", teamHandler.GetOrgTeam)
+		apiAuth.Post("/orgs/{org}/teams", teamHandler.CreateTeam)
+		apiAuth.Patch("/orgs/{org}/teams/{team_slug}", teamHandler.UpdateTeam)
+		apiAuth.Delete("/orgs/{org}/teams/{team_slug}", teamHandler.DeleteTeam)
+		api.Get("/orgs/{org}/teams/{team_slug}/members", teamHandler.ListTeamMembers)
+		apiAuth.Get("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.GetTeamMembership)
+		apiAuth.Put("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.AddTeamMember)
+		apiAuth.Delete("/orgs/{org}/teams/{team_slug}/memberships/{username}", teamHandler.RemoveTeamMember)
+		api.Get("/orgs/{org}/teams/{team_slug}/repos", teamHandler.ListTeamRepos)
+		api.Get("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.CheckTeamRepoPermission)
+		apiAuth.Put("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.AddTeamRepo)
+		apiAuth.Delete("/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}", teamHandler.RemoveTeamRepo)
+		api.Get("/orgs/{org}/teams/{team_slug}/teams", teamHandler.ListChildTeams)
+		apiAuth.Get("/user/teams", teamHandler.ListAuthenticatedUserTeams)
 
-	// ==========================================================================
-	// Watches (Subscriptions)
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/subscribers", watchHandler.ListWatchers)
-	auth.Get("/repos/{owner}/{repo}/subscription", watchHandler.GetSubscription)
-	auth.Put("/repos/{owner}/{repo}/subscription", watchHandler.SetSubscription)
-	auth.Delete("/repos/{owner}/{repo}/subscription", watchHandler.DeleteSubscription)
-	r.Get("/users/{username}/subscriptions", watchHandler.ListWatchedRepos)
-	auth.Get("/user/subscriptions", watchHandler.ListAuthenticatedUserWatchedRepos)
+		// Releases
+		api.Get("/repos/{owner}/{repo}/releases", releaseHandler.ListReleases)
+		api.Get("/repos/{owner}/{repo}/releases/latest", releaseHandler.GetLatestRelease)
+		apiAuth.Post("/repos/{owner}/{repo}/releases", releaseHandler.CreateRelease)
+		apiAuth.Post("/repos/{owner}/{repo}/releases/generate-notes", releaseHandler.GenerateReleaseNotes)
 
-	// ==========================================================================
-	// Webhooks
-	// ==========================================================================
-	auth.Get("/repos/{owner}/{repo}/hooks", webhookHandler.ListRepoWebhooks)
-	auth.Get("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.GetRepoWebhook)
-	auth.Post("/repos/{owner}/{repo}/hooks", webhookHandler.CreateRepoWebhook)
-	auth.Patch("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.UpdateRepoWebhook)
-	auth.Delete("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.DeleteRepoWebhook)
-	auth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/pings", webhookHandler.PingRepoWebhook)
-	auth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/tests", webhookHandler.TestRepoWebhook)
-	auth.Get("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries", webhookHandler.ListWebhookDeliveries)
-	auth.Get("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}", webhookHandler.GetWebhookDelivery)
-	auth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", webhookHandler.RedeliverWebhook)
-	auth.Get("/orgs/{org}/hooks", webhookHandler.ListOrgWebhooks)
-	auth.Get("/orgs/{org}/hooks/{hook_id}", webhookHandler.GetOrgWebhook)
-	auth.Post("/orgs/{org}/hooks", webhookHandler.CreateOrgWebhook)
-	auth.Patch("/orgs/{org}/hooks/{hook_id}", webhookHandler.UpdateOrgWebhook)
-	auth.Delete("/orgs/{org}/hooks/{hook_id}", webhookHandler.DeleteOrgWebhook)
-	auth.Post("/orgs/{org}/hooks/{hook_id}/pings", webhookHandler.PingOrgWebhook)
-	auth.Get("/orgs/{org}/hooks/{hook_id}/deliveries", webhookHandler.ListOrgWebhookDeliveries)
-	auth.Get("/orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}", webhookHandler.GetOrgWebhookDelivery)
-	auth.Post("/orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", webhookHandler.RedeliverOrgWebhook)
+		// Stars
+		api.Get("/repos/{owner}/{repo}/stargazers", starHandler.ListStargazers)
+		api.Get("/users/{username}/starred", starHandler.ListStarredRepos)
+		apiAuth.Get("/user/starred", starHandler.ListAuthenticatedUserStarredRepos)
+		apiAuth.Get("/user/starred/{owner}/{repo}", starHandler.CheckRepoStarred)
+		apiAuth.Put("/user/starred/{owner}/{repo}", starHandler.StarRepo)
+		apiAuth.Delete("/user/starred/{owner}/{repo}", starHandler.UnstarRepo)
 
-	// ==========================================================================
-	// Notifications
-	// ==========================================================================
-	auth.Get("/notifications", notificationHandler.ListNotifications)
-	auth.Put("/notifications", notificationHandler.MarkAllAsRead)
-	auth.Get("/notifications/threads/{thread_id}", notificationHandler.GetThread)
-	auth.Patch("/notifications/threads/{thread_id}", notificationHandler.MarkThreadAsRead)
-	auth.Delete("/notifications/threads/{thread_id}", notificationHandler.MarkThreadAsDone)
-	auth.Get("/notifications/threads/{thread_id}/subscription", notificationHandler.GetThreadSubscription)
-	auth.Put("/notifications/threads/{thread_id}/subscription", notificationHandler.SetThreadSubscription)
-	auth.Delete("/notifications/threads/{thread_id}/subscription", notificationHandler.DeleteThreadSubscription)
-	auth.Get("/repos/{owner}/{repo}/notifications", notificationHandler.ListRepoNotifications)
-	auth.Put("/repos/{owner}/{repo}/notifications", notificationHandler.MarkRepoNotificationsAsRead)
+		// Watches (Subscriptions)
+		api.Get("/repos/{owner}/{repo}/subscribers", watchHandler.ListWatchers)
+		apiAuth.Get("/repos/{owner}/{repo}/subscription", watchHandler.GetSubscription)
+		apiAuth.Put("/repos/{owner}/{repo}/subscription", watchHandler.SetSubscription)
+		apiAuth.Delete("/repos/{owner}/{repo}/subscription", watchHandler.DeleteSubscription)
+		api.Get("/users/{username}/subscriptions", watchHandler.ListWatchedRepos)
+		apiAuth.Get("/user/subscriptions", watchHandler.ListAuthenticatedUserWatchedRepos)
 
-	// ==========================================================================
-	// Reactions
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.ListIssueReactions)
-	auth.Post("/repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.CreateIssueReaction)
-	auth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}", reactionHandler.DeleteIssueReaction)
-	r.Get("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", reactionHandler.ListIssueCommentReactions)
-	auth.Post("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions", reactionHandler.CreateIssueCommentReaction)
-	auth.Delete("/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeleteIssueCommentReaction)
-	r.Get("/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", reactionHandler.ListPullReviewCommentReactions)
-	auth.Post("/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions", reactionHandler.CreatePullReviewCommentReaction)
-	auth.Delete("/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeletePullReviewCommentReaction)
-	r.Get("/repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.ListCommitCommentReactions)
-	auth.Post("/repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.CreateCommitCommentReaction)
-	auth.Delete("/repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeleteCommitCommentReaction)
-	r.Get("/repos/{owner}/{repo}/releases/{release_id}/reactions", reactionHandler.ListReleaseReactions)
-	auth.Post("/repos/{owner}/{repo}/releases/{release_id}/reactions", reactionHandler.CreateReleaseReaction)
-	auth.Delete("/repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}", reactionHandler.DeleteReleaseReaction)
+		// Webhooks
+		apiAuth.Get("/repos/{owner}/{repo}/hooks", webhookHandler.ListRepoWebhooks)
+		apiAuth.Get("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.GetRepoWebhook)
+		apiAuth.Post("/repos/{owner}/{repo}/hooks", webhookHandler.CreateRepoWebhook)
+		apiAuth.Patch("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.UpdateRepoWebhook)
+		apiAuth.Delete("/repos/{owner}/{repo}/hooks/{hook_id}", webhookHandler.DeleteRepoWebhook)
+		apiAuth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/pings", webhookHandler.PingRepoWebhook)
+		apiAuth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/tests", webhookHandler.TestRepoWebhook)
+		apiAuth.Get("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries", webhookHandler.ListWebhookDeliveries)
+		apiAuth.Get("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}", webhookHandler.GetWebhookDelivery)
+		apiAuth.Post("/repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", webhookHandler.RedeliverWebhook)
+		apiAuth.Get("/orgs/{org}/hooks", webhookHandler.ListOrgWebhooks)
+		apiAuth.Get("/orgs/{org}/hooks/{hook_id}", webhookHandler.GetOrgWebhook)
+		apiAuth.Post("/orgs/{org}/hooks", webhookHandler.CreateOrgWebhook)
+		apiAuth.Patch("/orgs/{org}/hooks/{hook_id}", webhookHandler.UpdateOrgWebhook)
+		apiAuth.Delete("/orgs/{org}/hooks/{hook_id}", webhookHandler.DeleteOrgWebhook)
+		apiAuth.Post("/orgs/{org}/hooks/{hook_id}/pings", webhookHandler.PingOrgWebhook)
+		apiAuth.Get("/orgs/{org}/hooks/{hook_id}/deliveries", webhookHandler.ListOrgWebhookDeliveries)
+		apiAuth.Get("/orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}", webhookHandler.GetOrgWebhookDelivery)
+		apiAuth.Post("/orgs/{org}/hooks/{hook_id}/deliveries/{delivery_id}/attempts", webhookHandler.RedeliverOrgWebhook)
 
-	// ==========================================================================
-	// Collaborators
-	// ==========================================================================
-	auth.Get("/repos/{owner}/{repo}/collaborators", collaboratorHandler.ListCollaborators)
-	r.Get("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.CheckCollaborator)
-	auth.Put("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.AddCollaborator)
-	auth.Delete("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.RemoveCollaborator)
-	auth.Get("/repos/{owner}/{repo}/collaborators/{username}/permission", collaboratorHandler.GetCollaboratorPermission)
-	auth.Get("/repos/{owner}/{repo}/invitations", collaboratorHandler.ListInvitations)
-	auth.Patch("/repos/{owner}/{repo}/invitations/{invitation_id}", collaboratorHandler.UpdateInvitation)
-	auth.Delete("/repos/{owner}/{repo}/invitations/{invitation_id}", collaboratorHandler.DeleteInvitation)
-	auth.Get("/user/repository_invitations", collaboratorHandler.ListUserInvitations)
-	auth.Patch("/user/repository_invitations/{invitation_id}", collaboratorHandler.AcceptInvitation)
-	auth.Delete("/user/repository_invitations/{invitation_id}", collaboratorHandler.DeclineInvitation)
+		// Notifications
+		apiAuth.Get("/notifications", notificationHandler.ListNotifications)
+		apiAuth.Put("/notifications", notificationHandler.MarkAllAsRead)
+		apiAuth.Get("/notifications/threads/{thread_id}", notificationHandler.GetThread)
+		apiAuth.Patch("/notifications/threads/{thread_id}", notificationHandler.MarkThreadAsRead)
+		apiAuth.Delete("/notifications/threads/{thread_id}", notificationHandler.MarkThreadAsDone)
+		apiAuth.Get("/notifications/threads/{thread_id}/subscription", notificationHandler.GetThreadSubscription)
+		apiAuth.Put("/notifications/threads/{thread_id}/subscription", notificationHandler.SetThreadSubscription)
+		apiAuth.Delete("/notifications/threads/{thread_id}/subscription", notificationHandler.DeleteThreadSubscription)
+		apiAuth.Get("/repos/{owner}/{repo}/notifications", notificationHandler.ListRepoNotifications)
+		apiAuth.Put("/repos/{owner}/{repo}/notifications", notificationHandler.MarkRepoNotificationsAsRead)
 
-	// ==========================================================================
-	// Branches
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/branches", branchHandler.ListBranches)
-	r.Get("/repos/{owner}/{repo}/branches/{branch}", branchHandler.GetBranch)
-	auth.Post("/repos/{owner}/{repo}/branches/{branch}/rename", branchHandler.RenameBranch)
-	auth.Get("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.GetBranchProtection)
-	auth.Put("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.UpdateBranchProtection)
-	auth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.DeleteBranchProtection)
-	auth.Get("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.GetRequiredStatusChecks)
-	auth.Patch("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.UpdateRequiredStatusChecks)
-	auth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.DeleteRequiredStatusChecks)
-	auth.Get("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.GetRequiredSignatures)
-	auth.Post("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.CreateRequiredSignatures)
-	auth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.DeleteRequiredSignatures)
+		// Reactions
+		api.Get("/repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.ListIssueReactions)
+		apiAuth.Post("/repos/{owner}/{repo}/issues/{issue_number}/reactions", reactionHandler.CreateIssueReaction)
+		apiAuth.Delete("/repos/{owner}/{repo}/issues/{issue_number}/reactions/{reaction_id}", reactionHandler.DeleteIssueReaction)
+		api.Get("/repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.ListCommitCommentReactions)
+		apiAuth.Post("/repos/{owner}/{repo}/comments/{comment_id}/reactions", reactionHandler.CreateCommitCommentReaction)
+		apiAuth.Delete("/repos/{owner}/{repo}/comments/{comment_id}/reactions/{reaction_id}", reactionHandler.DeleteCommitCommentReaction)
 
-	// ==========================================================================
-	// Commits
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/commits", commitHandler.ListCommits)
-	r.Get("/repos/{owner}/{repo}/commits/{ref}", commitHandler.GetCommit)
-	r.Get("/repos/{owner}/{repo}/compare/{basehead}", commitHandler.CompareCommits)
-	r.Get("/repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head", commitHandler.ListBranchesForHead)
-	r.Get("/repos/{owner}/{repo}/commits/{commit_sha}/pulls", commitHandler.ListPullsForCommit)
-	r.Get("/repos/{owner}/{repo}/commits/{ref}/status", commitHandler.GetCombinedStatus)
-	r.Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitHandler.ListStatuses)
-	auth.Post("/repos/{owner}/{repo}/statuses/{sha}", commitHandler.CreateStatus)
+		// Collaborators
+		apiAuth.Get("/repos/{owner}/{repo}/collaborators", collaboratorHandler.ListCollaborators)
+		api.Get("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.CheckCollaborator)
+		apiAuth.Put("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.AddCollaborator)
+		apiAuth.Delete("/repos/{owner}/{repo}/collaborators/{username}", collaboratorHandler.RemoveCollaborator)
+		apiAuth.Get("/repos/{owner}/{repo}/collaborators/{username}/permission", collaboratorHandler.GetCollaboratorPermission)
+		apiAuth.Get("/repos/{owner}/{repo}/invitations", collaboratorHandler.ListInvitations)
+		apiAuth.Patch("/repos/{owner}/{repo}/invitations/{invitation_id}", collaboratorHandler.UpdateInvitation)
+		apiAuth.Delete("/repos/{owner}/{repo}/invitations/{invitation_id}", collaboratorHandler.DeleteInvitation)
+		apiAuth.Get("/user/repository_invitations", collaboratorHandler.ListUserInvitations)
+		apiAuth.Patch("/user/repository_invitations/{invitation_id}", collaboratorHandler.AcceptInvitation)
+		apiAuth.Delete("/user/repository_invitations/{invitation_id}", collaboratorHandler.DeclineInvitation)
 
-	// ==========================================================================
-	// Git Data (Low-level)
-	// ==========================================================================
-	r.Get("/repos/{owner}/{repo}/git/blobs/{file_sha}", gitHandler.GetBlob)
-	auth.Post("/repos/{owner}/{repo}/git/blobs", gitHandler.CreateBlob)
-	r.Get("/repos/{owner}/{repo}/git/commits/{commit_sha}", gitHandler.GetGitCommit)
-	auth.Post("/repos/{owner}/{repo}/git/commits", gitHandler.CreateGitCommit)
-	r.Get("/repos/{owner}/{repo}/git/ref/{ref...}", gitHandler.GetRef)
-	r.Get("/repos/{owner}/{repo}/git/matching-refs/{ref...}", gitHandler.ListMatchingRefs)
-	auth.Post("/repos/{owner}/{repo}/git/refs", gitHandler.CreateRef)
-	auth.Patch("/repos/{owner}/{repo}/git/refs/{ref...}", gitHandler.UpdateRef)
-	auth.Delete("/repos/{owner}/{repo}/git/refs/{ref...}", gitHandler.DeleteRef)
-	r.Get("/repos/{owner}/{repo}/git/trees/{tree_sha}", gitHandler.GetTree)
-	auth.Post("/repos/{owner}/{repo}/git/trees", gitHandler.CreateTree)
-	r.Get("/repos/{owner}/{repo}/git/tags/{tag_sha}", gitHandler.GetTag)
-	auth.Post("/repos/{owner}/{repo}/git/tags", gitHandler.CreateTag)
-	r.Get("/repos/{owner}/{repo}/git/tags", gitHandler.ListTags)
+		// Branches
+		api.Get("/repos/{owner}/{repo}/branches", branchHandler.ListBranches)
+		api.Get("/repos/{owner}/{repo}/branches/{branch}", branchHandler.GetBranch)
+		apiAuth.Post("/repos/{owner}/{repo}/branches/{branch}/rename", branchHandler.RenameBranch)
+		apiAuth.Get("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.GetBranchProtection)
+		apiAuth.Put("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.UpdateBranchProtection)
+		apiAuth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection", branchHandler.DeleteBranchProtection)
+		apiAuth.Get("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.GetRequiredStatusChecks)
+		apiAuth.Patch("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.UpdateRequiredStatusChecks)
+		apiAuth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks", branchHandler.DeleteRequiredStatusChecks)
+		apiAuth.Get("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.GetRequiredSignatures)
+		apiAuth.Post("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.CreateRequiredSignatures)
+		apiAuth.Delete("/repos/{owner}/{repo}/branches/{branch}/protection/required_signatures", branchHandler.DeleteRequiredSignatures)
 
-	// ==========================================================================
-	// Search
-	// ==========================================================================
-	r.Get("/search/repositories", searchHandler.SearchRepositories)
-	r.Get("/search/code", searchHandler.SearchCode)
-	r.Get("/search/commits", searchHandler.SearchCommits)
-	r.Get("/search/issues", searchHandler.SearchIssues)
-	r.Get("/search/users", searchHandler.SearchUsers)
-	r.Get("/search/labels", searchHandler.SearchLabels)
-	r.Get("/search/topics", searchHandler.SearchTopics)
+		// Commits
+		api.Get("/repos/{owner}/{repo}/commits", commitHandler.ListCommits)
+		api.Get("/repos/{owner}/{repo}/commits/{ref}", commitHandler.GetCommit)
+		api.Get("/repos/{owner}/{repo}/compare/{basehead}", commitHandler.CompareCommits)
+		api.Get("/repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head", commitHandler.ListBranchesForHead)
+		api.Get("/repos/{owner}/{repo}/commits/{commit_sha}/pulls", commitHandler.ListPullsForCommit)
+		api.Get("/repos/{owner}/{repo}/commits/{ref}/status", commitHandler.GetCombinedStatus)
+		api.Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitHandler.ListStatuses)
+		apiAuth.Post("/repos/{owner}/{repo}/statuses/{sha}", commitHandler.CreateStatus)
 
-	// ==========================================================================
-	// Activity (Events & Feeds)
-	// ==========================================================================
-	r.Get("/events", activityHandler.ListPublicEvents)
-	r.Get("/repos/{owner}/{repo}/events", activityHandler.ListRepoEvents)
-	r.Get("/networks/{owner}/{repo}/events", activityHandler.ListRepoNetworkEvents)
-	r.Get("/orgs/{org}/events", activityHandler.ListOrgEvents)
-	r.Get("/users/{username}/received_events", activityHandler.ListUserReceivedEvents)
-	r.Get("/users/{username}/received_events/public", activityHandler.ListUserReceivedPublicEvents)
-	r.Get("/users/{username}/events", activityHandler.ListUserEvents)
-	r.Get("/users/{username}/events/public", activityHandler.ListUserPublicEvents)
-	auth.Get("/users/{username}/events/orgs/{org}", activityHandler.ListUserOrgEvents)
-	optAuth.Get("/feeds", activityHandler.ListFeeds)
+		// Git Data (Low-level)
+		api.Get("/repos/{owner}/{repo}/git/blobs/{file_sha}", gitHandler.GetBlob)
+		apiAuth.Post("/repos/{owner}/{repo}/git/blobs", gitHandler.CreateBlob)
+		api.Get("/repos/{owner}/{repo}/git/commits/{commit_sha}", gitHandler.GetGitCommit)
+		apiAuth.Post("/repos/{owner}/{repo}/git/commits", gitHandler.CreateGitCommit)
+		api.Get("/repos/{owner}/{repo}/git/ref/{ref...}", gitHandler.GetRef)
+		api.Get("/repos/{owner}/{repo}/git/matching-refs/{ref...}", gitHandler.ListMatchingRefs)
+		apiAuth.Post("/repos/{owner}/{repo}/git/refs", gitHandler.CreateRef)
+		apiAuth.Patch("/repos/{owner}/{repo}/git/refs/{ref...}", gitHandler.UpdateRef)
+		apiAuth.Delete("/repos/{owner}/{repo}/git/refs/{ref...}", gitHandler.DeleteRef)
+		api.Get("/repos/{owner}/{repo}/git/trees/{tree_sha}", gitHandler.GetTree)
+		apiAuth.Post("/repos/{owner}/{repo}/git/trees", gitHandler.CreateTree)
+		api.Get("/repos/{owner}/{repo}/git/tags/{tag_sha}", gitHandler.GetTag)
+		apiAuth.Post("/repos/{owner}/{repo}/git/tags", gitHandler.CreateTag)
+		api.Get("/repos/{owner}/{repo}/git/tags", gitHandler.ListTags)
+
+		// Search
+		api.Get("/search/repositories", searchHandler.SearchRepositories)
+		api.Get("/search/code", searchHandler.SearchCode)
+		api.Get("/search/commits", searchHandler.SearchCommits)
+		api.Get("/search/issues", searchHandler.SearchIssues)
+		api.Get("/search/users", searchHandler.SearchUsers)
+		api.Get("/search/labels", searchHandler.SearchLabels)
+		api.Get("/search/topics", searchHandler.SearchTopics)
+
+		// Activity (Events & Feeds)
+		api.Get("/events", activityHandler.ListPublicEvents)
+		api.Get("/repos/{owner}/{repo}/events", activityHandler.ListRepoEvents)
+		api.Get("/networks/{owner}/{repo}/events", activityHandler.ListRepoNetworkEvents)
+		api.Get("/orgs/{org}/events", activityHandler.ListOrgEvents)
+		api.Get("/users/{username}/received_events", activityHandler.ListUserReceivedEvents)
+		api.Get("/users/{username}/received_events/public", activityHandler.ListUserReceivedPublicEvents)
+		api.Get("/users/{username}/events", activityHandler.ListUserEvents)
+		api.Get("/users/{username}/events/public", activityHandler.ListUserPublicEvents)
+		apiAuth.Get("/users/{username}/events/orgs/{org}", activityHandler.ListUserOrgEvents)
+		apiOptAuth.Get("/feeds", activityHandler.ListFeeds)
+	})
 }

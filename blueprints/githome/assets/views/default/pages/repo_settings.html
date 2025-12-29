@@ -1,6 +1,183 @@
 {{define "content"}}
-<div class="repo-settings">
-    <h1>Settings</h1>
-    <p>Repository settings</p>
+<div class="repo-header">
+    <div class="repo-header-content">
+        <div class="repo-header-title">
+            <svg class="octicon color-fg-muted mr-2" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Z"/>
+            </svg>
+            <a href="/{{.Repo.Owner.Login}}" class="repo-owner">{{.Repo.Owner.Login}}</a>
+            <span class="repo-separator">/</span>
+            <a href="/{{.Repo.FullName}}" class="repo-name">{{.Repo.Name}}</a>
+        </div>
+    </div>
+</div>
+
+<nav class="UnderlineNav">
+    <div class="UnderlineNav-body">
+        {{range .Repo.Tabs}}
+        <a href="{{.URL}}" class="UnderlineNav-item{{if .Active}} selected{{end}}">
+            <span>{{.Name}}</span>
+            {{if gt .Count 0}}
+            <span class="Counter">{{.Count}}</span>
+            {{end}}
+        </a>
+        {{end}}
+    </div>
+</nav>
+
+<div class="container-xl mt-4">
+    <div class="Layout">
+        <div class="Layout-sidebar" style="width: 240px;">
+            <nav>
+                <a href="/{{.Repo.FullName}}/settings" class="d-block p-2 mb-1{{if eq .Section "general"}} text-bold{{end}}">General</a>
+                <a href="/{{.Repo.FullName}}/settings/access" class="d-block p-2 mb-1{{if eq .Section "access"}} text-bold{{end}}">Collaborators</a>
+                <a href="/{{.Repo.FullName}}/settings/branches" class="d-block p-2 mb-1{{if eq .Section "branches"}} text-bold{{end}}">Branches</a>
+                <hr class="my-2">
+                <a href="/{{.Repo.FullName}}/settings/danger" class="d-block p-2 color-fg-danger{{if eq .Section "danger"}} text-bold{{end}}">Danger Zone</a>
+            </nav>
+        </div>
+
+        <div class="Layout-main">
+            {{if .Success}}
+            <div class="flash flash-success mb-4">
+                {{.Success}}
+            </div>
+            {{end}}
+
+            {{if .Error}}
+            <div class="flash flash-error mb-4">
+                {{.Error}}
+            </div>
+            {{end}}
+
+            {{if eq .Section "general"}}
+            <h2 class="h4 mb-4">General</h2>
+
+            <div class="Box p-4 mb-4">
+                <h3 class="f5 mb-3">Repository name</h3>
+                <form method="POST" action="/{{.Repo.FullName}}/settings/rename">
+                    <div class="d-flex flex-items-center">
+                        <input type="text" name="name" class="form-control mr-2" value="{{.Repo.Name}}" style="max-width: 300px;">
+                        <button type="submit" class="btn">Rename</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="Box p-4 mb-4">
+                <h3 class="f5 mb-3">Default branch</h3>
+                <form method="POST" action="/{{.Repo.FullName}}/settings/branch">
+                    <div class="d-flex flex-items-center">
+                        <select name="default_branch" class="form-control mr-2" style="max-width: 300px;">
+                            <option>{{.Repo.DefaultBranch}}</option>
+                        </select>
+                        <button type="submit" class="btn">Update</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="Box p-4 mb-4">
+                <h3 class="f5 mb-3">Features</h3>
+                <form method="POST" action="/{{.Repo.FullName}}/settings/features">
+                    <div class="mb-3">
+                        <label class="d-flex flex-items-center">
+                            <input type="checkbox" name="has_issues" {{if .Repo.HasIssues}}checked{{end}} class="mr-2">
+                            <span>Issues</span>
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="d-flex flex-items-center">
+                            <input type="checkbox" name="has_wiki" {{if .Repo.HasWiki}}checked{{end}} class="mr-2">
+                            <span>Wiki</span>
+                        </label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="d-flex flex-items-center">
+                            <input type="checkbox" name="has_projects" {{if .Repo.HasProjects}}checked{{end}} class="mr-2">
+                            <span>Projects</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save changes</button>
+                </form>
+            </div>
+            {{end}}
+
+            {{if eq .Section "danger"}}
+            <h2 class="h4 mb-4">Danger Zone</h2>
+
+            <div class="Box p-4 mb-4" style="border-color: var(--color-danger-emphasis);">
+                <div class="d-flex flex-items-center flex-justify-between">
+                    <div>
+                        <h3 class="f5 mb-1">Change repository visibility</h3>
+                        <p class="color-fg-muted f6 mb-0">This repository is currently {{if .Repo.Private}}private{{else}}public{{end}}.</p>
+                    </div>
+                    <form method="POST" action="/{{.Repo.FullName}}/settings/visibility">
+                        <button type="submit" class="btn btn-danger">Change visibility</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="Box p-4" style="border-color: var(--color-danger-emphasis);">
+                <div class="d-flex flex-items-center flex-justify-between">
+                    <div>
+                        <h3 class="f5 mb-1">Delete this repository</h3>
+                        <p class="color-fg-muted f6 mb-0">Once you delete a repository, there is no going back. Please be certain.</p>
+                    </div>
+                    <form method="POST" action="/{{.Repo.FullName}}/settings/delete" onsubmit="return confirm('Are you sure you want to delete this repository? This action cannot be undone.');">
+                        <button type="submit" class="btn btn-danger">Delete this repository</button>
+                    </form>
+                </div>
+            </div>
+            {{end}}
+
+            {{if eq .Section "access"}}
+            <h2 class="h4 mb-4">Manage access</h2>
+
+            <div class="Box">
+                <div class="Box-header">
+                    <h3 class="Box-title">Collaborators</h3>
+                </div>
+                {{if .Collaborators}}
+                {{range .Collaborators}}
+                <div class="Box-row d-flex flex-items-center flex-justify-between">
+                    <div class="d-flex flex-items-center">
+                        {{if .AvatarURL}}
+                        <img src="{{.AvatarURL}}" alt="{{.Login}}" class="Avatar Avatar--medium mr-3">
+                        {{else}}
+                        <span class="Avatar Avatar--medium mr-3" style="background: #6e40c9; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600;">{{firstChar .Login}}</span>
+                        {{end}}
+                        <div>
+                            <a href="/{{.Login}}" class="Link--primary text-bold">{{.Login}}</a>
+                            <span class="Label Label--secondary ml-2">{{.Permission}}</span>
+                        </div>
+                    </div>
+                    <form method="POST" action="/{{$.Repo.FullName}}/settings/collaborators/{{.Login}}/remove">
+                        <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                    </form>
+                </div>
+                {{end}}
+                {{else}}
+                <div class="Box-body">
+                    <p class="color-fg-muted">No collaborators yet.</p>
+                </div>
+                {{end}}
+            </div>
+
+            <div class="Box mt-4 p-4">
+                <h3 class="f5 mb-3">Add collaborator</h3>
+                <form method="POST" action="/{{.Repo.FullName}}/settings/collaborators">
+                    <div class="d-flex flex-items-center">
+                        <input type="text" name="username" class="form-control mr-2" placeholder="Username" style="max-width: 300px;">
+                        <select name="permission" class="form-control mr-2" style="width: auto;">
+                            <option value="read">Read</option>
+                            <option value="write">Write</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary">Add</button>
+                    </div>
+                </form>
+            </div>
+            {{end}}
+        </div>
+    </div>
 </div>
 {{end}}

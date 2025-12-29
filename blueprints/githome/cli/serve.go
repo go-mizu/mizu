@@ -42,7 +42,7 @@ func newServeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&addr, "addr", "a", ":3000", "Listen address")
+	cmd.Flags().StringVarP(&addr, "addr", "a", ":8080", "Listen address")
 	cmd.Flags().BoolVar(&dev, "dev", false, "Development mode")
 
 	return cmd

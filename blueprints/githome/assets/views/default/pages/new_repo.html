@@ -1,10 +1,94 @@
 {{define "content"}}
-<div class="new-repo">
-    <h1>Create a new repository</h1>
+<div class="container-xl" style="max-width: 768px;">
+    <h1 class="h4 mb-4">Create a new repository</h1>
+
+    {{if .Error}}
+    <div class="flash flash-error mb-4">
+        {{.Error}}
+    </div>
+    {{end}}
+
     <form method="POST" action="/user/repos">
-        <input type="text" name="name" placeholder="Repository name" required>
-        <textarea name="description" placeholder="Description (optional)"></textarea>
-        <button type="submit">Create repository</button>
+        <div class="Box p-4">
+            <div class="form-group">
+                <label class="text-bold">Owner <span class="color-fg-danger">*</span></label>
+                <div class="d-flex flex-items-center mt-2">
+                    <select name="owner" class="form-control" style="width: auto;">
+                        {{if .User}}
+                        <option value="{{.User.Login}}">{{.User.Login}}</option>
+                        {{end}}
+                        {{range .Organizations}}
+                        <option value="{{.Login}}">{{.Login}}</option>
+                        {{end}}
+                    </select>
+                    <span class="mx-2 color-fg-muted">/</span>
+                    <input type="text" name="name" class="form-control" placeholder="Repository name" required autofocus style="flex: 1;">
+                </div>
+                <p class="f6 color-fg-muted mt-1">Great repository names are short and memorable.</p>
+            </div>
+
+            <div class="form-group">
+                <label class="text-bold">Description <span class="color-fg-muted">(optional)</span></label>
+                <textarea name="description" class="form-control mt-2" rows="2" placeholder="Short description of this repository"></textarea>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="form-group">
+                <div class="d-flex flex-items-start mb-3">
+                    <input type="radio" name="visibility" value="public" id="public" checked class="mt-1 mr-2">
+                    <label for="public" class="flex-1">
+                        <span class="text-bold d-block">Public</span>
+                        <span class="color-fg-muted f6">Anyone on the internet can see this repository. You choose who can commit.</span>
+                    </label>
+                </div>
+                <div class="d-flex flex-items-start">
+                    <input type="radio" name="visibility" value="private" id="private" class="mt-1 mr-2">
+                    <label for="private" class="flex-1">
+                        <span class="text-bold d-block">Private</span>
+                        <span class="color-fg-muted f6">You choose who can see and commit to this repository.</span>
+                    </label>
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="form-group">
+                <h3 class="f5 mb-2">Initialize this repository with:</h3>
+
+                <div class="d-flex flex-items-center mb-3">
+                    <input type="checkbox" name="auto_init" id="auto_init" value="true" class="mr-2">
+                    <label for="auto_init">
+                        <span class="text-bold">Add a README file</span>
+                        <span class="color-fg-muted f6 d-block">This is where you can write a long description for your project.</span>
+                    </label>
+                </div>
+
+                <div class="d-flex flex-items-center">
+                    <label class="mr-2">Add .gitignore:</label>
+                    <select name="gitignore_template" class="form-control" style="width: auto;">
+                        <option value="">None</option>
+                        {{range .GitignoreTemplates}}
+                        <option value="{{.}}">{{.}}</option>
+                        {{end}}
+                    </select>
+                </div>
+
+                <div class="d-flex flex-items-center mt-3">
+                    <label class="mr-2">Choose a license:</label>
+                    <select name="license_template" class="form-control" style="width: auto;">
+                        <option value="">None</option>
+                        {{range .Licenses}}
+                        <option value="{{.Key}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <button type="submit" class="btn btn-primary btn-block">Create repository</button>
+        </div>
     </form>
 </div>
 {{end}}
