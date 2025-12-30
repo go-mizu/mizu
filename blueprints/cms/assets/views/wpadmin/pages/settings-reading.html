@@ -1,0 +1,96 @@
+{{define "content"}}
+<h1>Reading Settings</h1>
+
+<form method="post" action="/wp-admin/options.php">
+    <input type="hidden" name="option_page" value="reading">
+    <input type="hidden" name="action" value="update">
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row">Your homepage displays</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Your homepage displays</span></legend>
+                    <p>
+                        <label>
+                            <input name="show_on_front" type="radio" value="posts" {{if ne (index .Settings "show_on_front") "page"}}checked="checked"{{end}}>
+                            Your latest posts
+                        </label>
+                    </p>
+                    <p>
+                        <label>
+                            <input name="show_on_front" type="radio" value="page" {{if eq (index .Settings "show_on_front") "page"}}checked="checked"{{end}}>
+                            A static page (select below)
+                        </label>
+                    </p>
+                    <ul>
+                        <li>
+                            <label for="page_on_front">Homepage:</label>
+                            <select name="page_on_front" id="page_on_front">
+                                {{range .Options.page_on_front}}
+                                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                                {{end}}
+                            </select>
+                        </li>
+                        <li>
+                            <label for="page_for_posts">Posts page:</label>
+                            <select name="page_for_posts" id="page_for_posts">
+                                {{range .Options.page_for_posts}}
+                                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                                {{end}}
+                            </select>
+                        </li>
+                    </ul>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="posts_per_page">Blog pages show at most</label></th>
+            <td>
+                <input name="posts_per_page" type="number" step="1" min="1" id="posts_per_page" value="{{default "10" (index .Settings "posts_per_page")}}" class="small-text"> posts
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="posts_per_rss">Syndication feeds show the most recent</label></th>
+            <td>
+                <input name="posts_per_rss" type="number" step="1" min="1" id="posts_per_rss" value="{{default "10" (index .Settings "posts_per_rss")}}" class="small-text"> items
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">For each post in a feed, include</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>For each post in a feed, include</span></legend>
+                    <p>
+                        <label>
+                            <input name="rss_use_excerpt" type="radio" value="0" {{if ne (index .Settings "rss_use_excerpt") "1"}}checked="checked"{{end}}>
+                            Full text
+                        </label><br>
+                        <label>
+                            <input name="rss_use_excerpt" type="radio" value="1" {{if eq (index .Settings "rss_use_excerpt") "1"}}checked="checked"{{end}}>
+                            Excerpt
+                        </label>
+                    </p>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Search engine visibility</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Search engine visibility</span></legend>
+                    <label for="blog_public">
+                        <input name="blog_public" type="checkbox" id="blog_public" value="0" {{if eq (index .Settings "blog_public") "0"}}checked="checked"{{end}}>
+                        Discourage search engines from indexing this site
+                    </label>
+                    <p class="description">It is up to search engines to honor this request.</p>
+                </fieldset>
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Save Changes">
+    </p>
+</form>
+{{end}}

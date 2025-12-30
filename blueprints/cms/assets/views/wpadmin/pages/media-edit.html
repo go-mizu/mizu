@@ -1,0 +1,91 @@
+{{define "content"}}
+<h1>Edit Media</h1>
+
+<form action="/wp-admin/post.php" method="post" id="post">
+    <input type="hidden" name="post_ID" value="{{.Media.ID}}">
+    <input type="hidden" name="action" value="update">
+
+    <div id="poststuff">
+        <div id="post-body" class="metabox-holder columns-2">
+            <div id="post-body-content">
+                <div class="attachment-preview">
+                    <div class="thumbnail">
+                        <img src="{{.ThumbnailURL}}" alt="">
+                    </div>
+                </div>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="attachment_url">File URL</label></th>
+                        <td>
+                            <input type="text" class="widefat urlfield" readonly="readonly" name="attachment_url" id="attachment_url" value="{{.FileURL}}">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="attachment_title">Title</label></th>
+                        <td>
+                            <input type="text" class="widefat" name="post_title" id="attachment_title" value="{{.Media.Title}}">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="attachment_caption">Caption</label></th>
+                        <td>
+                            <textarea class="widefat" name="post_excerpt" id="attachment_caption" rows="3">{{.Caption}}</textarea>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="attachment_alt">Alternative Text</label></th>
+                        <td>
+                            <input type="text" class="widefat" name="alt_text" id="attachment_alt" value="{{.AltText}}">
+                            <p class="description">Describe the purpose of the image. Leave empty if decorative.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="attachment_content">Description</label></th>
+                        <td>
+                            <textarea class="widefat" name="post_content" id="attachment_content" rows="5">{{.Description}}</textarea>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div id="postbox-container-1" class="postbox-container">
+                <div class="postbox">
+                    <div class="postbox-header">
+                        <h2 class="hndle">Save</h2>
+                    </div>
+                    <div class="inside">
+                        <div class="submitbox">
+                            <div id="major-publishing-actions">
+                                <div id="delete-action">
+                                    <a class="submitdelete deletion" href="/wp-admin/post.php?post={{.Media.ID}}&action=delete">Delete permanently</a>
+                                </div>
+                                <div id="publishing-action">
+                                    <input type="submit" name="save" id="publish" class="button button-primary button-large" value="Update">
+                                </div>
+                                <div class="clear"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="postbox">
+                    <div class="postbox-header">
+                        <h2 class="hndle">Attachment Details</h2>
+                    </div>
+                    <div class="inside">
+                        <p><strong>Uploaded on:</strong> {{formatDate .Media.CreatedAt}}</p>
+                        <p><strong>Uploaded by:</strong> {{if .Uploader}}{{.Uploader.DisplayName}}{{end}}</p>
+                        <p><strong>File name:</strong> {{.Media.FileName}}</p>
+                        <p><strong>File type:</strong> {{.MimeType}}</p>
+                        <p><strong>File size:</strong> {{.FileSize}}</p>
+                        {{if .Dimensions}}
+                        <p><strong>Dimensions:</strong> {{.Dimensions}}</p>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{{end}}

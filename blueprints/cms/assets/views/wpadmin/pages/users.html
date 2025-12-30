@@ -1,0 +1,95 @@
+{{define "content"}}
+<h1 class="wp-heading-inline">Users</h1>
+<a href="/wp-admin/user-new.php" class="page-title-action">Add New</a>
+
+<hr class="wp-header-end">
+
+<!-- Role Tabs -->
+<ul class="subsubsub">
+    {{range $i, $tab := .RoleTabs}}
+    {{if $i}} | {{end}}
+    <li class="{{.Role}}">
+        <a href="{{.URL}}" {{if .Active}}class="current"{{end}}>
+            {{.Label}} <span class="count">({{.Count}})</span>
+        </a>
+    </li>
+    {{end}}
+</ul>
+
+<form id="users-filter" method="get">
+    <p class="search-box">
+        <label class="screen-reader-text" for="user-search-input">Search Users:</label>
+        <input type="search" id="user-search-input" name="s" value="{{.SearchQuery}}">
+        <input type="submit" id="search-submit" class="button" value="Search Users">
+    </p>
+
+    <div class="tablenav top">
+        <div class="alignleft actions bulkactions">
+            <select name="action" id="bulk-action-selector-top">
+                <option value="-1">Bulk actions</option>
+                {{range .BulkActions}}
+                <option value="{{.Value}}">{{.Label}}</option>
+                {{end}}
+            </select>
+            <input type="submit" class="button action" value="Apply">
+        </div>
+
+        <div class="tablenav-pages">
+            <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+        </div>
+        <br class="clear">
+    </div>
+
+    <table class="wp-list-table widefat fixed striped table-view-list users">
+        <thead>
+            <tr>
+                <td class="manage-column column-cb check-column">
+                    <input type="checkbox">
+                </td>
+                {{range .Columns}}
+                <th scope="col" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}} {{.Class}}">
+                    {{.Label}}
+                </th>
+                {{end}}
+            </tr>
+        </thead>
+        <tbody id="the-list">
+            {{range .Users}}
+            <tr id="user-{{.ID}}">
+                <th scope="row" class="check-column">
+                    <input type="checkbox" name="users[]" value="{{.ID}}">
+                </th>
+                <td class="username column-username has-row-actions column-primary" data-colname="Username">
+                    <img alt="" src="{{.AvatarURL}}" class="avatar avatar-32 photo" height="32" width="32">
+                    <strong>
+                        <a href="/wp-admin/user-edit.php?user_id={{.ID}}">{{.Username}}</a>
+                    </strong>
+                    <div class="row-actions">
+                        {{range $i, $action := .RowActions}}
+                        {{if $i}} | {{end}}
+                        <span class="{{.Class}}"><a href="{{.URL}}">{{.Label}}</a></span>
+                        {{end}}
+                    </div>
+                </td>
+                <td class="name column-name" data-colname="Name">
+                    {{.DisplayName}}
+                </td>
+                <td class="email column-email" data-colname="Email">
+                    <a href="mailto:{{.Email}}">{{.Email}}</a>
+                </td>
+                <td class="role column-role" data-colname="Role">
+                    {{.RoleDisplay}}
+                </td>
+                <td class="posts column-posts num" data-colname="Posts">
+                    <a href="/wp-admin/edit.php?author={{.ID}}">{{.PostCount}}</a>
+                </td>
+            </tr>
+            {{else}}
+            <tr class="no-items">
+                <td class="colspanchange" colspan="{{add (len .Columns) 1}}">No users found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</form>
+{{end}}

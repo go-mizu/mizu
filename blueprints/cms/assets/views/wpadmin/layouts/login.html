@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="max-image-preview:large, noindex, noarchive">
+    <title>{{.Title}} &lsaquo; {{.SiteTitle}} &#8212; WordPress</title>
+    <link rel="stylesheet" id="dashicons-css" href="https://cdnjs.cloudflare.com/ajax/libs/dashicons/0.9.0/css/dashicons.min.css" type="text/css" media="all">
+    <link rel="stylesheet" id="buttons-css" href="/wp-admin/css/wpadmin.css" type="text/css" media="all">
+    <link rel="stylesheet" id="forms-css" href="/wp-admin/css/wpadmin.css" type="text/css" media="all">
+    <link rel="stylesheet" id="login-css" href="/wp-admin/css/wpadmin.css" type="text/css" media="all">
+</head>
+<body class="login wp-core-ui">
+    <div id="login">
+        <h1>
+            <a href="https://wordpress.org/" title="Powered by WordPress" tabindex="-1">{{.SiteTitle}}</a>
+        </h1>
+        {{template "content" .}}
+        <p id="backtoblog">
+            <a href="/">&larr; Go to {{.SiteTitle}}</a>
+        </p>
+    </div>
+    <div class="clear"></div>
+    <script type="text/javascript" src="/wp-admin/js/wpadmin.js" id="wp-admin-js"></script>
+</body>
+</html>

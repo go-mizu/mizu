@@ -1,0 +1,83 @@
+{{define "content"}}
+<h1>Writing Settings</h1>
+
+<form method="post" action="/wp-admin/options.php">
+    <input type="hidden" name="option_page" value="writing">
+    <input type="hidden" name="action" value="update">
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row"><label for="default_category">Default Post Category</label></th>
+            <td>
+                <select name="default_category" id="default_category">
+                    {{range .Options.default_category}}
+                    <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="default_post_format">Default Post Format</label></th>
+            <td>
+                <select name="default_post_format" id="default_post_format">
+                    {{range .Options.default_post_format}}
+                    <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </td>
+        </tr>
+    </table>
+
+    <h2 class="title">Post via email</h2>
+    <p>To post to WordPress by email you must set up a secret email account with POP3 access. Any mail received at this address will be posted, so it's a good idea to keep this address very secret. Here are three random strings you could use: <kbd>jK8v2mNp</kbd>, <kbd>Qx4wR9tL</kbd>, <kbd>Hn3yF7zB</kbd>.</p>
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row"><label for="mailserver_url">Mail Server</label></th>
+            <td>
+                <input name="mailserver_url" type="text" id="mailserver_url" value="mail.example.com" class="regular-text code">
+                <label for="mailserver_port">Port</label>
+                <input name="mailserver_port" type="text" id="mailserver_port" value="110" class="small-text">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="mailserver_login">Login Name</label></th>
+            <td>
+                <input name="mailserver_login" type="text" id="mailserver_login" value="login@example.com" class="regular-text ltr">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="mailserver_pass">Password</label></th>
+            <td>
+                <input name="mailserver_pass" type="password" id="mailserver_pass" value="" class="regular-text ltr">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="default_email_category">Default Mail Category</label></th>
+            <td>
+                <select name="default_email_category" id="default_email_category">
+                    {{range .Options.default_category}}
+                    <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </td>
+        </tr>
+    </table>
+
+    <h2 class="title">Update Services</h2>
+    <p>When you publish a new post, WordPress automatically notifies the following site update services. For more about this, see <a href="https://wordpress.org/documentation/article/update-services/">Update Services</a> on the Documentation wiki.</p>
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row"><label for="ping_sites">Update Services</label></th>
+            <td>
+                <textarea name="ping_sites" id="ping_sites" class="large-text code" rows="3">{{index .Settings "ping_sites"}}</textarea>
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Save Changes">
+    </p>
+</form>
+{{end}}

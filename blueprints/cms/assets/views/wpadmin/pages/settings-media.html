@@ -1,0 +1,62 @@
+{{define "content"}}
+<h1>Media Settings</h1>
+
+<form method="post" action="/wp-admin/options.php">
+    <input type="hidden" name="option_page" value="media">
+    <input type="hidden" name="action" value="update">
+
+    <h2 class="title">Image sizes</h2>
+    <p>The sizes listed below determine the maximum dimensions in pixels to use when adding an image to the Media Library.</p>
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row">Thumbnail size</th>
+            <td>
+                <label for="thumbnail_size_w">Width</label>
+                <input name="thumbnail_size_w" type="number" step="1" min="0" id="thumbnail_size_w" value="{{default "150" (index .Settings "thumbnail_size_w")}}" class="small-text">
+                <br>
+                <label for="thumbnail_size_h">Height</label>
+                <input name="thumbnail_size_h" type="number" step="1" min="0" id="thumbnail_size_h" value="{{default "150" (index .Settings "thumbnail_size_h")}}" class="small-text">
+                <br>
+                <input name="thumbnail_crop" type="checkbox" id="thumbnail_crop" value="1" {{if eq (index .Settings "thumbnail_crop") "1"}}checked{{end}}>
+                <label for="thumbnail_crop">Crop thumbnail to exact dimensions (normally thumbnails are proportional)</label>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Medium size</th>
+            <td>
+                <label for="medium_size_w">Max Width</label>
+                <input name="medium_size_w" type="number" step="1" min="0" id="medium_size_w" value="{{default "300" (index .Settings "medium_size_w")}}" class="small-text">
+                <br>
+                <label for="medium_size_h">Max Height</label>
+                <input name="medium_size_h" type="number" step="1" min="0" id="medium_size_h" value="{{default "300" (index .Settings "medium_size_h")}}" class="small-text">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Large size</th>
+            <td>
+                <label for="large_size_w">Max Width</label>
+                <input name="large_size_w" type="number" step="1" min="0" id="large_size_w" value="{{default "1024" (index .Settings "large_size_w")}}" class="small-text">
+                <br>
+                <label for="large_size_h">Max Height</label>
+                <input name="large_size_h" type="number" step="1" min="0" id="large_size_h" value="{{default "1024" (index .Settings "large_size_h")}}" class="small-text">
+            </td>
+        </tr>
+    </table>
+
+    <h2 class="title">Uploading Files</h2>
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row">Organize my uploads into month- and year-based folders</th>
+            <td>
+                <input name="uploads_use_yearmonth_folders" type="checkbox" id="uploads_use_yearmonth_folders" value="1" {{if eq (index .Settings "uploads_use_yearmonth_folders") "1"}}checked{{end}}>
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Save Changes">
+    </p>
+</form>
+{{end}}

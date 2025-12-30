@@ -57,6 +57,43 @@ update: ## Update dependencies
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
+# E2E Testing targets
+.PHONY: e2e-setup
+e2e-setup: ## Install e2e test dependencies
+	@cd e2e && npm install && npx playwright install
+
+.PHONY: e2e
+e2e: ## Run e2e tests
+	@cd e2e && npm test
+
+.PHONY: e2e-ui
+e2e-ui: ## Run e2e tests with Playwright UI
+	@cd e2e && npm run test:ui
+
+.PHONY: e2e-debug
+e2e-debug: ## Run e2e tests in debug mode
+	@cd e2e && npm run test:debug
+
+.PHONY: e2e-headed
+e2e-headed: ## Run e2e tests in headed browser mode
+	@cd e2e && npm run test:headed
+
+.PHONY: e2e-chromium
+e2e-chromium: ## Run e2e tests in Chromium only
+	@cd e2e && npm run test:chromium
+
+.PHONY: e2e-firefox
+e2e-firefox: ## Run e2e tests in Firefox only
+	@cd e2e && npm run test:firefox
+
+.PHONY: e2e-webkit
+e2e-webkit: ## Run e2e tests in WebKit only
+	@cd e2e && npm run test:webkit
+
+.PHONY: e2e-report
+e2e-report: ## Show e2e test report
+	@cd e2e && npm run report
+
 .PHONY: help
 help: ## Show available commands
 	@echo ""

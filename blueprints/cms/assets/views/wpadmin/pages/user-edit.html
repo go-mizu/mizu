@@ -1,0 +1,124 @@
+{{define "content"}}
+<h1>{{if .IsNew}}Add New User{{else}}Edit User{{end}}</h1>
+
+<form action="/wp-admin/user-edit.php" method="post" id="your-profile" novalidate="novalidate">
+    <input type="hidden" name="user_id" value="{{if .EditUser}}{{.EditUser.ID}}{{end}}">
+    <input type="hidden" name="action" value="{{if .IsNew}}createuser{{else}}update{{end}}">
+
+    <table class="form-table" role="presentation">
+        {{if .IsNew}}
+        <tr class="form-field form-required">
+            <th scope="row"><label for="user_login">Username <span class="description">(required)</span></label></th>
+            <td>
+                <input name="user_login" type="text" id="user_login" value="" class="regular-text" autocapitalize="none" autocorrect="off" autocomplete="off" maxlength="60">
+                <p class="description">Usernames cannot be changed.</p>
+            </td>
+        </tr>
+        {{else}}
+        <tr class="user-user-login-wrap">
+            <th><label for="user_login">Username</label></th>
+            <td>
+                <input type="text" name="user_login" id="user_login" value="{{.EditUser.Username}}" disabled="disabled" class="regular-text">
+                <p class="description">Usernames cannot be changed.</p>
+            </td>
+        </tr>
+        {{end}}
+
+        <tr class="form-field form-required">
+            <th scope="row"><label for="email">Email <span class="description">(required)</span></label></th>
+            <td>
+                <input name="email" type="email" id="email" value="{{if .EditUser}}{{.EditUser.Email}}{{end}}" class="regular-text ltr">
+            </td>
+        </tr>
+
+        <tr class="user-first-name-wrap">
+            <th><label for="first_name">First Name</label></th>
+            <td>
+                <input name="first_name" type="text" id="first_name" value="{{if .EditUser}}{{.EditUser.FirstName}}{{end}}" class="regular-text">
+            </td>
+        </tr>
+
+        <tr class="user-last-name-wrap">
+            <th><label for="last_name">Last Name</label></th>
+            <td>
+                <input name="last_name" type="text" id="last_name" value="{{if .EditUser}}{{.EditUser.LastName}}{{end}}" class="regular-text">
+            </td>
+        </tr>
+
+        <tr class="user-display-name-wrap">
+            <th><label for="display_name">Display name publicly as</label></th>
+            <td>
+                <input name="display_name" type="text" id="display_name" value="{{if .EditUser}}{{.EditUser.DisplayName}}{{end}}" class="regular-text">
+            </td>
+        </tr>
+
+        <tr class="user-url-wrap">
+            <th><label for="url">Website</label></th>
+            <td>
+                <input name="url" type="url" id="url" value="{{if .EditUser}}{{.EditUser.URL}}{{end}}" class="regular-text code">
+            </td>
+        </tr>
+
+        <tr class="user-description-wrap">
+            <th><label for="description">Biographical Info</label></th>
+            <td>
+                <textarea name="description" id="description" rows="5" cols="30">{{if .EditUser}}{{.EditUser.Bio}}{{end}}</textarea>
+                <p class="description">Share a little biographical information to fill out your profile.</p>
+            </td>
+        </tr>
+
+        {{if not .IsSelf}}
+        <tr class="user-role-wrap">
+            <th><label for="role">Role</label></th>
+            <td>
+                <select name="role" id="role">
+                    {{range .Roles}}
+                    <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </td>
+        </tr>
+        {{end}}
+    </table>
+
+    <h2>New Password</h2>
+    <table class="form-table" role="presentation">
+        <tr class="user-pass1-wrap">
+            <th><label for="pass1">New Password</label></th>
+            <td>
+                <input class="hidden" value=" " />
+                <button type="button" class="button wp-generate-pw hide-if-no-js">Set New Password</button>
+                <div class="wp-pwd hide-if-js">
+                    <input type="password" name="pass1" id="pass1" class="regular-text" value="" autocomplete="new-password" data-pw="">
+                </div>
+            </td>
+        </tr>
+        <tr class="user-pass2-wrap hide-if-js">
+            <th scope="row"><label for="pass2">Repeat New Password</label></th>
+            <td>
+                <input name="pass2" type="password" id="pass2" class="regular-text" value="" autocomplete="new-password">
+                <p class="description">Type your new password again.</p>
+            </td>
+        </tr>
+    </table>
+
+    {{if not .IsNew}}
+    <h2>Profile Picture</h2>
+    <table class="form-table" role="presentation">
+        <tr class="user-profile-picture">
+            <th>Profile Picture</th>
+            <td>
+                <img alt="" src="{{.AvatarURL}}" class="avatar avatar-96 photo" height="96" width="96">
+                <p class="description">
+                    You can change your profile picture on <a href="https://en.gravatar.com/">Gravatar</a>.
+                </p>
+            </td>
+        </tr>
+    </table>
+    {{end}}
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="{{if .IsNew}}Add New User{{else}}Update User{{end}}">
+    </p>
+</form>
+{{end}}

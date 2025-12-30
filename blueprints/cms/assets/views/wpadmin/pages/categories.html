@@ -1,0 +1,140 @@
+{{define "content"}}
+<h1 class="wp-heading-inline">{{.TaxLabel}}</h1>
+
+<hr class="wp-header-end">
+
+<div id="col-container" class="wp-clearfix">
+    <!-- Add New Form -->
+    <div id="col-left">
+        <div class="col-wrap">
+            <div class="form-wrap">
+                <h2>Add New Category</h2>
+                <form id="addtag" method="post" action="/wp-admin/edit-tags.php" class="validate">
+                    <input type="hidden" name="action" value="add-tag">
+                    <input type="hidden" name="taxonomy" value="{{.Taxonomy}}">
+
+                    <div class="form-field form-required term-name-wrap">
+                        <label for="tag-name">Name</label>
+                        <input name="tag-name" id="tag-name" type="text" value="" size="40">
+                        <p>The name is how it appears on your site.</p>
+                    </div>
+
+                    <div class="form-field term-slug-wrap">
+                        <label for="tag-slug">Slug</label>
+                        <input name="slug" id="tag-slug" type="text" value="" size="40">
+                        <p>The "slug" is the URL-friendly version of the name.</p>
+                    </div>
+
+                    {{if .ShowParent}}
+                    <div class="form-field term-parent-wrap">
+                        <label for="parent">Parent Category</label>
+                        <select name="parent" id="parent" class="postform">
+                            <option value="-1">None</option>
+                            {{range .ParentTerms}}
+                            <option value="{{.ID}}">{{.Name}}</option>
+                            {{end}}
+                        </select>
+                        <p>Categories, unlike tags, can have a hierarchy.</p>
+                    </div>
+                    {{end}}
+
+                    <div class="form-field term-description-wrap">
+                        <label for="tag-description">Description</label>
+                        <textarea name="description" id="tag-description" rows="5" cols="40"></textarea>
+                        <p>The description is not prominent by default.</p>
+                    </div>
+
+                    <p class="submit">
+                        <input type="submit" name="submit" id="submit" class="button button-primary" value="Add New Category">
+                    </p>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- List Table -->
+    <div id="col-right">
+        <div class="col-wrap">
+            <form id="posts-filter" method="get">
+                <input type="hidden" name="taxonomy" value="{{.Taxonomy}}">
+
+                <p class="search-box">
+                    <label class="screen-reader-text" for="tag-search-input">Search {{.TaxLabel}}:</label>
+                    <input type="search" id="tag-search-input" name="s" value="{{.SearchQuery}}">
+                    <input type="submit" class="button" value="Search {{.TaxLabel}}">
+                </p>
+
+                <div class="tablenav top">
+                    <div class="alignleft actions bulkactions">
+                        <select name="action" id="bulk-action-selector-top">
+                            <option value="-1">Bulk actions</option>
+                            {{range .BulkActions}}
+                            <option value="{{.Value}}">{{.Label}}</option>
+                            {{end}}
+                        </select>
+                        <input type="submit" class="button action" value="Apply">
+                    </div>
+
+                    <div class="tablenav-pages">
+                        <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+                    </div>
+                    <br class="clear">
+                </div>
+
+                <table class="wp-list-table widefat fixed striped table-view-list tags">
+                    <thead>
+                        <tr>
+                            <td class="manage-column column-cb check-column">
+                                <input type="checkbox">
+                            </td>
+                            {{range .Columns}}
+                            <th scope="col" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}} {{.Class}}">
+                                {{.Label}}
+                            </th>
+                            {{end}}
+                        </tr>
+                    </thead>
+                    <tbody id="the-list">
+                        {{range .Terms}}
+                        <tr id="tag-{{.ID}}">
+                            <th scope="row" class="check-column">
+                                <input type="checkbox" name="delete_tags[]" value="{{.ID}}">
+                            </th>
+                            <td class="name column-name has-row-actions column-primary" data-colname="Name">
+                                <strong>
+                                    <a class="row-title" href="/wp-admin/edit-tags.php?action=edit&taxonomy={{$.Taxonomy}}&tag_ID={{.ID}}">
+                                        {{.Name}}
+                                    </a>
+                                </strong>
+                                {{if .ParentName}}
+                                <br>&mdash; {{.ParentName}}
+                                {{end}}
+                                <div class="row-actions">
+                                    {{range $i, $action := .RowActions}}
+                                    {{if $i}} | {{end}}
+                                    <span class="{{.Class}}"><a href="{{.URL}}">{{.Label}}</a></span>
+                                    {{end}}
+                                </div>
+                            </td>
+                            <td class="description column-description" data-colname="Description">
+                                {{.Description}}
+                            </td>
+                            <td class="slug column-slug" data-colname="Slug">
+                                {{.Slug}}
+                            </td>
+                            <td class="posts column-posts num" data-colname="Count">
+                                <a href="/wp-admin/edit.php?{{if eq $.Taxonomy "category"}}category_name{{else}}tag{{end}}={{.Slug}}">{{.Count}}</a>
+                            </td>
+                        </tr>
+                        {{else}}
+                        <tr class="no-items">
+                            <td class="colspanchange" colspan="{{add (len .Columns) 1}}">No {{lower .TaxLabel}} found.</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

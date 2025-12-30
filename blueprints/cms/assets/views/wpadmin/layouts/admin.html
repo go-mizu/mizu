@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en-US" class="wp-toolbar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>{{.Title}} &lsaquo; {{.SiteTitle}} &#8212; WordPress</title>
+    <link rel="stylesheet" id="dashicons-css" href="https://cdnjs.cloudflare.com/ajax/libs/dashicons/0.9.0/css/dashicons.min.css" type="text/css" media="all">
+    <link rel="stylesheet" id="wp-admin-css" href="/wp-admin/css/wpadmin.css" type="text/css" media="all">
+</head>
+<body class="wp-admin wp-core-ui js {{if .BodyClass}}{{.BodyClass}}{{end}}">
+    <div id="wpwrap">
+        <!-- Admin Bar -->
+        <div id="wpadminbar" class="nojq nojs" role="navigation">
+            <a class="screen-reader-shortcut" href="#wp-toolbar" tabindex="1">Skip to toolbar</a>
+            <div class="quicklinks" id="wp-toolbar" role="navigation" aria-label="Toolbar">
+                <ul id="wp-admin-bar-root-default" class="ab-top-menu">
+                    <li id="wp-admin-bar-wp-logo" class="menupop">
+                        <a class="ab-item" aria-haspopup="true" href="/wp-admin/">
+                            <span class="ab-icon dashicons dashicons-wordpress" aria-hidden="true"></span>
+                            <span class="screen-reader-text">About WordPress</span>
+                        </a>
+                        <div class="ab-sub-wrapper">
+                            <ul id="wp-admin-bar-wp-logo-default" class="ab-submenu">
+                                <li id="wp-admin-bar-about"><a class="ab-item" href="/wp-admin/about.php">About WordPress</a></li>
+                                <li id="wp-admin-bar-wporg"><a class="ab-item" href="https://wordpress.org/" target="_blank">WordPress.org</a></li>
+                                <li id="wp-admin-bar-documentation"><a class="ab-item" href="https://wordpress.org/documentation/" target="_blank">Documentation</a></li>
+                                <li id="wp-admin-bar-support-forums"><a class="ab-item" href="https://wordpress.org/support/forums/" target="_blank">Support</a></li>
+                                <li id="wp-admin-bar-feedback"><a class="ab-item" href="https://wordpress.org/support/forum/requests-and-feedback" target="_blank">Feedback</a></li>
+                            </ul>
+                        </div>
+                    </li>
+                    <li id="wp-admin-bar-site-name" class="menupop">
+                        <a class="ab-item" aria-haspopup="true" href="/" target="_blank">
+                            <span class="ab-label">{{.SiteTitle}}</span>
+                        </a>
+                        <div class="ab-sub-wrapper">
+                            <ul id="wp-admin-bar-site-name-default" class="ab-submenu">
+                                <li id="wp-admin-bar-view-site"><a class="ab-item" href="/" target="_blank">Visit Site</a></li>
+                            </ul>
+                        </div>
+                    </li>
+                    <li id="wp-admin-bar-comments">
+                        <a class="ab-item" href="/wp-admin/edit-comments.php">
+                            <span class="ab-icon dashicons dashicons-admin-comments" aria-hidden="true"></span>
+                            <span class="ab-label awaiting-mod pending-count count-0" aria-hidden="true">0</span>
+                            <span class="screen-reader-text comments-in-moderation-text">0 Comments in moderation</span>
+                        </a>
+                    </li>
+                    <li id="wp-admin-bar-new-content" class="menupop">
+                        <a class="ab-item" aria-haspopup="true" href="/wp-admin/post-new.php">
+                            <span class="ab-icon dashicons dashicons-plus" aria-hidden="true"></span>
+                            <span class="ab-label">New</span>
+                        </a>
+                        <div class="ab-sub-wrapper">
+                            <ul id="wp-admin-bar-new-content-default" class="ab-submenu">
+                                <li id="wp-admin-bar-new-post"><a class="ab-item" href="/wp-admin/post-new.php">Post</a></li>
+                                <li id="wp-admin-bar-new-media"><a class="ab-item" href="/wp-admin/media-new.php">Media</a></li>
+                                <li id="wp-admin-bar-new-page"><a class="ab-item" href="/wp-admin/post-new.php?post_type=page">Page</a></li>
+                                <li id="wp-admin-bar-new-user"><a class="ab-item" href="/wp-admin/user-new.php">User</a></li>
+                            </ul>
+                        </div>
+                    </li>
+                </ul>
+                <ul id="wp-admin-bar-top-secondary" class="ab-top-secondary ab-top-menu">
+                    <li id="wp-admin-bar-search" class="admin-bar-search">
+                        <div class="ab-item ab-empty-item" tabindex="-1">
+                            <form action="/wp-admin/" method="get" id="adminbarsearch">
+                                <input class="adminbar-input" name="s" id="adminbar-search" type="text" value="" maxlength="150">
+                                <label for="adminbar-search" class="screen-reader-text">Search</label>
+                                <input type="submit" class="adminbar-button" value="Search">
+                            </form>
+                        </div>
+                    </li>
+                    <li id="wp-admin-bar-my-account" class="menupop with-avatar">
+                        <a class="ab-item" aria-haspopup="true" href="/wp-admin/profile.php">
+                            <span class="display-name">Howdy, {{.User.DisplayName}}</span>
+                            <img alt="" src="{{.User.AvatarURL}}" srcset="{{.User.AvatarURL}} 2x" class="avatar avatar-26 photo" height="26" width="26" decoding="async">
+                        </a>
+                        <div class="ab-sub-wrapper">
+                            <ul id="wp-admin-bar-user-actions" class="ab-submenu">
+                                <li id="wp-admin-bar-user-info">
+                                    <a class="ab-item" tabindex="-1" href="/wp-admin/profile.php">
+                                        <img alt="" src="{{.User.AvatarURL}}" srcset="{{.User.AvatarURL}} 2x" class="avatar avatar-64 photo" height="64" width="64" decoding="async">
+                                        <span class="display-name">{{.User.DisplayName}}</span>
+                                    </a>
+                                </li>
+                                <li id="wp-admin-bar-edit-profile"><a class="ab-item" href="/wp-admin/profile.php">Edit Profile</a></li>
+                                <li id="wp-admin-bar-logout"><a class="ab-item" href="/wp-login.php?action=logout">Log Out</a></li>
+                            </ul>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Admin Menu -->
+        <div id="adminmenumain" role="navigation" aria-label="Main menu">
+            <a href="#wpbody-content" class="screen-reader-shortcut">Skip to main content</a>
+            <div id="adminmenuwrap">
+                <ul id="adminmenu">
+                    {{range $index, $item := .Menu}}
+                    {{if $item.Separator}}
+                    <li class="wp-menu-separator" aria-hidden="true"></li>
+                    {{else}}
+                    <li class="menu-top {{if $item.Children}}wp-has-submenu{{end}} {{if $item.Active}}wp-has-current-submenu wp-menu-open current{{else if $item.Open}}wp-menu-open{{end}}" id="menu-{{$item.ID}}">
+                        <a href="{{$item.URL}}" class="wp-has-submenu wp-not-current-submenu menu-top">
+                            <div class="wp-menu-arrow"><div></div></div>
+                            <div class="wp-menu-image dashicons-before {{$item.Icon}}" aria-hidden="true"><br></div>
+                            <div class="wp-menu-name">{{$item.Title}}{{if gt $item.Badge 0}}<span class="awaiting-mod count-{{$item.Badge}}"><span class="pending-count" aria-hidden="true">{{$item.Badge}}</span><span class="comments-in-moderation-text screen-reader-text">{{$item.Badge}} pending</span></span>{{end}}</div>
+                        </a>
+                        {{if $item.Children}}
+                        <ul class="wp-submenu wp-submenu-wrap">
+                            <li class="wp-submenu-head" aria-hidden="true">{{$item.Title}}</li>
+                            {{range $item.Children}}
+                            <li class="{{if .Active}}current{{end}}">
+                                <a href="{{.URL}}" {{if .Active}}class="current" aria-current="page"{{end}}>{{.Title}}</a>
+                            </li>
+                            {{end}}
+                        </ul>
+                        {{end}}
+                    </li>
+                    {{end}}
+                    {{end}}
+                    <li id="collapse-menu" class="hide-if-no-js">
+                        <button type="button" id="collapse-button" aria-label="Collapse Main menu" aria-expanded="true">
+                            <span class="collapse-button-icon" aria-hidden="true"></span>
+                            <span class="collapse-button-label">Collapse menu</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div id="wpcontent">
+            <div id="wpbody" role="main">
+                <div id="wpbody-content">
+                    <!-- Notices -->
+                    {{range .Notices}}
+                    <div id="message" class="notice notice-{{.Type}} {{if .Dismissible}}is-dismissible{{end}}">
+                        <p>{{.Message}}</p>
+                        {{if .Dismissible}}
+                        <button type="button" class="notice-dismiss">
+                            <span class="screen-reader-text">Dismiss this notice.</span>
+                        </button>
+                        {{end}}
+                    </div>
+                    {{end}}
+
+                    <div class="wrap">
+                        <!-- Page Content -->
+                        {{template "content" .}}
+                    </div>
+                    <div class="clear"></div>
+                </div><!-- wpbody-content -->
+                <div class="clear"></div>
+            </div><!-- wpbody -->
+            <div class="clear"></div>
+        </div><!-- wpcontent -->
+
+        <!-- Footer -->
+        <div id="wpfooter" role="contentinfo">
+            <p id="footer-left" class="alignleft">
+                <span id="footer-thankyou">Thank you for creating with <a href="https://wordpress.org/">WordPress</a>.</span>
+            </p>
+            <p id="footer-upgrade" class="alignright">
+                Version 6.4.2
+            </p>
+            <div class="clear"></div>
+        </div>
+    </div><!-- wpwrap -->
+
+    <script type="text/javascript" src="/wp-admin/js/wpadmin.js" id="wp-admin-js"></script>
+</body>
+</html>

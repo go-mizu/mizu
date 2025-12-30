@@ -1,0 +1,127 @@
+{{define "content"}}
+<h1>General Settings</h1>
+
+<form method="post" action="/wp-admin/options.php">
+    <input type="hidden" name="option_page" value="general">
+    <input type="hidden" name="action" value="update">
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row"><label for="blogname">Site Title</label></th>
+            <td>
+                <input name="blogname" type="text" id="blogname" value="{{index .Settings "site_title"}}" class="regular-text">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="blogdescription">Tagline</label></th>
+            <td>
+                <input name="blogdescription" type="text" id="blogdescription" value="{{index .Settings "tagline"}}" class="regular-text">
+                <p class="description">In a few words, explain what this site is about.</p>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="siteurl">WordPress Address (URL)</label></th>
+            <td>
+                <input name="siteurl" type="url" id="siteurl" value="{{index .Settings "site_url"}}" class="regular-text code">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="home">Site Address (URL)</label></th>
+            <td>
+                <input name="home" type="url" id="home" value="{{index .Settings "site_url"}}" class="regular-text code">
+                <p class="description">Enter the address here if you want your site home page to be different from your WordPress installation directory.</p>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="new_admin_email">Administration Email Address</label></th>
+            <td>
+                <input name="new_admin_email" type="email" id="new_admin_email" value="{{index .Settings "admin_email"}}" class="regular-text ltr">
+                <p class="description">This address is used for admin purposes.</p>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Membership</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Membership</span></legend>
+                    <label for="users_can_register">
+                        <input name="users_can_register" type="checkbox" id="users_can_register" value="1" {{if eq (index .Settings "membership") "1"}}checked="checked"{{end}}>
+                        Anyone can register
+                    </label>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="default_role">New User Default Role</label></th>
+            <td>
+                <select name="default_role" id="default_role">
+                    {{range .Options.default_role}}
+                    <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="timezone_string">Timezone</label></th>
+            <td>
+                <select id="timezone_string" name="timezone_string">
+                    <option value="UTC" selected>UTC+0</option>
+                    <option value="America/New_York">America/New_York</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="Europe/Paris">Europe/Paris</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo</option>
+                </select>
+                <p class="description">Choose either a city in the same timezone as you or a UTC timezone offset.</p>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Date Format</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Date Format</span></legend>
+                    {{range .DateFormats}}
+                    <label>
+                        <input type="radio" name="date_format" value="{{.Value}}" {{if .Selected}}checked="checked"{{end}}>
+                        <span class="date-time-text format-i18n">{{.Label}}</span>
+                    </label><br>
+                    {{end}}
+                    <label>
+                        <input type="radio" name="date_format" id="date_format_custom_radio" value="custom">
+                        <span class="date-time-text">Custom:</span>
+                    </label>
+                    <input type="text" name="date_format_custom" id="date_format_custom" value="{{index .Settings "date_format"}}" class="small-text">
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Time Format</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Time Format</span></legend>
+                    {{range .TimeFormats}}
+                    <label>
+                        <input type="radio" name="time_format" value="{{.Value}}" {{if .Selected}}checked="checked"{{end}}>
+                        <span class="date-time-text format-i18n">{{.Label}}</span>
+                    </label><br>
+                    {{end}}
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="start_of_week">Week Starts On</label></th>
+            <td>
+                <select name="start_of_week" id="start_of_week">
+                    {{range .Options.week_starts}}
+                    <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Save Changes">
+    </p>
+</form>
+{{end}}

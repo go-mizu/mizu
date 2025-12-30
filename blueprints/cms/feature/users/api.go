@@ -3,6 +3,7 @@ package users
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -21,6 +22,53 @@ type User struct {
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// DisplayName returns the user's display name (Name or fallback to Email).
+func (u *User) DisplayName() string {
+	if u.Name != "" {
+		return u.Name
+	}
+	return u.Email
+}
+
+// Username returns the user's username (Slug or fallback to Email prefix).
+func (u *User) Username() string {
+	if u.Slug != "" {
+		return u.Slug
+	}
+	if u.Email != "" {
+		if at := strings.Index(u.Email, "@"); at > 0 {
+			return u.Email[:at]
+		}
+	}
+	return u.Email
+}
+
+// FirstName returns the user's first name (first part of Name).
+func (u *User) FirstName() string {
+	if u.Name == "" {
+		return ""
+	}
+	parts := strings.SplitN(u.Name, " ", 2)
+	return parts[0]
+}
+
+// LastName returns the user's last name (second part of Name).
+func (u *User) LastName() string {
+	if u.Name == "" {
+		return ""
+	}
+	parts := strings.SplitN(u.Name, " ", 2)
+	if len(parts) > 1 {
+		return parts[1]
+	}
+	return ""
+}
+
+// URL returns the user's website URL (empty for now).
+func (u *User) URL() string {
+	return ""
 }
 
 // Session represents an authenticated session.

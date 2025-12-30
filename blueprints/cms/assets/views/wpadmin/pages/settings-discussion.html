@@ -1,0 +1,186 @@
+{{define "content"}}
+<h1>Discussion Settings</h1>
+
+<form method="post" action="/wp-admin/options.php">
+    <input type="hidden" name="option_page" value="discussion">
+    <input type="hidden" name="action" value="update">
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row">Default post settings</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Default post settings</span></legend>
+                    <label for="default_pingback_flag">
+                        <input name="default_pingback_flag" type="checkbox" id="default_pingback_flag" value="1" {{if eq (index .Settings "default_pingback_flag") "1"}}checked{{end}}>
+                        Attempt to notify any blogs linked to from the post
+                    </label><br>
+                    <label for="default_ping_status">
+                        <input name="default_ping_status" type="checkbox" id="default_ping_status" value="open" {{if eq (index .Settings "default_ping_status") "open"}}checked{{end}}>
+                        Allow link notifications from other blogs (pingbacks and trackbacks) on new posts
+                    </label><br>
+                    <label for="default_comment_status">
+                        <input name="default_comment_status" type="checkbox" id="default_comment_status" value="open" {{if eq (index .Settings "default_comment_status") "open"}}checked{{end}}>
+                        Allow people to submit comments on new posts
+                    </label>
+                    <p class="description">Individual posts may override these settings.</p>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Other comment settings</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Other comment settings</span></legend>
+                    <label for="require_name_email">
+                        <input type="checkbox" name="require_name_email" id="require_name_email" value="1" {{if eq (index .Settings "require_name_email") "1"}}checked{{end}}>
+                        Comment author must fill out name and email
+                    </label><br>
+                    <label for="comment_registration">
+                        <input type="checkbox" name="comment_registration" id="comment_registration" value="1" {{if eq (index .Settings "comment_registration") "1"}}checked{{end}}>
+                        Users must be registered and logged in to comment
+                    </label><br>
+                    <label for="close_comments_for_old_posts">
+                        <input type="checkbox" name="close_comments_for_old_posts" id="close_comments_for_old_posts" value="1" {{if eq (index .Settings "close_comments_for_old_posts") "1"}}checked{{end}}>
+                        Automatically close comments on posts older than
+                    </label>
+                    <input name="close_comments_days_old" type="number" min="0" step="1" id="close_comments_days_old" value="{{default "14" (index .Settings "close_comments_days_old")}}" class="small-text"> days
+                    <br>
+                    <label for="thread_comments">
+                        <input type="checkbox" name="thread_comments" id="thread_comments" value="1" {{if eq (index .Settings "thread_comments") "1"}}checked{{end}}>
+                        Enable threaded (nested) comments
+                    </label>
+                    <select name="thread_comments_depth" id="thread_comments_depth">
+                        {{range .Options.thread_comments_depth}}
+                        <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                        {{end}}
+                    </select> deep
+                    <br>
+                    <label for="page_comments">
+                        <input type="checkbox" name="page_comments" id="page_comments" value="1" {{if eq (index .Settings "page_comments") "1"}}checked{{end}}>
+                        Break comments into pages with
+                    </label>
+                    <input name="comments_per_page" type="number" min="0" step="1" id="comments_per_page" value="{{default "50" (index .Settings "comments_per_page")}}" class="small-text"> top level comments per page and the
+                    <select name="default_comments_page" id="default_comments_page">
+                        {{range .Options.default_comments_page}}
+                        <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                        {{end}}
+                    </select>
+                    page displayed by default
+                    <br>
+                    Comments should be displayed with the
+                    <select name="comment_order" id="comment_order">
+                        {{range .Options.comment_order}}
+                        <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                        {{end}}
+                    </select>
+                    comments at the top of each page
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Email me whenever</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Email me whenever</span></legend>
+                    <label for="comments_notify">
+                        <input type="checkbox" name="comments_notify" id="comments_notify" value="1" {{if eq (index .Settings "comments_notify") "1"}}checked{{end}}>
+                        Anyone posts a comment
+                    </label><br>
+                    <label for="moderation_notify">
+                        <input type="checkbox" name="moderation_notify" id="moderation_notify" value="1" {{if eq (index .Settings "moderation_notify") "1"}}checked{{end}}>
+                        A comment is held for moderation
+                    </label>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Before a comment appears</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Before a comment appears</span></legend>
+                    <label for="comment_moderation">
+                        <input type="checkbox" name="comment_moderation" id="comment_moderation" value="1" {{if eq (index .Settings "comment_moderation") "1"}}checked{{end}}>
+                        Comment must be manually approved
+                    </label><br>
+                    <label for="comment_previously_approved">
+                        <input type="checkbox" name="comment_previously_approved" id="comment_previously_approved" value="1" {{if eq (index .Settings "comment_previously_approved") "1"}}checked{{end}}>
+                        Comment author must have a previously approved comment
+                    </label>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Comment Moderation</th>
+            <td>
+                <p>
+                    <label for="comment_max_links">Hold a comment in the queue if it contains
+                    <input name="comment_max_links" type="number" min="0" step="1" id="comment_max_links" value="{{default "2" (index .Settings "comment_max_links")}}" class="small-text"> or more links.</label>
+                </p>
+                <p>
+                    <label for="moderation_keys">When a comment contains any of these words in its content, author name, URL, email, IP address, or browser's user agent string, it will be held in the moderation queue. One word or IP address per line. It will match inside words, so "press" will match "WordPress".</label>
+                </p>
+                <textarea name="moderation_keys" rows="10" cols="50" id="moderation_keys" class="large-text code">{{index .Settings "moderation_keys"}}</textarea>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Disallowed Comment Keys</th>
+            <td>
+                <p>
+                    <label for="disallowed_keys">When a comment contains any of these words in its content, author name, URL, email, IP address, or browser's user agent string, it will be put in the Trash. One word or IP address per line.</label>
+                </p>
+                <textarea name="disallowed_keys" rows="10" cols="50" id="disallowed_keys" class="large-text code">{{index .Settings "disallowed_keys"}}</textarea>
+            </td>
+        </tr>
+    </table>
+
+    <h2 class="title">Avatars</h2>
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row">Avatar Display</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Avatar Display</span></legend>
+                    <label for="show_avatars">
+                        <input type="checkbox" id="show_avatars" name="show_avatars" value="1" {{if ne (index .Settings "show_avatars") "0"}}checked{{end}}>
+                        Show Avatars
+                    </label>
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Maximum Rating</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Maximum Rating</span></legend>
+                    {{range .Options.avatar_rating}}
+                    <label>
+                        <input type="radio" name="avatar_rating" value="{{.Value}}" {{if .Selected}}checked{{end}}>
+                        {{.Label}}
+                    </label><br>
+                    {{end}}
+                </fieldset>
+            </td>
+        </tr>
+        <tr>
+            <th scope="row">Default Avatar</th>
+            <td>
+                <fieldset>
+                    <legend class="screen-reader-text"><span>Default Avatar</span></legend>
+                    {{range .Options.avatar_default}}
+                    <label>
+                        <input type="radio" name="avatar_default" value="{{.Value}}" {{if .Selected}}checked{{end}}>
+                        {{.Label}}
+                    </label><br>
+                    {{end}}
+                </fieldset>
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Save Changes">
+    </p>
+</form>
+{{end}}

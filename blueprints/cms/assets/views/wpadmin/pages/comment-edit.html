@@ -1,0 +1,77 @@
+{{define "content"}}
+<h1>Edit Comment</h1>
+
+<form action="/wp-admin/comment.php" method="post" id="comment">
+    <input type="hidden" name="c" value="{{.Comment.ID}}">
+    <input type="hidden" name="action" value="editedcomment">
+
+    <div id="poststuff">
+        <div id="post-body" class="metabox-holder">
+            <div id="post-body-content">
+                <table class="form-table editcomment">
+                    <tr>
+                        <th scope="row"><label for="name">Author Name</label></th>
+                        <td>
+                            <input type="text" name="newcomment_author" id="name" value="{{.AuthorName}}" class="regular-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="email">Author Email</label></th>
+                        <td>
+                            <input type="email" name="newcomment_author_email" id="email" value="{{.AuthorEmail}}" class="regular-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="newcomment_author_url">Author URL</label></th>
+                        <td>
+                            <input type="url" name="newcomment_author_url" id="newcomment_author_url" value="{{.AuthorURL}}" class="regular-text code">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="comment_status">Status</label></th>
+                        <td>
+                            <select name="comment_status" id="comment_status">
+                                {{range .Statuses}}
+                                <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                                {{end}}
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="content">Comment</label></th>
+                        <td>
+                            <textarea id="content" name="content" cols="60" rows="10" class="large-text">{{.Comment.Content}}</textarea>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">In Response To</th>
+                        <td>
+                            <a href="{{if .Post}}/wp-admin/post.php?post={{.Post.ID}}&action=edit{{end}}">
+                                {{.PostTitle}}
+                            </a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Submitted on</th>
+                        <td>
+                            {{formatDateTime .Comment.CreatedAt}}
+                        </td>
+                    </tr>
+                </table>
+
+                <div class="submitbox">
+                    <div id="major-publishing-actions">
+                        <div id="delete-action">
+                            <a class="submitdelete deletion" href="/wp-admin/comment.php?c={{.Comment.ID}}&action=trash">Move to Trash</a>
+                        </div>
+                        <div id="publishing-action">
+                            <input type="submit" name="save" id="save" class="button button-primary button-large" value="Update">
+                        </div>
+                        <div class="clear"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{{end}}

@@ -1,0 +1,109 @@
+{{define "content"}}
+<h1 class="wp-heading-inline">Comments</h1>
+
+<hr class="wp-header-end">
+
+<!-- Status Tabs -->
+<ul class="subsubsub">
+    {{range $i, $tab := .StatusTabs}}
+    {{if $i}} | {{end}}
+    <li class="{{.Status}}">
+        <a href="{{.URL}}" {{if .Active}}class="current"{{end}}>
+            {{.Label}} <span class="count">({{.Count}})</span>
+        </a>
+    </li>
+    {{end}}
+</ul>
+
+<form id="comments-form" method="get">
+    <p class="search-box">
+        <label class="screen-reader-text" for="comment-search-input">Search Comments:</label>
+        <input type="search" id="comment-search-input" name="s" value="{{.SearchQuery}}">
+        <input type="submit" id="search-submit" class="button" value="Search Comments">
+    </p>
+
+    <div class="tablenav top">
+        <div class="alignleft actions bulkactions">
+            <select name="action" id="bulk-action-selector-top">
+                <option value="-1">Bulk actions</option>
+                {{range .BulkActions}}
+                <option value="{{.Value}}">{{.Label}}</option>
+                {{end}}
+            </select>
+            <input type="submit" class="button action" value="Apply">
+        </div>
+
+        <div class="tablenav-pages">
+            <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+        </div>
+        <br class="clear">
+    </div>
+
+    <table class="wp-list-table widefat fixed striped table-view-list comments">
+        <thead>
+            <tr>
+                <td class="manage-column column-cb check-column">
+                    <input type="checkbox">
+                </td>
+                {{range .Columns}}
+                <th scope="col" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}}">
+                    {{.Label}}
+                </th>
+                {{end}}
+            </tr>
+        </thead>
+        <tbody id="the-comment-list">
+            {{range .Comments}}
+            <tr id="comment-{{.ID}}" class="comment {{if .Pending}}unapproved{{end}}">
+                <th scope="row" class="check-column">
+                    <input type="checkbox" name="delete_comments[]" value="{{.ID}}">
+                </th>
+                <td class="author column-author has-row-actions column-primary" data-colname="Author">
+                    <img alt="" src="{{.AuthorAvatar}}" class="avatar avatar-32 photo" height="32" width="32">
+                    <strong>{{.AuthorName}}</strong><br>
+                    {{if .AuthorEmail}}
+                    <a href="mailto:{{.AuthorEmail}}">{{.AuthorEmail}}</a><br>
+                    {{end}}
+                    {{if .AuthorURL}}
+                    <a href="{{.AuthorURL}}">{{.AuthorURL}}</a>
+                    {{end}}
+                </td>
+                <td class="comment column-comment">
+                    {{if .Pending}}
+                    <div class="comment-waiting-status">
+                        <em class="comment-awaiting-moderation">Pending</em>
+                    </div>
+                    {{end}}
+                    <div class="comment-text">
+                        <p>{{.Content}}</p>
+                    </div>
+                    <div class="row-actions">
+                        {{range $i, $action := .RowActions}}
+                        {{if $i}} | {{end}}
+                        <span class="{{.Class}}"><a href="{{.URL}}">{{.Label}}</a></span>
+                        {{end}}
+                    </div>
+                </td>
+                <td class="response column-response" data-colname="In Response To">
+                    <div class="response-links">
+                        <span class="post-com-count-wrapper post-com-count-approved">
+                            <a href="{{.PostEditURL}}" class="comments-edit-item-link">
+                                {{.PostTitle}}
+                            </a>
+                        </span>
+                        <a href="{{.PostViewURL}}" class="comments-view-item-link">&nbsp;View Post</a>
+                    </div>
+                </td>
+                <td class="date column-date" data-colname="Submitted On">
+                    {{formatDateTime .CreatedAt}}
+                </td>
+            </tr>
+            {{else}}
+            <tr class="no-items">
+                <td class="colspanchange" colspan="5">No comments found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</form>
+{{end}}

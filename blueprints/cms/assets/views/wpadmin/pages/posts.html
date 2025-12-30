@@ -1,0 +1,201 @@
+{{define "content"}}
+<h1 class="wp-heading-inline">Posts</h1>
+<a href="/wp-admin/post-new.php" class="page-title-action">Add New</a>
+
+{{if .SearchQuery}}
+<span class="subtitle">Search results for: <strong>{{.SearchQuery}}</strong></span>
+{{end}}
+
+<hr class="wp-header-end">
+
+<!-- Status Tabs -->
+<ul class="subsubsub">
+    {{range $i, $tab := .StatusTabs}}
+    {{if $i}} | {{end}}
+    <li class="{{.Status}}">
+        <a href="{{.URL}}" {{if .Active}}class="current" aria-current="page"{{end}}>
+            {{.Label}} <span class="count">({{.Count}})</span>
+        </a>
+    </li>
+    {{end}}
+</ul>
+
+<form id="posts-filter" method="get">
+    <!-- Search Box -->
+    <p class="search-box">
+        <label class="screen-reader-text" for="post-search-input">Search Posts:</label>
+        <input type="search" id="post-search-input" name="s" value="{{.SearchQuery}}">
+        <input type="submit" id="search-submit" class="button" value="Search Posts">
+    </p>
+
+    <!-- Bulk Actions Top -->
+    <div class="tablenav top">
+        <div class="alignleft actions bulkactions">
+            <label for="bulk-action-selector-top" class="screen-reader-text">Select bulk action</label>
+            <select name="action" id="bulk-action-selector-top">
+                <option value="-1">Bulk actions</option>
+                {{range .BulkActions}}
+                <option value="{{.Value}}">{{.Label}}</option>
+                {{end}}
+            </select>
+            <input type="submit" id="doaction" class="button action" value="Apply">
+        </div>
+
+        <!-- Pagination -->
+        <div class="tablenav-pages">
+            <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+            {{if gt .Pagination.TotalPages 1}}
+            <span class="pagination-links">
+                {{if gt .Pagination.CurrentPage 1}}
+                <a class="first-page button" href="{{.Pagination.BaseURL}}&paged=1"><span class="screen-reader-text">First page</span><span aria-hidden="true">&laquo;</span></a>
+                <a class="prev-page button" href="{{.Pagination.BaseURL}}&paged={{sub .Pagination.CurrentPage 1}}"><span class="screen-reader-text">Previous page</span><span aria-hidden="true">&lsaquo;</span></a>
+                {{else}}
+                <span class="tablenav-pages-navspan button disabled" aria-hidden="true">&laquo;</span>
+                <span class="tablenav-pages-navspan button disabled" aria-hidden="true">&lsaquo;</span>
+                {{end}}
+                <span class="paging-input">
+                    <label for="current-page-selector" class="screen-reader-text">Current Page</label>
+                    <input class="current-page" id="current-page-selector" type="text" name="paged" value="{{.Pagination.CurrentPage}}" size="1" aria-describedby="table-paging">
+                    <span class="tablenav-paging-text"> of <span class="total-pages">{{.Pagination.TotalPages}}</span></span>
+                </span>
+                {{if lt .Pagination.CurrentPage .Pagination.TotalPages}}
+                <a class="next-page button" href="{{.Pagination.BaseURL}}&paged={{add .Pagination.CurrentPage 1}}"><span class="screen-reader-text">Next page</span><span aria-hidden="true">&rsaquo;</span></a>
+                <a class="last-page button" href="{{.Pagination.BaseURL}}&paged={{.Pagination.TotalPages}}"><span class="screen-reader-text">Last page</span><span aria-hidden="true">&raquo;</span></a>
+                {{else}}
+                <span class="tablenav-pages-navspan button disabled" aria-hidden="true">&rsaquo;</span>
+                <span class="tablenav-pages-navspan button disabled" aria-hidden="true">&raquo;</span>
+                {{end}}
+            </span>
+            {{end}}
+        </div>
+        <br class="clear">
+    </div>
+
+    <!-- Table -->
+    <table class="wp-list-table widefat fixed striped table-view-list posts">
+        <thead>
+            <tr>
+                <td id="cb" class="manage-column column-cb check-column">
+                    <label class="screen-reader-text" for="cb-select-all-1">Select All</label>
+                    <input id="cb-select-all-1" type="checkbox">
+                </td>
+                {{range .Columns}}
+                <th scope="col" id="{{.ID}}" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}} {{if .Sortable}}sortable {{if eq $.OrderBy .ID}}sorted{{end}}{{end}} {{.Class}}">
+                    {{if .Sortable}}
+                    <a href="{{$.Pagination.BaseURL}}&orderby={{.ID}}&order={{if and (eq $.OrderBy .ID) (eq $.Order "asc")}}desc{{else}}asc{{end}}">
+                        <span>{{.Label}}</span>
+                        <span class="sorting-indicator"></span>
+                    </a>
+                    {{else}}
+                    {{.Label}}
+                    {{end}}
+                </th>
+                {{end}}
+            </tr>
+        </thead>
+        <tbody id="the-list">
+            {{range .Posts}}
+            <tr id="post-{{.ID}}" class="iedit author-self level-0 post-{{.ID}} type-post status-{{.Status}} format-standard hentry">
+                <th scope="row" class="check-column">
+                    <label class="screen-reader-text" for="cb-select-{{.ID}}">Select {{.Title}}</label>
+                    <input id="cb-select-{{.ID}}" type="checkbox" name="post[]" value="{{.ID}}">
+                </th>
+                <td class="title column-title has-row-actions column-primary" data-colname="Title">
+                    <div class="locked-info"><span class="locked-avatar"></span> <span class="locked-text"></span></div>
+                    <strong>
+                        <a class="row-title" href="/wp-admin/post.php?post={{.ID}}&action=edit">{{.Title}}</a>
+                        {{if eq .Status "draft"}} — <span class="post-state">Draft</span>{{end}}
+                        {{if eq .Status "pending"}} — <span class="post-state">Pending</span>{{end}}
+                    </strong>
+                    <div class="row-actions">
+                        {{range $i, $action := .RowActions}}
+                        {{if $i}} | {{end}}
+                        <span class="{{.Class}}"><a href="{{.URL}}" {{.Attr}}>{{.Label}}</a></span>
+                        {{end}}
+                    </div>
+                    <button type="button" class="toggle-row"><span class="screen-reader-text">Show more details</span></button>
+                </td>
+                <td class="author column-author" data-colname="Author">
+                    {{if .Author}}
+                    <a href="/wp-admin/edit.php?author={{.Author.ID}}">{{.Author.DisplayName}}</a>
+                    {{end}}
+                </td>
+                <td class="categories column-categories" data-colname="Categories">
+                    {{range $i, $cat := .Categories}}
+                    {{if $i}}, {{end}}
+                    <a href="/wp-admin/edit.php?category_name={{$cat.Slug}}">{{$cat.Name}}</a>
+                    {{else}}
+                    —
+                    {{end}}
+                </td>
+                <td class="tags column-tags" data-colname="Tags">
+                    {{range $i, $tag := .Tags}}
+                    {{if $i}}, {{end}}
+                    <a href="/wp-admin/edit.php?tag={{$tag.Slug}}">{{$tag.Name}}</a>
+                    {{else}}
+                    —
+                    {{end}}
+                </td>
+                <td class="comments column-comments" data-colname="Comments">
+                    <div class="post-com-count-wrapper">
+                        <a href="/wp-admin/edit-comments.php?p={{.ID}}" class="post-com-count post-com-count-approved">
+                            <span class="comment-count-approved">{{.CommentCount}}</span>
+                        </a>
+                    </div>
+                </td>
+                <td class="date column-date" data-colname="Date">
+                    {{if eq .Status "published"}}
+                    Published<br>
+                    {{else}}
+                    Last Modified<br>
+                    {{end}}
+                    {{formatDate .UpdatedAt}}
+                </td>
+            </tr>
+            {{else}}
+            <tr class="no-items">
+                <td class="colspanchange" colspan="{{add (len .Columns) 1}}">No posts found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td class="manage-column column-cb check-column">
+                    <label class="screen-reader-text" for="cb-select-all-2">Select All</label>
+                    <input id="cb-select-all-2" type="checkbox">
+                </td>
+                {{range .Columns}}
+                <th scope="col" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}} {{if .Sortable}}sortable{{end}} {{.Class}}">
+                    {{if .Sortable}}
+                    <a href="{{$.Pagination.BaseURL}}&orderby={{.ID}}&order={{if and (eq $.OrderBy .ID) (eq $.Order "asc")}}desc{{else}}asc{{end}}">
+                        <span>{{.Label}}</span>
+                        <span class="sorting-indicator"></span>
+                    </a>
+                    {{else}}
+                    {{.Label}}
+                    {{end}}
+                </th>
+                {{end}}
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- Bulk Actions Bottom -->
+    <div class="tablenav bottom">
+        <div class="alignleft actions bulkactions">
+            <label for="bulk-action-selector-bottom" class="screen-reader-text">Select bulk action</label>
+            <select name="action2" id="bulk-action-selector-bottom">
+                <option value="-1">Bulk actions</option>
+                {{range .BulkActions}}
+                <option value="{{.Value}}">{{.Label}}</option>
+                {{end}}
+            </select>
+            <input type="submit" id="doaction2" class="button action" value="Apply">
+        </div>
+        <div class="tablenav-pages">
+            <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+        </div>
+        <br class="clear">
+    </div>
+</form>
+{{end}}
