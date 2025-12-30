@@ -1,0 +1,209 @@
+{{define "menu-item"}}
+<li id="menu-item-{{.ID}}" class="menu-item menu-item-depth-{{.Depth}}">
+    <div class="menu-item-bar">
+        <div class="menu-item-handle">
+            <span class="item-title">
+                <span class="menu-item-title">{{.Title}}</span>
+                <span class="is-submenu">sub item</span>
+            </span>
+            <span class="item-controls">
+                <span class="item-type">{{.TypeLabel}}</span>
+                <span class="item-order hide-if-js">
+                    <a href="#" class="item-move-up" aria-label="Move up"></a>|
+                    <a href="#" class="item-move-down" aria-label="Move down"></a>
+                </span>
+                <a class="item-edit" href="#"><span class="screen-reader-text">Edit</span></a>
+            </span>
+        </div>
+    </div>
+    <div class="menu-item-settings" id="menu-item-settings-{{.ID}}">
+        <p class="field-url description">
+            <label for="edit-menu-item-url-{{.ID}}">
+                URL
+                <input type="text" id="edit-menu-item-url-{{.ID}}" class="widefat code edit-menu-item-url" name="menu-item-url[{{.ID}}]" value="{{.URL}}">
+            </label>
+        </p>
+        <p class="description field-title">
+            <label for="edit-menu-item-title-{{.ID}}">
+                Navigation Label
+                <input type="text" id="edit-menu-item-title-{{.ID}}" class="widefat edit-menu-item-title" name="menu-item-title[{{.ID}}]" value="{{.Title}}">
+            </label>
+        </p>
+        <div class="menu-item-actions description-wide submitbox">
+            <a class="item-delete submitdelete deletion" href="#">Remove</a>
+            <span class="meta-sep"> | </span>
+            <a class="item-cancel submitcancel" href="#">Cancel</a>
+        </div>
+    </div>
+    {{if .Children}}
+    <ul class="menu-item-children">
+        {{range .Children}}
+        {{template "menu-item" .}}
+        {{end}}
+    </ul>
+    {{end}}
+</li>
+{{end}}
+
+{{define "content"}}
+<h1 class="wp-heading-inline">Menus</h1>
+
+<hr class="wp-header-end">
+
+<div id="nav-menus-frame" class="wp-clearfix">
+    <!-- Sidebar: Available Menu Items -->
+    <div id="menu-settings-column" class="metabox-holder">
+        <div id="side-sortables" class="accordion-container">
+            <ul class="outer-border">
+                <!-- Pages -->
+                <li class="control-section accordion-section open add-page">
+                    <h3 class="accordion-section-title hndle">
+                        Pages
+                        <button type="button" class="button-link item-edit" aria-expanded="true">
+                            <span class="screen-reader-text">Toggle</span>
+                        </button>
+                    </h3>
+                    <div class="accordion-section-content">
+                        <div class="tabs-panel tabs-panel-active">
+                            <ul class="categorychecklist form-no-clear">
+                                {{range .AvailableItems.Pages}}
+                                <li>
+                                    <label class="menu-item-title">
+                                        <input type="checkbox" class="menu-item-checkbox" name="menu-item[{{.ID}}][menu-item-object-id]" value="{{.ID}}">
+                                        {{.Title}}
+                                    </label>
+                                </li>
+                                {{end}}
+                            </ul>
+                        </div>
+                        <p class="button-controls">
+                            <span class="add-to-menu">
+                                <input type="submit" class="button submit-add-to-menu right" value="Add to Menu">
+                                <span class="spinner"></span>
+                            </span>
+                        </p>
+                    </div>
+                </li>
+
+                <!-- Posts -->
+                <li class="control-section accordion-section add-post">
+                    <h3 class="accordion-section-title hndle">Posts</h3>
+                    <div class="accordion-section-content">
+                        <div class="tabs-panel">
+                            <ul class="categorychecklist form-no-clear">
+                                {{range .AvailableItems.Posts}}
+                                <li>
+                                    <label class="menu-item-title">
+                                        <input type="checkbox" class="menu-item-checkbox" name="menu-item[{{.ID}}][menu-item-object-id]" value="{{.ID}}">
+                                        {{.Title}}
+                                    </label>
+                                </li>
+                                {{end}}
+                            </ul>
+                        </div>
+                    </div>
+                </li>
+
+                <!-- Custom Links -->
+                <li class="control-section accordion-section add-custom-links">
+                    <h3 class="accordion-section-title hndle">Custom Links</h3>
+                    <div class="accordion-section-content">
+                        <p class="description">
+                            <label>
+                                <span>URL</span>
+                                <input id="custom-menu-item-url" name="menu-item[-1][menu-item-url]" type="text" class="code" value="https://">
+                            </label>
+                        </p>
+                        <p class="description">
+                            <label>
+                                <span>Link Text</span>
+                                <input id="custom-menu-item-name" name="menu-item[-1][menu-item-title]" type="text">
+                            </label>
+                        </p>
+                        <p class="button-controls">
+                            <span class="add-to-menu">
+                                <input type="submit" class="button submit-add-to-menu" value="Add to Menu">
+                            </span>
+                        </p>
+                    </div>
+                </li>
+
+                <!-- Categories -->
+                <li class="control-section accordion-section add-category">
+                    <h3 class="accordion-section-title hndle">Categories</h3>
+                    <div class="accordion-section-content">
+                        <div class="tabs-panel">
+                            <ul class="categorychecklist form-no-clear">
+                                {{range .AvailableItems.Categories}}
+                                <li>
+                                    <label class="menu-item-title">
+                                        <input type="checkbox" class="menu-item-checkbox" name="menu-item[{{.ID}}][menu-item-object-id]" value="{{.ID}}">
+                                        {{.Name}}
+                                    </label>
+                                </li>
+                                {{end}}
+                            </ul>
+                        </div>
+                    </div>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Main: Menu Structure -->
+    <div id="menu-management-liquid">
+        <div id="menu-management">
+            <form id="update-nav-menu" action="/wp-admin/nav-menus.php" method="post">
+                <div class="menu-edit">
+                    <div id="nav-menu-header">
+                        <div class="major-publishing-actions wp-clearfix">
+                            <label class="menu-name-label" for="menu-name">Menu Name</label>
+                            <input name="menu-name" id="menu-name" type="text" class="menu-name regular-text menu-item-textbox"
+                                   value="{{if .ActiveMenu}}{{.ActiveMenu.Name}}{{end}}">
+                            <div class="publishing-action">
+                                <input type="submit" class="button button-primary button-large menu-save" value="{{if .IsNew}}Create Menu{{else}}Save Menu{{end}}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="post-body">
+                        <div id="post-body-content" class="wp-clearfix">
+                            {{if .ActiveMenu}}
+                            <h3>Menu Structure</h3>
+                            <div class="drag-instructions post-body-plain">
+                                <p>Drag each item into the order you prefer. Click the arrow on the right of the item to reveal additional configuration options.</p>
+                            </div>
+
+                            <ul class="menu" id="menu-to-edit">
+                                {{range .MenuItems}}
+                                {{template "menu-item" .}}
+                                {{end}}
+                            </ul>
+                            {{else}}
+                            <div class="manage-menus">
+                                <span class="add-new-menu-action">
+                                    or <a href="/wp-admin/nav-menus.php?action=edit&menu=0">create a new menu</a>. Don't forget to save your changes!
+                                </span>
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <div id="nav-menu-footer">
+                        <div class="major-publishing-actions wp-clearfix">
+                            {{if .ActiveMenu}}
+                            <span class="delete-action">
+                                <a class="submitdelete deletion menu-delete" href="/wp-admin/nav-menus.php?action=delete&menu={{.ActiveMenu.ID}}">Delete Menu</a>
+                            </span>
+                            {{end}}
+                            <div class="publishing-action">
+                                <input type="submit" class="button button-primary button-large menu-save" value="Save Menu">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

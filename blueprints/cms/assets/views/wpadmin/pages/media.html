@@ -1,0 +1,129 @@
+{{define "content"}}
+<h1 class="wp-heading-inline">Media Library</h1>
+<a href="/wp-admin/media-new.php" class="page-title-action">Add New</a>
+
+<hr class="wp-header-end">
+
+<form id="posts-filter" method="get">
+    <p class="search-box">
+        <label class="screen-reader-text" for="media-search-input">Search Media:</label>
+        <input type="search" id="media-search-input" name="s" value="{{.SearchQuery}}">
+        <input type="submit" id="search-submit" class="button" value="Search Media">
+    </p>
+
+    <div class="tablenav top">
+        <div class="alignleft actions">
+            <label for="attachment-filter" class="screen-reader-text">Filter by type</label>
+            <select name="attachment-filter" id="attachment-filter">
+                <option value="">All media items</option>
+                <option value="image" {{if eq .FilterType "image"}}selected{{end}}>Images</option>
+                <option value="audio" {{if eq .FilterType "audio"}}selected{{end}}>Audio</option>
+                <option value="video" {{if eq .FilterType "video"}}selected{{end}}>Video</option>
+                <option value="application" {{if eq .FilterType "application"}}selected{{end}}>Documents</option>
+            </select>
+            <input type="submit" class="button" value="Filter">
+        </div>
+
+        <div class="view-switch">
+            <a href="?mode=list" class="view-list {{if eq .ViewMode "list"}}current{{end}}">
+                <span class="screen-reader-text">List view</span>
+            </a>
+            <a href="?mode=grid" class="view-grid {{if eq .ViewMode "grid"}}current{{end}}">
+                <span class="screen-reader-text">Grid view</span>
+            </a>
+        </div>
+
+        <div class="tablenav-pages">
+            <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+        </div>
+        <br class="clear">
+    </div>
+
+    {{if eq .ViewMode "grid"}}
+    <!-- Grid View -->
+    <div class="media-frame wp-core-ui mode-grid">
+        <ul class="attachments ui-sortable ui-sortable-disabled">
+            {{range .Items}}
+            <li class="attachment" data-id="{{.ID}}">
+                <div class="attachment-preview type-image">
+                    <div class="thumbnail">
+                        <div class="centered">
+                            <img src="{{.ThumbnailURL}}" draggable="false" alt="">
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="check" tabindex="0">
+                    <span class="media-modal-icon"></span>
+                    <span class="screen-reader-text">Deselect</span>
+                </button>
+                <div class="attachment-details">
+                    <a href="/wp-admin/post.php?post={{.ID}}&action=edit" class="edit-attachment">Edit</a>
+                </div>
+            </li>
+            {{else}}
+            <li class="no-items">No media items found.</li>
+            {{end}}
+        </ul>
+    </div>
+    {{else}}
+    <!-- List View -->
+    <table class="wp-list-table widefat fixed striped table-view-list media">
+        <thead>
+            <tr>
+                <td class="manage-column column-cb check-column">
+                    <input type="checkbox">
+                </td>
+                {{range .Columns}}
+                <th scope="col" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}}">
+                    {{.Label}}
+                </th>
+                {{end}}
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Items}}
+            <tr id="post-{{.ID}}">
+                <th scope="row" class="check-column">
+                    <input type="checkbox" name="media[]" value="{{.ID}}">
+                </th>
+                <td class="title column-title has-row-actions column-primary">
+                    <strong>
+                        <a class="row-title" href="/wp-admin/post.php?post={{.ID}}&action=edit">
+                            <span class="media-icon image-icon">
+                                <img width="60" height="60" src="{{.ThumbnailURL}}" class="attachment-60x60" alt="">
+                            </span>
+                            {{.Title}}
+                        </a>
+                    </strong>
+                    <p class="filename">{{.FileName}}</p>
+                    <div class="row-actions">
+                        {{range $i, $action := .RowActions}}
+                        {{if $i}} | {{end}}
+                        <span class="{{.Class}}"><a href="{{.URL}}">{{.Label}}</a></span>
+                        {{end}}
+                    </div>
+                </td>
+                <td class="author column-author">
+                    {{if .Uploader}}{{.Uploader.DisplayName}}{{end}}
+                </td>
+                <td class="parent column-parent">
+                    {{range .AttachedTo}}
+                    <a href="{{.EditURL}}">{{.Title}}</a>
+                    {{else}}
+                    (Unattached)
+                    {{end}}
+                </td>
+                <td class="date column-date">
+                    {{formatDate .CreatedAt}}
+                </td>
+            </tr>
+            {{else}}
+            <tr class="no-items">
+                <td class="colspanchange" colspan="5">No media items found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{end}}
+</form>
+{{end}}

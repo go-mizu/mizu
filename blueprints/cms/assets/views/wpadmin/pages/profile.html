@@ -1,0 +1,132 @@
+{{define "content"}}
+<h1>Profile</h1>
+
+<form id="your-profile" action="/wp-admin/profile.php" method="post" novalidate="novalidate">
+    <input type="hidden" name="action" value="update">
+
+    <h2>Personal Options</h2>
+
+    <table class="form-table" role="presentation">
+        <tr class="user-admin-color-wrap">
+            <th scope="row">Admin Color Scheme</th>
+            <td>
+                <fieldset id="color-picker" class="scheme-list">
+                    <legend class="screen-reader-text"><span>Admin Color Scheme</span></legend>
+                    {{range .ColorSchemes}}
+                    <div class="color-option {{if eq $.CurrentScheme .ID}}selected{{end}}">
+                        <input name="admin_color" id="admin_color_{{.ID}}" type="radio" value="{{.ID}}" {{if eq $.CurrentScheme .ID}}checked="checked"{{end}}>
+                        <label for="admin_color_{{.ID}}">{{.Name}}</label>
+                        <table class="color-palette">
+                            <tr>
+                                {{range .Colors}}
+                                <td style="background-color: {{.}}">&nbsp;</td>
+                                {{end}}
+                            </tr>
+                        </table>
+                    </div>
+                    {{end}}
+                </fieldset>
+            </td>
+        </tr>
+        <tr class="user-admin-bar-front-wrap">
+            <th scope="row">Toolbar</th>
+            <td>
+                <label for="admin_bar_front">
+                    <input name="admin_bar_front" type="checkbox" id="admin_bar_front" value="1" {{if .AdminBarFront}}checked="checked"{{end}}>
+                    Show Toolbar when viewing site
+                </label>
+            </td>
+        </tr>
+    </table>
+
+    <h2>Name</h2>
+
+    <table class="form-table" role="presentation">
+        <tr class="user-user-login-wrap">
+            <th><label for="user_login">Username</label></th>
+            <td>
+                <input type="text" name="user_login" id="user_login" value="{{.User.Username}}" disabled="disabled" class="regular-text">
+                <p class="description">Usernames cannot be changed.</p>
+            </td>
+        </tr>
+        <tr class="user-first-name-wrap">
+            <th><label for="first_name">First Name</label></th>
+            <td>
+                <input name="first_name" type="text" id="first_name" value="{{.User.FirstName}}" class="regular-text">
+            </td>
+        </tr>
+        <tr class="user-last-name-wrap">
+            <th><label for="last_name">Last Name</label></th>
+            <td>
+                <input name="last_name" type="text" id="last_name" value="{{.User.LastName}}" class="regular-text">
+            </td>
+        </tr>
+        <tr class="user-nickname-wrap">
+            <th><label for="nickname">Nickname <span class="description">(required)</span></label></th>
+            <td>
+                <input name="nickname" type="text" id="nickname" value="{{.User.DisplayName}}" class="regular-text">
+            </td>
+        </tr>
+        <tr class="user-display-name-wrap">
+            <th><label for="display_name">Display name publicly as</label></th>
+            <td>
+                <input name="display_name" type="text" id="display_name" value="{{.User.DisplayName}}" class="regular-text">
+            </td>
+        </tr>
+    </table>
+
+    <h2>Contact Info</h2>
+
+    <table class="form-table" role="presentation">
+        <tr class="user-email-wrap">
+            <th><label for="email">Email <span class="description">(required)</span></label></th>
+            <td>
+                <input name="email" type="email" id="email" value="{{.User.Email}}" class="regular-text ltr">
+            </td>
+        </tr>
+        <tr class="user-url-wrap">
+            <th><label for="url">Website</label></th>
+            <td>
+                <input name="url" type="url" id="url" value="{{.User.URL}}" class="regular-text code">
+            </td>
+        </tr>
+    </table>
+
+    <h2>About Yourself</h2>
+
+    <table class="form-table" role="presentation">
+        <tr class="user-description-wrap">
+            <th><label for="description">Biographical Info</label></th>
+            <td>
+                <textarea name="description" id="description" rows="5" cols="30">{{.User.Bio}}</textarea>
+                <p class="description">Share a little biographical information to fill out your profile.</p>
+            </td>
+        </tr>
+        <tr class="user-profile-picture">
+            <th>Profile Picture</th>
+            <td>
+                <img alt="" src="{{.AvatarURL}}" class="avatar avatar-96 photo" height="96" width="96">
+                <p class="description">You can change your profile picture on <a href="https://en.gravatar.com/">Gravatar</a>.</p>
+            </td>
+        </tr>
+    </table>
+
+    <h2>Account Management</h2>
+
+    <table class="form-table" role="presentation">
+        <tr class="user-pass1-wrap">
+            <th><label for="pass1">New Password</label></th>
+            <td>
+                <button type="button" class="button wp-generate-pw hide-if-no-js">Set New Password</button>
+                <div class="wp-pwd hide-if-js">
+                    <input type="password" name="pass1" id="pass1" class="regular-text" value="" autocomplete="new-password">
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Update Profile">
+    </p>
+</form>
+{{end}}

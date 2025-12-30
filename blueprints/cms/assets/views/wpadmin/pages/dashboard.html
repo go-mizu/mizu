@@ -1,0 +1,187 @@
+{{define "content"}}
+<h1>Dashboard</h1>
+
+{{if .WelcomePanel}}
+<div id="welcome-panel" class="welcome-panel">
+    <a class="welcome-panel-close" href="#" aria-label="Dismiss the welcome panel">Dismiss</a>
+    <div class="welcome-panel-content">
+        <h2>Welcome to WordPress!</h2>
+        <p class="about-description">We've assembled some links to get you started:</p>
+        <div class="welcome-panel-column-container">
+            <div class="welcome-panel-column">
+                <h3>Get Started</h3>
+                <a class="button button-primary button-hero" href="/wp-admin/customize.php">Customize Your Site</a>
+                <p>or, <a href="/wp-admin/themes.php">change your theme completely</a></p>
+            </div>
+            <div class="welcome-panel-column">
+                <h3>Next Steps</h3>
+                <ul>
+                    <li><a href="/wp-admin/post-new.php" class="welcome-icon welcome-write-blog">Write your first blog post</a></li>
+                    <li><a href="/wp-admin/post-new.php?post_type=page" class="welcome-icon welcome-add-page">Add a page</a></li>
+                    <li><a href="/" class="welcome-icon welcome-view-site">View your site</a></li>
+                </ul>
+            </div>
+            <div class="welcome-panel-column welcome-panel-last">
+                <h3>More Actions</h3>
+                <ul>
+                    <li><a href="/wp-admin/widgets.php" class="welcome-icon welcome-widgets">Manage widgets</a></li>
+                    <li><a href="/wp-admin/nav-menus.php" class="welcome-icon welcome-menus">Manage menus</a></li>
+                    <li><a href="/wp-admin/options-discussion.php" class="welcome-icon welcome-comments">Turn comments on or off</a></li>
+                    <li><a href="https://wordpress.org/documentation/" class="welcome-icon welcome-learn-more">Learn more about getting started</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<div id="dashboard-widgets-wrap">
+    <div id="dashboard-widgets" class="metabox-holder">
+        <div id="postbox-container-1" class="postbox-container">
+            <!-- At a Glance -->
+            <div class="postbox">
+                <div class="postbox-header">
+                    <h2 class="hndle">At a Glance</h2>
+                </div>
+                <div class="inside">
+                    <div class="main">
+                        <ul>
+                            <li class="post-count">
+                                <a href="/wp-admin/edit.php">{{.AtAGlance.PostCount}} Posts</a>
+                            </li>
+                            <li class="page-count">
+                                <a href="/wp-admin/edit.php?post_type=page">{{.AtAGlance.PageCount}} Pages</a>
+                            </li>
+                            <li class="comment-count">
+                                <a href="/wp-admin/edit-comments.php">{{.AtAGlance.CommentCount}} Comments</a>
+                            </li>
+                        </ul>
+                        <p class="sub">{{.AtAGlance.Theme}}</p>
+                        <p class="sub">Running {{.AtAGlance.GoVersion}}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Draft -->
+            {{if .QuickDraft.Enabled}}
+            <div class="postbox">
+                <div class="postbox-header">
+                    <h2 class="hndle">Quick Draft</h2>
+                </div>
+                <div class="inside">
+                    <form name="post" action="/wp-admin/post.php" method="post" class="initial-form">
+                        <input type="hidden" name="action" value="post-quickdraft-save">
+                        <div class="input-text-wrap" id="title-wrap">
+                            <label for="title">Title</label>
+                            <input type="text" name="post_title" id="title" autocomplete="off">
+                        </div>
+                        <div class="textarea-wrap" id="description-wrap">
+                            <label for="content">Content</label>
+                            <textarea name="content" id="content" class="mceEditor" rows="3" cols="15"></textarea>
+                        </div>
+                        <p class="submit">
+                            <input type="submit" name="save" id="save-post" class="button button-primary" value="Save Draft">
+                        </p>
+                    </form>
+                    {{if .RecentDrafts}}
+                    <div class="drafts">
+                        <p class="view-all"><a href="/wp-admin/edit.php?post_status=draft">View all drafts</a></p>
+                        <h2 class="hide-if-no-js">Your Recent Drafts</h2>
+                        <ul>
+                            {{range .RecentDrafts}}
+                            <li>
+                                <div class="draft-title">
+                                    <a href="{{.EditURL}}" class="draft-title">{{.Title}}</a>
+                                    <time datetime="{{.Date.Format "2006-01-02T15:04:05Z"}}">{{formatDateTime .Date}}</time>
+                                </div>
+                            </li>
+                            {{end}}
+                        </ul>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+
+        <div id="postbox-container-2" class="postbox-container">
+            <!-- Activity -->
+            <div class="postbox">
+                <div class="postbox-header">
+                    <h2 class="hndle">Activity</h2>
+                </div>
+                <div class="inside">
+                    <div id="activity-widget">
+                        {{if .Activity}}
+                        <div id="published-posts" class="activity-block">
+                            <h3>Recently Published</h3>
+                            <ul>
+                                {{range .Activity}}
+                                <li>
+                                    <span>{{formatDateTime .Date}}</span>
+                                    <a href="{{.EditURL}}">{{.Title}}</a>
+                                </li>
+                                {{end}}
+                            </ul>
+                        </div>
+                        {{end}}
+
+                        {{if .RecentComments}}
+                        <div id="latest-comments" class="activity-block">
+                            <h3>Recent Comments</h3>
+                            <ul id="the-comment-list" data-wp-lists="list:comment">
+                                {{range .RecentComments}}
+                                <li class="comment-item {{if .Pending}}unapproved{{end}}">
+                                    <img alt="" src="{{.AuthorAvatar}}" class="avatar avatar-50 photo" height="50" width="50">
+                                    <div class="dashboard-comment-wrap has-row-actions">
+                                        <p class="comment-meta">
+                                            From <cite class="comment-author">{{.AuthorName}}</cite>
+                                            on <a href="{{.PostEditURL}}">{{.PostTitle}}</a>
+                                        </p>
+                                        <blockquote><p>{{truncate .Content 150}}</p></blockquote>
+                                        <p class="row-actions">
+                                            <span class="approve"><a href="#" class="dim:the-comment-list:comment-1:unapproved:e7e7d3:e7e7d3:new=approved">Approve</a> | </span>
+                                            <span class="reply hide-if-no-js"><a href="#" class="vim-r">Reply</a> | </span>
+                                            <span class="edit"><a href="/wp-admin/comment.php?action=editcomment&c={{.ID}}">Edit</a> | </span>
+                                            <span class="spam"><a href="#" class="delete vim-s">Spam</a> | </span>
+                                            <span class="trash"><a href="#" class="delete vim-d">Trash</a></span>
+                                        </p>
+                                    </div>
+                                </li>
+                                {{end}}
+                            </ul>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Site Health Status -->
+            <div class="postbox">
+                <div class="postbox-header">
+                    <h2 class="hndle">Site Health Status</h2>
+                </div>
+                <div class="inside">
+                    <div class="health-check-widget">
+                        <div class="health-check-widget-progress-circle">
+                            <svg class="health-check-widget-progress-icon" viewBox="0 0 100 100">
+                                <circle class="health-check-widget-progress-background" r="45" cx="50" cy="50"></circle>
+                                <circle class="health-check-widget-progress-bar good" r="45" cx="50" cy="50" style="stroke-dasharray: 283; stroke-dashoffset: 0;"></circle>
+                            </svg>
+                        </div>
+                        <div class="health-check-widget-text">
+                            {{if eq .SiteHealth.Status "good"}}
+                            <p>Great job! Your site currently passes all site health checks.</p>
+                            {{else if eq .SiteHealth.Status "recommended"}}
+                            <p>Your site has some recommended improvements.</p>
+                            {{else}}
+                            <p>Your site has critical issues that should be addressed.</p>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

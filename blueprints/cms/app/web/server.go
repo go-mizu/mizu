@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/cms/app/web/handler/rest"
+	"github.com/go-mizu/blueprints/cms/app/web/handler/wpadmin"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/wpapi"
+	"github.com/go-mizu/blueprints/cms/assets"
 	"github.com/go-mizu/blueprints/cms/feature/categories"
 	"github.com/go-mizu/blueprints/cms/feature/comments"
 	"github.com/go-mizu/blueprints/cms/feature/media"
@@ -64,6 +67,9 @@ type Server struct {
 
 	// WordPress API Handler
 	wpHandler *wpapi.Handler
+
+	// WordPress Admin Handler
+	wpAdminHandler *wpadmin.Handler
 }
 
 // New creates a new server.
@@ -161,6 +167,26 @@ func New(cfg Config) (*Server, error) {
 		Media:      mediaSvc,
 		Comments:   commentsSvc,
 		Settings:   settingsSvc,
+		GetUserID:  s.getUserID,
+		GetUser:    s.getUser,
+	})
+
+	// Create WordPress Admin handler
+	wpAdminTemplates, err := assets.WPAdminTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("parse wpadmin templates: %w", err)
+	}
+	s.wpAdminHandler = wpadmin.New(wpAdminTemplates, wpadmin.Config{
+		BaseURL:    baseURL,
+		Users:      usersSvc,
+		Posts:      postsSvc,
+		Pages:      pagesSvc,
+		Categories: categoriesSvc,
+		Tags:       tagsSvc,
+		Media:      mediaSvc,
+		Comments:   commentsSvc,
+		Settings:   settingsSvc,
+		Menus:      menusSvc,
 		GetUserID:  s.getUserID,
 		GetUser:    s.getUser,
 	})
@@ -405,6 +431,126 @@ func (s *Server) setupRoutes() {
 		wp.Put("/settings", s.wpHandler.UpdateSettings)
 		wp.Patch("/settings", s.wpHandler.UpdateSettings)
 	})
+
+	// WordPress Admin static assets
+	staticFS := assets.Static()
+	s.app.Get("/wp-admin/css/{filename...}", func(c *mizu.Ctx) error {
+		filename := c.Param("filename")
+		subFS, _ := fs.Sub(staticFS, "css")
+		http.StripPrefix("/wp-admin/css/", http.FileServer(http.FS(subFS))).ServeHTTP(c.Writer(), c.Request())
+		_ = filename // unused but needed for pattern matching
+		return nil
+	})
+	s.app.Get("/wp-admin/js/{filename...}", func(c *mizu.Ctx) error {
+		filename := c.Param("filename")
+		subFS, _ := fs.Sub(staticFS, "js")
+		http.StripPrefix("/wp-admin/js/", http.FileServer(http.FS(subFS))).ServeHTTP(c.Writer(), c.Request())
+		_ = filename
+		return nil
+	})
+
+	// WordPress Admin routes
+	s.app.Get("/wp-login.php", s.wpAdminHandler.Login)
+	s.app.Get("/wp-admin/", s.wpAdminHandler.Dashboard)
+	s.app.Get("/wp-admin/index.php", s.wpAdminHandler.Dashboard)
+
+	// Posts
+	s.app.Get("/wp-admin/edit.php", func(c *mizu.Ctx) error {
+		postType := c.Query("post_type")
+		if postType == "page" {
+			return s.wpAdminHandler.PagesList(c)
+		}
+		return s.wpAdminHandler.PostsList(c)
+	})
+	s.app.Get("/wp-admin/post-new.php", func(c *mizu.Ctx) error {
+		postType := c.Query("post_type")
+		if postType == "page" {
+			return s.wpAdminHandler.PageNew(c)
+		}
+		return s.wpAdminHandler.PostNew(c)
+	})
+	s.app.Get("/wp-admin/post.php", func(c *mizu.Ctx) error {
+		postType := c.Query("post_type")
+		if postType == "page" {
+			return s.wpAdminHandler.PageEdit(c)
+		}
+		return s.wpAdminHandler.PostEdit(c)
+	})
+
+	// Media
+	s.app.Get("/wp-admin/upload.php", s.wpAdminHandler.MediaLibrary)
+	s.app.Get("/wp-admin/media-new.php", s.wpAdminHandler.MediaNew)
+
+	// Comments
+	s.app.Get("/wp-admin/edit-comments.php", s.wpAdminHandler.CommentsList)
+	s.app.Get("/wp-admin/comment.php", s.wpAdminHandler.CommentEdit)
+
+	// Taxonomies
+	s.app.Get("/wp-admin/edit-tags.php", s.wpAdminHandler.TaxonomyList)
+
+	// Appearance
+	s.app.Get("/wp-admin/nav-menus.php", s.wpAdminHandler.MenusPage)
+
+	// Users
+	s.app.Get("/wp-admin/users.php", s.wpAdminHandler.UsersList)
+	s.app.Get("/wp-admin/user-new.php", s.wpAdminHandler.UserNew)
+	s.app.Get("/wp-admin/user-edit.php", s.wpAdminHandler.UserEdit)
+	s.app.Get("/wp-admin/profile.php", s.wpAdminHandler.Profile)
+
+	// Settings
+	s.app.Get("/wp-admin/options-general.php", s.wpAdminHandler.SettingsGeneral)
+	s.app.Get("/wp-admin/options-writing.php", s.wpAdminHandler.SettingsWriting)
+	s.app.Get("/wp-admin/options-reading.php", s.wpAdminHandler.SettingsReading)
+	s.app.Get("/wp-admin/options-discussion.php", s.wpAdminHandler.SettingsDiscussion)
+	s.app.Get("/wp-admin/options-media.php", s.wpAdminHandler.SettingsMedia)
+	s.app.Get("/wp-admin/options-permalink.php", s.wpAdminHandler.SettingsPermalinks)
+
+	// Clean URL routes (without .php extensions) - aliases for modern URLs
+	s.app.Get("/wp-admin/login", s.wpAdminHandler.Login)
+
+	// Posts (clean URLs)
+	s.app.Get("/wp-admin/posts", s.wpAdminHandler.PostsList)
+	s.app.Get("/wp-admin/posts/new", s.wpAdminHandler.PostNew)
+	s.app.Get("/wp-admin/posts/{id}", s.wpAdminHandler.PostEdit)
+
+	// Pages (clean URLs)
+	s.app.Get("/wp-admin/pages", s.wpAdminHandler.PagesList)
+	s.app.Get("/wp-admin/pages/new", s.wpAdminHandler.PageNew)
+	s.app.Get("/wp-admin/pages/{id}", s.wpAdminHandler.PageEdit)
+
+	// Media (clean URLs)
+	s.app.Get("/wp-admin/media", s.wpAdminHandler.MediaLibrary)
+	s.app.Get("/wp-admin/media/new", s.wpAdminHandler.MediaNew)
+	s.app.Get("/wp-admin/media/{id}", s.wpAdminHandler.MediaEdit)
+
+	// Comments (clean URLs)
+	s.app.Get("/wp-admin/comments", s.wpAdminHandler.CommentsList)
+	s.app.Get("/wp-admin/comments/{id}", s.wpAdminHandler.CommentEdit)
+
+	// Taxonomies (clean URLs)
+	s.app.Get("/wp-admin/categories", func(c *mizu.Ctx) error {
+		c.Request().URL.RawQuery = "taxonomy=category"
+		return s.wpAdminHandler.TaxonomyList(c)
+	})
+	s.app.Get("/wp-admin/tags", func(c *mizu.Ctx) error {
+		c.Request().URL.RawQuery = "taxonomy=post_tag"
+		return s.wpAdminHandler.TaxonomyList(c)
+	})
+
+	// Menus (clean URL)
+	s.app.Get("/wp-admin/menus", s.wpAdminHandler.MenusPage)
+
+	// Users (clean URLs)
+	s.app.Get("/wp-admin/users/new", s.wpAdminHandler.UserNew)
+	s.app.Get("/wp-admin/users/{id}", s.wpAdminHandler.UserEdit)
+
+	// Settings (clean URLs)
+	s.app.Get("/wp-admin/settings/general", s.wpAdminHandler.SettingsGeneral)
+	s.app.Get("/wp-admin/settings/writing", s.wpAdminHandler.SettingsWriting)
+	s.app.Get("/wp-admin/settings/reading", s.wpAdminHandler.SettingsReading)
+	s.app.Get("/wp-admin/settings/discussion", s.wpAdminHandler.SettingsDiscussion)
+	s.app.Get("/wp-admin/settings/media", s.wpAdminHandler.SettingsMedia)
+	s.app.Get("/wp-admin/settings/permalinks", s.wpAdminHandler.SettingsPermalinks)
 }
 
 // Service accessors for CLI

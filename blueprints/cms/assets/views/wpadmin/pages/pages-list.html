@@ -1,0 +1,100 @@
+{{define "content"}}
+<h1 class="wp-heading-inline">Pages</h1>
+<a href="/wp-admin/post-new.php?post_type=page" class="page-title-action">Add New</a>
+
+{{if .SearchQuery}}
+<span class="subtitle">Search results for: <strong>{{.SearchQuery}}</strong></span>
+{{end}}
+
+<hr class="wp-header-end">
+
+<!-- Status Tabs -->
+<ul class="subsubsub">
+    {{range $i, $tab := .StatusTabs}}
+    {{if $i}} | {{end}}
+    <li class="{{.Status}}">
+        <a href="{{.URL}}" {{if .Active}}class="current" aria-current="page"{{end}}>
+            {{.Label}} <span class="count">({{.Count}})</span>
+        </a>
+    </li>
+    {{end}}
+</ul>
+
+<form id="posts-filter" method="get">
+    <input type="hidden" name="post_type" value="page">
+
+    <p class="search-box">
+        <label class="screen-reader-text" for="post-search-input">Search Pages:</label>
+        <input type="search" id="post-search-input" name="s" value="{{.SearchQuery}}">
+        <input type="submit" id="search-submit" class="button" value="Search Pages">
+    </p>
+
+    <div class="tablenav top">
+        <div class="alignleft actions bulkactions">
+            <label for="bulk-action-selector-top" class="screen-reader-text">Select bulk action</label>
+            <select name="action" id="bulk-action-selector-top">
+                <option value="-1">Bulk actions</option>
+                {{range .BulkActions}}
+                <option value="{{.Value}}">{{.Label}}</option>
+                {{end}}
+            </select>
+            <input type="submit" id="doaction" class="button action" value="Apply">
+        </div>
+
+        <div class="tablenav-pages">
+            <span class="displaying-num">{{.Pagination.TotalItems}} items</span>
+        </div>
+        <br class="clear">
+    </div>
+
+    <table class="wp-list-table widefat fixed striped table-view-list pages">
+        <thead>
+            <tr>
+                <td id="cb" class="manage-column column-cb check-column">
+                    <input id="cb-select-all-1" type="checkbox">
+                </td>
+                {{range .Columns}}
+                <th scope="col" class="manage-column column-{{.ID}} {{if .Primary}}column-primary{{end}} {{.Class}}">
+                    {{.Label}}
+                </th>
+                {{end}}
+            </tr>
+        </thead>
+        <tbody id="the-list">
+            {{range .Pages}}
+            <tr id="post-{{.ID}}" class="iedit level-{{.Depth}}">
+                <th scope="row" class="check-column">
+                    <input type="checkbox" name="post[]" value="{{.ID}}">
+                </th>
+                <td class="title column-title has-row-actions column-primary" data-colname="Title">
+                    <strong>
+                        {{range $i := seq 0 .Depth}}&mdash; {{end}}
+                        <a class="row-title" href="/wp-admin/post.php?post={{.ID}}&action=edit&post_type=page">{{.Title}}</a>
+                        {{if eq .Status "draft"}} — <span class="post-state">Draft</span>{{end}}
+                    </strong>
+                    <div class="row-actions">
+                        {{range $i, $action := .RowActions}}
+                        {{if $i}} | {{end}}
+                        <span class="{{.Class}}"><a href="{{.URL}}">{{.Label}}</a></span>
+                        {{end}}
+                    </div>
+                </td>
+                <td class="author column-author" data-colname="Author">
+                    {{if .Author}}
+                    <a href="/wp-admin/edit.php?post_type=page&author={{.Author.ID}}">{{.Author.DisplayName}}</a>
+                    {{end}}
+                </td>
+                <td class="date column-date" data-colname="Date">
+                    {{if eq .Status "published"}}Published{{else}}Last Modified{{end}}<br>
+                    {{formatDate .UpdatedAt}}
+                </td>
+            </tr>
+            {{else}}
+            <tr class="no-items">
+                <td class="colspanchange" colspan="{{add (len .Columns) 1}}">No pages found.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</form>
+{{end}}

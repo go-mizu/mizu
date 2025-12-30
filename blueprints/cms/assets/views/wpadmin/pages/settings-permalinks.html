@@ -1,0 +1,73 @@
+{{define "content"}}
+<h1>Permalink Settings</h1>
+
+<form method="post" action="/wp-admin/options-permalink.php">
+    <p>WordPress offers you the ability to create a custom URL structure for your permalinks and archives. Custom URL structures can improve the aesthetics, usability, and forward-compatibility of your links.</p>
+
+    <h2 class="title">Common Settings</h2>
+    <p>Select the permalink structure for your website. Including the post name makes links more readable and helps visitors understand the content they're about to open.</p>
+
+    <table class="form-table permalink-structure">
+        <tr>
+            <th scope="row">
+                <label><input name="selection" type="radio" value="" {{if eq (index .Settings "permalink_structure") ""}}checked{{end}}> Plain</label>
+            </th>
+            <td><code>?p=123</code></td>
+        </tr>
+        <tr>
+            <th scope="row">
+                <label><input name="selection" type="radio" value="/archives/%post_id%" {{if eq (index .Settings "permalink_structure") "/archives/%post_id%"}}checked{{end}}> Numeric</label>
+            </th>
+            <td><code>/archives/123/</code></td>
+        </tr>
+        <tr>
+            <th scope="row">
+                <label><input name="selection" type="radio" value="/%year%/%monthnum%/%day%/%postname%/" {{if eq (index .Settings "permalink_structure") "/%year%/%monthnum%/%day%/%postname%/"}}checked{{end}}> Day and name</label>
+            </th>
+            <td><code>/2024/01/01/sample-post/</code></td>
+        </tr>
+        <tr>
+            <th scope="row">
+                <label><input name="selection" type="radio" value="/%year%/%monthnum%/%postname%/" {{if eq (index .Settings "permalink_structure") "/%year%/%monthnum%/%postname%/"}}checked{{end}}> Month and name</label>
+            </th>
+            <td><code>/2024/01/sample-post/</code></td>
+        </tr>
+        <tr>
+            <th scope="row">
+                <label><input name="selection" type="radio" value="/%postname%/" {{if eq (index .Settings "permalink_structure") "/%postname%/"}}checked{{end}}> Post name</label>
+            </th>
+            <td><code>/sample-post/</code></td>
+        </tr>
+        <tr>
+            <th scope="row">
+                <label><input name="selection" type="radio" value="custom" id="custom_selection"> Custom Structure</label>
+            </th>
+            <td>
+                <input name="permalink_structure" id="permalink_structure" type="text" value="{{index .Settings "permalink_structure"}}" class="regular-text code">
+            </td>
+        </tr>
+    </table>
+
+    <h2 class="title">Optional</h2>
+    <p>If you like, you may enter custom structures for your category and tag URLs here. For example, using <code>topics</code> as your category base would make your category links like <code>/topics/uncategorized/</code>. If you leave these blank the defaults will be used.</p>
+
+    <table class="form-table" role="presentation">
+        <tr>
+            <th scope="row"><label for="category_base">Category base</label></th>
+            <td>
+                <input name="category_base" id="category_base" type="text" value="{{index .Settings "category_base"}}" class="regular-text code">
+            </td>
+        </tr>
+        <tr>
+            <th scope="row"><label for="tag_base">Tag base</label></th>
+            <td>
+                <input name="tag_base" id="tag_base" type="text" value="{{index .Settings "tag_base"}}" class="regular-text code">
+            </td>
+        </tr>
+    </table>
+
+    <p class="submit">
+        <input type="submit" name="submit" id="submit" class="button button-primary" value="Save Changes">
+    </p>
+</form>
+{{end}}
