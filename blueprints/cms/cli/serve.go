@@ -2,104 +2,61 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/go-mizu/blueprints/cms/app/web"
 	"github.com/spf13/cobra"
-
-	"github.com/go-mizu/mizu/blueprints/cms/app/web"
-	"github.com/go-mizu/mizu/blueprints/cms/store/duckdb"
 )
 
 // NewServe creates the serve command.
 func NewServe() *cobra.Command {
-	return &cobra.Command{
+	var (
+		port   int
+		dbPath string
+		secret string
+		dev    bool
+	)
+
+	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the CMS server",
-		Long: `Starts the HTTP server for the CMS application.
+		Long:  "Start the Payload CMS compatible REST API server.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv, err := web.New(web.Config{
+				Port:   port,
+				DBPath: dbPath,
+				Secret: secret,
+				Dev:    dev,
+			})
+			if err != nil {
+				return fmt.Errorf("create server: %w", err)
+			}
 
-The server provides:
-  - WordPress REST API v2 at /wp-json/wp/v2/
-  - XML-RPC API at /xmlrpc.php
-  - Admin dashboard at /wp-admin/
-  - Frontend theme rendering`,
-		RunE: runServe,
-	}
-}
+			// Handle graceful shutdown
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
 
-func runServe(cmd *cobra.Command, args []string) error {
-	ui := NewUI()
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	ui.Header(iconServer, "Starting CMS Server")
-	ui.Blank()
+			go func() {
+				<-sigCh
+				fmt.Println("\nShutting down...")
+				srv.Shutdown(ctx)
+				cancel()
+			}()
 
-	// Open database
-	start := time.Now()
-	ui.StartSpinner("Opening database...")
-
-	store, err := duckdb.Open(dataDir)
-	if err != nil {
-		ui.StopSpinnerError("Failed to open database")
-		return err
-	}
-	defer store.Close()
-
-	ui.StopSpinner("Database ready", time.Since(start))
-
-	// Create server
-	ui.StartSpinner("Initializing server...")
-	start = time.Now()
-
-	srv, err := web.NewServer(store, web.ServerConfig{
-		Addr:    addr,
-		Dev:     dev,
-		DataDir: dataDir,
-	})
-	if err != nil {
-		ui.StopSpinnerError("Failed to create server")
-		return err
+			return srv.Run()
+		},
 	}
 
-	ui.StopSpinner("Server initialized", time.Since(start))
+	cmd.Flags().IntVarP(&port, "port", "p", 3000, "Server port")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: $HOME/data/blueprint/cms/cms.db)")
+	cmd.Flags().StringVar(&secret, "secret", "", "JWT secret (required for production)")
+	cmd.Flags().BoolVar(&dev, "dev", false, "Development mode")
 
-	// Print configuration
-	ui.Summary([][2]string{
-		{"Address", addr},
-		{"Data Dir", dataDir},
-		{"Mode", modeString(dev)},
-		{"REST API", addr + "/wp-json/wp/v2/"},
-		{"Admin", addr + "/wp-admin/"},
-	})
-
-	ui.Blank()
-	ui.Hint("Press Ctrl+C to stop the server")
-	ui.Blank()
-
-	// Setup graceful shutdown
-	ctx, cancel := context.WithCancel(cmd.Context())
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		<-sigCh
-		ui.Blank()
-		ui.Warn("Shutting down...")
-		cancel()
-	}()
-
-	// Start server
-	ui.Step("Listening on " + addr)
-
-	return srv.Start(ctx)
-}
-
-func modeString(dev bool) string {
-	if dev {
-		return "development"
-	}
-	return "production"
+	return cmd
 }
