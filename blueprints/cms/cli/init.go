@@ -1,51 +1,35 @@
 package cli
 
 import (
-	"time"
+	"fmt"
 
+	"github.com/go-mizu/blueprints/cms/app/web"
 	"github.com/spf13/cobra"
-
-	"github.com/go-mizu/mizu/blueprints/cms/store/duckdb"
 )
 
 // NewInit creates the init command.
 func NewInit() *cobra.Command {
-	return &cobra.Command{
+	var dbPath string
+
+	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize the CMS database",
-		Long: `Creates the database and runs all migrations to set up the schema.
+		Short: "Initialize the database",
+		Long:  "Create the database and initialize the schema.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv, err := web.New(web.Config{
+				DBPath: dbPath,
+			})
+			if err != nil {
+				return fmt.Errorf("create server: %w", err)
+			}
+			defer srv.Close()
 
-This command is safe to run multiple times - it will not overwrite existing data.`,
-		RunE: runInit,
+			fmt.Println("Database initialized successfully!")
+			return nil
+		},
 	}
-}
 
-func runInit(cmd *cobra.Command, args []string) error {
-	ui := NewUI()
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path")
 
-	ui.Header(iconDatabase, "Initializing CMS Database")
-	ui.Blank()
-
-	start := time.Now()
-	ui.StartSpinner("Creating database...")
-
-	store, err := duckdb.Open(dataDir)
-	if err != nil {
-		ui.StopSpinnerError("Failed to create database")
-		return err
-	}
-	defer store.Close()
-
-	ui.StopSpinner("Database created", time.Since(start))
-
-	ui.Summary([][2]string{
-		{"Location", dataDir},
-		{"Status", "Ready"},
-	})
-
-	ui.Success("Database initialized successfully!")
-	ui.Blank()
-	ui.Hint("Next: run 'cms install' for WordPress-style setup, or 'cms seed' for sample data")
-
-	return nil
+	return cmd
 }

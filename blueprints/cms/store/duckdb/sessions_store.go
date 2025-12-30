@@ -3,153 +3,154 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
+
+	"github.com/go-mizu/blueprints/cms/pkg/ulid"
 )
 
-// Session represents a user session.
-type Session struct {
-	SessionID    string
-	UserID       string
-	Token        string
-	IPAddress    string
-	UserAgent    string
-	Payload      string
-	LastActivity time.Time
-	ExpiresAt    time.Time
-}
-
-// SessionsStore handles session persistence.
+// SessionsStore handles session operations.
 type SessionsStore struct {
 	db *sql.DB
 }
 
-// NewSessionsStore creates a new sessions store.
+// NewSessionsStore creates a new SessionsStore.
 func NewSessionsStore(db *sql.DB) *SessionsStore {
 	return &SessionsStore{db: db}
 }
 
+// Session represents a user session.
+type Session struct {
+	ID           string
+	UserID       string
+	Collection   string
+	Token        string
+	RefreshToken string
+	UserAgent    string
+	IP           string
+	ExpiresAt    time.Time
+	CreatedAt    time.Time
+}
+
 // Create creates a new session.
-func (s *SessionsStore) Create(ctx context.Context, sess *Session) error {
-	query := `
-		INSERT INTO wp_sessions (session_id, user_id, token, ip_address, user_agent, payload, last_activity, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`
+func (s *SessionsStore) Create(ctx context.Context, session *Session) error {
+	session.ID = ulid.New()
+	session.CreatedAt = time.Now()
+
+	query := `INSERT INTO _sessions (id, user_id, collection, token, refresh_token, user_agent, ip, expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
 	_, err := s.db.ExecContext(ctx, query,
-		sess.SessionID, sess.UserID, sess.Token, sess.IPAddress,
-		sess.UserAgent, sess.Payload, sess.LastActivity, sess.ExpiresAt,
+		session.ID, session.UserID, session.Collection, session.Token, session.RefreshToken,
+		session.UserAgent, session.IP, session.ExpiresAt, session.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+
+	return nil
 }
 
 // GetByToken retrieves a session by token.
 func (s *SessionsStore) GetByToken(ctx context.Context, token string) (*Session, error) {
-	query := `
-		SELECT session_id, user_id, token, ip_address, user_agent, payload, last_activity, expires_at
-		FROM wp_sessions WHERE token = $1
-	`
-	sess := &Session{}
-	var ipAddress, userAgent, payload sql.NullString
-	err := s.db.QueryRowContext(ctx, query, token).Scan(
-		&sess.SessionID, &sess.UserID, &sess.Token, &ipAddress,
-		&userAgent, &payload, &sess.LastActivity, &sess.ExpiresAt,
+	query := `SELECT id, user_id, collection, token, refresh_token, user_agent, ip, expires_at, created_at
+		FROM _sessions WHERE token = ? AND expires_at > ?`
+
+	var session Session
+	var refreshToken, userAgent, ip sql.NullString
+
+	err := s.db.QueryRowContext(ctx, query, token, time.Now()).Scan(
+		&session.ID, &session.UserID, &session.Collection, &session.Token, &refreshToken,
+		&userAgent, &ip, &session.ExpiresAt, &session.CreatedAt,
 	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
 	if err != nil {
-		return nil, err
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get session: %w", err)
 	}
-	sess.IPAddress = ipAddress.String
-	sess.UserAgent = userAgent.String
-	sess.Payload = payload.String
-	return sess, nil
+
+	if refreshToken.Valid {
+		session.RefreshToken = refreshToken.String
+	}
+	if userAgent.Valid {
+		session.UserAgent = userAgent.String
+	}
+	if ip.Valid {
+		session.IP = ip.String
+	}
+
+	return &session, nil
 }
 
-// GetByID retrieves a session by ID.
-func (s *SessionsStore) GetByID(ctx context.Context, id string) (*Session, error) {
-	query := `
-		SELECT session_id, user_id, token, ip_address, user_agent, payload, last_activity, expires_at
-		FROM wp_sessions WHERE session_id = $1
-	`
-	sess := &Session{}
-	var ipAddress, userAgent, payload sql.NullString
-	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&sess.SessionID, &sess.UserID, &sess.Token, &ipAddress,
-		&userAgent, &payload, &sess.LastActivity, &sess.ExpiresAt,
-	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	sess.IPAddress = ipAddress.String
-	sess.UserAgent = userAgent.String
-	sess.Payload = payload.String
-	return sess, nil
-}
+// GetByRefreshToken retrieves a session by refresh token.
+func (s *SessionsStore) GetByRefreshToken(ctx context.Context, refreshToken string) (*Session, error) {
+	query := `SELECT id, user_id, collection, token, refresh_token, user_agent, ip, expires_at, created_at
+		FROM _sessions WHERE refresh_token = ?`
 
-// UpdateLastActivity updates the last activity time for a session.
-func (s *SessionsStore) UpdateLastActivity(ctx context.Context, sessionID string) error {
-	query := `UPDATE wp_sessions SET last_activity = $2 WHERE session_id = $1`
-	_, err := s.db.ExecContext(ctx, query, sessionID, time.Now())
-	return err
+	var session Session
+	var rt, userAgent, ip sql.NullString
+
+	err := s.db.QueryRowContext(ctx, query, refreshToken).Scan(
+		&session.ID, &session.UserID, &session.Collection, &session.Token, &rt,
+		&userAgent, &ip, &session.ExpiresAt, &session.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get session by refresh token: %w", err)
+	}
+
+	if rt.Valid {
+		session.RefreshToken = rt.String
+	}
+	if userAgent.Valid {
+		session.UserAgent = userAgent.String
+	}
+	if ip.Valid {
+		session.IP = ip.String
+	}
+
+	return &session, nil
 }
 
 // Delete deletes a session by token.
 func (s *SessionsStore) Delete(ctx context.Context, token string) error {
-	query := `DELETE FROM wp_sessions WHERE token = $1`
+	query := `DELETE FROM _sessions WHERE token = ?`
 	_, err := s.db.ExecContext(ctx, query, token)
-	return err
-}
-
-// DeleteByID deletes a session by ID.
-func (s *SessionsStore) DeleteByID(ctx context.Context, id string) error {
-	query := `DELETE FROM wp_sessions WHERE session_id = $1`
-	_, err := s.db.ExecContext(ctx, query, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
 }
 
 // DeleteByUser deletes all sessions for a user.
 func (s *SessionsStore) DeleteByUser(ctx context.Context, userID string) error {
-	query := `DELETE FROM wp_sessions WHERE user_id = $1`
+	query := `DELETE FROM _sessions WHERE user_id = ?`
 	_, err := s.db.ExecContext(ctx, query, userID)
-	return err
-}
-
-// DeleteExpired deletes all expired sessions.
-func (s *SessionsStore) DeleteExpired(ctx context.Context) error {
-	query := `DELETE FROM wp_sessions WHERE expires_at < $1`
-	_, err := s.db.ExecContext(ctx, query, time.Now())
-	return err
-}
-
-// ListByUser lists all sessions for a user.
-func (s *SessionsStore) ListByUser(ctx context.Context, userID string) ([]*Session, error) {
-	query := `
-		SELECT session_id, user_id, token, ip_address, user_agent, payload, last_activity, expires_at
-		FROM wp_sessions WHERE user_id = $1 ORDER BY last_activity DESC
-	`
-	rows, err := s.db.QueryContext(ctx, query, userID)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("delete user sessions: %w", err)
 	}
-	defer rows.Close()
+	return nil
+}
 
-	var sessions []*Session
-	for rows.Next() {
-		sess := &Session{}
-		var ipAddress, userAgent, payload sql.NullString
-		if err := rows.Scan(
-			&sess.SessionID, &sess.UserID, &sess.Token, &ipAddress,
-			&userAgent, &payload, &sess.LastActivity, &sess.ExpiresAt,
-		); err != nil {
-			return nil, err
-		}
-		sess.IPAddress = ipAddress.String
-		sess.UserAgent = userAgent.String
-		sess.Payload = payload.String
-		sessions = append(sessions, sess)
+// Update updates a session.
+func (s *SessionsStore) Update(ctx context.Context, session *Session) error {
+	query := `UPDATE _sessions SET token = ?, refresh_token = ?, expires_at = ? WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, session.Token, session.RefreshToken, session.ExpiresAt, session.ID)
+	if err != nil {
+		return fmt.Errorf("update session: %w", err)
 	}
-	return sessions, rows.Err()
+	return nil
+}
+
+// CleanupExpired removes expired sessions.
+func (s *SessionsStore) CleanupExpired(ctx context.Context) (int64, error) {
+	query := `DELETE FROM _sessions WHERE expires_at < ?`
+	result, err := s.db.ExecContext(ctx, query, time.Now())
+	if err != nil {
+		return 0, fmt.Errorf("cleanup sessions: %w", err)
+	}
+	return result.RowsAffected()
 }

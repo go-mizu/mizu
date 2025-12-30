@@ -1,458 +1,220 @@
+// Package web provides the HTTP server.
 package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"strings"
+	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/go-mizu/blueprints/cms/app/web/handler/rest"
+	"github.com/go-mizu/blueprints/cms/app/web/middleware"
+	"github.com/go-mizu/blueprints/cms/config"
+	"github.com/go-mizu/blueprints/cms/config/collections"
+	"github.com/go-mizu/blueprints/cms/config/globals"
+	"github.com/go-mizu/blueprints/cms/feature/auth"
+	collectionsSvc "github.com/go-mizu/blueprints/cms/feature/collections"
+	globalsSvc "github.com/go-mizu/blueprints/cms/feature/globals"
+	prefsSvc "github.com/go-mizu/blueprints/cms/feature/preferences"
+	"github.com/go-mizu/blueprints/cms/store/duckdb"
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/cms/app/web/handler/rest"
-	"github.com/go-mizu/mizu/blueprints/cms/feature/accounts"
-	"github.com/go-mizu/mizu/blueprints/cms/feature/options"
-	"github.com/go-mizu/mizu/blueprints/cms/feature/posts"
-	"github.com/go-mizu/mizu/blueprints/cms/feature/terms"
-	"github.com/go-mizu/mizu/blueprints/cms/store/duckdb"
 )
 
-// ServerConfig holds server configuration.
-type ServerConfig struct {
-	Addr    string
-	Dev     bool
-	DataDir string
+// Config holds server configuration.
+type Config struct {
+	Port      int
+	DBPath    string
+	Secret    string
+	Dev       bool
+	UploadDir string
 }
 
-// Server is the CMS web server.
+// Server is the HTTP server.
 type Server struct {
-	app    *mizu.App
-	store  *duckdb.Store
-	config ServerConfig
+	config      Config
+	app         *mizu.App
+	store       *duckdb.Store
+	collections []config.CollectionConfig
+	globals     []config.GlobalConfig
 
 	// Services
-	accounts accounts.API
-	posts    posts.API
-	terms    terms.API
-	options  options.API
-
-	// Handlers
-	restPosts      *rest.Posts
-	restPages      *rest.Pages
-	restUsers      *rest.Users
-	restCategories *rest.Categories
-	restTags       *rest.Tags
-	restSettings   *rest.Settings
+	authService        auth.API
+	collectionsService collectionsSvc.API
+	globalsService     globalsSvc.API
+	prefsService       prefsSvc.API
 }
 
-// NewServer creates a new server with the given store and config.
-func NewServer(store *duckdb.Store, cfg ServerConfig) (*Server, error) {
-	// Create services
-	accountsSvc := accounts.NewService(store.Users(), store.Usermeta(), store.Sessions())
-	optionsSvc := options.NewService(store.Options())
-	termsSvc := terms.NewService(store.Terms(), store.TermTaxonomy(), store.Termmeta())
-	postsSvc := posts.NewService(store.Posts(), store.Postmeta(), store.TermRelationships(), store.TermTaxonomy(), store.Options())
-
-	// Create Mizu app
-	app := mizu.New()
-
-	s := &Server{
-		app:      app,
-		store:    store,
-		config:   cfg,
-		accounts: accountsSvc,
-		posts:    postsSvc,
-		terms:    termsSvc,
-		options:  optionsSvc,
+// New creates a new Server.
+func New(cfg Config) (*Server, error) {
+	// Default config
+	if cfg.Port == 0 {
+		cfg.Port = 3000
+	}
+	if cfg.DBPath == "" {
+		home, _ := os.UserHomeDir()
+		cfg.DBPath = filepath.Join(home, "data", "blueprint", "cms", "cms.db")
+	}
+	if cfg.Secret == "" {
+		cfg.Secret = "change-me-in-production"
+	}
+	if cfg.UploadDir == "" {
+		cfg.UploadDir = "./uploads"
 	}
 
-	// Create handlers
-	s.restPosts = rest.NewPosts(postsSvc, s.getUserID)
-	s.restPages = rest.NewPages(postsSvc, s.getUserID)
-	s.restUsers = rest.NewUsers(accountsSvc, s.getUserID)
-	s.restCategories = rest.NewCategories(termsSvc, s.getUserID)
-	s.restTags = rest.NewTags(termsSvc, s.getUserID)
-	s.restSettings = rest.NewSettings(optionsSvc, s.getUserID)
+	// Open store
+	store, err := duckdb.New(cfg.DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("open store: %w", err)
+	}
 
-	// Setup routes
+	// Default collections and globals
+	allCollections := []config.CollectionConfig{
+		collections.Users,
+		collections.Media,
+		collections.Pages,
+		collections.Posts,
+		collections.Categories,
+		collections.Tags,
+	}
+	allGlobals := []config.GlobalConfig{
+		globals.SiteSettings,
+		globals.Navigation,
+	}
+
+	// Create services
+	authSvc := auth.NewService(store.DB(), store.Sessions, cfg.Secret, allCollections)
+	collSvc := collectionsSvc.NewService(store.Collections, store.Versions, allCollections)
+	globSvc := globalsSvc.NewService(store.Globals, store.Versions, allGlobals)
+	prefSvc := prefsSvc.NewService(store.Preferences)
+
+	s := &Server{
+		config:             cfg,
+		store:              store,
+		collections:        allCollections,
+		globals:            allGlobals,
+		authService:        authSvc,
+		collectionsService: collSvc,
+		globalsService:     globSvc,
+		prefsService:       prefSvc,
+	}
+
 	s.setupRoutes()
 
 	return s, nil
 }
 
-// Start starts the server and blocks until context is cancelled.
-func (s *Server) Start(ctx context.Context) error {
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- s.app.Listen(s.config.Addr)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-errCh:
-		return err
-	}
-}
-
-// Handler returns the HTTP handler for the server.
-func (s *Server) Handler() http.Handler {
-	return s.app.Router
-}
-
 // setupRoutes configures all routes.
 func (s *Server) setupRoutes() {
-	r := s.app.Router
+	s.app = mizu.New()
 
-	// WordPress REST API v2
-	r.Group("/wp-json", func(api *mizu.Router) {
-		// Discovery endpoint
-		api.Get("/", s.apiDiscovery)
+	// Middleware
+	authMiddleware := middleware.NewAuth(s.authService)
 
-		// WP REST API v2
-		api.Group("/wp/v2", func(v2 *mizu.Router) {
-			// Posts
-			v2.Get("/posts", s.restPosts.List)
-			v2.Post("/posts", s.authRequired(s.restPosts.Create))
-			v2.Get("/posts/{id}", s.restPosts.Get)
-			v2.Put("/posts/{id}", s.authRequired(s.restPosts.Update))
-			v2.Patch("/posts/{id}", s.authRequired(s.restPosts.Update))
-			v2.Delete("/posts/{id}", s.authRequired(s.restPosts.Delete))
+	// Handlers
+	collectionsHandler := rest.NewCollections(s.collectionsService)
+	authHandler := rest.NewAuth(s.authService)
+	globalsHandler := rest.NewGlobals(s.globalsService)
+	accessHandler := rest.NewAccess(s.collections, s.globals)
+	prefsHandler := rest.NewPreferences(s.prefsService)
 
-			// Pages
-			v2.Get("/pages", s.restPages.List)
-			v2.Post("/pages", s.authRequired(s.restPages.Create))
-			v2.Get("/pages/{id}", s.restPages.Get)
-			v2.Put("/pages/{id}", s.authRequired(s.restPages.Update))
-			v2.Patch("/pages/{id}", s.authRequired(s.restPages.Update))
-			v2.Delete("/pages/{id}", s.authRequired(s.restPages.Delete))
-
-			// Users
-			v2.Get("/users", s.restUsers.List)
-			v2.Post("/users", s.authRequired(s.restUsers.Create))
-			v2.Get("/users/{id}", s.restUsers.Get)
-			v2.Get("/users/me", s.authRequired(s.restUsers.Me))
-			v2.Put("/users/{id}", s.authRequired(s.restUsers.Update))
-			v2.Patch("/users/{id}", s.authRequired(s.restUsers.Update))
-			v2.Delete("/users/{id}", s.authRequired(s.restUsers.Delete))
-
-			// Categories
-			v2.Get("/categories", s.restCategories.List)
-			v2.Post("/categories", s.authRequired(s.restCategories.Create))
-			v2.Get("/categories/{id}", s.restCategories.Get)
-			v2.Put("/categories/{id}", s.authRequired(s.restCategories.Update))
-			v2.Patch("/categories/{id}", s.authRequired(s.restCategories.Update))
-			v2.Delete("/categories/{id}", s.authRequired(s.restCategories.Delete))
-
-			// Tags
-			v2.Get("/tags", s.restTags.List)
-			v2.Post("/tags", s.authRequired(s.restTags.Create))
-			v2.Get("/tags/{id}", s.restTags.Get)
-			v2.Put("/tags/{id}", s.authRequired(s.restTags.Update))
-			v2.Patch("/tags/{id}", s.authRequired(s.restTags.Update))
-			v2.Delete("/tags/{id}", s.authRequired(s.restTags.Delete))
-
-			// Settings
-			v2.Get("/settings", s.authRequired(s.restSettings.Get))
-			v2.Put("/settings", s.authRequired(s.restSettings.Update))
-			v2.Patch("/settings", s.authRequired(s.restSettings.Update))
-
-			// Types
-			v2.Get("/types", s.getTypes)
-			v2.Get("/types/{type}", s.getType)
-
-			// Statuses
-			v2.Get("/statuses", s.getStatuses)
-			v2.Get("/statuses/{status}", s.getStatus)
-
-			// Taxonomies
-			v2.Get("/taxonomies", s.getTaxonomies)
-			v2.Get("/taxonomies/{taxonomy}", s.getTaxonomy)
-		})
+	// Health check
+	s.app.Get("/health", func(c *mizu.Ctx) error {
+		return c.JSON(200, map[string]string{"status": "ok"})
 	})
 
-	// XML-RPC endpoint (legacy)
-	r.Post("/xmlrpc.php", s.handleXMLRPC)
+	// Access endpoint
+	s.app.Get("/api/access", authMiddleware.OptionalAuth(accessHandler.GetAccess))
 
-	// Frontend routes
-	r.Get("/", s.frontendHome)
-	r.Get("/{year}/{month}/{slug}", s.frontendPost)
-	r.Get("/page/{slug}", s.frontendPage)
-	r.Get("/category/{slug}", s.frontendCategory)
-	r.Get("/tag/{slug}", s.frontendTag)
-	r.Get("/author/{slug}", s.frontendAuthor)
-
-	// Admin routes (placeholder)
-	r.Get("/wp-admin/", s.adminDashboard)
-	r.Get("/wp-login.php", s.adminLogin)
-}
-
-// getUserID extracts the user ID from the request.
-func (s *Server) getUserID(c *mizu.Ctx) string {
-	// Check Authorization header
-	auth := c.Header().Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
-		session, err := s.accounts.GetSession(c.Request().Context(), token)
-		if err == nil && session != nil {
-			return session.UserID
+	// Auth endpoints for each auth-enabled collection
+	for _, col := range s.collections {
+		if col.Auth == nil {
+			continue
 		}
+		slug := col.Slug
+		prefix := "/api/" + slug
+
+		s.app.Post(prefix+"/login", authHandler.LoginWithCollection(slug))
+		s.app.Post(prefix+"/logout", authHandler.LogoutWithCollection(slug))
+		s.app.Get(prefix+"/me", authHandler.MeWithCollection(slug))
+		s.app.Post(prefix+"/refresh-token", authHandler.RefreshTokenWithCollection(slug))
+		s.app.Post(prefix+"/forgot-password", authHandler.ForgotPasswordWithCollection(slug))
+		s.app.Post(prefix+"/reset-password", authHandler.ResetPasswordWithCollection(slug))
+		s.app.Post(prefix+"/verify/{token}", authHandler.VerifyEmailWithCollection(slug))
+		s.app.Post(prefix+"/unlock", authMiddleware.RequireAuth(authHandler.UnlockWithCollection(slug)))
 	}
 
-	// Check Basic auth (for application passwords)
-	if strings.HasPrefix(auth, "Basic ") {
-		// TODO: Implement application password verification
+	// Collection CRUD endpoints
+	for _, col := range s.collections {
+		slug := col.Slug
+		prefix := "/api/" + slug
+
+		// Read operations - optional auth (access control may allow public)
+		s.app.Get(prefix, authMiddleware.OptionalAuth(collectionsHandler.FindWithCollection(slug)))
+		s.app.Get(prefix+"/count", authMiddleware.OptionalAuth(collectionsHandler.CountWithCollection(slug)))
+		s.app.Get(prefix+"/{id}", authMiddleware.OptionalAuth(collectionsHandler.FindByIDWithCollection(slug)))
+
+		// Write operations - require auth
+		s.app.Post(prefix, authMiddleware.RequireAuth(collectionsHandler.CreateWithCollection(slug)))
+		s.app.Patch(prefix, authMiddleware.RequireAuth(collectionsHandler.UpdateWithCollection(slug)))
+		s.app.Patch(prefix+"/{id}", authMiddleware.RequireAuth(collectionsHandler.UpdateByIDWithCollection(slug)))
+		s.app.Delete(prefix, authMiddleware.RequireAuth(collectionsHandler.DeleteWithCollection(slug)))
+		s.app.Delete(prefix+"/{id}", authMiddleware.RequireAuth(collectionsHandler.DeleteByIDWithCollection(slug)))
 	}
 
-	// Check cookie
-	cookie, err := c.Request().Cookie("session")
-	if err == nil && cookie != nil {
-		session, err := s.accounts.GetSession(c.Request().Context(), cookie.Value)
-		if err == nil && session != nil {
-			return session.UserID
-		}
+	// Global endpoints
+	for _, g := range s.globals {
+		slug := g.Slug
+		prefix := "/api/globals/" + slug
+
+		s.app.Get(prefix, authMiddleware.OptionalAuth(globalsHandler.GetWithSlug(slug)))
+		s.app.Post(prefix, authMiddleware.RequireAuth(globalsHandler.UpdateWithSlug(slug)))
 	}
 
-	return ""
+	// Preferences endpoints
+	s.app.Get("/api/payload-preferences/{key}", authMiddleware.RequireAuth(prefsHandler.Get))
+	s.app.Post("/api/payload-preferences/{key}", authMiddleware.RequireAuth(prefsHandler.Set))
+	s.app.Delete("/api/payload-preferences/{key}", authMiddleware.RequireAuth(prefsHandler.Delete))
+
+	// Static file serving for uploads
+	s.app.Static("/uploads", http.Dir(s.config.UploadDir))
 }
 
-// authRequired middleware requires authentication.
-func (s *Server) authRequired(next mizu.Handler) mizu.Handler {
-	return func(c *mizu.Ctx) error {
-		userID := s.getUserID(c)
-		if userID == "" {
-			return rest.Unauthorized(c, "You are not currently logged in.")
-		}
-		return next(c)
-	}
+// Run starts the server.
+func (s *Server) Run() error {
+	addr := fmt.Sprintf(":%d", s.config.Port)
+	fmt.Printf("CMS server listening on http://localhost%s\n", addr)
+	fmt.Printf("REST API: http://localhost%s/api\n", addr)
+	return s.app.Listen(addr)
 }
 
-// API Discovery endpoint
-func (s *Server) apiDiscovery(c *mizu.Ctx) error {
-	return c.JSON(200, map[string]interface{}{
-		"name":            "CMS",
-		"description":     "WordPress-compatible CMS",
-		"url":             s.config.Addr,
-		"home":            s.config.Addr,
-		"gmt_offset":      "0",
-		"timezone_string": "UTC",
-		"namespaces":      []string{"wp/v2"},
-		"authentication": map[string]interface{}{
-			"application-passwords": map[string]interface{}{
-				"endpoints": map[string]interface{}{
-					"authorization": s.config.Addr + "/wp-admin/authorize-application.php",
-				},
-			},
-		},
-		"routes": map[string]interface{}{
-			"/wp/v2": map[string]interface{}{
-				"namespace": "wp/v2",
-				"methods":   []string{"GET"},
-			},
-			"/wp/v2/posts": map[string]interface{}{
-				"namespace": "wp/v2",
-				"methods":   []string{"GET", "POST"},
-			},
-			"/wp/v2/pages": map[string]interface{}{
-				"namespace": "wp/v2",
-				"methods":   []string{"GET", "POST"},
-			},
-			"/wp/v2/users": map[string]interface{}{
-				"namespace": "wp/v2",
-				"methods":   []string{"GET", "POST"},
-			},
-			"/wp/v2/categories": map[string]interface{}{
-				"namespace": "wp/v2",
-				"methods":   []string{"GET", "POST"},
-			},
-			"/wp/v2/tags": map[string]interface{}{
-				"namespace": "wp/v2",
-				"methods":   []string{"GET", "POST"},
-			},
-		},
-	})
+// Close closes the server.
+func (s *Server) Close() error {
+	return s.store.Close()
 }
 
-// Type endpoints
-func (s *Server) getTypes(c *mizu.Ctx) error {
-	return c.JSON(200, map[string]interface{}{
-		"post": map[string]interface{}{
-			"description":  "Blog posts",
-			"hierarchical": false,
-			"name":         "Posts",
-			"slug":         "post",
-			"rest_base":    "posts",
-		},
-		"page": map[string]interface{}{
-			"description":  "Static pages",
-			"hierarchical": true,
-			"name":         "Pages",
-			"slug":         "page",
-			"rest_base":    "pages",
-		},
-		"attachment": map[string]interface{}{
-			"description":  "Media attachments",
-			"hierarchical": false,
-			"name":         "Media",
-			"slug":         "attachment",
-			"rest_base":    "media",
-		},
-	})
+// Shutdown gracefully shuts down the server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	// Give in-flight requests time to complete
+	<-time.After(100 * time.Millisecond)
+	return s.Close()
 }
 
-func (s *Server) getType(c *mizu.Ctx) error {
-	postType := c.Param("type")
-	types := map[string]map[string]interface{}{
-		"post": {
-			"description":  "Blog posts",
-			"hierarchical": false,
-			"name":         "Posts",
-			"slug":         "post",
-			"rest_base":    "posts",
-		},
-		"page": {
-			"description":  "Static pages",
-			"hierarchical": true,
-			"name":         "Pages",
-			"slug":         "page",
-			"rest_base":    "pages",
-		},
-	}
+// Getters for services (for seeding, testing, etc.)
 
-	if t, ok := types[postType]; ok {
-		return c.JSON(200, t)
-	}
-	return rest.NotFound(c, "Type not found.")
+func (s *Server) AuthService() auth.API {
+	return s.authService
 }
 
-// Status endpoints
-func (s *Server) getStatuses(c *mizu.Ctx) error {
-	return c.JSON(200, map[string]interface{}{
-		"publish": map[string]interface{}{
-			"name":   "Published",
-			"public": true,
-			"slug":   "publish",
-		},
-		"draft": map[string]interface{}{
-			"name":   "Draft",
-			"public": false,
-			"slug":   "draft",
-		},
-		"pending": map[string]interface{}{
-			"name":   "Pending Review",
-			"public": false,
-			"slug":   "pending",
-		},
-		"private": map[string]interface{}{
-			"name":   "Private",
-			"public": false,
-			"slug":   "private",
-		},
-	})
+func (s *Server) CollectionsService() collectionsSvc.API {
+	return s.collectionsService
 }
 
-func (s *Server) getStatus(c *mizu.Ctx) error {
-	status := c.Param("status")
-	statuses := map[string]map[string]interface{}{
-		"publish": {"name": "Published", "public": true, "slug": "publish"},
-		"draft":   {"name": "Draft", "public": false, "slug": "draft"},
-		"pending": {"name": "Pending Review", "public": false, "slug": "pending"},
-		"private": {"name": "Private", "public": false, "slug": "private"},
-	}
-
-	if st, ok := statuses[status]; ok {
-		return c.JSON(200, st)
-	}
-	return rest.NotFound(c, "Status not found.")
+func (s *Server) GlobalsService() globalsSvc.API {
+	return s.globalsService
 }
 
-// Taxonomy endpoints
-func (s *Server) getTaxonomies(c *mizu.Ctx) error {
-	return c.JSON(200, map[string]interface{}{
-		"category": map[string]interface{}{
-			"name":         "Categories",
-			"slug":         "category",
-			"description":  "Post categories",
-			"hierarchical": true,
-			"rest_base":    "categories",
-			"types":        []string{"post"},
-		},
-		"post_tag": map[string]interface{}{
-			"name":         "Tags",
-			"slug":         "post_tag",
-			"description":  "Post tags",
-			"hierarchical": false,
-			"rest_base":    "tags",
-			"types":        []string{"post"},
-		},
-	})
-}
-
-func (s *Server) getTaxonomy(c *mizu.Ctx) error {
-	taxonomy := c.Param("taxonomy")
-	taxonomies := map[string]map[string]interface{}{
-		"category": {
-			"name":         "Categories",
-			"slug":         "category",
-			"description":  "Post categories",
-			"hierarchical": true,
-			"rest_base":    "categories",
-			"types":        []string{"post"},
-		},
-		"post_tag": {
-			"name":         "Tags",
-			"slug":         "post_tag",
-			"description":  "Post tags",
-			"hierarchical": false,
-			"rest_base":    "tags",
-			"types":        []string{"post"},
-		},
-	}
-
-	if t, ok := taxonomies[taxonomy]; ok {
-		return c.JSON(200, t)
-	}
-	return rest.NotFound(c, "Taxonomy not found.")
-}
-
-// XML-RPC handler (placeholder)
-func (s *Server) handleXMLRPC(c *mizu.Ctx) error {
-	// TODO: Implement XML-RPC handling
-	return c.Text(200, "XML-RPC endpoint")
-}
-
-// Frontend handlers (placeholders)
-func (s *Server) frontendHome(c *mizu.Ctx) error {
-	return c.HTML(200, "<html><head><title>CMS</title></head><body><h1>Welcome to CMS</h1><p>WordPress-compatible content management.</p></body></html>")
-}
-
-func (s *Server) frontendPost(c *mizu.Ctx) error {
-	slug := c.Param("slug")
-	return c.HTML(200, "<html><head><title>Post</title></head><body><h1>Post: "+slug+"</h1></body></html>")
-}
-
-func (s *Server) frontendPage(c *mizu.Ctx) error {
-	slug := c.Param("slug")
-	return c.HTML(200, "<html><head><title>Page</title></head><body><h1>Page: "+slug+"</h1></body></html>")
-}
-
-func (s *Server) frontendCategory(c *mizu.Ctx) error {
-	slug := c.Param("slug")
-	return c.HTML(200, "<html><head><title>Category</title></head><body><h1>Category: "+slug+"</h1></body></html>")
-}
-
-func (s *Server) frontendTag(c *mizu.Ctx) error {
-	slug := c.Param("slug")
-	return c.HTML(200, "<html><head><title>Tag</title></head><body><h1>Tag: "+slug+"</h1></body></html>")
-}
-
-func (s *Server) frontendAuthor(c *mizu.Ctx) error {
-	slug := c.Param("slug")
-	return c.HTML(200, "<html><head><title>Author</title></head><body><h1>Author: "+slug+"</h1></body></html>")
-}
-
-// Admin handlers (placeholders)
-func (s *Server) adminDashboard(c *mizu.Ctx) error {
-	return c.HTML(200, "<html><head><title>Admin</title></head><body><h1>Admin Dashboard</h1><p>Coming soon...</p></body></html>")
-}
-
-func (s *Server) adminLogin(c *mizu.Ctx) error {
-	return c.HTML(200, "<html><head><title>Login</title></head><body><h1>Login</h1><form method='post'><input name='user' placeholder='Username'><input name='pass' type='password' placeholder='Password'><button>Login</button></form></body></html>")
+func (s *Server) Store() *duckdb.Store {
+	return s.store
 }
