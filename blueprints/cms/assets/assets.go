@@ -2,7 +2,9 @@
 package assets
 
 import (
+	"crypto/md5"
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"strings"
@@ -166,6 +168,19 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 		},
 		"lte": func(a, b int) bool {
 			return a <= b
+		},
+		"gravatar": func(email string, size int) string {
+			email = strings.ToLower(strings.TrimSpace(email))
+			hash := md5.Sum([]byte(email))
+			return fmt.Sprintf("https://www.gravatar.com/avatar/%x?s=%d&d=mm", hash, size)
+		},
+		"avatarURL": func(avatarURL, email string, size int) string {
+			if avatarURL != "" {
+				return avatarURL
+			}
+			email = strings.ToLower(strings.TrimSpace(email))
+			hash := md5.Sum([]byte(email))
+			return fmt.Sprintf("https://www.gravatar.com/avatar/%x?s=%d&d=mm", hash, size)
 		},
 	}
 

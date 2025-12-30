@@ -75,18 +75,18 @@
                     <li id="wp-admin-bar-my-account" class="menupop with-avatar">
                         <a class="ab-item" aria-haspopup="true" href="/wp-admin/profile.php">
                             <span class="display-name">Howdy, {{.User.DisplayName}}</span>
-                            <img alt="" src="{{.User.AvatarURL}}" srcset="{{.User.AvatarURL}} 2x" class="avatar avatar-26 photo" height="26" width="26" decoding="async">
+                            <img alt="" src="{{avatarURL .User.AvatarURL .User.Email 26}}" srcset="{{avatarURL .User.AvatarURL .User.Email 52}} 2x" class="avatar avatar-26 photo" height="26" width="26" decoding="async">
                         </a>
                         <div class="ab-sub-wrapper">
                             <ul id="wp-admin-bar-user-actions" class="ab-submenu">
                                 <li id="wp-admin-bar-user-info">
                                     <a class="ab-item" tabindex="-1" href="/wp-admin/profile.php">
-                                        <img alt="" src="{{.User.AvatarURL}}" srcset="{{.User.AvatarURL}} 2x" class="avatar avatar-64 photo" height="64" width="64" decoding="async">
+                                        <img alt="" src="{{avatarURL .User.AvatarURL .User.Email 64}}" srcset="{{avatarURL .User.AvatarURL .User.Email 128}} 2x" class="avatar avatar-64 photo" height="64" width="64" decoding="async">
                                         <span class="display-name">{{.User.DisplayName}}</span>
                                     </a>
                                 </li>
                                 <li id="wp-admin-bar-edit-profile"><a class="ab-item" href="/wp-admin/profile.php">Edit Profile</a></li>
-                                <li id="wp-admin-bar-logout"><a class="ab-item" href="/wp-login.php?action=logout">Log Out</a></li>
+                                <li id="wp-admin-bar-logout"><a class="ab-item" href="/wp-logout.php">Log Out</a></li>
                             </ul>
                         </div>
                     </li>
