@@ -140,11 +140,11 @@
                                         </p>
                                         <blockquote><p>{{truncate .Content 150}}</p></blockquote>
                                         <p class="row-actions">
-                                            <span class="approve"><a href="#" class="dim:the-comment-list:comment-1:unapproved:e7e7d3:e7e7d3:new=approved">Approve</a> | </span>
-                                            <span class="reply hide-if-no-js"><a href="#" class="vim-r">Reply</a> | </span>
+                                            {{if .Pending}}<span class="approve"><a href="/wp-admin/comment.php?action=approvecomment&c={{.ID}}">Approve</a> | </span>{{else}}<span class="unapprove"><a href="/wp-admin/comment.php?action=unapprovecomment&c={{.ID}}">Unapprove</a> | </span>{{end}}
+                                            <span class="reply hide-if-no-js"><a href="/wp-admin/comment.php?action=replytocomment&c={{.ID}}" class="vim-r">Reply</a> | </span>
                                             <span class="edit"><a href="/wp-admin/comment.php?action=editcomment&c={{.ID}}">Edit</a> | </span>
-                                            <span class="spam"><a href="#" class="delete vim-s">Spam</a> | </span>
-                                            <span class="trash"><a href="#" class="delete vim-d">Trash</a></span>
+                                            <span class="spam"><a href="/wp-admin/comment.php?action=spamcomment&c={{.ID}}" class="delete">Spam</a> | </span>
+                                            <span class="trash"><a href="/wp-admin/comment.php?action=trashcomment&c={{.ID}}" class="delete submitdelete">Trash</a></span>
                                         </p>
                                     </div>
                                 </li>
