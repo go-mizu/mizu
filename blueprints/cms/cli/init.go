@@ -2,34 +2,68 @@ package cli
 
 import (
 	"fmt"
+	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/blueprints/cms/app/web"
-	"github.com/spf13/cobra"
 )
 
-// NewInit creates the init command.
+// NewInit creates the init command
 func NewInit() *cobra.Command {
-	var dbPath string
-
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize the database",
-		Long:  "Create the database and initialize the schema.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			srv, err := web.New(web.Config{
-				DBPath: dbPath,
-			})
-			if err != nil {
-				return fmt.Errorf("create server: %w", err)
-			}
-			defer srv.Close()
+		Long: `Initialize the CMS database with the required schema.
 
-			fmt.Println("Database initialized successfully!")
-			return nil
-		},
+This command creates all necessary tables for:
+  - Users and sessions
+  - Posts and pages
+  - Categories and tags
+  - Media library
+  - Comments
+  - Settings and menus
+
+The database will be created if it doesn't exist.
+
+Examples:
+  cms init                          # Initialize default database
+  cms init --data /path/to/dir      # Initialize at specific directory`,
+		RunE: runInit,
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path")
-
 	return cmd
+}
+
+func runInit(cmd *cobra.Command, args []string) error {
+	Blank()
+	Header("", "Initialize Database")
+	Blank()
+
+	Summary("Data", dataDir)
+	Blank()
+
+	start := time.Now()
+	stop := StartSpinner("Initializing database...")
+
+	srv, err := web.New(web.Config{
+		Addr:    ":0",
+		DataDir: dataDir,
+		Dev:     false,
+	})
+	if err != nil {
+		stop()
+		Error(fmt.Sprintf("Failed to initialize: %v", err))
+		return err
+	}
+	srv.Close()
+
+	stop()
+	Step("", "Database initialized", time.Since(start))
+	Blank()
+	Success("Database ready")
+	Hint(fmt.Sprintf("Data directory: %s", dataDir))
+	Blank()
+
+	return nil
 }

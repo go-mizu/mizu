@@ -1,4 +1,4 @@
-// Package ulid provides ULID generation for unique IDs.
+// Package ulid provides ULID generation utilities.
 package ulid
 
 import (
@@ -21,20 +21,14 @@ func New() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
 }
 
-// Parse parses a ULID string and returns the ULID.
+// Parse parses a ULID string and returns the parsed ULID.
 func Parse(s string) (ulid.ULID, error) {
 	return ulid.Parse(s)
 }
 
-// IsValid checks if a string is a valid ULID.
-func IsValid(s string) bool {
-	_, err := ulid.Parse(s)
-	return err == nil
-}
-
-// Time extracts the time from a ULID string.
+// Time extracts the timestamp from a ULID string.
 func Time(s string) (time.Time, error) {
-	id, err := ulid.Parse(s)
+	id, err := Parse(s)
 	if err != nil {
 		return time.Time{}, err
 	}

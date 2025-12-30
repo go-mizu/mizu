@@ -1,288 +1,359 @@
--- CMS Core Schema
--- This schema provides the foundation tables. Collection-specific tables are created dynamically.
+-- schema.sql
+-- Modern CMS schema inspired by WordPress and Ghost.
+-- Clean, elegant data model for content management.
+--
+-- Core mental model:
+--   Users → Posts/Pages → Categories/Tags → Comments
+-- Content:
+--   Posts (blog), Pages (static), Collections (custom types)
+-- Media:
+--   Media library with metadata and relationships
+-- Extensibility:
+--   Custom collections with dynamic fields
 
--- Users table (for auth-enabled collections)
+-- ============================================================
+-- Users and authentication
+-- ============================================================
+
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR(26) PRIMARY KEY,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255),
-    salt VARCHAR(32),
-
-    -- Profile fields
-    first_name VARCHAR(255),
-    last_name VARCHAR(255),
-    roles TEXT, -- JSON array of roles
-
-    -- Auth fields
-    login_attempts INTEGER DEFAULT 0,
-    lock_until TIMESTAMP,
-    reset_password_token VARCHAR(255),
-    reset_password_expiration TIMESTAMP,
-    verification_token VARCHAR(255),
-    verified BOOLEAN DEFAULT FALSE,
-
-    -- API Key
-    api_key VARCHAR(255),
-    api_key_index VARCHAR(64), -- Hashed for lookup
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id            VARCHAR PRIMARY KEY,
+    email         VARCHAR UNIQUE NOT NULL,
+    password_hash VARCHAR NOT NULL,
+    name          VARCHAR NOT NULL,
+    slug          VARCHAR UNIQUE NOT NULL,
+    bio           TEXT,
+    avatar_url    VARCHAR,
+    role          VARCHAR NOT NULL DEFAULT 'author',
+    status        VARCHAR NOT NULL DEFAULT 'active',
+    meta          VARCHAR,
+    last_login_at TIMESTAMP,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_api_key_index ON users(api_key_index);
-
--- Sessions table
-CREATE TABLE IF NOT EXISTS _sessions (
-    id VARCHAR(26) PRIMARY KEY,
-    user_id VARCHAR(26) NOT NULL,
-    collection VARCHAR(255) NOT NULL,
-    token TEXT NOT NULL,
-    refresh_token TEXT,
-    user_agent TEXT,
-    ip VARCHAR(45),
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS sessions (
+    id            VARCHAR PRIMARY KEY,
+    user_id       VARCHAR NOT NULL,
+    refresh_token VARCHAR,
+    user_agent    TEXT,
+    ip_address    VARCHAR,
+    expires_at    TIMESTAMP NOT NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON _sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_token ON _sessions(token);
+-- ============================================================
+-- Posts (blog content)
+-- ============================================================
 
--- Globals table
-CREATE TABLE IF NOT EXISTS _globals (
-    id VARCHAR(26) PRIMARY KEY,
-    slug VARCHAR(255) NOT NULL UNIQUE,
-    data TEXT NOT NULL, -- JSON blob
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_globals_slug ON _globals(slug);
-
--- Global versions
-CREATE TABLE IF NOT EXISTS _globals_versions (
-    id VARCHAR(26) PRIMARY KEY,
-    global_slug VARCHAR(255) NOT NULL,
-    version INTEGER NOT NULL,
-    snapshot TEXT NOT NULL, -- JSON blob
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(26)
-);
-
-CREATE INDEX IF NOT EXISTS idx_globals_versions_slug ON _globals_versions(global_slug);
-
--- User preferences
-CREATE TABLE IF NOT EXISTS _preferences (
-    id VARCHAR(26) PRIMARY KEY,
-    user_id VARCHAR(26) NOT NULL,
-    key VARCHAR(255) NOT NULL,
-    value TEXT NOT NULL, -- JSON
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_preferences_user_key ON _preferences(user_id, key);
-
--- Media/Uploads table
-CREATE TABLE IF NOT EXISTS media (
-    id VARCHAR(26) PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    original_filename VARCHAR(255) NOT NULL,
-    mime_type VARCHAR(100) NOT NULL,
-    filesize INTEGER NOT NULL,
-    width INTEGER,
-    height INTEGER,
-    focal_x DOUBLE,
-    focal_y DOUBLE,
-    alt VARCHAR(255),
-    caption TEXT,
-
-    -- Image sizes (JSON map of size name -> {width, height, path})
-    sizes TEXT,
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_media_filename ON media(filename);
-CREATE INDEX IF NOT EXISTS idx_media_mime_type ON media(mime_type);
-
--- Document locks
-CREATE TABLE IF NOT EXISTS _locks (
-    id VARCHAR(26) PRIMARY KEY,
-    collection VARCHAR(255) NOT NULL,
-    document_id VARCHAR(26) NOT NULL,
-    user_id VARCHAR(26) NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    UNIQUE(collection, document_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_locks_collection_doc ON _locks(collection, document_id);
-
--- Migrations tracking
-CREATE TABLE IF NOT EXISTS _migrations (
-    id VARCHAR(26) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
-    batch INTEGER NOT NULL,
-    executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- Pages collection (example - normally created dynamically)
-CREATE TABLE IF NOT EXISTS pages (
-    id VARCHAR(26) PRIMARY KEY,
-    title VARCHAR(255),
-    slug VARCHAR(255) UNIQUE,
-    content TEXT, -- Rich text as JSON
-    parent VARCHAR(26),
-    featured_image VARCHAR(26),
-    meta TEXT, -- JSON for SEO group
-    status VARCHAR(50) DEFAULT 'draft',
-    published_at TIMESTAMP,
-
-    -- Version tracking
-    _status VARCHAR(20) DEFAULT 'draft',
-    _version INTEGER DEFAULT 1,
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_pages_slug ON pages(slug);
-CREATE INDEX IF NOT EXISTS idx_pages_status ON pages(status);
-CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent);
-
--- Pages versions
-CREATE TABLE IF NOT EXISTS pages_versions (
-    id VARCHAR(26) PRIMARY KEY,
-    parent VARCHAR(26) NOT NULL,
-    version INTEGER NOT NULL,
-    snapshot TEXT NOT NULL,
-    published BOOLEAN DEFAULT FALSE,
-    autosave BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(26)
-);
-
-CREATE INDEX IF NOT EXISTS idx_pages_versions_parent ON pages_versions(parent);
-
--- Posts collection
 CREATE TABLE IF NOT EXISTS posts (
-    id VARCHAR(26) PRIMARY KEY,
-    title VARCHAR(255),
-    slug VARCHAR(255) UNIQUE,
-    content TEXT,
-    excerpt TEXT,
-    author VARCHAR(26),
-    categories TEXT, -- JSON array of IDs
-    tags TEXT, -- JSON array of IDs
-    featured_image VARCHAR(26),
-    meta TEXT, -- JSON for SEO group
-    status VARCHAR(50) DEFAULT 'draft',
-    published_at TIMESTAMP,
-
-    -- Version tracking
-    _status VARCHAR(20) DEFAULT 'draft',
-    _version INTEGER DEFAULT 1,
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                VARCHAR PRIMARY KEY,
+    author_id         VARCHAR NOT NULL,
+    title             VARCHAR NOT NULL,
+    slug              VARCHAR UNIQUE NOT NULL,
+    excerpt           TEXT,
+    content           TEXT,
+    content_format    VARCHAR DEFAULT 'markdown',
+    featured_image_id VARCHAR,
+    status            VARCHAR NOT NULL DEFAULT 'draft',
+    visibility        VARCHAR NOT NULL DEFAULT 'public',
+    password          VARCHAR,
+    published_at      TIMESTAMP,
+    scheduled_at      TIMESTAMP,
+    meta              VARCHAR,
+    reading_time      INTEGER,
+    word_count        INTEGER,
+    allow_comments    BOOLEAN DEFAULT true,
+    is_featured       BOOLEAN DEFAULT false,
+    is_sticky         BOOLEAN DEFAULT false,
+    sort_order        INTEGER DEFAULT 0,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug);
-CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
-CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author);
-CREATE INDEX IF NOT EXISTS idx_posts_published_at ON posts(published_at);
+-- ============================================================
+-- Pages (static content)
+-- ============================================================
 
--- Posts versions
-CREATE TABLE IF NOT EXISTS posts_versions (
-    id VARCHAR(26) PRIMARY KEY,
-    parent VARCHAR(26) NOT NULL,
-    version INTEGER NOT NULL,
-    snapshot TEXT NOT NULL,
-    published BOOLEAN DEFAULT FALSE,
-    autosave BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(26)
+CREATE TABLE IF NOT EXISTS pages (
+    id                VARCHAR PRIMARY KEY,
+    author_id         VARCHAR NOT NULL,
+    parent_id         VARCHAR,
+    title             VARCHAR NOT NULL,
+    slug              VARCHAR NOT NULL,
+    content           TEXT,
+    content_format    VARCHAR DEFAULT 'markdown',
+    featured_image_id VARCHAR,
+    template          VARCHAR,
+    status            VARCHAR NOT NULL DEFAULT 'draft',
+    visibility        VARCHAR NOT NULL DEFAULT 'public',
+    meta              VARCHAR,
+    sort_order        INTEGER DEFAULT 0,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_posts_versions_parent ON posts_versions(parent);
+-- ============================================================
+-- Revisions (version history)
+-- ============================================================
 
--- Categories collection
+CREATE TABLE IF NOT EXISTS revisions (
+    id              VARCHAR PRIMARY KEY,
+    entity_type     VARCHAR NOT NULL,
+    entity_id       VARCHAR NOT NULL,
+    author_id       VARCHAR NOT NULL,
+    title           VARCHAR,
+    content         TEXT,
+    meta            VARCHAR,
+    revision_number INTEGER NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Categories (hierarchical taxonomy)
+-- ============================================================
+
 CREATE TABLE IF NOT EXISTS categories (
-    id VARCHAR(26) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) UNIQUE,
-    description TEXT,
-    parent VARCHAR(26),
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                VARCHAR PRIMARY KEY,
+    parent_id         VARCHAR,
+    name              VARCHAR NOT NULL,
+    slug              VARCHAR UNIQUE NOT NULL,
+    description       TEXT,
+    featured_image_id VARCHAR,
+    meta              VARCHAR,
+    sort_order        INTEGER DEFAULT 0,
+    post_count        INTEGER DEFAULT 0,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug);
-CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent);
+-- ============================================================
+-- Tags (flat taxonomy)
+-- ============================================================
 
--- Tags collection
 CREATE TABLE IF NOT EXISTS tags (
-    id VARCHAR(26) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) UNIQUE,
-
-    -- Timestamps
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id                VARCHAR PRIMARY KEY,
+    name              VARCHAR NOT NULL,
+    slug              VARCHAR UNIQUE NOT NULL,
+    description       TEXT,
+    featured_image_id VARCHAR,
+    meta              VARCHAR,
+    post_count        INTEGER DEFAULT 0,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_tags_slug ON tags(slug);
+-- ============================================================
+-- Post-Category relationship
+-- ============================================================
 
--- Localized field values (for field-level localization)
-CREATE TABLE IF NOT EXISTS _locales (
-    id VARCHAR(26) PRIMARY KEY,
-    collection VARCHAR(255) NOT NULL,
-    document_id VARCHAR(26) NOT NULL,
-    field_path VARCHAR(255) NOT NULL,
-    locale VARCHAR(10) NOT NULL,
-    value TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(collection, document_id, field_path, locale)
+CREATE TABLE IF NOT EXISTS post_categories (
+    post_id     VARCHAR NOT NULL,
+    category_id VARCHAR NOT NULL,
+    sort_order  INTEGER DEFAULT 0,
+    PRIMARY KEY (post_id, category_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_locales_lookup ON _locales(collection, document_id, locale);
-CREATE INDEX IF NOT EXISTS idx_locales_field ON _locales(collection, document_id, field_path);
+-- ============================================================
+-- Post-Tag relationship
+-- ============================================================
 
--- Relationships junction table (for polymorphic many-to-many)
-CREATE TABLE IF NOT EXISTS _relationships (
-    id VARCHAR(26) PRIMARY KEY,
-    source_collection VARCHAR(255) NOT NULL,
-    source_id VARCHAR(26) NOT NULL,
-    source_field VARCHAR(255) NOT NULL,
-    target_collection VARCHAR(255) NOT NULL,
-    target_id VARCHAR(26) NOT NULL,
-    position INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS post_tags (
+    post_id VARCHAR NOT NULL,
+    tag_id  VARCHAR NOT NULL,
+    PRIMARY KEY (post_id, tag_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_relationships_source ON _relationships(source_collection, source_id, source_field);
-CREATE INDEX IF NOT EXISTS idx_relationships_target ON _relationships(target_collection, target_id);
+-- ============================================================
+-- Media library
+-- ============================================================
 
--- Audit log for tracking changes
-CREATE TABLE IF NOT EXISTS _audit_log (
-    id VARCHAR(26) PRIMARY KEY,
-    collection VARCHAR(255) NOT NULL,
-    document_id VARCHAR(26) NOT NULL,
-    action VARCHAR(20) NOT NULL, -- 'create', 'update', 'delete'
-    user_id VARCHAR(26),
-    changes TEXT, -- JSON of changed fields
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS media (
+    id                VARCHAR PRIMARY KEY,
+    uploader_id       VARCHAR NOT NULL,
+    filename          VARCHAR NOT NULL,
+    original_filename VARCHAR NOT NULL,
+    mime_type         VARCHAR NOT NULL,
+    file_size         BIGINT NOT NULL,
+    storage_path      VARCHAR NOT NULL,
+    storage_provider  VARCHAR DEFAULT 'local',
+    url               VARCHAR NOT NULL,
+    alt_text          VARCHAR,
+    caption           TEXT,
+    title             VARCHAR,
+    description       TEXT,
+    width             INTEGER,
+    height            INTEGER,
+    duration          INTEGER,
+    meta              VARCHAR,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_collection_doc ON _audit_log(collection, document_id);
-CREATE INDEX IF NOT EXISTS idx_audit_user ON _audit_log(user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_created ON _audit_log(created_at);
+-- ============================================================
+-- Post-Media relationship
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS post_media (
+    post_id    VARCHAR NOT NULL,
+    media_id   VARCHAR NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    PRIMARY KEY (post_id, media_id)
+);
+
+-- ============================================================
+-- Comments
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS comments (
+    id           VARCHAR PRIMARY KEY,
+    post_id      VARCHAR NOT NULL,
+    parent_id    VARCHAR,
+    author_id    VARCHAR,
+    author_name  VARCHAR,
+    author_email VARCHAR,
+    author_url   VARCHAR,
+    content      TEXT NOT NULL,
+    status       VARCHAR NOT NULL DEFAULT 'pending',
+    ip_address   VARCHAR,
+    user_agent   TEXT,
+    likes_count  INTEGER DEFAULT 0,
+    meta         VARCHAR,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Collections (custom content types)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS collections (
+    id             VARCHAR PRIMARY KEY,
+    name           VARCHAR NOT NULL,
+    slug           VARCHAR UNIQUE NOT NULL,
+    description    TEXT,
+    icon           VARCHAR,
+    singular_label VARCHAR,
+    plural_label   VARCHAR,
+    supports       VARCHAR,
+    meta           VARCHAR,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Collection fields (schema definition)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS collection_fields (
+    id            VARCHAR PRIMARY KEY,
+    collection_id VARCHAR NOT NULL,
+    name          VARCHAR NOT NULL,
+    slug          VARCHAR NOT NULL,
+    field_type    VARCHAR NOT NULL,
+    description   TEXT,
+    placeholder   VARCHAR,
+    default_value TEXT,
+    options       VARCHAR,
+    validation    VARCHAR,
+    sort_order    INTEGER DEFAULT 0,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Collection items (custom content)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS collection_items (
+    id            VARCHAR PRIMARY KEY,
+    collection_id VARCHAR NOT NULL,
+    author_id     VARCHAR NOT NULL,
+    title         VARCHAR,
+    slug          VARCHAR,
+    status        VARCHAR NOT NULL DEFAULT 'draft',
+    data          VARCHAR NOT NULL,
+    meta          VARCHAR,
+    published_at  TIMESTAMP,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Settings (key-value store)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS settings (
+    id          VARCHAR PRIMARY KEY,
+    key         VARCHAR UNIQUE NOT NULL,
+    value       TEXT,
+    value_type  VARCHAR DEFAULT 'string',
+    group_name  VARCHAR,
+    description TEXT,
+    is_public   BOOLEAN DEFAULT false,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Navigation menus
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS menus (
+    id         VARCHAR PRIMARY KEY,
+    name       VARCHAR NOT NULL,
+    slug       VARCHAR UNIQUE NOT NULL,
+    location   VARCHAR,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Menu items
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS menu_items (
+    id         VARCHAR PRIMARY KEY,
+    menu_id    VARCHAR NOT NULL,
+    parent_id  VARCHAR,
+    title      VARCHAR NOT NULL,
+    url        VARCHAR,
+    target     VARCHAR DEFAULT '_self',
+    link_type  VARCHAR,
+    link_id    VARCHAR,
+    css_class  VARCHAR,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Webhooks
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS webhooks (
+    id                VARCHAR PRIMARY KEY,
+    name              VARCHAR NOT NULL,
+    url               VARCHAR NOT NULL,
+    secret            VARCHAR,
+    events            VARCHAR NOT NULL,
+    status            VARCHAR DEFAULT 'active',
+    last_triggered_at TIMESTAMP,
+    failure_count     INTEGER DEFAULT 0,
+    meta              VARCHAR,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- API keys
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           VARCHAR PRIMARY KEY,
+    user_id      VARCHAR,
+    name         VARCHAR NOT NULL,
+    key_hash     VARCHAR NOT NULL,
+    key_prefix   VARCHAR NOT NULL,
+    permissions  VARCHAR,
+    last_used_at TIMESTAMP,
+    expires_at   TIMESTAMP,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
