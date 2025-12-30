@@ -240,3 +240,49 @@ CREATE TABLE IF NOT EXISTS tags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tags_slug ON tags(slug);
+
+-- Localized field values (for field-level localization)
+CREATE TABLE IF NOT EXISTS _locales (
+    id VARCHAR(26) PRIMARY KEY,
+    collection VARCHAR(255) NOT NULL,
+    document_id VARCHAR(26) NOT NULL,
+    field_path VARCHAR(255) NOT NULL,
+    locale VARCHAR(10) NOT NULL,
+    value TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(collection, document_id, field_path, locale)
+);
+
+CREATE INDEX IF NOT EXISTS idx_locales_lookup ON _locales(collection, document_id, locale);
+CREATE INDEX IF NOT EXISTS idx_locales_field ON _locales(collection, document_id, field_path);
+
+-- Relationships junction table (for polymorphic many-to-many)
+CREATE TABLE IF NOT EXISTS _relationships (
+    id VARCHAR(26) PRIMARY KEY,
+    source_collection VARCHAR(255) NOT NULL,
+    source_id VARCHAR(26) NOT NULL,
+    source_field VARCHAR(255) NOT NULL,
+    target_collection VARCHAR(255) NOT NULL,
+    target_id VARCHAR(26) NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_relationships_source ON _relationships(source_collection, source_id, source_field);
+CREATE INDEX IF NOT EXISTS idx_relationships_target ON _relationships(target_collection, target_id);
+
+-- Audit log for tracking changes
+CREATE TABLE IF NOT EXISTS _audit_log (
+    id VARCHAR(26) PRIMARY KEY,
+    collection VARCHAR(255) NOT NULL,
+    document_id VARCHAR(26) NOT NULL,
+    action VARCHAR(20) NOT NULL, -- 'create', 'update', 'delete'
+    user_id VARCHAR(26),
+    changes TEXT, -- JSON of changed fields
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_collection_doc ON _audit_log(collection, document_id);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON _audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON _audit_log(created_at);
