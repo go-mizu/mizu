@@ -13,6 +13,7 @@ import (
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/cms/app/web/handler/rest"
+	"github.com/go-mizu/blueprints/cms/app/web/handler/wpapi"
 	"github.com/go-mizu/blueprints/cms/feature/categories"
 	"github.com/go-mizu/blueprints/cms/feature/comments"
 	"github.com/go-mizu/blueprints/cms/feature/media"
@@ -60,6 +61,9 @@ type Server struct {
 	commentsHandlers   *rest.Comments
 	settingsHandlers   *rest.Settings
 	menusHandlers      *rest.Menus
+
+	// WordPress API Handler
+	wpHandler *wpapi.Handler
 }
 
 // New creates a new server.
@@ -145,6 +149,22 @@ func New(cfg Config) (*Server, error) {
 	s.settingsHandlers = rest.NewSettings(settingsSvc)
 	s.menusHandlers = rest.NewMenus(menusSvc)
 
+	// Create WordPress API handler
+	baseURL := "http://localhost" + cfg.Addr
+	s.wpHandler = wpapi.New(wpapi.Config{
+		BaseURL:    baseURL,
+		Users:      usersSvc,
+		Posts:      postsSvc,
+		Pages:      pagesSvc,
+		Categories: categoriesSvc,
+		Tags:       tagsSvc,
+		Media:      mediaSvc,
+		Comments:   commentsSvc,
+		Settings:   settingsSvc,
+		GetUserID:  s.getUserID,
+		GetUser:    s.getUser,
+	})
+
 	s.setupRoutes()
 
 	return s, nil
@@ -180,6 +200,19 @@ func (s *Server) getUserID(c *mizu.Ctx) string {
 		return ""
 	}
 	return user.ID
+}
+
+// getUser extracts the user from the session.
+func (s *Server) getUser(c *mizu.Ctx) *users.User {
+	cookie, err := c.Cookie("session")
+	if err != nil || cookie.Value == "" {
+		return nil
+	}
+	user, err := s.users.GetBySession(c.Context(), cookie.Value)
+	if err != nil {
+		return nil
+	}
+	return user
 }
 
 // authRequired middleware requires authentication.
@@ -291,6 +324,86 @@ func (s *Server) setupRoutes() {
 		api.Put("/menus/{id}/items/{itemID}", s.authRequired(s.menusHandlers.UpdateItem))
 		api.Delete("/menus/{id}/items/{itemID}", s.authRequired(s.menusHandlers.DeleteItem))
 		api.Post("/menus/{id}/reorder", s.authRequired(s.menusHandlers.ReorderItems))
+	})
+
+	// WordPress REST API routes
+	s.app.Get("/wp-json", s.wpHandler.Discovery)
+	s.app.Get("/wp-json/wp/v2", s.wpHandler.NamespaceDiscovery)
+
+	s.app.Group("/wp-json/wp/v2", func(wp *mizu.Router) {
+		// Posts
+		wp.Get("/posts", s.wpHandler.ListPosts)
+		wp.Post("/posts", s.wpHandler.CreatePost)
+		wp.Get("/posts/{id}", s.wpHandler.GetPost)
+		wp.Post("/posts/{id}", s.wpHandler.UpdatePost)
+		wp.Put("/posts/{id}", s.wpHandler.UpdatePost)
+		wp.Patch("/posts/{id}", s.wpHandler.UpdatePost)
+		wp.Delete("/posts/{id}", s.wpHandler.DeletePost)
+
+		// Pages
+		wp.Get("/pages", s.wpHandler.ListPages)
+		wp.Post("/pages", s.wpHandler.CreatePage)
+		wp.Get("/pages/{id}", s.wpHandler.GetPage)
+		wp.Post("/pages/{id}", s.wpHandler.UpdatePage)
+		wp.Put("/pages/{id}", s.wpHandler.UpdatePage)
+		wp.Patch("/pages/{id}", s.wpHandler.UpdatePage)
+		wp.Delete("/pages/{id}", s.wpHandler.DeletePage)
+
+		// Users
+		wp.Get("/users", s.wpHandler.ListUsers)
+		wp.Post("/users", s.wpHandler.CreateUser)
+		wp.Get("/users/me", s.wpHandler.GetCurrentUser)
+		wp.Post("/users/me", s.wpHandler.UpdateCurrentUser)
+		wp.Put("/users/me", s.wpHandler.UpdateCurrentUser)
+		wp.Patch("/users/me", s.wpHandler.UpdateCurrentUser)
+		wp.Delete("/users/me", s.wpHandler.DeleteCurrentUser)
+		wp.Get("/users/{id}", s.wpHandler.GetUser)
+		wp.Post("/users/{id}", s.wpHandler.UpdateUser)
+		wp.Put("/users/{id}", s.wpHandler.UpdateUser)
+		wp.Patch("/users/{id}", s.wpHandler.UpdateUser)
+		wp.Delete("/users/{id}", s.wpHandler.DeleteUser)
+
+		// Categories
+		wp.Get("/categories", s.wpHandler.ListCategories)
+		wp.Post("/categories", s.wpHandler.CreateCategory)
+		wp.Get("/categories/{id}", s.wpHandler.GetCategory)
+		wp.Post("/categories/{id}", s.wpHandler.UpdateCategory)
+		wp.Put("/categories/{id}", s.wpHandler.UpdateCategory)
+		wp.Patch("/categories/{id}", s.wpHandler.UpdateCategory)
+		wp.Delete("/categories/{id}", s.wpHandler.DeleteCategory)
+
+		// Tags
+		wp.Get("/tags", s.wpHandler.ListTags)
+		wp.Post("/tags", s.wpHandler.CreateTag)
+		wp.Get("/tags/{id}", s.wpHandler.GetTag)
+		wp.Post("/tags/{id}", s.wpHandler.UpdateTag)
+		wp.Put("/tags/{id}", s.wpHandler.UpdateTag)
+		wp.Patch("/tags/{id}", s.wpHandler.UpdateTag)
+		wp.Delete("/tags/{id}", s.wpHandler.DeleteTag)
+
+		// Media
+		wp.Get("/media", s.wpHandler.ListMedia)
+		wp.Post("/media", s.wpHandler.UploadMedia)
+		wp.Get("/media/{id}", s.wpHandler.GetMedia)
+		wp.Post("/media/{id}", s.wpHandler.UpdateMedia)
+		wp.Put("/media/{id}", s.wpHandler.UpdateMedia)
+		wp.Patch("/media/{id}", s.wpHandler.UpdateMedia)
+		wp.Delete("/media/{id}", s.wpHandler.DeleteMedia)
+
+		// Comments
+		wp.Get("/comments", s.wpHandler.ListComments)
+		wp.Post("/comments", s.wpHandler.CreateComment)
+		wp.Get("/comments/{id}", s.wpHandler.GetComment)
+		wp.Post("/comments/{id}", s.wpHandler.UpdateComment)
+		wp.Put("/comments/{id}", s.wpHandler.UpdateComment)
+		wp.Patch("/comments/{id}", s.wpHandler.UpdateComment)
+		wp.Delete("/comments/{id}", s.wpHandler.DeleteComment)
+
+		// Settings
+		wp.Get("/settings", s.wpHandler.GetSettings)
+		wp.Post("/settings", s.wpHandler.UpdateSettings)
+		wp.Put("/settings", s.wpHandler.UpdateSettings)
+		wp.Patch("/settings", s.wpHandler.UpdateSettings)
 	})
 }
 
