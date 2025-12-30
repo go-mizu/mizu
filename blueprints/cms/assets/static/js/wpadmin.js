@@ -25,23 +25,38 @@
     });
 
     /**
-     * Mobile menu toggle
+     * Mobile menu toggle and collapse button
      */
     function initMenuToggle() {
-        var menuToggle = document.querySelector('.menu-toggle');
+        var collapseBtn = document.getElementById('collapse-button');
         var adminMenu = document.getElementById('adminmenu');
         var wpcontent = document.getElementById('wpcontent');
 
-        if (menuToggle && adminMenu) {
-            menuToggle.addEventListener('click', function(e) {
+        // Collapse button handler
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', function(e) {
                 e.preventDefault();
                 document.body.classList.toggle('folded');
-                localStorage.setItem('adminMenuFolded', document.body.classList.contains('folded'));
-            });
 
-            // Restore menu state
-            if (localStorage.getItem('adminMenuFolded') === 'true') {
-                document.body.classList.add('folded');
+                // Update aria-expanded
+                var isExpanded = !document.body.classList.contains('folded');
+                this.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+
+                // Save state
+                localStorage.setItem('adminMenuFolded', document.body.classList.contains('folded'));
+
+                // Set cookie for server-side awareness
+                document.cookie = 'folded_menu=' +
+                    (document.body.classList.contains('folded') ? '1' : '0') +
+                    '; path=/wp-admin; max-age=31536000';
+            });
+        }
+
+        // Restore menu state
+        if (localStorage.getItem('adminMenuFolded') === 'true') {
+            document.body.classList.add('folded');
+            if (collapseBtn) {
+                collapseBtn.setAttribute('aria-expanded', 'false');
             }
         }
 
@@ -59,6 +74,30 @@
                         this.classList.remove('opensub');
                     }
                 });
+
+                // Click toggle for submenus in non-folded state
+                var menuLink = item.querySelector('a.wp-has-submenu');
+                if (menuLink) {
+                    menuLink.addEventListener('click', function(e) {
+                        if (!document.body.classList.contains('folded')) {
+                            // Allow navigation if there's no submenu or clicking on submenu items
+                            var submenu = item.querySelector('.wp-submenu');
+                            if (submenu && !e.target.closest('.wp-submenu')) {
+                                e.preventDefault();
+                                item.classList.toggle('wp-menu-open');
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        // Mobile menu toggle
+        var mobileToggle = document.querySelector('.menu-toggle');
+        if (mobileToggle) {
+            mobileToggle.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.body.classList.toggle('mobile-menu-open');
             });
         }
     }
@@ -709,6 +748,225 @@
             }
         };
     }
+
+    /**
+     * Welcome panel dismiss
+     */
+    function initWelcomePanel() {
+        var welcomePanel = document.getElementById('welcome-panel');
+        var dismissBtn = welcomePanel ? welcomePanel.querySelector('.welcome-panel-close') : null;
+
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                welcomePanel.style.transition = 'opacity 0.3s ease, height 0.3s ease';
+                welcomePanel.style.opacity = '0';
+                welcomePanel.style.height = welcomePanel.offsetHeight + 'px';
+
+                setTimeout(function() {
+                    welcomePanel.style.height = '0';
+                    welcomePanel.style.overflow = 'hidden';
+                    welcomePanel.style.padding = '0';
+                    welcomePanel.style.margin = '0';
+                    welcomePanel.style.border = 'none';
+
+                    // Save dismissal state
+                    localStorage.setItem('welcomePanelDismissed', 'true');
+                }, 300);
+            });
+        }
+
+        // Check if welcome panel was previously dismissed
+        if (welcomePanel && localStorage.getItem('welcomePanelDismissed') === 'true') {
+            welcomePanel.style.display = 'none';
+        }
+    }
+
+    /**
+     * Accordion sections (menu editor sidebar)
+     */
+    function initAccordionSections() {
+        var accordionTitles = document.querySelectorAll('.accordion-section-title');
+
+        accordionTitles.forEach(function(title) {
+            title.addEventListener('click', function() {
+                var section = this.closest('.accordion-section');
+
+                // Close other sections (optional - for exclusive accordion)
+                // var container = this.closest('.accordion-container');
+                // if (container) {
+                //     container.querySelectorAll('.accordion-section.open').forEach(function(s) {
+                //         if (s !== section) s.classList.remove('open');
+                //     });
+                // }
+
+                section.classList.toggle('open');
+            });
+        });
+    }
+
+    /**
+     * Select all checkboxes in tables
+     */
+    function initTableSelectAll() {
+        var tables = document.querySelectorAll('.wp-list-table');
+
+        tables.forEach(function(table) {
+            var selectAllCheckboxes = table.querySelectorAll('thead .check-column input[type="checkbox"], tfoot .check-column input[type="checkbox"]');
+            var rowCheckboxes = table.querySelectorAll('tbody .check-column input[type="checkbox"]');
+
+            selectAllCheckboxes.forEach(function(selectAll) {
+                selectAll.addEventListener('change', function() {
+                    var isChecked = this.checked;
+                    rowCheckboxes.forEach(function(cb) {
+                        cb.checked = isChecked;
+                    });
+
+                    // Sync other select all checkboxes
+                    selectAllCheckboxes.forEach(function(other) {
+                        other.checked = isChecked;
+                    });
+                });
+            });
+
+            // Update select all when individual checkboxes change
+            rowCheckboxes.forEach(function(cb) {
+                cb.addEventListener('change', function() {
+                    var allChecked = Array.from(rowCheckboxes).every(function(c) { return c.checked; });
+                    var noneChecked = Array.from(rowCheckboxes).every(function(c) { return !c.checked; });
+
+                    selectAllCheckboxes.forEach(function(selectAll) {
+                        selectAll.checked = allChecked;
+                        selectAll.indeterminate = !allChecked && !noneChecked;
+                    });
+                });
+            });
+        });
+    }
+
+    /**
+     * Category add new (inline form)
+     */
+    function initCategoryAdd() {
+        var addToggle = document.getElementById('category-add-toggle');
+        var addForm = document.querySelector('.wp-hidden-children .wp-hidden-child');
+
+        if (addToggle && addForm) {
+            addToggle.addEventListener('click', function(e) {
+                e.preventDefault();
+                addForm.style.display = addForm.style.display === 'none' ? 'block' : 'none';
+
+                if (addForm.style.display === 'block') {
+                    var input = addForm.querySelector('input[type="text"]');
+                    if (input) input.focus();
+                }
+            });
+        }
+    }
+
+    /**
+     * Tag input handling
+     */
+    function initTagInput() {
+        var tagInputs = document.querySelectorAll('.tagsdiv');
+
+        tagInputs.forEach(function(tagDiv) {
+            var input = tagDiv.querySelector('.newtag');
+            var addBtn = tagDiv.querySelector('.tagadd, .button');
+            var tagList = tagDiv.querySelector('.tagchecklist');
+            var hiddenInput = tagDiv.querySelector('input[type="hidden"]');
+
+            if (!input || !tagList) return;
+
+            function addTag(tagName) {
+                if (!tagName.trim()) return;
+
+                var span = document.createElement('span');
+                span.className = 'tag-item';
+
+                var removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'ntdelbutton';
+                removeBtn.innerHTML = '<span class="remove-tag-icon" aria-hidden="true"></span><span class="screen-reader-text">Remove tag: ' + tagName + '</span>';
+                removeBtn.addEventListener('click', function() {
+                    span.remove();
+                    updateHiddenInput();
+                });
+
+                span.textContent = tagName + ' ';
+                span.appendChild(removeBtn);
+                tagList.appendChild(span);
+
+                input.value = '';
+                updateHiddenInput();
+            }
+
+            function updateHiddenInput() {
+                if (hiddenInput) {
+                    var tags = Array.from(tagList.querySelectorAll('.tag-item')).map(function(span) {
+                        return span.textContent.trim().replace(/\s*$/, '');
+                    });
+                    hiddenInput.value = tags.join(', ');
+                }
+            }
+
+            if (addBtn) {
+                addBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    addTag(input.value);
+                });
+            }
+
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    addTag(this.value.replace(/,/g, ''));
+                }
+            });
+        });
+    }
+
+    /**
+     * Form dirty state tracking
+     */
+    function initFormDirtyState() {
+        var forms = document.querySelectorAll('form.dirty-check');
+
+        forms.forEach(function(form) {
+            var initialState = new FormData(form);
+            var isDirty = false;
+
+            form.addEventListener('change', function() {
+                isDirty = true;
+            });
+
+            form.addEventListener('input', function() {
+                isDirty = true;
+            });
+
+            window.addEventListener('beforeunload', function(e) {
+                if (isDirty) {
+                    e.preventDefault();
+                    e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+                    return e.returnValue;
+                }
+            });
+
+            form.addEventListener('submit', function() {
+                isDirty = false;
+            });
+        });
+    }
+
+    // Initialize additional functions
+    document.addEventListener('DOMContentLoaded', function() {
+        initWelcomePanel();
+        initAccordionSections();
+        initTableSelectAll();
+        initCategoryAdd();
+        initTagInput();
+        initFormDirtyState();
+    });
 
     // Expose utilities globally for other scripts
     window.wpAdmin = {
