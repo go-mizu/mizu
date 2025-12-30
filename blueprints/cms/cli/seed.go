@@ -5,229 +5,358 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-mizu/blueprints/cms/app/web"
-	"github.com/go-mizu/blueprints/cms/feature/auth"
-	"github.com/go-mizu/blueprints/cms/feature/collections"
 	"github.com/spf13/cobra"
+
+	"github.com/go-mizu/blueprints/cms/app/web"
+	"github.com/go-mizu/blueprints/cms/feature/categories"
+	"github.com/go-mizu/blueprints/cms/feature/comments"
+	"github.com/go-mizu/blueprints/cms/feature/menus"
+	"github.com/go-mizu/blueprints/cms/feature/pages"
+	"github.com/go-mizu/blueprints/cms/feature/posts"
+	"github.com/go-mizu/blueprints/cms/feature/settings"
+	"github.com/go-mizu/blueprints/cms/feature/tags"
+	"github.com/go-mizu/blueprints/cms/feature/users"
 )
 
-// NewSeed creates the seed command.
+// NewSeed creates the seed command
 func NewSeed() *cobra.Command {
-	var dbPath string
-
 	cmd := &cobra.Command{
 		Use:   "seed",
-		Short: "Seed the database with sample data",
-		Long:  "Create sample users, pages, posts, and other content.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			srv, err := web.New(web.Config{
-				DBPath: dbPath,
-			})
-			if err != nil {
-				return fmt.Errorf("create server: %w", err)
-			}
-			defer srv.Close()
+		Short: "Seed the database with demo data",
+		Long: `Seed the CMS database with demo data for testing.
 
-			ctx := context.Background()
+Creates sample content:
+  - Admin user (admin@example.com / password123)
+  - Categories (Technology, Business, Lifestyle)
+  - Tags (Go, API, Tutorial, etc.)
+  - Sample posts with content
+  - Sample pages (About, Contact)
+  - Navigation menus
 
-			// Create admin user
-			fmt.Println("Creating admin user...")
-			admin, err := srv.AuthService().Register(ctx, "users", &auth.RegisterInput{
-				Email:     "admin@example.com",
-				Password:  "password",
-				FirstName: "Admin",
-				LastName:  "User",
-			})
-			if err != nil {
-				fmt.Printf("Warning: Could not create admin user: %v\n", err)
-			} else {
-				fmt.Printf("Created admin: %s\n", admin.User.Email)
+To reset the database, delete the data directory first:
+  rm -rf ~/data/blueprint/cms && cms seed
 
-				// Update to admin role
-				srv.CollectionsService().UpdateByID(ctx, "users", admin.User.ID, &collections.UpdateInput{
-					Data: map[string]any{
-						"roles": []string{"admin"},
-					},
-				})
-			}
+Examples:
+  cms seed                     # Seed with demo data
+  cms seed --data /path/to    # Seed specific database`,
+		RunE: runSeed,
+	}
 
-			// Create sample categories
-			fmt.Println("Creating categories...")
-			categories := []map[string]any{
-				{"name": "Technology", "slug": "technology", "description": "Tech news and tutorials"},
-				{"name": "Design", "slug": "design", "description": "UI/UX and design articles"},
-				{"name": "Business", "slug": "business", "description": "Business and marketing"},
-			}
-			categoryIDs := make(map[string]string)
-			for _, cat := range categories {
-				doc, err := srv.CollectionsService().Create(ctx, "categories", &collections.CreateInput{Data: cat})
-				if err != nil {
-					fmt.Printf("Warning: Could not create category %s: %v\n", cat["name"], err)
-				} else {
-					categoryIDs[cat["slug"].(string)] = doc["id"].(string)
-					fmt.Printf("Created category: %s\n", cat["name"])
-				}
-			}
+	return cmd
+}
 
-			// Create sample tags
-			fmt.Println("Creating tags...")
-			tags := []map[string]any{
-				{"name": "Go", "slug": "go"},
-				{"name": "JavaScript", "slug": "javascript"},
-				{"name": "React", "slug": "react"},
-				{"name": "CSS", "slug": "css"},
-			}
-			tagIDs := make(map[string]string)
-			for _, tag := range tags {
-				doc, err := srv.CollectionsService().Create(ctx, "tags", &collections.CreateInput{Data: tag})
-				if err != nil {
-					fmt.Printf("Warning: Could not create tag %s: %v\n", tag["name"], err)
-				} else {
-					tagIDs[tag["slug"].(string)] = doc["id"].(string)
-					fmt.Printf("Created tag: %s\n", tag["name"])
-				}
-			}
+func runSeed(cmd *cobra.Command, args []string) error {
+	Blank()
+	Header("", "Seed Database")
+	Blank()
 
-			// Create sample pages
-			fmt.Println("Creating pages...")
-			pages := []map[string]any{
-				{
-					"title":   "Home",
-					"slug":    "home",
-					"content": `{"root":{"children":[{"children":[{"text":"Welcome to our CMS!"}],"type":"h1"}],"type":"root"}}`,
-					"status":  "published",
-				},
-				{
-					"title":   "About",
-					"slug":    "about",
-					"content": `{"root":{"children":[{"children":[{"text":"About Us"}],"type":"h1"},{"children":[{"text":"We are a great company."}],"type":"p"}],"type":"root"}}`,
-					"status":  "published",
-				},
-				{
-					"title":   "Contact",
-					"slug":    "contact",
-					"content": `{"root":{"children":[{"children":[{"text":"Contact Us"}],"type":"h1"},{"children":[{"text":"Email: hello@example.com"}],"type":"p"}],"type":"root"}}`,
-					"status":  "published",
-				},
-			}
-			for _, page := range pages {
-				_, err := srv.CollectionsService().Create(ctx, "pages", &collections.CreateInput{Data: page})
-				if err != nil {
-					fmt.Printf("Warning: Could not create page %s: %v\n", page["title"], err)
-				} else {
-					fmt.Printf("Created page: %s\n", page["title"])
-				}
-			}
+	Summary("Data", dataDir)
+	Blank()
 
-			// Create sample posts
-			fmt.Println("Creating posts...")
-			var authorID string
-			if admin != nil {
-				authorID = admin.User.ID
-			}
-			posts := []map[string]any{
-				{
-					"title":       "Getting Started with Go",
-					"slug":        "getting-started-with-go",
-					"excerpt":     "Learn the basics of Go programming language.",
-					"content":     `{"root":{"children":[{"children":[{"text":"Getting Started with Go"}],"type":"h1"},{"children":[{"text":"Go is a statically typed, compiled language designed at Google."}],"type":"p"}],"type":"root"}}`,
-					"author":      authorID,
-					"categories":  []string{categoryIDs["technology"]},
-					"tags":        []string{tagIDs["go"]},
-					"status":      "published",
-					"publishedAt": time.Now().Format(time.RFC3339),
-				},
-				{
-					"title":       "Modern CSS Techniques",
-					"slug":        "modern-css-techniques",
-					"excerpt":     "Explore modern CSS features and techniques.",
-					"content":     `{"root":{"children":[{"children":[{"text":"Modern CSS Techniques"}],"type":"h1"},{"children":[{"text":"CSS has evolved significantly in recent years."}],"type":"p"}],"type":"root"}}`,
-					"author":      authorID,
-					"categories":  []string{categoryIDs["design"]},
-					"tags":        []string{tagIDs["css"]},
-					"status":      "published",
-					"publishedAt": time.Now().Format(time.RFC3339),
-				},
-				{
-					"title":   "Building React Applications",
-					"slug":    "building-react-applications",
-					"excerpt": "A guide to building modern React applications.",
-					"content": `{"root":{"children":[{"children":[{"text":"Building React Applications"}],"type":"h1"},{"children":[{"text":"React is a popular JavaScript library for building user interfaces."}],"type":"p"}],"type":"root"}}`,
-					"author":  authorID,
-					"categories": []string{
-						categoryIDs["technology"],
-						categoryIDs["design"],
-					},
-					"tags":        []string{tagIDs["javascript"], tagIDs["react"]},
-					"status":      "draft",
-					"publishedAt": nil,
-				},
-			}
-			for _, post := range posts {
-				_, err := srv.CollectionsService().Create(ctx, "posts", &collections.CreateInput{Data: post})
-				if err != nil {
-					fmt.Printf("Warning: Could not create post %s: %v\n", post["title"], err)
-				} else {
-					fmt.Printf("Created post: %s\n", post["title"])
-				}
-			}
+	start := time.Now()
+	stop := StartSpinner("Seeding database...")
 
-			// Seed site settings global
-			fmt.Println("Creating site settings...")
-			_, err = srv.GlobalsService().Update(ctx, "site-settings", map[string]any{
-				"siteName":        "My CMS Site",
-				"siteDescription": "A Payload CMS compatible content management system",
-				"social": map[string]any{
-					"twitter":  "https://twitter.com/example",
-					"github":   "https://github.com/example",
-					"linkedin": "https://linkedin.com/company/example",
-				},
-				"contact": map[string]any{
-					"email":   "hello@example.com",
-					"phone":   "+1 (555) 123-4567",
-					"address": "123 Main St, City, Country",
-				},
-				"seo": map[string]any{
-					"titleSuffix":        " | My CMS Site",
-					"defaultDescription": "Welcome to our content management system.",
-				},
-			})
-			if err != nil {
-				fmt.Printf("Warning: Could not create site settings: %v\n", err)
-			} else {
-				fmt.Println("Created site settings")
-			}
+	srv, err := web.New(web.Config{
+		Addr:    ":0",
+		DataDir: dataDir,
+		Dev:     false,
+	})
+	if err != nil {
+		stop()
+		Error(fmt.Sprintf("Failed to create server: %v", err))
+		return err
+	}
+	defer srv.Close()
 
-			// Seed navigation global
-			fmt.Println("Creating navigation...")
-			_, err = srv.GlobalsService().Update(ctx, "navigation", map[string]any{
-				"header": []map[string]any{
-					{"label": "Home", "type": "custom", "url": "/"},
-					{"label": "About", "type": "custom", "url": "/about"},
-					{"label": "Blog", "type": "custom", "url": "/blog"},
-					{"label": "Contact", "type": "custom", "url": "/contact"},
-				},
-				"footer": []map[string]any{
-					{"label": "Privacy Policy", "type": "custom", "url": "/privacy"},
-					{"label": "Terms of Service", "type": "custom", "url": "/terms"},
-				},
-			})
-			if err != nil {
-				fmt.Printf("Warning: Could not create navigation: %v\n", err)
-			} else {
-				fmt.Println("Created navigation")
-			}
+	ctx := context.Background()
 
-			fmt.Println("\nDatabase seeded successfully!")
-			fmt.Println("\nAdmin credentials:")
-			fmt.Println("  Email: admin@example.com")
-			fmt.Println("  Password: password")
+	// Create admin user
+	admin, _, err := srv.UserService().Register(ctx, &users.RegisterIn{
+		Email:    "admin@example.com",
+		Password: "password123",
+		Name:     "Admin User",
+	})
+	if err != nil {
+		admin, _ = srv.UserService().GetByEmail(ctx, "admin@example.com")
+	}
+	if admin == nil {
+		stop()
+		return fmt.Errorf("failed to create admin user")
+	}
 
-			return nil
+	// Update admin role
+	adminRole := "admin"
+	srv.UserService().Update(ctx, admin.ID, &users.UpdateIn{Role: &adminRole})
+
+	// Create categories
+	catTech, _ := srv.CategoryService().Create(ctx, &categories.CreateIn{
+		Name:        "Technology",
+		Description: "Latest tech news and tutorials",
+	})
+	catBiz, _ := srv.CategoryService().Create(ctx, &categories.CreateIn{
+		Name:        "Business",
+		Description: "Business insights and strategies",
+	})
+	catLife, _ := srv.CategoryService().Create(ctx, &categories.CreateIn{
+		Name:        "Lifestyle",
+		Description: "Tips for a better life",
+	})
+
+	// Create tags
+	tagGo, _ := srv.TagService().Create(ctx, &tags.CreateIn{Name: "Go"})
+	tagAPI, _ := srv.TagService().Create(ctx, &tags.CreateIn{Name: "API"})
+	tagTutorial, _ := srv.TagService().Create(ctx, &tags.CreateIn{Name: "Tutorial"})
+	tagTips, _ := srv.TagService().Create(ctx, &tags.CreateIn{Name: "Tips"})
+	srv.TagService().Create(ctx, &tags.CreateIn{Name: "Best Practices"})
+
+	// Create posts
+	samplePosts := []struct {
+		Title      string
+		Excerpt    string
+		Content    string
+		CategoryID string
+		TagIDs     []string
+		Status     string
+	}{
+		{
+			Title:   "Getting Started with Go",
+			Excerpt: "Learn the basics of Go programming language",
+			Content: `# Getting Started with Go
+
+Go is a statically typed, compiled programming language designed at Google. It is syntactically similar to C, but with memory safety, garbage collection, structural typing, and CSP-style concurrency.
+
+## Why Go?
+
+- **Simple and Clean Syntax**: Go is designed to be easy to learn and use.
+- **Fast Compilation**: Go compiles very quickly.
+- **Built-in Concurrency**: Goroutines make concurrent programming easy.
+- **Strong Standard Library**: Go comes with a comprehensive standard library.
+
+## Hello World
+
+` + "```go\npackage main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}\n```" + `
+
+Start your Go journey today!`,
+			CategoryID: catTech.ID,
+			TagIDs:     []string{tagGo.ID, tagTutorial.ID},
+			Status:     "published",
+		},
+		{
+			Title:   "Building RESTful APIs",
+			Excerpt: "A comprehensive guide to building REST APIs",
+			Content: `# Building RESTful APIs
+
+REST (Representational State Transfer) is an architectural style for designing networked applications.
+
+## Key Principles
+
+1. **Stateless**: Each request contains all information needed.
+2. **Client-Server**: Clear separation of concerns.
+3. **Uniform Interface**: Consistent resource identification.
+4. **Cacheable**: Responses can be cached.
+
+## Best Practices
+
+- Use proper HTTP methods (GET, POST, PUT, DELETE)
+- Return appropriate status codes
+- Use JSON for data exchange
+- Implement proper error handling
+- Add authentication and authorization
+
+Happy coding!`,
+			CategoryID: catTech.ID,
+			TagIDs:     []string{tagAPI.ID, tagTutorial.ID},
+			Status:     "published",
+		},
+		{
+			Title:   "10 Productivity Tips for Developers",
+			Excerpt: "Boost your productivity with these simple tips",
+			Content: `# 10 Productivity Tips for Developers
+
+Being productive as a developer is about working smarter, not harder.
+
+## Tips
+
+1. **Use keyboard shortcuts** - Learn your IDE shortcuts.
+2. **Take regular breaks** - Use the Pomodoro technique.
+3. **Minimize distractions** - Turn off notifications.
+4. **Write clean code** - It saves time in the long run.
+5. **Automate repetitive tasks** - Don't repeat yourself.
+6. **Learn to say no** - Focus on what matters.
+7. **Document as you go** - Future you will thank you.
+8. **Keep learning** - Stay updated with new technologies.
+9. **Use version control** - Git is your friend.
+10. **Get enough sleep** - A rested mind is more productive.
+
+Start implementing these tips today!`,
+			CategoryID: catLife.ID,
+			TagIDs:     []string{tagTips.ID},
+			Status:     "published",
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path")
+	var createdPosts []*posts.Post
+	for _, p := range samplePosts {
+		allowComments := true
+		post, err := srv.PostService().Create(ctx, admin.ID, &posts.CreateIn{
+			Title:         p.Title,
+			Excerpt:       p.Excerpt,
+			Content:       p.Content,
+			Status:        p.Status,
+			CategoryIDs:   []string{p.CategoryID},
+			TagIDs:        p.TagIDs,
+			AllowComments: &allowComments,
+		})
+		if err == nil {
+			createdPosts = append(createdPosts, post)
+			if p.Status == "published" {
+				srv.PostService().Publish(ctx, post.ID)
+			}
+		}
+	}
 
-	return cmd
+	// Create pages
+	srv.PageService().Create(ctx, admin.ID, &pages.CreateIn{
+		Title:   "About Us",
+		Content: "# About Us\n\nWelcome to our CMS. This is a modern content management system built with Go.\n\nWe believe in clean, fast, and secure content management.",
+		Status:  "published",
+	})
+
+	srv.PageService().Create(ctx, admin.ID, &pages.CreateIn{
+		Title:   "Contact",
+		Content: "# Contact Us\n\nGet in touch with us:\n\n- Email: hello@example.com\n- Phone: +1 234 567 890\n- Address: 123 Main St, City, Country",
+		Status:  "published",
+	})
+
+	// Create comments on first post
+	if len(createdPosts) > 0 {
+		srv.CommentService().Create(ctx, &comments.CreateIn{
+			PostID:      createdPosts[0].ID,
+			AuthorName:  "John Doe",
+			AuthorEmail: "john@example.com",
+			Content:     "Great article! Very helpful for beginners.",
+		})
+		srv.CommentService().Create(ctx, &comments.CreateIn{
+			PostID:      createdPosts[0].ID,
+			AuthorName:  "Jane Smith",
+			AuthorEmail: "jane@example.com",
+			Content:     "Thanks for sharing. Looking forward to more content!",
+		})
+	}
+
+	// Create menus
+	mainMenu, _ := srv.MenuService().CreateMenu(ctx, &menus.CreateMenuIn{
+		Name:     "Main Menu",
+		Location: "header",
+	})
+	if mainMenu != nil {
+		srv.MenuService().CreateItem(ctx, mainMenu.ID, &menus.CreateItemIn{
+			Title:     "Home",
+			URL:       "/",
+			SortOrder: 0,
+		})
+		srv.MenuService().CreateItem(ctx, mainMenu.ID, &menus.CreateItemIn{
+			Title:     "Blog",
+			URL:       "/blog",
+			SortOrder: 1,
+		})
+		srv.MenuService().CreateItem(ctx, mainMenu.ID, &menus.CreateItemIn{
+			Title:     "About",
+			URL:       "/about",
+			SortOrder: 2,
+		})
+		srv.MenuService().CreateItem(ctx, mainMenu.ID, &menus.CreateItemIn{
+			Title:     "Contact",
+			URL:       "/contact",
+			SortOrder: 3,
+		})
+	}
+
+	footerMenu, _ := srv.MenuService().CreateMenu(ctx, &menus.CreateMenuIn{
+		Name:     "Footer Menu",
+		Location: "footer",
+	})
+	if footerMenu != nil {
+		srv.MenuService().CreateItem(ctx, footerMenu.ID, &menus.CreateItemIn{
+			Title:     "Privacy Policy",
+			URL:       "/privacy",
+			SortOrder: 0,
+		})
+		srv.MenuService().CreateItem(ctx, footerMenu.ID, &menus.CreateItemIn{
+			Title:     "Terms of Service",
+			URL:       "/terms",
+			SortOrder: 1,
+		})
+	}
+
+	// Create settings
+	srv.SettingsService().Set(ctx, &settings.SetIn{
+		Key:       "site_title",
+		Value:     "My CMS",
+		GroupName: "general",
+		IsPublic:  ptrBool(true),
+	})
+	srv.SettingsService().Set(ctx, &settings.SetIn{
+		Key:       "site_description",
+		Value:     "A modern content management system",
+		GroupName: "general",
+		IsPublic:  ptrBool(true),
+	})
+	srv.SettingsService().Set(ctx, &settings.SetIn{
+		Key:       "posts_per_page",
+		Value:     "10",
+		ValueType: "number",
+		GroupName: "reading",
+		IsPublic:  ptrBool(true),
+	})
+
+	// Count created items
+	var categoryCount, tagCount int
+	if catTech != nil {
+		categoryCount++
+	}
+	if catBiz != nil {
+		categoryCount++
+	}
+	if catLife != nil {
+		categoryCount++
+	}
+	if tagGo != nil {
+		tagCount++
+	}
+	if tagAPI != nil {
+		tagCount++
+	}
+	if tagTutorial != nil {
+		tagCount++
+	}
+	if tagTips != nil {
+		tagCount++
+	}
+
+	stop()
+	Step("", "Database seeded", time.Since(start))
+	Blank()
+	Success("Sample data created")
+	Blank()
+
+	Summary(
+		"User", "admin@example.com",
+		"Password", "password123",
+		"Posts", fmt.Sprintf("%d posts", len(createdPosts)),
+		"Categories", fmt.Sprintf("%d categories", categoryCount),
+		"Tags", fmt.Sprintf("%d+ tags", tagCount),
+		"Menus", "2 menus (header, footer)",
+	)
+	Blank()
+	Hint("Start the server with: cms serve")
+	Hint("Login with: admin@example.com / password123")
+	Hint("To reset: rm -rf " + dataDir + " && cms seed")
+	Blank()
+
+	return nil
+}
+
+func ptrBool(b bool) *bool {
+	return &b
 }
