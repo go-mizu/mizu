@@ -449,8 +449,12 @@ func (s *Server) setupRoutes() {
 		return nil
 	})
 
-	// WordPress Admin routes
+	// WordPress Admin routes - Login/Logout
 	s.app.Get("/wp-login.php", s.wpAdminHandler.Login)
+	s.app.Post("/wp-login.php", s.wpAdminHandler.LoginPost)
+	s.app.Get("/wp-logout.php", s.wpAdminHandler.Logout)
+
+	// Dashboard
 	s.app.Get("/wp-admin/", s.wpAdminHandler.Dashboard)
 	s.app.Get("/wp-admin/index.php", s.wpAdminHandler.Dashboard)
 
@@ -507,6 +511,8 @@ func (s *Server) setupRoutes() {
 
 	// Clean URL routes (without .php extensions) - aliases for modern URLs
 	s.app.Get("/wp-admin/login", s.wpAdminHandler.Login)
+	s.app.Post("/wp-admin/login", s.wpAdminHandler.LoginPost)
+	s.app.Get("/wp-admin/logout", s.wpAdminHandler.Logout)
 
 	// Posts (clean URLs)
 	s.app.Get("/wp-admin/posts", s.wpAdminHandler.PostsList)

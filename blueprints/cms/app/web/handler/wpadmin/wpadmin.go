@@ -244,9 +244,19 @@ func (h *Handler) getSiteTitle(c *mizu.Ctx) string {
 	return "WordPress"
 }
 
-// Login renders the login page.
+// Login renders the login page (GET).
 func (h *Handler) Login(c *mizu.Ctx) error {
 	ctx := c.Request().Context()
+
+	// Check if already logged in
+	if user := h.getUser(c); user != nil {
+		redirectTo := c.Query("redirect_to")
+		if redirectTo == "" {
+			redirectTo = "/wp-admin/"
+		}
+		http.Redirect(c.Writer(), c.Request(), redirectTo, http.StatusFound)
+		return nil
+	}
 
 	// Get site settings
 	siteTitle := "WordPress"
@@ -263,6 +273,84 @@ func (h *Handler) Login(c *mizu.Ctx) error {
 	if c.Query("error") == "1" {
 		errorMsg = "Invalid username or password."
 	}
+	if c.Query("loggedout") == "true" {
+		errorMsg = ""
+	}
+
+	message := ""
+	if c.Query("loggedout") == "true" {
+		message = "You are now logged out."
+	}
+
+	return render(h, c, "login", LoginData{
+		Title:      "Log In",
+		SiteTitle:  siteTitle,
+		SiteURL:    h.baseURL,
+		RedirectTo: redirectTo,
+		Error:      errorMsg,
+		Message:    message,
+	})
+}
+
+// LoginPost handles the login form submission (POST).
+func (h *Handler) LoginPost(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+
+	// Parse form
+	if err := c.Request().ParseForm(); err != nil {
+		return h.loginError(c, "Invalid form data.")
+	}
+
+	email := c.Request().FormValue("log")
+	password := c.Request().FormValue("pwd")
+	redirectTo := c.Request().FormValue("redirect_to")
+	rememberMe := c.Request().FormValue("rememberme") == "forever"
+
+	if redirectTo == "" {
+		redirectTo = "/wp-admin/"
+	}
+
+	// Attempt login
+	user, session, err := h.users.Login(ctx, &users.LoginIn{
+		Email:    email,
+		Password: password,
+	})
+	if err != nil || user == nil {
+		return h.loginError(c, "Invalid username or password.")
+	}
+
+	// Set session cookie
+	cookie := &http.Cookie{
+		Name:     "session",
+		Value:    session.ID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	if rememberMe {
+		cookie.Expires = session.ExpiresAt
+		cookie.MaxAge = 14 * 24 * 60 * 60 // 14 days
+	}
+	http.SetCookie(c.Writer(), cookie)
+
+	// Redirect to destination
+	http.Redirect(c.Writer(), c.Request(), redirectTo, http.StatusFound)
+	return nil
+}
+
+// loginError renders the login page with an error message.
+func (h *Handler) loginError(c *mizu.Ctx, errorMsg string) error {
+	ctx := c.Request().Context()
+
+	siteTitle := "WordPress"
+	if setting, err := h.settings.Get(ctx, "site_title"); err == nil && setting.Value != "" {
+		siteTitle = setting.Value
+	}
+
+	redirectTo := c.Request().FormValue("redirect_to")
+	if redirectTo == "" {
+		redirectTo = "/wp-admin/"
+	}
 
 	return render(h, c, "login", LoginData{
 		Title:      "Log In",
@@ -271,6 +359,30 @@ func (h *Handler) Login(c *mizu.Ctx) error {
 		RedirectTo: redirectTo,
 		Error:      errorMsg,
 	})
+}
+
+// Logout handles user logout.
+func (h *Handler) Logout(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+
+	// Get session from cookie and invalidate it
+	if cookie, err := c.Cookie("session"); err == nil && cookie.Value != "" {
+		_ = h.users.Logout(ctx, cookie.Value)
+	}
+
+	// Clear session cookie
+	http.SetCookie(c.Writer(), &http.Cookie{
+		Name:     "session",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Redirect to login page with logged out message
+	http.Redirect(c.Writer(), c.Request(), "/wp-login.php?loggedout=true", http.StatusFound)
+	return nil
 }
 
 // Dashboard renders the main dashboard page.

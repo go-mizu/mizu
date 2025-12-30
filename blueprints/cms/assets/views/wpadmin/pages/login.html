@@ -1,23 +1,21 @@
 {{define "content"}}
 <div id="login">
-    <h1><a href="{{.SiteURL}}">{{.SiteTitle}}</a></h1>
+    <h1><a href="{{.SiteURL}}" title="Powered by Go">{{.SiteTitle}}</a></h1>
 
     {{if .Error}}
-    <div id="login_error" class="login-message error">
+    <div id="login_error">
         <strong>Error:</strong> {{.Error}}
     </div>
     {{end}}
 
     {{if .Message}}
-    <div class="login-message success">
-        {{.Message}}
-    </div>
+    <p class="message">{{.Message}}</p>
     {{end}}
 
     <form name="loginform" id="loginform" action="/wp-login.php" method="post">
         <p>
             <label for="user_login">Username or Email Address</label>
-            <input type="text" name="log" id="user_login" class="input" value="" size="20" autocapitalize="off" autocomplete="username" required>
+            <input type="text" name="log" id="user_login" class="input" value="" size="20" autocapitalize="off" autocomplete="username" required autofocus>
         </p>
         <p>
             <label for="user_pass">Password</label>
@@ -42,9 +40,5 @@
     <p id="backtoblog">
         <a href="{{.SiteURL}}">&larr; Go to {{.SiteTitle}}</a>
     </p>
-
-    <div class="privacy-policy-page-link">
-        <a href="/privacy-policy/">Privacy Policy</a>
-    </div>
 </div>
 {{end}}

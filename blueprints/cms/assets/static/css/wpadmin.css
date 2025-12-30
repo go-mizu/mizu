@@ -3166,6 +3166,50 @@ body.login {
     box-shadow: var(--wp-admin-box-shadow);
 }
 
+.login #login_error a {
+    color: var(--wp-admin-notice-error);
+}
+
+.privacy-policy-page-link {
+    text-align: center;
+    width: 100%;
+    margin: 50px 0 0;
+}
+
+.privacy-policy-page-link a {
+    font-size: 12px;
+    color: var(--wp-admin-text-light);
+}
+
+.privacy-policy-page-link a:hover {
+    color: var(--wp-admin-link);
+}
+
+/* Login form input focus states */
+#loginform .input:focus,
+#lostpasswordform .input:focus,
+#registerform .input:focus {
+    border-color: var(--wp-admin-input-focus-border);
+    box-shadow: var(--wp-admin-input-focus-shadow);
+    outline: 2px solid transparent;
+}
+
+/* Login button full width on mobile */
+@media screen and (max-width: 400px) {
+    .login .submit .button-primary {
+        width: 100%;
+    }
+
+    .login .forgetmenot {
+        float: none;
+        margin-bottom: 16px;
+    }
+
+    .login .submit {
+        float: none;
+    }
+}
+
 /* ============================================
    Responsive Design
    ============================================ */

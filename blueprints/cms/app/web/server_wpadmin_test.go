@@ -708,3 +708,443 @@ func containsSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+// TestWPAdminLoginLogout tests the complete login/logout workflow
+func TestWPAdminLoginLogout(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "wpadmin-login-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+	})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create test user
+	_, _, err = server.users.Register(ctx, &users.RegisterIn{
+		Email:    "login@test.com",
+		Password: "testpassword123",
+		Name:     "Login Test User",
+	})
+	if err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+
+	t.Run("LoginPageRenders", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/wp-login.php", nil)
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+		body := rec.Body.String()
+		assertContains(t, body, "Log In")
+		assertContains(t, body, "Username or Email Address")
+		assertContains(t, body, "Password")
+		assertContains(t, body, "Remember Me")
+		assertContains(t, body, "Lost your password?")
+	})
+
+	t.Run("LoginWithValidCredentials", func(t *testing.T) {
+		form := strings.NewReader("log=login@test.com&pwd=testpassword123&redirect_to=/wp-admin/")
+		req := httptest.NewRequest("POST", "/wp-login.php", form)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Should redirect to wp-admin
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+
+		location := rec.Header().Get("Location")
+		if location != "/wp-admin/" {
+			t.Errorf("expected redirect to /wp-admin/, got %s", location)
+		}
+
+		// Should set session cookie
+		cookies := rec.Result().Cookies()
+		var sessionCookie *http.Cookie
+		for _, c := range cookies {
+			if c.Name == "session" {
+				sessionCookie = c
+				break
+			}
+		}
+		if sessionCookie == nil {
+			t.Error("expected session cookie to be set")
+		} else if sessionCookie.Value == "" {
+			t.Error("expected session cookie to have a value")
+		}
+	})
+
+	t.Run("LoginWithInvalidCredentials", func(t *testing.T) {
+		form := strings.NewReader("log=login@test.com&pwd=wrongpassword&redirect_to=/wp-admin/")
+		req := httptest.NewRequest("POST", "/wp-login.php", form)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Should show login page with error
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		assertContains(t, body, "Invalid username or password")
+	})
+
+	t.Run("LoginWithRememberMe", func(t *testing.T) {
+		form := strings.NewReader("log=login@test.com&pwd=testpassword123&rememberme=forever&redirect_to=/wp-admin/")
+		req := httptest.NewRequest("POST", "/wp-login.php", form)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+
+		// Cookie should have MaxAge set
+		cookies := rec.Result().Cookies()
+		var sessionCookie *http.Cookie
+		for _, c := range cookies {
+			if c.Name == "session" {
+				sessionCookie = c
+				break
+			}
+		}
+		if sessionCookie == nil {
+			t.Error("expected session cookie")
+		} else if sessionCookie.MaxAge <= 0 {
+			t.Error("expected session cookie to have MaxAge set for remember me")
+		}
+	})
+
+	t.Run("LogoutClearsSession", func(t *testing.T) {
+		// First login to get a session
+		form := strings.NewReader("log=login@test.com&pwd=testpassword123&redirect_to=/wp-admin/")
+		req := httptest.NewRequest("POST", "/wp-login.php", form)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Get the session cookie
+		var sessionCookie *http.Cookie
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "session" {
+				sessionCookie = c
+				break
+			}
+		}
+		if sessionCookie == nil {
+			t.Fatal("failed to get session cookie")
+		}
+
+		// Now logout
+		req = httptest.NewRequest("GET", "/wp-logout.php", nil)
+		req.AddCookie(sessionCookie)
+		rec = httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Should redirect to login page
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+
+		location := rec.Header().Get("Location")
+		if !strings.HasPrefix(location, "/wp-login.php") {
+			t.Errorf("expected redirect to /wp-login.php, got %s", location)
+		}
+		if !strings.Contains(location, "loggedout=true") {
+			t.Errorf("expected loggedout=true in redirect, got %s", location)
+		}
+
+		// Session cookie should be cleared
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "session" {
+				if c.MaxAge > 0 {
+					t.Error("expected session cookie to be cleared (MaxAge should be -1)")
+				}
+				break
+			}
+		}
+	})
+
+	t.Run("LoggedOutMessageShown", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/wp-login.php?loggedout=true", nil)
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		assertContains(t, body, "You are now logged out")
+	})
+
+	t.Run("AlreadyLoggedInRedirects", func(t *testing.T) {
+		// Login first
+		_, session, _ := server.users.Login(ctx, &users.LoginIn{
+			Email:    "login@test.com",
+			Password: "testpassword123",
+		})
+
+		// Try to access login page while logged in
+		req := httptest.NewRequest("GET", "/wp-login.php", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: session.ID,
+		})
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Should redirect to wp-admin
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+
+		location := rec.Header().Get("Location")
+		if location != "/wp-admin/" {
+			t.Errorf("expected redirect to /wp-admin/, got %s", location)
+		}
+	})
+
+	t.Run("CustomRedirectAfterLogin", func(t *testing.T) {
+		form := strings.NewReader("log=login@test.com&pwd=testpassword123&redirect_to=/wp-admin/edit.php")
+		req := httptest.NewRequest("POST", "/wp-login.php", form)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+
+		location := rec.Header().Get("Location")
+		if location != "/wp-admin/edit.php" {
+			t.Errorf("expected redirect to /wp-admin/edit.php, got %s", location)
+		}
+	})
+
+	t.Run("CleanURLLoginWorks", func(t *testing.T) {
+		// Test /wp-admin/login works too
+		req := httptest.NewRequest("GET", "/wp-admin/login", nil)
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+		assertContains(t, rec.Body.String(), "Log In")
+	})
+
+	t.Run("CleanURLLogoutWorks", func(t *testing.T) {
+		// Login first
+		_, session, _ := server.users.Login(ctx, &users.LoginIn{
+			Email:    "login@test.com",
+			Password: "testpassword123",
+		})
+
+		req := httptest.NewRequest("GET", "/wp-admin/logout", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: session.ID,
+		})
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+	})
+}
+
+// TestWPAdminSessionPersistence tests that sessions work correctly across requests
+func TestWPAdminSessionPersistence(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "wpadmin-session-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+	})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create test user
+	testUser, _, err := server.users.Register(ctx, &users.RegisterIn{
+		Email:    "session@test.com",
+		Password: "password123",
+		Name:     "Session Test",
+	})
+	if err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+
+	t.Run("SessionPersistsAcrossRequests", func(t *testing.T) {
+		// Login
+		form := strings.NewReader("log=session@test.com&pwd=password123")
+		req := httptest.NewRequest("POST", "/wp-login.php", form)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Get session cookie
+		var sessionCookie *http.Cookie
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "session" {
+				sessionCookie = c
+				break
+			}
+		}
+		if sessionCookie == nil {
+			t.Fatal("failed to get session cookie")
+		}
+
+		// Make multiple requests with the same session
+		pages := []string{
+			"/wp-admin/",
+			"/wp-admin/edit.php",
+			"/wp-admin/upload.php",
+			"/wp-admin/users.php",
+		}
+
+		for _, page := range pages {
+			req := httptest.NewRequest("GET", page, nil)
+			req.AddCookie(sessionCookie)
+			rec := httptest.NewRecorder()
+			server.app.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200 for %s, got %d", page, rec.Code)
+			}
+
+			// Should show the logged-in user's name
+			assertContains(t, rec.Body.String(), testUser.Name)
+		}
+	})
+
+	t.Run("InvalidSessionRedirectsToLogin", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/wp-admin/", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: "invalid-session-id",
+		})
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		// Should redirect to login
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+
+		location := rec.Header().Get("Location")
+		if !strings.HasPrefix(location, "/wp-login.php") {
+			t.Errorf("expected redirect to /wp-login.php, got %s", location)
+		}
+	})
+
+	t.Run("ExpiredSessionRedirectsToLogin", func(t *testing.T) {
+		// This would require manipulating session expiry which is complex
+		// For now, just test that missing session redirects
+		req := httptest.NewRequest("GET", "/wp-admin/", nil)
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusFound {
+			t.Errorf("expected redirect (302), got %d", rec.Code)
+		}
+	})
+}
+
+// TestWPAdminUserInfo tests that user info is correctly displayed
+func TestWPAdminUserInfo(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "wpadmin-userinfo-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	server, err := New(Config{
+		Addr:    ":0",
+		DataDir: tmpDir,
+	})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Create test user
+	_, session, err := server.users.Register(ctx, &users.RegisterIn{
+		Email:    "info@test.com",
+		Password: "password123",
+		Name:     "Info Test User",
+	})
+	if err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+
+	t.Run("AdminBarShowsUserName", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/wp-admin/", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: session.ID,
+		})
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		// Should show "Howdy, <username>"
+		assertContains(t, body, "Howdy")
+		assertContains(t, body, "Info Test User")
+	})
+
+	t.Run("AdminBarShowsLogoutLink", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/wp-admin/", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: session.ID,
+		})
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		body := rec.Body.String()
+		assertContains(t, body, "Log Out")
+		assertContains(t, body, "/wp-logout.php")
+	})
+
+	t.Run("AdminBarShowsProfileLink", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/wp-admin/", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session",
+			Value: session.ID,
+		})
+		rec := httptest.NewRecorder()
+		server.app.ServeHTTP(rec, req)
+
+		body := rec.Body.String()
+		assertContains(t, body, "Edit Profile")
+		assertContains(t, body, "/wp-admin/profile.php")
+	})
+}

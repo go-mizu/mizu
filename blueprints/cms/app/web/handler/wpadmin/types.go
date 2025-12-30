@@ -16,15 +16,16 @@ import (
 
 // MenuItem represents a navigation menu item in the admin sidebar.
 type MenuItem struct {
-	ID       string
-	Title    string
-	URL      string
-	Icon     string // Dashicon class name
-	Active   bool
-	Open     bool // Whether submenu is expanded
-	Children []MenuItem
-	Badge    int    // Notification count (e.g., pending comments)
-	Cap      string // Required capability
+	ID        string
+	Title     string
+	URL       string
+	Icon      string // Dashicon class name
+	Active    bool
+	Open      bool // Whether submenu is expanded
+	Children  []MenuItem
+	Badge     int    // Notification count (e.g., pending comments)
+	Cap       string // Required capability
+	Separator bool   // Whether this is a separator line
 }
 
 // Breadcrumb represents a navigation breadcrumb.
@@ -159,6 +160,7 @@ type RecentDraft struct {
 // DashboardData holds data for the dashboard page.
 type DashboardData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -197,6 +199,7 @@ type RowAction struct {
 // PostsListData holds data for the posts list page.
 type PostsListData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -221,6 +224,7 @@ type PostsListData struct {
 // PostEditData holds data for the post edit page.
 type PostEditData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -268,6 +272,7 @@ type PageRow struct {
 // PagesListData holds data for the pages list page.
 type PagesListData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -289,6 +294,7 @@ type PagesListData struct {
 // PageEditData holds data for the page edit page.
 type PageEditData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -340,6 +346,7 @@ type AttachedPost struct {
 // MediaLibraryData holds data for the media library page.
 type MediaLibraryData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -360,6 +367,7 @@ type MediaLibraryData struct {
 // MediaEditData holds data for the media edit page.
 type MediaEditData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -401,6 +409,7 @@ type CommentRow struct {
 // CommentsListData holds data for the comments list page.
 type CommentsListData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -422,6 +431,7 @@ type CommentsListData struct {
 // CommentEditData holds data for the comment edit page.
 type CommentEditData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -453,6 +463,7 @@ type UserRow struct {
 // UsersListData holds data for the users list page.
 type UsersListData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -474,6 +485,7 @@ type UsersListData struct {
 // UserEditData holds data for the user edit page.
 type UserEditData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -493,6 +505,7 @@ type UserEditData struct {
 // ProfileData holds data for the profile page.
 type ProfileData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -528,6 +541,7 @@ type TaxonomyRow struct {
 // TaxonomyListData holds data for categories/tags list page.
 type TaxonomyListData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -576,6 +590,7 @@ type AvailableMenuItems struct {
 // MenusData holds data for the menus page.
 type MenusData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
@@ -594,6 +609,7 @@ type MenusData struct {
 // SettingsData holds data for settings pages.
 type SettingsData struct {
 	Title       string
+	BodyClass   string
 	User        *users.User
 	Menu        []MenuItem
 	Breadcrumbs []Breadcrumb
