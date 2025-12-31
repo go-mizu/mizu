@@ -6,7 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
     <!-- Title -->
-    <title>{{ block "title" . }}{{ .Site.Title }}{{ end }}</title>
+    <title>{{ block "title" . }}{{ .Site.Name }}{{ end }}</title>
 
     <!-- Meta Description -->
     {{ block "meta_description" . }}
@@ -14,12 +14,12 @@
     {{ end }}
 
     <!-- Canonical URL -->
-    <link rel="canonical" href="{{ .URL }}">
+    <link rel="canonical" href="{{ .Request.URL }}">
 
     <!-- Open Graph -->
     {{ block "og_tags" . }}
     <meta property="og:type" content="website">
-    <meta property="og:title" content="{{ .Site.Title }}">
+    <meta property="og:title" content="{{ .Site.Name }}">
     <meta property="og:description" content="{{ .Site.Description }}">
     <meta property="og:url" content="{{ .Site.URL }}">
     {{ end }}
@@ -56,7 +56,7 @@
     </style>
 
     <!-- Theme Stylesheet -->
-    <link rel="stylesheet" href="{{ .ThemeURL }}/assets/css/style.css">
+    <link rel="stylesheet" href="/theme/assets/css/style.css">
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23f83800'/><rect x='2' y='2' width='12' height='12' fill='%23fcfcfc'/><rect x='4' y='4' width='3' height='3' fill='%23000'/><rect x='9' y='4' width='3' height='3' fill='%23000'/><rect x='6' y='10' width='4' height='2' fill='%23000'/></svg>">
@@ -66,7 +66,7 @@
 <body class="{{ block "body_class" . }}{{ end }}{{ if .Theme.Features.pixel_cursor }} pixel-cursor{{ end }}{{ if .Theme.Features.crt_effect }} crt-glow{{ end }}{{ if .Theme.Features.scanlines }} crt-scanlines{{ end }}">
 
     <!-- Reading Progress Bar -->
-    {{ if and .Theme.Features.reading_progress (eq .Type "post") }}
+    {{ if and .Theme.Features.reading_progress .Request.IsSingle }}
     <div class="reading-progress" id="reading-progress">
         <div class="reading-progress__bar" id="reading-progress-bar"></div>
     </div>
@@ -78,7 +78,7 @@
     <!-- Mobile Navigation -->
     <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
         <ul class="mobile-nav__list">
-            {{ range .Site.Menus.primary }}
+            {{ range .Menus.primary.Items }}
             <li>
                 <a href="{{ .URL }}" class="mobile-nav__link{{ if .Active }} active{{ end }}">
                     {{ .Title }}
@@ -117,7 +117,7 @@
     {{ end }}
 
     <!-- Theme Script -->
-    <script src="{{ .ThemeURL }}/assets/js/main.js" defer></script>
+    <script src="/theme/assets/js/main.js" defer></script>
 
     {{ block "scripts" . }}{{ end }}
 </body>

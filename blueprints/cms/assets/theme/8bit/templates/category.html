@@ -1,7 +1,7 @@
-{{ define "title" }}{{ .Category.Name }} - {{ .Site.Title }}{{ end }}
+{{ define "title" }}{{ .Category.Name }} - {{ .Site.Name }}{{ end }}
 
 {{ define "meta_description" }}
-<meta name="description" content="{{ if .Category.Description }}{{ .Category.Description | truncate 160 }}{{ else }}Posts in the {{ .Category.Name }} category{{ end }}">
+<meta name="description" content="{{ if .Category.Description }}{{ truncate .Category.Description 160 }}{{ else }}Posts in the {{ .Category.Name }} category{{ end }}">
 {{ end }}
 
 {{ define "body_class" }}category-archive{{ end }}

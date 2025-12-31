@@ -1,241 +1,184 @@
 /*
- * 8-Bit Retro Theme - NES-Inspired Design System
- * Featuring: Pixel-Perfect Aesthetics, NES Color Palettes, Retro Gaming UI
- * Version: 1.0.0
+ * 8-BIT GAME UI THEME
+ * Authentic Retro Video Game Interface
+ * Inspired by: NES/SNES RPGs, Mario, Zelda, Final Fantasy
  */
 
 /* ==========================================================================
-   CSS Custom Properties
+   Google Fonts Import - Pixel Perfect
    ========================================================================== */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
+/* ==========================================================================
+   CSS Custom Properties - NES Palette
+   ========================================================================== */
 :root {
-    /* NES Color Palette - Core */
-    --8bit-black: #000000;
-    --8bit-white: #fcfcfc;
-    --8bit-dark-gray: #585858;
-    --8bit-gray: #a1a1a1;
-    --8bit-light-gray: #bcbcbc;
+    /* Authentic NES Color Palette */
+    --nes-black: #0f0f0f;
+    --nes-white: #fcfcfc;
+    --nes-gray-dark: #3c3c3c;
+    --nes-gray: #7c7c7c;
+    --nes-gray-light: #bcbcbc;
 
-    /* Primary Spectrum (Mario Red/Blue) */
-    --8bit-red: #f83800;
-    --8bit-red-light: #f87858;
-    --8bit-red-dark: #a81000;
-    --8bit-blue: #0078f8;
-    --8bit-blue-light: #3cbcfc;
-    --8bit-blue-dark: #0000bc;
+    /* Mario Colors */
+    --mario-red: #e52521;
+    --mario-red-dark: #8b1818;
+    --mario-blue: #1560bd;
+    --mario-brown: #6b4423;
+    --mario-gold: #fbd000;
+    --mario-orange: #ff9f00;
 
-    /* Secondary Colors */
-    --8bit-green: #00b800;
-    --8bit-green-light: #58d854;
-    --8bit-green-dark: #007800;
-    --8bit-yellow: #f8b800;
-    --8bit-gold: #fca044;
-    --8bit-orange: #e45c10;
+    /* Zelda Colors */
+    --zelda-green: #00a800;
+    --zelda-green-light: #58d858;
+    --zelda-green-dark: #005800;
 
-    /* Accent Colors */
-    --8bit-purple: #6844fc;
-    --8bit-purple-light: #9878f8;
-    --8bit-pink: #f85898;
-    --8bit-cyan: #00e8d8;
-    --8bit-sky: #a4e4fc;
+    /* Final Fantasy Colors */
+    --ff-blue: #0000bc;
+    --ff-blue-light: #6888fc;
+    --ff-cyan: #00fcfc;
 
-    /* Light Theme Colors */
-    --color-primary: #f83800;
-    --color-primary-hover: #f87858;
-    --color-primary-dark: #a81000;
-    --color-secondary: #0078f8;
-    --color-secondary-hover: #3cbcfc;
-    --color-accent: #f8b800;
-    --color-accent-alt: #00e8d8;
-    --color-background: #a4e4fc;
-    --color-surface: #fcfcfc;
-    --color-surface-alt: #bcbcbc;
-    --color-surface-elevated: #fcfcfc;
-    --color-text: #000000;
-    --color-text-secondary: #585858;
-    --color-text-muted: #a1a1a1;
-    --color-heading: #000000;
-    --color-link: #0078f8;
-    --color-link-hover: #3cbcfc;
-    --color-border: #000000;
-    --color-border-light: #585858;
-    --color-success: #00b800;
-    --color-warning: #f8b800;
-    --color-error: #f83800;
-    --color-info: #0078f8;
+    /* Sky/World Colors */
+    --sky-blue: #5c94fc;
+    --sky-light: #a4e4fc;
+    --grass-green: #00a800;
+    --brick-brown: #d87050;
+    --pipe-green: #00b800;
+
+    /* UI Colors */
+    --ui-bg: #000080;
+    --ui-border: #fcfcfc;
+    --ui-text: #fcfcfc;
+    --ui-highlight: #fbd000;
+    --ui-shadow: #000000;
+
+    /* Theme Variables */
+    --color-primary: var(--mario-red);
+    --color-secondary: var(--mario-blue);
+    --color-accent: var(--mario-gold);
+    --color-background: var(--sky-blue);
+    --color-surface: var(--nes-white);
+    --color-surface-game: var(--ff-blue);
+    --color-text: var(--nes-black);
+    --color-text-light: var(--nes-white);
+    --color-border: var(--nes-black);
+    --color-success: var(--zelda-green);
+    --color-warning: var(--mario-gold);
+    --color-error: var(--mario-red);
 
     /* Typography */
-    --font-pixel: 'Press Start 2P', 'Pixelify Sans', 'VT323', monospace;
-    --font-body: 'Pixelify Sans', 'VT323', 'Courier New', monospace;
-    --font-mono: 'VT323', 'Courier New', monospace;
+    --font-game: 'Press Start 2P', monospace;
 
-    /* Pixel-Perfect Type Scale (8px base) */
+    /* Pixel Scale (4px grid for authenticity) */
+    --px: 4px;
+    --px-2: 8px;
+    --px-3: 12px;
+    --px-4: 16px;
+    --px-5: 20px;
+    --px-6: 24px;
+    --px-8: 32px;
+    --px-10: 40px;
+    --px-12: 48px;
+    --px-16: 64px;
+
+    /* Text Sizes (multiples of 8 for pixel perfection) */
     --text-xs: 8px;
-    --text-sm: 12px;
-    --text-base: 16px;
-    --text-lg: 20px;
-    --text-xl: 24px;
-    --text-2xl: 32px;
-    --text-3xl: 40px;
-    --text-4xl: 48px;
-    --text-hero: 64px;
-
-    /* Line Heights */
-    --leading-none: 1;
-    --leading-tight: 1.25;
-    --leading-normal: 1.5;
-    --leading-relaxed: 1.75;
-    --leading-loose: 2;
-
-    /* Spacing (8px grid) */
-    --space-0: 0;
-    --space-1: 8px;
-    --space-2: 16px;
-    --space-3: 24px;
-    --space-4: 32px;
-    --space-5: 40px;
-    --space-6: 48px;
-    --space-8: 64px;
-    --space-10: 80px;
-    --space-12: 96px;
-    --space-16: 128px;
-
-    /* Border */
-    --border-thin: 2px solid var(--color-border);
-    --border-medium: 3px solid var(--color-border);
-    --border-thick: 4px solid var(--color-border);
-
-    /* Shadows (pixel-style) */
-    --shadow-sm: 2px 2px 0 var(--8bit-black);
-    --shadow-md: 4px 4px 0 var(--8bit-black);
-    --shadow-lg: 8px 8px 0 var(--8bit-black);
-    --shadow-inset: inset 4px 4px 0 var(--8bit-light-gray), inset -4px -4px 0 var(--8bit-dark-gray);
-    --shadow-inset-dark: inset 4px 4px 0 var(--8bit-dark-gray), inset -4px -4px 0 var(--8bit-black);
+    --text-sm: 10px;
+    --text-base: 12px;
+    --text-lg: 14px;
+    --text-xl: 16px;
+    --text-2xl: 20px;
+    --text-3xl: 24px;
+    --text-4xl: 32px;
 
     /* Animation */
-    --duration-instant: 0ms;
-    --duration-fast: 100ms;
-    --duration-normal: 200ms;
-    --duration-slow: 400ms;
-
-    /* Z-Index */
-    --z-dropdown: 100;
-    --z-sticky: 200;
-    --z-fixed: 300;
-    --z-modal-backdrop: 400;
-    --z-modal: 500;
-    --z-tooltip: 600;
-
-    /* Layout */
-    --container-sm: 512px;
-    --container-md: 768px;
-    --container-lg: 1024px;
-    --container-xl: 1280px;
-    --header-height: 80px;
+    --blink-speed: 0.5s;
 }
 
-/* Dark Theme (Underground Level) */
+/* Dark Theme - Underground/Castle Level */
 [data-theme="dark"] {
-    --color-primary: #f87858;
-    --color-primary-hover: #fca044;
-    --color-primary-dark: #f83800;
-    --color-secondary: #3cbcfc;
-    --color-secondary-hover: #a4e4fc;
-    --color-accent: #fca044;
-    --color-accent-alt: #00e8d8;
-    --color-background: #000000;
-    --color-surface: #18181b;
-    --color-surface-alt: #27272a;
-    --color-surface-elevated: #27272a;
-    --color-text: #fcfcfc;
-    --color-text-secondary: #bcbcbc;
-    --color-text-muted: #a1a1a1;
-    --color-heading: #fcfcfc;
-    --color-link: #3cbcfc;
-    --color-link-hover: #a4e4fc;
-    --color-border: #fcfcfc;
-    --color-border-light: #585858;
-    --color-success: #58d854;
-    --color-warning: #fca044;
-    --color-error: #f87858;
-    --color-info: #3cbcfc;
-
-    --shadow-sm: 2px 2px 0 var(--8bit-white);
-    --shadow-md: 4px 4px 0 var(--8bit-white);
-    --shadow-lg: 8px 8px 0 var(--8bit-white);
-    --shadow-inset: inset 4px 4px 0 var(--8bit-gray), inset -4px -4px 0 var(--8bit-dark-gray);
+    --color-background: #0f0f0f;
+    --color-surface: #1a1a2e;
+    --color-surface-game: #0f0f23;
+    --color-text: var(--nes-white);
+    --color-border: var(--nes-white);
+    --sky-blue: #0f0f23;
 }
 
 /* ==========================================================================
-   Animations
+   Animations - Game Style
    ========================================================================== */
-
 @keyframes blink {
     0%, 49% { opacity: 1; }
     50%, 100% { opacity: 0; }
 }
 
-@keyframes cursor-blink {
-    0%, 49% { border-color: var(--color-text); }
-    50%, 100% { border-color: transparent; }
-}
-
-@keyframes bounce-8bit {
+@keyframes float {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-8px); }
 }
 
-@keyframes float-8bit {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
+@keyframes bounce {
+    0%, 100% { transform: translateY(0) scaleY(1); }
+    30% { transform: translateY(-16px) scaleY(1.1); }
+    50% { transform: translateY(0) scaleY(0.9); }
+    70% { transform: translateY(-8px) scaleY(1.05); }
 }
 
-@keyframes shake-8bit {
+@keyframes coin-spin {
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(0.1); }
+}
+
+@keyframes sparkle {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+@keyframes walk {
+    0%, 100% { background-position: 0 0; }
+    50% { background-position: -16px 0; }
+}
+
+@keyframes slide-down {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 8px var(--mario-gold), inset 0 0 8px rgba(251, 208, 0, 0.3); }
+    50% { box-shadow: 0 0 16px var(--mario-gold), inset 0 0 16px rgba(251, 208, 0, 0.5); }
+}
+
+@keyframes rainbow {
+    0% { color: var(--mario-red); }
+    16% { color: var(--mario-orange); }
+    33% { color: var(--mario-gold); }
+    50% { color: var(--zelda-green); }
+    66% { color: var(--mario-blue); }
+    83% { color: #9c27b0; }
+    100% { color: var(--mario-red); }
+}
+
+@keyframes scanline {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 4px; }
+}
+
+@keyframes shake {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-4px); }
     75% { transform: translateX(4px); }
 }
 
-@keyframes spin-coin {
-    0%, 100% { transform: scaleX(1); }
-    25% { transform: scaleX(0.5); }
-    50% { transform: scaleX(0); }
-    75% { transform: scaleX(0.5); }
-}
-
-@keyframes pulse-glow {
-    0%, 100% { filter: drop-shadow(0 0 4px var(--color-primary)); }
-    50% { filter: drop-shadow(0 0 12px var(--color-primary)); }
-}
-
-@keyframes slide-in-right {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes slide-in-up {
-    from { transform: translateY(16px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes progress-stripe {
-    0% { background-position: 0 0; }
-    100% { background-position: 16px 0; }
-}
-
-/* Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
+@keyframes typewriter {
+    from { width: 0; }
+    to { width: 100%; }
 }
 
 /* ==========================================================================
    Reset & Base
    ========================================================================== */
-
 *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
@@ -244,411 +187,373 @@
 
 html {
     font-size: 16px;
-    -webkit-text-size-adjust: 100%;
-    scroll-behavior: auto;
-    scroll-padding-top: calc(var(--header-height) + 16px);
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: unset;
 }
 
 body {
-    font-family: var(--font-body);
+    font-family: var(--font-game);
     font-size: var(--text-base);
-    line-height: var(--leading-relaxed);
+    line-height: 2;
     color: var(--color-text);
-    background-color: var(--color-background);
+    background: var(--color-background);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
-    -webkit-font-smoothing: none;
-    -moz-osx-font-smoothing: unset;
-    text-rendering: optimizeSpeed;
+    position: relative;
 }
 
-/* Background Pattern */
+/* Animated Sky Background with Clouds */
 body::before {
     content: '';
     position: fixed;
-    inset: 0;
-    background-image:
-        linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
-    background-size: 16px 16px;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    background:
+        /* Clouds Layer 1 */
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='32'%3E%3Crect x='8' y='16' width='48' height='8' fill='%23fcfcfc'/%3E%3Crect x='16' y='8' width='32' height='8' fill='%23fcfcfc'/%3E%3Crect x='24' y='0' width='16' height='8' fill='%23fcfcfc'/%3E%3C/svg%3E") repeat-x,
+        /* Clouds Layer 2 */
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='24'%3E%3Crect x='4' y='12' width='40' height='8' fill='%23e8e8e8'/%3E%3Crect x='12' y='4' width='24' height='8' fill='%23e8e8e8'/%3E%3C/svg%3E") repeat-x,
+        linear-gradient(to bottom, var(--sky-light) 0%, var(--sky-blue) 60%, var(--color-background) 100%);
+    background-position: 0 80px, 200px 160px, 0 0;
+    background-size: 128px 64px, 96px 48px, 100% 100%;
+    animation: clouds 60s linear infinite;
+    z-index: -2;
     pointer-events: none;
-    z-index: -1;
+}
+
+@keyframes clouds {
+    from { background-position: 0 80px, 200px 160px, 0 0; }
+    to { background-position: 1000px 80px, 1200px 160px, 0 0; }
 }
 
 [data-theme="dark"] body::before {
-    background-image:
-        radial-gradient(var(--8bit-white) 1px, transparent 1px);
-    background-size: 64px 64px;
-    opacity: 0.1;
+    background:
+        /* Stars */
+        radial-gradient(2px 2px at 20px 30px, #fcfcfc, transparent),
+        radial-gradient(2px 2px at 40px 70px, #fcfcfc, transparent),
+        radial-gradient(2px 2px at 50px 160px, #fcfcfc, transparent),
+        radial-gradient(2px 2px at 90px 40px, #fcfcfc, transparent),
+        radial-gradient(2px 2px at 130px 80px, #fcfcfc, transparent),
+        radial-gradient(2px 2px at 160px 120px, #fcfcfc, transparent),
+        linear-gradient(to bottom, #0a0a1a 0%, #1a1a2e 100%);
+    background-size: 200px 200px, 200px 200px, 200px 200px, 200px 200px, 200px 200px, 200px 200px, 100% 100%;
+    animation: none;
+}
+
+/* CRT Scanlines Effect */
+body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.1) 0px,
+        rgba(0, 0, 0, 0.1) 2px,
+        transparent 2px,
+        transparent 4px
+    );
+    pointer-events: none;
+    z-index: 9998;
 }
 
 /* Selection */
 ::selection {
-    background-color: var(--color-primary);
-    color: var(--8bit-white);
-}
-
-/* Focus */
-:focus-visible {
-    outline: 4px solid var(--color-secondary);
-    outline-offset: 2px;
+    background: var(--mario-gold);
+    color: var(--nes-black);
 }
 
 /* ==========================================================================
-   Typography
+   Game Window/Dialog Box - RPG Style
    ========================================================================== */
-
-h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-pixel);
-    font-weight: normal;
-    line-height: var(--leading-tight);
-    color: var(--color-heading);
-    text-shadow: 2px 2px 0 var(--8bit-dark-gray);
-    margin-bottom: var(--space-2);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-[data-theme="dark"] h1,
-[data-theme="dark"] h2,
-[data-theme="dark"] h3,
-[data-theme="dark"] h4,
-[data-theme="dark"] h5,
-[data-theme="dark"] h6 {
-    text-shadow: 2px 2px 0 var(--8bit-black);
-}
-
-h1 { font-size: var(--text-3xl); }
-h2 { font-size: var(--text-2xl); }
-h3 { font-size: var(--text-xl); }
-h4 { font-size: var(--text-lg); }
-h5 { font-size: var(--text-base); }
-h6 { font-size: var(--text-sm); }
-
-p {
-    margin-bottom: var(--space-2);
-}
-
-a {
-    color: var(--color-link);
-    text-decoration: none;
-    transition: color var(--duration-fast) steps(2);
-}
-
-a:hover {
-    color: var(--color-link-hover);
-}
-
-strong, b {
-    font-weight: bold;
-}
-
-em, i {
-    font-style: italic;
-}
-
-small {
-    font-size: var(--text-sm);
-}
-
-/* Text with outline (for hero/title elements) */
-.text-outline {
-    text-shadow:
-        -2px -2px 0 var(--8bit-black),
-         2px -2px 0 var(--8bit-black),
-        -2px  2px 0 var(--8bit-black),
-         2px  2px 0 var(--8bit-black);
-}
-
-/* Blinking text */
-.text-blink {
-    animation: blink 1s steps(2) infinite;
-}
-
-/* Lists */
-ul, ol {
-    padding-left: var(--space-3);
-    margin-bottom: var(--space-2);
-}
-
-li {
-    margin-bottom: var(--space-1);
+.game-window {
     position: relative;
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    padding: var(--px-4);
+    color: var(--nes-white);
 }
 
-ul li::marker {
-    content: '> ';
-    color: var(--color-primary);
-}
-
-ol {
-    counter-reset: list-counter;
-}
-
-ol li {
-    counter-increment: list-counter;
-}
-
-ol li::marker {
-    content: counter(list-counter) '. ';
-    color: var(--color-primary);
-}
-
-/* Blockquote - Dialogue Box Style */
-blockquote {
-    position: relative;
-    padding: var(--space-3);
-    margin: var(--space-3) 0;
-    background: var(--8bit-blue-dark);
-    border: 4px solid var(--8bit-white);
-    color: var(--8bit-white);
-    font-family: var(--font-pixel);
-    font-size: var(--text-sm);
-}
-
-blockquote::before {
+/* Double border like Final Fantasy */
+.game-window::before {
     content: '';
     position: absolute;
-    inset: 4px;
-    border: 4px solid var(--8bit-white);
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
     pointer-events: none;
 }
 
-blockquote::after {
+/* Corner decorations */
+.game-window::after {
     content: '';
     position: absolute;
-    bottom: -12px;
-    left: 24px;
-    width: 0;
-    height: 0;
-    border-left: 12px solid transparent;
-    border-right: 12px solid transparent;
-    border-top: 12px solid var(--8bit-white);
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    background:
+        linear-gradient(var(--ff-blue-light), var(--ff-blue-light)) top left,
+        linear-gradient(var(--ff-blue-light), var(--ff-blue-light)) top right,
+        linear-gradient(var(--ff-blue-light), var(--ff-blue-light)) bottom left,
+        linear-gradient(var(--ff-blue-light), var(--ff-blue-light)) bottom right;
+    background-size: 12px 12px;
+    background-repeat: no-repeat;
+    pointer-events: none;
 }
 
-blockquote p {
-    margin: 0;
-}
-
-blockquote cite {
-    display: block;
-    margin-top: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--8bit-sky);
-    text-align: right;
-}
-
-/* Code */
-code {
-    font-family: var(--font-mono);
-    font-size: 0.9em;
-    padding: 2px 8px;
-    background-color: var(--color-surface);
-    border: 2px solid var(--color-border);
-    color: var(--color-primary);
-}
-
-pre {
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    padding: var(--space-2);
-    background-color: var(--8bit-black);
-    border: 4px solid var(--color-border);
-    color: var(--8bit-green-light);
-    overflow-x: auto;
-    margin: var(--space-3) 0;
-    box-shadow: var(--shadow-md);
-}
-
-pre code {
-    padding: 0;
-    background: none;
-    border: none;
-    color: inherit;
-}
-
-/* Images */
-img {
-    max-width: 100%;
-    height: auto;
-    display: block;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-}
-
-figure {
-    margin: var(--space-3) 0;
-}
-
-figcaption {
-    font-size: var(--text-sm);
-    color: var(--color-text-muted);
-    text-align: center;
-    margin-top: var(--space-1);
-    font-family: var(--font-pixel);
-}
-
-hr {
-    border: none;
-    height: 4px;
-    background: repeating-linear-gradient(
-        90deg,
-        var(--color-border) 0px,
-        var(--color-border) 8px,
-        transparent 8px,
-        transparent 16px
-    );
-    margin: var(--space-4) 0;
-}
-
-/* Tables */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: var(--space-3) 0;
-    border: 4px solid var(--color-border);
-}
-
-th, td {
-    padding: var(--space-1) var(--space-2);
-    border: 2px solid var(--color-border);
-    text-align: left;
-    font-family: var(--font-body);
-}
-
-th {
-    background-color: var(--color-surface-alt);
-    font-family: var(--font-pixel);
-    font-size: var(--text-sm);
+/* ==========================================================================
+   Typography - Pixel Perfect
+   ========================================================================== */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-game);
+    font-weight: normal;
+    line-height: 1.5;
+    color: var(--color-text);
     text-transform: uppercase;
+    letter-spacing: 0;
+    margin-bottom: var(--px-4);
+}
+
+h1 {
+    font-size: var(--text-2xl);
+    text-shadow:
+        4px 4px 0 var(--nes-black),
+        -1px -1px 0 var(--nes-black),
+        1px -1px 0 var(--nes-black),
+        -1px 1px 0 var(--nes-black),
+        1px 1px 0 var(--nes-black);
+    color: var(--mario-gold);
+}
+
+h2 {
+    font-size: var(--text-xl);
+    color: var(--color-primary);
+    text-shadow: 2px 2px 0 var(--nes-black);
+}
+
+h3 { font-size: var(--text-lg); }
+h4 { font-size: var(--text-base); }
+h5, h6 { font-size: var(--text-sm); }
+
+p {
+    margin-bottom: var(--px-4);
+    line-height: 2;
+}
+
+a {
+    color: var(--mario-gold);
+    text-decoration: none;
+    transition: all 0.1s steps(2);
+}
+
+a:hover {
+    color: var(--nes-white);
+    text-shadow: 0 0 8px var(--mario-gold);
+}
+
+strong, b { color: var(--mario-red); }
+em, i { color: var(--zelda-green); }
+small { font-size: var(--text-xs); }
+
+/* Text with game-style cursor */
+.typewriter {
+    overflow: hidden;
+    white-space: nowrap;
+    border-right: 4px solid var(--nes-white);
+    animation: typewriter 2s steps(20), blink 0.5s step-end infinite alternate;
+}
+
+/* Rainbow text for special items */
+.rainbow-text {
+    animation: rainbow 3s linear infinite;
+}
+
+/* Blinking text */
+.blink {
+    animation: blink var(--blink-speed) step-end infinite;
 }
 
 /* ==========================================================================
-   Layout
+   Game HUD - Status Bar
    ========================================================================== */
-
-.container {
-    width: 100%;
-    max-width: var(--container-xl);
-    margin: 0 auto;
-    padding: 0 var(--space-2);
+.game-hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: var(--nes-black);
+    border-bottom: 4px solid var(--mario-gold);
+    padding: var(--px-2) var(--px-4);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: var(--text-xs);
 }
 
-@media (min-width: 768px) {
-    .container {
-        padding: 0 var(--space-3);
-    }
+.hud-section {
+    display: flex;
+    align-items: center;
+    gap: var(--px-4);
 }
 
-.container--narrow {
-    max-width: var(--container-md);
+/* Coin Counter */
+.coin-counter {
+    display: flex;
+    align-items: center;
+    gap: var(--px-2);
+    color: var(--nes-white);
 }
 
-.container--wide {
-    max-width: 1400px;
+.coin-counter::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background: var(--mario-gold);
+    border-radius: 50%;
+    border: 2px solid var(--mario-orange);
+    animation: coin-spin 0.8s steps(4) infinite;
 }
 
-/* Main Content Layout */
-.site-main {
-    flex: 1;
-    padding: var(--space-4) 0;
+/* HP Bar */
+.hp-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--px-2);
+    color: var(--nes-white);
 }
 
-.content-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-4);
+.hp-bar__label {
+    color: var(--mario-red);
 }
 
-@media (min-width: 1024px) {
-    .content-layout {
-        grid-template-columns: 1fr 320px;
-    }
-
-    .content-layout--sidebar-left {
-        grid-template-columns: 320px 1fr;
-    }
-
-    .content-layout--sidebar-left .content-main {
-        order: 2;
-    }
-
-    .content-layout--sidebar-left .sidebar {
-        order: 1;
-    }
+.hp-bar__track {
+    width: 100px;
+    height: 12px;
+    background: var(--nes-gray-dark);
+    border: 2px solid var(--nes-white);
+    position: relative;
 }
 
-.content-main {
-    min-width: 0;
+.hp-bar__fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: linear-gradient(180deg, var(--zelda-green-light) 0%, var(--zelda-green) 50%, var(--zelda-green-dark) 100%);
+    transition: width 0.3s steps(10);
+}
+
+.hp-bar__fill--warning {
+    background: linear-gradient(180deg, var(--mario-gold) 0%, var(--mario-orange) 100%);
+}
+
+.hp-bar__fill--danger {
+    background: linear-gradient(180deg, var(--mario-red) 0%, var(--mario-red-dark) 100%);
+    animation: blink 0.3s step-end infinite;
+}
+
+/* Score Display */
+.score-display {
+    color: var(--nes-white);
+    letter-spacing: 2px;
+}
+
+.score-display__label {
+    color: var(--mario-gold);
 }
 
 /* ==========================================================================
-   Header
+   Header - Game Title Screen Style
    ========================================================================== */
-
 .site-header {
     position: sticky;
     top: 0;
-    z-index: var(--z-sticky);
-    background: var(--color-surface);
-    border-bottom: 4px solid var(--color-border);
-    box-shadow: 0 4px 0 var(--8bit-dark-gray);
+    z-index: 999;
+    background: linear-gradient(180deg, var(--ff-blue) 0%, var(--ff-blue-light) 100%);
+    border: 4px solid var(--nes-white);
+    margin: var(--px-4);
+    padding: 0;
 }
 
-[data-theme="dark"] .site-header {
-    box-shadow: 0 4px 0 var(--8bit-black);
+/* Double border effect */
+.site-header::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
 }
 
 .header-inner {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: var(--header-height);
-    gap: var(--space-2);
+    padding: var(--px-3) var(--px-6);
+    position: relative;
 }
 
-/* Logo */
+/* Logo - Game Title Style */
 .site-logo {
     display: flex;
     align-items: center;
-    gap: var(--space-1);
-}
-
-.site-logo__text {
-    font-family: var(--font-pixel);
-    font-size: var(--text-lg);
-    color: var(--color-heading);
-    text-transform: uppercase;
-    text-shadow: 2px 2px 0 var(--8bit-dark-gray);
-}
-
-[data-theme="dark"] .site-logo__text {
-    text-shadow: 2px 2px 0 var(--8bit-black);
+    gap: var(--px-3);
+    text-decoration: none;
 }
 
 .site-logo__icon {
-    font-size: var(--text-xl);
+    font-size: 24px;
+    animation: float 2s ease-in-out infinite;
+    text-shadow: 2px 2px 0 var(--nes-black);
 }
 
-/* Navigation */
+.site-logo__text {
+    font-family: var(--font-game);
+    font-size: var(--text-lg);
+    color: var(--nes-white);
+    text-transform: uppercase;
+    text-shadow:
+        3px 3px 0 var(--nes-black),
+        -1px -1px 0 var(--ff-blue-light),
+        1px -1px 0 var(--ff-blue-light);
+    letter-spacing: 2px;
+}
+
+.site-logo:hover .site-logo__text {
+    color: var(--mario-gold);
+    animation: pulse-glow 1s ease-in-out infinite;
+}
+
+/* Navigation - Menu Select Style */
 .main-nav {
     display: none;
 }
 
 @media (min-width: 768px) {
     .main-nav {
-        display: flex;
+        display: block;
     }
 }
 
 .nav-list {
     display: flex;
     list-style: none;
-    gap: var(--space-1);
+    gap: var(--px-2);
     padding: 0;
     margin: 0;
 }
@@ -660,47 +565,94 @@ th {
 .nav-link {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: var(--space-1) var(--space-2);
-    font-family: var(--font-pixel);
+    gap: var(--px-2);
+    padding: var(--px-2) var(--px-3);
+    font-family: var(--font-game);
     font-size: var(--text-xs);
-    color: var(--color-text);
+    color: var(--nes-white);
     text-transform: uppercase;
     text-decoration: none;
-    border: 2px solid transparent;
-    transition: all var(--duration-fast) steps(2);
+    position: relative;
+    transition: all 0.1s steps(2);
 }
 
+/* Menu cursor arrow */
 .nav-link::before {
     content: '';
     width: 12px;
+    height: 12px;
+    transition: all 0.1s steps(2);
 }
 
 .nav-link:hover::before,
 .nav-link.active::before {
-    content: '\25B6';
-    color: var(--color-primary);
-    animation: blink 0.5s steps(2) infinite;
+    content: '';
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 10px solid var(--mario-gold);
+    animation: blink 0.3s step-end infinite;
 }
 
 .nav-link:hover,
 .nav-link.active {
-    color: var(--color-primary);
-    border-color: var(--color-border);
-    background: var(--color-surface-alt);
+    color: var(--mario-gold);
+    text-shadow: 0 0 8px var(--mario-gold);
 }
 
-/* Mobile Menu Toggle */
+/* Header Actions */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--px-2);
+}
+
+/* Game Buttons */
+.theme-toggle,
+.search-toggle,
 .mobile-menu-toggle {
+    width: 40px;
+    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
+    background: var(--mario-red);
+    border: 4px solid var(--nes-black);
+    color: var(--nes-white);
     cursor: pointer;
-    box-shadow: var(--shadow-sm);
+    font-size: 16px;
+    box-shadow:
+        inset -4px -4px 0 var(--mario-red-dark),
+        inset 4px 4px 0 #ff6b6b,
+        4px 4px 0 var(--nes-black);
+    transition: all 0.05s steps(1);
+}
+
+.theme-toggle:hover,
+.search-toggle:hover,
+.mobile-menu-toggle:hover {
+    background: var(--mario-gold);
+    box-shadow:
+        inset -4px -4px 0 var(--mario-orange),
+        inset 4px 4px 0 #ffeb3b,
+        4px 4px 0 var(--nes-black);
+}
+
+.theme-toggle:active,
+.search-toggle:active,
+.mobile-menu-toggle:active {
+    transform: translate(4px, 4px);
+    box-shadow: inset 4px 4px 0 var(--mario-red-dark);
+}
+
+.mobile-menu-toggle span {
+    display: block;
+    width: 16px;
+    height: 3px;
+    background: var(--nes-white);
+    position: relative;
+    box-shadow: 0 6px 0 var(--nes-white), 0 -6px 0 var(--nes-white);
 }
 
 @media (min-width: 768px) {
@@ -709,375 +661,252 @@ th {
     }
 }
 
-.mobile-menu-toggle:active {
-    transform: translate(2px, 2px);
-    box-shadow: none;
-}
+.theme-toggle__icon--light { display: block; }
+.theme-toggle__icon--dark { display: none; }
+[data-theme="dark"] .theme-toggle__icon--light { display: none; }
+[data-theme="dark"] .theme-toggle__icon--dark { display: block; }
 
-.mobile-menu-toggle span {
-    display: block;
-    width: 20px;
-    height: 3px;
-    background: var(--color-text);
-    position: relative;
-}
-
-.mobile-menu-toggle span::before,
-.mobile-menu-toggle span::after {
-    content: '';
-    position: absolute;
+/* ==========================================================================
+   Container & Layout
+   ========================================================================== */
+.container {
     width: 100%;
-    height: 100%;
-    background: inherit;
-    left: 0;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 var(--px-4);
 }
 
-.mobile-menu-toggle span::before {
-    top: -6px;
+.site-main {
+    flex: 1;
+    padding: var(--px-8) 0;
 }
 
-.mobile-menu-toggle span::after {
-    bottom: -6px;
+.content-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--px-8);
 }
 
-/* Header Actions */
-.header-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-}
-
-/* Theme Toggle */
-.theme-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    cursor: pointer;
-    box-shadow: var(--shadow-sm);
-    font-size: var(--text-lg);
-}
-
-.theme-toggle:active {
-    transform: translate(2px, 2px);
-    box-shadow: none;
-}
-
-.theme-toggle__icon--light {
-    display: block;
-}
-
-.theme-toggle__icon--dark {
-    display: none;
-}
-
-[data-theme="dark"] .theme-toggle__icon--light {
-    display: none;
-}
-
-[data-theme="dark"] .theme-toggle__icon--dark {
-    display: block;
-}
-
-/* Search Toggle */
-.search-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    cursor: pointer;
-    box-shadow: var(--shadow-sm);
-    font-size: var(--text-lg);
-}
-
-.search-toggle:active {
-    transform: translate(2px, 2px);
-    box-shadow: none;
-}
-
-/* Mobile Nav */
-.mobile-nav {
-    display: none;
-    position: fixed;
-    inset: 0;
-    top: var(--header-height);
-    background: var(--color-surface);
-    border-top: 4px solid var(--color-border);
-    padding: var(--space-2);
-    z-index: var(--z-modal);
-    overflow-y: auto;
-}
-
-.mobile-nav.is-open {
-    display: block;
-    animation: slide-in-up 0.2s steps(4);
-}
-
-.mobile-nav__list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.mobile-nav__link {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: var(--space-2);
-    font-family: var(--font-pixel);
-    font-size: var(--text-sm);
-    color: var(--color-text);
-    text-transform: uppercase;
-    text-decoration: none;
-    border: 4px solid transparent;
-}
-
-.mobile-nav__link::before {
-    content: '';
-    width: 16px;
-}
-
-.mobile-nav__link:hover::before,
-.mobile-nav__link.active::before {
-    content: '\25B6';
-    color: var(--color-primary);
-    animation: blink 0.5s steps(2) infinite;
-}
-
-.mobile-nav__link:hover,
-.mobile-nav__link.active {
-    background: var(--color-surface-alt);
-    border-color: var(--color-border);
+@media (min-width: 1024px) {
+    .content-layout {
+        grid-template-columns: 1fr 300px;
+    }
 }
 
 /* ==========================================================================
-   Hero Section
+   Hero Section - Title Screen
    ========================================================================== */
-
 .hero {
-    padding: var(--space-8) 0;
     text-align: center;
-    background: var(--color-surface);
-    border-bottom: 4px solid var(--color-border);
-    box-shadow: 0 4px 0 var(--8bit-dark-gray);
-}
-
-[data-theme="dark"] .hero {
-    box-shadow: 0 4px 0 var(--8bit-black);
+    padding: var(--px-16) 0;
+    position: relative;
 }
 
 .hero__title {
-    font-size: var(--text-4xl);
-    margin-bottom: var(--space-2);
+    font-size: var(--text-3xl);
+    color: var(--mario-gold);
     text-shadow:
-        -3px -3px 0 var(--8bit-black),
-         3px -3px 0 var(--8bit-black),
-        -3px  3px 0 var(--8bit-black),
-         3px  3px 0 var(--8bit-black);
-    color: var(--color-primary);
+        4px 4px 0 var(--mario-red),
+        8px 8px 0 var(--nes-black);
+    margin-bottom: var(--px-4);
+    animation: float 3s ease-in-out infinite;
 }
 
 @media (min-width: 768px) {
     .hero__title {
-        font-size: var(--text-hero);
+        font-size: var(--text-4xl);
     }
 }
 
 .hero__subtitle {
-    font-family: var(--font-pixel);
     font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-4);
-    text-transform: uppercase;
+    color: var(--nes-white);
+    text-shadow: 2px 2px 0 var(--nes-black);
+    margin-bottom: var(--px-8);
 }
 
-.hero__cta {
-    display: inline-block;
-}
-
-.hero__cta .btn {
-    animation: float-8bit 2s steps(4) infinite;
-}
-
-/* Press Start Text */
+/* Press Start to Continue */
 .press-start {
-    font-family: var(--font-pixel);
     font-size: var(--text-sm);
-    color: var(--color-text);
-    text-transform: uppercase;
-    animation: blink 1s steps(2) infinite;
-    margin-top: var(--space-4);
+    color: var(--nes-white);
+    text-shadow: 2px 2px 0 var(--nes-black);
+    animation: blink 1s step-end infinite;
+    margin-top: var(--px-8);
+}
+
+.press-start::before {
+    content: '> ';
+    color: var(--mario-gold);
 }
 
 /* ==========================================================================
-   Buttons
+   Buttons - NES Controller Style
    ========================================================================== */
-
 .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: var(--space-1) var(--space-3);
-    font-family: var(--font-pixel);
-    font-size: var(--text-sm);
+    gap: var(--px-2);
+    padding: var(--px-3) var(--px-6);
+    font-family: var(--font-game);
+    font-size: var(--text-xs);
     text-transform: uppercase;
     text-decoration: none;
-    border: 4px solid var(--8bit-black);
     cursor: pointer;
-    transition: transform var(--duration-fast) steps(2), box-shadow var(--duration-fast) steps(2);
+    border: 4px solid var(--nes-black);
+    position: relative;
+    transition: all 0.05s steps(1);
 }
 
-.btn:hover {
-    transform: translate(2px, 2px);
-}
-
-.btn:active {
-    transform: translate(4px, 4px);
-}
-
-/* Primary Button (Red - Action) */
+/* A Button - Red */
 .btn--primary {
-    background: var(--8bit-red);
-    color: var(--8bit-white);
+    background: var(--mario-red);
+    color: var(--nes-white);
     box-shadow:
-        inset -4px -4px 0 var(--8bit-red-dark),
-        inset 4px 4px 0 var(--8bit-red-light),
-        4px 4px 0 var(--8bit-black);
+        inset -4px -4px 0 var(--mario-red-dark),
+        inset 4px 4px 0 #ff6b6b,
+        4px 4px 0 var(--nes-black);
 }
 
 .btn--primary:hover {
+    background: #ff4444;
+    transform: translate(-2px, -2px);
     box-shadow:
-        inset -4px -4px 0 var(--8bit-red-dark),
-        inset 4px 4px 0 var(--8bit-red-light),
-        2px 2px 0 var(--8bit-black);
+        inset -4px -4px 0 var(--mario-red-dark),
+        inset 4px 4px 0 #ff6b6b,
+        6px 6px 0 var(--nes-black);
 }
 
 .btn--primary:active {
-    box-shadow:
-        inset 4px 4px 0 var(--8bit-red-dark),
-        inset -4px -4px 0 var(--8bit-red-light);
+    transform: translate(4px, 4px);
+    box-shadow: inset 4px 4px 0 var(--mario-red-dark);
 }
 
-/* Secondary Button (Blue) */
+/* B Button - Gold */
 .btn--secondary {
-    background: var(--8bit-blue);
-    color: var(--8bit-white);
+    background: var(--mario-gold);
+    color: var(--nes-black);
     box-shadow:
-        inset -4px -4px 0 var(--8bit-blue-dark),
-        inset 4px 4px 0 var(--8bit-blue-light),
-        4px 4px 0 var(--8bit-black);
+        inset -4px -4px 0 var(--mario-orange),
+        inset 4px 4px 0 #ffeb3b,
+        4px 4px 0 var(--nes-black);
 }
 
 .btn--secondary:hover {
+    transform: translate(-2px, -2px);
     box-shadow:
-        inset -4px -4px 0 var(--8bit-blue-dark),
-        inset 4px 4px 0 var(--8bit-blue-light),
-        2px 2px 0 var(--8bit-black);
+        inset -4px -4px 0 var(--mario-orange),
+        inset 4px 4px 0 #ffeb3b,
+        6px 6px 0 var(--nes-black);
 }
 
-.btn--secondary:active {
+/* Start Button - Blue */
+.btn--start {
+    background: var(--mario-blue);
+    color: var(--nes-white);
     box-shadow:
-        inset 4px 4px 0 var(--8bit-blue-dark),
-        inset -4px -4px 0 var(--8bit-blue-light);
+        inset -4px -4px 0 #0d47a1,
+        inset 4px 4px 0 #42a5f5,
+        4px 4px 0 var(--nes-black);
+    border-radius: 20px;
 }
 
-/* Success Button (Green) */
+/* Success - Green (1UP) */
 .btn--success {
-    background: var(--8bit-green);
-    color: var(--8bit-white);
+    background: var(--zelda-green);
+    color: var(--nes-white);
     box-shadow:
-        inset -4px -4px 0 var(--8bit-green-dark),
-        inset 4px 4px 0 var(--8bit-green-light),
-        4px 4px 0 var(--8bit-black);
+        inset -4px -4px 0 var(--zelda-green-dark),
+        inset 4px 4px 0 var(--zelda-green-light),
+        4px 4px 0 var(--nes-black);
 }
 
-.btn--success:hover {
-    box-shadow:
-        inset -4px -4px 0 var(--8bit-green-dark),
-        inset 4px 4px 0 var(--8bit-green-light),
-        2px 2px 0 var(--8bit-black);
-}
-
-/* Warning Button (Yellow/Gold) */
-.btn--warning {
-    background: var(--8bit-yellow);
-    color: var(--8bit-black);
-    box-shadow:
-        inset -4px -4px 0 var(--8bit-orange),
-        inset 4px 4px 0 var(--8bit-gold),
-        4px 4px 0 var(--8bit-black);
-}
-
-/* Ghost Button */
+/* Ghost */
 .btn--ghost {
     background: transparent;
-    color: var(--color-text);
-    box-shadow: 4px 4px 0 var(--8bit-black);
+    color: var(--nes-white);
+    border-color: var(--nes-white);
+    box-shadow: 4px 4px 0 var(--nes-black);
 }
 
 .btn--ghost:hover {
-    background: var(--color-surface-alt);
-    box-shadow: 2px 2px 0 var(--8bit-black);
+    background: var(--nes-white);
+    color: var(--nes-black);
 }
 
-/* Small Button */
+/* Size variants */
 .btn--sm {
-    padding: 4px var(--space-2);
+    padding: var(--px-1) var(--px-3);
     font-size: var(--text-xs);
-    border-width: 2px;
 }
 
-/* Large Button */
 .btn--lg {
-    padding: var(--space-2) var(--space-4);
+    padding: var(--px-4) var(--px-8);
     font-size: var(--text-base);
 }
 
-/* Block Button */
-.btn--block {
-    width: 100%;
-}
-
 /* ==========================================================================
-   Cards (Post Cards - Cartridge Style)
+   Cards - Treasure Chest / Item Box Style
    ========================================================================== */
-
 .posts-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: var(--space-3);
+    gap: var(--px-6);
 }
 
 .post-card {
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-lg);
+    position: relative;
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
     overflow: hidden;
-    transition: transform var(--duration-fast) steps(2), box-shadow var(--duration-fast) steps(2);
+    transition: all 0.1s steps(2);
+}
+
+/* Double border */
+.post-card::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Corner diamonds */
+.post-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+        radial-gradient(8px 8px at 12px 12px, var(--mario-gold) 50%, transparent 50%),
+        radial-gradient(8px 8px at calc(100% - 12px) 12px, var(--mario-gold) 50%, transparent 50%),
+        radial-gradient(8px 8px at 12px calc(100% - 12px), var(--mario-gold) 50%, transparent 50%),
+        radial-gradient(8px 8px at calc(100% - 12px) calc(100% - 12px), var(--mario-gold) 50%, transparent 50%);
+    pointer-events: none;
+    z-index: 2;
 }
 
 .post-card:hover {
     transform: translate(-4px, -4px);
-    box-shadow: 12px 12px 0 var(--8bit-dark-gray);
+    box-shadow: 8px 8px 0 var(--nes-black);
 }
 
-[data-theme="dark"] .post-card:hover {
-    box-shadow: 12px 12px 0 var(--8bit-black);
+.post-card:hover::after {
+    animation: sparkle 0.5s steps(2) infinite;
 }
 
 .post-card__image-wrapper {
-    position: relative;
     aspect-ratio: 16 / 9;
-    border-bottom: 4px solid var(--color-border);
+    border-bottom: 4px solid var(--nes-white);
     overflow: hidden;
-    background: var(--color-surface-alt);
+    background: var(--nes-gray-dark);
+    position: relative;
 }
 
 .post-card__image {
@@ -1086,57 +915,76 @@ th {
     object-fit: cover;
 }
 
+/* Category Badge - Power-up Style */
 .post-card__category {
     position: absolute;
-    top: var(--space-1);
-    left: var(--space-1);
+    top: var(--px-2);
+    left: var(--px-2);
+    z-index: 3;
 }
 
 .post-card__content {
-    padding: var(--space-2);
+    padding: var(--px-4);
+    position: relative;
+    z-index: 1;
 }
 
 .post-card__title {
-    font-family: var(--font-pixel);
     font-size: var(--text-sm);
-    margin-bottom: var(--space-1);
-    text-shadow: none;
+    color: var(--nes-white);
+    margin-bottom: var(--px-2);
+    text-shadow: 2px 2px 0 var(--nes-black);
+    line-height: 1.6;
 }
 
 .post-card__title a {
-    color: var(--color-heading);
-    text-decoration: none;
+    color: inherit;
 }
 
 .post-card__title a:hover {
-    color: var(--color-primary);
+    color: var(--mario-gold);
 }
 
 .post-card__excerpt {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-2);
-    line-height: var(--leading-normal);
+    font-size: var(--text-xs);
+    color: var(--ff-cyan);
+    line-height: 2;
+    margin-bottom: var(--px-3);
 }
 
 .post-card__meta {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    font-family: var(--font-pixel);
+    gap: var(--px-3);
     font-size: var(--text-xs);
-    color: var(--color-text-muted);
+    color: var(--nes-gray-light);
 }
 
 .post-card__meta-item {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--px-1);
 }
 
-/* Featured Post Card */
+.post-card__meta-item::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: var(--mario-gold);
+}
+
+/* Featured Card */
 .post-card--featured {
     grid-column: span 2;
+    background: linear-gradient(135deg, var(--ff-blue) 0%, var(--mario-blue) 100%);
+}
+
+.post-card--featured::after {
+    background:
+        radial-gradient(8px 8px at 12px 12px, var(--mario-red) 50%, transparent 50%),
+        radial-gradient(8px 8px at calc(100% - 12px) 12px, var(--mario-red) 50%, transparent 50%),
+        radial-gradient(8px 8px at 12px calc(100% - 12px), var(--mario-red) 50%, transparent 50%),
+        radial-gradient(8px 8px at calc(100% - 12px) calc(100% - 12px), var(--mario-red) 50%, transparent 50%);
 }
 
 @media (max-width: 768px) {
@@ -1145,248 +993,174 @@ th {
     }
 }
 
-.post-card--featured .post-card__title {
-    font-size: var(--text-lg);
-}
-
 /* ==========================================================================
-   Badges & Tags
+   Badges & Tags - Power-ups
    ========================================================================== */
-
 .badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 12px;
-    font-family: var(--font-pixel);
+    gap: var(--px-1);
+    padding: var(--px-1) var(--px-2);
+    font-family: var(--font-game);
     font-size: var(--text-xs);
     text-transform: uppercase;
-    border: 2px solid var(--8bit-black);
-    box-shadow: 2px 2px 0 var(--8bit-black);
+    border: 2px solid var(--nes-black);
+    position: relative;
 }
 
+/* Mushroom - Red */
 .badge--primary {
-    background: var(--8bit-red);
-    color: var(--8bit-white);
+    background: var(--mario-red);
+    color: var(--nes-white);
+    box-shadow: 2px 2px 0 var(--nes-black);
 }
 
-.badge--secondary {
-    background: var(--8bit-blue);
-    color: var(--8bit-white);
+.badge--primary::before {
+    content: '\1F344';
+    margin-right: 4px;
 }
 
+/* Star - Gold */
+.badge--featured {
+    background: var(--mario-gold);
+    color: var(--nes-black);
+    box-shadow: 2px 2px 0 var(--nes-black);
+    animation: pulse-glow 1s ease-in-out infinite;
+}
+
+.badge--featured::before {
+    content: '\2B50';
+    margin-right: 4px;
+    animation: sparkle 0.5s steps(2) infinite;
+}
+
+/* Fire Flower - Orange */
+.badge--hot {
+    background: var(--mario-orange);
+    color: var(--nes-white);
+}
+
+.badge--hot::before {
+    content: '\1F525';
+    margin-right: 4px;
+}
+
+/* 1UP - Green */
 .badge--success {
-    background: var(--8bit-green);
-    color: var(--8bit-white);
+    background: var(--zelda-green);
+    color: var(--nes-white);
 }
 
-.badge--warning {
-    background: var(--8bit-yellow);
-    color: var(--8bit-black);
+.badge--success::before {
+    content: '1UP';
+    font-size: 8px;
+    margin-right: 4px;
 }
 
-.badge--gold {
-    background: var(--8bit-gold);
-    color: var(--8bit-black);
+/* Coin - Yellow */
+.badge--coin {
+    background: var(--mario-gold);
+    color: var(--nes-black);
 }
 
-.badge--gold::before {
-    content: '\2605';
+.badge--coin::before {
+    content: '';
+    width: 12px;
+    height: 12px;
+    background: var(--mario-orange);
+    border-radius: 50%;
+    margin-right: 4px;
+    animation: coin-spin 0.8s steps(4) infinite;
 }
 
-/* Tags */
+/* Tags - Item Inventory */
 .tags {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-1);
+    gap: var(--px-2);
 }
 
 .tag {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px;
-    font-family: var(--font-pixel);
+    padding: var(--px-1) var(--px-2);
+    font-family: var(--font-game);
     font-size: var(--text-xs);
-    background: var(--color-surface-alt);
-    color: var(--color-text);
-    border: 2px solid var(--color-border);
+    background: var(--nes-gray-dark);
+    color: var(--nes-white);
+    border: 2px solid var(--nes-white);
     text-decoration: none;
-    transition: all var(--duration-fast) steps(2);
+    transition: all 0.1s steps(2);
+}
+
+.tag::before {
+    content: '>';
+    color: var(--mario-gold);
+    margin-right: var(--px-1);
+    opacity: 0;
+    transition: opacity 0.1s steps(2);
 }
 
 .tag:hover {
-    background: var(--color-primary);
-    color: var(--8bit-white);
-    border-color: var(--color-primary);
+    background: var(--mario-gold);
+    color: var(--nes-black);
+    border-color: var(--nes-black);
+}
+
+.tag:hover::before {
+    opacity: 1;
+    animation: blink 0.3s step-end infinite;
 }
 
 /* ==========================================================================
-   Forms
+   Sidebar - Inventory Panel
    ========================================================================== */
-
-.form-group {
-    margin-bottom: var(--space-2);
-}
-
-.form-label {
-    display: block;
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    margin-bottom: var(--space-1);
-    color: var(--color-text);
-}
-
-.form-input,
-.form-textarea,
-.form-select {
-    width: 100%;
-    padding: var(--space-1) var(--space-2);
-    font-family: var(--font-body);
-    font-size: var(--text-base);
-    background: var(--8bit-black);
-    color: var(--8bit-white);
-    border: 4px solid var(--8bit-white);
-}
-
-[data-theme="dark"] .form-input,
-[data-theme="dark"] .form-textarea,
-[data-theme="dark"] .form-select {
-    background: var(--color-surface);
-    border-color: var(--color-border);
-}
-
-.form-input::placeholder,
-.form-textarea::placeholder {
-    color: var(--8bit-gray);
-}
-
-.form-input:focus,
-.form-textarea:focus,
-.form-select:focus {
-    outline: none;
-    box-shadow: 0 0 0 4px var(--8bit-cyan);
-}
-
-.form-textarea {
-    min-height: 120px;
-    resize: vertical;
-}
-
-.form-checkbox,
-.form-radio {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    cursor: pointer;
-}
-
-.form-checkbox input,
-.form-radio input {
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    cursor: pointer;
-}
-
-.form-checkbox input:checked,
-.form-radio input:checked {
-    background: var(--color-primary);
-    box-shadow: inset 4px 4px 0 var(--8bit-white);
-}
-
-.form-radio input {
-    border-radius: 50%;
-}
-
-/* ==========================================================================
-   Reading Progress Bar (Health Bar Style)
-   ========================================================================== */
-
-.reading-progress {
-    position: fixed;
-    top: var(--header-height);
-    left: 0;
-    right: 0;
-    height: 8px;
-    background: var(--8bit-dark-gray);
-    border-bottom: 2px solid var(--8bit-black);
-    z-index: var(--z-fixed);
-}
-
-.reading-progress__bar {
-    height: 100%;
-    width: 0;
-    background: linear-gradient(
-        180deg,
-        var(--8bit-green-light) 0%,
-        var(--8bit-green) 50%,
-        var(--8bit-green-dark) 100%
-    );
-    transition: width 0.1s steps(20);
-}
-
-/* Progress bar warning state (< 25% left) */
-.reading-progress--warning .reading-progress__bar {
-    background: linear-gradient(
-        180deg,
-        var(--8bit-gold) 0%,
-        var(--8bit-yellow) 50%,
-        var(--8bit-orange) 100%
-    );
-}
-
-/* Progress bar danger state (< 10% left) */
-.reading-progress--danger .reading-progress__bar {
-    background: linear-gradient(
-        180deg,
-        var(--8bit-red-light) 0%,
-        var(--8bit-red) 50%,
-        var(--8bit-red-dark) 100%
-    );
-    animation: blink 0.5s steps(2) infinite;
-}
-
-/* ==========================================================================
-   Sidebar (Inventory Panel)
-   ========================================================================== */
-
 .sidebar {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--px-6);
 }
 
 .widget {
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-md);
+    position: relative;
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+}
+
+.widget::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
 }
 
 .widget__header {
+    padding: var(--px-2) var(--px-3);
+    background: var(--mario-blue);
+    border-bottom: 4px solid var(--nes-white);
+    font-size: var(--text-xs);
+    color: var(--nes-white);
+    text-transform: uppercase;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: var(--space-1) var(--space-2);
-    background: var(--color-surface-alt);
-    border-bottom: 4px solid var(--color-border);
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    text-transform: uppercase;
+    gap: var(--px-2);
 }
 
 .widget__header::before {
     content: '\2605';
-    color: var(--color-primary);
+    color: var(--mario-gold);
+    animation: sparkle 1s steps(2) infinite;
 }
 
 .widget__content {
-    padding: var(--space-2);
+    padding: var(--px-3);
 }
 
-/* Widget Lists */
+/* Widget List - Menu Items */
 .widget-list {
     list-style: none;
     padding: 0;
@@ -1394,39 +1168,309 @@ th {
 }
 
 .widget-list li {
-    margin-bottom: var(--space-1);
+    margin-bottom: var(--px-2);
 }
 
 .widget-list a {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 0;
-    font-family: var(--font-body);
-    font-size: var(--text-sm);
-    color: var(--color-text);
+    gap: var(--px-2);
+    padding: var(--px-1) 0;
+    font-size: var(--text-xs);
+    color: var(--nes-white);
     text-decoration: none;
+    transition: all 0.1s steps(2);
 }
 
 .widget-list a::before {
-    content: '>';
-    color: var(--color-primary);
+    content: '';
+    width: 8px;
+    height: 8px;
+    border: 2px solid var(--mario-gold);
+    transition: all 0.1s steps(2);
 }
 
 .widget-list a:hover {
-    color: var(--color-primary);
+    color: var(--mario-gold);
+    padding-left: var(--px-2);
+}
+
+.widget-list a:hover::before {
+    background: var(--mario-gold);
 }
 
 /* ==========================================================================
-   Pagination
+   Forms - NES Input Style
    ========================================================================== */
+.form-group {
+    margin-bottom: var(--px-4);
+}
 
+.form-label {
+    display: block;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    margin-bottom: var(--px-2);
+    color: var(--mario-gold);
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+    width: 100%;
+    padding: var(--px-2) var(--px-3);
+    font-family: var(--font-game);
+    font-size: var(--text-sm);
+    background: var(--nes-black);
+    color: var(--nes-white);
+    border: 4px solid var(--nes-white);
+    outline: none;
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+    border-color: var(--mario-gold);
+    box-shadow: 0 0 0 4px rgba(251, 208, 0, 0.3);
+}
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+    color: var(--nes-gray);
+}
+
+.form-textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+/* Checkbox - Power Switch */
+.form-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--px-2);
+    cursor: pointer;
+}
+
+.form-checkbox input {
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    background: var(--nes-gray-dark);
+    border: 4px solid var(--nes-white);
+    cursor: pointer;
+}
+
+.form-checkbox input:checked {
+    background: var(--zelda-green);
+    box-shadow: inset 4px 4px 0 var(--zelda-green-light);
+}
+
+.form-checkbox input:checked::after {
+    content: '\2713';
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--nes-white);
+    font-size: 12px;
+}
+
+/* ==========================================================================
+   Single Post - Quest Log Entry
+   ========================================================================== */
+.post-header {
+    text-align: center;
+    margin-bottom: var(--px-8);
+    padding: var(--px-6);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    position: relative;
+}
+
+.post-header::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
+}
+
+.post-header__title {
+    font-size: var(--text-xl);
+    color: var(--mario-gold);
+    text-shadow: 3px 3px 0 var(--nes-black);
+    margin-bottom: var(--px-3);
+}
+
+.post-header__meta {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--px-4);
+    font-size: var(--text-xs);
+    color: var(--ff-cyan);
+}
+
+.post-header__meta-item {
+    display: flex;
+    align-items: center;
+    gap: var(--px-1);
+}
+
+.post-header__meta-item::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: var(--mario-gold);
+}
+
+/* Post Content - Scroll Style */
+.post-content {
+    background: var(--nes-white);
+    border: 4px solid var(--nes-black);
+    padding: var(--px-6);
+    color: var(--nes-black);
+    font-size: var(--text-sm);
+    line-height: 2.2;
+    position: relative;
+}
+
+/* Scroll top decoration */
+.post-content::before {
+    content: '';
+    position: absolute;
+    top: -12px;
+    left: 20px;
+    right: 20px;
+    height: 12px;
+    background:
+        repeating-linear-gradient(
+            90deg,
+            var(--mario-brown) 0px,
+            var(--mario-brown) 16px,
+            #8b5a2b 16px,
+            #8b5a2b 32px
+        );
+    border: 2px solid var(--nes-black);
+    border-bottom: none;
+}
+
+/* Scroll bottom decoration */
+.post-content::after {
+    content: '';
+    position: absolute;
+    bottom: -12px;
+    left: 20px;
+    right: 20px;
+    height: 12px;
+    background:
+        repeating-linear-gradient(
+            90deg,
+            var(--mario-brown) 0px,
+            var(--mario-brown) 16px,
+            #8b5a2b 16px,
+            #8b5a2b 32px
+        );
+    border: 2px solid var(--nes-black);
+    border-top: none;
+}
+
+.post-content h2,
+.post-content h3,
+.post-content h4 {
+    color: var(--mario-red);
+    margin-top: var(--px-6);
+    margin-bottom: var(--px-3);
+}
+
+.post-content a {
+    color: var(--mario-blue);
+    text-decoration: underline;
+}
+
+.post-content a:hover {
+    color: var(--mario-red);
+}
+
+.post-content img {
+    margin: var(--px-4) 0;
+    border: 4px solid var(--nes-black);
+    box-shadow: 4px 4px 0 var(--nes-gray);
+}
+
+.post-content blockquote {
+    margin: var(--px-4) 0;
+    padding: var(--px-4);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    color: var(--nes-white);
+    position: relative;
+}
+
+.post-content blockquote::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
+}
+
+.post-content blockquote::after {
+    content: '';
+    position: absolute;
+    bottom: -12px;
+    left: 24px;
+    width: 0;
+    height: 0;
+    border-left: 12px solid transparent;
+    border-right: 12px solid transparent;
+    border-top: 12px solid var(--nes-white);
+}
+
+.post-content pre,
+.post-content code {
+    font-family: var(--font-game);
+    background: var(--nes-black);
+    color: var(--zelda-green-light);
+}
+
+.post-content pre {
+    padding: var(--px-4);
+    border: 4px solid var(--mario-gold);
+    overflow-x: auto;
+    margin: var(--px-4) 0;
+}
+
+.post-content code {
+    padding: 2px 6px;
+}
+
+.post-content ul li::marker {
+    content: '\25B6  ';
+    color: var(--mario-red);
+}
+
+.post-content ol li::marker {
+    color: var(--mario-gold);
+}
+
+/* ==========================================================================
+   Pagination - Level Select
+   ========================================================================== */
 .pagination {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--space-1);
-    margin-top: var(--space-4);
+    gap: var(--px-2);
+    margin-top: var(--px-8);
 }
 
 .pagination__item {
@@ -1435,25 +1479,26 @@ th {
     justify-content: center;
     min-width: 40px;
     height: 40px;
-    padding: 0 var(--space-1);
-    font-family: var(--font-pixel);
+    padding: 0 var(--px-2);
+    font-family: var(--font-game);
     font-size: var(--text-xs);
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    color: var(--color-text);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    color: var(--nes-white);
     text-decoration: none;
-    box-shadow: var(--shadow-sm);
-    transition: all var(--duration-fast) steps(2);
+    transition: all 0.1s steps(2);
 }
 
 .pagination__item:hover {
-    transform: translate(2px, 2px);
-    box-shadow: none;
+    background: var(--mario-gold);
+    color: var(--nes-black);
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 var(--nes-black);
 }
 
 .pagination__item--active {
-    background: var(--color-primary);
-    color: var(--8bit-white);
+    background: var(--mario-red);
+    animation: pulse-glow 1s ease-in-out infinite;
 }
 
 .pagination__item--disabled {
@@ -1472,375 +1517,678 @@ th {
 }
 
 /* ==========================================================================
-   Single Post
+   Author Box - Character Profile
    ========================================================================== */
-
-.post-header {
-    margin-bottom: var(--space-4);
-}
-
-.post-header__title {
-    font-size: var(--text-2xl);
-    margin-bottom: var(--space-2);
-}
-
-@media (min-width: 768px) {
-    .post-header__title {
-        font-size: var(--text-3xl);
-    }
-}
-
-.post-header__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-}
-
-.post-header__meta-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.post-header__meta-item a {
-    color: inherit;
-}
-
-.post-header__meta-item a:hover {
-    color: var(--color-primary);
-}
-
-/* Featured Image */
-.post-featured-image {
-    margin-bottom: var(--space-4);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-lg);
-}
-
-.post-featured-image img {
-    width: 100%;
-    display: block;
-}
-
-/* Post Content */
-.post-content {
-    font-size: var(--text-lg);
-    line-height: var(--leading-relaxed);
-}
-
-.post-content h2,
-.post-content h3,
-.post-content h4 {
-    margin-top: var(--space-4);
-    margin-bottom: var(--space-2);
-}
-
-.post-content p {
-    margin-bottom: var(--space-2);
-}
-
-.post-content img {
-    margin: var(--space-3) 0;
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-md);
-}
-
-/* Post Footer */
-.post-footer {
-    margin-top: var(--space-4);
-    padding-top: var(--space-4);
-    border-top: 4px dashed var(--color-border);
-}
-
-.post-tags {
-    margin-bottom: var(--space-3);
-}
-
-.post-tags__label {
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    margin-bottom: var(--space-1);
-}
-
-/* ==========================================================================
-   Author Box
-   ========================================================================== */
-
 .author-box {
     display: flex;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-md);
-    margin-top: var(--space-4);
+    gap: var(--px-4);
+    padding: var(--px-4);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    margin-top: var(--px-6);
+    position: relative;
+}
+
+.author-box::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
 }
 
 .author-box__avatar {
     flex-shrink: 0;
-    width: 80px;
-    height: 80px;
-    border: 4px solid var(--color-border);
+    width: 64px;
+    height: 64px;
+    border: 4px solid var(--mario-gold);
+    background: var(--nes-gray-dark);
 }
 
 .author-box__avatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    image-rendering: pixelated;
 }
 
 .author-box__info {
     flex: 1;
+    position: relative;
+    z-index: 1;
 }
 
 .author-box__name {
-    font-family: var(--font-pixel);
     font-size: var(--text-sm);
-    margin-bottom: var(--space-1);
-    text-shadow: none;
+    color: var(--mario-gold);
+    text-shadow: 2px 2px 0 var(--nes-black);
+    margin-bottom: var(--px-1);
 }
 
 .author-box__bio {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-2);
-}
-
-.author-box__links {
-    display: flex;
-    gap: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--ff-cyan);
+    line-height: 2;
 }
 
 /* ==========================================================================
-   Post Navigation
+   Footer - Game Credits
    ========================================================================== */
+.site-footer {
+    background: var(--nes-black);
+    border-top: 4px solid var(--mario-gold);
+    padding: var(--px-8) 0;
+    margin-top: auto;
+}
 
+.footer-main {
+    margin-bottom: var(--px-6);
+}
+
+.footer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--px-6);
+}
+
+.footer-col__title {
+    font-size: var(--text-sm);
+    color: var(--mario-gold);
+    margin-bottom: var(--px-3);
+    text-shadow: 2px 2px 0 var(--mario-red-dark);
+}
+
+.footer-col__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.footer-col__list li {
+    margin-bottom: var(--px-2);
+}
+
+.footer-col__list a {
+    font-size: var(--text-xs);
+    color: var(--nes-gray-light);
+}
+
+.footer-col__list a:hover {
+    color: var(--mario-gold);
+}
+
+.footer-bottom {
+    text-align: center;
+    padding-top: var(--px-4);
+    border-top: 4px dashed var(--nes-gray-dark);
+}
+
+.footer-copyright {
+    font-size: var(--text-xs);
+    color: var(--nes-gray);
+}
+
+/* Animated "THE END" style */
+.footer-copyright::before {
+    content: '\2605 ';
+    color: var(--mario-gold);
+    animation: sparkle 1s steps(2) infinite;
+}
+
+.footer-copyright::after {
+    content: ' \2605';
+    color: var(--mario-gold);
+    animation: sparkle 1s steps(2) infinite 0.5s;
+}
+
+/* ==========================================================================
+   Back to Top - Warp Pipe
+   ========================================================================== */
+.back-to-top {
+    position: fixed;
+    bottom: var(--px-6);
+    right: var(--px-6);
+    width: 48px;
+    height: 48px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: var(--pipe-green);
+    border: 4px solid var(--nes-black);
+    color: var(--nes-white);
+    cursor: pointer;
+    z-index: 100;
+    font-size: 20px;
+    box-shadow:
+        inset -4px -4px 0 var(--zelda-green-dark),
+        inset 4px 4px 0 var(--zelda-green-light),
+        4px 4px 0 var(--nes-black);
+}
+
+.back-to-top.is-visible {
+    display: flex;
+    animation: float 2s ease-in-out infinite;
+}
+
+.back-to-top:hover {
+    animation: bounce 0.5s steps(8);
+}
+
+/* ==========================================================================
+   Mobile Navigation - Pause Menu
+   ========================================================================== */
+.mobile-nav {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 128, 0.95);
+    z-index: 998;
+    padding: var(--px-16) var(--px-6);
+}
+
+.mobile-nav.is-open {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    animation: slide-down 0.2s steps(4);
+}
+
+.mobile-nav::before {
+    content: 'PAUSE';
+    position: absolute;
+    top: var(--px-8);
+    font-size: var(--text-2xl);
+    color: var(--nes-white);
+    text-shadow: 4px 4px 0 var(--nes-black);
+    animation: blink 1s step-end infinite;
+}
+
+.mobile-nav__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    text-align: center;
+}
+
+.mobile-nav__list li {
+    margin-bottom: var(--px-4);
+}
+
+.mobile-nav__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--px-3);
+    padding: var(--px-2) var(--px-4);
+    font-family: var(--font-game);
+    font-size: var(--text-base);
+    color: var(--nes-white);
+    text-transform: uppercase;
+    text-decoration: none;
+}
+
+.mobile-nav__link::before {
+    content: '';
+    width: 16px;
+}
+
+.mobile-nav__link:hover::before,
+.mobile-nav__link.active::before {
+    content: '\25B6';
+    color: var(--mario-gold);
+    animation: blink 0.3s step-end infinite;
+}
+
+.mobile-nav__link:hover,
+.mobile-nav__link.active {
+    color: var(--mario-gold);
+}
+
+/* ==========================================================================
+   Reading Progress - HP Bar Style
+   ========================================================================== */
+.reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 12px;
+    background: var(--nes-black);
+    border-bottom: 4px solid var(--mario-gold);
+    z-index: 1001;
+    padding: 2px;
+}
+
+.reading-progress__bar {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(
+        180deg,
+        var(--zelda-green-light) 0%,
+        var(--zelda-green) 50%,
+        var(--zelda-green-dark) 100%
+    );
+    transition: width 0.1s steps(20);
+}
+
+/* ==========================================================================
+   Search - Item Search
+   ========================================================================== */
+.search-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 1000;
+    padding: var(--px-8);
+}
+
+.search-overlay.is-open {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 15vh;
+}
+
+.search-box {
+    width: 100%;
+    max-width: 500px;
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    animation: slide-down 0.2s steps(4);
+}
+
+.search-box::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
+}
+
+.search-box__header {
+    display: flex;
+    align-items: center;
+    padding: var(--px-3);
+    border-bottom: 4px solid var(--nes-white);
+    gap: var(--px-2);
+}
+
+.search-box__header::before {
+    content: '\1F50D';
+}
+
+.search-box__input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    font-family: var(--font-game);
+    font-size: var(--text-sm);
+    color: var(--nes-white);
+}
+
+.search-box__input::placeholder {
+    color: var(--ff-cyan);
+}
+
+.search-box__input:focus {
+    outline: none;
+}
+
+.search-box__close {
+    width: 32px;
+    height: 32px;
+    background: var(--mario-red);
+    border: 2px solid var(--nes-black);
+    color: var(--nes-white);
+    cursor: pointer;
+    font-family: var(--font-game);
+    font-size: var(--text-sm);
+}
+
+.search-box__results {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: var(--px-3);
+}
+
+.search-result {
+    padding: var(--px-2);
+    border-bottom: 2px dashed var(--ff-cyan);
+    margin-bottom: var(--px-2);
+}
+
+.search-result:last-child {
+    border-bottom: none;
+}
+
+.search-result__title {
+    font-size: var(--text-xs);
+    color: var(--mario-gold);
+}
+
+.search-result__excerpt {
+    font-size: var(--text-xs);
+    color: var(--ff-cyan);
+    line-height: 1.8;
+}
+
+/* ==========================================================================
+   Error Page - Game Over
+   ========================================================================== */
+.error-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    text-align: center;
+    padding: var(--px-8);
+}
+
+.error-page__code {
+    font-size: 64px;
+    color: var(--mario-red);
+    text-shadow:
+        6px 6px 0 var(--nes-black),
+        -2px -2px 0 var(--mario-red-dark);
+    margin-bottom: var(--px-4);
+    animation: shake 0.5s steps(4) 3;
+}
+
+.error-page__title {
+    font-size: var(--text-2xl);
+    color: var(--nes-white);
+    text-shadow: 3px 3px 0 var(--nes-black);
+    margin-bottom: var(--px-3);
+}
+
+.error-page__text {
+    font-size: var(--text-sm);
+    color: var(--ff-cyan);
+    margin-bottom: var(--px-6);
+}
+
+.error-page__continue {
+    font-size: var(--text-base);
+    color: var(--nes-white);
+    animation: blink 1s step-end infinite;
+}
+
+.error-page__continue::before {
+    content: '> ';
+    color: var(--mario-gold);
+}
+
+/* ==========================================================================
+   Archive Headers - World Map
+   ========================================================================== */
+.archive-header {
+    text-align: center;
+    padding: var(--px-8);
+    margin-bottom: var(--px-8);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    position: relative;
+}
+
+.archive-header::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--nes-white);
+    pointer-events: none;
+}
+
+.archive-header__icon {
+    font-size: 48px;
+    margin-bottom: var(--px-3);
+    animation: float 2s ease-in-out infinite;
+}
+
+.archive-header__title {
+    font-size: var(--text-xl);
+    color: var(--mario-gold);
+    text-shadow: 3px 3px 0 var(--nes-black);
+    margin-bottom: var(--px-2);
+}
+
+.archive-header__description {
+    font-size: var(--text-xs);
+    color: var(--ff-cyan);
+    max-width: 500px;
+    margin: 0 auto;
+    line-height: 2;
+}
+
+.archive-header__count {
+    font-size: var(--text-xs);
+    color: var(--nes-gray-light);
+    margin-top: var(--px-2);
+}
+
+.archive-header__count::before {
+    content: '\1F3AE ';
+}
+
+/* ==========================================================================
+   Comments - Message Board
+   ========================================================================== */
+.comments {
+    margin-top: var(--px-8);
+}
+
+.comments__title {
+    font-size: var(--text-lg);
+    color: var(--mario-gold);
+    text-shadow: 2px 2px 0 var(--nes-black);
+    margin-bottom: var(--px-4);
+}
+
+.comment {
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+    padding: var(--px-3);
+    margin-bottom: var(--px-3);
+    position: relative;
+}
+
+.comment::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 2px solid var(--nes-white);
+    pointer-events: none;
+}
+
+.comment__header {
+    display: flex;
+    align-items: center;
+    gap: var(--px-2);
+    margin-bottom: var(--px-2);
+}
+
+.comment__avatar {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--mario-gold);
+}
+
+.comment__author {
+    font-size: var(--text-xs);
+    color: var(--mario-gold);
+}
+
+.comment__date {
+    font-size: var(--text-xs);
+    color: var(--nes-gray-light);
+}
+
+.comment__content {
+    font-size: var(--text-xs);
+    color: var(--nes-white);
+    line-height: 2;
+    position: relative;
+    z-index: 1;
+}
+
+.comment-form {
+    margin-top: var(--px-4);
+    padding: var(--px-4);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
+}
+
+.comment-form__title {
+    font-size: var(--text-sm);
+    color: var(--mario-gold);
+    margin-bottom: var(--px-3);
+}
+
+/* ==========================================================================
+   Post Navigation - Level Navigation
+   ========================================================================== */
 .post-navigation {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--space-2);
-    margin-top: var(--space-4);
+    gap: var(--px-4);
+    margin-top: var(--px-8);
 }
 
 .post-navigation__item {
-    padding: var(--space-2);
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-sm);
+    padding: var(--px-3);
+    background: var(--ff-blue);
+    border: 4px solid var(--nes-white);
     text-decoration: none;
-    transition: all var(--duration-fast) steps(2);
+    transition: all 0.1s steps(2);
 }
 
 .post-navigation__item:hover {
-    transform: translate(2px, 2px);
-    box-shadow: none;
-}
-
-.post-navigation__item--prev {
-    text-align: left;
-}
-
-.post-navigation__item--next {
-    text-align: right;
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 var(--nes-black);
 }
 
 .post-navigation__label {
     display: block;
-    font-family: var(--font-pixel);
     font-size: var(--text-xs);
-    color: var(--color-text-muted);
+    color: var(--ff-cyan);
     text-transform: uppercase;
     margin-bottom: 4px;
 }
 
 .post-navigation__item--prev .post-navigation__label::before {
     content: '\25C0 ';
+    color: var(--mario-gold);
 }
 
 .post-navigation__item--next .post-navigation__label::after {
     content: ' \25B6';
+    color: var(--mario-gold);
 }
 
 .post-navigation__title {
-    font-family: var(--font-pixel);
     font-size: var(--text-xs);
-    color: var(--color-text);
+    color: var(--nes-white);
 }
 
 /* ==========================================================================
-   Related Posts
+   Social Share - High Score Share
    ========================================================================== */
-
-.related-posts {
-    margin-top: var(--space-4);
-}
-
-.related-posts__title {
-    font-size: var(--text-lg);
-    margin-bottom: var(--space-3);
-}
-
-.related-posts__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: var(--space-2);
-}
-
-/* ==========================================================================
-   Comments
-   ========================================================================== */
-
-.comments {
-    margin-top: var(--space-4);
-}
-
-.comments__title {
-    font-size: var(--text-xl);
-    margin-bottom: var(--space-3);
-}
-
-.comment {
-    padding: var(--space-2);
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    margin-bottom: var(--space-2);
-}
-
-.comment__header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    margin-bottom: var(--space-1);
-}
-
-.comment__avatar {
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--color-border);
-}
-
-.comment__author {
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-}
-
-.comment__date {
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-}
-
-.comment__content {
-    font-size: var(--text-sm);
-    line-height: var(--leading-normal);
-}
-
-.comment__reply {
-    margin-top: var(--space-1);
-}
-
-/* Nested Comments */
-.comment--reply {
-    margin-left: var(--space-3);
-    border-left: 4px solid var(--color-primary);
-}
-
-/* Comment Form */
-.comment-form {
-    margin-top: var(--space-3);
-    padding: var(--space-3);
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-md);
-}
-
-.comment-form__title {
-    font-size: var(--text-lg);
-    margin-bottom: var(--space-2);
-}
-
-/* ==========================================================================
-   Social Share
-   ========================================================================== */
-
 .social-share {
     display: flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: var(--px-2);
 }
 
 .social-share__label {
-    font-family: var(--font-pixel);
     font-size: var(--text-xs);
+    color: var(--ff-cyan);
     text-transform: uppercase;
 }
 
 .social-share__btn {
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    color: var(--color-text);
+    background: var(--nes-gray-dark);
+    border: 4px solid var(--nes-white);
+    color: var(--nes-white);
     text-decoration: none;
-    box-shadow: var(--shadow-sm);
-    font-size: var(--text-lg);
-    transition: all var(--duration-fast) steps(2);
+    font-size: 14px;
+    transition: all 0.1s steps(2);
 }
 
 .social-share__btn:hover {
-    transform: translate(2px, 2px);
-    box-shadow: none;
-    background: var(--color-primary);
-    color: var(--8bit-white);
+    background: var(--mario-gold);
+    color: var(--nes-black);
+    transform: translate(-2px, -2px);
+    box-shadow: 4px 4px 0 var(--nes-black);
 }
 
 /* ==========================================================================
-   Newsletter
+   Newsletter - Power-Up Signup
    ========================================================================== */
-
 .newsletter {
-    padding: var(--space-4);
-    background: var(--8bit-blue-dark);
-    border: 4px solid var(--8bit-white);
     text-align: center;
-    margin: var(--space-4) 0;
+    padding: var(--px-8);
+    background: var(--mario-blue);
+    border: 4px solid var(--mario-gold);
+    margin: var(--px-8) 0;
+    position: relative;
 }
 
 .newsletter::before {
     content: '';
     position: absolute;
-    inset: 4px;
-    border: 4px solid var(--8bit-white);
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    border: 4px solid var(--mario-gold);
     pointer-events: none;
 }
 
 .newsletter__icon {
-    font-size: var(--text-3xl);
-    margin-bottom: var(--space-2);
+    font-size: 48px;
+    margin-bottom: var(--px-3);
+    animation: float 2s ease-in-out infinite;
 }
 
 .newsletter__title {
-    color: var(--8bit-white);
-    margin-bottom: var(--space-1);
-    text-shadow: 2px 2px 0 var(--8bit-black);
+    font-size: var(--text-lg);
+    color: var(--mario-gold);
+    text-shadow: 3px 3px 0 var(--nes-black);
+    margin-bottom: var(--px-2);
 }
 
 .newsletter__text {
-    color: var(--8bit-sky);
-    font-size: var(--text-sm);
-    margin-bottom: var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--nes-white);
+    margin-bottom: var(--px-4);
+    line-height: 2;
 }
 
 .newsletter__form {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--px-2);
     max-width: 400px;
     margin: 0 auto;
 }
@@ -1851,311 +2199,108 @@ th {
     }
 }
 
-.newsletter__input {
-    flex: 1;
-    background: var(--8bit-black);
-    border: 4px solid var(--8bit-white);
-}
-
 /* ==========================================================================
-   Search
+   Special Game Elements
    ========================================================================== */
 
-.search-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: var(--z-modal);
-    padding: var(--space-4);
-}
-
-.search-overlay.is-open {
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: 20vh;
-}
-
-.search-box {
-    width: 100%;
-    max-width: 600px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    box-shadow: var(--shadow-lg);
-    animation: slide-in-up 0.2s steps(4);
-}
-
-.search-box__header {
-    display: flex;
-    align-items: center;
-    padding: var(--space-2);
-    border-bottom: 4px solid var(--color-border);
-}
-
-.search-box__input {
-    flex: 1;
-    padding: var(--space-1);
-    font-family: var(--font-pixel);
-    font-size: var(--text-sm);
-    background: transparent;
-    border: none;
-    color: var(--color-text);
-}
-
-.search-box__input:focus {
-    outline: none;
-}
-
-.search-box__close {
-    padding: var(--space-1);
-    background: none;
-    border: none;
-    color: var(--color-text);
-    cursor: pointer;
-    font-size: var(--text-lg);
-}
-
-.search-box__results {
-    max-height: 400px;
-    overflow-y: auto;
-    padding: var(--space-2);
-}
-
-.search-result {
-    padding: var(--space-1);
-    border-bottom: 2px dashed var(--color-border);
-}
-
-.search-result:last-child {
-    border-bottom: none;
-}
-
-.search-result__title {
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    color: var(--color-link);
-}
-
-.search-result__excerpt {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-}
-
-/* ==========================================================================
-   Footer
-   ========================================================================== */
-
-.site-footer {
-    margin-top: auto;
-    background: var(--color-surface);
-    border-top: 4px solid var(--color-border);
-}
-
-.footer-main {
-    padding: var(--space-4) 0;
-}
-
-.footer-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--space-4);
-}
-
-.footer-col__title {
-    font-size: var(--text-sm);
-    margin-bottom: var(--space-2);
-    text-shadow: none;
-}
-
-.footer-col__list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.footer-col__list li {
-    margin-bottom: var(--space-1);
-}
-
-.footer-col__list a {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-}
-
-.footer-col__list a:hover {
-    color: var(--color-primary);
-}
-
-.footer-bottom {
-    padding: var(--space-2) 0;
-    border-top: 4px dashed var(--color-border);
-    text-align: center;
-}
-
-.footer-copyright {
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-}
-
-/* ==========================================================================
-   Back to Top
-   ========================================================================== */
-
-.back-to-top {
-    position: fixed;
-    bottom: var(--space-3);
-    right: var(--space-3);
-    display: none;
+/* Question Block */
+.question-block {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
-    background: var(--color-surface);
-    border: 4px solid var(--color-border);
-    color: var(--color-text);
-    cursor: pointer;
-    box-shadow: var(--shadow-md);
-    z-index: var(--z-fixed);
-    font-size: var(--text-lg);
-    transition: all var(--duration-fast) steps(2);
-}
-
-.back-to-top.is-visible {
-    display: flex;
-}
-
-.back-to-top:hover {
-    transform: translate(2px, 2px);
-    box-shadow: var(--shadow-sm);
-    animation: bounce-8bit 0.5s steps(4) infinite;
-}
-
-.back-to-top:active {
-    transform: translate(4px, 4px);
-    box-shadow: none;
-}
-
-/* ==========================================================================
-   Error Page (Game Over Screen)
-   ========================================================================== */
-
-.error-page {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 60vh;
-    text-align: center;
-    padding: var(--space-4);
-}
-
-.error-page__code {
-    font-family: var(--font-pixel);
-    font-size: var(--text-hero);
-    color: var(--color-primary);
-    text-shadow:
-        -4px -4px 0 var(--8bit-black),
-         4px -4px 0 var(--8bit-black),
-        -4px  4px 0 var(--8bit-black),
-         4px  4px 0 var(--8bit-black);
-    margin-bottom: var(--space-2);
-    animation: shake-8bit 0.5s steps(4) 3;
-}
-
-.error-page__title {
-    font-size: var(--text-2xl);
-    margin-bottom: var(--space-2);
-}
-
-.error-page__text {
-    font-size: var(--text-lg);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--space-4);
-}
-
-.error-page__continue {
-    animation: blink 1s steps(2) infinite;
-}
-
-/* ==========================================================================
-   Archive/Category/Tag Pages
-   ========================================================================== */
-
-.archive-header {
-    padding: var(--space-4) 0;
-    text-align: center;
-    background: var(--color-surface);
-    border-bottom: 4px solid var(--color-border);
-    margin-bottom: var(--space-4);
-}
-
-.archive-header__icon {
-    font-size: var(--text-3xl);
-    margin-bottom: var(--space-2);
-}
-
-.archive-header__title {
-    font-size: var(--text-2xl);
-    margin-bottom: var(--space-1);
-}
-
-.archive-header__description {
-    color: var(--color-text-secondary);
-    max-width: 600px;
-    margin: 0 auto;
-}
-
-.archive-header__count {
-    font-family: var(--font-pixel);
-    font-size: var(--text-xs);
-    color: var(--color-text-muted);
-    margin-top: var(--space-1);
-}
-
-/* ==========================================================================
-   Special Effects (Optional)
-   ========================================================================== */
-
-/* CRT Scanlines (when enabled) */
-.crt-scanlines::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0, 0, 0, 0.1) 2px,
-        rgba(0, 0, 0, 0.1) 4px
-    );
-    pointer-events: none;
-    z-index: 9999;
-}
-
-/* CRT Glow (when enabled) */
-.crt-glow {
+    width: 32px;
+    height: 32px;
+    background: var(--mario-gold);
+    border: 4px solid var(--nes-black);
+    color: var(--nes-black);
+    font-weight: bold;
+    animation: float 1s ease-in-out infinite;
     box-shadow:
-        inset 0 0 100px rgba(255, 255, 255, 0.1),
-        inset 0 0 200px rgba(0, 0, 0, 0.2);
+        inset -4px -4px 0 var(--mario-orange),
+        inset 4px 4px 0 #ffeb3b;
 }
 
-/* Pixel Cursor (when enabled) */
-.pixel-cursor {
-    cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="0" y="0" width="4" height="4" fill="%23000"/><rect x="4" y="4" width="4" height="4" fill="%23000"/><rect x="8" y="8" width="4" height="4" fill="%23000"/><rect x="0" y="4" width="4" height="8" fill="%23000"/></svg>') 0 0, auto;
+.question-block::after {
+    content: '?';
+    font-family: var(--font-game);
+    font-size: 16px;
 }
 
-.pixel-cursor a,
-.pixel-cursor button,
-.pixel-cursor [role="button"] {
-    cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="0" width="8" height="4" fill="%23f83800"/><rect x="0" y="4" width="16" height="4" fill="%23f83800"/><rect x="4" y="8" width="8" height="4" fill="%23f83800"/><rect x="8" y="12" width="4" height="4" fill="%23f83800"/></svg>') 8 8, pointer;
+/* Brick Block */
+.brick-block {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    background: var(--brick-brown);
+    border: 2px solid var(--nes-black);
+    background-image:
+        linear-gradient(90deg, var(--nes-black) 2px, transparent 2px),
+        linear-gradient(var(--nes-black) 2px, transparent 2px);
+    background-size: 16px 16px;
+}
+
+/* Pipe */
+.pipe {
+    width: 48px;
+    height: 64px;
+    background: var(--pipe-green);
+    border: 4px solid var(--nes-black);
+    position: relative;
+    box-shadow:
+        inset -8px 0 0 var(--zelda-green-dark),
+        inset 8px 0 0 var(--zelda-green-light);
+}
+
+.pipe::before {
+    content: '';
+    position: absolute;
+    top: -16px;
+    left: -8px;
+    right: -8px;
+    height: 16px;
+    background: var(--pipe-green);
+    border: 4px solid var(--nes-black);
+    box-shadow:
+        inset -8px 0 0 var(--zelda-green-dark),
+        inset 8px 0 0 var(--zelda-green-light);
+}
+
+/* Coin */
+.coin {
+    display: inline-block;
+    width: 16px;
+    height: 20px;
+    background: var(--mario-gold);
+    border-radius: 50%;
+    border: 2px solid var(--mario-orange);
+    animation: coin-spin 0.8s steps(4) infinite;
+}
+
+/* 1UP Mushroom */
+.mushroom-1up {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    background:
+        radial-gradient(circle at 30% 30%, white 2px, transparent 2px),
+        radial-gradient(circle at 70% 30%, white 2px, transparent 2px),
+        linear-gradient(to bottom, var(--zelda-green) 50%, var(--nes-white) 50%);
+    border-radius: 50% 50% 40% 40%;
+    border: 2px solid var(--nes-black);
+}
+
+/* Star */
+.star-power {
+    display: inline-block;
+    font-size: 24px;
+    color: var(--mario-gold);
+    text-shadow: 0 0 8px var(--mario-gold);
+    animation: sparkle 0.5s steps(2) infinite, rainbow 2s linear infinite;
 }
 
 /* ==========================================================================
    Utilities
    ========================================================================== */
-
 .sr-only {
     position: absolute;
     width: 1px;
@@ -2172,32 +2317,26 @@ th {
 .text-left { text-align: left; }
 .text-right { text-align: right; }
 
-.mt-1 { margin-top: var(--space-1); }
-.mt-2 { margin-top: var(--space-2); }
-.mt-3 { margin-top: var(--space-3); }
-.mt-4 { margin-top: var(--space-4); }
-
-.mb-1 { margin-bottom: var(--space-1); }
-.mb-2 { margin-bottom: var(--space-2); }
-.mb-3 { margin-bottom: var(--space-3); }
-.mb-4 { margin-bottom: var(--space-4); }
-
 .hidden { display: none !important; }
 
 /* ==========================================================================
-   Responsive Adjustments
+   Responsive
    ========================================================================== */
-
 @media (max-width: 640px) {
-    :root {
-        --text-hero: 40px;
-        --text-4xl: 32px;
-        --text-3xl: 28px;
-        --text-2xl: 24px;
+    .site-header {
+        margin: var(--px-2);
     }
 
-    .hero {
-        padding: var(--space-4) 0;
+    .header-inner {
+        padding: var(--px-2) var(--px-3);
+    }
+
+    .site-logo__text {
+        font-size: var(--text-sm);
+    }
+
+    .hero__title {
+        font-size: var(--text-xl);
     }
 
     .post-navigation {
@@ -2206,10 +2345,28 @@ th {
 
     .author-box {
         flex-direction: column;
+        align-items: center;
         text-align: center;
     }
+}
 
-    .author-box__links {
-        justify-content: center;
+/* ==========================================================================
+   Print Styles
+   ========================================================================== */
+@media print {
+    body::before,
+    body::after,
+    .reading-progress,
+    .back-to-top,
+    .mobile-menu-toggle,
+    .theme-toggle,
+    .search-toggle {
+        display: none !important;
+    }
+
+    .post-content {
+        background: white;
+        color: black;
+        border: 1px solid black;
     }
 }

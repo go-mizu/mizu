@@ -1,9 +1,12 @@
 {{ define "partials/pagination.html" }}
-{{ if .Pagination }}
+{{/* Pagination Component - receives Pagination struct via .Pagination or directly */}}
+{{ $p := . }}
+{{ if .Pagination }}{{ $p = .Pagination }}{{ end }}
+{{ if gt $p.TotalPages 1 }}
 <nav class="pagination" aria-label="Pagination">
     <!-- Previous -->
-    {{ if .Pagination.HasPrev }}
-    <a href="{{ .Pagination.PrevURL }}" class="pagination__item pagination__prev" aria-label="Previous page">
+    {{ if gt $p.CurrentPage 1 }}
+    <a href="{{ $p.PrevURL }}" class="pagination__item pagination__prev" aria-label="Previous page">
         PREV
     </a>
     {{ else }}
@@ -13,23 +16,25 @@
     {{ end }}
 
     <!-- Page Numbers -->
-    {{ range .Pagination.Pages }}
-    {{ if .IsCurrent }}
-    <span class="pagination__item pagination__item--active" aria-current="page">
-        {{ .Number }}
-    </span>
-    {{ else if .IsEllipsis }}
+    {{ $current := $p.CurrentPage }}
+    {{ $baseURL := $p.BaseURL }}
+    {{ range $p.Pages }}
+    {{ if eq . -1 }}
     <span class="pagination__item pagination__item--ellipsis">...</span>
+    {{ else if eq . $current }}
+    <span class="pagination__item pagination__item--active" aria-current="page">
+        {{ . }}
+    </span>
     {{ else }}
-    <a href="{{ .URL }}" class="pagination__item">
-        {{ .Number }}
+    <a href="{{ $baseURL }}?page={{ . }}" class="pagination__item">
+        {{ . }}
     </a>
     {{ end }}
     {{ end }}
 
     <!-- Next -->
-    {{ if .Pagination.HasNext }}
-    <a href="{{ .Pagination.NextURL }}" class="pagination__item pagination__next" aria-label="Next page">
+    {{ if lt $p.CurrentPage $p.TotalPages }}
+    <a href="{{ $p.NextURL }}" class="pagination__item pagination__next" aria-label="Next page">
         NEXT
     </a>
     {{ else }}

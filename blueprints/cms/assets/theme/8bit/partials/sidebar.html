@@ -13,16 +13,15 @@
     {{ end }}
 
     <!-- Categories Widget -->
-    {{ if .Site.Categories }}
+    {{ if .Categories }}
     <div class="widget">
         <div class="widget__header">Categories</div>
         <div class="widget__content">
             <ul class="widget-list">
-                {{ range .Site.Categories | first 8 }}
+                {{ range .Categories | first 8 }}
                 <li>
-                    <a href="{{ .URL }}">
+                    <a href="/category/{{ .Slug }}">
                         {{ .Name }}
-                        <span class="badge badge--gold">{{ .Count }}</span>
                     </a>
                 </li>
                 {{ end }}
@@ -32,13 +31,13 @@
     {{ end }}
 
     <!-- Tags Widget -->
-    {{ if .Site.Tags }}
+    {{ if .Tags }}
     <div class="widget">
         <div class="widget__header">Tags</div>
         <div class="widget__content">
             <div class="tags">
-                {{ range .Site.Tags | first 12 }}
-                <a href="{{ .URL }}" class="tag">{{ .Name }}</a>
+                {{ range .Tags | first 12 }}
+                <a href="/tag/{{ .Slug }}" class="tag">{{ .Name }}</a>
                 {{ end }}
             </div>
         </div>
@@ -46,14 +45,14 @@
     {{ end }}
 
     <!-- Recent Posts Widget -->
-    {{ if .Site.RecentPosts }}
+    {{ if .RecentPosts }}
     <div class="widget">
         <div class="widget__header">Recent</div>
         <div class="widget__content">
             <ul class="widget-list">
-                {{ range .Site.RecentPosts | first 5 }}
+                {{ range .RecentPosts | first 5 }}
                 <li>
-                    <a href="{{ .URL }}">{{ .Title | truncate 40 }}</a>
+                    <a href="/{{ .Slug }}">{{ truncate .Title 40 }}</a>
                 </li>
                 {{ end }}
             </ul>

@@ -67,18 +67,47 @@ type Config struct {
 	GetUser    func(*mizu.Ctx) *users.User
 }
 
+// TemplateLoader loads templates for a given theme slug.
+type TemplateLoader func(slug string) (map[string]*template.Template, error)
+
 // Handler handles frontend site requests.
 type Handler struct {
-	templates map[string]*template.Template
-	cfg       Config
+	templateLoader TemplateLoader
+	templateCache  map[string]map[string]*template.Template // theme slug -> templates
+	cfg            Config
 }
 
 // New creates a new site handler.
-func New(templates map[string]*template.Template, cfg Config) *Handler {
+func New(templateLoader TemplateLoader, cfg Config) *Handler {
 	return &Handler{
-		templates: templates,
-		cfg:       cfg,
+		templateLoader: templateLoader,
+		templateCache:  make(map[string]map[string]*template.Template),
+		cfg:            cfg,
 	}
+}
+
+// getTemplates returns templates for the active theme.
+func (h *Handler) getTemplates(c *mizu.Ctx) (map[string]*template.Template, error) {
+	// Get active theme from settings
+	activeTheme := "default"
+	if setting, err := h.cfg.Settings.Get(c.Context(), "active_theme"); err == nil && setting.Value != "" {
+		activeTheme = setting.Value
+	}
+
+	// Check cache
+	if templates, ok := h.templateCache[activeTheme]; ok {
+		return templates, nil
+	}
+
+	// Load templates for this theme
+	templates, err := h.templateLoader(activeTheme)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the templates
+	h.templateCache[activeTheme] = templates
+	return templates, nil
 }
 
 // render renders a template with the given data.
@@ -88,7 +117,12 @@ func (h *Handler) render(c *mizu.Ctx, name string, data interface{}) error {
 
 // renderWithStatus renders a template with the given data and status code.
 func (h *Handler) renderWithStatus(c *mizu.Ctx, name string, data interface{}, status int) error {
-	tmpl, ok := h.templates[name]
+	templates, err := h.getTemplates(c)
+	if err != nil {
+		return c.Text(http.StatusInternalServerError, "Failed to load templates: "+err.Error())
+	}
+
+	tmpl, ok := templates[name]
 	if !ok {
 		return c.Text(http.StatusInternalServerError, "Template not found: "+name)
 	}

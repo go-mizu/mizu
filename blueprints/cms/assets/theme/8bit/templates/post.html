@@ -1,18 +1,22 @@
-{{ define "title" }}{{ .Title }} - {{ .Site.Title }}{{ end }}
+{{ define "title" }}{{ .Post.Title }} - {{ .Site.Name }}{{ end }}
 
 {{ define "meta_description" }}
-<meta name="description" content="{{ .Excerpt | truncate 160 }}">
+{{ if .Post.Excerpt }}
+<meta name="description" content="{{ truncate .Post.Excerpt 160 }}">
+{{ end }}
 {{ end }}
 
 {{ define "og_tags" }}
 <meta property="og:type" content="article">
-<meta property="og:title" content="{{ .Title }}">
-<meta property="og:description" content="{{ .Excerpt | truncate 160 }}">
-<meta property="og:url" content="{{ .URL }}">
-{{ if .FeaturedImage }}
-<meta property="og:image" content="{{ .FeaturedImage }}">
+<meta property="og:title" content="{{ .Post.Title }}">
+<meta property="og:description" content="{{ if .Post.Excerpt }}{{ truncate .Post.Excerpt 160 }}{{ end }}">
+<meta property="og:url" content="{{ .Request.URL }}">
+{{ if .Post.FeaturedImage }}
+<meta property="og:image" content="{{ .Post.FeaturedImage.URL }}">
 {{ end }}
-<meta property="article:published_time" content="{{ .Date | date "2006-01-02T15:04:05Z" }}">
+{{ if .Post.PublishedAt }}
+<meta property="article:published_time" content="{{ .Post.PublishedAt.Format "2006-01-02T15:04:05Z07:00" }}">
+{{ end }}
 {{ if .Author }}
 <meta property="article:author" content="{{ .Author.Name }}">
 {{ end }}
@@ -25,28 +29,30 @@
     <!-- Post Header -->
     <header class="post-header">
         <!-- Category Badge -->
-        {{ if .Category }}
+        {{ if .Categories }}
         <div style="margin-bottom: var(--space-2);">
-            <a href="{{ .Category.URL }}" class="badge badge--primary">{{ .Category.Name }}</a>
+            {{ range .Categories | first 1 }}
+            <a href="/category/{{ .Slug }}" class="badge badge--primary">{{ .Name }}</a>
+            {{ end }}
         </div>
         {{ end }}
 
-        <h1 class="post-header__title">{{ .Title }}</h1>
+        <h1 class="post-header__title">{{ .Post.Title }}</h1>
 
         <!-- Meta -->
         {{ template "partials/post-meta.html" . }}
     </header>
 
     <!-- Featured Image -->
-    {{ if .FeaturedImage }}
+    {{ if .Post.FeaturedImage }}
     <figure class="post-featured-image">
-        <img src="{{ .FeaturedImage }}" alt="{{ .Title }}">
+        <img src="{{ .Post.FeaturedImage.URL }}" alt="{{ .Post.Title }}">
     </figure>
     {{ end }}
 
     <!-- Post Content -->
     <div class="post-content">
-        {{ .Content }}
+        {{ .Post.Content | safe }}
     </div>
 
     <!-- Post Footer -->
@@ -59,7 +65,7 @@
             </p>
             <div class="tags">
                 {{ range .Tags }}
-                <a href="{{ .URL }}" class="tag">{{ .Name }}</a>
+                <a href="/tag/{{ .Slug }}" class="tag">{{ .Name }}</a>
                 {{ end }}
             </div>
         </div>
@@ -93,20 +99,17 @@
 </article>
 
 <!-- JSON-LD Structured Data -->
+{{ if .Post }}
 <script type="application/ld+json">
 {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    "headline": "{{ .Title }}",
-    "description": "{{ .Excerpt | truncate 160 }}",
-    "datePublished": "{{ .Date | date "2006-01-02T15:04:05Z" }}",
-    {{ if .ModifiedDate }}
-    "dateModified": "{{ .ModifiedDate | date "2006-01-02T15:04:05Z" }}",
-    {{ end }}
-    "url": "{{ .URL }}",
-    {{ if .FeaturedImage }}
-    "image": "{{ .FeaturedImage }}",
-    {{ end }}
+    "headline": "{{ .Post.Title }}",
+    {{ if .Post.Excerpt }}"description": "{{ truncate .Post.Excerpt 160 }}",{{ end }}
+    {{ if .Post.PublishedAt }}"datePublished": "{{ .Post.PublishedAt.Format "2006-01-02T15:04:05Z07:00" }}",{{ end }}
+    {{ if .Post.UpdatedAt }}"dateModified": "{{ .Post.UpdatedAt.Format "2006-01-02T15:04:05Z07:00" }}",{{ end }}
+    "url": "{{ .Request.URL }}",
+    {{ if .Post.FeaturedImage }}"image": "{{ .Post.FeaturedImage.URL }}",{{ end }}
     {{ if .Author }}
     "author": {
         "@type": "Person",
@@ -115,8 +118,9 @@
     {{ end }}
     "publisher": {
         "@type": "Organization",
-        "name": "{{ .Site.Title }}"
+        "name": "{{ .Site.Name }}"
     }
 }
 </script>
+{{ end }}
 {{ end }}

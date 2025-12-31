@@ -1,4 +1,4 @@
-{{ define "title" }}{{ .Site.Title }} - Press Start to Read{{ end }}
+{{ define "title" }}{{ .Site.Name }} - Press Start to Read{{ end }}
 
 {{ define "body_class" }}home{{ end }}
 
@@ -6,7 +6,7 @@
 <!-- Hero Section (Title Screen) -->
 <section class="hero">
     <div class="container">
-        <h1 class="hero__title">{{ .Site.Title }}</h1>
+        <h1 class="hero__title">{{ .Site.Name }}</h1>
         <p class="hero__subtitle">{{ .Site.Description }}</p>
 
         <div class="hero__cta">
@@ -40,25 +40,25 @@
                 <article class="post-card post-card--featured">
                     {{ if $post.FeaturedImage }}
                     <div class="post-card__image-wrapper">
-                        <a href="{{ $post.URL }}">
-                            <img src="{{ $post.FeaturedImage }}" alt="{{ $post.Title }}" class="post-card__image" loading="lazy">
+                        <a href="/{{ $post.Slug }}">
+                            <img src="{{ $post.FeaturedImage.URL }}" alt="{{ $post.Title }}" class="post-card__image" loading="lazy">
                         </a>
-                        {{ if $post.Category }}
-                        <span class="post-card__category badge badge--primary">{{ $post.Category.Name }}</span>
+                        {{ if $post.Categories }}
+                        <span class="post-card__category badge badge--primary">{{ (index $post.Categories 0).Name }}</span>
                         {{ end }}
                     </div>
                     {{ end }}
                     <div class="post-card__content">
                         <h3 class="post-card__title" style="font-size: var(--text-lg);">
-                            <a href="{{ $post.URL }}">{{ $post.Title }}</a>
+                            <a href="/{{ $post.Slug }}">{{ $post.Title }}</a>
                         </h3>
                         {{ if $post.Excerpt }}
-                        <p class="post-card__excerpt">{{ $post.Excerpt | truncate 200 }}</p>
+                        <p class="post-card__excerpt">{{ truncate $post.Excerpt 200 }}</p>
                         {{ end }}
                         <div class="post-card__meta">
                             <span class="post-card__meta-item">
                                 <span aria-hidden="true">&#9733;</span>
-                                {{ $post.Date | date "Jan 2, 2006" }}
+                                {{ $post.PublishedAt | date "Jan 2, 2006" }}
                             </span>
                             {{ if $post.ReadingTime }}
                             <span class="post-card__meta-item">

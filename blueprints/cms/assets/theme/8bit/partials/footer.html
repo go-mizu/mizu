@@ -14,7 +14,7 @@
                 <div class="footer-col">
                     <h4 class="footer-col__title">Navigate</h4>
                     <ul class="footer-col__list">
-                        {{ range .Site.Menus.footer }}
+                        {{ range .Menus.footer.Items }}
                         <li>
                             <a href="{{ .URL }}">{{ .Title }}</a>
                         </li>
@@ -26,9 +26,9 @@
                 <div class="footer-col">
                     <h4 class="footer-col__title">Categories</h4>
                     <ul class="footer-col__list">
-                        {{ range .Site.Categories | first 5 }}
+                        {{ range .Categories | first 5 }}
                         <li>
-                            <a href="{{ .URL }}">{{ .Name }}</a>
+                            <a href="/category/{{ .Slug }}">{{ .Name }}</a>
                         </li>
                         {{ end }}
                     </ul>
@@ -38,7 +38,7 @@
                 <div class="footer-col">
                     <h4 class="footer-col__title">Connect</h4>
                     <ul class="footer-col__list">
-                        {{ range .Site.Menus.social }}
+                        {{ range .Menus.social.Items }}
                         <li>
                             <a href="{{ .URL }}" target="_blank" rel="noopener noreferrer">{{ .Title }}</a>
                         </li>
@@ -51,7 +51,7 @@
         <!-- Footer Bottom -->
         <div class="footer-bottom">
             <p class="footer-copyright">
-                &copy; {{ now.Year }} {{ .Site.Title }}. ALL RIGHTS RESERVED.
+                &copy; {{ (now).Year }} {{ .Site.Name }}. ALL RIGHTS RESERVED.
             </p>
         </div>
     </div>
