@@ -487,7 +487,13 @@ func (s *Server) setupRoutes() {
 
 	// Comments
 	s.app.Get("/wp-admin/edit-comments.php", s.wpAdminHandler.CommentsList)
-	s.app.Get("/wp-admin/comment.php", s.wpAdminHandler.CommentEdit)
+	s.app.Get("/wp-admin/comment.php", func(c *mizu.Ctx) error {
+		action := c.Query("action")
+		if action == "editcomment" || action == "edit" {
+			return s.wpAdminHandler.CommentEdit(c)
+		}
+		return s.wpAdminHandler.CommentAction(c)
+	})
 
 	// Taxonomies
 	s.app.Get("/wp-admin/edit-tags.php", s.wpAdminHandler.TaxonomyList)
@@ -557,6 +563,106 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/wp-admin/settings/discussion", s.wpAdminHandler.SettingsDiscussion)
 	s.app.Get("/wp-admin/settings/media", s.wpAdminHandler.SettingsMedia)
 	s.app.Get("/wp-admin/settings/permalinks", s.wpAdminHandler.SettingsPermalinks)
+
+	// ============================================================
+	// WordPress Admin POST routes - Form Submissions
+	// ============================================================
+
+	// Posts
+	s.app.Post("/wp-admin/post.php", func(c *mizu.Ctx) error {
+		action := c.Request().FormValue("action")
+		postType := c.Query("post_type")
+		if postType == "" {
+			postType = c.Request().FormValue("post_type")
+		}
+
+		switch action {
+		case "trash":
+			if postType == "page" {
+				return s.wpAdminHandler.PageTrash(c)
+			}
+			return s.wpAdminHandler.PostTrash(c)
+		case "untrash":
+			return s.wpAdminHandler.PostRestore(c)
+		case "delete":
+			return s.wpAdminHandler.PostDelete(c)
+		case "post-quickdraft-save":
+			return s.wpAdminHandler.QuickDraftSave(c)
+		default:
+			if postType == "page" {
+				return s.wpAdminHandler.PageSave(c)
+			}
+			return s.wpAdminHandler.PostSave(c)
+		}
+	})
+
+	// Bulk post actions
+	s.app.Post("/wp-admin/edit.php", s.wpAdminHandler.BulkPostAction)
+
+	// Media
+	s.app.Post("/wp-admin/upload.php", s.wpAdminHandler.MediaUpload)
+	s.app.Post("/wp-admin/media.php", s.wpAdminHandler.MediaSave)
+	s.app.Get("/wp-admin/media.php", func(c *mizu.Ctx) error {
+		action := c.Query("action")
+		if action == "delete" {
+			return s.wpAdminHandler.MediaDelete(c)
+		}
+		return s.wpAdminHandler.MediaEdit(c)
+	})
+
+	// Comments
+	s.app.Post("/wp-admin/comment.php", s.wpAdminHandler.CommentSave)
+	s.app.Post("/wp-admin/edit-comments.php", s.wpAdminHandler.BulkCommentAction)
+
+	// Taxonomies
+	s.app.Post("/wp-admin/edit-tags.php", func(c *mizu.Ctx) error {
+		taxonomy := c.Query("taxonomy")
+		if taxonomy == "" {
+			taxonomy = c.Request().FormValue("taxonomy")
+		}
+		action := c.Query("action")
+		if action == "" {
+			action = c.Request().FormValue("action")
+		}
+
+		if action == "delete" {
+			if taxonomy == "post_tag" {
+				return s.wpAdminHandler.TagDelete(c)
+			}
+			return s.wpAdminHandler.CategoryDelete(c)
+		}
+
+		if taxonomy == "post_tag" {
+			return s.wpAdminHandler.TagSave(c)
+		}
+		return s.wpAdminHandler.CategorySave(c)
+	})
+
+	// Users
+	s.app.Post("/wp-admin/user-new.php", s.wpAdminHandler.UserSave)
+	s.app.Post("/wp-admin/user-edit.php", s.wpAdminHandler.UserSave)
+	s.app.Post("/wp-admin/profile.php", s.wpAdminHandler.ProfileSave)
+
+	// Settings
+	s.app.Post("/wp-admin/options.php", s.wpAdminHandler.SettingsSave)
+	s.app.Post("/wp-admin/options-general.php", s.wpAdminHandler.SettingsSave)
+	s.app.Post("/wp-admin/options-writing.php", s.wpAdminHandler.SettingsSave)
+	s.app.Post("/wp-admin/options-reading.php", s.wpAdminHandler.SettingsSave)
+	s.app.Post("/wp-admin/options-discussion.php", s.wpAdminHandler.SettingsSave)
+	s.app.Post("/wp-admin/options-media.php", s.wpAdminHandler.SettingsSave)
+	s.app.Post("/wp-admin/options-permalink.php", s.wpAdminHandler.SettingsSave)
+
+	// Menus
+	s.app.Post("/wp-admin/nav-menus.php", func(c *mizu.Ctx) error {
+		action := c.Request().FormValue("action")
+		if action == "add-item" {
+			return s.wpAdminHandler.MenuItemSave(c)
+		}
+		if action == "delete-item" {
+			return s.wpAdminHandler.MenuItemDelete(c)
+		}
+		return s.wpAdminHandler.MenuSave(c)
+	})
 }
 
 // Service accessors for CLI
