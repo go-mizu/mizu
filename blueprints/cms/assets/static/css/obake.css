@@ -2520,3 +2520,1344 @@ img {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ================================
+   Content Filters & Search
+   ================================ */
+.gh-content-filters {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 40px 24px;
+    gap: 16px;
+}
+
+.gh-filter-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.gh-filter-tab {
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+}
+
+.gh-filter-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.gh-filter-tab.active {
+    color: var(--text-primary);
+    background: var(--bg-active);
+}
+
+.gh-filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gh-search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    min-width: 200px;
+}
+
+.gh-search-box-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.gh-search-box-input {
+    flex: 1;
+    padding: 0;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    outline: none;
+}
+
+.gh-search-box-input::placeholder {
+    color: var(--text-muted);
+}
+
+.gh-view-toggle {
+    display: flex;
+    background: var(--bg-hover);
+    border-radius: var(--radius-md);
+    padding: 2px;
+}
+
+.gh-view-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+
+.gh-view-btn:hover {
+    color: var(--text-secondary);
+}
+
+.gh-view-btn.active {
+    background: var(--bg-content);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.gh-view-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* ================================
+   Posts List & Grid
+   ================================ */
+.gh-posts,
+.gh-pages {
+    padding-bottom: 40px;
+}
+
+.gh-posts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    padding: 0 40px;
+}
+
+.gh-post-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: all var(--transition-fast);
+}
+
+.gh-post-card:hover {
+    border-color: var(--border-dark);
+    box-shadow: var(--shadow-md);
+}
+
+.gh-post-card-image {
+    height: 160px;
+    background: var(--bg-hover);
+    background-size: cover;
+    background-position: center;
+}
+
+.gh-post-card-image-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gh-post-card-image-empty svg {
+    width: 32px;
+    height: 32px;
+    color: var(--text-muted);
+}
+
+.gh-post-card-content {
+    padding: 16px;
+}
+
+.gh-post-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.gh-post-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.gh-post-card-author-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-full);
+}
+
+.gh-post-card-status {
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: var(--radius-sm);
+}
+
+/* Post Row (List View) */
+.gh-post-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border-light);
+    transition: all var(--transition-fast);
+}
+
+.gh-post-row:hover {
+    background: var(--bg-hover);
+    margin: 0 -16px;
+    padding: 16px;
+    border-radius: var(--radius-md);
+}
+
+.gh-post-row-thumb {
+    width: 80px;
+    height: 56px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.gh-post-row-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gh-post-row-image-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-hover);
+}
+
+.gh-post-row-image-empty svg {
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+}
+
+.gh-post-row-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.gh-post-row-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gh-post-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
+.gh-post-row-author {
+    color: var(--text-secondary);
+}
+
+.gh-post-row-status {
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: var(--radius-sm);
+}
+
+.gh-post-row-date {
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.gh-post-row-access {
+    flex-shrink: 0;
+}
+
+/* Status Badges */
+.gh-status-published,
+.gh-status-publish {
+    background: var(--color-green-bg);
+    color: var(--color-green);
+}
+
+.gh-status-draft {
+    background: var(--bg-hover);
+    color: var(--text-tertiary);
+}
+
+.gh-status-scheduled,
+.gh-status-future {
+    background: var(--color-purple-bg);
+    color: var(--color-purple);
+}
+
+/* Access Badges */
+.gh-access-badge {
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    background: var(--bg-hover);
+    color: var(--text-tertiary);
+}
+
+.gh-access-public {
+    background: var(--color-green-bg);
+    color: var(--color-green);
+}
+
+.gh-access-members {
+    background: var(--color-blue-bg);
+    color: var(--color-blue);
+}
+
+.gh-access-paid {
+    background: var(--color-yellow-bg);
+    color: var(--color-yellow);
+}
+
+/* ================================
+   Tags List
+   ================================ */
+.gh-tags {
+    padding-bottom: 40px;
+}
+
+.gh-tag-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-light);
+    transition: all var(--transition-fast);
+}
+
+.gh-tag-row:hover {
+    background: var(--bg-hover);
+    margin: 0 -16px;
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+}
+
+.gh-tag-row-image {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.gh-tag-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gh-tag-image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--accent-color) 0%, var(--color-purple) 100%);
+}
+
+.gh-tag-image-placeholder svg {
+    width: 20px;
+    height: 20px;
+    color: white;
+}
+
+.gh-tag-row-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.gh-tag-row-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.gh-tag-internal-badge {
+    color: var(--text-muted);
+}
+
+.gh-tag-row-meta {
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
+.gh-tag-row-count {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+/* ================================
+   Members Page
+   ================================ */
+.gh-members {
+    padding-bottom: 40px;
+}
+
+.gh-members-stats {
+    display: flex;
+    gap: 32px;
+    padding: 0 40px 24px;
+}
+
+.gh-members-stat {
+    display: flex;
+    flex-direction: column;
+}
+
+.gh-members-stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+}
+
+.gh-members-stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.gh-member-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gh-member-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.gh-member-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.gh-member-email {
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
+.gh-status-free {
+    background: var(--bg-hover);
+    color: var(--text-tertiary);
+}
+
+.gh-status-paid {
+    background: var(--color-green-bg);
+    color: var(--color-green);
+}
+
+/* ================================
+   Staff Page
+   ================================ */
+.gh-staff {
+    padding-bottom: 40px;
+}
+
+.gh-staff-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    transition: all var(--transition-fast);
+}
+
+.gh-staff-card:hover {
+    border-color: var(--border-dark);
+    box-shadow: var(--shadow-sm);
+}
+
+.gh-staff-card-avatar {
+    flex-shrink: 0;
+}
+
+.gh-staff-card-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.gh-staff-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.gh-staff-email {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+}
+
+.gh-staff-role {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: var(--radius-sm);
+    background: var(--bg-hover);
+    color: var(--text-tertiary);
+}
+
+.gh-role-owner,
+.gh-role-administrator {
+    background: var(--color-purple-bg);
+    color: var(--color-purple);
+}
+
+.gh-role-editor {
+    background: var(--color-blue-bg);
+    color: var(--color-blue);
+}
+
+.gh-role-author {
+    background: var(--color-green-bg);
+    color: var(--color-green);
+}
+
+.gh-staff-card-meta {
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+}
+
+/* ================================
+   Modal
+   ================================ */
+.gh-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 400;
+}
+
+.gh-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay-bg);
+}
+
+.gh-modal-content {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    background: var(--bg-content);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.gh-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gh-modal-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.gh-modal-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    font-size: 24px;
+    color: var(--text-tertiary);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+}
+
+.gh-modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.gh-modal-body {
+    padding: 24px;
+}
+
+.gh-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 24px;
+    background: var(--bg-hover);
+}
+
+/* ================================
+   Editor Enhancements
+   ================================ */
+.gh-editor-container {
+    display: flex;
+    flex: 1;
+}
+
+.gh-editor-textarea-wrap {
+    flex: 1;
+}
+
+.gh-editor-textarea {
+    width: 100%;
+    min-height: 400px;
+    padding: 0;
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+}
+
+.gh-editor-textarea::placeholder {
+    color: var(--text-muted);
+}
+
+/* Plus Button & Card Menu */
+.gh-editor-plus {
+    position: relative;
+    margin-top: 24px;
+}
+
+.gh-editor-plus-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    background: var(--bg-hover);
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+}
+
+.gh-editor-plus-btn:hover {
+    background: var(--accent-color);
+    color: white;
+}
+
+.gh-editor-plus-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.gh-card-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 8px;
+    padding: 8px;
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+}
+
+.gh-card-menu.active {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.gh-card-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.gh-card-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.gh-card-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.gh-card-btn span {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+/* Editor Sidebar Enhancements */
+.gh-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gh-sidebar-header h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.gh-sidebar-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+}
+
+.gh-sidebar-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.gh-sidebar-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.gh-sidebar-content {
+    padding: 24px;
+}
+
+.gh-sidebar-section {
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.gh-sidebar-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.gh-sidebar-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.gh-sidebar-input,
+.gh-sidebar-select,
+.gh-sidebar-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 13.5px;
+    color: var(--text-primary);
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+}
+
+.gh-sidebar-input:focus,
+.gh-sidebar-select:focus,
+.gh-sidebar-textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.gh-sidebar-textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.gh-sidebar-code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.gh-sidebar-url {
+    display: flex;
+    align-items: center;
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.gh-sidebar-url-prefix {
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+    background: var(--bg-hover);
+    white-space: nowrap;
+}
+
+.gh-sidebar-url .gh-sidebar-input {
+    border: none;
+    border-radius: 0;
+}
+
+.gh-sidebar-url .gh-sidebar-input:focus {
+    box-shadow: none;
+}
+
+.gh-sidebar-datetime {
+    display: flex;
+    gap: 8px;
+}
+
+.gh-sidebar-datetime .gh-sidebar-input {
+    flex: 1;
+}
+
+.gh-sidebar-image-upload {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: var(--bg-hover);
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    overflow: hidden;
+}
+
+.gh-sidebar-image-upload:hover {
+    border-color: var(--accent-color);
+}
+
+.gh-sidebar-image-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gh-sidebar-image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+}
+
+.gh-sidebar-image-placeholder svg {
+    width: 32px;
+    height: 32px;
+}
+
+.gh-sidebar-image-placeholder span {
+    font-size: 13px;
+}
+
+.gh-sidebar-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.gh-sidebar-toggle input {
+    display: none;
+}
+
+/* Expandable Sections */
+.gh-sidebar-expandable {
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+.gh-sidebar-expand-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 0;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-light);
+    transition: color var(--transition-fast);
+}
+
+.gh-sidebar-expand-btn:hover {
+    color: var(--text-primary);
+}
+
+.gh-sidebar-expand-btn svg {
+    width: 16px;
+    height: 16px;
+    transition: transform var(--transition-fast);
+}
+
+.gh-sidebar-expand-btn.active svg {
+    transform: rotate(180deg);
+}
+
+.gh-sidebar-expand-content {
+    display: none;
+    padding: 16px 0;
+}
+
+.gh-sidebar-expand-content.active {
+    display: block;
+}
+
+.gh-sidebar-field {
+    margin-bottom: 16px;
+}
+
+.gh-sidebar-field:last-child {
+    margin-bottom: 0;
+}
+
+.gh-sidebar-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+}
+
+.gh-sidebar-danger {
+    border: none;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* ================================
+   Tag Edit Form
+   ================================ */
+.gh-tag-edit {
+    padding-bottom: 40px;
+}
+
+.gh-tag-form-content {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 40px;
+    padding: 0 40px;
+}
+
+.gh-tag-form-main {
+    max-width: 640px;
+}
+
+.gh-form-section {
+    margin-bottom: 32px;
+    padding-bottom: 32px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gh-form-section:last-child {
+    border-bottom: none;
+}
+
+.gh-form-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.gh-form-section-desc {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 20px;
+}
+
+.gh-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.gh-form-danger {
+    border: none;
+    padding-top: 32px;
+    border-top: 1px solid var(--color-red);
+}
+
+.gh-tag-image-upload {
+    width: 100%;
+    height: 160px;
+    background: var(--bg-hover);
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    overflow: hidden;
+}
+
+.gh-tag-image-upload:hover {
+    border-color: var(--accent-color);
+}
+
+.gh-tag-image-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gh-tag-image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+}
+
+.gh-tag-image-placeholder svg {
+    width: 32px;
+    height: 32px;
+}
+
+/* Tag Preview */
+.gh-tag-form-sidebar {
+    position: sticky;
+    top: 24px;
+}
+
+.gh-tag-preview h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-bottom: 16px;
+}
+
+.gh-tag-preview-card {
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.gh-tag-preview-image {
+    height: 120px;
+    background: linear-gradient(135deg, var(--accent-color) 0%, var(--color-purple) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gh-tag-preview-image svg {
+    width: 32px;
+    height: 32px;
+    color: white;
+}
+
+.gh-tag-preview-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gh-tag-preview-content {
+    padding: 16px;
+}
+
+.gh-tag-preview-content h5 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.gh-tag-preview-content p {
+    font-size: 13px;
+    color: var(--text-tertiary);
+}
+
+/* ================================
+   Member Detail Page
+   ================================ */
+.gh-member-detail {
+    padding-bottom: 40px;
+}
+
+.gh-member-detail-content {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 32px;
+    padding: 0 40px;
+}
+
+.gh-member-detail-main {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.gh-card {
+    background: var(--bg-content);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+}
+
+.gh-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+}
+
+.gh-card-danger {
+    border-color: var(--color-red);
+}
+
+.gh-member-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.gh-member-detail-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-full);
+}
+
+.gh-member-header-info h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.gh-member-header-info p {
+    font-size: 14px;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+}
+
+.gh-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.gh-activity-item {
+    display: flex;
+    gap: 12px;
+}
+
+.gh-activity-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-hover);
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+}
+
+.gh-activity-icon svg {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.gh-activity-content {
+    flex: 1;
+}
+
+.gh-activity-type {
+    display: block;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.gh-activity-details {
+    display: block;
+    font-size: 13px;
+    color: var(--text-tertiary);
+}
+
+.gh-activity-time {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.gh-empty-message {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.gh-member-detail-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.gh-btn-block {
+    width: 100%;
+}
+
+/* ================================
+   Staff Edit Page
+   ================================ */
+.gh-staff-edit {
+    padding-bottom: 40px;
+}
+
+.gh-staff-form-content {
+    padding: 0 40px;
+    max-width: 720px;
+}
+
+.gh-staff-cover {
+    width: 100%;
+    height: 200px;
+    background: linear-gradient(135deg, var(--bg-hover) 0%, var(--border-color) 100%);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.gh-staff-cover-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gh-staff-cover-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gh-staff-profile-image {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    margin-top: -48px;
+    margin-bottom: 32px;
+    padding-left: 24px;
+}
+
+.gh-staff-avatar-lg {
+    width: 96px;
+    height: 96px;
+    border-radius: var(--radius-full);
+    border: 4px solid var(--bg-content);
+    object-fit: cover;
+}
+
+/* ================================
+   Responsive Enhancements
+   ================================ */
+@media (max-width: 1024px) {
+    .gh-tag-form-content,
+    .gh-member-detail-content {
+        grid-template-columns: 1fr;
+    }
+
+    .gh-tag-form-sidebar {
+        position: static;
+    }
+}
+
+@media (max-width: 768px) {
+    .gh-content-filters {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 0 24px 24px;
+    }
+
+    .gh-filter-tabs {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .gh-filter-actions {
+        width: 100%;
+    }
+
+    .gh-search-box {
+        flex: 1;
+    }
+
+    .gh-posts-grid {
+        padding: 0 24px;
+        grid-template-columns: 1fr;
+    }
+
+    .gh-form-row {
+        grid-template-columns: 1fr;
+    }
+}
