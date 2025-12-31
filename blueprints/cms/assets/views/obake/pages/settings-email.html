@@ -1,0 +1,125 @@
+{{define "content"}}
+<div class="gh-settings">
+    <div class="gh-settings-sidebar">
+        <nav class="gh-settings-nav">
+            <a href="/obake/settings/general/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                <span>General</span>
+            </a>
+            <a href="/obake/settings/design/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="13.5" cy="6.5" r="2.5"/>
+                    <circle cx="17.5" cy="10.5" r="2.5"/>
+                    <circle cx="8.5" cy="7.5" r="2.5"/>
+                    <circle cx="6.5" cy="12.5" r="2.5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.85-.1 2.72-.3a2 2 0 001.5-1.93c0-.12-.01-.25-.03-.37a.99.99 0 01.22-.79c.23-.26.57-.41.92-.41H18a4 4 0 004-4c0-5.5-4.5-10-10-10z"/>
+                </svg>
+                <span>Design</span>
+            </a>
+            <a href="/obake/settings/membership/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+                <span>Membership</span>
+            </a>
+            <a href="/obake/settings/email/" class="gh-settings-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>Email newsletter</span>
+            </a>
+            <a href="/obake/settings/advanced/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <span>Advanced</span>
+            </a>
+        </nav>
+    </div>
+
+    <div class="gh-settings-content">
+        <header class="gh-settings-header">
+            <h1>Email newsletter settings</h1>
+        </header>
+
+        <!-- Newsletter Toggle -->
+        <div class="gh-settings-section">
+            <div class="gh-settings-section-header">
+                <h2>Enable newsletters</h2>
+                <p>Send posts as email newsletters to subscribers</p>
+            </div>
+            <div class="gh-settings-section-content">
+                <label class="gh-toggle">
+                    <input type="checkbox" name="newsletter_enabled" {{if .NewsletterEnabled}}checked{{end}}>
+                    <span class="gh-toggle-slider"></span>
+                    <span class="gh-toggle-label">Enable email newsletters</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Newsletter Settings -->
+        <div class="gh-settings-section">
+            <div class="gh-settings-section-header">
+                <h2>Newsletter settings</h2>
+                <p>Configure how your newsletters are sent</p>
+            </div>
+            <div class="gh-settings-section-content">
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Default recipients</label>
+                    <select name="default_recipients" class="gh-form-select">
+                        <option value="all" {{if eq .DefaultRecipients "all"}}selected{{end}}>All subscribers</option>
+                        <option value="paid" {{if eq .DefaultRecipients "paid"}}selected{{end}}>Paid subscribers only</option>
+                        <option value="free" {{if eq .DefaultRecipients "free"}}selected{{end}}>Free subscribers only</option>
+                        <option value="none" {{if eq .DefaultRecipients "none"}}selected{{end}}>Nobody (disable by default)</option>
+                    </select>
+                </div>
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Sender name</label>
+                    <input type="text" name="sender_name" class="gh-form-input" value="{{.SenderName}}" placeholder="Your publication name">
+                </div>
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Sender email address</label>
+                    <input type="email" name="sender_email" class="gh-form-input" value="{{.SenderEmail}}" placeholder="noreply@example.com">
+                </div>
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Reply-to address</label>
+                    <input type="email" name="reply_to" class="gh-form-input" value="{{.ReplyTo}}" placeholder="Same as sender email">
+                </div>
+            </div>
+        </div>
+
+        <!-- Mailgun Settings -->
+        <div class="gh-settings-section">
+            <div class="gh-settings-section-header">
+                <h2>Mailgun settings</h2>
+                <p>Configure Mailgun for sending bulk emails</p>
+            </div>
+            <div class="gh-settings-section-content">
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Mailgun domain</label>
+                    <input type="text" name="mailgun_domain" class="gh-form-input" value="{{.MailgunDomain}}" placeholder="mg.yourdomain.com">
+                </div>
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Mailgun API key</label>
+                    <input type="password" name="mailgun_api_key" class="gh-form-input" value="{{.MailgunAPIKey}}" placeholder="key-xxxxxxxxxxxxxxxx">
+                </div>
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Mailgun base URL</label>
+                    <select name="mailgun_base_url" class="gh-form-select">
+                        <option value="https://api.mailgun.net/v3" {{if eq .MailgunBaseURL "https://api.mailgun.net/v3"}}selected{{end}}>US (api.mailgun.net)</option>
+                        <option value="https://api.eu.mailgun.net/v3" {{if eq .MailgunBaseURL "https://api.eu.mailgun.net/v3"}}selected{{end}}>EU (api.eu.mailgun.net)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

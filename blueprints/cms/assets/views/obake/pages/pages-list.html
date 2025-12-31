@@ -1,0 +1,89 @@
+{{define "content"}}
+<div class="gh-posts gh-pages">
+    <header class="gh-content-header">
+        <div class="gh-content-header-left">
+            <h1 class="gh-content-title">Pages</h1>
+        </div>
+        <div class="gh-content-header-right">
+            <a href="/obake/pages/new/" class="gh-btn gh-btn-primary">
+                <svg class="gh-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>New page</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Filters -->
+    <div class="gh-content-filters">
+        <div class="gh-filter-tabs">
+            <a href="/obake/pages/" class="gh-filter-tab {{if eq .FilterStatus ""}}active{{end}}">
+                All pages
+            </a>
+            <a href="/obake/pages/?status=published" class="gh-filter-tab {{if eq .FilterStatus "published"}}active{{end}}">
+                Published
+            </a>
+            <a href="/obake/pages/?status=draft" class="gh-filter-tab {{if eq .FilterStatus "draft"}}active{{end}}">
+                Drafts
+            </a>
+        </div>
+
+        <div class="gh-filter-actions">
+            <div class="gh-search-box">
+                <svg class="gh-search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text" class="gh-search-box-input" placeholder="Search pages..." value="{{.SearchQuery}}" onkeyup="if(event.key==='Enter') window.location='?q='+this.value">
+            </div>
+        </div>
+    </div>
+
+    <!-- Pages List -->
+    <div class="gh-posts-list">
+        {{if .Pages}}
+        {{range .Pages}}
+        <a href="/obake/pages/{{.ID}}/" class="gh-post-row">
+            <div class="gh-post-row-thumb">
+                {{if .Thumbnail}}
+                <img src="{{.Thumbnail}}" alt="" class="gh-post-row-image">
+                {{else}}
+                <div class="gh-post-row-image-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="3" y1="9" x2="21" y2="9"/>
+                        <line x1="9" y1="21" x2="9" y2="9"/>
+                    </svg>
+                </div>
+                {{end}}
+            </div>
+            <div class="gh-post-row-content">
+                <h3 class="gh-post-row-title">{{if .Title}}{{.Title}}{{else}}(Untitled){{end}}</h3>
+                <div class="gh-post-row-meta">
+                    {{if .Author}}
+                    <span class="gh-post-row-author">By {{.Author.DisplayName}}</span>
+                    {{end}}
+                    <span class="gh-post-row-status gh-status-{{.Status}}">{{.Status}}</span>
+                </div>
+            </div>
+            <div class="gh-post-row-date">
+                {{formatDate .PublishDate}}
+            </div>
+        </a>
+        {{end}}
+        {{else}}
+        <div class="gh-empty-state gh-empty-posts">
+            <svg class="gh-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="9" y1="21" x2="9" y2="9"/>
+            </svg>
+            <h3>No pages yet</h3>
+            <p>Create your first page to get started</p>
+            <a href="/obake/pages/new/" class="gh-btn gh-btn-primary">Create your first page</a>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

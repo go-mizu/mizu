@@ -1,0 +1,123 @@
+{{define "content"}}
+<div class="gh-member-detail">
+    <header class="gh-content-header">
+        <div class="gh-content-header-left">
+            <a href="/obake/members/" class="gh-editor-back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+            </a>
+            <h1 class="gh-content-title">
+                {{if .Member}}{{if .Member.Name}}{{.Member.Name}}{{else}}{{.Member.Email}}{{end}}{{else}}Member{{end}}
+            </h1>
+        </div>
+    </header>
+
+    <div class="gh-member-detail-content">
+        <div class="gh-member-detail-main">
+            {{if .Member}}
+            <!-- Member Info Card -->
+            <div class="gh-card">
+                <div class="gh-member-header">
+                    <img src="{{.Member.Avatar}}" alt="" class="gh-member-detail-avatar">
+                    <div class="gh-member-header-info">
+                        <h2>{{if .Member.Name}}{{.Member.Name}}{{else}}Anonymous{{end}}</h2>
+                        <p>{{.Member.Email}}</p>
+                        <span class="gh-member-status gh-status-{{.Member.Status}}">{{.Member.Status}}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity -->
+            <div class="gh-card">
+                <h3 class="gh-card-title">Activity</h3>
+                {{if .Activity}}
+                <ul class="gh-activity-list">
+                    {{range .Activity}}
+                    <li class="gh-activity-item">
+                        <div class="gh-activity-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                            </svg>
+                        </div>
+                        <div class="gh-activity-content">
+                            <span class="gh-activity-type">{{.Type}}</span>
+                            <span class="gh-activity-details">{{.Details}}</span>
+                            <span class="gh-activity-time">{{formatDateTime .Timestamp}}</span>
+                        </div>
+                    </li>
+                    {{end}}
+                </ul>
+                {{else}}
+                <p class="gh-empty-message">No activity yet</p>
+                {{end}}
+            </div>
+
+            <!-- Email Activity -->
+            <div class="gh-card">
+                <h3 class="gh-card-title">Email activity</h3>
+                {{if .EmailActivity}}
+                <ul class="gh-email-activity-list">
+                    {{range .EmailActivity}}
+                    <li class="gh-email-activity-item">
+                        <span class="gh-email-subject">{{.Subject}}</span>
+                        <span class="gh-email-date">{{formatDate .SentDate}}</span>
+                        <div class="gh-email-status">
+                            {{if .Opened}}<span class="gh-email-opened">Opened</span>{{end}}
+                            {{if .Clicked}}<span class="gh-email-clicked">Clicked</span>{{end}}
+                        </div>
+                    </li>
+                    {{end}}
+                </ul>
+                {{else}}
+                <p class="gh-empty-message">No emails sent yet</p>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="gh-empty-state">
+                <p>Member not found</p>
+            </div>
+            {{end}}
+        </div>
+
+        {{if .Member}}
+        <div class="gh-member-detail-sidebar">
+            <!-- Notes -->
+            <div class="gh-card">
+                <h3 class="gh-card-title">Notes</h3>
+                <textarea class="gh-form-textarea" placeholder="Add notes about this member...">{{.Notes}}</textarea>
+            </div>
+
+            <!-- Subscriptions -->
+            <div class="gh-card">
+                <h3 class="gh-card-title">Subscriptions</h3>
+                {{if .Subscriptions}}
+                <ul class="gh-subscriptions-list">
+                    {{range .Subscriptions}}
+                    <li class="gh-subscription-item">
+                        <span class="gh-subscription-tier">{{.Tier}}</span>
+                        <span class="gh-subscription-status">{{.Status}}</span>
+                        <span class="gh-subscription-amount">{{.Amount}}/{{.Interval}}</span>
+                    </li>
+                    {{end}}
+                </ul>
+                {{else}}
+                <p class="gh-empty-message">No subscriptions</p>
+                {{end}}
+            </div>
+
+            <!-- Actions -->
+            <div class="gh-card gh-card-danger">
+                <button class="gh-btn gh-btn-danger gh-btn-block">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                    </svg>
+                    <span>Delete member</span>
+                </button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

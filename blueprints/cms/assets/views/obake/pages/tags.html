@@ -1,0 +1,86 @@
+{{define "content"}}
+<div class="gh-tags">
+    <header class="gh-content-header">
+        <div class="gh-content-header-left">
+            <h1 class="gh-content-title">Tags</h1>
+        </div>
+        <div class="gh-content-header-right">
+            <a href="/obake/tags/new/" class="gh-btn gh-btn-primary">
+                <svg class="gh-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>New tag</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Filters -->
+    <div class="gh-content-filters">
+        <div class="gh-filter-tabs">
+            <a href="/obake/tags/" class="gh-filter-tab {{if not .ShowInternal}}active{{end}}">
+                Public tags
+            </a>
+            <a href="/obake/tags/?internal=1" class="gh-filter-tab {{if .ShowInternal}}active{{end}}">
+                Internal tags
+            </a>
+        </div>
+
+        <div class="gh-filter-actions">
+            <div class="gh-search-box">
+                <svg class="gh-search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text" class="gh-search-box-input" placeholder="Search tags..." value="{{.SearchQuery}}" onkeyup="if(event.key==='Enter') window.location='?q='+this.value">
+            </div>
+        </div>
+    </div>
+
+    <!-- Tags List -->
+    <div class="gh-tags-list">
+        {{if .Tags}}
+        {{range .Tags}}
+        <a href="/obake/tags/{{.Slug}}/" class="gh-tag-row">
+            <div class="gh-tag-row-image">
+                {{if .Featured}}
+                <img src="{{.Featured.URL}}" alt="" class="gh-tag-image">
+                {{else}}
+                <div class="gh-tag-image-placeholder" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+                        <line x1="7" y1="7" x2="7.01" y2="7"/>
+                    </svg>
+                </div>
+                {{end}}
+            </div>
+            <div class="gh-tag-row-content">
+                <h3 class="gh-tag-row-name">
+                    {{if .IsInternal}}
+                    <span class="gh-tag-internal-badge">#</span>
+                    {{end}}
+                    {{.Name}}
+                </h3>
+                <div class="gh-tag-row-meta">
+                    <span class="gh-tag-slug">/tag/{{.Slug}}</span>
+                </div>
+            </div>
+            <div class="gh-tag-row-count">
+                {{.PostCount}} {{if eq .PostCount 1}}post{{else}}posts{{end}}
+            </div>
+        </a>
+        {{end}}
+        {{else}}
+        <div class="gh-empty-state">
+            <svg class="gh-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            <h3>No tags yet</h3>
+            <p>Create tags to organize your content</p>
+            <a href="/obake/tags/new/" class="gh-btn gh-btn-primary">Create your first tag</a>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

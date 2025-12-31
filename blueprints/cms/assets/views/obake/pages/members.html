@@ -1,0 +1,112 @@
+{{define "content"}}
+<div class="gh-members">
+    <header class="gh-content-header">
+        <div class="gh-content-header-left">
+            <h1 class="gh-content-title">Members</h1>
+        </div>
+        <div class="gh-content-header-right">
+            <button class="gh-btn gh-btn-secondary">
+                <svg class="gh-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Export</span>
+            </button>
+            <button class="gh-btn gh-btn-primary">
+                <svg class="gh-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                <span>New member</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Stats -->
+    <div class="gh-members-stats">
+        <div class="gh-members-stat">
+            <span class="gh-members-stat-value">{{.TotalMembers}}</span>
+            <span class="gh-members-stat-label">Total members</span>
+        </div>
+        <div class="gh-members-stat">
+            <span class="gh-members-stat-value">{{.FreeCount}}</span>
+            <span class="gh-members-stat-label">Free</span>
+        </div>
+        <div class="gh-members-stat">
+            <span class="gh-members-stat-value">{{.PaidCount}}</span>
+            <span class="gh-members-stat-label">Paid</span>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="gh-content-filters">
+        <div class="gh-filter-tabs">
+            <a href="/obake/members/" class="gh-filter-tab {{if eq .FilterStatus ""}}active{{end}}">
+                All
+            </a>
+            <a href="/obake/members/?status=free" class="gh-filter-tab {{if eq .FilterStatus "free"}}active{{end}}">
+                Free
+            </a>
+            <a href="/obake/members/?status=paid" class="gh-filter-tab {{if eq .FilterStatus "paid"}}active{{end}}">
+                Paid
+            </a>
+        </div>
+
+        <div class="gh-filter-actions">
+            <div class="gh-search-box">
+                <svg class="gh-search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                <input type="text" class="gh-search-box-input" placeholder="Search members..." value="{{.SearchQuery}}">
+            </div>
+        </div>
+    </div>
+
+    <!-- Members List -->
+    <div class="gh-members-list">
+        {{if .Members}}
+        <table class="gh-table">
+            <thead>
+                <tr>
+                    <th>Member</th>
+                    <th>Status</th>
+                    <th>Open rate</th>
+                    <th>Subscribed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Members}}
+                <tr class="gh-member-row" onclick="window.location='/obake/members/{{.ID}}/'">
+                    <td class="gh-member-info">
+                        <img src="{{.Avatar}}" alt="" class="gh-member-avatar">
+                        <div class="gh-member-details">
+                            <span class="gh-member-name">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}</span>
+                            <span class="gh-member-email">{{.Email}}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="gh-member-status gh-status-{{.Status}}">{{.Status}}</span>
+                    </td>
+                    <td>{{printf "%.0f" .OpenRate}}%</td>
+                    <td>{{formatDate .Subscribed}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <div class="gh-empty-state">
+            <svg class="gh-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+                <path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            <h3>No members yet</h3>
+            <p>Members will appear here when people sign up to your site</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
