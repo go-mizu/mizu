@@ -1,0 +1,79 @@
+{{/* Category Archive Template */}}
+
+{{define "title"}}{{.Category.Name}} - {{.Site.Name}}{{end}}
+
+{{define "meta_description"}}
+{{if .Category.Description}}
+<meta name="description" content="{{truncate .Category.Description 160}}">
+{{else}}
+<meta name="description" content="Browse all posts in {{.Category.Name}}.">
+{{end}}
+{{end}}
+
+{{define "body_class"}}page-archive page-category category-{{.Category.Slug}}{{end}}
+
+{{define "og_tags"}}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{.Category.Name}} - {{.Site.Name}}">
+<meta property="og:description" content="{{if .Category.Description}}{{truncate .Category.Description 160}}{{else}}Browse all posts in {{.Category.Name}}{{end}}">
+<meta property="og:url" content="{{.Request.URL}}">
+{{end}}
+
+{{define "content"}}
+<div class="archive-page category-archive">
+    {{/* Category Header */}}
+    <header class="archive-header">
+        <div class="container">
+            <div class="archive-header-content">
+                <div class="archive-label">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    Category
+                </div>
+                <h1 class="archive-title">{{.Category.Name}}</h1>
+                {{if .Category.Description}}
+                <p class="archive-description">{{.Category.Description}}</p>
+                {{end}}
+                {{if .Pagination}}
+                <p class="archive-count">{{.Pagination.Total}} {{if eq .Pagination.Total 1}}post{{else}}posts{{end}}</p>
+                {{end}}
+            </div>
+        </div>
+    </header>
+
+    {{/* Posts */}}
+    <section class="archive-content">
+        <div class="container">
+            <div class="content-layout{{if .Theme.Config.sidebar_position}} content-layout--sidebar-{{.Theme.Config.sidebar_position}}{{end}}">
+                <div class="posts-main">
+                    {{if .Posts}}
+                    <div class="posts-grid">
+                        {{range .Posts}}
+                        {{template "partials/post-card.html" .}}
+                        {{end}}
+                    </div>
+
+                    {{/* Pagination */}}
+                    {{template "partials/pagination.html" .}}
+                    {{else}}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                            </svg>
+                        </div>
+                        <h2 class="empty-state-title">No posts yet</h2>
+                        <p class="empty-state-text">There are no posts in this category yet.</p>
+                        <a href="/" class="btn btn--primary">Back to Home</a>
+                    </div>
+                    {{end}}
+                </div>
+
+                {{/* Sidebar */}}
+                {{template "partials/sidebar.html" .}}
+            </div>
+        </div>
+    </section>
+</div>
+{{end}}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-mizu/blueprints/cms/app/web/handler/obake"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/rest"
+	"github.com/go-mizu/blueprints/cms/app/web/handler/site"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/wpadmin"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/wpapi"
 	"github.com/go-mizu/blueprints/cms/assets"
@@ -74,6 +75,9 @@ type Server struct {
 
 	// Ghost-compatible Admin Handler (Obake)
 	obakeHandler *obake.Handler
+
+	// Site frontend Handler
+	siteHandler *site.Handler
 }
 
 // New creates a new server.
@@ -210,6 +214,26 @@ func New(cfg Config) (*Server, error) {
 		Settings:  settingsSvc,
 		GetUserID: s.getUserID,
 		GetUser:   s.getUser,
+	})
+
+	// Create Site frontend handler
+	siteTemplates, err := assets.SiteTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("parse site templates: %w", err)
+	}
+	s.siteHandler = site.New(siteTemplates, site.Config{
+		BaseURL:    baseURL,
+		Posts:      postsSvc,
+		Pages:      pagesSvc,
+		Categories: categoriesSvc,
+		Tags:       tagsSvc,
+		Users:      usersSvc,
+		Media:      mediaSvc,
+		Comments:   commentsSvc,
+		Settings:   settingsSvc,
+		Menus:      menusSvc,
+		GetUserID:  s.getUserID,
+		GetUser:    s.getUser,
 	})
 
 	s.setupRoutes()
@@ -764,6 +788,46 @@ func (s *Server) setupRoutes() {
 
 	// Export
 	s.app.Get("/obake/settings/export/", s.obakeHandler.Export)
+
+	// ============================================================
+	// Frontend Site Routes
+	// ============================================================
+
+	// Theme static assets
+	themeAssetsFS := assets.ThemeAssets()
+	s.app.Get("/theme/assets/{filepath...}", func(c *mizu.Ctx) error {
+		filepath := c.Param("filepath")
+		http.StripPrefix("/theme/assets/", http.FileServer(http.FS(themeAssetsFS))).ServeHTTP(c.Writer(), c.Request())
+		_ = filepath
+		return nil
+	})
+
+	// Homepage
+	s.app.Get("/", s.siteHandler.Home)
+
+	// RSS Feed
+	s.app.Get("/feed", s.siteHandler.Feed)
+
+	// Search
+	s.app.Get("/search", s.siteHandler.Search)
+
+	// Archive
+	s.app.Get("/archive", s.siteHandler.Archive)
+
+	// Category archives
+	s.app.Get("/category/{slug}", s.siteHandler.Category)
+
+	// Tag archives
+	s.app.Get("/tag/{slug}", s.siteHandler.Tag)
+
+	// Author archives
+	s.app.Get("/author/{slug}", s.siteHandler.Author)
+
+	// Static pages
+	s.app.Get("/page/{slug}", s.siteHandler.Page)
+
+	// Single posts (must be last to catch all slugs)
+	s.app.Get("/{slug}", s.siteHandler.Post)
 }
 
 // Service accessors for CLI

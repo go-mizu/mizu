@@ -1,0 +1,168 @@
+{{/* Single Post Template */}}
+
+{{define "title"}}{{if .Post}}{{.Post.Title}} - {{end}}{{.Site.Name}}{{end}}
+
+{{define "meta_description"}}
+{{if .Post}}
+{{if .Post.Excerpt}}
+<meta name="description" content="{{truncate .Post.Excerpt 160}}">
+{{else if .Post.Content}}
+<meta name="description" content="{{truncate (stripHtml .Post.Content) 160}}">
+{{end}}
+{{end}}
+{{end}}
+
+{{define "body_class"}}page-post single-post post-{{.Post.ID}}{{end}}
+
+{{define "og_tags"}}
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{.Post.Title}}">
+<meta property="og:description" content="{{if .Post.Excerpt}}{{truncate .Post.Excerpt 160}}{{else}}{{truncate (stripHtml .Post.Content) 160}}{{end}}">
+<meta property="og:url" content="{{.Request.URL}}">
+{{if .Post.FeaturedImage}}
+<meta property="og:image" content="{{.Post.FeaturedImage.URL}}">
+{{end}}
+{{if .Post.PublishedAt}}
+<meta property="article:published_time" content="{{.Post.PublishedAt.Format "2006-01-02T15:04:05Z07:00"}}">
+{{end}}
+{{if .Post.UpdatedAt}}
+<meta property="article:modified_time" content="{{.Post.UpdatedAt.Format "2006-01-02T15:04:05Z07:00"}}">
+{{end}}
+{{if .Author}}
+<meta property="article:author" content="{{.Author.Name}}">
+{{end}}
+{{range .Categories}}
+<meta property="article:section" content="{{.Name}}">
+{{end}}
+{{range .Tags}}
+<meta property="article:tag" content="{{.Name}}">
+{{end}}
+{{end}}
+
+{{define "twitter_tags"}}
+<meta name="twitter:title" content="{{.Post.Title}}">
+<meta name="twitter:description" content="{{if .Post.Excerpt}}{{truncate .Post.Excerpt 160}}{{else}}{{truncate (stripHtml .Post.Content) 160}}{{end}}">
+{{if .Post.FeaturedImage}}
+<meta name="twitter:image" content="{{.Post.FeaturedImage.URL}}">
+{{end}}
+{{end}}
+
+{{define "head"}}
+{{/* JSON-LD Structured Data */}}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "{{.Post.Title}}"{{if or .Post.PublishedAt .Post.UpdatedAt .Post.FeaturedImage .Author}},{{end}}
+    {{if .Post.PublishedAt}}
+    "datePublished": "{{.Post.PublishedAt.Format "2006-01-02T15:04:05Z07:00"}}"{{if or .Post.UpdatedAt .Post.FeaturedImage .Author}},{{end}}
+    {{end}}
+    {{if .Post.UpdatedAt}}
+    "dateModified": "{{.Post.UpdatedAt.Format "2006-01-02T15:04:05Z07:00"}}"{{if or .Post.FeaturedImage .Author}},{{end}}
+    {{end}}
+    {{if .Post.FeaturedImage}}
+    "image": "{{.Post.FeaturedImage.URL}}"{{if .Author}},{{end}}
+    {{end}}
+    {{if .Author}}
+    "author": {
+        "@type": "Person",
+        "name": "{{.Author.Name}}"
+    },
+    {{end}}
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{.Site.Name}}"
+    }
+}
+</script>
+{{end}}
+
+{{define "content"}}
+<article class="single-post-article" itemscope itemtype="https://schema.org/Article">
+    {{/* Post Header */}}
+    <header class="post-header">
+        <div class="container container--narrow">
+            {{/* Categories */}}
+            {{if .Categories}}
+            <div class="post-categories">
+                {{range .Categories}}
+                <a href="/category/{{.Slug}}" class="post-category" rel="category">{{.Name}}</a>
+                {{end}}
+            </div>
+            {{end}}
+
+            {{/* Title */}}
+            <h1 class="post-title" itemprop="headline">{{.Post.Title}}</h1>
+
+            {{/* Meta */}}
+            {{template "partials/post-meta.html" .}}
+        </div>
+    </header>
+
+    {{/* Featured Image */}}
+    {{if .Post.FeaturedImage}}
+    <figure class="post-featured-image">
+        <div class="container container--wide">
+            <img src="{{.Post.FeaturedImage.URL}}"
+                 alt="{{if .Post.FeaturedImage.Alt}}{{.Post.FeaturedImage.Alt}}{{else}}{{.Post.Title}}{{end}}"
+                 itemprop="image">
+            {{if .Post.FeaturedImage.Caption}}
+            <figcaption class="post-image-caption">{{.Post.FeaturedImage.Caption}}</figcaption>
+            {{end}}
+        </div>
+    </figure>
+    {{end}}
+
+    {{/* Post Content */}}
+    <div class="post-content-wrapper">
+        <div class="container container--narrow">
+            <div class="post-content prose" itemprop="articleBody">
+                {{.Post.Content | safe}}
+            </div>
+
+            {{/* Tags */}}
+            {{if .Tags}}
+            <footer class="post-footer">
+                <div class="post-tags">
+                    <span class="post-tags-label">Tags:</span>
+                    {{range .Tags}}
+                    <a href="/tag/{{.Slug}}" class="post-tag" rel="tag">{{.Name}}</a>
+                    {{end}}
+                </div>
+            </footer>
+            {{end}}
+
+            {{/* Social Share */}}
+            {{template "partials/social-share.html" .}}
+        </div>
+    </div>
+
+    {{/* Author Box */}}
+    {{if .Theme.Config.show_author_bio}}
+    <div class="container container--narrow">
+        {{template "partials/author-box.html" .}}
+    </div>
+    {{end}}
+
+    {{/* Post Navigation */}}
+    {{if .Theme.Config.show_post_navigation}}
+    <div class="container container--narrow">
+        {{template "partials/post-navigation.html" .}}
+    </div>
+    {{end}}
+
+    {{/* Related Posts */}}
+    {{if .Theme.Config.show_related_posts}}
+    <div class="container container--wide">
+        {{template "partials/related-posts.html" .}}
+    </div>
+    {{end}}
+
+    {{/* Comments */}}
+    {{if and .Theme.Config.enable_comments .Post.AllowComments}}
+    <div class="container container--narrow">
+        {{template "partials/comments.html" .}}
+    </div>
+    {{end}}
+</article>
+{{end}}

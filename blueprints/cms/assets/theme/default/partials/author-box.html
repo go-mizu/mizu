@@ -1,0 +1,41 @@
+{{/* Author Box - Displayed after post content */}}
+{{if .Author}}
+<div class="author-box">
+    <div class="author-box-inner">
+        {{/* Author Avatar */}}
+        <div class="author-box-avatar">
+            {{if .Author.AvatarURL}}
+            <img src="{{.Author.AvatarURL}}" alt="{{.Author.Name}}" class="author-avatar-image">
+            {{else}}
+            <div class="author-avatar-placeholder">
+                {{substr .Author.Name 0 1}}
+            </div>
+            {{end}}
+        </div>
+
+        {{/* Author Info */}}
+        <div class="author-box-content">
+            <div class="author-box-header">
+                <span class="author-box-label">Written by</span>
+                <h4 class="author-box-name">
+                    <a href="/author/{{.Author.Slug}}">{{.Author.Name}}</a>
+                </h4>
+            </div>
+
+            {{if .Author.Bio}}
+            <p class="author-box-bio">{{.Author.Bio}}</p>
+            {{end}}
+
+            {{/* Author Social Links */}}
+            <div class="author-box-links">
+                <a href="/author/{{.Author.Slug}}" class="author-box-link">
+                    View all posts
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

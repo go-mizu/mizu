@@ -9,6 +9,7 @@ require (
 	github.com/go-mizu/mizu v0.5.7
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
+	github.com/yuin/goldmark v1.7.8
 	golang.org/x/crypto v0.46.0
 	golang.org/x/text v0.32.0
 )

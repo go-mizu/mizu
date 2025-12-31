@@ -1,0 +1,31 @@
+{{/* Related Posts Section */}}
+{{if .Related}}
+<section class="related-posts">
+    <h3 class="related-posts-title">You might also like</h3>
+    <div class="related-posts-grid">
+        {{range .Related}}
+        <article class="related-post">
+            {{if .FeaturedImage}}
+            <a href="/{{.Slug}}" class="related-post-image-link">
+                <figure class="related-post-image">
+                    <img src="{{.FeaturedImage.URL}}"
+                         alt="{{if .FeaturedImage.Alt}}{{.FeaturedImage.Alt}}{{else}}{{.Title}}{{end}}"
+                         loading="lazy">
+                </figure>
+            </a>
+            {{end}}
+            <div class="related-post-content">
+                <h4 class="related-post-title">
+                    <a href="/{{.Slug}}">{{.Title}}</a>
+                </h4>
+                {{if .PublishedAt}}
+                <time datetime="{{.PublishedAt.Format "2006-01-02"}}" class="related-post-date">
+                    {{.PublishedAt.Format "Jan 2, 2006"}}
+                </time>
+                {{end}}
+            </div>
+        </article>
+        {{end}}
+    </div>
+</section>
+{{end}}

@@ -1,0 +1,240 @@
+{
+  "name": "Modern Theme",
+  "slug": "default",
+  "version": "2.0.0",
+  "description": "A bold, modern CMS theme featuring bento grid layouts, glassmorphism effects, and micro-interactions. Designed with 2025 design trends for maximum visual impact.",
+  "author": {
+    "name": "CMS Team",
+    "email": "team@example.com",
+    "url": "https://example.com"
+  },
+  "license": "MIT",
+  "screenshot": "screenshot.png",
+
+  "engine": "1.0",
+  "requires": {
+    "cms": ">=1.0.0"
+  },
+
+  "config": {
+    "posts_per_page": 12,
+    "date_format": "Jan 2, 2006",
+    "time_format": "3:04 PM",
+    "excerpt_length": 140,
+    "featured_image_size": {
+      "width": 1200,
+      "height": 630
+    },
+    "sidebar_position": "right",
+    "show_author_bio": true,
+    "show_related_posts": true,
+    "related_posts_count": 3,
+    "show_reading_time": true,
+    "show_post_navigation": true,
+    "enable_comments": true,
+    "enable_newsletter": true,
+    "hero_style": "gradient",
+    "card_style": "bento"
+  },
+
+  "colors": {
+    "primary": "#6366f1",
+    "primary_hover": "#4f46e5",
+    "secondary": "#8b5cf6",
+    "accent": "#f472b6",
+    "accent_alt": "#22d3ee",
+    "background": "#fafafa",
+    "surface": "#ffffff",
+    "surface_alt": "#f4f4f5",
+    "text": "#18181b",
+    "text_secondary": "#52525b",
+    "text_muted": "#a1a1aa",
+    "heading": "#09090b",
+    "link": "#6366f1",
+    "link_hover": "#4f46e5",
+    "border": "#e4e4e7",
+    "border_light": "#f4f4f5",
+    "success": "#22c55e",
+    "warning": "#f59e0b",
+    "error": "#ef4444",
+    "info": "#3b82f6"
+  },
+
+  "dark_colors": {
+    "primary": "#818cf8",
+    "primary_hover": "#a5b4fc",
+    "secondary": "#a78bfa",
+    "accent": "#f9a8d4",
+    "accent_alt": "#67e8f9",
+    "background": "#09090b",
+    "surface": "#18181b",
+    "surface_alt": "#27272a",
+    "text": "#fafafa",
+    "text_secondary": "#d4d4d8",
+    "text_muted": "#71717a",
+    "heading": "#ffffff",
+    "link": "#818cf8",
+    "link_hover": "#a5b4fc",
+    "border": "#27272a",
+    "border_light": "#18181b",
+    "success": "#4ade80",
+    "warning": "#fbbf24",
+    "error": "#f87171",
+    "info": "#60a5fa"
+  },
+
+  "fonts": {
+    "heading": "'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    "body": "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    "mono": "'JetBrains Mono', 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Monaco, monospace"
+  },
+
+  "features": {
+    "dark_mode": true,
+    "sticky_header": true,
+    "back_to_top": true,
+    "reading_progress": true,
+    "table_of_contents": true,
+    "code_highlighting": true,
+    "image_lightbox": true,
+    "lazy_loading": true,
+    "newsletter": true,
+    "comments": true,
+    "social_share": true,
+    "related_posts": true,
+    "author_box": true,
+    "search": true,
+    "smooth_scroll": true,
+    "glassmorphism": true,
+    "gradient_accents": true,
+    "micro_interactions": true,
+    "bento_grid": true
+  },
+
+  "custom_templates": [
+    {
+      "name": "Full Width",
+      "slug": "full-width",
+      "file": "custom-templates/full-width.html",
+      "for": ["page", "post"]
+    },
+    {
+      "name": "Landing Page",
+      "slug": "landing",
+      "file": "custom-templates/landing.html",
+      "for": ["page"]
+    },
+    {
+      "name": "Contact",
+      "slug": "contact",
+      "file": "custom-templates/contact.html",
+      "for": ["page"]
+    }
+  ],
+
+  "widget_areas": [
+    {
+      "name": "Sidebar",
+      "slug": "sidebar",
+      "description": "Main sidebar widget area"
+    },
+    {
+      "name": "Footer Column 1",
+      "slug": "footer-1",
+      "description": "First footer column"
+    },
+    {
+      "name": "Footer Column 2",
+      "slug": "footer-2",
+      "description": "Second footer column"
+    },
+    {
+      "name": "Footer Column 3",
+      "slug": "footer-3",
+      "description": "Third footer column"
+    },
+    {
+      "name": "Footer Column 4",
+      "slug": "footer-4",
+      "description": "Fourth footer column"
+    }
+  ],
+
+  "menu_locations": [
+    {
+      "name": "Primary Navigation",
+      "slug": "primary",
+      "description": "Main site navigation in header"
+    },
+    {
+      "name": "Secondary Navigation",
+      "slug": "secondary",
+      "description": "Secondary navigation items"
+    },
+    {
+      "name": "Footer Navigation",
+      "slug": "footer",
+      "description": "Footer links"
+    },
+    {
+      "name": "Social Links",
+      "slug": "social",
+      "description": "Social media links"
+    }
+  ],
+
+  "image_sizes": [
+    {
+      "name": "thumbnail",
+      "width": 150,
+      "height": 150,
+      "crop": true
+    },
+    {
+      "name": "small",
+      "width": 300,
+      "height": 200,
+      "crop": false
+    },
+    {
+      "name": "medium",
+      "width": 600,
+      "height": 400,
+      "crop": false
+    },
+    {
+      "name": "large",
+      "width": 1024,
+      "height": 683,
+      "crop": false
+    },
+    {
+      "name": "featured",
+      "width": 1200,
+      "height": 630,
+      "crop": true
+    },
+    {
+      "name": "hero",
+      "width": 1920,
+      "height": 1080,
+      "crop": true
+    }
+  ],
+
+  "scripts": [
+    {
+      "handle": "main",
+      "src": "assets/js/main.js",
+      "position": "footer",
+      "defer": true
+    }
+  ],
+
+  "styles": [
+    {
+      "handle": "style",
+      "src": "assets/css/style.css"
+    }
+  ]
+}

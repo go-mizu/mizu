@@ -1,0 +1,72 @@
+{{/* Pagination Component - receives Pagination struct directly */}}
+{{if gt .TotalPages 1}}
+<nav class="pagination" aria-label="Pagination">
+    <ul class="pagination-list">
+        {{/* Previous Page */}}
+        {{if gt .CurrentPage 1}}
+        <li class="pagination-item pagination-item--prev">
+            <a href="{{.PrevURL}}" class="pagination-link pagination-link--prev" aria-label="Go to previous page">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 18l-6-6 6-6"/>
+                </svg>
+                <span>Previous</span>
+            </a>
+        </li>
+        {{else}}
+        <li class="pagination-item pagination-item--prev pagination-item--disabled">
+            <span class="pagination-link pagination-link--prev" aria-disabled="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 18l-6-6 6-6"/>
+                </svg>
+                <span>Previous</span>
+            </span>
+        </li>
+        {{end}}
+
+        {{/* Page Numbers */}}
+        {{$current := .CurrentPage}}
+        {{$baseURL := .BaseURL}}
+        {{range .Pages}}
+        {{if eq . -1}}
+        <li class="pagination-item pagination-item--ellipsis">
+            <span class="pagination-ellipsis">&hellip;</span>
+        </li>
+        {{else if eq . $current}}
+        <li class="pagination-item pagination-item--active">
+            <span class="pagination-link pagination-link--current" aria-current="page">{{.}}</span>
+        </li>
+        {{else}}
+        <li class="pagination-item">
+            <a href="{{$baseURL}}?page={{.}}" class="pagination-link">{{.}}</a>
+        </li>
+        {{end}}
+        {{end}}
+
+        {{/* Next Page */}}
+        {{if lt .CurrentPage .TotalPages}}
+        <li class="pagination-item pagination-item--next">
+            <a href="{{.NextURL}}" class="pagination-link pagination-link--next" aria-label="Go to next page">
+                <span>Next</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"/>
+                </svg>
+            </a>
+        </li>
+        {{else}}
+        <li class="pagination-item pagination-item--next pagination-item--disabled">
+            <span class="pagination-link pagination-link--next" aria-disabled="true">
+                <span>Next</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18l6-6-6-6"/>
+                </svg>
+            </span>
+        </li>
+        {{end}}
+    </ul>
+
+    {{/* Page Info */}}
+    <div class="pagination-info">
+        Page {{.CurrentPage}} of {{.TotalPages}}
+    </div>
+</nav>
+{{end}}
