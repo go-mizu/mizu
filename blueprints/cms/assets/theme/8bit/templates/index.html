@@ -1,0 +1,114 @@
+{{ define "title" }}{{ .Site.Title }} - Press Start to Read{{ end }}
+
+{{ define "body_class" }}home{{ end }}
+
+{{ define "content" }}
+<!-- Hero Section (Title Screen) -->
+<section class="hero">
+    <div class="container">
+        <h1 class="hero__title">{{ .Site.Title }}</h1>
+        <p class="hero__subtitle">{{ .Site.Description }}</p>
+
+        <div class="hero__cta">
+            <a href="#posts" class="btn btn--primary btn--lg">
+                <span aria-hidden="true">&#9654;</span> START READING
+            </a>
+        </div>
+
+        <p class="press-start">PRESS START</p>
+    </div>
+</section>
+
+<!-- Posts Grid -->
+<section class="container" id="posts">
+    <div class="content-layout">
+        <!-- Main Content -->
+        <div class="content-main">
+            <!-- Section Header -->
+            <div style="margin-bottom: var(--space-3);">
+                <h2 style="font-size: var(--text-xl);">
+                    <span aria-hidden="true">&#9733;</span> LATEST POSTS
+                </h2>
+            </div>
+
+            <!-- Posts Grid -->
+            {{ if .Posts }}
+            <div class="posts-grid">
+                {{ range $index, $post := .Posts }}
+                {{ if eq $index 0 }}
+                <!-- Featured First Post -->
+                <article class="post-card post-card--featured">
+                    {{ if $post.FeaturedImage }}
+                    <div class="post-card__image-wrapper">
+                        <a href="{{ $post.URL }}">
+                            <img src="{{ $post.FeaturedImage }}" alt="{{ $post.Title }}" class="post-card__image" loading="lazy">
+                        </a>
+                        {{ if $post.Category }}
+                        <span class="post-card__category badge badge--primary">{{ $post.Category.Name }}</span>
+                        {{ end }}
+                    </div>
+                    {{ end }}
+                    <div class="post-card__content">
+                        <h3 class="post-card__title" style="font-size: var(--text-lg);">
+                            <a href="{{ $post.URL }}">{{ $post.Title }}</a>
+                        </h3>
+                        {{ if $post.Excerpt }}
+                        <p class="post-card__excerpt">{{ $post.Excerpt | truncate 200 }}</p>
+                        {{ end }}
+                        <div class="post-card__meta">
+                            <span class="post-card__meta-item">
+                                <span aria-hidden="true">&#9733;</span>
+                                {{ $post.Date | date "Jan 2, 2006" }}
+                            </span>
+                            {{ if $post.ReadingTime }}
+                            <span class="post-card__meta-item">
+                                <span aria-hidden="true">&#9200;</span>
+                                {{ $post.ReadingTime }} min
+                            </span>
+                            {{ end }}
+                        </div>
+                    </div>
+                </article>
+                {{ else }}
+                {{ template "partials/post-card.html" $post }}
+                {{ end }}
+                {{ end }}
+            </div>
+
+            <!-- Pagination -->
+            {{ template "partials/pagination.html" . }}
+            {{ else }}
+            <!-- No Posts -->
+            <div style="text-align: center; padding: var(--space-8);">
+                <p style="font-family: var(--font-pixel); font-size: var(--text-2xl); margin-bottom: var(--space-2);">
+                    NO POSTS FOUND
+                </p>
+                <p style="color: var(--color-text-secondary);">
+                    Check back soon for new content!
+                </p>
+            </div>
+            {{ end }}
+        </div>
+
+        <!-- Sidebar -->
+        {{ template "partials/sidebar.html" . }}
+    </div>
+</section>
+
+<!-- Newsletter Section -->
+{{ if .Theme.Features.newsletter }}
+<section class="container" style="margin-top: var(--space-4);">
+    <div class="newsletter" style="position: relative;">
+        <div class="newsletter__icon" aria-hidden="true">&#128231;</div>
+        <h3 class="newsletter__title">JOIN THE PARTY!</h3>
+        <p class="newsletter__text">Subscribe to get new posts delivered to your inbox</p>
+        <form action="/subscribe" method="post" class="newsletter__form">
+            <input type="email" name="email" class="form-input newsletter__input" placeholder="YOUR EMAIL" required>
+            <button type="submit" class="btn btn--warning">
+                SUBSCRIBE
+            </button>
+        </form>
+    </div>
+</section>
+{{ end }}
+{{ end }}

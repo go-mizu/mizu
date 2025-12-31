@@ -1,0 +1,41 @@
+{{ define "partials/author-box.html" }}
+{{ if .Author }}
+<div class="author-box">
+    <!-- Avatar -->
+    <div class="author-box__avatar">
+        {{ if .Author.Avatar }}
+        <img src="{{ .Author.Avatar }}" alt="{{ .Author.Name }}" loading="lazy">
+        {{ else }}
+        <div style="width: 100%; height: 100%; background: var(--color-surface-alt); display: flex; align-items: center; justify-content: center; font-size: 32px;">
+            &#128100;
+        </div>
+        {{ end }}
+    </div>
+
+    <!-- Info -->
+    <div class="author-box__info">
+        <h4 class="author-box__name">
+            <a href="{{ .Author.URL }}">{{ .Author.Name }}</a>
+        </h4>
+
+        {{ if .Author.Bio }}
+        <p class="author-box__bio">{{ .Author.Bio }}</p>
+        {{ end }}
+
+        <!-- Social Links -->
+        <div class="author-box__links">
+            {{ if .Author.Website }}
+            <a href="{{ .Author.Website }}" class="btn btn--ghost btn--sm" target="_blank" rel="noopener noreferrer">
+                Website
+            </a>
+            {{ end }}
+            {{ if .Author.Twitter }}
+            <a href="https://twitter.com/{{ .Author.Twitter }}" class="btn btn--ghost btn--sm" target="_blank" rel="noopener noreferrer">
+                Twitter
+            </a>
+            {{ end }}
+        </div>
+    </div>
+</div>
+{{ end }}
+{{ end }}

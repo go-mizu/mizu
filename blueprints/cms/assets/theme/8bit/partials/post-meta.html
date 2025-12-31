@@ -1,0 +1,35 @@
+{{ define "partials/post-meta.html" }}
+<div class="post-header__meta">
+    <!-- Date -->
+    <span class="post-header__meta-item">
+        <span aria-hidden="true">&#128197;</span>
+        <time datetime="{{ .Date | date "2006-01-02" }}">
+            {{ .Date | date "Jan 2, 2006" }}
+        </time>
+    </span>
+
+    <!-- Author -->
+    {{ if .Author }}
+    <span class="post-header__meta-item">
+        <span aria-hidden="true">&#128100;</span>
+        <a href="{{ .Author.URL }}">{{ .Author.Name }}</a>
+    </span>
+    {{ end }}
+
+    <!-- Category -->
+    {{ if .Category }}
+    <span class="post-header__meta-item">
+        <span aria-hidden="true">&#128193;</span>
+        <a href="{{ .Category.URL }}">{{ .Category.Name }}</a>
+    </span>
+    {{ end }}
+
+    <!-- Reading Time -->
+    {{ if .ReadingTime }}
+    <span class="post-header__meta-item">
+        <span aria-hidden="true">&#9200;</span>
+        {{ .ReadingTime }} MIN READ
+    </span>
+    {{ end }}
+</div>
+{{ end }}

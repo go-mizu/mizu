@@ -1,0 +1,85 @@
+{{ define "title" }}Search: {{ .Query }} - {{ .Site.Title }}{{ end }}
+
+{{ define "body_class" }}search-results{{ end }}
+
+{{ define "content" }}
+<!-- Search Header -->
+<header class="archive-header">
+    <div class="container">
+        <div class="archive-header__icon" aria-hidden="true">&#128269;</div>
+        <h1 class="archive-header__title">SEARCH RESULTS</h1>
+
+        <!-- Search Form -->
+        <form action="/search" method="get" style="max-width: 500px; margin: var(--space-3) auto;">
+            <div style="display: flex; gap: var(--space-1);">
+                <input
+                    type="text"
+                    name="q"
+                    value="{{ .Query }}"
+                    class="form-input"
+                    placeholder="SEARCH..."
+                    style="flex: 1;"
+                >
+                <button type="submit" class="btn btn--primary">
+                    GO
+                </button>
+            </div>
+        </form>
+
+        {{ if .Query }}
+        <p class="archive-header__count">
+            {{ len .Posts }} {{ if eq (len .Posts) 1 }}RESULT{{ else }}RESULTS{{ end }} FOR "{{ .Query | upper }}"
+        </p>
+        {{ end }}
+    </div>
+</header>
+
+<!-- Search Results -->
+<section class="container">
+    <div class="content-layout">
+        <div class="content-main">
+            {{ if .Posts }}
+            <div class="posts-grid">
+                {{ range .Posts }}
+                {{ template "partials/post-card.html" . }}
+                {{ end }}
+            </div>
+
+            {{ template "partials/pagination.html" . }}
+            {{ else if .Query }}
+            <div style="text-align: center; padding: var(--space-8);">
+                <p style="font-family: var(--font-pixel); font-size: var(--text-2xl); margin-bottom: var(--space-2); color: var(--color-error);">
+                    NO MATCHES FOUND
+                </p>
+                <p style="color: var(--color-text-secondary); margin-bottom: var(--space-3);">
+                    Try searching for something else.
+                </p>
+
+                <div style="margin-top: var(--space-4);">
+                    <p style="font-family: var(--font-pixel); font-size: var(--text-xs); margin-bottom: var(--space-2);">
+                        SUGGESTIONS:
+                    </p>
+                    <ul style="list-style: none; padding: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">
+                        <li>- Check your spelling</li>
+                        <li>- Try different keywords</li>
+                        <li>- Use fewer words</li>
+                    </ul>
+                </div>
+
+                <a href="/" class="btn btn--secondary" style="margin-top: var(--space-4);">
+                    RETURN HOME
+                </a>
+            </div>
+            {{ else }}
+            <div style="text-align: center; padding: var(--space-8);">
+                <p style="font-family: var(--font-pixel); font-size: var(--text-lg); color: var(--color-text-secondary);">
+                    ENTER A QUERY TO BEGIN YOUR QUEST
+                </p>
+            </div>
+            {{ end }}
+        </div>
+
+        {{ template "partials/sidebar.html" . }}
+    </div>
+</section>
+{{ end }}

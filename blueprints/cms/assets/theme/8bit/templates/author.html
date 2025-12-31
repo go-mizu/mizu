@@ -1,0 +1,85 @@
+{{ define "title" }}{{ .Author.Name }} - {{ .Site.Title }}{{ end }}
+
+{{ define "meta_description" }}
+<meta name="description" content="Posts by {{ .Author.Name }}{{ if .Author.Bio }} - {{ .Author.Bio | truncate 100 }}{{ end }}">
+{{ end }}
+
+{{ define "body_class" }}author-archive{{ end }}
+
+{{ define "content" }}
+<!-- Author Header -->
+<header class="archive-header">
+    <div class="container">
+        <!-- Avatar -->
+        <div style="display: flex; justify-content: center; margin-bottom: var(--space-2);">
+            <div style="width: 96px; height: 96px; border: 4px solid var(--color-border); box-shadow: var(--shadow-md);">
+                {{ if .Author.Avatar }}
+                <img src="{{ .Author.Avatar }}" alt="{{ .Author.Name }}" style="width: 100%; height: 100%; object-fit: cover;">
+                {{ else }}
+                <div style="width: 100%; height: 100%; background: var(--color-surface-alt); display: flex; align-items: center; justify-content: center; font-size: 48px;">
+                    &#128100;
+                </div>
+                {{ end }}
+            </div>
+        </div>
+
+        <h1 class="archive-header__title">{{ .Author.Name }}</h1>
+
+        {{ if .Author.Bio }}
+        <p class="archive-header__description">{{ .Author.Bio }}</p>
+        {{ end }}
+
+        <p class="archive-header__count">
+            {{ len .Posts }} {{ if eq (len .Posts) 1 }}POST{{ else }}POSTS{{ end }} PUBLISHED
+        </p>
+
+        <!-- Author Links -->
+        {{ if or .Author.Website .Author.Twitter }}
+        <div style="display: flex; justify-content: center; gap: var(--space-1); margin-top: var(--space-2);">
+            {{ if .Author.Website }}
+            <a href="{{ .Author.Website }}" class="btn btn--ghost btn--sm" target="_blank" rel="noopener noreferrer">
+                Website
+            </a>
+            {{ end }}
+            {{ if .Author.Twitter }}
+            <a href="https://twitter.com/{{ .Author.Twitter }}" class="btn btn--ghost btn--sm" target="_blank" rel="noopener noreferrer">
+                Twitter
+            </a>
+            {{ end }}
+        </div>
+        {{ end }}
+    </div>
+</header>
+
+<!-- Posts Grid -->
+<section class="container">
+    <div class="content-layout">
+        <div class="content-main">
+            <h2 style="font-size: var(--text-xl); margin-bottom: var(--space-3);">
+                <span aria-hidden="true">&#9733;</span> POSTS BY {{ .Author.Name | upper }}
+            </h2>
+
+            {{ if .Posts }}
+            <div class="posts-grid">
+                {{ range .Posts }}
+                {{ template "partials/post-card.html" . }}
+                {{ end }}
+            </div>
+
+            {{ template "partials/pagination.html" . }}
+            {{ else }}
+            <div style="text-align: center; padding: var(--space-8);">
+                <p style="font-family: var(--font-pixel); font-size: var(--text-2xl); margin-bottom: var(--space-2);">
+                    NO POSTS YET
+                </p>
+                <p style="color: var(--color-text-secondary);">
+                    This author hasn't published any posts yet.
+                </p>
+            </div>
+            {{ end }}
+        </div>
+
+        {{ template "partials/sidebar.html" . }}
+    </div>
+</section>
+{{ end }}

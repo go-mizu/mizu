@@ -1,0 +1,15 @@
+{{ define "partials/related-posts.html" }}
+{{ if .RelatedPosts }}
+<section class="related-posts">
+    <h3 class="related-posts__title">
+        <span aria-hidden="true">&#9733;</span> MORE ADVENTURES
+    </h3>
+
+    <div class="related-posts__grid">
+        {{ range .RelatedPosts | first 3 }}
+        {{ template "partials/post-card.html" . }}
+        {{ end }}
+    </div>
+</section>
+{{ end }}
+{{ end }}

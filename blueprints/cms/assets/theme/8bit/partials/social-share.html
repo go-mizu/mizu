@@ -1,0 +1,48 @@
+{{ define "partials/social-share.html" }}
+<div class="social-share">
+    <span class="social-share__label">Share:</span>
+
+    <!-- Twitter/X -->
+    <a
+        href="https://twitter.com/intent/tweet?url={{ .URL | urlencode }}&text={{ .Title | urlencode }}"
+        class="social-share__btn"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Share on Twitter"
+    >
+        <span aria-hidden="true">X</span>
+    </a>
+
+    <!-- Facebook -->
+    <a
+        href="https://www.facebook.com/sharer/sharer.php?u={{ .URL | urlencode }}"
+        class="social-share__btn"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Share on Facebook"
+    >
+        <span aria-hidden="true">f</span>
+    </a>
+
+    <!-- LinkedIn -->
+    <a
+        href="https://www.linkedin.com/shareArticle?mini=true&url={{ .URL | urlencode }}&title={{ .Title | urlencode }}"
+        class="social-share__btn"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Share on LinkedIn"
+    >
+        <span aria-hidden="true">in</span>
+    </a>
+
+    <!-- Copy Link -->
+    <button
+        class="social-share__btn"
+        id="copy-link-btn"
+        data-url="{{ .URL }}"
+        aria-label="Copy link"
+    >
+        <span aria-hidden="true">&#128279;</span>
+    </button>
+</div>
+{{ end }}
