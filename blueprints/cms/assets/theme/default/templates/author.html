@@ -1,0 +1,102 @@
+{{/* Author Archive Template */}}
+
+{{define "title"}}{{.AuthorData.Name}} - {{.Site.Name}}{{end}}
+
+{{define "meta_description"}}
+{{if .AuthorData.Bio}}
+<meta name="description" content="{{truncate .AuthorData.Bio 160}}">
+{{else}}
+<meta name="description" content="Posts by {{.AuthorData.Name}}.">
+{{end}}
+{{end}}
+
+{{define "body_class"}}page-archive page-author author-{{.AuthorData.Slug}}{{end}}
+
+{{define "og_tags"}}
+<meta property="og:type" content="profile">
+<meta property="og:title" content="{{.AuthorData.Name}} - {{.Site.Name}}">
+<meta property="og:description" content="{{if .AuthorData.Bio}}{{truncate .AuthorData.Bio 160}}{{else}}Posts by {{.AuthorData.Name}}{{end}}">
+<meta property="og:url" content="{{.Request.URL}}">
+{{if .AuthorData.AvatarURL}}
+<meta property="og:image" content="{{.AuthorData.AvatarURL}}">
+{{end}}
+<meta property="profile:first_name" content="{{.AuthorData.Name}}">
+{{end}}
+
+{{define "content"}}
+<div class="archive-page author-archive">
+    {{/* Author Header */}}
+    <header class="author-header">
+        <div class="container">
+            <div class="author-header-content">
+                {{/* Avatar */}}
+                <div class="author-header-avatar">
+                    {{if .AuthorData.AvatarURL}}
+                    <img src="{{.AuthorData.AvatarURL}}" alt="{{.AuthorData.Name}}" class="author-avatar-large">
+                    {{else}}
+                    <div class="author-avatar-large author-avatar-large--placeholder">
+                        {{substr .AuthorData.Name 0 1}}
+                    </div>
+                    {{end}}
+                </div>
+
+                {{/* Author Info */}}
+                <div class="author-header-info">
+                    <h1 class="author-name">{{.AuthorData.Name}}</h1>
+                    {{if .AuthorData.Bio}}
+                    <p class="author-bio">{{.AuthorData.Bio}}</p>
+                    {{end}}
+                    <div class="author-meta">
+                        {{if .Pagination}}
+                        <span class="author-post-count">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <path d="M14 2v6h6"/>
+                            </svg>
+                            {{.Pagination.Total}} {{if eq .Pagination.Total 1}}post{{else}}posts{{end}}
+                        </span>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    {{/* Posts */}}
+    <section class="archive-content">
+        <div class="container">
+            <div class="content-layout{{if .Theme.Config.sidebar_position}} content-layout--sidebar-{{.Theme.Config.sidebar_position}}{{end}}">
+                <div class="posts-main">
+                    <h2 class="section-title">Posts by {{.AuthorData.Name}}</h2>
+
+                    {{if .Posts}}
+                    <div class="posts-grid">
+                        {{range .Posts}}
+                        {{template "partials/post-card.html" .}}
+                        {{end}}
+                    </div>
+
+                    {{/* Pagination */}}
+                    {{template "partials/pagination.html" .}}
+                    {{else}}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <path d="M14 2v6h6"/>
+                            </svg>
+                        </div>
+                        <h2 class="empty-state-title">No posts yet</h2>
+                        <p class="empty-state-text">This author hasn't published any posts yet.</p>
+                        <a href="/" class="btn btn--primary">Back to Home</a>
+                    </div>
+                    {{end}}
+                </div>
+
+                {{/* Sidebar */}}
+                {{template "partials/sidebar.html" .}}
+            </div>
+        </div>
+    </section>
+</div>
+{{end}}

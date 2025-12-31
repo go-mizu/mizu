@@ -1,0 +1,97 @@
+{{/* Comments Section */}}
+{{if .Theme.Features.comments}}
+<section class="comments-section" id="comments">
+    <h3 class="comments-title">
+        {{if .Comments}}
+        {{len .Comments}} {{if eq (len .Comments) 1}}Comment{{else}}Comments{{end}}
+        {{else}}
+        Leave a comment
+        {{end}}
+    </h3>
+
+    {{/* Comments List */}}
+    {{if .Comments}}
+    <ol class="comments-list">
+        {{range .Comments}}
+        <li class="comment{{if .ParentID}} comment--reply{{end}}" id="comment-{{.ID}}">
+            <article class="comment-body">
+                <header class="comment-header">
+                    <div class="comment-author">
+                        {{if .Author}}
+                        {{if .Author.AvatarURL}}
+                        <img src="{{.Author.AvatarURL}}" alt="{{.Author.Name}}" class="comment-avatar">
+                        {{else}}
+                        <div class="comment-avatar comment-avatar--placeholder">
+                            {{substr .Author.Name 0 1}}
+                        </div>
+                        {{end}}
+                        <span class="comment-author-name">{{.Author.Name}}</span>
+                        {{else}}
+                        <div class="comment-avatar comment-avatar--placeholder">
+                            {{substr .AuthorName 0 1}}
+                        </div>
+                        <span class="comment-author-name">{{.AuthorName}}</span>
+                        {{end}}
+                    </div>
+                    <time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}" class="comment-date">
+                        {{.CreatedAt.Format "Jan 2, 2006 at 3:04 PM"}}
+                    </time>
+                </header>
+                <div class="comment-content">
+                    {{.Content | safe}}
+                </div>
+                <footer class="comment-footer">
+                    <button class="comment-reply-btn" data-comment-id="{{.ID}}" aria-label="Reply to this comment">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 10h10a8 8 0 0 1 8 8v4M3 10l6 6M3 10l6-6"/>
+                        </svg>
+                        Reply
+                    </button>
+                </footer>
+            </article>
+
+            {{/* Nested Replies */}}
+            {{if .Replies}}
+            <ol class="comment-replies">
+                {{range .Replies}}
+                <li class="comment comment--reply" id="comment-{{.ID}}">
+                    <article class="comment-body">
+                        <header class="comment-header">
+                            <div class="comment-author">
+                                {{if .Author}}
+                                {{if .Author.AvatarURL}}
+                                <img src="{{.Author.AvatarURL}}" alt="{{.Author.Name}}" class="comment-avatar">
+                                {{else}}
+                                <div class="comment-avatar comment-avatar--placeholder">
+                                    {{substr .Author.Name 0 1}}
+                                </div>
+                                {{end}}
+                                <span class="comment-author-name">{{.Author.Name}}</span>
+                                {{else}}
+                                <div class="comment-avatar comment-avatar--placeholder">
+                                    {{substr .AuthorName 0 1}}
+                                </div>
+                                <span class="comment-author-name">{{.AuthorName}}</span>
+                                {{end}}
+                            </div>
+                            <time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}" class="comment-date">
+                                {{.CreatedAt.Format "Jan 2, 2006 at 3:04 PM"}}
+                            </time>
+                        </header>
+                        <div class="comment-content">
+                            {{.Content | safe}}
+                        </div>
+                    </article>
+                </li>
+                {{end}}
+            </ol>
+            {{end}}
+        </li>
+        {{end}}
+    </ol>
+    {{end}}
+
+    {{/* Comment Form */}}
+    {{template "partials/comment-form.html" .}}
+</section>
+{{end}}

@@ -1,0 +1,108 @@
+{{/* Site Header */}}
+<header class="site-header{{if .Theme.Features.sticky_header}} site-header--sticky{{end}}" id="site-header">
+    <div class="container">
+        <div class="header-inner">
+            {{/* Logo / Site Title */}}
+            <div class="site-branding">
+                <a href="/" class="site-logo" aria-label="{{.Site.Name}} - Home">
+                    {{if .Site.Logo}}
+                    <img src="{{.Site.Logo.URL}}" alt="{{.Site.Name}}" class="logo-image">
+                    {{else}}
+                    <span class="site-title">{{.Site.Name}}</span>
+                    {{end}}
+                </a>
+                {{if .Site.Tagline}}
+                <p class="site-tagline">{{.Site.Tagline}}</p>
+                {{end}}
+            </div>
+
+            {{/* Primary Navigation */}}
+            <nav class="primary-nav" id="primary-nav" aria-label="Primary navigation">
+                <ul class="nav-menu">
+                    <li class="nav-item{{if .Request.IsHome}} nav-item--active{{end}}">
+                        <a href="/" class="nav-link">Home</a>
+                    </li>
+                    {{range .Menus.primary.Items}}
+                    <li class="nav-item{{if eq $.Request.Path .URL}} nav-item--active{{end}}{{if .Children}} nav-item--has-children{{end}}">
+                        <a href="{{.URL}}" class="nav-link"{{if eq .Target "_blank"}} target="_blank" rel="noopener noreferrer"{{end}}>
+                            {{.Title}}
+                            {{if .Children}}
+                            <svg class="nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                            {{end}}
+                        </a>
+                        {{if .Children}}
+                        <ul class="nav-submenu">
+                            {{range .Children}}
+                            <li class="nav-submenu-item">
+                                <a href="{{.URL}}" class="nav-submenu-link"{{if eq .Target "_blank"}} target="_blank" rel="noopener noreferrer"{{end}}>{{.Title}}</a>
+                            </li>
+                            {{end}}
+                        </ul>
+                        {{end}}
+                    </li>
+                    {{end}}
+                </ul>
+            </nav>
+
+            {{/* Header Actions */}}
+            <div class="header-actions">
+                {{/* Search Button */}}
+                {{if .Theme.Features.search}}
+                <button class="header-action-btn search-toggle" id="search-toggle" aria-label="Open search" aria-expanded="false">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                </button>
+                {{end}}
+
+                {{/* Dark Mode Toggle */}}
+                {{if .Theme.Features.dark_mode}}
+                <button class="header-action-btn theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+                    <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"/>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                    </svg>
+                    <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+                {{end}}
+
+                {{/* Mobile Menu Toggle */}}
+                <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="primary-nav">
+                    <span class="hamburger">
+                        <span class="hamburger-line"></span>
+                        <span class="hamburger-line"></span>
+                        <span class="hamburger-line"></span>
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {{/* Search Overlay */}}
+    {{if .Theme.Features.search}}
+    <div class="search-overlay" id="search-overlay" aria-hidden="true">
+        <div class="search-overlay-inner">
+            <form class="search-form" action="/search" method="GET" role="search">
+                <label for="search-input" class="sr-only">Search</label>
+                <input type="search" id="search-input" name="q" class="search-input" placeholder="Search articles..." autocomplete="off" aria-label="Search">
+                <button type="submit" class="search-submit" aria-label="Submit search">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                </button>
+            </form>
+            <button class="search-close" id="search-close" aria-label="Close search">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+    {{end}}
+</header>

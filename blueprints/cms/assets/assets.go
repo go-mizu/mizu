@@ -17,6 +17,21 @@ var staticFS embed.FS
 //go:embed views/*
 var viewsFS embed.FS
 
+//go:embed theme/*
+var themeFS embed.FS
+
+// Theme returns the theme files filesystem.
+func Theme() fs.FS {
+	sub, _ := fs.Sub(themeFS, "theme/default")
+	return sub
+}
+
+// ThemeAssets returns the theme assets filesystem.
+func ThemeAssets() fs.FS {
+	sub, _ := fs.Sub(themeFS, "theme/default/assets")
+	return sub
+}
+
 // Static returns the static files filesystem.
 func Static() fs.FS {
 	sub, _ := fs.Sub(staticFS, "static")
@@ -496,6 +511,223 @@ func ObakeTemplates() (map[string]*template.Template, error) {
 		tmpl, err = tmpl.Parse(string(pageBytes))
 		if err != nil {
 			return nil, fmt.Errorf("parse auth page %s: %w", name, err)
+		}
+
+		templates[name] = tmpl
+	}
+
+	return templates, nil
+}
+
+// SiteTemplates parses and returns all frontend theme templates.
+func SiteTemplates() (map[string]*template.Template, error) {
+	templates := make(map[string]*template.Template)
+
+	// Template functions for the frontend theme
+	funcMap := template.FuncMap{
+		"safe": func(s string) template.HTML {
+			return template.HTML(s)
+		},
+		"truncate": func(s string, length int) string {
+			if len(s) <= length {
+				return s
+			}
+			// Try to break at a word boundary
+			if length > 3 {
+				for i := length; i > length-20 && i > 0; i-- {
+					if s[i] == ' ' {
+						return s[:i] + "..."
+					}
+				}
+			}
+			return s[:length] + "..."
+		},
+		"stripHtml": func(s string) string {
+			// Simple HTML tag stripper
+			result := strings.Builder{}
+			inTag := false
+			for _, r := range s {
+				if r == '<' {
+					inTag = true
+				} else if r == '>' {
+					inTag = false
+				} else if !inTag {
+					result.WriteRune(r)
+				}
+			}
+			return result.String()
+		},
+		"substr": func(s string, start, end int) string {
+			runes := []rune(s)
+			if start >= len(runes) {
+				return ""
+			}
+			if end > len(runes) {
+				end = len(runes)
+			}
+			return string(runes[start:end])
+		},
+		"contains": func(s, substr string) bool {
+			return strings.Contains(s, substr)
+		},
+		"urlEncode": func(s string) string {
+			return template.URLQueryEscaper(s)
+		},
+		"now": func() time.Time {
+			return time.Now()
+		},
+		"add": func(a, b int) int {
+			return a + b
+		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
+		"mul": func(a, b int) int {
+			return a * b
+		},
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mod": func(a, b int) int {
+			return a % b
+		},
+		"eq": func(a, b interface{}) bool {
+			return a == b
+		},
+		"ne": func(a, b interface{}) bool {
+			return a != b
+		},
+		"gt": func(a, b int) bool {
+			return a > b
+		},
+		"lt": func(a, b int) bool {
+			return a < b
+		},
+		"gte": func(a, b int) bool {
+			return a >= b
+		},
+		"lte": func(a, b int) bool {
+			return a <= b
+		},
+		"default": func(def, val interface{}) interface{} {
+			if val == nil || val == "" {
+				return def
+			}
+			return val
+		},
+		"lower": func(s string) string {
+			return strings.ToLower(s)
+		},
+		"upper": func(s string) string {
+			return strings.ToUpper(s)
+		},
+		"title": func(s string) string {
+			return strings.Title(s)
+		},
+		"replace": func(s, old, new string) string {
+			return strings.ReplaceAll(s, old, new)
+		},
+		"split": func(s, sep string) []string {
+			return strings.Split(s, sep)
+		},
+		"join": func(sep string, arr []string) string {
+			return strings.Join(arr, sep)
+		},
+		"asset": func(path string) string {
+			return "/theme/assets/" + path
+		},
+		"safeHTML": func(s string) template.HTML {
+			return template.HTML(s)
+		},
+		"safeURL": func(s string) template.URL {
+			return template.URL(s)
+		},
+		"safeCSS": func(s string) template.CSS {
+			return template.CSS(s)
+		},
+	}
+
+	// Read the base layout
+	layoutBytes, err := themeFS.ReadFile("theme/default/layouts/base.html")
+	if err != nil {
+		return nil, fmt.Errorf("read base layout: %w", err)
+	}
+	layoutContent := string(layoutBytes)
+
+	// Common partials used by base layout (always included)
+	commonPartials := []string{"header", "footer"}
+	commonPartialContents := make(map[string]string)
+	for _, name := range commonPartials {
+		content, err := themeFS.ReadFile("theme/default/partials/" + name + ".html")
+		if err != nil {
+			continue
+		}
+		commonPartialContents[name] = string(content)
+	}
+
+	// Map of template name to the partials it needs
+	templatePartials := map[string][]string{
+		"index":    {"post-card", "pagination", "sidebar"},
+		"post":     {"post-meta", "social-share", "author-box", "post-navigation", "related-posts", "comments", "comment-form"},
+		"page":     {},
+		"archive":  {"post-card", "pagination", "sidebar"},
+		"category": {"post-card", "pagination", "sidebar"},
+		"tag":      {"post-card", "pagination", "sidebar"},
+		"author":   {"post-card", "pagination", "sidebar"},
+		"search":   {"pagination"},
+		"error":    {},
+	}
+
+	// Page templates
+	pageTemplates := []string{
+		"index", "post", "page", "archive",
+		"category", "tag", "author", "search", "error",
+	}
+
+	for _, name := range pageTemplates {
+		pageBytes, err := themeFS.ReadFile("theme/default/templates/" + name + ".html")
+		if err != nil {
+			continue
+		}
+
+		// Build combined template
+		// Parse the layout first as the base, then the page content as "content" template
+		tmpl := template.New("layout").Funcs(funcMap)
+
+		// Parse the layout first
+		tmpl, err = tmpl.Parse(layoutContent)
+		if err != nil {
+			return nil, fmt.Errorf("parse layout for %s: %w", name, err)
+		}
+
+		// Parse the page content - it contains {{define "content"}} which the layout uses
+		tmpl, err = tmpl.Parse(string(pageBytes))
+		if err != nil {
+			return nil, fmt.Errorf("parse page %s: %w", name, err)
+		}
+
+		// Parse common partials
+		for partialName, partialContent := range commonPartialContents {
+			tmpl, err = tmpl.New("partials/" + partialName + ".html").Parse(partialContent)
+			if err != nil {
+				return nil, fmt.Errorf("parse common partial %s for %s: %w", partialName, name, err)
+			}
+		}
+
+		// Parse only the partials this template needs
+		neededPartials := templatePartials[name]
+		for _, partialName := range neededPartials {
+			content, err := themeFS.ReadFile("theme/default/partials/" + partialName + ".html")
+			if err != nil {
+				continue
+			}
+			tmpl, err = tmpl.New("partials/" + partialName + ".html").Parse(string(content))
+			if err != nil {
+				return nil, fmt.Errorf("parse partial %s for %s: %w", partialName, name, err)
+			}
 		}
 
 		templates[name] = tmpl

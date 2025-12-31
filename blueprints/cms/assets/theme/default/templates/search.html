@@ -1,0 +1,172 @@
+{{/* Search Results Template */}}
+
+{{define "title"}}{{if .Query}}Search results for "{{.Query}}"{{else}}Search{{end}} - {{.Site.Name}}{{end}}
+
+{{define "meta_description"}}
+{{if .Query}}
+<meta name="description" content="Search results for {{.Query}}.">
+{{else}}
+<meta name="description" content="Search our site for posts and pages.">
+{{end}}
+{{end}}
+
+{{define "body_class"}}page-search{{end}}
+
+{{define "content"}}
+<div class="search-page">
+    {{/* Search Header */}}
+    <header class="search-header">
+        <div class="container">
+            <h1 class="search-title">
+                {{if .Query}}
+                Search results for <span class="search-query">"{{.Query}}"</span>
+                {{else}}
+                Search
+                {{end}}
+            </h1>
+
+            {{/* Search Form */}}
+            <form class="search-form-large" action="/search" method="GET" role="search">
+                <div class="search-form-group">
+                    <label for="search-page-input" class="sr-only">Search</label>
+                    <input type="search"
+                           id="search-page-input"
+                           name="q"
+                           class="search-input-large"
+                           placeholder="Search for posts, pages..."
+                           value="{{.Query}}"
+                           autofocus>
+                    <button type="submit" class="search-btn-large">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="m21 21-4.35-4.35"/>
+                        </svg>
+                        Search
+                    </button>
+                </div>
+            </form>
+
+            {{if .Query}}
+            <p class="search-count">
+                {{if gt .Total 0}}
+                Found {{.Total}} {{if eq .Total 1}}result{{else}}results{{end}}
+                {{else}}
+                No results found
+                {{end}}
+            </p>
+            {{end}}
+        </div>
+    </header>
+
+    {{/* Search Results */}}
+    <section class="search-content">
+        <div class="container">
+            {{if .Query}}
+            {{if or .Posts .Pages}}
+            <div class="search-results">
+                {{/* Posts Results */}}
+                {{if .Posts}}
+                <div class="search-section">
+                    <h2 class="search-section-title">Posts</h2>
+                    <div class="search-results-list">
+                        {{range .Posts}}
+                        <article class="search-result">
+                            {{if .FeaturedImage}}
+                            <a href="/{{.Slug}}" class="search-result-image">
+                                <img src="{{.FeaturedImage.URL}}" alt="{{.Title}}" loading="lazy">
+                            </a>
+                            {{end}}
+                            <div class="search-result-content">
+                                <span class="search-result-type">Post</span>
+                                <h3 class="search-result-title">
+                                    <a href="/{{.Slug}}">{{.Title}}</a>
+                                </h3>
+                                {{if .Excerpt}}
+                                <p class="search-result-excerpt">{{truncate .Excerpt 160}}</p>
+                                {{end}}
+                                <div class="search-result-meta">
+                                    {{if .Author}}
+                                    <span class="search-result-author">{{.Author.Name}}</span>
+                                    <span class="separator">&middot;</span>
+                                    {{end}}
+                                    {{if .PublishedAt}}
+                                    <time datetime="{{.PublishedAt.Format "2006-01-02"}}">
+                                        {{.PublishedAt.Format "Jan 2, 2006"}}
+                                    </time>
+                                    {{end}}
+                                </div>
+                            </div>
+                        </article>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+
+                {{/* Pages Results */}}
+                {{if .Pages}}
+                <div class="search-section">
+                    <h2 class="search-section-title">Pages</h2>
+                    <div class="search-results-list">
+                        {{range .Pages}}
+                        <article class="search-result">
+                            {{if .FeaturedImage}}
+                            <a href="/page/{{.Slug}}" class="search-result-image">
+                                <img src="{{.FeaturedImage.URL}}" alt="{{.Title}}" loading="lazy">
+                            </a>
+                            {{end}}
+                            <div class="search-result-content">
+                                <span class="search-result-type">Page</span>
+                                <h3 class="search-result-title">
+                                    <a href="/page/{{.Slug}}">{{.Title}}</a>
+                                </h3>
+                                {{if .Excerpt}}
+                                <p class="search-result-excerpt">{{truncate .Excerpt 160}}</p>
+                                {{end}}
+                            </div>
+                        </article>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+            </div>
+
+            {{/* Pagination */}}
+            {{template "partials/pagination.html" .}}
+            {{else}}
+            {{/* No Results */}}
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                </div>
+                <h2 class="empty-state-title">No results found</h2>
+                <p class="empty-state-text">We couldn't find anything matching "{{.Query}}". Try different keywords or browse our categories.</p>
+                <div class="empty-state-actions">
+                    <a href="/" class="btn btn--primary">Back to Home</a>
+                    <a href="/archive" class="btn btn--secondary">Browse Archive</a>
+                </div>
+            </div>
+            {{end}}
+            {{else}}
+            {{/* No Query */}}
+            <div class="search-suggestions">
+                <h2 class="search-suggestions-title">Try searching for:</h2>
+                <div class="search-suggestions-list">
+                    {{if .Tags}}
+                    {{range .Tags}}
+                    <a href="/search?q={{.Name}}" class="search-suggestion">{{.Name}}</a>
+                    {{end}}
+                    {{else}}
+                    <a href="/search?q=getting+started" class="search-suggestion">Getting Started</a>
+                    <a href="/search?q=tutorial" class="search-suggestion">Tutorial</a>
+                    <a href="/search?q=guide" class="search-suggestion">Guide</a>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </section>
+</div>
+{{end}}

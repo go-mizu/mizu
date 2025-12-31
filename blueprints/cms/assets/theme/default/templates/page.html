@@ -1,0 +1,93 @@
+{{/* Single Page Template */}}
+
+{{define "title"}}{{.Page.Title}} - {{.Site.Name}}{{end}}
+
+{{define "meta_description"}}
+{{if .Page}}
+{{if .Page.Excerpt}}
+<meta name="description" content="{{truncate .Page.Excerpt 160}}">
+{{else if .Page.Content}}
+<meta name="description" content="{{truncate (stripHtml .Page.Content) 160}}">
+{{end}}
+{{end}}
+{{end}}
+
+{{define "body_class"}}page-page single-page page-{{.Page.ID}}{{if .Page.Template}} page-template-{{.Page.Template}}{{end}}{{end}}
+
+{{define "og_tags"}}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{.Page.Title}}">
+<meta property="og:description" content="{{if .Page.Excerpt}}{{truncate .Page.Excerpt 160}}{{else}}{{truncate (stripHtml .Page.Content) 160}}{{end}}">
+<meta property="og:url" content="{{.Request.URL}}">
+{{if .Page.FeaturedImage}}
+<meta property="og:image" content="{{.Page.FeaturedImage.URL}}">
+{{end}}
+{{end}}
+
+{{define "twitter_tags"}}
+<meta name="twitter:title" content="{{.Page.Title}}">
+<meta name="twitter:description" content="{{if .Page.Excerpt}}{{truncate .Page.Excerpt 160}}{{else}}{{truncate (stripHtml .Page.Content) 160}}{{end}}">
+{{if .Page.FeaturedImage}}
+<meta name="twitter:image" content="{{.Page.FeaturedImage.URL}}">
+{{end}}
+{{end}}
+
+{{define "content"}}
+<article class="single-page-article">
+    {{/* Page Header */}}
+    <header class="page-header">
+        <div class="container container--narrow">
+            <h1 class="page-title">{{.Page.Title}}</h1>
+            {{if .Page.Excerpt}}
+            <p class="page-excerpt">{{.Page.Excerpt}}</p>
+            {{end}}
+        </div>
+    </header>
+
+    {{/* Featured Image */}}
+    {{if .Page.FeaturedImage}}
+    <figure class="page-featured-image">
+        <div class="container container--wide">
+            <img src="{{.Page.FeaturedImage.URL}}"
+                 alt="{{if .Page.FeaturedImage.Alt}}{{.Page.FeaturedImage.Alt}}{{else}}{{.Page.Title}}{{end}}">
+            {{if .Page.FeaturedImage.Caption}}
+            <figcaption class="page-image-caption">{{.Page.FeaturedImage.Caption}}</figcaption>
+            {{end}}
+        </div>
+    </figure>
+    {{end}}
+
+    {{/* Page Content */}}
+    <div class="page-content-wrapper">
+        <div class="container container--narrow">
+            <div class="page-content prose">
+                {{.Page.Content | safe}}
+            </div>
+        </div>
+    </div>
+
+    {{/* Child Pages */}}
+    {{if .ChildPages}}
+    <section class="child-pages">
+        <div class="container container--narrow">
+            <h2 class="child-pages-title">In this section</h2>
+            <div class="child-pages-grid">
+                {{range .ChildPages}}
+                <a href="/page/{{.Slug}}" class="child-page-card">
+                    {{if .FeaturedImage}}
+                    <figure class="child-page-image">
+                        <img src="{{.FeaturedImage.URL}}" alt="{{.Title}}" loading="lazy">
+                    </figure>
+                    {{end}}
+                    <h3 class="child-page-title">{{.Title}}</h3>
+                    {{if .Excerpt}}
+                    <p class="child-page-excerpt">{{truncate .Excerpt 120}}</p>
+                    {{end}}
+                </a>
+                {{end}}
+            </div>
+        </div>
+    </section>
+    {{end}}
+</article>
+{{end}}

@@ -1,0 +1,54 @@
+{{/* Post Meta - Author, Date, Categories, Reading Time */}}
+<div class="post-meta">
+    {{/* Author */}}
+    {{if .Author}}
+    <div class="post-meta-author">
+        {{if .Author.AvatarURL}}
+        <img src="{{.Author.AvatarURL}}" alt="{{.Author.Name}}" class="post-meta-avatar">
+        {{else}}
+        <div class="post-meta-avatar post-meta-avatar--placeholder">
+            {{substr .Author.Name 0 1}}
+        </div>
+        {{end}}
+        <div class="post-meta-author-info">
+            <a href="/author/{{.Author.Slug}}" class="post-meta-author-name">{{.Author.Name}}</a>
+            <div class="post-meta-details">
+                {{if .Post.PublishedAt}}
+                <time datetime="{{.Post.PublishedAt.Format "2006-01-02"}}" class="post-meta-date">
+                    {{.Post.PublishedAt.Format "January 2, 2006"}}
+                </time>
+                {{end}}
+                {{if .Post.ReadingTime}}
+                <span class="post-meta-separator">&middot;</span>
+                <span class="post-meta-reading-time">{{.Post.ReadingTime}} min read</span>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{else}}
+    <div class="post-meta-details">
+        {{if .Post.PublishedAt}}
+        <time datetime="{{.Post.PublishedAt.Format "2006-01-02"}}" class="post-meta-date">
+            {{.Post.PublishedAt.Format "January 2, 2006"}}
+        </time>
+        {{end}}
+        {{if .Post.ReadingTime}}
+        <span class="post-meta-separator">&middot;</span>
+        <span class="post-meta-reading-time">{{.Post.ReadingTime}} min read</span>
+        {{end}}
+    </div>
+    {{end}}
+
+    {{/* Categories & Tags */}}
+    {{if or .Categories .Tags}}
+    <div class="post-meta-taxonomies">
+        {{if .Categories}}
+        <div class="post-meta-categories">
+            {{range .Categories}}
+            <a href="/category/{{.Slug}}" class="post-meta-category">{{.Name}}</a>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+</div>

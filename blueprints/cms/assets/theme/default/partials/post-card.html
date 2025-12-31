@@ -1,0 +1,68 @@
+{{/* Post Card - Used in post listings */}}
+<article class="post-card">
+    {{/* Featured Image */}}
+    {{if .FeaturedImage}}
+    <a href="/{{.Slug}}" class="post-card-image-link">
+        <figure class="post-card-image">
+            <img src="{{.FeaturedImage.URL}}"
+                 alt="{{if .FeaturedImage.Alt}}{{.FeaturedImage.Alt}}{{else}}{{.Title}}{{end}}"
+                 loading="lazy"
+                 width="{{.FeaturedImage.Width}}"
+                 height="{{.FeaturedImage.Height}}">
+        </figure>
+    </a>
+    {{end}}
+
+    <div class="post-card-content">
+        {{/* Post Meta - Categories */}}
+        {{if .Categories}}
+        <div class="post-card-meta">
+            {{range $i, $cat := .Categories}}{{if $i}}, {{end}}<a href="/category/{{$cat.Slug}}" class="post-card-category">{{$cat.Name}}</a>{{end}}
+        </div>
+        {{end}}
+
+        {{/* Post Title */}}
+        <h2 class="post-card-title">
+            <a href="/{{.Slug}}">{{.Title}}</a>
+        </h2>
+
+        {{/* Post Excerpt */}}
+        {{if .Excerpt}}
+        <p class="post-card-excerpt">{{truncate .Excerpt 160}}</p>
+        {{else if .Content}}
+        <p class="post-card-excerpt">{{truncate (stripHtml .Content) 160}}</p>
+        {{end}}
+
+        {{/* Post Footer */}}
+        <footer class="post-card-footer">
+            {{/* Author */}}
+            {{if .Author}}
+            <div class="post-card-author">
+                {{if .Author.AvatarURL}}
+                <img src="{{.Author.AvatarURL}}" alt="{{.Author.Name}}" class="post-card-author-avatar">
+                {{else}}
+                <div class="post-card-author-avatar post-card-author-avatar--placeholder">
+                    {{substr .Author.Name 0 1}}
+                </div>
+                {{end}}
+                <a href="/author/{{.Author.Slug}}" class="post-card-author-name">{{.Author.Name}}</a>
+            </div>
+            {{end}}
+
+            {{/* Date and Reading Time */}}
+            <div class="post-card-info">
+                {{if .PublishedAt}}
+                <time datetime="{{.PublishedAt.Format "2006-01-02"}}" class="post-card-date">
+                    {{.PublishedAt.Format "Jan 2, 2006"}}
+                </time>
+                {{end}}
+                {{if .ReadingTime}}
+                <span class="post-card-reading-time">
+                    <span class="separator">&middot;</span>
+                    {{.ReadingTime}} min read
+                </span>
+                {{end}}
+            </div>
+        </footer>
+    </div>
+</article>

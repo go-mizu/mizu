@@ -1,0 +1,176 @@
+{{/* Homepage Template */}}
+
+{{define "title"}}{{.Site.Name}}{{if .Site.Tagline}} - {{.Site.Tagline}}{{end}}{{end}}
+
+{{define "meta_description"}}
+{{if .Site.Description}}
+<meta name="description" content="{{truncate .Site.Description 160}}">
+{{end}}
+{{end}}
+
+{{define "og_tags"}}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{.Site.Name}}">
+{{if .Site.Description}}<meta property="og:description" content="{{.Site.Description}}">{{end}}
+<meta property="og:url" content="{{.Request.URL}}">
+{{end}}
+
+{{define "twitter_tags"}}
+<meta name="twitter:title" content="{{.Site.Name}}">
+{{if .Site.Description}}<meta name="twitter:description" content="{{.Site.Description}}">{{end}}
+{{end}}
+
+{{define "body_class"}}page-home{{end}}
+
+{{define "content"}}
+<div class="home-page">
+    {{/* Hero Section with Featured Posts */}}
+    {{if .Featured}}
+    <section class="hero-section">
+        <div class="container">
+            <div class="hero-grid">
+                {{/* Main Featured Post */}}
+                {{with index .Featured 0}}
+                <article class="hero-main">
+                    {{if .FeaturedImage}}
+                    <a href="/{{.Slug}}" class="hero-main-image-link">
+                        <figure class="hero-main-image">
+                            <img src="{{.FeaturedImage.URL}}"
+                                 alt="{{if .FeaturedImage.Alt}}{{.FeaturedImage.Alt}}{{else}}{{.Title}}{{end}}">
+                        </figure>
+                    </a>
+                    {{end}}
+                    <div class="hero-main-content">
+                        {{if .Categories}}
+                        <div class="hero-meta">
+                            {{range $i, $cat := .Categories}}{{if $i}}, {{end}}<a href="/category/{{$cat.Slug}}" class="hero-category">{{$cat.Name}}</a>{{end}}
+                        </div>
+                        {{end}}
+                        <h1 class="hero-main-title">
+                            <a href="/{{.Slug}}">{{.Title}}</a>
+                        </h1>
+                        {{if .Excerpt}}
+                        <p class="hero-main-excerpt">{{truncate .Excerpt 200}}</p>
+                        {{end}}
+                        <div class="hero-main-footer">
+                            {{if .Author}}
+                            <div class="hero-author">
+                                {{if .Author.AvatarURL}}
+                                <img src="{{.Author.AvatarURL}}" alt="{{.Author.Name}}" class="hero-author-avatar">
+                                {{end}}
+                                <span class="hero-author-name">{{.Author.Name}}</span>
+                            </div>
+                            {{end}}
+                            <time datetime="{{.PublishedAt.Format "2006-01-02"}}" class="hero-date">
+                                {{.PublishedAt.Format "Jan 2, 2006"}}
+                            </time>
+                        </div>
+                    </div>
+                </article>
+                {{end}}
+
+                {{/* Secondary Featured Posts */}}
+                {{if gt (len .Featured) 1}}
+                <div class="hero-secondary">
+                    {{range $i, $post := .Featured}}
+                    {{if gt $i 0}}
+                    {{if lt $i 4}}
+                    <article class="hero-card">
+                        {{if $post.FeaturedImage}}
+                        <a href="/{{$post.Slug}}" class="hero-card-image-link">
+                            <figure class="hero-card-image">
+                                <img src="{{$post.FeaturedImage.URL}}"
+                                     alt="{{if $post.FeaturedImage.Alt}}{{$post.FeaturedImage.Alt}}{{else}}{{$post.Title}}{{end}}"
+                                     loading="lazy">
+                            </figure>
+                        </a>
+                        {{end}}
+                        <div class="hero-card-content">
+                            <h3 class="hero-card-title">
+                                <a href="/{{$post.Slug}}">{{$post.Title}}</a>
+                            </h3>
+                            <time datetime="{{$post.PublishedAt.Format "2006-01-02"}}" class="hero-card-date">
+                                {{$post.PublishedAt.Format "Jan 2, 2006"}}
+                            </time>
+                        </div>
+                    </article>
+                    {{end}}
+                    {{end}}
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </section>
+    {{end}}
+
+    {{/* Main Content Area */}}
+    <section class="posts-section">
+        <div class="container">
+            <div class="content-layout{{if .Theme.Config.sidebar_position}} content-layout--sidebar-{{.Theme.Config.sidebar_position}}{{end}}">
+                {{/* Posts List */}}
+                <div class="posts-main">
+                    {{if not .Featured}}
+                    <header class="section-header">
+                        <h1 class="section-title">Latest Posts</h1>
+                    </header>
+                    {{else}}
+                    <header class="section-header">
+                        <h2 class="section-title">Recent Posts</h2>
+                    </header>
+                    {{end}}
+
+                    {{if .Posts}}
+                    <div class="posts-grid">
+                        {{range $post := .Posts}}
+                        {{template "partials/post-card.html" $post}}
+                        {{end}}
+                    </div>
+
+                    {{/* Pagination */}}
+                    {{if .Pagination}}
+                    {{template "partials/pagination.html" .Pagination}}
+                    {{end}}
+                    {{else}}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <path d="M14 2v6h6"/>
+                                <path d="M16 13H8"/>
+                                <path d="M16 17H8"/>
+                                <path d="M10 9H8"/>
+                            </svg>
+                        </div>
+                        <h2 class="empty-state-title">No posts yet</h2>
+                        <p class="empty-state-text">Check back soon for new content!</p>
+                    </div>
+                    {{end}}
+                </div>
+
+                {{/* Sidebar - temporarily disabled */}}
+            </div>
+        </div>
+    </section>
+
+    {{/* Newsletter Section */}}
+    {{if .Theme.Features.newsletter}}
+    <section class="newsletter-section">
+        <div class="container">
+            <div class="newsletter-box">
+                <div class="newsletter-content">
+                    <h2 class="newsletter-title">Subscribe to our newsletter</h2>
+                    <p class="newsletter-text">Get the latest posts delivered right to your inbox. No spam, ever.</p>
+                </div>
+                <form class="newsletter-form-large" action="/subscribe" method="POST">
+                    <div class="newsletter-form-group">
+                        <input type="email" name="email" class="newsletter-input-large" placeholder="Enter your email" required aria-label="Email address">
+                        <button type="submit" class="newsletter-btn-large">Subscribe</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+    {{end}}
+</div>
+{{end}}

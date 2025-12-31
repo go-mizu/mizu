@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="{{if .Site.Language}}{{.Site.Language}}{{else}}en{{end}}" {{if .Theme.Features.dark_mode}}data-theme="light"{{end}}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+    {{/* Page Title */}}
+    <title>{{block "title" .}}{{.Site.Name}}{{if .Site.Tagline}} - {{.Site.Tagline}}{{end}}{{end}}</title>
+
+    {{/* Meta Description */}}
+    {{block "meta_description" .}}
+    {{if .Post}}
+    <meta name="description" content="{{if .Post.Excerpt}}{{truncate .Post.Excerpt 160}}{{else}}{{truncate .Post.Content 160}}{{end}}">
+    {{else if .Page}}
+    <meta name="description" content="{{if .Page.Excerpt}}{{truncate .Page.Excerpt 160}}{{else}}{{truncate .Page.Content 160}}{{end}}">
+    {{else if .Site.Description}}
+    <meta name="description" content="{{truncate .Site.Description 160}}">
+    {{end}}
+    {{end}}
+
+    {{/* Canonical URL */}}
+    <link rel="canonical" href="{{.Request.URL}}">
+
+    {{/* Open Graph Tags */}}
+    <meta property="og:site_name" content="{{.Site.Name}}">
+    <meta property="og:locale" content="{{if .Site.Language}}{{.Site.Language}}{{else}}en_US{{end}}">
+    {{block "og_tags" .}}
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{{.Site.Name}}">
+    <meta property="og:description" content="{{.Site.Description}}">
+    <meta property="og:url" content="{{.Request.URL}}">
+    {{end}}
+
+    {{/* Twitter Card Tags */}}
+    <meta name="twitter:card" content="summary_large_image">
+    {{block "twitter_tags" .}}
+    <meta name="twitter:title" content="{{.Site.Name}}">
+    <meta name="twitter:description" content="{{.Site.Description}}">
+    {{end}}
+
+    {{/* RSS Feed */}}
+    <link rel="alternate" type="application/rss+xml" title="{{.Site.Name}} RSS Feed" href="/feed">
+
+    {{/* Favicon */}}
+    {{if .Site.Icon}}
+    <link rel="icon" type="image/png" href="{{.Site.Icon.URL}}">
+    <link rel="apple-touch-icon" href="{{.Site.Icon.URL}}">
+    {{else}}
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128221;</text></svg>">
+    {{end}}
+
+    {{/* Preconnect to external resources */}}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    {{/* Google Fonts - Plus Jakarta Sans & Inter */}}
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    {{/* Theme Styles */}}
+    <link rel="stylesheet" href="/theme/assets/css/style.css">
+
+    {{/* Additional head content */}}
+    {{block "head" .}}{{end}}
+
+    {{/* Inline critical styles for theme colors */}}
+    <style>
+        :root {
+            --color-primary: {{.Theme.Colors.primary}};
+            --color-primary-hover: {{.Theme.Colors.primary_hover}};
+            --color-secondary: {{.Theme.Colors.secondary}};
+            --color-accent: {{.Theme.Colors.accent}};
+            --color-background: {{.Theme.Colors.background}};
+            --color-surface: {{.Theme.Colors.surface}};
+            --color-surface-alt: {{.Theme.Colors.surface_alt}};
+            --color-text: {{.Theme.Colors.text}};
+            --color-text-secondary: {{.Theme.Colors.text_secondary}};
+            --color-text-muted: {{.Theme.Colors.text_muted}};
+            --color-heading: {{.Theme.Colors.heading}};
+            --color-link: {{.Theme.Colors.link}};
+            --color-link-hover: {{.Theme.Colors.link_hover}};
+            --color-border: {{.Theme.Colors.border}};
+            --color-border-light: {{.Theme.Colors.border_light}};
+            --color-success: {{.Theme.Colors.success}};
+            --color-warning: {{.Theme.Colors.warning}};
+            --color-error: {{.Theme.Colors.error}};
+            --color-info: {{.Theme.Colors.info}};
+        }
+        [data-theme="dark"] {
+            --color-primary: {{.Theme.DarkColors.primary}};
+            --color-primary-hover: {{.Theme.DarkColors.primary_hover}};
+            --color-secondary: {{.Theme.DarkColors.secondary}};
+            --color-accent: {{.Theme.DarkColors.accent}};
+            --color-background: {{.Theme.DarkColors.background}};
+            --color-surface: {{.Theme.DarkColors.surface}};
+            --color-surface-alt: {{.Theme.DarkColors.surface_alt}};
+            --color-text: {{.Theme.DarkColors.text}};
+            --color-text-secondary: {{.Theme.DarkColors.text_secondary}};
+            --color-text-muted: {{.Theme.DarkColors.text_muted}};
+            --color-heading: {{.Theme.DarkColors.heading}};
+            --color-link: {{.Theme.DarkColors.link}};
+            --color-link-hover: {{.Theme.DarkColors.link_hover}};
+            --color-border: {{.Theme.DarkColors.border}};
+            --color-border-light: {{.Theme.DarkColors.border_light}};
+            --color-success: {{.Theme.DarkColors.success}};
+            --color-warning: {{.Theme.DarkColors.warning}};
+            --color-error: {{.Theme.DarkColors.error}};
+            --color-info: {{.Theme.DarkColors.info}};
+        }
+    </style>
+</head>
+<body class="{{block "body_class" .}}{{end}}">
+    {{/* Skip to content link for accessibility */}}
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    {{/* Reading progress bar (for single posts) - only shown when Post is defined */}}
+    {{if .Request.IsSingle}}
+    {{if .Theme.Features.reading_progress}}
+    <div class="reading-progress" id="reading-progress">
+        <div class="reading-progress-bar"></div>
+    </div>
+    {{end}}
+    {{end}}
+
+    {{/* Site Header */}}
+    {{template "partials/header.html" .}}
+
+    {{/* Main Content */}}
+    <main id="main-content" class="site-main">
+        {{block "content" .}}{{end}}
+    </main>
+
+    {{/* Site Footer */}}
+    {{template "partials/footer.html" .}}
+
+    {{/* Back to top button */}}
+    {{if .Theme.Features.back_to_top}}
+    <button class="back-to-top" id="back-to-top" aria-label="Back to top">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 15l-6-6-6 6"/>
+        </svg>
+    </button>
+    {{end}}
+
+    {{/* Theme Scripts */}}
+    <script src="/theme/assets/js/main.js" defer></script>
+
+    {{/* Additional scripts */}}
+    {{block "scripts" .}}{{end}}
+</body>
+</html>

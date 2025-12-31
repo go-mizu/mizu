@@ -1,0 +1,54 @@
+{{/* Comment Form */}}
+<div class="comment-form-wrapper" id="respond">
+    <h4 class="comment-form-title">Leave a Reply</h4>
+
+    <form class="comment-form" action="/api/v1/comments/for-post/{{.Post.ID}}" method="POST" id="comment-form">
+        <input type="hidden" name="post_id" value="{{.Post.ID}}">
+        <input type="hidden" name="parent_id" value="" id="comment-parent-id">
+
+        {{/* Reply indicator */}}
+        <div class="comment-reply-info" id="comment-reply-info" style="display: none;">
+            <span>Replying to <strong id="reply-to-name"></strong></span>
+            <button type="button" class="cancel-reply-btn" id="cancel-reply" aria-label="Cancel reply">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        {{/* Comment textarea */}}
+        <div class="form-group">
+            <label for="comment-content" class="form-label">Comment <span class="required">*</span></label>
+            <textarea id="comment-content" name="content" class="form-textarea" rows="5" required placeholder="Write your comment here..."></textarea>
+        </div>
+
+        {{/* Guest fields (shown when not logged in) */}}
+        {{if not .User}}
+        <div class="form-row">
+            <div class="form-group">
+                <label for="comment-name" class="form-label">Name <span class="required">*</span></label>
+                <input type="text" id="comment-name" name="author_name" class="form-input" required placeholder="Your name">
+            </div>
+            <div class="form-group">
+                <label for="comment-email" class="form-label">Email <span class="required">*</span></label>
+                <input type="email" id="comment-email" name="author_email" class="form-input" required placeholder="your@email.com">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="comment-website" class="form-label">Website</label>
+            <input type="url" id="comment-website" name="author_url" class="form-input" placeholder="https://yourwebsite.com">
+        </div>
+        {{end}}
+
+        {{/* Submit button */}}
+        <div class="form-actions">
+            <button type="submit" class="btn btn--primary">
+                Post Comment
+            </button>
+        </div>
+
+        <p class="comment-form-notice">
+            Your email address will not be published. Required fields are marked <span class="required">*</span>
+        </p>
+    </form>
+</div>

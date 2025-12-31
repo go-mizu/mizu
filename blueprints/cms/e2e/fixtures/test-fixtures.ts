@@ -11,6 +11,20 @@ export const TEST_ADMIN = {
 
 // Page URLs
 export const URLS = {
+  // Public site URLs (frontend theme)
+  site: {
+    home: '/',
+    post: (slug: string) => `/${slug}`,
+    page: (slug: string) => `/page/${slug}`,
+    category: (slug: string) => `/category/${slug}`,
+    tag: (slug: string) => `/tag/${slug}`,
+    author: (slug: string) => `/author/${slug}`,
+    archive: '/archive',
+    search: '/search',
+    searchWithQuery: (q: string) => `/search?q=${encodeURIComponent(q)}`,
+    feed: '/feed',
+  },
+
   // Clean URLs (without .php)
   login: '/wp-admin/login',
   dashboard: '/wp-admin/',
