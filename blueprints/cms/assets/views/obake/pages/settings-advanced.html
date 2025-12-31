@@ -1,0 +1,215 @@
+{{define "content"}}
+<div class="gh-settings">
+    <div class="gh-settings-sidebar">
+        <nav class="gh-settings-nav">
+            <a href="/obake/settings/general/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                <span>General</span>
+            </a>
+            <a href="/obake/settings/design/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="13.5" cy="6.5" r="2.5"/>
+                    <circle cx="17.5" cy="10.5" r="2.5"/>
+                    <circle cx="8.5" cy="7.5" r="2.5"/>
+                    <circle cx="6.5" cy="12.5" r="2.5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.85-.1 2.72-.3a2 2 0 001.5-1.93c0-.12-.01-.25-.03-.37a.99.99 0 01.22-.79c.23-.26.57-.41.92-.41H18a4 4 0 004-4c0-5.5-4.5-10-10-10z"/>
+                </svg>
+                <span>Design</span>
+            </a>
+            <a href="/obake/settings/membership/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+                <span>Membership</span>
+            </a>
+            <a href="/obake/settings/email/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>Email newsletter</span>
+            </a>
+            <a href="/obake/settings/advanced/" class="gh-settings-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <span>Advanced</span>
+            </a>
+        </nav>
+    </div>
+
+    <div class="gh-settings-content">
+        <form method="POST" action="/obake/settings/save/">
+            <input type="hidden" name="section" value="advanced">
+
+            <header class="gh-settings-header">
+                <h1>Advanced settings</h1>
+                <button type="submit" class="gh-btn gh-btn-primary">Save</button>
+            </header>
+
+            <!-- Code injection -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Code injection</h2>
+                    <p>Add custom code to your site's header and footer</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Site header</label>
+                        <textarea name="code_head" class="gh-form-textarea gh-form-code" rows="8" placeholder="<script>...</script>">{{.CodeHead}}</textarea>
+                        <p class="gh-form-help">Injected into every page before &lt;/head&gt;</p>
+                    </div>
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Site footer</label>
+                        <textarea name="code_foot" class="gh-form-textarea gh-form-code" rows="8" placeholder="<script>...</script>">{{.CodeFoot}}</textarea>
+                        <p class="gh-form-help">Injected into every page before &lt;/body&gt;</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Integrations -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Integrations</h2>
+                    <p>Connect with third-party services</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    {{if .Integrations}}
+                    <div class="gh-integrations-list">
+                        {{range .Integrations}}
+                        <div class="gh-integration-card">
+                            <div class="gh-integration-icon">
+                                {{if .Icon}}
+                                <img src="{{.Icon}}" alt="">
+                                {{else}}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                    <path d="M7 7h.01"/>
+                                    <path d="M7 12h.01"/>
+                                    <path d="M7 17h.01"/>
+                                </svg>
+                                {{end}}
+                            </div>
+                            <div class="gh-integration-info">
+                                <h4>{{.Name}}</h4>
+                                <p>{{.Description}}</p>
+                            </div>
+                            <a href="/obake/settings/integrations/{{.Slug}}/" class="gh-btn gh-btn-secondary gh-btn-sm">Configure</a>
+                        </div>
+                        {{end}}
+                    </div>
+                    {{end}}
+                    <button type="button" class="gh-btn gh-btn-secondary" style="margin-top: 1rem;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span>Add custom integration</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Labs -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Labs</h2>
+                    <p>Enable beta features</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    {{if .LabsFeatures}}
+                    {{range .LabsFeatures}}
+                    <label class="gh-toggle" style="margin-bottom: 1rem;">
+                        <input type="checkbox" name="labs_{{.Flag}}" {{if .Enabled}}checked{{end}}>
+                        <span class="gh-toggle-slider"></span>
+                        <div class="gh-toggle-content">
+                            <span class="gh-toggle-label">{{.Name}}</span>
+                            <span class="gh-toggle-description">{{.Description}}</span>
+                        </div>
+                    </label>
+                    {{end}}
+                    {{else}}
+                    <p class="gh-empty-message">No beta features available</p>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Import/Export -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Migration tools</h2>
+                    <p>Export or import your content</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <div class="gh-migration-tools">
+                        <div class="gh-migration-tool">
+                            <div class="gh-migration-info">
+                                <h4>Export content</h4>
+                                <p>Download all posts, pages, tags and settings as JSON</p>
+                            </div>
+                            <a href="{{.ExportURL}}" class="gh-btn gh-btn-secondary">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                <span>Export</span>
+                            </a>
+                        </div>
+                        <div class="gh-migration-tool">
+                            <div class="gh-migration-info">
+                                <h4>Import content</h4>
+                                <p>Upload a JSON export file</p>
+                            </div>
+                            <button type="button" class="gh-btn gh-btn-secondary">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <span>Import</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="gh-settings-section gh-settings-danger">
+                <div class="gh-settings-section-header">
+                    <h2>Danger zone</h2>
+                    <p>Irreversible actions</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <button type="button" class="gh-btn gh-btn-danger" onclick="confirmDeleteAll()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                            <line x1="10" y1="11" x2="10" y2="17"/>
+                            <line x1="14" y1="11" x2="14" y2="17"/>
+                        </svg>
+                        <span>Delete all content</span>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function confirmDeleteAll() {
+    if (confirm('Are you sure you want to delete ALL content? This action cannot be undone.')) {
+        if (confirm('This will permanently delete all posts, pages, tags, and members. Are you absolutely sure?')) {
+            // Handle delete
+            alert('Content deletion not implemented yet');
+        }
+    }
+}
+</script>
+{{end}}

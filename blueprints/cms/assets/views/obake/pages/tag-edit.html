@@ -1,0 +1,152 @@
+{{define "content"}}
+<div class="gh-tag-edit">
+    <form class="gh-tag-form" method="POST" action="/obake/tags/save/">
+        {{if .Tag}}
+        <input type="hidden" name="id" value="{{.Tag.ID}}">
+        {{end}}
+
+        <header class="gh-content-header">
+            <div class="gh-content-header-left">
+                <a href="/obake/tags/" class="gh-editor-back">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </a>
+                <h1 class="gh-content-title">{{if .IsNew}}New tag{{else}}{{.Tag.Name}}{{end}}</h1>
+            </div>
+            <div class="gh-content-header-right">
+                <button type="submit" class="gh-btn gh-btn-primary">
+                    <span>Save</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="gh-tag-form-content">
+            <div class="gh-tag-form-main">
+                <!-- Basic Info -->
+                <div class="gh-form-section">
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Name</label>
+                        <input type="text" name="name" class="gh-form-input" value="{{if .Tag}}{{.Tag.Name}}{{end}}" placeholder="Tag name" required>
+                        <p class="gh-form-help">{{if .IsInternal}}Internal tags start with #{{else}}The name of your tag{{end}}</p>
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Slug</label>
+                        <input type="text" name="slug" class="gh-form-input" value="{{.Slug}}" placeholder="tag-slug">
+                        <p class="gh-form-help">The URL-friendly version of the name</p>
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Description</label>
+                        <textarea name="description" class="gh-form-textarea" placeholder="Add a description for this tag...">{{.Description}}</textarea>
+                    </div>
+                </div>
+
+                <!-- Tag Image -->
+                <div class="gh-form-section">
+                    <h3 class="gh-form-section-title">Tag image</h3>
+                    <div class="gh-tag-image-upload">
+                        {{if .FeaturedImage}}
+                        <img src="{{.FeaturedImage.URL}}" alt="" class="gh-tag-image-preview">
+                        <input type="hidden" name="featured_media_id" value="{{.FeaturedImage.ID}}">
+                        {{else}}
+                        <div class="gh-tag-image-placeholder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            <span>Upload tag image</span>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+
+                <!-- Meta Data -->
+                <div class="gh-form-section">
+                    <h3 class="gh-form-section-title">Meta data</h3>
+                    <p class="gh-form-section-desc">Extra content for search engines</p>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Meta title</label>
+                        <input type="text" name="meta_title" class="gh-form-input" value="{{.MetaTitle}}" placeholder="Custom title for search engines">
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Meta description</label>
+                        <textarea name="meta_description" class="gh-form-textarea" placeholder="Custom description for search engines">{{.MetaDescription}}</textarea>
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Canonical URL</label>
+                        <input type="url" name="canonical_url" class="gh-form-input" value="{{.CanonicalURL}}" placeholder="https://...">
+                    </div>
+                </div>
+
+                <!-- Code Injection -->
+                <div class="gh-form-section">
+                    <h3 class="gh-form-section-title">Code injection</h3>
+                    <p class="gh-form-section-desc">Add scripts to tag pages</p>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Tag header</label>
+                        <textarea name="code_head" class="gh-form-textarea gh-form-code" placeholder="<script>...</script>">{{.CodeHead}}</textarea>
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Tag footer</label>
+                        <textarea name="code_foot" class="gh-form-textarea gh-form-code" placeholder="<script>...</script>">{{.CodeFoot}}</textarea>
+                    </div>
+                </div>
+
+                {{if .Tag}}
+                <div class="gh-form-section gh-form-danger">
+                    <button type="button" class="gh-btn gh-btn-danger" onclick="confirmDelete()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                        <span>Delete tag</span>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+
+            <!-- Sidebar -->
+            <div class="gh-tag-form-sidebar">
+                <div class="gh-tag-preview">
+                    <h4>Tag card preview</h4>
+                    <div class="gh-tag-preview-card">
+                        <div class="gh-tag-preview-image">
+                            {{if .FeaturedImage}}
+                            <img src="{{.FeaturedImage.URL}}" alt="">
+                            {{else}}
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/>
+                                <line x1="7" y1="7" x2="7.01" y2="7"/>
+                            </svg>
+                            {{end}}
+                        </div>
+                        <div class="gh-tag-preview-content">
+                            <h5>{{if .Tag}}{{.Tag.Name}}{{else}}Tag name{{end}}</h5>
+                            <p>{{.PostCount}} posts</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+{{if .Tag}}
+<form id="deleteForm" method="POST" action="/obake/tags/{{.Tag.Slug}}/delete/" style="display:none"></form>
+<script>
+function confirmDelete() {
+    if (confirm('Are you sure you want to delete this tag?')) {
+        document.getElementById('deleteForm').submit();
+    }
+}
+</script>
+{{end}}
+{{end}}

@@ -1,0 +1,150 @@
+{{define "content"}}
+<div class="gh-staff-edit">
+    <form class="gh-staff-form" method="POST" action="/obake/staff/save/">
+        {{if .Staff}}
+        <input type="hidden" name="id" value="{{.Staff.ID}}">
+        {{end}}
+
+        <header class="gh-content-header">
+            <div class="gh-content-header-left">
+                <a href="/obake/staff/" class="gh-editor-back">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </a>
+                <h1 class="gh-content-title">{{if .IsSelf}}Your profile{{else}}{{.Name}}{{end}}</h1>
+            </div>
+            <div class="gh-content-header-right">
+                <button type="submit" class="gh-btn gh-btn-primary">
+                    <span>Save</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="gh-staff-form-content">
+            <div class="gh-staff-form-main">
+                <!-- Cover Image -->
+                <div class="gh-staff-cover">
+                    {{if .CoverImage}}
+                    <img src="{{.CoverImage.URL}}" alt="" class="gh-staff-cover-image">
+                    {{else}}
+                    <div class="gh-staff-cover-placeholder">
+                        <button type="button" class="gh-btn gh-btn-secondary">Add cover image</button>
+                    </div>
+                    {{end}}
+                </div>
+
+                <!-- Profile Image -->
+                <div class="gh-staff-profile-image">
+                    {{if .ProfileImage}}
+                    <img src="{{.ProfileImage.URL}}" alt="" class="gh-staff-avatar-lg">
+                    {{else}}
+                    <img src="{{gravatar .Email 120}}" alt="" class="gh-staff-avatar-lg">
+                    {{end}}
+                    <button type="button" class="gh-btn gh-btn-secondary gh-btn-sm">Change</button>
+                </div>
+
+                <!-- Basic Info -->
+                <div class="gh-form-section">
+                    <div class="gh-form-row">
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">Full name</label>
+                            <input type="text" name="display_name" class="gh-form-input" value="{{.Name}}" placeholder="Your name">
+                        </div>
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">Slug</label>
+                            <input type="text" name="slug" class="gh-form-input" value="{{.Slug}}" placeholder="username">
+                        </div>
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Email</label>
+                        <input type="email" name="email" class="gh-form-input" value="{{.Email}}" placeholder="jamie@example.com" required>
+                    </div>
+
+                    <div class="gh-form-row">
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">Location</label>
+                            <input type="text" name="location" class="gh-form-input" value="{{.Location}}" placeholder="San Francisco, CA">
+                        </div>
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">Website</label>
+                            <input type="url" name="website" class="gh-form-input" value="{{.Website}}" placeholder="https://...">
+                        </div>
+                    </div>
+
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Bio</label>
+                        <textarea name="bio" class="gh-form-textarea" placeholder="A short bio about yourself...">{{.Bio}}</textarea>
+                    </div>
+                </div>
+
+                <!-- Social -->
+                <div class="gh-form-section">
+                    <h3 class="gh-form-section-title">Social accounts</h3>
+                    <div class="gh-form-row">
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">X (Twitter)</label>
+                            <input type="text" name="twitter" class="gh-form-input" value="{{.TwitterURL}}" placeholder="@username">
+                        </div>
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">Facebook</label>
+                            <input type="text" name="facebook" class="gh-form-input" value="{{.FacebookURL}}" placeholder="username">
+                        </div>
+                    </div>
+                </div>
+
+                {{if not .IsSelf}}
+                <!-- Role -->
+                <div class="gh-form-section">
+                    <h3 class="gh-form-section-title">Role</h3>
+                    <div class="gh-form-group">
+                        <select name="role" class="gh-form-select">
+                            {{range .Roles}}
+                            <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+                            {{end}}
+                        </select>
+                        <p class="gh-form-help">
+                            What permissions should this user have?
+                        </p>
+                    </div>
+                </div>
+                {{end}}
+
+                <!-- Password -->
+                {{if .IsSelf}}
+                <div class="gh-form-section">
+                    <h3 class="gh-form-section-title">Change password</h3>
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Current password</label>
+                        <input type="password" name="current_password" class="gh-form-input" placeholder="Enter current password">
+                    </div>
+                    <div class="gh-form-row">
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">New password</label>
+                            <input type="password" name="new_password" class="gh-form-input" placeholder="Enter new password">
+                        </div>
+                        <div class="gh-form-group">
+                            <label class="gh-form-label">Verify password</label>
+                            <input type="password" name="confirm_password" class="gh-form-input" placeholder="Confirm new password">
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+
+                {{if and .Staff (not .IsSelf) (not .IsOwner)}}
+                <div class="gh-form-section gh-form-danger">
+                    <button type="button" class="gh-btn gh-btn-danger">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                        <span>Delete user</span>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </form>
+</div>
+{{end}}

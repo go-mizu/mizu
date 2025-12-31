@@ -1,0 +1,198 @@
+{{define "content"}}
+<div class="gh-settings">
+    <div class="gh-settings-sidebar">
+        <nav class="gh-settings-nav">
+            <a href="/obake/settings/general/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                <span>General</span>
+            </a>
+            <a href="/obake/settings/design/" class="gh-settings-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="13.5" cy="6.5" r="2.5"/>
+                    <circle cx="17.5" cy="10.5" r="2.5"/>
+                    <circle cx="8.5" cy="7.5" r="2.5"/>
+                    <circle cx="6.5" cy="12.5" r="2.5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.85-.1 2.72-.3a2 2 0 001.5-1.93c0-.12-.01-.25-.03-.37a.99.99 0 01.22-.79c.23-.26.57-.41.92-.41H18a4 4 0 004-4c0-5.5-4.5-10-10-10z"/>
+                </svg>
+                <span>Design</span>
+            </a>
+            <a href="/obake/settings/membership/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+                <span>Membership</span>
+            </a>
+            <a href="/obake/settings/email/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>Email newsletter</span>
+            </a>
+            <a href="/obake/settings/advanced/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <span>Advanced</span>
+            </a>
+        </nav>
+    </div>
+
+    <div class="gh-settings-content">
+        <form method="POST" action="/obake/settings/save/">
+            <input type="hidden" name="section" value="design">
+
+            <header class="gh-settings-header">
+                <h1>Design settings</h1>
+                <button type="submit" class="gh-btn gh-btn-primary">Save</button>
+            </header>
+
+            <!-- Branding -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Branding</h2>
+                    <p>Upload your publication icon, logo and cover image</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <div class="gh-branding-uploads">
+                        <div class="gh-branding-item">
+                            <label class="gh-form-label">Publication icon</label>
+                            <div class="gh-branding-upload gh-branding-icon">
+                                {{if .Icon}}
+                                <img src="{{.Icon.URL}}" alt="">
+                                {{else}}
+                                <div class="gh-branding-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                                        <polyline points="21 15 16 10 5 21"/>
+                                    </svg>
+                                </div>
+                                {{end}}
+                            </div>
+                            <p class="gh-form-help">A square icon (at least 60x60px)</p>
+                        </div>
+                        <div class="gh-branding-item">
+                            <label class="gh-form-label">Publication logo</label>
+                            <div class="gh-branding-upload gh-branding-logo">
+                                {{if .Logo}}
+                                <img src="{{.Logo.URL}}" alt="">
+                                {{else}}
+                                <div class="gh-branding-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                                        <polyline points="21 15 16 10 5 21"/>
+                                    </svg>
+                                </div>
+                                {{end}}
+                            </div>
+                            <p class="gh-form-help">The primary logo for your publication</p>
+                        </div>
+                        <div class="gh-branding-item gh-branding-item-full">
+                            <label class="gh-form-label">Publication cover</label>
+                            <div class="gh-branding-upload gh-branding-cover">
+                                {{if .CoverImage}}
+                                <img src="{{.CoverImage.URL}}" alt="">
+                                {{else}}
+                                <div class="gh-branding-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                                        <polyline points="21 15 16 10 5 21"/>
+                                    </svg>
+                                    <span>Upload cover</span>
+                                </div>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accent color -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Accent color</h2>
+                    <p>Primary color used in your publication theme</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <div class="gh-form-group gh-color-picker">
+                        <input type="color" name="accent_color" value="{{.AccentColor}}" class="gh-color-input">
+                        <input type="text" name="accent_color_text" value="{{.AccentColor}}" class="gh-form-input" placeholder="#30CF43">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Navigation</h2>
+                    <p>Primary and secondary navigation menus</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <div class="gh-nav-editor">
+                        <h4>Primary navigation</h4>
+                        <div class="gh-nav-items" id="primaryNav">
+                            {{range .PrimaryNav}}
+                            <div class="gh-nav-item">
+                                <input type="text" name="primary_nav_label[]" value="{{.Label}}" placeholder="Label" class="gh-form-input">
+                                <input type="text" name="primary_nav_url[]" value="{{.URL}}" placeholder="URL" class="gh-form-input">
+                                <button type="button" class="gh-nav-item-remove">&times;</button>
+                            </div>
+                            {{end}}
+                            <button type="button" class="gh-btn gh-btn-secondary gh-btn-sm" onclick="addNavItem('primaryNav')">
+                                Add item
+                            </button>
+                        </div>
+
+                        <h4 style="margin-top: 2rem;">Secondary navigation</h4>
+                        <div class="gh-nav-items" id="secondaryNav">
+                            {{range .SecondaryNav}}
+                            <div class="gh-nav-item">
+                                <input type="text" name="secondary_nav_label[]" value="{{.Label}}" placeholder="Label" class="gh-form-input">
+                                <input type="text" name="secondary_nav_url[]" value="{{.URL}}" placeholder="URL" class="gh-form-input">
+                                <button type="button" class="gh-nav-item-remove">&times;</button>
+                            </div>
+                            {{end}}
+                            <button type="button" class="gh-btn gh-btn-secondary gh-btn-sm" onclick="addNavItem('secondaryNav')">
+                                Add item
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Announcement bar -->
+            <div class="gh-settings-section">
+                <div class="gh-settings-section-header">
+                    <h2>Announcement bar</h2>
+                    <p>Show an announcement at the top of your site</p>
+                </div>
+                <div class="gh-settings-section-content">
+                    <label class="gh-toggle">
+                        <input type="checkbox" name="announcement_enabled" {{if .AnnouncementEnabled}}checked{{end}}>
+                        <span class="gh-toggle-slider"></span>
+                        <span class="gh-toggle-label">Show announcement</span>
+                    </label>
+                    <div class="gh-form-group" style="margin-top: 1rem;">
+                        <label class="gh-form-label">Announcement text</label>
+                        <input type="text" name="announcement_content" class="gh-form-input" value="{{.AnnouncementContent}}" placeholder="Your announcement here">
+                    </div>
+                    <div class="gh-form-group">
+                        <label class="gh-form-label">Background color</label>
+                        <input type="color" name="announcement_bg" value="{{if .AnnouncementBg}}{{.AnnouncementBg}}{{else}}#15171A{{end}}" class="gh-color-input">
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}

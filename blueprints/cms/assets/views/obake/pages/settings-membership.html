@@ -1,0 +1,142 @@
+{{define "content"}}
+<div class="gh-settings">
+    <div class="gh-settings-sidebar">
+        <nav class="gh-settings-nav">
+            <a href="/obake/settings/general/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                </svg>
+                <span>General</span>
+            </a>
+            <a href="/obake/settings/design/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="13.5" cy="6.5" r="2.5"/>
+                    <circle cx="17.5" cy="10.5" r="2.5"/>
+                    <circle cx="8.5" cy="7.5" r="2.5"/>
+                    <circle cx="6.5" cy="12.5" r="2.5"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.85-.1 2.72-.3a2 2 0 001.5-1.93c0-.12-.01-.25-.03-.37a.99.99 0 01.22-.79c.23-.26.57-.41.92-.41H18a4 4 0 004-4c0-5.5-4.5-10-10-10z"/>
+                </svg>
+                <span>Design</span>
+            </a>
+            <a href="/obake/settings/membership/" class="gh-settings-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+                <span>Membership</span>
+            </a>
+            <a href="/obake/settings/email/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>Email newsletter</span>
+            </a>
+            <a href="/obake/settings/advanced/" class="gh-settings-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                <span>Advanced</span>
+            </a>
+        </nav>
+    </div>
+
+    <div class="gh-settings-content">
+        <header class="gh-settings-header">
+            <h1>Membership settings</h1>
+        </header>
+
+        <!-- Access -->
+        <div class="gh-settings-section">
+            <div class="gh-settings-section-header">
+                <h2>Access</h2>
+                <p>Choose who can view your content</p>
+            </div>
+            <div class="gh-settings-section-content">
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Subscription access</label>
+                    <select name="default_access" class="gh-form-select">
+                        <option value="public" {{if eq .DefaultAccess "public"}}selected{{end}}>Anyone can sign up</option>
+                        <option value="invite" {{if eq .DefaultAccess "invite"}}selected{{end}}>Only people I invite</option>
+                        <option value="none" {{if eq .DefaultAccess "none"}}selected{{end}}>Nobody</option>
+                    </select>
+                </div>
+                <div class="gh-form-group">
+                    <label class="gh-form-label">Commenting</label>
+                    <select name="comment_access" class="gh-form-select">
+                        <option value="off" {{if eq .CommentAccess "off"}}selected{{end}}>Off</option>
+                        <option value="all" {{if eq .CommentAccess "all"}}selected{{end}}>All members</option>
+                        <option value="paid" {{if eq .CommentAccess "paid"}}selected{{end}}>Paid-members only</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portal -->
+        <div class="gh-settings-section">
+            <div class="gh-settings-section-header">
+                <h2>Portal</h2>
+                <p>Membership signup popup for your site</p>
+            </div>
+            <div class="gh-settings-section-content">
+                <label class="gh-toggle">
+                    <input type="checkbox" name="portal_enabled" {{if .PortalEnabled}}checked{{end}}>
+                    <span class="gh-toggle-slider"></span>
+                    <span class="gh-toggle-label">Enable Portal</span>
+                </label>
+                <label class="gh-toggle" style="margin-top: 1rem;">
+                    <input type="checkbox" name="portal_button" {{if .PortalButton}}checked{{end}}>
+                    <span class="gh-toggle-slider"></span>
+                    <span class="gh-toggle-label">Show Portal button</span>
+                </label>
+                <label class="gh-toggle" style="margin-top: 1rem;">
+                    <input type="checkbox" name="portal_signup" {{if .PortalSignup}}checked{{end}}>
+                    <span class="gh-toggle-slider"></span>
+                    <span class="gh-toggle-label">Allow signup</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Tiers -->
+        <div class="gh-settings-section">
+            <div class="gh-settings-section-header">
+                <h2>Tiers</h2>
+                <p>Membership tiers with different access levels and pricing</p>
+            </div>
+            <div class="gh-settings-section-content">
+                {{if .Tiers}}
+                <div class="gh-tiers-list">
+                    {{range .Tiers}}
+                    <div class="gh-tier-card {{if not .Active}}inactive{{end}}">
+                        <div class="gh-tier-header">
+                            <h4>{{.Name}}</h4>
+                            <span class="gh-tier-status">{{if .Active}}Active{{else}}Archived{{end}}</span>
+                        </div>
+                        <p class="gh-tier-description">{{.Description}}</p>
+                        <div class="gh-tier-pricing">
+                            {{if .MonthlyPrice}}
+                            <span class="gh-tier-price">{{.MonthlyPrice}}/month</span>
+                            {{end}}
+                            {{if .YearlyPrice}}
+                            <span class="gh-tier-price">{{.YearlyPrice}}/year</span>
+                            {{end}}
+                        </div>
+                        <button type="button" class="gh-btn gh-btn-secondary gh-btn-sm">Edit</button>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="gh-empty-state gh-empty-sm">
+                    <p>No paid tiers configured</p>
+                    <button type="button" class="gh-btn gh-btn-primary">Add tier</button>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -13,6 +13,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/cms/app/web/handler/obake"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/rest"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/wpadmin"
 	"github.com/go-mizu/blueprints/cms/app/web/handler/wpapi"
@@ -70,6 +71,9 @@ type Server struct {
 
 	// WordPress Admin Handler
 	wpAdminHandler *wpadmin.Handler
+
+	// Ghost-compatible Admin Handler (Obake)
+	obakeHandler *obake.Handler
 }
 
 // New creates a new server.
@@ -189,6 +193,23 @@ func New(cfg Config) (*Server, error) {
 		Menus:      menusSvc,
 		GetUserID:  s.getUserID,
 		GetUser:    s.getUser,
+	})
+
+	// Create Ghost-compatible Admin handler (Obake)
+	obakeTemplates, err := assets.ObakeTemplates()
+	if err != nil {
+		return nil, fmt.Errorf("parse obake templates: %w", err)
+	}
+	s.obakeHandler = obake.New(obakeTemplates, obake.Config{
+		BaseURL:   baseURL,
+		Users:     usersSvc,
+		Posts:     postsSvc,
+		Pages:     pagesSvc,
+		Tags:      tagsSvc,
+		Media:     mediaSvc,
+		Settings:  settingsSvc,
+		GetUserID: s.getUserID,
+		GetUser:   s.getUser,
 	})
 
 	s.setupRoutes()
@@ -663,6 +684,86 @@ func (s *Server) setupRoutes() {
 		}
 		return s.wpAdminHandler.MenuSave(c)
 	})
+
+	// ============================================================
+	// Obake Admin Routes
+	// ============================================================
+
+	// Obake Admin static assets
+	s.app.Get("/obake/css/{filename...}", func(c *mizu.Ctx) error {
+		filename := c.Param("filename")
+		subFS, _ := fs.Sub(staticFS, "css")
+		http.StripPrefix("/obake/css/", http.FileServer(http.FS(subFS))).ServeHTTP(c.Writer(), c.Request())
+		_ = filename
+		return nil
+	})
+	s.app.Get("/obake/js/{filename...}", func(c *mizu.Ctx) error {
+		filename := c.Param("filename")
+		subFS, _ := fs.Sub(staticFS, "js")
+		http.StripPrefix("/obake/js/", http.FileServer(http.FS(subFS))).ServeHTTP(c.Writer(), c.Request())
+		_ = filename
+		return nil
+	})
+
+	// Obake Auth routes
+	s.app.Get("/obake/signin/", s.obakeHandler.Login)
+	s.app.Post("/obake/signin/", s.obakeHandler.LoginPost)
+	s.app.Get("/obake/signout/", s.obakeHandler.Logout)
+
+	// Dashboard
+	s.app.Get("/obake/", s.obakeHandler.Dashboard)
+	s.app.Get("/obake/dashboard/", s.obakeHandler.Dashboard)
+
+	// Posts
+	s.app.Get("/obake/posts/", s.obakeHandler.PostsList)
+	s.app.Get("/obake/editor/post/", s.obakeHandler.PostNew)
+	s.app.Get("/obake/editor/post/{id}/", s.obakeHandler.PostEdit)
+	s.app.Post("/obake/editor/post/", s.obakeHandler.PostSave)
+	s.app.Post("/obake/editor/post/{id}/", s.obakeHandler.PostSave)
+
+	// Pages
+	s.app.Get("/obake/pages/", s.obakeHandler.PagesList)
+	s.app.Get("/obake/editor/page/", s.obakeHandler.PageNew)
+	s.app.Get("/obake/editor/page/{id}/", s.obakeHandler.PageEdit)
+	s.app.Post("/obake/editor/page/", s.obakeHandler.PageSave)
+	s.app.Post("/obake/editor/page/{id}/", s.obakeHandler.PageSave)
+
+	// Tags
+	s.app.Get("/obake/tags/", s.obakeHandler.TagsList)
+	s.app.Get("/obake/tags/new/", s.obakeHandler.TagNew)
+	s.app.Get("/obake/tags/{slug}/", s.obakeHandler.TagEdit)
+	s.app.Post("/obake/tags/", s.obakeHandler.TagSave)
+	s.app.Post("/obake/tags/{slug}/", s.obakeHandler.TagSave)
+	s.app.Post("/obake/tags/{slug}/delete/", s.obakeHandler.TagDelete)
+
+	// Members
+	s.app.Get("/obake/members/", s.obakeHandler.MembersList)
+	s.app.Get("/obake/members/{id}/", s.obakeHandler.MemberDetail)
+
+	// Staff
+	s.app.Get("/obake/settings/staff/", s.obakeHandler.StaffList)
+	s.app.Get("/obake/settings/staff/{slug}/", s.obakeHandler.StaffEdit)
+	s.app.Post("/obake/settings/staff/{slug}/", s.obakeHandler.StaffSave)
+	s.app.Post("/obake/settings/staff/invite/", s.obakeHandler.StaffInvite)
+
+	// Settings
+	s.app.Get("/obake/settings/", s.obakeHandler.SettingsGeneral)
+	s.app.Get("/obake/settings/general/", s.obakeHandler.SettingsGeneral)
+	s.app.Get("/obake/settings/design/", s.obakeHandler.SettingsDesign)
+	s.app.Get("/obake/settings/membership/", s.obakeHandler.SettingsMembership)
+	s.app.Get("/obake/settings/email/", s.obakeHandler.SettingsEmail)
+	s.app.Get("/obake/settings/advanced/", s.obakeHandler.SettingsAdvanced)
+	s.app.Post("/obake/settings/save/", s.obakeHandler.SettingsSave)
+
+	// Search
+	s.app.Get("/obake/search/", s.obakeHandler.Search)
+
+	// Media Library
+	s.app.Get("/obake/media/", s.obakeHandler.MediaLibrary)
+	s.app.Post("/obake/media/upload/", s.obakeHandler.MediaUpload)
+
+	// Export
+	s.app.Get("/obake/settings/export/", s.obakeHandler.Export)
 }
 
 // Service accessors for CLI

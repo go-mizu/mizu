@@ -1,0 +1,306 @@
+{{define "content"}}
+<div class="gh-editor">
+    <form class="gh-editor-form" method="POST" action="/obake/posts/save/">
+        {{if .Post}}
+        <input type="hidden" name="id" value="{{.Post.ID}}">
+        {{end}}
+        <input type="hidden" name="status" id="postStatus" value="{{if .Post}}{{.Post.Status}}{{else}}draft{{end}}">
+
+        <!-- Editor Header -->
+        <header class="gh-editor-header">
+            <div class="gh-editor-header-left">
+                <a href="/obake/posts/" class="gh-editor-back">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </a>
+                <span class="gh-editor-status" id="editorStatus">
+                    {{if .IsNew}}New{{else if .Post}}{{if eq .Post.Status "publish"}}Published{{else if eq .Post.Status "future"}}Scheduled{{else}}Draft{{end}}{{end}}
+                </span>
+            </div>
+            <div class="gh-editor-header-right">
+                <button type="button" class="gh-btn gh-btn-secondary" onclick="toggleSettings()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+                    </svg>
+                    <span>Settings</span>
+                </button>
+                {{if .Post}}
+                <a href="/{{.Post.Slug}}" target="_blank" class="gh-btn gh-btn-secondary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                    </svg>
+                    <span>Preview</span>
+                </a>
+                {{end}}
+                <button type="submit" class="gh-btn gh-btn-primary" onclick="document.getElementById('postStatus').value='publish'">
+                    <span>{{if .IsNew}}Publish{{else if .Post}}{{if eq .Post.Status "publish"}}Update{{else}}Publish{{end}}{{end}}</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Editor Content -->
+        <div class="gh-editor-container">
+            <div class="gh-editor-content">
+                <!-- Title -->
+                <input
+                    type="text"
+                    name="title"
+                    class="gh-editor-title"
+                    placeholder="Post title"
+                    value="{{if .Post}}{{.Post.Title}}{{end}}"
+                    autofocus
+                >
+
+                <!-- Content -->
+                <div class="gh-editor-textarea-wrap">
+                    <textarea
+                        name="content"
+                        class="gh-editor-textarea"
+                        placeholder="Begin writing your post..."
+                        id="editorContent"
+                    >{{if .Post}}{{.Post.Content}}{{end}}</textarea>
+                </div>
+
+                <!-- Card Insert Button -->
+                <div class="gh-editor-plus" id="editorPlus">
+                    <button type="button" class="gh-editor-plus-btn" onclick="toggleCardMenu()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                    </button>
+                    <div class="gh-card-menu" id="cardMenu">
+                        <button type="button" class="gh-card-btn" onclick="insertCard('image')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            <span>Image</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('markdown')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                            </svg>
+                            <span>Markdown</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('html')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="16 18 22 12 16 6"/>
+                                <polyline points="8 6 2 12 8 18"/>
+                            </svg>
+                            <span>HTML</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('divider')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            <span>Divider</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('bookmark')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+                            </svg>
+                            <span>Bookmark</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('callout')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="16" x2="12" y2="12"/>
+                                <line x1="12" y1="8" x2="12.01" y2="8"/>
+                            </svg>
+                            <span>Callout</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('toggle')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                            <span>Toggle</span>
+                        </button>
+                        <button type="button" class="gh-card-btn" onclick="insertCard('button')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="8" width="18" height="8" rx="2"/>
+                            </svg>
+                            <span>Button</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Sidebar -->
+            <aside class="gh-editor-sidebar" id="editorSidebar">
+                <div class="gh-sidebar-header">
+                    <h3>Post settings</h3>
+                    <button type="button" class="gh-sidebar-close" onclick="toggleSettings()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="gh-sidebar-content">
+                    <!-- URL -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Post URL</label>
+                        <div class="gh-sidebar-url">
+                            <span class="gh-sidebar-url-prefix">{{.SiteURL}}/</span>
+                            <input type="text" name="slug" class="gh-sidebar-input" value="{{.Slug}}" placeholder="post-url">
+                        </div>
+                    </div>
+
+                    <!-- Publish Date -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Publish date</label>
+                        <div class="gh-sidebar-datetime">
+                            <input type="date" name="publish_date" class="gh-sidebar-input" value="{{.PublishDate}}">
+                            <input type="time" name="publish_time" class="gh-sidebar-input" value="{{.PublishTime}}">
+                        </div>
+                    </div>
+
+                    <!-- Tags -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Tags</label>
+                        <select name="tags[]" class="gh-sidebar-select" multiple>
+                            {{range .AllTags}}
+                            <option value="{{.ID}}" {{if contains $.SelectedTags .ID}}selected{{end}}>{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+
+                    <!-- Authors -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Authors</label>
+                        <select name="authors[]" class="gh-sidebar-select" multiple>
+                            {{range .AllAuthors}}
+                            <option value="{{.ID}}" {{if contains $.SelectedAuthors .ID}}selected{{end}}>{{.DisplayName}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+
+                    <!-- Featured Image -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Feature image</label>
+                        <div class="gh-sidebar-image-upload">
+                            {{if .FeaturedImage}}
+                            <img src="{{.FeaturedImage.URL}}" alt="" class="gh-sidebar-image-preview">
+                            <input type="hidden" name="featured_media_id" value="{{.FeaturedImage.ID}}">
+                            {{else}}
+                            <div class="gh-sidebar-image-placeholder">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                                    <polyline points="21 15 16 10 5 21"/>
+                                </svg>
+                                <span>Click to upload</span>
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <!-- Excerpt -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Excerpt</label>
+                        <textarea name="excerpt" class="gh-sidebar-textarea" placeholder="Add a custom excerpt...">{{.Excerpt}}</textarea>
+                    </div>
+
+                    <!-- Access -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-label">Post access</label>
+                        <select name="access_level" class="gh-sidebar-select">
+                            <option value="public" {{if eq .AccessLevel "public"}}selected{{end}}>Public</option>
+                            <option value="members" {{if eq .AccessLevel "members"}}selected{{end}}>Members only</option>
+                            <option value="paid" {{if eq .AccessLevel "paid"}}selected{{end}}>Paid members only</option>
+                        </select>
+                    </div>
+
+                    <!-- Featured -->
+                    <div class="gh-sidebar-section">
+                        <label class="gh-sidebar-toggle">
+                            <input type="checkbox" name="featured" {{if .Featured}}checked{{end}}>
+                            <span class="gh-toggle-slider"></span>
+                            <span class="gh-toggle-label">Feature this post</span>
+                        </label>
+                    </div>
+
+                    <!-- Meta Data -->
+                    <div class="gh-sidebar-section gh-sidebar-expandable">
+                        <button type="button" class="gh-sidebar-expand-btn" onclick="toggleExpand(this)">
+                            <span>Meta data</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </button>
+                        <div class="gh-sidebar-expand-content">
+                            <div class="gh-sidebar-field">
+                                <label>Meta title</label>
+                                <input type="text" name="meta_title" class="gh-sidebar-input" value="{{.MetaTitle}}" placeholder="Custom title for search engines">
+                            </div>
+                            <div class="gh-sidebar-field">
+                                <label>Meta description</label>
+                                <textarea name="meta_description" class="gh-sidebar-textarea" placeholder="Custom description for search engines">{{.MetaDescription}}</textarea>
+                            </div>
+                            <div class="gh-sidebar-field">
+                                <label>Canonical URL</label>
+                                <input type="url" name="canonical_url" class="gh-sidebar-input" value="{{.CanonicalURL}}" placeholder="https://...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Code Injection -->
+                    <div class="gh-sidebar-section gh-sidebar-expandable">
+                        <button type="button" class="gh-sidebar-expand-btn" onclick="toggleExpand(this)">
+                            <span>Code injection</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </button>
+                        <div class="gh-sidebar-expand-content">
+                            <div class="gh-sidebar-field">
+                                <label>Post header</label>
+                                <textarea name="code_head" class="gh-sidebar-textarea gh-sidebar-code" placeholder="<script>...</script>">{{.CodeHead}}</textarea>
+                            </div>
+                            <div class="gh-sidebar-field">
+                                <label>Post footer</label>
+                                <textarea name="code_foot" class="gh-sidebar-textarea gh-sidebar-code" placeholder="<script>...</script>">{{.CodeFoot}}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{if .Post}}
+                    <!-- Delete -->
+                    <div class="gh-sidebar-section gh-sidebar-danger">
+                        <button type="button" class="gh-btn gh-btn-danger" onclick="confirmDelete()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                            </svg>
+                            <span>Delete post</span>
+                        </button>
+                    </div>
+                    {{end}}
+                </div>
+            </aside>
+        </div>
+    </form>
+</div>
+
+{{if .Post}}
+<form id="deleteForm" method="POST" action="/obake/posts/{{.Post.ID}}/delete/" style="display:none">
+    <input type="hidden" name="_method" value="DELETE">
+</form>
+{{end}}
+
+<script>
+function confirmDelete() {
+    if (confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+        document.getElementById('deleteForm').submit();
+    }
+}
+</script>
+{{end}}

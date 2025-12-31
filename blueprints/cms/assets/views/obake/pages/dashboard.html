@@ -1,0 +1,281 @@
+{{define "content"}}
+<div class="gh-dashboard">
+    <header class="gh-dashboard-header">
+        <h1 class="gh-dashboard-title">Dashboard</h1>
+        <div class="gh-dashboard-actions">
+            <select class="gh-select gh-dashboard-range" onchange="window.location='?tab={{.ActiveTab}}&range='+this.value">
+                <option value="today" {{if eq .DateRange "today"}}selected{{end}}>Today</option>
+                <option value="7d" {{if eq .DateRange "7d"}}selected{{end}}>Last 7 days</option>
+                <option value="30d" {{if eq .DateRange "30d"}}selected{{end}}>Last 30 days</option>
+                <option value="90d" {{if eq .DateRange "90d"}}selected{{end}}>Last 90 days</option>
+                <option value="all" {{if eq .DateRange "all"}}selected{{end}}>All time</option>
+            </select>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="gh-dashboard-tabs">
+        <a href="?tab=overview&range={{.DateRange}}" class="gh-dashboard-tab {{if eq .ActiveTab "overview"}}active{{end}}">
+            Overview
+        </a>
+        <a href="?tab=newsletters&range={{.DateRange}}" class="gh-dashboard-tab {{if eq .ActiveTab "newsletters"}}active{{end}}">
+            Newsletters
+        </a>
+        <a href="?tab=growth&range={{.DateRange}}" class="gh-dashboard-tab {{if eq .ActiveTab "growth"}}active{{end}}">
+            Growth
+        </a>
+        <a href="?tab=locations&range={{.DateRange}}" class="gh-dashboard-tab {{if eq .ActiveTab "locations"}}active{{end}}">
+            Locations
+        </a>
+    </nav>
+
+    {{if eq .ActiveTab "overview"}}
+    <!-- Overview Tab -->
+    <div class="gh-dashboard-content">
+        <!-- Stats Row -->
+        <div class="gh-dashboard-stats">
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.UniqueVisitors.Label}}</span>
+                    {{if .UniqueVisitors.Trend}}
+                    <span class="gh-stat-trend {{if .UniqueVisitors.TrendUp}}up{{else}}down{{end}}">
+                        {{.UniqueVisitors.Trend}}
+                    </span>
+                    {{end}}
+                </div>
+                <div class="gh-stat-value">{{.UniqueVisitors.Value}}</div>
+            </div>
+
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.TotalPageviews.Label}}</span>
+                    {{if .TotalPageviews.Trend}}
+                    <span class="gh-stat-trend {{if .TotalPageviews.TrendUp}}up{{else}}down{{end}}">
+                        {{.TotalPageviews.Trend}}
+                    </span>
+                    {{end}}
+                </div>
+                <div class="gh-stat-value">{{.TotalPageviews.Value}}</div>
+            </div>
+
+            <div class="gh-stat-card gh-stat-realtime">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">Realtime</span>
+                    <span class="gh-stat-live-dot"></span>
+                </div>
+                <div class="gh-stat-value">{{.RealtimeVisitors}}</div>
+                <div class="gh-stat-sublabel">visitors right now</div>
+            </div>
+        </div>
+
+        <!-- Content Grid -->
+        <div class="gh-dashboard-grid">
+            <!-- Top Content -->
+            <div class="gh-dashboard-section">
+                <div class="gh-section-header">
+                    <h2 class="gh-section-title">Top content</h2>
+                </div>
+                <div class="gh-section-content">
+                    {{if .TopContent}}
+                    <ul class="gh-top-content-list">
+                        {{range .TopContent}}
+                        <li class="gh-top-content-item">
+                            <a href="{{.URL}}" class="gh-top-content-link">
+                                {{if .Thumbnail}}
+                                <img src="{{.Thumbnail}}" alt="" class="gh-top-content-thumb">
+                                {{else}}
+                                <div class="gh-top-content-thumb-placeholder">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                                        <polyline points="21 15 16 10 5 21"/>
+                                    </svg>
+                                </div>
+                                {{end}}
+                                <span class="gh-top-content-title">{{.Title}}</span>
+                            </a>
+                            <span class="gh-top-content-views">{{.Views}} views</span>
+                        </li>
+                        {{end}}
+                    </ul>
+                    {{else}}
+                    <div class="gh-empty-state">
+                        <p>No content data yet</p>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Top Sources -->
+            <div class="gh-dashboard-section">
+                <div class="gh-section-header">
+                    <h2 class="gh-section-title">Top sources</h2>
+                </div>
+                <div class="gh-section-content">
+                    {{if .TopSources}}
+                    <ul class="gh-top-sources-list">
+                        {{range .TopSources}}
+                        <li class="gh-top-source-item">
+                            <div class="gh-top-source-info">
+                                <span class="gh-top-source-name">{{.Name}}</span>
+                                <span class="gh-top-source-url">{{.URL}}</span>
+                            </div>
+                            <div class="gh-top-source-stats">
+                                <span class="gh-top-source-visits">{{.Visits}}</span>
+                                <div class="gh-top-source-bar" style="width: {{.Percent}}%"></div>
+                            </div>
+                        </li>
+                        {{end}}
+                    </ul>
+                    {{else}}
+                    <div class="gh-empty-state">
+                        <p>No traffic sources yet</p>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{else if eq .ActiveTab "newsletters"}}
+    <!-- Newsletters Tab -->
+    <div class="gh-dashboard-content">
+        <div class="gh-dashboard-stats">
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.TotalSubscribers.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.TotalSubscribers.Value}}</div>
+            </div>
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.AverageOpenRate.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.AverageOpenRate.Value}}</div>
+            </div>
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.AverageClickRate.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.AverageClickRate.Value}}</div>
+            </div>
+        </div>
+
+        <div class="gh-dashboard-section">
+            <div class="gh-section-header">
+                <h2 class="gh-section-title">Top newsletters</h2>
+            </div>
+            <div class="gh-section-content">
+                {{if .TopNewsletters}}
+                <table class="gh-table">
+                    <thead>
+                        <tr>
+                            <th>Newsletter</th>
+                            <th>Recipients</th>
+                            <th>Open rate</th>
+                            <th>Click rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .TopNewsletters}}
+                        <tr>
+                            <td>{{.Title}}</td>
+                            <td>{{.Recipients}}</td>
+                            <td>{{printf "%.1f" .OpenRate}}%</td>
+                            <td>{{printf "%.1f" .ClickRate}}%</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+                {{else}}
+                <div class="gh-empty-state">
+                    <p>No newsletters sent yet</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    {{else if eq .ActiveTab "growth"}}
+    <!-- Growth Tab -->
+    <div class="gh-dashboard-content">
+        <div class="gh-dashboard-stats">
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.TotalMembers.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.TotalMembers.Value}}</div>
+            </div>
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.FreeMembers.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.FreeMembers.Value}}</div>
+            </div>
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.PaidMembers.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.PaidMembers.Value}}</div>
+            </div>
+            <div class="gh-stat-card">
+                <div class="gh-stat-header">
+                    <span class="gh-stat-label">{{.MRR.Label}}</span>
+                </div>
+                <div class="gh-stat-value">{{.MRR.Value}}</div>
+            </div>
+        </div>
+
+        <div class="gh-dashboard-section">
+            <div class="gh-section-header">
+                <h2 class="gh-section-title">Member growth</h2>
+            </div>
+            <div class="gh-section-content">
+                <div class="gh-chart-placeholder">
+                    <p>Growth chart will appear here</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{else if eq .ActiveTab "locations"}}
+    <!-- Locations Tab -->
+    <div class="gh-dashboard-content">
+        <div class="gh-dashboard-section gh-locations-map">
+            <div class="gh-section-header">
+                <h2 class="gh-section-title">Visitor locations</h2>
+            </div>
+            <div class="gh-section-content">
+                <div class="gh-map-placeholder">
+                    <p>World map will appear here</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="gh-dashboard-section">
+            <div class="gh-section-header">
+                <h2 class="gh-section-title">Top countries</h2>
+            </div>
+            <div class="gh-section-content">
+                {{if .TopCountries}}
+                <ul class="gh-countries-list">
+                    {{range .TopCountries}}
+                    <li class="gh-country-item">
+                        <span class="gh-country-flag">{{.Code}}</span>
+                        <span class="gh-country-name">{{.Country}}</span>
+                        <span class="gh-country-visits">{{.Visits}}</span>
+                        <div class="gh-country-bar" style="width: {{.Percent}}%"></div>
+                    </li>
+                    {{end}}
+                </ul>
+                {{else}}
+                <div class="gh-empty-state">
+                    <p>No location data yet</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
