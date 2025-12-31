@@ -1,7 +1,7 @@
-{{ define "title" }}{{ .Author.Name }} - {{ .Site.Title }}{{ end }}
+{{ define "title" }}{{ .Author.Name }} - {{ .Site.Name }}{{ end }}
 
 {{ define "meta_description" }}
-<meta name="description" content="Posts by {{ .Author.Name }}{{ if .Author.Bio }} - {{ .Author.Bio | truncate 100 }}{{ end }}">
+<meta name="description" content="Posts by {{ truncate .Author.Name }}{{ if .Author.Bio }} - {{ .Author.Bio 100 }}{{ end }}">
 {{ end }}
 
 {{ define "body_class" }}author-archive{{ end }}

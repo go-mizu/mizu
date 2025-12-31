@@ -1,18 +1,18 @@
 {{ define "partials/post-card.html" }}
-<article class="post-card{{ if .Featured }} post-card--featured{{ end }}">
+<article class="post-card{{ if .IsFeatured }} post-card--featured{{ end }}">
     <!-- Image -->
     {{ if .FeaturedImage }}
     <div class="post-card__image-wrapper">
-        <a href="{{ .URL }}">
+        <a href="/{{ .Slug }}">
             <img
-                src="{{ .FeaturedImage }}"
+                src="{{ .FeaturedImage.URL }}"
                 alt="{{ .Title }}"
                 class="post-card__image"
                 loading="lazy"
             >
         </a>
-        {{ if .Category }}
-        <span class="post-card__category badge badge--primary">{{ .Category.Name }}</span>
+        {{ if .Categories }}
+        <span class="post-card__category badge badge--primary">{{ (index .Categories 0).Name }}</span>
         {{ end }}
     </div>
     {{ end }}
@@ -20,17 +20,17 @@
     <!-- Content -->
     <div class="post-card__content">
         <h3 class="post-card__title">
-            <a href="{{ .URL }}">{{ .Title }}</a>
+            <a href="/{{ .Slug }}">{{ .Title }}</a>
         </h3>
 
         {{ if .Excerpt }}
-        <p class="post-card__excerpt">{{ .Excerpt | truncate 120 }}</p>
+        <p class="post-card__excerpt">{{ truncate .Excerpt 120 }}</p>
         {{ end }}
 
         <div class="post-card__meta">
             <span class="post-card__meta-item">
                 <span aria-hidden="true">&#9733;</span>
-                {{ .Date | date "Jan 2" }}
+                {{ .PublishedAt | date "Jan 2" }}
             </span>
             {{ if .ReadingTime }}
             <span class="post-card__meta-item">

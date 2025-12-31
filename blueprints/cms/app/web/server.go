@@ -216,12 +216,8 @@ func New(cfg Config) (*Server, error) {
 		GetUser:   s.getUser,
 	})
 
-	// Create Site frontend handler
-	siteTemplates, err := assets.SiteTemplates()
-	if err != nil {
-		return nil, fmt.Errorf("parse site templates: %w", err)
-	}
-	s.siteHandler = site.New(siteTemplates, site.Config{
+	// Create Site frontend handler with dynamic template loading
+	s.siteHandler = site.New(assets.SiteTemplatesBySlug, site.Config{
 		BaseURL:    baseURL,
 		Posts:      postsSvc,
 		Pages:      pagesSvc,
@@ -797,21 +793,27 @@ func (s *Server) setupRoutes() {
 	// Frontend Site Routes
 	// ============================================================
 
-	// Theme static assets (default theme)
-	themeAssetsFS := assets.ThemeAssets()
+	// Theme static assets (serves active theme's assets dynamically)
 	s.app.Get("/theme/assets/{filepath...}", func(c *mizu.Ctx) error {
 		filepath := c.Param("filepath")
+		// Get active theme from settings
+		activeTheme := "default"
+		if setting, err := s.settings.Get(c.Context(), "active_theme"); err == nil && setting.Value != "" {
+			activeTheme = setting.Value
+		}
+		// Serve assets from the active theme
+		themeAssetsFS := assets.ThemeAssetsBySlug(activeTheme)
 		http.StripPrefix("/theme/assets/", http.FileServer(http.FS(themeAssetsFS))).ServeHTTP(c.Writer(), c.Request())
 		_ = filepath
 		return nil
 	})
 
 	// Theme-specific assets (for theme previews/screenshots)
-	s.app.Get("/theme/{slug}/assets/{filepath...}", func(c *mizu.Ctx) error {
+	s.app.Get("/themes/{slug}/assets/{filepath...}", func(c *mizu.Ctx) error {
 		slug := c.Param("slug")
 		filepath := c.Param("filepath")
 		themeFS := assets.ThemeAssetsBySlug(slug)
-		http.StripPrefix("/theme/"+slug+"/assets/", http.FileServer(http.FS(themeFS))).ServeHTTP(c.Writer(), c.Request())
+		http.StripPrefix("/themes/"+slug+"/assets/", http.FileServer(http.FS(themeFS))).ServeHTTP(c.Writer(), c.Request())
 		_ = filepath
 		return nil
 	})

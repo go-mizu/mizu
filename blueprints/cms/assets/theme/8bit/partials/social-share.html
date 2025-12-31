@@ -4,7 +4,7 @@
 
     <!-- Twitter/X -->
     <a
-        href="https://twitter.com/intent/tweet?url={{ .URL | urlencode }}&text={{ .Title | urlencode }}"
+        href="https://twitter.com/intent/tweet?url={{ .Request.URL | urlencode }}&text={{ .Post.Title | urlencode }}"
         class="social-share__btn"
         target="_blank"
         rel="noopener noreferrer"
@@ -15,7 +15,7 @@
 
     <!-- Facebook -->
     <a
-        href="https://www.facebook.com/sharer/sharer.php?u={{ .URL | urlencode }}"
+        href="https://www.facebook.com/sharer/sharer.php?u={{ .Request.URL | urlencode }}"
         class="social-share__btn"
         target="_blank"
         rel="noopener noreferrer"
@@ -26,7 +26,7 @@
 
     <!-- LinkedIn -->
     <a
-        href="https://www.linkedin.com/shareArticle?mini=true&url={{ .URL | urlencode }}&title={{ .Title | urlencode }}"
+        href="https://www.linkedin.com/shareArticle?mini=true&url={{ .Request.URL | urlencode }}&title={{ .Post.Title | urlencode }}"
         class="social-share__btn"
         target="_blank"
         rel="noopener noreferrer"
@@ -39,7 +39,7 @@
     <button
         class="social-share__btn"
         id="copy-link-btn"
-        data-url="{{ .URL }}"
+        data-url="{{ .Request.URL }}"
         aria-label="Copy link"
     >
         <span aria-hidden="true">&#128279;</span>

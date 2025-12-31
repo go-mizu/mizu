@@ -5,13 +5,13 @@
             <!-- Logo -->
             <a href="{{ .Site.URL }}" class="site-logo">
                 <span class="site-logo__icon" aria-hidden="true">&#9733;</span>
-                <span class="site-logo__text">{{ .Site.Title }}</span>
+                <span class="site-logo__text">{{ .Site.Name }}</span>
             </a>
 
             <!-- Main Navigation -->
             <nav class="main-nav" aria-label="Main navigation">
                 <ul class="nav-list">
-                    {{ range .Site.Menus.primary }}
+                    {{ range .Menus.primary.Items }}
                     <li>
                         <a href="{{ .URL }}" class="nav-link{{ if .Active }} active{{ end }}">
                             {{ .Title }}

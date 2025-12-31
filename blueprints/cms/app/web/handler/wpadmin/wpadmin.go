@@ -2182,7 +2182,7 @@ func (h *Handler) Themes(c *mizu.Ctx) error {
 			Description: t.Description,
 			Author:      t.Author.Name,
 			AuthorURL:   t.Author.URL,
-			Screenshot:  "/theme/" + t.Slug + "/assets/images/screenshot.png",
+			Screenshot:  "/themes/" + t.Slug + "/assets/images/screenshot.png",
 			Active:      t.Slug == activeTheme,
 		})
 	}

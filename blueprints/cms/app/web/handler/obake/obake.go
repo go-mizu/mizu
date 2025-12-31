@@ -1086,7 +1086,7 @@ func (h *Handler) SettingsDesign(c *mizu.Ctx) error {
 			Slug:        t.Slug,
 			Version:     t.Version,
 			Description: t.Description,
-			Screenshot:  "/theme/" + t.Slug + "/assets/images/screenshot.png",
+			Screenshot:  "/themes/" + t.Slug + "/assets/images/screenshot.png",
 			Active:      t.Slug == activeTheme,
 		})
 	}

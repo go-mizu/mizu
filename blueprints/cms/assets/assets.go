@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -808,6 +809,219 @@ func SiteTemplates() (map[string]*template.Template, error) {
 			content, err := themeFS.ReadFile("theme/default/partials/" + partialName + ".html")
 			if err != nil {
 				continue
+			}
+			tmpl, err = tmpl.New("partials/" + partialName + ".html").Parse(string(content))
+			if err != nil {
+				return nil, fmt.Errorf("parse partial %s for %s: %w", partialName, name, err)
+			}
+		}
+
+		templates[name] = tmpl
+	}
+
+	return templates, nil
+}
+
+// SiteTemplatesBySlug parses and returns all frontend theme templates for a specific theme.
+func SiteTemplatesBySlug(slug string) (map[string]*template.Template, error) {
+	templates := make(map[string]*template.Template)
+
+	funcMap := template.FuncMap{
+		"safe": func(s string) template.HTML { return template.HTML(s) },
+		"date": func(format string, t interface{}) string {
+			// When used with pipe: {{ .Date | date "format" }}
+			// format is the first arg, t (piped value) is the last
+			if t == nil {
+				return ""
+			}
+			switch v := t.(type) {
+			case time.Time:
+				if v.IsZero() {
+					return ""
+				}
+				return v.Format(format)
+			case *time.Time:
+				if v == nil || v.IsZero() {
+					return ""
+				}
+				return v.Format(format)
+			default:
+				return ""
+			}
+		},
+		"truncate": func(s string, length int) string {
+			if len(s) <= length {
+				return s
+			}
+			if length > 3 {
+				for i := length; i > length-20 && i > 0; i-- {
+					if s[i] == ' ' {
+						return s[:i] + "..."
+					}
+				}
+			}
+			return s[:length] + "..."
+		},
+		"stripHtml": func(s string) string {
+			result := strings.Builder{}
+			inTag := false
+			for _, r := range s {
+				if r == '<' {
+					inTag = true
+				} else if r == '>' {
+					inTag = false
+				} else if !inTag {
+					result.WriteRune(r)
+				}
+			}
+			return result.String()
+		},
+		"substr": func(s string, start, end int) string {
+			runes := []rune(s)
+			if start >= len(runes) {
+				return ""
+			}
+			if end > len(runes) {
+				end = len(runes)
+			}
+			return string(runes[start:end])
+		},
+		"contains":  func(s, substr string) bool { return strings.Contains(s, substr) },
+		"urlEncode": func(s string) string { return template.URLQueryEscaper(s) },
+		"urlencode": func(s string) string { return template.URLQueryEscaper(s) },
+		"now":       func() time.Time { return time.Now() },
+		"add":       func(a, b int) int { return a + b },
+		"sub":       func(a, b int) int { return a - b },
+		"mul":       func(a, b int) int { return a * b },
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"mod": func(a, b int) int { return a % b },
+		"first": func(n int, items interface{}) interface{} {
+			// Return first n items from a slice
+			if items == nil {
+				return nil
+			}
+			v := reflect.ValueOf(items)
+			if v.Kind() != reflect.Slice {
+				return items
+			}
+			if n > v.Len() {
+				n = v.Len()
+			}
+			return v.Slice(0, n).Interface()
+		},
+		"last": func(n int, items interface{}) interface{} {
+			// Return last n items from a slice
+			if items == nil {
+				return nil
+			}
+			v := reflect.ValueOf(items)
+			if v.Kind() != reflect.Slice {
+				return items
+			}
+			length := v.Len()
+			if n > length {
+				n = length
+			}
+			return v.Slice(length-n, length).Interface()
+		},
+		"eq": func(a, b interface{}) bool { return a == b },
+		"ne":       func(a, b interface{}) bool { return a != b },
+		"gt":       func(a, b int) bool { return a > b },
+		"lt":       func(a, b int) bool { return a < b },
+		"gte":      func(a, b int) bool { return a >= b },
+		"lte":      func(a, b int) bool { return a <= b },
+		"default":  func(def, val interface{}) interface{} { if val == nil || val == "" { return def }; return val },
+		"lower":    func(s string) string { return strings.ToLower(s) },
+		"upper":    func(s string) string { return strings.ToUpper(s) },
+		"title":    func(s string) string { return strings.Title(s) },
+		"replace":  func(s, old, new string) string { return strings.ReplaceAll(s, old, new) },
+		"split":    func(s, sep string) []string { return strings.Split(s, sep) },
+		"join":     func(sep string, arr []string) string { return strings.Join(arr, sep) },
+		"asset":    func(path string) string { return "/theme/assets/" + path },
+		"safeHTML": func(s string) template.HTML { return template.HTML(s) },
+		"safeURL":  func(s string) template.URL { return template.URL(s) },
+		"safeCSS":  func(s string) template.CSS { return template.CSS(s) },
+	}
+
+	themePath := "theme/" + slug
+
+	layoutBytes, err := themeFS.ReadFile(themePath + "/layouts/base.html")
+	if err != nil {
+		layoutBytes, err = themeFS.ReadFile("theme/default/layouts/base.html")
+		if err != nil {
+			return nil, fmt.Errorf("read base layout: %w", err)
+		}
+		themePath = "theme/default"
+	}
+	layoutContent := string(layoutBytes)
+
+	commonPartials := []string{"header", "footer"}
+	commonPartialContents := make(map[string]string)
+	for _, name := range commonPartials {
+		content, err := themeFS.ReadFile(themePath + "/partials/" + name + ".html")
+		if err != nil {
+			content, err = themeFS.ReadFile("theme/default/partials/" + name + ".html")
+			if err != nil {
+				continue
+			}
+		}
+		commonPartialContents[name] = string(content)
+	}
+
+	templatePartials := map[string][]string{
+		"index":    {"post-card", "pagination", "sidebar"},
+		"post":     {"post-meta", "social-share", "author-box", "post-navigation", "related-posts", "comments", "comment-form"},
+		"page":     {},
+		"archive":  {"post-card", "pagination", "sidebar"},
+		"category": {"post-card", "pagination", "sidebar"},
+		"tag":      {"post-card", "pagination", "sidebar"},
+		"author":   {"post-card", "pagination", "sidebar"},
+		"search":   {"pagination"},
+		"error":    {},
+	}
+
+	pageTemplates := []string{"index", "post", "page", "archive", "category", "tag", "author", "search", "error"}
+
+	for _, name := range pageTemplates {
+		pageBytes, err := themeFS.ReadFile(themePath + "/templates/" + name + ".html")
+		if err != nil {
+			pageBytes, err = themeFS.ReadFile("theme/default/templates/" + name + ".html")
+			if err != nil {
+				continue
+			}
+		}
+
+		tmpl := template.New("layout").Funcs(funcMap)
+		tmpl, err = tmpl.Parse(layoutContent)
+		if err != nil {
+			return nil, fmt.Errorf("parse layout for %s: %w", name, err)
+		}
+
+		tmpl, err = tmpl.Parse(string(pageBytes))
+		if err != nil {
+			return nil, fmt.Errorf("parse page %s: %w", name, err)
+		}
+
+		for partialName, partialContent := range commonPartialContents {
+			tmpl, err = tmpl.New("partials/" + partialName + ".html").Parse(partialContent)
+			if err != nil {
+				return nil, fmt.Errorf("parse common partial %s for %s: %w", partialName, name, err)
+			}
+		}
+
+		neededPartials := templatePartials[name]
+		for _, partialName := range neededPartials {
+			content, err := themeFS.ReadFile(themePath + "/partials/" + partialName + ".html")
+			if err != nil {
+				content, err = themeFS.ReadFile("theme/default/partials/" + partialName + ".html")
+				if err != nil {
+					continue
+				}
 			}
 			tmpl, err = tmpl.New("partials/" + partialName + ".html").Parse(string(content))
 			if err != nil {

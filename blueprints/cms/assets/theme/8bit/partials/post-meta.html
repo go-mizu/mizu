@@ -1,34 +1,38 @@
 {{ define "partials/post-meta.html" }}
 <div class="post-header__meta">
     <!-- Date -->
+    {{ if .Post.PublishedAt }}
     <span class="post-header__meta-item">
         <span aria-hidden="true">&#128197;</span>
-        <time datetime="{{ .Date | date "2006-01-02" }}">
-            {{ .Date | date "Jan 2, 2006" }}
+        <time datetime="{{ .Post.PublishedAt.Format "2006-01-02" }}">
+            {{ .Post.PublishedAt.Format "Jan 2, 2006" }}
         </time>
     </span>
+    {{ end }}
 
     <!-- Author -->
     {{ if .Author }}
     <span class="post-header__meta-item">
         <span aria-hidden="true">&#128100;</span>
-        <a href="{{ .Author.URL }}">{{ .Author.Name }}</a>
+        <a href="/author/{{ .Author.Slug }}">{{ .Author.Name }}</a>
     </span>
     {{ end }}
 
     <!-- Category -->
-    {{ if .Category }}
+    {{ if .Categories }}
     <span class="post-header__meta-item">
         <span aria-hidden="true">&#128193;</span>
-        <a href="{{ .Category.URL }}">{{ .Category.Name }}</a>
+        {{ range .Categories | first 1 }}
+        <a href="/category/{{ .Slug }}">{{ .Name }}</a>
+        {{ end }}
     </span>
     {{ end }}
 
     <!-- Reading Time -->
-    {{ if .ReadingTime }}
+    {{ if .Post.ReadingTime }}
     <span class="post-header__meta-item">
         <span aria-hidden="true">&#9200;</span>
-        {{ .ReadingTime }} MIN READ
+        {{ .Post.ReadingTime }} MIN READ
     </span>
     {{ end }}
 </div>
