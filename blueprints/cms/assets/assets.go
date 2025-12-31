@@ -4,6 +4,7 @@ package assets
 import (
 	"crypto/md5"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -20,15 +21,98 @@ var viewsFS embed.FS
 //go:embed theme/*
 var themeFS embed.FS
 
-// Theme returns the theme files filesystem.
+// ThemeJSON represents the structure of theme.json files.
+type ThemeJSON struct {
+	Name        string `json:"name"`
+	Slug        string `json:"slug"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Screenshot  string `json:"screenshot"`
+	Author      struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"author"`
+	Colors     map[string]string `json:"colors"`
+	DarkColors map[string]string `json:"dark_colors"`
+	Fonts      map[string]string `json:"fonts"`
+	Features   map[string]bool   `json:"features"`
+	Config     map[string]any    `json:"config"`
+}
+
+// ListThemes returns information about all available themes.
+func ListThemes() ([]*ThemeJSON, error) {
+	var themes []*ThemeJSON
+
+	entries, err := fs.ReadDir(themeFS, "theme")
+	if err != nil {
+		return nil, fmt.Errorf("read theme directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		themeJSONPath := "theme/" + entry.Name() + "/theme.json"
+		data, err := themeFS.ReadFile(themeJSONPath)
+		if err != nil {
+			continue
+		}
+
+		var themeInfo ThemeJSON
+		if err := json.Unmarshal(data, &themeInfo); err != nil {
+			continue
+		}
+
+		themes = append(themes, &themeInfo)
+	}
+
+	return themes, nil
+}
+
+// GetTheme returns information about a specific theme by slug.
+func GetTheme(slug string) (*ThemeJSON, error) {
+	themeJSONPath := "theme/" + slug + "/theme.json"
+	data, err := themeFS.ReadFile(themeJSONPath)
+	if err != nil {
+		return nil, fmt.Errorf("read theme.json: %w", err)
+	}
+
+	var themeInfo ThemeJSON
+	if err := json.Unmarshal(data, &themeInfo); err != nil {
+		return nil, fmt.Errorf("parse theme.json: %w", err)
+	}
+
+	return &themeInfo, nil
+}
+
+// Theme returns the theme files filesystem for a specific theme.
 func Theme() fs.FS {
 	sub, _ := fs.Sub(themeFS, "theme/default")
 	return sub
 }
 
-// ThemeAssets returns the theme assets filesystem.
+// ThemeBySlug returns the theme files filesystem for a specific theme by slug.
+func ThemeBySlug(slug string) fs.FS {
+	sub, err := fs.Sub(themeFS, "theme/"+slug)
+	if err != nil {
+		sub, _ = fs.Sub(themeFS, "theme/default")
+	}
+	return sub
+}
+
+// ThemeAssets returns the theme assets filesystem for the default theme.
 func ThemeAssets() fs.FS {
 	sub, _ := fs.Sub(themeFS, "theme/default/assets")
+	return sub
+}
+
+// ThemeAssetsBySlug returns the theme assets filesystem for a specific theme.
+func ThemeAssetsBySlug(slug string) fs.FS {
+	sub, err := fs.Sub(themeFS, "theme/"+slug+"/assets")
+	if err != nil {
+		sub, _ = fs.Sub(themeFS, "theme/default/assets")
+	}
 	return sub
 }
 
@@ -230,6 +314,7 @@ func WPAdminTemplates() (map[string]*template.Template, error) {
 		"categories",
 		"tags",
 		"menus",
+		"themes",
 		"settings-general",
 		"settings-writing",
 		"settings-reading",

@@ -26,6 +26,7 @@ type SiteContext struct {
 // ThemeContext holds theme configuration.
 type ThemeContext struct {
 	Name       string
+	Slug       string
 	Version    string
 	Config     map[string]interface{}
 	Colors     map[string]string
