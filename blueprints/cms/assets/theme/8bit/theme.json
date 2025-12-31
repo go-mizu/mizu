@@ -1,0 +1,236 @@
+{
+  "name": "8-Bit Retro",
+  "slug": "8bit",
+  "version": "1.0.0",
+  "description": "A nostalgic 8-bit video game inspired CMS theme featuring pixel-perfect aesthetics, NES color palettes, and retro gaming UI elements. Press START to read!",
+  "author": {
+    "name": "CMS Team",
+    "email": "team@example.com",
+    "url": "https://example.com"
+  },
+  "license": "MIT",
+  "screenshot": "screenshot.png",
+
+  "engine": "1.0",
+  "requires": {
+    "cms": ">=1.0.0"
+  },
+
+  "config": {
+    "posts_per_page": 9,
+    "date_format": "Jan 2, 2006",
+    "time_format": "3:04 PM",
+    "excerpt_length": 120,
+    "featured_image_size": {
+      "width": 512,
+      "height": 288
+    },
+    "sidebar_position": "right",
+    "show_author_bio": true,
+    "show_related_posts": true,
+    "related_posts_count": 3,
+    "show_reading_time": true,
+    "show_post_navigation": true,
+    "enable_comments": true,
+    "enable_newsletter": true,
+    "hero_style": "title-screen",
+    "card_style": "cartridge"
+  },
+
+  "colors": {
+    "primary": "#f83800",
+    "primary_hover": "#f87858",
+    "secondary": "#0078f8",
+    "accent": "#f8b800",
+    "accent_alt": "#00e8d8",
+    "background": "#a4e4fc",
+    "surface": "#fcfcfc",
+    "surface_alt": "#bcbcbc",
+    "text": "#000000",
+    "text_secondary": "#585858",
+    "text_muted": "#a1a1a1",
+    "heading": "#000000",
+    "link": "#0078f8",
+    "link_hover": "#3cbcfc",
+    "border": "#000000",
+    "border_light": "#585858",
+    "success": "#00b800",
+    "warning": "#f8b800",
+    "error": "#f83800",
+    "info": "#0078f8"
+  },
+
+  "dark_colors": {
+    "primary": "#f87858",
+    "primary_hover": "#fca044",
+    "secondary": "#3cbcfc",
+    "accent": "#fca044",
+    "accent_alt": "#00e8d8",
+    "background": "#000000",
+    "surface": "#18181b",
+    "surface_alt": "#27272a",
+    "text": "#fcfcfc",
+    "text_secondary": "#bcbcbc",
+    "text_muted": "#a1a1a1",
+    "heading": "#fcfcfc",
+    "link": "#3cbcfc",
+    "link_hover": "#a4e4fc",
+    "border": "#fcfcfc",
+    "border_light": "#585858",
+    "success": "#58d854",
+    "warning": "#fca044",
+    "error": "#f87858",
+    "info": "#3cbcfc"
+  },
+
+  "fonts": {
+    "heading": "'Press Start 2P', 'Pixelify Sans', 'VT323', monospace",
+    "body": "'Pixelify Sans', 'VT323', 'Courier New', monospace",
+    "mono": "'VT323', 'Courier New', monospace"
+  },
+
+  "features": {
+    "dark_mode": true,
+    "sticky_header": true,
+    "back_to_top": true,
+    "reading_progress": true,
+    "table_of_contents": true,
+    "code_highlighting": true,
+    "image_lightbox": false,
+    "lazy_loading": true,
+    "newsletter": true,
+    "comments": true,
+    "social_share": true,
+    "related_posts": true,
+    "author_box": true,
+    "search": true,
+    "smooth_scroll": false,
+    "crt_effect": false,
+    "scanlines": false,
+    "pixel_cursor": true,
+    "sound_effects": false,
+    "animations": true,
+    "blink_cursor": true
+  },
+
+  "custom_templates": [
+    {
+      "name": "Full Width",
+      "slug": "full-width",
+      "file": "custom-templates/full-width.html",
+      "for": ["page", "post"]
+    },
+    {
+      "name": "Game Over",
+      "slug": "game-over",
+      "file": "custom-templates/game-over.html",
+      "for": ["page"]
+    }
+  ],
+
+  "widget_areas": [
+    {
+      "name": "Sidebar (Inventory)",
+      "slug": "sidebar",
+      "description": "Main sidebar widget area - styled as game inventory"
+    },
+    {
+      "name": "Footer Column 1",
+      "slug": "footer-1",
+      "description": "First footer column"
+    },
+    {
+      "name": "Footer Column 2",
+      "slug": "footer-2",
+      "description": "Second footer column"
+    },
+    {
+      "name": "Footer Column 3",
+      "slug": "footer-3",
+      "description": "Third footer column"
+    },
+    {
+      "name": "Footer Column 4",
+      "slug": "footer-4",
+      "description": "Fourth footer column"
+    }
+  ],
+
+  "menu_locations": [
+    {
+      "name": "Primary Navigation",
+      "slug": "primary",
+      "description": "Main game menu navigation in header"
+    },
+    {
+      "name": "Secondary Navigation",
+      "slug": "secondary",
+      "description": "Secondary navigation items"
+    },
+    {
+      "name": "Footer Navigation",
+      "slug": "footer",
+      "description": "Footer links"
+    },
+    {
+      "name": "Social Links",
+      "slug": "social",
+      "description": "Social media links"
+    }
+  ],
+
+  "image_sizes": [
+    {
+      "name": "thumbnail",
+      "width": 64,
+      "height": 64,
+      "crop": true
+    },
+    {
+      "name": "small",
+      "width": 128,
+      "height": 128,
+      "crop": false
+    },
+    {
+      "name": "medium",
+      "width": 256,
+      "height": 256,
+      "crop": false
+    },
+    {
+      "name": "large",
+      "width": 512,
+      "height": 288,
+      "crop": false
+    },
+    {
+      "name": "featured",
+      "width": 512,
+      "height": 288,
+      "crop": true
+    },
+    {
+      "name": "hero",
+      "width": 1024,
+      "height": 576,
+      "crop": true
+    }
+  ],
+
+  "scripts": [
+    {
+      "handle": "main",
+      "src": "assets/js/main.js",
+      "position": "footer",
+      "defer": true
+    }
+  ],
+
+  "styles": [
+    {
+      "handle": "style",
+      "src": "assets/css/style.css"
+    }
+  ]
+}

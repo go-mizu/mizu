@@ -1,0 +1,122 @@
+{{ define "title" }}{{ .Title }} - {{ .Site.Title }}{{ end }}
+
+{{ define "meta_description" }}
+<meta name="description" content="{{ .Excerpt | truncate 160 }}">
+{{ end }}
+
+{{ define "og_tags" }}
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{ .Title }}">
+<meta property="og:description" content="{{ .Excerpt | truncate 160 }}">
+<meta property="og:url" content="{{ .URL }}">
+{{ if .FeaturedImage }}
+<meta property="og:image" content="{{ .FeaturedImage }}">
+{{ end }}
+<meta property="article:published_time" content="{{ .Date | date "2006-01-02T15:04:05Z" }}">
+{{ if .Author }}
+<meta property="article:author" content="{{ .Author.Name }}">
+{{ end }}
+{{ end }}
+
+{{ define "body_class" }}single-post{{ end }}
+
+{{ define "content" }}
+<article class="container container--narrow">
+    <!-- Post Header -->
+    <header class="post-header">
+        <!-- Category Badge -->
+        {{ if .Category }}
+        <div style="margin-bottom: var(--space-2);">
+            <a href="{{ .Category.URL }}" class="badge badge--primary">{{ .Category.Name }}</a>
+        </div>
+        {{ end }}
+
+        <h1 class="post-header__title">{{ .Title }}</h1>
+
+        <!-- Meta -->
+        {{ template "partials/post-meta.html" . }}
+    </header>
+
+    <!-- Featured Image -->
+    {{ if .FeaturedImage }}
+    <figure class="post-featured-image">
+        <img src="{{ .FeaturedImage }}" alt="{{ .Title }}">
+    </figure>
+    {{ end }}
+
+    <!-- Post Content -->
+    <div class="post-content">
+        {{ .Content }}
+    </div>
+
+    <!-- Post Footer -->
+    <footer class="post-footer">
+        <!-- Tags -->
+        {{ if .Tags }}
+        <div class="post-tags">
+            <p class="post-tags__label">
+                <span aria-hidden="true">&#127991;</span> Tags:
+            </p>
+            <div class="tags">
+                {{ range .Tags }}
+                <a href="{{ .URL }}" class="tag">{{ .Name }}</a>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- Social Share -->
+        {{ if .Theme.Features.social_share }}
+        {{ template "partials/social-share.html" . }}
+        {{ end }}
+    </footer>
+
+    <!-- Author Box -->
+    {{ if .Theme.Features.author_box }}
+    {{ template "partials/author-box.html" . }}
+    {{ end }}
+
+    <!-- Post Navigation -->
+    {{ if .Theme.Features.show_post_navigation }}
+    {{ template "partials/post-navigation.html" . }}
+    {{ end }}
+
+    <!-- Related Posts -->
+    {{ if .Theme.Features.related_posts }}
+    {{ template "partials/related-posts.html" . }}
+    {{ end }}
+
+    <!-- Comments -->
+    {{ if .Theme.Features.comments }}
+    {{ template "partials/comments.html" . }}
+    {{ end }}
+</article>
+
+<!-- JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "{{ .Title }}",
+    "description": "{{ .Excerpt | truncate 160 }}",
+    "datePublished": "{{ .Date | date "2006-01-02T15:04:05Z" }}",
+    {{ if .ModifiedDate }}
+    "dateModified": "{{ .ModifiedDate | date "2006-01-02T15:04:05Z" }}",
+    {{ end }}
+    "url": "{{ .URL }}",
+    {{ if .FeaturedImage }}
+    "image": "{{ .FeaturedImage }}",
+    {{ end }}
+    {{ if .Author }}
+    "author": {
+        "@type": "Person",
+        "name": "{{ .Author.Name }}"
+    },
+    {{ end }}
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{ .Site.Title }}"
+    }
+}
+</script>
+{{ end }}

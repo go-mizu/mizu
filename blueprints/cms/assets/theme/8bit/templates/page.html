@@ -1,0 +1,66 @@
+{{ define "title" }}{{ .Title }} - {{ .Site.Title }}{{ end }}
+
+{{ define "meta_description" }}
+<meta name="description" content="{{ .Excerpt | default .Site.Description | truncate 160 }}">
+{{ end }}
+
+{{ define "body_class" }}page{{ end }}
+
+{{ define "content" }}
+<article class="container container--narrow">
+    <!-- Page Header -->
+    <header class="post-header">
+        <h1 class="post-header__title">{{ .Title }}</h1>
+    </header>
+
+    <!-- Featured Image -->
+    {{ if .FeaturedImage }}
+    <figure class="post-featured-image">
+        <img src="{{ .FeaturedImage }}" alt="{{ .Title }}">
+    </figure>
+    {{ end }}
+
+    <!-- Page Content -->
+    <div class="post-content">
+        {{ .Content }}
+    </div>
+
+    <!-- Child Pages (if any) -->
+    {{ if .ChildPages }}
+    <section style="margin-top: var(--space-4);">
+        <h2 style="font-size: var(--text-xl); margin-bottom: var(--space-3);">
+            <span aria-hidden="true">&#128196;</span> SUB-PAGES
+        </h2>
+        <div class="posts-grid">
+            {{ range .ChildPages }}
+            <article class="post-card">
+                <div class="post-card__content">
+                    <h3 class="post-card__title">
+                        <a href="{{ .URL }}">{{ .Title }}</a>
+                    </h3>
+                    {{ if .Excerpt }}
+                    <p class="post-card__excerpt">{{ .Excerpt | truncate 100 }}</p>
+                    {{ end }}
+                </div>
+            </article>
+            {{ end }}
+        </div>
+    </section>
+    {{ end }}
+</article>
+
+<!-- JSON-LD Structured Data -->
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": "{{ .Title }}",
+    "description": "{{ .Excerpt | default .Site.Description | truncate 160 }}",
+    "url": "{{ .URL }}",
+    "publisher": {
+        "@type": "Organization",
+        "name": "{{ .Site.Title }}"
+    }
+}
+</script>
+{{ end }}

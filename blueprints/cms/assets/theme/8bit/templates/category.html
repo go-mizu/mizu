@@ -1,0 +1,56 @@
+{{ define "title" }}{{ .Category.Name }} - {{ .Site.Title }}{{ end }}
+
+{{ define "meta_description" }}
+<meta name="description" content="{{ if .Category.Description }}{{ .Category.Description | truncate 160 }}{{ else }}Posts in the {{ .Category.Name }} category{{ end }}">
+{{ end }}
+
+{{ define "body_class" }}category-archive{{ end }}
+
+{{ define "content" }}
+<!-- Category Header -->
+<header class="archive-header">
+    <div class="container">
+        <div class="archive-header__icon" aria-hidden="true">&#128193;</div>
+        <h1 class="archive-header__title">{{ .Category.Name | upper }}</h1>
+
+        {{ if .Category.Description }}
+        <p class="archive-header__description">{{ .Category.Description }}</p>
+        {{ end }}
+
+        <p class="archive-header__count">
+            {{ len .Posts }} {{ if eq (len .Posts) 1 }}POST{{ else }}POSTS{{ end }} IN THIS CATEGORY
+        </p>
+    </div>
+</header>
+
+<!-- Posts Grid -->
+<section class="container">
+    <div class="content-layout">
+        <div class="content-main">
+            {{ if .Posts }}
+            <div class="posts-grid">
+                {{ range .Posts }}
+                {{ template "partials/post-card.html" . }}
+                {{ end }}
+            </div>
+
+            {{ template "partials/pagination.html" . }}
+            {{ else }}
+            <div style="text-align: center; padding: var(--space-8);">
+                <p style="font-family: var(--font-pixel); font-size: var(--text-2xl); margin-bottom: var(--space-2);">
+                    CATEGORY EMPTY
+                </p>
+                <p style="color: var(--color-text-secondary);">
+                    No posts in this category yet.
+                </p>
+                <a href="/" class="btn btn--primary" style="margin-top: var(--space-3);">
+                    EXPLORE OTHER AREAS
+                </a>
+            </div>
+            {{ end }}
+        </div>
+
+        {{ template "partials/sidebar.html" . }}
+    </div>
+</section>
+{{ end }}

@@ -1,0 +1,56 @@
+{{ define "title" }}#{{ .Tag.Name }} - {{ .Site.Title }}{{ end }}
+
+{{ define "meta_description" }}
+<meta name="description" content="Posts tagged with {{ .Tag.Name }}">
+{{ end }}
+
+{{ define "body_class" }}tag-archive{{ end }}
+
+{{ define "content" }}
+<!-- Tag Header -->
+<header class="archive-header">
+    <div class="container">
+        <div class="archive-header__icon" aria-hidden="true">&#127991;</div>
+        <h1 class="archive-header__title">#{{ .Tag.Name | upper }}</h1>
+
+        {{ if .Tag.Description }}
+        <p class="archive-header__description">{{ .Tag.Description }}</p>
+        {{ end }}
+
+        <p class="archive-header__count">
+            {{ len .Posts }} {{ if eq (len .Posts) 1 }}POST{{ else }}POSTS{{ end }} TAGGED
+        </p>
+    </div>
+</header>
+
+<!-- Posts Grid -->
+<section class="container">
+    <div class="content-layout">
+        <div class="content-main">
+            {{ if .Posts }}
+            <div class="posts-grid">
+                {{ range .Posts }}
+                {{ template "partials/post-card.html" . }}
+                {{ end }}
+            </div>
+
+            {{ template "partials/pagination.html" . }}
+            {{ else }}
+            <div style="text-align: center; padding: var(--space-8);">
+                <p style="font-family: var(--font-pixel); font-size: var(--text-2xl); margin-bottom: var(--space-2);">
+                    NO ITEMS FOUND
+                </p>
+                <p style="color: var(--color-text-secondary);">
+                    No posts with this tag yet.
+                </p>
+                <a href="/" class="btn btn--primary" style="margin-top: var(--space-3);">
+                    RETURN HOME
+                </a>
+            </div>
+            {{ end }}
+        </div>
+
+        {{ template "partials/sidebar.html" . }}
+    </div>
+</section>
+{{ end }}

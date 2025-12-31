@@ -1,0 +1,58 @@
+{{ define "title" }}{{ .Error.Code }} - {{ .Error.Title }} - {{ .Site.Title }}{{ end }}
+
+{{ define "body_class" }}error-page-wrapper{{ end }}
+
+{{ define "content" }}
+<div class="error-page">
+    <!-- Error Code -->
+    <div class="error-page__code">
+        {{ .Error.Code }}
+    </div>
+
+    <!-- Title -->
+    <h1 class="error-page__title">
+        {{ if eq .Error.Code 404 }}
+        GAME OVER
+        {{ else if eq .Error.Code 500 }}
+        SYSTEM ERROR
+        {{ else }}
+        ERROR ENCOUNTERED
+        {{ end }}
+    </h1>
+
+    <!-- Message -->
+    <p class="error-page__text">
+        {{ if eq .Error.Code 404 }}
+        The page you're looking for doesn't exist or has been moved.
+        {{ else if eq .Error.Code 500 }}
+        Something went wrong on our end. Please try again later.
+        {{ else }}
+        {{ .Error.Message | default "An unexpected error occurred." }}
+        {{ end }}
+    </p>
+
+    <!-- Actions -->
+    <div style="display: flex; gap: var(--space-2); justify-content: center; flex-wrap: wrap;">
+        <a href="/" class="btn btn--primary">
+            <span aria-hidden="true">&#9654;</span> CONTINUE
+        </a>
+        <button onclick="history.back()" class="btn btn--secondary">
+            <span aria-hidden="true">&#9664;</span> GO BACK
+        </button>
+    </div>
+
+    <!-- Continue Text -->
+    <p class="error-page__continue" style="margin-top: var(--space-4);">
+        PRESS A BUTTON TO CONTINUE
+    </p>
+
+    <!-- Easter Egg Hint for 404 -->
+    {{ if eq .Error.Code 404 }}
+    <div style="margin-top: var(--space-6); opacity: 0.5;">
+        <p style="font-family: var(--font-pixel); font-size: var(--text-xs);">
+            HINT: THE PRINCESS IS IN ANOTHER CASTLE
+        </p>
+    </div>
+    {{ end }}
+</div>
+{{ end }}

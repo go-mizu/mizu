@@ -1,0 +1,29 @@
+{{ define "partials/comment-form.html" }}
+<form class="comment-form" id="comment-form" action="/comments" method="post">
+    <h4 class="comment-form__title">
+        <span aria-hidden="true">&#9998;</span> LEAVE A MESSAGE
+    </h4>
+
+    <input type="hidden" name="post_id" value="{{ .ID }}">
+    <input type="hidden" name="parent_id" id="comment-parent-id" value="">
+
+    <div class="form-group">
+        <label for="comment-name" class="form-label">Name *</label>
+        <input type="text" id="comment-name" name="name" class="form-input" required placeholder="PLAYER NAME">
+    </div>
+
+    <div class="form-group">
+        <label for="comment-email" class="form-label">Email *</label>
+        <input type="email" id="comment-email" name="email" class="form-input" required placeholder="YOUR@EMAIL.COM">
+    </div>
+
+    <div class="form-group">
+        <label for="comment-content" class="form-label">Message *</label>
+        <textarea id="comment-content" name="content" class="form-textarea" required placeholder="TYPE YOUR MESSAGE..."></textarea>
+    </div>
+
+    <button type="submit" class="btn btn--primary">
+        <span aria-hidden="true">&#9654;</span> SUBMIT
+    </button>
+</form>
+{{ end }}

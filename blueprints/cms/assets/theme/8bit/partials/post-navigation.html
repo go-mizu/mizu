@@ -1,0 +1,29 @@
+{{ define "partials/post-navigation.html" }}
+<nav class="post-navigation" aria-label="Post navigation">
+    <!-- Previous Post -->
+    {{ if .PrevPost }}
+    <a href="{{ .PrevPost.URL }}" class="post-navigation__item post-navigation__item--prev">
+        <span class="post-navigation__label">Previous</span>
+        <span class="post-navigation__title">{{ .PrevPost.Title | truncate 50 }}</span>
+    </a>
+    {{ else }}
+    <div class="post-navigation__item post-navigation__item--prev" style="opacity: 0.3;">
+        <span class="post-navigation__label">Start</span>
+        <span class="post-navigation__title">No previous level</span>
+    </div>
+    {{ end }}
+
+    <!-- Next Post -->
+    {{ if .NextPost }}
+    <a href="{{ .NextPost.URL }}" class="post-navigation__item post-navigation__item--next">
+        <span class="post-navigation__label">Next</span>
+        <span class="post-navigation__title">{{ .NextPost.Title | truncate 50 }}</span>
+    </a>
+    {{ else }}
+    <div class="post-navigation__item post-navigation__item--next" style="opacity: 0.3;">
+        <span class="post-navigation__label">End</span>
+        <span class="post-navigation__title">No next level</span>
+    </div>
+    {{ end }}
+</nav>
+{{ end }}

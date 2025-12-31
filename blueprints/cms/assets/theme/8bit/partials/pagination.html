@@ -1,0 +1,42 @@
+{{ define "partials/pagination.html" }}
+{{ if .Pagination }}
+<nav class="pagination" aria-label="Pagination">
+    <!-- Previous -->
+    {{ if .Pagination.HasPrev }}
+    <a href="{{ .Pagination.PrevURL }}" class="pagination__item pagination__prev" aria-label="Previous page">
+        PREV
+    </a>
+    {{ else }}
+    <span class="pagination__item pagination__prev pagination__item--disabled" aria-disabled="true">
+        PREV
+    </span>
+    {{ end }}
+
+    <!-- Page Numbers -->
+    {{ range .Pagination.Pages }}
+    {{ if .IsCurrent }}
+    <span class="pagination__item pagination__item--active" aria-current="page">
+        {{ .Number }}
+    </span>
+    {{ else if .IsEllipsis }}
+    <span class="pagination__item pagination__item--ellipsis">...</span>
+    {{ else }}
+    <a href="{{ .URL }}" class="pagination__item">
+        {{ .Number }}
+    </a>
+    {{ end }}
+    {{ end }}
+
+    <!-- Next -->
+    {{ if .Pagination.HasNext }}
+    <a href="{{ .Pagination.NextURL }}" class="pagination__item pagination__next" aria-label="Next page">
+        NEXT
+    </a>
+    {{ else }}
+    <span class="pagination__item pagination__next pagination__item--disabled" aria-disabled="true">
+        NEXT
+    </span>
+    {{ end }}
+</nav>
+{{ end }}
+{{ end }}

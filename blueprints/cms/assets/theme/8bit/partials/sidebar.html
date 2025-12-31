@@ -1,0 +1,84 @@
+{{ define "partials/sidebar.html" }}
+<aside class="sidebar">
+    <!-- Search Widget -->
+    {{ if .Theme.Features.search }}
+    <div class="widget">
+        <div class="widget__header">Search</div>
+        <div class="widget__content">
+            <form action="/search" method="get" class="search-form">
+                <input type="text" name="q" class="form-input" placeholder="TYPE QUERY...">
+            </form>
+        </div>
+    </div>
+    {{ end }}
+
+    <!-- Categories Widget -->
+    {{ if .Site.Categories }}
+    <div class="widget">
+        <div class="widget__header">Categories</div>
+        <div class="widget__content">
+            <ul class="widget-list">
+                {{ range .Site.Categories | first 8 }}
+                <li>
+                    <a href="{{ .URL }}">
+                        {{ .Name }}
+                        <span class="badge badge--gold">{{ .Count }}</span>
+                    </a>
+                </li>
+                {{ end }}
+            </ul>
+        </div>
+    </div>
+    {{ end }}
+
+    <!-- Tags Widget -->
+    {{ if .Site.Tags }}
+    <div class="widget">
+        <div class="widget__header">Tags</div>
+        <div class="widget__content">
+            <div class="tags">
+                {{ range .Site.Tags | first 12 }}
+                <a href="{{ .URL }}" class="tag">{{ .Name }}</a>
+                {{ end }}
+            </div>
+        </div>
+    </div>
+    {{ end }}
+
+    <!-- Recent Posts Widget -->
+    {{ if .Site.RecentPosts }}
+    <div class="widget">
+        <div class="widget__header">Recent</div>
+        <div class="widget__content">
+            <ul class="widget-list">
+                {{ range .Site.RecentPosts | first 5 }}
+                <li>
+                    <a href="{{ .URL }}">{{ .Title | truncate 40 }}</a>
+                </li>
+                {{ end }}
+            </ul>
+        </div>
+    </div>
+    {{ end }}
+
+    <!-- Newsletter Widget -->
+    {{ if .Theme.Features.newsletter }}
+    <div class="widget">
+        <div class="widget__header">Subscribe</div>
+        <div class="widget__content">
+            <p style="font-size: var(--text-sm); margin-bottom: var(--space-1);">
+                GET NEW POSTS IN YOUR INBOX!
+            </p>
+            <form action="/subscribe" method="post">
+                <div class="form-group">
+                    <input type="email" name="email" class="form-input" placeholder="YOUR EMAIL" required>
+                </div>
+                <button type="submit" class="btn btn--primary btn--block btn--sm">
+                    JOIN
+                </button>
+            </form>
+        </div>
+    </div>
+    {{ end }}
+</aside>
+{{ end }}
