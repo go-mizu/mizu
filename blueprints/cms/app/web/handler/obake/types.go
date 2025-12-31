@@ -444,9 +444,23 @@ type SettingsGeneralData struct {
 	PrivatePassword string
 }
 
+// ThemeOption represents a theme option in the design settings.
+type ThemeOption struct {
+	Name        string
+	Slug        string
+	Version     string
+	Description string
+	Screenshot  string
+	Active      bool
+}
+
 // SettingsDesignData holds data for design settings.
 type SettingsDesignData struct {
 	BaseData
+
+	// Themes
+	Themes      []*ThemeOption
+	ActiveTheme string
 
 	// Branding
 	Icon            *media.Media

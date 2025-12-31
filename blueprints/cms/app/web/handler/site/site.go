@@ -15,6 +15,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
 
+	"github.com/go-mizu/blueprints/cms/assets"
 	"github.com/go-mizu/blueprints/cms/feature/categories"
 	"github.com/go-mizu/blueprints/cms/feature/comments"
 	"github.com/go-mizu/blueprints/cms/feature/media"
@@ -122,10 +123,51 @@ func (h *Handler) getSiteContext(c *mizu.Ctx) SiteContext {
 	return site
 }
 
-// getThemeContext builds theme context.
-func (h *Handler) getThemeContext() ThemeContext {
+// getThemeContext builds theme context from the active theme.
+func (h *Handler) getThemeContext(c *mizu.Ctx) ThemeContext {
+	ctx := c.Context()
+
+	// Get active theme from settings
+	activeTheme := "default"
+	if setting, err := h.cfg.Settings.Get(ctx, "active_theme"); err == nil && setting.Value != "" {
+		activeTheme = setting.Value
+	}
+
+	// Try to load theme configuration from theme.json
+	themeJSON, err := assets.GetTheme(activeTheme)
+	if err != nil {
+		// Fallback to default theme
+		themeJSON, _ = assets.GetTheme("default")
+	}
+
+	// If still nil, return hardcoded defaults
+	if themeJSON == nil {
+		return h.getDefaultThemeContext()
+	}
+
+	// Build config map from theme.json config
+	config := make(map[string]interface{})
+	for k, v := range themeJSON.Config {
+		config[k] = v
+	}
+
+	return ThemeContext{
+		Name:       themeJSON.Name,
+		Slug:       themeJSON.Slug,
+		Version:    themeJSON.Version,
+		Config:     config,
+		Colors:     themeJSON.Colors,
+		DarkColors: themeJSON.DarkColors,
+		Fonts:      themeJSON.Fonts,
+		Features:   themeJSON.Features,
+	}
+}
+
+// getDefaultThemeContext returns hardcoded default theme context as fallback.
+func (h *Handler) getDefaultThemeContext() ThemeContext {
 	return ThemeContext{
 		Name:    "Default Theme",
+		Slug:    "default",
 		Version: "1.0.0",
 		Config: map[string]interface{}{
 			"posts_per_page":       10,
@@ -271,7 +313,7 @@ func (h *Handler) getRecentPosts(c *mizu.Ctx, limit int) []*PostView {
 func (h *Handler) baseData(c *mizu.Ctx, isHome, isSingle, isPage, isArchive, isSearch bool) BaseData {
 	return BaseData{
 		Site:  h.getSiteContext(c),
-		Theme: h.getThemeContext(),
+		Theme: h.getThemeContext(c),
 		Request: RequestContext{
 			URL:       h.cfg.BaseURL + c.Request().URL.Path,
 			Path:      c.Request().URL.Path,

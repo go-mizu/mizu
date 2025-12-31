@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/cms/assets"
 	"github.com/go-mizu/blueprints/cms/feature/media"
 	"github.com/go-mizu/blueprints/cms/feature/pages"
 	"github.com/go-mizu/blueprints/cms/feature/posts"
@@ -1065,8 +1066,35 @@ func (h *Handler) SettingsDesign(c *mizu.Ctx) error {
 		accentColor = setting.Value
 	}
 
+	// Get active theme from settings
+	activeTheme := "default"
+	if setting, err := h.cfg.Settings.Get(ctx, "active_theme"); err == nil && setting != nil && setting.Value != "" {
+		activeTheme = setting.Value
+	}
+
+	// Get available themes
+	themeList, err := assets.ListThemes()
+	if err != nil {
+		themeList = []*assets.ThemeJSON{}
+	}
+
+	// Convert to ThemeOption for template
+	themes := make([]*ThemeOption, 0, len(themeList))
+	for _, t := range themeList {
+		themes = append(themes, &ThemeOption{
+			Name:        t.Name,
+			Slug:        t.Slug,
+			Version:     t.Version,
+			Description: t.Description,
+			Screenshot:  "/theme/" + t.Slug + "/assets/images/screenshot.png",
+			Active:      t.Slug == activeTheme,
+		})
+	}
+
 	data := SettingsDesignData{
 		BaseData:     h.baseData(c, "Design settings", "settings", user),
+		Themes:       themes,
+		ActiveTheme:  activeTheme,
 		AccentColor:  accentColor,
 		PrimaryNav:   []NavLink{},
 		SecondaryNav: []NavLink{},
@@ -1155,6 +1183,15 @@ func (h *Handler) SettingsSave(c *mizu.Ctx) error {
 		return c.Redirect(http.StatusFound, "/obake/settings/general/")
 
 	case "design":
+		// Save theme setting if provided
+		if theme := c.Request().FormValue("active_theme"); theme != "" {
+			h.cfg.Settings.Set(ctx, &settings.SetIn{
+				Key:       "active_theme",
+				Value:     theme,
+				ValueType: "string",
+				GroupName: "appearance",
+			})
+		}
 		h.cfg.Settings.Set(ctx, &settings.SetIn{Key: "accent_color", Value: c.Request().FormValue("accent_color")})
 		return c.Redirect(http.StatusFound, "/obake/settings/design/")
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/cms/assets"
 	"github.com/go-mizu/blueprints/cms/feature/categories"
 	"github.com/go-mizu/blueprints/cms/feature/comments"
 	"github.com/go-mizu/blueprints/cms/feature/media"
@@ -169,6 +170,7 @@ func (h *Handler) buildMenu(c *mizu.Ctx, activeItem string) []MenuItem {
 			Active: strings.HasPrefix(activeItem, "appearance"),
 			Open:   strings.HasPrefix(activeItem, "appearance"),
 			Children: []MenuItem{
+				{ID: "themes", Title: "Themes", URL: "/wp-admin/themes.php", Active: activeItem == "themes"},
 				{ID: "menus", Title: "Menus", URL: "/wp-admin/nav-menus.php", Active: activeItem == "menus"},
 			},
 		},
@@ -2149,6 +2151,87 @@ func (h *Handler) SettingsPermalinks(c *mizu.Ctx) error {
 	})
 }
 
+// Themes renders the themes page.
+func (h *Handler) Themes(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	// Get active theme from settings
+	activeTheme := "default"
+	if setting, err := h.settings.Get(ctx, "active_theme"); err == nil && setting.Value != "" {
+		activeTheme = setting.Value
+	}
+
+	// Get available themes from assets
+	themeList, err := assets.ListThemes()
+	if err != nil {
+		themeList = []*assets.ThemeJSON{}
+	}
+
+	// Convert to ThemeInfo for template
+	themes := make([]*ThemeInfo, 0, len(themeList))
+	for _, t := range themeList {
+		themes = append(themes, &ThemeInfo{
+			Name:        t.Name,
+			Slug:        t.Slug,
+			Version:     t.Version,
+			Description: t.Description,
+			Author:      t.Author.Name,
+			AuthorURL:   t.Author.URL,
+			Screenshot:  "/theme/" + t.Slug + "/assets/images/screenshot.png",
+			Active:      t.Slug == activeTheme,
+		})
+	}
+
+	return render(h, c, "themes", ThemesData{
+		Title:       "Themes",
+		User:        user,
+		Menu:        h.buildMenu(c, "themes"),
+		Breadcrumbs: []Breadcrumb{{Label: "Appearance"}, {Label: "Themes"}},
+		SiteTitle:   h.getSiteTitle(c),
+		SiteURL:     h.baseURL,
+		Themes:      themes,
+		ActiveTheme: activeTheme,
+	})
+}
+
+// ThemeActivate activates a theme.
+func (h *Handler) ThemeActivate(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	themeSlug := c.Request().FormValue("theme")
+
+	if themeSlug == "" {
+		return h.redirectWithError(c, "/wp-admin/themes.php", "No theme specified")
+	}
+
+	// Verify theme exists
+	if _, err := assets.GetTheme(themeSlug); err != nil {
+		return h.redirectWithError(c, "/wp-admin/themes.php", "Theme not found")
+	}
+
+	// Save active theme setting
+	_, err := h.settings.Set(ctx, &settings.SetIn{
+		Key:       "active_theme",
+		Value:     themeSlug,
+		ValueType: "string",
+		GroupName: "appearance",
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/themes.php", "Failed to activate theme")
+	}
+
+	return h.redirectWithSuccess(c, "/wp-admin/themes.php", "Theme activated successfully")
+}
+
 // ============================================================
 // POST Handlers - Form Submissions
 // ============================================================
@@ -3195,6 +3278,14 @@ func (h *Handler) QuickDraftSave(c *mizu.Ctx) error {
 
 // redirectWithError redirects with an error message.
 func (h *Handler) redirectWithError(c *mizu.Ctx, url, message string) error {
+	// In a real implementation, we'd store the message in a session flash
+	// For now, just redirect
+	http.Redirect(c.Writer(), c.Request(), url, http.StatusFound)
+	return nil
+}
+
+// redirectWithSuccess redirects with a success message.
+func (h *Handler) redirectWithSuccess(c *mizu.Ctx, url, message string) error {
 	// In a real implementation, we'd store the message in a session flash
 	// For now, just redirect
 	http.Redirect(c.Writer(), c.Request(), url, http.StatusFound)

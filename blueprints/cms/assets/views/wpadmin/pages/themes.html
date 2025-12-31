@@ -1,0 +1,295 @@
+{{define "content"}}
+<h1>Themes</h1>
+
+<p class="theme-count">{{len .Themes}} theme{{if ne (len .Themes) 1}}s{{end}} available</p>
+
+<div class="theme-browser">
+    <div class="themes wp-clearfix">
+        {{range .Themes}}
+        <div class="theme{{if .Active}} active{{end}}" tabindex="0">
+            <div class="theme-screenshot">
+                <img src="{{.Screenshot}}" alt="{{.Name}} theme screenshot" onerror="this.src='data:image/svg+xml,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 300 225&quot;><rect fill=&quot;%23f0f0f1&quot; width=&quot;300&quot; height=&quot;225&quot;/><text x=&quot;50%&quot; y=&quot;50%&quot; fill=&quot;%2372777c&quot; text-anchor=&quot;middle&quot; dominant-baseline=&quot;middle&quot; font-family=&quot;sans-serif&quot; font-size=&quot;14&quot;>No Screenshot</text></svg>'">
+            </div>
+
+            <div class="theme-id-container">
+                {{if .Active}}
+                <h2 class="theme-name" id="theme-{{.Slug}}-name">
+                    <span>Active:</span> {{.Name}}
+                </h2>
+                {{else}}
+                <h2 class="theme-name" id="theme-{{.Slug}}-name">{{.Name}}</h2>
+                {{end}}
+
+                <div class="theme-actions">
+                    {{if .Active}}
+                    <a class="button button-primary" href="/" target="_blank">Visit Site</a>
+                    {{else}}
+                    <form method="POST" action="/wp-admin/themes.php" style="display: inline;">
+                        <input type="hidden" name="action" value="activate">
+                        <input type="hidden" name="theme" value="{{.Slug}}">
+                        <button type="submit" class="button button-primary">Activate</button>
+                    </form>
+                    {{end}}
+                    <button type="button" class="button theme-details-btn" data-slug="{{.Slug}}" data-name="{{.Name}}" data-version="{{.Version}}" data-description="{{.Description}}" data-author="{{.Author}}" data-author-url="{{.AuthorURL}}" data-active="{{.Active}}">Theme Details</button>
+                </div>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Theme Details Modal -->
+<div id="theme-details-modal" class="theme-overlay" style="display: none;">
+    <div class="theme-overlay-content">
+        <div class="theme-backdrop"></div>
+        <div class="theme-wrap wp-clearfix">
+            <div class="theme-header">
+                <button class="close dashicons dashicons-no" type="button"><span class="screen-reader-text">Close details dialog</span></button>
+            </div>
+            <div class="theme-about wp-clearfix">
+                <div class="theme-screenshots">
+                    <div class="screenshot">
+                        <img id="modal-screenshot" src="" alt="">
+                    </div>
+                </div>
+                <div class="theme-info">
+                    <h2 class="theme-name" id="modal-theme-name"></h2>
+                    <p class="theme-author">By <a id="modal-author-link" href="" target="_blank"><span id="modal-author"></span></a></p>
+                    <p class="theme-version">Version: <span id="modal-version"></span></p>
+                    <p class="theme-description" id="modal-description"></p>
+                    <div class="theme-actions">
+                        <form id="modal-activate-form" method="POST" action="/wp-admin/themes.php" style="display: none;">
+                            <input type="hidden" name="action" value="activate">
+                            <input type="hidden" name="theme" id="modal-theme-slug" value="">
+                            <button type="submit" class="button button-primary">Activate</button>
+                        </form>
+                        <span id="modal-active-badge" class="current-label" style="display: none;">Active Theme</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.theme-count {
+    color: #50575e;
+    font-size: 14px;
+    margin: 15px 0;
+}
+
+.theme-browser .themes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    clear: both;
+}
+
+.theme-browser .theme {
+    background: #fff;
+    border: 1px solid #dcdcde;
+    cursor: pointer;
+}
+
+.theme-browser .theme:hover,
+.theme-browser .theme:focus {
+    border-color: #2271b1;
+}
+
+.theme-browser .theme.active {
+    border: 3px solid #2271b1;
+}
+
+.theme-screenshot {
+    position: relative;
+    background: #f0f0f1;
+}
+
+.theme-screenshot img {
+    width: 100%;
+    height: auto;
+    display: block;
+    aspect-ratio: 4/3;
+    object-fit: cover;
+}
+
+.theme-id-container {
+    padding: 15px;
+    border-top: 1px solid #dcdcde;
+}
+
+.theme-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 10px;
+}
+
+.theme-name span {
+    font-weight: 700;
+    color: #2271b1;
+}
+
+.theme-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.theme-actions .button {
+    flex: 1;
+    text-align: center;
+}
+
+/* Modal styles */
+.theme-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100000;
+}
+
+.theme-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+}
+
+.theme-wrap {
+    position: relative;
+    background: #fff;
+    margin: 50px auto;
+    max-width: 800px;
+    box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+}
+
+.theme-header {
+    background: #fff;
+    border-bottom: 1px solid #dcdcde;
+    padding: 10px;
+    text-align: right;
+}
+
+.theme-header .close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    color: #50575e;
+    padding: 5px;
+}
+
+.theme-header .close:hover {
+    color: #d63638;
+}
+
+.theme-about {
+    padding: 30px;
+    display: flex;
+    gap: 30px;
+}
+
+.theme-screenshots {
+    flex: 1;
+}
+
+.theme-screenshots .screenshot img {
+    width: 100%;
+    border: 1px solid #dcdcde;
+}
+
+.theme-info {
+    flex: 1;
+}
+
+.theme-info .theme-name {
+    font-size: 22px;
+    margin-bottom: 10px;
+}
+
+.theme-info .theme-author {
+    color: #50575e;
+    margin-bottom: 5px;
+}
+
+.theme-info .theme-version {
+    color: #787c82;
+    font-size: 13px;
+    margin-bottom: 15px;
+}
+
+.theme-info .theme-description {
+    line-height: 1.6;
+    color: #3c434a;
+}
+
+.theme-info .theme-actions {
+    margin-top: 20px;
+}
+
+.current-label {
+    display: inline-block;
+    padding: 5px 15px;
+    background: #2271b1;
+    color: #fff;
+    border-radius: 3px;
+    font-weight: 600;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('theme-details-modal');
+    const closeBtn = modal.querySelector('.close');
+    const backdrop = modal.querySelector('.theme-backdrop');
+
+    // Open modal
+    document.querySelectorAll('.theme-details-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const slug = this.dataset.slug;
+            const name = this.dataset.name;
+            const version = this.dataset.version;
+            const description = this.dataset.description;
+            const author = this.dataset.author;
+            const authorUrl = this.dataset.authorUrl;
+            const active = this.dataset.active === 'true';
+
+            document.getElementById('modal-screenshot').src = '/theme/' + slug + '/assets/images/screenshot.png';
+            document.getElementById('modal-theme-name').textContent = name;
+            document.getElementById('modal-author').textContent = author;
+            document.getElementById('modal-author-link').href = authorUrl || '#';
+            document.getElementById('modal-version').textContent = version;
+            document.getElementById('modal-description').textContent = description;
+            document.getElementById('modal-theme-slug').value = slug;
+
+            if (active) {
+                document.getElementById('modal-activate-form').style.display = 'none';
+                document.getElementById('modal-active-badge').style.display = 'inline-block';
+            } else {
+                document.getElementById('modal-activate-form').style.display = 'inline';
+                document.getElementById('modal-active-badge').style.display = 'none';
+            }
+
+            modal.style.display = 'block';
+        });
+    });
+
+    // Close modal
+    function closeModal() {
+        modal.style.display = 'none';
+    }
+
+    closeBtn.addEventListener('click', closeModal);
+    backdrop.addEventListener('click', closeModal);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal.style.display === 'block') {
+            closeModal();
+        }
+    });
+});
+</script>
+{{end}}

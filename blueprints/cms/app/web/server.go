@@ -544,6 +544,7 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/wp-admin/edit-tags.php", s.wpAdminHandler.TaxonomyList)
 
 	// Appearance
+	s.app.Get("/wp-admin/themes.php", s.wpAdminHandler.Themes)
 	s.app.Get("/wp-admin/nav-menus.php", s.wpAdminHandler.MenusPage)
 
 	// Users
@@ -697,6 +698,9 @@ func (s *Server) setupRoutes() {
 	s.app.Post("/wp-admin/options-media.php", s.wpAdminHandler.SettingsSave)
 	s.app.Post("/wp-admin/options-permalink.php", s.wpAdminHandler.SettingsSave)
 
+	// Themes
+	s.app.Post("/wp-admin/themes.php", s.wpAdminHandler.ThemeActivate)
+
 	// Menus
 	s.app.Post("/wp-admin/nav-menus.php", func(c *mizu.Ctx) error {
 		action := c.Request().FormValue("action")
@@ -793,11 +797,21 @@ func (s *Server) setupRoutes() {
 	// Frontend Site Routes
 	// ============================================================
 
-	// Theme static assets
+	// Theme static assets (default theme)
 	themeAssetsFS := assets.ThemeAssets()
 	s.app.Get("/theme/assets/{filepath...}", func(c *mizu.Ctx) error {
 		filepath := c.Param("filepath")
 		http.StripPrefix("/theme/assets/", http.FileServer(http.FS(themeAssetsFS))).ServeHTTP(c.Writer(), c.Request())
+		_ = filepath
+		return nil
+	})
+
+	// Theme-specific assets (for theme previews/screenshots)
+	s.app.Get("/theme/{slug}/assets/{filepath...}", func(c *mizu.Ctx) error {
+		slug := c.Param("slug")
+		filepath := c.Param("filepath")
+		themeFS := assets.ThemeAssetsBySlug(slug)
+		http.StripPrefix("/theme/"+slug+"/assets/", http.FileServer(http.FS(themeFS))).ServeHTTP(c.Writer(), c.Request())
 		_ = filepath
 		return nil
 	})

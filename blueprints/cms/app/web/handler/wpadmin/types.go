@@ -644,3 +644,30 @@ type ScreenOptions struct {
 	Columns       []string
 	ViewMode      string
 }
+
+// ThemeInfo holds information about a theme.
+type ThemeInfo struct {
+	Name        string
+	Slug        string
+	Version     string
+	Description string
+	Author      string
+	AuthorURL   string
+	Screenshot  string
+	Active      bool
+}
+
+// ThemesData holds data for the themes page.
+type ThemesData struct {
+	Title       string
+	BodyClass   string
+	User        *users.User
+	Menu        []MenuItem
+	Breadcrumbs []Breadcrumb
+	Notices     []AdminNotice
+	SiteTitle   string
+	SiteURL     string
+
+	Themes      []*ThemeInfo
+	ActiveTheme string
+}
