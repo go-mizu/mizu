@@ -1,6 +1,7 @@
 package wpadmin
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"html/template"
@@ -2146,4 +2147,1056 @@ func (h *Handler) SettingsPermalinks(c *mizu.Ctx) error {
 		Section:     "permalinks",
 		Settings:    settingsMap,
 	})
+}
+
+// ============================================================
+// POST Handlers - Form Submissions
+// ============================================================
+
+// PostSave handles creating or updating a post.
+func (h *Handler) PostSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit.php", "Invalid form data")
+	}
+
+	postID := c.Request().FormValue("post_ID")
+	action := c.Request().FormValue("action")
+	title := c.Request().FormValue("post_title")
+	content := c.Request().FormValue("content")
+	excerpt := c.Request().FormValue("excerpt")
+	slug := c.Request().FormValue("post_name")
+	status := c.Request().FormValue("post_status")
+	visibility := c.Request().FormValue("visibility")
+	categoryIDs := c.Request().Form["post_category[]"]
+
+	// Filter out "0" from category IDs
+	var validCatIDs []string
+	for _, id := range categoryIDs {
+		if id != "0" && id != "" {
+			validCatIDs = append(validCatIDs, id)
+		}
+	}
+
+	// Parse tags from textarea
+	tagsInput := c.Request().FormValue("tax_input[post_tag]")
+	var tagNames []string
+	if tagsInput != "" {
+		for _, name := range strings.Split(tagsInput, ",") {
+			name = strings.TrimSpace(name)
+			if name != "" {
+				tagNames = append(tagNames, name)
+			}
+		}
+	}
+
+	if action == "create" || postID == "" {
+		// Create new post
+		post, err := h.posts.Create(ctx, user.ID, &posts.CreateIn{
+			Title:       title,
+			Slug:        slug,
+			Content:     content,
+			Excerpt:     excerpt,
+			Status:      status,
+			Visibility:  visibility,
+			CategoryIDs: validCatIDs,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/post-new.php", "Failed to create post: "+err.Error())
+		}
+
+		// Handle tags - create if not exists
+		if len(tagNames) > 0 {
+			tagIDs, err := h.ensureTagsByName(ctx, tagNames)
+			if err == nil && len(tagIDs) > 0 {
+				_ = h.posts.SetTags(ctx, post.ID, tagIDs)
+			}
+		}
+
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/post.php?post="+post.ID+"&action=edit&message=1", http.StatusFound)
+		return nil
+	}
+
+	// Update existing post
+	_, err := h.posts.Update(ctx, postID, &posts.UpdateIn{
+		Title:      &title,
+		Slug:       &slug,
+		Content:    &content,
+		Excerpt:    &excerpt,
+		Status:     &status,
+		Visibility: &visibility,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/post.php?post="+postID+"&action=edit", "Failed to update post: "+err.Error())
+	}
+
+	// Update categories
+	if err := h.posts.SetCategories(ctx, postID, validCatIDs); err != nil {
+		// Log but don't fail
+	}
+
+	// Handle tags
+	if len(tagNames) > 0 {
+		tagIDs, err := h.ensureTagsByName(ctx, tagNames)
+		if err == nil {
+			_ = h.posts.SetTags(ctx, postID, tagIDs)
+		}
+	} else {
+		_ = h.posts.SetTags(ctx, postID, []string{})
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/post.php?post="+postID+"&action=edit&message=1", http.StatusFound)
+	return nil
+}
+
+// ensureTagsByName creates tags if they don't exist and returns their IDs.
+func (h *Handler) ensureTagsByName(ctx context.Context, names []string) ([]string, error) {
+	var tagIDs []string
+	for _, name := range names {
+		// Try to find existing tag
+		tag, err := h.tags.GetBySlug(ctx, slugify(name))
+		if err != nil {
+			// Create new tag
+			tag, err = h.tags.Create(ctx, &tags.CreateIn{
+				Name: name,
+			})
+			if err != nil {
+				continue
+			}
+		}
+		tagIDs = append(tagIDs, tag.ID)
+	}
+	return tagIDs, nil
+}
+
+// slugify converts a string to a URL-friendly slug.
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	return s
+}
+
+// PostTrash moves a post to trash.
+func (h *Handler) PostTrash(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	postID := c.Query("post")
+	if postID == "" {
+		postID = c.Request().FormValue("post")
+	}
+
+	if postID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php", http.StatusFound)
+		return nil
+	}
+
+	// Update status to trash
+	status := "trash"
+	_, err := h.posts.Update(ctx, postID, &posts.UpdateIn{
+		Status: &status,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit.php", "Failed to trash post")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php?trashed=1", http.StatusFound)
+	return nil
+}
+
+// PostRestore restores a post from trash.
+func (h *Handler) PostRestore(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	postID := c.Query("post")
+
+	if postID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php", http.StatusFound)
+		return nil
+	}
+
+	// Update status to draft
+	status := "draft"
+	_, err := h.posts.Update(ctx, postID, &posts.UpdateIn{
+		Status: &status,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit.php?post_status=trash", "Failed to restore post")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php?untrashed=1", http.StatusFound)
+	return nil
+}
+
+// PostDelete permanently deletes a post.
+func (h *Handler) PostDelete(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	postID := c.Query("post")
+
+	if postID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php", http.StatusFound)
+		return nil
+	}
+
+	if err := h.posts.Delete(ctx, postID); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit.php?post_status=trash", "Failed to delete post")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php?deleted=1", http.StatusFound)
+	return nil
+}
+
+// BulkPostAction handles bulk actions on posts.
+func (h *Handler) BulkPostAction(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php", http.StatusFound)
+		return nil
+	}
+
+	action := c.Request().FormValue("action")
+	if action == "-1" {
+		action = c.Request().FormValue("action2")
+	}
+
+	postIDs := c.Request().Form["post[]"]
+	if len(postIDs) == 0 {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php", http.StatusFound)
+		return nil
+	}
+
+	switch action {
+	case "trash":
+		status := "trash"
+		for _, id := range postIDs {
+			h.posts.Update(ctx, id, &posts.UpdateIn{Status: &status})
+		}
+		http.Redirect(c.Writer(), c.Request(), fmt.Sprintf("/wp-admin/edit.php?trashed=%d", len(postIDs)), http.StatusFound)
+	case "untrash":
+		status := "draft"
+		for _, id := range postIDs {
+			h.posts.Update(ctx, id, &posts.UpdateIn{Status: &status})
+		}
+		http.Redirect(c.Writer(), c.Request(), fmt.Sprintf("/wp-admin/edit.php?untrashed=%d", len(postIDs)), http.StatusFound)
+	case "delete":
+		for _, id := range postIDs {
+			h.posts.Delete(ctx, id)
+		}
+		http.Redirect(c.Writer(), c.Request(), fmt.Sprintf("/wp-admin/edit.php?deleted=%d", len(postIDs)), http.StatusFound)
+	default:
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php", http.StatusFound)
+	}
+
+	return nil
+}
+
+// PageSave handles creating or updating a page.
+func (h *Handler) PageSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit.php?post_type=page", "Invalid form data")
+	}
+
+	pageID := c.Request().FormValue("post_ID")
+	action := c.Request().FormValue("action")
+	title := c.Request().FormValue("post_title")
+	content := c.Request().FormValue("content")
+	slug := c.Request().FormValue("post_name")
+	status := c.Request().FormValue("post_status")
+	visibility := c.Request().FormValue("visibility")
+	parentID := c.Request().FormValue("parent_id")
+	menuOrder := parseIntDefault(c.Request().FormValue("menu_order"), 0)
+	template := c.Request().FormValue("page_template")
+
+	if action == "create" || pageID == "" {
+		// Create new page
+		page, err := h.pages.Create(ctx, user.ID, &pages.CreateIn{
+			Title:      title,
+			Slug:       slug,
+			Content:    content,
+			ParentID:   parentID,
+			Status:     status,
+			Visibility: visibility,
+			Template:   template,
+			SortOrder:  menuOrder,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/post-new.php?post_type=page", "Failed to create page: "+err.Error())
+		}
+
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/post.php?post="+page.ID+"&action=edit&post_type=page&message=1", http.StatusFound)
+		return nil
+	}
+
+	// Update existing page
+	_, err := h.pages.Update(ctx, pageID, &pages.UpdateIn{
+		Title:      &title,
+		Slug:       &slug,
+		Content:    &content,
+		ParentID:   &parentID,
+		Status:     &status,
+		Visibility: &visibility,
+		Template:   &template,
+		SortOrder:  &menuOrder,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/post.php?post="+pageID+"&action=edit&post_type=page", "Failed to update page: "+err.Error())
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/post.php?post="+pageID+"&action=edit&post_type=page&message=1", http.StatusFound)
+	return nil
+}
+
+// PageTrash moves a page to trash.
+func (h *Handler) PageTrash(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	pageID := c.Query("post")
+
+	if pageID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php?post_type=page", http.StatusFound)
+		return nil
+	}
+
+	status := "trash"
+	_, err := h.pages.Update(ctx, pageID, &pages.UpdateIn{
+		Status: &status,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit.php?post_type=page", "Failed to trash page")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit.php?post_type=page&trashed=1", http.StatusFound)
+	return nil
+}
+
+// CategorySave handles creating or updating a category.
+func (h *Handler) CategorySave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=category", "Invalid form data")
+	}
+
+	catID := c.Request().FormValue("tag_ID")
+	name := c.Request().FormValue("tag-name")
+	slug := c.Request().FormValue("slug")
+	parentID := c.Request().FormValue("parent")
+	description := c.Request().FormValue("description")
+
+	if parentID == "-1" {
+		parentID = ""
+	}
+
+	if catID == "" {
+		// Create new category
+		_, err := h.categories.Create(ctx, &categories.CreateIn{
+			Name:        name,
+			Slug:        slug,
+			ParentID:    parentID,
+			Description: description,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=category", "Failed to create category: "+err.Error())
+		}
+	} else {
+		// Update existing category
+		_, err := h.categories.Update(ctx, catID, &categories.UpdateIn{
+			Name:        &name,
+			Slug:        &slug,
+			ParentID:    &parentID,
+			Description: &description,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=category", "Failed to update category: "+err.Error())
+		}
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-tags.php?taxonomy=category&message=1", http.StatusFound)
+	return nil
+}
+
+// CategoryDelete deletes a category.
+func (h *Handler) CategoryDelete(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	catID := c.Query("tag_ID")
+
+	if catID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-tags.php?taxonomy=category", http.StatusFound)
+		return nil
+	}
+
+	if err := h.categories.Delete(ctx, catID); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=category", "Failed to delete category")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-tags.php?taxonomy=category&deleted=1", http.StatusFound)
+	return nil
+}
+
+// TagSave handles creating or updating a tag.
+func (h *Handler) TagSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=post_tag", "Invalid form data")
+	}
+
+	tagID := c.Request().FormValue("tag_ID")
+	name := c.Request().FormValue("tag-name")
+	slug := c.Request().FormValue("slug")
+	description := c.Request().FormValue("description")
+
+	if tagID == "" {
+		// Create new tag
+		_, err := h.tags.Create(ctx, &tags.CreateIn{
+			Name:        name,
+			Slug:        slug,
+			Description: description,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=post_tag", "Failed to create tag: "+err.Error())
+		}
+	} else {
+		// Update existing tag
+		_, err := h.tags.Update(ctx, tagID, &tags.UpdateIn{
+			Name:        &name,
+			Slug:        &slug,
+			Description: &description,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=post_tag", "Failed to update tag: "+err.Error())
+		}
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-tags.php?taxonomy=post_tag&message=1", http.StatusFound)
+	return nil
+}
+
+// TagDelete deletes a tag.
+func (h *Handler) TagDelete(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	tagID := c.Query("tag_ID")
+
+	if tagID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-tags.php?taxonomy=post_tag", http.StatusFound)
+		return nil
+	}
+
+	if err := h.tags.Delete(ctx, tagID); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-tags.php?taxonomy=post_tag", "Failed to delete tag")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-tags.php?taxonomy=post_tag&deleted=1", http.StatusFound)
+	return nil
+}
+
+// CommentAction handles comment moderation actions (approve, spam, trash).
+func (h *Handler) CommentAction(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	action := c.Query("action")
+	commentID := c.Query("c")
+
+	if commentID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-comments.php", http.StatusFound)
+		return nil
+	}
+
+	var err error
+	switch action {
+	case "approve", "approvecomment":
+		_, err = h.comments.Approve(ctx, commentID)
+	case "unapprove", "unapprovecomment":
+		status := "pending"
+		_, err = h.comments.Update(ctx, commentID, &comments.UpdateIn{Status: &status})
+	case "spam", "spamcomment":
+		_, err = h.comments.MarkAsSpam(ctx, commentID)
+	case "trash", "trashcomment":
+		status := "trash"
+		_, err = h.comments.Update(ctx, commentID, &comments.UpdateIn{Status: &status})
+	case "untrash":
+		status := "pending"
+		_, err = h.comments.Update(ctx, commentID, &comments.UpdateIn{Status: &status})
+	case "delete":
+		err = h.comments.Delete(ctx, commentID)
+	}
+
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-comments.php", "Failed to perform action")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-comments.php", http.StatusFound)
+	return nil
+}
+
+// CommentSave handles updating a comment.
+func (h *Handler) CommentSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-comments.php", "Invalid form data")
+	}
+
+	commentID := c.Request().FormValue("comment_ID")
+	content := c.Request().FormValue("content")
+	status := c.Request().FormValue("comment_status")
+	authorName := c.Request().FormValue("newcomment_author")
+	authorEmail := c.Request().FormValue("newcomment_author_email")
+	authorURL := c.Request().FormValue("newcomment_author_url")
+
+	if commentID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-comments.php", http.StatusFound)
+		return nil
+	}
+
+	// Get existing comment to update
+	comment, err := h.comments.GetByID(ctx, commentID)
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/edit-comments.php", "Comment not found")
+	}
+
+	// Update with new values
+	_, err = h.comments.Update(ctx, commentID, &comments.UpdateIn{
+		Content: &content,
+		Status:  &status,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/comment.php?c="+commentID+"&action=edit", "Failed to update comment")
+	}
+
+	// Note: author fields would need to be added to UpdateIn if not already there
+	_ = comment
+	_ = authorName
+	_ = authorEmail
+	_ = authorURL
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-comments.php?updated=1", http.StatusFound)
+	return nil
+}
+
+// BulkCommentAction handles bulk comment moderation.
+func (h *Handler) BulkCommentAction(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-comments.php", http.StatusFound)
+		return nil
+	}
+
+	action := c.Request().FormValue("action")
+	if action == "-1" {
+		action = c.Request().FormValue("action2")
+	}
+
+	commentIDs := c.Request().Form["delete_comments[]"]
+	if len(commentIDs) == 0 {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/edit-comments.php", http.StatusFound)
+		return nil
+	}
+
+	for _, id := range commentIDs {
+		switch action {
+		case "approve":
+			h.comments.Approve(ctx, id)
+		case "unapprove":
+			status := "pending"
+			h.comments.Update(ctx, id, &comments.UpdateIn{Status: &status})
+		case "spam":
+			h.comments.MarkAsSpam(ctx, id)
+		case "trash":
+			status := "trash"
+			h.comments.Update(ctx, id, &comments.UpdateIn{Status: &status})
+		case "delete":
+			h.comments.Delete(ctx, id)
+		}
+	}
+
+	http.Redirect(c.Writer(), c.Request(), fmt.Sprintf("/wp-admin/edit-comments.php?%s=%d", action, len(commentIDs)), http.StatusFound)
+	return nil
+}
+
+// UserSave handles creating or updating a user.
+func (h *Handler) UserSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/users.php", "Invalid form data")
+	}
+
+	userID := c.Request().FormValue("user_id")
+	email := c.Request().FormValue("email")
+	name := c.Request().FormValue("display_name")
+	firstName := c.Request().FormValue("first_name")
+	lastName := c.Request().FormValue("last_name")
+	role := c.Request().FormValue("role")
+	bio := c.Request().FormValue("description")
+	password := c.Request().FormValue("pass1")
+
+	// Combine first and last name if display name not set
+	if name == "" && (firstName != "" || lastName != "") {
+		name = strings.TrimSpace(firstName + " " + lastName)
+	}
+
+	if userID == "" {
+		// Create new user
+		if email == "" || password == "" {
+			return h.redirectWithError(c, "/wp-admin/user-new.php", "Email and password are required")
+		}
+
+		_, _, err := h.users.Register(ctx, &users.RegisterIn{
+			Email:    email,
+			Password: password,
+			Name:     name,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/user-new.php", "Failed to create user: "+err.Error())
+		}
+
+		// Update role after creation if specified
+		// Note: This would require updating the user after registration
+
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/users.php?created=1", http.StatusFound)
+		return nil
+	}
+
+	// Update existing user
+	_, err := h.users.Update(ctx, userID, &users.UpdateIn{
+		Name: &name,
+		Bio:  &bio,
+		Role: &role,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/user-edit.php?user_id="+userID, "Failed to update user: "+err.Error())
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/user-edit.php?user_id="+userID+"&updated=1", http.StatusFound)
+	return nil
+}
+
+// ProfileSave handles updating the current user's profile.
+func (h *Handler) ProfileSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/profile.php", "Invalid form data")
+	}
+
+	name := c.Request().FormValue("display_name")
+	firstName := c.Request().FormValue("first_name")
+	lastName := c.Request().FormValue("last_name")
+	bio := c.Request().FormValue("description")
+	email := c.Request().FormValue("email")
+
+	if name == "" && (firstName != "" || lastName != "") {
+		name = strings.TrimSpace(firstName + " " + lastName)
+	}
+
+	_, err := h.users.Update(ctx, user.ID, &users.UpdateIn{
+		Name: &name,
+		Bio:  &bio,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/profile.php", "Failed to update profile: "+err.Error())
+	}
+
+	_ = email // Email update would need separate handling
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/profile.php?updated=1", http.StatusFound)
+	return nil
+}
+
+// SettingsSave handles saving settings for all settings pages.
+func (h *Handler) SettingsSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/options-general.php", "Invalid form data")
+	}
+
+	// Determine which settings page based on option_page field
+	optionPage := c.Request().FormValue("option_page")
+	redirectURL := "/wp-admin/options-general.php"
+
+	switch optionPage {
+	case "general":
+		redirectURL = "/wp-admin/options-general.php"
+	case "writing":
+		redirectURL = "/wp-admin/options-writing.php"
+	case "reading":
+		redirectURL = "/wp-admin/options-reading.php"
+	case "discussion":
+		redirectURL = "/wp-admin/options-discussion.php"
+	case "media":
+		redirectURL = "/wp-admin/options-media.php"
+	case "permalink":
+		redirectURL = "/wp-admin/options-permalink.php"
+	}
+
+	// Save all form values as settings
+	for key, values := range c.Request().Form {
+		if key == "option_page" || key == "action" || key == "_wpnonce" {
+			continue
+		}
+
+		value := ""
+		if len(values) > 0 {
+			value = values[0]
+		}
+
+		_, err := h.settings.Set(ctx, &settings.SetIn{
+			Key:       key,
+			Value:     value,
+			GroupName: optionPage,
+		})
+		if err != nil {
+			// Log but continue
+		}
+	}
+
+	http.Redirect(c.Writer(), c.Request(), redirectURL+"?settings-updated=true", http.StatusFound)
+	return nil
+}
+
+// MenuSave handles creating or updating a menu.
+func (h *Handler) MenuSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/nav-menus.php", "Invalid form data")
+	}
+
+	menuID := c.Request().FormValue("menu")
+	menuName := c.Request().FormValue("menu-name")
+	action := c.Request().FormValue("action")
+
+	if action == "delete" && menuID != "" {
+		if err := h.menus.DeleteMenu(ctx, menuID); err != nil {
+			return h.redirectWithError(c, "/wp-admin/nav-menus.php?menu="+menuID, "Failed to delete menu")
+		}
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/nav-menus.php?deleted=1", http.StatusFound)
+		return nil
+	}
+
+	if menuID == "" || action == "create" {
+		// Create new menu
+		menu, err := h.menus.CreateMenu(ctx, &menus.CreateMenuIn{
+			Name: menuName,
+		})
+		if err != nil {
+			return h.redirectWithError(c, "/wp-admin/nav-menus.php", "Failed to create menu: "+err.Error())
+		}
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/nav-menus.php?menu="+menu.ID+"&created=1", http.StatusFound)
+		return nil
+	}
+
+	// Update existing menu
+	_, err := h.menus.UpdateMenu(ctx, menuID, &menus.UpdateMenuIn{
+		Name: &menuName,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/nav-menus.php?menu="+menuID, "Failed to update menu: "+err.Error())
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/nav-menus.php?menu="+menuID+"&updated=1", http.StatusFound)
+	return nil
+}
+
+// MenuItemSave handles creating or updating a menu item.
+func (h *Handler) MenuItemSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/nav-menus.php", "Invalid form data")
+	}
+
+	menuID := c.Request().FormValue("menu")
+	title := c.Request().FormValue("menu-item-title")
+	url := c.Request().FormValue("menu-item-url")
+	linkType := c.Request().FormValue("menu-item-type")
+	linkID := c.Request().FormValue("menu-item-object-id")
+	parentID := c.Request().FormValue("menu-item-parent-id")
+
+	_, err := h.menus.CreateItem(ctx, menuID, &menus.CreateItemIn{
+		Title:    title,
+		URL:      url,
+		LinkType: linkType,
+		LinkID:   linkID,
+		ParentID: parentID,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/nav-menus.php?menu="+menuID, "Failed to add menu item: "+err.Error())
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/nav-menus.php?menu="+menuID+"&item-added=1", http.StatusFound)
+	return nil
+}
+
+// MenuItemDelete handles deleting a menu item.
+func (h *Handler) MenuItemDelete(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	menuID := c.Query("menu")
+	itemID := c.Query("item")
+
+	if itemID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/nav-menus.php", http.StatusFound)
+		return nil
+	}
+
+	if err := h.menus.DeleteItem(ctx, itemID); err != nil {
+		return h.redirectWithError(c, "/wp-admin/nav-menus.php?menu="+menuID, "Failed to delete menu item")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/nav-menus.php?menu="+menuID+"&item-deleted=1", http.StatusFound)
+	return nil
+}
+
+// MediaUpload handles file uploads.
+func (h *Handler) MediaUpload(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	// Parse multipart form (32 MB max)
+	if err := c.Request().ParseMultipartForm(32 << 20); err != nil {
+		return h.redirectWithError(c, "/wp-admin/upload.php", "Failed to parse upload: "+err.Error())
+	}
+
+	file, header, err := c.Request().FormFile("async-upload")
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/upload.php", "No file uploaded")
+	}
+	defer file.Close()
+
+	// Detect MIME type
+	mimeType := header.Header.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+
+	// Upload via media service
+	mediaItem, err := h.media.Upload(ctx, user.ID, &media.UploadIn{
+		File:     file,
+		Filename: header.Filename,
+		MimeType: mimeType,
+		FileSize: header.Size,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/upload.php", "Failed to upload: "+err.Error())
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/upload.php?item="+mediaItem.ID+"&uploaded=1", http.StatusFound)
+	return nil
+}
+
+// MediaSave handles updating media metadata.
+func (h *Handler) MediaSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		return h.redirectWithError(c, "/wp-admin/upload.php", "Invalid form data")
+	}
+
+	mediaID := c.Request().FormValue("post_ID")
+	title := c.Request().FormValue("post_title")
+	altText := c.Request().FormValue("_wp_attachment_image_alt")
+	caption := c.Request().FormValue("post_excerpt")
+	description := c.Request().FormValue("post_content")
+
+	if mediaID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/upload.php", http.StatusFound)
+		return nil
+	}
+
+	_, err := h.media.Update(ctx, mediaID, &media.UpdateIn{
+		Title:       &title,
+		AltText:     &altText,
+		Caption:     &caption,
+		Description: &description,
+	})
+	if err != nil {
+		return h.redirectWithError(c, "/wp-admin/post.php?post="+mediaID+"&action=edit", "Failed to update media: "+err.Error())
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/post.php?post="+mediaID+"&action=edit&message=1", http.StatusFound)
+	return nil
+}
+
+// MediaDelete handles deleting media.
+func (h *Handler) MediaDelete(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	mediaID := c.Query("post")
+
+	if mediaID == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/upload.php", http.StatusFound)
+		return nil
+	}
+
+	if err := h.media.Delete(ctx, mediaID); err != nil {
+		return h.redirectWithError(c, "/wp-admin/upload.php", "Failed to delete media")
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/upload.php?deleted=1", http.StatusFound)
+	return nil
+}
+
+// QuickDraftSave handles the Quick Draft form on the dashboard.
+func (h *Handler) QuickDraftSave(c *mizu.Ctx) error {
+	user := h.requireAuth(c)
+	if user == nil {
+		return nil
+	}
+
+	ctx := c.Request().Context()
+
+	if err := c.Request().ParseForm(); err != nil {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/", http.StatusFound)
+		return nil
+	}
+
+	title := c.Request().FormValue("post_title")
+	content := c.Request().FormValue("content")
+
+	if title == "" && content == "" {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/", http.StatusFound)
+		return nil
+	}
+
+	if title == "" {
+		title = "Quick Draft"
+	}
+
+	post, err := h.posts.Create(ctx, user.ID, &posts.CreateIn{
+		Title:   title,
+		Content: content,
+		Status:  "draft",
+	})
+	if err != nil {
+		http.Redirect(c.Writer(), c.Request(), "/wp-admin/?draft-error=1", http.StatusFound)
+		return nil
+	}
+
+	http.Redirect(c.Writer(), c.Request(), "/wp-admin/post.php?post="+post.ID+"&action=edit&message=6", http.StatusFound)
+	return nil
+}
+
+// redirectWithError redirects with an error message.
+func (h *Handler) redirectWithError(c *mizu.Ctx, url, message string) error {
+	// In a real implementation, we'd store the message in a session flash
+	// For now, just redirect
+	http.Redirect(c.Writer(), c.Request(), url, http.StatusFound)
+	return nil
 }
