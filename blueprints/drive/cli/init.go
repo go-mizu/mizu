@@ -1,39 +1,68 @@
 package cli
 
 import (
-	"context"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/go-mizu/blueprints/drive/store/duckdb"
+	"github.com/go-mizu/blueprints/drive/app/web"
 )
 
-func newInitCmd() *cobra.Command {
-	return &cobra.Command{
+// NewInit creates the init command
+func NewInit() *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize the database",
-		RunE:  runInit,
+		Long: `Initialize the Drive database with the required schema.
+
+This command creates all necessary tables for:
+  - Users and sessions
+  - Files and folders
+  - Shares and permissions
+  - Activity logs
+  - User settings
+
+The database will be created if it doesn't exist.
+
+Examples:
+  drive init                          # Initialize default database
+  drive init --data /path/to/dir      # Initialize at specific directory`,
+		RunE: runInit,
 	}
+
+	return cmd
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
-	// Ensure data directory exists
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return fmt.Errorf("create data directory: %w", err)
-	}
+	Blank()
+	Header("", "Initialize Database")
+	Blank()
 
-	store, err := duckdb.Open(dataDir)
+	Summary("Data", dataDir)
+	Blank()
+
+	start := time.Now()
+	stop := StartSpinner("Initializing database...")
+
+	srv, err := web.New(web.Config{
+		Addr:    ":0",
+		DataDir: dataDir,
+		Dev:     false,
+	})
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		stop()
+		Error(fmt.Sprintf("Failed to initialize: %v", err))
+		return err
 	}
-	defer store.Close()
+	srv.Close()
 
-	if err := store.Ensure(context.Background()); err != nil {
-		return fmt.Errorf("initialize schema: %w", err)
-	}
+	stop()
+	Step("", "Database initialized", time.Since(start))
+	Blank()
+	Success("Database ready")
+	Hint(fmt.Sprintf("Data directory: %s", dataDir))
+	Blank()
 
-	fmt.Println("Database initialized successfully")
 	return nil
 }

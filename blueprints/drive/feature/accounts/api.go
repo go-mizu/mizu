@@ -6,103 +6,70 @@ import (
 	"time"
 )
 
-// Account represents a user account.
-type Account struct {
-	ID           string    `json:"id"`
-	Username     string    `json:"username"`
-	Email        string    `json:"email,omitempty"`
-	PasswordHash string    `json:"-"`
-	DisplayName  string    `json:"display_name,omitempty"`
-	AvatarURL    string    `json:"avatar_url,omitempty"`
-	StorageQuota int64     `json:"storage_quota"`
-	StorageUsed  int64     `json:"storage_used"`
-	IsAdmin      bool      `json:"is_admin,omitempty"`
-	IsSuspended  bool      `json:"is_suspended,omitempty"`
-	Preferences  string    `json:"preferences,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+// User represents a user account.
+type User struct {
+	ID            string    `json:"id"`
+	Email         string    `json:"email"`
+	Name          string    `json:"name"`
+	PasswordHash  string    `json:"-"`
+	AvatarURL     string    `json:"avatar_url,omitempty"`
+	StorageQuota  int64     `json:"storage_quota"`
+	StorageUsed   int64     `json:"storage_used"`
+	IsAdmin       bool      `json:"is_admin"`
+	EmailVerified bool      `json:"email_verified"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // Session represents an authenticated session.
 type Session struct {
-	ID        string    `json:"id"`
-	AccountID string    `json:"account_id"`
-	Token     string    `json:"token,omitempty"`
-	UserAgent string    `json:"user_agent,omitempty"`
-	IPAddress string    `json:"ip_address,omitempty"`
-	LastUsed  time.Time `json:"last_used"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	TokenHash    string    `json:"-"`
+	IPAddress    string    `json:"ip_address,omitempty"`
+	UserAgent    string    `json:"user_agent,omitempty"`
+	LastActiveAt time.Time `json:"last_active_at,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
-// RegisterIn contains registration input.
+// RegisterIn contains input for registering a user.
 type RegisterIn struct {
-	Username    string `json:"username"`
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name,omitempty"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
 }
 
-// LoginIn contains login input.
+// LoginIn contains input for logging in.
 type LoginIn struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	UserAgent string `json:"-"`
-	IPAddress string `json:"-"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
-// UpdateIn contains profile update input.
+// UpdateIn contains input for updating a user.
 type UpdateIn struct {
-	DisplayName *string `json:"display_name,omitempty"`
-	AvatarURL   *string `json:"avatar_url,omitempty"`
+	Name      *string `json:"name,omitempty"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
 }
 
-// ChangePasswordIn contains password change input.
+// ChangePasswordIn contains input for changing password.
 type ChangePasswordIn struct {
 	CurrentPassword string `json:"current_password"`
 	NewPassword     string `json:"new_password"`
 }
 
-// StorageUsage represents storage usage breakdown.
-type StorageUsage struct {
-	Quota     int64            `json:"quota"`
-	Used      int64            `json:"used"`
-	Available int64            `json:"available"`
-	Percent   float64          `json:"percent_used"`
-	Breakdown map[string]int64 `json:"breakdown"`
-}
-
 // API defines the accounts service contract.
 type API interface {
-	Register(ctx context.Context, in *RegisterIn) (*Account, error)
-	Login(ctx context.Context, in *LoginIn) (*Session, *Account, error)
-	Logout(ctx context.Context, token string) error
-	GetByID(ctx context.Context, id string) (*Account, error)
-	GetByToken(ctx context.Context, token string) (*Account, *Session, error)
-	Update(ctx context.Context, id string, in *UpdateIn) (*Account, error)
+	Register(ctx context.Context, in *RegisterIn) (*User, *Session, error)
+	Login(ctx context.Context, in *LoginIn) (*User, *Session, error)
+	Logout(ctx context.Context, sessionID string) error
+	LogoutAll(ctx context.Context, userID string) error
+	GetByID(ctx context.Context, id string) (*User, error)
+	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetBySession(ctx context.Context, token string) (*User, error)
+	Update(ctx context.Context, id string, in *UpdateIn) (*User, error)
 	ChangePassword(ctx context.Context, id string, in *ChangePasswordIn) error
-	GetStorageUsage(ctx context.Context, id string) (*StorageUsage, error)
-	UpdateStorageUsed(ctx context.Context, id string, delta int64) error
-	ListSessions(ctx context.Context, accountID string) ([]*Session, error)
-	RevokeSession(ctx context.Context, accountID, sessionID string) error
-}
-
-// Store defines the data access contract.
-type Store interface {
-	Create(ctx context.Context, a *Account) error
-	GetByID(ctx context.Context, id string) (*Account, error)
-	GetByUsername(ctx context.Context, username string) (*Account, error)
-	GetByEmail(ctx context.Context, email string) (*Account, error)
-	Update(ctx context.Context, id string, in *UpdateIn) error
-	UpdatePassword(ctx context.Context, id, passwordHash string) error
-	UpdateStorageUsed(ctx context.Context, id string, delta int64) error
-
-	CreateSession(ctx context.Context, s *Session) error
-	GetSessionByToken(ctx context.Context, token string) (*Session, error)
-	UpdateSessionLastUsed(ctx context.Context, id string) error
-	DeleteSession(ctx context.Context, id string) error
-	DeleteSessionsByAccount(ctx context.Context, accountID string) error
-	ListSessionsByAccount(ctx context.Context, accountID string) ([]*Session, error)
-
-	GetStorageByCategory(ctx context.Context, accountID string) (map[string]int64, error)
+	Delete(ctx context.Context, id string) error
+	ListSessions(ctx context.Context, userID string) ([]*Session, error)
+	DeleteSession(ctx context.Context, userID, sessionID string) error
 }

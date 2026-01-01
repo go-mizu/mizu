@@ -2,336 +2,251 @@ package folders
 
 import (
 	"context"
-	"path"
-	"strings"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/go-mizu/blueprints/drive/pkg/ulid"
+	"github.com/go-mizu/blueprints/drive/store/duckdb"
+)
+
+var (
+	ErrNotFound     = errors.New("folder not found")
+	ErrMissingName  = errors.New("name is required")
+	ErrUnauthorized = errors.New("unauthorized")
 )
 
 // Service implements the folders API.
 type Service struct {
-	store Store
+	store *duckdb.Store
 }
 
 // NewService creates a new folders service.
-func NewService(store Store) *Service {
+func NewService(store *duckdb.Store) *Service {
 	return &Service{store: store}
 }
 
-// Create creates a new folder.
-func (s *Service) Create(ctx context.Context, ownerID string, in *CreateIn) (*Folder, error) {
-	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		return nil, ErrInvalidParent
-	}
-
-	// Get parent folder
-	var parentPath string
-	var depth int
-	parentID := in.ParentID
-
-	if parentID != "" {
-		parent, err := s.store.GetByID(ctx, parentID)
-		if err != nil {
-			return nil, ErrInvalidParent
-		}
-		if parent.OwnerID != ownerID {
-			return nil, ErrNotOwner
-		}
-		parentPath = parent.Path
-		depth = parent.Depth + 1
-	} else {
-		// Use root folder
-		root, err := s.EnsureRoot(ctx, ownerID)
-		if err != nil {
-			return nil, err
-		}
-		parentID = root.ID
-		parentPath = root.Path
-		depth = 1
-	}
-
-	// Check for duplicate name
-	if existing, _ := s.store.GetByOwnerAndParentAndName(ctx, ownerID, parentID, name); existing != nil {
-		return nil, ErrNameTaken
+func (s *Service) Create(ctx context.Context, userID string, in *CreateIn) (*Folder, error) {
+	if in.Name == "" {
+		return nil, ErrMissingName
 	}
 
 	now := time.Now()
-	folder := &Folder{
-		ID:        ulid.New(),
-		OwnerID:   ownerID,
-		ParentID:  parentID,
-		Name:      name,
-		Path:      path.Join(parentPath, name),
-		Depth:     depth,
-		Color:     in.Color,
-		IsRoot:    false,
-		Starred:   false,
-		Trashed:   false,
-		CreatedAt: now,
-		UpdatedAt: now,
+	dbFolder := &duckdb.Folder{
+		ID:          ulid.New(),
+		UserID:      userID,
+		ParentID:    sql.NullString{String: in.ParentID, Valid: in.ParentID != ""},
+		Name:        in.Name,
+		Description: sql.NullString{String: in.Description, Valid: in.Description != ""},
+		Color:       sql.NullString{String: in.Color, Valid: in.Color != ""},
+		IsStarred:   false,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
-	if err := s.store.Create(ctx, folder); err != nil {
+	if err := s.store.CreateFolder(ctx, dbFolder); err != nil {
 		return nil, err
 	}
 
-	return folder, nil
+	return dbFolderToFolder(dbFolder), nil
 }
 
-// GetByID retrieves a folder by ID.
 func (s *Service) GetByID(ctx context.Context, id string) (*Folder, error) {
-	return s.store.GetByID(ctx, id)
-}
-
-// GetRoot retrieves the root folder for a user.
-func (s *Service) GetRoot(ctx context.Context, ownerID string) (*Folder, error) {
-	return s.store.GetRoot(ctx, ownerID)
-}
-
-// EnsureRoot creates root folder if it doesn't exist.
-func (s *Service) EnsureRoot(ctx context.Context, ownerID string) (*Folder, error) {
-	root, err := s.store.GetRoot(ctx, ownerID)
-	if err == nil {
-		return root, nil
-	}
-
-	now := time.Now()
-	root = &Folder{
-		ID:        ulid.New(),
-		OwnerID:   ownerID,
-		ParentID:  "",
-		Name:      "My Drive",
-		Path:      "/",
-		Depth:     0,
-		IsRoot:    true,
-		Starred:   false,
-		Trashed:   false,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	if err := s.store.Create(ctx, root); err != nil {
-		// Race condition - another goroutine created it
-		return s.store.GetRoot(ctx, ownerID)
-	}
-
-	return root, nil
-}
-
-// List lists folders.
-func (s *Service) List(ctx context.Context, ownerID string, in *ListIn) ([]*Folder, error) {
-	return s.store.List(ctx, ownerID, in)
-}
-
-// Update updates a folder.
-func (s *Service) Update(ctx context.Context, id, ownerID string, in *UpdateIn) (*Folder, error) {
-	folder, err := s.store.GetByID(ctx, id)
+	dbFolder, err := s.store.GetFolderByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-
-	if folder.OwnerID != ownerID {
-		return nil, ErrNotOwner
+	if dbFolder == nil {
+		return nil, ErrNotFound
 	}
-
-	if folder.IsRoot {
-		return nil, ErrCannotMove
-	}
-
-	// Check for name collision
-	if in.Name != nil && *in.Name != folder.Name {
-		name := strings.TrimSpace(*in.Name)
-		if existing, _ := s.store.GetByOwnerAndParentAndName(ctx, ownerID, folder.ParentID, name); existing != nil {
-			return nil, ErrNameTaken
-		}
-
-		// Update path for this folder and descendants
-		oldPath := folder.Path
-		newPath := path.Join(path.Dir(folder.Path), name)
-
-		if err := s.store.Update(ctx, id, in); err != nil {
-			return nil, err
-		}
-		if err := s.store.UpdatePath(ctx, id, newPath, folder.Depth); err != nil {
-			return nil, err
-		}
-
-		// Update descendant paths
-		descendants, _ := s.store.ListDescendants(ctx, id)
-		for _, desc := range descendants {
-			descNewPath := strings.Replace(desc.Path, oldPath, newPath, 1)
-			s.store.UpdatePath(ctx, desc.ID, descNewPath, desc.Depth)
-		}
-	} else {
-		if err := s.store.Update(ctx, id, in); err != nil {
-			return nil, err
-		}
-	}
-
-	return s.store.GetByID(ctx, id)
+	return dbFolderToFolder(dbFolder), nil
 }
 
-// Move moves a folder to a new parent.
-func (s *Service) Move(ctx context.Context, id, ownerID, newParentID string) (*Folder, error) {
-	folder, err := s.store.GetByID(ctx, id)
+func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Folder, error) {
+	dbFolder, err := s.store.GetFolderByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-
-	if folder.OwnerID != ownerID {
-		return nil, ErrNotOwner
+	if dbFolder == nil {
+		return nil, ErrNotFound
 	}
 
-	if folder.IsRoot {
-		return nil, ErrCannotMove
+	if in.Name != nil {
+		dbFolder.Name = *in.Name
 	}
-
-	if newParentID == id {
-		return nil, ErrCannotMove
+	if in.Description != nil {
+		dbFolder.Description = sql.NullString{String: *in.Description, Valid: true}
 	}
-
-	// Get new parent
-	var newParentPath string
-	var newDepth int
-
-	if newParentID == "" {
-		root, err := s.EnsureRoot(ctx, ownerID)
-		if err != nil {
-			return nil, err
-		}
-		newParentID = root.ID
-		newParentPath = root.Path
-		newDepth = 1
-	} else {
-		parent, err := s.store.GetByID(ctx, newParentID)
-		if err != nil {
-			return nil, ErrInvalidParent
-		}
-		if parent.OwnerID != ownerID {
-			return nil, ErrNotOwner
-		}
-
-		// Can't move into descendant
-		if strings.HasPrefix(parent.Path, folder.Path+"/") {
-			return nil, ErrCannotMove
-		}
-
-		newParentPath = parent.Path
-		newDepth = parent.Depth + 1
+	if in.Color != nil {
+		dbFolder.Color = sql.NullString{String: *in.Color, Valid: true}
 	}
+	dbFolder.UpdatedAt = time.Now()
 
-	// Check name collision in new parent
-	if existing, _ := s.store.GetByOwnerAndParentAndName(ctx, ownerID, newParentID, folder.Name); existing != nil {
-		return nil, ErrNameTaken
-	}
-
-	oldPath := folder.Path
-	newPath := path.Join(newParentPath, folder.Name)
-	depthDiff := newDepth - folder.Depth
-
-	// Update this folder
-	if err := s.store.UpdateParent(ctx, id, newParentID, newPath, newDepth); err != nil {
+	if err := s.store.UpdateFolder(ctx, dbFolder); err != nil {
 		return nil, err
 	}
 
-	// Update descendant paths
-	descendants, _ := s.store.ListDescendants(ctx, id)
-	for _, desc := range descendants {
-		descNewPath := strings.Replace(desc.Path, oldPath, newPath, 1)
-		s.store.UpdatePath(ctx, desc.ID, descNewPath, desc.Depth+depthDiff)
-	}
-
-	return s.store.GetByID(ctx, id)
+	return dbFolderToFolder(dbFolder), nil
 }
 
-// Copy copies a folder and its contents.
-func (s *Service) Copy(ctx context.Context, id, ownerID, destParentID string) (*Folder, error) {
-	folder, err := s.store.GetByID(ctx, id)
+func (s *Service) Move(ctx context.Context, id string, in *MoveIn) (*Folder, error) {
+	dbFolder, err := s.store.GetFolderByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-
-	if folder.OwnerID != ownerID {
-		return nil, ErrNotOwner
+	if dbFolder == nil {
+		return nil, ErrNotFound
 	}
 
-	// Create copy in destination
-	return s.Create(ctx, ownerID, &CreateIn{
-		Name:     folder.Name + " (copy)",
-		ParentID: destParentID,
-		Color:    folder.Color,
-	})
+	dbFolder.ParentID = sql.NullString{String: in.ParentID, Valid: in.ParentID != ""}
+	dbFolder.UpdatedAt = time.Now()
+
+	if err := s.store.UpdateFolder(ctx, dbFolder); err != nil {
+		return nil, err
+	}
+
+	return dbFolderToFolder(dbFolder), nil
 }
 
-// Delete moves a folder to trash.
-func (s *Service) Delete(ctx context.Context, id, ownerID string) error {
-	folder, err := s.store.GetByID(ctx, id)
+func (s *Service) Delete(ctx context.Context, id string) error {
+	// Get all child folders
+	childIDs, err := s.store.ListChildFolderIDs(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	if folder.OwnerID != ownerID {
-		return ErrNotOwner
+	// Delete children first
+	for _, childID := range childIDs {
+		if err := s.store.DeleteFolder(ctx, childID); err != nil {
+			return err
+		}
 	}
 
-	if folder.IsRoot {
-		return ErrCannotMove
-	}
-
-	return s.store.UpdateTrashed(ctx, id, true)
+	// Delete the folder
+	return s.store.DeleteFolder(ctx, id)
 }
 
-// Star stars or unstars a folder.
-func (s *Service) Star(ctx context.Context, id, ownerID string, starred bool) error {
-	folder, err := s.store.GetByID(ctx, id)
+func (s *Service) Trash(ctx context.Context, id string) error {
+	dbFolder, err := s.store.GetFolderByID(ctx, id)
 	if err != nil {
 		return err
 	}
-
-	if folder.OwnerID != ownerID {
-		return ErrNotOwner
+	if dbFolder == nil {
+		return ErrNotFound
 	}
 
-	return s.store.UpdateStarred(ctx, id, starred)
+	// Trash all child folders
+	childIDs, err := s.store.ListChildFolderIDs(ctx, id)
+	if err != nil {
+		return err
+	}
+	for _, childID := range childIDs {
+		_ = s.store.TrashFolder(ctx, childID)
+	}
+
+	return s.store.TrashFolder(ctx, id)
 }
 
-// GetTree returns the folder tree.
-func (s *Service) GetTree(ctx context.Context, ownerID string, rootID string) (*TreeNode, error) {
-	var root *Folder
-	var err error
-
-	if rootID == "" {
-		root, err = s.store.GetRoot(ctx, ownerID)
-	} else {
-		root, err = s.store.GetByID(ctx, rootID)
+func (s *Service) Restore(ctx context.Context, id string) error {
+	// Restore child folders
+	childIDs, err := s.store.ListChildFolderIDs(ctx, id)
+	if err != nil {
+		return err
 	}
+	for _, childID := range childIDs {
+		_ = s.store.RestoreFolder(ctx, childID)
+	}
+
+	return s.store.RestoreFolder(ctx, id)
+}
+
+func (s *Service) Star(ctx context.Context, id, userID string) error {
+	dbFolder, err := s.store.GetFolderByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if dbFolder == nil {
+		return ErrNotFound
+	}
+	return s.store.StarFolder(ctx, id)
+}
+
+func (s *Service) Unstar(ctx context.Context, id, userID string) error {
+	return s.store.UnstarFolder(ctx, id)
+}
+
+func (s *Service) ListByUser(ctx context.Context, userID string) ([]*Folder, error) {
+	dbFolders, err := s.store.ListAllFoldersByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	return s.buildTree(ctx, ownerID, root)
+	return dbFoldersToFolders(dbFolders), nil
 }
 
-func (s *Service) buildTree(ctx context.Context, ownerID string, folder *Folder) (*TreeNode, error) {
-	node := &TreeNode{
-		ID:   folder.ID,
-		Name: folder.Name,
-	}
-
-	children, err := s.store.ListByParent(ctx, ownerID, folder.ID)
+func (s *Service) ListByParent(ctx context.Context, userID, parentID string) ([]*Folder, error) {
+	dbFolders, err := s.store.ListFoldersByUser(ctx, userID, parentID)
 	if err != nil {
-		return node, nil
+		return nil, err
 	}
+	return dbFoldersToFolders(dbFolders), nil
+}
 
-	for _, child := range children {
-		if child.Trashed {
-			continue
-		}
-		childNode, _ := s.buildTree(ctx, ownerID, child)
-		node.Children = append(node.Children, childNode)
+func (s *Service) ListStarred(ctx context.Context, userID string) ([]*Folder, error) {
+	dbFolders, err := s.store.ListStarredFolders(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
+	return dbFoldersToFolders(dbFolders), nil
+}
 
-	return node, nil
+func (s *Service) ListTrashed(ctx context.Context, userID string) ([]*Folder, error) {
+	dbFolders, err := s.store.ListTrashedFolders(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return dbFoldersToFolders(dbFolders), nil
+}
+
+func (s *Service) Search(ctx context.Context, userID, query string) ([]*Folder, error) {
+	dbFolders, err := s.store.SearchFolders(ctx, userID, query)
+	if err != nil {
+		return nil, err
+	}
+	return dbFoldersToFolders(dbFolders), nil
+}
+
+func (s *Service) GetPath(ctx context.Context, id string) ([]*Folder, error) {
+	dbFolders, err := s.store.GetFolderPath(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return dbFoldersToFolders(dbFolders), nil
+}
+
+func dbFolderToFolder(f *duckdb.Folder) *Folder {
+	folder := &Folder{
+		ID:          f.ID,
+		UserID:      f.UserID,
+		Name:        f.Name,
+		Description: f.Description.String,
+		Color:       f.Color.String,
+		IsStarred:   f.IsStarred,
+		CreatedAt:   f.CreatedAt,
+		UpdatedAt:   f.UpdatedAt,
+	}
+	if f.ParentID.Valid {
+		folder.ParentID = f.ParentID.String
+	}
+	if f.TrashedAt.Valid {
+		folder.TrashedAt = f.TrashedAt.Time
+	}
+	return folder
+}
+
+func dbFoldersToFolders(dbFolders []*duckdb.Folder) []*Folder {
+	folders := make([]*Folder, len(dbFolders))
+	for i, f := range dbFolders {
+		folders[i] = dbFolderToFolder(f)
+	}
+	return folders
 }

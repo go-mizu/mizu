@@ -4,264 +4,223 @@ import (
 	"context"
 	"database/sql"
 	"time"
-
-	"github.com/go-mizu/blueprints/drive/feature/folders"
 )
 
-// FoldersStore handles folder persistence.
-type FoldersStore struct {
-	db *sql.DB
+// Folder represents a folder record.
+type Folder struct {
+	ID          string
+	UserID      string
+	ParentID    sql.NullString
+	Name        string
+	Description sql.NullString
+	Color       sql.NullString
+	IsStarred   bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	TrashedAt   sql.NullTime
 }
 
-// Create inserts a new folder.
-func (s *FoldersStore) Create(ctx context.Context, f *folders.Folder) error {
+// CreateFolder inserts a new folder.
+func (s *Store) CreateFolder(ctx context.Context, f *Folder) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO folders (id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		f.ID, f.OwnerID, nullString(f.ParentID), f.Name, f.Path, f.Depth, f.Color, f.IsRoot, f.Starred, f.Trashed, f.CreatedAt, f.UpdatedAt)
+		INSERT INTO folders (id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, f.ID, f.UserID, f.ParentID, f.Name, f.Description, f.Color, f.IsStarred, f.CreatedAt, f.UpdatedAt, f.TrashedAt)
 	return err
 }
 
-// GetByID retrieves a folder by ID.
-func (s *FoldersStore) GetByID(ctx context.Context, id string) (*folders.Folder, error) {
-	f := &folders.Folder{}
-	var parentID, color sql.NullString
-	var trashedAt sql.NullTime
-
+// GetFolderByID retrieves a folder by ID.
+func (s *Store) GetFolderByID(ctx context.Context, id string) (*Folder, error) {
+	f := &Folder{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-		FROM folders WHERE id = ?`, id).Scan(
-		&f.ID, &f.OwnerID, &parentID, &f.Name, &f.Path, &f.Depth, &color, &f.IsRoot, &f.Starred, &f.Trashed, &trashedAt, &f.CreatedAt, &f.UpdatedAt)
+		SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+		FROM folders WHERE id = ?
+	`, id).Scan(&f.ID, &f.UserID, &f.ParentID, &f.Name, &f.Description, &f.Color, &f.IsStarred, &f.CreatedAt, &f.UpdatedAt, &f.TrashedAt)
 	if err == sql.ErrNoRows {
-		return nil, folders.ErrNotFound
+		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	f.ParentID = parentID.String
-	f.Color = color.String
-	if trashedAt.Valid {
-		f.TrashedAt = &trashedAt.Time
-	}
-
-	return f, nil
+	return f, err
 }
 
-// GetByOwnerAndParentAndName retrieves a folder by owner, parent, and name.
-func (s *FoldersStore) GetByOwnerAndParentAndName(ctx context.Context, ownerID, parentID, name string) (*folders.Folder, error) {
-	f := &folders.Folder{}
-	var pID, color sql.NullString
-	var trashedAt sql.NullTime
-
-	var err error
-	if parentID == "" {
-		err = s.db.QueryRowContext(ctx, `
-			SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-			FROM folders WHERE owner_id = ? AND parent_id IS NULL AND name = ?`, ownerID, name).Scan(
-			&f.ID, &f.OwnerID, &pID, &f.Name, &f.Path, &f.Depth, &color, &f.IsRoot, &f.Starred, &f.Trashed, &trashedAt, &f.CreatedAt, &f.UpdatedAt)
-	} else {
-		err = s.db.QueryRowContext(ctx, `
-			SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-			FROM folders WHERE owner_id = ? AND parent_id = ? AND name = ?`, ownerID, parentID, name).Scan(
-			&f.ID, &f.OwnerID, &pID, &f.Name, &f.Path, &f.Depth, &color, &f.IsRoot, &f.Starred, &f.Trashed, &trashedAt, &f.CreatedAt, &f.UpdatedAt)
-	}
-
-	if err == sql.ErrNoRows {
-		return nil, folders.ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	f.ParentID = pID.String
-	f.Color = color.String
-	if trashedAt.Valid {
-		f.TrashedAt = &trashedAt.Time
-	}
-
-	return f, nil
-}
-
-// GetRoot retrieves the root folder for a user.
-func (s *FoldersStore) GetRoot(ctx context.Context, ownerID string) (*folders.Folder, error) {
-	f := &folders.Folder{}
-	var parentID, color sql.NullString
-	var trashedAt sql.NullTime
-
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-		FROM folders WHERE owner_id = ? AND is_root = TRUE`, ownerID).Scan(
-		&f.ID, &f.OwnerID, &parentID, &f.Name, &f.Path, &f.Depth, &color, &f.IsRoot, &f.Starred, &f.Trashed, &trashedAt, &f.CreatedAt, &f.UpdatedAt)
-	if err == sql.ErrNoRows {
-		return nil, folders.ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	f.ParentID = parentID.String
-	f.Color = color.String
-	if trashedAt.Valid {
-		f.TrashedAt = &trashedAt.Time
-	}
-
-	return f, nil
-}
-
-// List lists folders.
-func (s *FoldersStore) List(ctx context.Context, ownerID string, in *folders.ListIn) ([]*folders.Folder, error) {
-	query := `SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-		FROM folders WHERE owner_id = ? AND trashed = ?`
-	args := []any{ownerID, in.Trashed}
-
-	if in.ParentID != "" {
-		query += " AND parent_id = ?"
-		args = append(args, in.ParentID)
-	}
-
-	if in.Starred != nil {
-		query += " AND starred = ?"
-		args = append(args, *in.Starred)
-	}
-
-	// Order
-	orderBy := "name"
-	if in.OrderBy != "" {
-		orderBy = in.OrderBy
-	}
-	order := "ASC"
-	if in.Order == "desc" {
-		order = "DESC"
-	}
-	query += " ORDER BY " + orderBy + " " + order
-
-	// Pagination
-	if in.Limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, in.Limit)
-	}
-	if in.Offset > 0 {
-		query += " OFFSET ?"
-		args = append(args, in.Offset)
-	}
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanFolders(rows)
-}
-
-// ListByParent lists folders by parent.
-func (s *FoldersStore) ListByParent(ctx context.Context, ownerID, parentID string) ([]*folders.Folder, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-		FROM folders WHERE owner_id = ? AND parent_id = ? ORDER BY name`,
-		ownerID, parentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanFolders(rows)
-}
-
-// ListDescendants lists all descendant folders.
-func (s *FoldersStore) ListDescendants(ctx context.Context, id string) ([]*folders.Folder, error) {
-	folder, err := s.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, owner_id, parent_id, name, path, depth, color, is_root, starred, trashed, trashed_at, created_at, updated_at
-		FROM folders WHERE path LIKE ? AND id != ?`,
-		folder.Path+"/%", id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanFolders(rows)
-}
-
-// Update updates a folder.
-func (s *FoldersStore) Update(ctx context.Context, id string, in *folders.UpdateIn) error {
-	if in.Name != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE folders SET name = ?, updated_at = ? WHERE id = ?`, *in.Name, time.Now(), id); err != nil {
-			return err
-		}
-	}
-	if in.Color != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE folders SET color = ?, updated_at = ? WHERE id = ?`, *in.Color, time.Now(), id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// UpdatePath updates folder path and depth.
-func (s *FoldersStore) UpdatePath(ctx context.Context, id, path string, depth int) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE folders SET path = ?, depth = ?, updated_at = ? WHERE id = ?`, path, depth, time.Now(), id)
+// UpdateFolder updates a folder.
+func (s *Store) UpdateFolder(ctx context.Context, f *Folder) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE folders SET user_id = ?, parent_id = ?, name = ?, description = ?, color = ?, is_starred = ?, updated_at = ?, trashed_at = ?
+		WHERE id = ?
+	`, f.UserID, f.ParentID, f.Name, f.Description, f.Color, f.IsStarred, f.UpdatedAt, f.TrashedAt, f.ID)
 	return err
 }
 
-// UpdateParent updates folder parent.
-func (s *FoldersStore) UpdateParent(ctx context.Context, id, parentID, path string, depth int) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE folders SET parent_id = ?, path = ?, depth = ?, updated_at = ? WHERE id = ?`, parentID, path, depth, time.Now(), id)
-	return err
-}
-
-// UpdateTrashed updates trashed status.
-func (s *FoldersStore) UpdateTrashed(ctx context.Context, id string, trashed bool) error {
-	var trashedAt any
-	if trashed {
-		trashedAt = time.Now()
-	}
-	_, err := s.db.ExecContext(ctx, `UPDATE folders SET trashed = ?, trashed_at = ?, updated_at = ? WHERE id = ?`, trashed, trashedAt, time.Now(), id)
-	return err
-}
-
-// UpdateStarred updates starred status.
-func (s *FoldersStore) UpdateStarred(ctx context.Context, id string, starred bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE folders SET starred = ?, updated_at = ? WHERE id = ?`, starred, time.Now(), id)
-	return err
-}
-
-// Delete deletes a folder.
-func (s *FoldersStore) Delete(ctx context.Context, id string) error {
+// DeleteFolder permanently deletes a folder.
+func (s *Store) DeleteFolder(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM folders WHERE id = ?`, id)
 	return err
 }
 
-func scanFolders(rows *sql.Rows) ([]*folders.Folder, error) {
-	var result []*folders.Folder
-	for rows.Next() {
-		f := &folders.Folder{}
-		var parentID, color sql.NullString
-		var trashedAt sql.NullTime
+// ListFoldersByUser lists all folders for a user in a specific parent folder.
+func (s *Store) ListFoldersByUser(ctx context.Context, userID, parentID string) ([]*Folder, error) {
+	var rows *sql.Rows
+	var err error
 
-		if err := rows.Scan(&f.ID, &f.OwnerID, &parentID, &f.Name, &f.Path, &f.Depth, &color, &f.IsRoot, &f.Starred, &f.Trashed, &trashedAt, &f.CreatedAt, &f.UpdatedAt); err != nil {
+	if parentID == "" {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+			FROM folders WHERE user_id = ? AND parent_id IS NULL AND trashed_at IS NULL ORDER BY name
+		`, userID)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+			FROM folders WHERE user_id = ? AND parent_id = ? AND trashed_at IS NULL ORDER BY name
+		`, userID, parentID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanFolders(rows)
+}
+
+// ListAllFoldersByUser lists all folders for a user.
+func (s *Store) ListAllFoldersByUser(ctx context.Context, userID string) ([]*Folder, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+		FROM folders WHERE user_id = ? AND trashed_at IS NULL ORDER BY name
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanFolders(rows)
+}
+
+// ListStarredFolders lists all starred folders for a user.
+func (s *Store) ListStarredFolders(ctx context.Context, userID string) ([]*Folder, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+		FROM folders WHERE user_id = ? AND is_starred = TRUE AND trashed_at IS NULL ORDER BY name
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanFolders(rows)
+}
+
+// ListTrashedFolders lists trashed folders for a user.
+func (s *Store) ListTrashedFolders(ctx context.Context, userID string) ([]*Folder, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+		FROM folders WHERE user_id = ? AND trashed_at IS NOT NULL ORDER BY trashed_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanFolders(rows)
+}
+
+// SearchFolders searches folders by name.
+func (s *Store) SearchFolders(ctx context.Context, userID, query string) ([]*Folder, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, user_id, parent_id, name, description, color, is_starred, created_at, updated_at, trashed_at
+		FROM folders WHERE user_id = ? AND trashed_at IS NULL AND LOWER(name) LIKE LOWER(?) ORDER BY name
+	`, userID, "%"+query+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanFolders(rows)
+}
+
+// TrashFolder moves a folder to trash.
+func (s *Store) TrashFolder(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE folders SET trashed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	return err
+}
+
+// RestoreFolder restores a folder from trash.
+func (s *Store) RestoreFolder(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE folders SET trashed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	return err
+}
+
+// StarFolder stars a folder.
+func (s *Store) StarFolder(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE folders SET is_starred = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	return err
+}
+
+// UnstarFolder unstars a folder.
+func (s *Store) UnstarFolder(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE folders SET is_starred = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	return err
+}
+
+// GetFolderPath returns the path from root to folder.
+func (s *Store) GetFolderPath(ctx context.Context, id string) ([]*Folder, error) {
+	var path []*Folder
+	currentID := id
+
+	for currentID != "" {
+		folder, err := s.GetFolderByID(ctx, currentID)
+		if err != nil {
+			return nil, err
+		}
+		if folder == nil {
+			break
+		}
+		path = append([]*Folder{folder}, path...)
+		currentID = folder.ParentID.String
+		if !folder.ParentID.Valid {
+			break
+		}
+	}
+
+	return path, nil
+}
+
+// ListChildFolderIDs returns all descendant folder IDs (for recursive operations).
+func (s *Store) ListChildFolderIDs(ctx context.Context, id string) ([]string, error) {
+	var ids []string
+	toProcess := []string{id}
+
+	for len(toProcess) > 0 {
+		currentID := toProcess[0]
+		toProcess = toProcess[1:]
+
+		rows, err := s.db.QueryContext(ctx, `SELECT id FROM folders WHERE parent_id = ?`, currentID)
+		if err != nil {
 			return nil, err
 		}
 
-		f.ParentID = parentID.String
-		f.Color = color.String
-		if trashedAt.Valid {
-			f.TrashedAt = &trashedAt.Time
+		for rows.Next() {
+			var childID string
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			ids = append(ids, childID)
+			toProcess = append(toProcess, childID)
 		}
-
-		result = append(result, f)
+		rows.Close()
 	}
-	return result, rows.Err()
+
+	return ids, nil
 }
 
-func nullString(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
+func scanFolders(rows *sql.Rows) ([]*Folder, error) {
+	var folders []*Folder
+	for rows.Next() {
+		f := &Folder{}
+		if err := rows.Scan(&f.ID, &f.UserID, &f.ParentID, &f.Name, &f.Description, &f.Color, &f.IsStarred, &f.CreatedAt, &f.UpdatedAt, &f.TrashedAt); err != nil {
+			return nil, err
+		}
+		folders = append(folders, f)
 	}
-	return sql.NullString{String: s, Valid: true}
+	return folders, rows.Err()
 }

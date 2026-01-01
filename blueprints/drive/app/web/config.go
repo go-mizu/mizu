@@ -4,6 +4,5 @@ package web
 type Config struct {
 	Addr    string
 	DataDir string
-	BaseURL string
 	Dev     bool
 }

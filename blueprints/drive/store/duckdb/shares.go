@@ -4,287 +4,157 @@ import (
 	"context"
 	"database/sql"
 	"time"
-
-	"github.com/go-mizu/blueprints/drive/feature/shares"
 )
 
-// SharesStore handles share persistence.
-type SharesStore struct {
-	db *sql.DB
+// Share represents a share record.
+type Share struct {
+	ID               string
+	ResourceType     string
+	ResourceID       string
+	OwnerID          string
+	SharedWithID     sql.NullString
+	Permission       string
+	LinkToken        sql.NullString
+	LinkPasswordHash sql.NullString
+	ExpiresAt        sql.NullTime
+	DownloadLimit    sql.NullInt64
+	DownloadCount    int
+	PreventDownload  bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
-// Create inserts a new share.
-func (s *SharesStore) Create(ctx context.Context, sh *shares.Share) error {
+// CreateShare inserts a new share.
+func (s *Store) CreateShare(ctx context.Context, sh *Share) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO shares (id, item_id, item_type, owner_id, shared_with, permission, notify, message, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		sh.ID, sh.ItemID, sh.ItemType, sh.OwnerID, sh.SharedWith, sh.Permission, sh.Notify, sh.Message, sh.CreatedAt, sh.UpdatedAt)
+		INSERT INTO shares (id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, sh.ID, sh.ResourceType, sh.ResourceID, sh.OwnerID, sh.SharedWithID, sh.Permission, sh.LinkToken, sh.LinkPasswordHash, sh.ExpiresAt, sh.DownloadLimit, sh.DownloadCount, sh.PreventDownload, sh.CreatedAt, sh.UpdatedAt)
 	return err
 }
 
-// GetByID retrieves a share by ID.
-func (s *SharesStore) GetByID(ctx context.Context, id string) (*shares.Share, error) {
-	sh := &shares.Share{}
-	var message sql.NullString
-
+// GetShareByID retrieves a share by ID.
+func (s *Store) GetShareByID(ctx context.Context, id string) (*Share, error) {
+	sh := &Share{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, shared_with, permission, notify, message, created_at, updated_at
-		FROM shares WHERE id = ?`, id).Scan(
-		&sh.ID, &sh.ItemID, &sh.ItemType, &sh.OwnerID, &sh.SharedWith, &sh.Permission, &sh.Notify, &message, &sh.CreatedAt, &sh.UpdatedAt)
-
+		SELECT id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at
+		FROM shares WHERE id = ?
+	`, id).Scan(&sh.ID, &sh.ResourceType, &sh.ResourceID, &sh.OwnerID, &sh.SharedWithID, &sh.Permission, &sh.LinkToken, &sh.LinkPasswordHash, &sh.ExpiresAt, &sh.DownloadLimit, &sh.DownloadCount, &sh.PreventDownload, &sh.CreatedAt, &sh.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return nil, shares.ErrNotFound
+		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	sh.Message = message.String
-	return sh, nil
+	return sh, err
 }
 
-// GetByItemAndUser retrieves a share by item and user.
-func (s *SharesStore) GetByItemAndUser(ctx context.Context, itemID, itemType, sharedWith string) (*shares.Share, error) {
-	sh := &shares.Share{}
-	var message sql.NullString
-
+// GetShareByToken retrieves a share by link token.
+func (s *Store) GetShareByToken(ctx context.Context, token string) (*Share, error) {
+	sh := &Share{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, shared_with, permission, notify, message, created_at, updated_at
-		FROM shares WHERE item_id = ? AND item_type = ? AND shared_with = ?`, itemID, itemType, sharedWith).Scan(
-		&sh.ID, &sh.ItemID, &sh.ItemType, &sh.OwnerID, &sh.SharedWith, &sh.Permission, &sh.Notify, &message, &sh.CreatedAt, &sh.UpdatedAt)
-
+		SELECT id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at
+		FROM shares WHERE link_token = ?
+	`, token).Scan(&sh.ID, &sh.ResourceType, &sh.ResourceID, &sh.OwnerID, &sh.SharedWithID, &sh.Permission, &sh.LinkToken, &sh.LinkPasswordHash, &sh.ExpiresAt, &sh.DownloadLimit, &sh.DownloadCount, &sh.PreventDownload, &sh.CreatedAt, &sh.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return nil, shares.ErrNotFound
+		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	sh.Message = message.String
-	return sh, nil
+	return sh, err
 }
 
-// ListByOwner lists shares by owner.
-func (s *SharesStore) ListByOwner(ctx context.Context, ownerID string) ([]*shares.Share, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, shared_with, permission, notify, message, created_at, updated_at
-		FROM shares WHERE owner_id = ? ORDER BY created_at DESC`, ownerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanShares(rows)
-}
-
-// ListBySharedWith lists shares shared with a user.
-func (s *SharesStore) ListBySharedWith(ctx context.Context, accountID string) ([]*shares.Share, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, shared_with, permission, notify, message, created_at, updated_at
-		FROM shares WHERE shared_with = ? ORDER BY created_at DESC`, accountID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanShares(rows)
-}
-
-// ListByItem lists shares for an item.
-func (s *SharesStore) ListByItem(ctx context.Context, itemID, itemType string) ([]*shares.Share, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, shared_with, permission, notify, message, created_at, updated_at
-		FROM shares WHERE item_id = ? AND item_type = ? ORDER BY created_at DESC`, itemID, itemType)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanShares(rows)
-}
-
-// Update updates a share.
-func (s *SharesStore) Update(ctx context.Context, id string, permission string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE shares SET permission = ?, updated_at = ? WHERE id = ?`, permission, time.Now(), id)
+// UpdateShare updates a share.
+func (s *Store) UpdateShare(ctx context.Context, sh *Share) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE shares SET permission = ?, link_password_hash = ?, expires_at = ?, download_limit = ?, download_count = ?, prevent_download = ?, updated_at = ?
+		WHERE id = ?
+	`, sh.Permission, sh.LinkPasswordHash, sh.ExpiresAt, sh.DownloadLimit, sh.DownloadCount, sh.PreventDownload, sh.UpdatedAt, sh.ID)
 	return err
 }
 
-// Delete deletes a share.
-func (s *SharesStore) Delete(ctx context.Context, id string) error {
+// DeleteShare deletes a share by ID.
+func (s *Store) DeleteShare(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM shares WHERE id = ?`, id)
 	return err
 }
 
-func scanShares(rows *sql.Rows) ([]*shares.Share, error) {
-	var result []*shares.Share
-	for rows.Next() {
-		sh := &shares.Share{}
-		var message sql.NullString
-
-		if err := rows.Scan(&sh.ID, &sh.ItemID, &sh.ItemType, &sh.OwnerID, &sh.SharedWith, &sh.Permission, &sh.Notify, &message, &sh.CreatedAt, &sh.UpdatedAt); err != nil {
-			return nil, err
-		}
-
-		sh.Message = message.String
-		result = append(result, sh)
-	}
-	return result, rows.Err()
-}
-
-// ShareLinksStore handles share link persistence.
-type ShareLinksStore struct {
-	db *sql.DB
-}
-
-// Create inserts a new share link.
-func (s *ShareLinksStore) Create(ctx context.Context, l *shares.ShareLink) error {
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO share_links (id, item_id, item_type, owner_id, token, permission, password_hash,
-			expires_at, download_limit, download_count, allow_download, disabled, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.ID, l.ItemID, l.ItemType, l.OwnerID, l.Token, l.Permission, nullString(l.PasswordHash),
-		l.ExpiresAt, l.DownloadLimit, l.DownloadCount, l.AllowDownload, l.Disabled, l.CreatedAt)
-	return err
-}
-
-// GetByID retrieves a link by ID.
-func (s *ShareLinksStore) GetByID(ctx context.Context, id string) (*shares.ShareLink, error) {
-	return s.scanLink(s.db.QueryRowContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, token, permission, password_hash,
-			expires_at, download_limit, download_count, allow_download, disabled, created_at, accessed_at
-		FROM share_links WHERE id = ?`, id))
-}
-
-// GetByToken retrieves a link by token.
-func (s *ShareLinksStore) GetByToken(ctx context.Context, token string) (*shares.ShareLink, error) {
-	return s.scanLink(s.db.QueryRowContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, token, permission, password_hash,
-			expires_at, download_limit, download_count, allow_download, disabled, created_at, accessed_at
-		FROM share_links WHERE token = ?`, token))
-}
-
-// ListByItem lists links for an item.
-func (s *ShareLinksStore) ListByItem(ctx context.Context, itemID, itemType string) ([]*shares.ShareLink, error) {
+// ListSharesByOwner lists all shares created by a user.
+func (s *Store) ListSharesByOwner(ctx context.Context, ownerID string) ([]*Share, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, item_id, item_type, owner_id, token, permission, password_hash,
-			expires_at, download_limit, download_count, allow_download, disabled, created_at, accessed_at
-		FROM share_links WHERE item_id = ? AND item_type = ? ORDER BY created_at DESC`, itemID, itemType)
+		SELECT id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at
+		FROM shares WHERE owner_id = ? ORDER BY created_at DESC
+	`, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var result []*shares.ShareLink
-	for rows.Next() {
-		l := &shares.ShareLink{}
-		var passwordHash sql.NullString
-		var expiresAt, accessedAt sql.NullTime
-		var downloadLimit sql.NullInt64
-
-		if err := rows.Scan(&l.ID, &l.ItemID, &l.ItemType, &l.OwnerID, &l.Token, &l.Permission, &passwordHash,
-			&expiresAt, &downloadLimit, &l.DownloadCount, &l.AllowDownload, &l.Disabled, &l.CreatedAt, &accessedAt); err != nil {
-			return nil, err
-		}
-
-		l.PasswordHash = passwordHash.String
-		l.HasPassword = passwordHash.Valid && passwordHash.String != ""
-		if expiresAt.Valid {
-			l.ExpiresAt = &expiresAt.Time
-		}
-		if downloadLimit.Valid {
-			limit := int(downloadLimit.Int64)
-			l.DownloadLimit = &limit
-		}
-		if accessedAt.Valid {
-			l.AccessedAt = &accessedAt.Time
-		}
-
-		result = append(result, l)
-	}
-	return result, rows.Err()
+	return scanShares(rows)
 }
 
-// Update updates a link.
-func (s *ShareLinksStore) Update(ctx context.Context, id string, in *shares.UpdateLinkIn, passwordHash string) error {
-	if in.Permission != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET permission = ? WHERE id = ?`, *in.Permission, id); err != nil {
-			return err
-		}
-	}
-	if passwordHash != "" {
-		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET password_hash = ? WHERE id = ?`, passwordHash, id); err != nil {
-			return err
-		}
-	}
-	if in.ExpiresAt != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET expires_at = ? WHERE id = ?`, in.ExpiresAt, id); err != nil {
-			return err
-		}
-	}
-	if in.DownloadLimit != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET download_limit = ? WHERE id = ?`, *in.DownloadLimit, id); err != nil {
-			return err
-		}
-	}
-	if in.AllowDownload != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET allow_download = ? WHERE id = ?`, *in.AllowDownload, id); err != nil {
-			return err
-		}
-	}
-	if in.Disabled != nil {
-		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET disabled = ? WHERE id = ?`, *in.Disabled, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// UpdateAccess updates access time.
-func (s *ShareLinksStore) UpdateAccess(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE share_links SET accessed_at = ? WHERE id = ?`, time.Now(), id)
-	return err
-}
-
-// IncrementDownloads increments download count.
-func (s *ShareLinksStore) IncrementDownloads(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE share_links SET download_count = download_count + 1 WHERE id = ?`, id)
-	return err
-}
-
-// Delete deletes a link.
-func (s *ShareLinksStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM share_links WHERE id = ?`, id)
-	return err
-}
-
-func (s *ShareLinksStore) scanLink(row *sql.Row) (*shares.ShareLink, error) {
-	l := &shares.ShareLink{}
-	var passwordHash sql.NullString
-	var expiresAt, accessedAt sql.NullTime
-	var downloadLimit sql.NullInt64
-
-	err := row.Scan(&l.ID, &l.ItemID, &l.ItemType, &l.OwnerID, &l.Token, &l.Permission, &passwordHash,
-		&expiresAt, &downloadLimit, &l.DownloadCount, &l.AllowDownload, &l.Disabled, &l.CreatedAt, &accessedAt)
-
-	if err == sql.ErrNoRows {
-		return nil, shares.ErrLinkNotFound
-	}
+// ListSharesWithUser lists all shares shared with a user.
+func (s *Store) ListSharesWithUser(ctx context.Context, userID string) ([]*Share, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at
+		FROM shares WHERE shared_with_id = ? ORDER BY created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
-	l.PasswordHash = passwordHash.String
-	l.HasPassword = passwordHash.Valid && passwordHash.String != ""
-	if expiresAt.Valid {
-		l.ExpiresAt = &expiresAt.Time
-	}
-	if downloadLimit.Valid {
-		limit := int(downloadLimit.Int64)
-		l.DownloadLimit = &limit
-	}
-	if accessedAt.Valid {
-		l.AccessedAt = &accessedAt.Time
-	}
+	return scanShares(rows)
+}
 
-	return l, nil
+// ListSharesForResource lists all shares for a resource.
+func (s *Store) ListSharesForResource(ctx context.Context, resourceType, resourceID string) ([]*Share, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at
+		FROM shares WHERE resource_type = ? AND resource_id = ? ORDER BY created_at DESC
+	`, resourceType, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanShares(rows)
+}
+
+// GetShareForUserAndResource checks if a resource is shared with a user.
+func (s *Store) GetShareForUserAndResource(ctx context.Context, userID, resourceType, resourceID string) (*Share, error) {
+	sh := &Share{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, resource_type, resource_id, owner_id, shared_with_id, permission, link_token, link_password_hash, expires_at, download_limit, download_count, prevent_download, created_at, updated_at
+		FROM shares WHERE shared_with_id = ? AND resource_type = ? AND resource_id = ?
+	`, userID, resourceType, resourceID).Scan(&sh.ID, &sh.ResourceType, &sh.ResourceID, &sh.OwnerID, &sh.SharedWithID, &sh.Permission, &sh.LinkToken, &sh.LinkPasswordHash, &sh.ExpiresAt, &sh.DownloadLimit, &sh.DownloadCount, &sh.PreventDownload, &sh.CreatedAt, &sh.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return sh, err
+}
+
+// IncrementDownloadCount increments the download count for a share.
+func (s *Store) IncrementDownloadCount(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE shares SET download_count = download_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id)
+	return err
+}
+
+// DeleteSharesForResource deletes all shares for a resource.
+func (s *Store) DeleteSharesForResource(ctx context.Context, resourceType, resourceID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM shares WHERE resource_type = ? AND resource_id = ?`, resourceType, resourceID)
+	return err
+}
+
+// CleanupExpiredShares removes expired shares.
+func (s *Store) CleanupExpiredShares(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM shares WHERE expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP`)
+	return err
+}
+
+func scanShares(rows *sql.Rows) ([]*Share, error) {
+	var shares []*Share
+	for rows.Next() {
+		sh := &Share{}
+		if err := rows.Scan(&sh.ID, &sh.ResourceType, &sh.ResourceID, &sh.OwnerID, &sh.SharedWithID, &sh.Permission, &sh.LinkToken, &sh.LinkPasswordHash, &sh.ExpiresAt, &sh.DownloadLimit, &sh.DownloadCount, &sh.PreventDownload, &sh.CreatedAt, &sh.UpdatedAt); err != nil {
+			return nil, err
+		}
+		shares = append(shares, sh)
+	}
+	return shares, rows.Err()
 }

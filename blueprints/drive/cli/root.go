@@ -1,41 +1,83 @@
-// Package cli provides the command-line interface.
 package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
+	"github.com/charmbracelet/fang"
 	"github.com/spf13/cobra"
 )
 
 var (
-	dataDir string
-	addr    string
-	dev     bool
+	// Version information (set via ldflags)
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
 )
 
-// Execute runs the CLI.
+// dataDir is the default data directory
+var dataDir string
+
+// Execute runs the CLI
 func Execute(ctx context.Context) error {
 	root := &cobra.Command{
-		Use:     "drive",
-		Short:   "Drive - Cloud file storage",
-		Version: "1.0.0",
+		Use:   "drive",
+		Short: "Drive - Cloud file storage like Google Drive, Box, Dropbox",
+		Long: `Drive is a full-featured cloud file storage system.
+
+Features:
+  - File and folder management
+  - Drag-and-drop uploads
+  - File sharing with permissions
+  - Multiple access protocols (REST, S3, WebDAV, SFTP)
+  - File versioning and trash
+  - Activity logging
+
+Get started:
+  drive init      Initialize the database
+  drive serve     Start the web server
+  drive seed      Seed with sample data`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
-	// Default data directory
+	// Set default data directory
 	home, _ := os.UserHomeDir()
-	defaultData := filepath.Join(home, ".drive")
+	dataDir = filepath.Join(home, "data", "blueprint", "drive")
 
-	root.PersistentFlags().StringVar(&dataDir, "data", defaultData, "Data directory path")
-	root.PersistentFlags().StringVar(&addr, "addr", ":8080", "HTTP listen address")
-	root.PersistentFlags().BoolVar(&dev, "dev", false, "Development mode")
+	// Global flags
+	root.SetVersionTemplate("drive {{.Version}}\n")
+	root.Version = versionString()
+	root.PersistentFlags().StringVar(&dataDir, "data", dataDir, "Data directory")
+	root.PersistentFlags().Bool("dev", false, "Enable development mode")
 
-	root.AddCommand(
-		newServeCmd(),
-		newInitCmd(),
-		newSeedCmd(),
-	)
+	// Add subcommands
+	root.AddCommand(NewServe())
+	root.AddCommand(NewInit())
+	root.AddCommand(NewSeed())
 
-	return root.ExecuteContext(ctx)
+	if err := fang.Execute(ctx, root,
+		fang.WithVersion(Version),
+		fang.WithCommit(Commit),
+	); err != nil {
+		fmt.Fprintln(os.Stderr, errorStyle.Render("[ERROR] "+err.Error()))
+		return err
+	}
+	return nil
+}
+
+func versionString() string {
+	if strings.TrimSpace(Version) != "" && Version != "dev" {
+		return Version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			return bi.Main.Version
+		}
+	}
+	return "dev"
 }

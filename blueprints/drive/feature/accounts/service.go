@@ -2,192 +2,213 @@ package accounts
 
 import (
 	"context"
-	"strings"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"time"
-	"unicode"
 
-	"github.com/go-mizu/blueprints/drive/pkg/crypto"
 	"github.com/go-mizu/blueprints/drive/pkg/password"
 	"github.com/go-mizu/blueprints/drive/pkg/ulid"
-)
-
-const (
-	DefaultQuota     = 15 * 1024 * 1024 * 1024 // 15 GB
-	SessionDuration  = 30 * 24 * time.Hour     // 30 days
-	MinPasswordLen   = 8
+	"github.com/go-mizu/blueprints/drive/store/duckdb"
 )
 
 // Service implements the accounts API.
 type Service struct {
-	store Store
+	store *duckdb.Store
 }
 
 // NewService creates a new accounts service.
-func NewService(store Store) *Service {
+func NewService(store *duckdb.Store) *Service {
 	return &Service{store: store}
 }
 
-// Register creates a new account.
-func (s *Service) Register(ctx context.Context, in *RegisterIn) (*Account, error) {
-	// Validate input
-	username := strings.TrimSpace(in.Username)
-	if len(username) < 3 || len(username) > 50 {
-		return nil, ErrWeakPassword
+func (s *Service) Register(ctx context.Context, in *RegisterIn) (*User, *Session, error) {
+	if in.Email == "" {
+		return nil, nil, ErrMissingEmail
 	}
-	if !isValidUsername(username) {
-		return nil, ErrWeakPassword
+	if in.Name == "" {
+		return nil, nil, ErrMissingName
 	}
-
-	email := strings.TrimSpace(strings.ToLower(in.Email))
-	if !strings.Contains(email, "@") {
-		return nil, ErrWeakPassword
+	if in.Password == "" {
+		return nil, nil, ErrMissingPassword
 	}
 
-	if len(in.Password) < MinPasswordLen {
-		return nil, ErrWeakPassword
+	// Check if user already exists
+	existing, err := s.store.GetUserByEmail(ctx, in.Email)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	// Check uniqueness
-	if existing, _ := s.store.GetByUsername(ctx, username); existing != nil {
-		return nil, ErrUsernameTaken
-	}
-	if existing, _ := s.store.GetByEmail(ctx, email); existing != nil {
-		return nil, ErrEmailTaken
+	if existing != nil {
+		return nil, nil, ErrUserExists
 	}
 
 	// Hash password
 	hash, err := password.Hash(in.Password)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	now := time.Now()
-	account := &Account{
-		ID:           ulid.New(),
-		Username:     username,
-		Email:        email,
-		PasswordHash: hash,
-		DisplayName:  strings.TrimSpace(in.DisplayName),
-		StorageQuota: DefaultQuota,
-		StorageUsed:  0,
-		Preferences:  "{}", // Valid empty JSON
-		CreatedAt:    now,
-		UpdatedAt:    now,
+	dbUser := &duckdb.User{
+		ID:            ulid.New(),
+		Email:         in.Email,
+		Name:          in.Name,
+		PasswordHash:  hash,
+		StorageQuota:  10 * 1024 * 1024 * 1024, // 10GB
+		StorageUsed:   0,
+		IsAdmin:       false,
+		EmailVerified: false,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 
-	if err := s.store.Create(ctx, account); err != nil {
-		return nil, err
+	if err := s.store.CreateUser(ctx, dbUser); err != nil {
+		return nil, nil, err
 	}
 
-	return account, nil
-}
-
-// Login authenticates a user and creates a session.
-func (s *Service) Login(ctx context.Context, in *LoginIn) (*Session, *Account, error) {
-	account, err := s.store.GetByUsername(ctx, strings.TrimSpace(in.Username))
-	if err != nil {
-		// Also try email
-		account, err = s.store.GetByEmail(ctx, strings.TrimSpace(strings.ToLower(in.Username)))
-		if err != nil {
-			return nil, nil, ErrInvalidCredentials
-		}
-	}
-
-	if account.IsSuspended {
-		return nil, nil, ErrAccountSuspended
-	}
-
-	// Verify password
-	match, err := password.Verify(in.Password, account.PasswordHash)
-	if err != nil || !match {
-		return nil, nil, ErrInvalidCredentials
-	}
+	user := dbUserToUser(dbUser)
 
 	// Create session
-	token, err := crypto.GenerateSessionToken()
+	session, err := s.createSession(ctx, user.ID, "", "")
 	if err != nil {
 		return nil, nil, err
 	}
 
-	now := time.Now()
-	session := &Session{
-		ID:        ulid.New(),
-		AccountID: account.ID,
-		Token:     token,
-		UserAgent: in.UserAgent,
-		IPAddress: in.IPAddress,
-		LastUsed:  now,
-		ExpiresAt: now.Add(SessionDuration),
-		CreatedAt: now,
+	return user, session, nil
+}
+
+func (s *Service) Login(ctx context.Context, in *LoginIn) (*User, *Session, error) {
+	if in.Email == "" {
+		return nil, nil, ErrMissingEmail
+	}
+	if in.Password == "" {
+		return nil, nil, ErrMissingPassword
 	}
 
-	if err := s.store.CreateSession(ctx, session); err != nil {
+	dbUser, err := s.store.GetUserByEmail(ctx, in.Email)
+	if err != nil {
 		return nil, nil, err
 	}
+	if dbUser == nil {
+		return nil, nil, ErrInvalidEmail
+	}
 
-	return session, account, nil
-}
-
-// Logout invalidates a session.
-func (s *Service) Logout(ctx context.Context, token string) error {
-	session, err := s.store.GetSessionByToken(ctx, token)
+	valid, err := password.Verify(in.Password, dbUser.PasswordHash)
 	if err != nil {
-		return nil // Already logged out
+		return nil, nil, err
 	}
-	return s.store.DeleteSession(ctx, session.ID)
-}
-
-// GetByID retrieves an account by ID.
-func (s *Service) GetByID(ctx context.Context, id string) (*Account, error) {
-	return s.store.GetByID(ctx, id)
-}
-
-// GetByToken retrieves account and session by token.
-func (s *Service) GetByToken(ctx context.Context, token string) (*Account, *Session, error) {
-	session, err := s.store.GetSessionByToken(ctx, token)
-	if err != nil {
-		return nil, nil, ErrSessionNotFound
+	if !valid {
+		return nil, nil, ErrInvalidPassword
 	}
 
-	if time.Now().After(session.ExpiresAt) {
-		s.store.DeleteSession(ctx, session.ID)
-		return nil, nil, ErrSessionExpired
-	}
+	user := dbUserToUser(dbUser)
 
-	account, err := s.store.GetByID(ctx, session.AccountID)
+	session, err := s.createSession(ctx, user.ID, "", "")
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Update last used
-	s.store.UpdateSessionLastUsed(ctx, session.ID)
-
-	return account, session, nil
+	return user, session, nil
 }
 
-// Update updates account profile.
-func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Account, error) {
-	if err := s.store.Update(ctx, id, in); err != nil {
+func (s *Service) Logout(ctx context.Context, sessionID string) error {
+	return s.store.DeleteSession(ctx, sessionID)
+}
+
+func (s *Service) LogoutAll(ctx context.Context, userID string) error {
+	return s.store.DeleteUserSessions(ctx, userID)
+}
+
+func (s *Service) GetByID(ctx context.Context, id string) (*User, error) {
+	dbUser, err := s.store.GetUserByID(ctx, id)
+	if err != nil {
 		return nil, err
 	}
-	return s.store.GetByID(ctx, id)
+	if dbUser == nil {
+		return nil, ErrNotFound
+	}
+	return dbUserToUser(dbUser), nil
 }
 
-// ChangePassword changes account password.
+func (s *Service) GetByEmail(ctx context.Context, email string) (*User, error) {
+	dbUser, err := s.store.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if dbUser == nil {
+		return nil, nil
+	}
+	return dbUserToUser(dbUser), nil
+}
+
+func (s *Service) GetBySession(ctx context.Context, token string) (*User, error) {
+	tokenHash := hashToken(token)
+	sess, err := s.store.GetSessionByToken(ctx, tokenHash)
+	if err != nil {
+		return nil, err
+	}
+	if sess == nil {
+		return nil, ErrSessionNotFound
+	}
+
+	if time.Now().After(sess.ExpiresAt) {
+		_ = s.store.DeleteSession(ctx, sess.ID)
+		return nil, ErrSessionExpired
+	}
+
+	// Update last active
+	_ = s.store.UpdateSessionActivity(ctx, sess.ID)
+
+	dbUser, err := s.store.GetUserByID(ctx, sess.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if dbUser == nil {
+		return nil, ErrNotFound
+	}
+
+	return dbUserToUser(dbUser), nil
+}
+
+func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*User, error) {
+	dbUser, err := s.store.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if dbUser == nil {
+		return nil, ErrNotFound
+	}
+
+	if in.Name != nil {
+		dbUser.Name = *in.Name
+	}
+	if in.AvatarURL != nil {
+		dbUser.AvatarURL = sql.NullString{String: *in.AvatarURL, Valid: true}
+	}
+	dbUser.UpdatedAt = time.Now()
+
+	if err := s.store.UpdateUser(ctx, dbUser); err != nil {
+		return nil, err
+	}
+
+	return dbUserToUser(dbUser), nil
+}
+
 func (s *Service) ChangePassword(ctx context.Context, id string, in *ChangePasswordIn) error {
-	account, err := s.store.GetByID(ctx, id)
+	dbUser, err := s.store.GetUserByID(ctx, id)
 	if err != nil {
 		return err
 	}
-
-	// Verify current password
-	match, err := password.Verify(in.CurrentPassword, account.PasswordHash)
-	if err != nil || !match {
-		return ErrInvalidPassword
+	if dbUser == nil {
+		return ErrNotFound
 	}
 
-	if len(in.NewPassword) < MinPasswordLen {
-		return ErrWeakPassword
+	valid, err := password.Verify(in.CurrentPassword, dbUser.PasswordHash)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return ErrInvalidPassword
 	}
 
 	hash, err := password.Hash(in.NewPassword)
@@ -195,71 +216,100 @@ func (s *Service) ChangePassword(ctx context.Context, id string, in *ChangePassw
 		return err
 	}
 
-	return s.store.UpdatePassword(ctx, id, hash)
+	dbUser.PasswordHash = hash
+	dbUser.UpdatedAt = time.Now()
+
+	return s.store.UpdateUser(ctx, dbUser)
 }
 
-// GetStorageUsage returns storage usage breakdown.
-func (s *Service) GetStorageUsage(ctx context.Context, id string) (*StorageUsage, error) {
-	account, err := s.store.GetByID(ctx, id)
+func (s *Service) Delete(ctx context.Context, id string) error {
+	// Delete user's sessions first
+	_ = s.store.DeleteUserSessions(ctx, id)
+	return s.store.DeleteUser(ctx, id)
+}
+
+func (s *Service) ListSessions(ctx context.Context, userID string) ([]*Session, error) {
+	dbSessions, err := s.store.ListUserSessions(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	breakdown, err := s.store.GetStorageByCategory(ctx, id)
-	if err != nil {
-		return nil, err
+	sessions := make([]*Session, len(dbSessions))
+	for i, sess := range dbSessions {
+		sessions[i] = dbSessionToSession(sess)
 	}
-
-	available := account.StorageQuota - account.StorageUsed
-	if available < 0 {
-		available = 0
-	}
-
-	percent := 0.0
-	if account.StorageQuota > 0 {
-		percent = float64(account.StorageUsed) / float64(account.StorageQuota) * 100
-	}
-
-	return &StorageUsage{
-		Quota:     account.StorageQuota,
-		Used:      account.StorageUsed,
-		Available: available,
-		Percent:   percent,
-		Breakdown: breakdown,
-	}, nil
+	return sessions, nil
 }
 
-// UpdateStorageUsed adjusts storage usage.
-func (s *Service) UpdateStorageUsed(ctx context.Context, id string, delta int64) error {
-	return s.store.UpdateStorageUsed(ctx, id, delta)
-}
-
-// ListSessions lists all sessions for an account.
-func (s *Service) ListSessions(ctx context.Context, accountID string) ([]*Session, error) {
-	return s.store.ListSessionsByAccount(ctx, accountID)
-}
-
-// RevokeSession revokes a specific session.
-func (s *Service) RevokeSession(ctx context.Context, accountID, sessionID string) error {
-	sessions, err := s.store.ListSessionsByAccount(ctx, accountID)
+func (s *Service) DeleteSession(ctx context.Context, userID, sessionID string) error {
+	sess, err := s.store.GetSessionByID(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-
-	for _, sess := range sessions {
-		if sess.ID == sessionID {
-			return s.store.DeleteSession(ctx, sessionID)
-		}
+	if sess == nil {
+		return ErrSessionNotFound
 	}
-
-	return ErrSessionNotFound
+	if sess.UserID != userID {
+		return ErrUnauthorized
+	}
+	return s.store.DeleteSession(ctx, sessionID)
 }
 
-func isValidUsername(username string) bool {
-	for _, r := range username {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
-			return false
-		}
+func (s *Service) createSession(ctx context.Context, userID, ipAddress, userAgent string) (*Session, error) {
+	token := ulid.New()
+	tokenHash := hashToken(token)
+	now := time.Now()
+
+	dbSession := &duckdb.Session{
+		ID:           ulid.New(),
+		UserID:       userID,
+		TokenHash:    tokenHash,
+		IPAddress:    sql.NullString{String: ipAddress, Valid: ipAddress != ""},
+		UserAgent:    sql.NullString{String: userAgent, Valid: userAgent != ""},
+		LastActiveAt: sql.NullTime{Time: now, Valid: true},
+		ExpiresAt:    now.Add(7 * 24 * time.Hour),
+		CreatedAt:    now,
 	}
-	return true
+
+	if err := s.store.CreateSession(ctx, dbSession); err != nil {
+		return nil, err
+	}
+
+	session := dbSessionToSession(dbSession)
+	session.TokenHash = token // Return the raw token, not the hash
+	return session, nil
+}
+
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
+func dbUserToUser(u *duckdb.User) *User {
+	return &User{
+		ID:            u.ID,
+		Email:         u.Email,
+		Name:          u.Name,
+		PasswordHash:  u.PasswordHash,
+		AvatarURL:     u.AvatarURL.String,
+		StorageQuota:  u.StorageQuota,
+		StorageUsed:   u.StorageUsed,
+		IsAdmin:       u.IsAdmin,
+		EmailVerified: u.EmailVerified,
+		CreatedAt:     u.CreatedAt,
+		UpdatedAt:     u.UpdatedAt,
+	}
+}
+
+func dbSessionToSession(s *duckdb.Session) *Session {
+	return &Session{
+		ID:           s.ID,
+		UserID:       s.UserID,
+		TokenHash:    s.TokenHash,
+		IPAddress:    s.IPAddress.String,
+		UserAgent:    s.UserAgent.String,
+		LastActiveAt: s.LastActiveAt.Time,
+		ExpiresAt:    s.ExpiresAt,
+		CreatedAt:    s.CreatedAt,
+	}
 }
