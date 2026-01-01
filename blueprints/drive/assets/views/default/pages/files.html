@@ -132,7 +132,7 @@
   {{end}}
 
   {{range .Files}}
-  <div class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}">
+  <div class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
     <div class="w-16 h-16 mb-3 flex items-center justify-center">
       {{if isImage .MimeType}}
       <div class="w-full h-full rounded-lg bg-zinc-100 overflow-hidden">
@@ -195,36 +195,36 @@
   {{end}}
     </div>
   </div>
+</div>
 
-  <!-- Right Sidebar (collapsible) -->
-  <div id="grid-sidebar" class="hidden w-0 flex-shrink-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200" data-collapsed="true">
-    <!-- Resize Handle -->
-    <div id="grid-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
-    <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
-      <div class="p-4">
-        <div id="grid-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
-          <img id="grid-preview-img" class="hidden w-full h-full object-cover" src="">
-          <svg id="grid-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-            <polyline points="14 2 14 8 20 8"/>
-          </svg>
-        </div>
-        <h3 id="grid-preview-name" class="text-sm font-medium text-zinc-900 mb-4 text-center break-words"></h3>
-        <div id="grid-preview-info" class="space-y-3 text-sm">
-          <div class="flex justify-between"><span class="text-zinc-500">Kind</span><span id="grid-preview-kind" class="text-zinc-900 text-right"></span></div>
-          <div class="flex justify-between"><span class="text-zinc-500">Size</span><span id="grid-preview-size" class="text-zinc-900"></span></div>
-          <div class="flex justify-between"><span class="text-zinc-500">Modified</span><span id="grid-preview-date" class="text-zinc-900"></span></div>
-          <div id="grid-preview-dimensions" class="hidden flex justify-between"><span class="text-zinc-500">Dimensions</span><span id="grid-preview-dims" class="text-zinc-900"></span></div>
-          <div id="grid-preview-duration" class="hidden flex justify-between"><span class="text-zinc-500">Duration</span><span id="grid-preview-dur" class="text-zinc-900"></span></div>
-          <div id="grid-preview-camera" class="hidden flex justify-between"><span class="text-zinc-500">Camera</span><span id="grid-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
-          <div id="grid-preview-artist" class="hidden flex justify-between"><span class="text-zinc-500">Artist</span><span id="grid-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
-          <div id="grid-preview-album" class="hidden flex justify-between"><span class="text-zinc-500">Album</span><span id="grid-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
-        </div>
+<!-- Right Sidebar (fixed position) -->
+<div id="grid-sidebar" class="hidden fixed right-0 top-14 bottom-0 w-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200 z-30" data-collapsed="true">
+  <!-- Resize Handle -->
+  <div id="grid-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
+  <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
+    <div class="p-4">
+      <div id="grid-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+        <img id="grid-preview-img" class="hidden w-full h-full object-cover" src="">
+        <svg id="grid-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
       </div>
-      <div class="mt-auto p-4 border-t border-zinc-200 flex gap-2">
-        <button id="grid-preview-open" class="btn btn-primary flex-1 text-sm">Open</button>
-        <button id="grid-preview-download" class="btn btn-secondary flex-1 text-sm">Download</button>
+      <h3 id="grid-preview-name" class="text-sm font-medium text-zinc-900 mb-4 text-center break-words"></h3>
+      <div id="grid-preview-info" class="space-y-3 text-sm">
+        <div class="flex justify-between"><span class="text-zinc-500">Kind</span><span id="grid-preview-kind" class="text-zinc-900 text-right"></span></div>
+        <div class="flex justify-between"><span class="text-zinc-500">Size</span><span id="grid-preview-size" class="text-zinc-900"></span></div>
+        <div class="flex justify-between"><span class="text-zinc-500">Modified</span><span id="grid-preview-date" class="text-zinc-900"></span></div>
+        <div id="grid-preview-dimensions" class="hidden flex justify-between"><span class="text-zinc-500">Dimensions</span><span id="grid-preview-dims" class="text-zinc-900"></span></div>
+        <div id="grid-preview-duration" class="hidden flex justify-between"><span class="text-zinc-500">Duration</span><span id="grid-preview-dur" class="text-zinc-900"></span></div>
+        <div id="grid-preview-camera" class="hidden flex justify-between"><span class="text-zinc-500">Camera</span><span id="grid-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+        <div id="grid-preview-artist" class="hidden flex justify-between"><span class="text-zinc-500">Artist</span><span id="grid-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+        <div id="grid-preview-album" class="hidden flex justify-between"><span class="text-zinc-500">Album</span><span id="grid-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
       </div>
+    </div>
+    <div class="mt-auto p-4 border-t border-zinc-200 flex gap-2">
+      <button id="grid-preview-open" class="btn btn-primary flex-1 text-sm">Open</button>
+      <button id="grid-preview-download" class="btn btn-secondary flex-1 text-sm">Download</button>
     </div>
   </div>
 </div>
@@ -306,7 +306,7 @@
       {{end}}
 
       {{range .Files}}
-      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}">
+      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
         <td class="px-4 py-3">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-5 h-5 text-zinc-400 flex-shrink-0">
@@ -357,36 +357,36 @@
       </table>
     </div>
   </div>
+</div>
 
-  <!-- Right Sidebar (collapsible) -->
-  <div id="list-sidebar" class="hidden w-0 flex-shrink-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200" data-collapsed="true">
-    <!-- Resize Handle -->
-    <div id="list-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
-    <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
-      <div class="p-4">
-        <div id="list-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
-          <img id="list-preview-img" class="hidden w-full h-full object-cover" src="">
-          <svg id="list-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-            <polyline points="14 2 14 8 20 8"/>
-          </svg>
-        </div>
-        <h3 id="list-preview-name" class="text-sm font-medium text-zinc-900 mb-4 text-center break-words"></h3>
-        <div id="list-preview-info" class="space-y-3 text-sm">
-          <div class="flex justify-between"><span class="text-zinc-500">Kind</span><span id="list-preview-kind" class="text-zinc-900 text-right"></span></div>
-          <div class="flex justify-between"><span class="text-zinc-500">Size</span><span id="list-preview-size" class="text-zinc-900"></span></div>
-          <div class="flex justify-between"><span class="text-zinc-500">Modified</span><span id="list-preview-date" class="text-zinc-900"></span></div>
-          <div id="list-preview-dimensions" class="hidden flex justify-between"><span class="text-zinc-500">Dimensions</span><span id="list-preview-dims" class="text-zinc-900"></span></div>
-          <div id="list-preview-duration" class="hidden flex justify-between"><span class="text-zinc-500">Duration</span><span id="list-preview-dur" class="text-zinc-900"></span></div>
-          <div id="list-preview-camera" class="hidden flex justify-between"><span class="text-zinc-500">Camera</span><span id="list-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
-          <div id="list-preview-artist" class="hidden flex justify-between"><span class="text-zinc-500">Artist</span><span id="list-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
-          <div id="list-preview-album" class="hidden flex justify-between"><span class="text-zinc-500">Album</span><span id="list-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
-        </div>
+<!-- Right Sidebar (fixed position) -->
+<div id="list-sidebar" class="hidden fixed right-0 top-14 bottom-0 w-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200 z-30" data-collapsed="true">
+  <!-- Resize Handle -->
+  <div id="list-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
+  <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
+    <div class="p-4">
+      <div id="list-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+        <img id="list-preview-img" class="hidden w-full h-full object-cover" src="">
+        <svg id="list-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
       </div>
-      <div class="mt-auto p-4 border-t border-zinc-200 flex gap-2">
-        <button id="list-preview-open" class="btn btn-primary flex-1 text-sm">Open</button>
-        <button id="list-preview-download" class="btn btn-secondary flex-1 text-sm">Download</button>
+      <h3 id="list-preview-name" class="text-sm font-medium text-zinc-900 mb-4 text-center break-words"></h3>
+      <div id="list-preview-info" class="space-y-3 text-sm">
+        <div class="flex justify-between"><span class="text-zinc-500">Kind</span><span id="list-preview-kind" class="text-zinc-900 text-right"></span></div>
+        <div class="flex justify-between"><span class="text-zinc-500">Size</span><span id="list-preview-size" class="text-zinc-900"></span></div>
+        <div class="flex justify-between"><span class="text-zinc-500">Modified</span><span id="list-preview-date" class="text-zinc-900"></span></div>
+        <div id="list-preview-dimensions" class="hidden flex justify-between"><span class="text-zinc-500">Dimensions</span><span id="list-preview-dims" class="text-zinc-900"></span></div>
+        <div id="list-preview-duration" class="hidden flex justify-between"><span class="text-zinc-500">Duration</span><span id="list-preview-dur" class="text-zinc-900"></span></div>
+        <div id="list-preview-camera" class="hidden flex justify-between"><span class="text-zinc-500">Camera</span><span id="list-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+        <div id="list-preview-artist" class="hidden flex justify-between"><span class="text-zinc-500">Artist</span><span id="list-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+        <div id="list-preview-album" class="hidden flex justify-between"><span class="text-zinc-500">Album</span><span id="list-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
       </div>
+    </div>
+    <div class="mt-auto p-4 border-t border-zinc-200 flex gap-2">
+      <button id="list-preview-open" class="btn btn-primary flex-1 text-sm">Open</button>
+      <button id="list-preview-download" class="btn btn-secondary flex-1 text-sm">Download</button>
     </div>
   </div>
 </div>
@@ -402,8 +402,43 @@
 {{else if eq .ViewMode "column"}}
 <!-- Column View (Finder-style) - height accounts for header(56px) + padding(24px) + breadcrumb bar(~56px) + bottom padding(24px) -->
 <div id="column-view" class="flex bg-white rounded-xl border border-zinc-200 overflow-hidden" style="height: calc(100vh - 180px); max-height: calc(100vh - 180px);">
-  <!-- Columns Container -->
+  <!-- Columns Container (includes navigation columns + optional big preview) -->
   <div id="columns-container" class="flex flex-1 overflow-x-auto scrollbar-thin">
+    <!-- Big Preview Column (appears when file is selected) -->
+    <div id="column-big-preview" class="hidden flex-shrink-0 border-r border-zinc-200 flex flex-col bg-zinc-100" style="width: 400px; min-width: 400px; order: 999;">
+      <div class="column-header px-3 py-2 bg-zinc-50 border-b border-zinc-200 text-xs font-medium text-zinc-500 uppercase tracking-wider flex items-center justify-between">
+        <span id="column-big-preview-title">Preview</span>
+        <button id="column-big-preview-close" class="p-1 rounded hover:bg-zinc-200 transition-colors">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
+        <!-- Image preview -->
+        <img id="column-big-preview-img" class="hidden max-w-full max-h-full object-contain rounded-lg shadow-lg" src="">
+        <!-- Video preview -->
+        <video id="column-big-preview-video" class="hidden max-w-full max-h-full rounded-lg shadow-lg" controls></video>
+        <!-- Audio preview -->
+        <div id="column-big-preview-audio-container" class="hidden flex flex-col items-center gap-4 w-full max-w-sm">
+          <div class="w-32 h-32 rounded-xl bg-zinc-200 flex items-center justify-center">
+            <svg class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          </div>
+          <audio id="column-big-preview-audio" class="w-full" controls></audio>
+        </div>
+        <!-- Other files placeholder -->
+        <div id="column-big-preview-placeholder" class="hidden flex flex-col items-center text-zinc-500">
+          <svg class="w-24 h-24 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <span id="column-big-preview-filename" class="text-lg font-medium text-zinc-700 text-center px-4 break-words"></span>
+          <span class="text-sm mt-2">Double-click or press Enter to open</span>
+        </div>
+        <!-- Loading indicator -->
+        <div id="column-big-preview-loading" class="hidden">
+          <div class="w-10 h-10 border-4 border-zinc-300 border-t-zinc-600 rounded-full animate-spin"></div>
+        </div>
+      </div>
+    </div>
     <!-- Initial Column (Root) -->
     <div class="column flex-shrink-0 w-56 border-r border-zinc-200 flex flex-col" data-path="">
       <div class="column-header px-3 py-2 bg-zinc-50 border-b border-zinc-200 text-xs font-medium text-zinc-500 uppercase tracking-wider">

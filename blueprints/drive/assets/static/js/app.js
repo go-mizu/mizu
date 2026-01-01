@@ -1307,6 +1307,11 @@
       }
     });
 
+    // Setup close button for big preview
+    document.getElementById('column-big-preview-close')?.addEventListener('click', () => {
+      hideBigPreview();
+    });
+
     // Keyboard navigation for column view
     columnView.addEventListener('keydown', handleColumnKeydown);
     columnView.setAttribute('tabindex', '0');
@@ -1414,17 +1419,126 @@
     columnState.selectedItem = { id, type, name, mime, size };
 
     if (type === 'folder') {
+      // Hide big preview for folders
+      hideBigPreview();
       // Load folder contents in new column
       await loadColumnContents(id, name);
       // Hide preview panel for folders (or show folder info)
       updateColumnPreview({ id, type, name });
     } else {
+      // Show big preview column for files
+      showBigPreview({ id, type, name, mime, size });
       // Show file preview panel
       updateColumnPreview({ id, type, name, mime, size });
     }
 
     // Scroll to show new column
     columnsContainer.scrollLeft = columnsContainer.scrollWidth;
+  }
+
+  // Show big preview column for files in column view
+  function showBigPreview(item) {
+    const bigPreview = document.getElementById('column-big-preview');
+    if (!bigPreview) return;
+
+    const img = document.getElementById('column-big-preview-img');
+    const video = document.getElementById('column-big-preview-video');
+    const audioContainer = document.getElementById('column-big-preview-audio-container');
+    const audio = document.getElementById('column-big-preview-audio');
+    const placeholder = document.getElementById('column-big-preview-placeholder');
+    const loading = document.getElementById('column-big-preview-loading');
+    const title = document.getElementById('column-big-preview-title');
+    const filename = document.getElementById('column-big-preview-filename');
+
+    // Hide all content types first
+    img?.classList.add('hidden');
+    video?.classList.add('hidden');
+    audioContainer?.classList.add('hidden');
+    placeholder?.classList.add('hidden');
+    loading?.classList.remove('hidden');
+
+    // Stop any playing media
+    if (video) {
+      video.pause();
+      video.src = '';
+    }
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+    }
+
+    // Show the preview column
+    bigPreview.classList.remove('hidden');
+    if (title) title.textContent = item.name;
+
+    const contentUrl = '/api/v1/content/' + item.id;
+    const mime = item.mime || '';
+
+    if (mime.startsWith('image/') && img) {
+      img.onload = () => {
+        loading?.classList.add('hidden');
+        img.classList.remove('hidden');
+      };
+      img.onerror = () => {
+        loading?.classList.add('hidden');
+        showBigPreviewPlaceholder(item.name);
+      };
+      img.src = contentUrl;
+    } else if (mime.startsWith('video/') && video) {
+      loading?.classList.add('hidden');
+      video.onerror = () => {
+        video.classList.add('hidden');
+        showBigPreviewPlaceholder(item.name);
+      };
+      video.src = contentUrl;
+      video.classList.remove('hidden');
+    } else if (mime.startsWith('audio/') && audio && audioContainer) {
+      loading?.classList.add('hidden');
+      audio.onerror = () => {
+        audioContainer.classList.add('hidden');
+        showBigPreviewPlaceholder(item.name);
+      };
+      audio.src = contentUrl;
+      audioContainer.classList.remove('hidden');
+    } else {
+      loading?.classList.add('hidden');
+      showBigPreviewPlaceholder(item.name);
+    }
+
+    // Scroll to show preview
+    const columnsContainer = document.getElementById('columns-container');
+    if (columnsContainer) {
+      setTimeout(() => {
+        columnsContainer.scrollLeft = columnsContainer.scrollWidth;
+      }, 50);
+    }
+  }
+
+  function showBigPreviewPlaceholder(name) {
+    const placeholder = document.getElementById('column-big-preview-placeholder');
+    const filename = document.getElementById('column-big-preview-filename');
+    if (filename) filename.textContent = name;
+    placeholder?.classList.remove('hidden');
+  }
+
+  function hideBigPreview() {
+    const bigPreview = document.getElementById('column-big-preview');
+    const video = document.getElementById('column-big-preview-video');
+    const audio = document.getElementById('column-big-preview-audio');
+
+    if (!bigPreview) return;
+
+    // Stop any playing media
+    if (video) {
+      video.pause();
+      video.src = '';
+    }
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+    }
+
+    bigPreview.classList.add('hidden');
   }
 
   async function loadColumnContents(folderId, folderName) {
@@ -2411,6 +2525,7 @@
         const response = await fetch('/api/v1/metadata/' + item.id);
         if (response.ok) {
           const meta = await response.json();
+          console.debug('[metadata]', item.id, meta);
 
           if (meta.size) {
             previewSize.textContent = formatSize(meta.size);
@@ -2422,6 +2537,7 @@
 
           // Image metadata
           if (meta.image) {
+            console.debug('[metadata] image details:', meta.image);
             const img = meta.image;
             if (img.width && img.height) {
               const row = document.getElementById(`${prefix}-preview-dimensions`);
