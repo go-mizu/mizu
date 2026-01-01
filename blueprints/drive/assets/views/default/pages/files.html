@@ -42,45 +42,28 @@
         </a>
       </div>
     </div>
-
-    <!-- View Toggle (4 views: List, Grid, Column, Gallery) -->
-    <div class="flex items-center border border-zinc-200 rounded-lg p-0.5">
-      <a href="?view=list&sort={{.SortBy}}&order={{.SortOrder}}" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "list"}}bg-zinc-200{{end}}" title="List View">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="8" x2="21" y1="6" y2="6"/>
-          <line x1="8" x2="21" y1="12" y2="12"/>
-          <line x1="8" x2="21" y1="18" y2="18"/>
-          <line x1="3" x2="3.01" y1="6" y2="6"/>
-          <line x1="3" x2="3.01" y1="12" y2="12"/>
-          <line x1="3" x2="3.01" y1="18" y2="18"/>
-        </svg>
-      </a>
-      <a href="?view=grid&sort={{.SortBy}}&order={{.SortOrder}}" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "grid"}}bg-zinc-200{{end}}" title="Grid View">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect width="7" height="7" x="3" y="3" rx="1"/>
-          <rect width="7" height="7" x="14" y="3" rx="1"/>
-          <rect width="7" height="7" x="14" y="14" rx="1"/>
-          <rect width="7" height="7" x="3" y="14" rx="1"/>
-        </svg>
-      </a>
-      <a href="?view=column&sort={{.SortBy}}&order={{.SortOrder}}" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "column"}}bg-zinc-200{{end}}" title="Column View">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="5" height="18" rx="1"/>
-          <rect x="10" y="3" width="5" height="18" rx="1"/>
-          <rect x="17" y="3" width="5" height="18" rx="1"/>
-        </svg>
-      </a>
-      <a href="?view=gallery&sort={{.SortBy}}&order={{.SortOrder}}" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "gallery"}}bg-zinc-200{{end}}" title="Gallery View">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="14" rx="2"/>
-          <rect x="3" y="19" width="4" height="2" rx="0.5"/>
-          <rect x="8" y="19" width="4" height="2" rx="0.5"/>
-          <rect x="13" y="19" width="4" height="2" rx="0.5"/>
-          <rect x="18" y="19" width="3" height="2" rx="0.5"/>
-        </svg>
-      </a>
-    </div>
   </div>
+  <!-- Hidden: enable topbar view switcher for files page -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const switcher = document.getElementById('topbar-view-switcher');
+      if (switcher) {
+        switcher.classList.remove('hidden');
+        switcher.classList.add('flex');
+        // Update active state based on current view
+        const currentView = '{{.ViewMode}}';
+        const sortBy = '{{.SortBy}}';
+        const sortOrder = '{{.SortOrder}}';
+        switcher.querySelectorAll('.view-btn').forEach(btn => {
+          const view = btn.dataset.view;
+          btn.href = '?view=' + view + '&sort=' + sortBy + '&order=' + sortOrder;
+          if (view === currentView) {
+            btn.classList.add('bg-white', 'shadow-sm');
+          }
+        });
+      }
+    });
+  </script>
 </div>
 
 {{if and (eq (len .Folders) 0) (eq (len .Files) 0)}}
@@ -121,9 +104,9 @@
   <div id="grid-main-content" class="flex-1 min-w-0 transition-all duration-200">
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
   {{range .Folders}}
-  <a href="/files/{{.ID}}" class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
-    <div class="w-16 h-16 mb-3 flex items-center justify-center text-zinc-400 group-hover:text-zinc-600 transition-colors">
-      <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1">
+  <a href="/files/{{.ID}}" class="group relative flex flex-col items-center p-4 rounded-xl border border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/80 transition-all cursor-pointer hover:shadow-sm" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
+    <div class="w-16 h-16 mb-3 flex items-center justify-center text-amber-500 group-hover:text-amber-600 transition-colors">
+      <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
       </svg>
     </div>
@@ -132,7 +115,7 @@
   {{end}}
 
   {{range .Files}}
-  <div class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
+  <div class="group relative flex flex-col items-center p-4 rounded-xl border border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/80 transition-all cursor-pointer hover:shadow-sm" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
     <div class="w-16 h-16 mb-3 flex items-center justify-center">
       {{if isImage .MimeType}}
       <div class="w-full h-full rounded-lg bg-zinc-100 overflow-hidden">
@@ -281,10 +264,10 @@
     </thead>
     <tbody class="divide-y divide-zinc-100">
       {{range .Folders}}
-      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
+      <tr class="group hover:bg-zinc-50/80 transition-colors cursor-pointer border-b border-transparent hover:border-zinc-100" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
         <td class="px-4 py-3">
           <a href="/files/{{.ID}}" class="flex items-center gap-3 min-w-0">
-            <svg class="w-5 h-5 text-zinc-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-5 h-5 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
             <span class="text-sm font-medium text-zinc-900 truncate" title="{{.Name}}">{{.Name}}</span>
@@ -306,10 +289,10 @@
       {{end}}
 
       {{range .Files}}
-      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
+      <tr class="group hover:bg-zinc-50/80 transition-colors cursor-pointer border-b border-transparent hover:border-zinc-100" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
         <td class="px-4 py-3">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-5 h-5 text-zinc-400 flex-shrink-0">
+            <div class="w-5 h-5 text-zinc-500 flex-shrink-0">
               {{if eq .Icon "image"}}
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
@@ -424,44 +407,43 @@
           </div>
           <audio id="column-big-preview-audio" class="w-full" controls></audio>
         </div>
-        <!-- PDF preview -->
-        <div id="column-big-preview-pdf" class="hidden w-full h-full flex flex-col overflow-hidden rounded-lg shadow-lg bg-zinc-800">
-          <div class="flex items-center justify-between px-3 py-2 bg-zinc-900 border-b border-zinc-700">
+        <!-- PDF preview - Scrollable (all pages) -->
+        <div id="column-big-preview-pdf" class="hidden w-full h-full flex flex-col overflow-hidden rounded-lg shadow-lg bg-zinc-100 border border-zinc-200">
+          <div class="flex items-center justify-between px-3 py-2 bg-zinc-50 border-b border-zinc-200">
             <div class="flex items-center gap-2">
-              <button id="column-pdf-prev" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50" disabled>
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-              </button>
-              <span class="text-xs text-zinc-300"><span id="column-pdf-page">1</span> / <span id="column-pdf-total">-</span></span>
-              <button id="column-pdf-next" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50" disabled>
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-              </button>
+              <svg class="w-4 h-4 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span id="column-pdf-total" class="text-xs text-zinc-600">-</span>
+              <span class="text-xs text-zinc-400">pages</span>
             </div>
             <div class="flex items-center gap-1">
-              <button id="column-pdf-zoom-out" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+              <button id="column-pdf-zoom-out" class="p-1 rounded hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900 transition-colors">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M8 11h6"/></svg>
               </button>
-              <span id="column-pdf-zoom" class="text-xs text-zinc-400 w-10 text-center">100%</span>
-              <button id="column-pdf-zoom-in" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+              <span id="column-pdf-zoom" class="text-xs text-zinc-500 w-10 text-center font-medium">100%</span>
+              <button id="column-pdf-zoom-in" class="p-1 rounded hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900 transition-colors">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M11 8v6M8 11h6"/></svg>
               </button>
             </div>
           </div>
-          <div id="column-pdf-viewer" class="flex-1 overflow-auto flex items-start justify-center p-4 bg-zinc-900">
-            <canvas id="column-pdf-canvas" class="shadow-xl"></canvas>
+          <div id="column-pdf-viewer" class="flex-1 overflow-auto flex flex-col items-center gap-3 p-4 bg-zinc-100">
+            <!-- PDF pages will be rendered here -->
           </div>
         </div>
         <!-- Markdown preview -->
         <div id="column-big-preview-markdown" class="hidden w-full h-full overflow-auto bg-white rounded-lg shadow-lg">
           <div id="column-markdown-content" class="prose prose-zinc max-w-none p-6"></div>
         </div>
-        <!-- Code preview -->
-        <div id="column-big-preview-code" class="hidden w-full h-full overflow-hidden rounded-lg shadow-lg bg-zinc-900 flex flex-col">
-          <div class="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
-            <span id="column-code-filename" class="text-sm text-zinc-400"></span>
-            <span id="column-code-lang" class="text-xs text-zinc-500 bg-zinc-700 px-2 py-0.5 rounded"></span>
+        <!-- Code preview - Light theme -->
+        <div id="column-big-preview-code" class="hidden w-full h-full overflow-hidden rounded-lg shadow-lg bg-white border border-zinc-200 flex flex-col">
+          <div class="flex items-center justify-between px-4 py-2 bg-zinc-50 border-b border-zinc-200">
+            <span id="column-code-filename" class="text-sm text-zinc-600"></span>
+            <span id="column-code-lang" class="text-xs text-zinc-500 bg-zinc-200 px-2 py-0.5 rounded font-medium"></span>
           </div>
-          <div class="flex-1 overflow-auto">
-            <pre class="p-4 m-0 text-sm leading-relaxed"><code id="column-code-content" class="hljs"></code></pre>
+          <div class="flex-1 overflow-auto bg-white">
+            <pre class="p-4 m-0 text-sm leading-relaxed bg-white"><code id="column-code-content" class="hljs"></code></pre>
           </div>
         </div>
         <!-- Other files placeholder -->
@@ -486,8 +468,8 @@
       </div>
       <div class="column-content flex-1 overflow-y-auto">
         {{range .Folders}}
-        <div class="column-item group flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-100 transition-colors" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
-          <svg class="w-4 h-4 text-zinc-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
+        <div class="column-item group flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-100 transition-colors rounded-md mx-1 my-0.5" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
+          <svg class="w-4 h-4 text-amber-500 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
           <span class="text-sm text-zinc-700 truncate flex-1">{{.Name}}</span>
@@ -495,14 +477,14 @@
         </div>
         {{end}}
         {{range .Files}}
-        <div class="column-item group flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-100 transition-colors" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
-          <div class="w-4 h-4 text-zinc-400 flex-shrink-0">
+        <div class="column-item group flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-100 transition-colors rounded-md mx-1 my-0.5" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}" data-size="{{.Size}}">
+          <div class="w-4 h-4 text-zinc-500 flex-shrink-0">
             {{if eq .Icon "image"}}
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
             {{else if eq .Icon "video"}}
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
             {{else if eq .Icon "music"}}
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="18" r="4"/><path d="M12 18V2l7 4"/></svg>
             {{else}}
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
             {{end}}
@@ -633,7 +615,7 @@
     <div id="gallery-strip" class="h-24 bg-zinc-800 border-t border-zinc-700 overflow-x-auto flex items-center gap-2 px-4 scrollbar-thin">
       {{range .Folders}}
       <div class="gallery-thumb flex-shrink-0 w-16 h-16 rounded-lg bg-zinc-700 flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-white/50 transition-all" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
-        <svg class="w-8 h-8 text-zinc-400" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
+        <svg class="w-8 h-8 text-amber-400" viewBox="0 0 24 24" fill="currentColor" opacity="0.25" stroke="currentColor" stroke-width="1.5">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
       </div>
