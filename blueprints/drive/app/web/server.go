@@ -13,6 +13,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/drive/app/web/handler"
 	"github.com/go-mizu/blueprints/drive/app/web/handler/api"
 	"github.com/go-mizu/blueprints/drive/assets"
 	"github.com/go-mizu/blueprints/drive/feature/accounts"
@@ -42,6 +43,7 @@ type Server struct {
 	folderHandlers   *api.Folders
 	shareHandlers    *api.Shares
 	activityHandlers *api.Activity
+	pageHandlers     *handler.Page
 }
 
 // New creates a new server.
@@ -106,8 +108,24 @@ func New(cfg Config) (*Server, error) {
 	s.shareHandlers = api.NewShares(sharesSvc, s.getUserID)
 	s.activityHandlers = api.NewActivity(activitySvc, s.getUserID)
 
-	// Page handler will use templates
-	_ = templates
+	// Set storage root - defaults to user's home directory Downloads folder
+	storageRoot := cfg.StorageRoot
+	if storageRoot == "" {
+		home, _ := os.UserHomeDir()
+		storageRoot = filepath.Join(home, "Downloads")
+	}
+
+	// Create page handlers
+	s.pageHandlers = handler.NewPage(
+		templates,
+		accountsSvc,
+		filesSvc,
+		foldersSvc,
+		sharesSvc,
+		activitySvc,
+		s.getUserID,
+		storageRoot,
+	)
 
 	s.setupRoutes()
 
@@ -176,65 +194,33 @@ func (s *Server) setupRoutes() {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
 
-	// Page routes
+	// Page routes - local mode doesn't require auth, redirect to files directly
 	s.app.Get("/", func(c *mizu.Ctx) error {
-		user := s.optionalAuth(c)
-		if user == nil {
-			http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
-			return nil
-		}
 		http.Redirect(c.Writer(), c.Request(), "/files", http.StatusFound)
 		return nil
 	})
 
-	s.app.Get("/login", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Login</h1><p>TODO: Implement login page</p>")
-	})
+	s.app.Get("/login", s.pageHandlers.Login)
+	s.app.Get("/register", s.pageHandlers.Register)
+	s.app.Get("/files", s.pageHandlers.Files)
+	s.app.Get("/files/{path...}", s.pageHandlers.Files)
+	s.app.Get("/shared", s.pageHandlers.Shared)
+	s.app.Get("/recent", s.pageHandlers.Recent)
+	s.app.Get("/starred", s.pageHandlers.Starred)
+	s.app.Get("/trash", s.pageHandlers.Trash)
+	s.app.Get("/search", s.pageHandlers.Search)
+	s.app.Get("/settings", s.pageHandlers.Settings)
+	s.app.Get("/activity", s.pageHandlers.Activity)
 
-	s.app.Get("/register", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Register</h1><p>TODO: Implement register page</p>")
-	})
+	// Preview page
+	s.app.Get("/preview/{id...}", s.pageHandlers.Preview)
 
-	s.app.Get("/files", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Files</h1><p>TODO: Implement files page</p>")
-	})
-
-	s.app.Get("/files/{path...}", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Files</h1><p>TODO: Implement files page</p>")
-	})
-
-	s.app.Get("/shared", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Shared</h1><p>TODO: Implement shared page</p>")
-	})
-
-	s.app.Get("/recent", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Recent</h1><p>TODO: Implement recent page</p>")
-	})
-
-	s.app.Get("/starred", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Starred</h1><p>TODO: Implement starred page</p>")
-	})
-
-	s.app.Get("/trash", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Trash</h1><p>TODO: Implement trash page</p>")
-	})
-
-	s.app.Get("/search", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Search</h1><p>TODO: Implement search page</p>")
-	})
-
-	s.app.Get("/settings", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Settings</h1><p>TODO: Implement settings page</p>")
-	})
-
-	s.app.Get("/activity", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Activity</h1><p>TODO: Implement activity page</p>")
-	})
+	// File content and thumbnail (for local mode)
+	s.app.Get("/api/v1/content/{id...}", s.pageHandlers.Content)
+	s.app.Get("/api/v1/thumbnail/{id...}", s.pageHandlers.Thumbnail)
 
 	// Shared link access
-	s.app.Get("/s/{token}", func(c *mizu.Ctx) error {
-		return c.HTML(200, "<h1>Drive - Shared Link</h1><p>TODO: Implement shared link page</p>")
-	})
+	s.app.Get("/s/{token}", s.pageHandlers.ShareLink)
 
 	// API routes
 	s.app.Group("/api/v1", func(r *mizu.Router) {
@@ -263,6 +249,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/files/{id}/restore", s.authRequired(s.fileHandlers.Restore))
 		r.Get("/files/{id}/versions", s.authRequired(s.fileHandlers.ListVersions))
 		r.Post("/files/{id}/versions/{version}/restore", s.authRequired(s.fileHandlers.RestoreVersion))
+		r.Get("/files/{id}/preview", s.authRequired(s.fileHandlers.Preview))
 
 		// Folders
 		r.Get("/folders", s.authRequired(s.folderHandlers.List))

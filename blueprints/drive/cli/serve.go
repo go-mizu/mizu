@@ -27,11 +27,13 @@ The server provides:
 Examples:
   drive serve                    # Start on default port 8080
   drive serve --addr :3000       # Start on port 3000
-  drive serve --dev              # Enable development mode`,
+  drive serve --dev              # Enable development mode
+  drive serve --local            # Local mode (no auth required)`,
 		RunE: runServe,
 	}
 
 	cmd.Flags().StringP("addr", "a", ":8080", "Address to listen on")
+	cmd.Flags().Bool("local", true, "Enable local mode (no authentication required)")
 
 	return cmd
 }
@@ -39,6 +41,7 @@ Examples:
 func runServe(cmd *cobra.Command, args []string) error {
 	addr, _ := cmd.Flags().GetString("addr")
 	dev, _ := cmd.Root().PersistentFlags().GetBool("dev")
+	localMode, _ := cmd.Flags().GetBool("local")
 
 	Blank()
 	Header("", "Drive Server")
@@ -48,15 +51,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		"Address", addr,
 		"Data", dataDir,
 		"Mode", modeString(dev),
+		"Local", localModeString(localMode),
 		"Version", Version,
 	)
 	Blank()
 
 	// Create server
 	srv, err := web.New(web.Config{
-		Addr:    addr,
-		DataDir: dataDir,
-		Dev:     dev,
+		Addr:      addr,
+		DataDir:   dataDir,
+		Dev:       dev,
+		LocalMode: localMode,
 	})
 	if err != nil {
 		Error(fmt.Sprintf("Failed to create server: %v", err))

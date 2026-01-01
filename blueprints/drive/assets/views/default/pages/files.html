@@ -1,0 +1,264 @@
+{{define "content"}}
+<!-- Breadcrumb & Actions -->
+<div class="flex items-center justify-between mb-6">
+  <nav class="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
+    {{range $i, $b := .Breadcrumbs}}
+    {{if $i}}<svg class="w-4 h-4 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>{{end}}
+    {{if eq $b.URL ""}}
+    <span class="text-zinc-900 font-medium">{{$b.Label}}</span>
+    {{else}}
+    <a href="{{$b.URL}}" class="text-zinc-500 hover:text-zinc-900 transition-colors">{{$b.Label}}</a>
+    {{end}}
+    {{end}}
+  </nav>
+
+  <div class="flex items-center gap-2">
+    <!-- Sort -->
+    <div class="relative" id="sort-dropdown">
+      <button class="btn btn-ghost text-sm gap-1" data-action="toggle-dropdown">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m3 16 4 4 4-4M7 20V4M21 8l-4-4-4 4M17 4v16"/>
+        </svg>
+        <span>{{if eq .SortBy "name"}}Name{{else if eq .SortBy "date"}}Modified{{else if eq .SortBy "size"}}Size{{else}}Name{{end}}</span>
+      </button>
+      <div class="dropdown-menu hidden absolute right-0 top-full mt-1 w-40">
+        <a href="?sort=name&order={{if and (eq .SortBy "name") (eq .SortOrder "asc")}}desc{{else}}asc{{end}}&view={{.ViewMode}}" class="dropdown-item {{if eq .SortBy "name"}}bg-zinc-100{{end}}">
+          Name
+          {{if eq .SortBy "name"}}
+          <svg class="w-4 h-4 ml-auto {{if eq .SortOrder "desc"}}rotate-180{{end}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+          {{end}}
+        </a>
+        <a href="?sort=date&order={{if and (eq .SortBy "date") (eq .SortOrder "desc")}}asc{{else}}desc{{end}}&view={{.ViewMode}}" class="dropdown-item {{if eq .SortBy "date"}}bg-zinc-100{{end}}">
+          Modified
+          {{if eq .SortBy "date"}}
+          <svg class="w-4 h-4 ml-auto {{if eq .SortOrder "desc"}}rotate-180{{end}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+          {{end}}
+        </a>
+        <a href="?sort=size&order={{if and (eq .SortBy "size") (eq .SortOrder "desc")}}asc{{else}}desc{{end}}&view={{.ViewMode}}" class="dropdown-item {{if eq .SortBy "size"}}bg-zinc-100{{end}}">
+          Size
+          {{if eq .SortBy "size"}}
+          <svg class="w-4 h-4 ml-auto {{if eq .SortOrder "desc"}}rotate-180{{end}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+          {{end}}
+        </a>
+      </div>
+    </div>
+
+    <!-- View Toggle -->
+    <div class="flex items-center border border-zinc-200 rounded-lg p-0.5">
+      <a href="?view=grid&sort={{.SortBy}}&order={{.SortOrder}}" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "grid"}}bg-zinc-200{{end}}">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="7" height="7" x="3" y="3" rx="1"/>
+          <rect width="7" height="7" x="14" y="3" rx="1"/>
+          <rect width="7" height="7" x="14" y="14" rx="1"/>
+          <rect width="7" height="7" x="3" y="14" rx="1"/>
+        </svg>
+      </a>
+      <a href="?view=list&sort={{.SortBy}}&order={{.SortOrder}}" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "list"}}bg-zinc-200{{end}}">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" x2="21" y1="6" y2="6"/>
+          <line x1="8" x2="21" y1="12" y2="12"/>
+          <line x1="8" x2="21" y1="18" y2="18"/>
+          <line x1="3" x2="3.01" y1="6" y2="6"/>
+          <line x1="3" x2="3.01" y1="12" y2="12"/>
+          <line x1="3" x2="3.01" y1="18" y2="18"/>
+        </svg>
+      </a>
+    </div>
+  </div>
+</div>
+
+{{if and (eq (len .Folders) 0) (eq (len .Files) 0)}}
+<!-- Empty State -->
+<div class="flex flex-col items-center justify-center py-20 text-center">
+  <div class="w-20 h-20 mb-6 bg-zinc-100 rounded-full flex items-center justify-center">
+    <svg class="w-10 h-10 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+  </div>
+  <h3 class="text-lg font-medium text-zinc-900 mb-2">No files yet</h3>
+  <p class="text-zinc-500 mb-6 max-w-sm">Get started by uploading files or creating a folder</p>
+  <div class="flex items-center gap-3">
+    <button class="btn btn-primary" data-action="upload-file">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" x2="12" y1="3" y2="15"/>
+      </svg>
+      Upload files
+    </button>
+    <button class="btn btn-secondary" data-action="new-folder">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <line x1="12" x2="12" y1="11" y2="17"/>
+        <line x1="9" x2="15" y1="14" y2="14"/>
+      </svg>
+      New folder
+    </button>
+  </div>
+</div>
+{{else}}
+<!-- File Grid/List -->
+{{if eq .ViewMode "grid"}}
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+  {{range .Folders}}
+  <a href="/files/{{.ID}}" class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
+    <div class="w-16 h-16 mb-3 flex items-center justify-center text-zinc-400 group-hover:text-zinc-600 transition-colors">
+      <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+    </div>
+    <span class="text-sm text-center text-zinc-700 group-hover:text-zinc-900 font-medium truncate w-full">{{.Name}}</span>
+  </a>
+  {{end}}
+
+  {{range .Files}}
+  <div class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}">
+    <div class="w-16 h-16 mb-3 flex items-center justify-center">
+      {{if isImage .MimeType}}
+      <div class="w-full h-full rounded-lg bg-zinc-100 overflow-hidden">
+        <img src="/api/v1/thumbnail/{{.ID}}" alt="" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div class="w-full h-full items-center justify-center text-zinc-400 hidden">
+          <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+            <circle cx="9" cy="9" r="2"/>
+            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+          </svg>
+        </div>
+      </div>
+      {{else}}
+      <div class="text-zinc-400">
+        {{if eq .Icon "video"}}
+        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m22 8-6 4 6 4V8Z"/>
+          <rect width="14" height="12" x="2" y="6" rx="2" ry="2"/>
+        </svg>
+        {{else if eq .Icon "music"}}
+        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+        {{else if eq .Icon "file-text"}}
+        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" x2="8" y1="13" y2="13"/>
+          <line x1="16" x2="8" y1="17" y2="17"/>
+          <line x1="10" x2="8" y1="9" y2="9"/>
+        </svg>
+        {{else if eq .Icon "file-code"}}
+        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <path d="m10 13-2 2 2 2"/>
+          <path d="m14 17 2-2-2-2"/>
+        </svg>
+        {{else if eq .Icon "file-archive"}}
+        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <path d="M12 12v6"/>
+          <path d="M10 18h4"/>
+        </svg>
+        {{else}}
+        <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    <span class="text-sm text-center text-zinc-700 group-hover:text-zinc-900 font-medium truncate w-full" title="{{.Name}}">{{.Name}}</span>
+    <span class="text-xs text-zinc-400 mt-1">{{.SizeDisplay}}</span>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<!-- List View -->
+<div class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+  <table class="w-full">
+    <thead class="bg-zinc-50 border-b border-zinc-200">
+      <tr>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3">Name</th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden md:table-cell">Modified</th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Size</th>
+        <th class="w-10"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-zinc-100">
+      {{range .Folders}}
+      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
+        <td class="px-4 py-3">
+          <a href="/files/{{.ID}}" class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span class="text-sm font-medium text-zinc-900">{{.Name}}</span>
+          </a>
+        </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell">{{formatTime .UpdatedAt}}</td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell">-</td>
+        <td class="px-2 py-3">
+          <button class="btn btn-ghost btn-icon opacity-0 group-hover:opacity-100 transition-opacity" data-action="context-menu">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+      {{end}}
+
+      {{range .Files}}
+      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}">
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-3">
+            <div class="w-5 h-5 text-zinc-400">
+              {{if eq .Icon "image"}}
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                <circle cx="9" cy="9" r="2"/>
+                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+              </svg>
+              {{else if eq .Icon "video"}}
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="m22 8-6 4 6 4V8Z"/>
+                <rect width="14" height="12" x="2" y="6" rx="2" ry="2"/>
+              </svg>
+              {{else if eq .Icon "music"}}
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M9 18V5l12-2v13"/>
+                <circle cx="6" cy="18" r="3"/>
+                <circle cx="18" cy="16" r="3"/>
+              </svg>
+              {{else}}
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              {{end}}
+            </div>
+            <span class="text-sm font-medium text-zinc-900 truncate max-w-xs" title="{{.Name}}">{{.Name}}</span>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell">{{.TimeDisplay}}</td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell">{{.SizeDisplay}}</td>
+        <td class="px-2 py-3">
+          <button class="btn btn-ghost btn-icon opacity-0 group-hover:opacity-100 transition-opacity" data-action="context-menu">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}
+{{end}}

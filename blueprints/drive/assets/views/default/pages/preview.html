@@ -1,0 +1,918 @@
+{{define "content"}}
+{{if not .File}}
+<!-- File Not Found -->
+<div class="preview-container fixed inset-0 z-50 flex flex-col bg-zinc-950 items-center justify-center" id="preview-page">
+  <div class="text-center">
+    <div class="w-24 h-24 mx-auto mb-6 flex items-center justify-center bg-zinc-800 rounded-2xl">
+      <svg class="w-12 h-12 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 8v4M12 16h.01"/>
+      </svg>
+    </div>
+    <h2 class="text-xl font-medium text-white mb-2">File not found</h2>
+    <p class="text-zinc-400 mb-6">The file you're looking for doesn't exist or has been moved</p>
+    <a href="/files" class="btn btn-primary">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="m15 18-6-6 6-6"/>
+      </svg>
+      Back to files
+    </a>
+  </div>
+</div>
+<style>
+  body > div { display: none; }
+  #preview-page { display: flex !important; }
+</style>
+{{else}}
+<!-- Preview Page -->
+<div class="preview-container fixed inset-0 z-50 flex flex-col bg-zinc-950" id="preview-page">
+  <!-- Header -->
+  <header class="flex items-center justify-between px-4 py-3 bg-zinc-900/90 backdrop-blur-sm border-b border-zinc-800">
+    <div class="flex items-center gap-3 min-w-0">
+      <a href="javascript:history.back()" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </a>
+      <div class="min-w-0">
+        <h1 class="text-sm font-medium text-white truncate">{{.File.Name}}</h1>
+        <p class="text-xs text-zinc-500">{{formatSize .File.Size}}</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1">
+      <!-- Zoom controls for images -->
+      <div id="zoom-controls" class="hidden items-center gap-1 mr-2">
+        <button class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800" data-action="zoom-out" title="Zoom out (-)">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+        </button>
+        <span id="zoom-level" class="text-xs text-zinc-400 w-12 text-center">100%</span>
+        <button class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800" data-action="zoom-in" title="Zoom in (+)">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800" data-action="zoom-reset" title="Reset zoom (0)">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3.5 5.5L5 7l2.5-2.5M3.5 18.5L5 17l2.5 2.5M18.5 5.5L17 7l2.5-2.5M18.5 18.5L17 17l2.5 2.5M12 8v8M8 12h8"/></svg>
+        </button>
+      </div>
+
+      <!-- Info button -->
+      <button class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800" data-action="toggle-info" title="File info (i)">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-4M12 8h.01"/>
+        </svg>
+      </button>
+
+      <!-- Download button -->
+      <a href="{{.PreviewURL}}" download="{{.File.Name}}" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800" title="Download (d)">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" x2="12" y1="15" y2="3"/>
+        </svg>
+      </a>
+
+      <!-- Fullscreen button -->
+      <button class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-800" data-action="fullscreen" title="Fullscreen (f)">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Preview Area -->
+  <div class="flex-1 flex overflow-hidden relative">
+    <!-- Previous Navigation -->
+    {{if .PrevFile}}
+    <a href="/preview/{{.PrevFile.ID}}" class="preview-nav preview-nav-prev absolute left-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 flex items-center justify-center rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-white transition-all opacity-60 hover:opacity-100" title="Previous file (Left arrow)">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m15 18-6-6 6-6"/>
+      </svg>
+    </a>
+    {{end}}
+
+    <!-- Preview Viewport -->
+    <div id="preview-viewport" class="flex-1 flex items-center justify-center overflow-hidden p-4">
+      {{if not .CanPreview}}
+      <!-- Unsupported Preview -->
+      <div class="text-center">
+        <div class="w-24 h-24 mx-auto mb-6 flex items-center justify-center bg-zinc-800 rounded-2xl">
+          <svg class="w-12 h-12 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-medium text-white mb-2">Preview not available</h2>
+        <p class="text-zinc-400 mb-6">This file type cannot be previewed in the browser</p>
+        <a href="{{.PreviewURL}}" download="{{.File.Name}}" class="btn btn-primary">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" x2="12" y1="15" y2="3"/>
+          </svg>
+          Download file
+        </a>
+      </div>
+
+      {{else if eq .PreviewType "image"}}
+      <!-- Image Preview -->
+      <div id="image-container" class="relative max-w-full max-h-full cursor-grab active:cursor-grabbing">
+        <img id="preview-image" src="{{.PreviewURL}}" alt="{{.File.Name}}" class="max-w-full max-h-[calc(100vh-200px)] object-contain select-none" draggable="false">
+      </div>
+
+      {{else if eq .PreviewType "video"}}
+      <!-- Video Preview -->
+      <video id="preview-video" controls autoplay class="max-w-full max-h-[calc(100vh-200px)] bg-black rounded-lg">
+        <source src="{{.PreviewURL}}" type="{{.File.MimeType}}">
+        Your browser does not support video playback.
+      </video>
+
+      {{else if eq .PreviewType "audio"}}
+      <!-- Audio Preview -->
+      <div class="w-full max-w-lg mx-auto bg-zinc-900 rounded-2xl p-8">
+        <div class="w-32 h-32 mx-auto mb-6 flex items-center justify-center bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl">
+          <svg class="w-16 h-16 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-white text-center mb-6 truncate">{{.File.Name}}</h3>
+        <audio id="preview-audio" controls autoplay class="w-full">
+          <source src="{{.PreviewURL}}" type="{{.File.MimeType}}">
+          Your browser does not support audio playback.
+        </audio>
+      </div>
+
+      {{else if eq .PreviewType "pdf"}}
+      <!-- PDF Preview with pdf.js -->
+      <div id="pdf-container" class="w-full h-full bg-zinc-800 rounded-lg overflow-hidden flex flex-col">
+        <!-- PDF Toolbar -->
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-700">
+          <div class="flex items-center gap-2">
+            <button id="pdf-prev" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-50" disabled title="Previous page">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span class="text-sm text-zinc-300">
+              <span id="pdf-page-num">1</span> / <span id="pdf-page-count">-</span>
+            </span>
+            <button id="pdf-next" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-50" disabled title="Next page">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="pdf-zoom-out" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-700" title="Zoom out">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg>
+            </button>
+            <span id="pdf-zoom-level" class="text-xs text-zinc-400 w-12 text-center">100%</span>
+            <button id="pdf-zoom-in" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-700" title="Zoom in">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+            </button>
+            <button id="pdf-fit-width" class="btn btn-ghost btn-icon text-zinc-400 hover:text-white hover:bg-zinc-700" title="Fit to width">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 3H3M21 21H3M12 7v10M8 11l4-4 4 4M8 13l4 4 4-4"/></svg>
+            </button>
+          </div>
+        </div>
+        <!-- PDF Canvas Container -->
+        <div id="pdf-viewer" class="flex-1 overflow-auto flex items-start justify-center p-4 bg-zinc-900">
+          <canvas id="pdf-canvas" class="shadow-2xl"></canvas>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "code"}}
+      <!-- Code Preview -->
+      <div class="w-full max-w-5xl mx-auto h-full flex flex-col bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
+          <span class="text-sm text-zinc-400">{{.File.Name}}</span>
+          <span class="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">{{.Language}}</span>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <pre class="p-4 m-0 text-sm leading-relaxed"><code id="code-content" class="language-{{.Language}} hljs">{{.FileContent}}</code></pre>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "markdown"}}
+      <!-- Markdown Preview -->
+      <div class="w-full max-w-3xl mx-auto h-full bg-white rounded-xl overflow-auto">
+        <div id="markdown-content" class="prose prose-zinc max-w-none p-8">
+          <!-- Content will be rendered by marked.js -->
+        </div>
+      </div>
+      <script id="markdown-source" type="text/plain">{{.FileContent}}</script>
+
+      {{else if eq .PreviewType "text"}}
+      <!-- Plain Text Preview -->
+      <div class="w-full max-w-5xl mx-auto h-full flex flex-col bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
+          <span class="text-sm text-zinc-400">{{.File.Name}}</span>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <pre class="p-4 m-0 text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap font-mono">{{.FileContent}}</pre>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "spreadsheet"}}
+      <!-- Spreadsheet Preview -->
+      <div class="w-full h-full flex flex-col bg-white rounded-xl overflow-hidden">
+        <div id="spreadsheet-container" class="flex-1 overflow-auto">
+          <div class="flex items-center justify-center h-full">
+            <div class="text-center">
+              <div class="animate-spin w-8 h-8 border-2 border-zinc-300 border-t-zinc-900 rounded-full mx-auto mb-4"></div>
+              <p class="text-zinc-600">Loading spreadsheet...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "document"}}
+      <!-- Document Preview (DOCX) -->
+      <div class="w-full max-w-4xl mx-auto h-full bg-white rounded-xl overflow-auto">
+        <div id="document-container" class="p-8 prose prose-zinc max-w-none">
+          <div class="flex items-center justify-center h-64">
+            <div class="text-center">
+              <div class="animate-spin w-8 h-8 border-2 border-zinc-300 border-t-zinc-900 rounded-full mx-auto mb-4"></div>
+              <p class="text-zinc-600">Loading document...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "3d"}}
+      <!-- 3D Model Preview -->
+      <div id="threejs-container" class="w-full h-full bg-zinc-900 rounded-xl">
+        <div class="flex items-center justify-center h-full">
+          <div class="text-center">
+            <div class="animate-spin w-8 h-8 border-2 border-zinc-700 border-t-zinc-400 rounded-full mx-auto mb-4"></div>
+            <p class="text-zinc-400">Loading 3D model...</p>
+          </div>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "font"}}
+      <!-- Font Preview -->
+      <div class="w-full max-w-3xl mx-auto bg-white rounded-xl overflow-auto p-8">
+        <style id="font-preview-style"></style>
+        <div class="space-y-8">
+          <div>
+            <h3 class="text-sm font-medium text-zinc-500 mb-2">Sample Text</h3>
+            <p id="font-sample" class="text-4xl text-zinc-900" style="font-family: 'PreviewFont', sans-serif;">
+              The quick brown fox jumps over the lazy dog
+            </p>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-zinc-500 mb-2">Alphabet</h3>
+            <p id="font-alphabet" class="text-2xl text-zinc-900" style="font-family: 'PreviewFont', sans-serif;">
+              ABCDEFGHIJKLMNOPQRSTUVWXYZ<br>
+              abcdefghijklmnopqrstuvwxyz<br>
+              0123456789
+            </p>
+          </div>
+          <div>
+            <h3 class="text-sm font-medium text-zinc-500 mb-2">Sizes</h3>
+            <div class="space-y-2" style="font-family: 'PreviewFont', sans-serif;">
+              <p class="text-xs text-zinc-900">12px - The quick brown fox jumps over the lazy dog</p>
+              <p class="text-sm text-zinc-900">14px - The quick brown fox jumps over the lazy dog</p>
+              <p class="text-base text-zinc-900">16px - The quick brown fox jumps over the lazy dog</p>
+              <p class="text-lg text-zinc-900">18px - The quick brown fox jumps over the lazy dog</p>
+              <p class="text-xl text-zinc-900">20px - The quick brown fox jumps over the lazy dog</p>
+              <p class="text-2xl text-zinc-900">24px - The quick brown fox jumps over the lazy dog</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {{else if eq .PreviewType "archive"}}
+      <!-- Archive Preview -->
+      <div class="w-full max-w-2xl mx-auto bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
+        <div class="px-4 py-3 bg-zinc-800/50 border-b border-zinc-800">
+          <span class="text-sm text-zinc-400">{{.File.Name}}</span>
+        </div>
+        <div id="archive-container" class="p-4">
+          <p class="text-zinc-400 text-center py-8">Archive contents preview not available.<br>Download the file to view its contents.</p>
+        </div>
+      </div>
+
+      {{else}}
+      <!-- Fallback -->
+      <div class="text-center">
+        <div class="w-24 h-24 mx-auto mb-6 flex items-center justify-center bg-zinc-800 rounded-2xl">
+          <svg class="w-12 h-12 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <h2 class="text-xl font-medium text-white mb-2">{{.File.Name}}</h2>
+        <p class="text-zinc-400 mb-6">{{formatSize .File.Size}}</p>
+        <a href="{{.PreviewURL}}" download="{{.File.Name}}" class="btn btn-primary">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" x2="12" y1="15" y2="3"/>
+          </svg>
+          Download file
+        </a>
+      </div>
+      {{end}}
+    </div>
+
+    <!-- Next Navigation -->
+    {{if .NextFile}}
+    <a href="/preview/{{.NextFile.ID}}" class="preview-nav preview-nav-next absolute right-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 flex items-center justify-center rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-white transition-all opacity-60 hover:opacity-100" title="Next file (Right arrow)">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 18 6-6-6-6"/>
+      </svg>
+    </a>
+    {{end}}
+
+    <!-- File Info Panel -->
+    <div id="info-panel" class="hidden absolute right-0 top-0 bottom-0 w-80 bg-zinc-900 border-l border-zinc-800 overflow-auto z-30">
+      <div class="p-4 border-b border-zinc-800 flex items-center justify-between">
+        <h3 class="font-medium text-white">File details</h3>
+        <button class="btn btn-ghost btn-icon text-zinc-400 hover:text-white" data-action="toggle-info">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="text-xs text-zinc-500 block mb-1">Name</label>
+          <p class="text-sm text-white break-words">{{.File.Name}}</p>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-500 block mb-1">Type</label>
+          <p class="text-sm text-white">{{.File.MimeType}}</p>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-500 block mb-1">Size</label>
+          <p class="text-sm text-white">{{formatSize .File.Size}}</p>
+        </div>
+        <div>
+          <label class="text-xs text-zinc-500 block mb-1">Modified</label>
+          <p class="text-sm text-white">{{formatDate .File.UpdatedAt}}</p>
+        </div>
+        {{if .Language}}
+        <div>
+          <label class="text-xs text-zinc-500 block mb-1">Language</label>
+          <p class="text-sm text-white">{{.Language}}</p>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="flex items-center justify-between px-4 py-2 bg-zinc-900/90 backdrop-blur-sm border-t border-zinc-800">
+    <div class="text-xs text-zinc-500">
+      {{if gt .CurrentIndex 0}}{{.CurrentIndex}} of {{len .SiblingIDs}} files{{end}}
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="text-xs text-zinc-500">
+        <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-400">Esc</kbd> Close
+        {{if or .PrevFile .NextFile}}
+        <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-400 ml-2">&larr;</kbd>
+        <kbd class="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-400">&rarr;</kbd> Navigate
+        {{end}}
+      </span>
+    </div>
+  </footer>
+</div>
+
+<!-- Libraries for advanced previews (loaded lazily) -->
+{{if eq .PreviewType "code"}}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+{{end}}
+
+{{if eq .PreviewType "markdown"}}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const source = document.getElementById('markdown-source').textContent;
+    marked.setOptions({
+      highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
+    document.getElementById('markdown-content').innerHTML = marked.parse(source);
+  });
+</script>
+{{end}}
+
+{{if eq .PreviewType "spreadsheet"}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async function() {
+    const container = document.getElementById('spreadsheet-container');
+    try {
+      const response = await fetch('{{.PreviewURL}}');
+      const data = await response.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const html = XLSX.utils.sheet_to_html(firstSheet, { editable: false });
+      container.innerHTML = html;
+      container.querySelector('table').className = 'min-w-full divide-y divide-zinc-200';
+      container.querySelectorAll('td, th').forEach(cell => {
+        cell.className = 'px-3 py-2 text-sm text-zinc-900 border border-zinc-200';
+      });
+    } catch (err) {
+      container.innerHTML = '<p class="text-red-600 text-center py-8">Failed to load spreadsheet</p>';
+    }
+  });
+</script>
+{{end}}
+
+{{if eq .PreviewType "document"}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async function() {
+    const container = document.getElementById('document-container');
+    try {
+      const response = await fetch('{{.PreviewURL}}');
+      const data = await response.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer: data });
+      container.innerHTML = result.value;
+    } catch (err) {
+      container.innerHTML = '<p class="text-red-600 text-center py-8">Failed to load document</p>';
+    }
+  });
+</script>
+{{end}}
+
+{{if eq .PreviewType "font"}}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const style = document.getElementById('font-preview-style');
+    style.textContent = `
+      @font-face {
+        font-family: 'PreviewFont';
+        src: url('{{.PreviewURL}}');
+      }
+    `;
+  });
+</script>
+{{end}}
+
+{{if eq .PreviewType "pdf"}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+<script type="module">
+  import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs';
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+
+  let pdfDoc = null;
+  let pageNum = 1;
+  let pageRendering = false;
+  let pageNumPending = null;
+  let scale = 1.0;
+
+  const canvas = document.getElementById('pdf-canvas');
+  const ctx = canvas.getContext('2d');
+  const viewer = document.getElementById('pdf-viewer');
+
+  function renderPage(num) {
+    pageRendering = true;
+    pdfDoc.getPage(num).then(function(page) {
+      const viewport = page.getViewport({ scale: scale });
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const renderContext = {
+        canvasContext: ctx,
+        viewport: viewport
+      };
+
+      const renderTask = page.render(renderContext);
+      renderTask.promise.then(function() {
+        pageRendering = false;
+        if (pageNumPending !== null) {
+          renderPage(pageNumPending);
+          pageNumPending = null;
+        }
+      });
+    });
+
+    document.getElementById('pdf-page-num').textContent = num;
+    document.getElementById('pdf-prev').disabled = (num <= 1);
+    document.getElementById('pdf-next').disabled = (num >= pdfDoc.numPages);
+  }
+
+  function queueRenderPage(num) {
+    if (pageRendering) {
+      pageNumPending = num;
+    } else {
+      renderPage(num);
+    }
+  }
+
+  function updateZoomLevel() {
+    document.getElementById('pdf-zoom-level').textContent = Math.round(scale * 100) + '%';
+  }
+
+  function fitToWidth() {
+    if (!pdfDoc) return;
+    pdfDoc.getPage(pageNum).then(function(page) {
+      const viewport = page.getViewport({ scale: 1.0 });
+      const containerWidth = viewer.clientWidth - 32; // padding
+      scale = containerWidth / viewport.width;
+      updateZoomLevel();
+      queueRenderPage(pageNum);
+    });
+  }
+
+  // Navigation
+  document.getElementById('pdf-prev').addEventListener('click', function() {
+    if (pageNum <= 1) return;
+    pageNum--;
+    queueRenderPage(pageNum);
+  });
+
+  document.getElementById('pdf-next').addEventListener('click', function() {
+    if (pageNum >= pdfDoc.numPages) return;
+    pageNum++;
+    queueRenderPage(pageNum);
+  });
+
+  // Zoom
+  document.getElementById('pdf-zoom-in').addEventListener('click', function() {
+    scale = Math.min(scale * 1.25, 5.0);
+    updateZoomLevel();
+    queueRenderPage(pageNum);
+  });
+
+  document.getElementById('pdf-zoom-out').addEventListener('click', function() {
+    scale = Math.max(scale * 0.8, 0.25);
+    updateZoomLevel();
+    queueRenderPage(pageNum);
+  });
+
+  document.getElementById('pdf-fit-width').addEventListener('click', fitToWidth);
+
+  // Keyboard shortcuts for PDF
+  document.addEventListener('keydown', function(e) {
+    if (e.target.matches('input, textarea')) return;
+    if (e.key === 'PageDown' || (e.key === 'ArrowDown' && !e.ctrlKey)) {
+      if (pageNum < pdfDoc.numPages) {
+        e.preventDefault();
+        pageNum++;
+        queueRenderPage(pageNum);
+      }
+    } else if (e.key === 'PageUp' || (e.key === 'ArrowUp' && !e.ctrlKey)) {
+      if (pageNum > 1) {
+        e.preventDefault();
+        pageNum--;
+        queueRenderPage(pageNum);
+      }
+    }
+  });
+
+  // Load PDF
+  const loadingTask = pdfjsLib.getDocument('{{.PreviewURL}}');
+  loadingTask.promise.then(function(pdf) {
+    pdfDoc = pdf;
+    document.getElementById('pdf-page-count').textContent = pdf.numPages;
+
+    // Fit to width on load
+    fitToWidth();
+  }).catch(function(error) {
+    console.error('Error loading PDF:', error);
+    document.getElementById('pdf-viewer').innerHTML =
+      '<div class="text-center text-red-400 py-8"><p>Failed to load PDF</p><p class="text-sm text-zinc-500 mt-2">' + error.message + '</p></div>';
+  });
+</script>
+{{end}}
+
+<!-- Preview JavaScript -->
+<script>
+(function() {
+  'use strict';
+
+  const previewType = '{{.PreviewType}}';
+  const prevFileUrl = '{{if .PrevFile}}/preview/{{.PrevFile.ID}}{{end}}';
+  const nextFileUrl = '{{if .NextFile}}/preview/{{.NextFile.ID}}{{end}}';
+
+  // Image zoom/pan state
+  let scale = 1;
+  let translateX = 0;
+  let translateY = 0;
+  let isDragging = false;
+  let startX, startY;
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  function init() {
+    setupKeyboardNavigation();
+    setupInfoPanel();
+    setupFullscreen();
+
+    if (previewType === 'image') {
+      setupImageZoom();
+    }
+  }
+
+  function setupKeyboardNavigation() {
+    document.addEventListener('keydown', (e) => {
+      // Ignore if in input
+      if (e.target.matches('input, textarea')) return;
+
+      switch(e.key) {
+        case 'Escape':
+          history.back();
+          break;
+        case 'ArrowLeft':
+          if (prevFileUrl) window.location.href = prevFileUrl;
+          break;
+        case 'ArrowRight':
+          if (nextFileUrl) window.location.href = nextFileUrl;
+          break;
+        case 'd':
+          document.querySelector('a[download]')?.click();
+          break;
+        case 'i':
+          toggleInfoPanel();
+          break;
+        case 'f':
+          toggleFullscreen();
+          break;
+        case '+':
+        case '=':
+          if (previewType === 'image') zoomIn();
+          break;
+        case '-':
+          if (previewType === 'image') zoomOut();
+          break;
+        case '0':
+          if (previewType === 'image') zoomReset();
+          break;
+        case ' ':
+          e.preventDefault();
+          togglePlayPause();
+          break;
+      }
+    });
+
+    // Touch swipe navigation
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = touchEndY - touchStartY;
+
+      // Only handle horizontal swipes
+      if (Math.abs(deltaX) > 100 && Math.abs(deltaX) > Math.abs(deltaY)) {
+        if (deltaX > 0 && prevFileUrl) {
+          window.location.href = prevFileUrl;
+        } else if (deltaX < 0 && nextFileUrl) {
+          window.location.href = nextFileUrl;
+        }
+      }
+    }, { passive: true });
+  }
+
+  function setupInfoPanel() {
+    document.querySelectorAll('[data-action="toggle-info"]').forEach(btn => {
+      btn.addEventListener('click', toggleInfoPanel);
+    });
+  }
+
+  function toggleInfoPanel() {
+    const panel = document.getElementById('info-panel');
+    panel.classList.toggle('hidden');
+  }
+
+  function setupFullscreen() {
+    document.querySelectorAll('[data-action="fullscreen"]').forEach(btn => {
+      btn.addEventListener('click', toggleFullscreen);
+    });
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.getElementById('preview-page').requestFullscreen();
+    }
+  }
+
+  function togglePlayPause() {
+    const video = document.getElementById('preview-video');
+    const audio = document.getElementById('preview-audio');
+    const media = video || audio;
+    if (media) {
+      if (media.paused) {
+        media.play();
+      } else {
+        media.pause();
+      }
+    }
+  }
+
+  function setupImageZoom() {
+    const container = document.getElementById('image-container');
+    const img = document.getElementById('preview-image');
+    const zoomControls = document.getElementById('zoom-controls');
+
+    if (!container || !img) return;
+
+    // Show zoom controls
+    zoomControls?.classList.remove('hidden');
+    zoomControls?.classList.add('flex');
+
+    // Wheel zoom
+    container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newScale = Math.min(Math.max(0.5, scale * delta), 5);
+
+      // Zoom toward mouse position
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const scaleChange = newScale / scale;
+      translateX = x - scaleChange * (x - translateX);
+      translateY = y - scaleChange * (y - translateY);
+      scale = newScale;
+
+      updateImageTransform();
+    }, { passive: false });
+
+    // Double-click to reset
+    container.addEventListener('dblclick', () => {
+      if (scale === 1) {
+        scale = 2;
+      } else {
+        zoomReset();
+      }
+      updateImageTransform();
+    });
+
+    // Pan functionality
+    container.addEventListener('mousedown', (e) => {
+      if (scale > 1) {
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+        container.style.cursor = 'grabbing';
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        translateX = e.clientX - startX;
+        translateY = e.clientY - startY;
+        updateImageTransform();
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      isDragging = false;
+      if (container) container.style.cursor = scale > 1 ? 'grab' : 'default';
+    });
+
+    // Zoom controls
+    document.querySelector('[data-action="zoom-in"]')?.addEventListener('click', zoomIn);
+    document.querySelector('[data-action="zoom-out"]')?.addEventListener('click', zoomOut);
+    document.querySelector('[data-action="zoom-reset"]')?.addEventListener('click', zoomReset);
+  }
+
+  function zoomIn() {
+    scale = Math.min(scale * 1.25, 5);
+    updateImageTransform();
+  }
+
+  function zoomOut() {
+    scale = Math.max(scale * 0.8, 0.5);
+    if (scale <= 1) {
+      translateX = 0;
+      translateY = 0;
+    }
+    updateImageTransform();
+  }
+
+  function zoomReset() {
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+    updateImageTransform();
+  }
+
+  function updateImageTransform() {
+    const img = document.getElementById('preview-image');
+    const container = document.getElementById('image-container');
+    const zoomLevel = document.getElementById('zoom-level');
+
+    if (img) {
+      img.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    }
+    if (container) {
+      container.style.cursor = scale > 1 ? 'grab' : 'default';
+    }
+    if (zoomLevel) {
+      zoomLevel.textContent = Math.round(scale * 100) + '%';
+    }
+  }
+})();
+</script>
+
+<style>
+  /* Override default layout for preview page */
+  body > div { display: none; }
+  #preview-page { display: flex !important; }
+
+  /* Smooth transitions */
+  #preview-image {
+    transition: transform 0.1s ease-out;
+  }
+
+  /* Hide scrollbar on preview */
+  #preview-viewport::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Code highlighting customization */
+  pre code.hljs {
+    background: transparent;
+    padding: 0;
+  }
+
+  /* Prose styles for markdown */
+  .prose {
+    color: #374151;
+    max-width: 65ch;
+  }
+  .prose h1, .prose h2, .prose h3, .prose h4 {
+    color: #111827;
+    font-weight: 600;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+  }
+  .prose h1 { font-size: 2em; }
+  .prose h2 { font-size: 1.5em; }
+  .prose h3 { font-size: 1.25em; }
+  .prose p { margin: 1em 0; line-height: 1.75; }
+  .prose code {
+    background: #f3f4f6;
+    padding: 0.2em 0.4em;
+    border-radius: 0.25em;
+    font-size: 0.875em;
+  }
+  .prose pre {
+    background: #1f2937;
+    padding: 1em;
+    border-radius: 0.5em;
+    overflow-x: auto;
+  }
+  .prose pre code {
+    background: transparent;
+    padding: 0;
+    color: #e5e7eb;
+  }
+  .prose a {
+    color: #2563eb;
+    text-decoration: underline;
+  }
+  .prose ul, .prose ol {
+    padding-left: 1.5em;
+    margin: 1em 0;
+  }
+  .prose li { margin: 0.25em 0; }
+  .prose blockquote {
+    border-left: 4px solid #e5e7eb;
+    padding-left: 1em;
+    color: #6b7280;
+    margin: 1em 0;
+  }
+  .prose img {
+    max-width: 100%;
+    border-radius: 0.5em;
+  }
+  .prose table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .prose th, .prose td {
+    border: 1px solid #e5e7eb;
+    padding: 0.5em 0.75em;
+    text-align: left;
+  }
+  .prose th {
+    background: #f9fafb;
+    font-weight: 600;
+  }
+</style>
+{{end}}
+{{end}}
