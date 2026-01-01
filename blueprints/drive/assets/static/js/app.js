@@ -279,18 +279,18 @@
           // Multi-select
           if (selectedItems.has(id)) {
             selectedItems.delete(id);
-            item.classList.remove('ring-2', 'ring-blue-500');
+            item.classList.remove('selected-item', 'bg-blue-50', 'border-blue-200', 'ring-1', 'ring-blue-500/30');
           } else {
             selectedItems.add(id);
-            item.classList.add('ring-2', 'ring-blue-500');
+            item.classList.add('selected-item', 'bg-blue-50', 'border-blue-200', 'ring-1', 'ring-blue-500/30');
           }
         } else if (e.shiftKey) {
           // Range select (TODO)
         } else {
-          // Single click - select item (Finder-like behavior)
+          // Single click - select item (Finder-like behavior with modern shadcn style)
           clearSelection();
           selectedItems.add(id);
-          item.classList.add('ring-2', 'ring-blue-500');
+          item.classList.add('selected-item', 'bg-blue-50', 'border-blue-200', 'ring-1', 'ring-blue-500/30');
           selectedFile = { id, type, name, mime, element: item };
         }
       });
@@ -324,7 +324,7 @@
     selectedItems.clear();
     selectedFile = null;
     document.querySelectorAll('[data-type="file"], [data-type="folder"]').forEach(item => {
-      item.classList.remove('ring-2', 'ring-blue-500', 'ring-zinc-900', 'dark:ring-zinc-100');
+      item.classList.remove('selected-item', 'bg-blue-50', 'border-blue-200', 'ring-1', 'ring-blue-500/30', 'ring-2', 'ring-blue-500', 'ring-zinc-900', 'dark:ring-zinc-100');
     });
   }
 
@@ -350,9 +350,7 @@
     // Fullscreen
     document.getElementById('preview-fullscreen')?.addEventListener('click', toggleFullscreen);
 
-    // PDF controls
-    document.getElementById('pdf-prev-page')?.addEventListener('click', () => changePdfPage(-1));
-    document.getElementById('pdf-next-page')?.addEventListener('click', () => changePdfPage(1));
+    // PDF zoom controls (pagination removed - now scrollable)
     document.getElementById('pdf-zoom-in')?.addEventListener('click', () => changePdfZoom(1.25));
     document.getElementById('pdf-zoom-out')?.addEventListener('click', () => changePdfZoom(0.8));
 
@@ -557,19 +555,23 @@
 
   async function loadPdfPreview(url) {
     const container = document.getElementById('preview-pdf-container');
+    const viewer = document.getElementById('pdf-viewer');
     container.classList.remove('hidden');
+
+    // Clear previous pages
+    viewer.innerHTML = '';
 
     try {
       const pdfjsLib = await loadPdfJs();
       const loadingTask = pdfjsLib.getDocument(url);
       previewState.pdfDoc = await loadingTask.promise;
-      previewState.pdfPage = 1;
       previewState.pdfScale = 1.0;
 
       document.getElementById('pdf-total-pages').textContent = previewState.pdfDoc.numPages;
       document.getElementById('preview-fileinfo').textContent = `${previewState.pdfDoc.numPages} pages`;
 
-      await renderPdfPage();
+      // Render all pages for scrollable view
+      await renderAllPdfPages();
     } catch (err) {
       console.error('Failed to load PDF:', err);
       container.classList.add('hidden');
@@ -577,52 +579,49 @@
     }
   }
 
-  async function renderPdfPage() {
+  async function renderAllPdfPages() {
     if (!previewState.pdfDoc) return;
 
-    const page = await previewState.pdfDoc.getPage(previewState.pdfPage);
-    const canvas = document.getElementById('pdf-canvas');
-    const ctx = canvas.getContext('2d');
     const viewer = document.getElementById('pdf-viewer');
+    viewer.innerHTML = '';
 
-    // Calculate scale to fit width
-    const viewport = page.getViewport({ scale: 1.0 });
-    const containerWidth = viewer.clientWidth - 32;
-    let scale = previewState.pdfScale;
+    // Get first page to calculate scale
+    const firstPage = await previewState.pdfDoc.getPage(1);
+    const viewport = firstPage.getViewport({ scale: 1.0 });
+    const containerWidth = viewer.clientWidth - 48;
 
-    if (scale === 1.0) {
-      scale = containerWidth / viewport.width;
-      previewState.pdfScale = scale;
+    // Calculate initial scale to fit width
+    if (previewState.pdfScale === 1.0) {
+      previewState.pdfScale = Math.min(containerWidth / viewport.width, 1.5);
     }
 
-    const scaledViewport = page.getViewport({ scale });
-    canvas.height = scaledViewport.height;
-    canvas.width = scaledViewport.width;
+    // Render all pages
+    for (let pageNum = 1; pageNum <= previewState.pdfDoc.numPages; pageNum++) {
+      const page = await previewState.pdfDoc.getPage(pageNum);
+      const scaledViewport = page.getViewport({ scale: previewState.pdfScale });
 
-    await page.render({
-      canvasContext: ctx,
-      viewport: scaledViewport
-    }).promise;
+      // Create canvas for this page
+      const canvas = document.createElement('canvas');
+      canvas.className = 'shadow-lg rounded bg-white';
+      canvas.width = scaledViewport.width;
+      canvas.height = scaledViewport.height;
 
-    // Update UI
-    document.getElementById('pdf-current-page').textContent = previewState.pdfPage;
+      viewer.appendChild(canvas);
+
+      const ctx = canvas.getContext('2d');
+      await page.render({
+        canvasContext: ctx,
+        viewport: scaledViewport
+      }).promise;
+    }
+
+    // Update zoom display
     document.getElementById('pdf-zoom').textContent = Math.round(previewState.pdfScale * 100) + '%';
-    document.getElementById('pdf-prev-page').disabled = previewState.pdfPage <= 1;
-    document.getElementById('pdf-next-page').disabled = previewState.pdfPage >= previewState.pdfDoc.numPages;
-  }
-
-  function changePdfPage(delta) {
-    if (!previewState.pdfDoc) return;
-    const newPage = previewState.pdfPage + delta;
-    if (newPage >= 1 && newPage <= previewState.pdfDoc.numPages) {
-      previewState.pdfPage = newPage;
-      renderPdfPage();
-    }
   }
 
   function changePdfZoom(factor) {
-    previewState.pdfScale = Math.min(Math.max(previewState.pdfScale * factor, 0.25), 5.0);
-    renderPdfPage();
+    previewState.pdfScale = Math.min(Math.max(previewState.pdfScale * factor, 0.25), 3.0);
+    renderAllPdfPages();
   }
 
   async function loadTextPreview(url, filename, type) {
@@ -987,20 +986,7 @@
               audio.paused ? audio.play() : audio.pause();
             }
             return;
-          case 'PageDown':
-          case 'ArrowDown':
-            if (previewState.pdfDoc) {
-              e.preventDefault();
-              changePdfPage(1);
-            }
-            return;
-          case 'PageUp':
-          case 'ArrowUp':
-            if (previewState.pdfDoc) {
-              e.preventDefault();
-              changePdfPage(-1);
-            }
-            return;
+          // PDF is now scrollable - no pagination shortcuts needed
         }
       }
 
@@ -1609,16 +1595,16 @@
 
   async function loadColumnPdfPreview(url) {
     const container = document.getElementById('column-big-preview-pdf');
-    const canvas = document.getElementById('column-pdf-canvas');
-    const pageEl = document.getElementById('column-pdf-page');
+    const viewer = document.getElementById('column-pdf-viewer');
     const totalEl = document.getElementById('column-pdf-total');
-    const prevBtn = document.getElementById('column-pdf-prev');
-    const nextBtn = document.getElementById('column-pdf-next');
     const zoomEl = document.getElementById('column-pdf-zoom');
     const zoomInBtn = document.getElementById('column-pdf-zoom-in');
     const zoomOutBtn = document.getElementById('column-pdf-zoom-out');
 
-    if (!container || !canvas) return;
+    if (!container || !viewer) return;
+
+    // Clear previous pages
+    viewer.innerHTML = '';
 
     // Load PDF.js
     const pdfjsLib = await window.loadPdfJs();
@@ -1626,52 +1612,55 @@
     const pdf = await loadingTask.promise;
 
     columnPdfState.doc = pdf;
-    columnPdfState.page = 1;
     columnPdfState.scale = 1.0;
 
     totalEl.textContent = pdf.numPages;
 
-    // Setup controls
-    const renderPage = async (pageNum) => {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: columnPdfState.scale });
+    // Render all pages function
+    const renderAllPages = async () => {
+      viewer.innerHTML = '';
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      // Get first page to calculate scale
+      const firstPage = await pdf.getPage(1);
+      const viewport = firstPage.getViewport({ scale: 1.0 });
+      const containerWidth = viewer.clientWidth - 32;
 
-      const ctx = canvas.getContext('2d');
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      // Calculate initial scale to fit width
+      if (columnPdfState.scale === 1.0) {
+        columnPdfState.scale = Math.min(containerWidth / viewport.width, 1.2);
+      }
 
-      pageEl.textContent = pageNum;
-      prevBtn.disabled = pageNum <= 1;
-      nextBtn.disabled = pageNum >= pdf.numPages;
+      // Render all pages
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const scaledViewport = page.getViewport({ scale: columnPdfState.scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'shadow-md rounded bg-white';
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+
+        viewer.appendChild(canvas);
+
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+      }
+
       zoomEl.textContent = Math.round(columnPdfState.scale * 100) + '%';
     };
 
     // Initial render
-    await renderPage(1);
+    await renderAllPages();
     container.classList.remove('hidden');
 
-    // Event handlers (remove old ones first)
-    prevBtn.onclick = async () => {
-      if (columnPdfState.page > 1) {
-        columnPdfState.page--;
-        await renderPage(columnPdfState.page);
-      }
-    };
-    nextBtn.onclick = async () => {
-      if (columnPdfState.page < pdf.numPages) {
-        columnPdfState.page++;
-        await renderPage(columnPdfState.page);
-      }
-    };
+    // Zoom event handlers
     zoomInBtn.onclick = async () => {
-      columnPdfState.scale *= 1.25;
-      await renderPage(columnPdfState.page);
+      columnPdfState.scale = Math.min(columnPdfState.scale * 1.25, 3.0);
+      await renderAllPages();
     };
     zoomOutBtn.onclick = async () => {
-      columnPdfState.scale *= 0.8;
-      await renderPage(columnPdfState.page);
+      columnPdfState.scale = Math.max(columnPdfState.scale * 0.8, 0.25);
+      await renderAllPages();
     };
   }
 
@@ -1798,7 +1787,7 @@
       // Add files
       if (data.files) {
         data.files.forEach(file => {
-          const icon = getFileIcon(file.mime_type);
+          const icon = getFileIcon(file.mime_type, file.name);
           itemsHtml += `
             <div class="column-item group flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-100 transition-colors" data-type="file" data-id="${escapeHtml(file.id)}" data-name="${escapeHtml(file.name)}" data-mime="${escapeHtml(file.mime_type)}" data-size="${file.size}">
               <div class="w-4 h-4 text-zinc-400 flex-shrink-0">${icon}</div>
@@ -2883,21 +2872,111 @@
     }
   }
 
-  // Helper: Get file icon SVG
-  function getFileIcon(mime) {
-    if (!mime) {
-      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>';
-    }
-    if (mime.startsWith('image/')) {
+  // Helper: Get file icon SVG - Enhanced with more file types (Lucide-inspired)
+  function getFileIcon(mime, filename) {
+    const ext = filename ? filename.split('.').pop().toLowerCase() : '';
+
+    // Default file icon
+    const defaultIcon = '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+    if (!mime && !ext) return defaultIcon;
+
+    // Images
+    if (mime?.startsWith('image/')) {
       return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
     }
-    if (mime.startsWith('video/')) {
+
+    // Videos
+    if (mime?.startsWith('video/')) {
       return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>';
     }
-    if (mime.startsWith('audio/')) {
-      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+
+    // Audio
+    if (mime?.startsWith('audio/')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="18" r="4"/><path d="M12 18V2l7 4"/></svg>';
     }
-    return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+    // PDF
+    if (mime === 'application/pdf' || ext === 'pdf') {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12h1.5a1.5 1.5 0 1 1 0 3H10v3"/><path d="M6 12v6"/><path d="M6 12h1"/><path d="M17 12h1a2 2 0 0 1 0 4h-1v2"/></svg>';
+    }
+
+    // Markdown
+    if (ext === 'md' || ext === 'markdown' || ext === 'mdx') {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M7 15V9l2 2 2-2v6"/><path d="M17 9v6l-2-2"/></svg>';
+    }
+
+    // Code files
+    const codeExts = ['js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'php', 'swift', 'kt', 'scala', 'vue', 'svelte', 'lua', 'r', 'pl', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd'];
+    if (codeExts.includes(ext) || mime?.includes('javascript') || mime?.includes('typescript') || mime?.includes('x-python')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>';
+    }
+
+    // JSON
+    if (ext === 'json' || mime === 'application/json') {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 16s0-2 2-2c1.5 0 2 1 2 2s.5 2 2 2c2 0 2-2 2-2"/><path d="M8 12s0-2 2-2c1.5 0 2 1 2 2"/></svg>';
+    }
+
+    // Config/YAML/TOML
+    const configExts = ['yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env'];
+    if (configExts.includes(ext)) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="15" r="2"/><path d="M12 11v2"/><path d="M12 17v2"/></svg>';
+    }
+
+    // HTML/CSS/Web
+    const webExts = ['html', 'htm', 'css', 'scss', 'sass', 'less', 'xml', 'svg'];
+    if (webExts.includes(ext)) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="m8 13 4 4 4-4"/><path d="m8 17 4-4 4 4"/></svg>';
+    }
+
+    // SQL/Database
+    if (ext === 'sql' || ext === 'db' || ext === 'sqlite') {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>';
+    }
+
+    // Archives
+    const archiveExts = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz'];
+    if (archiveExts.includes(ext) || mime?.includes('zip') || mime?.includes('compressed') || mime?.includes('archive')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 12v6"/><path d="M9 15h6"/><rect x="10" y="10" width="4" height="2" rx="0.5"/></svg>';
+    }
+
+    // Spreadsheets
+    const spreadsheetExts = ['xls', 'xlsx', 'csv', 'numbers', 'ods'];
+    if (spreadsheetExts.includes(ext) || mime?.includes('spreadsheet') || mime?.includes('excel')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg>';
+    }
+
+    // Presentations
+    const presentationExts = ['ppt', 'pptx', 'key', 'odp'];
+    if (presentationExts.includes(ext) || mime?.includes('presentation') || mime?.includes('powerpoint')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><rect x="8" y="12" width="8" height="6" rx="1"/></svg>';
+    }
+
+    // Documents (Word, etc.)
+    const docExts = ['doc', 'docx', 'odt', 'rtf', 'pages'];
+    if (docExts.includes(ext) || mime?.includes('document') || mime?.includes('msword')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>';
+    }
+
+    // Text files
+    const textExts = ['txt', 'log', 'text', 'readme', 'license', 'changelog'];
+    if (textExts.includes(ext) || mime?.startsWith('text/plain')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>';
+    }
+
+    // Fonts
+    const fontExts = ['ttf', 'otf', 'woff', 'woff2', 'eot'];
+    if (fontExts.includes(ext) || mime?.includes('font')) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M9 18v-6l3-3 3 3v6"/><path d="M9 14h6"/></svg>';
+    }
+
+    // Executables
+    const exeExts = ['exe', 'msi', 'dmg', 'app', 'deb', 'rpm', 'apk'];
+    if (exeExts.includes(ext)) {
+      return '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><rect x="9" y="12" width="6" height="6" rx="1"/><path d="m12 12-2-2"/><path d="m12 12 2-2"/></svg>';
+    }
+
+    return defaultIcon;
   }
 
   // Helper: Get MIME type description

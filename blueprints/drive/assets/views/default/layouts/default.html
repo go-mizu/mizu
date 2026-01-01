@@ -192,6 +192,30 @@
           </form>
         </div>
 
+        <!-- View Switcher (topbar) - Finder inspired -->
+        <div id="topbar-view-switcher" class="hidden items-center border border-zinc-200 rounded-lg bg-zinc-100/50 p-0.5">
+          <a href="?view=list" class="view-btn flex items-center justify-center w-8 h-7 rounded-md transition-colors hover:bg-white" data-view="list" title="List">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h18"/>
+            </svg>
+          </a>
+          <a href="?view=grid" class="view-btn flex items-center justify-center w-8 h-7 rounded-md transition-colors hover:bg-white" data-view="grid" title="Grid">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+          </a>
+          <a href="?view=column" class="view-btn flex items-center justify-center w-8 h-7 rounded-md transition-colors hover:bg-white" data-view="column" title="Columns">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="18" rx="1"/><rect x="15" y="3" width="6" height="18" rx="1"/>
+            </svg>
+          </a>
+          <a href="?view=gallery" class="view-btn flex items-center justify-center w-8 h-7 rounded-md transition-colors hover:bg-white" data-view="gallery" title="Gallery">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="12" rx="2"/><path d="M3 19h4"/><path d="M10 19h4"/><path d="M17 19h4"/>
+            </svg>
+          </a>
+        </div>
+
         <!-- Actions -->
         <div class="flex items-center gap-2">
           {{if .User}}
@@ -220,8 +244,6 @@
               </button>
             </div>
           </div>
-          {{else}}
-          <a href="/login" class="btn btn-ghost text-sm">Sign in</a>
           {{end}}
         </div>
       </header>
@@ -449,40 +471,39 @@
           <audio id="preview-audio" controls class="w-full"></audio>
         </div>
       </div>
-      <!-- PDF Preview -->
-      <div id="preview-pdf-container" class="hidden w-full h-full flex flex-col bg-zinc-800 rounded-lg overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-700">
+      <!-- PDF Preview - Scrollable (all pages) -->
+      <div id="preview-pdf-container" class="hidden w-full h-full flex flex-col bg-zinc-100 rounded-lg overflow-hidden border border-zinc-200 shadow-xl">
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-50 border-b border-zinc-200">
           <div class="flex items-center gap-2">
-            <button id="pdf-prev-page" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-            </button>
-            <span class="text-sm text-zinc-300"><span id="pdf-current-page">1</span> / <span id="pdf-total-pages">-</span></span>
-            <button id="pdf-next-page" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+            <svg class="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <span id="pdf-total-pages" class="text-sm text-zinc-600">-</span>
+            <span class="text-sm text-zinc-400">pages</span>
           </div>
           <div class="flex items-center gap-2">
-            <button id="pdf-zoom-out" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+            <button id="pdf-zoom-out" class="p-1.5 rounded hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900 transition-colors">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M8 11h6"/></svg>
             </button>
-            <span id="pdf-zoom" class="text-xs text-zinc-400 w-12 text-center">100%</span>
-            <button id="pdf-zoom-in" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+            <span id="pdf-zoom" class="text-xs text-zinc-500 w-12 text-center font-medium">100%</span>
+            <button id="pdf-zoom-in" class="p-1.5 rounded hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900 transition-colors">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M11 8v6M8 11h6"/></svg>
             </button>
           </div>
         </div>
-        <div id="pdf-viewer" class="flex-1 overflow-auto flex items-start justify-center p-4 bg-zinc-900">
-          <canvas id="pdf-canvas" class="shadow-2xl"></canvas>
+        <div id="pdf-viewer" class="flex-1 overflow-auto flex flex-col items-center gap-4 p-6 bg-zinc-100">
+          <!-- PDF pages will be rendered here as canvases -->
         </div>
       </div>
-      <!-- Code/Text Preview -->
-      <div id="preview-text-container" class="hidden w-full max-w-5xl h-full flex flex-col bg-zinc-900 rounded-lg overflow-hidden border border-zinc-700">
-        <div class="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
-          <span id="preview-text-filename" class="text-sm text-zinc-400"></span>
-          <span id="preview-text-lang" class="text-xs text-zinc-500 bg-zinc-700 px-2 py-1 rounded"></span>
+      <!-- Code/Text Preview - Light theme -->
+      <div id="preview-text-container" class="hidden w-full max-w-5xl h-full flex flex-col bg-white rounded-lg overflow-hidden border border-zinc-200 shadow-xl">
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-50 border-b border-zinc-200">
+          <span id="preview-text-filename" class="text-sm text-zinc-600"></span>
+          <span id="preview-text-lang" class="text-xs text-zinc-500 bg-zinc-200 px-2 py-1 rounded font-medium"></span>
         </div>
-        <div class="flex-1 overflow-auto">
-          <pre class="p-4 m-0 text-sm leading-relaxed"><code id="preview-text-content" class="hljs"></code></pre>
+        <div class="flex-1 overflow-auto bg-white">
+          <pre class="p-4 m-0 text-sm leading-relaxed bg-white"><code id="preview-text-content" class="hljs"></code></pre>
         </div>
       </div>
       <!-- Unsupported Preview -->
@@ -531,16 +552,24 @@
     };
   </script>
 
-  <!-- Highlight.js for code (loaded on demand) -->
+  <!-- Highlight.js for code (loaded on demand) - Light theme for default -->
   <link id="hljs-css" rel="stylesheet" href="">
   <script>
-    window.loadHighlightJs = function() {
+    window.loadHighlightJs = function(theme = 'light') {
       if (window.hljs) return Promise.resolve(window.hljs);
       return new Promise((resolve) => {
-        document.getElementById('hljs-css').href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+        // Use light github theme for code preview in content area
+        const themeUrl = theme === 'dark'
+          ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
+          : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+        document.getElementById('hljs-css').href = themeUrl;
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
-        script.onload = () => resolve(window.hljs);
+        script.onload = () => {
+          // Register common languages after loading
+          const commonLangs = ['javascript', 'typescript', 'python', 'go', 'rust', 'java', 'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin', 'scala', 'sql', 'bash', 'shell', 'json', 'yaml', 'xml', 'html', 'css', 'scss', 'markdown', 'diff', 'dockerfile', 'makefile', 'graphql', 'lua', 'r', 'perl', 'vim', 'nginx', 'apache', 'ini', 'toml'];
+          resolve(window.hljs);
+        };
         document.head.appendChild(script);
       });
     };
