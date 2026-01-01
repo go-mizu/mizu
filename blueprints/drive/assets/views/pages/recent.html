@@ -1,0 +1,198 @@
+{{define "content"}}
+<div class="recent-view">
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="page-header-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+        </div>
+        <div class="page-header-text">
+            <h1>Recent</h1>
+            <p class="page-header-subtitle">Files and folders you've accessed recently</p>
+        </div>
+    </div>
+
+    <!-- Time Period Filter -->
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <div class="filter-tabs">
+                <button class="filter-tab {{if eq .Period "today"}}active{{end}}" data-period="today">Today</button>
+                <button class="filter-tab {{if eq .Period "week"}}active{{end}}" data-period="week">This week</button>
+                <button class="filter-tab {{if eq .Period "month"}}active{{end}}" data-period="month">This month</button>
+                <button class="filter-tab {{if eq .Period "all"}}active{{end}}" data-period="all">All time</button>
+            </div>
+        </div>
+        <div class="toolbar-right">
+            <div class="view-toggle">
+                <button class="view-toggle-btn {{if eq .ViewMode "grid"}}active{{end}}" data-view="grid" title="Grid view">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                </button>
+                <button class="view-toggle-btn {{if eq .ViewMode "list"}}active{{end}}" data-view="list" title="List view">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6"/>
+                        <line x1="8" y1="12" x2="21" y2="12"/>
+                        <line x1="8" y1="18" x2="21" y2="18"/>
+                        <line x1="3" y1="6" x2="3.01" y2="6"/>
+                        <line x1="3" y1="12" x2="3.01" y2="12"/>
+                        <line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {{if .Items}}
+    {{range .GroupedItems}}
+    <div class="recent-group">
+        <h3 class="recent-group-header">{{.Label}}</h3>
+
+        <!-- Grid View -->
+        <div class="file-grid" style="{{if eq $.ViewMode "list"}}display: none;{{end}}">
+            {{range .Items}}
+            <div class="file-card {{.Type}}" data-id="{{.ID}}" data-type="{{.Type}}" data-starred="{{.Starred}}" {{if eq .Type "file"}}data-mime="{{.MimeType}}"{{end}}>
+                <div class="file-card-checkbox">
+                    <input type="checkbox" class="select-checkbox">
+                </div>
+                <div class="file-card-preview">
+                    {{if eq .Type "folder"}}
+                    <svg class="folder-icon" width="64" height="64" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    {{else if .HasThumbnail}}
+                    <img src="/api/v1/files/{{.ID}}/preview" alt="{{.Name}}">
+                    {{else}}
+                    <svg class="file-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        {{if hasPrefix .MimeType "image/"}}
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                        {{else if hasPrefix .MimeType "video/"}}
+                        <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        {{else}}
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                        {{end}}
+                    </svg>
+                    {{end}}
+                </div>
+                <div class="file-card-info">
+                    <div class="file-card-name" title="{{.Name}}">{{.Name}}</div>
+                    <div class="file-card-meta">
+                        <span>{{.AccessedAt | formatRelativeTime}}</span>
+                        <span class="activity-type">{{.ActivityType}}</span>
+                    </div>
+                </div>
+                <div class="file-card-actions">
+                    <button class="btn-icon {{if .Starred}}active{{end}}" data-action="star" title="{{if .Starred}}Remove from starred{{else}}Add to starred{{end}}">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="{{if .Starred}}currentColor{{else}}none{{end}}" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                    </button>
+                    <button class="btn-icon" data-action="more" title="More actions">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            {{end}}
+        </div>
+
+        <!-- List View -->
+        <div class="file-list no-header" style="{{if eq $.ViewMode "grid"}}display: none;{{end}}">
+            {{range .Items}}
+            <div class="file-list-item {{.Type}}" data-id="{{.ID}}" data-type="{{.Type}}" data-starred="{{.Starred}}">
+                <div class="file-list-item-checkbox">
+                    <input type="checkbox" class="select-checkbox">
+                </div>
+                <div class="file-list-item-name">
+                    {{if eq .Type "folder"}}
+                    <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="var(--folder-blue)" stroke="none">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    {{else}}
+                    <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    {{end}}
+                    <span>{{.Name}}</span>
+                </div>
+                <div class="file-list-item-activity">
+                    <span class="activity-badge">{{.ActivityType}}</span>
+                </div>
+                <div class="file-list-item-modified">{{.AccessedAt | formatRelativeTime}}</div>
+                <div class="file-list-item-actions">
+                    <button class="btn-icon" data-action="more" title="More actions">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+    {{else}}
+    <!-- Empty State -->
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+        </div>
+        <h3>No recent activity</h3>
+        <p>Files and folders you open, edit, or share will appear here.</p>
+        <a href="/" class="btn btn-primary">Go to All files</a>
+    </div>
+    {{end}}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Period tabs
+    document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const period = tab.dataset.period;
+            window.location.href = `/recent?period=${period}`;
+        });
+    });
+
+    // Star button clicks
+    document.querySelectorAll('[data-action="star"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const card = btn.closest('.file-card, .file-list-item');
+            const id = card.dataset.id;
+            const type = card.dataset.type;
+            const isStarred = card.dataset.starred === 'true';
+
+            try {
+                if (type === 'file') {
+                    await Drive.api.files.star(id, !isStarred);
+                } else {
+                    await Drive.api.folders.star(id, !isStarred);
+                }
+                location.reload();
+            } catch (error) {
+                Drive.showToast('Failed to update', 'error');
+            }
+        });
+    });
+
+    // More button clicks
+    document.querySelectorAll('[data-action="more"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const card = btn.closest('.file-card, .file-list-item');
+            const type = card.dataset.type;
+            const rect = btn.getBoundingClientRect();
+            contextMenu.show(rect.left, rect.bottom + 4, card, type);
+        });
+    });
+});
+</script>
+{{end}}

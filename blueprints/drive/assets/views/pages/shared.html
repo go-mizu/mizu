@@ -1,0 +1,356 @@
+{{define "content"}}
+<div class="shared-view">
+    <!-- Page Header with Tabs -->
+    <div class="page-header with-tabs">
+        <div class="page-header-content">
+            <div class="page-header-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </div>
+            <div class="page-header-text">
+                <h1>Shared</h1>
+            </div>
+        </div>
+        <div class="page-tabs">
+            <a href="/shared?tab=with-me" class="page-tab {{if eq .Tab "with-me"}}active{{end}}">Shared with me</a>
+            <a href="/shared?tab=by-me" class="page-tab {{if eq .Tab "by-me"}}active{{end}}">Shared by me</a>
+            <a href="/shared?tab=links" class="page-tab {{if eq .Tab "links"}}active{{end}}">Links</a>
+        </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <div class="toolbar-left">
+            {{if eq .Tab "with-me"}}
+            <div class="filter-dropdown">
+                <button class="filter-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                    </svg>
+                    {{if .FilterOwner}}From: {{.FilterOwner}}{{else}}All owners{{end}}
+                </button>
+            </div>
+            {{end}}
+        </div>
+        <div class="toolbar-right">
+            <div class="sort-dropdown">
+                <button class="sort-btn" id="sort-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="4" y1="6" x2="11" y2="6"/>
+                        <line x1="4" y1="12" x2="11" y2="12"/>
+                        <line x1="4" y1="18" x2="13" y2="18"/>
+                        <polyline points="15 15 18 18 21 15"/>
+                        <line x1="18" y1="6" x2="18" y2="18"/>
+                    </svg>
+                    Sort by {{.SortBy}}
+                </button>
+            </div>
+            <div class="toolbar-divider"></div>
+            <div class="view-toggle">
+                <button class="view-toggle-btn {{if eq .ViewMode "grid"}}active{{end}}" data-view="grid" title="Grid view">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                </button>
+                <button class="view-toggle-btn {{if eq .ViewMode "list"}}active{{end}}" data-view="list" title="List view">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="8" y1="6" x2="21" y2="6"/>
+                        <line x1="8" y1="12" x2="21" y2="12"/>
+                        <line x1="8" y1="18" x2="21" y2="18"/>
+                        <line x1="3" y1="6" x2="3.01" y2="6"/>
+                        <line x1="3" y1="12" x2="3.01" y2="12"/>
+                        <line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {{if eq .Tab "links"}}
+    <!-- Links Tab -->
+    {{if .Links}}
+    <div class="shared-links-list">
+        {{range .Links}}
+        <div class="shared-link-item" data-id="{{.ID}}">
+            <div class="shared-link-icon">
+                {{if eq .ItemType "folder"}}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="var(--folder-blue)" stroke="none">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                {{else}}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                {{end}}
+            </div>
+            <div class="shared-link-info">
+                <div class="shared-link-name">{{.ItemName}}</div>
+                <div class="shared-link-meta">
+                    <span class="link-url">{{.ShortURL}}</span>
+                    <span class="link-views">{{.ViewCount}} views</span>
+                    {{if .ExpiresAt}}
+                    <span class="link-expires">Expires {{.ExpiresAt | formatDate}}</span>
+                    {{end}}
+                </div>
+            </div>
+            <div class="shared-link-permissions">
+                {{if .AllowDownload}}
+                <span class="permission-badge">Download allowed</span>
+                {{end}}
+                {{if .Password}}
+                <span class="permission-badge">Password protected</span>
+                {{end}}
+            </div>
+            <div class="shared-link-actions">
+                <button class="btn btn-secondary btn-sm" data-action="copy-link" data-url="{{.URL}}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    Copy
+                </button>
+                <button class="btn btn-secondary btn-sm" data-action="edit-link">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                    Settings
+                </button>
+                <button class="btn-icon danger" data-action="delete-link" title="Remove link">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+        </div>
+        <h3>No shared links</h3>
+        <p>When you create a link to share files or folders, they'll appear here.</p>
+    </div>
+    {{end}}
+
+    {{else}}
+    <!-- Files Tab (with-me or by-me) -->
+    {{if .Items}}
+    <!-- Grid View -->
+    <div class="file-grid" style="{{if eq .ViewMode "list"}}display: none;{{end}}">
+        {{range .Items}}
+        <div class="file-card {{.Type}}" data-id="{{.ID}}" data-type="{{.Type}}" data-starred="{{.Starred}}" {{if eq .Type "file"}}data-mime="{{.MimeType}}"{{end}}>
+            <div class="file-card-checkbox">
+                <input type="checkbox" class="select-checkbox">
+            </div>
+            <div class="file-card-preview">
+                {{if eq .Type "folder"}}
+                <svg class="folder-icon" width="64" height="64" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                {{else if .HasThumbnail}}
+                <img src="/api/v1/files/{{.ID}}/preview" alt="{{.Name}}">
+                {{else}}
+                <svg class="file-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                {{end}}
+            </div>
+            <div class="file-card-info">
+                <div class="file-card-name" title="{{.Name}}">{{.Name}}</div>
+                <div class="file-card-meta">
+                    {{if eq $.Tab "with-me"}}
+                    <span class="shared-by">
+                        <img src="{{.OwnerAvatar}}" alt="" class="avatar-xs">
+                        {{.OwnerName}}
+                    </span>
+                    {{else}}
+                    <span class="shared-with-count">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                        </svg>
+                        {{.ShareCount}} people
+                    </span>
+                    {{end}}
+                </div>
+            </div>
+            <div class="file-card-actions">
+                <button class="btn-icon {{if .Starred}}active{{end}}" data-action="star" title="{{if .Starred}}Remove from starred{{else}}Add to starred{{end}}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="{{if .Starred}}currentColor{{else}}none{{end}}" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                </button>
+                <button class="btn-icon" data-action="more" title="More actions">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- List View -->
+    <div class="file-list" style="{{if eq .ViewMode "grid"}}display: none;{{end}}">
+        <div class="file-list-header">
+            <span></span>
+            <span data-sort="name">Name</span>
+            {{if eq .Tab "with-me"}}
+            <span data-sort="owner">Shared by</span>
+            {{else}}
+            <span data-sort="share_count">Shared with</span>
+            {{end}}
+            <span data-sort="shared_at">Shared on</span>
+            <span></span>
+        </div>
+
+        {{range .Items}}
+        <div class="file-list-item {{.Type}}" data-id="{{.ID}}" data-type="{{.Type}}" data-starred="{{.Starred}}">
+            <div class="file-list-item-checkbox">
+                <input type="checkbox" class="select-checkbox">
+            </div>
+            <div class="file-list-item-name">
+                {{if eq .Type "folder"}}
+                <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="var(--folder-blue)" stroke="none">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                {{else}}
+                <svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                {{end}}
+                <span>{{.Name}}</span>
+            </div>
+            {{if eq $.Tab "with-me"}}
+            <div class="file-list-item-owner">
+                <img src="{{.OwnerAvatar}}" alt="" class="avatar-xs">
+                <span>{{.OwnerName}}</span>
+            </div>
+            {{else}}
+            <div class="file-list-item-shared-with">
+                <div class="avatar-stack">
+                    {{range $i, $u := .SharedWith}}
+                    {{if lt $i 3}}
+                    <img src="{{$u.Avatar}}" alt="{{$u.Name}}" class="avatar-xs" title="{{$u.Name}}">
+                    {{end}}
+                    {{end}}
+                    {{if gt (len .SharedWith) 3}}
+                    <span class="avatar-more">+{{sub (len .SharedWith) 3}}</span>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+            <div class="file-list-item-shared-at">{{.SharedAt | formatDate}}</div>
+            <div class="file-list-item-actions">
+                <button class="btn-icon" data-action="more" title="More actions">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <!-- Empty State -->
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+        </div>
+        {{if eq .Tab "with-me"}}
+        <h3>Nothing shared with you yet</h3>
+        <p>When someone shares files or folders with you, they'll appear here.</p>
+        {{else}}
+        <h3>You haven't shared anything</h3>
+        <p>Share files and folders with others using the share button.</p>
+        {{end}}
+    </div>
+    {{end}}
+    {{end}}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Copy link button
+    document.querySelectorAll('[data-action="copy-link"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const url = btn.dataset.url;
+            try {
+                await navigator.clipboard.writeText(url);
+                Drive.showToast('Link copied to clipboard', 'success');
+            } catch (error) {
+                Drive.showToast('Failed to copy link', 'error');
+            }
+        });
+    });
+
+    // Delete link button
+    document.querySelectorAll('[data-action="delete-link"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const item = btn.closest('.shared-link-item');
+            const id = item.dataset.id;
+
+            if (confirm('Are you sure you want to remove this link? Anyone with the link will no longer have access.')) {
+                try {
+                    await Drive.api.shares.deleteLink(id);
+                    item.remove();
+                    Drive.showToast('Link removed', 'success');
+                } catch (error) {
+                    Drive.showToast('Failed to remove link', 'error');
+                }
+            }
+        });
+    });
+
+    // Star button clicks
+    document.querySelectorAll('[data-action="star"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const card = btn.closest('.file-card, .file-list-item');
+            const id = card.dataset.id;
+            const type = card.dataset.type;
+            const isStarred = card.dataset.starred === 'true';
+
+            try {
+                if (type === 'file') {
+                    await Drive.api.files.star(id, !isStarred);
+                } else {
+                    await Drive.api.folders.star(id, !isStarred);
+                }
+                location.reload();
+            } catch (error) {
+                Drive.showToast('Failed to update', 'error');
+            }
+        });
+    });
+
+    // More button clicks
+    document.querySelectorAll('[data-action="more"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const card = btn.closest('.file-card, .file-list-item');
+            const type = card.dataset.type;
+            const rect = btn.getBoundingClientRect();
+            contextMenu.show(rect.left, rect.bottom + 4, card, type);
+        });
+    });
+});
+</script>
+{{end}}
