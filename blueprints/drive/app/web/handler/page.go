@@ -17,6 +17,7 @@ import (
 	"github.com/go-mizu/blueprints/drive/feature/activity"
 	"github.com/go-mizu/blueprints/drive/feature/files"
 	"github.com/go-mizu/blueprints/drive/feature/folders"
+	"github.com/go-mizu/blueprints/drive/feature/meta"
 	"github.com/go-mizu/blueprints/drive/feature/shares"
 )
 
@@ -227,6 +228,7 @@ type Page struct {
 	folders     folders.API
 	shares      shares.API
 	activity    activity.API
+	meta        *meta.Service
 	getUserID   func(*mizu.Ctx) string
 	storageRoot string
 }
@@ -249,6 +251,7 @@ func NewPage(
 		folders:     folders,
 		shares:      shares,
 		activity:    activity,
+		meta:        meta.New(),
 		getUserID:   getUserID,
 		storageRoot: storageRoot,
 	}
@@ -1243,4 +1246,62 @@ func formatActivityDescription(a *activity.Activity) string {
 	default:
 		return a.Action
 	}
+}
+
+// Metadata returns file metadata as JSON.
+func (h *Page) Metadata(c *mizu.Ctx) error {
+	fileID := c.Param("id")
+	fullPath := filepath.Join(h.storageRoot, fileID)
+
+	// Check file exists
+	if _, err := os.Stat(fullPath); err != nil {
+		return c.JSON(404, map[string]string{"error": "File not found"})
+	}
+
+	// Extract metadata
+	metadata, err := h.meta.Extract(c.Context(), fullPath)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to extract metadata"})
+	}
+
+	// Update file ID to be the relative path
+	metadata.FileID = fileID
+
+	return c.JSON(200, metadata)
+}
+
+// FolderChildren returns folder contents for column view navigation.
+func (h *Page) FolderChildren(c *mizu.Ctx) error {
+	folderID := c.Param("id")
+	if folderID == "" {
+		folderID = ""
+	}
+
+	folderViews, fileViews := h.readLocalDirectory(folderID)
+
+	// Build path breadcrumbs
+	var pathItems []map[string]string
+	if folderID != "" {
+		parts := strings.Split(folderID, "/")
+		currentPath := ""
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			currentPath = currentPath + "/" + part
+			pathItems = append(pathItems, map[string]string{
+				"id":   strings.TrimPrefix(currentPath, "/"),
+				"name": part,
+			})
+		}
+	}
+
+	// Build response
+	response := map[string]any{
+		"folders": folderViews,
+		"files":   fileViews,
+		"path":    pathItems,
+	}
+
+	return c.JSON(200, response)
 }
