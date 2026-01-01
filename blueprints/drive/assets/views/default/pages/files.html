@@ -115,8 +115,11 @@
 {{else}}
 <!-- File Views -->
 {{if eq .ViewMode "grid"}}
-<!-- Grid View -->
-<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+<!-- Grid View with Right Sidebar -->
+<div class="flex gap-0">
+  <!-- Main Content Area -->
+  <div id="grid-main-content" class="flex-1 min-w-0 transition-all duration-200">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
   {{range .Folders}}
   <a href="/files/{{.ID}}" class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
     <div class="w-16 h-16 mb-3 flex items-center justify-center text-zinc-400 group-hover:text-zinc-600 transition-colors">
@@ -190,17 +193,89 @@
     <span class="text-xs text-zinc-400 mt-1">{{.SizeDisplay}}</span>
   </div>
   {{end}}
+    </div>
+  </div>
+
+  <!-- Right Sidebar (collapsible) -->
+  <div id="grid-sidebar" class="hidden w-0 flex-shrink-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200" data-collapsed="true">
+    <!-- Resize Handle -->
+    <div id="grid-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
+    <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
+      <div class="p-4">
+        <div id="grid-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+          <img id="grid-preview-img" class="hidden w-full h-full object-cover" src="">
+          <svg id="grid-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <h3 id="grid-preview-name" class="text-sm font-medium text-zinc-900 mb-4 text-center break-words"></h3>
+        <div id="grid-preview-info" class="space-y-3 text-sm">
+          <div class="flex justify-between"><span class="text-zinc-500">Kind</span><span id="grid-preview-kind" class="text-zinc-900 text-right"></span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Size</span><span id="grid-preview-size" class="text-zinc-900"></span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Modified</span><span id="grid-preview-date" class="text-zinc-900"></span></div>
+          <div id="grid-preview-dimensions" class="hidden flex justify-between"><span class="text-zinc-500">Dimensions</span><span id="grid-preview-dims" class="text-zinc-900"></span></div>
+          <div id="grid-preview-duration" class="hidden flex justify-between"><span class="text-zinc-500">Duration</span><span id="grid-preview-dur" class="text-zinc-900"></span></div>
+          <div id="grid-preview-camera" class="hidden flex justify-between"><span class="text-zinc-500">Camera</span><span id="grid-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+          <div id="grid-preview-artist" class="hidden flex justify-between"><span class="text-zinc-500">Artist</span><span id="grid-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+          <div id="grid-preview-album" class="hidden flex justify-between"><span class="text-zinc-500">Album</span><span id="grid-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+        </div>
+      </div>
+      <div class="mt-auto p-4 border-t border-zinc-200 flex gap-2">
+        <button id="grid-preview-open" class="btn btn-primary flex-1 text-sm">Open</button>
+        <button id="grid-preview-download" class="btn btn-secondary flex-1 text-sm">Download</button>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- Toggle Sidebar Button (Grid) -->
+<button id="grid-sidebar-toggle" class="fixed right-4 bottom-4 z-40 p-3 rounded-full bg-zinc-900 text-white shadow-lg hover:bg-zinc-700 transition-colors" title="Toggle sidebar (I)">
+  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <path d="M15 3v18"/>
+  </svg>
+</button>
+
 {{else if eq .ViewMode "list"}}
-<!-- List View -->
-<div class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
-  <table class="w-full">
-    <thead class="bg-zinc-50 border-b border-zinc-200">
+<!-- List View with Right Sidebar -->
+<div class="flex gap-0">
+  <!-- Main Content Area -->
+  <div id="list-main-content" class="flex-1 min-w-0 transition-all duration-200">
+    <div class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+      <table class="w-full table-fixed">
+        <thead class="bg-zinc-50 border-b border-zinc-200">
       <tr>
-        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3">Name</th>
-        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden md:table-cell">Modified</th>
-        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Size</th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 w-[45%]">
+          <a href="?sort=name&order={{if and (eq .SortBy "name") (eq .SortOrder "asc")}}desc{{else}}asc{{end}}&view={{.ViewMode}}"
+             class="flex items-center gap-1 hover:text-zinc-700 transition-colors cursor-pointer">
+            Name
+            {{if eq .SortBy "name"}}
+            <svg class="w-3 h-3 {{if eq .SortOrder "desc"}}rotate-180{{end}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+            {{end}}
+          </a>
+        </th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden lg:table-cell w-[15%]">
+          <span>Kind</span>
+        </th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden md:table-cell w-[18%]">
+          <a href="?sort=date&order={{if and (eq .SortBy "date") (eq .SortOrder "desc")}}asc{{else}}desc{{end}}&view={{.ViewMode}}"
+             class="flex items-center gap-1 hover:text-zinc-700 transition-colors cursor-pointer">
+            Modified
+            {{if eq .SortBy "date"}}
+            <svg class="w-3 h-3 {{if eq .SortOrder "desc"}}rotate-180{{end}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+            {{end}}
+          </a>
+        </th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden sm:table-cell w-[12%]">
+          <a href="?sort=size&order={{if and (eq .SortBy "size") (eq .SortOrder "desc")}}asc{{else}}desc{{end}}&view={{.ViewMode}}"
+             class="flex items-center gap-1 hover:text-zinc-700 transition-colors cursor-pointer">
+            Size
+            {{if eq .SortBy "size"}}
+            <svg class="w-3 h-3 {{if eq .SortOrder "desc"}}rotate-180{{end}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+            {{end}}
+          </a>
+        </th>
         <th class="w-10"></th>
       </tr>
     </thead>
@@ -208,13 +283,14 @@
       {{range .Folders}}
       <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
         <td class="px-4 py-3">
-          <a href="/files/{{.ID}}" class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
+          <a href="/files/{{.ID}}" class="flex items-center gap-3 min-w-0">
+            <svg class="w-5 h-5 text-zinc-400 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
-            <span class="text-sm font-medium text-zinc-900">{{.Name}}</span>
+            <span class="text-sm font-medium text-zinc-900 truncate" title="{{.Name}}">{{.Name}}</span>
           </a>
         </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden lg:table-cell">Folder</td>
         <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell">{{formatTime .UpdatedAt}}</td>
         <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell">-</td>
         <td class="px-2 py-3">
@@ -232,8 +308,8 @@
       {{range .Files}}
       <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer" data-type="file" data-id="{{.ID}}" data-name="{{.Name}}" data-mime="{{.MimeType}}">
         <td class="px-4 py-3">
-          <div class="flex items-center gap-3">
-            <div class="w-5 h-5 text-zinc-400">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-5 h-5 text-zinc-400 flex-shrink-0">
               {{if eq .Icon "image"}}
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
@@ -258,11 +334,14 @@
               </svg>
               {{end}}
             </div>
-            <span class="text-sm font-medium text-zinc-900 truncate max-w-xs" title="{{.Name}}">{{.Name}}</span>
+            <span class="text-sm font-medium text-zinc-900 truncate" title="{{.Name}}">{{.Name}}</span>
           </div>
         </td>
-        <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell">{{.TimeDisplay}}</td>
-        <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell">{{.SizeDisplay}}</td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden lg:table-cell truncate" title="{{.MimeType}}">
+          {{if eq .Icon "image"}}Image{{else if eq .Icon "video"}}Video{{else if eq .Icon "music"}}Audio{{else if eq .Icon "file-text"}}Document{{else if eq .Icon "file-code"}}Code{{else}}File{{end}}
+        </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell whitespace-nowrap">{{.TimeDisplay}}</td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell whitespace-nowrap">{{.SizeDisplay}}</td>
         <td class="px-2 py-3">
           <button class="btn btn-ghost btn-icon opacity-0 group-hover:opacity-100 transition-opacity" data-action="context-menu">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -274,13 +353,55 @@
         </td>
       </tr>
       {{end}}
-    </tbody>
-  </table>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Right Sidebar (collapsible) -->
+  <div id="list-sidebar" class="hidden w-0 flex-shrink-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200" data-collapsed="true">
+    <!-- Resize Handle -->
+    <div id="list-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
+    <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
+      <div class="p-4">
+        <div id="list-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+          <img id="list-preview-img" class="hidden w-full h-full object-cover" src="">
+          <svg id="list-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <h3 id="list-preview-name" class="text-sm font-medium text-zinc-900 mb-4 text-center break-words"></h3>
+        <div id="list-preview-info" class="space-y-3 text-sm">
+          <div class="flex justify-between"><span class="text-zinc-500">Kind</span><span id="list-preview-kind" class="text-zinc-900 text-right"></span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Size</span><span id="list-preview-size" class="text-zinc-900"></span></div>
+          <div class="flex justify-between"><span class="text-zinc-500">Modified</span><span id="list-preview-date" class="text-zinc-900"></span></div>
+          <div id="list-preview-dimensions" class="hidden flex justify-between"><span class="text-zinc-500">Dimensions</span><span id="list-preview-dims" class="text-zinc-900"></span></div>
+          <div id="list-preview-duration" class="hidden flex justify-between"><span class="text-zinc-500">Duration</span><span id="list-preview-dur" class="text-zinc-900"></span></div>
+          <div id="list-preview-camera" class="hidden flex justify-between"><span class="text-zinc-500">Camera</span><span id="list-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+          <div id="list-preview-artist" class="hidden flex justify-between"><span class="text-zinc-500">Artist</span><span id="list-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+          <div id="list-preview-album" class="hidden flex justify-between"><span class="text-zinc-500">Album</span><span id="list-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span></div>
+        </div>
+      </div>
+      <div class="mt-auto p-4 border-t border-zinc-200 flex gap-2">
+        <button id="list-preview-open" class="btn btn-primary flex-1 text-sm">Open</button>
+        <button id="list-preview-download" class="btn btn-secondary flex-1 text-sm">Download</button>
+      </div>
+    </div>
+  </div>
 </div>
 
+<!-- Toggle Sidebar Button (List) -->
+<button id="list-sidebar-toggle" class="fixed right-4 bottom-4 z-40 p-3 rounded-full bg-zinc-900 text-white shadow-lg hover:bg-zinc-700 transition-colors" title="Toggle sidebar (I)">
+  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <path d="M15 3v18"/>
+  </svg>
+</button>
+
 {{else if eq .ViewMode "column"}}
-<!-- Column View (Finder-style) -->
-<div id="column-view" class="flex h-[calc(100vh-12rem)] bg-white rounded-xl border border-zinc-200 overflow-hidden">
+<!-- Column View (Finder-style) - height accounts for header(56px) + padding(24px) + breadcrumb bar(~56px) + bottom padding(24px) -->
+<div id="column-view" class="flex bg-white rounded-xl border border-zinc-200 overflow-hidden" style="height: calc(100vh - 180px); max-height: calc(100vh - 180px);">
   <!-- Columns Container -->
   <div id="columns-container" class="flex flex-1 overflow-x-auto scrollbar-thin">
     <!-- Initial Column (Root) -->
@@ -319,8 +440,8 @@
   </div>
 
   <!-- Preview Panel (Column View) -->
-  <div id="column-preview-panel" class="hidden w-72 flex-shrink-0 border-l border-zinc-200 bg-zinc-50 flex flex-col">
-    <div class="p-4 flex-1 overflow-y-auto">
+  <div id="column-preview-panel" class="hidden w-72 flex-shrink-0 border-l border-zinc-200 bg-zinc-50 flex flex-col overflow-y-auto scrollbar-thin" style="max-height: 100%;">
+    <div class="p-4 flex-1">
       <div id="column-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
         <img id="column-preview-img" class="hidden w-full h-full object-cover" src="">
         <svg id="column-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -349,11 +470,51 @@
         </div>
         <div id="column-preview-camera" class="hidden flex justify-between">
           <span class="text-zinc-500">Camera</span>
-          <span id="column-preview-camera-model" class="text-zinc-900 text-right"></span>
+          <span id="column-preview-camera-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span>
+        </div>
+        <div id="column-preview-lens" class="hidden flex justify-between">
+          <span class="text-zinc-500">Lens</span>
+          <span id="column-preview-lens-model" class="text-zinc-900 text-right truncate max-w-[120px]"></span>
+        </div>
+        <div id="column-preview-exposure" class="hidden flex justify-between">
+          <span class="text-zinc-500">Exposure</span>
+          <span id="column-preview-exposure-info" class="text-zinc-900 text-right"></span>
+        </div>
+        <div id="column-preview-location" class="hidden flex justify-between">
+          <span class="text-zinc-500">Location</span>
+          <a id="column-preview-location-link" href="#" target="_blank" class="text-blue-600 hover:text-blue-800 text-right truncate max-w-[120px]"></a>
         </div>
         <div id="column-preview-duration" class="hidden flex justify-between">
           <span class="text-zinc-500">Duration</span>
           <span id="column-preview-dur" class="text-zinc-900"></span>
+        </div>
+        <div id="column-preview-codec" class="hidden flex justify-between">
+          <span class="text-zinc-500">Codec</span>
+          <span id="column-preview-codec-info" class="text-zinc-900"></span>
+        </div>
+        <div id="column-preview-framerate" class="hidden flex justify-between">
+          <span class="text-zinc-500">Frame Rate</span>
+          <span id="column-preview-fps" class="text-zinc-900"></span>
+        </div>
+        <div id="column-preview-artist" class="hidden flex justify-between">
+          <span class="text-zinc-500">Artist</span>
+          <span id="column-preview-artist-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span>
+        </div>
+        <div id="column-preview-album" class="hidden flex justify-between">
+          <span class="text-zinc-500">Album</span>
+          <span id="column-preview-album-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span>
+        </div>
+        <div id="column-preview-bitrate" class="hidden flex justify-between">
+          <span class="text-zinc-500">Bitrate</span>
+          <span id="column-preview-bitrate-info" class="text-zinc-900"></span>
+        </div>
+        <div id="column-preview-pages" class="hidden flex justify-between">
+          <span class="text-zinc-500">Pages</span>
+          <span id="column-preview-page-count" class="text-zinc-900"></span>
+        </div>
+        <div id="column-preview-author" class="hidden flex justify-between">
+          <span class="text-zinc-500">Author</span>
+          <span id="column-preview-author-name" class="text-zinc-900 text-right truncate max-w-[120px]"></span>
         </div>
       </div>
     </div>
@@ -365,12 +526,12 @@
 </div>
 
 {{else if eq .ViewMode "gallery"}}
-<!-- Gallery View -->
-<div id="gallery-view" class="flex h-[calc(100vh-12rem)] bg-white rounded-xl border border-zinc-200 overflow-hidden">
+<!-- Gallery View - uses flex layout with constrained height -->
+<div id="gallery-view" class="flex bg-white rounded-xl border border-zinc-200 overflow-hidden max-w-full" style="height: calc(100vh - 200px); min-height: 400px;">
   <!-- Main Preview Area -->
-  <div class="flex-1 flex flex-col">
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
     <!-- Large Preview -->
-    <div id="gallery-main" class="flex-1 flex items-center justify-center bg-zinc-900 relative">
+    <div id="gallery-main" class="flex-1 flex items-center justify-center bg-zinc-900 relative overflow-hidden">
       <div id="gallery-loading" class="hidden">
         <div class="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
       </div>
@@ -421,8 +582,8 @@
     </div>
   </div>
 
-  <!-- Info Panel (Gallery View) -->
-  <div id="gallery-info-panel" class="w-72 flex-shrink-0 border-l border-zinc-200 bg-white flex flex-col overflow-y-auto">
+  <!-- Info Panel (Gallery View) - scrollable within constrained height -->
+  <div id="gallery-info-panel" class="w-72 flex-shrink-0 border-l border-zinc-200 bg-white flex flex-col overflow-y-auto scrollbar-thin" style="max-height: 100%;">
     <div class="p-4 border-b border-zinc-200">
       <h3 id="gallery-info-name" class="text-sm font-semibold text-zinc-900 break-words">No file selected</h3>
       <p id="gallery-info-type" class="text-xs text-zinc-500 mt-1"></p>
@@ -527,7 +688,256 @@
     <!-- Location (for geotagged images) -->
     <div id="gallery-location-info" class="hidden p-4 border-b border-zinc-200">
       <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Location</h4>
-      <div id="gallery-location-coords" class="text-sm text-zinc-900">-</div>
+      <div id="gallery-location-coords" class="text-sm text-zinc-900 mb-2">-</div>
+      <div id="gallery-altitude-row" class="hidden flex justify-between text-sm mb-2">
+        <span class="text-zinc-500">Altitude</span>
+        <span id="gallery-info-altitude" class="text-zinc-900">-</span>
+      </div>
+      <a id="gallery-map-link" href="#" target="_blank" class="hidden inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        Open in Maps
+      </a>
+    </div>
+
+    <!-- Exposure Settings (for images with EXIF) -->
+    <div id="gallery-exposure-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Exposure</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-lens-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Lens</dt>
+          <dd id="gallery-info-lens" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-flash-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Flash</dt>
+          <dd id="gallery-info-flash" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-metering-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Metering</dt>
+          <dd id="gallery-info-metering" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-program-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Program</dt>
+          <dd id="gallery-info-program" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-wb-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">White Balance</dt>
+          <dd id="gallery-info-wb" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-software-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Software</dt>
+          <dd id="gallery-info-software" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-datetime-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Date Taken</dt>
+          <dd id="gallery-info-datetime" class="text-zinc-900">-</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Image Format Info -->
+    <div id="gallery-format-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Format</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-colorspace-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Color Space</dt>
+          <dd id="gallery-info-colorspace" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-bitdepth-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Bit Depth</dt>
+          <dd id="gallery-info-bitdepth" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-alpha-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Alpha Channel</dt>
+          <dd id="gallery-info-alpha" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-animated-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Animation</dt>
+          <dd id="gallery-info-animated" class="text-zinc-900">-</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Audio Technical Info -->
+    <div id="gallery-audio-tech-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Technical</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-samplerate-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Sample Rate</dt>
+          <dd id="gallery-info-samplerate" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-channels-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Channels</dt>
+          <dd id="gallery-info-channels" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-audiobitdepth-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Bit Depth</dt>
+          <dd id="gallery-info-audiobitdepth" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-audiocodec-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Codec</dt>
+          <dd id="gallery-info-audiocodec" class="text-zinc-900">-</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Audio Track Details -->
+    <div id="gallery-track-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Track</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-title-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Title</dt>
+          <dd id="gallery-info-title" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-albumartist-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Album Artist</dt>
+          <dd id="gallery-info-albumartist" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-composer-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Composer</dt>
+          <dd id="gallery-info-composer" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-track-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Track</dt>
+          <dd id="gallery-info-track" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-disc-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Disc</dt>
+          <dd id="gallery-info-disc" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-bpm-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">BPM</dt>
+          <dd id="gallery-info-bpm" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-publisher-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Publisher</dt>
+          <dd id="gallery-info-publisher" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-comment-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Comment</dt>
+          <dd id="gallery-info-comment" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Video Track Info -->
+    <div id="gallery-video-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Video</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-videocodec-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Codec</dt>
+          <dd id="gallery-info-videocodec" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-aspectratio-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Aspect Ratio</dt>
+          <dd id="gallery-info-aspectratio" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-framerate-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Frame Rate</dt>
+          <dd id="gallery-info-framerate" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-videobitrate-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Bitrate</dt>
+          <dd id="gallery-info-videobitrate" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-container-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Container</dt>
+          <dd id="gallery-info-container" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-hdr-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">HDR</dt>
+          <dd id="gallery-info-hdr" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-videobitdepth-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Bit Depth</dt>
+          <dd id="gallery-info-videobitdepth" class="text-zinc-900">-</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Video Audio Track -->
+    <div id="gallery-video-audio-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Audio Track</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-va-codec-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Codec</dt>
+          <dd id="gallery-info-va-codec" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-va-bitrate-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Bitrate</dt>
+          <dd id="gallery-info-va-bitrate" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-va-channels-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Channels</dt>
+          <dd id="gallery-info-va-channels" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-va-samplerate-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Sample Rate</dt>
+          <dd id="gallery-info-va-samplerate" class="text-zinc-900">-</dd>
+        </div>
+      </dl>
+    </div>
+
+    <!-- Subtitles -->
+    <div id="gallery-subtitles-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Subtitles</h4>
+      <div id="gallery-subtitles-list" class="text-sm text-zinc-900 space-y-1">
+        <!-- Subtitle tracks will be listed here -->
+      </div>
+    </div>
+
+    <!-- Document Info -->
+    <div id="gallery-document-info" class="hidden p-4 border-b border-zinc-200">
+      <h4 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Document</h4>
+      <dl class="space-y-2 text-sm">
+        <div id="gallery-pages-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Pages</dt>
+          <dd id="gallery-info-pages" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-author-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Author</dt>
+          <dd id="gallery-info-author" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-doctitle-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Title</dt>
+          <dd id="gallery-info-doctitle" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-subject-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Subject</dt>
+          <dd id="gallery-info-subject" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-keywords-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Keywords</dt>
+          <dd id="gallery-info-keywords" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-creator-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Creator</dt>
+          <dd id="gallery-info-creator" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-producer-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Producer</dt>
+          <dd id="gallery-info-producer" class="text-zinc-900 text-right max-w-[140px] truncate">-</dd>
+        </div>
+        <div id="gallery-pdfversion-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">PDF Version</dt>
+          <dd id="gallery-info-pdfversion" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-wordcount-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Words</dt>
+          <dd id="gallery-info-wordcount" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-encrypted-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Encrypted</dt>
+          <dd id="gallery-info-encrypted" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-doccreated-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Created</dt>
+          <dd id="gallery-info-doccreated" class="text-zinc-900">-</dd>
+        </div>
+        <div id="gallery-docmodified-row" class="hidden flex justify-between">
+          <dt class="text-zinc-500">Modified</dt>
+          <dd id="gallery-info-docmodified" class="text-zinc-900">-</dd>
+        </div>
+      </dl>
     </div>
   </div>
 </div>

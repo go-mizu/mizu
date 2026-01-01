@@ -11,6 +11,8 @@ type FileMetadata struct {
 	ExtractedAt time.Time `json:"extracted_at"`
 	MimeType    string    `json:"mime_type"`
 	Size        int64     `json:"size"`
+	ModifiedAt  time.Time `json:"modified_at,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitempty"`
 
 	// Type-specific metadata
 	Image    *ImageMetadata    `json:"image,omitempty"`

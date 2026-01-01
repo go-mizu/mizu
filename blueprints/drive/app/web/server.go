@@ -219,8 +219,8 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/api/v1/content/{id...}", s.pageHandlers.Content)
 	s.app.Get("/api/v1/thumbnail/{id...}", s.pageHandlers.Thumbnail)
 	s.app.Get("/api/v1/metadata/{id...}", s.pageHandlers.Metadata)
-	s.app.Get("/api/v1/folders/children/{id...}", s.pageHandlers.FolderChildren)
-	s.app.Get("/api/v1/folders/children", s.pageHandlers.FolderChildren)
+	s.app.Get("/api/v1/folder-children/{id...}", s.pageHandlers.FolderChildren)
+	s.app.Get("/api/v1/folder-children", s.pageHandlers.FolderChildren)
 
 	// Shared link access
 	s.app.Get("/s/{token}", s.pageHandlers.ShareLink)
