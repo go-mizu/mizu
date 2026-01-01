@@ -7,6 +7,7 @@
   let selectedItems = new Set();
   let currentPath = '';
   let clipboard = { items: [], action: null };
+  let selectedFile = null; // Currently selected (highlighted) file
 
   // Preview state
   let previewState = {
@@ -33,10 +34,98 @@
     currentItem: null
   };
 
+  // Sidebar State (for List/Grid views)
+  let sidebarState = {
+    isOpen: false,
+    width: 288, // default 18rem
+    selectedItem: null,
+    viewType: null // 'list' or 'grid'
+  };
+
+  // =====================
+  // VIEW PERSISTENCE
+  // =====================
+  function saveViewPreference(view) {
+    localStorage.setItem('drive_view_mode', view);
+  }
+
+  function getViewPreference() {
+    return localStorage.getItem('drive_view_mode') || 'grid';
+  }
+
+  function saveSortPreference(sortBy, sortOrder) {
+    localStorage.setItem('drive_sort_by', sortBy);
+    localStorage.setItem('drive_sort_order', sortOrder);
+  }
+
+  function getSortPreference() {
+    return {
+      sortBy: localStorage.getItem('drive_sort_by') || 'name',
+      sortOrder: localStorage.getItem('drive_sort_order') || 'asc'
+    };
+  }
+
+  // Initialize view mode from localStorage - redirect if needed
+  function initViewMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentView = urlParams.get('view');
+    const savedView = getViewPreference();
+    const { sortBy, sortOrder } = getSortPreference();
+
+    // If no view in URL and saved preference differs from default
+    if (!currentView && savedView !== 'grid') {
+      const url = new URL(window.location);
+      url.searchParams.set('view', savedView);
+      if (!urlParams.get('sort')) url.searchParams.set('sort', sortBy);
+      if (!urlParams.get('order')) url.searchParams.set('order', sortOrder);
+      window.location.replace(url);
+      return false;
+    }
+
+    // Save current view if specified in URL
+    if (currentView) {
+      saveViewPreference(currentView);
+    }
+
+    // Save sort if specified
+    if (urlParams.get('sort')) {
+      saveSortPreference(urlParams.get('sort'), urlParams.get('order') || 'asc');
+    }
+
+    return true;
+  }
+
+  // Update navigation links to preserve view preference
+  function updateNavigationLinks() {
+    const viewMode = getViewPreference();
+    const { sortBy, sortOrder } = getSortPreference();
+
+    // Update folder links to include view parameters
+    document.querySelectorAll('[data-type="folder"] a').forEach(link => {
+      const url = new URL(link.href, window.location.origin);
+      url.searchParams.set('view', viewMode);
+      url.searchParams.set('sort', sortBy);
+      url.searchParams.set('order', sortOrder);
+      link.href = url.toString();
+    });
+
+    // Update breadcrumb links
+    document.querySelectorAll('nav[aria-label="Breadcrumb"] a').forEach(link => {
+      const url = new URL(link.href, window.location.origin);
+      url.searchParams.set('view', viewMode);
+      url.searchParams.set('sort', sortBy);
+      url.searchParams.set('order', sortOrder);
+      link.href = url.toString();
+    });
+  }
+
   // DOM Ready
   document.addEventListener('DOMContentLoaded', init);
 
   function init() {
+    // Check view mode first - may redirect
+    if (!initViewMode()) return;
+
     setupDropdowns();
     setupModals();
     setupFileSelection();
@@ -49,6 +138,8 @@
     collectPreviewableFiles();
     setupColumnView();
     setupGalleryView();
+    setupSidebar();
+    updateNavigationLinks();
   }
 
   // Collect all files for navigation
@@ -171,7 +262,9 @@
     });
   }
 
-  // File Selection
+  // File Selection - Finder-like behavior
+  // Single click: select item
+  // Double click: open folder / preview file
   function setupFileSelection() {
     document.querySelectorAll('[data-type="file"], [data-type="folder"]').forEach(item => {
       item.addEventListener('click', (e) => {
@@ -186,41 +279,42 @@
           // Multi-select
           if (selectedItems.has(id)) {
             selectedItems.delete(id);
-            item.classList.remove('ring-2', 'ring-zinc-900', 'dark:ring-zinc-100');
+            item.classList.remove('ring-2', 'ring-blue-500');
           } else {
             selectedItems.add(id);
-            item.classList.add('ring-2', 'ring-zinc-900', 'dark:ring-zinc-100');
+            item.classList.add('ring-2', 'ring-blue-500');
           }
         } else if (e.shiftKey) {
           // Range select (TODO)
         } else {
-          // Single click
+          // Single click - select item (Finder-like behavior)
           clearSelection();
-          if (type === 'folder') {
-            // Navigate to folder
-            const link = item.querySelector('a');
-            if (link) {
-              window.location.href = link.href;
-            } else {
-              window.location.href = '/files/' + id;
-            }
-          } else {
-            // Open preview overlay for files
-            openPreview({ id, name, mime });
-          }
+          selectedItems.add(id);
+          item.classList.add('ring-2', 'ring-blue-500');
+          selectedFile = { id, type, name, mime, element: item };
         }
       });
 
-      // Double-click to open in new tab
+      // Double-click to navigate/preview
       item.addEventListener('dblclick', (e) => {
         e.preventDefault();
         const type = item.dataset.type;
         const id = item.dataset.id;
+        const name = item.dataset.name;
+        const mime = item.dataset.mime;
+
         if (type === 'folder') {
-          window.location.href = '/files/' + id;
+          // Navigate to folder with preserved view preferences
+          const viewMode = getViewPreference();
+          const { sortBy, sortOrder } = getSortPreference();
+          const url = new URL('/files/' + id, window.location.origin);
+          url.searchParams.set('view', viewMode);
+          url.searchParams.set('sort', sortBy);
+          url.searchParams.set('order', sortOrder);
+          window.location.href = url.toString();
         } else {
-          // Open in new tab
-          window.open('/api/v1/content/' + id, '_blank');
+          // Open preview overlay for files
+          openPreview({ id, name, mime });
         }
       });
     });
@@ -228,8 +322,9 @@
 
   function clearSelection() {
     selectedItems.clear();
+    selectedFile = null;
     document.querySelectorAll('[data-type="file"], [data-type="folder"]').forEach(item => {
-      item.classList.remove('ring-2', 'ring-zinc-900', 'dark:ring-zinc-100');
+      item.classList.remove('ring-2', 'ring-blue-500', 'ring-zinc-900', 'dark:ring-zinc-100');
     });
   }
 
@@ -406,6 +501,16 @@
     const container = document.getElementById('preview-video-container');
     const video = document.getElementById('preview-video');
 
+    // Add error handling
+    video.onerror = () => {
+      container.classList.add('hidden');
+      showMediaError('Video format not supported by your browser', url, previewState.currentFile?.name);
+    };
+
+    video.oncanplay = () => {
+      document.getElementById('preview-fileinfo').textContent = `${video.videoWidth} × ${video.videoHeight}`;
+    };
+
     video.src = url;
     video.type = mime;
     container.classList.remove('hidden');
@@ -416,11 +521,38 @@
     const container = document.getElementById('preview-audio-container');
     const audio = document.getElementById('preview-audio');
 
+    // Add error handling
+    audio.onerror = () => {
+      container.classList.add('hidden');
+      showMediaError('Audio format not supported by your browser', url, name);
+    };
+
+    audio.onloadedmetadata = () => {
+      document.getElementById('preview-fileinfo').textContent = formatDuration(audio.duration);
+    };
+
     document.getElementById('preview-audio-name').textContent = name;
     audio.src = url;
     audio.type = mime;
     container.classList.remove('hidden');
     audio.play().catch(() => {});
+  }
+
+  // Show error message for unsupported media formats
+  function showMediaError(message, url, filename) {
+    const container = document.getElementById('preview-unsupported');
+    document.getElementById('preview-unsupported-name').textContent = filename || 'Unknown file';
+    document.getElementById('preview-unsupported-download').href = url;
+    document.getElementById('preview-unsupported-download').download = filename || '';
+
+    // Update message if there's a message element
+    const msgEl = document.getElementById('preview-unsupported-message');
+    if (msgEl) {
+      msgEl.textContent = message;
+    }
+
+    container.classList.remove('hidden');
+    document.getElementById('preview-fileinfo').textContent = message;
   }
 
   async function loadPdfPreview(url) {
@@ -904,7 +1036,7 @@
             e.preventDefault();
             document.querySelectorAll('[data-type="file"], [data-type="folder"]').forEach(item => {
               selectedItems.add(item.dataset.id);
-              item.classList.add('ring-2', 'ring-zinc-900');
+              item.classList.add('ring-2', 'ring-blue-500');
             });
           }
           break;
@@ -928,17 +1060,35 @@
           }
           break;
 
-        case 'Enter':
-          if (selectedItems.size === 1) {
+        case ' ':
+          // Space bar - Quick Look style preview (like Finder)
+          if (selectedFile && selectedFile.type === 'file') {
             e.preventDefault();
-            const id = Array.from(selectedItems)[0];
-            const item = document.querySelector(`[data-id="${id}"]`);
-            if (item) {
-              handleAction('preview', {
-                id: item.dataset.id,
-                type: item.dataset.type,
-                name: item.dataset.name,
-                mime: item.dataset.mime,
+            openPreview({
+              id: selectedFile.id,
+              name: selectedFile.name,
+              mime: selectedFile.mime
+            });
+          }
+          break;
+
+        case 'Enter':
+          // Enter key - Open folder or preview file
+          if (selectedFile) {
+            e.preventDefault();
+            if (selectedFile.type === 'folder') {
+              const viewMode = getViewPreference();
+              const { sortBy, sortOrder } = getSortPreference();
+              const url = new URL('/files/' + selectedFile.id, window.location.origin);
+              url.searchParams.set('view', viewMode);
+              url.searchParams.set('sort', sortBy);
+              url.searchParams.set('order', sortOrder);
+              window.location.href = url.toString();
+            } else {
+              openPreview({
+                id: selectedFile.id,
+                name: selectedFile.name,
+                mime: selectedFile.mime
               });
             }
           }
@@ -1125,12 +1275,21 @@
       setupColumnItems(firstColumn);
     }
 
+    // Initialize columns from current URL path (for deep links)
+    initColumnsFromPath();
+
     // Setup preview panel buttons
     document.getElementById('column-preview-open')?.addEventListener('click', () => {
       if (columnState.selectedItem) {
         const { id, type, name, mime } = columnState.selectedItem;
         if (type === 'folder') {
-          window.location.href = '/files/' + id;
+          const viewMode = getViewPreference();
+          const { sortBy, sortOrder } = getSortPreference();
+          const url = new URL('/files/' + id, window.location.origin);
+          url.searchParams.set('view', viewMode);
+          url.searchParams.set('sort', sortBy);
+          url.searchParams.set('order', sortOrder);
+          window.location.href = url.toString();
         } else {
           openPreview({ id, name, mime });
         }
@@ -1151,6 +1310,69 @@
     // Keyboard navigation for column view
     columnView.addEventListener('keydown', handleColumnKeydown);
     columnView.setAttribute('tabindex', '0');
+  }
+
+  // Initialize columns from URL path - load all ancestor folders
+  async function initColumnsFromPath() {
+    const path = window.location.pathname.replace('/files', '').replace(/^\//, '');
+    if (!path) return;
+
+    const parts = path.split('/').filter(p => p);
+    if (parts.length === 0) return;
+
+    let currentPath = '';
+
+    // Load each level of the path hierarchy
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const prevPath = currentPath;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+      // Find the item in the current column and select it
+      const currentColumn = columnState.columns[columnState.columns.length - 1];
+      if (currentColumn) {
+        const item = currentColumn.querySelector(`[data-id="${CSS.escape(currentPath)}"]`) ||
+                     currentColumn.querySelector(`[data-name="${CSS.escape(part)}"]`);
+
+        if (item) {
+          // Highlight the item
+          currentColumn.querySelectorAll('.column-item').forEach(i => {
+            i.classList.remove('bg-blue-500', 'text-white');
+            i.querySelector('svg')?.classList.remove('text-white');
+            i.querySelector('span')?.classList.remove('text-white');
+          });
+
+          item.classList.add('bg-blue-500');
+          item.querySelector('svg')?.classList.add('text-white');
+          item.querySelector('span')?.classList.add('text-white');
+
+          // If it's a folder (not the last item or if the last item is a folder), load its contents
+          if (item.dataset.type === 'folder' && i < parts.length - 1) {
+            await loadColumnContents(currentPath, part);
+          } else if (i === parts.length - 1) {
+            // Last item - update preview panel
+            columnState.selectedItem = {
+              id: item.dataset.id,
+              type: item.dataset.type,
+              name: item.dataset.name,
+              mime: item.dataset.mime,
+              size: item.dataset.size
+            };
+
+            if (item.dataset.type === 'folder') {
+              await loadColumnContents(currentPath, part);
+            }
+            updateColumnPreview(columnState.selectedItem);
+          }
+        }
+      }
+    }
+
+    // Scroll to show the last column
+    const columnsContainer = document.getElementById('columns-container');
+    if (columnsContainer) {
+      columnsContainer.scrollLeft = columnsContainer.scrollWidth;
+    }
   }
 
   function setupColumnItems(column) {
@@ -1209,7 +1431,7 @@
     const columnsContainer = document.getElementById('columns-container');
 
     try {
-      const response = await fetch('/api/v1/folders/children/' + folderId);
+      const response = await fetch('/api/v1/folder-children/' + folderId);
       if (!response.ok) throw new Error('Failed to load folder');
 
       const data = await response.json();
@@ -1285,10 +1507,14 @@
     previewPanel.classList.remove('hidden');
     previewName.textContent = item.name;
 
-    // Hide optional rows
-    dimsRow?.classList.add('hidden');
-    cameraRow?.classList.add('hidden');
-    durationRow?.classList.add('hidden');
+    // Hide all optional rows
+    const optionalRows = [
+      'column-preview-dimensions', 'column-preview-camera', 'column-preview-lens',
+      'column-preview-exposure', 'column-preview-location', 'column-preview-duration',
+      'column-preview-codec', 'column-preview-framerate', 'column-preview-artist',
+      'column-preview-album', 'column-preview-bitrate', 'column-preview-pages', 'column-preview-author'
+    ];
+    optionalRows.forEach(id => document.getElementById(id)?.classList.add('hidden'));
 
     if (item.type === 'folder') {
       previewImg.classList.add('hidden');
@@ -1322,34 +1548,102 @@
             previewSize.textContent = formatSize(meta.size);
           }
 
+          // Display modified date
+          if (meta.modified_at) {
+            previewDate.textContent = formatDate(meta.modified_at);
+          }
+
           // Image metadata
           if (meta.image) {
-            if (meta.image.width && meta.image.height) {
+            const img = meta.image;
+            if (img.width && img.height) {
               dimsRow?.classList.remove('hidden');
-              dimsValue.textContent = `${meta.image.width} × ${meta.image.height}`;
+              dimsValue.textContent = `${img.width} × ${img.height}`;
             }
-            if (meta.image.camera_make || meta.image.camera_model) {
+            if (img.make || img.model) {
               cameraRow?.classList.remove('hidden');
-              cameraValue.textContent = [meta.image.camera_make, meta.image.camera_model].filter(Boolean).join(' ');
+              cameraValue.textContent = [img.make, img.model].filter(Boolean).join(' ');
+            }
+            if (img.lens_model) {
+              document.getElementById('column-preview-lens')?.classList.remove('hidden');
+              document.getElementById('column-preview-lens-model').textContent = img.lens_model;
+            }
+            // Exposure summary
+            if (img.f_number || img.exposure_time || img.iso) {
+              const expParts = [];
+              if (img.f_number) expParts.push(`f/${img.f_number}`);
+              if (img.exposure_time) expParts.push(img.exposure_time);
+              if (img.iso) expParts.push(`ISO ${img.iso}`);
+              if (expParts.length) {
+                document.getElementById('column-preview-exposure')?.classList.remove('hidden');
+                document.getElementById('column-preview-exposure-info').textContent = expParts.join(' · ');
+              }
+            }
+            // Location
+            if (img.gps_latitude && img.gps_longitude) {
+              const locRow = document.getElementById('column-preview-location');
+              const locLink = document.getElementById('column-preview-location-link');
+              if (locRow && locLink) {
+                locRow.classList.remove('hidden');
+                locLink.href = `https://www.google.com/maps?q=${img.gps_latitude},${img.gps_longitude}`;
+                locLink.textContent = `${img.gps_latitude.toFixed(4)}, ${img.gps_longitude.toFixed(4)}`;
+              }
             }
           }
 
           // Video metadata
           if (meta.video) {
-            if (meta.video.width && meta.video.height) {
+            const vid = meta.video;
+            if (vid.width && vid.height) {
               dimsRow?.classList.remove('hidden');
-              dimsValue.textContent = `${meta.video.width} × ${meta.video.height}`;
+              dimsValue.textContent = `${vid.width} × ${vid.height}`;
             }
-            if (meta.video.duration) {
+            if (vid.duration || vid.duration_str) {
               durationRow?.classList.remove('hidden');
-              durationValue.textContent = formatDuration(meta.video.duration);
+              durationValue.textContent = vid.duration_str || formatDuration(vid.duration);
+            }
+            if (vid.video_codec) {
+              document.getElementById('column-preview-codec')?.classList.remove('hidden');
+              document.getElementById('column-preview-codec-info').textContent = vid.video_codec.toUpperCase();
+            }
+            if (vid.frame_rate) {
+              document.getElementById('column-preview-framerate')?.classList.remove('hidden');
+              document.getElementById('column-preview-fps').textContent = `${vid.frame_rate.toFixed(2)} fps`;
             }
           }
 
           // Audio metadata
-          if (meta.audio && meta.audio.duration) {
-            durationRow?.classList.remove('hidden');
-            durationValue.textContent = formatDuration(meta.audio.duration);
+          if (meta.audio) {
+            const aud = meta.audio;
+            if (aud.duration || aud.duration_str) {
+              durationRow?.classList.remove('hidden');
+              durationValue.textContent = aud.duration_str || formatDuration(aud.duration);
+            }
+            if (aud.artist) {
+              document.getElementById('column-preview-artist')?.classList.remove('hidden');
+              document.getElementById('column-preview-artist-name').textContent = aud.artist;
+            }
+            if (aud.album) {
+              document.getElementById('column-preview-album')?.classList.remove('hidden');
+              document.getElementById('column-preview-album-name').textContent = aud.album;
+            }
+            if (aud.bitrate) {
+              document.getElementById('column-preview-bitrate')?.classList.remove('hidden');
+              document.getElementById('column-preview-bitrate-info').textContent = `${Math.round(aud.bitrate)} kbps`;
+            }
+          }
+
+          // Document metadata
+          if (meta.document) {
+            const doc = meta.document;
+            if (doc.page_count) {
+              document.getElementById('column-preview-pages')?.classList.remove('hidden');
+              document.getElementById('column-preview-page-count').textContent = doc.page_count;
+            }
+            if (doc.author) {
+              document.getElementById('column-preview-author')?.classList.remove('hidden');
+              document.getElementById('column-preview-author-name').textContent = doc.author;
+            }
           }
         }
       } catch (err) {
@@ -1444,8 +1738,25 @@
 
     // Setup thumbnail click handlers
     thumbs.forEach((thumb, index) => {
+      // Single click to select and preview
       thumb.addEventListener('click', () => {
         selectGalleryItem(index);
+      });
+
+      // Double click to open full preview overlay or navigate to folder
+      thumb.addEventListener('dblclick', () => {
+        const item = galleryState.items[index];
+        if (item.type === 'folder') {
+          const viewMode = getViewPreference();
+          const { sortBy, sortOrder } = getSortPreference();
+          const url = new URL('/files/' + item.id, window.location.origin);
+          url.searchParams.set('view', viewMode);
+          url.searchParams.set('sort', sortBy);
+          url.searchParams.set('order', sortOrder);
+          window.location.href = url.toString();
+        } else {
+          openPreview({ id: item.id, name: item.name, mime: item.mime });
+        }
       });
     });
 
@@ -1457,10 +1768,11 @@
     galleryView.addEventListener('keydown', handleGalleryKeydown);
     galleryView.setAttribute('tabindex', '0');
 
-    // Auto-select first file item
-    const firstFileIndex = galleryState.items.findIndex(item => item.type === 'file');
-    if (firstFileIndex >= 0) {
-      selectGalleryItem(firstFileIndex);
+    // Auto-select first item (file or folder)
+    if (galleryState.items.length > 0) {
+      // Prefer first file, fallback to first item
+      const firstFileIndex = galleryState.items.findIndex(item => item.type === 'file');
+      selectGalleryItem(firstFileIndex >= 0 ? firstFileIndex : 0);
     }
 
     // Show navigation on hover
@@ -1473,6 +1785,13 @@
       mainArea.addEventListener('mouseleave', () => {
         document.getElementById('gallery-prev')?.classList.remove('opacity-60');
         document.getElementById('gallery-next')?.classList.remove('opacity-60');
+      });
+
+      // Double click on main preview to open full preview overlay
+      mainArea.addEventListener('dblclick', () => {
+        if (galleryState.currentItem && galleryState.currentItem.type === 'file') {
+          openPreview(galleryState.currentItem);
+        }
       });
     }
   }
@@ -1541,27 +1860,36 @@
       img.onload = () => loading.classList.add('hidden');
       img.onerror = () => {
         loading.classList.add('hidden');
-        showGalleryPlaceholder('Failed to load image');
+        showGalleryPlaceholder('Failed to load image', true);
       };
       img.src = contentUrl;
       img.classList.remove('hidden');
     } else if (mime.startsWith('video/')) {
       loading.classList.add('hidden');
+      video.onerror = () => {
+        video.classList.add('hidden');
+        showGalleryPlaceholder('Video format not supported', true);
+      };
       video.src = contentUrl;
       video.classList.remove('hidden');
       video.play().catch(() => {});
     } else if (mime.startsWith('audio/')) {
       loading.classList.add('hidden');
+      audio.onerror = () => {
+        audio.classList.add('hidden');
+        showGalleryPlaceholder('Audio format not supported', true);
+      };
       audio.src = contentUrl;
       audio.classList.remove('hidden');
       audio.play().catch(() => {});
     } else {
       loading.classList.add('hidden');
-      showGalleryPlaceholder('Preview not available');
+      // Show preview not available with Open Preview button for documents, code, etc.
+      showGalleryPlaceholder('Double-click or press Enter to preview', true);
     }
   }
 
-  function showGalleryPlaceholder(message) {
+  function showGalleryPlaceholder(message, showOpenButton = false) {
     const placeholder = document.getElementById('gallery-preview-placeholder');
     const img = document.getElementById('gallery-preview-img');
     const video = document.getElementById('gallery-preview-video');
@@ -1570,7 +1898,33 @@
     img.classList.add('hidden');
     video.classList.add('hidden');
     audio.classList.add('hidden');
-    placeholder.querySelector('span').textContent = message;
+
+    // Update message
+    const msgSpan = placeholder.querySelector('span');
+    if (msgSpan) {
+      msgSpan.textContent = message;
+    }
+
+    // Show or create open button for non-previewable files
+    let openBtn = placeholder.querySelector('.gallery-open-btn');
+    if (showOpenButton && galleryState.currentItem?.type === 'file') {
+      if (!openBtn) {
+        openBtn = document.createElement('button');
+        openBtn.className = 'gallery-open-btn mt-4 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors';
+        openBtn.textContent = 'Open Preview';
+        openBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (galleryState.currentItem) {
+            openPreview(galleryState.currentItem);
+          }
+        });
+        placeholder.appendChild(openBtn);
+      }
+      openBtn.classList.remove('hidden');
+    } else if (openBtn) {
+      openBtn.classList.add('hidden');
+    }
+
     placeholder.classList.remove('hidden');
   }
 
@@ -1584,10 +1938,12 @@
     document.getElementById('gallery-info-modified').textContent = '-';
 
     // Hide all optional sections
-    document.getElementById('gallery-media-info')?.classList.add('hidden');
-    document.getElementById('gallery-camera-info')?.classList.add('hidden');
-    document.getElementById('gallery-audio-info')?.classList.add('hidden');
-    document.getElementById('gallery-location-info')?.classList.add('hidden');
+    const allSections = [
+      'gallery-media-info', 'gallery-camera-info', 'gallery-audio-info', 'gallery-location-info',
+      'gallery-exposure-info', 'gallery-format-info', 'gallery-audio-tech-info', 'gallery-track-info',
+      'gallery-video-info', 'gallery-video-audio-info', 'gallery-subtitles-info', 'gallery-document-info'
+    ];
+    allSections.forEach(id => document.getElementById(id)?.classList.add('hidden'));
 
     // Hide all optional rows
     document.querySelectorAll('[id^="gallery-"][id$="-row"]').forEach(row => {
@@ -1595,6 +1951,9 @@
         row.classList.add('hidden');
       }
     });
+
+    // Hide map link
+    document.getElementById('gallery-map-link')?.classList.add('hidden');
 
     if (item.type === 'folder') return;
 
@@ -1610,117 +1969,521 @@
         document.getElementById('gallery-info-size').textContent = formatSize(meta.size);
       }
 
+      // Display dates
+      if (meta.created_at) {
+        document.getElementById('gallery-info-created').textContent = formatDate(meta.created_at);
+      }
+      if (meta.modified_at) {
+        document.getElementById('gallery-info-modified').textContent = formatDate(meta.modified_at);
+      }
+
       // Image metadata
       if (meta.image) {
+        const img = meta.image;
         const mediaInfo = document.getElementById('gallery-media-info');
         mediaInfo?.classList.remove('hidden');
 
-        if (meta.image.width && meta.image.height) {
-          document.getElementById('gallery-dims-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-dims').textContent = `${meta.image.width} × ${meta.image.height}`;
+        if (img.width && img.height) {
+          showRow('gallery-dims-row', 'gallery-info-dims', `${img.width} × ${img.height}`);
         }
 
-        // Camera info
-        if (meta.image.camera_make || meta.image.camera_model || meta.image.aperture || meta.image.exposure_time || meta.image.iso) {
-          const cameraInfo = document.getElementById('gallery-camera-info');
-          cameraInfo?.classList.remove('hidden');
+        // Camera info section
+        if (img.make || img.model || img.f_number || img.exposure_time || img.iso) {
+          document.getElementById('gallery-camera-info')?.classList.remove('hidden');
 
-          if (meta.image.camera_make || meta.image.camera_model) {
-            document.getElementById('gallery-camera-row')?.classList.remove('hidden');
-            document.getElementById('gallery-info-camera').textContent = [meta.image.camera_make, meta.image.camera_model].filter(Boolean).join(' ');
+          if (img.make || img.model) {
+            showRow('gallery-camera-row', 'gallery-info-camera', [img.make, img.model].filter(Boolean).join(' '));
           }
-          if (meta.image.aperture) {
-            document.getElementById('gallery-aperture-row')?.classList.remove('hidden');
-            document.getElementById('gallery-info-aperture').textContent = `f/${meta.image.aperture}`;
+          if (img.f_number) {
+            showRow('gallery-aperture-row', 'gallery-info-aperture', `f/${img.f_number}`);
           }
-          if (meta.image.exposure_time) {
-            document.getElementById('gallery-exposure-row')?.classList.remove('hidden');
-            document.getElementById('gallery-info-exposure').textContent = meta.image.exposure_time;
+          if (img.exposure_time) {
+            showRow('gallery-exposure-row', 'gallery-info-exposure', img.exposure_time);
           }
-          if (meta.image.iso) {
-            document.getElementById('gallery-iso-row')?.classList.remove('hidden');
-            document.getElementById('gallery-info-iso').textContent = meta.image.iso;
+          if (img.iso) {
+            showRow('gallery-iso-row', 'gallery-info-iso', img.iso);
           }
-          if (meta.image.focal_length) {
-            document.getElementById('gallery-focal-row')?.classList.remove('hidden');
-            document.getElementById('gallery-info-focal').textContent = `${meta.image.focal_length}mm`;
+          if (img.focal_length) {
+            let focalText = `${img.focal_length}mm`;
+            if (img.focal_length_35mm) focalText += ` (${img.focal_length_35mm}mm equiv)`;
+            showRow('gallery-focal-row', 'gallery-info-focal', focalText);
+          }
+        }
+
+        // Exposure/additional EXIF section
+        if (img.lens_model || img.flash || img.metering_mode || img.exposure_program || img.white_balance || img.software || img.date_time_original) {
+          document.getElementById('gallery-exposure-info')?.classList.remove('hidden');
+
+          if (img.lens_model) showRow('gallery-lens-row', 'gallery-info-lens', img.lens_model);
+          if (img.flash) showRow('gallery-flash-row', 'gallery-info-flash', img.flash);
+          if (img.metering_mode) showRow('gallery-metering-row', 'gallery-info-metering', img.metering_mode);
+          if (img.exposure_program) showRow('gallery-program-row', 'gallery-info-program', img.exposure_program);
+          if (img.white_balance) showRow('gallery-wb-row', 'gallery-info-wb', img.white_balance);
+          if (img.software) showRow('gallery-software-row', 'gallery-info-software', img.software);
+          if (img.date_time_original) showRow('gallery-datetime-row', 'gallery-info-datetime', img.date_time_original);
+        }
+
+        // Format info section
+        if (img.color_space || img.bit_depth || img.has_alpha !== undefined || img.is_animated) {
+          document.getElementById('gallery-format-info')?.classList.remove('hidden');
+
+          if (img.color_space) showRow('gallery-colorspace-row', 'gallery-info-colorspace', img.color_space);
+          if (img.bit_depth) showRow('gallery-bitdepth-row', 'gallery-info-bitdepth', `${img.bit_depth}-bit`);
+          if (img.has_alpha !== undefined) showRow('gallery-alpha-row', 'gallery-info-alpha', img.has_alpha ? 'Yes' : 'No');
+          if (img.is_animated) {
+            let animText = 'Yes';
+            if (img.frame_count) animText += ` (${img.frame_count} frames)`;
+            showRow('gallery-animated-row', 'gallery-info-animated', animText);
           }
         }
 
         // GPS location
-        if (meta.image.latitude && meta.image.longitude) {
-          const locationInfo = document.getElementById('gallery-location-info');
-          locationInfo?.classList.remove('hidden');
+        if (img.gps_latitude && img.gps_longitude) {
+          document.getElementById('gallery-location-info')?.classList.remove('hidden');
           document.getElementById('gallery-location-coords').textContent =
-            `${meta.image.latitude.toFixed(6)}, ${meta.image.longitude.toFixed(6)}`;
+            `${img.gps_latitude.toFixed(6)}, ${img.gps_longitude.toFixed(6)}`;
+
+          // Map link
+          const mapLink = document.getElementById('gallery-map-link');
+          if (mapLink) {
+            mapLink.href = `https://www.google.com/maps?q=${img.gps_latitude},${img.gps_longitude}`;
+            mapLink.classList.remove('hidden');
+          }
+
+          // Altitude
+          if (img.gps_altitude) {
+            document.getElementById('gallery-altitude-row')?.classList.remove('hidden');
+            document.getElementById('gallery-info-altitude').textContent = `${img.gps_altitude.toFixed(1)}m`;
+          }
         }
       }
 
       // Video metadata
       if (meta.video) {
-        const mediaInfo = document.getElementById('gallery-media-info');
-        mediaInfo?.classList.remove('hidden');
+        const vid = meta.video;
+        document.getElementById('gallery-media-info')?.classList.remove('hidden');
 
-        if (meta.video.width && meta.video.height) {
-          document.getElementById('gallery-dims-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-dims').textContent = `${meta.video.width} × ${meta.video.height}`;
+        if (vid.width && vid.height) {
+          showRow('gallery-dims-row', 'gallery-info-dims', `${vid.width} × ${vid.height}`);
         }
-        if (meta.video.duration) {
-          document.getElementById('gallery-duration-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-duration').textContent = formatDuration(meta.video.duration);
+        if (vid.duration || vid.duration_str) {
+          showRow('gallery-duration-row', 'gallery-info-duration', vid.duration_str || formatDuration(vid.duration));
         }
-        if (meta.video.video_codec) {
-          document.getElementById('gallery-codec-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-codec').textContent = meta.video.video_codec;
+        if (vid.video_codec) {
+          showRow('gallery-codec-row', 'gallery-info-codec', vid.video_codec.toUpperCase());
+        }
+
+        // Video track info section
+        if (vid.video_codec || vid.aspect_ratio || vid.frame_rate || vid.video_bitrate || vid.container || vid.hdr_format || vid.bit_depth) {
+          document.getElementById('gallery-video-info')?.classList.remove('hidden');
+
+          if (vid.video_codec) showRow('gallery-videocodec-row', 'gallery-info-videocodec', vid.video_codec.toUpperCase());
+          if (vid.aspect_ratio) showRow('gallery-aspectratio-row', 'gallery-info-aspectratio', vid.aspect_ratio);
+          if (vid.frame_rate) showRow('gallery-framerate-row', 'gallery-info-framerate', `${vid.frame_rate.toFixed(2)} fps`);
+          if (vid.video_bitrate) showRow('gallery-videobitrate-row', 'gallery-info-videobitrate', `${Math.round(vid.video_bitrate)} kbps`);
+          if (vid.container) showRow('gallery-container-row', 'gallery-info-container', vid.container.toUpperCase());
+          if (vid.hdr_format) showRow('gallery-hdr-row', 'gallery-info-hdr', vid.hdr_format);
+          if (vid.bit_depth) showRow('gallery-videobitdepth-row', 'gallery-info-videobitdepth', `${vid.bit_depth}-bit`);
+        }
+
+        // Video audio track section
+        if (vid.has_audio && (vid.audio_codec || vid.audio_bitrate || vid.audio_channels || vid.audio_sample_rate)) {
+          document.getElementById('gallery-video-audio-info')?.classList.remove('hidden');
+
+          if (vid.audio_codec) showRow('gallery-va-codec-row', 'gallery-info-va-codec', vid.audio_codec.toUpperCase());
+          if (vid.audio_bitrate) showRow('gallery-va-bitrate-row', 'gallery-info-va-bitrate', `${Math.round(vid.audio_bitrate)} kbps`);
+          if (vid.audio_channels) showRow('gallery-va-channels-row', 'gallery-info-va-channels', formatChannels(vid.audio_channels));
+          if (vid.audio_sample_rate) showRow('gallery-va-samplerate-row', 'gallery-info-va-samplerate', `${vid.audio_sample_rate} Hz`);
+        }
+
+        // Subtitles section
+        if (vid.subtitle_tracks && vid.subtitle_tracks.length > 0) {
+          document.getElementById('gallery-subtitles-info')?.classList.remove('hidden');
+          const subList = document.getElementById('gallery-subtitles-list');
+          if (subList) {
+            subList.innerHTML = vid.subtitle_tracks.map(t =>
+              `<div class="flex justify-between"><span>${t.language || 'Unknown'}</span><span class="text-zinc-500">${t.format || ''}</span></div>`
+            ).join('');
+          }
         }
       }
 
       // Audio metadata
       if (meta.audio) {
-        const mediaInfo = document.getElementById('gallery-media-info');
-        const audioInfo = document.getElementById('gallery-audio-info');
-        mediaInfo?.classList.remove('hidden');
-        audioInfo?.classList.remove('hidden');
+        const aud = meta.audio;
+        document.getElementById('gallery-media-info')?.classList.remove('hidden');
+        document.getElementById('gallery-audio-info')?.classList.remove('hidden');
 
-        if (meta.audio.duration) {
-          document.getElementById('gallery-duration-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-duration').textContent = formatDuration(meta.audio.duration);
+        if (aud.duration || aud.duration_str) {
+          showRow('gallery-duration-row', 'gallery-info-duration', aud.duration_str || formatDuration(aud.duration));
         }
-        if (meta.audio.artist) {
-          document.getElementById('gallery-artist-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-artist').textContent = meta.audio.artist;
+        if (aud.artist) showRow('gallery-artist-row', 'gallery-info-artist', aud.artist);
+        if (aud.album) showRow('gallery-album-row', 'gallery-info-album', aud.album);
+        if (aud.genre) showRow('gallery-genre-row', 'gallery-info-genre', aud.genre);
+        if (aud.year) showRow('gallery-year-row', 'gallery-info-year', aud.year);
+        if (aud.bitrate) showRow('gallery-bitrate-row', 'gallery-info-bitrate', `${Math.round(aud.bitrate)} kbps`);
+
+        // Audio technical info section
+        if (aud.sample_rate || aud.channels || aud.bit_depth || aud.codec) {
+          document.getElementById('gallery-audio-tech-info')?.classList.remove('hidden');
+
+          if (aud.sample_rate) showRow('gallery-samplerate-row', 'gallery-info-samplerate', `${aud.sample_rate} Hz`);
+          if (aud.channels) showRow('gallery-channels-row', 'gallery-info-channels', formatChannels(aud.channels));
+          if (aud.bit_depth) showRow('gallery-audiobitdepth-row', 'gallery-info-audiobitdepth', `${aud.bit_depth}-bit`);
+          if (aud.codec) showRow('gallery-audiocodec-row', 'gallery-info-audiocodec', aud.codec.toUpperCase());
         }
-        if (meta.audio.album) {
-          document.getElementById('gallery-album-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-album').textContent = meta.audio.album;
-        }
-        if (meta.audio.genre) {
-          document.getElementById('gallery-genre-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-genre').textContent = meta.audio.genre;
-        }
-        if (meta.audio.year) {
-          document.getElementById('gallery-year-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-year').textContent = meta.audio.year;
-        }
-        if (meta.audio.bitrate) {
-          document.getElementById('gallery-bitrate-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-bitrate').textContent = `${Math.round(meta.audio.bitrate / 1000)} kbps`;
+
+        // Track info section
+        if (aud.title || aud.album_artist || aud.composer || aud.track_number || aud.disc_number || aud.bpm || aud.publisher || aud.comment) {
+          document.getElementById('gallery-track-info')?.classList.remove('hidden');
+
+          if (aud.title) showRow('gallery-title-row', 'gallery-info-title', aud.title);
+          if (aud.album_artist) showRow('gallery-albumartist-row', 'gallery-info-albumartist', aud.album_artist);
+          if (aud.composer) showRow('gallery-composer-row', 'gallery-info-composer', aud.composer);
+          if (aud.track_number) {
+            let trackText = String(aud.track_number);
+            if (aud.track_total) trackText += ` of ${aud.track_total}`;
+            showRow('gallery-track-row', 'gallery-info-track', trackText);
+          }
+          if (aud.disc_number) {
+            let discText = String(aud.disc_number);
+            if (aud.disc_total) discText += ` of ${aud.disc_total}`;
+            showRow('gallery-disc-row', 'gallery-info-disc', discText);
+          }
+          if (aud.bpm) showRow('gallery-bpm-row', 'gallery-info-bpm', aud.bpm);
+          if (aud.publisher) showRow('gallery-publisher-row', 'gallery-info-publisher', aud.publisher);
+          if (aud.comment) showRow('gallery-comment-row', 'gallery-info-comment', aud.comment);
         }
       }
 
       // Document metadata
       if (meta.document) {
-        const mediaInfo = document.getElementById('gallery-media-info');
-        mediaInfo?.classList.remove('hidden');
+        const doc = meta.document;
+        document.getElementById('gallery-media-info')?.classList.remove('hidden');
 
-        if (meta.document.page_count) {
-          document.getElementById('gallery-dims-row')?.classList.remove('hidden');
-          document.getElementById('gallery-info-dims').textContent = `${meta.document.page_count} pages`;
+        if (doc.page_count) {
+          showRow('gallery-dims-row', 'gallery-info-dims', `${doc.page_count} pages`);
+        }
+
+        // Document info section
+        if (doc.page_count || doc.author || doc.title || doc.subject || doc.keywords || doc.creator || doc.producer || doc.pdf_version || doc.word_count || doc.is_encrypted !== undefined || doc.created_at || doc.modified_at) {
+          document.getElementById('gallery-document-info')?.classList.remove('hidden');
+
+          if (doc.page_count) showRow('gallery-pages-row', 'gallery-info-pages', doc.page_count);
+          if (doc.author) showRow('gallery-author-row', 'gallery-info-author', doc.author);
+          if (doc.title) showRow('gallery-doctitle-row', 'gallery-info-doctitle', doc.title);
+          if (doc.subject) showRow('gallery-subject-row', 'gallery-info-subject', doc.subject);
+          if (doc.keywords) showRow('gallery-keywords-row', 'gallery-info-keywords', doc.keywords);
+          if (doc.creator) showRow('gallery-creator-row', 'gallery-info-creator', doc.creator);
+          if (doc.producer) showRow('gallery-producer-row', 'gallery-info-producer', doc.producer);
+          if (doc.pdf_version) showRow('gallery-pdfversion-row', 'gallery-info-pdfversion', doc.pdf_version);
+          if (doc.word_count) showRow('gallery-wordcount-row', 'gallery-info-wordcount', doc.word_count.toLocaleString());
+          if (doc.is_encrypted !== undefined) showRow('gallery-encrypted-row', 'gallery-info-encrypted', doc.is_encrypted ? 'Yes' : 'No');
+          if (doc.created_at) showRow('gallery-doccreated-row', 'gallery-info-doccreated', doc.created_at);
+          if (doc.modified_at) showRow('gallery-docmodified-row', 'gallery-info-docmodified', doc.modified_at);
         }
       }
 
     } catch (err) {
       console.error('Failed to fetch metadata:', err);
+    }
+  }
+
+  // Helper to show a metadata row
+  function showRow(rowId, valueId, value) {
+    const row = document.getElementById(rowId);
+    const valueEl = document.getElementById(valueId);
+    if (row && valueEl) {
+      row.classList.remove('hidden');
+      valueEl.textContent = value;
+    }
+  }
+
+  // =====================
+  // SIDEBAR (List/Grid Views)
+  // =====================
+  function setupSidebar() {
+    // Detect which view we're in
+    const listSidebar = document.getElementById('list-sidebar');
+    const gridSidebar = document.getElementById('grid-sidebar');
+
+    if (listSidebar) {
+      sidebarState.viewType = 'list';
+      setupSidebarControls('list');
+    } else if (gridSidebar) {
+      sidebarState.viewType = 'grid';
+      setupSidebarControls('grid');
+    } else {
+      return; // No sidebar in this view
+    }
+
+    // Load sidebar state from localStorage
+    const savedOpen = localStorage.getItem('drive_sidebar_open') === 'true';
+    const savedWidth = parseInt(localStorage.getItem('drive_sidebar_width')) || 288;
+    sidebarState.width = savedWidth;
+
+    if (savedOpen) {
+      toggleSidebar(true);
+    }
+  }
+
+  function setupSidebarControls(viewType) {
+    const prefix = viewType;
+    const sidebar = document.getElementById(`${prefix}-sidebar`);
+    const toggleBtn = document.getElementById(`${prefix}-sidebar-toggle`);
+    const resizeHandle = document.getElementById(`${prefix}-sidebar-resize`);
+    const openBtn = document.getElementById(`${prefix}-preview-open`);
+    const downloadBtn = document.getElementById(`${prefix}-preview-download`);
+
+    // Toggle button
+    toggleBtn?.addEventListener('click', () => toggleSidebar());
+
+    // Keyboard shortcut (I for Info)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'i' && !e.ctrlKey && !e.metaKey && !e.target.matches('input, textarea')) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    });
+
+    // Resize handle
+    if (resizeHandle) {
+      let isResizing = false;
+      let startX, startWidth;
+
+      resizeHandle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = sidebarState.width;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        const diff = startX - e.clientX;
+        const newWidth = Math.max(200, Math.min(500, startWidth + diff));
+        sidebarState.width = newWidth;
+        sidebar.style.width = `${newWidth}px`;
+        localStorage.setItem('drive_sidebar_width', newWidth);
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (isResizing) {
+          isResizing = false;
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+      });
+    }
+
+    // Open button
+    openBtn?.addEventListener('click', () => {
+      if (sidebarState.selectedItem) {
+        const { id, type, name, mime } = sidebarState.selectedItem;
+        if (type === 'folder') {
+          const viewMode = getViewPreference();
+          const { sortBy, sortOrder } = getSortPreference();
+          const url = new URL('/files/' + id, window.location.origin);
+          url.searchParams.set('view', viewMode);
+          url.searchParams.set('sort', sortBy);
+          url.searchParams.set('order', sortOrder);
+          window.location.href = url.toString();
+        } else {
+          openPreview({ id, name, mime });
+        }
+      }
+    });
+
+    // Download button
+    downloadBtn?.addEventListener('click', () => {
+      if (sidebarState.selectedItem && sidebarState.selectedItem.type === 'file') {
+        const a = document.createElement('a');
+        a.href = '/api/v1/content/' + sidebarState.selectedItem.id;
+        a.download = sidebarState.selectedItem.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    });
+
+    // Setup click handlers on items
+    setupSidebarItemHandlers(viewType);
+  }
+
+  function setupSidebarItemHandlers(viewType) {
+    const items = document.querySelectorAll('[data-type="file"], [data-type="folder"]');
+    items.forEach(item => {
+      item.addEventListener('click', (e) => {
+        // Don't trigger if clicking on a link or button
+        if (e.target.closest('a') || e.target.closest('button')) return;
+
+        const id = item.dataset.id;
+        const type = item.dataset.type;
+        const name = item.dataset.name;
+        const mime = item.dataset.mime || '';
+        const size = item.dataset.size || '';
+
+        // Highlight selected item
+        items.forEach(i => i.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50'));
+        item.classList.add('ring-2', 'ring-blue-500', 'bg-blue-50');
+
+        // Update sidebar
+        sidebarState.selectedItem = { id, type, name, mime, size };
+        updateSidebarPreview(viewType, sidebarState.selectedItem);
+
+        // Auto-open sidebar on first selection if closed
+        if (!sidebarState.isOpen) {
+          toggleSidebar(true);
+        }
+      });
+    });
+  }
+
+  function toggleSidebar(forceOpen) {
+    const viewType = sidebarState.viewType;
+    if (!viewType) return;
+
+    const sidebar = document.getElementById(`${viewType}-sidebar`);
+    const toggleBtn = document.getElementById(`${viewType}-sidebar-toggle`);
+    if (!sidebar) return;
+
+    const shouldOpen = forceOpen !== undefined ? forceOpen : !sidebarState.isOpen;
+    sidebarState.isOpen = shouldOpen;
+
+    if (shouldOpen) {
+      sidebar.classList.remove('hidden', 'w-0');
+      sidebar.style.width = `${sidebarState.width}px`;
+      toggleBtn?.classList.add('bg-blue-600');
+    } else {
+      sidebar.classList.add('w-0');
+      sidebar.style.width = '0px';
+      setTimeout(() => {
+        if (!sidebarState.isOpen) sidebar.classList.add('hidden');
+      }, 200);
+      toggleBtn?.classList.remove('bg-blue-600');
+    }
+
+    localStorage.setItem('drive_sidebar_open', shouldOpen);
+  }
+
+  async function updateSidebarPreview(viewType, item) {
+    const prefix = viewType;
+    const previewImg = document.getElementById(`${prefix}-preview-img`);
+    const previewIcon = document.getElementById(`${prefix}-preview-icon`);
+    const previewName = document.getElementById(`${prefix}-preview-name`);
+    const previewKind = document.getElementById(`${prefix}-preview-kind`);
+    const previewSize = document.getElementById(`${prefix}-preview-size`);
+    const previewDate = document.getElementById(`${prefix}-preview-date`);
+
+    previewName.textContent = item.name;
+
+    // Hide all optional rows
+    const optionalRows = [`${prefix}-preview-dimensions`, `${prefix}-preview-duration`, `${prefix}-preview-camera`, `${prefix}-preview-artist`, `${prefix}-preview-album`];
+    optionalRows.forEach(id => document.getElementById(id)?.classList.add('hidden'));
+
+    if (item.type === 'folder') {
+      previewImg?.classList.add('hidden');
+      previewIcon?.classList.remove('hidden');
+      if (previewIcon) {
+        previewIcon.innerHTML = `<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1"/>`;
+      }
+      previewKind.textContent = 'Folder';
+      previewSize.textContent = '-';
+      previewDate.textContent = '-';
+    } else {
+      // Check if image
+      if (item.mime && item.mime.startsWith('image/')) {
+        previewImg.src = '/api/v1/thumbnail/' + item.id;
+        previewImg?.classList.remove('hidden');
+        previewIcon?.classList.add('hidden');
+      } else {
+        previewImg?.classList.add('hidden');
+        previewIcon?.classList.remove('hidden');
+      }
+
+      previewKind.textContent = getMimeDescription(item.mime);
+      previewSize.textContent = item.size ? formatSize(parseInt(item.size)) : '-';
+      previewDate.textContent = '-';
+
+      // Fetch metadata
+      try {
+        const response = await fetch('/api/v1/metadata/' + item.id);
+        if (response.ok) {
+          const meta = await response.json();
+
+          if (meta.size) {
+            previewSize.textContent = formatSize(meta.size);
+          }
+
+          if (meta.modified_at) {
+            previewDate.textContent = formatDate(meta.modified_at);
+          }
+
+          // Image metadata
+          if (meta.image) {
+            const img = meta.image;
+            if (img.width && img.height) {
+              const row = document.getElementById(`${prefix}-preview-dimensions`);
+              const value = document.getElementById(`${prefix}-preview-dims`);
+              if (row && value) {
+                row.classList.remove('hidden');
+                value.textContent = `${img.width} × ${img.height}`;
+              }
+            }
+            if (img.make || img.model) {
+              const row = document.getElementById(`${prefix}-preview-camera`);
+              const value = document.getElementById(`${prefix}-preview-camera-model`);
+              if (row && value) {
+                row.classList.remove('hidden');
+                value.textContent = [img.make, img.model].filter(Boolean).join(' ');
+              }
+            }
+          }
+
+          // Video/Audio metadata
+          if (meta.video || meta.audio) {
+            const media = meta.video || meta.audio;
+            if (media.duration || media.duration_str) {
+              const row = document.getElementById(`${prefix}-preview-duration`);
+              const value = document.getElementById(`${prefix}-preview-dur`);
+              if (row && value) {
+                row.classList.remove('hidden');
+                value.textContent = media.duration_str || formatDuration(media.duration);
+              }
+            }
+            if (meta.audio?.artist) {
+              const row = document.getElementById(`${prefix}-preview-artist`);
+              const value = document.getElementById(`${prefix}-preview-artist-name`);
+              if (row && value) {
+                row.classList.remove('hidden');
+                value.textContent = meta.audio.artist;
+              }
+            }
+            if (meta.audio?.album) {
+              const row = document.getElementById(`${prefix}-preview-album`);
+              const value = document.getElementById(`${prefix}-preview-album-name`);
+              if (row && value) {
+                row.classList.remove('hidden');
+                value.textContent = meta.audio.album;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch metadata:', err);
+      }
+    }
+  }
+
+  // Helper to format channel count
+  function formatChannels(channels) {
+    switch (channels) {
+      case 1: return 'Mono';
+      case 2: return 'Stereo';
+      case 6: return '5.1 Surround';
+      case 8: return '7.1 Surround';
+      default: return `${channels} channels`;
     }
   }
 
@@ -1789,26 +2552,68 @@
   function getMimeDescription(mime) {
     if (!mime) return 'File';
     const descriptions = {
+      // Images
       'image/jpeg': 'JPEG Image',
       'image/png': 'PNG Image',
       'image/gif': 'GIF Image',
       'image/webp': 'WebP Image',
       'image/svg+xml': 'SVG Image',
+      'image/bmp': 'BMP Image',
+      'image/tiff': 'TIFF Image',
+      'image/heic': 'HEIC Image',
+      'image/heif': 'HEIF Image',
+      // Video
       'video/mp4': 'MP4 Video',
       'video/webm': 'WebM Video',
       'video/quicktime': 'QuickTime Video',
+      'video/x-msvideo': 'AVI Video',
+      'video/x-matroska': 'MKV Video',
+      'video/x-ms-wmv': 'WMV Video',
+      'video/x-flv': 'FLV Video',
+      'video/x-m4v': 'M4V Video',
+      'video/3gpp': '3GP Video',
+      'video/ogg': 'OGG Video',
+      // Audio
       'audio/mpeg': 'MP3 Audio',
       'audio/mp3': 'MP3 Audio',
       'audio/wav': 'WAV Audio',
       'audio/flac': 'FLAC Audio',
       'audio/ogg': 'OGG Audio',
       'audio/aac': 'AAC Audio',
+      'audio/mp4': 'M4A Audio',
+      'audio/x-ms-wma': 'WMA Audio',
+      'audio/aiff': 'AIFF Audio',
+      'audio/opus': 'Opus Audio',
+      'audio/midi': 'MIDI Audio',
+      // Documents
       'application/pdf': 'PDF Document',
       'application/zip': 'ZIP Archive',
+      'application/msword': 'Word Document',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word Document',
+      'application/vnd.ms-excel': 'Excel Spreadsheet',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel Spreadsheet',
+      'application/vnd.ms-powerpoint': 'PowerPoint Presentation',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint Presentation',
+      // Text
       'text/plain': 'Text File',
       'text/html': 'HTML Document',
       'text/css': 'CSS Stylesheet',
-      'application/javascript': 'JavaScript File',
+      'text/javascript': 'JavaScript File',
+      'text/typescript': 'TypeScript File',
+      'text/markdown': 'Markdown Document',
+      'text/x-go': 'Go Source',
+      'text/x-python': 'Python Script',
+      'text/x-rust': 'Rust Source',
+      'text/x-java': 'Java Source',
+      'text/x-c': 'C Source',
+      'text/x-c++': 'C++ Source',
+      'text/x-ruby': 'Ruby Script',
+      'text/x-php': 'PHP Script',
+      'text/x-swift': 'Swift Source',
+      'text/x-kotlin': 'Kotlin Source',
+      'text/yaml': 'YAML File',
+      'text/toml': 'TOML File',
+      'text/x-sql': 'SQL File',
       'application/json': 'JSON File'
     };
     return descriptions[mime] || mime.split('/')[1]?.toUpperCase() + ' File' || 'File';
@@ -1824,5 +2629,33 @@
       return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Helper: Format date from ISO string
+  function formatDate(isoString) {
+    if (!isoString) return '-';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return '-';
+
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today.getTime() - 86400000);
+      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+      const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+      if (dateOnly.getTime() === today.getTime()) {
+        return `Today at ${timeStr}`;
+      } else if (dateOnly.getTime() === yesterday.getTime()) {
+        return `Yesterday at ${timeStr}`;
+      } else if (now.getTime() - date.getTime() < 7 * 86400000) {
+        return date.toLocaleDateString(undefined, { weekday: 'short' }) + ` at ${timeStr}`;
+      } else {
+        return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      }
+    } catch {
+      return '-';
+    }
   }
 })();

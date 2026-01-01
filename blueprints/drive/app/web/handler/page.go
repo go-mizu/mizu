@@ -1111,6 +1111,7 @@ func groupFilesByTime(files []*FileView) []*ItemGroup {
 func getMimeType(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	mimeTypes := map[string]string{
+		// Text/Documents
 		".txt":  "text/plain",
 		".html": "text/html",
 		".css":  "text/css",
@@ -1118,17 +1119,20 @@ func getMimeType(filename string) string {
 		".json": "application/json",
 		".xml":  "application/xml",
 		".pdf":  "application/pdf",
-		".zip":  "application/zip",
-		".tar":  "application/x-tar",
-		".gz":   "application/gzip",
-		".rar":  "application/vnd.rar",
-		".7z":   "application/x-7z-compressed",
+		// Archives
+		".zip": "application/zip",
+		".tar": "application/x-tar",
+		".gz":  "application/gzip",
+		".rar": "application/vnd.rar",
+		".7z":  "application/x-7z-compressed",
+		// Office Documents
 		".doc":  "application/msword",
 		".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		".xls":  "application/vnd.ms-excel",
 		".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		".ppt":  "application/vnd.ms-powerpoint",
 		".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		// Images
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
 		".png":  "image/png",
@@ -1136,14 +1140,37 @@ func getMimeType(filename string) string {
 		".webp": "image/webp",
 		".svg":  "image/svg+xml",
 		".ico":  "image/x-icon",
+		".bmp":  "image/bmp",
+		".tiff": "image/tiff",
+		".tif":  "image/tiff",
+		".heic": "image/heic",
+		".heif": "image/heif",
+		// Audio - Extended support
 		".mp3":  "audio/mpeg",
 		".wav":  "audio/wav",
 		".ogg":  "audio/ogg",
+		".oga":  "audio/ogg",
+		".flac": "audio/flac",
+		".aac":  "audio/aac",
+		".m4a":  "audio/mp4",
+		".wma":  "audio/x-ms-wma",
+		".aiff": "audio/aiff",
+		".aif":  "audio/aiff",
+		".opus": "audio/opus",
+		".mid":  "audio/midi",
+		".midi": "audio/midi",
+		// Video
 		".mp4":  "video/mp4",
 		".webm": "video/webm",
 		".mov":  "video/quicktime",
 		".avi":  "video/x-msvideo",
 		".mkv":  "video/x-matroska",
+		".wmv":  "video/x-ms-wmv",
+		".flv":  "video/x-flv",
+		".m4v":  "video/x-m4v",
+		".3gp":  "video/3gpp",
+		".ogv":  "video/ogg",
+		// Code/Programming
 		".go":   "text/x-go",
 		".py":   "text/x-python",
 		".rs":   "text/x-rust",
@@ -1151,11 +1178,28 @@ func getMimeType(filename string) string {
 		".c":    "text/x-c",
 		".cpp":  "text/x-c++",
 		".h":    "text/x-c",
+		".hpp":  "text/x-c++",
+		".ts":   "text/typescript",
+		".tsx":  "text/typescript",
+		".jsx":  "text/javascript",
+		".vue":  "text/html",
+		".svelte": "text/html",
+		".rb":   "text/x-ruby",
+		".php":  "text/x-php",
+		".swift": "text/x-swift",
+		".kt":   "text/x-kotlin",
+		".scala": "text/x-scala",
+		".sh":   "text/x-shellscript",
+		".bash": "text/x-shellscript",
+		".zsh":  "text/x-shellscript",
+		// Config/Data
 		".md":   "text/markdown",
 		".yaml": "text/yaml",
 		".yml":  "text/yaml",
 		".toml": "text/toml",
 		".sql":  "text/x-sql",
+		".ini":  "text/plain",
+		".env":  "text/plain",
 	}
 
 	if mime, ok := mimeTypes[ext]; ok {
@@ -1254,7 +1298,8 @@ func (h *Page) Metadata(c *mizu.Ctx) error {
 	fullPath := filepath.Join(h.storageRoot, fileID)
 
 	// Check file exists
-	if _, err := os.Stat(fullPath); err != nil {
+	info, err := os.Stat(fullPath)
+	if err != nil {
 		return c.JSON(404, map[string]string{"error": "File not found"})
 	}
 
@@ -1266,6 +1311,10 @@ func (h *Page) Metadata(c *mizu.Ctx) error {
 
 	// Update file ID to be the relative path
 	metadata.FileID = fileID
+
+	// Add file timestamps
+	metadata.ModifiedAt = info.ModTime()
+	metadata.CreatedAt = info.ModTime() // Use ModTime as fallback for created time
 
 	return c.JSON(200, metadata)
 }
