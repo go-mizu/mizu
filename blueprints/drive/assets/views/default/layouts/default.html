@@ -391,6 +391,161 @@
     </div>
   </div>
 
+  <!-- Preview Overlay Modal -->
+  <div id="preview-overlay" class="hidden fixed inset-0 z-[100] bg-black/95">
+    <!-- Header -->
+    <header class="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent z-10">
+      <div class="flex items-center gap-4 min-w-0">
+        <button id="preview-close" class="p-2 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors" title="Close (Esc)">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <div class="min-w-0">
+          <h2 id="preview-filename" class="text-white font-medium truncate"></h2>
+          <p id="preview-fileinfo" class="text-white/60 text-sm"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1">
+        <a id="preview-download" href="#" download class="p-2 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors" title="Download">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        </a>
+        <a id="preview-open-tab" href="#" target="_blank" class="p-2 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors" title="Open in new tab">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+        </a>
+        <button id="preview-fullscreen" class="p-2 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors" title="Fullscreen (F)">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Arrows -->
+    <button id="preview-prev" class="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all opacity-0 hover:opacity-100 group-hover:opacity-100 z-10 disabled:opacity-30 disabled:cursor-not-allowed" title="Previous (←)">
+      <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <button id="preview-next" class="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white transition-all opacity-0 hover:opacity-100 z-10 disabled:opacity-30 disabled:cursor-not-allowed" title="Next (→)">
+      <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+
+    <!-- Preview Content -->
+    <div id="preview-content" class="absolute inset-0 flex items-center justify-center pt-16 pb-16 px-20">
+      <!-- Loading -->
+      <div id="preview-loading" class="hidden">
+        <div class="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin"></div>
+      </div>
+      <!-- Image Preview -->
+      <div id="preview-image-container" class="hidden max-w-full max-h-full">
+        <img id="preview-image" class="max-w-full max-h-[calc(100vh-8rem)] object-contain select-none" draggable="false">
+      </div>
+      <!-- Video Preview -->
+      <div id="preview-video-container" class="hidden w-full max-w-5xl">
+        <video id="preview-video" controls class="w-full max-h-[calc(100vh-8rem)] bg-black rounded-lg"></video>
+      </div>
+      <!-- Audio Preview -->
+      <div id="preview-audio-container" class="hidden w-full max-w-lg">
+        <div class="bg-zinc-900 rounded-2xl p-8 text-center">
+          <div class="w-24 h-24 mx-auto mb-6 flex items-center justify-center bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl">
+            <svg class="w-12 h-12 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+          </div>
+          <h3 id="preview-audio-name" class="text-lg font-medium text-white mb-6 truncate"></h3>
+          <audio id="preview-audio" controls class="w-full"></audio>
+        </div>
+      </div>
+      <!-- PDF Preview -->
+      <div id="preview-pdf-container" class="hidden w-full h-full flex flex-col bg-zinc-800 rounded-lg overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-700">
+          <div class="flex items-center gap-2">
+            <button id="pdf-prev-page" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span class="text-sm text-zinc-300"><span id="pdf-current-page">1</span> / <span id="pdf-total-pages">-</span></span>
+            <button id="pdf-next-page" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="pdf-zoom-out" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M8 11h6"/></svg>
+            </button>
+            <span id="pdf-zoom" class="text-xs text-zinc-400 w-12 text-center">100%</span>
+            <button id="pdf-zoom-in" class="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M11 8v6M8 11h6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="pdf-viewer" class="flex-1 overflow-auto flex items-start justify-center p-4 bg-zinc-900">
+          <canvas id="pdf-canvas" class="shadow-2xl"></canvas>
+        </div>
+      </div>
+      <!-- Code/Text Preview -->
+      <div id="preview-text-container" class="hidden w-full max-w-5xl h-full flex flex-col bg-zinc-900 rounded-lg overflow-hidden border border-zinc-700">
+        <div class="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
+          <span id="preview-text-filename" class="text-sm text-zinc-400"></span>
+          <span id="preview-text-lang" class="text-xs text-zinc-500 bg-zinc-700 px-2 py-1 rounded"></span>
+        </div>
+        <div class="flex-1 overflow-auto">
+          <pre class="p-4 m-0 text-sm leading-relaxed"><code id="preview-text-content" class="hljs"></code></pre>
+        </div>
+      </div>
+      <!-- Unsupported Preview -->
+      <div id="preview-unsupported" class="hidden text-center">
+        <div class="w-24 h-24 mx-auto mb-6 flex items-center justify-center bg-zinc-800 rounded-2xl">
+          <svg class="w-12 h-12 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <h2 id="preview-unsupported-name" class="text-xl font-medium text-white mb-2"></h2>
+        <p class="text-zinc-400 mb-6">Preview not available for this file type</p>
+        <a id="preview-unsupported-download" href="#" download class="inline-flex items-center gap-2 px-4 py-2 bg-white text-black rounded-lg font-medium hover:bg-zinc-200 transition-colors">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Download
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-gradient-to-t from-black/80 to-transparent">
+      <span id="preview-counter" class="text-white/60 text-sm"></span>
+      <span class="text-white/40 text-xs">
+        <kbd class="px-1.5 py-0.5 bg-white/10 rounded">Esc</kbd> Close
+        <kbd class="px-1.5 py-0.5 bg-white/10 rounded ml-2">←</kbd>
+        <kbd class="px-1.5 py-0.5 bg-white/10 rounded">→</kbd> Navigate
+      </span>
+    </footer>
+  </div>
+
+  <!-- PDF.js library (loaded on demand) -->
+  <script>
+    window.loadPdfJs = function() {
+      if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs';
+        script.type = 'module';
+        script.onload = () => {
+          import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs').then(pdfjsLib => {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+            window.pdfjsLib = pdfjsLib;
+            resolve(pdfjsLib);
+          }).catch(reject);
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+  </script>
+
+  <!-- Highlight.js for code (loaded on demand) -->
+  <link id="hljs-css" rel="stylesheet" href="">
+  <script>
+    window.loadHighlightJs = function() {
+      if (window.hljs) return Promise.resolve(window.hljs);
+      return new Promise((resolve) => {
+        document.getElementById('hljs-css').href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
+        script.onload = () => resolve(window.hljs);
+        document.head.appendChild(script);
+      });
+    };
+  </script>
+
   <script src="/static/js/app.js"></script>
   <script>document.body.classList.add('ready');</script>
 </body>
