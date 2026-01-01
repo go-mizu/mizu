@@ -1,48 +1,28 @@
-// Package duckdb provides DuckDB-based storage.
+// Package duckdb provides a DuckDB-backed store for Drive.
 package duckdb
 
 import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
-	"path/filepath"
-
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 //go:embed schema.sql
-var schema string
+var schemaDDL string
 
-// Store is the main DuckDB store.
+// Store implements the data access layer using DuckDB.
 type Store struct {
 	db *sql.DB
 }
 
-// Open opens a DuckDB database.
-func Open(dataDir string) (*Store, error) {
-	dbPath := filepath.Join(dataDir, "drive.duckdb")
-	db, err := sql.Open("duckdb", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+// New creates a new Store with the given database connection.
+func New(db *sql.DB) (*Store, error) {
+	if db == nil {
+		return nil, errors.New("duckdb: nil db")
 	}
-
-	// Set connection pool settings
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-
 	return &Store{db: db}, nil
-}
-
-// Ensure creates tables if they don't exist.
-func (s *Store) Ensure(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, schema)
-	return err
-}
-
-// Close closes the database connection.
-func (s *Store) Close() error {
-	return s.db.Close()
 }
 
 // DB returns the underlying database connection.
@@ -50,57 +30,49 @@ func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// Accounts returns the accounts store.
-func (s *Store) Accounts() *AccountsStore {
-	return &AccountsStore{db: s.db}
+// Ensure initializes the database schema.
+func (s *Store) Ensure(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, schemaDDL); err != nil {
+		return fmt.Errorf("duckdb: schema: %w", err)
+	}
+	return nil
 }
 
-// Files returns the files store.
-func (s *Store) Files() *FilesStore {
-	return &FilesStore{db: s.db}
+// Close closes the database connection.
+func (s *Store) Close() error {
+	if s.db != nil {
+		return s.db.Close()
+	}
+	return nil
 }
 
-// Folders returns the folders store.
-func (s *Store) Folders() *FoldersStore {
-	return &FoldersStore{db: s.db}
+// Exec executes a query without returning rows.
+func (s *Store) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return s.db.ExecContext(ctx, query, args...)
 }
 
-// Shares returns the shares store.
-func (s *Store) Shares() *SharesStore {
-	return &SharesStore{db: s.db}
+// Query executes a query that returns rows.
+func (s *Store) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return s.db.QueryContext(ctx, query, args...)
 }
 
-// ShareLinks returns the share links store.
-func (s *Store) ShareLinks() *ShareLinksStore {
-	return &ShareLinksStore{db: s.db}
+// QueryRow executes a query that returns a single row.
+func (s *Store) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	return s.db.QueryRowContext(ctx, query, args...)
 }
 
-// Tags returns the tags store.
-func (s *Store) Tags() *TagsStore {
-	return &TagsStore{db: s.db}
-}
+// Stats returns basic statistics about the store.
+func (s *Store) Stats(ctx context.Context) (map[string]any, error) {
+	stats := make(map[string]any)
 
-// Comments returns the comments store.
-func (s *Store) Comments() *CommentsStore {
-	return &CommentsStore{db: s.db}
-}
+	tables := []string{"users", "files", "folders", "shares", "activities", "comments"}
+	for _, table := range tables {
+		var count int64
+		row := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s", table))
+		if err := row.Scan(&count); err == nil {
+			stats[table] = count
+		}
+	}
 
-// Activities returns the activities store.
-func (s *Store) Activities() *ActivitiesStore {
-	return &ActivitiesStore{db: s.db}
-}
-
-// Notifications returns the notifications store.
-func (s *Store) Notifications() *NotificationsStore {
-	return &NotificationsStore{db: s.db}
-}
-
-// ChunkedUploads returns the chunked uploads store.
-func (s *Store) ChunkedUploads() *ChunkedUploadsStore {
-	return &ChunkedUploadsStore{db: s.db}
-}
-
-// FileVersions returns the file versions store.
-func (s *Store) FileVersions() *FileVersionsStore {
-	return &FileVersionsStore{db: s.db}
+	return stats, nil
 }

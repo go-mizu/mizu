@@ -2,314 +2,239 @@ package shares
 
 import (
 	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/base64"
+	"errors"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/pkg/crypto"
 	"github.com/go-mizu/blueprints/drive/pkg/password"
 	"github.com/go-mizu/blueprints/drive/pkg/ulid"
+	"github.com/go-mizu/blueprints/drive/store/duckdb"
+)
+
+var (
+	ErrNotFound     = errors.New("share not found")
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrExpired      = errors.New("share expired")
+	ErrDownloadLimit = errors.New("download limit reached")
 )
 
 // Service implements the shares API.
 type Service struct {
-	store     Store
-	linkStore LinkStore
-	baseURL   string
+	store *duckdb.Store
 }
 
 // NewService creates a new shares service.
-func NewService(store Store, linkStore LinkStore, baseURL string) *Service {
-	return &Service{
-		store:     store,
-		linkStore: linkStore,
-		baseURL:   baseURL,
-	}
+func NewService(store *duckdb.Store) *Service {
+	return &Service{store: store}
 }
 
-// Create creates a new share.
-func (s *Service) Create(ctx context.Context, ownerID string, in *CreateShareIn) (*Share, error) {
-	// Check if already shared
-	if existing, _ := s.store.GetByItemAndUser(ctx, in.ItemID, in.ItemType, in.SharedWith); existing != nil {
-		return nil, ErrAlreadyShared
-	}
-
+func (s *Service) Create(ctx context.Context, ownerID, resourceID, resourceType, sharedWithID, permission string) (*Share, error) {
 	now := time.Now()
-	share := &Share{
-		ID:         ulid.New(),
-		ItemID:     in.ItemID,
-		ItemType:   in.ItemType,
-		OwnerID:    ownerID,
-		SharedWith: in.SharedWith,
-		Permission: in.Permission,
-		Notify:     in.Notify,
-		Message:    in.Message,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+	dbShare := &duckdb.Share{
+		ID:           ulid.New(),
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		OwnerID:      ownerID,
+		SharedWithID: sql.NullString{String: sharedWithID, Valid: sharedWithID != ""},
+		Permission:   permission,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
-	if err := s.store.Create(ctx, share); err != nil {
+	if err := s.store.CreateShare(ctx, dbShare); err != nil {
 		return nil, err
 	}
 
-	return share, nil
+	return dbShareToShare(dbShare), nil
 }
 
-// GetByID retrieves a share by ID.
-func (s *Service) GetByID(ctx context.Context, id string) (*Share, error) {
-	return s.store.GetByID(ctx, id)
-}
+func (s *Service) CreateLink(ctx context.Context, ownerID, resourceID, resourceType string, in *CreateLinkIn) (*Share, error) {
+	token := generateToken()
+	now := time.Now()
 
-// ListByOwner lists shares created by owner.
-func (s *Service) ListByOwner(ctx context.Context, ownerID string) ([]*Share, error) {
-	return s.store.ListByOwner(ctx, ownerID)
-}
-
-// ListSharedWithMe lists items shared with the user.
-func (s *Service) ListSharedWithMe(ctx context.Context, accountID string) ([]*SharedItem, error) {
-	shares, err := s.store.ListBySharedWith(ctx, accountID)
-	if err != nil {
-		return nil, err
+	dbShare := &duckdb.Share{
+		ID:           ulid.New(),
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		OwnerID:      ownerID,
+		Permission:   in.Permission,
+		LinkToken:    sql.NullString{String: token, Valid: true},
+		PreventDownload: in.PreventDownload,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
-	var items []*SharedItem
-	for _, share := range shares {
-		items = append(items, &SharedItem{
-			Share:    share,
-			ItemID:   share.ItemID,
-			ItemType: share.ItemType,
-		})
-	}
-
-	return items, nil
-}
-
-// ListForItem lists all shares for an item.
-func (s *Service) ListForItem(ctx context.Context, itemID, itemType string) ([]*Share, error) {
-	return s.store.ListByItem(ctx, itemID, itemType)
-}
-
-// Update updates a share's permission.
-func (s *Service) Update(ctx context.Context, id, ownerID string, permission string) (*Share, error) {
-	share, err := s.store.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if share.OwnerID != ownerID {
-		return nil, ErrNotOwner
-	}
-
-	if err := s.store.Update(ctx, id, permission); err != nil {
-		return nil, err
-	}
-
-	return s.store.GetByID(ctx, id)
-}
-
-// Delete deletes a share.
-func (s *Service) Delete(ctx context.Context, id, ownerID string) error {
-	share, err := s.store.GetByID(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	if share.OwnerID != ownerID {
-		return ErrNotOwner
-	}
-
-	return s.store.Delete(ctx, id)
-}
-
-// CreateLink creates a share link.
-func (s *Service) CreateLink(ctx context.Context, ownerID string, in *CreateLinkIn) (*ShareLink, error) {
-	token, err := crypto.GenerateShareToken()
-	if err != nil {
-		return nil, err
-	}
-
-	var passwordHash string
 	if in.Password != "" {
-		passwordHash, err = password.Hash(in.Password)
+		hash, err := password.Hash(in.Password)
 		if err != nil {
 			return nil, err
 		}
+		dbShare.LinkPasswordHash = sql.NullString{String: hash, Valid: true}
 	}
 
-	link := &ShareLink{
-		ID:            ulid.New(),
-		ItemID:        in.ItemID,
-		ItemType:      in.ItemType,
-		OwnerID:       ownerID,
-		Token:         token,
-		Permission:    in.Permission,
-		PasswordHash:  passwordHash,
-		HasPassword:   passwordHash != "",
-		ExpiresAt:     in.ExpiresAt,
-		DownloadLimit: in.DownloadLimit,
-		DownloadCount: 0,
-		AllowDownload: in.AllowDownload,
-		Disabled:      false,
-		CreatedAt:     time.Now(),
+	if !in.ExpiresAt.IsZero() {
+		dbShare.ExpiresAt = sql.NullTime{Time: in.ExpiresAt, Valid: true}
 	}
 
-	if err := s.linkStore.Create(ctx, link); err != nil {
+	if in.DownloadLimit > 0 {
+		dbShare.DownloadLimit = sql.NullInt64{Int64: in.DownloadLimit, Valid: true}
+	}
+
+	if err := s.store.CreateShare(ctx, dbShare); err != nil {
 		return nil, err
 	}
 
-	link.URL = s.baseURL + "/s/" + token
-
-	return link, nil
+	return dbShareToShare(dbShare), nil
 }
 
-// GetLinkByID retrieves a link by ID.
-func (s *Service) GetLinkByID(ctx context.Context, id string) (*ShareLink, error) {
-	link, err := s.linkStore.GetByID(ctx, id)
+func (s *Service) GetByID(ctx context.Context, id string) (*Share, error) {
+	dbShare, err := s.store.GetShareByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	link.URL = s.baseURL + "/s/" + link.Token
-	return link, nil
+	if dbShare == nil {
+		return nil, ErrNotFound
+	}
+	return dbShareToShare(dbShare), nil
 }
 
-// GetLinkByToken retrieves a link by token.
-func (s *Service) GetLinkByToken(ctx context.Context, token string) (*ShareLink, error) {
-	link, err := s.linkStore.GetByToken(ctx, token)
+func (s *Service) GetByToken(ctx context.Context, token string) (*Share, error) {
+	dbShare, err := s.store.GetShareByToken(ctx, token)
 	if err != nil {
-		return nil, ErrLinkNotFound
+		return nil, err
+	}
+	if dbShare == nil {
+		return nil, ErrNotFound
 	}
 
-	if link.Disabled {
-		return nil, ErrLinkDisabled
+	// Check if expired
+	if dbShare.ExpiresAt.Valid && time.Now().After(dbShare.ExpiresAt.Time) {
+		return nil, ErrExpired
 	}
 
-	if link.ExpiresAt != nil && time.Now().After(*link.ExpiresAt) {
-		return nil, ErrLinkExpired
-	}
-
-	if link.DownloadLimit != nil && link.DownloadCount >= *link.DownloadLimit {
+	// Check download limit
+	if dbShare.DownloadLimit.Valid && int64(dbShare.DownloadCount) >= dbShare.DownloadLimit.Int64 {
 		return nil, ErrDownloadLimit
 	}
 
-	link.URL = s.baseURL + "/s/" + link.Token
-	return link, nil
+	return dbShareToShare(dbShare), nil
 }
 
-// ListLinksForItem lists all links for an item.
-func (s *Service) ListLinksForItem(ctx context.Context, itemID, itemType string) ([]*ShareLink, error) {
-	links, err := s.linkStore.ListByItem(ctx, itemID, itemType)
+func (s *Service) Update(ctx context.Context, id string, in *UpdateIn) (*Share, error) {
+	dbShare, err := s.store.GetShareByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-
-	for _, link := range links {
-		link.URL = s.baseURL + "/s/" + link.Token
+	if dbShare == nil {
+		return nil, ErrNotFound
 	}
 
-	return links, nil
-}
+	if in.Permission != nil {
+		dbShare.Permission = *in.Permission
+	}
+	if in.ExpiresAt != nil {
+		dbShare.ExpiresAt = sql.NullTime{Time: *in.ExpiresAt, Valid: !in.ExpiresAt.IsZero()}
+	}
+	if in.DownloadLimit != nil {
+		dbShare.DownloadLimit = sql.NullInt64{Int64: *in.DownloadLimit, Valid: *in.DownloadLimit > 0}
+	}
+	if in.PreventDownload != nil {
+		dbShare.PreventDownload = *in.PreventDownload
+	}
+	dbShare.UpdatedAt = time.Now()
 
-// UpdateLink updates a share link.
-func (s *Service) UpdateLink(ctx context.Context, id, ownerID string, in *UpdateLinkIn) (*ShareLink, error) {
-	link, err := s.linkStore.GetByID(ctx, id)
-	if err != nil {
+	if err := s.store.UpdateShare(ctx, dbShare); err != nil {
 		return nil, err
 	}
 
-	if link.OwnerID != ownerID {
-		return nil, ErrNotOwner
-	}
+	return dbShareToShare(dbShare), nil
+}
 
-	var passwordHash string
-	if in.Password != nil && *in.Password != "" {
-		passwordHash, _ = password.Hash(*in.Password)
-	}
+func (s *Service) Delete(ctx context.Context, id string) error {
+	return s.store.DeleteShare(ctx, id)
+}
 
-	if err := s.linkStore.Update(ctx, id, in, passwordHash); err != nil {
+func (s *Service) ListByOwner(ctx context.Context, ownerID string) ([]*Share, error) {
+	dbShares, err := s.store.ListSharesByOwner(ctx, ownerID)
+	if err != nil {
 		return nil, err
 	}
-
-	return s.GetLinkByID(ctx, id)
+	return dbSharesToShares(dbShares), nil
 }
 
-// DeleteLink deletes a share link.
-func (s *Service) DeleteLink(ctx context.Context, id, ownerID string) error {
-	link, err := s.linkStore.GetByID(ctx, id)
+func (s *Service) ListSharedWithMe(ctx context.Context, userID string) ([]*Share, error) {
+	dbShares, err := s.store.ListSharesWithUser(ctx, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	if link.OwnerID != ownerID {
-		return ErrNotOwner
-	}
-
-	return s.linkStore.Delete(ctx, id)
+	return dbSharesToShares(dbShares), nil
 }
 
-// VerifyLinkPassword verifies a share link password.
-func (s *Service) VerifyLinkPassword(ctx context.Context, token, pwd string) (bool, error) {
-	link, err := s.linkStore.GetByToken(ctx, token)
+func (s *Service) ListForResource(ctx context.Context, resourceType, resourceID string) ([]*Share, error) {
+	dbShares, err := s.store.ListSharesForResource(ctx, resourceType, resourceID)
 	if err != nil {
-		return false, ErrLinkNotFound
+		return nil, err
 	}
-
-	if link.PasswordHash == "" {
-		return true, nil
-	}
-
-	return password.Verify(pwd, link.PasswordHash)
+	return dbSharesToShares(dbShares), nil
 }
 
-// RecordLinkAccess records access to a link.
-func (s *Service) RecordLinkAccess(ctx context.Context, token string) error {
-	link, err := s.linkStore.GetByToken(ctx, token)
+func (s *Service) CheckAccess(ctx context.Context, userID, resourceType, resourceID string) (*Share, error) {
+	dbShare, err := s.store.GetShareForUserAndResource(ctx, userID, resourceType, resourceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	return s.linkStore.UpdateAccess(ctx, link.ID)
+	if dbShare == nil {
+		return nil, nil
+	}
+	return dbShareToShare(dbShare), nil
 }
 
-// GetEffectivePermission returns the effective permission for a user on an item.
-func (s *Service) GetEffectivePermission(ctx context.Context, accountID, itemID, itemType string) (*EffectivePermission, error) {
-	// Check direct share
-	share, err := s.store.GetByItemAndUser(ctx, itemID, itemType, accountID)
-	if err == nil && share != nil {
-		return &EffectivePermission{
-			Permission: share.Permission,
-			Source:     "share",
-			ItemID:     itemID,
-			ItemType:   itemType,
-		}, nil
-	}
-
-	return nil, ErrNoPermission
+func (s *Service) IncrementDownload(ctx context.Context, id string) error {
+	return s.store.IncrementDownloadCount(ctx, id)
 }
 
-// CanPerform checks if a user can perform an action.
-func (s *Service) CanPerform(ctx context.Context, accountID, itemID, itemType, action string) (bool, error) {
-	perm, err := s.GetEffectivePermission(ctx, accountID, itemID, itemType)
-	if err != nil {
-		return false, nil
-	}
-
-	return permissionAllows(perm.Permission, action), nil
+func generateToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)
 }
 
-var permissionActions = map[string][]string{
-	PermissionOwner:     {"view", "download", "comment", "edit", "upload", "move", "copy", "share", "delete", "manage"},
-	PermissionEditor:    {"view", "download", "comment", "edit", "upload", "move", "copy", "share"},
-	PermissionCommenter: {"view", "download", "comment"},
-	PermissionViewer:    {"view", "download"},
+func dbShareToShare(sh *duckdb.Share) *Share {
+	share := &Share{
+		ID:              sh.ID,
+		ResourceType:   sh.ResourceType,
+		ResourceID:     sh.ResourceID,
+		OwnerID:        sh.OwnerID,
+		Permission:     sh.Permission,
+		DownloadCount:  sh.DownloadCount,
+		PreventDownload: sh.PreventDownload,
+		CreatedAt:      sh.CreatedAt,
+		UpdatedAt:      sh.UpdatedAt,
+	}
+	if sh.SharedWithID.Valid {
+		share.SharedWithID = sh.SharedWithID.String
+	}
+	if sh.LinkToken.Valid {
+		share.LinkToken = sh.LinkToken.String
+	}
+	if sh.LinkPasswordHash.Valid {
+		share.LinkPasswordHash = sh.LinkPasswordHash.String
+	}
+	if sh.ExpiresAt.Valid {
+		share.ExpiresAt = sh.ExpiresAt.Time
+	}
+	if sh.DownloadLimit.Valid {
+		share.DownloadLimit = sh.DownloadLimit.Int64
+	}
+	return share
 }
 
-func permissionAllows(perm, action string) bool {
-	actions, ok := permissionActions[perm]
-	if !ok {
-		return false
+func dbSharesToShares(dbShares []*duckdb.Share) []*Share {
+	shares := make([]*Share, len(dbShares))
+	for i, sh := range dbShares {
+		shares[i] = dbShareToShare(sh)
 	}
-	for _, a := range actions {
-		if a == action {
-			return true
-		}
-	}
-	return false
+	return shares
 }

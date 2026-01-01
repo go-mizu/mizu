@@ -1,43 +1,67 @@
-.PHONY: build run init seed test clean help
+.DEFAULT_GOAL := help
+SHELL := /usr/bin/env bash
 
-BINARY := drive
-INSTALL_PATH := $(HOME)/bin/$(BINARY)
-DATA_DIR := ./data
+GO      ?= go
+PKG     ?= ./...
+BINARY  ?= $(HOME)/bin/drive
+CMD     ?= ./cmd/drive
+DATA_DIR ?= $(HOME)/data/blueprint/drive
 
-build:
-	@echo "Building $(BINARY)..."
-	@GOWORK=off go build -o $(INSTALL_PATH) ./cmd/drive
+CGO_ENABLED ?= 1
 
-run:
-	@GOWORK=off go run ./cmd/drive $(ARGS)
+VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+TIME    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-serve: build
-	@$(INSTALL_PATH) serve --data $(DATA_DIR)
+LDVARS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(TIME)
+GO_LDFLAGS ?= -s -w $(LDVARS)
 
-init: build
-	@$(INSTALL_PATH) init --data $(DATA_DIR)
+.PHONY: build
+build: ## Build drive binary to $$HOME/bin/drive
+	@mkdir -p $(dir $(BINARY))
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built: $(BINARY) ($(VERSION))"
 
-seed: build
-	@$(INSTALL_PATH) seed --data $(DATA_DIR)
+.PHONY: install
+install: build ## Install drive binary to $$HOME/bin/drive (alias for build)
 
-test:
-	@GOWORK=off go test -v ./...
+.PHONY: run
+run: ## Run the server
+	@GOWORK=off $(GO) run $(CMD) serve --dev
 
-clean:
-	@rm -f $(INSTALL_PATH)
+.PHONY: init
+init: ## Initialize the database
+	@GOWORK=off $(GO) run $(CMD) init
+
+.PHONY: seed
+seed: ## Seed the database with sample data
+	@GOWORK=off $(GO) run $(CMD) seed
+
+.PHONY: test
+test: ## Run all tests
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test $(PKG)
+
+.PHONY: test-v
+test-v: ## Run all tests with verbose output
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+
+.PHONY: clean
+clean: ## Remove binary and data directory
+	@rm -f $(BINARY)
 	@rm -rf $(DATA_DIR)
+	@echo "Cleaned: $(BINARY), $(DATA_DIR)"
 
-tidy:
-	@GOWORK=off go mod tidy
+.PHONY: update
+update: ## Update dependencies
+	@rm -f go.sum
+	@$(GO) get -u ./...
+	@$(GO) mod tidy
 
-help:
-	@echo "Available targets:"
-	@echo "  build    - Build binary to ~/bin/$(BINARY)"
-	@echo "  run      - Run with go run (use ARGS='...' to pass args)"
-	@echo "  serve    - Build and start server"
-	@echo "  init     - Initialize database"
-	@echo "  seed     - Seed demo data"
-	@echo "  test     - Run tests"
-	@echo "  clean    - Remove binary and data"
-	@echo "  tidy     - Run go mod tidy"
-	@echo "  help     - Show this help"
+.PHONY: help
+help: ## Show available commands
+	@echo ""
+	@echo "Drive Blueprint"
+	@echo ""
+	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
+	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@echo ""

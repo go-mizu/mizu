@@ -1,4 +1,3 @@
-// Drive is a full-featured cloud file storage application.
 package main
 
 import (
@@ -10,8 +9,21 @@ import (
 	"github.com/go-mizu/blueprints/drive/cli"
 )
 
+var (
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Set version info from ldflags
+	cli.Version = Version
+	cli.Commit = Commit
+	cli.BuildTime = BuildTime
+
+	// Create context with signal handling
+	ctx, cancel := signal.NotifyContext(context.Background(),
+		syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	if err := cli.Execute(ctx); err != nil {
