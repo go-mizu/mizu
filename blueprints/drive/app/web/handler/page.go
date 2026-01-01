@@ -4,6 +4,7 @@ package handler
 import (
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1300,12 +1301,14 @@ func (h *Page) Metadata(c *mizu.Ctx) error {
 	// Check file exists
 	info, err := os.Stat(fullPath)
 	if err != nil {
+		slog.Debug("metadata: file not found", "file_id", fileID, "path", fullPath)
 		return c.JSON(404, map[string]string{"error": "File not found"})
 	}
 
 	// Extract metadata
 	metadata, err := h.meta.Extract(c.Context(), fullPath)
 	if err != nil {
+		slog.Debug("metadata: extraction failed", "file_id", fileID, "error", err)
 		return c.JSON(500, map[string]string{"error": "Failed to extract metadata"})
 	}
 
@@ -1315,6 +1318,29 @@ func (h *Page) Metadata(c *mizu.Ctx) error {
 	// Add file timestamps
 	metadata.ModifiedAt = info.ModTime()
 	metadata.CreatedAt = info.ModTime() // Use ModTime as fallback for created time
+
+	// Debug log the extracted metadata
+	slog.Debug("metadata: extracted",
+		"file_id", fileID,
+		"mime_type", metadata.MimeType,
+		"size", metadata.Size,
+		"has_image", metadata.Image != nil,
+		"has_video", metadata.Video != nil,
+		"has_audio", metadata.Audio != nil,
+		"has_document", metadata.Document != nil,
+	)
+
+	// Log image-specific metadata if present
+	if metadata.Image != nil {
+		slog.Debug("metadata: image details",
+			"file_id", fileID,
+			"width", metadata.Image.Width,
+			"height", metadata.Image.Height,
+			"make", metadata.Image.Make,
+			"model", metadata.Image.Model,
+			"has_gps", metadata.Image.GPSLatitude != 0 || metadata.Image.GPSLongitude != 0,
+		)
+	}
 
 	return c.JSON(200, metadata)
 }
