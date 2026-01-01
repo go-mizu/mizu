@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} - Drive</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            border: 'hsl(240 5.9% 90%)',
+            input: 'hsl(240 5.9% 90%)',
+            ring: 'hsl(240 5.9% 10%)',
+            background: 'hsl(0 0% 100%)',
+            foreground: 'hsl(240 10% 3.9%)',
+            primary: {
+              DEFAULT: 'hsl(240 5.9% 10%)',
+              foreground: 'hsl(0 0% 98%)',
+            },
+            secondary: {
+              DEFAULT: 'hsl(240 4.8% 95.9%)',
+              foreground: 'hsl(240 5.9% 10%)',
+            },
+            muted: {
+              DEFAULT: 'hsl(240 4.8% 95.9%)',
+              foreground: 'hsl(240 3.8% 46.1%)',
+            },
+            accent: {
+              DEFAULT: 'hsl(240 4.8% 95.9%)',
+              foreground: 'hsl(240 5.9% 10%)',
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+      .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+      .scrollbar-thin::-webkit-scrollbar-thumb { background: #e4e4e7; border-radius: 3px; }
+      .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+    }
+    @layer components {
+      .btn {
+        @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+      }
+      .btn-primary {
+        @apply bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2;
+      }
+      .btn-secondary {
+        @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-4 py-2;
+      }
+      .btn-ghost {
+        @apply hover:bg-accent hover:text-accent-foreground h-9 px-3;
+      }
+      .btn-icon {
+        @apply h-9 w-9 p-0;
+      }
+      .input {
+        @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+      }
+      .card {
+        @apply rounded-xl border bg-white text-foreground shadow-sm;
+      }
+      .dropdown-menu {
+        @apply absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-white p-1 text-foreground shadow-lg;
+      }
+      .dropdown-item {
+        @apply relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground;
+      }
+    }
+    body { opacity: 0; }
+    body.ready { opacity: 1; transition: opacity 0.05s ease-in; }
+  </style>
+</head>
+<body class="font-sans bg-white text-foreground antialiased h-full">
+  <div class="flex h-full">
+    <!-- Sidebar -->
+    <aside class="fixed left-0 top-0 bottom-0 w-64 bg-zinc-50/80 border-r border-zinc-200 flex flex-col z-40">
+      <!-- Logo -->
+      <div class="flex items-center gap-3 px-4 py-4 border-b border-zinc-200">
+        <svg class="w-8 h-8 text-zinc-900" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor" opacity="0.2"/>
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="text-lg font-semibold text-zinc-900">Drive</span>
+      </div>
+
+      <!-- New Button -->
+      <div class="p-3">
+        <button id="new-btn" class="btn btn-primary w-full justify-start gap-2" data-action="new-menu">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          New
+        </button>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 overflow-y-auto scrollbar-thin px-3 py-2">
+        <div class="space-y-1">
+          <a href="/files" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "files"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+            My Drive
+          </a>
+          <a href="/shared" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "shared"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            Shared with me
+          </a>
+          <a href="/recent" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "recent"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Recent
+          </a>
+          <a href="/starred" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "starred"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            Starred
+          </a>
+          <a href="/trash" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "trash"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            Trash
+          </a>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-zinc-200">
+          <a href="/activity" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "activity"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+            Activity
+          </a>
+          <a href="/settings" class="flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors {{if eq .ActiveNav "settings"}}bg-zinc-200/80 text-zinc-900 font-medium{{else}}text-zinc-600 hover:bg-zinc-200/50 hover:text-zinc-900{{end}}">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            Settings
+          </a>
+        </div>
+      </nav>
+
+      <!-- Storage Usage -->
+      <div class="p-4 border-t border-zinc-200">
+        <div class="flex items-center justify-between text-xs text-zinc-500 mb-2">
+          <span>Storage</span>
+          <span>{{formatSize .StorageUsed}} of {{formatSize .StorageLimit}}</span>
+        </div>
+        <div class="w-full h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+          <div class="h-full bg-zinc-900 rounded-full transition-all" style="width: {{percentage .StorageUsed .StorageLimit}}%"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 ml-64">
+      <!-- Header -->
+      <header class="sticky top-0 z-30 flex items-center gap-4 h-14 px-6 bg-white/80 backdrop-blur-sm border-b border-zinc-200">
+        <!-- Search -->
+        <div class="flex-1 max-w-xl">
+          <form action="/search" method="GET" class="relative">
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="search" name="q" placeholder="Search files..." value="{{.Query}}" class="input pl-9 bg-zinc-100/80 border-0 focus:bg-white focus:ring-1">
+          </form>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-2">
+          {{if .User}}
+          <div class="relative" id="user-menu">
+            <button class="btn btn-ghost btn-icon rounded-full" data-action="toggle-dropdown">
+              <span class="flex items-center justify-center w-8 h-8 text-sm font-medium bg-zinc-900 text-white rounded-full">
+                {{if .User.DisplayName}}{{slice .User.DisplayName 0 1}}{{else}}U{{end}}
+              </span>
+            </button>
+            <div class="dropdown-menu hidden absolute right-0 top-full mt-2 w-48">
+              <a href="/settings" class="dropdown-item">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                Settings
+              </a>
+              <div class="h-px bg-zinc-200 my-1"></div>
+              <button class="dropdown-item w-full text-left" data-action="logout">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" x2="9" y1="12" y2="12"/>
+                </svg>
+                Sign out
+              </button>
+            </div>
+          </div>
+          {{else}}
+          <a href="/login" class="btn btn-ghost text-sm">Sign in</a>
+          {{end}}
+        </div>
+      </header>
+
+      <!-- Page Content -->
+      <main class="p-6">
+        {{template "content" .}}
+      </main>
+    </div>
+  </div>
+
+  <!-- New Menu Dropdown -->
+  <div id="new-menu" class="dropdown-menu hidden fixed z-50 w-52" style="top: 100px; left: 16px;">
+    <button class="dropdown-item w-full" data-action="new-folder">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <line x1="12" x2="12" y1="11" y2="17"/>
+        <line x1="9" x2="15" y1="14" y2="14"/>
+      </svg>
+      New folder
+    </button>
+    <div class="h-px bg-zinc-200 my-1"></div>
+    <button class="dropdown-item w-full" data-action="upload-file">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" x2="12" y1="3" y2="15"/>
+      </svg>
+      Upload file
+    </button>
+    <button class="dropdown-item w-full" data-action="upload-folder">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <polyline points="12 11 12 17"/>
+        <polyline points="9 14 12 11 15 14"/>
+      </svg>
+      Upload folder
+    </button>
+  </div>
+
+  <!-- Context Menu -->
+  <div id="context-menu" class="dropdown-menu hidden fixed z-50 w-52">
+    <button class="dropdown-item w-full" data-action="preview">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      Preview
+    </button>
+    <button class="dropdown-item w-full" data-action="open">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/>
+        <line x1="10" x2="21" y1="14" y2="3"/>
+      </svg>
+      Open in new tab
+    </button>
+    <button class="dropdown-item w-full" data-action="download">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" x2="12" y1="15" y2="3"/>
+      </svg>
+      Download
+    </button>
+    <div class="h-px bg-zinc-200 my-1"></div>
+    <button class="dropdown-item w-full" data-action="rename">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+        <path d="m15 5 4 4"/>
+      </svg>
+      Rename
+    </button>
+    <button class="dropdown-item w-full" data-action="star">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+      Add to starred
+    </button>
+    <div class="h-px bg-zinc-200 my-1"></div>
+    <button class="dropdown-item w-full" data-action="share">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="18" cy="5" r="3"/>
+        <circle cx="6" cy="12" r="3"/>
+        <circle cx="18" cy="19" r="3"/>
+        <line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/>
+        <line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>
+      </svg>
+      Share
+    </button>
+    <button class="dropdown-item w-full" data-action="copy-link">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+      Copy link
+    </button>
+    <div class="h-px bg-zinc-200 my-1"></div>
+    <button class="dropdown-item w-full" data-action="move">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <path d="M12 11v6"/>
+        <path d="m9 14 3-3 3 3"/>
+      </svg>
+      Move to
+    </button>
+    <button class="dropdown-item w-full text-red-600 hover:bg-red-50" data-action="trash">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      </svg>
+      Move to trash
+    </button>
+  </div>
+
+  <!-- Upload Modal -->
+  <div id="upload-modal" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" data-action="close-modal"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-white rounded-xl shadow-2xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+        <h2 class="text-lg font-semibold">Upload files</h2>
+        <button class="btn btn-ghost btn-icon" data-action="close-modal">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="p-6">
+        <div id="drop-zone" class="border-2 border-dashed border-zinc-300 rounded-lg p-8 text-center hover:border-zinc-400 transition-colors cursor-pointer">
+          <svg class="w-12 h-12 mx-auto text-zinc-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" x2="12" y1="3" y2="15"/>
+          </svg>
+          <p class="text-zinc-600 mb-2">Drag and drop files here</p>
+          <p class="text-zinc-400 text-sm">or click to browse</p>
+          <input type="file" id="file-input" class="hidden" multiple>
+        </div>
+        <div id="upload-list" class="mt-4 space-y-2 max-h-48 overflow-y-auto hidden"></div>
+      </div>
+      <div class="flex justify-end gap-2 px-6 py-4 border-t border-zinc-200 bg-zinc-50 rounded-b-xl">
+        <button class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button class="btn btn-primary" id="upload-submit" disabled>Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Folder Modal -->
+  <div id="folder-modal" class="hidden fixed inset-0 z-50">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" data-action="close-modal"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-xl shadow-2xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+        <h2 class="text-lg font-semibold">New folder</h2>
+        <button class="btn btn-ghost btn-icon" data-action="close-modal">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <form id="folder-form" class="p-6">
+        <label for="folder-name" class="block text-sm font-medium text-zinc-700 mb-2">Folder name</label>
+        <input type="text" id="folder-name" name="name" class="input" placeholder="Untitled folder" required autofocus>
+      </form>
+      <div class="flex justify-end gap-2 px-6 py-4 border-t border-zinc-200 bg-zinc-50 rounded-b-xl">
+        <button class="btn btn-secondary" data-action="close-modal">Cancel</button>
+        <button type="submit" form="folder-form" class="btn btn-primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>document.body.classList.add('ready');</script>
+</body>
+</html>
+
+{{define "content"}}{{end}}

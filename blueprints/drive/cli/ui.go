@@ -131,3 +131,11 @@ func modeString(dev bool) string {
 	}
 	return "production"
 }
+
+// localModeString returns the local mode display string.
+func localModeString(local bool) string {
+	if local {
+		return "yes (no auth)"
+	}
+	return "no"
+}

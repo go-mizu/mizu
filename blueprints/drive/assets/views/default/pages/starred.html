@@ -1,0 +1,147 @@
+{{define "content"}}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-zinc-900">Starred</h1>
+    <p class="text-zinc-500 mt-1">Your favorite files and folders</p>
+  </div>
+
+  <div class="flex items-center border border-zinc-200 rounded-lg p-0.5">
+    <a href="?view=grid" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "grid"}}bg-zinc-200{{end}}">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect width="7" height="7" x="3" y="3" rx="1"/>
+        <rect width="7" height="7" x="14" y="3" rx="1"/>
+        <rect width="7" height="7" x="14" y="14" rx="1"/>
+        <rect width="7" height="7" x="3" y="14" rx="1"/>
+      </svg>
+    </a>
+    <a href="?view=list" class="btn btn-ghost btn-icon h-7 w-7 rounded-md {{if eq .ViewMode "list"}}bg-zinc-200{{end}}">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="8" x2="21" y1="6" y2="6"/>
+        <line x1="8" x2="21" y1="12" y2="12"/>
+        <line x1="8" x2="21" y1="18" y2="18"/>
+        <line x1="3" x2="3.01" y1="6" y2="6"/>
+        <line x1="3" x2="3.01" y1="12" y2="12"/>
+        <line x1="3" x2="3.01" y1="18" y2="18"/>
+      </svg>
+    </a>
+  </div>
+</div>
+
+{{if and (eq (len .Folders) 0) (eq (len .Files) 0)}}
+<div class="flex flex-col items-center justify-center py-20 text-center">
+  <div class="w-20 h-20 mb-6 bg-zinc-100 rounded-full flex items-center justify-center">
+    <svg class="w-10 h-10 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>
+  </div>
+  <h3 class="text-lg font-medium text-zinc-900 mb-2">No starred items</h3>
+  <p class="text-zinc-500 max-w-sm">Add items to your starred list for quick access</p>
+</div>
+{{else}}
+{{if eq .ViewMode "grid"}}
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+  {{range .Folders}}
+  <a href="/files/{{.ID}}" class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer">
+    <div class="absolute top-2 right-2">
+      <svg class="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    </div>
+    <div class="w-16 h-16 mb-3 flex items-center justify-center text-zinc-400">
+      <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+    </div>
+    <span class="text-sm text-center text-zinc-700 font-medium truncate w-full">{{.Name}}</span>
+  </a>
+  {{end}}
+
+  {{range .Files}}
+  <div class="group relative flex flex-col items-center p-4 rounded-xl border border-transparent hover:border-zinc-200 hover:bg-zinc-50 transition-all cursor-pointer" data-type="file" data-id="{{.ID}}">
+    <div class="absolute top-2 right-2">
+      <svg class="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    </div>
+    <div class="w-16 h-16 mb-3 flex items-center justify-center text-zinc-400">
+      <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+    </div>
+    <span class="text-sm text-center text-zinc-700 font-medium truncate w-full">{{.Name}}</span>
+    <span class="text-xs text-zinc-400 mt-1">{{.SizeDisplay}}</span>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+  <table class="w-full">
+    <thead class="bg-zinc-50 border-b border-zinc-200">
+      <tr>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3">Name</th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden md:table-cell">Modified</th>
+        <th class="text-left text-xs font-medium text-zinc-500 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Size</th>
+        <th class="w-10"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-zinc-100">
+      {{range .Folders}}
+      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer">
+        <td class="px-4 py-3">
+          <a href="/files/{{.ID}}" class="flex items-center gap-3">
+            <svg class="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <svg class="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="currentColor" opacity="0.3" stroke="currentColor" stroke-width="1.5">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span class="text-sm font-medium text-zinc-900">{{.Name}}</span>
+          </a>
+        </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell">{{formatTime .UpdatedAt}}</td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell">-</td>
+        <td class="px-2 py-3">
+          <button class="btn btn-ghost btn-icon opacity-0 group-hover:opacity-100" data-action="context-menu">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+      {{end}}
+      {{range .Files}}
+      <tr class="group hover:bg-zinc-50 transition-colors cursor-pointer">
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-3">
+            <svg class="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 24 24">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <svg class="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <span class="text-sm font-medium text-zinc-900">{{.Name}}</span>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell">{{.TimeDisplay}}</td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell">{{.SizeDisplay}}</td>
+        <td class="px-2 py-3">
+          <button class="btn btn-ghost btn-icon opacity-0 group-hover:opacity-100" data-action="context-menu">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
+          </button>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}
+{{end}}

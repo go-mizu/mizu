@@ -21,8 +21,19 @@ type requestContext struct {
 var contextStore sync.Map
 
 // authRequired is middleware that requires authentication.
+// In LocalMode, authentication is skipped and a default local user is used.
 func (s *Server) authRequired(next mizu.Handler) mizu.Handler {
 	return func(c *mizu.Ctx) error {
+		// Skip auth in local mode
+		if s.cfg.LocalMode {
+			contextStore.Store(c.Request(), &requestContext{
+				userID: "local",
+				user:   &accounts.User{ID: "local", Name: "Local User"},
+			})
+			defer contextStore.Delete(c.Request())
+			return next(c)
+		}
+
 		token := s.getAuthToken(c)
 		if token == "" {
 			return c.JSON(http.StatusUnauthorized, map[string]string{
@@ -65,6 +76,11 @@ func (s *Server) optionalAuth(c *mizu.Ctx) *accounts.User {
 
 // getUserID returns the current user ID from context.
 func (s *Server) getUserID(c *mizu.Ctx) string {
+	// Return local user in local mode
+	if s.cfg.LocalMode {
+		return "local"
+	}
+
 	if ctx, ok := contextStore.Load(c.Request()); ok {
 		return ctx.(*requestContext).userID
 	}

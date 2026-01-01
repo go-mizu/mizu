@@ -369,3 +369,64 @@ func (h *Files) Search(c *mizu.Ctx) error {
 
 	return c.JSON(http.StatusOK, filesList)
 }
+
+// Preview returns preview metadata for a file.
+func (h *Files) Preview(c *mizu.Ctx) error {
+	id := c.Param("id")
+	userID := h.getUserID(c)
+
+	file, err := h.files.GetByID(c.Context(), id)
+	if err != nil {
+		if err == files.ErrNotFound {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "file not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// Log preview activity
+	h.activity.Log(c.Context(), userID, &activity.LogIn{
+		Action:       "view",
+		ResourceType: "file",
+		ResourceID:   id,
+		ResourceName: file.Name,
+	})
+
+	// Get base URL from request
+	scheme := "http"
+	if c.Request().TLS != nil {
+		scheme = "https"
+	}
+	baseURL := scheme + "://" + c.Request().Host
+
+	// Create preview info
+	previewInfo := files.GetPreviewInfo(file, baseURL)
+
+	// Get sibling files for navigation
+	parentID := file.ParentID
+	siblings, _ := h.files.ListByUser(c.Context(), userID, parentID)
+
+	response := &files.PreviewResponse{
+		PreviewInfo: previewInfo,
+	}
+
+	// Find prev/next files
+	for i, sibling := range siblings {
+		if sibling.ID == file.ID {
+			if i > 0 {
+				response.Siblings.Prev = &files.SiblingFile{
+					ID:   siblings[i-1].ID,
+					Name: siblings[i-1].Name,
+				}
+			}
+			if i < len(siblings)-1 {
+				response.Siblings.Next = &files.SiblingFile{
+					ID:   siblings[i+1].ID,
+					Name: siblings[i+1].Name,
+				}
+			}
+			break
+		}
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
