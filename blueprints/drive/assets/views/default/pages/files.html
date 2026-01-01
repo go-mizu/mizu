@@ -184,8 +184,15 @@
 <div id="grid-sidebar" class="hidden fixed right-0 top-14 bottom-0 w-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200 z-30" data-collapsed="true">
   <!-- Resize Handle -->
   <div id="grid-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
-  <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
-    <div class="p-4">
+  <div class="w-72 min-w-72 flex flex-col h-full relative">
+    <!-- Sidebar Header -->
+    <div class="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-sm border-b border-zinc-200 flex-shrink-0">
+      <span class="text-sm font-medium text-zinc-700">Info</span>
+      <button id="grid-sidebar-close" class="p-1 rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-600 transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto scrollbar-thin p-4">
       <div id="grid-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
         <img id="grid-preview-img" class="hidden w-full h-full object-cover" src="">
         <svg id="grid-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -320,9 +327,7 @@
             <span class="text-sm font-medium text-zinc-900 truncate" title="{{.Name}}">{{.Name}}</span>
           </div>
         </td>
-        <td class="px-4 py-3 text-sm text-zinc-500 hidden lg:table-cell truncate" title="{{.MimeType}}">
-          {{if eq .Icon "image"}}Image{{else if eq .Icon "video"}}Video{{else if eq .Icon "music"}}Audio{{else if eq .Icon "file-text"}}Document{{else if eq .Icon "file-code"}}Code{{else}}File{{end}}
-        </td>
+        <td class="px-4 py-3 text-sm text-zinc-500 hidden lg:table-cell truncate" title="{{.MimeType}}">{{.KindDisplay}}</td>
         <td class="px-4 py-3 text-sm text-zinc-500 hidden md:table-cell whitespace-nowrap">{{.TimeDisplay}}</td>
         <td class="px-4 py-3 text-sm text-zinc-500 hidden sm:table-cell whitespace-nowrap">{{.SizeDisplay}}</td>
         <td class="px-2 py-3">
@@ -346,8 +351,15 @@
 <div id="list-sidebar" class="hidden fixed right-0 top-14 bottom-0 w-0 border-l border-zinc-200 bg-zinc-50 overflow-hidden transition-all duration-200 z-30" data-collapsed="true">
   <!-- Resize Handle -->
   <div id="list-sidebar-resize" class="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-10"></div>
-  <div class="w-72 min-w-72 flex flex-col h-full overflow-y-auto scrollbar-thin relative">
-    <div class="p-4">
+  <div class="w-72 min-w-72 flex flex-col h-full relative">
+    <!-- Sidebar Header -->
+    <div class="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-sm border-b border-zinc-200 flex-shrink-0">
+      <span class="text-sm font-medium text-zinc-700">Info</span>
+      <button id="list-sidebar-close" class="p-1 rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-600 transition-colors">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto scrollbar-thin p-4">
       <div id="list-preview-thumb" class="w-full aspect-square bg-zinc-200 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
         <img id="list-preview-img" class="hidden w-full h-full object-cover" src="">
         <svg id="list-preview-icon" class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">

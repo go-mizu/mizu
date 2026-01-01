@@ -81,6 +81,36 @@
     }
     body { opacity: 0; }
     body.ready { opacity: 1; transition: opacity 0.05s ease-in; }
+
+    /* Line numbers for code preview */
+    .code-with-lines {
+      counter-reset: line;
+      display: block;
+      padding: 1rem;
+    }
+    .code-with-lines .code-line {
+      display: block;
+      padding-left: 3.5rem;
+      position: relative;
+      min-height: 1.5rem;
+    }
+    .code-with-lines .line-number {
+      position: absolute;
+      left: 0;
+      width: 2.5rem;
+      text-align: right;
+      color: #9ca3af;
+      padding-right: 1rem;
+      user-select: none;
+      font-size: 0.75rem;
+      opacity: 0.7;
+    }
+    .code-with-lines.hide-line-numbers .line-number {
+      display: none;
+    }
+    .code-with-lines.hide-line-numbers .code-line {
+      padding-left: 0;
+    }
   </style>
 </head>
 <body class="font-sans bg-white text-foreground antialiased h-full">

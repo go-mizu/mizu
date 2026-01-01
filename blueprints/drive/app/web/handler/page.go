@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,6 +34,7 @@ type Breadcrumb struct {
 type FileView struct {
 	*files.File
 	Icon        string
+	KindDisplay string
 	SizeDisplay string
 	TimeDisplay string
 	IsSelected  bool
@@ -463,6 +465,7 @@ func (h *Page) Starred(c *mizu.Ctx) error {
 			fileViews = append(fileViews, &FileView{
 				File:        f,
 				Icon:        getIconForMime(f.MimeType),
+				KindDisplay: getKindForMime(f.MimeType),
 				SizeDisplay: formatSize(f.Size),
 				TimeDisplay: formatTime(f.UpdatedAt),
 			})
@@ -511,6 +514,7 @@ func (h *Page) Trash(c *mizu.Ctx) error {
 			fileViews = append(fileViews, &FileView{
 				File:        f,
 				Icon:        getIconForMime(f.MimeType),
+				KindDisplay: getKindForMime(f.MimeType),
 				SizeDisplay: formatSize(f.Size),
 				TimeDisplay: formatTime(f.TrashedAt),
 			})
@@ -836,7 +840,14 @@ func (h *Page) Preview(c *mizu.Ctx) error {
 // Content serves file content for preview.
 func (h *Page) Content(c *mizu.Ctx) error {
 	fileID := c.Param("id")
-	fullPath := filepath.Join(h.storageRoot, fileID)
+
+	// URL decode the file ID to handle special characters
+	decodedID, err := url.PathUnescape(fileID)
+	if err != nil {
+		decodedID = fileID // Fallback to original if decode fails
+	}
+
+	fullPath := filepath.Join(h.storageRoot, decodedID)
 
 	// Check file exists
 	info, err := os.Stat(fullPath)
@@ -845,9 +856,9 @@ func (h *Page) Content(c *mizu.Ctx) error {
 	}
 
 	// Set headers
-	mimeType := getMimeType(fileID)
+	mimeType := getMimeType(decodedID)
 	c.Writer().Header().Set("Content-Type", mimeType)
-	c.Writer().Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filepath.Base(fileID)))
+	c.Writer().Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filepath.Base(decodedID)))
 	c.Writer().Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	c.Writer().Header().Set("Cache-Control", "private, max-age=3600")
 
@@ -860,7 +871,7 @@ func (h *Page) Content(c *mizu.Ctx) error {
 
 	// ServeContent writes headers directly, so mark response as started
 	c.Status(200)
-	http.ServeContent(c.Writer(), c.Request(), filepath.Base(fileID), info.ModTime(), file)
+	http.ServeContent(c.Writer(), c.Request(), filepath.Base(decodedID), info.ModTime(), file)
 	// Ignore errors from ServeContent (like broken pipe) since headers are already sent
 	return nil
 }
@@ -868,7 +879,14 @@ func (h *Page) Content(c *mizu.Ctx) error {
 // Thumbnail serves file thumbnail.
 func (h *Page) Thumbnail(c *mizu.Ctx) error {
 	fileID := c.Param("id")
-	fullPath := filepath.Join(h.storageRoot, fileID)
+
+	// URL decode the file ID to handle special characters
+	decodedID, err := url.PathUnescape(fileID)
+	if err != nil {
+		decodedID = fileID // Fallback to original if decode fails
+	}
+
+	fullPath := filepath.Join(h.storageRoot, decodedID)
 
 	// Check file exists
 	info, err := os.Stat(fullPath)
@@ -876,7 +894,7 @@ func (h *Page) Thumbnail(c *mizu.Ctx) error {
 		return c.Text(404, "File not found")
 	}
 
-	mimeType := getMimeType(fileID)
+	mimeType := getMimeType(decodedID)
 
 	// For images, serve the file directly (browser will scale)
 	if strings.HasPrefix(mimeType, "image/") && mimeType != "image/svg+xml" {
@@ -891,7 +909,7 @@ func (h *Page) Thumbnail(c *mizu.Ctx) error {
 
 		// ServeContent writes headers directly, so mark response as started
 		c.Status(200)
-		http.ServeContent(c.Writer(), c.Request(), filepath.Base(fileID), info.ModTime(), file)
+		http.ServeContent(c.Writer(), c.Request(), filepath.Base(decodedID), info.ModTime(), file)
 		// Ignore errors from ServeContent (like broken pipe) since headers are already sent
 		return nil
 	}
@@ -945,6 +963,7 @@ func (h *Page) readLocalDirectory(path string) ([]*FolderView, []*FileView) {
 					UpdatedAt: info.ModTime(),
 				},
 				Icon:        getIconForMime(mimeType),
+				KindDisplay: getKindForMime(mimeType),
 				SizeDisplay: formatSize(info.Size()),
 				TimeDisplay: formatTime(info.ModTime()),
 			})
@@ -1000,6 +1019,7 @@ func (h *Page) searchLocalFiles(query string) ([]*FolderView, []*FileView) {
 					UpdatedAt: info.ModTime(),
 				},
 				Icon:        getIconForMime(mimeType),
+				KindDisplay: getKindForMime(mimeType),
 				SizeDisplay: formatSize(info.Size()),
 				TimeDisplay: formatTime(info.ModTime()),
 			})
@@ -1238,6 +1258,125 @@ func getIconForMime(mimeType string) string {
 	}
 }
 
+// getKindForMime returns a human-readable file kind description (like Finder).
+func getKindForMime(mimeType string) string {
+	// Specific MIME type mappings
+	mimeKinds := map[string]string{
+		// Images
+		"image/jpeg":      "JPEG Image",
+		"image/png":       "PNG Image",
+		"image/gif":       "GIF Image",
+		"image/webp":      "WebP Image",
+		"image/svg+xml":   "SVG Image",
+		"image/bmp":       "BMP Image",
+		"image/tiff":      "TIFF Image",
+		"image/heic":      "HEIC Image",
+		"image/heif":      "HEIF Image",
+		"image/x-icon":    "Icon File",
+		"image/vnd.adobe.photoshop": "Photoshop Document",
+		// Videos
+		"video/mp4":         "MP4 Video",
+		"video/webm":        "WebM Video",
+		"video/quicktime":   "QuickTime Movie",
+		"video/x-msvideo":   "AVI Video",
+		"video/x-matroska":  "Matroska Video",
+		"video/x-ms-wmv":    "WMV Video",
+		"video/x-flv":       "Flash Video",
+		"video/x-m4v":       "M4V Video",
+		"video/3gpp":        "3GPP Video",
+		"video/ogg":         "Ogg Video",
+		"video/mpeg":        "MPEG Video",
+		// Audio
+		"audio/mpeg":        "MP3 Audio",
+		"audio/mp3":         "MP3 Audio",
+		"audio/wav":         "WAV Audio",
+		"audio/x-wav":       "WAV Audio",
+		"audio/flac":        "FLAC Audio",
+		"audio/x-flac":      "FLAC Audio",
+		"audio/ogg":         "Ogg Audio",
+		"audio/aac":         "AAC Audio",
+		"audio/mp4":         "M4A Audio",
+		"audio/x-m4a":       "M4A Audio",
+		"audio/x-ms-wma":    "WMA Audio",
+		"audio/aiff":        "AIFF Audio",
+		"audio/x-aiff":      "AIFF Audio",
+		"audio/opus":        "Opus Audio",
+		"audio/midi":        "MIDI Audio",
+		"audio/x-midi":      "MIDI Audio",
+		// Documents
+		"application/pdf":   "PDF Document",
+		"application/msword": "Word Document",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word Document",
+		"application/vnd.ms-excel": "Excel Spreadsheet",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel Spreadsheet",
+		"application/vnd.ms-powerpoint": "PowerPoint Presentation",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint Presentation",
+		"application/rtf":   "Rich Text Document",
+		// Archives
+		"application/zip":   "ZIP Archive",
+		"application/x-rar-compressed": "RAR Archive",
+		"application/x-7z-compressed": "7-Zip Archive",
+		"application/gzip":  "Gzip Archive",
+		"application/x-tar": "TAR Archive",
+		"application/x-bzip2": "Bzip2 Archive",
+		// Code/Data
+		"application/json":  "JSON File",
+		"application/xml":   "XML File",
+		"application/javascript": "JavaScript File",
+		"application/x-javascript": "JavaScript File",
+		"text/javascript":   "JavaScript File",
+		// Text
+		"text/plain":        "Plain Text",
+		"text/html":         "HTML Document",
+		"text/css":          "CSS Stylesheet",
+		"text/markdown":     "Markdown Document",
+		"text/x-markdown":   "Markdown Document",
+		"text/csv":          "CSV Document",
+		"text/xml":          "XML Document",
+		"text/x-python":     "Python Script",
+		"text/x-go":         "Go Source",
+		"text/x-java":       "Java Source",
+		"text/x-c":          "C Source",
+		"text/x-c++":        "C++ Source",
+		"text/x-ruby":       "Ruby Script",
+		"text/x-php":        "PHP Script",
+		"text/x-shellscript": "Shell Script",
+		"text/yaml":         "YAML File",
+		"text/x-yaml":       "YAML File",
+		// Fonts
+		"font/ttf":          "TrueType Font",
+		"font/otf":          "OpenType Font",
+		"font/woff":         "Web Font",
+		"font/woff2":        "Web Font 2",
+		// Executables
+		"application/x-msdownload": "Windows Executable",
+		"application/x-mach-binary": "macOS Executable",
+		"application/x-executable": "Executable",
+	}
+
+	if kind, ok := mimeKinds[mimeType]; ok {
+		return kind
+	}
+
+	// Generic type mappings
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "Image"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "Video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "Audio"
+	case strings.HasPrefix(mimeType, "text/"):
+		return "Text File"
+	case strings.Contains(mimeType, "zip") || strings.Contains(mimeType, "archive") || strings.Contains(mimeType, "compressed"):
+		return "Archive"
+	case strings.Contains(mimeType, "font"):
+		return "Font"
+	default:
+		return "Document"
+	}
+}
+
 func formatSize(size int64) string {
 	const (
 		KB = 1024
@@ -1296,12 +1435,20 @@ func formatActivityDescription(a *activity.Activity) string {
 // Metadata returns file metadata as JSON.
 func (h *Page) Metadata(c *mizu.Ctx) error {
 	fileID := c.Param("id")
-	fullPath := filepath.Join(h.storageRoot, fileID)
+
+	// URL decode the file ID to handle special characters
+	decodedID, err := url.PathUnescape(fileID)
+	if err != nil {
+		slog.Debug("metadata: failed to decode file id", "file_id", fileID, "error", err)
+		decodedID = fileID // Fallback to original if decode fails
+	}
+
+	fullPath := filepath.Join(h.storageRoot, decodedID)
 
 	// Check file exists
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		slog.Debug("metadata: file not found", "file_id", fileID, "path", fullPath)
+		slog.Debug("metadata: file not found", "file_id", decodedID, "path", fullPath)
 		return c.JSON(404, map[string]string{"error": "File not found"})
 	}
 
@@ -1313,7 +1460,7 @@ func (h *Page) Metadata(c *mizu.Ctx) error {
 	}
 
 	// Update file ID to be the relative path
-	metadata.FileID = fileID
+	metadata.FileID = decodedID
 
 	// Add file timestamps
 	metadata.ModifiedAt = info.ModTime()
@@ -1348,8 +1495,13 @@ func (h *Page) Metadata(c *mizu.Ctx) error {
 // FolderChildren returns folder contents for column view navigation.
 func (h *Page) FolderChildren(c *mizu.Ctx) error {
 	folderID := c.Param("id")
-	if folderID == "" {
-		folderID = ""
+
+	// URL decode the folder ID to handle special characters
+	if folderID != "" {
+		decodedID, err := url.PathUnescape(folderID)
+		if err == nil {
+			folderID = decodedID
+		}
 	}
 
 	folderViews, fileViews := h.readLocalDirectory(folderID)
