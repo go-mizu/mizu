@@ -1436,8 +1436,15 @@
     columnsContainer.scrollLeft = columnsContainer.scrollWidth;
   }
 
+  // Column preview state
+  let columnPdfState = {
+    doc: null,
+    page: 1,
+    scale: 1.0
+  };
+
   // Show big preview column for files in column view
-  function showBigPreview(item) {
+  async function showBigPreview(item) {
     const bigPreview = document.getElementById('column-big-preview');
     if (!bigPreview) return;
 
@@ -1445,15 +1452,20 @@
     const video = document.getElementById('column-big-preview-video');
     const audioContainer = document.getElementById('column-big-preview-audio-container');
     const audio = document.getElementById('column-big-preview-audio');
+    const pdfContainer = document.getElementById('column-big-preview-pdf');
+    const markdownContainer = document.getElementById('column-big-preview-markdown');
+    const codeContainer = document.getElementById('column-big-preview-code');
     const placeholder = document.getElementById('column-big-preview-placeholder');
     const loading = document.getElementById('column-big-preview-loading');
     const title = document.getElementById('column-big-preview-title');
-    const filename = document.getElementById('column-big-preview-filename');
 
     // Hide all content types first
     img?.classList.add('hidden');
     video?.classList.add('hidden');
     audioContainer?.classList.add('hidden');
+    pdfContainer?.classList.add('hidden');
+    markdownContainer?.classList.add('hidden');
+    codeContainer?.classList.add('hidden');
     placeholder?.classList.add('hidden');
     loading?.classList.remove('hidden');
 
@@ -1473,34 +1485,52 @@
 
     const contentUrl = '/api/v1/content/' + item.id;
     const mime = item.mime || '';
+    const ext = item.name.split('.').pop().toLowerCase();
 
-    if (mime.startsWith('image/') && img) {
-      img.onload = () => {
-        loading?.classList.add('hidden');
-        img.classList.remove('hidden');
-      };
-      img.onerror = () => {
-        loading?.classList.add('hidden');
-        showBigPreviewPlaceholder(item.name);
-      };
-      img.src = contentUrl;
-    } else if (mime.startsWith('video/') && video) {
-      loading?.classList.add('hidden');
-      video.onerror = () => {
-        video.classList.add('hidden');
-        showBigPreviewPlaceholder(item.name);
-      };
-      video.src = contentUrl;
-      video.classList.remove('hidden');
-    } else if (mime.startsWith('audio/') && audio && audioContainer) {
-      loading?.classList.add('hidden');
-      audio.onerror = () => {
-        audioContainer.classList.add('hidden');
-        showBigPreviewPlaceholder(item.name);
-      };
-      audio.src = contentUrl;
-      audioContainer.classList.remove('hidden');
-    } else {
+    // Determine preview type
+    const previewType = getColumnPreviewType(mime, ext);
+
+    try {
+      switch (previewType) {
+        case 'image':
+          loadColumnImagePreview(img, contentUrl, loading, item.name);
+          break;
+        case 'video':
+          loading?.classList.add('hidden');
+          video.onerror = () => {
+            video.classList.add('hidden');
+            showBigPreviewPlaceholder(item.name);
+          };
+          video.src = contentUrl;
+          video.classList.remove('hidden');
+          break;
+        case 'audio':
+          loading?.classList.add('hidden');
+          audio.onerror = () => {
+            audioContainer.classList.add('hidden');
+            showBigPreviewPlaceholder(item.name);
+          };
+          audio.src = contentUrl;
+          audioContainer.classList.remove('hidden');
+          break;
+        case 'pdf':
+          await loadColumnPdfPreview(contentUrl);
+          loading?.classList.add('hidden');
+          break;
+        case 'markdown':
+          await loadColumnMarkdownPreview(contentUrl, item.name);
+          loading?.classList.add('hidden');
+          break;
+        case 'code':
+          await loadColumnCodePreview(contentUrl, item.name);
+          loading?.classList.add('hidden');
+          break;
+        default:
+          loading?.classList.add('hidden');
+          showBigPreviewPlaceholder(item.name);
+      }
+    } catch (err) {
+      console.error('Preview error:', err);
       loading?.classList.add('hidden');
       showBigPreviewPlaceholder(item.name);
     }
@@ -1512,6 +1542,196 @@
         columnsContainer.scrollLeft = columnsContainer.scrollWidth;
       }, 50);
     }
+  }
+
+  function getColumnPreviewType(mime, ext) {
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
+    if (mime === 'application/pdf') return 'pdf';
+
+    // Markdown files
+    if (['md', 'markdown', 'mdown', 'mkdn'].includes(ext)) return 'markdown';
+
+    // Code files
+    const codeExts = ['js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
+                      'cs', 'php', 'swift', 'kt', 'scala', 'html', 'css', 'scss', 'sass', 'less',
+                      'xml', 'json', 'yaml', 'yml', 'toml', 'ini', 'sql', 'sh', 'bash', 'zsh',
+                      'dockerfile', 'makefile', 'vue', 'svelte', 'graphql', 'gql'];
+    if (codeExts.includes(ext)) return 'code';
+
+    // Plain text
+    if (['txt', 'log', 'text', 'readme', 'license', 'changelog', 'gitignore'].includes(ext) || mime.startsWith('text/')) return 'code';
+
+    return 'unsupported';
+  }
+
+  function loadColumnImagePreview(img, url, loading, name) {
+    img.onload = () => {
+      loading?.classList.add('hidden');
+      img.classList.remove('hidden');
+    };
+    img.onerror = () => {
+      loading?.classList.add('hidden');
+      showBigPreviewPlaceholder(name);
+    };
+    img.src = url;
+  }
+
+  // Generate PDF thumbnail as data URL
+  async function generatePdfThumbnail(fileId, maxSize = 200) {
+    try {
+      const pdfjsLib = await window.loadPdfJs();
+      const url = '/api/v1/content/' + fileId;
+      const loadingTask = pdfjsLib.getDocument(url);
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(1);
+
+      // Calculate scale to fit within maxSize
+      const originalViewport = page.getViewport({ scale: 1 });
+      const scale = Math.min(maxSize / originalViewport.width, maxSize / originalViewport.height);
+      const viewport = page.getViewport({ scale });
+
+      // Create offscreen canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.warn('PDF thumbnail generation failed:', err);
+      return null;
+    }
+  }
+
+  async function loadColumnPdfPreview(url) {
+    const container = document.getElementById('column-big-preview-pdf');
+    const canvas = document.getElementById('column-pdf-canvas');
+    const pageEl = document.getElementById('column-pdf-page');
+    const totalEl = document.getElementById('column-pdf-total');
+    const prevBtn = document.getElementById('column-pdf-prev');
+    const nextBtn = document.getElementById('column-pdf-next');
+    const zoomEl = document.getElementById('column-pdf-zoom');
+    const zoomInBtn = document.getElementById('column-pdf-zoom-in');
+    const zoomOutBtn = document.getElementById('column-pdf-zoom-out');
+
+    if (!container || !canvas) return;
+
+    // Load PDF.js
+    const pdfjsLib = await window.loadPdfJs();
+    const loadingTask = pdfjsLib.getDocument(url);
+    const pdf = await loadingTask.promise;
+
+    columnPdfState.doc = pdf;
+    columnPdfState.page = 1;
+    columnPdfState.scale = 1.0;
+
+    totalEl.textContent = pdf.numPages;
+
+    // Setup controls
+    const renderPage = async (pageNum) => {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: columnPdfState.scale });
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      pageEl.textContent = pageNum;
+      prevBtn.disabled = pageNum <= 1;
+      nextBtn.disabled = pageNum >= pdf.numPages;
+      zoomEl.textContent = Math.round(columnPdfState.scale * 100) + '%';
+    };
+
+    // Initial render
+    await renderPage(1);
+    container.classList.remove('hidden');
+
+    // Event handlers (remove old ones first)
+    prevBtn.onclick = async () => {
+      if (columnPdfState.page > 1) {
+        columnPdfState.page--;
+        await renderPage(columnPdfState.page);
+      }
+    };
+    nextBtn.onclick = async () => {
+      if (columnPdfState.page < pdf.numPages) {
+        columnPdfState.page++;
+        await renderPage(columnPdfState.page);
+      }
+    };
+    zoomInBtn.onclick = async () => {
+      columnPdfState.scale *= 1.25;
+      await renderPage(columnPdfState.page);
+    };
+    zoomOutBtn.onclick = async () => {
+      columnPdfState.scale *= 0.8;
+      await renderPage(columnPdfState.page);
+    };
+  }
+
+  async function loadColumnMarkdownPreview(url, filename) {
+    const container = document.getElementById('column-big-preview-markdown');
+    const content = document.getElementById('column-markdown-content');
+
+    if (!container || !content) return;
+
+    // Fetch content
+    const response = await fetch(url);
+    const text = await response.text();
+
+    // Load marked.js and render
+    const marked = await window.loadMarked();
+    content.innerHTML = marked.parse(text);
+
+    // Highlight code blocks if any
+    try {
+      const hljs = await window.loadHighlightJs();
+      content.querySelectorAll('pre code').forEach(block => {
+        hljs.highlightElement(block);
+      });
+    } catch (e) {
+      // Ignore highlighting errors
+    }
+
+    container.classList.remove('hidden');
+  }
+
+  async function loadColumnCodePreview(url, filename) {
+    const container = document.getElementById('column-big-preview-code');
+    const content = document.getElementById('column-code-content');
+    const filenameEl = document.getElementById('column-code-filename');
+    const langEl = document.getElementById('column-code-lang');
+
+    if (!container || !content) return;
+
+    // Fetch content
+    const response = await fetch(url);
+    const text = await response.text();
+
+    // Get language
+    const lang = getLanguage(filename);
+    if (filenameEl) filenameEl.textContent = filename;
+    if (langEl) langEl.textContent = lang;
+
+    // Set content
+    content.textContent = text;
+    content.className = `hljs language-${lang}`;
+
+    // Load highlight.js and highlight
+    try {
+      const hljs = await window.loadHighlightJs();
+      hljs.highlightElement(content);
+    } catch (e) {
+      console.warn('Code highlighting failed:', e);
+    }
+
+    container.classList.remove('hidden');
   }
 
   function showBigPreviewPlaceholder(name) {
@@ -1537,6 +1757,9 @@
       audio.pause();
       audio.src = '';
     }
+
+    // Reset PDF state
+    columnPdfState.doc = null;
 
     bigPreview.classList.add('hidden');
   }
@@ -1643,6 +1866,19 @@
         previewImg.src = '/api/v1/thumbnail/' + item.id;
         previewImg.classList.remove('hidden');
         previewIcon.classList.add('hidden');
+      } else if (item.mime === 'application/pdf') {
+        // Generate PDF thumbnail using PDF.js
+        previewImg.classList.add('hidden');
+        previewIcon.classList.remove('hidden');
+        previewIcon.innerHTML = `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12h4"/><path d="M10 16h4"/>`;
+        // Async PDF thumbnail generation
+        generatePdfThumbnail(item.id).then(dataUrl => {
+          if (dataUrl && columnState.selectedItem?.id === item.id) {
+            previewImg.src = dataUrl;
+            previewImg.classList.remove('hidden');
+            previewIcon.classList.add('hidden');
+          }
+        }).catch(() => {});
       } else {
         previewImg.classList.add('hidden');
         previewIcon.classList.remove('hidden');

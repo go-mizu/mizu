@@ -546,6 +546,19 @@
     };
   </script>
 
+  <!-- Marked.js for markdown (loaded on demand) -->
+  <script>
+    window.loadMarked = function() {
+      if (window.marked) return Promise.resolve(window.marked);
+      return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js';
+        script.onload = () => resolve(window.marked);
+        document.head.appendChild(script);
+      });
+    };
+  </script>
+
   <script src="/static/js/app.js"></script>
   <script>document.body.classList.add('ready');</script>
 </body>

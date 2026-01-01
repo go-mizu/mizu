@@ -1,6 +1,6 @@
 {{define "content"}}
 <!-- Breadcrumb & Actions -->
-<div class="flex items-center justify-between mb-6">
+<div class="flex items-center justify-between mb-6 relative z-40">
   <nav class="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
     {{range $i, $b := .Breadcrumbs}}
     {{if $i}}<svg class="w-4 h-4 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>{{end}}
@@ -405,7 +405,7 @@
   <!-- Columns Container (includes navigation columns + optional big preview) -->
   <div id="columns-container" class="flex flex-1 overflow-x-auto scrollbar-thin">
     <!-- Big Preview Column (appears when file is selected) -->
-    <div id="column-big-preview" class="hidden flex-shrink-0 border-r border-zinc-200 flex flex-col bg-zinc-100" style="width: 400px; min-width: 400px; order: 999;">
+    <div id="column-big-preview" class="hidden flex-1 min-w-[300px] flex flex-col bg-zinc-100" style="order: 999;">
       <div class="column-header px-3 py-2 bg-zinc-50 border-b border-zinc-200 text-xs font-medium text-zinc-500 uppercase tracking-wider flex items-center justify-between">
         <span id="column-big-preview-title">Preview</span>
         <button id="column-big-preview-close" class="p-1 rounded hover:bg-zinc-200 transition-colors">
@@ -423,6 +423,46 @@
             <svg class="w-16 h-16 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           </div>
           <audio id="column-big-preview-audio" class="w-full" controls></audio>
+        </div>
+        <!-- PDF preview -->
+        <div id="column-big-preview-pdf" class="hidden w-full h-full flex flex-col overflow-hidden rounded-lg shadow-lg bg-zinc-800">
+          <div class="flex items-center justify-between px-3 py-2 bg-zinc-900 border-b border-zinc-700">
+            <div class="flex items-center gap-2">
+              <button id="column-pdf-prev" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50" disabled>
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <span class="text-xs text-zinc-300"><span id="column-pdf-page">1</span> / <span id="column-pdf-total">-</span></span>
+              <button id="column-pdf-next" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white disabled:opacity-50" disabled>
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-1">
+              <button id="column-pdf-zoom-out" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M8 11h6"/></svg>
+              </button>
+              <span id="column-pdf-zoom" class="text-xs text-zinc-400 w-10 text-center">100%</span>
+              <button id="column-pdf-zoom-in" class="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M11 8v6M8 11h6"/></svg>
+              </button>
+            </div>
+          </div>
+          <div id="column-pdf-viewer" class="flex-1 overflow-auto flex items-start justify-center p-4 bg-zinc-900">
+            <canvas id="column-pdf-canvas" class="shadow-xl"></canvas>
+          </div>
+        </div>
+        <!-- Markdown preview -->
+        <div id="column-big-preview-markdown" class="hidden w-full h-full overflow-auto bg-white rounded-lg shadow-lg">
+          <div id="column-markdown-content" class="prose prose-zinc max-w-none p-6"></div>
+        </div>
+        <!-- Code preview -->
+        <div id="column-big-preview-code" class="hidden w-full h-full overflow-hidden rounded-lg shadow-lg bg-zinc-900 flex flex-col">
+          <div class="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
+            <span id="column-code-filename" class="text-sm text-zinc-400"></span>
+            <span id="column-code-lang" class="text-xs text-zinc-500 bg-zinc-700 px-2 py-0.5 rounded"></span>
+          </div>
+          <div class="flex-1 overflow-auto">
+            <pre class="p-4 m-0 text-sm leading-relaxed"><code id="column-code-content" class="hljs"></code></pre>
+          </div>
         </div>
         <!-- Other files placeholder -->
         <div id="column-big-preview-placeholder" class="hidden flex flex-col items-center text-zinc-500">
