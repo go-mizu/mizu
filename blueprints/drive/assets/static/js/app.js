@@ -595,16 +595,23 @@
       previewState.pdfScale = Math.min(containerWidth / viewport.width, 1.5);
     }
 
+    // Use higher DPI for sharper rendering on retina displays
+    const dpiScale = window.devicePixelRatio || 1;
+
     // Render all pages
     for (let pageNum = 1; pageNum <= previewState.pdfDoc.numPages; pageNum++) {
       const page = await previewState.pdfDoc.getPage(pageNum);
-      const scaledViewport = page.getViewport({ scale: previewState.pdfScale });
+      const scaledViewport = page.getViewport({ scale: previewState.pdfScale * dpiScale });
 
       // Create canvas for this page
       const canvas = document.createElement('canvas');
       canvas.className = 'shadow-lg rounded bg-white';
+      // Set canvas size at higher resolution
       canvas.width = scaledViewport.width;
       canvas.height = scaledViewport.height;
+      // Scale down with CSS for crisp display
+      canvas.style.width = `${scaledViewport.width / dpiScale}px`;
+      canvas.style.height = `${scaledViewport.height / dpiScale}px`;
 
       viewer.appendChild(canvas);
 
@@ -1228,15 +1235,30 @@
   }
 
   // Load highlight.js on demand
-  async function loadHighlightJs() {
+  let hljsTheme = null;
+  async function loadHighlightJs(theme = 'dark') {
+    // Update theme if needed
+    const themeUrl = theme === 'light'
+      ? 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css'
+      : 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+
+    if (hljsTheme !== theme) {
+      const existingLink = document.getElementById('hljs-theme');
+      if (existingLink) {
+        existingLink.href = themeUrl;
+      } else {
+        const link = document.createElement('link');
+        link.id = 'hljs-theme';
+        link.rel = 'stylesheet';
+        link.href = themeUrl;
+        document.head.appendChild(link);
+      }
+      hljsTheme = theme;
+    }
+
     if (window.hljs) return window.hljs;
 
     return new Promise((resolve) => {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
-      document.head.appendChild(link);
-
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js';
       script.onload = () => resolve(window.hljs);
@@ -1429,29 +1451,42 @@
     scale: 1.0
   };
 
+  // Track current preview request to prevent stale updates
+  let columnPreviewRequestId = 0;
+
   // Show big preview column for files in column view
   async function showBigPreview(item) {
     const bigPreview = document.getElementById('column-big-preview');
     if (!bigPreview) return;
+
+    // Increment request ID to track this preview request
+    const currentRequestId = ++columnPreviewRequestId;
 
     const img = document.getElementById('column-big-preview-img');
     const video = document.getElementById('column-big-preview-video');
     const audioContainer = document.getElementById('column-big-preview-audio-container');
     const audio = document.getElementById('column-big-preview-audio');
     const pdfContainer = document.getElementById('column-big-preview-pdf');
+    const pdfViewer = document.getElementById('column-pdf-viewer');
     const markdownContainer = document.getElementById('column-big-preview-markdown');
+    const markdownContent = document.getElementById('column-markdown-content');
     const codeContainer = document.getElementById('column-big-preview-code');
+    const codeContent = document.getElementById('column-code-content');
     const placeholder = document.getElementById('column-big-preview-placeholder');
     const loading = document.getElementById('column-big-preview-loading');
     const title = document.getElementById('column-big-preview-title');
 
-    // Hide all content types first
+    // Hide all content types first and clear content
     img?.classList.add('hidden');
+    if (img) img.src = '';
     video?.classList.add('hidden');
     audioContainer?.classList.add('hidden');
     pdfContainer?.classList.add('hidden');
+    if (pdfViewer) pdfViewer.innerHTML = '';
     markdownContainer?.classList.add('hidden');
+    if (markdownContent) markdownContent.innerHTML = '';
     codeContainer?.classList.add('hidden');
+    if (codeContent) codeContent.textContent = '';
     placeholder?.classList.add('hidden');
     loading?.classList.remove('hidden');
 
@@ -1465,25 +1500,34 @@
       audio.src = '';
     }
 
+    // Reset PDF state
+    columnPdfState.doc = null;
+    columnPdfState.scale = 1.0;
+
     // Show the preview column
     bigPreview.classList.remove('hidden');
     if (title) title.textContent = item.name;
 
-    const contentUrl = '/api/v1/content/' + item.id;
+    const contentUrl = '/api/v1/content/' + encodeURIComponent(item.id);
     const mime = item.mime || '';
     const ext = item.name.split('.').pop().toLowerCase();
 
     // Determine preview type
     const previewType = getColumnPreviewType(mime, ext);
 
+    // Helper to check if this request is still current
+    const isCurrentRequest = () => currentRequestId === columnPreviewRequestId;
+
     try {
       switch (previewType) {
         case 'image':
-          loadColumnImagePreview(img, contentUrl, loading, item.name);
+          loadColumnImagePreview(img, contentUrl, loading, item.name, isCurrentRequest);
           break;
         case 'video':
+          if (!isCurrentRequest()) return;
           loading?.classList.add('hidden');
           video.onerror = () => {
+            if (!isCurrentRequest()) return;
             video.classList.add('hidden');
             showBigPreviewPlaceholder(item.name);
           };
@@ -1491,8 +1535,10 @@
           video.classList.remove('hidden');
           break;
         case 'audio':
+          if (!isCurrentRequest()) return;
           loading?.classList.add('hidden');
           audio.onerror = () => {
+            if (!isCurrentRequest()) return;
             audioContainer.classList.add('hidden');
             showBigPreviewPlaceholder(item.name);
           };
@@ -1500,22 +1546,27 @@
           audioContainer.classList.remove('hidden');
           break;
         case 'pdf':
-          await loadColumnPdfPreview(contentUrl);
+          await loadColumnPdfPreview(contentUrl, isCurrentRequest);
+          if (!isCurrentRequest()) return;
           loading?.classList.add('hidden');
           break;
         case 'markdown':
-          await loadColumnMarkdownPreview(contentUrl, item.name);
+          await loadColumnMarkdownPreview(contentUrl, item.name, isCurrentRequest);
+          if (!isCurrentRequest()) return;
           loading?.classList.add('hidden');
           break;
         case 'code':
-          await loadColumnCodePreview(contentUrl, item.name);
+          await loadColumnCodePreview(contentUrl, item.name, isCurrentRequest);
+          if (!isCurrentRequest()) return;
           loading?.classList.add('hidden');
           break;
         default:
+          if (!isCurrentRequest()) return;
           loading?.classList.add('hidden');
           showBigPreviewPlaceholder(item.name);
       }
     } catch (err) {
+      if (!isCurrentRequest()) return;
       console.error('Preview error:', err);
       loading?.classList.add('hidden');
       showBigPreviewPlaceholder(item.name);
@@ -1552,12 +1603,14 @@
     return 'unsupported';
   }
 
-  function loadColumnImagePreview(img, url, loading, name) {
+  function loadColumnImagePreview(img, url, loading, name, isCurrentRequest) {
     img.onload = () => {
+      if (isCurrentRequest && !isCurrentRequest()) return;
       loading?.classList.add('hidden');
       img.classList.remove('hidden');
     };
     img.onerror = () => {
+      if (isCurrentRequest && !isCurrentRequest()) return;
       loading?.classList.add('hidden');
       showBigPreviewPlaceholder(name);
     };
@@ -1593,7 +1646,7 @@
     }
   }
 
-  async function loadColumnPdfPreview(url) {
+  async function loadColumnPdfPreview(url, isCurrentRequest) {
     const container = document.getElementById('column-big-preview-pdf');
     const viewer = document.getElementById('column-pdf-viewer');
     const totalEl = document.getElementById('column-pdf-total');
@@ -1602,14 +1655,18 @@
     const zoomOutBtn = document.getElementById('column-pdf-zoom-out');
 
     if (!container || !viewer) return;
+    if (isCurrentRequest && !isCurrentRequest()) return;
 
     // Clear previous pages
     viewer.innerHTML = '';
 
     // Load PDF.js
     const pdfjsLib = await window.loadPdfJs();
+    if (isCurrentRequest && !isCurrentRequest()) return;
+
     const loadingTask = pdfjsLib.getDocument(url);
     const pdf = await loadingTask.promise;
+    if (isCurrentRequest && !isCurrentRequest()) return;
 
     columnPdfState.doc = pdf;
     columnPdfState.scale = 1.0;
@@ -1630,15 +1687,22 @@
         columnPdfState.scale = Math.min(containerWidth / viewport.width, 1.2);
       }
 
+      // Use higher DPI for sharper rendering on retina displays
+      const dpiScale = window.devicePixelRatio || 1;
+
       // Render all pages
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum);
-        const scaledViewport = page.getViewport({ scale: columnPdfState.scale });
+        const scaledViewport = page.getViewport({ scale: columnPdfState.scale * dpiScale });
 
         const canvas = document.createElement('canvas');
         canvas.className = 'shadow-md rounded bg-white';
+        // Set canvas size at higher resolution
         canvas.width = scaledViewport.width;
         canvas.height = scaledViewport.height;
+        // Scale down with CSS for crisp display
+        canvas.style.width = `${scaledViewport.width / dpiScale}px`;
+        canvas.style.height = `${scaledViewport.height / dpiScale}px`;
 
         viewer.appendChild(canvas);
 
@@ -1664,23 +1728,28 @@
     };
   }
 
-  async function loadColumnMarkdownPreview(url, filename) {
+  async function loadColumnMarkdownPreview(url, filename, isCurrentRequest) {
     const container = document.getElementById('column-big-preview-markdown');
     const content = document.getElementById('column-markdown-content');
 
     if (!container || !content) return;
+    if (isCurrentRequest && !isCurrentRequest()) return;
 
     // Fetch content
     const response = await fetch(url);
+    if (isCurrentRequest && !isCurrentRequest()) return;
     const text = await response.text();
+    if (isCurrentRequest && !isCurrentRequest()) return;
 
     // Load marked.js and render
     const marked = await window.loadMarked();
+    if (isCurrentRequest && !isCurrentRequest()) return;
     content.innerHTML = marked.parse(text);
 
-    // Highlight code blocks if any
+    // Highlight code blocks if any (use light theme)
     try {
-      const hljs = await window.loadHighlightJs();
+      const hljs = await window.loadHighlightJs('light');
+      if (isCurrentRequest && !isCurrentRequest()) return;
       content.querySelectorAll('pre code').forEach(block => {
         hljs.highlightElement(block);
       });
@@ -1691,30 +1760,37 @@
     container.classList.remove('hidden');
   }
 
-  async function loadColumnCodePreview(url, filename) {
+  async function loadColumnCodePreview(url, filename, isCurrentRequest) {
     const container = document.getElementById('column-big-preview-code');
     const content = document.getElementById('column-code-content');
     const filenameEl = document.getElementById('column-code-filename');
     const langEl = document.getElementById('column-code-lang');
 
     if (!container || !content) return;
+    if (isCurrentRequest && !isCurrentRequest()) return;
 
     // Fetch content
     const response = await fetch(url);
+    if (isCurrentRequest && !isCurrentRequest()) return;
     const text = await response.text();
+    if (isCurrentRequest && !isCurrentRequest()) return;
 
     // Get language
     const lang = getLanguage(filename);
     if (filenameEl) filenameEl.textContent = filename;
     if (langEl) langEl.textContent = lang;
 
-    // Set content
-    content.textContent = text;
+    // Set content with line numbers
+    const lines = text.split('\n');
+    content.innerHTML = lines.map((line, i) =>
+      `<span class="code-line"><span class="line-number">${i + 1}</span>${escapeHtml(line)}</span>`
+    ).join('\n');
     content.className = `hljs language-${lang}`;
 
-    // Load highlight.js and highlight
+    // Load highlight.js and highlight (use light theme)
     try {
-      const hljs = await window.loadHighlightJs();
+      const hljs = await window.loadHighlightJs('light');
+      if (isCurrentRequest && !isCurrentRequest()) return;
       hljs.highlightElement(content);
     } catch (e) {
       console.warn('Code highlighting failed:', e);
@@ -2570,12 +2646,16 @@
     const prefix = viewType;
     const sidebar = document.getElementById(`${prefix}-sidebar`);
     const toggleBtn = document.getElementById(`${prefix}-sidebar-toggle`);
+    const closeBtn = document.getElementById(`${prefix}-sidebar-close`);
     const resizeHandle = document.getElementById(`${prefix}-sidebar-resize`);
     const openBtn = document.getElementById(`${prefix}-preview-open`);
     const downloadBtn = document.getElementById(`${prefix}-preview-download`);
 
     // Toggle button
     toggleBtn?.addEventListener('click', () => toggleSidebar());
+
+    // Close button
+    closeBtn?.addEventListener('click', () => toggleSidebar(false));
 
     // Keyboard shortcut (I for Info)
     document.addEventListener('keydown', (e) => {
