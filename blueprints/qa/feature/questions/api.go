@@ -97,6 +97,7 @@ type API interface {
 	Reopen(ctx context.Context, id string) error
 	UpdateStats(ctx context.Context, id string, answerDelta, commentDelta, favoriteDelta int64) error
 	UpdateScore(ctx context.Context, id string, delta int64) error
+	EnrichQuestions(ctx context.Context, questions []*Question) error
 }
 
 // Store defines the data storage interface for questions.
@@ -119,4 +120,5 @@ type Store interface {
 	UpdateScore(ctx context.Context, id string, delta int64) error
 	SetTags(ctx context.Context, questionID string, tags []string) error
 	GetTags(ctx context.Context, questionID string) ([]*tags.Tag, error)
+	GetTagsForQuestions(ctx context.Context, questionIDs []string) (map[string][]*tags.Tag, error)
 }

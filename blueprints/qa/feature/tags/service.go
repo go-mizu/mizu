@@ -41,8 +41,27 @@ func (s *Service) Create(ctx context.Context, name string, excerpt string) (*Tag
 
 // UpsertBatch ensures tags exist.
 func (s *Service) UpsertBatch(ctx context.Context, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+
+	// Normalize names
+	normalizedNames := make([]string, 0, len(names))
 	for _, name := range names {
-		_, _ = s.Create(ctx, name, "")
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" {
+			normalizedNames = append(normalizedNames, name)
+		}
+	}
+
+	// Batch check which tags already exist
+	existing, _ := s.store.GetByNames(ctx, normalizedNames)
+
+	// Create only missing tags
+	for _, name := range normalizedNames {
+		if _, exists := existing[name]; !exists {
+			_, _ = s.Create(ctx, name, "")
+		}
 	}
 	return nil
 }
@@ -50,6 +69,11 @@ func (s *Service) UpsertBatch(ctx context.Context, names []string) error {
 // GetByName gets a tag by name.
 func (s *Service) GetByName(ctx context.Context, name string) (*Tag, error) {
 	return s.store.GetByName(ctx, name)
+}
+
+// GetByNames gets multiple tags by names.
+func (s *Service) GetByNames(ctx context.Context, names []string) (map[string]*Tag, error) {
+	return s.store.GetByNames(ctx, names)
 }
 
 // List lists tags.
@@ -60,4 +84,9 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*Tag, error) {
 // IncrementQuestionCount updates question count.
 func (s *Service) IncrementQuestionCount(ctx context.Context, name string, delta int64) error {
 	return s.store.IncrementQuestionCount(ctx, name, delta)
+}
+
+// IncrementQuestionCountBatch updates question counts for multiple tags.
+func (s *Service) IncrementQuestionCountBatch(ctx context.Context, names []string, delta int64) error {
+	return s.store.IncrementQuestionCountBatch(ctx, names, delta)
 }

@@ -285,15 +285,47 @@ func (s *QuestionsStore) SetTags(ctx context.Context, questionID string, tagName
 		return nil
 	}
 
-	for _, name := range tagNames {
-		var tagID string
-		err := s.db.QueryRowContext(ctx, `SELECT id FROM tags WHERE name = $1`, name).Scan(&tagID)
-		if err != nil {
+	// Batch fetch all tag IDs in one query
+	placeholders := make([]string, len(tagNames))
+	args := make([]any, len(tagNames))
+	for i, name := range tagNames {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = name
+	}
+
+	query := `SELECT id, name FROM tags WHERE name IN (` + strings.Join(placeholders, ",") + `)`
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	tagIDs := make(map[string]string)
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
 			continue
 		}
-		_, _ = s.db.ExecContext(ctx, `INSERT INTO question_tags (question_id, tag_id) VALUES ($1, $2)`, questionID, tagID)
+		tagIDs[name] = id
 	}
-	return nil
+
+	// Batch insert all question_tags
+	if len(tagIDs) == 0 {
+		return nil
+	}
+
+	insertPlaceholders := make([]string, 0, len(tagIDs))
+	insertArgs := make([]any, 0, len(tagIDs)*2)
+	i := 0
+	for _, tagID := range tagIDs {
+		insertPlaceholders = append(insertPlaceholders, fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2))
+		insertArgs = append(insertArgs, questionID, tagID)
+		i++
+	}
+
+	insertQuery := `INSERT INTO question_tags (question_id, tag_id) VALUES ` + strings.Join(insertPlaceholders, ", ")
+	_, err = s.db.ExecContext(ctx, insertQuery, insertArgs...)
+	return err
 }
 
 // GetTags retrieves tags for a question.
@@ -317,6 +349,44 @@ func (s *QuestionsStore) GetTags(ctx context.Context, questionID string) ([]*tag
 			return nil, err
 		}
 		result = append(result, tag)
+	}
+	return result, rows.Err()
+}
+
+// GetTagsForQuestions retrieves tags for multiple questions.
+func (s *QuestionsStore) GetTagsForQuestions(ctx context.Context, questionIDs []string) (map[string][]*tags.Tag, error) {
+	if len(questionIDs) == 0 {
+		return make(map[string][]*tags.Tag), nil
+	}
+
+	placeholders := make([]string, len(questionIDs))
+	args := make([]any, len(questionIDs))
+	for i, id := range questionIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := `
+		SELECT qt.question_id, t.id, t.name, t.excerpt, t.wiki, t.question_count, t.created_at
+		FROM tags t
+		JOIN question_tags qt ON qt.tag_id = t.id
+		WHERE qt.question_id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY t.name ASC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]*tags.Tag)
+	for rows.Next() {
+		var questionID string
+		tag := &tags.Tag{}
+		if err := rows.Scan(&questionID, &tag.ID, &tag.Name, &tag.Excerpt, &tag.Wiki, &tag.QuestionCount, &tag.CreatedAt); err != nil {
+			return nil, err
+		}
+		result[questionID] = append(result[questionID], tag)
 	}
 	return result, rows.Err()
 }

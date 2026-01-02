@@ -285,23 +285,25 @@ func (h *Page) Register(c *mizu.Ctx) error {
 }
 
 func (h *Page) enrichQuestions(c *mizu.Ctx, list []*questions.Question) {
-	for _, q := range list {
-		full, err := h.questions.GetByID(c.Request().Context(), q.ID)
-		if err != nil {
-			continue
-		}
-		q.Tags = full.Tags
-		q.Author = full.Author
-	}
+	_ = h.questions.EnrichQuestions(c.Request().Context(), list)
 }
 
 func (h *Page) attachAnswerComments(c *mizu.Ctx, list []*answers.Answer) []AnswerView {
 	views := make([]AnswerView, 0, len(list))
+
+	// Collect answer IDs
+	answerIDs := make([]string, len(list))
+	for i, answer := range list {
+		answerIDs[i] = answer.ID
+	}
+
+	// Batch load all comments for all answers
+	commentsMap, _ := h.comments.ListByTargets(c.Request().Context(), comments.TargetAnswer, answerIDs, comments.ListOpts{Limit: 20})
+
 	for _, answer := range list {
-		commentsList, _ := h.comments.ListByTarget(c.Request().Context(), comments.TargetAnswer, answer.ID, comments.ListOpts{Limit: 20})
 		views = append(views, AnswerView{
 			Answer:   answer,
-			Comments: commentsList,
+			Comments: commentsMap[answer.ID],
 		})
 	}
 	return views

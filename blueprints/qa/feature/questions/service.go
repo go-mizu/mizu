@@ -54,9 +54,7 @@ func (s *Service) Create(ctx context.Context, authorID string, in CreateIn) (*Qu
 		tagNames := normalizeTags(in.Tags)
 		_ = s.tags.UpsertBatch(ctx, tagNames)
 		_ = s.store.SetTags(ctx, question.ID, tagNames)
-		for _, tag := range tagNames {
-			_ = s.tags.IncrementQuestionCount(ctx, tag, 1)
-		}
+		_ = s.tags.IncrementQuestionCountBatch(ctx, tagNames, 1)
 	}
 
 	question.Tags, _ = s.store.GetTags(ctx, question.ID)
@@ -186,4 +184,33 @@ func (s *Service) UpdateStats(ctx context.Context, id string, answerDelta, comme
 // UpdateScore updates question score.
 func (s *Service) UpdateScore(ctx context.Context, id string, delta int64) error {
 	return s.store.UpdateScore(ctx, id, delta)
+}
+
+// EnrichQuestions batch loads authors and tags for a list of questions.
+func (s *Service) EnrichQuestions(ctx context.Context, questions []*Question) error {
+	if len(questions) == 0 {
+		return nil
+	}
+
+	// Collect IDs
+	questionIDs := make([]string, len(questions))
+	authorIDs := make([]string, 0, len(questions))
+	for i, q := range questions {
+		questionIDs[i] = q.ID
+		authorIDs = append(authorIDs, q.AuthorID)
+	}
+
+	// Batch load authors
+	authors, _ := s.accounts.GetByIDs(ctx, authorIDs)
+
+	// Batch load tags
+	tagsMap, _ := s.store.GetTagsForQuestions(ctx, questionIDs)
+
+	// Assign to questions
+	for _, q := range questions {
+		q.Author = authors[q.AuthorID]
+		q.Tags = tagsMap[q.ID]
+	}
+
+	return nil
 }

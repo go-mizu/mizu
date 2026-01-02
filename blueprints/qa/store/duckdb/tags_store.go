@@ -3,6 +3,7 @@ package duckdb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/qa/feature/tags"
@@ -92,4 +93,57 @@ func (s *TagsStore) IncrementQuestionCount(ctx context.Context, name string, del
 		UPDATE tags SET question_count = question_count + $2 WHERE name = $1
 	`, name, delta)
 	return err
+}
+
+// IncrementQuestionCountBatch updates question counts for multiple tags.
+func (s *TagsStore) IncrementQuestionCountBatch(ctx context.Context, names []string, delta int64) error {
+	if len(names) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, len(names))
+	args := make([]any, len(names)+1)
+	args[0] = delta
+	for i, name := range names {
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args[i+1] = strings.ToLower(name)
+	}
+
+	query := `UPDATE tags SET question_count = question_count + $1 WHERE name IN (` + strings.Join(placeholders, ",") + `)`
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+// GetByNames retrieves tags by names.
+func (s *TagsStore) GetByNames(ctx context.Context, names []string) (map[string]*tags.Tag, error) {
+	if len(names) == 0 {
+		return make(map[string]*tags.Tag), nil
+	}
+
+	placeholders := make([]string, len(names))
+	args := make([]any, len(names))
+	for i, name := range names {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = strings.ToLower(name)
+	}
+
+	query := `
+		SELECT id, name, excerpt, wiki, question_count, created_at
+		FROM tags WHERE name IN (` + strings.Join(placeholders, ",") + `)`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]*tags.Tag)
+	for rows.Next() {
+		tag := &tags.Tag{}
+		if err := rows.Scan(&tag.ID, &tag.Name, &tag.Excerpt, &tag.Wiki, &tag.QuestionCount, &tag.CreatedAt); err != nil {
+			return nil, err
+		}
+		result[tag.Name] = tag
+	}
+	return result, rows.Err()
 }

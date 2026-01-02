@@ -55,10 +55,50 @@ func (s *Service) ListByTarget(ctx context.Context, targetType TargetType, targe
 	if err != nil {
 		return nil, err
 	}
+
+	// Batch load authors to avoid N+1
+	authorIDs := make([]string, 0, len(comments))
 	for _, comment := range comments {
-		comment.Author, _ = s.accounts.GetByID(ctx, comment.AuthorID)
+		authorIDs = append(authorIDs, comment.AuthorID)
 	}
+	authors, _ := s.accounts.GetByIDs(ctx, authorIDs)
+	for _, comment := range comments {
+		comment.Author = authors[comment.AuthorID]
+	}
+
 	return comments, nil
+}
+
+// ListByTargets lists comments for multiple targets.
+func (s *Service) ListByTargets(ctx context.Context, targetType TargetType, targetIDs []string, opts ListOpts) (map[string][]*Comment, error) {
+	commentsMap, err := s.store.ListByTargets(ctx, targetType, targetIDs, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect all unique author IDs
+	authorIDs := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, comments := range commentsMap {
+		for _, comment := range comments {
+			if !seen[comment.AuthorID] {
+				seen[comment.AuthorID] = true
+				authorIDs = append(authorIDs, comment.AuthorID)
+			}
+		}
+	}
+
+	// Batch load authors
+	authors, _ := s.accounts.GetByIDs(ctx, authorIDs)
+
+	// Assign authors to comments
+	for _, comments := range commentsMap {
+		for _, comment := range comments {
+			comment.Author = authors[comment.AuthorID]
+		}
+	}
+
+	return commentsMap, nil
 }
 
 // Delete deletes a comment.

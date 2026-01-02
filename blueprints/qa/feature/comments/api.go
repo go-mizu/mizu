@@ -55,6 +55,7 @@ type ListOpts struct {
 type API interface {
 	Create(ctx context.Context, authorID string, in CreateIn) (*Comment, error)
 	ListByTarget(ctx context.Context, targetType TargetType, targetID string, opts ListOpts) ([]*Comment, error)
+	ListByTargets(ctx context.Context, targetType TargetType, targetIDs []string, opts ListOpts) (map[string][]*Comment, error)
 	Delete(ctx context.Context, id string) error
 	UpdateScore(ctx context.Context, id string, delta int64) error
 }
@@ -63,6 +64,7 @@ type API interface {
 type Store interface {
 	Create(ctx context.Context, comment *Comment) error
 	ListByTarget(ctx context.Context, targetType TargetType, targetID string, opts ListOpts) ([]*Comment, error)
+	ListByTargets(ctx context.Context, targetType TargetType, targetIDs []string, opts ListOpts) (map[string][]*Comment, error)
 	Delete(ctx context.Context, id string) error
 	UpdateScore(ctx context.Context, id string, delta int64) error
 }
