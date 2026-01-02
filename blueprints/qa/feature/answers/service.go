@@ -67,9 +67,17 @@ func (s *Service) ListByQuestion(ctx context.Context, questionID string, opts Li
 	if err != nil {
 		return nil, err
 	}
+
+	// Batch load authors to avoid N+1
+	authorIDs := make([]string, 0, len(answers))
 	for _, answer := range answers {
-		answer.Author, _ = s.accounts.GetByID(ctx, answer.AuthorID)
+		authorIDs = append(authorIDs, answer.AuthorID)
 	}
+	authors, _ := s.accounts.GetByIDs(ctx, authorIDs)
+	for _, answer := range answers {
+		answer.Author = authors[answer.AuthorID]
+	}
+
 	return answers, nil
 }
 
