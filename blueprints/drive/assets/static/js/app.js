@@ -142,15 +142,6 @@
     const viewMode = getViewPreference();
     const { sortBy, sortOrder } = getSortPreference();
 
-    // Update folder links to include view parameters
-    document.querySelectorAll('[data-type="folder"] a').forEach(link => {
-      const url = new URL(link.href, window.location.origin);
-      url.searchParams.set('view', viewMode);
-      url.searchParams.set('sort', sortBy);
-      url.searchParams.set('order', sortOrder);
-      link.href = url.toString();
-    });
-
     // Update breadcrumb links
     document.querySelectorAll('nav[aria-label="Breadcrumb"] a').forEach(link => {
       const url = new URL(link.href, window.location.origin);
