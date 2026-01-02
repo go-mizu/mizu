@@ -25,6 +25,7 @@ func NewSeed() *cobra.Command {
 		RunE:  runSeed,
 	}
 	cmd.AddCommand(NewSeedSE())
+	cmd.AddCommand(NewSeedFixTags())
 	return cmd
 }
 
