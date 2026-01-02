@@ -37,14 +37,14 @@
     <h2 class="text-sm font-medium text-zinc-500 mb-3">Folders</h2>
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
       {{range .Folders}}
-      <a href="/files/{{.ID}}" class="group relative flex flex-col items-center p-4 rounded-xl border border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/80 transition-all cursor-pointer hover:shadow-sm" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
+      <div class="group relative flex flex-col items-center p-4 rounded-xl border border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/80 transition-all cursor-pointer hover:shadow-sm" data-type="folder" data-id="{{.ID}}" data-name="{{.Name}}">
         <div class="w-16 h-16 mb-3 flex items-center justify-center text-amber-500">
           <svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
         </div>
         <span class="text-sm text-center text-zinc-700 group-hover:text-zinc-900 font-medium truncate w-full" title="{{.Name}}">{{.Name}}</span>
-      </a>
+      </div>
       {{end}}
     </div>
   </div>
