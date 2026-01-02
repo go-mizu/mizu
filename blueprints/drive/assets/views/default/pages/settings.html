@@ -61,9 +61,11 @@
           <h3 class="text-sm font-medium text-zinc-700">Default view</h3>
           <p class="text-sm text-zinc-500">Choose how files are displayed by default</p>
         </div>
-        <select class="input w-32" id="default-view">
+        <select class="input w-36" id="default-view">
           <option value="grid">Grid</option>
           <option value="list">List</option>
+          <option value="column">Column</option>
+          <option value="gallery">Gallery</option>
         </select>
       </div>
 
@@ -83,46 +85,65 @@
   <!-- Keyboard Shortcuts Section -->
   <section class="card p-6">
     <h2 class="text-lg font-medium text-zinc-900 mb-4">Keyboard shortcuts</h2>
-    <div class="grid grid-cols-2 gap-4 text-sm">
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">New folder</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">N</kbd>
+    <div class="space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-4">
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">New folder</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">N</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Upload file</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">U</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Search</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">/</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Delete</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">Del</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Rename</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">F2</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Select all</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">Cmd/Ctrl+A</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Quick preview</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">Space</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Open</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">Enter</kbd>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-zinc-600">Close/Cancel</span>
+          <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">Esc</kbd>
+        </div>
       </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Upload file</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">U</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Search</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">/</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Delete</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">Del</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Rename</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">F2</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Select all</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">Ctrl+A</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Copy</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">Ctrl+C</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Cut</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">Ctrl+X</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Paste</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">Ctrl+V</kbd>
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-zinc-600">Go to home</span>
-        <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded">G H</kbd>
+      <div class="pt-3 border-t border-zinc-100">
+        <h3 class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">In Preview</h3>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="flex items-center justify-between">
+            <span class="text-zinc-600">Previous file</span>
+            <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">&larr;</kbd>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-zinc-600">Next file</span>
+            <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">&rarr;</kbd>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-zinc-600">Fullscreen</span>
+            <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">F</kbd>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-zinc-600">Play/Pause</span>
+            <kbd class="px-2 py-1 text-xs bg-zinc-100 rounded font-mono">Space</kbd>
+          </div>
+        </div>
       </div>
     </div>
   </section>
