@@ -1,0 +1,36 @@
+{{define "login.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-title">
+  <h1>Log in</h1>
+</div>
+<div class="auth-layout">
+  <div class="form-card">
+    <div class="form-field">
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="name@example.com">
+    </div>
+    <div class="form-field">
+      <label for="password">Password</label>
+      <input id="password" type="password">
+    </div>
+    <button class="btn btn-primary">Log in</button>
+  </div>
+  <div class="auth-aside">
+    <strong>Welcome back</strong>
+    <p class="muted">Sign in to vote, answer, and earn reputation.</p>
+    <p class="muted">New here? <a href="/register">Create an account</a>.</p>
+  </div>
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Welcome back</div>
+  <div class="sidebar-card-body">
+    <p class="muted">Sign in to vote, answer, and earn reputation.</p>
+  </div>
+</div>
+{{end}}

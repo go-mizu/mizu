@@ -1,0 +1,19 @@
+{{define "comment"}}
+<div class="comment" data-comment-id="{{.ID}}">
+  <div class="comment-score">
+    {{if gt .Score 0}}{{.Score}}{{end}}
+  </div>
+  <div class="comment-body">
+    <span class="comment-copy">{{.Body}}</span>
+    <span class="comment-meta">
+      &ndash;
+      {{if .Author}}
+        <a class="comment-user" href="/users/{{.Author.ID}}">{{default .Author.DisplayName .Author.Username}}</a>
+      {{else}}
+        <span class="comment-user">user</span>
+      {{end}}
+      <span class="comment-date" title="{{.CreatedAt}}">{{formatTimeRelative .CreatedAt}}</span>
+    </span>
+  </div>
+</div>
+{{end}}

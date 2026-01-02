@@ -1,0 +1,46 @@
+{{define "users.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-title">
+  <h1>Users</h1>
+</div>
+<div class="tags-toolbar">
+  <form class="tags-search" action="/users" method="get">
+    <input type="search" name="q" placeholder="Filter by user" value="{{.Data.Query}}">
+  </form>
+</div>
+<div class="user-grid">
+  {{range .Data.Users}}
+    <div class="user-tile">
+      <div class="user-avatar">
+        {{if .AvatarURL}}
+          <img src="{{.AvatarURL}}" alt="{{default .DisplayName .Username}}">
+        {{else}}
+          <span>{{printf "%.1s" (default .DisplayName .Username)}}</span>
+        {{end}}
+      </div>
+      <div class="user-tile-body">
+        <div class="name"><a href="/users/{{.ID}}">{{default .DisplayName .Username}}</a></div>
+        <div class="user-handle">@{{.Username}}</div>
+        <div class="rep">{{formatNumber .Reputation}} rep</div>
+        {{if .Location}}
+          <div class="muted">{{.Location}}</div>
+        {{end}}
+      </div>
+    </div>
+  {{else}}
+    <p class="muted">No users found.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Users</div>
+  <div class="sidebar-card-body">
+    <p class="muted">Search users by name or reputation.</p>
+  </div>
+</div>
+{{end}}

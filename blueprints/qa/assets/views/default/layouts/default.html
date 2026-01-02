@@ -1,0 +1,76 @@
+{{define "default.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="QA Overflow - Q&A for developers">
+  <meta name="theme-color" content="#f48225">
+  <title>{{.Title}} - QA Overflow</title>
+  <link rel="stylesheet" href="{{staticURL "/static/css/app.css"}}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23f48225' width='100' height='100' rx='10'/><text y='.9em' x='50%' text-anchor='middle' font-size='70' fill='white'>Q</text></svg>">
+  <script>
+    // Immediately apply theme to prevent flash
+    (function() {
+      var theme = localStorage.getItem('theme');
+      if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+</head>
+<body>
+  {{template "nav" .}}
+  <div class="page-wrapper">
+    <aside class="left-nav" id="left-nav" aria-label="Sidebar navigation">
+      <div class="nav-section">Public</div>
+      <a href="/" class="{{if eq .ActiveNav "home"}}active{{end}}" aria-current="{{if eq .ActiveNav "home"}}page{{end}}">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 18 18"><path d="M9 1L1 8h2v7a1 1 0 001 1h3v-6h4v6h3a1 1 0 001-1V8h2L9 1z"/></svg>
+        </span>
+        <span>Home</span>
+      </a>
+      <a href="/questions" class="{{if eq .ActiveNav "questions"}}active{{end}}" aria-current="{{if eq .ActiveNav "questions"}}page{{end}}">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 18 18"><path d="M9 1a8 8 0 100 16A8 8 0 009 1zm.81 12.13c-.02.71-.55 1.15-1.24 1.13-.66-.02-1.17-.49-1.15-1.2.02-.72.56-1.18 1.22-1.16.7.03 1.2.51 1.17 1.23zM11.77 8a5.8 5.8 0 01-.59.73c-.45.48-.79.9-.93 1.44-.1.39-.13.79-.13 1.2H8.1c0-.6.07-1.12.22-1.57.25-.76.72-1.33 1.26-1.86.38-.36.64-.63.79-.93.15-.29.22-.6.22-.91 0-.42-.12-.75-.37-1-.25-.26-.61-.39-1.08-.39-.48 0-.87.16-1.16.47-.27.28-.42.64-.42 1.08H5.5c.02-.95.37-1.7 1.05-2.26C7.25 3.42 8.1 3.13 9.15 3.13c1.01 0 1.82.27 2.43.8.61.54.92 1.28.92 2.22 0 .7-.24 1.36-.73 1.85z"/></svg>
+        </span>
+        <span>Questions</span>
+      </a>
+      <a href="/tags" class="{{if eq .ActiveNav "tags"}}active{{end}}" aria-current="{{if eq .ActiveNav "tags"}}page{{end}}">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 18 18"><path d="M9.18 1a2 2 0 00-1.42.59L2.59 6.76a2 2 0 000 2.83l5.83 5.83a2 2 0 002.83 0l5.17-5.17a2 2 0 00.59-1.42V3a2 2 0 00-2-2H9.18zM13 7a2 2 0 110-4 2 2 0 010 4z"/></svg>
+        </span>
+        <span>Tags</span>
+      </a>
+      <div class="nav-section">Users</div>
+      <a href="/users" class="{{if eq .ActiveNav "users"}}active{{end}}" aria-current="{{if eq .ActiveNav "users"}}page{{end}}">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 18 18"><path d="M9 1a8 8 0 100 16A8 8 0 009 1zM5.93 13.48c.33-.95 1.61-1.48 3.07-1.48s2.74.53 3.07 1.48A6.02 6.02 0 019 15a6.02 6.02 0 01-3.07-1.52zm7.51-1.22c-.98-1.42-3.08-2.26-4.44-2.26s-3.46.84-4.44 2.26A5.98 5.98 0 019 3a6 6 0 014.44 9.26zM9 5a2 2 0 100 4 2 2 0 000-4z"/></svg>
+        </span>
+        <span>Users</span>
+      </a>
+      <a href="/badges" class="{{if eq .ActiveNav "badges"}}active{{end}}" aria-current="{{if eq .ActiveNav "badges"}}page{{end}}">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 18 18"><path d="M9.12 1a2 2 0 00-1.79 1.1L6.27 4.18l-3.42.5a2 2 0 00-1.11 3.4l2.48 2.42-.58 3.4a2 2 0 002.9 2.1L9.12 14.4l3.07 1.62a2 2 0 002.9-2.11l-.58-3.4 2.48-2.41a2 2 0 00-1.11-3.41l-3.42-.5-1.05-2.08a2 2 0 00-2.29-1.1z"/></svg>
+        </span>
+        <span>Badges</span>
+      </a>
+    </aside>
+    <main class="main-content" id="main-content">
+      <div class="main-inner">
+        <div class="content-area">
+          {{template "content" .}}
+        </div>
+        <aside class="sidebar-area" aria-label="Right sidebar">
+          {{template "sidebar" .}}
+        </aside>
+      </div>
+    </main>
+  </div>
+  <div class="toast" role="alert" aria-live="polite" id="toast">
+    <span class="toast-message"></span>
+  </div>
+  <script src="{{staticURL "/static/js/app.js"}}" defer></script>
+</body>
+</html>
+{{end}}

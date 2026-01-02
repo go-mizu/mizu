@@ -1,0 +1,52 @@
+{{define "question_card"}}
+<div class="s-post-summary">
+  <div class="s-post-summary--stats">
+    <div class="s-post-summary--stats-item">
+      <span class="s-post-summary--stats-item-number">{{formatNumber .Score}}</span>
+      <span class="s-post-summary--stats-item-unit">votes</span>
+    </div>
+    <div class="s-post-summary--stats-item {{if .AcceptedAnswerID}}has-accepted-answer{{else if gt .AnswerCount 0}}has-answers{{end}}">
+      <span class="s-post-summary--stats-item-number">{{formatNumber .AnswerCount}}</span>
+      <span class="s-post-summary--stats-item-unit">{{if eq .AnswerCount 1}}answer{{else}}answers{{end}}</span>
+    </div>
+    <div class="s-post-summary--stats-item">
+      <span class="s-post-summary--stats-item-number">{{formatNumber .ViewCount}}</span>
+      <span class="s-post-summary--stats-item-unit">views</span>
+    </div>
+  </div>
+  <div class="s-post-summary--content">
+    {{$slug := slugify .Title}}
+    <h3 class="s-post-summary--content-title">
+      <a href="/questions/{{.ID}}{{if $slug}}/{{$slug}}{{end}}">{{.Title}}</a>
+    </h3>
+    <div class="s-post-summary--content-excerpt">{{truncate .Body 200}}</div>
+    <div class="s-post-summary--meta">
+      <div class="tag-list">
+        {{range .Tags}}
+          <a class="s-tag" href="/tags/{{.Name}}">{{.Name}}</a>
+        {{end}}
+      </div>
+      {{if .Author}}
+        <div class="user-card">
+          <div class="user-avatar sm">
+            {{if .Author.AvatarURL}}
+              <img src="{{.Author.AvatarURL}}" alt="">
+            {{else}}
+              <span aria-hidden="true">{{printf "%.1s" (default .Author.DisplayName .Author.Username)}}</span>
+            {{end}}
+          </div>
+          <div>
+            <span class="time-asked">asked {{formatTimeRelative .CreatedAt}}</span>
+            <a class="user-name" href="/users/{{.Author.ID}}">{{default .Author.DisplayName .Author.Username}}</a>
+            <span class="s-user-card--rep fw-bold">{{formatNumber .Author.Reputation}}</span>
+          </div>
+        </div>
+      {{else}}
+        <div class="user-info">
+          <span class="muted">asked {{formatTimeRelative .CreatedAt}}</span>
+        </div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

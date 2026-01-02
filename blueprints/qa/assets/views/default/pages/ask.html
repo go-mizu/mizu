@@ -1,0 +1,77 @@
+{{define "ask.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="header-row">
+  <h1 class="fs-headline1 fw-normal">Ask a public question</h1>
+</div>
+
+<div class="s-card" style="background: var(--blue-050); border-color: var(--blue-200); margin-bottom: 16px;">
+  <h2 class="fs-body3 fw-bold" style="margin: 0 0 8px;">Writing a good question</h2>
+  <p style="margin: 0; font-size: var(--fs-body1); color: var(--black-700);">
+    You're ready to ask a programming-related question and this form will help guide you through the process.
+  </p>
+  <p style="margin: 8px 0 0; font-size: var(--fs-body1); color: var(--black-600);">
+    Looking to ask a non-programming question? See <a href="#">the topics here</a> to find a relevant site.
+  </p>
+</div>
+
+<form class="form-card" action="/api/questions" method="post">
+  <div class="form-field">
+    <label class="s-label" for="title">Title</label>
+    <p class="s-description" style="margin-bottom: 8px;">Be specific and imagine you're asking a question to another person.</p>
+    <input type="text" id="title" name="title" class="s-input" placeholder="e.g. Is there an R function for finding the index of an element in a vector?" required maxlength="150">
+  </div>
+
+  <div class="form-field">
+    <label class="s-label" for="body">What are the details of your problem?</label>
+    <p class="s-description" style="margin-bottom: 8px;">Introduce the problem and expand on what you put in the title. Minimum 20 characters.</p>
+    <textarea id="body" name="body" class="s-textarea" placeholder="Include all the information someone would need to answer your question" required minlength="20"></textarea>
+    <div class="form-hint">
+      <strong>Markdown supported.</strong> Use code blocks for code: <code>```code```</code>
+    </div>
+  </div>
+
+  <div class="form-field">
+    <label class="s-label" for="tags">Tags</label>
+    <p class="s-description" style="margin-bottom: 8px;">Add up to 5 tags to describe what your question is about. Start typing to see suggestions.</p>
+    <input type="text" id="tags" name="tags" class="s-input" placeholder="e.g. (javascript react css)" maxlength="200">
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 16px; margin-top: 24px;">
+    <button type="submit" class="btn btn-primary">Post your question</button>
+    <a href="/" class="s-btn s-btn__muted">Discard draft</a>
+  </div>
+</form>
+{{end}}
+
+{{define "sidebar"}}
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Step 1: Draft your question</div>
+  <div class="s-sidebarwidget--content">
+    <p style="margin: 0; font-size: var(--fs-body1); color: var(--black-600);">
+      The community is here to help you with specific coding, algorithm, or language problems.
+    </p>
+  </div>
+</div>
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Writing a good title</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list" style="padding-left: 16px; list-style: disc;">
+      <li>Your title should summarize the problem</li>
+      <li>You might find that you have a better idea of your title after writing the body</li>
+    </ul>
+  </div>
+</div>
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Introduce the problem</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list" style="padding-left: 16px; list-style: disc;">
+      <li>Explain how you encountered the problem</li>
+      <li>Describe what you've already tried</li>
+      <li>Include error messages and relevant code</li>
+    </ul>
+  </div>
+</div>
+{{end}}

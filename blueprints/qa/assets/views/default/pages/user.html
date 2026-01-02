@@ -1,0 +1,58 @@
+{{define "user.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="profile-header">
+  <div class="user-avatar xl">
+    {{if .Data.User.AvatarURL}}
+      <img src="{{.Data.User.AvatarURL}}" alt="{{default .Data.User.DisplayName .Data.User.Username}}">
+    {{else}}
+      <span>{{printf "%.1s" (default .Data.User.DisplayName .Data.User.Username)}}</span>
+    {{end}}
+  </div>
+  <div>
+    <div class="page-title">
+      <h1>{{default .Data.User.DisplayName .Data.User.Username}}</h1>
+    </div>
+    <div class="user-handle">@{{.Data.User.Username}}</div>
+    {{if .Data.User.Bio}}
+      <p class="muted">{{.Data.User.Bio}}</p>
+    {{end}}
+    <div class="user-info">
+      <span>{{formatNumber .Data.User.Reputation}} reputation</span>
+      <span>Member for {{formatTimeRelative .Data.User.CreatedAt}}</span>
+      {{if .Data.User.Location}}
+        <span>{{.Data.User.Location}}</span>
+      {{end}}
+      {{if .Data.User.WebsiteURL}}
+        <span><a href="{{.Data.User.WebsiteURL}}">website</a></span>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<h2>Top Questions</h2>
+<div class="question-list">
+  {{range .Data.Questions}}
+    {{template "question_card" .}}
+  {{else}}
+    <p class="muted">No questions yet.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Top Tags</div>
+  <div class="sidebar-card-body">
+    <div class="tag-list">
+      {{range .Data.TopTags}}
+        <span class="tag">{{.Name}}</span>
+      {{else}}
+        <span class="muted">No tags yet.</span>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

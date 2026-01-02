@@ -1,0 +1,191 @@
+{{define "question.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="question-header">
+  <div class="question-title-row">
+    <h1>{{.Data.Question.Title}}</h1>
+    <a class="btn btn-primary" href="/ask">Ask Question</a>
+  </div>
+  <div class="question-meta-row">
+    <div class="meta-item">
+      <span class="meta-label">Asked</span>
+      <span>{{formatTimeRelative .Data.Question.CreatedAt}}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Modified</span>
+      <span>{{formatTimeRelative .Data.Question.UpdatedAt}}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Viewed</span>
+      <span>{{formatNumber .Data.Question.ViewCount}} times</span>
+    </div>
+  </div>
+</div>
+
+{{if .Data.Question.IsClosed}}
+  <div class="status-banner status-closed" role="alert">
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor" aria-hidden="true" style="flex-shrink:0">
+      <path d="M9 1a8 8 0 100 16A8 8 0 009 1zM8 5a1 1 0 012 0v4a1 1 0 01-2 0V5zm1 8a1 1 0 100-2 1 1 0 000 2z"/>
+    </svg>
+    <div>
+      <strong>Closed.</strong>
+      <span>{{default .Data.Question.CloseReason "This question is not accepting answers."}}</span>
+    </div>
+  </div>
+{{end}}
+{{if gt .Data.Question.BountyAmount 0}}
+  <div class="status-banner status-bounty" role="alert">
+    <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor" aria-hidden="true" style="flex-shrink:0">
+      <path d="M9 1a8 8 0 100 16A8 8 0 009 1zm2 11H7v-2h4v2zm0-4H7V4h4v4z"/>
+    </svg>
+    <div>
+      <strong>Bounty +{{formatNumber .Data.Question.BountyAmount}}</strong>
+      <span>This question has an active bounty worth reputation.</span>
+    </div>
+  </div>
+{{end}}
+
+<article class="post-layout question-post" data-post-id="{{.Data.Question.ID}}" data-post-type="question">
+  <div class="vote-box" role="group" aria-label="Vote on this question">
+    <button class="vote-btn" aria-label="Vote up" title="This question shows research effort; it is useful and clear">
+      <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M2 25h32L18 9 2 25z" fill="currentColor"/></svg>
+    </button>
+    <div class="score" aria-label="Score: {{formatNumber .Data.Question.Score}}">{{formatNumber .Data.Question.Score}}</div>
+    <button class="vote-btn down" aria-label="Vote down" title="This question does not show any research effort; it is unclear or not useful">
+      <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M2 11h32L18 27 2 11z" fill="currentColor"/></svg>
+    </button>
+    <button class="bookmark-btn" aria-label="Save this question" title="Save this question">
+      <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 2v14l6-4 6 4V2H3z" fill="currentColor"/></svg>
+    </button>
+    <div class="favorite-count">{{formatNumber .Data.Question.FavoriteCount}}</div>
+    {{if gt .Data.Question.BountyAmount 0}}
+      <div class="bounty-pill" title="Bounty amount">+{{formatNumber .Data.Question.BountyAmount}}</div>
+    {{end}}
+  </div>
+  <div class="post-content">
+    <div class="post-body">{{safeHTML .Data.Question.BodyHTML}}</div>
+    <div class="tag-list" style="margin-top: 24px; margin-bottom: 16px;">
+      {{range .Data.Question.Tags}}
+        <a class="s-tag" href="/tags/{{.Name}}">{{.Name}}</a>
+      {{end}}
+    </div>
+    <div class="post-actions">
+      <div class="post-menu">
+        <a href="#" title="Short permalink to this question">Share</a>
+        <a href="#" title="Revise and improve this post">Edit</a>
+        <a href="#" title="Follow this post to receive notifications">Follow</a>
+        <a href="#" title="Flag this post for serious problems">Flag</a>
+      </div>
+      {{if .Data.Question.Author}}
+      <div class="user-card">
+        <div class="user-avatar">
+          {{if .Data.Question.Author.AvatarURL}}
+            <img src="{{.Data.Question.Author.AvatarURL}}" alt="">
+          {{else}}
+            <span aria-hidden="true">{{printf "%.1s" (default .Data.Question.Author.DisplayName .Data.Question.Author.Username)}}</span>
+          {{end}}
+        </div>
+        <div>
+          <div class="time-asked">asked {{formatTimeRelative .Data.Question.CreatedAt}}</div>
+          <a class="user-name" href="/users/{{.Data.Question.Author.ID}}">{{default .Data.Question.Author.DisplayName .Data.Question.Author.Username}}</a>
+          <div class="s-user-card--awards">
+            <span class="s-user-card--rep fw-bold">{{formatNumber .Data.Question.Author.Reputation}}</span>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    <div class="comments" aria-label="Comments on question">
+      {{range .Data.QuestionComments}}
+        {{template "comment" .}}
+      {{else}}
+      {{end}}
+      <div class="comment-actions">
+        <a href="#" role="button">Add a comment</a>
+      </div>
+    </div>
+  </div>
+</article>
+
+<div class="answer-header">
+  <h2 id="answers-heading">{{formatNumber .Data.AnswerCount}} {{if eq .Data.AnswerCount 1}}Answer{{else}}Answers{{end}}</h2>
+  <div class="answer-sort">
+    <label for="answer-sort">Sorted by:</label>
+    <select id="answer-sort" name="answer-sort" class="s-select">
+      <option value="score" selected>Highest score (default)</option>
+      <option value="activity">Date modified (newest first)</option>
+      <option value="oldest">Date created (oldest first)</option>
+    </select>
+  </div>
+</div>
+
+<div class="answers-list" aria-labelledby="answers-heading">
+{{range .Data.Answers}}
+  {{template "answer" .}}
+{{else}}
+  <p class="muted" style="padding: 24px 0; border-bottom: 1px solid var(--theme-border-color-light);">No answers yet. Be the first to answer!</p>
+{{end}}
+</div>
+
+<div class="answer-form" id="your-answer">
+  <h2>Your Answer</h2>
+  <form action="/api/questions/{{.Data.Question.ID}}/answers" method="post">
+    <div class="form-field">
+      <textarea name="body" class="s-textarea" placeholder="Write your answer here..." required minlength="30"></textarea>
+      <div class="form-hint">
+        <strong>Markdown supported.</strong> Use code blocks for code: <code>```code```</code>
+      </div>
+    </div>
+    <div class="answer-form-actions">
+      <button type="submit" class="btn btn-primary">Post Your Answer</button>
+      <span class="muted">By clicking "Post Your Answer", you agree to our terms of service and privacy policy.</span>
+    </div>
+  </form>
+</div>
+
+<div class="answer-footer">
+  <span>Not the answer you're looking for?</span>
+  <a href="/questions">Browse other questions</a>
+  <span>or</span>
+  <a href="/ask">ask your own question</a>.
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Related Questions</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list">
+      {{range .Data.RelatedQuestions}}
+        {{$slug := slugify .Title}}
+        <li>
+          <span class="s-badge s-badge__votes s-badge__xs" style="margin-right:6px;">{{.Score}}</span>
+          <a href="/questions/{{.ID}}{{if $slug}}/{{$slug}}{{end}}">{{.Title}}</a>
+        </li>
+      {{else}}
+        <li class="muted">No related questions</li>
+      {{end}}
+    </ul>
+  </div>
+</div>
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Linked</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list">
+      <li class="muted">No linked questions</li>
+    </ul>
+  </div>
+</div>
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Hot Network Questions</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list">
+      <li><a href="#">Why does this query planner pick a full scan?</a></li>
+      <li><a href="#">What causes random time drift in containers?</a></li>
+      <li><a href="#">How to avoid deadlocks with async tasks?</a></li>
+    </ul>
+  </div>
+</div>
+{{end}}

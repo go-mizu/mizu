@@ -1,0 +1,88 @@
+{{define "nav"}}
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <button class="mobile-nav-toggle" aria-label="Toggle navigation" aria-expanded="false" data-action="toggle-nav">
+      <svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+        <path d="M2 4h14v2H2V4zm0 4h14v2H2V8zm0 4h14v2H2v-2z"/>
+      </svg>
+    </button>
+    <a class="topbar-logo" href="/">
+      <svg viewBox="0 0 150 30" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="QA Overflow">
+        <path d="M4 22V6h4l10 8-10 8H4z" fill="#f48225"/>
+        <path d="M14 7l8 8-8 8" stroke="#f48225" stroke-width="2.5" fill="none"/>
+        <text x="32" y="21" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="16" font-weight="400" fill="#232629">
+          <tspan>QA</tspan><tspan font-weight="700"> Overflow</tspan>
+        </text>
+      </svg>
+    </a>
+    <nav class="topbar-nav" aria-label="Main navigation">
+      <a class="topbar-link" href="#">About</a>
+      <a class="topbar-link" href="#">Products</a>
+      <a class="topbar-link" href="#">For Teams</a>
+    </nav>
+    <form class="topbar-search" action="/search" method="get" role="search">
+      <svg class="search-icon" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+        <path d="M18 16.5l-5.14-5.18a7 7 0 10-1.19 1.19L16.5 18l1.5-1.5zM10 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+      </svg>
+      <input type="search" name="q" placeholder="Search..." value="{{.Query}}" aria-label="Search" autocomplete="off">
+    </form>
+    <div class="topbar-actions">
+      {{if .CurrentUser}}
+        <div class="topbar-icons">
+          <a class="topbar-icon" href="#" aria-label="Inbox" title="Inbox">
+            <svg viewBox="0 0 20 18" fill="currentColor" aria-hidden="true">
+              <path d="M4.63 1h10.56a2 2 0 011.94 1.35L20 10.79V15a2 2 0 01-2 2H2a2 2 0 01-2-2v-4.21l2.78-8.44c.25-.8 1-1.36 1.85-1.35zm8.28 12L14 11h4l-2.55-7.74a1 1 0 00-.95-.68H5.5a1 1 0 00-.95.68L2 11h4l1.09 2h5.82z"/>
+            </svg>
+          </a>
+          <a class="topbar-icon" href="#" aria-label="Achievements" title="Achievements">
+            <svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+              <path d="M9 0a8 8 0 100 16A8 8 0 009 0zm.55 6.37l1.92.56.56 1.92L10.11 9l1.92 1.15-.56 1.92-1.92.56-.55 1.92L7.85 13l-1.92.56-.56-1.92L7.29 9 5.37 7.85l.56-1.92 1.92-.56L9 3.45l1.15 1.92-.55 1z"/>
+            </svg>
+          </a>
+          <a class="topbar-icon" href="#" aria-label="Help" title="Help">
+            <svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+              <path d="M9 1a8 8 0 100 16A8 8 0 009 1zm.81 12.13c-.02.71-.55 1.15-1.24 1.13-.66-.02-1.17-.49-1.15-1.2.02-.72.56-1.18 1.22-1.16.7.03 1.2.51 1.17 1.23zM11.77 8a5.8 5.8 0 01-.59.73c-.45.48-.79.9-.93 1.44-.1.39-.13.79-.13 1.2H8.1c0-.6.07-1.12.22-1.57.25-.76.72-1.33 1.26-1.86.38-.36.64-.63.79-.93.15-.29.22-.6.22-.91 0-.42-.12-.75-.37-1-.25-.26-.61-.39-1.08-.39-.48 0-.87.16-1.16.47-.27.28-.42.64-.42 1.08H5.5c.02-.95.37-1.7 1.05-2.26C7.25 3.42 8.1 3.13 9.15 3.13c1.01 0 1.82.27 2.43.8.61.54.92 1.28.92 2.22 0 .7-.24 1.36-.73 1.85z"/>
+            </svg>
+          </a>
+        </div>
+        <a class="topbar-user" href="/users/{{.CurrentUser.ID}}">
+          <div class="user-avatar sm">
+            {{if .CurrentUser.AvatarURL}}
+              <img src="{{.CurrentUser.AvatarURL}}" alt="">
+            {{else}}
+              <span aria-hidden="true">{{printf "%.1s" (default .CurrentUser.DisplayName .CurrentUser.Username)}}</span>
+            {{end}}
+          </div>
+          <span class="reputation">{{formatNumber .CurrentUser.Reputation}}</span>
+          <div class="badge-counts">
+            {{if gt .CurrentUser.GoldBadges 0}}<span class="s-award-bling s-award-bling--gold">{{.CurrentUser.GoldBadges}}</span>{{end}}
+            {{if gt .CurrentUser.SilverBadges 0}}<span class="s-award-bling s-award-bling--silver">{{.CurrentUser.SilverBadges}}</span>{{end}}
+            {{if gt .CurrentUser.BronzeBadges 0}}<span class="s-award-bling s-award-bling--bronze">{{.CurrentUser.BronzeBadges}}</span>{{end}}
+          </div>
+        </a>
+        <button class="theme-toggle" aria-label="Toggle dark mode" data-action="toggle-theme">
+          <svg class="icon-sun" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+            <path d="M9 3V1m0 16v-2m6-6h2M1 9h2m12.3-4.3l1.4-1.4M2.3 16.3l1.4-1.4m0-9.8L2.3 3.7m13.4 10.6l-1.4-1.4M12 9a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true" style="display:none">
+            <path d="M15.64 11.02A7.5 7.5 0 016.98 2.36 8 8 0 109 17a8.02 8.02 0 006.64-5.98z"/>
+          </svg>
+        </button>
+        <a class="btn" href="/logout">Log out</a>
+      {{else}}
+        <a class="btn btn-secondary" href="/login">Log in</a>
+        <a class="btn btn-primary" href="/register">Sign up</a>
+        <button class="theme-toggle" aria-label="Toggle dark mode" data-action="toggle-theme">
+          <svg class="icon-sun" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+            <path d="M9 3V1m0 16v-2m6-6h2M1 9h2m12.3-4.3l1.4-1.4M2.3 16.3l1.4-1.4m0-9.8L2.3 3.7m13.4 10.6l-1.4-1.4M12 9a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true" style="display:none">
+            <path d="M15.64 11.02A7.5 7.5 0 016.98 2.36 8 8 0 109 17a8.02 8.02 0 006.64-5.98z"/>
+          </svg>
+        </button>
+      {{end}}
+    </div>
+  </div>
+</header>
+{{end}}

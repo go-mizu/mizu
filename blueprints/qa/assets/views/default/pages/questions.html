@@ -1,0 +1,41 @@
+{{define "questions.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="header-row">
+  <div>
+    <div class="page-title">
+      <h1>All Questions</h1>
+    </div>
+    <div class="page-subtitle">{{len .Data.Questions}} questions</div>
+  </div>
+  <a class="btn btn-primary" href="/ask">Ask Question</a>
+</div>
+<div class="filter-tabs">
+  <a href="/questions?sort=newest" class="{{if eq .Data.Sort "newest"}}active{{end}}">Newest</a>
+  <a href="/questions?sort=active" class="{{if eq .Data.Sort "active"}}active{{end}}">Active</a>
+  <a href="/questions?sort=score" class="{{if eq .Data.Sort "score"}}active{{end}}">Score</a>
+  <a href="/questions?sort=unanswered" class="{{if eq .Data.Sort "unanswered"}}active{{end}}">Unanswered</a>
+</div>
+<div class="question-list">
+  {{range .Data.Questions}}
+    {{template "question_card" .}}
+  {{else}}
+    <p class="muted">No questions yet.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Hot Network Questions</div>
+  <div class="sidebar-card-body">
+    <ul class="sidebar-list">
+      <li><a href="#">Why does Go favor composition over inheritance?</a></li>
+      <li><a href="#">How to handle rate limits in APIs?</a></li>
+      <li><a href="#">Best practices for schema migrations</a></li>
+    </ul>
+  </div>
+</div>
+{{end}}
