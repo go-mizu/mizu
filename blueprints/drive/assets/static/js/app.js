@@ -3,6 +3,48 @@
 (function() {
   'use strict';
 
+  // =====================
+  // TOAST NOTIFICATIONS
+  // =====================
+  const toastContainer = document.createElement('div');
+  toastContainer.className = 'fixed bottom-4 right-4 z-50 flex flex-col gap-2';
+  toastContainer.id = 'toast-container';
+  document.addEventListener('DOMContentLoaded', () => {
+    document.body.appendChild(toastContainer);
+  });
+
+  function showToast(message, type = 'info', duration = 3000) {
+    const toast = document.createElement('div');
+    const colors = {
+      success: 'bg-green-600 text-white',
+      error: 'bg-red-600 text-white',
+      warning: 'bg-amber-500 text-white',
+      info: 'bg-zinc-800 text-white'
+    };
+    const icons = {
+      success: '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>',
+      error: '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>',
+      warning: '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+      info: '<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>'
+    };
+
+    toast.className = `flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 ${colors[type]}`;
+    toast.innerHTML = `${icons[type]}<span class="text-sm font-medium">${message}</span>`;
+
+    toastContainer.appendChild(toast);
+
+    // Animate in
+    requestAnimationFrame(() => {
+      toast.classList.remove('translate-x-full');
+    });
+
+    // Remove after duration
+    setTimeout(() => {
+      toast.classList.add('translate-x-full');
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+
   // State
   let selectedItems = new Set();
   let currentPath = '';
@@ -795,6 +837,9 @@
 
         const path = window.location.pathname.replace('/files', '').replace(/^\//, '');
 
+        let successCount = 0;
+        let failCount = 0;
+
         for (const file of files) {
           const formData = new FormData();
           formData.append('file', file);
@@ -803,16 +848,30 @@
           }
 
           try {
-            await fetch('/api/v1/files', {
+            const res = await fetch('/api/v1/files', {
               method: 'POST',
               body: formData,
             });
+            if (res.ok) {
+              successCount++;
+            } else {
+              failCount++;
+            }
           } catch (err) {
             console.error('Upload failed:', err);
+            failCount++;
           }
         }
 
-        window.location.reload();
+        if (failCount === 0) {
+          showToast(`${successCount} file${successCount !== 1 ? 's' : ''} uploaded`, 'success');
+        } else if (successCount === 0) {
+          showToast('Upload failed', 'error');
+        } else {
+          showToast(`${successCount} uploaded, ${failCount} failed`, 'warning');
+        }
+
+        setTimeout(() => window.location.reload(), 500);
       });
     }
   }
@@ -885,7 +944,7 @@
     });
   }
 
-  function handleAction(action, item) {
+  async function handleAction(action, item) {
     switch (action) {
       case 'preview':
         if (item.type === 'folder') {
@@ -906,57 +965,118 @@
       case 'download':
         if (item.type === 'file') {
           const a = document.createElement('a');
-          a.href = '/api/v1/content/' + item.id;
+          a.href = '/api/v1/content/' + encodeURIComponent(item.id);
           a.download = item.name;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
+          showToast('Download started', 'success');
         }
         break;
 
       case 'rename':
         const newName = prompt('Enter new name:', item.name);
         if (newName && newName !== item.name) {
-          const endpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
-          fetch(endpoint + item.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: newName }),
-          }).then(() => window.location.reload());
+          try {
+            const endpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
+            const res = await fetch(endpoint + encodeURIComponent(item.id), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: newName }),
+            });
+            if (res.ok) {
+              showToast('Renamed successfully', 'success');
+              setTimeout(() => window.location.reload(), 500);
+            } else {
+              const data = await res.json();
+              showToast(data.error || 'Failed to rename', 'error');
+            }
+          } catch (err) {
+            showToast('Failed to rename', 'error');
+          }
         }
         break;
 
       case 'star':
-        const starEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
-        fetch(starEndpoint + item.id + '/star', { method: 'PUT' })
-          .then(() => window.location.reload());
+        try {
+          const starEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
+          const res = await fetch(starEndpoint + encodeURIComponent(item.id) + '/star', { method: 'PUT' });
+          if (res.ok) {
+            showToast('Updated starred status', 'success');
+            setTimeout(() => window.location.reload(), 500);
+          } else {
+            showToast('Failed to update starred status', 'error');
+          }
+        } catch (err) {
+          showToast('Failed to update starred status', 'error');
+        }
         break;
 
       case 'trash':
         if (confirm('Move "' + item.name + '" to trash?')) {
-          const trashEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
-          fetch(trashEndpoint + item.id + '/trash', { method: 'POST' })
-            .then(() => window.location.reload());
+          try {
+            const trashEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
+            const res = await fetch(trashEndpoint + encodeURIComponent(item.id) + '/trash', { method: 'POST' });
+            if (res.ok) {
+              showToast('Moved to trash', 'success');
+              setTimeout(() => window.location.reload(), 500);
+            } else {
+              showToast('Failed to move to trash', 'error');
+            }
+          } catch (err) {
+            showToast('Failed to move to trash', 'error');
+          }
         }
         break;
 
       case 'copy-link':
-        const url = window.location.origin + '/files/' + item.id;
-        navigator.clipboard.writeText(url);
+        try {
+          const url = window.location.origin + '/files/' + item.id;
+          await navigator.clipboard.writeText(url);
+          showToast('Link copied to clipboard', 'success');
+        } catch (err) {
+          showToast('Failed to copy link', 'error');
+        }
         break;
 
       case 'restore':
-        const restoreEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
-        fetch(restoreEndpoint + item.id + '/restore', { method: 'POST' })
-          .then(() => window.location.reload());
+        try {
+          const restoreEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
+          const res = await fetch(restoreEndpoint + encodeURIComponent(item.id) + '/restore', { method: 'POST' });
+          if (res.ok) {
+            showToast('Restored successfully', 'success');
+            setTimeout(() => window.location.reload(), 500);
+          } else {
+            showToast('Failed to restore', 'error');
+          }
+        } catch (err) {
+          showToast('Failed to restore', 'error');
+        }
         break;
 
       case 'delete-permanent':
         if (confirm('Permanently delete "' + item.name + '"? This cannot be undone.')) {
-          const deleteEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
-          fetch(deleteEndpoint + item.id, { method: 'DELETE' })
-            .then(() => window.location.reload());
+          try {
+            const deleteEndpoint = item.type === 'folder' ? '/api/v1/folders/' : '/api/v1/files/';
+            const res = await fetch(deleteEndpoint + encodeURIComponent(item.id), { method: 'DELETE' });
+            if (res.ok) {
+              showToast('Deleted permanently', 'success');
+              setTimeout(() => window.location.reload(), 500);
+            } else {
+              showToast('Failed to delete', 'error');
+            }
+          } catch (err) {
+            showToast('Failed to delete', 'error');
+          }
         }
+        break;
+
+      case 'share':
+        showToast('Sharing coming soon', 'info');
+        break;
+
+      case 'move':
+        showToast('Move functionality coming soon', 'info');
         break;
     }
   }
@@ -1021,6 +1141,14 @@
         case 'Backspace':
           if (selectedItems.size > 0 && !e.target.matches('input, textarea')) {
             e.preventDefault();
+            // Delete selected items
+            if (selectedFile) {
+              handleAction('trash', {
+                id: selectedFile.id,
+                type: selectedFile.type,
+                name: selectedFile.name
+              });
+            }
           }
           break;
 
@@ -1164,7 +1292,7 @@
         const path = window.location.pathname.replace('/files', '').replace(/^\//, '');
 
         try {
-          await fetch('/api/v1/folders', {
+          const res = await fetch('/api/v1/folders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1172,21 +1300,37 @@
               parent_id: path || undefined,
             }),
           });
-          window.location.reload();
+          if (res.ok) {
+            showToast('Folder created', 'success');
+            setTimeout(() => window.location.reload(), 500);
+          } else {
+            const data = await res.json();
+            showToast(data.error || 'Failed to create folder', 'error');
+          }
         } catch (err) {
           console.error('Failed to create folder:', err);
+          showToast('Failed to create folder', 'error');
         }
       });
     }
+
+    // Settings persistence
+    setupSettings();
 
     document.querySelectorAll('[data-action="empty-trash"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (confirm('Permanently delete all items in trash? This cannot be undone.')) {
           try {
-            await fetch('/api/v1/trash', { method: 'DELETE' });
-            window.location.reload();
+            const res = await fetch('/api/v1/trash', { method: 'DELETE' });
+            if (res.ok) {
+              showToast('Trash emptied', 'success');
+              setTimeout(() => window.location.reload(), 500);
+            } else {
+              showToast('Failed to empty trash', 'error');
+            }
           } catch (err) {
             console.error('Failed to empty trash:', err);
+            showToast('Failed to empty trash', 'error');
           }
         }
       });
@@ -3140,6 +3284,52 @@
       return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // =====================
+  // SETTINGS PAGE
+  // =====================
+  function setupSettings() {
+    const defaultViewSelect = document.getElementById('default-view');
+    const showHiddenCheckbox = document.getElementById('show-hidden');
+
+    if (defaultViewSelect) {
+      // Load saved preference
+      const savedView = getViewPreference();
+      defaultViewSelect.value = savedView;
+
+      // Add column/gallery options if they don't exist
+      if (!defaultViewSelect.querySelector('option[value="column"]')) {
+        const columnOpt = document.createElement('option');
+        columnOpt.value = 'column';
+        columnOpt.textContent = 'Column';
+        defaultViewSelect.appendChild(columnOpt);
+      }
+      if (!defaultViewSelect.querySelector('option[value="gallery"]')) {
+        const galleryOpt = document.createElement('option');
+        galleryOpt.value = 'gallery';
+        galleryOpt.textContent = 'Gallery';
+        defaultViewSelect.appendChild(galleryOpt);
+      }
+
+      // Save on change
+      defaultViewSelect.addEventListener('change', () => {
+        saveViewPreference(defaultViewSelect.value);
+        showToast('Default view updated', 'success');
+      });
+    }
+
+    if (showHiddenCheckbox) {
+      // Load saved preference
+      const showHidden = localStorage.getItem('drive_show_hidden') === 'true';
+      showHiddenCheckbox.checked = showHidden;
+
+      // Save on change
+      showHiddenCheckbox.addEventListener('change', () => {
+        localStorage.setItem('drive_show_hidden', showHiddenCheckbox.checked);
+        showToast(showHiddenCheckbox.checked ? 'Hidden files will be shown' : 'Hidden files will be hidden', 'success');
+      });
+    }
   }
 
   // Helper: Format date from ISO string
