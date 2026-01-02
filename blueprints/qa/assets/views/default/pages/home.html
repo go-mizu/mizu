@@ -1,0 +1,80 @@
+{{define "home.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="header-row">
+  <div>
+    <h1 class="fs-headline1 fw-normal">Top Questions</h1>
+  </div>
+  <a class="btn btn-primary" href="/ask">Ask Question</a>
+</div>
+<div class="page-subtitle">{{len .Data.Questions}} questions</div>
+
+<nav class="s-navigation" aria-label="Question sorting">
+  <a href="/?sort=newest" class="s-navigation--item {{if eq .Data.Sort "newest"}}is-selected{{end}}">Newest</a>
+  <a href="/?sort=active" class="s-navigation--item {{if eq .Data.Sort "active"}}is-selected{{end}}">Active</a>
+  <a href="/?sort=score" class="s-navigation--item {{if eq .Data.Sort "score"}}is-selected{{end}}">Score</a>
+  <a href="/?sort=unanswered" class="s-navigation--item {{if eq .Data.Sort "unanswered"}}is-selected{{end}}">Unanswered</a>
+</nav>
+
+<div class="question-list" role="list">
+  {{range .Data.Questions}}
+    {{template "question_card" .}}
+  {{else}}
+    <p class="muted" style="padding: 24px 0;">No questions yet. Be the first to ask!</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">The Overflow Blog</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list">
+      <li>
+        <svg viewBox="0 0 14 14" width="14" height="14" style="display:inline-block;vertical-align:middle;margin-right:6px;color:var(--black-400)"><path fill="currentColor" d="M11.1 1.71l1.13 1.12c.2.2.2.51 0 .71L11.1 4.67 9.21 2.84l1.18-1.13c.2-.2.51-.2.71 0zM2 11.12l6.37-6.43 1.88 1.88L3.88 13H2v-1.88z"/></svg>
+        <a href="#">Shipping AI features without breaking trust</a>
+      </li>
+      <li>
+        <svg viewBox="0 0 14 14" width="14" height="14" style="display:inline-block;vertical-align:middle;margin-right:6px;color:var(--black-400)"><path fill="currentColor" d="M11.1 1.71l1.13 1.12c.2.2.2.51 0 .71L11.1 4.67 9.21 2.84l1.18-1.13c.2-.2.51-.2.71 0zM2 11.12l6.37-6.43 1.88 1.88L3.88 13H2v-1.88z"/></svg>
+        <a href="#">Building a resilient Q&A community</a>
+      </li>
+      <li>
+        <svg viewBox="0 0 14 14" width="14" height="14" style="display:inline-block;vertical-align:middle;margin-right:6px;color:var(--black-400)"><path fill="currentColor" d="M11.1 1.71l1.13 1.12c.2.2.2.51 0 .71L11.1 4.67 9.21 2.84l1.18-1.13c.2-.2.51-.2.71 0zM2 11.12l6.37-6.43 1.88 1.88L3.88 13H2v-1.88z"/></svg>
+        <a href="#">The future of tag curation</a>
+      </li>
+    </ul>
+  </div>
+</div>
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Featured on Meta</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list">
+      <li>
+        <span class="s-badge s-badge__info s-badge__sm" style="margin-right:6px;">Meta</span>
+        <a href="#">Community feedback: New sorting options</a>
+      </li>
+      <li>
+        <span class="s-badge s-badge__info s-badge__sm" style="margin-right:6px;">Meta</span>
+        <a href="#">New badge rollout plan</a>
+      </li>
+      <li>
+        <span class="s-badge s-badge__warning s-badge__sm" style="margin-right:6px;">Review</span>
+        <a href="#">Release notes 2025.03</a>
+      </li>
+    </ul>
+  </div>
+</div>
+<div class="s-sidebarwidget">
+  <div class="s-sidebarwidget--header">Hot Network Questions</div>
+  <div class="s-sidebarwidget--content">
+    <ul class="sidebar-list">
+      <li><a href="#">Why does this query planner pick a full scan?</a></li>
+      <li><a href="#">What causes random time drift in containers?</a></li>
+      <li><a href="#">How to avoid deadlocks with async tasks?</a></li>
+      <li><a href="#">Best practices for API rate limiting</a></li>
+    </ul>
+  </div>
+</div>
+{{end}}

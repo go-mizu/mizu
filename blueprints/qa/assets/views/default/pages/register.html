@@ -1,0 +1,40 @@
+{{define "register.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-title">
+  <h1>Sign up</h1>
+</div>
+<div class="auth-layout">
+  <div class="form-card">
+    <div class="form-field">
+      <label for="display">Display name</label>
+      <input id="display" placeholder="Your name">
+    </div>
+    <div class="form-field">
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="name@example.com">
+    </div>
+    <div class="form-field">
+      <label for="password">Password</label>
+      <input id="password" type="password">
+    </div>
+    <button class="btn btn-primary">Create account</button>
+  </div>
+  <div class="auth-aside">
+    <strong>Join the community</strong>
+    <p class="muted">Get answers, earn badges, and help others.</p>
+    <p class="muted">Already have an account? <a href="/login">Log in</a>.</p>
+  </div>
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Join the community</div>
+  <div class="sidebar-card-body">
+    <p class="muted">Get answers, earn badges, and help others.</p>
+  </div>
+</div>
+{{end}}

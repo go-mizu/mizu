@@ -1,0 +1,60 @@
+{{define "answer"}}
+<article class="post-layout answer-post {{if .IsAccepted}}is-accepted{{end}}" data-post-id="{{.ID}}" data-post-type="answer">
+  <div class="vote-box" role="group" aria-label="Vote on this answer">
+    <button class="vote-btn" aria-label="Vote up" title="This answer is useful">
+      <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M2 25h32L18 9 2 25z" fill="currentColor"/></svg>
+    </button>
+    <div class="score" aria-label="Score: {{formatNumber .Score}}">{{formatNumber .Score}}</div>
+    <button class="vote-btn down" aria-label="Vote down" title="This answer is not useful">
+      <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M2 11h32L18 27 2 11z" fill="currentColor"/></svg>
+    </button>
+    {{if .IsAccepted}}
+    <div class="accepted-check" title="Accepted answer" aria-label="This answer has been accepted">
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <path d="M6 14l8 8L30 6l4 4-20 20-12-12 4-4z" fill="currentColor"/>
+      </svg>
+    </div>
+    {{end}}
+    <button class="bookmark-btn" aria-label="Save this answer" title="Save this answer">
+      <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 2v14l6-4 6 4V2H3z" fill="currentColor"/></svg>
+    </button>
+  </div>
+  <div class="post-content">
+    <div class="post-body">{{safeHTML .BodyHTML}}</div>
+    <div class="post-actions">
+      <div class="post-menu">
+        <a href="#" title="Short permalink to this answer">Share</a>
+        <a href="#" title="Revise and improve this post">Edit</a>
+        <a href="#" title="Follow this post to receive notifications">Follow</a>
+        <a href="#" title="Flag this post for serious problems">Flag</a>
+      </div>
+      {{if .Author}}
+      <div class="user-card">
+        <div class="user-avatar">
+          {{if .Author.AvatarURL}}
+            <img src="{{.Author.AvatarURL}}" alt="">
+          {{else}}
+            <span aria-hidden="true">{{printf "%.1s" (default .Author.DisplayName .Author.Username)}}</span>
+          {{end}}
+        </div>
+        <div>
+          <div class="time-asked">answered {{formatTimeRelative .CreatedAt}}</div>
+          <a class="user-name" href="/users/{{.Author.ID}}">{{default .Author.DisplayName .Author.Username}}</a>
+          <div class="s-user-card--awards">
+            <span class="s-user-card--rep fw-bold">{{formatNumber .Author.Reputation}}</span>
+          </div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+    <div class="comments" aria-label="Comments on answer">
+      {{range .Comments}}
+        {{template "comment" .}}
+      {{end}}
+      <div class="comment-actions">
+        <a href="#" role="button">Add a comment</a>
+      </div>
+    </div>
+  </div>
+</article>
+{{end}}

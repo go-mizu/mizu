@@ -1,0 +1,32 @@
+{{define "tag.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="tag-hero">
+  <div>
+    <div class="page-title">
+      <h1><span class="tag">{{.Data.Tag.Name}}</span> Tag</h1>
+    </div>
+    <div class="page-subtitle">{{formatNumber .Data.Tag.QuestionCount}} questions</div>
+    <p class="muted">{{.Data.Tag.Excerpt}}</p>
+  </div>
+  <a class="btn btn-primary" href="/ask">Ask Question</a>
+</div>
+<div class="question-list">
+  {{range .Data.Questions}}
+    {{template "question_card" .}}
+  {{else}}
+    <p class="muted">No questions tagged with {{.Data.Tag.Name}}.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Tag Wiki</div>
+  <div class="sidebar-card-body">
+    <p>{{.Data.Tag.Wiki}}</p>
+  </div>
+</div>
+{{end}}

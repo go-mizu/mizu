@@ -1,0 +1,29 @@
+{{define "search.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="header-row">
+  <div class="page-title">
+    <h1>Search Results</h1>
+  </div>
+  <div class="page-subtitle">{{len .Data.Questions}} results</div>
+</div>
+<p class="muted">Results for \"{{.Data.Query}}\"</p>
+<div class="question-list">
+  {{range .Data.Questions}}
+    {{template "question_card" .}}
+  {{else}}
+    <p class="muted">No results found.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Search tips</div>
+  <div class="sidebar-card-body">
+    <p class="muted">Use tags and quoted phrases to narrow results.</p>
+  </div>
+</div>
+{{end}}

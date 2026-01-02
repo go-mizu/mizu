@@ -1,0 +1,41 @@
+{{define "tags.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="page-title">
+  <h1>Tags</h1>
+  <div class="muted">{{formatNumber .Data.TagCount}} tags</div>
+</div>
+<div class="tags-toolbar">
+  <form class="tags-search" action="/tags" method="get">
+    <input type="search" name="q" placeholder="Filter by tag name" value="{{.Data.Query}}">
+  </form>
+</div>
+<div class="tags-grid">
+  {{range .Data.Tags}}
+    <div class="tag-card">
+      <div class="tag-card-header">
+        <a class="tag" href="/tags/{{.Name}}">{{.Name}}</a>
+        <span class="tag-count">{{formatNumber .QuestionCount}} questions</span>
+      </div>
+      <p>{{default .Excerpt "Curated answers and insights from the community."}}</p>
+      <div class="tag-meta">
+        <span class="muted">Popular</span>
+        <span class="muted">Updated {{formatTimeRelative .CreatedAt}}</span>
+      </div>
+    </div>
+  {{else}}
+    <p class="muted">No tags found.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">Tag filters</div>
+  <div class="sidebar-card-body">
+    <p class="muted">Filter tags by name, popularity, or newness.</p>
+  </div>
+</div>
+{{end}}

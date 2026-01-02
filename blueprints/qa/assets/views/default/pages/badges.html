@@ -1,0 +1,32 @@
+{{define "badges.html"}}
+{{template "default.html" .}}
+{{end}}
+
+{{define "content"}}
+<div class="header-row">
+  <div class="page-title">
+    <h1>Badges</h1>
+  </div>
+  <div class="page-subtitle">{{len .Data.Badges}} badges</div>
+</div>
+<div class="badge-grid">
+  {{range .Data.Badges}}
+    <div class="badge-card badge-{{.Tier}}">
+      <div class="badge-tier">{{.Tier}}</div>
+      <div class="badge-name">{{.Name}}</div>
+      <p class="muted">{{.Description}}</p>
+    </div>
+  {{else}}
+    <p class="muted">No badges found.</p>
+  {{end}}
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<div class="sidebar-card">
+  <div class="sidebar-card-header">How badges work</div>
+  <div class="sidebar-card-body">
+    <p class="muted">Earn badges for asking, answering, and helping others.</p>
+  </div>
+</div>
+{{end}}
