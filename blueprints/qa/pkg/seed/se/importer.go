@@ -930,3 +930,44 @@ func (c *countingReader) Read(p []byte) (int, error) {
 func rawOrEmpty(val string) string {
 	return val
 }
+
+// ImportQuestionTags imports only the question-tag associations from Posts.xml.
+// This is useful for fixing a database where question_tags is empty.
+func (i *Importer) ImportQuestionTags(ctx context.Context, postsPath string) (int, error) {
+	count := 0
+
+	err := i.importRows(ctx, postsPath, "Posts.xml", func(tx *sql.Tx, batch *batchState) (func(), error) {
+		linkStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO question_tags (question_id, tag_id)
+			VALUES ($1, $2)
+			ON CONFLICT (question_id, tag_id) DO NOTHING
+		`)
+		if err != nil {
+			return nil, err
+		}
+		cleanup := func() { _ = linkStmt.Close() }
+
+		batch.handlePost = func(row postRow) error {
+			if row.ID == 0 {
+				return nil
+			}
+			if postType(row.PostTypeID) != postTypeQuestion {
+				return nil
+			}
+			tags := parseTags(row.Tags)
+			for _, tag := range tags {
+				if tag == "" {
+					continue
+				}
+				if _, err := linkStmt.ExecContext(ctx, questionID(row.ID), tagID(tag)); err != nil {
+					return err
+				}
+				count++
+			}
+			return nil
+		}
+		return cleanup, nil
+	})
+
+	return count, err
+}

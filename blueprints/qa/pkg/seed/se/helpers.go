@@ -150,6 +150,20 @@ func parseTags(value string) []string {
 	if value == "" {
 		return nil
 	}
+
+	// Handle pipe-separated format: |tag1|tag2|tag3|
+	if strings.HasPrefix(value, "|") {
+		var tags []string
+		for _, tag := range strings.Split(value, "|") {
+			tag = strings.ToLower(strings.TrimSpace(tag))
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+		return tags
+	}
+
+	// Handle angle bracket format: <tag1><tag2><tag3>
 	var tags []string
 	for {
 		start := strings.IndexByte(value, '<')
