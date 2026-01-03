@@ -88,21 +88,40 @@ func (s *Service) GetChildren(ctx context.Context, blockID string) ([]*Block, er
 	return s.store.GetChildren(ctx, blockID)
 }
 
-// BatchCreate creates multiple blocks.
+// BatchCreate creates multiple blocks in a single batch operation.
 func (s *Service) BatchCreate(ctx context.Context, inputs []*CreateIn) ([]*Block, error) {
-	blocks := make([]*Block, 0, len(inputs))
-	for _, in := range inputs {
-		block, err := s.Create(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		blocks = append(blocks, block)
+	if len(inputs) == 0 {
+		return []*Block{}, nil
 	}
+
+	now := time.Now()
+	blocks := make([]*Block, len(inputs))
+	for i, in := range inputs {
+		blocks[i] = &Block{
+			ID:        ulid.New(),
+			PageID:    in.PageID,
+			ParentID:  in.ParentID,
+			Type:      in.Type,
+			Content:   in.Content,
+			Position:  in.Position,
+			CreatedBy: in.CreatedBy,
+			CreatedAt: now,
+			UpdatedBy: in.CreatedBy,
+			UpdatedAt: now,
+		}
+	}
+
+	if err := s.store.BatchCreate(ctx, blocks); err != nil {
+		return nil, err
+	}
+
 	return blocks, nil
 }
 
 // BatchUpdate updates multiple blocks.
 func (s *Service) BatchUpdate(ctx context.Context, updates []*UpdateIn) error {
+	// Note: True batch update would require a store method that accepts multiple updates
+	// For now, individual updates are still necessary as each block may have different content
 	for _, u := range updates {
 		if err := s.store.Update(ctx, u.ID, u); err != nil {
 			return err
@@ -111,14 +130,9 @@ func (s *Service) BatchUpdate(ctx context.Context, updates []*UpdateIn) error {
 	return nil
 }
 
-// BatchDelete deletes multiple blocks.
+// BatchDelete deletes multiple blocks in a single batch operation.
 func (s *Service) BatchDelete(ctx context.Context, ids []string) error {
-	for _, id := range ids {
-		if err := s.store.Delete(ctx, id); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.store.BatchDelete(ctx, ids)
 }
 
 // Move moves a block to a new position.

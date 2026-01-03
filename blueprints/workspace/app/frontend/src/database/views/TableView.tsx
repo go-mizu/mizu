@@ -17,7 +17,7 @@ import '@glideapps/glide-data-grid/dist/index.css'
 import '@glideapps/glide-data-grid-cells/dist/index.css'
 import { DatabaseRow, Property, PropertyType, Database, FileAttachment } from '../../api/client'
 import { filesCellRenderer, createFilesCell } from '../cells/FilesCell'
-import { RowDetailModal } from '../RowDetailModal'
+import { SidePeek } from '../SidePeek'
 import {
   Plus,
   Trash2,
@@ -307,6 +307,7 @@ export function TableView({
     rows: CompactSelection.empty(),
   })
   const [detailRow, setDetailRow] = useState<DatabaseRow | null>(null)
+  const [detailRowIndex, setDetailRowIndex] = useState<number>(-1)
   const [searchQuery, setSearchQuery] = useState('')
   const [showColumnVisibility, setShowColumnVisibility] = useState(false)
   const [showAddProperty, setShowAddProperty] = useState<{ x: number; y: number } | null>(null)
@@ -649,12 +650,32 @@ export function TableView({
     onUpdateRow(rowData.id, { [property.id]: valueToSave })
   }, [filteredRows, visibleProperties, onUpdateRow])
 
-  // Handle row marker click (open detail modal)
+  // Handle row marker click (open side peek)
   const onRowMarkerClick = useCallback((row: number) => {
     if (row < filteredRows.length) {
       setDetailRow(filteredRows[row])
+      setDetailRowIndex(row)
     }
   }, [filteredRows])
+
+  // Handle side peek navigation
+  const handleNavigate = useCallback((direction: 'prev' | 'next') => {
+    const newIndex = direction === 'prev' ? detailRowIndex - 1 : detailRowIndex + 1
+    if (newIndex >= 0 && newIndex < filteredRows.length) {
+      setDetailRow(filteredRows[newIndex])
+      setDetailRowIndex(newIndex)
+    }
+  }, [detailRowIndex, filteredRows])
+
+  // Handle row update from side peek
+  const handleRowUpdate = useCallback((updatedRow: DatabaseRow) => {
+    // Find and update the row in the filtered list
+    const index = filteredRows.findIndex(r => r.id === updatedRow.id)
+    if (index >= 0) {
+      onUpdateRow(updatedRow.id, updatedRow.properties)
+    }
+    setDetailRow(updatedRow)
+  }, [filteredRows, onUpdateRow])
 
   // Handle cell click - custom cells handle their own overlays now
   const onCellClicked = useCallback((_cell: Item, _event: CellClickedEventArgs) => {
@@ -1434,17 +1455,26 @@ export function TableView({
         </>
       )}
 
-      {/* Row Detail Modal */}
+      {/* Side Peek Panel */}
       {detailRow && database && (
-        <RowDetailModal
+        <SidePeek
           row={detailRow}
           database={database}
-          onClose={() => setDetailRow(null)}
-          onUpdate={() => {}}
+          rows={filteredRows}
+          currentIndex={detailRowIndex}
+          isOpen={!!detailRow}
+          onClose={() => {
+            setDetailRow(null)
+            setDetailRowIndex(-1)
+          }}
+          onNavigate={handleNavigate}
+          onUpdate={handleRowUpdate}
           onDelete={(rowId) => {
             onDeleteRow(rowId)
             setDetailRow(null)
+            setDetailRowIndex(-1)
           }}
+          onAddProperty={onAddProperty}
         />
       )}
     </div>

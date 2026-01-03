@@ -270,14 +270,46 @@ CREATE TABLE IF NOT EXISTS page_access (
 );
 
 -- ============================================================
+-- Row Comments (for database rows)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS row_comments (
+    id          VARCHAR PRIMARY KEY,
+    row_id      VARCHAR NOT NULL,
+    user_id     VARCHAR NOT NULL,
+    content     TEXT NOT NULL,
+    resolved    BOOLEAN DEFAULT FALSE,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Row Content Blocks (for database rows)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS row_content_blocks (
+    id          VARCHAR PRIMARY KEY,
+    row_id      VARCHAR NOT NULL,
+    parent_id   VARCHAR,
+    type        VARCHAR NOT NULL,
+    content     TEXT,
+    properties  JSON DEFAULT '{}',
+    sort_order  INTEGER DEFAULT 0,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- Indexes
 -- ============================================================
 
 CREATE INDEX IF NOT EXISTS idx_pages_workspace ON pages(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id, parent_type);
+CREATE INDEX IF NOT EXISTS idx_pages_parent_id ON pages(parent_id);
 CREATE INDEX IF NOT EXISTS idx_blocks_page ON blocks(page_id);
 CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(parent_id);
 CREATE INDEX IF NOT EXISTS idx_comments_page ON comments(page_id);
+CREATE INDEX IF NOT EXISTS idx_comments_author ON comments(author_id);
 CREATE INDEX IF NOT EXISTS idx_activities_workspace ON activities(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id, workspace_id);
@@ -286,3 +318,10 @@ CREATE INDEX IF NOT EXISTS idx_database_rows_database ON database_rows(database_
 CREATE INDEX IF NOT EXISTS idx_database_rows_created ON database_rows(database_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_members_workspace ON members(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);
+CREATE INDEX IF NOT EXISTS idx_row_comments_row ON row_comments(row_id);
+CREATE INDEX IF NOT EXISTS idx_row_comments_user ON row_comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_row_content_blocks_row ON row_content_blocks(row_id);
+CREATE INDEX IF NOT EXISTS idx_row_content_blocks_parent ON row_content_blocks(parent_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_databases_workspace ON databases(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_databases_page ON databases(page_id);

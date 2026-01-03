@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/go-mizu/blueprints/workspace/feature/databases"
 )
@@ -37,25 +39,32 @@ func (s *DatabasesStore) GetByID(ctx context.Context, id string) (*databases.Dat
 }
 
 func (s *DatabasesStore) Update(ctx context.Context, id string, in *databases.UpdateIn) error {
+	// Build a single UPDATE with all fields to avoid multiple round-trips
+	sets := []string{"updated_at = CURRENT_TIMESTAMP"}
+	args := []interface{}{}
+
 	if in.Title != nil {
-		_, err := s.db.ExecContext(ctx, "UPDATE databases SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *in.Title, id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "title = ?")
+		args = append(args, *in.Title)
 	}
 	if in.Icon != nil {
-		_, err := s.db.ExecContext(ctx, "UPDATE databases SET icon = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *in.Icon, id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "icon = ?")
+		args = append(args, *in.Icon)
 	}
 	if in.Cover != nil {
-		_, err := s.db.ExecContext(ctx, "UPDATE databases SET cover = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", *in.Cover, id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "cover = ?")
+		args = append(args, *in.Cover)
 	}
-	return nil
+
+	// Only execute if there are actual changes
+	if len(args) == 0 {
+		return nil
+	}
+
+	args = append(args, id)
+	query := fmt.Sprintf("UPDATE databases SET %s WHERE id = ?", strings.Join(sets, ", "))
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 func (s *DatabasesStore) Delete(ctx context.Context, id string) error {
