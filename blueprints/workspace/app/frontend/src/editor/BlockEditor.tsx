@@ -479,6 +479,16 @@ interface BlockContent {
   database_id?: string
   synced_from?: string
   page_id?: string
+  // Equation
+  expression?: string
+  // Synced block
+  sync_id?: string
+  original_page_name?: string
+  // Template button
+  button_text?: string
+  button_style?: string
+  // Simple table
+  table_data?: string
 }
 
 interface Block {
@@ -607,7 +617,9 @@ const API_TO_BLOCKNOTE: Record<string, string | { type: string; props?: Record<s
   heading_2: { type: 'heading', props: { level: 2 } },
   heading_3: { type: 'heading', props: { level: 3 } },
   bulleted_list: 'bulletListItem',
+  bulleted_list_item: 'bulletListItem',
   numbered_list: 'numberedListItem',
+  numbered_list_item: 'numberedListItem',
   to_do: 'checkListItem',
   todo: 'checkListItem',
   code: 'codeBlock',
@@ -628,6 +640,10 @@ const API_TO_BLOCKNOTE: Record<string, string | { type: string; props?: Record<s
   pdf: 'pdf',
   column_list: 'columnList',
   link_to_page: 'linkToPage',
+  synced_block: 'syncedBlock',
+  template_button: 'templateButton',
+  breadcrumb: 'breadcrumb',
+  child_page: 'childPage',
 }
 
 // BlockNote type to API type mapping
@@ -663,7 +679,7 @@ function richTextToInlineContent(richText: RichText[] | undefined): Array<{
   text: string
   styles: Record<string, boolean | string>
 }> | string {
-  if (!richText || richText.length === 0) return ''
+  if (!richText || !Array.isArray(richText) || richText.length === 0) return ''
 
   return richText.map((rt) => ({
     type: 'text' as const,
@@ -728,6 +744,20 @@ function apiBlocksToBlockNote(blocks: Block[]): PartialBlock[] {
       props.title = content.title || ''
       props.icon = content.icon || ''
     }
+    if (block.type === 'equation') {
+      props.latex = content.expression || ''
+    }
+    if (block.type === 'synced_block') {
+      props.syncId = content.sync_id || ''
+      props.originalPageName = content.original_page_name || ''
+    }
+    if (block.type === 'template_button') {
+      props.buttonText = content.button_text || 'Template'
+      props.buttonStyle = content.button_style || 'default'
+    }
+    if (block.type === 'simple_table') {
+      props.tableData = content.table_data || ''
+    }
 
     // Get inline content
     let inlineContent = richTextToInlineContent(content.rich_text)
@@ -735,11 +765,14 @@ function apiBlocksToBlockNote(blocks: Block[]): PartialBlock[] {
       inlineContent = content.text
     }
 
+    // Block types that don't have inline content
+    const noContentTypes = ['divider', 'image', 'video', 'file', 'equation', 'tableOfContents', 'syncedBlock', 'templateButton', 'breadcrumb', 'simpleTable']
+
     return {
       id: block.id,
       type: type as any,
       props,
-      content: type === 'divider' || type === 'image' || type === 'video' || type === 'file'
+      content: noContentTypes.includes(type)
         ? undefined
         : inlineContent || undefined,
       children: block.children ? apiBlocksToBlockNote(block.children) : [],
@@ -749,7 +782,7 @@ function apiBlocksToBlockNote(blocks: Block[]): PartialBlock[] {
 
 // Extract plain text from rich text array
 function extractPlainText(richText: RichText[] | undefined): string {
-  if (!richText) return ''
+  if (!richText || !Array.isArray(richText)) return ''
   return richText.map(rt => rt.text || '').join('')
 }
 
