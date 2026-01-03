@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workspace Dev</title>
+    <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #1a1a1a;
+            --sidebar-bg: #f7f7f7;
+            --border-color: #e5e5e5;
+            --primary-color: #2563eb;
+        }
+        [data-theme="dark"] {
+            --bg-color: #1a1a1a;
+            --text-color: #e5e5e5;
+            --sidebar-bg: #252525;
+            --border-color: #3a3a3a;
+            --primary-color: #3b82f6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+        }
+        .app-layout { display: flex; min-height: 100vh; }
+        .app-container { display: flex; width: 100%; }
+        .sidebar {
+            width: 240px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 16px;
+            flex-shrink: 0;
+        }
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            margin-bottom: 16px;
+        }
+        .workspace-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .dev-badge {
+            background: var(--primary-color);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .nav-section {
+            margin-bottom: 24px;
+        }
+        .nav-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-color);
+            opacity: 0.6;
+            padding: 8px;
+            margin-bottom: 4px;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            color: inherit;
+        }
+        .nav-item:hover { background: var(--border-color); }
+        .nav-item.active { background: var(--primary-color); color: white; }
+        .main-content { flex: 1; display: flex; flex-direction: column; }
+        .topbar {
+            height: 48px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 8px;
+        }
+        .breadcrumb { font-size: 14px; color: var(--text-color); opacity: 0.7; }
+        .content-area { flex: 1; padding: 24px; overflow-y: auto; }
+        .view-toggle {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .view-toggle button {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-color);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .view-toggle button:hover { background: var(--sidebar-bg); }
+        .view-toggle button.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        .view-container { display: none; }
+        .view-container.active { display: block; }
+        .page-view { max-width: 900px; margin: 0 auto; }
+        .page-header { margin-bottom: 24px; }
+        .page-title {
+            font-size: 32px;
+            font-weight: 700;
+            outline: none;
+            border: none;
+            width: 100%;
+        }
+        .page-title:empty::before {
+            content: 'Untitled';
+            color: var(--text-color);
+            opacity: 0.4;
+        }
+        #editor-root { min-height: 400px; }
+        #database-root { min-height: 400px; }
+        .theme-toggle {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            padding: 8px 16px;
+            background: var(--sidebar-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-color);
+        }
+    </style>
+    <script>
+        // Set initial theme
+        (function() {
+            const theme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+</head>
+<body class="app-layout">
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span class="workspace-name">Dev Workspace</span>
+                <span class="dev-badge">DEV</span>
+            </div>
+            <nav class="nav-section">
+                <div class="nav-section-title">Views</div>
+                <a href="#" class="nav-item active" data-view="editor">Block Editor</a>
+                <a href="#" class="nav-item" data-view="database">Database View</a>
+            </nav>
+            <nav class="nav-section">
+                <div class="nav-section-title">Dev Tools</div>
+                <a href="http://localhost:3000" class="nav-item" target="_blank">Backend Server</a>
+                <a href="/@vite/debug" class="nav-item" target="_blank">Vite Debug</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div class="breadcrumb">Dev Mode / Test Page</div>
+            </header>
+            <div class="content-area">
+                <div class="view-toggle">
+                    <button class="active" data-view="editor">Block Editor</button>
+                    <button data-view="database">Database View</button>
+                </div>
+
+                <!-- Editor View -->
+                <div id="editor-view" class="view-container active">
+                    <div class="page-view" data-page-id="dev-page-001">
+                        <div class="page-header">
+                            <h1 class="page-title" contenteditable="true" id="page-title">Development Test Page</h1>
+                        </div>
+                        <div id="editor-root"
+                             data-page-id="dev-page-001"
+                             data-blocks="">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Database View -->
+                <div id="database-view" class="view-container">
+                    <div id="database-root"
+                         data-database-id="dev-db-001"
+                         data-view-type="table"
+                         data-data='{
+  "database": {"id":"dev-db-001","name":"Test Database"},
+  "rows":[
+    {"id":"row1","database_id":"dev-db-001","properties":{"title":"Project Alpha","description":"Main project description","progress":75,"status":"in-progress","tags":["frontend","urgent"],"priority":"high","due_date":"2024-03-15","completed":false,"website":"https://example.com","email":"alice@example.com","phone":"+1-555-0101","assignee":"Alice"},"created_at":"2024-01-15T10:00:00Z","updated_at":"2024-01-20T14:30:00Z"},
+    {"id":"row2","database_id":"dev-db-001","properties":{"title":"Project Beta","description":"Secondary project","progress":100,"status":"done","tags":["backend"],"priority":"low","due_date":"2024-02-28","completed":true,"website":"https://beta.example.com","email":"bob@example.com","phone":"+1-555-0102","assignee":"Bob"},"created_at":"2024-01-10T09:00:00Z","updated_at":"2024-02-28T16:00:00Z"},
+    {"id":"row3","database_id":"dev-db-001","properties":{"title":"Project Gamma","description":"New initiative","progress":25,"status":"todo","tags":["design","review"],"priority":"medium","due_date":"2024-04-30","completed":false,"website":"","email":"charlie@example.com","phone":"","assignee":"Charlie"},"created_at":"2024-02-01T11:00:00Z","updated_at":"2024-02-05T10:00:00Z"},
+    {"id":"row4","database_id":"dev-db-001","properties":{"title":"Project Delta","description":"","progress":50,"status":"in-progress","tags":[],"priority":"high","due_date":"2024-03-20","completed":false,"website":"https://delta.io","email":"","phone":"+1-555-0104","assignee":""},"created_at":"2024-02-10T08:00:00Z","updated_at":"2024-02-15T12:00:00Z"}
+  ],
+  "properties":[
+    {"id":"title","name":"Title","type":"text"},
+    {"id":"description","name":"Description","type":"text"},
+    {"id":"progress","name":"Progress","type":"number"},
+    {"id":"status","name":"Status","type":"status","options":[{"id":"todo","name":"Todo","color":"gray"},{"id":"in-progress","name":"In Progress","color":"blue"},{"id":"done","name":"Done","color":"green"}]},
+    {"id":"tags","name":"Tags","type":"multi_select","options":[{"id":"frontend","name":"Frontend","color":"blue"},{"id":"backend","name":"Backend","color":"purple"},{"id":"design","name":"Design","color":"pink"},{"id":"urgent","name":"Urgent","color":"red"},{"id":"review","name":"Review","color":"yellow"}]},
+    {"id":"priority","name":"Priority","type":"select","options":[{"id":"low","name":"Low","color":"gray"},{"id":"medium","name":"Medium","color":"yellow"},{"id":"high","name":"High","color":"red"}]},
+    {"id":"due_date","name":"Due Date","type":"date"},
+    {"id":"completed","name":"Completed","type":"checkbox"},
+    {"id":"website","name":"Website","type":"url"},
+    {"id":"email","name":"Email","type":"email"},
+    {"id":"phone","name":"Phone","type":"phone"},
+    {"id":"assignee","name":"Assignee","type":"person"}
+  ],
+  "views":[]
+}'>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <button class="theme-toggle" id="theme-toggle">Toggle Theme</button>
+
+    <script>
+        // View switching
+        document.querySelectorAll('[data-view]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const view = btn.dataset.view;
+
+                // Update button states
+                document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+                document.querySelector(`.view-toggle button[data-view="${view}"]`)?.classList.add('active');
+
+                // Update nav states
+                document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.remove('active'));
+                document.querySelector(`.nav-item[data-view="${view}"]`)?.classList.add('active');
+
+                // Show/hide views
+                document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+                document.getElementById(`${view}-view`)?.classList.add('active');
+            });
+        });
+
+        // Theme toggle
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+        });
+    </script>
+
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Portal for Glide Data Grid overlays -->
+    <div id="portal"></div>
+</body>
+</html>
