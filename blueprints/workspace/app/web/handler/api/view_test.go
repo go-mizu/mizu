@@ -336,11 +336,13 @@ func TestViewList(t *testing.T) {
 		resp := ts.Request("GET", "/api/v1/databases/"+db.ID+"/views", nil, cookie)
 		ts.ExpectStatus(resp, http.StatusOK)
 
-		var viewList []*views.View
-		ts.ParseJSON(resp, &viewList)
+		var result struct {
+			Views []*views.View `json:"views"`
+		}
+		ts.ParseJSON(resp, &result)
 
-		if len(viewList) < 3 {
-			t.Errorf("expected at least 3 views, got %d", len(viewList))
+		if len(result.Views) < 3 {
+			t.Errorf("expected at least 3 views, got %d", len(result.Views))
 		}
 	})
 }
