@@ -1,0 +1,49 @@
+{{define "title"}}{{.Page.Title}} - Workspace{{end}}
+
+{{define "breadcrumb"}}
+{{range .Breadcrumb}}
+<a href="/w/{{$.Workspace.Slug}}/p/{{.ID}}">{{.Title}}</a>
+<span class="breadcrumb-sep">/</span>
+{{end}}
+<span class="breadcrumb-current">{{.Page.Title}}</span>
+{{end}}
+
+{{define "content"}}
+<div class="page-view" data-page-id="{{.Page.ID}}">
+    <div class="page-header">
+        <div class="page-icon-wrapper" data-icon-picker data-target="page-{{.Page.ID}}" data-current-icon="{{.Page.Icon}}">
+            <!-- Icon picker will be mounted here by React -->
+        </div>
+        <h1 class="page-title" contenteditable="true" data-placeholder="Untitled" id="page-title">{{.Page.Title}}</h1>
+        <div class="page-actions">
+            <button class="icon-btn {{if .IsFavorite}}active{{end}}" id="favorite-btn" title="Add to favorites">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="{{if .IsFavorite}}currentColor{{else}}none{{end}}">
+                    <path d="M8 2l1.8 3.6 4 .6-2.9 2.8.7 4L8 11.4 4.4 13l.7-4L2.2 6.2l4-.6L8 2z" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="share-btn" title="Share">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.5"/>
+                    <circle cx="4" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
+                    <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.5"/>
+                    <path d="M6 7l4-2M6 9l4 2" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="more-btn" title="More">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="4" cy="8" r="1.5" fill="currentColor"/>
+                    <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+                    <circle cx="12" cy="8" r="1.5" fill="currentColor"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- BlockNote Editor Mount Point -->
+    <div id="editor-root" data-page-id="{{.Page.ID}}" data-blocks='{{.BlocksJSON}}'></div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script type="module" src="/static/dist/js/main.js"></script>
+{{end}}

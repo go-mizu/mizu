@@ -1,0 +1,157 @@
+{{define "title"}}Settings - {{.Workspace.Name}}{{end}}
+
+{{define "breadcrumb"}}
+<a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
+<span class="breadcrumb-sep">/</span>
+<span class="breadcrumb-current">Settings</span>
+{{end}}
+
+{{define "content"}}
+<div class="settings-page">
+    <div class="settings-header">
+        <h1>Workspace Settings</h1>
+    </div>
+
+    <div class="settings-content">
+        <nav class="settings-nav">
+            <button class="settings-nav-item active" data-section="general">General</button>
+            <button class="settings-nav-item" data-section="members">Members</button>
+            <button class="settings-nav-item" data-section="security">Security</button>
+            <button class="settings-nav-item danger" data-section="danger">Danger zone</button>
+        </nav>
+
+        <div class="settings-sections">
+            <!-- General Settings -->
+            <section class="settings-section active" id="section-general">
+                <h2>General</h2>
+                <form id="workspace-settings-form">
+                    <div class="form-group">
+                        <label for="ws-name">Workspace name</label>
+                        <input type="text" id="ws-name" name="name" value="{{.Workspace.Name}}">
+                    </div>
+                    <div class="form-group">
+                        <label for="ws-slug">Workspace URL</label>
+                        <div class="input-prefix">
+                            <span>/w/</span>
+                            <input type="text" id="ws-slug" name="slug" value="{{.Workspace.Slug}}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="ws-icon">Icon</label>
+                        <button type="button" class="icon-picker" id="ws-icon-picker">
+                            {{if .Workspace.Icon}}{{.Workspace.Icon}}{{else}}🏠{{end}}
+                        </button>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save changes</button>
+                </form>
+            </section>
+
+            <!-- Members -->
+            <section class="settings-section" id="section-members">
+                <h2>Members</h2>
+                <div class="invite-section">
+                    <h3>Invite members</h3>
+                    <form id="invite-form" class="invite-form">
+                        <input type="email" id="invite-email" placeholder="Email address" required>
+                        <select id="invite-role">
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary">Invite</button>
+                    </form>
+                </div>
+
+                <div class="members-list">
+                    <h3>Current members</h3>
+                    <table class="members-table">
+                        <thead>
+                            <tr>
+                                <th>Member</th>
+                                <th>Role</th>
+                                <th>Joined</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Members}}
+                            <tr data-member-id="{{.ID}}">
+                                <td>
+                                    <div class="member-info">
+                                        <span class="member-avatar">{{slice .UserName 0 1}}</span>
+                                        <div>
+                                            <div class="member-name">{{.UserName}}</div>
+                                            <div class="member-email">{{.UserEmail}}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <select class="role-select" {{if eq .Role "owner"}}disabled{{end}}>
+                                        <option value="member" {{if eq .Role "member"}}selected{{end}}>Member</option>
+                                        <option value="admin" {{if eq .Role "admin"}}selected{{end}}>Admin</option>
+                                        <option value="owner" {{if eq .Role "owner"}}selected{{end}}>Owner</option>
+                                    </select>
+                                </td>
+                                <td>{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+                                <td>
+                                    {{if ne .Role "owner"}}
+                                    <button class="btn btn-sm btn-danger remove-member-btn">Remove</button>
+                                    {{end}}
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Security -->
+            <section class="settings-section" id="section-security">
+                <h2>Security</h2>
+                <div class="security-options">
+                    <div class="security-option">
+                        <div class="option-info">
+                            <h3>Require two-factor authentication</h3>
+                            <p>All members will be required to enable 2FA</p>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" id="require-2fa">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="security-option">
+                        <div class="option-info">
+                            <h3>Restrict external sharing</h3>
+                            <p>Prevent sharing pages with people outside the workspace</p>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" id="restrict-sharing">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Danger Zone -->
+            <section class="settings-section" id="section-danger">
+                <h2>Danger zone</h2>
+                <div class="danger-actions">
+                    <div class="danger-action">
+                        <div class="action-info">
+                            <h3>Export workspace</h3>
+                            <p>Download all pages and databases as markdown and CSV files</p>
+                        </div>
+                        <button class="btn btn-outline" id="export-btn">Export</button>
+                    </div>
+                    <div class="danger-action">
+                        <div class="action-info">
+                            <h3>Delete workspace</h3>
+                            <p>Permanently delete this workspace and all its contents. This action cannot be undone.</p>
+                        </div>
+                        <button class="btn btn-danger" id="delete-workspace-btn">Delete workspace</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+{{end}}

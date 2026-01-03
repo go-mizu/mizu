@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Workspace{{end}}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-layout">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="40" height="40" rx="8" fill="#000"/>
+                    <path d="M12 12h16v4H12zM12 20h12v4H12zM12 28h8v4H12z" fill="#fff"/>
+                </svg>
+                <span>Workspace</span>
+            </div>
+            {{block "content" .}}{{end}}
+        </div>
+    </div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
