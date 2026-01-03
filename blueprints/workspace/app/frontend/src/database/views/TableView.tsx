@@ -1,9 +1,182 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import DataEditor, {
+  GridColumn,
+  GridCell,
+  GridCellKind,
+  EditableGridCell,
+  Item,
+  CompactSelection,
+  GridSelection,
+  Theme,
+  DataEditorRef,
+  SpriteMap,
+  CellClickedEventArgs,
+} from '@glideapps/glide-data-grid'
+import '@glideapps/glide-data-grid/dist/index.css'
 import { DatabaseRow, Property, PropertyType, Database } from '../../api/client'
-import { PropertyCell } from '../PropertyCell'
-import { PropertyHeader } from '../PropertyHeader'
 import { RowDetailModal } from '../RowDetailModal'
-import { GripVertical, Eye, EyeOff, ChevronDown, Maximize2, Plus, Trash2, Search } from 'lucide-react'
+import {
+  Plus,
+  Trash2,
+  Eye,
+  EyeOff,
+  Search,
+  Type,
+  Hash,
+  Calendar,
+  CheckSquare,
+  Link,
+  Mail,
+  Phone,
+  Users,
+  Paperclip,
+  List,
+  CircleDot,
+  Clock,
+  User,
+  X,
+} from 'lucide-react'
+
+// SVG icon generators for header icons (returns SVG string for Glide Data Grid)
+const headerIcons: SpriteMap = {
+  // Text type icon (Aa)
+  headerText: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="4 7 4 4 20 4 20 7"/>
+    <line x1="9" y1="20" x2="15" y2="20"/>
+    <line x1="12" y1="4" x2="12" y2="20"/>
+  </svg>`,
+
+  // Number type icon (#)
+  headerNumber: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="4" y1="9" x2="20" y2="9"/>
+    <line x1="4" y1="15" x2="20" y2="15"/>
+    <line x1="10" y1="3" x2="8" y2="21"/>
+    <line x1="16" y1="3" x2="14" y2="21"/>
+  </svg>`,
+
+  // Date type icon (calendar)
+  headerDate: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+    <line x1="16" y1="2" x2="16" y2="6"/>
+    <line x1="8" y1="2" x2="8" y2="6"/>
+    <line x1="3" y1="10" x2="21" y2="10"/>
+  </svg>`,
+
+  // Checkbox type icon
+  headerCheckbox: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="9 11 12 14 22 4"/>
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+  </svg>`,
+
+  // URL type icon (link)
+  headerUrl: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+  </svg>`,
+
+  // Email type icon
+  headerEmail: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+    <polyline points="22,6 12,13 2,6"/>
+  </svg>`,
+
+  // Phone type icon
+  headerPhone: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+  </svg>`,
+
+  // Person/users type icon
+  headerPerson: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+    <circle cx="9" cy="7" r="4"/>
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+  </svg>`,
+
+  // Files type icon
+  headerFiles: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+  </svg>`,
+
+  // Select type icon (dot in circle)
+  headerSelect: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <circle cx="12" cy="12" r="3" fill="${p.fgColor}"/>
+  </svg>`,
+
+  // Multi-select type icon (list)
+  headerMultiSelect: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="8" y1="6" x2="21" y2="6"/>
+    <line x1="8" y1="12" x2="21" y2="12"/>
+    <line x1="8" y1="18" x2="21" y2="18"/>
+    <line x1="3" y1="6" x2="3.01" y2="6"/>
+    <line x1="3" y1="12" x2="3.01" y2="12"/>
+    <line x1="3" y1="18" x2="3.01" y2="18"/>
+  </svg>`,
+
+  // Status type icon (badge)
+  headerStatus: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <path d="M8 12l2 2 4-4"/>
+  </svg>`,
+
+  // Created/edited time icon (clock)
+  headerTime: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <polyline points="12 6 12 12 16 14"/>
+  </svg>`,
+
+  // Created/edited by icon (user)
+  headerUser: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+    <circle cx="12" cy="7" r="4"/>
+  </svg>`,
+
+  // Relation type icon
+  headerRelation: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="15 3 21 3 21 9"/>
+    <polyline points="9 21 3 21 3 15"/>
+    <line x1="21" y1="3" x2="14" y2="10"/>
+    <line x1="3" y1="21" x2="10" y2="14"/>
+  </svg>`,
+
+  // Formula type icon
+  headerFormula: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="4" y1="4" x2="20" y2="4"/>
+    <path d="M9 4v16l3-3 3 3V4"/>
+  </svg>`,
+
+  // Rollup type icon
+  headerRollup: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+  </svg>`,
+}
+
+// Map property type to header icon name
+function getHeaderIconName(type: PropertyType): string {
+  switch (type) {
+    case 'text': return 'headerText'
+    case 'number': return 'headerNumber'
+    case 'date': return 'headerDate'
+    case 'checkbox': return 'headerCheckbox'
+    case 'url': return 'headerUrl'
+    case 'email': return 'headerEmail'
+    case 'phone': return 'headerPhone'
+    case 'person': return 'headerPerson'
+    case 'files': return 'headerFiles'
+    case 'select': return 'headerSelect'
+    case 'multi_select': return 'headerMultiSelect'
+    case 'status': return 'headerStatus'
+    case 'created_time':
+    case 'last_edited_time': return 'headerTime'
+    case 'created_by':
+    case 'last_edited_by': return 'headerUser'
+    case 'relation': return 'headerRelation'
+    case 'formula': return 'headerFormula'
+    case 'rollup': return 'headerRollup'
+    default: return 'headerText'
+  }
+}
 
 interface TableViewProps {
   rows: DatabaseRow[]
@@ -21,6 +194,174 @@ interface TableViewProps {
   onRowsReorder?: (rowIds: string[]) => void
 }
 
+// Notion-inspired theme
+const notionTheme: Partial<Theme> = {
+  accentColor: '#2383e2',
+  accentLight: 'rgba(35, 131, 226, 0.1)',
+  textDark: '#37352f',
+  textMedium: '#787774',
+  textLight: '#b4b4b0',
+  bgCell: '#ffffff',
+  bgCellMedium: '#fbfbfa',
+  bgHeader: '#ffffff',
+  bgHeaderHasFocus: '#f7f6f3',
+  bgHeaderHovered: '#f7f6f3',
+  borderColor: '#e9e9e7',
+  fontFamily: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+  baseFontStyle: '14px',
+  headerFontStyle: '500 14px',
+  editorFontSize: '14px',
+  lineHeight: 1.5,
+  cellHorizontalPadding: 8,
+  cellVerticalPadding: 6,
+  headerIconSize: 16,
+}
+
+// Format date for display
+function formatDate(value: unknown): string {
+  if (!value) return ''
+  try {
+    const dateStr = typeof value === 'object' && value !== null && 'start' in value
+      ? (value as { start: string }).start
+      : String(value)
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) return String(value)
+    return date.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+    })
+  } catch {
+    return String(value)
+  }
+}
+
+// Get icon for property type
+function getPropertyIcon(type: PropertyType) {
+  const iconProps = { size: 14, strokeWidth: 1.75, style: { opacity: 0.7 } }
+  switch (type) {
+    case 'text': return <Type {...iconProps} />
+    case 'number': return <Hash {...iconProps} />
+    case 'date': return <Calendar {...iconProps} />
+    case 'checkbox': return <CheckSquare {...iconProps} />
+    case 'url': return <Link {...iconProps} />
+    case 'email': return <Mail {...iconProps} />
+    case 'phone': return <Phone {...iconProps} />
+    case 'person': return <Users {...iconProps} />
+    case 'files': return <Paperclip {...iconProps} />
+    case 'select': return <CircleDot {...iconProps} />
+    case 'multi_select': return <List {...iconProps} />
+    case 'status': return <CircleDot {...iconProps} />
+    case 'created_time':
+    case 'last_edited_time': return <Clock {...iconProps} />
+    case 'created_by':
+    case 'last_edited_by': return <User {...iconProps} />
+    default: return <Type {...iconProps} />
+  }
+}
+
+// Color map for select options
+const selectColorMap: Record<string, string> = {
+  gray: '#e9e9e7',
+  brown: '#eee0da',
+  orange: '#fadec9',
+  yellow: '#fdecc8',
+  green: '#dbeddb',
+  blue: '#d3e5ef',
+  purple: '#e8deee',
+  pink: '#f5e0e9',
+  red: '#ffd5d2',
+}
+
+// Sub-component for select dropdown options
+function SelectDropdownOptions({
+  property,
+  currentValue,
+  onSelect,
+}: {
+  property: Property
+  currentValue: unknown
+  onSelect: (optionId: string | null) => void
+}) {
+  const options = property.options || []
+
+  if (options.length === 0) {
+    return (
+      <div style={{ padding: '8px 12px', fontSize: 13, color: 'rgba(55,53,47,0.5)' }}>
+        No options yet
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {options.map((option) => {
+        const isSelected = property.type === 'multi_select'
+          ? Array.isArray(currentValue) && currentValue.includes(option.id)
+          : currentValue === option.id
+        const bgColor = selectColorMap[option.color || 'gray'] || selectColorMap.gray
+
+        return (
+          <button
+            key={option.id}
+            onClick={() => onSelect(option.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              width: '100%',
+              padding: '6px 12px',
+              background: isSelected ? 'rgba(35, 131, 226, 0.08)' : 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontSize: 14,
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={(e) => !isSelected && (e.currentTarget.style.background = 'rgba(55,53,47,0.04)')}
+            onMouseLeave={(e) => !isSelected && (e.currentTarget.style.background = 'transparent')}
+          >
+            {property.type === 'multi_select' && (
+              <div style={{
+                width: 16,
+                height: 16,
+                border: isSelected ? 'none' : '1px solid rgba(55,53,47,0.3)',
+                borderRadius: 3,
+                background: isSelected ? '#2383e2' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                {isSelected && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </div>
+            )}
+            <span style={{
+              display: 'inline-block',
+              padding: '2px 8px',
+              borderRadius: 3,
+              background: bgColor,
+              color: '#37352f',
+              fontSize: 13,
+            }}>
+              {option.name}
+            </span>
+            {property.type !== 'multi_select' && isSelected && (
+              <svg style={{ marginLeft: 'auto' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2383e2" strokeWidth="2">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </button>
+        )
+      })}
+    </>
+  )
+}
+
 export function TableView({
   rows,
   properties,
@@ -30,29 +371,57 @@ export function TableView({
   onUpdateRow,
   onDeleteRow,
   onAddProperty,
-  onUpdateProperty,
-  onDeleteProperty,
   onHiddenPropertiesChange,
-  onRowsReorder,
 }: TableViewProps) {
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
-  const [resizing, setResizing] = useState<{ id: string; startX: number; startWidth: number } | null>(null)
-  const [showAddProperty, setShowAddProperty] = useState(false)
-  const [showColumnVisibility, setShowColumnVisibility] = useState(false)
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
-  const [selectedCell, setSelectedCell] = useState<{ rowIndex: number; colIndex: number } | null>(null)
+  const gridRef = useRef<DataEditorRef>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [gridHeight, setGridHeight] = useState(400)
+  const [selection, setSelection] = useState<GridSelection>({
+    columns: CompactSelection.empty(),
+    rows: CompactSelection.empty(),
+  })
   const [detailRow, setDetailRow] = useState<DatabaseRow | null>(null)
-  const [draggedRowId, setDraggedRowId] = useState<string | null>(null)
-  const [dragOverRowId, setDragOverRowId] = useState<string | null>(null)
-  const [localRows, setLocalRows] = useState(rows)
   const [searchQuery, setSearchQuery] = useState('')
-  const tableRef = useRef<HTMLTableElement>(null)
+  const [showColumnVisibility, setShowColumnVisibility] = useState(false)
+  const [showAddProperty, setShowAddProperty] = useState(false)
   const columnVisibilityRef = useRef<HTMLDivElement>(null)
+  const addPropertyRef = useRef<HTMLDivElement>(null)
 
-  // Sync local rows with prop
+  // Select dropdown state
+  const [selectDropdown, setSelectDropdown] = useState<{
+    cell: Item
+    property: Property
+    row: DatabaseRow
+    bounds: { x: number; y: number; width: number; height: number }
+  } | null>(null)
+
+  // Calculate grid height
   useEffect(() => {
-    setLocalRows(rows)
-  }, [rows])
+    const updateHeight = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        const availableHeight = window.innerHeight - rect.top - 80
+        setGridHeight(Math.max(300, Math.min(availableHeight, 700)))
+      }
+    }
+    updateHeight()
+    window.addEventListener('resize', updateHeight)
+    return () => window.removeEventListener('resize', updateHeight)
+  }, [])
+
+  // Close menus on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (columnVisibilityRef.current && !columnVisibilityRef.current.contains(e.target as Node)) {
+        setShowColumnVisibility(false)
+      }
+      if (addPropertyRef.current && !addPropertyRef.current.contains(e.target as Node)) {
+        setShowAddProperty(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   // Get visible properties
   const visibleProperties = useMemo(() => {
@@ -61,191 +430,311 @@ export function TableView({
 
   // Filter rows by search query
   const filteredRows = useMemo(() => {
-    if (!searchQuery.trim()) return localRows
+    if (!searchQuery.trim()) return rows
     const query = searchQuery.toLowerCase()
-    return localRows.filter(row => {
+    return rows.filter(row => {
       return properties.some(prop => {
         const value = row.properties[prop.id]
         if (value === null || value === undefined) return false
         return String(value).toLowerCase().includes(query)
       })
     })
-  }, [localRows, searchQuery, properties])
+  }, [rows, searchQuery, properties])
 
-  // Handle column resize
-  const handleResizeStart = useCallback((e: React.MouseEvent, propertyId: string, currentWidth: number) => {
-    e.preventDefault()
-    setResizing({ id: propertyId, startX: e.clientX, startWidth: currentWidth })
-  }, [])
+  // Create columns with icons
+  const columns: GridColumn[] = useMemo(() => {
+    return visibleProperties.map((prop, index) => ({
+      id: prop.id,
+      title: prop.name,
+      icon: getHeaderIconName(prop.type),
+      width: index === 0 ? 280 : 150,
+      grow: index === 0 ? 1 : 0,
+      hasMenu: false,
+      themeOverride: index === 0 ? {
+        baseFontStyle: '500 14px',
+        textDark: '#37352f',
+      } : undefined,
+    }))
+  }, [visibleProperties])
 
-  useEffect(() => {
-    if (!resizing) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const diff = e.clientX - resizing.startX
-      const newWidth = Math.max(100, resizing.startWidth + diff)
-      setColumnWidths((prev) => ({ ...prev, [resizing.id]: newWidth }))
+  // Get cell content
+  const getCellContent = useCallback((cell: Item): GridCell => {
+    const [col, row] = cell
+    if (row >= filteredRows.length || col >= visibleProperties.length) {
+      return { kind: GridCellKind.Text, data: '', displayData: '', allowOverlay: false }
     }
 
-    const handleMouseUp = () => {
-      setResizing(null)
-    }
+    const rowData = filteredRows[row]
+    const property = visibleProperties[col]
+    const value = rowData.properties[property.id]
+    const isReadOnly = ['created_time', 'created_by', 'last_edited_time', 'last_edited_by', 'rollup', 'formula'].includes(property.type)
 
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [resizing])
-
-  // Close column visibility menu on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (columnVisibilityRef.current && !columnVisibilityRef.current.contains(e.target as Node)) {
-        setShowColumnVisibility(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  // Handle keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!selectedCell) return
-
-      const { rowIndex, colIndex } = selectedCell
-      let newRowIndex = rowIndex
-      let newColIndex = colIndex
-
-      switch (e.key) {
-        case 'ArrowUp':
-          e.preventDefault()
-          newRowIndex = Math.max(0, rowIndex - 1)
-          break
-        case 'ArrowDown':
-          e.preventDefault()
-          newRowIndex = Math.min(filteredRows.length - 1, rowIndex + 1)
-          break
-        case 'ArrowLeft':
-          e.preventDefault()
-          newColIndex = Math.max(0, colIndex - 1)
-          break
-        case 'ArrowRight':
-          e.preventDefault()
-          newColIndex = Math.min(visibleProperties.length - 1, colIndex + 1)
-          break
-        case 'Tab':
-          e.preventDefault()
-          if (e.shiftKey) {
-            // Move left or to previous row
-            if (colIndex > 0) {
-              newColIndex = colIndex - 1
-            } else if (rowIndex > 0) {
-              newRowIndex = rowIndex - 1
-              newColIndex = visibleProperties.length - 1
-            }
-          } else {
-            // Move right or to next row
-            if (colIndex < visibleProperties.length - 1) {
-              newColIndex = colIndex + 1
-            } else if (rowIndex < filteredRows.length - 1) {
-              newRowIndex = rowIndex + 1
-              newColIndex = 0
-            }
-          }
-          break
-        case 'Enter':
-          e.preventDefault()
-          // Open row detail modal
-          setDetailRow(filteredRows[rowIndex])
-          return
-        case 'Escape':
-          e.preventDefault()
-          setSelectedCell(null)
-          return
-        default:
-          return
-      }
-
-      setSelectedCell({ rowIndex: newRowIndex, colIndex: newColIndex })
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [selectedCell, filteredRows, visibleProperties])
-
-  // Handle row selection
-  const handleSelectRow = useCallback((rowId: string, e: React.MouseEvent) => {
-    if (e.shiftKey && selectedRows.size > 0) {
-      const rowIds = filteredRows.map((r) => r.id)
-      const lastSelected = Array.from(selectedRows).pop()!
-      const start = rowIds.indexOf(lastSelected)
-      const end = rowIds.indexOf(rowId)
-      const range = rowIds.slice(Math.min(start, end), Math.max(start, end) + 1)
-      setSelectedRows(new Set(range))
-    } else if (e.metaKey || e.ctrlKey) {
-      setSelectedRows((prev) => {
-        const next = new Set(prev)
-        if (next.has(rowId)) {
-          next.delete(rowId)
-        } else {
-          next.add(rowId)
+    switch (property.type) {
+      case 'text':
+      case 'email':
+      case 'phone':
+        return {
+          kind: GridCellKind.Text,
+          data: value ? String(value) : '',
+          displayData: value ? String(value) : '',
+          allowOverlay: true,
+          readonly: false,
         }
-        return next
-      })
-    } else {
-      setSelectedRows(new Set([rowId]))
-    }
-  }, [filteredRows, selectedRows])
 
-  // Handle select all
-  const handleSelectAll = useCallback((checked: boolean) => {
-    if (checked) {
-      setSelectedRows(new Set(filteredRows.map((r) => r.id)))
-    } else {
-      setSelectedRows(new Set())
+      case 'number':
+        const numValue = typeof value === 'number' ? value : (value ? parseFloat(String(value)) : undefined)
+        return {
+          kind: GridCellKind.Number,
+          data: numValue,
+          displayData: numValue !== undefined && !isNaN(numValue) ? String(numValue) : '',
+          allowOverlay: true,
+          readonly: false,
+        }
+
+      case 'checkbox':
+        return {
+          kind: GridCellKind.Boolean,
+          data: Boolean(value),
+          allowOverlay: false,
+          readonly: false,
+        }
+
+      case 'url':
+        return {
+          kind: GridCellKind.Uri,
+          data: value ? String(value) : '',
+          displayData: value ? String(value).replace(/^https?:\/\//, '').slice(0, 35) : '',
+          allowOverlay: true,
+          readonly: false,
+          hoverEffect: true,
+        }
+
+      case 'select':
+      case 'status':
+        const selectedOption = property.options?.find(o => o.id === value)
+        return {
+          kind: GridCellKind.Bubble,
+          data: selectedOption ? [selectedOption.name] : [],
+          allowOverlay: false, // Use custom dropdown instead
+        }
+
+      case 'multi_select':
+        const selectedIds = Array.isArray(value) ? value : []
+        const selectedNames = selectedIds
+          .map(id => property.options?.find(o => o.id === id)?.name)
+          .filter(Boolean) as string[]
+        return {
+          kind: GridCellKind.Bubble,
+          data: selectedNames,
+          allowOverlay: false, // Use custom dropdown instead
+        }
+
+      case 'date':
+        return {
+          kind: GridCellKind.Text,
+          data: value ? String(value) : '',
+          displayData: formatDate(value),
+          allowOverlay: true,
+          readonly: false,
+        }
+
+      case 'created_time':
+      case 'last_edited_time':
+        return {
+          kind: GridCellKind.Text,
+          data: value ? String(value) : '',
+          displayData: formatDate(value),
+          allowOverlay: false,
+          readonly: true,
+          themeOverride: { textDark: '#787774' },
+        }
+
+      case 'person':
+        const personValue = Array.isArray(value)
+          ? (value as string[]).join(', ')
+          : value ? String(value) : ''
+        return {
+          kind: GridCellKind.Text,
+          data: personValue,
+          displayData: personValue,
+          allowOverlay: true,
+          readonly: false,
+        }
+
+      case 'created_by':
+      case 'last_edited_by':
+        return {
+          kind: GridCellKind.Text,
+          data: value ? String(value) : '',
+          displayData: value ? String(value) : '',
+          allowOverlay: false,
+          readonly: true,
+          themeOverride: { textDark: '#787774' },
+        }
+
+      case 'relation':
+        const relations = Array.isArray(value)
+          ? (value as Array<{ id: string; title: string }>).map(r => r.title)
+          : []
+        return {
+          kind: GridCellKind.Bubble,
+          data: relations,
+          allowOverlay: true,
+        }
+
+      case 'files':
+        const files = Array.isArray(value)
+          ? (value as Array<{ name: string }>).map(f => f.name)
+          : []
+        return {
+          kind: GridCellKind.Bubble,
+          data: files,
+          allowOverlay: true,
+        }
+
+      case 'rollup':
+      case 'formula':
+        return {
+          kind: GridCellKind.Text,
+          data: value !== undefined ? String(value) : '',
+          displayData: value !== undefined ? String(value) : '-',
+          allowOverlay: false,
+          readonly: true,
+          themeOverride: { textDark: '#787774' },
+        }
+
+      default:
+        return {
+          kind: GridCellKind.Text,
+          data: value ? String(value) : '',
+          displayData: value ? String(value) : '',
+          allowOverlay: true,
+          readonly: isReadOnly,
+        }
+    }
+  }, [filteredRows, visibleProperties])
+
+  // Handle cell edits
+  const onCellEdited = useCallback((cell: Item, newValue: EditableGridCell) => {
+    const [col, row] = cell
+    if (row >= filteredRows.length || col >= visibleProperties.length) return
+
+    const rowData = filteredRows[row]
+    const property = visibleProperties[col]
+
+    let valueToSave: unknown
+
+    switch (newValue.kind) {
+      case GridCellKind.Text:
+        valueToSave = newValue.data
+        break
+      case GridCellKind.Number:
+        valueToSave = newValue.data
+        break
+      case GridCellKind.Boolean:
+        valueToSave = newValue.data
+        break
+      case GridCellKind.Uri:
+        valueToSave = newValue.data
+        break
+      default:
+        valueToSave = (newValue as any).data
+        if (property.type === 'select' || property.type === 'status') {
+          const names = (newValue as any).data as string[]
+          const name = names?.[0]
+          const option = property.options?.find(o => o.name === name)
+          valueToSave = option?.id || ''
+        } else if (property.type === 'multi_select') {
+          const names = (newValue as any).data as string[]
+          valueToSave = names?.map(name => {
+            const option = property.options?.find(o => o.name === name)
+            return option?.id || name
+          }) || []
+        }
+    }
+
+    onUpdateRow(rowData.id, { [property.id]: valueToSave })
+  }, [filteredRows, visibleProperties, onUpdateRow])
+
+  // Handle row double-click
+  const onCellActivated = useCallback((cell: Item) => {
+    const [, row] = cell
+    if (row < filteredRows.length) {
+      setDetailRow(filteredRows[row])
     }
   }, [filteredRows])
 
+  // Handle cell click for select dropdowns
+  const onCellClicked = useCallback((cell: Item, event: CellClickedEventArgs) => {
+    const [col, row] = cell
+    if (row >= filteredRows.length || col >= visibleProperties.length) return
+
+    const property = visibleProperties[col]
+    const rowData = filteredRows[row]
+
+    // Open dropdown for select/status/multi_select types
+    if (property.type === 'select' || property.type === 'status' || property.type === 'multi_select') {
+      setSelectDropdown({
+        cell,
+        property,
+        row: rowData,
+        bounds: event.bounds,
+      })
+    }
+  }, [filteredRows, visibleProperties])
+
+  // Handle select option change
+  const handleSelectOption = useCallback((optionId: string | null) => {
+    if (!selectDropdown) return
+
+    const { property, row, cell } = selectDropdown
+    const [, rowIndex] = cell
+
+    // Get fresh row data from filteredRows to avoid stale state
+    const currentRow = filteredRows[rowIndex] || row
+
+    if (property.type === 'multi_select') {
+      // For multi-select, toggle the option
+      const currentValues = Array.isArray(currentRow.properties[property.id])
+        ? (currentRow.properties[property.id] as string[])
+        : []
+      const newValues = currentValues.includes(optionId || '')
+        ? currentValues.filter(v => v !== optionId)
+        : [...currentValues, optionId || ''].filter(Boolean)
+      onUpdateRow(currentRow.id, { [property.id]: newValues })
+
+      // Update the dropdown state with fresh row data for next toggle
+      setSelectDropdown(prev => prev ? { ...prev, row: { ...currentRow, properties: { ...currentRow.properties, [property.id]: newValues } } } : null)
+    } else {
+      // For single select/status, set the value
+      onUpdateRow(currentRow.id, { [property.id]: optionId || '' })
+      setSelectDropdown(null)
+    }
+  }, [selectDropdown, onUpdateRow, filteredRows])
+
   // Handle delete selected
   const handleDeleteSelected = useCallback(() => {
-    if (!confirm(`Delete ${selectedRows.size} row(s)?`)) return
-    selectedRows.forEach((id) => onDeleteRow(id))
-    setSelectedRows(new Set())
-  }, [selectedRows, onDeleteRow])
+    const selectedRowIndices = selection.rows.toArray()
+    if (selectedRowIndices.length === 0) return
 
-  // Handle row drag and drop
-  const handleDragStart = useCallback((e: React.DragEvent, rowId: string) => {
-    setDraggedRowId(rowId)
-    e.dataTransfer.effectAllowed = 'move'
-  }, [])
+    if (!confirm(`Delete ${selectedRowIndices.length} row(s)?`)) return
 
-  const handleDragOver = useCallback((e: React.DragEvent, rowId: string) => {
-    e.preventDefault()
-    if (draggedRowId && draggedRowId !== rowId) {
-      setDragOverRowId(rowId)
-    }
-  }, [draggedRowId])
-
-  const handleDragEnd = useCallback(() => {
-    if (draggedRowId && dragOverRowId && draggedRowId !== dragOverRowId) {
-      const newRows = [...localRows]
-      const draggedIndex = newRows.findIndex(r => r.id === draggedRowId)
-      const targetIndex = newRows.findIndex(r => r.id === dragOverRowId)
-
-      if (draggedIndex !== -1 && targetIndex !== -1) {
-        const [removed] = newRows.splice(draggedIndex, 1)
-        newRows.splice(targetIndex, 0, removed)
-        setLocalRows(newRows)
-        onRowsReorder?.(newRows.map(r => r.id))
+    selectedRowIndices.forEach(rowIndex => {
+      if (rowIndex < filteredRows.length) {
+        onDeleteRow(filteredRows[rowIndex].id)
       }
-    }
-    setDraggedRowId(null)
-    setDragOverRowId(null)
-  }, [draggedRowId, dragOverRowId, localRows, onRowsReorder])
+    })
+
+    setSelection({
+      columns: CompactSelection.empty(),
+      rows: CompactSelection.empty(),
+    })
+  }, [selection, filteredRows, onDeleteRow])
+
+  // Handle add row
+  const handleAddRow = useCallback(async () => {
+    await onAddRow()
+  }, [onAddRow])
 
   // Toggle property visibility
   const togglePropertyVisibility = useCallback((propertyId: string) => {
@@ -255,7 +744,7 @@ export function TableView({
     onHiddenPropertiesChange?.(newHidden)
   }, [hiddenProperties, onHiddenPropertiesChange])
 
-  // Add new property
+  // Handle add property
   const handleAddProperty = useCallback((type: PropertyType) => {
     onAddProperty({
       name: 'New Property',
@@ -265,53 +754,60 @@ export function TableView({
     setShowAddProperty(false)
   }, [onAddProperty])
 
-  const getColumnWidth = (propertyId: string) => columnWidths[propertyId] || 200
+  const selectedRowCount = selection.rows.length
 
-  // Handle cell click for keyboard navigation
-  const handleCellClick = useCallback((rowIndex: number, colIndex: number) => {
-    setSelectedCell({ rowIndex, colIndex })
-  }, [])
-
-  // Handle row detail update
-  const handleDetailUpdate = useCallback((updatedRow: DatabaseRow) => {
-    setLocalRows(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r))
-  }, [])
+  const propertyTypes: { type: PropertyType; label: string; icon: React.ReactNode }[] = [
+    { type: 'text', label: 'Text', icon: <Type size={14} /> },
+    { type: 'number', label: 'Number', icon: <Hash size={14} /> },
+    { type: 'select', label: 'Select', icon: <CircleDot size={14} /> },
+    { type: 'multi_select', label: 'Multi-select', icon: <List size={14} /> },
+    { type: 'status', label: 'Status', icon: <CircleDot size={14} /> },
+    { type: 'date', label: 'Date', icon: <Calendar size={14} /> },
+    { type: 'person', label: 'Person', icon: <Users size={14} /> },
+    { type: 'checkbox', label: 'Checkbox', icon: <CheckSquare size={14} /> },
+    { type: 'url', label: 'URL', icon: <Link size={14} /> },
+    { type: 'email', label: 'Email', icon: <Mail size={14} /> },
+    { type: 'phone', label: 'Phone', icon: <Phone size={14} /> },
+    { type: 'files', label: 'Files & media', icon: <Paperclip size={14} /> },
+  ]
 
   return (
-    <div className="table-view">
-      {/* Toolbar */}
-      <div className="table-toolbar" style={{
+    <div className="table-view" ref={containerRef} style={{ fontFamily: notionTheme.fontFamily }}>
+      {/* Toolbar - Notion style */}
+      <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '8px 0',
-        borderBottom: '1px solid var(--border-color)',
-        marginBottom: 8,
+        gap: 4,
+        padding: '4px 0',
+        marginBottom: 2,
       }}>
         {/* Search */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          background: 'var(--bg-secondary)',
-          borderRadius: 'var(--radius-md)',
-          flex: '0 0 250px',
+          gap: 6,
+          padding: '4px 8px',
+          background: searchQuery ? '#f7f6f3' : 'transparent',
+          borderRadius: 4,
+          transition: 'all 0.15s',
         }}>
-          <Search size={14} style={{ color: 'var(--text-tertiary)' }} />
+          <Search size={14} style={{ color: '#9a9a97' }} />
           <input
             type="text"
-            placeholder="Search in table..."
+            placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{
-              flex: 1,
+              width: searchQuery ? 160 : 50,
               border: 'none',
               background: 'none',
               outline: 'none',
-              fontSize: 13,
-              color: 'var(--text-primary)',
+              fontSize: 14,
+              color: '#37352f',
+              transition: 'width 0.2s',
             }}
+            onFocus={(e) => e.currentTarget.style.width = '160px'}
+            onBlur={(e) => !searchQuery && (e.currentTarget.style.width = '50px')}
           />
           {searchQuery && (
             <button
@@ -320,59 +816,64 @@ export function TableView({
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                padding: 0,
-                color: 'var(--text-tertiary)',
+                padding: 2,
+                color: '#9a9a97',
+                display: 'flex',
+                borderRadius: 2,
               }}
             >
-              ×
+              <X size={12} />
             </button>
           )}
         </div>
 
-        {/* Column visibility toggle */}
+        <div style={{ flex: 1 }} />
+
+        {/* Properties toggle */}
         <div ref={columnVisibilityRef} style={{ position: 'relative' }}>
           <button
             onClick={() => setShowColumnVisibility(!showColumnVisibility)}
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              background: 'none',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
+              gap: 4,
+              padding: '4px 8px',
+              background: showColumnVisibility ? '#f7f6f3' : 'none',
+              border: 'none',
+              borderRadius: 4,
               cursor: 'pointer',
-              fontSize: 13,
-              color: 'var(--text-secondary)',
+              fontSize: 14,
+              color: '#9a9a97',
             }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#f7f6f3'}
+            onMouseLeave={(e) => !showColumnVisibility && (e.currentTarget.style.background = 'none')}
           >
             <Eye size={14} />
-            Properties
-            <ChevronDown size={14} />
           </button>
           {showColumnVisibility && (
             <div style={{
               position: 'absolute',
               top: '100%',
-              left: 0,
+              right: 0,
               marginTop: 4,
-              background: 'var(--bg-primary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-lg)',
+              background: '#ffffff',
+              border: '1px solid rgba(55,53,47,0.09)',
+              borderRadius: 6,
+              boxShadow: 'rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px',
               minWidth: 220,
-              maxHeight: 300,
+              maxHeight: 320,
               overflowY: 'auto',
               zIndex: 100,
             }}>
               <div style={{
-                padding: '8px 12px',
-                borderBottom: '1px solid var(--border-color)',
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--text-secondary)',
+                padding: '8px 12px 6px',
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'rgba(55,53,47,0.65)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
               }}>
-                Toggle columns
+                Properties
               </div>
               {properties.map((prop) => (
                 <button
@@ -383,100 +884,80 @@ export function TableView({
                     alignItems: 'center',
                     gap: 8,
                     width: '100%',
-                    padding: '8px 12px',
+                    padding: '6px 12px',
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
                     textAlign: 'left',
-                    fontSize: 13,
+                    fontSize: 14,
+                    color: hiddenProperties.includes(prop.id) ? 'rgba(55,53,47,0.35)' : '#37352f',
+                    transition: 'background 0.1s',
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                 >
+                  <span style={{ color: 'rgba(55,53,47,0.45)' }}>{getPropertyIcon(prop.type)}</span>
+                  <span style={{ flex: 1 }}>{prop.name}</span>
                   {hiddenProperties.includes(prop.id) ? (
-                    <EyeOff size={14} style={{ color: 'var(--text-tertiary)' }} />
+                    <EyeOff size={14} style={{ color: 'rgba(55,53,47,0.35)' }} />
                   ) : (
-                    <Eye size={14} style={{ color: 'var(--accent-color)' }} />
+                    <Eye size={14} style={{ color: '#2383e2' }} />
                   )}
-                  <span style={{
-                    color: hiddenProperties.includes(prop.id) ? 'var(--text-tertiary)' : 'var(--text-primary)',
-                    textDecoration: hiddenProperties.includes(prop.id) ? 'line-through' : 'none',
-                  }}>
-                    {prop.name}
-                  </span>
                 </button>
               ))}
-              {hiddenProperties.length > 0 && (
-                <button
-                  onClick={() => onHiddenPropertiesChange?.([])}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '8px 12px',
-                    background: 'none',
-                    border: 'none',
-                    borderTop: '1px solid var(--border-color)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    fontSize: 12,
-                    color: 'var(--accent-color)',
-                  }}
-                >
-                  Show all
-                </button>
-              )}
             </div>
           )}
         </div>
 
-        <div style={{ flex: 1 }} />
-
         {/* Row count */}
-        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-          {filteredRows.length} {filteredRows.length === 1 ? 'row' : 'rows'}
-          {searchQuery && ` (filtered)`}
+        <span style={{ fontSize: 12, color: 'rgba(55,53,47,0.5)', padding: '0 8px' }}>
+          {filteredRows.length}
         </span>
       </div>
 
       {/* Bulk actions */}
-      {selectedRows.size > 0 && (
-        <div className="bulk-actions" style={{
+      {selectedRowCount > 0 && (
+        <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
-          padding: '8px 12px',
-          background: 'var(--accent-bg)',
-          borderRadius: 'var(--radius-md)',
-          marginBottom: 8,
+          gap: 8,
+          padding: '6px 10px',
+          background: '#e8f4ff',
+          borderRadius: 4,
+          marginBottom: 6,
         }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{selectedRows.size} selected</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#37352f' }}>
+            {selectedRowCount} selected
+          </span>
           <button
-            className="btn btn-sm btn-danger"
             onClick={handleDeleteSelected}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              padding: '4px 12px',
-              background: 'var(--error-color)',
+              padding: '3px 8px',
+              background: '#eb5757',
               color: 'white',
               border: 'none',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 4,
               fontSize: 12,
               cursor: 'pointer',
+              fontWeight: 500,
             }}
           >
             <Trash2 size={12} />
             Delete
           </button>
           <button
-            className="btn btn-sm"
-            onClick={() => setSelectedRows(new Set())}
+            onClick={() => setSelection({ columns: CompactSelection.empty(), rows: CompactSelection.empty() })}
             style={{
-              padding: '4px 12px',
-              background: 'none',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-sm)',
+              padding: '3px 8px',
+              background: 'white',
+              border: '1px solid rgba(55,53,47,0.16)',
+              borderRadius: 4,
               fontSize: 12,
               cursor: 'pointer',
+              color: '#37352f',
             }}
           >
             Clear
@@ -484,245 +965,304 @@ export function TableView({
         </div>
       )}
 
-      <div className="table-container" style={{ overflowX: 'auto' }}>
-        <table className="data-table" ref={tableRef} style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          fontSize: 14,
-        }}>
-          <thead>
-            <tr>
-              <th className="checkbox-cell" style={{
-                width: 32,
-                padding: '8px 4px',
-                borderBottom: '1px solid var(--border-color)',
-              }}>
-                <input
-                  type="checkbox"
-                  checked={selectedRows.size === filteredRows.length && filteredRows.length > 0}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  style={{ cursor: 'pointer' }}
-                />
-              </th>
-              <th className="row-handle" style={{
-                width: 28,
-                padding: '8px 4px',
-                borderBottom: '1px solid var(--border-color)',
-              }} />
-              {visibleProperties.map((property) => (
-                <th
-                  key={property.id}
-                  style={{
-                    width: getColumnWidth(property.id),
-                    minWidth: 100,
-                    padding: '8px 12px',
-                    borderBottom: '1px solid var(--border-color)',
-                    textAlign: 'left',
-                    position: 'relative',
-                  }}
-                  className="property-header-cell"
-                >
-                  <PropertyHeader
-                    property={property}
-                    onUpdate={(updates) => onUpdateProperty(property.id, updates)}
-                    onDelete={() => onDeleteProperty(property.id)}
-                  />
-                  <div
-                    className="resize-handle"
-                    onMouseDown={(e) => handleResizeStart(e, property.id, getColumnWidth(property.id))}
-                    style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 4,
-                      cursor: 'col-resize',
-                      background: resizing?.id === property.id ? 'var(--accent-color)' : 'transparent',
-                    }}
-                  />
-                </th>
-              ))}
-              <th className="add-property-cell" style={{
-                width: 40,
-                padding: '8px 4px',
-                borderBottom: '1px solid var(--border-color)',
-                position: 'relative',
-              }}>
-                <button
-                  className="add-property-btn"
-                  onClick={() => setShowAddProperty(!showAddProperty)}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'none',
-                    border: '1px dashed var(--border-color)',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    color: 'var(--text-tertiary)',
-                  }}
-                >
-                  <Plus size={14} />
-                </button>
-                {showAddProperty && (
-                  <PropertyTypeMenu onSelect={handleAddProperty} onClose={() => setShowAddProperty(false)} />
-                )}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRows.map((row, rowIndex) => (
-              <tr
-                key={row.id}
-                className={`
-                  ${selectedRows.has(row.id) ? 'selected' : ''}
-                  ${draggedRowId === row.id ? 'dragging' : ''}
-                  ${dragOverRowId === row.id ? 'drag-over' : ''}
-                `}
-                style={{
-                  background: selectedRows.has(row.id) ? 'var(--accent-bg)' :
-                              dragOverRowId === row.id ? 'var(--bg-secondary)' : 'transparent',
-                  opacity: draggedRowId === row.id ? 0.5 : 1,
-                }}
-                onClick={(e) => handleSelectRow(row.id, e)}
-                draggable
-                onDragStart={(e) => handleDragStart(e, row.id)}
-                onDragOver={(e) => handleDragOver(e, row.id)}
-                onDragEnd={handleDragEnd}
-              >
-                <td className="checkbox-cell" style={{ padding: '8px 4px' }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedRows.has(row.id)}
-                    onChange={() => {}}
-                    style={{ cursor: 'pointer' }}
-                  />
-                </td>
-                <td className="row-handle" style={{ padding: '8px 4px' }}>
-                  <div
-                    className="drag-handle"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'grab',
-                      color: 'var(--text-tertiary)',
-                    }}
-                  >
-                    <GripVertical size={14} />
-                  </div>
-                </td>
-                {visibleProperties.map((property, colIndex) => (
-                  <td
-                    key={property.id}
-                    style={{
-                      width: getColumnWidth(property.id),
-                      padding: '4px 12px',
-                      borderBottom: '1px solid var(--border-color-light)',
-                      outline: selectedCell?.rowIndex === rowIndex && selectedCell?.colIndex === colIndex
-                        ? '2px solid var(--accent-color)'
-                        : 'none',
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleCellClick(rowIndex, colIndex)
-                    }}
-                  >
-                    <PropertyCell
-                      property={property}
-                      value={row.properties[property.id]}
-                      onChange={(value) => onUpdateRow(row.id, { [property.id]: value })}
-                    />
-                  </td>
-                ))}
-                <td className="row-actions" style={{ padding: '4px 8px' }}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      className="open-row-btn"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setDetailRow(row)
-                      }}
-                      title="Open"
-                      style={{
-                        width: 24,
-                        height: 24,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'none',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        cursor: 'pointer',
-                        color: 'var(--text-tertiary)',
-                        opacity: 0,
-                        transition: 'opacity 0.15s',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
-                    >
-                      <Maximize2 size={14} />
-                    </button>
-                    <button
-                      className="delete-row-btn"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (confirm('Delete this row?')) {
-                          onDeleteRow(row.id)
-                        }
-                      }}
-                      title="Delete"
-                      style={{
-                        width: 24,
-                        height: 24,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'none',
-                        border: 'none',
-                        borderRadius: 'var(--radius-sm)',
-                        cursor: 'pointer',
-                        color: 'var(--text-tertiary)',
-                        opacity: 0,
-                        transition: 'opacity 0.15s',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Grid container */}
+      <div style={{
+        borderRadius: 0,
+        overflow: 'hidden',
+        borderTop: '1px solid #e9e9e7',
+      }}>
+        <DataEditor
+          ref={gridRef}
+          columns={columns}
+          rows={filteredRows.length}
+          getCellContent={getCellContent}
+          onCellEdited={onCellEdited}
+          onCellActivated={onCellActivated}
+          onCellClicked={onCellClicked}
+          gridSelection={selection}
+          onGridSelectionChange={setSelection}
+          theme={notionTheme}
+          headerIcons={headerIcons}
+          width="100%"
+          height={gridHeight}
+          rowMarkers="clickable-number"
+          rowMarkerWidth={32}
+          smoothScrollX
+          smoothScrollY
+          getCellsForSelection
+          rowSelect="multi"
+          columnSelect="none"
+          rangeSelect="multi-rect"
+          keybindings={{
+            downFill: true,
+            rightFill: true,
+            clear: true,
+            copy: true,
+            paste: true,
+            search: false,
+            selectAll: true,
+            selectColumn: false,
+            selectRow: true,
+          }}
+          onPaste
+          rowHeight={32}
+          headerHeight={32}
+          verticalBorder={false}
+          rightElement={
+            <div
+              onClick={() => setShowAddProperty(true)}
+              style={{
+                width: 42,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--bg-header, #ffffff)',
+                borderLeft: '1px solid #e9e9e7',
+                cursor: 'pointer',
+                color: 'rgba(55,53,47,0.5)',
+                transition: 'all 0.15s',
+              }}
+              title="Add a property"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#f7f6f3'
+                e.currentTarget.style.color = '#37352f'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--bg-header, #ffffff)'
+                e.currentTarget.style.color = 'rgba(55,53,47,0.5)'
+              }}
+            >
+              <Plus size={16} strokeWidth={1.5} />
+            </div>
+          }
+          rightElementProps={{
+            fill: false,
+            sticky: true,
+          }}
+        />
       </div>
 
-      {/* Add row button */}
+      {/* Add row button - Notion style */}
       <button
-        className="add-row-btn"
-        onClick={() => onAddRow()}
+        onClick={handleAddRow}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '8px 12px',
-          marginTop: 8,
+          gap: 4,
+          padding: '4px 6px',
+          marginTop: 0,
+          marginLeft: 6,
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: 'var(--text-tertiary)',
-          fontSize: 13,
-          width: '100%',
+          color: 'rgba(55,53,47,0.5)',
+          fontSize: 14,
           textAlign: 'left',
+          borderRadius: 3,
+          transition: 'background 0.1s',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(55,53,47,0.04)'
+          e.currentTarget.style.color = '#37352f'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'none'
+          e.currentTarget.style.color = 'rgba(55,53,47,0.5)'
         }}
       >
-        <Plus size={14} />
+        <Plus size={12} />
         <span>New</span>
       </button>
+
+      {/* Add property menu */}
+      {showAddProperty && (
+        <div
+          ref={addPropertyRef}
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: '#ffffff',
+            border: '1px solid rgba(55,53,47,0.09)',
+            borderRadius: 6,
+            boxShadow: 'rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px',
+            minWidth: 240,
+            maxHeight: 400,
+            overflowY: 'auto',
+            zIndex: 1000,
+          }}
+        >
+          <div style={{
+            padding: '10px 12px',
+            borderBottom: '1px solid rgba(55,53,47,0.09)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: '#37352f' }}>
+              Property type
+            </span>
+            <button
+              onClick={() => setShowAddProperty(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 4,
+                color: 'rgba(55,53,47,0.45)',
+                display: 'flex',
+                borderRadius: 3,
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.08)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          {propertyTypes.map(({ type, label, icon }) => (
+            <button
+              key={type}
+              onClick={() => handleAddProperty(type)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                width: '100%',
+                padding: '8px 12px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontSize: 14,
+                color: '#37352f',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+            >
+              <span style={{ color: 'rgba(55,53,47,0.45)', display: 'flex' }}>{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Backdrop for add property */}
+      {showAddProperty && (
+        <div
+          onClick={() => setShowAddProperty(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15,15,15,0.6)',
+            zIndex: 999,
+          }}
+        />
+      )}
+
+      {/* Select dropdown overlay */}
+      {selectDropdown && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setSelectDropdown(null)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 1000,
+            }}
+          />
+          {/* Dropdown menu */}
+          <div
+            style={{
+              position: 'fixed',
+              top: selectDropdown.bounds.y + selectDropdown.bounds.height + 4,
+              left: selectDropdown.bounds.x,
+              minWidth: Math.max(selectDropdown.bounds.width, 200),
+              maxWidth: 300,
+              background: '#ffffff',
+              border: '1px solid rgba(55,53,47,0.09)',
+              borderRadius: 6,
+              boxShadow: 'rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px',
+              zIndex: 1001,
+              maxHeight: 300,
+              overflowY: 'auto',
+              padding: '6px 0',
+            }}
+          >
+            {/* Options */}
+            <SelectDropdownOptions
+              property={selectDropdown.property}
+              currentValue={selectDropdown.row.properties[selectDropdown.property.id]}
+              onSelect={handleSelectOption}
+            />
+
+            {/* Clear option for single select */}
+            {selectDropdown.property.type !== 'multi_select' && Boolean(selectDropdown.row.properties[selectDropdown.property.id]) && (
+              <>
+                <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '4px 0' }} />
+                <button
+                  onClick={() => handleSelectOption(null)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    width: '100%',
+                    padding: '6px 12px',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    fontSize: 13,
+                    color: 'rgba(55,53,47,0.5)',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <X size={12} />
+                  Clear
+                </button>
+              </>
+            )}
+
+            {/* Done button for multi-select */}
+            {selectDropdown.property.type === 'multi_select' && (
+              <>
+                <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '4px 0' }} />
+                <button
+                  onClick={() => setSelectDropdown(null)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 'calc(100% - 16px)',
+                    margin: '4px 8px',
+                    padding: '6px 12px',
+                    background: '#2383e2',
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: 'white',
+                  }}
+                >
+                  Done
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Row Detail Modal */}
       {detailRow && database && (
@@ -730,132 +1270,15 @@ export function TableView({
           row={detailRow}
           database={database}
           onClose={() => setDetailRow(null)}
-          onUpdate={handleDetailUpdate}
+          onUpdate={() => {}}
           onDelete={(rowId) => {
             onDeleteRow(rowId)
             setDetailRow(null)
           }}
         />
       )}
-
-      {/* Keyboard shortcuts hint */}
-      {selectedCell && (
-        <div style={{
-          position: 'fixed',
-          bottom: 16,
-          right: 16,
-          padding: '8px 12px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: 'var(--shadow-md)',
-          fontSize: 11,
-          color: 'var(--text-secondary)',
-          display: 'flex',
-          gap: 16,
-        }}>
-          <span>↑↓←→ Navigate</span>
-          <span>Tab Next</span>
-          <span>Enter Open</span>
-          <span>Esc Deselect</span>
-        </div>
-      )}
     </div>
   )
 }
 
-// Property type selection menu
-function PropertyTypeMenu({
-  onSelect,
-  onClose,
-}: {
-  onSelect: (type: PropertyType) => void
-  onClose: () => void
-}) {
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onClose])
-
-  const types: { type: PropertyType; label: string; icon: string }[] = [
-    { type: 'text', label: 'Text', icon: 'Aa' },
-    { type: 'number', label: 'Number', icon: '#' },
-    { type: 'select', label: 'Select', icon: '○' },
-    { type: 'multi_select', label: 'Multi-select', icon: '◎' },
-    { type: 'status', label: 'Status', icon: '●' },
-    { type: 'date', label: 'Date', icon: '📅' },
-    { type: 'person', label: 'Person', icon: '👤' },
-    { type: 'checkbox', label: 'Checkbox', icon: '☑' },
-    { type: 'url', label: 'URL', icon: '🔗' },
-    { type: 'email', label: 'Email', icon: '✉' },
-    { type: 'phone', label: 'Phone', icon: '📞' },
-    { type: 'files', label: 'Files & media', icon: '📎' },
-    { type: 'relation', label: 'Relation', icon: '↔' },
-    { type: 'rollup', label: 'Rollup', icon: '∑' },
-    { type: 'formula', label: 'Formula', icon: 'ƒ' },
-    { type: 'created_time', label: 'Created time', icon: '⏱' },
-    { type: 'created_by', label: 'Created by', icon: '👤' },
-    { type: 'last_edited_time', label: 'Last edited time', icon: '⏱' },
-    { type: 'last_edited_by', label: 'Last edited by', icon: '👤' },
-  ]
-
-  return (
-    <div
-      className="property-type-menu"
-      ref={menuRef}
-      style={{
-        position: 'absolute',
-        top: '100%',
-        right: 0,
-        marginTop: 4,
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border-color)',
-        borderRadius: 'var(--radius-md)',
-        boxShadow: 'var(--shadow-lg)',
-        minWidth: 200,
-        maxHeight: 400,
-        overflowY: 'auto',
-        zIndex: 100,
-      }}
-    >
-      <div className="menu-header" style={{
-        padding: '8px 12px',
-        borderBottom: '1px solid var(--border-color)',
-        fontSize: 12,
-        fontWeight: 600,
-        color: 'var(--text-secondary)',
-      }}>
-        Property Type
-      </div>
-      {types.map(({ type, label, icon }) => (
-        <button
-          key={type}
-          className="menu-item"
-          onClick={() => onSelect(type)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            width: '100%',
-            padding: '8px 12px',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            textAlign: 'left',
-            fontSize: 13,
-          }}
-        >
-          <span className="menu-icon" style={{ width: 20, textAlign: 'center' }}>{icon}</span>
-          <span>{label}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
+export default TableView
