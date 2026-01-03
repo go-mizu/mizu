@@ -167,8 +167,54 @@ export interface Property {
   name: string
   type: PropertyType
   options?: PropertyOption[]
-  config?: Record<string, unknown>
+  config?: PropertyConfig
 }
+
+export interface PropertyConfig {
+  // Number format options
+  numberFormat?: NumberFormat
+  precision?: number
+  currency?: string
+  showThousandsSeparator?: boolean
+
+  // Relation options
+  relatedDatabaseId?: string
+
+  // Rollup options
+  rollupProperty?: string
+  rollupFunction?: 'count' | 'sum' | 'average' | 'min' | 'max' | 'percent_empty' | 'percent_not_empty'
+
+  // Formula options
+  formula?: string
+
+  // Date options
+  includeTime?: boolean
+  dateFormat?: 'relative' | 'full' | 'month_day_year' | 'day_month_year' | 'year_month_day'
+  timeFormat?: '12h' | '24h'
+}
+
+export type NumberFormat =
+  | 'number'
+  | 'number_with_commas'
+  | 'percent'
+  | 'dollar'
+  | 'euro'
+  | 'pound'
+  | 'yen'
+  | 'rupee'
+  | 'won'
+  | 'yuan'
+  | 'peso'
+  | 'franc'
+  | 'kroner'
+  | 'real'
+  | 'ringgit'
+  | 'ruble'
+  | 'rupiah'
+  | 'baht'
+  | 'lira'
+  | 'shekel'
+  | 'rand'
 
 export type PropertyType =
   | 'text'
@@ -226,6 +272,34 @@ export interface Filter {
   operator: string
   value: unknown
 }
+
+export interface FilterGroup {
+  operator: 'and' | 'or'
+  filters: (Filter | FilterGroup)[]
+}
+
+// Advanced date filter values
+export type DateFilterValue =
+  | string // ISO date string
+  | { type: 'relative'; value: RelativeDateValue }
+
+export type RelativeDateValue =
+  | 'today'
+  | 'tomorrow'
+  | 'yesterday'
+  | 'one_week_ago'
+  | 'one_week_from_now'
+  | 'one_month_ago'
+  | 'one_month_from_now'
+  | 'this_week'
+  | 'last_week'
+  | 'next_week'
+  | 'this_month'
+  | 'last_month'
+  | 'next_month'
+  | 'this_year'
+  | 'last_year'
+  | 'next_year'
 
 export interface Sort {
   property: string
