@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -182,6 +182,13 @@ func New(cfg Config) (*Server, error) {
 
 	s.setupRoutes()
 
+	// Seed dev data if in dev mode
+	if isDevMode() {
+		if err := s.seedDevData(); err != nil {
+			slog.Warn("failed to seed dev data", "error", err)
+		}
+	}
+
 	// Serve static files
 	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(assets.Static())))
 	s.app.Get("/static/{path...}", func(c *mizu.Ctx) error {
@@ -212,7 +219,7 @@ func New(cfg Config) (*Server, error) {
 
 // Run starts the server.
 func (s *Server) Run() error {
-	log.Printf("Starting Workspace server on %s", s.cfg.Addr)
+	slog.Info("Starting Workspace server", "addr", s.cfg.Addr)
 	return s.app.Listen(s.cfg.Addr)
 }
 
@@ -235,6 +242,181 @@ func (s *Server) ViewService() views.API           { return s.views }
 
 // Handler returns the HTTP handler for testing.
 func (s *Server) Handler() http.Handler { return s.app }
+
+// seedDevData creates test data for development mode.
+func (s *Server) seedDevData() error {
+	ctx := context.Background()
+
+	// Check if dev database already exists
+	_, err := s.databases.GetByID(ctx, "dev-db-001")
+	if err == nil {
+		slog.Info("Dev data already exists, skipping seed")
+		return nil
+	}
+
+	slog.Info("Seeding dev data...")
+
+	// Create dev workspace first (if it doesn't exist)
+	ws, _ := s.workspaces.GetByID(ctx, "dev-ws-001")
+	if ws == nil {
+		ws, err = s.workspaces.Create(ctx, devUserID, &workspaces.CreateIn{
+			Name: "Dev Workspace",
+			Slug: "dev",
+		})
+		if err != nil {
+			return fmt.Errorf("create dev workspace: %w", err)
+		}
+		// Override ID for consistency
+		s.db.ExecContext(ctx, "UPDATE workspaces SET id = ? WHERE id = ?", "dev-ws-001", ws.ID)
+		ws.ID = "dev-ws-001"
+	}
+
+	// Create dev database with properties
+	db, err := s.databases.Create(ctx, &databases.CreateIn{
+		WorkspaceID: ws.ID,
+		Title:       "Test Database",
+		Properties: []databases.Property{
+			{ID: "title", Name: "Title", Type: databases.PropTitle},
+			{ID: "description", Name: "Description", Type: databases.PropRichText},
+			{ID: "progress", Name: "Progress", Type: databases.PropNumber},
+			{ID: "status", Name: "Status", Type: databases.PropStatus, Config: databases.StatusConfig{
+				Options: []databases.StatusOption{
+					{ID: "todo", Name: "To Do", Color: "gray"},
+					{ID: "in-progress", Name: "In Progress", Color: "blue"},
+					{ID: "done", Name: "Done", Color: "green"},
+				},
+			}},
+			{ID: "tags", Name: "Tags", Type: databases.PropMultiSelect, Config: databases.SelectConfig{
+				Options: []databases.SelectOption{
+					{ID: "frontend", Name: "frontend", Color: "blue"},
+					{ID: "backend", Name: "backend", Color: "green"},
+					{ID: "design", Name: "design", Color: "purple"},
+					{ID: "urgent", Name: "urgent", Color: "red"},
+					{ID: "review", Name: "review", Color: "yellow"},
+				},
+			}},
+			{ID: "priority", Name: "Priority", Type: databases.PropSelect, Config: databases.SelectConfig{
+				Options: []databases.SelectOption{
+					{ID: "low", Name: "Low", Color: "gray"},
+					{ID: "medium", Name: "Medium", Color: "yellow"},
+					{ID: "high", Name: "High", Color: "red"},
+				},
+			}},
+			{ID: "due_date", Name: "Due Date", Type: databases.PropDate},
+			{ID: "completed", Name: "Completed", Type: databases.PropCheckbox},
+			{ID: "website", Name: "Website", Type: databases.PropURL},
+			{ID: "email", Name: "Email", Type: databases.PropEmail},
+			{ID: "phone", Name: "Phone", Type: databases.PropPhone},
+			{ID: "assignee", Name: "Assignee", Type: databases.PropPerson},
+		},
+		CreatedBy: devUserID,
+	})
+	if err != nil {
+		return fmt.Errorf("create dev database: %w", err)
+	}
+
+	// Override database ID for consistency
+	s.db.ExecContext(ctx, "UPDATE databases SET id = ? WHERE id = ?", "dev-db-001", db.ID)
+
+	// Create dev rows
+	devRows := []struct {
+		id    string
+		props map[string]interface{}
+	}{
+		{
+			id: "row1",
+			props: map[string]interface{}{
+				"title":       "Project Alpha",
+				"description": "Main project description",
+				"progress":    75,
+				"status":      "in-progress",
+				"tags":        []string{"frontend", "urgent"},
+				"priority":    "high",
+				"due_date":    "2024-03-15",
+				"completed":   false,
+				"website":     "https://example.com",
+				"email":       "alice@example.com",
+				"phone":       "+1-555-0101",
+				"assignee":    "Alice",
+			},
+		},
+		{
+			id: "row2",
+			props: map[string]interface{}{
+				"title":       "Project Beta",
+				"description": "Secondary project",
+				"progress":    100,
+				"status":      "done",
+				"tags":        []string{"backend"},
+				"priority":    "low",
+				"due_date":    "2024-02-28",
+				"completed":   true,
+				"website":     "https://beta.example.com",
+				"email":       "bob@example.com",
+				"phone":       "+1-555-0102",
+				"assignee":    "Bob",
+			},
+		},
+		{
+			id: "row3",
+			props: map[string]interface{}{
+				"title":       "Project Gamma",
+				"description": "New initiative",
+				"progress":    25,
+				"status":      "todo",
+				"tags":        []string{"design", "review"},
+				"priority":    "medium",
+				"due_date":    "2024-04-30",
+				"completed":   false,
+				"email":       "charlie@example.com",
+				"assignee":    "Charlie",
+			},
+		},
+		{
+			id: "row4",
+			props: map[string]interface{}{
+				"title":       "Project Delta",
+				"description": "",
+				"progress":    50,
+				"status":      "in-progress",
+				"tags":        []string{},
+				"priority":    "high",
+				"due_date":    "2024-03-20",
+				"completed":   false,
+				"website":     "https://delta.io",
+				"phone":       "+1-555-0104",
+			},
+		},
+	}
+
+	for _, r := range devRows {
+		row, err := s.rows.Create(ctx, &rows.CreateIn{
+			DatabaseID: "dev-db-001",
+			Properties: r.props,
+			CreatedBy:  devUserID,
+		})
+		if err != nil {
+			slog.Warn("failed to create dev row", "rowID", r.id, "error", err)
+			continue
+		}
+		// Override row ID for consistency
+		s.db.ExecContext(ctx, "UPDATE database_rows SET id = ? WHERE id = ?", r.id, row.ID)
+	}
+
+	// Create a default view
+	_, err = s.views.Create(ctx, &views.CreateIn{
+		DatabaseID: "dev-db-001",
+		Name:       "Table view",
+		Type:       "table",
+		CreatedBy:  devUserID,
+	})
+	if err != nil {
+		slog.Warn("failed to create dev view", "error", err)
+	}
+
+	slog.Info("Dev data seeded successfully")
+	return nil
+}
 
 func (s *Server) setupRoutes() {
 	// Health check

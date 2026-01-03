@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-mizu/mizu"
@@ -65,17 +66,24 @@ func (h *Row) Update(c *mizu.Ctx) error {
 		Properties map[string]interface{} `json:"properties"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		slog.Error("Row.Update: failed to bind JSON", "error", err, "rowID", id)
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
 	}
+
+	// Log the received properties for debugging
+	propsJSON, _ := json.Marshal(in.Properties)
+	slog.Info("Row.Update: received properties", "rowID", id, "properties", string(propsJSON))
 
 	row, err := h.rows.Update(c.Request().Context(), id, &rows.UpdateIn{
 		Properties: in.Properties,
 		UpdatedBy:  userID,
 	})
 	if err != nil {
+		slog.Error("Row.Update: failed to update", "error", err, "rowID", id)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
+	slog.Info("Row.Update: successfully updated", "rowID", id)
 	return c.JSON(http.StatusOK, row)
 }
 

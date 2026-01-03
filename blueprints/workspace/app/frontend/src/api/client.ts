@@ -62,7 +62,7 @@ class ApiClient {
       return { id: 'mock-page', title: 'Mock Page', blocks: [] } as T
     }
     if (path.startsWith('/databases')) {
-      return { id: 'mock-db', name: 'Mock Database', records: [], properties: {}, views: [] } as T
+      return { id: 'mock-db', name: 'Untitled', records: [], properties: [], views: [] } as T
     }
     if (path.startsWith('/workspaces')) {
       return { id: 'mock-ws', name: 'Mock Workspace', slug: 'mock' } as T
@@ -176,6 +176,9 @@ export interface PropertyConfig {
   precision?: number
   currency?: string
   showThousandsSeparator?: boolean
+
+  // Select/Status options (for backend compatibility)
+  options?: PropertyOption[]
 
   // Relation options
   relatedDatabaseId?: string

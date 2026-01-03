@@ -12,7 +12,9 @@ import DataEditor, {
   SpriteMap,
   CellClickedEventArgs,
 } from '@glideapps/glide-data-grid'
+import { allCells, type DropdownCellType, type TagsCellType, type DatePickerType } from '@glideapps/glide-data-grid-cells'
 import '@glideapps/glide-data-grid/dist/index.css'
+import '@glideapps/glide-data-grid-cells/dist/index.css'
 import { DatabaseRow, Property, PropertyType, Database } from '../../api/client'
 import { RowDetailModal } from '../RowDetailModal'
 import {
@@ -35,6 +37,7 @@ import {
   Clock,
   User,
   X,
+  Edit2,
 } from 'lucide-react'
 
 // SVG icon generators for header icons (returns SVG string for Glide Data Grid)
@@ -150,6 +153,12 @@ const headerIcons: SpriteMap = {
   headerRollup: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
   </svg>`,
+
+  // Add row icon (plus sign for trailing row)
+  addRow: (p) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${p.fgColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/>
+    <line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>`,
 }
 
 // Map property type to header icon name
@@ -201,6 +210,9 @@ const notionTheme: Partial<Theme> = {
   textDark: '#37352f',
   textMedium: '#787774',
   textLight: '#b4b4b0',
+  textHeader: '#787774', // Header text color
+  fgIconHeader: '#787774', // Header icon foreground color (this controls icon colors!)
+  bgIconHeader: '#ffffff', // Header icon background color
   bgCell: '#ffffff',
   bgCellMedium: '#fbfbfa',
   bgHeader: '#ffffff',
@@ -273,95 +285,6 @@ const selectColorMap: Record<string, string> = {
   red: '#ffd5d2',
 }
 
-// Sub-component for select dropdown options
-function SelectDropdownOptions({
-  property,
-  currentValue,
-  onSelect,
-}: {
-  property: Property
-  currentValue: unknown
-  onSelect: (optionId: string | null) => void
-}) {
-  const options = property.options || []
-
-  if (options.length === 0) {
-    return (
-      <div style={{ padding: '8px 12px', fontSize: 13, color: 'rgba(55,53,47,0.5)' }}>
-        No options yet
-      </div>
-    )
-  }
-
-  return (
-    <>
-      {options.map((option) => {
-        const isSelected = property.type === 'multi_select'
-          ? Array.isArray(currentValue) && currentValue.includes(option.id)
-          : currentValue === option.id
-        const bgColor = selectColorMap[option.color || 'gray'] || selectColorMap.gray
-
-        return (
-          <button
-            key={option.id}
-            onClick={() => onSelect(option.id)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              width: '100%',
-              padding: '6px 12px',
-              background: isSelected ? 'rgba(35, 131, 226, 0.08)' : 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              textAlign: 'left',
-              fontSize: 14,
-              transition: 'background 0.1s',
-            }}
-            onMouseEnter={(e) => !isSelected && (e.currentTarget.style.background = 'rgba(55,53,47,0.04)')}
-            onMouseLeave={(e) => !isSelected && (e.currentTarget.style.background = 'transparent')}
-          >
-            {property.type === 'multi_select' && (
-              <div style={{
-                width: 16,
-                height: 16,
-                border: isSelected ? 'none' : '1px solid rgba(55,53,47,0.3)',
-                borderRadius: 3,
-                background: isSelected ? '#2383e2' : 'transparent',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                {isSelected && (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </div>
-            )}
-            <span style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 3,
-              background: bgColor,
-              color: '#37352f',
-              fontSize: 13,
-            }}>
-              {option.name}
-            </span>
-            {property.type !== 'multi_select' && isSelected && (
-              <svg style={{ marginLeft: 'auto' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2383e2" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-          </button>
-        )
-      })}
-    </>
-  )
-}
-
 export function TableView({
   rows,
   properties,
@@ -371,6 +294,8 @@ export function TableView({
   onUpdateRow,
   onDeleteRow,
   onAddProperty,
+  onUpdateProperty,
+  onDeleteProperty,
   onHiddenPropertiesChange,
 }: TableViewProps) {
   const gridRef = useRef<DataEditorRef>(null)
@@ -383,17 +308,22 @@ export function TableView({
   const [detailRow, setDetailRow] = useState<DatabaseRow | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [showColumnVisibility, setShowColumnVisibility] = useState(false)
-  const [showAddProperty, setShowAddProperty] = useState(false)
+  const [showAddProperty, setShowAddProperty] = useState<{ x: number; y: number } | null>(null)
+  const [newPropertyName, setNewPropertyName] = useState('')
+  const [propertyTypeSearch, setPropertyTypeSearch] = useState('')
   const columnVisibilityRef = useRef<HTMLDivElement>(null)
   const addPropertyRef = useRef<HTMLDivElement>(null)
+  const propertyNameInputRef = useRef<HTMLInputElement>(null)
 
-  // Select dropdown state
-  const [selectDropdown, setSelectDropdown] = useState<{
-    cell: Item
+
+  // Header menu state for column editing
+  const [headerMenu, setHeaderMenu] = useState<{
     property: Property
-    row: DatabaseRow
-    bounds: { x: number; y: number; width: number; height: number }
+    bounds: { x: number; y: number }
   } | null>(null)
+  const [editingColumnName, setEditingColumnName] = useState<string | null>(null)
+  const [columnNameInput, setColumnNameInput] = useState('')
+  const headerMenuRef = useRef<HTMLDivElement>(null)
 
   // Calculate grid height
   useEffect(() => {
@@ -416,7 +346,13 @@ export function TableView({
         setShowColumnVisibility(false)
       }
       if (addPropertyRef.current && !addPropertyRef.current.contains(e.target as Node)) {
-        setShowAddProperty(false)
+        setShowAddProperty(null)
+        setNewPropertyName('')
+        setPropertyTypeSearch('')
+      }
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setHeaderMenu(null)
+        setEditingColumnName(null)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -441,7 +377,7 @@ export function TableView({
     })
   }, [rows, searchQuery, properties])
 
-  // Create columns with icons
+  // Create columns with icons and menu
   const columns: GridColumn[] = useMemo(() => {
     return visibleProperties.map((prop, index) => ({
       id: prop.id,
@@ -449,13 +385,34 @@ export function TableView({
       icon: getHeaderIconName(prop.type),
       width: index === 0 ? 280 : 150,
       grow: index === 0 ? 1 : 0,
-      hasMenu: false,
+      hasMenu: true,
       themeOverride: index === 0 ? {
         baseFontStyle: '500 14px',
         textDark: '#37352f',
       } : undefined,
     }))
   }, [visibleProperties])
+
+  // Handle header menu click
+  const onHeaderMenuClick = useCallback((col: number, bounds: { x: number; y: number; width: number; height: number }) => {
+    if (col < visibleProperties.length) {
+      setHeaderMenu({
+        property: visibleProperties[col],
+        bounds: { x: bounds.x, y: bounds.y + bounds.height },
+      })
+    }
+  }, [visibleProperties])
+
+  // Handle column rename
+  const handleColumnRename = useCallback((propertyId: string, newName: string) => {
+    if (newName.trim()) {
+      onUpdateProperty(propertyId, { name: newName.trim() })
+    }
+    setEditingColumnName(null)
+    setColumnNameInput('')
+    setHeaderMenu(null)
+  }, [onUpdateProperty])
+
 
   // Get cell content
   const getCellContent = useCallback((cell: Item): GridCell => {
@@ -511,32 +468,59 @@ export function TableView({
 
       case 'select':
       case 'status':
+        // Use DropdownCell from glide-data-grid-cells for single select with colors
         const selectedOption = property.options?.find(o => o.id === value)
+        const dropdownOptions = property.options?.map(o => ({
+          value: o.id,
+          label: o.name,
+          color: selectColorMap[o.color || 'gray'] || selectColorMap.gray,
+        })) || []
         return {
-          kind: GridCellKind.Bubble,
-          data: selectedOption ? [selectedOption.name] : [],
-          allowOverlay: false, // Use custom dropdown instead
-        }
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: selectedOption?.name || '',
+          data: {
+            kind: 'dropdown-cell',
+            value: value as string || null,
+            allowedValues: dropdownOptions.map(o => ({ value: o.value, label: o.label })),
+          },
+        } as DropdownCellType
 
       case 'multi_select':
-        const selectedIds = Array.isArray(value) ? value : []
-        const selectedNames = selectedIds
+        // Use TagsCell from glide-data-grid-cells for multi-select with colors
+        const selectedTagIds = Array.isArray(value) ? value : []
+        const possibleTags = property.options?.map(o => ({
+          tag: o.name,
+          color: selectColorMap[o.color || 'gray'] || selectColorMap.gray,
+        })) || []
+        const selectedTags = selectedTagIds
           .map(id => property.options?.find(o => o.id === id)?.name)
           .filter(Boolean) as string[]
         return {
-          kind: GridCellKind.Bubble,
-          data: selectedNames,
-          allowOverlay: false, // Use custom dropdown instead
-        }
+          kind: GridCellKind.Custom,
+          allowOverlay: true,
+          copyData: selectedTags.join(', '),
+          data: {
+            kind: 'tags-cell',
+            possibleTags,
+            tags: selectedTags,
+          },
+        } as TagsCellType
 
       case 'date':
+        // Use DatePickerCell from glide-data-grid-cells for date editing
+        const dateValue = value ? new Date(String(value)) : undefined
         return {
-          kind: GridCellKind.Text,
-          data: value ? String(value) : '',
-          displayData: formatDate(value),
+          kind: GridCellKind.Custom,
           allowOverlay: true,
-          readonly: false,
-        }
+          copyData: formatDate(value),
+          data: {
+            kind: 'date-picker-cell',
+            date: dateValue,
+            displayDate: formatDate(value),
+            format: 'date', // 'date' | 'datetime' | 'time'
+          },
+        } as DatePickerType
 
       case 'created_time':
       case 'last_edited_time':
@@ -637,80 +621,45 @@ export function TableView({
       case GridCellKind.Uri:
         valueToSave = newValue.data
         break
-      default:
-        valueToSave = (newValue as any).data
-        if (property.type === 'select' || property.type === 'status') {
-          const names = (newValue as any).data as string[]
-          const name = names?.[0]
-          const option = property.options?.find(o => o.name === name)
-          valueToSave = option?.id || ''
-        } else if (property.type === 'multi_select') {
-          const names = (newValue as any).data as string[]
-          valueToSave = names?.map(name => {
+      case GridCellKind.Custom:
+        // Handle custom cells from glide-data-grid-cells
+        const customData = (newValue as any).data
+        if (customData?.kind === 'dropdown-cell') {
+          // DropdownCell: value is the selected option value (id)
+          valueToSave = customData.value || ''
+        } else if (customData?.kind === 'tags-cell') {
+          // TagsCell: tags is array of tag names, need to convert to ids
+          const tagNames = customData.tags as string[]
+          valueToSave = tagNames?.map(name => {
             const option = property.options?.find(o => o.name === name)
             return option?.id || name
           }) || []
+        } else if (customData?.kind === 'date-picker-cell') {
+          // DatePickerCell: date is a Date object
+          valueToSave = customData.date ? customData.date.toISOString() : null
+        } else {
+          valueToSave = customData
         }
+        break
+      default:
+        valueToSave = (newValue as any).data
     }
 
     onUpdateRow(rowData.id, { [property.id]: valueToSave })
   }, [filteredRows, visibleProperties, onUpdateRow])
 
-  // Handle row double-click
-  const onCellActivated = useCallback((cell: Item) => {
-    const [, row] = cell
+  // Handle row marker click (open detail modal)
+  const onRowMarkerClick = useCallback((row: number) => {
     if (row < filteredRows.length) {
       setDetailRow(filteredRows[row])
     }
   }, [filteredRows])
 
-  // Handle cell click for select dropdowns
-  const onCellClicked = useCallback((cell: Item, event: CellClickedEventArgs) => {
-    const [col, row] = cell
-    if (row >= filteredRows.length || col >= visibleProperties.length) return
+  // Handle cell click - custom cells handle their own overlays now
+  const onCellClicked = useCallback((_cell: Item, _event: CellClickedEventArgs) => {
+    // Custom cells from glide-data-grid-cells handle their own dropdowns/overlays
+  }, [])
 
-    const property = visibleProperties[col]
-    const rowData = filteredRows[row]
-
-    // Open dropdown for select/status/multi_select types
-    if (property.type === 'select' || property.type === 'status' || property.type === 'multi_select') {
-      setSelectDropdown({
-        cell,
-        property,
-        row: rowData,
-        bounds: event.bounds,
-      })
-    }
-  }, [filteredRows, visibleProperties])
-
-  // Handle select option change
-  const handleSelectOption = useCallback((optionId: string | null) => {
-    if (!selectDropdown) return
-
-    const { property, row, cell } = selectDropdown
-    const [, rowIndex] = cell
-
-    // Get fresh row data from filteredRows to avoid stale state
-    const currentRow = filteredRows[rowIndex] || row
-
-    if (property.type === 'multi_select') {
-      // For multi-select, toggle the option
-      const currentValues = Array.isArray(currentRow.properties[property.id])
-        ? (currentRow.properties[property.id] as string[])
-        : []
-      const newValues = currentValues.includes(optionId || '')
-        ? currentValues.filter(v => v !== optionId)
-        : [...currentValues, optionId || ''].filter(Boolean)
-      onUpdateRow(currentRow.id, { [property.id]: newValues })
-
-      // Update the dropdown state with fresh row data for next toggle
-      setSelectDropdown(prev => prev ? { ...prev, row: { ...currentRow, properties: { ...currentRow.properties, [property.id]: newValues } } } : null)
-    } else {
-      // For single select/status, set the value
-      onUpdateRow(currentRow.id, { [property.id]: optionId || '' })
-      setSelectDropdown(null)
-    }
-  }, [selectDropdown, onUpdateRow, filteredRows])
 
   // Handle delete selected
   const handleDeleteSelected = useCallback(() => {
@@ -736,6 +685,12 @@ export function TableView({
     await onAddRow()
   }, [onAddRow])
 
+  // Handle row appended from grid (returns position)
+  const handleRowAppended = useCallback(async () => {
+    await onAddRow()
+    return 'bottom' as const
+  }, [onAddRow])
+
   // Toggle property visibility
   const togglePropertyVisibility = useCallback((propertyId: string) => {
     const newHidden = hiddenProperties.includes(propertyId)
@@ -744,15 +699,61 @@ export function TableView({
     onHiddenPropertiesChange?.(newHidden)
   }, [hiddenProperties, onHiddenPropertiesChange])
 
-  // Handle add property
+  // Handle add property with type-specific default names
   const handleAddProperty = useCallback((type: PropertyType) => {
-    onAddProperty({
-      name: 'New Property',
+    // Generate default name based on type
+    const typeNames: Record<PropertyType, string> = {
+      text: 'Text',
+      number: 'Number',
+      select: 'Select',
+      multi_select: 'Tags',
+      status: 'Status',
+      date: 'Date',
+      person: 'Person',
+      checkbox: 'Checkbox',
+      url: 'URL',
+      email: 'Email',
+      phone: 'Phone',
+      files: 'Files',
+      relation: 'Relation',
+      rollup: 'Rollup',
+      formula: 'Formula',
+      created_time: 'Created time',
+      created_by: 'Created by',
+      last_edited_time: 'Last edited time',
+      last_edited_by: 'Last edited by',
+    }
+
+    // Use custom name if provided, otherwise generate default
+    const existingNames = properties.map(p => p.name)
+    let name = newPropertyName.trim() || typeNames[type] || 'Property'
+
+    // Ensure name is unique
+    if (existingNames.includes(name)) {
+      const baseName = name
+      let counter = 1
+      while (existingNames.includes(name)) {
+        counter++
+        name = `${baseName} ${counter}`
+      }
+    }
+
+    // Backend expects only: name, type, config (with options inside for select types)
+    // Do NOT send 'options' at root level - it breaks BindJSON
+    const isSelectType = type === 'select' || type === 'multi_select' || type === 'status'
+    const propertyData: Omit<Property, 'id'> = {
+      name,
       type,
-      options: type === 'select' || type === 'multi_select' || type === 'status' ? [] : undefined,
-    })
-    setShowAddProperty(false)
-  }, [onAddProperty])
+    }
+    // Only add config for select types with options structure
+    if (isSelectType) {
+      propertyData.config = { options: [] }
+    }
+    onAddProperty(propertyData)
+    setShowAddProperty(null)
+    setNewPropertyName('')
+    setPropertyTypeSearch('')
+  }, [onAddProperty, properties, newPropertyName])
 
   const selectedRowCount = selection.rows.length
 
@@ -811,6 +812,7 @@ export function TableView({
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery('')}
               style={{
                 background: 'none',
@@ -832,6 +834,7 @@ export function TableView({
         {/* Properties toggle */}
         <div ref={columnVisibilityRef} style={{ position: 'relative' }}>
           <button
+            type="button"
             onClick={() => setShowColumnVisibility(!showColumnVisibility)}
             style={{
               display: 'flex',
@@ -877,6 +880,7 @@ export function TableView({
               </div>
               {properties.map((prop) => (
                 <button
+                  type="button"
                   key={prop.id}
                   onClick={() => togglePropertyVisibility(prop.id)}
                   style={{
@@ -930,6 +934,7 @@ export function TableView({
             {selectedRowCount} selected
           </span>
           <button
+            type="button"
             onClick={handleDeleteSelected}
             style={{
               display: 'flex',
@@ -949,6 +954,7 @@ export function TableView({
             Delete
           </button>
           <button
+            type="button"
             onClick={() => setSelection({ columns: CompactSelection.empty(), rows: CompactSelection.empty() })}
             style={{
               padding: '3px 8px',
@@ -977,12 +983,20 @@ export function TableView({
           rows={filteredRows.length}
           getCellContent={getCellContent}
           onCellEdited={onCellEdited}
-          onCellActivated={onCellActivated}
           onCellClicked={onCellClicked}
+          onRowAppended={handleRowAppended}
+          trailingRowOptions={{
+            hint: 'New',
+            sticky: true,
+            tint: true,
+            addIcon: 'addRow', // Custom icon defined in headerIcons
+          }}
+          onHeaderMenuClick={onHeaderMenuClick}
           gridSelection={selection}
           onGridSelectionChange={setSelection}
           theme={notionTheme}
           headerIcons={headerIcons}
+          customRenderers={allCells}
           width="100%"
           height={gridHeight}
           rowMarkers="clickable-number"
@@ -1010,7 +1024,15 @@ export function TableView({
           verticalBorder={false}
           rightElement={
             <div
-              onClick={() => setShowAddProperty(true)}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                const rect = e.currentTarget.getBoundingClientRect()
+                setShowAddProperty({ x: rect.left - 280, y: rect.bottom + 4 })
+                setNewPropertyName('')
+                setPropertyTypeSearch('')
+                setTimeout(() => propertyNameInputRef.current?.focus(), 50)
+              }}
               style={{
                 width: 42,
                 height: 32,
@@ -1045,6 +1067,7 @@ export function TableView({
 
       {/* Add row button - Notion style */}
       <button
+        type="button"
         onClick={handleAddRow}
         style={{
           display: 'flex',
@@ -1075,102 +1098,203 @@ export function TableView({
         <span>New</span>
       </button>
 
-      {/* Add property menu */}
+      {/* Add property popup - Notion style positioned dropdown */}
       {showAddProperty && (
-        <div
-          ref={addPropertyRef}
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: '#ffffff',
-            border: '1px solid rgba(55,53,47,0.09)',
-            borderRadius: 6,
-            boxShadow: 'rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px',
-            minWidth: 240,
-            maxHeight: 400,
-            overflowY: 'auto',
-            zIndex: 1000,
-          }}
-        >
-          <div style={{
-            padding: '10px 12px',
-            borderBottom: '1px solid rgba(55,53,47,0.09)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: '#37352f' }}>
-              Property type
-            </span>
-            <button
-              onClick={() => setShowAddProperty(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: 4,
-                color: 'rgba(55,53,47,0.45)',
-                display: 'flex',
-                borderRadius: 3,
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.08)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          {propertyTypes.map(({ type, label, icon }) => (
-            <button
-              key={type}
-              onClick={() => handleAddProperty(type)}
-              style={{
+        <>
+          {/* Invisible backdrop to close on click outside */}
+          <div
+            onClick={() => {
+              setShowAddProperty(null)
+              setNewPropertyName('')
+              setPropertyTypeSearch('')
+            }}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 999,
+            }}
+          />
+          <div
+            ref={addPropertyRef}
+            style={{
+              position: 'fixed',
+              top: showAddProperty.y,
+              left: Math.max(10, Math.min(showAddProperty.x, window.innerWidth - 320)),
+              background: '#ffffff',
+              border: '1px solid rgba(55,53,47,0.09)',
+              borderRadius: 6,
+              boxShadow: 'rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px',
+              width: 300,
+              maxHeight: 480,
+              overflowY: 'auto',
+              zIndex: 1000,
+            }}
+          >
+            {/* Property name input */}
+            <div style={{ padding: '10px 10px 8px' }}>
+              <input
+                ref={propertyNameInputRef}
+                type="text"
+                value={newPropertyName}
+                onChange={(e) => setNewPropertyName(e.target.value)}
+                placeholder="Property name"
+                style={{
+                  width: '100%',
+                  padding: '6px 8px',
+                  border: '1px solid rgba(55,53,47,0.16)',
+                  borderRadius: 4,
+                  fontSize: 14,
+                  outline: 'none',
+                  background: '#fff',
+                }}
+                onFocus={(e) => e.currentTarget.style.borderColor = '#2383e2'}
+                onBlur={(e) => e.currentTarget.style.borderColor = 'rgba(55,53,47,0.16)'}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowAddProperty(null)
+                    setNewPropertyName('')
+                    setPropertyTypeSearch('')
+                  }
+                }}
+              />
+            </div>
+
+            {/* Search filter */}
+            <div style={{ padding: '0 10px 8px' }}>
+              <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
-                width: '100%',
-                padding: '8px 12px',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontSize: 14,
-                color: '#37352f',
-                transition: 'background 0.1s',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-            >
-              <span style={{ color: 'rgba(55,53,47,0.45)', display: 'flex' }}>{icon}</span>
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
+                gap: 6,
+                padding: '5px 8px',
+                background: 'rgba(55,53,47,0.04)',
+                borderRadius: 4,
+              }}>
+                <Search size={14} style={{ color: '#9a9a97' }} />
+                <input
+                  type="text"
+                  value={propertyTypeSearch}
+                  onChange={(e) => setPropertyTypeSearch(e.target.value)}
+                  placeholder="Search for a property type..."
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    background: 'none',
+                    outline: 'none',
+                    fontSize: 13,
+                    color: '#37352f',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '0 0 6px' }} />
+
+            {/* Suggested section - only show if no search query */}
+            {!propertyTypeSearch && (
+              <>
+                <div style={{
+                  padding: '6px 12px 4px',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: 'rgba(55,53,47,0.5)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  Suggested
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, padding: '0 6px 8px' }}>
+                  {propertyTypes.slice(0, 4).map(({ type, label, icon }) => (
+                    <button
+                      type="button"
+                      key={`suggested-${type}`}
+                      onClick={() => handleAddProperty(type)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 8px',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontSize: 13,
+                        color: '#37352f',
+                        borderRadius: 4,
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                    >
+                      <span style={{ color: 'rgba(55,53,47,0.5)', display: 'flex' }}>{icon}</span>
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '0 0 6px' }} />
+              </>
+            )}
+
+            {/* Type section */}
+            <div style={{
+              padding: '6px 12px 4px',
+              fontSize: 11,
+              fontWeight: 500,
+              color: 'rgba(55,53,47,0.5)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}>
+              Type
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, padding: '0 6px 10px' }}>
+              {propertyTypes
+                .filter(({ label }) =>
+                  !propertyTypeSearch || label.toLowerCase().includes(propertyTypeSearch.toLowerCase())
+                )
+                .map(({ type, label, icon }) => (
+                  <button
+                    type="button"
+                    key={type}
+                    onClick={() => handleAddProperty(type)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 8px',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontSize: 13,
+                      color: '#37352f',
+                      borderRadius: 4,
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                  >
+                    <span style={{ color: 'rgba(55,53,47,0.5)', display: 'flex' }}>{icon}</span>
+                    <span>{label}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Backdrop for add property */}
-      {showAddProperty && (
-        <div
-          onClick={() => setShowAddProperty(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(15,15,15,0.6)',
-            zIndex: 999,
-          }}
-        />
-      )}
 
-      {/* Select dropdown overlay */}
-      {selectDropdown && (
+      {/* Header menu for column editing */}
+      {headerMenu && (
         <>
           {/* Backdrop */}
           <div
-            onClick={() => setSelectDropdown(null)}
+            onClick={() => {
+              setHeaderMenu(null)
+              setEditingColumnName(null)
+            }}
             style={{
               position: 'fixed',
               top: 0,
@@ -1180,83 +1304,161 @@ export function TableView({
               zIndex: 1000,
             }}
           />
-          {/* Dropdown menu */}
+          {/* Menu */}
           <div
+            ref={headerMenuRef}
             style={{
               position: 'fixed',
-              top: selectDropdown.bounds.y + selectDropdown.bounds.height + 4,
-              left: selectDropdown.bounds.x,
-              minWidth: Math.max(selectDropdown.bounds.width, 200),
-              maxWidth: 300,
+              top: headerMenu.bounds.y + 4,
+              left: headerMenu.bounds.x,
+              minWidth: 220,
               background: '#ffffff',
               border: '1px solid rgba(55,53,47,0.09)',
               borderRadius: 6,
               boxShadow: 'rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px, rgba(15, 15, 15, 0.2) 0px 9px 24px',
               zIndex: 1001,
-              maxHeight: 300,
-              overflowY: 'auto',
               padding: '6px 0',
             }}
           >
-            {/* Options */}
-            <SelectDropdownOptions
-              property={selectDropdown.property}
-              currentValue={selectDropdown.row.properties[selectDropdown.property.id]}
-              onSelect={handleSelectOption}
-            />
-
-            {/* Clear option for single select */}
-            {selectDropdown.property.type !== 'multi_select' && Boolean(selectDropdown.row.properties[selectDropdown.property.id]) && (
+            {/* Column name editing */}
+            {editingColumnName === headerMenu.property.id ? (
+              <div style={{ padding: '8px 12px' }}>
+                <input
+                  type="text"
+                  value={columnNameInput}
+                  onChange={(e) => setColumnNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleColumnRename(headerMenu.property.id, columnNameInput)
+                    }
+                    if (e.key === 'Escape') {
+                      setEditingColumnName(null)
+                      setColumnNameInput('')
+                    }
+                  }}
+                  onBlur={() => handleColumnRename(headerMenu.property.id, columnNameInput)}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '6px 10px',
+                    border: '1px solid #2383e2',
+                    borderRadius: 4,
+                    fontSize: 14,
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            ) : (
               <>
+                {/* Property name display */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: 'rgba(55,53,47,0.65)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  {getPropertyIcon(headerMenu.property.type)}
+                  <span>{headerMenu.property.type.replace('_', ' ')}</span>
+                </div>
                 <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '4px 0' }} />
+
+                {/* Rename option */}
                 <button
-                  onClick={() => handleSelectOption(null)}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setEditingColumnName(headerMenu.property.id)
+                    setColumnNameInput(headerMenu.property.name)
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
+                    gap: 10,
                     width: '100%',
-                    padding: '6px 12px',
-                    background: 'transparent',
+                    padding: '8px 12px',
+                    background: 'none',
                     border: 'none',
                     cursor: 'pointer',
                     textAlign: 'left',
-                    fontSize: 13,
-                    color: 'rgba(55,53,47,0.5)',
+                    fontSize: 14,
+                    color: '#37352f',
                     transition: 'background 0.1s',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                 >
-                  <X size={12} />
-                  Clear
+                  <Edit2 size={14} style={{ opacity: 0.65 }} />
+                  <span>Rename</span>
                 </button>
-              </>
-            )}
 
-            {/* Done button for multi-select */}
-            {selectDropdown.property.type === 'multi_select' && (
-              <>
-                <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '4px 0' }} />
+                {/* Hide option */}
                 <button
-                  onClick={() => setSelectDropdown(null)}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    togglePropertyVisibility(headerMenu.property.id)
+                    setHeaderMenu(null)
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 'calc(100% - 16px)',
-                    margin: '4px 8px',
-                    padding: '6px 12px',
-                    background: '#2383e2',
+                    gap: 10,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
                     border: 'none',
-                    borderRadius: 4,
                     cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: 'white',
+                    textAlign: 'left',
+                    fontSize: 14,
+                    color: '#37352f',
+                    transition: 'background 0.1s',
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(55,53,47,0.04)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                 >
-                  Done
+                  <EyeOff size={14} style={{ opacity: 0.65 }} />
+                  <span>Hide in view</span>
+                </button>
+
+                <div style={{ height: 1, background: 'rgba(55,53,47,0.09)', margin: '4px 0' }} />
+
+                {/* Delete option */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (confirm(`Delete "${headerMenu.property.name}" property? This cannot be undone.`)) {
+                      onDeleteProperty(headerMenu.property.id)
+                      setHeaderMenu(null)
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    fontSize: 14,
+                    color: '#eb5757',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(235,87,87,0.04)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                >
+                  <Trash2 size={14} />
+                  <span>Delete property</span>
                 </button>
               </>
             )}
