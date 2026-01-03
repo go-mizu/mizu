@@ -30,9 +30,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:3000',
-      '/w': 'http://localhost:3000',
-      '/static': 'http://localhost:3000',
+      '/api': 'http://localhost:8080',
+      '/w': 'http://localhost:8080',
+      '/static': 'http://localhost:8080',
     },
   },
 })
