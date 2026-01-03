@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { TableView } from './views/TableView'
 import { BoardView } from './views/BoardView'
 import { ListView } from './views/ListView'
@@ -8,9 +8,20 @@ import { ChartView } from './views/ChartView'
 import { TimelineView } from './views/TimelineView'
 import { FilterPanel } from './FilterPanel'
 import { SortPanel } from './SortPanel'
-import { api, DatabaseRow, Property, Filter, Sort, View } from '../api/client'
+import { api, Database, DatabaseRow, Property, Filter, Sort, View } from '../api/client'
 import { useDatabaseStore } from '../stores/databaseStore'
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Plus,
+  ChevronDown,
+  MoreHorizontal,
+  Edit2,
+  Copy,
+  Trash2,
+  Lock,
+  Unlock,
+  Search,
+} from 'lucide-react'
 
 export type ViewType = 'table' | 'board' | 'list' | 'calendar' | 'gallery' | 'timeline' | 'chart'
 
@@ -19,6 +30,7 @@ interface DatabaseViewProps {
   viewId?: string
   viewType: ViewType
   initialData: {
+    database?: Database
     rows: DatabaseRow[]
     properties: Property[]
     views?: View[]
@@ -31,6 +43,7 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
     fetchViews,
     createView,
     updateView,
+    deleteView,
     setActiveView,
     activeViewId,
   } = useDatabaseStore()
@@ -41,10 +54,18 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
   const [filters, setFilters] = useState<Filter[]>([])
   const [sorts, setSorts] = useState<Sort[]>([])
   const [groupBy, setGroupBy] = useState<string | null>(null)
+  const [hiddenProperties, setHiddenProperties] = useState<string[]>([])
   const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [showSortPanel, setShowSortPanel] = useState(false)
+  const [showViewMenu, setShowViewMenu] = useState<string | null>(null)
+  const [showAddViewMenu, setShowAddViewMenu] = useState(false)
+  const [editingViewName, setEditingViewName] = useState<string | null>(null)
+  const [newViewName, setNewViewName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [currentViewId, setCurrentViewId] = useState<string | undefined>(initialViewId)
+  const [searchQuery, setSearchQuery] = useState('')
+  const viewMenuRef = useRef<HTMLDivElement>(null)
+  const addViewMenuRef = useRef<HTMLDivElement>(null)
 
   // Get views for this database
   const views = storedViews[databaseId] || initialData.views || []
@@ -70,33 +91,101 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
         if (currentView.config.filters) setFilters(currentView.config.filters)
         if (currentView.config.sorts) setSorts(currentView.config.sorts)
         if (currentView.config.groupBy) setGroupBy(currentView.config.groupBy)
+        if (currentView.config.hiddenProperties) setHiddenProperties(currentView.config.hiddenProperties)
       }
     }
   }, [currentView])
 
-  // Handle view type change with persistence
-  const handleViewTypeChange = useCallback(async (newType: ViewType) => {
-    setViewType(newType)
-
-    // Find existing view of this type or create one
-    const existingView = views.find(v => v.type === newType)
-
-    if (existingView) {
-      setCurrentViewId(existingView.id)
-      setActiveView(existingView.id)
-    } else {
-      // Create a new view
-      const newView = await createView(databaseId, {
-        name: `${newType.charAt(0).toUpperCase() + newType.slice(1)} view`,
-        type: newType,
-        config: {},
-      })
-      if (newView) {
-        setCurrentViewId(newView.id)
-        setActiveView(newView.id)
+  // Close menus on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
+        setShowViewMenu(null)
+      }
+      if (addViewMenuRef.current && !addViewMenuRef.current.contains(e.target as Node)) {
+        setShowAddViewMenu(false)
       }
     }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Handle view selection
+  const handleSelectView = useCallback((view: View) => {
+    setCurrentViewId(view.id)
+    setActiveView(view.id)
+  }, [setActiveView])
+
+  // Handle view type change with persistence
+  const handleAddView = useCallback(async (type: ViewType) => {
+    const existingCount = views.filter(v => v.type === type).length
+    const viewName = existingCount > 0
+      ? `${type.charAt(0).toUpperCase() + type.slice(1)} view ${existingCount + 1}`
+      : `${type.charAt(0).toUpperCase() + type.slice(1)} view`
+
+    const newView = await createView(databaseId, {
+      name: viewName,
+      type,
+      config: {},
+    })
+
+    if (newView) {
+      setCurrentViewId(newView.id)
+      setActiveView(newView.id)
+    }
+
+    setShowAddViewMenu(false)
   }, [views, databaseId, createView, setActiveView])
+
+  // Handle rename view
+  const handleRenameView = useCallback(async (viewId: string, name: string) => {
+    if (!name.trim()) {
+      setEditingViewName(null)
+      return
+    }
+
+    await updateView(viewId, { name: name.trim() })
+    setEditingViewName(null)
+    setNewViewName('')
+    setShowViewMenu(null)
+  }, [updateView])
+
+  // Handle duplicate view
+  const handleDuplicateView = useCallback(async (view: View) => {
+    const newView = await createView(databaseId, {
+      name: `${view.name} (copy)`,
+      type: view.type,
+      config: { ...view.config },
+    })
+
+    if (newView) {
+      setCurrentViewId(newView.id)
+      setActiveView(newView.id)
+    }
+
+    setShowViewMenu(null)
+  }, [databaseId, createView, setActiveView])
+
+  // Handle delete view
+  const handleDeleteView = useCallback(async (viewId: string) => {
+    if (views.length <= 1) {
+      alert('Cannot delete the only view')
+      return
+    }
+
+    if (!confirm('Delete this view?')) return
+
+    await deleteView(viewId)
+
+    // Switch to first remaining view
+    const remaining = views.find(v => v.id !== viewId)
+    if (remaining) {
+      setCurrentViewId(remaining.id)
+      setActiveView(remaining.id)
+    }
+
+    setShowViewMenu(null)
+  }, [views, deleteView, setActiveView])
 
   // Save view config when filters/sorts change
   const saveViewConfig = useCallback(async () => {
@@ -108,18 +197,19 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
           filters,
           sorts,
           groupBy,
+          hiddenProperties,
         }
       })
     } catch (err) {
       console.error('Failed to save view config:', err)
     }
-  }, [currentViewId, filters, sorts, groupBy, updateView])
+  }, [currentViewId, filters, sorts, groupBy, hiddenProperties, updateView])
 
   // Debounced save on filter/sort change
   useEffect(() => {
     const timeout = setTimeout(saveViewConfig, 1000)
     return () => clearTimeout(timeout)
-  }, [filters, sorts, groupBy, saveViewConfig])
+  }, [filters, sorts, groupBy, hiddenProperties, saveViewConfig])
 
   // Fetch rows when filters/sorts change
   const fetchRows = useCallback(async () => {
@@ -222,12 +312,15 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
       rows,
       properties,
       groupBy,
+      database: initialData.database,
+      hiddenProperties,
       onAddRow: handleAddRow,
       onUpdateRow: handleUpdateRow,
       onDeleteRow: handleDeleteRow,
       onAddProperty: handleAddProperty,
       onUpdateProperty: handleUpdateProperty,
       onDeleteProperty: handleDeleteProperty,
+      onHiddenPropertiesChange: setHiddenProperties,
     }
 
     switch (viewType) {
@@ -252,43 +345,314 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
 
   return (
     <div className="database-view-container">
-      {/* View type tabs */}
-      <div className="database-view-tabs">
-        {(['table', 'board', 'list', 'calendar', 'gallery', 'timeline', 'chart'] as ViewType[]).map((type) => (
-          <button
-            key={type}
-            className={`view-tab ${viewType === type ? 'active' : ''}`}
-            onClick={() => handleViewTypeChange(type)}
+      {/* View tabs */}
+      <div className="database-view-tabs" style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '8px 0',
+        borderBottom: '1px solid var(--border-color)',
+        overflowX: 'auto',
+      }}>
+        {views.map((view) => (
+          <div
+            key={view.id}
+            className={`view-tab ${currentView?.id === view.id ? 'active' : ''}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              background: currentView?.id === view.id ? 'var(--bg-secondary)' : 'transparent',
+              borderRadius: 'var(--radius-md)',
+              cursor: 'pointer',
+              position: 'relative',
+            }}
           >
-            <ViewIcon type={type} />
-            <span>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
-          </button>
+            {editingViewName === view.id ? (
+              <input
+                type="text"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                onBlur={() => handleRenameView(view.id, newViewName)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameView(view.id, newViewName)
+                  if (e.key === 'Escape') {
+                    setEditingViewName(null)
+                    setNewViewName('')
+                  }
+                }}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  padding: '2px 6px',
+                  border: '1px solid var(--accent-color)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 13,
+                  outline: 'none',
+                  width: 120,
+                }}
+              />
+            ) : (
+              <>
+                <div
+                  onClick={() => handleSelectView(view)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <ViewIcon type={view.type as ViewType} />
+                  <span style={{ fontSize: 13, fontWeight: currentView?.id === view.id ? 500 : 400 }}>
+                    {view.name}
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowViewMenu(showViewMenu === view.id ? null : view.id)
+                  }}
+                  style={{
+                    width: 20,
+                    height: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-tertiary)',
+                    borderRadius: 'var(--radius-sm)',
+                    opacity: currentView?.id === view.id ? 1 : 0,
+                    transition: 'opacity 0.15s',
+                  }}
+                  className="view-menu-btn"
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+              </>
+            )}
+
+            {/* View menu */}
+            {showViewMenu === view.id && (
+              <div
+                ref={viewMenuRef}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: 4,
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-lg)',
+                  minWidth: 180,
+                  zIndex: 100,
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setEditingViewName(view.id)
+                    setNewViewName(view.name)
+                    setShowViewMenu(null)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    textAlign: 'left',
+                  }}
+                >
+                  <Edit2 size={14} />
+                  Rename
+                </button>
+                <button
+                  onClick={() => handleDuplicateView(view)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    textAlign: 'left',
+                  }}
+                >
+                  <Copy size={14} />
+                  Duplicate
+                </button>
+                <button
+                  onClick={() => handleDeleteView(view.id)}
+                  disabled={views.length <= 1}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
+                    border: 'none',
+                    borderTop: '1px solid var(--border-color)',
+                    cursor: views.length <= 1 ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    textAlign: 'left',
+                    color: views.length <= 1 ? 'var(--text-tertiary)' : 'var(--error-color)',
+                    opacity: views.length <= 1 ? 0.5 : 1,
+                  }}
+                >
+                  <Trash2 size={14} />
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
         ))}
+
+        {/* Add view button */}
+        <div ref={addViewMenuRef} style={{ position: 'relative' }}>
+          <button
+            onClick={() => setShowAddViewMenu(!showAddViewMenu)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '6px 12px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-tertiary)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 13,
+            }}
+          >
+            <Plus size={14} />
+            Add view
+          </button>
+          {showAddViewMenu && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              marginTop: 4,
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-lg)',
+              minWidth: 180,
+              zIndex: 100,
+            }}>
+              {(['table', 'board', 'list', 'calendar', 'gallery', 'timeline', 'chart'] as ViewType[]).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => handleAddView(type)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    textAlign: 'left',
+                  }}
+                >
+                  <ViewIcon type={type} />
+                  <span>{type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Toolbar */}
-      <div className="database-toolbar">
+      <div className="database-toolbar" style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 0',
+      }}>
         <button
           className={`toolbar-btn ${showFilterPanel ? 'active' : ''}`}
           onClick={() => setShowFilterPanel(!showFilterPanel)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            background: showFilterPanel ? 'var(--accent-bg)' : 'none',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
         >
           <FilterIcon />
           <span>Filter</span>
-          {filters.length > 0 && <span className="badge">{filters.length}</span>}
+          {filters.length > 0 && (
+            <span style={{
+              padding: '2px 6px',
+              background: 'var(--accent-color)',
+              color: 'white',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 11,
+              fontWeight: 600,
+            }}>
+              {filters.length}
+            </span>
+          )}
         </button>
         <button
           className={`toolbar-btn ${showSortPanel ? 'active' : ''}`}
           onClick={() => setShowSortPanel(!showSortPanel)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            background: showSortPanel ? 'var(--accent-bg)' : 'none',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+            fontSize: 13,
+          }}
         >
           <SortIcon />
           <span>Sort</span>
-          {sorts.length > 0 && <span className="badge">{sorts.length}</span>}
+          {sorts.length > 0 && (
+            <span style={{
+              padding: '2px 6px',
+              background: 'var(--accent-color)',
+              color: 'white',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 11,
+              fontWeight: 600,
+            }}>
+              {sorts.length}
+            </span>
+          )}
         </button>
         {(viewType === 'board' || viewType === 'list') && (
           <select
             className="group-select"
             value={groupBy || ''}
             onChange={(e) => setGroupBy(e.target.value || null)}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 13,
+              background: 'var(--bg-primary)',
+              cursor: 'pointer',
+            }}
           >
             <option value="">No grouping</option>
             {properties
@@ -303,30 +667,65 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
       </div>
 
       {/* Filter panel */}
-      {showFilterPanel && (
-        <FilterPanel
-          properties={properties}
-          filters={filters}
-          onFiltersChange={setFilters}
-          onClose={() => setShowFilterPanel(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showFilterPanel && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{ overflow: 'hidden', marginBottom: 8 }}
+          >
+            <FilterPanel
+              properties={properties}
+              filters={filters}
+              onFiltersChange={setFilters}
+              onClose={() => setShowFilterPanel(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Sort panel */}
-      {showSortPanel && (
-        <SortPanel
-          properties={properties}
-          sorts={sorts}
-          onSortsChange={setSorts}
-          onClose={() => setShowSortPanel(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showSortPanel && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{ overflow: 'hidden', marginBottom: 8 }}
+          >
+            <SortPanel
+              properties={properties}
+              sorts={sorts}
+              onSortsChange={setSorts}
+              onClose={() => setShowSortPanel(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Loading overlay */}
-      {isLoading && <div className="loading-overlay">Loading...</div>}
+      {isLoading && (
+        <div className="loading-overlay" style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(255,255,255,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50,
+        }}>
+          Loading...
+        </div>
+      )}
 
       {/* View content */}
-      <div className="database-content">{renderView()}</div>
+      <div className="database-content" style={{ flex: 1, overflow: 'auto' }}>
+        {renderView()}
+      </div>
     </div>
   )
 }
