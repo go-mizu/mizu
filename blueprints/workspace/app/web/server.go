@@ -178,7 +178,7 @@ func New(cfg Config) (*Server, error) {
 	s.favoriteHandlers = api.NewFavorite(favoritesSvc, s.getUserID)
 	s.searchHandlers = api.NewSearch(searchSvc, s.getUserID)
 	s.mediaHandlers = api.NewMedia(filepath.Join(cfg.DataDir, "uploads"), s.getUserID)
-	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workspacesSvc, membersSvc, pagesSvc, blocksSvc, databasesSvc, viewsSvc, favoritesSvc, s.getUserID)
+	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workspacesSvc, membersSvc, pagesSvc, blocksSvc, databasesSvc, viewsSvc, rowsSvc, favoritesSvc, s.getUserID)
 
 	s.setupRoutes()
 

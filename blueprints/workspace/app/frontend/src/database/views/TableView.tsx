@@ -15,7 +15,8 @@ import DataEditor, {
 import { allCells, type DropdownCellType, type TagsCellType, type DatePickerType } from '@glideapps/glide-data-grid-cells'
 import '@glideapps/glide-data-grid/dist/index.css'
 import '@glideapps/glide-data-grid-cells/dist/index.css'
-import { DatabaseRow, Property, PropertyType, Database } from '../../api/client'
+import { DatabaseRow, Property, PropertyType, Database, FileAttachment } from '../../api/client'
+import { filesCellRenderer, createFilesCell } from '../cells/FilesCell'
 import { RowDetailModal } from '../RowDetailModal'
 import {
   Plus,
@@ -567,14 +568,11 @@ export function TableView({
         }
 
       case 'files':
-        const files = Array.isArray(value)
-          ? (value as Array<{ name: string }>).map(f => f.name)
+        // Use custom FilesCell for file attachments with upload support
+        const filesData: FileAttachment[] = Array.isArray(value)
+          ? (value as FileAttachment[])
           : []
-        return {
-          kind: GridCellKind.Bubble,
-          data: files,
-          allowOverlay: true,
-        }
+        return createFilesCell(filesData)
 
       case 'rollup':
       case 'formula':
@@ -637,6 +635,9 @@ export function TableView({
         } else if (customData?.kind === 'date-picker-cell') {
           // DatePickerCell: date is a Date object
           valueToSave = customData.date ? customData.date.toISOString() : null
+        } else if (customData?.kind === 'files-cell') {
+          // FilesCell: files is array of FileAttachment objects
+          valueToSave = customData.files || []
         } else {
           valueToSave = customData
         }
@@ -996,7 +997,7 @@ export function TableView({
           onGridSelectionChange={setSelection}
           theme={notionTheme}
           headerIcons={headerIcons}
-          customRenderers={allCells}
+          customRenderers={[...allCells, filesCellRenderer]}
           width="100%"
           height={gridHeight}
           rowMarkers="clickable-number"
@@ -1064,39 +1065,6 @@ export function TableView({
           }}
         />
       </div>
-
-      {/* Add row button - Notion style */}
-      <button
-        type="button"
-        onClick={handleAddRow}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '4px 6px',
-          marginTop: 0,
-          marginLeft: 6,
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'rgba(55,53,47,0.5)',
-          fontSize: 14,
-          textAlign: 'left',
-          borderRadius: 3,
-          transition: 'background 0.1s',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(55,53,47,0.04)'
-          e.currentTarget.style.color = '#37352f'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'none'
-          e.currentTarget.style.color = 'rgba(55,53,47,0.5)'
-        }}
-      >
-        <Plus size={12} />
-        <span>New</span>
-      </button>
 
       {/* Add property popup - Notion style positioned dropdown */}
       {showAddProperty && (

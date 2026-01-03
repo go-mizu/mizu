@@ -322,3 +322,20 @@ export interface User {
   email: string
   avatar?: string
 }
+
+// File/Media types for database property
+export interface FileAttachment {
+  id: string
+  name: string
+  url: string
+  type: string // MIME type
+  size?: number
+  thumbnailUrl?: string
+}
+
+export interface UploadResponse {
+  id: string
+  url: string
+  filename: string
+  type: string
+}

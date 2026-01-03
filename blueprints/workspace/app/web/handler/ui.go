@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"html/template"
 	"net/http"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/favorites"
 	"github.com/go-mizu/blueprints/workspace/feature/members"
 	"github.com/go-mizu/blueprints/workspace/feature/pages"
+	"github.com/go-mizu/blueprints/workspace/feature/rows"
 	"github.com/go-mizu/blueprints/workspace/feature/users"
 	"github.com/go-mizu/blueprints/workspace/feature/views"
 	"github.com/go-mizu/blueprints/workspace/feature/workspaces"
@@ -26,6 +28,7 @@ type UI struct {
 	blocks     blocks.API
 	databases  databases.API
 	views      views.API
+	rows       rows.API
 	favorites  favorites.API
 	getUserID  func(c *mizu.Ctx) string
 }
@@ -40,6 +43,7 @@ func NewUI(
 	blocks blocks.API,
 	databases databases.API,
 	views views.API,
+	rows rows.API,
 	favorites favorites.API,
 	getUserID func(c *mizu.Ctx) string,
 ) *UI {
@@ -52,6 +56,7 @@ func NewUI(
 		blocks:     blocks,
 		databases:  databases,
 		views:      views,
+		rows:       rows,
 		favorites:  favorites,
 		getUserID:  getUserID,
 	}
@@ -174,19 +179,50 @@ func (h *UI) Database(c *mizu.Ctx) error {
 	}
 
 	viewsList, _ := h.views.ListByDatabase(c.Request().Context(), databaseID)
+	rowsResult, _ := h.rows.List(c.Request().Context(), &rows.ListIn{
+		DatabaseID: databaseID,
+		Limit:      100,
+	})
 	user, _ := h.users.GetByID(c.Request().Context(), userID)
 	pagesList, _ := h.pages.ListByWorkspace(c.Request().Context(), ws.ID, pages.ListOpts{})
 	favs, _ := h.favorites.List(c.Request().Context(), userID, ws.ID)
 	wsList, _ := h.workspaces.ListByUser(c.Request().Context(), userID)
 
+	// Build the database data JSON for the frontend
+	var rowsList []*rows.Row
+	if rowsResult != nil {
+		rowsList = rowsResult.Rows
+	}
+
+	// Determine current view (first view or default to table)
+	var currentView *views.View
+	if len(viewsList) > 0 {
+		currentView = viewsList[0]
+	} else {
+		currentView = &views.View{
+			Type: views.ViewTable,
+			Name: "Table view",
+		}
+	}
+
+	databaseData := map[string]interface{}{
+		"database":   db,
+		"rows":       rowsList,
+		"properties": db.Properties,
+		"views":      viewsList,
+	}
+	databaseDataJSON, _ := json.Marshal(databaseData)
+
 	data := map[string]interface{}{
-		"User":       user,
-		"Workspace":  ws,
-		"Workspaces": wsList,
-		"Pages":      pagesList,
-		"Favorites":  favs,
-		"Database":   db,
-		"Views":      viewsList,
+		"User":             user,
+		"Workspace":        ws,
+		"Workspaces":       wsList,
+		"Pages":            pagesList,
+		"Favorites":        favs,
+		"Database":         db,
+		"Views":            viewsList,
+		"CurrentView":      currentView,
+		"DatabaseDataJSON": template.JS(databaseDataJSON),
 	}
 
 	return h.render(c, "database", data)

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Property, PropertyOption, api } from '../api/client'
+import { Property, PropertyOption, api, FileAttachment } from '../api/client'
 import { format, parseISO, isValid, parse } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -50,12 +50,8 @@ interface WorkspaceMember {
   avatar_url?: string
 }
 
-interface FileValue {
-  name: string
-  url: string
-  size?: number
-  type?: string
-}
+// Use FileAttachment from API client for file values
+type FileValue = FileAttachment
 
 export function PropertyCell({ property, value, onChange, workspaceId }: PropertyCellProps) {
   switch (property.type) {
@@ -1396,7 +1392,41 @@ function PhoneCell({ value, onChange }: { value: string; onChange: (v: string) =
   )
 }
 
-// Enhanced Files cell with upload
+// File type detection for display
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif']
+const VIDEO_EXTS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'wmv', 'flv']
+const AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma']
+const DOC_EXTS = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt']
+const SHEET_EXTS = ['xls', 'xlsx', 'csv', 'ods']
+const PRES_EXTS = ['ppt', 'pptx', 'odp']
+const ARCHIVE_EXTS = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']
+const CODE_EXTS = ['js', 'ts', 'tsx', 'jsx', 'py', 'go', 'rs', 'java', 'c', 'cpp', 'css', 'html', 'json', 'md']
+
+function getFileExt(name: string): string {
+  const parts = name.split('.')
+  return parts.length > 1 ? parts.pop()?.toLowerCase() || '' : ''
+}
+
+function isImage(file: FileValue): boolean {
+  if (file.type?.startsWith('image/')) return true
+  return IMAGE_EXTS.includes(getFileExt(file.name))
+}
+
+function getFileIconForDisplay(file: FileValue): string {
+  const ext = getFileExt(file.name)
+  if (file.type?.startsWith('image/') || IMAGE_EXTS.includes(ext)) return '🖼️'
+  if (file.type?.startsWith('video/') || VIDEO_EXTS.includes(ext)) return '🎬'
+  if (file.type?.startsWith('audio/') || AUDIO_EXTS.includes(ext)) return '🎵'
+  if (file.type?.includes('pdf') || ext === 'pdf') return '📄'
+  if (DOC_EXTS.includes(ext)) return '📝'
+  if (SHEET_EXTS.includes(ext)) return '📊'
+  if (PRES_EXTS.includes(ext)) return '📽️'
+  if (ARCHIVE_EXTS.includes(ext)) return '🗜️'
+  if (CODE_EXTS.includes(ext)) return '💻'
+  return '📎'
+}
+
+// Enhanced Files cell with upload and image preview
 function FilesCell({ value, onChange }: { value: FileValue[]; onChange: (v: FileValue[]) => void }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -1410,10 +1440,11 @@ function FilesCell({ value, onChange }: { value: FileValue[]; onChange: (v: File
       for (const file of Array.from(uploadFiles)) {
         const result = await api.upload(file)
         newFiles.push({
-          name: file.name,
+          id: result.id,
+          name: result.filename,
           url: result.url,
           size: file.size,
-          type: file.type,
+          type: result.type,
         })
       }
       onChange([...files, ...newFiles])
@@ -1436,16 +1467,6 @@ function FilesCell({ value, onChange }: { value: FileValue[]; onChange: (v: File
     onChange(files.filter((_, i) => i !== index))
   }
 
-  const getFileIcon = (type?: string) => {
-    if (type?.startsWith('image/')) return '🖼️'
-    if (type?.startsWith('video/')) return '🎬'
-    if (type?.startsWith('audio/')) return '🎵'
-    if (type?.includes('pdf')) return '📄'
-    if (type?.includes('spreadsheet') || type?.includes('excel')) return '📊'
-    if (type?.includes('document') || type?.includes('word')) return '📝'
-    return '📎'
-  }
-
   const formatSize = (bytes?: number) => {
     if (!bytes) return ''
     if (bytes < 1024) return `${bytes} B`
@@ -1464,32 +1485,55 @@ function FilesCell({ value, onChange }: { value: FileValue[]; onChange: (v: File
       />
 
       {files.length > 0 ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {files.map((file, i) => (
             <div
-              key={i}
+              key={file.id || i}
               className="file-item"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 4,
+                gap: 6,
                 padding: '4px 8px',
                 background: 'var(--bg-secondary)',
                 borderRadius: 'var(--radius-sm)',
                 fontSize: 13,
               }}
             >
-              <span>{getFileIcon(file.type)}</span>
+              {/* Image thumbnail or file icon */}
+              {isImage(file) && file.url ? (
+                <img
+                  src={file.thumbnailUrl || file.url}
+                  alt={file.name}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    objectFit: 'cover',
+                    borderRadius: 3,
+                    flexShrink: 0,
+                  }}
+                />
+              ) : (
+                <span style={{ fontSize: 16, flexShrink: 0 }}>{getFileIconForDisplay(file)}</span>
+              )}
               <a
                 href={file.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+                style={{
+                  color: 'var(--text-primary)',
+                  textDecoration: 'none',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 120,
+                }}
+                title={file.name}
               >
                 {file.name}
               </a>
               {file.size && (
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}>
+                <span style={{ color: 'var(--text-tertiary)', fontSize: 11, flexShrink: 0 }}>
                   {formatSize(file.size)}
                 </span>
               )}
@@ -1504,6 +1548,7 @@ function FilesCell({ value, onChange }: { value: FileValue[]; onChange: (v: File
                   cursor: 'pointer',
                   color: 'var(--text-tertiary)',
                   borderRadius: 2,
+                  flexShrink: 0,
                 }}
               >
                 <X size={12} />

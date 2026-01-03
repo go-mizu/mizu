@@ -6546,3 +6546,39 @@ a:focus-visible {
     padding: 0 !important;
   }
 }
+
+/* =============================================================================
+   Glide Data Grid Overrides
+   ============================================================================= */
+
+/* Fix text editor overlay to match row height */
+.dvn-scroll-inner .gdg-style {
+  max-height: 32px !important;
+}
+
+.dvn-scroll-inner .gdg-growing-entry {
+  max-height: 32px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+}
+
+.dvn-scroll-inner .gdg-growing-entry textarea {
+  max-height: 32px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  line-height: 20px !important;
+  padding: 5px 8px !important;
+  font-size: 14px !important;
+  box-sizing: border-box !important;
+  resize: none !important;
+  overflow: hidden !important;
+}
+
+/* Ensure portal overlay doesn't overflow */
+.gdg-portal {
+  pointer-events: auto;
+}
+
+.gdg-portal > div {
+  overflow: visible;
+}

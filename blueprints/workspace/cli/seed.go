@@ -220,6 +220,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			}},
 			{Name: "Due Date", Type: databases.PropDate},
 			{Name: "Assignee", Type: databases.PropPerson},
+			{Name: "Attachments", Type: databases.PropFiles},
 		},
 	})
 	if err != nil {
@@ -253,16 +254,24 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 	// Add sample tasks as database items (pages with parent = database)
 	tasks := []struct {
-		Title    string
-		Status   string
-		Priority string
-		DueDays  int
+		Title       string
+		Status      string
+		Priority    string
+		DueDays     int
+		Attachments []map[string]interface{}
 	}{
-		{"Design new landing page", "In Progress", "High", 3},
-		{"Write documentation", "Not Started", "Medium", 7},
-		{"Fix login bug", "Done", "High", -2},
-		{"Review pull requests", "In Progress", "Medium", 1},
-		{"Update dependencies", "Not Started", "Low", 14},
+		{"Design new landing page", "In Progress", "High", 3, []map[string]interface{}{
+			{"id": "file-1", "name": "mockup.png", "url": "https://via.placeholder.com/800x600?text=Landing+Page+Mockup", "type": "image/png"},
+			{"id": "file-2", "name": "design-spec.pdf", "url": "https://example.com/design-spec.pdf", "type": "application/pdf"},
+		}},
+		{"Write documentation", "Not Started", "Medium", 7, []map[string]interface{}{
+			{"id": "file-3", "name": "outline.md", "url": "https://example.com/outline.md", "type": "text/markdown"},
+		}},
+		{"Fix login bug", "Done", "High", -2, nil},
+		{"Review pull requests", "In Progress", "Medium", 1, nil},
+		{"Update dependencies", "Not Started", "Low", 14, []map[string]interface{}{
+			{"id": "file-4", "name": "audit-report.txt", "url": "https://example.com/audit.txt", "type": "text/plain"},
+		}},
 	}
 
 	for _, task := range tasks {
@@ -274,6 +283,9 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		if task.DueDays != 0 {
 			dueDate := time.Now().AddDate(0, 0, task.DueDays).Format("2006-01-02")
 			props["Due Date"] = pages.PropertyValue{Type: "date", Value: dueDate}
+		}
+		if task.Attachments != nil {
+			props["Attachments"] = pages.PropertyValue{Type: "files", Value: task.Attachments}
 		}
 
 		srv.PageService().Create(ctx, &pages.CreateIn{
