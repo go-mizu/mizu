@@ -701,5 +701,40 @@ export const PDFBlock = createReactBlockSpec(
         </div>
       )
     },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('pdf-block') || element.hasAttribute('data-pdf-url')) {
+        return {
+          url: element.getAttribute('data-pdf-url') || '',
+          name: element.getAttribute('data-pdf-name') || '',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const { url, name } = block.props as Record<string, string>
+      return (
+        <div
+          className="pdf-block"
+          data-pdf-url={url}
+          data-pdf-name={name}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '12px 16px',
+            border: '1px solid rgba(55, 53, 47, 0.16)',
+            borderRadius: '4px',
+          }}
+        >
+          <span style={{ fontSize: '24px' }}>📄</span>
+          <div>
+            <div style={{ fontWeight: 500 }}>{name || 'PDF Document'}</div>
+            <div style={{ fontSize: '12px', color: '#787774' }}>PDF file</div>
+          </div>
+        </div>
+      )
+    },
   }
 )

@@ -657,6 +657,46 @@ export const InlineDatabaseBlock = createReactBlockSpec(
         </div>
       )
     },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('inline-database-block') || element.hasAttribute('data-database-id')) {
+        return {
+          databaseId: element.getAttribute('data-database-id') || '',
+          viewId: element.getAttribute('data-view-id') || '',
+          showTitle: element.getAttribute('data-show-title') !== 'false',
+          maxRows: parseInt(element.getAttribute('data-max-rows') || '5', 10),
+          filters: element.getAttribute('data-filters') || '[]',
+          sorts: element.getAttribute('data-sorts') || '[]',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const { databaseId, viewId, showTitle, maxRows, filters, sorts } = block.props as Record<string, unknown>
+      return (
+        <div
+          className="inline-database-block"
+          data-database-id={databaseId as string}
+          data-view-id={viewId as string}
+          data-show-title={String(showTitle)}
+          data-max-rows={String(maxRows)}
+          data-filters={filters as string}
+          data-sorts={sorts as string}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 16px',
+            border: '1px solid rgba(55, 53, 47, 0.16)',
+            borderRadius: '8px',
+          }}
+        >
+          <span style={{ fontSize: '20px' }}>📊</span>
+          <span>Linked Database</span>
+        </div>
+      )
+    },
   }
 )
 

@@ -233,6 +233,9 @@ export const LinkToPageBlock = createReactBlockSpec(
       return (
         <motion.div
           className="link-to-page-block"
+          data-page-id={pageId}
+          data-page-title={title}
+          data-page-icon={icon}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.15 }}
@@ -306,6 +309,42 @@ export const LinkToPageBlock = createReactBlockSpec(
             )}
           </AnimatePresence>
         </motion.div>
+      )
+    },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('link-to-page-block') || element.hasAttribute('data-page-id')) {
+        return {
+          pageId: element.getAttribute('data-page-id') || '',
+          title: element.getAttribute('data-page-title') || '',
+          icon: element.getAttribute('data-page-icon') || '',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const { pageId, title, icon } = block.props as Record<string, string>
+      return (
+        <a
+          href={`/pages/${pageId}`}
+          className="link-to-page-block"
+          data-page-id={pageId}
+          data-page-title={title}
+          data-page-icon={icon}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            textDecoration: 'none',
+            color: 'inherit',
+          }}
+        >
+          <span style={{ fontSize: '16px' }}>{icon || '📄'}</span>
+          <span style={{ textDecoration: 'underline' }}>{title || 'Untitled'}</span>
+        </a>
       )
     },
   }

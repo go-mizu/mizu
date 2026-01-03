@@ -68,7 +68,7 @@ export const TableOfContentsBlock = createReactBlockSpec(
       }
 
       return (
-        <div className="toc-block">
+        <div className="toc-block" data-block-type="tableOfContents">
           <div className="toc-title">Table of Contents</div>
           <nav className="toc-list">
             {headings.map((heading) => (
@@ -82,6 +82,22 @@ export const TableOfContentsBlock = createReactBlockSpec(
               </button>
             ))}
           </nav>
+        </div>
+      )
+    },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('toc-block') || element.getAttribute('data-block-type') === 'tableOfContents') {
+        return {}
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: () => {
+      return (
+        <div className="toc-block" data-block-type="tableOfContents" style={{ padding: '16px', background: '#f7f6f3', borderRadius: '4px' }}>
+          <strong>Table of Contents</strong>
+          <p style={{ fontSize: '12px', color: '#787774', marginTop: '4px' }}>Auto-generated from headings</p>
         </div>
       )
     },

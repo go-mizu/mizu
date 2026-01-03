@@ -105,6 +105,7 @@ export const EquationBlock = createReactBlockSpec(
       return (
         <div
           className="equation-block"
+          data-equation-latex={block.props.latex}
           onClick={() => setIsEditing(true)}
           title="Click to edit equation"
         >
@@ -116,6 +117,35 @@ export const EquationBlock = createReactBlockSpec(
             </div>
           )}
           {error && <div className="equation-error">{error}</div>}
+        </div>
+      )
+    },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('equation-block') || element.hasAttribute('data-equation-latex')) {
+        return {
+          latex: element.getAttribute('data-equation-latex') || '',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const latex = (block.props.latex as string) || ''
+      return (
+        <div
+          className="equation-block"
+          data-equation-latex={latex}
+          style={{
+            padding: '16px',
+            textAlign: 'center',
+            background: '#f7f6f3',
+            borderRadius: '4px',
+            fontFamily: 'KaTeX_Math, serif',
+            fontStyle: 'italic',
+          }}
+        >
+          {latex || 'Empty equation'}
         </div>
       )
     },

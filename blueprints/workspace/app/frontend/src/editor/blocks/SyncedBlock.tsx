@@ -366,5 +366,40 @@ export const SyncedBlock = createReactBlockSpec(
         </div>
       )
     },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('synced-block') || element.hasAttribute('data-sync-id')) {
+        return {
+          syncId: element.getAttribute('data-sync-id') || '',
+          originalPageId: element.getAttribute('data-original-page-id') || '',
+          originalPageName: element.getAttribute('data-original-page-name') || '',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const { syncId, originalPageId, originalPageName } = block.props as Record<string, string>
+      return (
+        <div
+          className="synced-block"
+          data-sync-id={syncId}
+          data-original-page-id={originalPageId}
+          data-original-page-name={originalPageName}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 16px',
+            background: 'rgba(35, 131, 226, 0.08)',
+            borderRadius: '8px',
+            border: '1px solid rgba(35, 131, 226, 0.2)',
+          }}
+        >
+          <span>🔗</span>
+          <span>Synced from {originalPageName || 'another page'}</span>
+        </div>
+      )
+    },
   }
 )

@@ -392,5 +392,65 @@ export const SimpleTableBlock = createReactBlockSpec(
         </div>
       )
     },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('simple-table-block') || element.hasAttribute('data-table-data')) {
+        return {
+          tableData: element.getAttribute('data-table-data') || JSON.stringify({
+            rows: [
+              { cells: [{ content: '' }, { content: '' }, { content: '' }] },
+              { cells: [{ content: '' }, { content: '' }, { content: '' }] },
+            ],
+            hasHeader: true,
+          }),
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const tableDataStr = (block.props.tableData as string) || '{"rows":[],"hasHeader":true}'
+      let tableData: { rows: Array<{ cells: Array<{ content: string }> }>; hasHeader: boolean }
+      try {
+        tableData = JSON.parse(tableDataStr)
+      } catch {
+        tableData = { rows: [], hasHeader: true }
+      }
+
+      return (
+        <table
+          className="simple-table-block"
+          data-table-data={tableDataStr}
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            border: '1px solid rgba(55, 53, 47, 0.16)',
+          }}
+        >
+          <tbody>
+            {tableData.rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {row.cells.map((cell, colIndex) => {
+                  const Tag = tableData.hasHeader && rowIndex === 0 ? 'th' : 'td'
+                  return (
+                    <Tag
+                      key={colIndex}
+                      style={{
+                        padding: '8px 12px',
+                        border: '1px solid rgba(55, 53, 47, 0.16)',
+                        fontWeight: tableData.hasHeader && rowIndex === 0 ? 600 : 400,
+                        background: tableData.hasHeader && rowIndex === 0 ? '#f7f6f3' : 'transparent',
+                      }}
+                    >
+                      {cell.content}
+                    </Tag>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+    },
   }
 )

@@ -227,6 +227,231 @@
   border-top: 1px solid var(--border-color);
 }
 
+/* Code block - Notion-like styling */
+.bn-container [data-content-type="codeBlock"] {
+  position: relative;
+  background-color: #f7f6f3 !important;
+  border: 1px solid rgba(55, 53, 47, 0.09) !important;
+  border-radius: var(--radius-md) !important;
+  margin: 8px 0 !important;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] {
+  background-color: #1e1e1e !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Remove the pseudo-element - BlockNote has its own language selector */
+.bn-container [data-content-type="codeBlock"]::before {
+  display: none !important;
+}
+
+/* Code block content wrapper */
+.bn-container [data-content-type="codeBlock"] > div {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Code block content area */
+.bn-container [data-content-type="codeBlock"] pre {
+  margin: 0 !important;
+  padding: 16px !important;
+  background: transparent !important;
+  overflow-x: auto;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.bn-container [data-content-type="codeBlock"] pre code,
+.bn-container [data-content-type="codeBlock"] code {
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  background: transparent !important;
+  color: #37352f !important;
+  tab-size: 2;
+  white-space: pre;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] pre code,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] code {
+  color: #d4d4d4 !important;
+}
+
+/* Shiki syntax highlighting integration */
+.bn-container [data-content-type="codeBlock"] .shiki {
+  background: transparent !important;
+  margin: 0 !important;
+  padding: 16px !important;
+}
+
+.bn-container [data-content-type="codeBlock"] .shiki code {
+  display: block;
+  padding: 0 !important;
+}
+
+/* Syntax highlighting colors - Light theme (VS Code Light+ inspired) */
+.bn-container [data-content-type="codeBlock"] .hljs-keyword,
+.bn-container .bn-code-block .hljs-keyword,
+.bn-container [data-content-type="codeBlock"] .token.keyword {
+  color: #0000ff;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-string,
+.bn-container .bn-code-block .hljs-string,
+.bn-container [data-content-type="codeBlock"] .token.string {
+  color: #a31515;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-comment,
+.bn-container .bn-code-block .hljs-comment,
+.bn-container [data-content-type="codeBlock"] .token.comment {
+  color: #008000;
+  font-style: italic;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-number,
+.bn-container .bn-code-block .hljs-number,
+.bn-container [data-content-type="codeBlock"] .token.number {
+  color: #098658;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-function,
+.bn-container .bn-code-block .hljs-function,
+.bn-container [data-content-type="codeBlock"] .token.function {
+  color: #795e26;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-class,
+.bn-container .bn-code-block .hljs-class,
+.bn-container [data-content-type="codeBlock"] .token.class-name {
+  color: #267f99;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-variable,
+.bn-container .bn-code-block .hljs-variable,
+.bn-container [data-content-type="codeBlock"] .token.variable {
+  color: #001080;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-operator,
+.bn-container .bn-code-block .hljs-operator,
+.bn-container [data-content-type="codeBlock"] .token.operator {
+  color: #000000;
+}
+
+.bn-container [data-content-type="codeBlock"] .hljs-punctuation,
+.bn-container .bn-code-block .hljs-punctuation,
+.bn-container [data-content-type="codeBlock"] .token.punctuation {
+  color: #393a34;
+}
+
+/* Syntax highlighting colors - Dark theme */
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-keyword,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-keyword,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.keyword {
+  color: #569cd6;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-string,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-string,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.string {
+  color: #ce9178;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-comment,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-comment,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.comment {
+  color: #6a9955;
+  font-style: italic;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-number,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-number,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.number {
+  color: #b5cea8;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-function,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-function,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.function {
+  color: #dcdcaa;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-class,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-class,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.class-name {
+  color: #4ec9b0;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-variable,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-variable,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.variable {
+  color: #9cdcfe;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-operator,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-operator,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.operator {
+  color: #d4d4d4;
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .hljs-punctuation,
+[data-theme="dark"] .bn-container .bn-code-block .hljs-punctuation,
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] .token.punctuation {
+  color: #d4d4d4;
+}
+
+/* Code block language selector */
+.bn-container [data-content-type="codeBlock"] select,
+.bn-container [data-content-type="codeBlock"] .bn-code-block-language-select {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  padding: 4px 28px 4px 10px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  background: rgba(55, 53, 47, 0.06);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23787774' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  z-index: 10;
+}
+
+.bn-container [data-content-type="codeBlock"] select:hover {
+  background-color: rgba(55, 53, 47, 0.1);
+}
+
+.bn-container [data-content-type="codeBlock"] select:focus {
+  outline: none;
+  background-color: rgba(55, 53, 47, 0.12);
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] select {
+  background-color: rgba(255, 255, 255, 0.08);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b9a97' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .bn-container [data-content-type="codeBlock"] select:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Ensure content has padding for the selector */
+.bn-container [data-content-type="codeBlock"] pre {
+  padding-top: 40px !important;
+}
+
 /* =============================================================================
    Database View Styles
    ============================================================================= */
@@ -4737,14 +4962,88 @@ tr:hover .delete-row-btn {
   background: rgba(255, 255, 255, 0.024);
 }
 
-/* Block drag handle */
+/* Block drag handle / Side menu */
 .bn-side-menu {
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: opacity 150ms ease;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.bn-block-outer:hover .bn-side-menu {
+/* Show side menu on block hover - using data attributes that BlockNote sets */
+[data-node-type="blockContainer"]:hover .bn-side-menu,
+.bn-block-outer:hover .bn-side-menu,
+.bn-editor [data-content-type]:hover > .bn-side-menu,
+.bn-side-menu:hover,
+.bn-side-menu:focus-within,
+.bn-side-menu.bn-visible,
+.bn-side-menu[data-visible="true"] {
   opacity: 1;
+}
+
+/* Responsive positioning for narrow screens */
+@media (max-width: 768px) {
+  .bn-side-menu {
+    transform: translateX(4px);
+  }
+}
+
+/* Ensure side menu buttons are visible and clickable */
+.bn-side-menu button {
+  cursor: grab;
+  opacity: 0.6;
+  transition: opacity 150ms ease, background 150ms ease;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bn-side-menu button:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.bn-side-menu button:active {
+  cursor: grabbing;
+}
+
+/* Drag handle specific styling */
+.bn-drag-handle {
+  cursor: grab !important;
+}
+
+.bn-drag-handle:active {
+  cursor: grabbing !important;
+}
+
+/* Add block button styling */
+.bn-add-block-button {
+  cursor: pointer !important;
+}
+
+/* Drag handle menu */
+.bn-drag-handle-menu {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 200px;
+}
+
+.bn-drag-handle-menu-item {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.bn-drag-handle-menu-item:hover {
+  background: var(--bg-hover);
 }
 
 /* Slash menu enhancements */
@@ -4800,6 +5099,150 @@ tr:hover .delete-row-btn {
 .bn-toolbar-button[data-active="true"] {
   background: var(--accent-bg) !important;
   color: var(--accent-color) !important;
+}
+
+/* =============================================================================
+   Custom Color Picker - Notion Style
+   ============================================================================= */
+
+/* Toolbar separator */
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Color picker wrapper */
+.color-picker-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Color button content layout */
+.color-button-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 18px;
+}
+
+.color-button-content span {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Color indicator bar under the icon */
+.color-indicator {
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+}
+
+/* Color picker dropdown menu */
+.color-picker-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 12px;
+  z-index: 1000;
+  min-width: 200px;
+}
+
+[data-theme="dark"] .color-picker-menu {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Color picker label */
+.color-picker-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+/* Color grid */
+.color-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+/* Individual color option */
+.color-option {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  background: var(--bg-secondary);
+}
+
+.color-option:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.color-option.selected {
+  box-shadow: 0 0 0 2px var(--accent-color);
+}
+
+/* Text color option styling */
+.color-option span {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Background color option */
+.color-option.bg-option {
+  background: var(--bg-secondary);
+}
+
+/* No color icon */
+.no-color-icon {
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+/* Check icon for selected state */
+.color-option .check-icon {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  color: var(--accent-color);
+  background: var(--bg-primary);
+  border-radius: 50%;
+  padding: 1px;
+}
+
+/* Text color specific styling */
+.text-color-menu .color-option {
+  background: var(--bg-secondary);
+}
+
+/* Highlight color specific styling */
+.highlight-color-menu .color-option {
+  border: 1px solid rgba(55, 53, 47, 0.1);
+}
+
+[data-theme="dark"] .highlight-color-menu .color-option {
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Enhanced toggle block styling */
@@ -5101,7 +5544,7 @@ tr:hover .delete-row-btn {
 }
 
 /* =============================================================================
-   Slash Menu - Notion Style
+   Slash Menu - Notion Style (Enhanced)
    ============================================================================= */
 
 /* BlockNote slash menu overrides */
@@ -5109,25 +5552,50 @@ tr:hover .delete-row-btn {
   background: var(--bg-primary) !important;
   border: 1px solid var(--border-color) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-lg) !important;
-  padding: 6px !important;
-  max-height: 400px !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+  padding: 8px 0 !important;
+  max-height: 450px !important;
   overflow-y: auto !important;
-  min-width: 300px !important;
+  min-width: 320px !important;
+  width: 320px !important;
 }
 
+[data-theme="dark"] .bn-suggestion-menu {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Search input styling at top */
+.bn-suggestion-menu-input {
+  margin: 0 8px 8px 8px !important;
+  padding: 8px 12px !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-md) !important;
+  font-size: 14px !important;
+  width: calc(100% - 16px) !important;
+  background: var(--bg-secondary) !important;
+}
+
+.bn-suggestion-menu-input:focus {
+  outline: none !important;
+  border-color: var(--accent-color) !important;
+  box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.15) !important;
+}
+
+/* Menu items */
 .bn-suggestion-menu-item {
   display: flex !important;
   align-items: center !important;
   gap: 12px !important;
-  padding: 8px 12px !important;
+  padding: 6px 14px !important;
+  margin: 0 4px !important;
   border-radius: var(--radius-md) !important;
   cursor: pointer !important;
-  transition: background 0.1s ease !important;
+  transition: background 0.08s ease !important;
   color: var(--text-primary) !important;
   background: transparent !important;
   border: none !important;
-  width: 100% !important;
+  width: calc(100% - 8px) !important;
+  min-height: 32px !important;
 }
 
 .bn-suggestion-menu-item:hover,
@@ -5136,34 +5604,106 @@ tr:hover .delete-row-btn {
   background: var(--bg-hover) !important;
 }
 
-.bn-suggestion-menu-item .icon,
-.bn-suggestion-menu-item svg {
-  width: 20px !important;
-  height: 20px !important;
+/* Active/selected item with keyboard - subtle blue tint */
+.bn-suggestion-menu-item[aria-selected="true"],
+.bn-suggestion-menu-item.bn-selected {
+  background: rgba(35, 131, 226, 0.08) !important;
+}
+
+[data-theme="dark"] .bn-suggestion-menu-item[aria-selected="true"],
+[data-theme="dark"] .bn-suggestion-menu-item.bn-selected {
+  background: rgba(35, 131, 226, 0.15) !important;
+}
+
+/* Icon container - square background like Notion */
+.bn-suggestion-menu-item > div:first-child,
+.bn-suggestion-menu-item .icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 24px !important;
+  height: 24px !important;
   flex-shrink: 0 !important;
+  background: rgba(55, 53, 47, 0.04) !important;
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid rgba(55, 53, 47, 0.06) !important;
+}
+
+[data-theme="dark"] .bn-suggestion-menu-item > div:first-child,
+[data-theme="dark"] .bn-suggestion-menu-item .icon {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.bn-suggestion-menu-item svg {
+  width: 16px !important;
+  height: 16px !important;
   color: var(--text-secondary) !important;
 }
 
-.bn-suggestion-menu-item .title {
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  color: var(--text-primary) !important;
+/* Text content */
+.bn-suggestion-menu-item-text {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1px !important;
+  flex: 1 !important;
+  min-width: 0 !important;
 }
 
-.bn-suggestion-menu-item .subtext {
+.bn-suggestion-menu-item .title,
+.bn-suggestion-menu-item-title {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  color: var(--text-primary) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.bn-suggestion-menu-item .subtext,
+.bn-suggestion-menu-item-subtitle {
   font-size: 12px !important;
   color: var(--text-tertiary) !important;
-  margin-top: 2px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
-/* Slash menu group headers */
+/* Keyboard shortcut hint */
+.bn-suggestion-menu-item::after {
+  content: attr(data-shortcut);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 2px 6px;
+  background: rgba(55, 53, 47, 0.04);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.bn-suggestion-menu-item:not([data-shortcut])::after {
+  display: none;
+}
+
+/* Slash menu group headers - Notion style */
+.bn-suggestion-menu-label,
 .bn-suggestion-menu-group {
-  padding: 8px 12px 4px !important;
+  padding: 12px 14px 6px 14px !important;
   font-size: 11px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   color: var(--text-tertiary) !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
+  letter-spacing: 0.03em !important;
+  border-top: 1px solid var(--border-color) !important;
+  margin-top: 4px !important;
+}
+
+.bn-suggestion-menu-label:first-child,
+.bn-suggestion-menu-group:first-child {
+  border-top: none !important;
+  margin-top: 0 !important;
+  padding-top: 8px !important;
 }
 
 /* Empty state */
@@ -5172,6 +5712,45 @@ tr:hover .delete-row-btn {
   text-align: center !important;
   color: var(--text-tertiary) !important;
   font-size: 13px !important;
+}
+
+/* Keyboard navigation hint footer */
+.bn-suggestion-menu::after {
+  content: "↑↓ navigate  ↵ select  esc close";
+  display: block;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-color);
+  margin-top: 4px;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+/* Smooth scrollbar for slash menu */
+.bn-suggestion-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.bn-suggestion-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bn-suggestion-menu::-webkit-scrollbar-thumb {
+  background: rgba(55, 53, 47, 0.15);
+  border-radius: 4px;
+}
+
+.bn-suggestion-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(55, 53, 47, 0.25);
+}
+
+[data-theme="dark"] .bn-suggestion-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .bn-suggestion-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* =============================================================================
@@ -5917,10 +6496,30 @@ tr:hover .delete-row-btn {
 /* Focus states for accessibility */
 button:focus-visible,
 input:focus-visible,
-a:focus-visible,
-[contenteditable]:focus-visible {
+a:focus-visible {
   outline: 2px solid var(--accent-color);
   outline-offset: 2px;
+}
+
+/* Remove focus outline from BlockNote editor - it handles its own focus states */
+.bn-editor:focus-visible,
+.bn-editor [contenteditable]:focus-visible,
+.bn-block-content:focus-visible,
+.bn-inline-content:focus-visible,
+.bn-container [contenteditable]:focus-visible,
+.bn-container [contenteditable]:focus,
+.block-editor [contenteditable]:focus-visible,
+.block-editor [contenteditable]:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Also remove from ProseMirror (BlockNote's underlying editor) */
+.ProseMirror:focus,
+.ProseMirror:focus-visible,
+.ProseMirror-focused {
+  outline: none !important;
 }
 
 /* Selection colors */

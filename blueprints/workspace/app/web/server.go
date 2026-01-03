@@ -73,6 +73,7 @@ type Server struct {
 	shareHandlers      *api.Share
 	favoriteHandlers   *api.Favorite
 	searchHandlers     *api.Search
+	mediaHandlers      *api.Media
 	uiHandlers         *handler.UI
 }
 
@@ -169,6 +170,7 @@ func New(cfg Config) (*Server, error) {
 	s.shareHandlers = api.NewShare(sharingSvc, s.getUserID)
 	s.favoriteHandlers = api.NewFavorite(favoritesSvc, s.getUserID)
 	s.searchHandlers = api.NewSearch(searchSvc, s.getUserID)
+	s.mediaHandlers = api.NewMedia(filepath.Join(cfg.DataDir, "uploads"), s.getUserID)
 	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workspacesSvc, membersSvc, pagesSvc, blocksSvc, databasesSvc, viewsSvc, favoritesSvc, s.getUserID)
 
 	s.setupRoutes()
@@ -182,6 +184,19 @@ func New(cfg Config) (*Server, error) {
 		}
 		c.Writer().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		staticHandler.ServeHTTP(c.Writer(), c.Request())
+		return nil
+	})
+
+	// Serve uploaded files
+	uploadsDir := filepath.Join(cfg.DataDir, "uploads")
+	uploadsHandler := http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadsDir)))
+	s.app.Get("/uploads/{path...}", func(c *mizu.Ctx) error {
+		ext := filepath.Ext(c.Request().URL.Path)
+		if contentType := mime.TypeByExtension(ext); contentType != "" {
+			c.Writer().Header().Set("Content-Type", contentType)
+		}
+		c.Writer().Header().Set("Cache-Control", "public, max-age=86400")
+		uploadsHandler.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
 
@@ -307,5 +322,8 @@ func (s *Server) setupRoutes() {
 		api.Get("/workspaces/{id}/search", s.authRequired(s.searchHandlers.Search))
 		api.Get("/workspaces/{id}/quick-search", s.authRequired(s.searchHandlers.QuickSearch))
 		api.Get("/workspaces/{id}/recent", s.authRequired(s.searchHandlers.Recent))
+
+		// Media
+		api.Post("/media/upload", s.authRequired(s.mediaHandlers.Upload))
 	})
 }

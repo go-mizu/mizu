@@ -509,5 +509,43 @@ export const TemplateBlock = createReactBlockSpec(
         </div>
       )
     },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('template-block') || element.hasAttribute('data-template-button')) {
+        return {
+          buttonText: element.getAttribute('data-button-text') || 'New item from template',
+          templateContent: element.getAttribute('data-template-content') || '[]',
+          templateName: element.getAttribute('data-template-name') || '',
+          buttonStyle: element.getAttribute('data-button-style') || 'default',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const { buttonText, templateContent, templateName, buttonStyle } = block.props as Record<string, string>
+      return (
+        <div
+          className="template-block"
+          data-template-button="true"
+          data-button-text={buttonText}
+          data-template-content={templateContent}
+          data-template-name={templateName}
+          data-button-style={buttonStyle}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            borderRadius: '6px',
+            background: '#f7f6f3',
+            border: '1px solid #e3e2de',
+          }}
+        >
+          <span>➕</span>
+          {buttonText || 'New item from template'}
+        </div>
+      )
+    },
   }
 )
