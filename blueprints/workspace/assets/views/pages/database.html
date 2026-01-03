@@ -1,0 +1,43 @@
+{{define "title"}}{{.Database.Name}} - Workspace{{end}}
+
+{{define "breadcrumb"}}
+<a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
+<span class="breadcrumb-sep">/</span>
+<span class="breadcrumb-current">{{.Database.Name}}</span>
+{{end}}
+
+{{define "content"}}
+<div class="database-view" data-database-id="{{.Database.ID}}">
+    <div class="database-header">
+        <div class="database-icon-wrapper" data-icon-picker data-target="database-{{.Database.ID}}" data-current-icon="{{.Database.Icon}}">
+            <!-- Icon picker will be mounted here by React -->
+        </div>
+        <h1 class="database-title" contenteditable="true" id="database-title">{{.Database.Name}}</h1>
+        <div class="database-actions">
+            <button class="icon-btn" id="database-settings-btn" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
+                    <path d="M8 2v2M8 12v2M14 8h-2M4 8H2M12.2 3.8l-1.4 1.4M5.2 10.8l-1.4 1.4M12.2 12.2l-1.4-1.4M5.2 5.2L3.8 3.8" stroke="currentColor" stroke-width="1.5"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Database Description -->
+    {{if .Database.Description}}
+    <p class="database-description">{{.Database.Description}}</p>
+    {{end}}
+
+    <!-- React Database View Mount Point -->
+    <div
+        id="database-root"
+        data-database-id="{{.Database.ID}}"
+        data-view-type="{{.CurrentView.Type}}"
+        data-data='{{.DatabaseDataJSON}}'
+    ></div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script type="module" src="/static/dist/js/main.js"></script>
+{{end}}

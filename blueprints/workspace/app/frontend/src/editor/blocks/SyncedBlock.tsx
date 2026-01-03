@@ -1,0 +1,370 @@
+import { createReactBlockSpec } from '@blocknote/react'
+import { useState, useEffect, useCallback } from 'react'
+import { Link2, RefreshCw, Unlink, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+
+interface SyncedBlockData {
+  id: string
+  content: unknown[]
+  pageId: string
+  pageName: string
+  lastUpdated: string
+}
+
+export const SyncedBlock = createReactBlockSpec(
+  {
+    type: 'syncedBlock',
+    propSchema: {
+      syncId: {
+        default: '',
+      },
+      originalPageId: {
+        default: '',
+      },
+      originalPageName: {
+        default: '',
+      },
+    },
+    content: 'none',
+  },
+  {
+    render: ({ block, editor }) => {
+      const [syncedData, setSyncedData] = useState<SyncedBlockData | null>(null)
+      const [isLoading, setIsLoading] = useState(true)
+      const [error, setError] = useState<string | null>(null)
+      const [isHovered, setIsHovered] = useState(false)
+      const [showMenu, setShowMenu] = useState(false)
+      const [lastSynced, setLastSynced] = useState<Date | null>(null)
+
+      const syncId = block.props.syncId as string
+      const originalPageId = block.props.originalPageId as string
+      const originalPageName = block.props.originalPageName as string
+
+      // Fetch synced content
+      const fetchSyncedContent = useCallback(async () => {
+        if (!syncId) {
+          setIsLoading(false)
+          return
+        }
+
+        setIsLoading(true)
+        setError(null)
+
+        try {
+          // TODO: Replace with actual API call
+          const response = await fetch(`/api/v1/synced-blocks/${syncId}`)
+          if (!response.ok) {
+            throw new Error('Failed to fetch synced content')
+          }
+          const data = await response.json()
+          setSyncedData(data)
+          setLastSynced(new Date())
+        } catch (err) {
+          console.error('Failed to fetch synced content:', err)
+          setError('Unable to load synced content')
+        } finally {
+          setIsLoading(false)
+        }
+      }, [syncId])
+
+      // Initial fetch
+      useEffect(() => {
+        fetchSyncedContent()
+      }, [fetchSyncedContent])
+
+      // Unlink synced block (convert to regular content)
+      const handleUnlink = useCallback(() => {
+        // TODO: Convert synced block to regular blocks
+        // This would copy the content and remove the sync reference
+        setShowMenu(false)
+      }, [])
+
+      // Navigate to original page
+      const handleNavigateToOriginal = useCallback(() => {
+        if (originalPageId) {
+          window.location.href = `/pages/${originalPageId}`
+        }
+      }, [originalPageId])
+
+      // Empty state - no sync configured
+      if (!syncId) {
+        return (
+          <div
+            className="synced-block empty"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '32px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '8px',
+              border: '1px dashed var(--border-color)',
+              margin: '8px 0',
+            }}
+          >
+            <Link2 size={24} style={{ color: 'var(--text-tertiary)', marginBottom: '12px' }} />
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '14px', fontWeight: 500 }}>
+              Synced Block
+            </p>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: '13px', textAlign: 'center', maxWidth: '300px' }}>
+              Content synced from another location. Changes made anywhere will be reflected everywhere this block appears.
+            </p>
+          </div>
+        )
+      }
+
+      // Loading state
+      if (isLoading) {
+        return (
+          <div
+            className="synced-block loading"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px',
+              background: 'var(--bg-secondary)',
+              borderRadius: '8px',
+              margin: '8px 0',
+            }}
+          >
+            <Loader2
+              size={20}
+              style={{
+                color: 'var(--accent-color)',
+                animation: 'spin 1s linear infinite',
+              }}
+            />
+            <span style={{ marginLeft: '12px', color: 'var(--text-secondary)', fontSize: '14px' }}>
+              Loading synced content...
+            </span>
+          </div>
+        )
+      }
+
+      // Error state
+      if (error) {
+        return (
+          <div
+            className="synced-block error"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '16px',
+              background: 'var(--danger-bg)',
+              borderRadius: '8px',
+              border: '1px solid var(--danger-color)',
+              margin: '8px 0',
+            }}
+          >
+            <AlertCircle size={20} style={{ color: 'var(--danger-color)', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <p style={{ color: 'var(--danger-color)', fontSize: '14px', fontWeight: 500, marginBottom: '4px' }}>
+                Sync Error
+              </p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                {error}
+              </p>
+            </div>
+            <button
+              onClick={fetchSyncedContent}
+              style={{
+                padding: '6px 12px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '4px',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          </div>
+        )
+      }
+
+      return (
+        <div
+          className="synced-block"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => {
+            setIsHovered(false)
+            setShowMenu(false)
+          }}
+          style={{
+            position: 'relative',
+            margin: '8px 0',
+            borderRadius: '8px',
+            border: isHovered ? '1px solid var(--accent-color)' : '1px solid transparent',
+            transition: 'border-color 0.15s',
+          }}
+        >
+          {/* Sync indicator bar */}
+          <AnimatePresence>
+            {isHovered && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.1 }}
+                style={{
+                  position: 'absolute',
+                  top: '-32px',
+                  left: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '4px 10px',
+                  background: 'var(--accent-color)',
+                  color: 'white',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  zIndex: 10,
+                }}
+              >
+                <Link2 size={12} />
+                Synced from {originalPageName || 'another page'}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toolbar */}
+          <AnimatePresence>
+            {isHovered && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.1 }}
+                style={{
+                  position: 'absolute',
+                  top: '-32px',
+                  right: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  zIndex: 10,
+                }}
+              >
+                <button
+                  onClick={fetchSyncedContent}
+                  title="Refresh synced content"
+                  style={{
+                    padding: '4px 8px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  Sync
+                </button>
+                <button
+                  onClick={handleNavigateToOriginal}
+                  title="Go to original"
+                  style={{
+                    padding: '4px 8px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  <ExternalLink size={12} />
+                  Original
+                </button>
+                <button
+                  onClick={handleUnlink}
+                  title="Unlink (copy content)"
+                  style={{
+                    padding: '4px 8px',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    color: 'var(--text-secondary)',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  <Unlink size={12} />
+                  Unlink
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Synced content */}
+          <div
+            className="synced-content"
+            style={{
+              padding: '16px',
+              background: isHovered ? 'rgba(35, 131, 226, 0.04)' : 'transparent',
+              borderRadius: '8px',
+              minHeight: '60px',
+              transition: 'background 0.15s',
+            }}
+          >
+            {syncedData?.content ? (
+              // TODO: Render synced blocks properly using BlockNote's rendering
+              <div style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
+                {/* Placeholder for synced content rendering */}
+                <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  Synced content would render here...
+                </p>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-tertiary)', fontSize: '14px', fontStyle: 'italic' }}>
+                No content synced yet
+              </p>
+            )}
+          </div>
+
+          {/* Last synced indicator */}
+          {lastSynced && isHovered && (
+            <div
+              style={{
+                padding: '4px 16px 8px',
+                fontSize: '11px',
+                color: 'var(--text-tertiary)',
+              }}
+            >
+              Last synced: {lastSynced.toLocaleTimeString()}
+            </div>
+          )}
+
+          {/* CSS for animation */}
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      )
+    },
+  }
+)

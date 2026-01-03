@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Workspace{{end}}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/dist/css/main.css">
+    <script>
+        // Set initial theme before render to prevent flash
+        (function() {
+            const theme = localStorage.getItem('theme') || 'system';
+            if (theme === 'system') {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+            } else {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+        })();
+    </script>
+</head>
+<body class="app-layout">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <div class="workspace-switcher" id="workspace-switcher">
+                    {{if .Workspace}}
+                    <span class="workspace-icon">{{slice .Workspace.Name 0 1}}</span>
+                    <span class="workspace-name">{{.Workspace.Name}}</span>
+                    {{end}}
+                    <svg class="chevron" width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                    </svg>
+                </div>
+                <div class="workspace-dropdown" id="workspace-dropdown">
+                    {{range .Workspaces}}
+                    <a href="/w/{{.Slug}}" class="workspace-option">
+                        <span class="workspace-icon">{{slice .Name 0 1}}</span>
+                        <span>{{.Name}}</span>
+                    </a>
+                    {{end}}
+                    <div class="dropdown-divider"></div>
+                    <button class="workspace-option" id="create-workspace-btn">
+                        <span class="icon">+</span>
+                        <span>Create workspace</span>
+                    </button>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="/w/{{.Workspace.Slug}}/search" class="nav-item">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <span>Search</span>
+                    <kbd class="shortcut">Cmd+K</kbd>
+                </a>
+                <a href="/w/{{.Workspace.Slug}}/settings" class="nav-item">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            {{if .Favorites}}
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>Favorites</span>
+                </div>
+                <div class="page-tree">
+                {{range .Favorites}}
+                <a href="/w/{{$.Workspace.Slug}}/p/{{.TargetID}}" class="nav-item page-item">
+                    <span class="page-icon">{{if .Icon}}{{.Icon}}{{else}}⭐{{end}}</span>
+                    <span class="page-title">{{.Title}}</span>
+                </a>
+                {{end}}
+                </div>
+            </div>
+            {{end}}
+
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>Pages</span>
+                    <button class="add-page-btn" id="add-page-btn" data-workspace="{{.Workspace.ID}}" title="Add page">
+                        <svg width="12" height="12" viewBox="0 0 12 12">
+                            <path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.5"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="page-tree" id="page-tree">
+                    {{range .Pages}}
+                    {{if eq .ParentType "workspace"}}
+                    <div class="page-tree-item" data-id="{{.ID}}">
+                        <a href="/w/{{$.Workspace.Slug}}/p/{{.ID}}" class="nav-item page-item">
+                            <span class="page-icon">{{if .Icon}}{{.Icon}}{{else}}📄{{end}}</span>
+                            <span class="page-title">{{.Title}}</span>
+                        </a>
+                    </div>
+                    {{end}}
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Theme toggle -->
+            <div class="sidebar-footer">
+                <button class="nav-item theme-toggle" id="theme-toggle" title="Toggle theme">
+                    <svg class="sun-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <span>Theme</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="breadcrumb">
+                    <a href="/w/{{.Workspace.Slug}}" class="breadcrumb-home">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M2 8l6-6 6 6M4 7v6a1 1 0 001 1h2v-3a1 1 0 011-1h0a1 1 0 011 1v3h2a1 1 0 001-1V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+                    <span class="breadcrumb-sep">/</span>
+                    {{block "breadcrumb" .}}{{end}}
+                </div>
+                <div class="topbar-actions">
+                    {{if .User}}
+                    <div class="user-menu" id="user-menu">
+                        <button class="user-avatar">{{slice .User.Name 0 1}}</button>
+                        <div class="user-dropdown" id="user-dropdown">
+                            <div class="user-info">
+                                <strong>{{.User.Name}}</strong>
+                                <span>{{.User.Email}}</span>
+                            </div>
+                            <div class="dropdown-divider"></div>
+                            <button id="logout-btn" class="dropdown-item">Log out</button>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            </header>
+            <div class="content-area">
+                {{block "content" .}}{{end}}
+            </div>
+        </main>
+    </div>
+    <script src="/static/js/app.js"></script>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>

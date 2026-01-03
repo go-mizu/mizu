@@ -1,0 +1,46 @@
+{{define "title"}}Search - {{.Workspace.Name}}{{end}}
+
+{{define "breadcrumb"}}
+<a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
+<span class="breadcrumb-sep">/</span>
+<span class="breadcrumb-current">Search</span>
+{{end}}
+
+{{define "content"}}
+<div class="search-page">
+    <div class="search-header">
+        <div class="search-input-wrapper">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/>
+                <path d="M14 14L18 18" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <input type="text" id="search-input" placeholder="Search pages, databases, and more..." value="{{.Query}}" autofocus>
+        </div>
+    </div>
+
+    <div class="search-filters">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="page">Pages</button>
+        <button class="filter-chip" data-filter="database">Databases</button>
+    </div>
+
+    <div class="search-results" id="search-results">
+        {{if .Query}}
+        <div class="results-loading">Searching...</div>
+        {{else}}
+        <div class="search-empty">
+            <div class="empty-icon">🔍</div>
+            <p>Search for pages, databases, and content</p>
+            <p class="empty-hint">Use keywords or phrases to find what you're looking for</p>
+        </div>
+        {{end}}
+    </div>
+
+    <div class="recent-searches" id="recent-searches">
+        <h3>Recent searches</h3>
+        <div class="recent-list">
+            <!-- Populated from localStorage -->
+        </div>
+    </div>
+</div>
+{{end}}
