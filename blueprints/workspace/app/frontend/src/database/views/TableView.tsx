@@ -7,7 +7,7 @@ interface TableViewProps {
   rows: DatabaseRow[]
   properties: Property[]
   groupBy: string | null
-  onAddRow: () => void
+  onAddRow: (initialProperties?: Record<string, unknown>) => Promise<DatabaseRow | null>
   onUpdateRow: (rowId: string, updates: Record<string, unknown>) => void
   onDeleteRow: (rowId: string) => void
   onAddProperty: (property: Omit<Property, 'id'>) => void
@@ -225,7 +225,7 @@ export function TableView({
       </div>
 
       {/* Add row button */}
-      <button className="add-row-btn" onClick={onAddRow}>
+      <button className="add-row-btn" onClick={() => onAddRow()}>
         <svg width="12" height="12" viewBox="0 0 12 12">
           <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" />
         </svg>

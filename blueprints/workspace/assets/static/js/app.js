@@ -40,19 +40,38 @@
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const errorDiv = document.getElementById('login-error');
+            const submitBtn = loginForm.querySelector('button[type="submit"]');
+
             if (errorDiv) errorDiv.textContent = '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Logging in...';
+            }
 
             try {
+                const emailInput = document.getElementById('email');
+                const passwordInput = document.getElementById('password');
+
+                if (!emailInput || !passwordInput) {
+                    throw new Error('Form inputs not found');
+                }
+
                 await api.post('/auth/login', {
-                    email: document.getElementById('email').value,
-                    password: document.getElementById('password').value
+                    email: emailInput.value,
+                    password: passwordInput.value
                 });
                 window.location.href = '/app';
             } catch (err) {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Log in';
+                }
+                const errorMessage = err.message || 'Login failed. Please try again.';
                 if (errorDiv) {
-                    errorDiv.textContent = err.message;
+                    errorDiv.textContent = errorMessage;
+                    errorDiv.style.display = 'block';
                 } else {
-                    alert(err.message);
+                    alert(errorMessage);
                 }
             }
         });
@@ -63,20 +82,40 @@
         registerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const errorDiv = document.getElementById('register-error');
+            const submitBtn = registerForm.querySelector('button[type="submit"]');
+
             if (errorDiv) errorDiv.textContent = '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Creating account...';
+            }
 
             try {
+                const nameInput = document.getElementById('name');
+                const emailInput = document.getElementById('email');
+                const passwordInput = document.getElementById('password');
+
+                if (!emailInput || !passwordInput) {
+                    throw new Error('Form inputs not found');
+                }
+
                 await api.post('/auth/register', {
-                    name: document.getElementById('name').value,
-                    email: document.getElementById('email').value,
-                    password: document.getElementById('password').value
+                    name: nameInput ? nameInput.value : '',
+                    email: emailInput.value,
+                    password: passwordInput.value
                 });
                 window.location.href = '/app';
             } catch (err) {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Sign up';
+                }
+                const errorMessage = err.message || 'Registration failed. Please try again.';
                 if (errorDiv) {
-                    errorDiv.textContent = err.message;
+                    errorDiv.textContent = errorMessage;
+                    errorDiv.style.display = 'block';
                 } else {
-                    alert(err.message);
+                    alert(errorMessage);
                 }
             }
         });
@@ -132,11 +171,13 @@
         });
     }
 
-    // Block editing
+    // Block editing (only for non-React pages)
+    // Skip if BlockNote React editor is present
+    const blockNoteEditor = document.querySelector('.block-editor');
     const blocksContainer = document.getElementById('blocks-container');
     const blockMenu = document.getElementById('block-menu');
 
-    if (blocksContainer && blockMenu) {
+    if (blocksContainer && blockMenu && !blockNoteEditor) {
         let currentBlock = null;
         let currentInput = null;
 
@@ -516,6 +557,17 @@
             // TODO: Load view data
         });
     });
+
+    // Theme toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-theme') || 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+        });
+    }
 
     // Helper function
     function escapeHtml(text) {

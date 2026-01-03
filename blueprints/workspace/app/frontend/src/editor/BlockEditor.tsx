@@ -23,9 +23,24 @@ import {
   UnnestBlockButton,
   CreateLinkButton,
   DefaultReactSuggestionItem,
+  SideMenu,
+  SideMenuController,
+  DragHandleMenu,
+  RemoveBlockItem,
+  BlockColorsItem,
+  useComponentsContext,
+  useBlockNoteEditor,
 } from '@blocknote/react'
+import { combineByGroup } from '@blocknote/core'
+import {
+  withMultiColumn,
+  multiColumnDropCursor,
+  getMultiColumnSlashMenuItems,
+  locales as multiColumnLocales,
+} from '@blocknote/xl-multi-column'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
+// xl-multi-column styles are bundled with the main package
 import { MantineProvider } from '@mantine/core'
 import {
   Type,
@@ -44,7 +59,6 @@ import {
   FileText,
   Link2,
   Table,
-  Columns,
   Calculator,
   ListTree,
   MessageSquare,
@@ -62,19 +76,144 @@ import {
 
 import { api } from '../api/client'
 import { CalloutBlock } from './blocks/CalloutBlock'
-import { ToggleBlock } from './blocks/ToggleBlock'
 import { BookmarkBlock } from './blocks/BookmarkBlock'
-import { DividerBlock } from './blocks/DividerBlock'
 import { EquationBlock } from './blocks/EquationBlock'
 import { TableOfContentsBlock } from './blocks/TableOfContentsBlock'
-import { AudioBlock } from './blocks/AudioBlock'
 import { PDFBlock } from './blocks/PDFBlock'
-import { ColumnListBlock } from './blocks/ColumnBlock'
 import { LinkToPageBlock } from './blocks/LinkToPageBlock'
 import { SyncedBlock } from './blocks/SyncedBlock'
 import { TemplateBlock } from './blocks/TemplateBlock'
 import { InlineDatabaseBlock } from './blocks/InlineDatabaseBlock'
+import { SimpleTableBlock } from './blocks/SimpleTableBlock'
 import { MentionInline } from './InlineMention'
+
+// Type for drag handle menu item props
+interface DragHandleItemProps {
+  block: any
+  children: React.ReactNode
+}
+
+// Custom Drag Handle Menu Items
+function DuplicateBlockItem({ block, children }: DragHandleItemProps) {
+  const editor = useBlockNoteEditor()
+  const Components = useComponentsContext()!
+
+  return (
+    <Components.Generic.Menu.Item
+      onClick={() => {
+        const blockCopy = { ...block, id: undefined }
+        editor.insertBlocks([blockCopy], block, 'after')
+      }}
+    >
+      {children}
+    </Components.Generic.Menu.Item>
+  )
+}
+
+function CopyLinkItem({ block, children }: DragHandleItemProps) {
+  const Components = useComponentsContext()!
+
+  return (
+    <Components.Generic.Menu.Item
+      onClick={() => {
+        const url = `${window.location.origin}${window.location.pathname}#block-${block.id}`
+        navigator.clipboard.writeText(url)
+      }}
+    >
+      {children}
+    </Components.Generic.Menu.Item>
+  )
+}
+
+function TurnIntoItem({ block, children }: DragHandleItemProps) {
+  const editor = useBlockNoteEditor()
+  const Components = useComponentsContext()!
+
+  const turnIntoOptions = [
+    { type: 'paragraph', label: 'Text' },
+    { type: 'heading', label: 'Heading 1', props: { level: 1 } },
+    { type: 'heading', label: 'Heading 2', props: { level: 2 } },
+    { type: 'heading', label: 'Heading 3', props: { level: 3 } },
+    { type: 'bulletListItem', label: 'Bulleted list' },
+    { type: 'numberedListItem', label: 'Numbered list' },
+    { type: 'checkListItem', label: 'To-do list' },
+    { type: 'quote', label: 'Quote' },
+    { type: 'toggleListItem', label: 'Toggle list' },
+    { type: 'callout', label: 'Callout' },
+  ]
+
+  return (
+    <Components.Generic.Menu.Item
+      subTrigger={true}
+    >
+      {children}
+      <Components.Generic.Menu.Dropdown>
+        {turnIntoOptions.map((option) => (
+          <Components.Generic.Menu.Item
+            key={`${option.type}-${option.label}`}
+            onClick={() => {
+              editor.updateBlock(block, {
+                type: option.type as any,
+                props: option.props as any,
+              })
+            }}
+          >
+            {option.label}
+          </Components.Generic.Menu.Item>
+        ))}
+      </Components.Generic.Menu.Dropdown>
+    </Components.Generic.Menu.Item>
+  )
+}
+
+function MoveUpItem({ block, children }: DragHandleItemProps) {
+  const editor = useBlockNoteEditor()
+  const Components = useComponentsContext()!
+
+  return (
+    <Components.Generic.Menu.Item
+      onClick={() => {
+        // Set cursor to this block first, then move
+        editor.setTextCursorPosition(block, 'start')
+        editor.moveBlocksUp()
+      }}
+    >
+      {children}
+    </Components.Generic.Menu.Item>
+  )
+}
+
+function MoveDownItem({ block, children }: DragHandleItemProps) {
+  const editor = useBlockNoteEditor()
+  const Components = useComponentsContext()!
+
+  return (
+    <Components.Generic.Menu.Item
+      onClick={() => {
+        // Set cursor to this block first, then move
+        editor.setTextCursorPosition(block, 'start')
+        editor.moveBlocksDown()
+      }}
+    >
+      {children}
+    </Components.Generic.Menu.Item>
+  )
+}
+
+// Custom Drag Handle Menu component - receives block prop and passes to children
+function CustomDragHandleMenu({ block }: { block: any }) {
+  return (
+    <DragHandleMenu block={block}>
+      <RemoveBlockItem block={block}>Delete</RemoveBlockItem>
+      <DuplicateBlockItem block={block}>Duplicate</DuplicateBlockItem>
+      <TurnIntoItem block={block}>Turn into</TurnIntoItem>
+      <BlockColorsItem block={block}>Colors</BlockColorsItem>
+      <CopyLinkItem block={block}>Copy link to block</CopyLinkItem>
+      <MoveUpItem block={block}>Move up</MoveUpItem>
+      <MoveDownItem block={block}>Move down</MoveDownItem>
+    </DragHandleMenu>
+  )
+}
 
 // API Block types from backend
 interface RichText {
@@ -130,23 +269,22 @@ interface BlockEditorProps {
   workspaceId?: string
 }
 
-// Custom schema with our custom blocks
-const schema = BlockNoteSchema.create({
+// Custom schema with our custom blocks - wrapped with withMultiColumn for column support
+// BlockNote 0.42+ has built-in blocks for toggle (toggleListItem), divider, audio, codeBlock
+const baseSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
-    callout: CalloutBlock,
-    toggle: ToggleBlock,
-    bookmark: BookmarkBlock,
-    divider: DividerBlock,
-    equation: EquationBlock,
-    tableOfContents: TableOfContentsBlock,
-    audio: AudioBlock,
-    pdf: PDFBlock,
-    columnList: ColumnListBlock,
-    linkToPage: LinkToPageBlock,
-    syncedBlock: SyncedBlock,
-    templateButton: TemplateBlock,
-    inlineDatabase: InlineDatabaseBlock,
+    // Custom blocks that extend default functionality
+    callout: CalloutBlock(),
+    bookmark: BookmarkBlock(),
+    equation: EquationBlock(),
+    tableOfContents: TableOfContentsBlock(),
+    pdf: PDFBlock(),
+    linkToPage: LinkToPageBlock(),
+    syncedBlock: SyncedBlock(),
+    templateButton: TemplateBlock(),
+    inlineDatabase: InlineDatabaseBlock(),
+    simpleTable: SimpleTableBlock(),
   },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
@@ -154,6 +292,9 @@ const schema = BlockNoteSchema.create({
   },
   styleSpecs: defaultStyleSpecs,
 })
+
+// Wrap schema with multi-column support
+const schema = withMultiColumn(baseSchema)
 
 // Mention suggestion item interface
 interface MentionSuggestionItem {
@@ -224,6 +365,7 @@ async function getMentionItems(
 type EditorType = typeof schema.BlockNoteEditor
 
 // API block type to BlockNote type mapping
+// BlockNote 0.42+ uses toggleListItem instead of toggle, codeBlock instead of code
 const API_TO_BLOCKNOTE: Record<string, string | { type: string; props?: Record<string, unknown> }> = {
   paragraph: 'paragraph',
   heading_1: { type: 'heading', props: { level: 1 } },
@@ -236,7 +378,7 @@ const API_TO_BLOCKNOTE: Record<string, string | { type: string; props?: Record<s
   code: 'codeBlock',
   quote: 'quote',
   callout: 'callout',
-  toggle: 'toggle',
+  toggle: 'toggleListItem',
   divider: 'divider',
   horizontalRule: 'divider',
   image: 'image',
@@ -244,6 +386,7 @@ const API_TO_BLOCKNOTE: Record<string, string | { type: string; props?: Record<s
   file: 'file',
   bookmark: 'bookmark',
   table: 'table',
+  simple_table: 'simpleTable',
   equation: 'equation',
   table_of_contents: 'tableOfContents',
   audio: 'audio',
@@ -253,6 +396,7 @@ const API_TO_BLOCKNOTE: Record<string, string | { type: string; props?: Record<s
 }
 
 // BlockNote type to API type mapping
+// BlockNote 0.42+ uses toggleListItem and codeBlock as built-in types
 const BLOCKNOTE_TO_API: Record<string, string | ((props: Record<string, unknown>) => string)> = {
   paragraph: 'paragraph',
   heading: (props) => `heading_${props?.level || 1}`,
@@ -262,14 +406,14 @@ const BLOCKNOTE_TO_API: Record<string, string | ((props: Record<string, unknown>
   codeBlock: 'code',
   quote: 'quote',
   callout: 'callout',
-  toggle: 'toggle',
+  toggleListItem: 'toggle',
   divider: 'divider',
-  horizontalRule: 'divider',
   image: 'image',
   video: 'video',
   file: 'file',
   bookmark: 'bookmark',
   table: 'table',
+  simpleTable: 'simple_table',
   equation: 'equation',
   tableOfContents: 'table_of_contents',
   audio: 'audio',
@@ -591,7 +735,7 @@ function getCustomSlashMenuItems(editor: EditorType): DefaultReactSuggestionItem
       title: 'Toggle list',
       onItemClick: () => {
         editor.insertBlocks(
-          [{ type: 'toggle' }],
+          [{ type: 'toggleListItem' }],
           editor.getTextCursorPosition().block,
           'after'
         )
@@ -638,10 +782,10 @@ function getCustomSlashMenuItems(editor: EditorType): DefaultReactSuggestionItem
           'after'
         )
       },
-      aliases: ['code', 'codeblock', 'pre', 'programming'],
+      aliases: ['code', 'codeblock', 'pre', 'programming', 'syntax'],
       group: 'Basic blocks',
       icon: <Code size={18} />,
-      subtext: 'Capture a code snippet',
+      subtext: 'Capture a code snippet with syntax highlighting',
     },
 
     // Media blocks
@@ -810,33 +954,20 @@ function getCustomSlashMenuItems(editor: EditorType): DefaultReactSuggestionItem
       subtext: 'Add a simple table',
     },
     {
-      title: '2 columns',
+      title: 'Simple Table',
       onItemClick: () => {
         editor.insertBlocks(
-          [{ type: 'columnList' as const }],
+          [{ type: 'simpleTable' as const }],
           editor.getTextCursorPosition().block,
           'after'
         )
       },
-      aliases: ['columns', '2 columns', 'two columns', 'layout', 'split'],
+      aliases: ['simple table', 'basic table', 'data table'],
       group: 'Advanced blocks',
-      icon: <Columns size={18} />,
-      subtext: 'Create a 2-column layout',
+      icon: <Table size={18} />,
+      subtext: 'Add a basic editable table',
     },
-    {
-      title: '3 columns',
-      onItemClick: () => {
-        editor.insertBlocks(
-          [{ type: 'columnList' as const }],
-          editor.getTextCursorPosition().block,
-          'after'
-        )
-      },
-      aliases: ['3 columns', 'three columns', 'triple'],
-      group: 'Advanced blocks',
-      icon: <Columns size={18} />,
-      subtext: 'Create a 3-column layout',
-    },
+    // Column layouts are now provided by @blocknote/xl-multi-column via getMultiColumnSlashMenuItems
     {
       title: 'Equation',
       onItemClick: () => {
@@ -952,10 +1083,11 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
     return apiBlocksToBlockNote(initialBlocks)
   }, [initialBlocks])
 
-  // Create editor instance with custom schema
+  // Create editor instance with custom schema and multi-column drop cursor
   const editor = useCreateBlockNote({
     schema,
     initialContent,
+    dropCursor: multiColumnDropCursor,
     uploadFile: async (file: File) => {
       const result = await api.upload(file)
       return result.url
@@ -969,52 +1101,114 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
 
   // Save handler
   const saveBlocks = useCallback(async () => {
-    if (!pageId) return
+    if (!pageId) {
+      console.warn('Cannot save: pageId is missing')
+      return
+    }
 
     setIsSaving(true)
     setSaveError(null)
     try {
-      const blocks = blockNoteToApiBlocks(editor.document as PartialBlock[])
+      const document = editor.document
+      if (!document || !Array.isArray(document)) {
+        console.warn('Cannot save: document is invalid')
+        return
+      }
+      const blocks = blockNoteToApiBlocks(document as PartialBlock[])
       await api.put(`/pages/${pageId}/blocks`, { blocks })
       setLastSaved(new Date())
       onSave?.()
     } catch (err) {
       console.error('Failed to save blocks:', err)
-      setSaveError('Failed to save')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save'
+      setSaveError(errorMessage)
     } finally {
       setIsSaving(false)
     }
   }, [editor, pageId, onSave])
 
-  // Debounced save on change
+  // Debounced save on change - this is handled via onChange prop on BlockNoteView
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleEditorChange = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+    saveTimeoutRef.current = setTimeout(saveBlocks, 1000)
+  }, [saveBlocks])
+
+  // Cleanup timeout on unmount
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout>
-
-    const handleChange = () => {
-      clearTimeout(timeout)
-      timeout = setTimeout(saveBlocks, 1000)
-    }
-
-    editor.onEditorContentChange(handleChange)
-
     return () => {
-      clearTimeout(timeout)
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
     }
-  }, [editor, saveBlocks])
+  }, [])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts for block manipulation and saving
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey
+
       // Cmd/Ctrl + S to save immediately
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      if (isMod && e.key === 's') {
         e.preventDefault()
         saveBlocks()
+        return
+      }
+
+      // Get the current block for block-level operations
+      const currentBlock = editor.getTextCursorPosition()?.block
+      if (!currentBlock) return
+
+      // Cmd/Ctrl + Shift + Up - Move block up
+      if (isMod && e.shiftKey && e.key === 'ArrowUp') {
+        e.preventDefault()
+        editor.moveBlocksUp()
+        return
+      }
+
+      // Cmd/Ctrl + Shift + Down - Move block down
+      if (isMod && e.shiftKey && e.key === 'ArrowDown') {
+        e.preventDefault()
+        editor.moveBlocksDown()
+        return
+      }
+
+      // Cmd/Ctrl + D - Duplicate block
+      if (isMod && e.key === 'd') {
+        e.preventDefault()
+        const blockCopy = { ...currentBlock, id: undefined }
+        editor.insertBlocks([blockCopy], currentBlock, 'after')
+        return
+      }
+
+      // Cmd/Ctrl + Shift + Backspace - Delete block
+      if (isMod && e.shiftKey && e.key === 'Backspace') {
+        e.preventDefault()
+        editor.removeBlocks([currentBlock])
+        return
+      }
+
+      // Tab - Nest block (indent)
+      if (e.key === 'Tab' && !e.shiftKey && editor.canNestBlock()) {
+        e.preventDefault()
+        editor.nestBlock()
+        return
+      }
+
+      // Shift + Tab - Unnest block (outdent)
+      if (e.key === 'Tab' && e.shiftKey && editor.canUnnestBlock()) {
+        e.preventDefault()
+        editor.unnestBlock()
+        return
       }
     }
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [saveBlocks])
+  }, [editor, saveBlocks])
 
   // Determine effective theme
   const effectiveTheme = theme === 'dark' ? 'dark' : 'light'
@@ -1034,14 +1228,32 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
         <BlockNoteView
           editor={editor}
           theme={effectiveTheme}
+          onChange={handleEditorChange}
           slashMenu={false}
+          sideMenu={false}
           formattingToolbar={false}
         >
+          {/* Side menu with drag handle for block manipulation */}
+          <SideMenuController
+            sideMenu={(props) => (
+              <SideMenu {...props} dragHandleMenu={CustomDragHandleMenu} />
+            )}
+          />
+          {/* Slash menu with multi-column items */}
           <SuggestionMenuController
             triggerCharacter="/"
-            getItems={async (query) =>
-              filterSuggestionItems(getCustomSlashMenuItems(editor), query)
-            }
+            getItems={async (query) => {
+              try {
+                const customItems = getCustomSlashMenuItems(editor)
+                const multiColumnItems = getMultiColumnSlashMenuItems(editor)
+                const allItems = combineByGroup(customItems, multiColumnItems)
+                return filterSuggestionItems(allItems, query)
+              } catch (err) {
+                console.error('Error loading slash menu items:', err)
+                // Return default items as fallback
+                return filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query)
+              }
+            }}
           />
           {/* @ mention menu */}
           <SuggestionMenuController

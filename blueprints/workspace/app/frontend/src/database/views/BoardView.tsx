@@ -6,7 +6,7 @@ interface BoardViewProps {
   rows: DatabaseRow[]
   properties: Property[]
   groupBy: string | null
-  onAddRow: () => void
+  onAddRow: (initialProperties?: Record<string, unknown>) => Promise<DatabaseRow | null>
   onUpdateRow: (rowId: string, updates: Record<string, unknown>) => void
   onDeleteRow: (rowId: string) => void
   onAddProperty: (property: Omit<Property, 'id'>) => void
@@ -112,11 +112,20 @@ export function BoardView({
   }, [dragging, groupProperty, onUpdateRow])
 
   // Handle add card to column
-  const handleAddCard = useCallback(async (_columnId: string) => {
-    // First create the row
-    onAddRow()
-    // TODO: Set the group property to the column ID after creation
-  }, [onAddRow])
+  const handleAddCard = useCallback(async (columnId: string) => {
+    if (!groupProperty) {
+      // No grouping, just add a new row
+      await onAddRow()
+      return
+    }
+
+    // Create the row with the column's group value
+    const initialProperties: Record<string, unknown> = columnId === 'uncategorized'
+      ? {}
+      : { [groupProperty.id]: columnId }
+
+    await onAddRow(initialProperties)
+  }, [onAddRow, groupProperty])
 
   // Get title property (first text property or first property)
   const titleProperty = useMemo(() => {

@@ -146,15 +146,17 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
     }
   }, [fetchRows, filters, sorts])
 
-  // Add new row
-  const handleAddRow = useCallback(async () => {
+  // Add new row with optional initial properties
+  const handleAddRow = useCallback(async (initialProperties?: Record<string, unknown>) => {
     try {
       const newRow = await api.post<DatabaseRow>(`/databases/${databaseId}/rows`, {
-        properties: {},
+        properties: initialProperties || {},
       })
       setRows((prev) => [...prev, newRow])
+      return newRow
     } catch (err) {
       console.error('Failed to add row:', err)
+      return null
     }
   }, [databaseId])
 

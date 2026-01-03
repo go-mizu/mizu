@@ -22,7 +22,7 @@ interface CalendarViewProps {
   rows: DatabaseRow[]
   properties: Property[]
   groupBy: string | null
-  onAddRow: () => void
+  onAddRow: (initialProperties?: Record<string, unknown>) => Promise<DatabaseRow | null>
   onUpdateRow: (rowId: string, updates: Record<string, unknown>) => void
   onDeleteRow: (rowId: string) => void
   onAddProperty: (property: Omit<Property, 'id'>) => void
@@ -228,7 +228,8 @@ export function CalendarView({
       if (selectedEvent) {
         onUpdateRow(selectedEvent.id, updates)
       } else {
-        onAddRow()
+        // Create a new row with the initial properties
+        await onAddRow(updates)
       }
       setShowEventForm(false)
       setEventFormData(null)

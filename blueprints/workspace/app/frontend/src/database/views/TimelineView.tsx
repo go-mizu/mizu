@@ -1,16 +1,18 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar } from 'lucide-react'
 import { format, addDays, addWeeks, addMonths, startOfWeek, startOfMonth, endOfMonth, differenceInDays, parseISO, isValid, isSameDay } from 'date-fns'
-import { Database, DatabaseRow, Property } from '../../api/client'
+import { DatabaseRow, Property } from '../../api/client'
 
 interface TimelineViewProps {
   rows: DatabaseRow[]
-  database: Database
-  dateProperty: string
-  endDateProperty?: string
-  groupByProperty?: string
-  onRowClick: (row: DatabaseRow) => void
-  onRowUpdate: (row: DatabaseRow) => void
+  properties: Property[]
+  groupBy: string | null
+  onAddRow: (initialProperties?: Record<string, unknown>) => Promise<DatabaseRow | null>
+  onUpdateRow: (rowId: string, updates: Record<string, unknown>) => void
+  onDeleteRow: (rowId: string) => void
+  onAddProperty: (property: Omit<Property, 'id'>) => void
+  onUpdateProperty: (propertyId: string, updates: Partial<Property>) => void
+  onDeleteProperty: (propertyId: string) => void
 }
 
 type ZoomLevel = 'day' | 'week' | 'month' | 'quarter'
@@ -29,12 +31,11 @@ const COLORS = [
 
 export function TimelineView({
   rows,
-  database,
-  dateProperty,
-  endDateProperty,
-  groupByProperty,
-  onRowClick,
-  onRowUpdate,
+  properties,
+  groupBy,
+  onAddRow,
+  onUpdateRow,
+  onDeleteRow,
 }: TimelineViewProps) {
   const [zoom, setZoom] = useState<ZoomLevel>('week')
   const [startDate, setStartDate] = useState(() => startOfMonth(new Date()))
@@ -43,18 +44,17 @@ export function TimelineView({
   const [dragType, setDragType] = useState<'move' | 'resize-start' | 'resize-end'>('move')
   const containerRef = useRef<HTMLDivElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const [selectedRow, setSelectedRow] = useState<string | null>(null)
 
   const config = ZOOM_CONFIGS[zoom]
 
-  // Get date property
-  const dateProp = database.properties.find(p => p.id === dateProperty || p.name === dateProperty)
-  const endDateProp = endDateProperty
-    ? database.properties.find(p => p.id === endDateProperty || p.name === endDateProperty)
-    : null
+  // Find date properties automatically
+  const dateProperty = properties.find(p => p.type === 'date')?.id || ''
+  const endDateProperty = properties.find(p => p.type === 'date' && p.id !== dateProperty)?.id
 
   // Get group property
-  const groupProp = groupByProperty
-    ? database.properties.find(p => p.id === groupByProperty || p.name === groupByProperty)
+  const groupProp = groupBy
+    ? properties.find(p => p.id === groupBy)
     : null
 
   // Calculate timeline columns based on zoom level
@@ -281,8 +281,8 @@ export function TimelineView({
                 const title = row.properties.title as string || 'Untitled'
 
                 return (
-                  <div key={row.id} className="timeline-row">
-                    <div className="timeline-sidebar-cell" onClick={() => onRowClick(row)}>
+                  <div key={row.id} className={`timeline-row ${selectedRow === row.id ? 'selected' : ''}`}>
+                    <div className="timeline-sidebar-cell" onClick={() => setSelectedRow(row.id)}>
                       <span className="row-title">{title}</span>
                     </div>
                     <div className="timeline-grid">
@@ -304,7 +304,7 @@ export function TimelineView({
                             backgroundColor: COLORS[rowIndex % COLORS.length],
                           }}
                           onMouseDown={(e) => handleMouseDown(e, row.id, 'move')}
-                          onClick={() => onRowClick(row)}
+                          onClick={() => setSelectedRow(row.id)}
                         >
                           {/* Resize handles */}
                           <div
@@ -343,6 +343,14 @@ export function TimelineView({
           <p>Add items with a date property to see them on the timeline.</p>
         </div>
       )}
+
+      {/* Add row button */}
+      <button className="add-row-btn" onClick={() => onAddRow()}>
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+        <span>New</span>
+      </button>
     </div>
   )
 }
