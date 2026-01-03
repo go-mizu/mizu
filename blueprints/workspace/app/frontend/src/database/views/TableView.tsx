@@ -11,6 +11,7 @@ import DataEditor, {
   DataEditorRef,
   SpriteMap,
   CellClickedEventArgs,
+  GridMouseEventArgs,
 } from '@glideapps/glide-data-grid'
 import { allCells, type DropdownCellType, type TagsCellType, type DatePickerType } from '@glideapps/glide-data-grid-cells'
 import '@glideapps/glide-data-grid/dist/index.css'
@@ -310,6 +311,10 @@ export function TableView({
   const [detailRow, setDetailRow] = useState<DatabaseRow | null>(null)
   const [detailRowIndex, setDetailRowIndex] = useState<number>(-1)
   const [searchQuery, setSearchQuery] = useState('')
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null)
+  const [openButtonBounds, setOpenButtonBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null)
+  const [isOpenButtonHovered, setIsOpenButtonHovered] = useState(false)
+  const hideTimeoutRef = useRef<number | null>(null)
   const [showColumnVisibility, setShowColumnVisibility] = useState(false)
   const [showAddProperty, setShowAddProperty] = useState<{ x: number; y: number } | null>(null)
   const [newPropertyName, setNewPropertyName] = useState('')
@@ -683,6 +688,51 @@ export function TableView({
     // Custom cells from glide-data-grid-cells handle their own dropdowns/overlays
   }, [])
 
+  // Handle item hover to show open button (Notion-style)
+  const onItemHovered = useCallback((args: GridMouseEventArgs) => {
+    // Clear any pending hide timeout when hovering
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current)
+      hideTimeoutRef.current = null
+    }
+
+    if (args.kind === 'cell' && args.location[1] < filteredRows.length) {
+      const row = args.location[1]
+      const col = args.location[0]
+      // Show open button only when hovering on the first column (title)
+      if (col === 0 && args.bounds) {
+        setHoveredRow(row)
+        setOpenButtonBounds({
+          x: args.bounds.x,
+          y: args.bounds.y,
+          width: args.bounds.width,
+          height: args.bounds.height,
+        })
+      } else if (hoveredRow !== row) {
+        // Different row, hide immediately
+        setHoveredRow(null)
+        setOpenButtonBounds(null)
+      }
+      // Keep button visible while hovering anywhere on the same row
+    } else if (args.kind === 'out-of-bounds' || args.kind === 'header') {
+      // Delay hiding to allow moving to the button
+      hideTimeoutRef.current = window.setTimeout(() => {
+        if (!isOpenButtonHovered) {
+          setHoveredRow(null)
+          setOpenButtonBounds(null)
+        }
+      }, 100)
+    }
+  }, [filteredRows.length, hoveredRow, isOpenButtonHovered])
+
+  // Handle open button click
+  const handleOpenButtonClick = useCallback(() => {
+    if (hoveredRow !== null && hoveredRow < filteredRows.length) {
+      setDetailRow(filteredRows[hoveredRow])
+      setDetailRowIndex(hoveredRow)
+    }
+  }, [hoveredRow, filteredRows])
+
 
   // Handle delete selected
   const handleDeleteSelected = useCallback(() => {
@@ -1015,6 +1065,7 @@ export function TableView({
             addIcon: 'addRow', // Custom icon defined in headerIcons
           }}
           onHeaderMenuClick={onHeaderMenuClick}
+          onItemHovered={onItemHovered}
           gridSelection={selection}
           onGridSelectionChange={setSelection}
           theme={notionTheme}
@@ -1454,6 +1505,54 @@ export function TableView({
             )}
           </div>
         </>
+      )}
+
+      {/* Notion-style OPEN button overlay */}
+      {hoveredRow !== null && openButtonBounds && (
+        <button
+          type="button"
+          onClick={handleOpenButtonClick}
+          onMouseEnter={() => {
+            setIsOpenButtonHovered(true)
+            if (hideTimeoutRef.current) {
+              clearTimeout(hideTimeoutRef.current)
+              hideTimeoutRef.current = null
+            }
+          }}
+          onMouseLeave={() => {
+            setIsOpenButtonHovered(false)
+            // Hide after leaving button
+            hideTimeoutRef.current = window.setTimeout(() => {
+              setHoveredRow(null)
+              setOpenButtonBounds(null)
+            }, 100)
+          }}
+          style={{
+            position: 'fixed',
+            top: openButtonBounds.y + (openButtonBounds.height - 22) / 2,
+            left: openButtonBounds.x + openButtonBounds.width - 54,
+            height: 22,
+            padding: '0 6px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            background: isOpenButtonHovered ? 'rgba(55, 53, 47, 0.16)' : 'rgba(55, 53, 47, 0.08)',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 500,
+            color: isOpenButtonHovered ? 'rgba(55, 53, 47, 0.9)' : 'rgba(55, 53, 47, 0.6)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            zIndex: 10,
+            transition: 'all 0.15s ease',
+            boxShadow: '0 0 0 1px rgba(55, 53, 47, 0.05)',
+          }}
+        >
+          <Expand size={12} strokeWidth={2} />
+          <span>Open</span>
+        </button>
       )}
 
       {/* Side Peek Panel */}
