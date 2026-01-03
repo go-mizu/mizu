@@ -1,3 +1,7 @@
+/* ==========================================================================
+   Workspace - Notion-inspired Design System
+   ========================================================================== */
+
 /* Reset and base styles */
 *, *::before, *::after {
     box-sizing: border-box;
@@ -6,28 +10,92 @@
 }
 
 :root {
+    /* Colors - Light theme (Notion-inspired) */
     --bg-primary: #ffffff;
-    --bg-secondary: #f7f6f3;
-    --bg-tertiary: #ffffff;
-    --bg-hover: rgba(55, 53, 47, 0.08);
-    --bg-active: rgba(55, 53, 47, 0.16);
+    --bg-secondary: #fbfbfa;
+    --bg-tertiary: #f7f7f5;
+    --bg-hover: rgba(55, 53, 47, 0.04);
+    --bg-active: rgba(55, 53, 47, 0.08);
+
     --text-primary: #37352f;
-    --text-secondary: #787774;
-    --text-tertiary: #b4b4b4;
+    --text-secondary: rgba(55, 53, 47, 0.65);
+    --text-tertiary: rgba(55, 53, 47, 0.45);
+    --text-placeholder: rgba(55, 53, 47, 0.35);
+
     --border-color: rgba(55, 53, 47, 0.09);
-    --accent-color: #2383e2;
-    --accent-hover: #0073e6;
-    --danger-color: #e03e3e;
-    --success-color: #0f7b6c;
-    --sidebar-width: 240px;
-    --topbar-height: 45px;
-    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    --font-mono: "SFMono-Regular", Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace;
+    --border-strong: rgba(55, 53, 47, 0.16);
+
+    --accent-color: rgb(35, 131, 226);
+    --accent-bg: rgba(35, 131, 226, 0.1);
+    --accent-hover: rgb(0, 119, 204);
+
+    --danger-color: rgb(235, 87, 87);
+    --danger-bg: rgba(235, 87, 87, 0.1);
+    --success-color: rgb(15, 123, 108);
+    --success-bg: rgba(15, 123, 108, 0.1);
+    --warning-color: rgb(203, 145, 47);
+    --warning-bg: rgba(203, 145, 47, 0.1);
+
+    /* Layout */
+    --sidebar-width: 248px;
+    --topbar-height: 44px;
+    --content-max-width: 900px;
+    --content-padding: 96px;
+
+    /* Typography - Notion-like font stack */
+    --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --font-serif: Lyon-Text, Georgia, ui-serif, serif;
+
+    /* Spacing */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+
+    /* Border radius */
     --radius-sm: 3px;
-    --radius-md: 6px;
-    --radius-lg: 12px;
-    --shadow-sm: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px;
-    --shadow-md: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 5px 10px, rgba(15, 15, 15, 0.2) 0px 15px 40px;
+    --radius-md: 4px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+
+    /* Shadows - Notion-style */
+    --shadow-sm: rgba(15, 15, 15, 0.04) 0px 0px 0px 1px, rgba(15, 15, 15, 0.03) 0px 3px 6px, rgba(15, 15, 15, 0.06) 0px 9px 24px;
+    --shadow-md: rgba(15, 15, 15, 0.04) 0px 0px 0px 1px, rgba(15, 15, 15, 0.03) 0px 3px 6px, rgba(15, 15, 15, 0.06) 0px 9px 24px;
+    --shadow-lg: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 5px 10px, rgba(15, 15, 15, 0.2) 0px 15px 40px;
+
+    /* Transitions */
+    --transition-fast: 150ms ease;
+    --transition-normal: 200ms ease;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+    --bg-primary: #191919;
+    --bg-secondary: #202020;
+    --bg-tertiary: #252525;
+    --bg-hover: rgba(255, 255, 255, 0.055);
+    --bg-active: rgba(255, 255, 255, 0.09);
+
+    --text-primary: rgba(255, 255, 255, 0.9);
+    --text-secondary: rgba(255, 255, 255, 0.55);
+    --text-tertiary: rgba(255, 255, 255, 0.35);
+    --text-placeholder: rgba(255, 255, 255, 0.25);
+
+    --border-color: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.14);
+
+    --accent-color: rgb(82, 156, 202);
+    --accent-bg: rgba(82, 156, 202, 0.15);
+
+    --danger-color: rgb(235, 87, 87);
+    --danger-bg: rgba(235, 87, 87, 0.15);
+
+    --shadow-sm: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0.25) 0px 3px 6px, rgba(0, 0, 0, 0.3) 0px 9px 24px;
+    --shadow-md: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0.25) 0px 3px 6px, rgba(0, 0, 0, 0.3) 0px 9px 24px;
+    --shadow-lg: rgba(0, 0, 0, 0.25) 0px 0px 0px 1px, rgba(0, 0, 0, 0.35) 0px 5px 10px, rgba(0, 0, 0, 0.45) 0px 15px 40px;
 }
 
 body {
@@ -37,6 +105,8 @@ body {
     color: var(--text-primary);
     background: var(--bg-primary);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 a {
@@ -134,6 +204,14 @@ input, select, textarea {
     color: var(--danger-color);
     font-size: 13px;
     min-height: 20px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
+
+.form-error:not(:empty) {
+    background-color: rgba(220, 53, 69, 0.1);
+    border: 1px solid var(--danger-color);
 }
 
 .auth-footer {
@@ -216,11 +294,12 @@ input, select, textarea {
     min-height: 100vh;
 }
 
-/* Sidebar */
+/* ==========================================================================
+   Sidebar - Notion-inspired
+   ========================================================================== */
 .sidebar {
     width: var(--sidebar-width);
     background: var(--bg-secondary);
-    border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     position: fixed;
@@ -228,21 +307,63 @@ input, select, textarea {
     top: 0;
     bottom: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 100;
+    transition: width var(--transition-normal);
+}
+
+.sidebar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.sidebar:hover::-webkit-scrollbar-thumb {
+    background: rgba(55, 53, 47, 0.2);
+}
+
+[data-theme="dark"] .sidebar:hover::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .sidebar-header {
-    padding: 12px;
-    position: relative;
+    padding: var(--space-3) var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    background: transparent;
+    transition: background var(--transition-fast);
+    flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+    background: var(--bg-hover);
 }
 
 .workspace-switcher {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-md);
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background var(--transition-fast);
+    flex: 1;
+    min-width: 0;
 }
 
 .workspace-switcher:hover {
@@ -250,27 +371,37 @@ input, select, textarea {
 }
 
 .workspace-icon {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     border-radius: var(--radius-sm);
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #9D8DD5 0%, #D5A8C4 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
+    flex-shrink: 0;
+    text-transform: uppercase;
 }
 
 .workspace-name {
     flex: 1;
+    font-size: 14px;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-primary);
 }
 
 .chevron {
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+}
+
+.workspace-switcher:hover .chevron {
     color: var(--text-secondary);
 }
 
@@ -278,13 +409,26 @@ input, select, textarea {
     display: none;
     position: absolute;
     top: 100%;
-    left: 12px;
-    right: 12px;
+    left: var(--space-2);
+    right: var(--space-2);
+    margin-top: var(--space-1);
     background: var(--bg-primary);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
-    z-index: 100;
-    padding: 6px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    z-index: 200;
+    padding: var(--space-1);
+    animation: slideDown 150ms ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .workspace-dropdown.open {
@@ -294,35 +438,58 @@ input, select, textarea {
 .workspace-option {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px;
-    border-radius: var(--radius-sm);
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
     width: 100%;
     text-align: left;
+    font-size: 14px;
+    color: var(--text-primary);
+    transition: background var(--transition-fast);
 }
 
 .workspace-option:hover {
     background: var(--bg-hover);
 }
 
+.workspace-option .icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 16px;
+}
+
 .dropdown-divider {
     height: 1px;
     background: var(--border-color);
-    margin: 6px 0;
+    margin: var(--space-1) 0;
 }
 
 .sidebar-nav {
-    padding: 0 8px;
+    padding: 0 var(--space-2);
 }
 
 .nav-item {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--space-2);
+    padding: 5px var(--space-2);
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    transition: background 0.15s, color 0.15s;
+    font-size: 14px;
+    transition: background var(--transition-fast), color var(--transition-fast);
+    min-height: 28px;
+    position: relative;
+}
+
+.nav-item svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    opacity: 0.8;
 }
 
 .nav-item:hover {
@@ -330,37 +497,60 @@ input, select, textarea {
     color: var(--text-primary);
 }
 
+.nav-item:hover svg {
+    opacity: 1;
+}
+
+.nav-item .shortcut {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+}
+
 .sidebar-section {
-    margin-top: 16px;
-    padding: 0 8px;
+    margin-top: var(--space-4);
+    padding: 0 var(--space-2);
 }
 
 .section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 8px;
-    font-size: 12px;
+    padding: var(--space-1) var(--space-2);
+    margin-bottom: 2px;
+}
+
+.section-header span {
+    font-size: 11px;
     font-weight: 500;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.02em;
 }
 
 .add-page-btn {
-    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
     border-radius: var(--radius-sm);
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
     opacity: 0;
-    transition: opacity 0.15s, background 0.15s;
+    transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
-.section-header:hover .add-page-btn {
+.section-header:hover .add-page-btn,
+.sidebar-section:hover .add-page-btn {
     opacity: 1;
 }
 
 .add-page-btn:hover {
     background: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 .page-tree {
@@ -369,67 +559,132 @@ input, select, textarea {
     gap: 1px;
 }
 
+.page-tree-item {
+    position: relative;
+}
+
 .page-item {
     font-size: 14px;
 }
 
 .page-icon {
     font-size: 14px;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
 }
 
-.page-title {
+/* Sidebar page title - different from main page title */
+.sidebar .page-title,
+.page-tree .page-title {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-secondary);
 }
 
-/* Main content */
+/* Sidebar footer - theme toggle */
+.sidebar-footer {
+    margin-top: auto;
+    padding: var(--space-2);
+    border-top: 1px solid var(--border-color);
+}
+
+.theme-toggle {
+    justify-content: flex-start;
+    width: 100%;
+}
+
+/* ==========================================================================
+   Main Content Area - Notion-inspired
+   ========================================================================== */
 .main-content {
     flex: 1;
     margin-left: var(--sidebar-width);
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    background: var(--bg-primary);
 }
 
 .topbar {
     height: var(--topbar-height);
-    border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 16px;
+    padding: 0 var(--space-3);
     position: sticky;
     top: 0;
     background: var(--bg-primary);
-    z-index: 10;
+    z-index: 50;
+    min-width: 0;
 }
 
 .breadcrumb {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     font-size: 14px;
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
+    min-width: 0;
 }
 
-.breadcrumb a:hover {
+.breadcrumb-home {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.breadcrumb-home:hover {
+    background: var(--bg-hover);
     color: var(--text-primary);
 }
 
+.breadcrumb-home svg {
+    width: 16px;
+    height: 16px;
+}
+
 .breadcrumb-sep {
-    margin: 0 4px;
+    color: var(--text-tertiary);
+    user-select: none;
+}
+
+.breadcrumb a:not(.breadcrumb-home) {
+    padding: 2px var(--space-1);
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    transition: background var(--transition-fast), color var(--transition-fast);
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.breadcrumb a:not(.breadcrumb-home):hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 .breadcrumb-current {
     color: var(--text-primary);
+    font-weight: 400;
 }
 
 .topbar-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-1);
+    flex-shrink: 0;
 }
 
 .user-menu {
@@ -437,29 +692,37 @@ input, select, textarea {
 }
 
 .user-avatar {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #9D8DD5 0%, #D5A8C4 100%);
     color: white;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     display: flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+    text-transform: uppercase;
+}
+
+.user-avatar:hover {
+    opacity: 0.85;
 }
 
 .user-dropdown {
     display: none;
     position: absolute;
-    top: 100%;
+    top: calc(100% + var(--space-1));
     right: 0;
     background: var(--bg-primary);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
-    min-width: 200px;
-    padding: 8px;
-    z-index: 100;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    min-width: 220px;
+    padding: var(--space-1);
+    z-index: 200;
+    animation: slideDown 150ms ease;
 }
 
 .user-dropdown.open {
@@ -467,11 +730,14 @@ input, select, textarea {
 }
 
 .user-info {
-    padding: 8px;
+    padding: var(--space-2) var(--space-3);
 }
 
 .user-info strong {
     display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
 }
 
 .user-info span {
@@ -479,12 +745,46 @@ input, select, textarea {
     color: var(--text-secondary);
 }
 
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    color: var(--text-primary);
+    text-align: left;
+    transition: background var(--transition-fast);
+}
+
+.dropdown-item:hover {
+    background: var(--bg-hover);
+}
+
+.dropdown-item.danger {
+    color: var(--danger-color);
+}
+
+/* Content area - Notion-style spacing */
 .content-area {
     flex: 1;
-    padding: 24px 60px;
-    max-width: 900px;
+    padding: var(--space-5) var(--content-padding);
+    max-width: calc(var(--content-max-width) + var(--content-padding) * 2);
     margin: 0 auto;
     width: 100%;
+}
+
+@media (max-width: 1200px) {
+    .content-area {
+        padding: var(--space-5) var(--space-6);
+    }
+}
+
+@media (max-width: 768px) {
+    .content-area {
+        padding: var(--space-4) var(--space-4);
+    }
 }
 
 /* Workspace home */
@@ -577,35 +877,64 @@ input, select, textarea {
     color: var(--text-secondary);
 }
 
-/* Page view */
+/* ==========================================================================
+   Page View - Notion-inspired
+   ========================================================================== */
 .page-view {
-    padding-top: 40px;
+    padding-top: var(--space-6);
 }
 
 .page-header {
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 24px;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.page-icon-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
 }
 
 .page-icon-btn {
-    font-size: 48px;
+    font-size: 72px;
     padding: 0;
     line-height: 1;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+    border: none;
+    background: none;
 }
 
-.page-title {
-    flex: 1;
+.page-icon-btn:hover {
+    opacity: 0.8;
+}
+
+.page-view .page-title,
+.content-area > .page-title {
     font-size: 40px;
     font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.015em;
     outline: none;
-    min-height: 52px;
+    min-height: 1.2em;
+    border: none;
+    background: none;
+    width: 100%;
+    color: var(--text-primary);
+    caret-color: var(--accent-color);
 }
 
-.page-title:empty::before {
+.page-view .page-title:empty::before,
+.content-area > .page-title:empty::before {
     content: attr(data-placeholder);
-    color: var(--text-tertiary);
+    color: var(--text-placeholder);
+}
+
+.page-view .page-title::selection,
+.content-area > .page-title::selection {
+    background: var(--accent-bg);
 }
 
 .page-actions {
@@ -1284,7 +1613,7 @@ input, select, textarea {
 
 .sidebar.collapsed .workspace-name,
 .sidebar.collapsed .nav-item span,
-.sidebar.collapsed .page-title,
+.sidebar.collapsed .page-tree .page-title,
 .sidebar.collapsed .section-header span,
 .sidebar.collapsed .shortcut {
     display: none;
@@ -1639,8 +1968,9 @@ body {
     text-rendering: optimizeLegibility;
 }
 
-/* Page title styling */
-.page-title,
+/* Main content page/database title styling */
+.page-view .page-title,
+.content-area > .page-title,
 .database-title {
     font-weight: 700;
     letter-spacing: -0.02em;

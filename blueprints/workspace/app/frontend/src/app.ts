@@ -429,40 +429,18 @@ function initQuickActions() {
 
 // Theme functionality
 function initTheme() {
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
-  const savedTheme = localStorage.getItem('theme')
-
-  function setTheme(theme: 'light' | 'dark' | 'system') {
-    if (theme === 'system') {
-      document.documentElement.setAttribute('data-theme', prefersDark.matches ? 'dark' : 'light')
-    } else {
-      document.documentElement.setAttribute('data-theme', theme)
-    }
+  function setTheme(theme: 'light' | 'dark') {
+    document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }
-
-  // Initial theme
-  if (savedTheme) {
-    setTheme(savedTheme as 'light' | 'dark' | 'system')
-  } else {
-    setTheme('system')
-  }
-
-  // Listen for system theme changes
-  prefersDark.addEventListener('change', () => {
-    if (localStorage.getItem('theme') === 'system') {
-      setTheme('system')
-    }
-  })
 
   // Theme toggle button
   const themeToggle = document.getElementById('theme-toggle')
   if (themeToggle) {
     themeToggle.addEventListener('click', () => {
-      const current = localStorage.getItem('theme') || 'system'
-      const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system']
-      const nextIndex = (themes.indexOf(current as 'light' | 'dark' | 'system') + 1) % themes.length
-      setTheme(themes[nextIndex])
+      const current = document.documentElement.getAttribute('data-theme') || 'light'
+      const next = current === 'dark' ? 'light' : 'dark'
+      setTheme(next)
     })
   }
 }

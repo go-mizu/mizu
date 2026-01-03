@@ -144,3 +144,89 @@ func (h *Page) Duplicate(c *mizu.Ctx) error {
 
 	return c.JSON(http.StatusCreated, page)
 }
+
+// UpdateBlocks updates all blocks for a page.
+func (h *Page) UpdateBlocks(c *mizu.Ctx) error {
+	pageID := c.Param("id")
+	userID := h.getUserID(c)
+
+	var in struct {
+		Blocks []blocks.UpdateIn `json:"blocks"`
+	}
+	if err := c.BindJSON(&in, 10<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	// Set updater for each block
+	for i := range in.Blocks {
+		in.Blocks[i].UpdatedBy = userID
+	}
+
+	// Get existing blocks for this page to determine creates vs updates
+	existing, err := h.blocks.GetByPage(c.Request().Context(), pageID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	existingIDs := make(map[string]bool)
+	for _, b := range existing {
+		existingIDs[b.ID] = true
+	}
+
+	// Separate into creates and updates
+	var creates []*blocks.CreateIn
+	var updates []*blocks.UpdateIn
+	incomingIDs := make(map[string]bool)
+
+	for i := range in.Blocks {
+		block := &in.Blocks[i]
+		incomingIDs[block.ID] = true
+
+		if existingIDs[block.ID] {
+			updates = append(updates, block)
+		} else {
+			creates = append(creates, &blocks.CreateIn{
+				PageID:    pageID,
+				Type:      block.Type,
+				Content:   block.Content,
+				CreatedBy: userID,
+			})
+		}
+	}
+
+	// Delete blocks that are no longer present
+	var deletes []string
+	for _, b := range existing {
+		if !incomingIDs[b.ID] {
+			deletes = append(deletes, b.ID)
+		}
+	}
+
+	ctx := c.Request().Context()
+
+	if len(deletes) > 0 {
+		if err := h.blocks.BatchDelete(ctx, deletes); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	if len(updates) > 0 {
+		if err := h.blocks.BatchUpdate(ctx, updates); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	if len(creates) > 0 {
+		if _, err := h.blocks.BatchCreate(ctx, creates); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	// Return the updated blocks
+	result, err := h.blocks.GetByPage(ctx, pageID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, result)
+}

@@ -258,6 +258,7 @@ func (s *Server) setupRoutes() {
 		api.Delete("/pages/{id}", s.authRequired(s.pageHandlers.Delete))
 		api.Get("/workspaces/{workspaceID}/pages", s.authRequired(s.pageHandlers.List))
 		api.Get("/pages/{id}/blocks", s.authRequired(s.pageHandlers.GetBlocks))
+		api.Put("/pages/{id}/blocks", s.authRequired(s.pageHandlers.UpdateBlocks))
 		api.Post("/pages/{id}/archive", s.authRequired(s.pageHandlers.Archive))
 		api.Post("/pages/{id}/restore", s.authRequired(s.pageHandlers.Restore))
 		api.Post("/pages/{id}/duplicate", s.authRequired(s.pageHandlers.Duplicate))

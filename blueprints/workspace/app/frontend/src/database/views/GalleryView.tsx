@@ -6,7 +6,7 @@ interface GalleryViewProps {
   rows: DatabaseRow[]
   properties: Property[]
   groupBy: string | null
-  onAddRow: () => void
+  onAddRow: (initialProperties?: Record<string, unknown>) => Promise<DatabaseRow | null>
   onUpdateRow: (rowId: string, updates: Record<string, unknown>) => void
   onDeleteRow: (rowId: string) => void
   onAddProperty: (property: Omit<Property, 'id'>) => void
@@ -197,7 +197,7 @@ export function GalleryView({
         })}
 
         {/* Add card */}
-        <div className="gallery-card add-card" onClick={onAddRow}>
+        <div className="gallery-card add-card" onClick={() => onAddRow()}>
           <div className="add-card-content">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />

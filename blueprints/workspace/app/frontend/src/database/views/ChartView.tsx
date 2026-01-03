@@ -22,9 +22,13 @@ type ChartType = 'bar' | 'line' | 'pie' | 'donut'
 interface ChartViewProps {
   rows: DatabaseRow[]
   properties: Property[]
-  onAddRow: () => void
+  groupBy: string | null
+  onAddRow: (initialProperties?: Record<string, unknown>) => Promise<DatabaseRow | null>
   onUpdateRow: (rowId: string, updates: Record<string, unknown>) => void
   onDeleteRow: (rowId: string) => void
+  onAddProperty: (property: Omit<Property, 'id'>) => void
+  onUpdateProperty: (propertyId: string, updates: Partial<Property>) => void
+  onDeleteProperty: (propertyId: string) => void
 }
 
 const CHART_COLORS = [
@@ -100,7 +104,7 @@ export function ChartView({
           <BarChart2 size={48} />
           <h3>No data to display</h3>
           <p>Add rows to your database or configure chart settings</p>
-          <button className="btn-primary" onClick={onAddRow}>
+          <button className="btn-primary" onClick={() => onAddRow()}>
             Add first row
           </button>
         </div>
