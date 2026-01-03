@@ -333,6 +333,18 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Create Development Test Page with all block types
+	devTestPage, _ := srv.PageService().Create(ctx, &pages.CreateIn{
+		WorkspaceID: ws.ID,
+		ParentType:  pages.ParentWorkspace,
+		Title:       "Development Test Page",
+		Icon:        "🧪",
+		CreatedBy:   ownerUser.ID,
+	})
+	if devTestPage != nil {
+		createDevTestBlocks(ctx, srv.BlockService(), devTestPage.ID, ownerUser.ID)
+	}
+
 	stop()
 	Step("", "Database seeded", time.Since(start))
 	Blank()
@@ -343,7 +355,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		"Users", fmt.Sprintf("%d users (alice, bob, charlie)", len(createdUsers)),
 		"Password", "password123",
 		"Workspace", ws.Name,
-		"Pages", "Getting Started, Tasks, Meeting Notes",
+		"Pages", "Getting Started, Tasks, Meeting Notes, Development Test Page",
 	)
 	Blank()
 	Hint("Start the server with: workspace serve")
@@ -356,4 +368,475 @@ func runSeed(cmd *cobra.Command, args []string) error {
 
 func ptrBool(b bool) *bool {
 	return &b
+}
+
+// createDevTestBlocks creates comprehensive test blocks for the Development Test Page
+func createDevTestBlocks(ctx context.Context, blockSvc blocks.API, pageID, userID string) {
+	testBlocks := []struct {
+		Type    blocks.BlockType
+		Content blocks.Content
+	}{
+		// ========================================
+		// Section: Title & Introduction
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("Block Editor Showcase")}},
+		{blocks.BlockParagraph, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "This page demonstrates all available block types with various configurations. Use this page to test the editor functionality and verify styling matches Notion."},
+		}}},
+		{blocks.BlockDivider, blocks.Content{}},
+
+		// ========================================
+		// Section: Text Formatting
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("1. Text Formatting")}},
+		{blocks.BlockParagraph, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Normal text, "},
+			{Type: "text", Text: "bold text", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: ", "},
+			{Type: "text", Text: "italic text", Annotations: blocks.Annotations{Italic: true}},
+			{Type: "text", Text: ", "},
+			{Type: "text", Text: "underlined", Annotations: blocks.Annotations{Underline: true}},
+			{Type: "text", Text: ", "},
+			{Type: "text", Text: "strikethrough", Annotations: blocks.Annotations{Strikethrough: true}},
+			{Type: "text", Text: ", and "},
+			{Type: "text", Text: "inline code", Annotations: blocks.Annotations{Code: true}},
+			{Type: "text", Text: "."},
+		}}},
+		{blocks.BlockParagraph, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Combined: "},
+			{Type: "text", Text: "bold italic", Annotations: blocks.Annotations{Bold: true, Italic: true}},
+			{Type: "text", Text: ", "},
+			{Type: "text", Text: "bold underline", Annotations: blocks.Annotations{Bold: true, Underline: true}},
+			{Type: "text", Text: ", "},
+			{Type: "text", Text: "all styles", Annotations: blocks.Annotations{Bold: true, Italic: true, Underline: true, Strikethrough: true}},
+			{Type: "text", Text: "."},
+		}}},
+		{blocks.BlockParagraph, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Colors: "},
+			{Type: "text", Text: "gray", Annotations: blocks.Annotations{Color: "gray"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "brown", Annotations: blocks.Annotations{Color: "brown"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "orange", Annotations: blocks.Annotations{Color: "orange"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "yellow", Annotations: blocks.Annotations{Color: "yellow"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "green", Annotations: blocks.Annotations{Color: "green"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "blue", Annotations: blocks.Annotations{Color: "blue"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "purple", Annotations: blocks.Annotations{Color: "purple"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "pink", Annotations: blocks.Annotations{Color: "pink"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "red", Annotations: blocks.Annotations{Color: "red"}},
+		}}},
+		{blocks.BlockParagraph, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Highlights: "},
+			{Type: "text", Text: "gray bg", Annotations: blocks.Annotations{Color: "gray_background"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "yellow bg", Annotations: blocks.Annotations{Color: "yellow_background"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "green bg", Annotations: blocks.Annotations{Color: "green_background"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "blue bg", Annotations: blocks.Annotations{Color: "blue_background"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "purple bg", Annotations: blocks.Annotations{Color: "purple_background"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "pink bg", Annotations: blocks.Annotations{Color: "pink_background"}},
+			{Type: "text", Text: " "},
+			{Type: "text", Text: "red bg", Annotations: blocks.Annotations{Color: "red_background"}},
+		}}},
+
+		// ========================================
+		// Section: Headings
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("2. Headings")}},
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("Heading 1 - Main Title")}},
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Heading 2 - Section Title")}},
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("Heading 3 - Subsection Title")}},
+		{blocks.BlockParagraph, blocks.Content{RichText: rt("Regular paragraph text for comparison.")}},
+
+		// ========================================
+		// Section: Lists
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("3. List Types")}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Bulleted List")}},
+		{blocks.BlockBulletList, blocks.Content{RichText: rt("First bullet point")}},
+		{blocks.BlockBulletList, blocks.Content{RichText: rt("Second bullet point")}},
+		{blocks.BlockBulletList, blocks.Content{RichText: rt("Third bullet point with longer text to test wrapping behavior")}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Numbered List")}},
+		{blocks.BlockNumberList, blocks.Content{RichText: rt("First numbered item")}},
+		{blocks.BlockNumberList, blocks.Content{RichText: rt("Second numbered item")}},
+		{blocks.BlockNumberList, blocks.Content{RichText: rt("Third numbered item")}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("To-Do List")}},
+		{blocks.BlockTodo, blocks.Content{RichText: rt("Unchecked task"), Checked: ptrBool(false)}},
+		{blocks.BlockTodo, blocks.Content{RichText: rt("Checked/completed task"), Checked: ptrBool(true)}},
+		{blocks.BlockTodo, blocks.Content{RichText: rt("Another pending task"), Checked: ptrBool(false)}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Toggle List")}},
+		{blocks.BlockToggle, blocks.Content{RichText: rt("Click to expand this toggle")}},
+		{blocks.BlockToggle, blocks.Content{RichText: rt("Another toggle with content")}},
+
+		// ========================================
+		// Section: Callouts
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("4. Callout Blocks")}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Default callout - great for tips and information"), Icon: "💡", Color: "default"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Gray callout - subtle and neutral"), Icon: "📝", Color: "gray"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Brown callout - warm and earthy"), Icon: "🌰", Color: "brown"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Orange callout - attention-grabbing"), Icon: "🔶", Color: "orange"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Yellow callout - warning or important note"), Icon: "⚠️", Color: "yellow"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Green callout - success or positive feedback"), Icon: "✅", Color: "green"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Blue callout - informational or tips"), Icon: "ℹ️", Color: "blue"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Purple callout - creative or ideas"), Icon: "💜", Color: "purple"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Pink callout - playful or feminine"), Icon: "🌸", Color: "pink"}},
+		{blocks.BlockCallout, blocks.Content{RichText: rt("Red callout - error or danger"), Icon: "❌", Color: "red"}},
+
+		// ========================================
+		// Section: Quote & Divider
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("5. Quote & Divider")}},
+		{blocks.BlockQuote, blocks.Content{RichText: rt("This is a blockquote. Great for highlighting important quotes or references. It can span multiple lines and should maintain proper styling.")}},
+		{blocks.BlockDivider, blocks.Content{}},
+		{blocks.BlockParagraph, blocks.Content{RichText: rt("Content after the divider.")}},
+
+		// ========================================
+		// Section: Code Blocks
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("6. Code Blocks")}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("JavaScript")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `function greeting(name) {
+  console.log('Hello, ' + name + '!');
+  return {
+    message: 'Welcome',
+    timestamp: new Date(),
+  };
+}
+
+// Call the function
+greeting('World');`}},
+			Language: "javascript",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("Python")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `def fibonacci(n):
+    """Generate Fibonacci sequence up to n."""
+    a, b = 0, 1
+    result = []
+    while a < n:
+        result.append(a)
+        a, b = b, a + b
+    return result
+
+# Example usage
+print(fibonacci(100))`}},
+			Language: "python",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("Go")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `package main
+
+import "fmt"
+
+func main() {
+    // Simple hello world
+    message := "Hello, Go!"
+    fmt.Println(message)
+
+    // Loop example
+    for i := 0; i < 5; i++ {
+        fmt.Printf("Count: %d\n", i)
+    }
+}`}},
+			Language: "go",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("CSS")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `.notion-callout {
+  display: flex;
+  padding: 16px 16px 16px 12px;
+  border-radius: 3px;
+  background: rgba(241, 241, 239, 1);
+}
+
+.notion-callout:hover {
+  background: rgba(235, 235, 233, 1);
+}`}},
+			Language: "css",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("SQL")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `SELECT
+    u.id,
+    u.name,
+    COUNT(o.id) AS order_count,
+    SUM(o.total) AS total_spent
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE u.created_at > '2024-01-01'
+GROUP BY u.id, u.name
+HAVING COUNT(o.id) > 5
+ORDER BY total_spent DESC
+LIMIT 10;`}},
+			Language: "sql",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("HTML")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sample Page</title>
+</head>
+<body>
+    <header class="site-header">
+        <h1>Welcome</h1>
+    </header>
+    <main>
+        <p>Hello, World!</p>
+    </main>
+</body>
+</html>`}},
+			Language: "html",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("JSON")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "A Notion-like block editor",
+  "features": ["rich-text", "databases", "collaboration"],
+  "config": {
+    "theme": "light",
+    "autosave": true
+  }
+}`}},
+			Language: "json",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("TypeScript")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `interface Block {
+  id: string;
+  type: BlockType;
+  content: RichText[];
+  children?: Block[];
+}
+
+type BlockType = 'paragraph' | 'heading' | 'callout' | 'code';
+
+const createBlock = <T extends BlockType>(
+  type: T,
+  content: string
+): Block => ({
+  id: crypto.randomUUID(),
+  type,
+  content: [{ text: content }],
+});`}},
+			Language: "typescript",
+		}},
+
+		{blocks.BlockHeading3, blocks.Content{RichText: rt("Bash / Shell")}},
+		{blocks.BlockCode, blocks.Content{
+			RichText: []blocks.RichText{{Type: "text", Text: `#!/bin/bash
+set -e
+
+echo "Starting deployment..."
+
+# Build and test
+npm run build
+npm test
+
+# Deploy
+rsync -avz ./dist/ user@server:/var/www/app/
+
+echo "Deployment complete!"
+exit 0`}},
+			Language: "bash",
+		}},
+
+		// ========================================
+		// Section: Equations
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("7. Equations (LaTeX)")}},
+		{blocks.BlockParagraph, blocks.Content{RichText: rt("Mathematical equations rendered with KaTeX:")}},
+		{blocks.BlockEquation, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "E = mc^2"}}}},
+		{blocks.BlockEquation, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"}}}},
+		{blocks.BlockEquation, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}"}}}},
+		{blocks.BlockEquation, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}"}}}},
+		{blocks.BlockEquation, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "\\nabla \\times \\mathbf{E} = -\\frac{\\partial \\mathbf{B}}{\\partial t}"}}}},
+		{blocks.BlockEquation, blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix} \\begin{bmatrix} x \\\\ y \\end{bmatrix} = \\begin{bmatrix} ax + by \\\\ cx + dy \\end{bmatrix}"}}}},
+
+		// ========================================
+		// Section: Media Blocks
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("8. Media Blocks")}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Image")}},
+		{blocks.BlockImage, blocks.Content{
+			URL:     "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800",
+			Caption: []blocks.RichText{{Type: "text", Text: "Beautiful mountain landscape"}},
+		}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Bookmark")}},
+		{blocks.BlockBookmark, blocks.Content{
+			URL:         "https://github.com",
+			Title:       "GitHub: Where the world builds software",
+			Description: "GitHub is where over 100 million developers shape the future of software, together.",
+		}},
+		{blocks.BlockBookmark, blocks.Content{
+			URL:         "https://notion.so",
+			Title:       "Notion – The all-in-one workspace",
+			Description: "A new tool that blends your everyday work apps into one. It's the all-in-one workspace for you and your team.",
+		}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Video (External)")}},
+		{blocks.BlockVideo, blocks.Content{
+			URL:     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			Caption: []blocks.RichText{{Type: "text", Text: "Sample video embed"}},
+		}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("File Attachments")}},
+		{blocks.BlockFile, blocks.Content{
+			URL:   "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+			Title: "Sample PDF Document.pdf",
+		}},
+		{blocks.BlockFile, blocks.Content{
+			URL:   "https://sample-videos.com/csv/Sample-Spreadsheet-10-rows.csv",
+			Title: "Data Export.csv",
+		}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Embed (External Content)")}},
+		{blocks.BlockEmbed, blocks.Content{
+			URL:     "https://codepen.io/pen/embed",
+			Caption: []blocks.RichText{{Type: "text", Text: "Embedded external content"}},
+		}},
+
+		// ========================================
+		// Section: Table
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("9. Tables")}},
+		{blocks.BlockTable, blocks.Content{
+			TableWidth: 3,
+			HasHeader:  true,
+		}},
+
+		// ========================================
+		// Section: Advanced Blocks
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("10. Advanced Blocks")}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Synced Block (Mock)")}},
+		{blocks.BlockSyncedBlock, blocks.Content{
+			SyncedFrom: "original-block-id",
+			RichText:   rt("This is synced content that appears in multiple places."),
+		}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Linked Database (Mock)")}},
+		{blocks.BlockLinkedDB, blocks.Content{
+			DatabaseID: "sample-database-id",
+		}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Breadcrumb")}},
+		{blocks.BlockBreadcrumb, blocks.Content{}},
+
+		{blocks.BlockHeading2, blocks.Content{RichText: rt("Template Button")}},
+		{blocks.BlockTemplateButton, blocks.Content{
+			ButtonText:  "Add New Task",
+			ButtonStyle: "primary",
+		}},
+
+		// ========================================
+		// Section: Column Layout
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("11. Column Layout")}},
+		{blocks.BlockParagraph, blocks.Content{RichText: rt("Multi-column layouts allow side-by-side content arrangement. Use the / menu to insert columns.")}},
+		{blocks.BlockColumnList, blocks.Content{
+			ColumnCount: 2,
+		}},
+
+		// ========================================
+		// Section: Child Pages
+		// ========================================
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("12. Child Pages & Databases")}},
+		{blocks.BlockChildPage, blocks.Content{
+			Title: "Sub-page Example",
+			Icon:  "📄",
+		}},
+		{blocks.BlockChildDB, blocks.Content{
+			Title: "Inline Database Example",
+		}},
+
+		// ========================================
+		// Section: Summary
+		// ========================================
+		{blocks.BlockDivider, blocks.Content{}},
+		{blocks.BlockHeading1, blocks.Content{RichText: rt("Summary")}},
+		{blocks.BlockCallout, blocks.Content{
+			RichText: []blocks.RichText{
+				{Type: "text", Text: "This page includes ", Annotations: blocks.Annotations{}},
+				{Type: "text", Text: "30+ block types", Annotations: blocks.Annotations{Bold: true}},
+				{Type: "text", Text: " demonstrating the full capabilities of the block editor:"},
+			},
+			Icon:  "🎯",
+			Color: "blue",
+		}},
+		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Text formatting", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: " - Bold, italic, colors, highlights, inline code"},
+		}}},
+		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Lists", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: " - Bulleted, numbered, to-do, toggle"},
+		}}},
+		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Callouts", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: " - All 10 color variants with icons"},
+		}}},
+		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Code blocks", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: " - JS, Python, Go, CSS, SQL, HTML, JSON, TS, Bash"},
+		}}},
+		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Media", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: " - Images, videos, files, bookmarks, embeds"},
+		}}},
+		{blocks.BlockBulletList, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Advanced", Annotations: blocks.Annotations{Bold: true}},
+			{Type: "text", Text: " - Equations, tables, synced blocks, linked databases"},
+		}}},
+		{blocks.BlockDivider, blocks.Content{}},
+		{blocks.BlockParagraph, blocks.Content{RichText: []blocks.RichText{
+			{Type: "text", Text: "Use this page to test drag-and-drop, formatting, and visual consistency with Notion.", Annotations: blocks.Annotations{Italic: true, Color: "gray"}},
+		}}},
+	}
+
+	// Create all blocks
+	for i, bc := range testBlocks {
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			Type:      bc.Type,
+			Content:   bc.Content,
+			Position:  i,
+			CreatedBy: userID,
+		})
+	}
+}
+
+// rt is a helper to create simple rich text
+func rt(text string) []blocks.RichText {
+	return []blocks.RichText{{Type: "text", Text: text}}
 }
