@@ -23,6 +23,7 @@
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@glideapps/glide-data-grid": "^6.0.3",
+    "@glideapps/glide-data-grid-cells": "^6.0.3",
     "@mantine/core": "^8.3.10",
     "@mantine/dates": "^8.3.10",
     "@mantine/hooks": "^8.3.10",

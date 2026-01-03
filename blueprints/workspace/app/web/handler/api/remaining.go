@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-mizu/mizu"
@@ -134,13 +136,26 @@ func (h *Database) AddProperty(c *mizu.Ctx) error {
 	dbID := c.Param("id")
 	var prop databases.Property
 	if err := c.BindJSON(&prop, 1<<20); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		slog.Error("AddProperty: failed to bind JSON", "error", err, "dbID", dbID)
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
 	}
+
+	// Log the received property for debugging
+	propJSON, _ := json.Marshal(prop)
+	slog.Info("AddProperty: received property", "dbID", dbID, "property", string(propJSON))
+
 	db, err := h.databases.AddProperty(c.Request().Context(), dbID, prop)
 	if err != nil {
+		slog.Error("AddProperty: failed to add property", "error", err, "dbID", dbID)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, db)
+	// Return the newly created property (last one in the list)
+	if len(db.Properties) > 0 {
+		newProp := db.Properties[len(db.Properties)-1]
+		slog.Info("AddProperty: successfully added", "dbID", dbID, "propertyID", newProp.ID, "name", newProp.Name, "type", newProp.Type)
+		return c.JSON(http.StatusCreated, newProp)
+	}
+	return c.JSON(http.StatusCreated, prop)
 }
 
 func (h *Database) UpdateProperty(c *mizu.Ctx) error {

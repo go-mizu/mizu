@@ -2,14 +2,28 @@ package web
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/go-mizu/mizu"
 )
 
 const sessionCookieName = "workspace_session"
 
+// devUserID is used in development mode to bypass authentication
+const devUserID = "dev-user-001"
+
+// isDevMode returns true if running in development mode
+func isDevMode() bool {
+	return os.Getenv("DEV_MODE") == "true" || os.Getenv("GO_ENV") == "development"
+}
+
 // getUserID extracts the user ID from the session cookie.
 func (s *Server) getUserID(c *mizu.Ctx) string {
+	// In dev mode, return a default user ID
+	if isDevMode() {
+		return devUserID
+	}
+
 	cookie, err := c.Request().Cookie(sessionCookieName)
 	if err != nil {
 		return ""
