@@ -1,9 +1,9 @@
-{{define "title"}}{{.Database.Name}} - Workspace{{end}}
+{{define "title"}}{{.Database.Title}} - Workspace{{end}}
 
 {{define "breadcrumb"}}
 <a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
 <span class="breadcrumb-sep">/</span>
-<span class="breadcrumb-current">{{.Database.Name}}</span>
+<span class="breadcrumb-current">{{.Database.Title}}</span>
 {{end}}
 
 {{define "content"}}
@@ -12,7 +12,7 @@
         <div class="database-icon-wrapper" data-icon-picker data-target="database-{{.Database.ID}}" data-current-icon="{{.Database.Icon}}">
             <!-- Icon picker will be mounted here by React -->
         </div>
-        <h1 class="database-title" contenteditable="true" id="database-title">{{.Database.Name}}</h1>
+        <h1 class="database-title" contenteditable="true" id="database-title">{{.Database.Title}}</h1>
         <div class="database-actions">
             <button class="icon-btn" id="database-settings-btn" title="Settings">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
