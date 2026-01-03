@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/go-mizu/blueprints/workspace/feature/blocks"
 )
@@ -90,17 +91,75 @@ func (s *BlocksStore) Move(ctx context.Context, id string, newParentID string, p
 }
 
 func (s *BlocksStore) Reorder(ctx context.Context, parentID string, blockIDs []string) error {
-	for i, id := range blockIDs {
-		_, err := s.db.ExecContext(ctx, "UPDATE blocks SET position = ? WHERE id = ?", i, id)
-		if err != nil {
-			return err
-		}
+	if len(blockIDs) == 0 {
+		return nil
 	}
-	return nil
+
+	// Build batch UPDATE with CASE statement to avoid N individual updates
+	var caseBuilder strings.Builder
+	args := make([]interface{}, 0, len(blockIDs)*2+len(blockIDs))
+
+	caseBuilder.WriteString("UPDATE blocks SET position = CASE id ")
+	for i, id := range blockIDs {
+		caseBuilder.WriteString("WHEN ? THEN ? ")
+		args = append(args, id, i)
+	}
+	caseBuilder.WriteString("END WHERE id IN (")
+
+	placeholders := make([]string, len(blockIDs))
+	for i, id := range blockIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	caseBuilder.WriteString(strings.Join(placeholders, ", "))
+	caseBuilder.WriteString(")")
+
+	_, err := s.db.ExecContext(ctx, caseBuilder.String(), args...)
+	return err
 }
 
 func (s *BlocksStore) DeleteByPage(ctx context.Context, pageID string) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM blocks WHERE page_id = ?", pageID)
+	return err
+}
+
+func (s *BlocksStore) BatchCreate(ctx context.Context, blocks []*blocks.Block) error {
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	// Build multi-row INSERT
+	var sb strings.Builder
+	sb.WriteString("INSERT INTO blocks (id, page_id, parent_id, type, content, position, created_by, created_at, updated_by, updated_at) VALUES ")
+
+	args := make([]interface{}, 0, len(blocks)*10)
+	for i, b := range blocks {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+		contentJSON, _ := json.Marshal(b.Content)
+		args = append(args, b.ID, b.PageID, b.ParentID, b.Type, string(contentJSON), b.Position, b.CreatedBy, b.CreatedAt, b.UpdatedBy, b.UpdatedAt)
+	}
+
+	_, err := s.db.ExecContext(ctx, sb.String(), args...)
+	return err
+}
+
+func (s *BlocksStore) BatchDelete(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := "DELETE FROM blocks WHERE id IN (" + strings.Join(placeholders, ", ") + ")"
+	_, err := s.db.ExecContext(ctx, query, args...)
 	return err
 }
 

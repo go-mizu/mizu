@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/go-mizu/blueprints/workspace/feature/views"
 )
@@ -38,46 +39,47 @@ func (s *ViewsStore) GetByID(ctx context.Context, id string) (*views.View, error
 }
 
 func (s *ViewsStore) Update(ctx context.Context, id string, in *views.UpdateIn) error {
+	// Build a single UPDATE with all fields to avoid multiple round-trips
+	sets := []string{}
+	args := []interface{}{}
+
 	if in.Name != nil {
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET name = ? WHERE id = ?", *in.Name, id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "name = ?")
+		args = append(args, *in.Name)
 	}
 	if in.Filter != nil {
 		filterJSON, _ := json.Marshal(in.Filter)
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET filter = ? WHERE id = ?", string(filterJSON), id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "filter = ?")
+		args = append(args, string(filterJSON))
 	}
 	if len(in.Sorts) > 0 {
 		sortsJSON, _ := json.Marshal(in.Sorts)
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET sorts = ? WHERE id = ?", string(sortsJSON), id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "sorts = ?")
+		args = append(args, string(sortsJSON))
 	}
 	if len(in.Properties) > 0 {
 		propsJSON, _ := json.Marshal(in.Properties)
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET properties = ? WHERE id = ?", string(propsJSON), id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "properties = ?")
+		args = append(args, string(propsJSON))
 	}
 	if in.GroupBy != nil {
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET group_by = ? WHERE id = ?", *in.GroupBy, id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "group_by = ?")
+		args = append(args, *in.GroupBy)
 	}
 	if in.CalendarBy != nil {
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET calendar_by = ? WHERE id = ?", *in.CalendarBy, id)
-		if err != nil {
-			return err
-		}
+		sets = append(sets, "calendar_by = ?")
+		args = append(args, *in.CalendarBy)
 	}
-	return nil
+
+	// Only execute if there are actual changes
+	if len(sets) == 0 {
+		return nil
+	}
+
+	args = append(args, id)
+	query := "UPDATE views SET " + strings.Join(sets, ", ") + " WHERE id = ?"
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 func (s *ViewsStore) Delete(ctx context.Context, id string) error {
@@ -100,13 +102,31 @@ func (s *ViewsStore) ListByDatabase(ctx context.Context, databaseID string) ([]*
 }
 
 func (s *ViewsStore) Reorder(ctx context.Context, databaseID string, viewIDs []string) error {
-	for i, id := range viewIDs {
-		_, err := s.db.ExecContext(ctx, "UPDATE views SET position = ? WHERE id = ?", i, id)
-		if err != nil {
-			return err
-		}
+	if len(viewIDs) == 0 {
+		return nil
 	}
-	return nil
+
+	// Build batch UPDATE with CASE statement to avoid N individual updates
+	var caseBuilder strings.Builder
+	args := make([]interface{}, 0, len(viewIDs)*2+len(viewIDs))
+
+	caseBuilder.WriteString("UPDATE views SET position = CASE id ")
+	for i, id := range viewIDs {
+		caseBuilder.WriteString("WHEN ? THEN ? ")
+		args = append(args, id, i)
+	}
+	caseBuilder.WriteString("END WHERE id IN (")
+
+	placeholders := make([]string, len(viewIDs))
+	for i, id := range viewIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	caseBuilder.WriteString(strings.Join(placeholders, ", "))
+	caseBuilder.WriteString(")")
+
+	_, err := s.db.ExecContext(ctx, caseBuilder.String(), args...)
+	return err
 }
 
 func (s *ViewsStore) scanView(row *sql.Row) (*views.View, error) {

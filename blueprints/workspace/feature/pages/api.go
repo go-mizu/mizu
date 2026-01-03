@@ -128,6 +128,7 @@ type Store interface {
 	Delete(ctx context.Context, id string) error
 	ListByWorkspace(ctx context.Context, workspaceID string, opts ListOpts) ([]*Page, error)
 	ListByParent(ctx context.Context, parentID string, parentType ParentType) ([]*Page, error)
+	ListByParentIDs(ctx context.Context, parentIDs []string, parentType ParentType) (map[string][]*Page, error)
 	Archive(ctx context.Context, id string) error
 	Restore(ctx context.Context, id string) error
 	ListArchived(ctx context.Context, workspaceID string) ([]*Page, error)

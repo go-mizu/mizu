@@ -178,4 +178,6 @@ type Store interface {
 	Move(ctx context.Context, id string, newParentID string, position int) error
 	Reorder(ctx context.Context, parentID string, blockIDs []string) error
 	DeleteByPage(ctx context.Context, pageID string) error
+	BatchCreate(ctx context.Context, blocks []*Block) error
+	BatchDelete(ctx context.Context, ids []string) error
 }

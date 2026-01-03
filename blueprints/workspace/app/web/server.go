@@ -24,6 +24,8 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/members"
 	"github.com/go-mizu/blueprints/workspace/feature/notifications"
 	"github.com/go-mizu/blueprints/workspace/feature/pages"
+	"github.com/go-mizu/blueprints/workspace/feature/rowblocks"
+	"github.com/go-mizu/blueprints/workspace/feature/rowcomments"
 	"github.com/go-mizu/blueprints/workspace/feature/rows"
 	"github.com/go-mizu/blueprints/workspace/feature/search"
 	"github.com/go-mizu/blueprints/workspace/feature/sharing"
@@ -56,6 +58,8 @@ type Server struct {
 	databases     databases.API
 	views         views.API
 	rows          rows.API
+	rowcomments   rowcomments.API
+	rowblocks     rowblocks.API
 	comments      comments.API
 	sharing       sharing.API
 	history       history.API
@@ -71,8 +75,10 @@ type Server struct {
 	blockHandlers      *api.Block
 	databaseHandlers   *api.Database
 	viewHandlers       *api.View
-	rowHandlers        *api.Row
-	commentHandlers    *api.Comment
+	rowHandlers           *api.Row
+	rowCommentHandlers    *api.RowComment
+	rowBlockHandlers      *api.RowBlock
+	commentHandlers       *api.Comment
 	shareHandlers      *api.Share
 	favoriteHandlers   *api.Favorite
 	searchHandlers     *api.Search
@@ -114,6 +120,8 @@ func New(cfg Config) (*Server, error) {
 	databasesStore := duckdb.NewDatabasesStore(db)
 	viewsStore := duckdb.NewViewsStore(db)
 	rowsStore := duckdb.NewRowsStore(db)
+	rowCommentsStore := duckdb.NewRowCommentsStore(db)
+	rowBlocksStore := duckdb.NewRowBlocksStore(db)
 	commentsStore := duckdb.NewCommentsStore(db)
 	sharesStore := duckdb.NewSharesStore(db)
 	historyStore := duckdb.NewHistoryStore(db)
@@ -130,6 +138,8 @@ func New(cfg Config) (*Server, error) {
 	databasesSvc := databases.NewService(databasesStore)
 	viewsSvc := views.NewService(viewsStore, pagesSvc)
 	rowsSvc := rows.NewService(rowsStore)
+	rowCommentsSvc := rowcomments.NewService(rowCommentsStore, usersSvc)
+	rowBlocksSvc := rowblocks.NewService(rowBlocksStore)
 	commentsSvc := comments.NewService(commentsStore, usersSvc)
 	sharingSvc := sharing.NewService(sharesStore, usersSvc)
 	historySvc := history.NewService(historyStore, usersSvc, pagesSvc, blocksSvc)
@@ -150,6 +160,8 @@ func New(cfg Config) (*Server, error) {
 		databases:     databasesSvc,
 		views:         viewsSvc,
 		rows:          rowsSvc,
+		rowcomments:   rowCommentsSvc,
+		rowblocks:     rowBlocksSvc,
 		comments:      commentsSvc,
 		sharing:       sharingSvc,
 		history:       historySvc,
@@ -173,6 +185,8 @@ func New(cfg Config) (*Server, error) {
 	s.databaseHandlers = api.NewDatabase(databasesSvc, s.getUserID)
 	s.viewHandlers = api.NewView(viewsSvc, s.getUserID)
 	s.rowHandlers = api.NewRow(rowsSvc, s.getUserID)
+	s.rowCommentHandlers = api.NewRowComment(rowCommentsSvc, s.getUserID)
+	s.rowBlockHandlers = api.NewRowBlock(rowBlocksSvc)
 	s.commentHandlers = api.NewComment(commentsSvc, s.getUserID)
 	s.shareHandlers = api.NewShare(sharingSvc, s.getUserID)
 	s.favoriteHandlers = api.NewFavorite(favoritesSvc, s.getUserID)
@@ -271,43 +285,42 @@ func (s *Server) seedDevData() error {
 		ws.ID = "dev-ws-001"
 	}
 
-	// Create dev database with properties
+	// Create Tasks Tracker database (like Notion screenshot)
 	db, err := s.databases.Create(ctx, &databases.CreateIn{
 		WorkspaceID: ws.ID,
-		Title:       "Test Database",
+		Title:       "Tasks Tracker",
 		Properties: []databases.Property{
-			{ID: "title", Name: "Title", Type: databases.PropTitle},
-			{ID: "description", Name: "Description", Type: databases.PropRichText},
-			{ID: "progress", Name: "Progress", Type: databases.PropNumber},
+			{ID: "title", Name: "Task name", Type: databases.PropTitle},
 			{ID: "status", Name: "Status", Type: databases.PropStatus, Config: databases.StatusConfig{
 				Options: []databases.StatusOption{
-					{ID: "todo", Name: "To Do", Color: "gray"},
-					{ID: "in-progress", Name: "In Progress", Color: "blue"},
+					{ID: "not-started", Name: "Not started", Color: "gray"},
+					{ID: "in-progress", Name: "In progress", Color: "blue"},
 					{ID: "done", Name: "Done", Color: "green"},
 				},
 			}},
-			{ID: "tags", Name: "Tags", Type: databases.PropMultiSelect, Config: databases.SelectConfig{
-				Options: []databases.SelectOption{
-					{ID: "frontend", Name: "frontend", Color: "blue"},
-					{ID: "backend", Name: "backend", Color: "green"},
-					{ID: "design", Name: "design", Color: "purple"},
-					{ID: "urgent", Name: "urgent", Color: "red"},
-					{ID: "review", Name: "review", Color: "yellow"},
-				},
-			}},
+			{ID: "assignee", Name: "Assignee", Type: databases.PropPerson},
+			{ID: "due_date", Name: "Due date", Type: databases.PropDate},
 			{ID: "priority", Name: "Priority", Type: databases.PropSelect, Config: databases.SelectConfig{
 				Options: []databases.SelectOption{
 					{ID: "low", Name: "Low", Color: "gray"},
 					{ID: "medium", Name: "Medium", Color: "yellow"},
 					{ID: "high", Name: "High", Color: "red"},
+					{ID: "urgent", Name: "Urgent", Color: "pink"},
 				},
 			}},
-			{ID: "due_date", Name: "Due Date", Type: databases.PropDate},
-			{ID: "completed", Name: "Completed", Type: databases.PropCheckbox},
-			{ID: "website", Name: "Website", Type: databases.PropURL},
+			{ID: "tags", Name: "Tags", Type: databases.PropMultiSelect, Config: databases.SelectConfig{
+				Options: []databases.SelectOption{
+					{ID: "website", Name: "Website", Color: "blue"},
+					{ID: "help-center", Name: "Help Center", Color: "green"},
+					{ID: "release", Name: "Release", Color: "purple"},
+					{ID: "marketing", Name: "Marketing", Color: "orange"},
+					{ID: "documentation", Name: "Documentation", Color: "yellow"},
+				},
+			}},
+			{ID: "progress", Name: "Progress", Type: databases.PropNumber},
+			{ID: "description", Name: "Description", Type: databases.PropRichText},
+			{ID: "url", Name: "URL", Type: databases.PropURL},
 			{ID: "email", Name: "Email", Type: databases.PropEmail},
-			{ID: "phone", Name: "Phone", Type: databases.PropPhone},
-			{ID: "assignee", Name: "Assignee", Type: databases.PropPerson},
 		},
 		CreatedBy: devUserID,
 	})
@@ -318,7 +331,7 @@ func (s *Server) seedDevData() error {
 	// Override database ID for consistency
 	s.db.ExecContext(ctx, "UPDATE databases SET id = ? WHERE id = ?", "dev-db-001", db.ID)
 
-	// Create dev rows
+	// Create realistic task rows (like Notion Tasks Tracker)
 	devRows := []struct {
 		id    string
 		props map[string]interface{}
@@ -326,65 +339,105 @@ func (s *Server) seedDevData() error {
 		{
 			id: "row1",
 			props: map[string]interface{}{
-				"title":       "Project Alpha",
-				"description": "Main project description",
-				"progress":    75,
-				"status":      "in-progress",
-				"tags":        []string{"frontend", "urgent"},
+				"title":       "Improve website copy",
+				"description": "Review and update all marketing copy on the main website. Focus on clarity and conversion optimization.",
+				"progress":    100,
+				"status":      "done",
+				"tags":        []string{"website", "marketing"},
 				"priority":    "high",
-				"due_date":    "2024-03-15",
-				"completed":   false,
-				"website":     "https://example.com",
-				"email":       "alice@example.com",
-				"phone":       "+1-555-0101",
-				"assignee":    "Alice",
+				"due_date":    "2025-02-03",
+				"assignee":    "Sarah Chen",
 			},
 		},
 		{
 			id: "row2",
 			props: map[string]interface{}{
-				"title":       "Project Beta",
-				"description": "Secondary project",
-				"progress":    100,
-				"status":      "done",
-				"tags":        []string{"backend"},
-				"priority":    "low",
-				"due_date":    "2024-02-28",
-				"completed":   true,
-				"website":     "https://beta.example.com",
-				"email":       "bob@example.com",
-				"phone":       "+1-555-0102",
-				"assignee":    "Bob",
+				"title":       "Update help center & FAQ",
+				"description": "Add new articles covering recent feature releases. Update existing documentation for accuracy.",
+				"progress":    60,
+				"status":      "in-progress",
+				"tags":        []string{"help-center", "documentation"},
+				"priority":    "medium",
+				"due_date":    "2025-02-20",
+				"assignee":    "Mike Johnson",
 			},
 		},
 		{
 			id: "row3",
 			props: map[string]interface{}{
-				"title":       "Project Gamma",
-				"description": "New initiative",
-				"progress":    25,
-				"status":      "todo",
-				"tags":        []string{"design", "review"},
-				"priority":    "medium",
-				"due_date":    "2024-04-30",
-				"completed":   false,
-				"email":       "charlie@example.com",
-				"assignee":    "Charlie",
+				"title":       "Publish release notes@",
+				"description": "Draft and publish release notes for version 2.5. Include all new features and bug fixes.",
+				"progress":    0,
+				"status":      "not-started",
+				"tags":        []string{"release"},
+				"priority":    "high",
+				"due_date":    "2025-02-28",
+				"assignee":    "",
 			},
 		},
 		{
 			id: "row4",
 			props: map[string]interface{}{
-				"title":       "Project Delta",
-				"description": "",
-				"progress":    50,
+				"title":       "Design new onboarding flow",
+				"description": "Create wireframes and mockups for the new user onboarding experience. Focus on reducing time-to-value.",
+				"progress":    35,
 				"status":      "in-progress",
-				"tags":        []string{},
+				"tags":        []string{"website"},
+				"priority":    "urgent",
+				"due_date":    "2025-01-02",
+				"assignee":    "Emily Davis",
+			},
+		},
+		{
+			id: "row5",
+			props: map[string]interface{}{
+				"title":       "Prepare Q1 marketing campaign",
+				"description": "Develop comprehensive marketing plan including social media, email campaigns, and paid advertising.",
+				"progress":    0,
+				"status":      "not-started",
+				"tags":        []string{"marketing"},
+				"priority":    "medium",
+				"due_date":    "2024-12-31",
+				"assignee":    "Alex Thompson",
+			},
+		},
+		{
+			id: "row6",
+			props: map[string]interface{}{
+				"title":       "Review API documentation",
+				"description": "Audit current API docs for completeness and accuracy. Add missing endpoints and examples.",
+				"progress":    0,
+				"status":      "not-started",
+				"tags":        []string{"documentation"},
+				"priority":    "low",
+				"due_date":    "2024-12-31",
+				"assignee":    "Chris Wilson",
+			},
+		},
+		{
+			id: "row7",
+			props: map[string]interface{}{
+				"title":       "Customer feedback analysis",
+				"description": "Analyze recent customer feedback and support tickets. Identify top feature requests and pain points.",
+				"progress":    80,
+				"status":      "in-progress",
+				"tags":        []string{"help-center"},
 				"priority":    "high",
-				"due_date":    "2024-03-20",
-				"completed":   false,
-				"website":     "https://delta.io",
-				"phone":       "+1-555-0104",
+				"due_date":    "2025-01-15",
+				"assignee":    "Jordan Lee",
+			},
+		},
+		{
+			id: "row8",
+			props: map[string]interface{}{
+				"title":       "Launch blog series",
+				"description": "Write and publish a 5-part blog series on best practices for productivity. Include case studies.",
+				"progress":    45,
+				"status":      "in-progress",
+				"tags":        []string{"marketing", "website"},
+				"priority":    "medium",
+				"due_date":    "2025-02-10",
+				"assignee":    "Taylor Brown",
 			},
 		},
 	}
@@ -412,6 +465,60 @@ func (s *Server) seedDevData() error {
 	})
 	if err != nil {
 		slog.Warn("failed to create dev view", "error", err)
+	}
+
+	// Seed sample row comments
+	sampleComments := []struct {
+		rowID   string
+		content string
+	}{
+		{"row1", "Great progress on this! The copy looks much better now."},
+		{"row1", "Agreed, the conversion rates should improve with these changes."},
+		{"row2", "We need to prioritize the FAQ section - lots of customer questions coming in."},
+		{"row3", "Please include screenshots for all new features."},
+	}
+
+	for _, c := range sampleComments {
+		_, err := s.rowcomments.Create(ctx, &rowcomments.CreateIn{
+			RowID:   c.rowID,
+			Content: c.content,
+			UserID:  devUserID,
+		})
+		if err != nil {
+			slog.Warn("failed to create sample comment", "error", err)
+		}
+	}
+
+	// Seed sample content blocks for row3 (like the screenshot)
+	sampleBlocks := []struct {
+		rowID string
+		typ   string
+		cont  string
+		props map[string]interface{}
+		order int
+	}{
+		{"row3", "heading_2", "Task description", nil, 0},
+		{"row3", "paragraph", "Provide an overview of the task and related details.", nil, 1},
+		{"row3", "heading_2", "Sub-tasks", nil, 2},
+		{"row3", "to_do", "Review previous release notes format", map[string]interface{}{"checked": false}, 3},
+		{"row3", "to_do", "Gather feature list from engineering", map[string]interface{}{"checked": false}, 4},
+		{"row3", "to_do", "Write initial draft", map[string]interface{}{"checked": false}, 5},
+		{"row3", "to_do", "Get approval from PM", map[string]interface{}{"checked": false}, 6},
+		{"row3", "to_do", "Publish to blog and email", map[string]interface{}{"checked": false}, 7},
+		{"row3", "heading_2", "Supporting files", nil, 8},
+		{"row3", "callout", "Add any relevant documents, designs, or references here.", nil, 9},
+	}
+
+	for _, b := range sampleBlocks {
+		_, err := s.rowblocks.Create(ctx, &rowblocks.CreateIn{
+			RowID:      b.rowID,
+			Type:       rowblocks.BlockType(b.typ),
+			Content:    b.cont,
+			Properties: b.props,
+		})
+		if err != nil {
+			slog.Warn("failed to create sample block", "error", err)
+		}
 	}
 
 	slog.Info("Dev data seeded successfully")
@@ -499,6 +606,23 @@ func (s *Server) setupRoutes() {
 		api.Patch("/rows/{id}", s.authRequired(s.rowHandlers.Update))
 		api.Delete("/rows/{id}", s.authRequired(s.rowHandlers.Delete))
 		api.Post("/rows/{id}/duplicate", s.authRequired(s.rowHandlers.Duplicate))
+
+		// Row Comments (for side peek)
+		api.Get("/rows/{id}/comments", s.authRequired(s.rowCommentHandlers.List))
+		api.Post("/rows/{id}/comments", s.authRequired(s.rowCommentHandlers.Create))
+		api.Get("/row-comments/{id}", s.authRequired(s.rowCommentHandlers.Get))
+		api.Patch("/row-comments/{id}", s.authRequired(s.rowCommentHandlers.Update))
+		api.Delete("/row-comments/{id}", s.authRequired(s.rowCommentHandlers.Delete))
+		api.Post("/row-comments/{id}/resolve", s.authRequired(s.rowCommentHandlers.Resolve))
+		api.Post("/row-comments/{id}/unresolve", s.authRequired(s.rowCommentHandlers.Unresolve))
+
+		// Row Content Blocks (for side peek)
+		api.Get("/rows/{id}/blocks", s.authRequired(s.rowBlockHandlers.List))
+		api.Post("/rows/{id}/blocks", s.authRequired(s.rowBlockHandlers.Create))
+		api.Post("/rows/{id}/blocks/reorder", s.authRequired(s.rowBlockHandlers.Reorder))
+		api.Get("/row-blocks/{id}", s.authRequired(s.rowBlockHandlers.Get))
+		api.Patch("/row-blocks/{id}", s.authRequired(s.rowBlockHandlers.Update))
+		api.Delete("/row-blocks/{id}", s.authRequired(s.rowBlockHandlers.Delete))
 
 		// Comments
 		api.Post("/comments", s.authRequired(s.commentHandlers.Create))

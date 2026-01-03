@@ -116,6 +116,47 @@ func (s *PagesStore) ListByParent(ctx context.Context, parentID string, parentTy
 	return s.scanPages(rows)
 }
 
+func (s *PagesStore) ListByParentIDs(ctx context.Context, parentIDs []string, parentType pages.ParentType) (map[string][]*pages.Page, error) {
+	if len(parentIDs) == 0 {
+		return make(map[string][]*pages.Page), nil
+	}
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(parentIDs))
+	args := make([]interface{}, len(parentIDs)+1)
+	for i, id := range parentIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	args[len(parentIDs)] = parentType
+
+	query := fmt.Sprintf(`
+		SELECT id, workspace_id, parent_id, parent_type, title, icon, cover, cover_y, CAST(properties AS VARCHAR), is_template, is_archived, created_by, created_at, updated_by, updated_at
+		FROM pages
+		WHERE parent_id IN (%s) AND parent_type = ? AND is_archived = FALSE
+		ORDER BY title
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	allPages, err := s.scanPages(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group by parent ID
+	result := make(map[string][]*pages.Page)
+	for _, p := range allPages {
+		result[p.ParentID] = append(result[p.ParentID], p)
+	}
+
+	return result, nil
+}
+
 func (s *PagesStore) Archive(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE pages SET is_archived = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
 	return err

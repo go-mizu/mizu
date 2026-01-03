@@ -93,10 +93,19 @@ func (s *Service) ListByWorkspace(ctx context.Context, workspaceID string, opts 
 		return nil, err
 	}
 
-	// Load children for each page
-	for _, p := range pages {
-		children, _ := s.store.ListByParent(ctx, p.ID, ParentPage)
-		p.Children = children
+	// Batch load children to avoid N+1 queries
+	if len(pages) > 0 {
+		parentIDs := make([]string, len(pages))
+		for i, p := range pages {
+			parentIDs[i] = p.ID
+		}
+
+		childrenMap, err := s.store.ListByParentIDs(ctx, parentIDs, ParentPage)
+		if err == nil {
+			for _, p := range pages {
+				p.Children = childrenMap[p.ID]
+			}
+		}
 	}
 
 	return pages, nil
