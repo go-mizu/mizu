@@ -253,6 +253,12 @@ export const BookmarkBlock = createReactBlockSpec(
       return (
         <motion.div
           className="bookmark-block"
+          data-bookmark-url={url}
+          data-bookmark-title={title}
+          data-bookmark-description={description}
+          data-bookmark-image={image}
+          data-bookmark-favicon={favicon}
+          data-bookmark-sitename={siteName}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
@@ -455,6 +461,57 @@ export const BookmarkBlock = createReactBlockSpec(
             </motion.div>
           )}
         </motion.div>
+      )
+    },
+    // Parse HTML to recreate block when pasting or drag-dropping
+    parse: (element: HTMLElement) => {
+      if (element.classList.contains('bookmark-block') || element.hasAttribute('data-bookmark-url')) {
+        return {
+          url: element.getAttribute('data-bookmark-url') || '',
+          title: element.getAttribute('data-bookmark-title') || '',
+          description: element.getAttribute('data-bookmark-description') || '',
+          image: element.getAttribute('data-bookmark-image') || '',
+          favicon: element.getAttribute('data-bookmark-favicon') || '',
+          siteName: element.getAttribute('data-bookmark-sitename') || '',
+        }
+      }
+      return undefined
+    },
+    // Convert to external HTML for clipboard/export
+    toExternalHTML: ({ block }) => {
+      const { url, title, description, favicon, siteName } = block.props as Record<string, string>
+      const domain = (() => {
+        try {
+          return new URL(url || '').hostname.replace('www.', '')
+        } catch {
+          return url || ''
+        }
+      })()
+
+      return (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bookmark-block"
+          data-bookmark-url={url}
+          data-bookmark-title={title}
+          data-bookmark-description={description}
+          data-bookmark-favicon={favicon}
+          data-bookmark-sitename={siteName}
+          style={{
+            display: 'block',
+            padding: '12px 16px',
+            border: '1px solid rgba(55, 53, 47, 0.16)',
+            borderRadius: '4px',
+            textDecoration: 'none',
+            color: 'inherit',
+          }}
+        >
+          <div style={{ fontWeight: 500 }}>{title || domain}</div>
+          {description && <div style={{ fontSize: '12px', color: '#787774', marginTop: '4px' }}>{description}</div>}
+          <div style={{ fontSize: '12px', color: '#9b9a97', marginTop: '8px' }}>{siteName || domain}</div>
+        </a>
       )
     },
   }

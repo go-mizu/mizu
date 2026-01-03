@@ -8,7 +8,10 @@ import {
   filterSuggestionItems,
   PartialBlock,
   Block as BNBlock,
+  createCodeBlockSpec,
 } from '@blocknote/core'
+import { codeBlockOptions } from '@blocknote/code-block'
+// Note: @blocknote/code-block styles are bundled in the main mantine package
 import {
   SuggestionMenuController,
   getDefaultReactSlashMenuItems,
@@ -26,10 +29,13 @@ import {
   SideMenu,
   SideMenuController,
   DragHandleMenu,
+  DragHandleButton,
+  AddBlockButton,
   RemoveBlockItem,
   BlockColorsItem,
   useComponentsContext,
   useBlockNoteEditor,
+  useSelectedBlocks,
 } from '@blocknote/react'
 import { combineByGroup } from '@blocknote/core'
 import {
@@ -72,6 +78,10 @@ import {
   User,
   Calendar,
   Database,
+  Highlighter,
+  Palette,
+  ChevronDown,
+  Check,
 } from 'lucide-react'
 
 import { api } from '../api/client'
@@ -164,6 +174,221 @@ function TurnIntoItem({ block, children }: DragHandleItemProps) {
       </Components.Generic.Menu.Dropdown>
     </Components.Generic.Menu.Item>
   )
+}
+
+// =============================================================================
+// Enhanced Color Picker Component (Notion-style)
+// =============================================================================
+
+// Notion-like color palette
+const TEXT_COLORS = [
+  { name: 'Default', value: 'default', color: '#37352f', darkColor: '#e6e6e6' },
+  { name: 'Gray', value: 'gray', color: '#787774', darkColor: '#9b9a97' },
+  { name: 'Brown', value: 'brown', color: '#9f6b53', darkColor: '#ba856f' },
+  { name: 'Orange', value: 'orange', color: '#d9730d', darkColor: '#ffa344' },
+  { name: 'Yellow', value: 'yellow', color: '#cb912f', darkColor: '#ffdc49' },
+  { name: 'Green', value: 'green', color: '#448361', darkColor: '#4dab9a' },
+  { name: 'Blue', value: 'blue', color: '#2383e2', darkColor: '#529cca' },
+  { name: 'Purple', value: 'purple', color: '#9065b0', darkColor: '#9a6dd7' },
+  { name: 'Pink', value: 'pink', color: '#c14c8a', darkColor: '#e255a1' },
+  { name: 'Red', value: 'red', color: '#d44c47', darkColor: '#ff7369' },
+]
+
+const BACKGROUND_COLORS = [
+  { name: 'Default', value: 'default', color: 'transparent', darkColor: 'transparent' },
+  { name: 'Gray', value: 'gray', color: '#f1f1ef', darkColor: '#454b4e' },
+  { name: 'Brown', value: 'brown', color: '#f4eeee', darkColor: '#594a3a' },
+  { name: 'Orange', value: 'orange', color: '#fbecdd', darkColor: '#59413a' },
+  { name: 'Yellow', value: 'yellow', color: '#fbf3db', darkColor: '#59563b' },
+  { name: 'Green', value: 'green', color: '#edf3ec', darkColor: '#354c4b' },
+  { name: 'Blue', value: 'blue', color: '#e7f3f8', darkColor: '#364954' },
+  { name: 'Purple', value: 'purple', color: '#f6f3f9', darkColor: '#443f57' },
+  { name: 'Pink', value: 'pink', color: '#faf1f5', darkColor: '#533b4c' },
+  { name: 'Red', value: 'red', color: '#fdebec', darkColor: '#594141' },
+]
+
+// Enhanced Text Color Button
+function TextColorButton() {
+  const editor = useBlockNoteEditor()
+  const Components = useComponentsContext()!
+  const [isOpen, setIsOpen] = useState(false)
+  const [activeTextColor, setActiveTextColor] = useState('default')
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const selectedBlocks = useSelectedBlocks(editor)
+  const hasInlineContent = selectedBlocks.some(
+    (block) => block.content !== undefined && Array.isArray(block.content)
+  )
+
+  // Update active color when selection changes
+  useEffect(() => {
+    const updateColor = () => {
+      try {
+        const styles = editor.getActiveStyles()
+        const textColor = String(styles.textColor || 'default')
+        setActiveTextColor(textColor)
+      } catch {
+        setActiveTextColor('default')
+      }
+    }
+    updateColor()
+    // Listen to selection changes
+    const unsubscribe = editor.onSelectionChange(updateColor)
+    return () => unsubscribe()
+  }, [editor])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  if (!hasInlineContent) return null
+
+  const currentColor = TEXT_COLORS.find((c) => c.value === activeTextColor) || TEXT_COLORS[0]
+
+  return (
+    <div className="color-picker-wrapper" ref={menuRef}>
+      <Components.FormattingToolbar.Button
+        mainTooltip="Text color"
+        onClick={() => setIsOpen(!isOpen)}
+        isSelected={isOpen}
+      >
+        <div className="color-button-content">
+          <span style={{ color: currentColor.color, fontWeight: 600 }}>A</span>
+          <div
+            className="color-indicator"
+            style={{ backgroundColor: currentColor.value === 'default' ? '#37352f' : currentColor.color }}
+          />
+        </div>
+      </Components.FormattingToolbar.Button>
+
+      {isOpen && (
+        <div className="color-picker-menu text-color-menu">
+          <div className="color-picker-label">Text color</div>
+          <div className="color-picker-grid">
+            {TEXT_COLORS.map((color) => (
+              <button
+                key={color.value}
+                className={`color-option ${activeTextColor === color.value ? 'selected' : ''}`}
+                onClick={() => {
+                  editor.toggleStyles({ textColor: color.value })
+                  setActiveTextColor(color.value)
+                  setIsOpen(false)
+                }}
+                title={color.name}
+              >
+                <span style={{ color: color.color, fontWeight: 600 }}>A</span>
+                {activeTextColor === color.value && <Check size={12} className="check-icon" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Enhanced Background/Highlight Color Button
+function HighlightColorButton() {
+  const editor = useBlockNoteEditor()
+  const Components = useComponentsContext()!
+  const [isOpen, setIsOpen] = useState(false)
+  const [activeBackgroundColor, setActiveBackgroundColor] = useState('default')
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const selectedBlocks = useSelectedBlocks(editor)
+  const hasInlineContent = selectedBlocks.some(
+    (block) => block.content !== undefined && Array.isArray(block.content)
+  )
+
+  // Update active color when selection changes
+  useEffect(() => {
+    const updateColor = () => {
+      try {
+        const styles = editor.getActiveStyles()
+        const bgColor = String(styles.backgroundColor || 'default')
+        setActiveBackgroundColor(bgColor)
+      } catch {
+        setActiveBackgroundColor('default')
+      }
+    }
+    updateColor()
+    // Listen to selection changes
+    const unsubscribe = editor.onSelectionChange(updateColor)
+    return () => unsubscribe()
+  }, [editor])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  if (!hasInlineContent) return null
+
+  const currentColor = BACKGROUND_COLORS.find((c) => c.value === activeBackgroundColor) || BACKGROUND_COLORS[0]
+
+  return (
+    <div className="color-picker-wrapper" ref={menuRef}>
+      <Components.FormattingToolbar.Button
+        mainTooltip="Highlight color"
+        onClick={() => setIsOpen(!isOpen)}
+        isSelected={isOpen}
+      >
+        <div className="color-button-content">
+          <Highlighter size={16} />
+          <div
+            className="color-indicator"
+            style={{
+              backgroundColor: currentColor.value === 'default' ? '#fbf3db' : currentColor.color,
+              border: currentColor.value === 'default' ? '1px solid #e3e2de' : 'none',
+            }}
+          />
+        </div>
+      </Components.FormattingToolbar.Button>
+
+      {isOpen && (
+        <div className="color-picker-menu highlight-color-menu">
+          <div className="color-picker-label">Background</div>
+          <div className="color-picker-grid">
+            {BACKGROUND_COLORS.map((color) => (
+              <button
+                key={color.value}
+                className={`color-option bg-option ${activeBackgroundColor === color.value ? 'selected' : ''}`}
+                onClick={() => {
+                  editor.toggleStyles({ backgroundColor: color.value })
+                  setActiveBackgroundColor(color.value)
+                  setIsOpen(false)
+                }}
+                title={color.name}
+                style={{
+                  backgroundColor: color.value === 'default' ? 'transparent' : color.color,
+                  border: color.value === 'default' ? '1px dashed #ccc' : '1px solid transparent',
+                }}
+              >
+                {color.value === 'default' && <span className="no-color-icon">∅</span>}
+                {activeBackgroundColor === color.value && <Check size={12} className="check-icon" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Toolbar Separator
+function ToolbarSeparator() {
+  return <div className="toolbar-separator" />
 }
 
 function MoveUpItem({ block, children }: DragHandleItemProps) {
@@ -269,11 +494,17 @@ interface BlockEditorProps {
   workspaceId?: string
 }
 
+// Create code block with syntax highlighting support
+// Type assertion needed due to shiki version differences in dependencies
+const codeBlockWithHighlighting = createCodeBlockSpec(codeBlockOptions as Parameters<typeof createCodeBlockSpec>[0])
+
 // Custom schema with our custom blocks - wrapped with withMultiColumn for column support
 // BlockNote 0.42+ has built-in blocks for toggle (toggleListItem), divider, audio, codeBlock
 const baseSchema = BlockNoteSchema.create({
   blockSpecs: {
     ...defaultBlockSpecs,
+    // Override codeBlock with syntax highlighting support
+    codeBlock: codeBlockWithHighlighting,
     // Custom blocks that extend default functionality
     callout: CalloutBlock(),
     bookmark: BookmarkBlock(),
@@ -561,9 +792,11 @@ function inlineContentToRichText(content: unknown): RichText[] {
   })
 }
 
-// Convert BlockNote blocks to API format
-function blockNoteToApiBlocks(blocks: PartialBlock[]): Block[] {
-  return blocks.map((block) => {
+// Convert BlockNote blocks to API format (flattened - no children nesting)
+function blockNoteToApiBlocks(blocks: PartialBlock[], parentId?: string): Block[] {
+  const result: Block[] = []
+
+  for (const block of blocks) {
     const type = block.type as string
     const props = (block.props || {}) as Record<string, unknown>
     const mapping = BLOCKNOTE_TO_API[type]
@@ -617,13 +850,27 @@ function blockNoteToApiBlocks(blocks: PartialBlock[]): Block[] {
       content.icon = props.icon as string || ''
     }
 
-    return {
+    const apiBlock: Block = {
       id: block.id || crypto.randomUUID(),
       type: apiType,
       content,
-      children: block.children ? blockNoteToApiBlocks(block.children as PartialBlock[]) : [],
     }
-  })
+
+    // Add parent_id if this is a nested block
+    if (parentId) {
+      (apiBlock as any).parent_id = parentId
+    }
+
+    result.push(apiBlock)
+
+    // Recursively add children as separate blocks with parent reference
+    if (block.children && block.children.length > 0) {
+      const childBlocks = blockNoteToApiBlocks(block.children as PartialBlock[], apiBlock.id)
+      result.push(...childBlocks)
+    }
+  }
+
+  return result
 }
 
 // Custom slash menu items - Comprehensive Notion-style menu
@@ -1191,19 +1438,90 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
         return
       }
 
-      // Tab - Nest block (indent)
-      if (e.key === 'Tab' && !e.shiftKey && editor.canNestBlock()) {
+      // Cmd/Ctrl + E - Toggle inline code
+      if (isMod && e.key === 'e') {
         e.preventDefault()
-        editor.nestBlock()
+        editor.toggleStyles({ code: true })
         return
       }
 
-      // Shift + Tab - Unnest block (outdent)
-      if (e.key === 'Tab' && e.shiftKey && editor.canUnnestBlock()) {
+      // Cmd/Ctrl + Shift + S - Toggle strikethrough
+      if (isMod && e.shiftKey && e.key === 's') {
         e.preventDefault()
-        editor.unnestBlock()
+        editor.toggleStyles({ strike: true })
         return
       }
+
+      // Cmd/Ctrl + Shift + H - Toggle highlight (yellow background)
+      if (isMod && e.shiftKey && e.key === 'h') {
+        e.preventDefault()
+        editor.toggleStyles({ backgroundColor: 'yellow' })
+        return
+      }
+
+      // Cmd/Ctrl + Alt + 1/2/3 - Convert to Heading 1/2/3
+      if (isMod && e.altKey && ['1', '2', '3'].includes(e.key)) {
+        e.preventDefault()
+        const level = parseInt(e.key) as 1 | 2 | 3
+        editor.updateBlock(currentBlock, {
+          type: 'heading',
+          props: { level },
+        })
+        return
+      }
+
+      // Cmd/Ctrl + Alt + 0 - Convert to paragraph
+      if (isMod && e.altKey && e.key === '0') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'paragraph' })
+        return
+      }
+
+      // Cmd/Ctrl + Shift + 7 - Toggle numbered list
+      if (isMod && e.shiftKey && e.key === '7') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'numberedListItem' })
+        return
+      }
+
+      // Cmd/Ctrl + Shift + 8 - Toggle bullet list
+      if (isMod && e.shiftKey && e.key === '8') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'bulletListItem' })
+        return
+      }
+
+      // Cmd/Ctrl + Shift + 9 - Toggle todo/checklist
+      if (isMod && e.shiftKey && e.key === '9') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'checkListItem' })
+        return
+      }
+
+      // Cmd/Ctrl + Shift + . - Toggle quote block
+      if (isMod && e.shiftKey && e.key === '.') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'quote' })
+        return
+      }
+
+      // Cmd/Ctrl + Shift + C - Toggle code block
+      if (isMod && e.shiftKey && e.key === 'c') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'codeBlock' })
+        return
+      }
+
+      // Cmd/Ctrl + Shift + T - Toggle toggle list
+      if (isMod && e.shiftKey && e.key === 't') {
+        e.preventDefault()
+        editor.updateBlock(currentBlock, { type: 'toggleListItem' })
+        return
+      }
+
+      // Note: Tab/Shift+Tab for nesting is handled natively by BlockNote
+      // Note: Cmd+K for links is handled by BlockNote's CreateLinkButton
+      // Note: Escape is handled natively by BlockNote to close menus/clear selection
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -1233,10 +1551,13 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
           sideMenu={false}
           formattingToolbar={false}
         >
-          {/* Side menu with drag handle for block manipulation */}
+          {/* Side menu with add button and drag handle for block manipulation */}
           <SideMenuController
             sideMenu={(props) => (
-              <SideMenu {...props} dragHandleMenu={CustomDragHandleMenu} />
+              <SideMenu {...props}>
+                <AddBlockButton {...props} />
+                <DragHandleButton {...props} dragHandleMenu={CustomDragHandleMenu} />
+              </SideMenu>
             )}
           />
           {/* Slash menu with multi-column items */}
@@ -1293,15 +1614,32 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
             formattingToolbar={() => (
               <FormattingToolbar>
                 <BlockTypeSelect key="blockTypeSelect" />
+
+                <ToolbarSeparator key="sep1" />
+
+                {/* Text styling buttons */}
                 <BasicTextStyleButton basicTextStyle="bold" key="boldStyleButton" />
                 <BasicTextStyleButton basicTextStyle="italic" key="italicStyleButton" />
                 <BasicTextStyleButton basicTextStyle="underline" key="underlineStyleButton" />
                 <BasicTextStyleButton basicTextStyle="strike" key="strikeStyleButton" />
                 <BasicTextStyleButton basicTextStyle="code" key="codeStyleButton" />
+
+                <ToolbarSeparator key="sep2" />
+
+                {/* Custom color pickers - Notion style */}
+                <TextColorButton key="textColorButton" />
+                <HighlightColorButton key="highlightColorButton" />
+
+                <ToolbarSeparator key="sep3" />
+
+                {/* Text alignment */}
                 <TextAlignButton textAlignment="left" key="textAlignLeftButton" />
                 <TextAlignButton textAlignment="center" key="textAlignCenterButton" />
                 <TextAlignButton textAlignment="right" key="textAlignRightButton" />
-                <ColorStyleButton key="colorStyleButton" />
+
+                <ToolbarSeparator key="sep4" />
+
+                {/* Block manipulation */}
                 <NestBlockButton key="nestBlockButton" />
                 <UnnestBlockButton key="unnestBlockButton" />
                 <CreateLinkButton key="createLinkButton" />

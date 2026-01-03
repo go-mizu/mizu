@@ -434,6 +434,12 @@ function initTheme() {
     localStorage.setItem('theme', theme)
   }
 
+  // Initialize theme from localStorage or default to light
+  const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light')
+  setTheme(initialTheme)
+
   // Theme toggle button
   const themeToggle = document.getElementById('theme-toggle')
   if (themeToggle) {
@@ -443,6 +449,14 @@ function initTheme() {
       setTheme(next)
     })
   }
+
+  // Listen for system theme changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    // Only auto-switch if user hasn't explicitly set a preference
+    if (!localStorage.getItem('theme')) {
+      setTheme(e.matches ? 'dark' : 'light')
+    }
+  })
 }
 
 // Helper functions

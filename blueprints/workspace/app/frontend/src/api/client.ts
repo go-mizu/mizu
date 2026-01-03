@@ -1,5 +1,9 @@
 const API_BASE = '/api/v1'
 
+// Check if we're in dev mode without a backend
+// @ts-expect-error Vite provides import.meta.env
+const isDevMode = import.meta.env?.DEV ?? false
+
 interface RequestOptions {
   method: string
   headers: Record<string, string>
@@ -19,24 +23,58 @@ class ApiClient {
       options.body = JSON.stringify(data)
     }
 
-    const response = await fetch(API_BASE + path, options)
+    try {
+      const response = await fetch(API_BASE + path, options)
 
-    if (!response.ok) {
-      let errorMessage = 'Request failed'
-      try {
-        const error = await response.json()
-        errorMessage = error.error || errorMessage
-      } catch {
-        errorMessage = response.statusText || errorMessage
+      if (!response.ok) {
+        let errorMessage = 'Request failed'
+        try {
+          const error = await response.json()
+          errorMessage = error.error || errorMessage
+        } catch {
+          errorMessage = response.statusText || errorMessage
+        }
+        throw new Error(errorMessage)
       }
-      throw new Error(errorMessage)
+
+      // Handle empty responses
+      const text = await response.text()
+      if (!text) return {} as T
+
+      return JSON.parse(text)
+    } catch (error) {
+      // In dev mode, return mock data instead of crashing
+      if (isDevMode) {
+        console.warn(`[API Dev Mode] ${method} ${path} failed:`, error)
+        return this.getMockResponse<T>(method, path, data)
+      }
+      throw error
     }
+  }
 
-    // Handle empty responses
-    const text = await response.text()
-    if (!text) return {} as T
-
-    return JSON.parse(text)
+  // Mock responses for dev mode when backend is not running
+  private getMockResponse<T>(method: string, path: string, _data?: unknown): T {
+    // Return appropriate mock data based on endpoint
+    if (path.startsWith('/pages/') && path.endsWith('/blocks')) {
+      return { blocks: [] } as T
+    }
+    if (path.startsWith('/pages')) {
+      return { id: 'mock-page', title: 'Mock Page', blocks: [] } as T
+    }
+    if (path.startsWith('/databases')) {
+      return { id: 'mock-db', name: 'Mock Database', records: [], properties: {}, views: [] } as T
+    }
+    if (path.startsWith('/workspaces')) {
+      return { id: 'mock-ws', name: 'Mock Workspace', slug: 'mock' } as T
+    }
+    if (path.startsWith('/search')) {
+      return { results: [], users: [], databases: [] } as T
+    }
+    if (path.startsWith('/media/upload')) {
+      return { id: 'mock-media', url: 'https://via.placeholder.com/400', filename: 'mock.jpg', type: 'image/jpeg' } as T
+    }
+    // Default empty response
+    return {} as T
   }
 
   get<T>(path: string): Promise<T> {
@@ -60,7 +98,7 @@ class ApiClient {
   }
 
   // File upload
-  async upload(file: File, path: string = '/media/upload'): Promise<{ id: string; url: string }> {
+  async upload(file: File, path: string = '/media/upload'): Promise<{ id: string; url: string; filename: string; type: string }> {
     const formData = new FormData()
     formData.append('file', file)
 
@@ -71,7 +109,14 @@ class ApiClient {
     })
 
     if (!response.ok) {
-      throw new Error('Upload failed')
+      let errorMessage = 'Upload failed'
+      try {
+        const error = await response.json()
+        errorMessage = error.error || errorMessage
+      } catch {
+        errorMessage = response.statusText || errorMessage
+      }
+      throw new Error(errorMessage)
     }
 
     return response.json()
