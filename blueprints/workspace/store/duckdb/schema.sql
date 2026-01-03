@@ -1,5 +1,5 @@
 -- schema.sql
--- Workspace - Notion-style collaborative workspace schema
+-- Workspace - Notion-style collaborative workspace schema (DuckDB oriented)
 
 -- ============================================================
 -- Users and authentication
@@ -62,38 +62,53 @@ CREATE TABLE IF NOT EXISTS invites (
 );
 
 -- ============================================================
--- Pages
+-- Pages (also used as Database Rows)
 -- ============================================================
+-- A database row is a page with pages.database_id set.
+-- pages.properties stores either:
+-- - page properties (for normal pages)
+-- - row properties (for database rows), keyed by database schema properties
 
 CREATE TABLE IF NOT EXISTS pages (
-    id           VARCHAR PRIMARY KEY,
-    workspace_id VARCHAR NOT NULL,
-    parent_id    VARCHAR,
-    parent_type  VARCHAR DEFAULT 'workspace',
-    title        VARCHAR DEFAULT '',
-    icon         VARCHAR,
-    cover        VARCHAR,
-    cover_y      DOUBLE DEFAULT 0.5,
-    properties   JSON DEFAULT '{}',
-    is_template  BOOLEAN DEFAULT FALSE,
-    is_archived  BOOLEAN DEFAULT FALSE,
-    created_by   VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_by   VARCHAR NOT NULL,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id            VARCHAR PRIMARY KEY,
+    workspace_id  VARCHAR NOT NULL,
+
+    -- hierarchy
+    parent_id     VARCHAR,
+    parent_type   VARCHAR NOT NULL DEFAULT 'workspace', -- workspace | page | database
+
+    -- database row support (Notion-style)
+    database_id   VARCHAR, -- nullable; when set, this page is a database row
+    row_position  BIGINT DEFAULT 0, -- ordering inside a database (or view default)
+
+    -- display
+    title         VARCHAR DEFAULT '',
+    icon          VARCHAR,
+    cover         VARCHAR,
+    cover_y       DOUBLE DEFAULT 0.5,
+
+    -- content + metadata
+    properties    JSON DEFAULT '{}',
+    is_template   BOOLEAN DEFAULT FALSE,
+    is_archived   BOOLEAN DEFAULT FALSE,
+
+    created_by    VARCHAR NOT NULL,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by    VARCHAR NOT NULL,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
--- Blocks
+-- Blocks (page content)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS blocks (
     id         VARCHAR PRIMARY KEY,
     page_id    VARCHAR NOT NULL,
-    parent_id  VARCHAR,
-    type       VARCHAR NOT NULL,
+    parent_id  VARCHAR,               -- nesting within blocks
+    type       VARCHAR NOT NULL,       -- paragraph, heading, todo, etc.
     content    JSON DEFAULT '{}',
-    position   INTEGER DEFAULT 0,
+    position   BIGINT DEFAULT 0,       -- ordering within a parent
     created_by VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR NOT NULL,
@@ -107,13 +122,13 @@ CREATE TABLE IF NOT EXISTS blocks (
 CREATE TABLE IF NOT EXISTS databases (
     id           VARCHAR PRIMARY KEY,
     workspace_id VARCHAR NOT NULL,
-    page_id      VARCHAR NOT NULL,
+    page_id      VARCHAR NOT NULL,      -- the page that hosts this database
     title        VARCHAR DEFAULT 'Untitled',
     description  JSON DEFAULT '[]',
     icon         VARCHAR,
     cover        VARCHAR,
     is_inline    BOOLEAN DEFAULT FALSE,
-    properties   JSON DEFAULT '[]',
+    properties   JSON DEFAULT '[]',     -- schema: list of property definitions
     created_by   VARCHAR NOT NULL,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_by   VARCHAR NOT NULL,
@@ -128,45 +143,34 @@ CREATE TABLE IF NOT EXISTS views (
     id          VARCHAR PRIMARY KEY,
     database_id VARCHAR NOT NULL,
     name        VARCHAR NOT NULL,
-    type        VARCHAR NOT NULL DEFAULT 'table',
+    type        VARCHAR NOT NULL DEFAULT 'table', -- table | board | calendar | list | gallery
     filter      JSON,
     sorts       JSON DEFAULT '[]',
     properties  JSON DEFAULT '[]',
     group_by    VARCHAR,
     calendar_by VARCHAR,
-    position    INTEGER DEFAULT 0,
+    position    BIGINT DEFAULT 0,
     created_by  VARCHAR NOT NULL,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
--- Database Rows
+-- Comments (polymorphic)
 -- ============================================================
-
-CREATE TABLE IF NOT EXISTS database_rows (
-    id          VARCHAR PRIMARY KEY,
-    database_id VARCHAR NOT NULL,
-    properties  JSON DEFAULT '{}',
-    created_by  VARCHAR NOT NULL,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_by  VARCHAR NOT NULL,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Comments
--- ============================================================
+-- target_type: page | block | database_row
+-- target_id:   pages.id (for page/database_row) or blocks.id (for block)
 
 CREATE TABLE IF NOT EXISTS comments (
-    id          VARCHAR PRIMARY KEY,
-    page_id     VARCHAR NOT NULL,
-    block_id    VARCHAR,
-    parent_id   VARCHAR,
-    content     JSON NOT NULL,
-    author_id   VARCHAR NOT NULL,
-    is_resolved BOOLEAN DEFAULT FALSE,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id           VARCHAR PRIMARY KEY,
+    workspace_id VARCHAR NOT NULL,
+    target_type  VARCHAR NOT NULL,
+    target_id    VARCHAR NOT NULL,
+    parent_id    VARCHAR,              -- reply threading
+    content      JSON NOT NULL,
+    author_id    VARCHAR NOT NULL,
+    is_resolved  BOOLEAN DEFAULT FALSE,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ============================================================
@@ -176,7 +180,7 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE TABLE IF NOT EXISTS shares (
     id          VARCHAR PRIMARY KEY,
     page_id     VARCHAR NOT NULL,
-    type        VARCHAR NOT NULL,
+    type        VARCHAR NOT NULL,            -- public_link | workspace | user
     permission  VARCHAR NOT NULL DEFAULT 'read',
     user_id     VARCHAR,
     token       VARCHAR UNIQUE,
@@ -270,58 +274,41 @@ CREATE TABLE IF NOT EXISTS page_access (
 );
 
 -- ============================================================
--- Row Comments (for database rows)
+-- Indexes (trimmed for DuckDB)
 -- ============================================================
+-- Keep only the ones that align with very common access paths:
+-- - workspace scoping
+-- - hierarchy navigation
+-- - ordering retrieval
+-- - auth/session lookups
+-- - notification inbox
 
-CREATE TABLE IF NOT EXISTS row_comments (
-    id          VARCHAR PRIMARY KEY,
-    row_id      VARCHAR NOT NULL,
-    user_id     VARCHAR NOT NULL,
-    content     TEXT NOT NULL,
-    resolved    BOOLEAN DEFAULT FALSE,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_expires
+    ON sessions(user_id, expires_at);
 
--- ============================================================
--- Row Content Blocks (for database rows)
--- ============================================================
+CREATE INDEX IF NOT EXISTS idx_members_workspace_user
+    ON members(workspace_id, user_id);
 
-CREATE TABLE IF NOT EXISTS row_content_blocks (
-    id          VARCHAR PRIMARY KEY,
-    row_id      VARCHAR NOT NULL,
-    parent_id   VARCHAR,
-    type        VARCHAR NOT NULL,
-    content     TEXT,
-    properties  JSON DEFAULT '{}',
-    sort_order  INTEGER DEFAULT 0,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+CREATE INDEX IF NOT EXISTS idx_pages_workspace_parent
+    ON pages(workspace_id, parent_type, parent_id);
 
--- ============================================================
--- Indexes
--- ============================================================
+CREATE INDEX IF NOT EXISTS idx_pages_database_order
+    ON pages(database_id, row_position);
 
-CREATE INDEX IF NOT EXISTS idx_pages_workspace ON pages(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent_id, parent_type);
-CREATE INDEX IF NOT EXISTS idx_pages_parent_id ON pages(parent_id);
-CREATE INDEX IF NOT EXISTS idx_blocks_page ON blocks(page_id);
-CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(parent_id);
-CREATE INDEX IF NOT EXISTS idx_comments_page ON comments(page_id);
-CREATE INDEX IF NOT EXISTS idx_comments_author ON comments(author_id);
-CREATE INDEX IF NOT EXISTS idx_activities_workspace ON activities(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
-CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id, workspace_id);
-CREATE INDEX IF NOT EXISTS idx_views_database ON views(database_id);
-CREATE INDEX IF NOT EXISTS idx_database_rows_database ON database_rows(database_id);
-CREATE INDEX IF NOT EXISTS idx_database_rows_created ON database_rows(database_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_members_workspace ON members(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);
-CREATE INDEX IF NOT EXISTS idx_row_comments_row ON row_comments(row_id);
-CREATE INDEX IF NOT EXISTS idx_row_comments_user ON row_comments(user_id);
-CREATE INDEX IF NOT EXISTS idx_row_content_blocks_row ON row_content_blocks(row_id);
-CREATE INDEX IF NOT EXISTS idx_row_content_blocks_parent ON row_content_blocks(parent_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_databases_workspace ON databases(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_databases_page ON databases(page_id);
+CREATE INDEX IF NOT EXISTS idx_blocks_page_parent_order
+    ON blocks(page_id, parent_id, position);
+
+CREATE INDEX IF NOT EXISTS idx_views_database_order
+    ON views(database_id, position);
+
+CREATE INDEX IF NOT EXISTS idx_comments_target
+    ON comments(workspace_id, target_type, target_id);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_inbox
+    ON notifications(user_id, is_read, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_activities_workspace_time
+    ON activities(workspace_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_shares_token
+    ON shares(token);

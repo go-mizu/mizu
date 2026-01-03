@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/workspace/feature/rows"
+	"github.com/go-mizu/blueprints/workspace/pkg/ulid"
 )
 
 // RowsStore implements rows.Store using DuckDB.
+// Uses the pages table with database_id set to store rows.
 type RowsStore struct {
 	db *sql.DB
 }
@@ -27,17 +29,30 @@ func (s *RowsStore) Create(ctx context.Context, row *rows.Row) error {
 		return err
 	}
 
+	// Get max row_position for this database
+	var maxPos sql.NullInt64
+	s.db.QueryRowContext(ctx, "SELECT MAX(row_position) FROM pages WHERE database_id = ?", row.DatabaseID).Scan(&maxPos)
+	position := int64(0)
+	if maxPos.Valid {
+		position = maxPos.Int64 + 1
+	}
+
+	// Generate ID if not set
+	if row.ID == "" {
+		row.ID = ulid.New()
+	}
+
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO database_rows (id, database_id, properties, created_by, created_at, updated_by, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, row.ID, row.DatabaseID, string(propsJSON), row.CreatedBy, row.CreatedAt, row.UpdatedBy, row.UpdatedAt)
+		INSERT INTO pages (id, workspace_id, parent_id, parent_type, database_id, row_position, title, properties, is_template, is_archived, created_by, created_at, updated_by, updated_at)
+		VALUES (?, ?, ?, 'database', ?, ?, ?, ?, FALSE, FALSE, ?, ?, ?, ?)
+	`, row.ID, row.WorkspaceID, row.DatabaseID, row.DatabaseID, position, row.Title, string(propsJSON), row.CreatedBy, row.CreatedAt, row.UpdatedBy, row.UpdatedAt)
 	return err
 }
 
 func (s *RowsStore) GetByID(ctx context.Context, id string) (*rows.Row, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, database_id, CAST(properties AS VARCHAR), created_by, created_at, updated_by, updated_at
-		FROM database_rows WHERE id = ?
+		SELECT id, database_id, workspace_id, title, CAST(properties AS VARCHAR), row_position, created_by, created_at, updated_by, updated_at
+		FROM pages WHERE id = ? AND database_id IS NOT NULL
 	`, id)
 	return s.scanRow(row)
 }
@@ -48,29 +63,35 @@ func (s *RowsStore) Update(ctx context.Context, id string, in *rows.UpdateIn) er
 		return err
 	}
 
+	// Extract title from properties if present
+	title := ""
+	if t, ok := in.Properties["title"].(string); ok {
+		title = t
+	}
+
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE database_rows
-		SET properties = ?, updated_by = ?, updated_at = ?
-		WHERE id = ?
-	`, string(propsJSON), in.UpdatedBy, time.Now(), id)
+		UPDATE pages
+		SET properties = ?, title = ?, updated_by = ?, updated_at = ?
+		WHERE id = ? AND database_id IS NOT NULL
+	`, string(propsJSON), title, in.UpdatedBy, time.Now(), id)
 	return err
 }
 
 func (s *RowsStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM database_rows WHERE id = ?", id)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM pages WHERE id = ? AND database_id IS NOT NULL", id)
 	return err
 }
 
 func (s *RowsStore) DeleteByDatabase(ctx context.Context, databaseID string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM database_rows WHERE database_id = ?", databaseID)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM pages WHERE database_id = ?", databaseID)
 	return err
 }
 
 func (s *RowsStore) List(ctx context.Context, in *rows.ListIn) ([]*rows.Row, error) {
 	query := `
-		SELECT id, database_id, CAST(properties AS VARCHAR), created_by, created_at, updated_by, updated_at
-		FROM database_rows
-		WHERE database_id = ?
+		SELECT id, database_id, workspace_id, title, CAST(properties AS VARCHAR), row_position, created_by, created_at, updated_by, updated_at
+		FROM pages
+		WHERE database_id = ? AND is_archived = FALSE
 	`
 	args := []interface{}{in.DatabaseID}
 
@@ -92,7 +113,7 @@ func (s *RowsStore) List(ctx context.Context, in *rows.ListIn) ([]*rows.Row, err
 	if sortSQL != "" {
 		query += " ORDER BY " + sortSQL
 	} else {
-		query += " ORDER BY created_at DESC"
+		query += " ORDER BY row_position ASC, created_at DESC"
 	}
 
 	// Apply limit
@@ -100,17 +121,17 @@ func (s *RowsStore) List(ctx context.Context, in *rows.ListIn) ([]*rows.Row, err
 		query += fmt.Sprintf(" LIMIT %d", in.Limit)
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	sqlRows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer sqlRows.Close()
 
-	return s.scanRows(rows)
+	return s.scanRows(sqlRows)
 }
 
 func (s *RowsStore) Count(ctx context.Context, databaseID string, filters []rows.Filter) (int, error) {
-	query := "SELECT COUNT(*) FROM database_rows WHERE database_id = ?"
+	query := "SELECT COUNT(*) FROM pages WHERE database_id = ? AND is_archived = FALSE"
 	args := []interface{}{databaseID}
 
 	filterSQL, filterArgs := s.buildFilterSQL(filters)
@@ -149,8 +170,8 @@ func (s *RowsStore) buildFilterSQL(filters []rows.Filter) (string, []interface{}
 }
 
 func (s *RowsStore) buildSingleFilter(f rows.Filter) (string, []interface{}) {
-	// Escape property name for JSON path
-	propPath := fmt.Sprintf("$.%s", f.Property)
+	// Properties are stored as {type, value} objects, so we need to access the .value field
+	propPath := fmt.Sprintf("$.%s.value", f.Property)
 
 	switch f.Operator {
 	// Text operators
@@ -284,7 +305,8 @@ func (s *RowsStore) buildSortSQL(sorts []rows.Sort) string {
 
 	var parts []string
 	for _, sort := range sorts {
-		propPath := fmt.Sprintf("$.%s", sort.Property)
+		// Properties are stored as {type, value} objects, so we need to access the .value field
+		propPath := fmt.Sprintf("$.%s.value", sort.Property)
 		direction := "ASC"
 		if sort.Direction == "desc" {
 			direction = "DESC"
@@ -298,14 +320,23 @@ func (s *RowsStore) buildSortSQL(sorts []rows.Sort) string {
 func (s *RowsStore) scanRow(row *sql.Row) (*rows.Row, error) {
 	var r rows.Row
 	var propsJSON string
-	err := row.Scan(&r.ID, &r.DatabaseID, &propsJSON, &r.CreatedBy, &r.CreatedAt, &r.UpdatedBy, &r.UpdatedAt)
+	var databaseID sql.NullString
+	var workspaceID sql.NullString
+	var title sql.NullString
+	err := row.Scan(&r.ID, &databaseID, &workspaceID, &title, &propsJSON, &r.RowPosition, &r.CreatedBy, &r.CreatedAt, &r.UpdatedBy, &r.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
-	json.Unmarshal([]byte(propsJSON), &r.Properties)
-	if r.Properties == nil {
-		r.Properties = make(map[string]interface{})
+	if databaseID.Valid {
+		r.DatabaseID = databaseID.String
 	}
+	if workspaceID.Valid {
+		r.WorkspaceID = workspaceID.String
+	}
+	if title.Valid {
+		r.Title = title.String
+	}
+	r.Properties = s.parseProperties(propsJSON)
 	return &r, nil
 }
 
@@ -314,15 +345,49 @@ func (s *RowsStore) scanRows(sqlRows *sql.Rows) ([]*rows.Row, error) {
 	for sqlRows.Next() {
 		var r rows.Row
 		var propsJSON string
-		err := sqlRows.Scan(&r.ID, &r.DatabaseID, &propsJSON, &r.CreatedBy, &r.CreatedAt, &r.UpdatedBy, &r.UpdatedAt)
+		var databaseID sql.NullString
+		var workspaceID sql.NullString
+		var title sql.NullString
+		err := sqlRows.Scan(&r.ID, &databaseID, &workspaceID, &title, &propsJSON, &r.RowPosition, &r.CreatedBy, &r.CreatedAt, &r.UpdatedBy, &r.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(propsJSON), &r.Properties)
-		if r.Properties == nil {
-			r.Properties = make(map[string]interface{})
+		if databaseID.Valid {
+			r.DatabaseID = databaseID.String
 		}
+		if workspaceID.Valid {
+			r.WorkspaceID = workspaceID.String
+		}
+		if title.Valid {
+			r.Title = title.String
+		}
+		r.Properties = s.parseProperties(propsJSON)
 		result = append(result, &r)
 	}
 	return result, sqlRows.Err()
+}
+
+// parseProperties parses JSON properties and extracts values from {type, value} objects.
+func (s *RowsStore) parseProperties(propsJSON string) map[string]interface{} {
+	var rawProps map[string]interface{}
+	json.Unmarshal([]byte(propsJSON), &rawProps)
+	if rawProps == nil {
+		return make(map[string]interface{})
+	}
+
+	// Extract .value from each property if it's stored as {type, value} object
+	result := make(map[string]interface{})
+	for k, v := range rawProps {
+		if m, ok := v.(map[string]interface{}); ok {
+			// Check if it has a "value" key (PropertyValue format)
+			if val, hasValue := m["value"]; hasValue {
+				result[k] = val
+			} else {
+				result[k] = v
+			}
+		} else {
+			result[k] = v
+		}
+	}
+	return result
 }

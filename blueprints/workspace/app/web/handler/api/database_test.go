@@ -343,23 +343,17 @@ func TestDatabaseAddProperty(t *testing.T) {
 	for _, tt := range propertyTests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/properties", tt.prop, cookie)
-			ts.ExpectStatus(resp, http.StatusOK)
+			ts.ExpectStatus(resp, http.StatusCreated)
 
-			var updated databases.Database
-			ts.ParseJSON(resp, &updated)
+			var created databases.Property
+			ts.ParseJSON(resp, &created)
 
-			// Check that the property was added
-			var found bool
-			for _, p := range updated.Properties {
-				if p.ID == tt.prop["id"] {
-					found = true
-					if string(p.Type) != tt.prop["type"] {
-						t.Errorf("property type = %q, want %q", p.Type, tt.prop["type"])
-					}
-				}
+			// Check that the property was created with correct values
+			if created.ID != tt.prop["id"] {
+				t.Errorf("property id = %q, want %q", created.ID, tt.prop["id"])
 			}
-			if !found {
-				t.Errorf("property %q not found", tt.prop["id"])
+			if string(created.Type) != tt.prop["type"] {
+				t.Errorf("property type = %q, want %q", created.Type, tt.prop["type"])
 			}
 		})
 	}

@@ -39,6 +39,7 @@ import {
   User,
   X,
   Edit2,
+  Expand,
 } from 'lucide-react'
 
 // SVG icon generators for header icons (returns SVG string for Glide Data Grid)

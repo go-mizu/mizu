@@ -3,9 +3,8 @@ package rows
 import (
 	"context"
 	"errors"
-	"time"
 
-	"github.com/go-mizu/blueprints/workspace/pkg/ulid"
+	"github.com/go-mizu/blueprints/workspace/feature/pages"
 )
 
 var (
@@ -15,39 +14,54 @@ var (
 const DefaultLimit = 100
 
 // Service implements the rows API.
+// It uses pages with database_id as the underlying storage.
 type Service struct {
 	store Store
+	pages pages.API
 }
 
 // NewService creates a new rows service.
-func NewService(store Store) *Service {
-	return &Service{store: store}
+func NewService(store Store, pages pages.API) *Service {
+	return &Service{store: store, pages: pages}
 }
 
 // Create creates a new row in a database.
 func (s *Service) Create(ctx context.Context, in *CreateIn) (*Row, error) {
-	now := time.Now()
-
 	props := in.Properties
 	if props == nil {
 		props = make(map[string]interface{})
 	}
 
-	row := &Row{
-		ID:         ulid.New(),
-		DatabaseID: in.DatabaseID,
-		Properties: props,
-		CreatedBy:  in.CreatedBy,
-		CreatedAt:  now,
-		UpdatedBy:  in.CreatedBy,
-		UpdatedAt:  now,
+	// Convert row properties to page properties
+	pageProps := make(pages.Properties)
+	for k, v := range props {
+		pageProps[k] = pages.PropertyValue{
+			Type:  "unknown", // Type will be determined by database schema
+			Value: v,
+		}
 	}
 
-	if err := s.store.Create(ctx, row); err != nil {
+	// Extract title from properties if present
+	title := ""
+	if t, ok := props["title"].(string); ok {
+		title = t
+	}
+
+	// Create a page with database_id set (this makes it a row)
+	page, err := s.pages.Create(ctx, &pages.CreateIn{
+		WorkspaceID: in.WorkspaceID,
+		ParentType:  pages.ParentDatabase,
+		ParentID:    in.DatabaseID,
+		DatabaseID:  in.DatabaseID,
+		Title:       title,
+		Properties:  pageProps,
+		CreatedBy:   in.CreatedBy,
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return row, nil
+	return PageToRow(page), nil
 }
 
 // GetByID retrieves a row by ID.
@@ -150,8 +164,9 @@ func (s *Service) DuplicateRow(ctx context.Context, id string, userID string) (*
 	}
 
 	return s.Create(ctx, &CreateIn{
-		DatabaseID: original.DatabaseID,
-		Properties: newProps,
-		CreatedBy:  userID,
+		DatabaseID:  original.DatabaseID,
+		WorkspaceID: original.WorkspaceID,
+		Properties:  newProps,
+		CreatedBy:   userID,
 	})
 }

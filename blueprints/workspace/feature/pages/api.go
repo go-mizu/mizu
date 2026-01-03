@@ -18,11 +18,14 @@ const (
 )
 
 // Page represents a document page.
+// When DatabaseID is set, this page acts as a database row.
 type Page struct {
 	ID          string      `json:"id"`
 	WorkspaceID string      `json:"workspace_id"`
 	ParentID    string      `json:"parent_id,omitempty"`
 	ParentType  ParentType  `json:"parent_type"`
+	DatabaseID  string      `json:"database_id,omitempty"`  // When set, this page is a database row
+	RowPosition int64       `json:"row_position,omitempty"` // Ordering within a database
 	Title       string      `json:"title"`
 	Icon        string      `json:"icon,omitempty"`
 	Cover       string      `json:"cover,omitempty"`
@@ -37,9 +40,9 @@ type Page struct {
 	UpdatedAt   time.Time   `json:"updated_at"`
 
 	// Enriched fields
-	Children    []*Page     `json:"children,omitempty"`
-	Breadcrumb  []*PageRef  `json:"breadcrumb,omitempty"`
-	Author      *users.User `json:"author,omitempty"`
+	Children   []*Page     `json:"children,omitempty"`
+	Breadcrumb []*PageRef  `json:"breadcrumb,omitempty"`
+	Author     *users.User `json:"author,omitempty"`
 }
 
 // PageRef is a lightweight page reference.
@@ -63,6 +66,7 @@ type CreateIn struct {
 	WorkspaceID string     `json:"workspace_id"`
 	ParentID    string     `json:"parent_id,omitempty"`
 	ParentType  ParentType `json:"parent_type"`
+	DatabaseID  string     `json:"database_id,omitempty"` // When set, creates a database row
 	Title       string     `json:"title"`
 	Icon        string     `json:"icon,omitempty"`
 	Cover       string     `json:"cover,omitempty"`
@@ -135,4 +139,10 @@ type Store interface {
 	Move(ctx context.Context, id, newParentID string, newParentType ParentType) error
 	Search(ctx context.Context, workspaceID, query string, opts SearchOpts) ([]*Page, error)
 	GetRecent(ctx context.Context, userID, workspaceID string, limit int) ([]*Page, error)
+
+	// Database row operations (pages with database_id set)
+	ListByDatabase(ctx context.Context, databaseID string, limit int, cursor string) ([]*Page, error)
+	CountByDatabase(ctx context.Context, databaseID string) (int, error)
+	DeleteByDatabase(ctx context.Context, databaseID string) error
+	GetMaxRowPosition(ctx context.Context, databaseID string) (int64, error)
 }

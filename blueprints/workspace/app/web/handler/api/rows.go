@@ -7,18 +7,24 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/workspace/feature/blocks"
+	"github.com/go-mizu/blueprints/workspace/feature/comments"
+	"github.com/go-mizu/blueprints/workspace/feature/databases"
 	"github.com/go-mizu/blueprints/workspace/feature/rows"
 )
 
 // Row handles database row endpoints.
 type Row struct {
 	rows      rows.API
+	blocks    blocks.API
+	comments  comments.API
+	databases databases.API
 	getUserID func(c *mizu.Ctx) string
 }
 
 // NewRow creates a new Row handler.
-func NewRow(rows rows.API, getUserID func(c *mizu.Ctx) string) *Row {
-	return &Row{rows: rows, getUserID: getUserID}
+func NewRow(rows rows.API, blocks blocks.API, comments comments.API, databases databases.API, getUserID func(c *mizu.Ctx) string) *Row {
+	return &Row{rows: rows, blocks: blocks, comments: comments, databases: databases, getUserID: getUserID}
 }
 
 // Create creates a new row in a database.
@@ -33,10 +39,17 @@ func (h *Row) Create(c *mizu.Ctx) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
+	// Get database to find workspace ID
+	db, err := h.databases.GetByID(c.Request().Context(), dbID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "database not found"})
+	}
+
 	row, err := h.rows.Create(c.Request().Context(), &rows.CreateIn{
-		DatabaseID: dbID,
-		Properties: in.Properties,
-		CreatedBy:  userID,
+		DatabaseID:  dbID,
+		WorkspaceID: db.WorkspaceID,
+		Properties:  in.Properties,
+		CreatedBy:   userID,
 	})
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -145,4 +158,221 @@ func (h *Row) Duplicate(c *mizu.Ctx) error {
 	}
 
 	return c.JSON(http.StatusCreated, row)
+}
+
+// =====================================================
+// Row Comments - using polymorphic comments
+// =====================================================
+
+// ListComments lists comments for a row.
+func (h *Row) ListComments(c *mizu.Ctx) error {
+	rowID := c.Param("id")
+
+	// Get the row to find the workspace ID
+	row, err := h.rows.GetByID(c.Request().Context(), rowID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "row not found"})
+	}
+
+	result, err := h.comments.ListByTarget(c.Request().Context(), row.WorkspaceID, comments.TargetDatabaseRow, rowID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+// CreateComment creates a comment on a row.
+func (h *Row) CreateComment(c *mizu.Ctx) error {
+	rowID := c.Param("id")
+	userID := h.getUserID(c)
+
+	var in struct {
+		Content  []blocks.RichText `json:"content"`
+		ParentID string            `json:"parent_id,omitempty"`
+	}
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	// Get the row to find the workspace ID
+	row, err := h.rows.GetByID(c.Request().Context(), rowID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "row not found"})
+	}
+
+	comment, err := h.comments.Create(c.Request().Context(), &comments.CreateIn{
+		WorkspaceID: row.WorkspaceID,
+		TargetType:  comments.TargetDatabaseRow,
+		TargetID:    rowID,
+		ParentID:    in.ParentID,
+		Content:     in.Content,
+		AuthorID:    userID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, comment)
+}
+
+// UpdateComment updates a row comment.
+func (h *Row) UpdateComment(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var in struct {
+		Content []blocks.RichText `json:"content"`
+	}
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	comment, err := h.comments.Update(c.Request().Context(), id, in.Content)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, comment)
+}
+
+// DeleteComment deletes a row comment.
+func (h *Row) DeleteComment(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	if err := h.comments.Delete(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusNoContent, nil)
+}
+
+// ResolveComment marks a comment as resolved.
+func (h *Row) ResolveComment(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	if err := h.comments.Resolve(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "resolved"})
+}
+
+// UnresolveComment marks a comment as unresolved.
+func (h *Row) UnresolveComment(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	if err := h.comments.Unresolve(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "unresolved"})
+}
+
+// =====================================================
+// Row Content Blocks - using unified blocks table
+// =====================================================
+
+// ListBlocks lists content blocks for a row (row is a page).
+func (h *Row) ListBlocks(c *mizu.Ctx) error {
+	rowID := c.Param("id")
+
+	// Row ID is the page ID since rows are pages
+	result, err := h.blocks.GetByPage(c.Request().Context(), rowID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+// CreateBlock creates a content block in a row.
+func (h *Row) CreateBlock(c *mizu.Ctx) error {
+	rowID := c.Param("id")
+	userID := h.getUserID(c)
+
+	var in struct {
+		Type     blocks.BlockType `json:"type"`
+		Content  blocks.Content   `json:"content"`
+		ParentID string           `json:"parent_id,omitempty"`
+		Position int              `json:"position"`
+	}
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	block, err := h.blocks.Create(c.Request().Context(), &blocks.CreateIn{
+		PageID:    rowID, // Row ID is the page ID
+		ParentID:  in.ParentID,
+		Type:      in.Type,
+		Content:   in.Content,
+		Position:  in.Position,
+		CreatedBy: userID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, block)
+}
+
+// UpdateBlock updates a row content block.
+func (h *Row) UpdateBlock(c *mizu.Ctx) error {
+	id := c.Param("id")
+	userID := h.getUserID(c)
+
+	var in struct {
+		Content blocks.Content `json:"content"`
+	}
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	block, err := h.blocks.Update(c.Request().Context(), id, &blocks.UpdateIn{
+		Content:   in.Content,
+		UpdatedBy: userID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, block)
+}
+
+// DeleteBlock deletes a row content block.
+func (h *Row) DeleteBlock(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	if err := h.blocks.Delete(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusNoContent, nil)
+}
+
+// ReorderBlocks reorders blocks within a row.
+func (h *Row) ReorderBlocks(c *mizu.Ctx) error {
+	rowID := c.Param("id")
+
+	var in struct {
+		BlockIDs []string `json:"block_ids"`
+	}
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	ctx := c.Request().Context()
+
+	// Use the Reorder method to update positions
+	// ParentID is empty for top-level blocks in a row
+	if err := h.blocks.Reorder(ctx, "", in.BlockIDs); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// Return updated blocks
+	result, err := h.blocks.GetByPage(ctx, rowID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, result)
 }
