@@ -537,7 +537,9 @@ func TestCommentWorkflow(t *testing.T) {
 
 	// Create a comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "This is a test comment"},
 		},

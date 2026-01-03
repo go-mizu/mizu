@@ -24,7 +24,9 @@ func TestCommentCreate(t *testing.T) {
 		{
 			name: "page comment",
 			body: map[string]interface{}{
-				"page_id": page.ID,
+				"workspace_id": ws.ID,
+				"target_type":  "page",
+				"target_id":    page.ID,
 				"content": []map[string]interface{}{
 					{"type": "text", "text": "This is a comment"},
 				},
@@ -34,7 +36,9 @@ func TestCommentCreate(t *testing.T) {
 		{
 			name: "comment with formatting",
 			body: map[string]interface{}{
-				"page_id": page.ID,
+				"workspace_id": ws.ID,
+				"target_type":  "page",
+				"target_id":    page.ID,
 				"content": []map[string]interface{}{
 					{
 						"type": "text",
@@ -48,13 +52,13 @@ func TestCommentCreate(t *testing.T) {
 			wantStatus: http.StatusCreated,
 		},
 		{
-			name: "missing page_id",
+			name: "missing target",
 			body: map[string]interface{}{
 				"content": []map[string]interface{}{
-					{"type": "text", "text": "No page"},
+					{"type": "text", "text": "No target"},
 				},
 			},
-			wantStatus: http.StatusCreated, // App allows comments without page_id
+			wantStatus: http.StatusCreated, // App allows comments without target
 		},
 	}
 
@@ -70,9 +74,9 @@ func TestCommentCreate(t *testing.T) {
 				if comment.ID == "" {
 					t.Error("comment ID should not be empty")
 				}
-				// Only check page_id if it was provided in request
-				if tt.body["page_id"] != nil && comment.PageID != page.ID {
-					t.Errorf("page_id = %q, want %q", comment.PageID, page.ID)
+				// Only check target_id if target_id was provided in request
+				if tt.body["target_id"] != nil && comment.TargetID != page.ID {
+					t.Errorf("target_id = %q, want %q", comment.TargetID, page.ID)
 				}
 			}
 			resp.Body.Close()
@@ -91,7 +95,9 @@ func TestCommentCreateReply(t *testing.T) {
 
 	// Create parent comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "Parent comment"},
 		},
@@ -103,8 +109,10 @@ func TestCommentCreateReply(t *testing.T) {
 
 	// Create reply
 	resp = ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id":   page.ID,
-		"parent_id": parent.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
+		"parent_id":    parent.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "Reply comment"},
 		},
@@ -130,7 +138,9 @@ func TestCommentUpdate(t *testing.T) {
 
 	// Create comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "Original comment"},
 		},
@@ -178,7 +188,9 @@ func TestCommentDelete(t *testing.T) {
 
 	// Create comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "To delete"},
 		},
@@ -207,7 +219,9 @@ func TestCommentList(t *testing.T) {
 	// Create comments
 	for i := 0; i < 3; i++ {
 		resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-			"page_id": page.ID,
+			"workspace_id": ws.ID,
+			"target_type":  "page",
+			"target_id":    page.ID,
 			"content": []map[string]interface{}{
 				{"type": "text", "text": "Comment " + string(rune('A'+i))},
 			},
@@ -240,7 +254,9 @@ func TestCommentResolve(t *testing.T) {
 
 	// Create comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "To resolve"},
 		},
@@ -272,7 +288,9 @@ func TestCommentThreaded(t *testing.T) {
 
 	// Create parent comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "Thread starter"},
 		},
@@ -285,8 +303,10 @@ func TestCommentThreaded(t *testing.T) {
 	// Create multiple replies
 	for i := 0; i < 3; i++ {
 		resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-			"page_id":   page.ID,
-			"parent_id": parent.ID,
+			"workspace_id": ws.ID,
+			"target_type":  "page",
+			"target_id":    page.ID,
+			"parent_id":    parent.ID,
 			"content": []map[string]interface{}{
 				{"type": "text", "text": "Reply " + string(rune('1'+i))},
 			},
@@ -324,7 +344,9 @@ func TestCommentWithMention(t *testing.T) {
 
 	// Create comment with mention
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "Hey "},
 			{
@@ -359,7 +381,9 @@ func TestCommentUnauthenticated(t *testing.T) {
 
 	// Create comment
 	resp := ts.Request("POST", "/api/v1/comments", map[string]interface{}{
-		"page_id": page.ID,
+		"workspace_id": ws.ID,
+		"target_type":  "page",
+		"target_id":    page.ID,
 		"content": []map[string]interface{}{
 			{"type": "text", "text": "Auth test"},
 		},

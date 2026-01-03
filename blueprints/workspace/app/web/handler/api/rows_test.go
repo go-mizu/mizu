@@ -1,534 +1,404 @@
 package api_test
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/go-mizu/mizu"
-
-	"github.com/go-mizu/blueprints/workspace/app/web/handler/api"
+	"github.com/go-mizu/blueprints/workspace/feature/databases"
 	"github.com/go-mizu/blueprints/workspace/feature/rows"
 )
 
+// createTestRow creates a row in a database and returns it.
+func createTestRow(ts *TestServer, cookie *http.Cookie, dbID string, props map[string]interface{}) *rows.Row {
+	resp := ts.Request("POST", "/api/v1/databases/"+dbID+"/rows", map[string]interface{}{
+		"properties": props,
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusCreated)
+
+	var row rows.Row
+	ts.ParseJSON(resp, &row)
+	return &row
+}
+
 func TestRowHandler_Create(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
+	// Setup
+	_, cookie := ts.Register("rowcreate@example.com", "Row Create", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Workspace", "row-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Test Database")
 
-	body := `{"properties":{"title":"Test Row","status":"active"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Errorf("expected status %d, got %d: %s", http.StatusCreated, w.Code, w.Body.String())
+	tests := []struct {
+		name       string
+		props      map[string]interface{}
+		wantStatus int
+	}{
+		{
+			name:       "basic row",
+			props:      map[string]interface{}{"title": "Test Row", "status": "active"},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "row with multiple properties",
+			props:      map[string]interface{}{"title": "Multi Prop", "count": 42, "done": true},
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "empty properties",
+			props:      map[string]interface{}{},
+			wantStatus: http.StatusCreated,
+		},
 	}
 
-	var result rows.Row
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := ts.Request("POST", "/api/v1/databases/"+db.ID+"/rows", map[string]interface{}{
+				"properties": tt.props,
+			}, cookie)
+			ts.ExpectStatus(resp, tt.wantStatus)
 
-	if result.DatabaseID != "db123" {
-		t.Errorf("expected database_id db123, got %s", result.DatabaseID)
-	}
+			if tt.wantStatus == http.StatusCreated {
+				var row rows.Row
+				ts.ParseJSON(resp, &row)
 
-	if result.Properties["title"] != "Test Row" {
-		t.Errorf("expected title 'Test Row', got %v", result.Properties["title"])
+				if row.ID == "" {
+					t.Error("row ID should not be empty")
+				}
+				if row.DatabaseID != db.ID {
+					t.Errorf("database_id = %q, want %q", row.DatabaseID, db.ID)
+				}
+			} else {
+				resp.Body.Close()
+			}
+		})
 	}
 }
 
 func TestRowHandler_Get(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	// Create a row first
-	ctx := context.Background()
-	_, _ = svc.Create(ctx, &rows.CreateIn{
-		DatabaseID: "db123",
-		Properties: map[string]interface{}{"title": "Test"},
-		CreatedBy:  "user123",
+	// Setup
+	_, cookie := ts.Register("rowget@example.com", "Row Get", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Get Workspace", "row-get-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Get Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Test Row"})
+
+	t.Run("get existing row", func(t *testing.T) {
+		resp := ts.Request("GET", "/api/v1/rows/"+row.ID, nil, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
+
+		var fetched rows.Row
+		ts.ParseJSON(resp, &fetched)
+
+		if fetched.ID != row.ID {
+			t.Errorf("id = %q, want %q", fetched.ID, row.ID)
+		}
 	})
 
-	app := mizu.New()
-	app.Get("/rows/{id}", handler.Get)
-
-	req := httptest.NewRequest(http.MethodGet, "/rows/"+store.createdRow.ID, nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
-	}
+	t.Run("get non-existent row", func(t *testing.T) {
+		resp := ts.Request("GET", "/api/v1/rows/non-existent-id", nil, cookie)
+		ts.ExpectStatus(resp, http.StatusNotFound)
+		resp.Body.Close()
+	})
 }
 
 func TestRowHandler_Update(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	// Create a row first
-	ctx := context.Background()
-	row, _ := svc.Create(ctx, &rows.CreateIn{
-		DatabaseID: "db123",
-		Properties: map[string]interface{}{"title": "Original"},
-		CreatedBy:  "user123",
+	// Setup
+	_, cookie := ts.Register("rowupdate@example.com", "Row Update", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Update Workspace", "row-update-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Update Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Original", "status": "todo"})
+
+	t.Run("update properties", func(t *testing.T) {
+		resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+			"properties": map[string]interface{}{"title": "Updated", "status": "done"},
+		}, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
+
+		var updated rows.Row
+		ts.ParseJSON(resp, &updated)
+
+		if updated.Properties["title"] != "Updated" {
+			t.Errorf("title = %v, want 'Updated'", updated.Properties["title"])
+		}
+		if updated.Properties["status"] != "done" {
+			t.Errorf("status = %v, want 'done'", updated.Properties["status"])
+		}
 	})
 
-	app := mizu.New()
-	app.Patch("/rows/{id}", handler.Update)
-
-	body := `{"properties":{"title":"Updated","status":"done"}}`
-	req := httptest.NewRequest(http.MethodPatch, "/rows/"+row.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
-	}
-
-	var result rows.Row
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if result.Properties["title"] != "Updated" {
-		t.Errorf("expected title 'Updated', got %v", result.Properties["title"])
-	}
+	t.Run("update non-existent row", func(t *testing.T) {
+		resp := ts.Request("PATCH", "/api/v1/rows/non-existent-id", map[string]interface{}{
+			"properties": map[string]interface{}{"title": "Updated"},
+		}, cookie)
+		ts.ExpectStatus(resp, http.StatusInternalServerError)
+		resp.Body.Close()
+	})
 }
 
 func TestRowHandler_Delete(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	// Create a row first
-	ctx := context.Background()
-	row, _ := svc.Create(ctx, &rows.CreateIn{
-		DatabaseID: "db123",
-		Properties: map[string]interface{}{"title": "To Delete"},
-		CreatedBy:  "user123",
+	// Setup
+	_, cookie := ts.Register("rowdelete@example.com", "Row Delete", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Delete Workspace", "row-delete-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Delete Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "To Delete"})
+
+	t.Run("delete row", func(t *testing.T) {
+		resp := ts.Request("DELETE", "/api/v1/rows/"+row.ID, nil, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
+		resp.Body.Close()
+
+		// Verify row is gone
+		resp = ts.Request("GET", "/api/v1/rows/"+row.ID, nil, cookie)
+		ts.ExpectStatus(resp, http.StatusNotFound)
+		resp.Body.Close()
 	})
-
-	app := mizu.New()
-	app.Delete("/rows/{id}", handler.Delete)
-
-	req := httptest.NewRequest(http.MethodDelete, "/rows/"+row.ID, nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
-	}
 }
 
 func TestRowHandler_List(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	ctx := context.Background()
-	// Create some rows
+	// Setup
+	_, cookie := ts.Register("rowlist@example.com", "Row List", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row List Workspace", "row-list-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row List Database")
+
+	// Create multiple rows
 	for i := 0; i < 5; i++ {
-		_, _ = svc.Create(ctx, &rows.CreateIn{
-			DatabaseID: "db123",
-			Properties: map[string]interface{}{"title": "Row"},
-			CreatedBy:  "user123",
-		})
+		createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row " + string(rune('A'+i))})
 	}
 
-	app := mizu.New()
-	app.Get("/databases/{id}/rows", handler.List)
+	t.Run("list all rows", func(t *testing.T) {
+		resp := ts.Request("GET", "/api/v1/databases/"+db.ID+"/rows", nil, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
 
-	req := httptest.NewRequest(http.MethodGet, "/databases/db123/rows", nil)
-	w := httptest.NewRecorder()
+		var result rows.ListResult
+		ts.ParseJSON(resp, &result)
 
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
-	}
-
-	var result rows.ListResult
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if len(result.Rows) != 5 {
-		t.Errorf("expected 5 rows, got %d", len(result.Rows))
-	}
+		if len(result.Rows) != 5 {
+			t.Errorf("expected 5 rows, got %d", len(result.Rows))
+		}
+	})
 }
 
 func TestRowHandler_ListWithFilters(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	ctx := context.Background()
+	// Setup
+	_, cookie := ts.Register("rowfilter@example.com", "Row Filter", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Filter Workspace", "row-filter-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Filter Database")
+
 	// Create rows with different statuses
-	_, _ = svc.Create(ctx, &rows.CreateIn{
-		DatabaseID: "db123",
-		Properties: map[string]interface{}{"title": "Row 1", "status": "active"},
-		CreatedBy:  "user123",
+	createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row 1", "status": "active"})
+	createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row 2", "status": "done"})
+	createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row 3", "status": "active"})
+
+	t.Run("filter by status", func(t *testing.T) {
+		filters := `[{"property":"status","operator":"is","value":"active"}]`
+		resp := ts.Request("GET", "/api/v1/databases/"+db.ID+"/rows?filters="+filters, nil, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
+
+		var result rows.ListResult
+		ts.ParseJSON(resp, &result)
+
+		if len(result.Rows) != 2 {
+			t.Errorf("expected 2 rows with status=active, got %d", len(result.Rows))
+		}
 	})
-	_, _ = svc.Create(ctx, &rows.CreateIn{
-		DatabaseID: "db123",
-		Properties: map[string]interface{}{"title": "Row 2", "status": "done"},
-		CreatedBy:  "user123",
-	})
-
-	app := mizu.New()
-	app.Get("/databases/{id}/rows", handler.List)
-
-	// Test with filter
-	filters := `[{"property":"status","operator":"is","value":"active"}]`
-	req := httptest.NewRequest(http.MethodGet, "/databases/db123/rows?filters="+filters, nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d: %s", http.StatusOK, w.Code, w.Body.String())
-	}
 }
 
 func TestRowHandler_Duplicate(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	ctx := context.Background()
-	// Create a row first
-	row, _ := svc.Create(ctx, &rows.CreateIn{
-		DatabaseID: "db123",
-		Properties: map[string]interface{}{"title": "Original"},
-		CreatedBy:  "user123",
+	// Setup
+	_, cookie := ts.Register("rowdup@example.com", "Row Dup", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Dup Workspace", "row-dup-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Dup Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Original", "count": 42})
+
+	t.Run("duplicate row", func(t *testing.T) {
+		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/duplicate", nil, cookie)
+		ts.ExpectStatus(resp, http.StatusCreated)
+
+		var dup rows.Row
+		ts.ParseJSON(resp, &dup)
+
+		if dup.ID == row.ID {
+			t.Error("duplicated row should have different ID")
+		}
+		if dup.DatabaseID != row.DatabaseID {
+			t.Errorf("database_id = %q, want %q", dup.DatabaseID, row.DatabaseID)
+		}
 	})
-
-	app := mizu.New()
-	app.Post("/rows/{id}/duplicate", handler.Duplicate)
-
-	req := httptest.NewRequest(http.MethodPost, "/rows/"+row.ID+"/duplicate", nil)
-	w := httptest.NewRecorder()
-
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Errorf("expected status %d, got %d: %s", http.StatusCreated, w.Code, w.Body.String())
-	}
-
-	var result rows.Row
-	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if result.ID == row.ID {
-		t.Error("duplicated row should have different ID")
-	}
-}
-
-// mockRowsStore implements rows.Store for testing
-type mockRowsStore struct {
-	rows       map[string]*rows.Row
-	createdRow *rows.Row
-}
-
-func newMockRowsStore() *mockRowsStore {
-	return &mockRowsStore{
-		rows: make(map[string]*rows.Row),
-	}
-}
-
-func (s *mockRowsStore) Create(_ context.Context, row *rows.Row) error {
-	s.rows[row.ID] = row
-	s.createdRow = row
-	return nil
-}
-
-func (s *mockRowsStore) GetByID(_ context.Context, id string) (*rows.Row, error) {
-	if row, ok := s.rows[id]; ok {
-		return row, nil
-	}
-	return nil, rows.ErrNotFound
-}
-
-func (s *mockRowsStore) Update(_ context.Context, id string, in *rows.UpdateIn) error {
-	if row, ok := s.rows[id]; ok {
-		row.Properties = in.Properties
-		row.UpdatedBy = in.UpdatedBy
-		return nil
-	}
-	return rows.ErrNotFound
-}
-
-func (s *mockRowsStore) Delete(_ context.Context, id string) error {
-	delete(s.rows, id)
-	return nil
-}
-
-func (s *mockRowsStore) List(_ context.Context, in *rows.ListIn) ([]*rows.Row, error) {
-	var result []*rows.Row
-	for _, row := range s.rows {
-		if row.DatabaseID == in.DatabaseID {
-			result = append(result, row)
-		}
-	}
-	return result, nil
-}
-
-func (s *mockRowsStore) Count(_ context.Context, databaseID string, _ []rows.Filter) (int, error) {
-	count := 0
-	for _, row := range s.rows {
-		if row.DatabaseID == databaseID {
-			count++
-		}
-	}
-	return count, nil
-}
-
-func (s *mockRowsStore) DeleteByDatabase(_ context.Context, databaseID string) error {
-	for id, row := range s.rows {
-		if row.DatabaseID == databaseID {
-			delete(s.rows, id)
-		}
-	}
-	return nil
 }
 
 // Tests for all property types to ensure data persistence
 
 func TestRowHandler_PropertyTypes_Text(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowtext@example.com", "Row Text", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Text Workspace", "row-text-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Text Database")
 
-	// Create with text property
-	body := `{"properties":{"name":"John Doe","description":"A long text description"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	// Create with text properties
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"name":        "John Doe",
+		"description": "A long text description",
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["name"] != "John Doe" {
-		t.Errorf("expected name 'John Doe', got %v", created.Properties["name"])
+	if row.Properties["name"] != "John Doe" {
+		t.Errorf("expected name 'John Doe', got %v", row.Properties["name"])
 	}
 
 	// Update text property
-	body = `{"properties":{"name":"Jane Doe"}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"name": "Jane Doe"},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
 
 	var updated rows.Row
-	json.Unmarshal(w.Body.Bytes(), &updated)
+	ts.ParseJSON(resp, &updated)
 
 	if updated.Properties["name"] != "Jane Doe" {
-		t.Errorf("expected updated name 'Jane Doe', got %v", updated.Properties["name"])
+		t.Errorf("expected name 'Jane Doe', got %v", updated.Properties["name"])
 	}
 }
 
 func TestRowHandler_PropertyTypes_Number(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rownum@example.com", "Row Num", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Num Workspace", "row-num-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Num Database")
 
 	// Create with number properties
-	body := `{"properties":{"age":25,"price":99.99,"count":100}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"age":   25,
+		"price": 99.99,
+		"count": 100,
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
+	if row.Properties["age"] != float64(25) {
+		t.Errorf("expected age 25, got %v", row.Properties["age"])
 	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["age"] != float64(25) {
-		t.Errorf("expected age 25, got %v", created.Properties["age"])
-	}
-
-	if created.Properties["price"] != float64(99.99) {
-		t.Errorf("expected price 99.99, got %v", created.Properties["price"])
+	if row.Properties["price"] != float64(99.99) {
+		t.Errorf("expected price 99.99, got %v", row.Properties["price"])
 	}
 
 	// Update number property
-	body = `{"properties":{"age":30}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"age": 30},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
+	resp.Body.Close()
 }
 
 func TestRowHandler_PropertyTypes_Checkbox(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowcheck@example.com", "Row Check", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Check Workspace", "row-check-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Check Database")
 
 	// Create with checkbox property
-	body := `{"properties":{"completed":true,"archived":false}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"completed": true,
+		"archived":  false,
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
+	if row.Properties["completed"] != true {
+		t.Errorf("expected completed true, got %v", row.Properties["completed"])
 	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["completed"] != true {
-		t.Errorf("expected completed true, got %v", created.Properties["completed"])
-	}
-
-	if created.Properties["archived"] != false {
-		t.Errorf("expected archived false, got %v", created.Properties["archived"])
+	if row.Properties["archived"] != false {
+		t.Errorf("expected archived false, got %v", row.Properties["archived"])
 	}
 
 	// Toggle checkbox
-	body = `{"properties":{"completed":false}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"completed": false},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
 
 	var updated rows.Row
-	json.Unmarshal(w.Body.Bytes(), &updated)
+	ts.ParseJSON(resp, &updated)
 
 	if updated.Properties["completed"] != false {
-		t.Errorf("expected completed toggled to false, got %v", updated.Properties["completed"])
+		t.Errorf("expected completed false, got %v", updated.Properties["completed"])
 	}
 }
 
 func TestRowHandler_PropertyTypes_Date(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowdate@example.com", "Row Date", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Date Workspace", "row-date-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Date Database")
 
 	// Create with date property
-	body := `{"properties":{"due_date":"2025-12-31T23:59:59Z","created_at":"2025-01-01T00:00:00Z"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"due_date":   "2025-12-31T23:59:59Z",
+		"created_at": "2025-01-01T00:00:00Z",
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["due_date"] != "2025-12-31T23:59:59Z" {
-		t.Errorf("expected due_date '2025-12-31T23:59:59Z', got %v", created.Properties["due_date"])
+	if row.Properties["due_date"] != "2025-12-31T23:59:59Z" {
+		t.Errorf("expected due_date '2025-12-31T23:59:59Z', got %v", row.Properties["due_date"])
 	}
 
 	// Update date
-	body = `{"properties":{"due_date":"2026-01-15T12:00:00Z"}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"due_date": "2026-01-15T12:00:00Z"},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
+	resp.Body.Close()
 }
 
 func TestRowHandler_PropertyTypes_Select(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowselect@example.com", "Row Select", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Select Workspace", "row-select-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Select Database")
 
-	// Create with select property (option ID)
-	body := `{"properties":{"status":"opt_active","priority":"opt_high"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	// Create with select property
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"status":   "opt_active",
+		"priority": "opt_high",
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["status"] != "opt_active" {
-		t.Errorf("expected status 'opt_active', got %v", created.Properties["status"])
+	if row.Properties["status"] != "opt_active" {
+		t.Errorf("expected status 'opt_active', got %v", row.Properties["status"])
 	}
 
 	// Change select value
-	body = `{"properties":{"status":"opt_done"}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"status": "opt_done"},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
 
 	var updated rows.Row
-	json.Unmarshal(w.Body.Bytes(), &updated)
+	ts.ParseJSON(resp, &updated)
 
 	if updated.Properties["status"] != "opt_done" {
 		t.Errorf("expected status 'opt_done', got %v", updated.Properties["status"])
@@ -536,50 +406,35 @@ func TestRowHandler_PropertyTypes_Select(t *testing.T) {
 }
 
 func TestRowHandler_PropertyTypes_MultiSelect(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowmulti@example.com", "Row Multi", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Multi Workspace", "row-multi-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Multi Database")
 
-	// Create with multi-select property (array of option IDs)
-	body := `{"properties":{"tags":["tag_work","tag_urgent"]}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	// Create with multi-select property
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"tags": []string{"tag_work", "tag_urgent"},
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	tags, ok := created.Properties["tags"].([]interface{})
+	tags, ok := row.Properties["tags"].([]interface{})
 	if !ok {
-		t.Fatalf("expected tags to be array, got %T", created.Properties["tags"])
+		t.Fatalf("expected tags to be array, got %T", row.Properties["tags"])
 	}
-
 	if len(tags) != 2 {
 		t.Errorf("expected 2 tags, got %d", len(tags))
 	}
 
-	// Update multi-select (add/remove tags)
-	body = `{"properties":{"tags":["tag_work","tag_personal","tag_important"]}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	// Update multi-select
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"tags": []string{"tag_work", "tag_personal", "tag_important"}},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
 
 	var updated rows.Row
-	json.Unmarshal(w.Body.Bytes(), &updated)
+	ts.ParseJSON(resp, &updated)
 
 	updatedTags, _ := updated.Properties["tags"].([]interface{})
 	if len(updatedTags) != 3 {
@@ -588,147 +443,101 @@ func TestRowHandler_PropertyTypes_MultiSelect(t *testing.T) {
 }
 
 func TestRowHandler_PropertyTypes_URL(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowurl@example.com", "Row URL", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row URL Workspace", "row-url-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row URL Database")
 
 	// Create with URL property
-	body := `{"properties":{"website":"https://example.com","docs":"https://docs.example.com/api"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"website": "https://example.com",
+		"docs":    "https://docs.example.com/api",
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["website"] != "https://example.com" {
-		t.Errorf("expected website 'https://example.com', got %v", created.Properties["website"])
+	if row.Properties["website"] != "https://example.com" {
+		t.Errorf("expected website 'https://example.com', got %v", row.Properties["website"])
 	}
 
 	// Update URL
-	body = `{"properties":{"website":"https://new-example.com"}}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp := ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{"website": "https://new-example.com"},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
+	resp.Body.Close()
 }
 
 func TestRowHandler_PropertyTypes_Email(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
+	// Setup
+	_, cookie := ts.Register("rowemail@example.com", "Row Email", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Email Workspace", "row-email-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Email Database")
 
 	// Create with email property
-	body := `{"properties":{"email":"user@example.com","contact":"support@company.com"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"email":   "user@example.com",
+		"contact": "support@company.com",
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["email"] != "user@example.com" {
-		t.Errorf("expected email 'user@example.com', got %v", created.Properties["email"])
+	if row.Properties["email"] != "user@example.com" {
+		t.Errorf("expected email 'user@example.com', got %v", row.Properties["email"])
 	}
 }
 
 func TestRowHandler_PropertyTypes_Phone(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
+	// Setup
+	_, cookie := ts.Register("rowphone@example.com", "Row Phone", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Phone Workspace", "row-phone-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Phone Database")
 
 	// Create with phone property
-	body := `{"properties":{"phone":"+1-555-123-4567","fax":"+1-555-987-6543"}}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"phone": "+1-555-123-4567",
+		"fax":   "+1-555-987-6543",
+	})
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
-
-	if created.Properties["phone"] != "+1-555-123-4567" {
-		t.Errorf("expected phone '+1-555-123-4567', got %v", created.Properties["phone"])
+	if row.Properties["phone"] != "+1-555-123-4567" {
+		t.Errorf("expected phone '+1-555-123-4567', got %v", row.Properties["phone"])
 	}
 }
 
 func TestRowHandler_PropertyTypes_AllTypesIntegration(t *testing.T) {
-	store := newMockRowsStore()
-	svc := rows.NewService(store)
-	handler := api.NewRow(svc, func(c *mizu.Ctx) string { return "user123" })
+	ts := NewTestServer(t)
+	defer ts.Close()
 
-	app := mizu.New()
-	app.Post("/databases/{id}/rows", handler.Create)
-	app.Get("/rows/{id}", handler.Get)
-	app.Patch("/rows/{id}", handler.Update)
+	// Setup
+	_, cookie := ts.Register("rowallprop@example.com", "Row All Props", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row All Workspace", "row-all-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row All Database")
 
 	// Create row with all property types
-	body := `{
-		"properties": {
-			"title": "Test Item",
-			"count": 42,
-			"completed": true,
-			"due_date": "2025-12-31T00:00:00Z",
-			"status": "opt_active",
-			"tags": ["tag_a", "tag_b"],
-			"website": "https://example.com",
-			"email": "test@example.com",
-			"phone": "+1-555-000-0000"
-		}
-	}`
-	req := httptest.NewRequest(http.MethodPost, "/databases/db123/rows", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create failed: %s", w.Body.String())
-	}
-
-	var created rows.Row
-	json.Unmarshal(w.Body.Bytes(), &created)
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{
+		"title":     "Test Item",
+		"count":     42,
+		"completed": true,
+		"due_date":  "2025-12-31T00:00:00Z",
+		"status":    "opt_active",
+		"tags":      []string{"tag_a", "tag_b"},
+		"website":   "https://example.com",
+		"email":     "test@example.com",
+		"phone":     "+1-555-000-0000",
+	})
 
 	// Verify GET returns same data
-	req = httptest.NewRequest(http.MethodGet, "/rows/"+created.ID, nil)
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("get failed: %s", w.Body.String())
-	}
+	resp := ts.Request("GET", "/api/v1/rows/"+row.ID, nil, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
 
 	var fetched rows.Row
-	json.Unmarshal(w.Body.Bytes(), &fetched)
+	ts.ParseJSON(resp, &fetched)
 
-	// Verify all properties match
 	if fetched.Properties["title"] != "Test Item" {
 		t.Errorf("title mismatch after fetch")
 	}
@@ -743,24 +552,17 @@ func TestRowHandler_PropertyTypes_AllTypesIntegration(t *testing.T) {
 	}
 
 	// Update multiple properties at once
-	body = `{
-		"properties": {
-			"title": "Updated Item",
-			"count": 100,
-			"completed": false
-		}
-	}`
-	req = httptest.NewRequest(http.MethodPatch, "/rows/"+created.ID, bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("update failed: %s", w.Body.String())
-	}
+	resp = ts.Request("PATCH", "/api/v1/rows/"+row.ID, map[string]interface{}{
+		"properties": map[string]interface{}{
+			"title":     "Updated Item",
+			"count":     100,
+			"completed": false,
+		},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusOK)
 
 	var updated rows.Row
-	json.Unmarshal(w.Body.Bytes(), &updated)
+	ts.ParseJSON(resp, &updated)
 
 	if updated.Properties["title"] != "Updated Item" {
 		t.Errorf("title not updated")
@@ -771,4 +573,115 @@ func TestRowHandler_PropertyTypes_AllTypesIntegration(t *testing.T) {
 	if updated.Properties["completed"] != false {
 		t.Errorf("completed not updated")
 	}
+}
+
+func TestRowHandler_Unauthenticated(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	// Setup - create data with authenticated user
+	_, cookie := ts.Register("rowauth@example.com", "Row Auth", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Auth Workspace", "row-auth-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Auth Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Test"})
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"create row", "POST", "/api/v1/databases/" + db.ID + "/rows"},
+		{"get row", "GET", "/api/v1/rows/" + row.ID},
+		{"update row", "PATCH", "/api/v1/rows/" + row.ID},
+		{"delete row", "DELETE", "/api/v1/rows/" + row.ID},
+		{"list rows", "GET", "/api/v1/databases/" + db.ID + "/rows"},
+		{"duplicate row", "POST", "/api/v1/rows/" + row.ID + "/duplicate"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := ts.Request(tt.method, tt.path, nil) // No cookie
+			ts.ExpectStatus(resp, http.StatusUnauthorized)
+			resp.Body.Close()
+		})
+	}
+}
+
+// Row Comments Tests
+
+func TestRowHandler_Comments(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	// Setup
+	_, cookie := ts.Register("rowcomment@example.com", "Row Comment", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Comment Workspace", "row-comment-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Comment Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Commentable Row"})
+
+	t.Run("create comment on row", func(t *testing.T) {
+		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/comments", map[string]interface{}{
+			"content": []map[string]interface{}{
+				{"type": "text", "text": "This is a comment on a row"},
+			},
+		}, cookie)
+		ts.ExpectStatus(resp, http.StatusCreated)
+		resp.Body.Close()
+	})
+
+	t.Run("list row comments", func(t *testing.T) {
+		resp := ts.Request("GET", "/api/v1/rows/"+row.ID+"/comments", nil, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
+		resp.Body.Close()
+	})
+}
+
+// Row Blocks Tests
+
+func TestRowHandler_Blocks(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	// Setup
+	_, cookie := ts.Register("rowblock@example.com", "Row Block", "password123")
+	ws := createTestWorkspace(ts, cookie, "Row Block Workspace", "row-block-ws")
+	db := createTestDatabase(ts, cookie, ws.ID, "Row Block Database")
+	row := createTestRow(ts, cookie, db.ID, map[string]interface{}{"title": "Row with Blocks"})
+
+	t.Run("create block in row", func(t *testing.T) {
+		resp := ts.Request("POST", "/api/v1/rows/"+row.ID+"/blocks", map[string]interface{}{
+			"type": "paragraph",
+			"content": map[string]interface{}{
+				"rich_text": []map[string]interface{}{
+					{"type": "text", "text": "Block content"},
+				},
+			},
+		}, cookie)
+		ts.ExpectStatus(resp, http.StatusCreated)
+		resp.Body.Close()
+	})
+
+	t.Run("list row blocks", func(t *testing.T) {
+		resp := ts.Request("GET", "/api/v1/rows/"+row.ID+"/blocks", nil, cookie)
+		ts.ExpectStatus(resp, http.StatusOK)
+		resp.Body.Close()
+	})
+}
+
+// Helper to create database with properties for filter tests
+func createDatabaseWithProperties(ts *TestServer, cookie *http.Cookie, wsID, title string) *databases.Database {
+	resp := ts.Request("POST", "/api/v1/databases", map[string]interface{}{
+		"workspace_id": wsID,
+		"title":        title,
+		"properties": []map[string]interface{}{
+			{"id": "title", "name": "Title", "type": "title"},
+			{"id": "status", "name": "Status", "type": "select"},
+			{"id": "priority", "name": "Priority", "type": "number"},
+		},
+	}, cookie)
+	ts.ExpectStatus(resp, http.StatusCreated)
+
+	var db databases.Database
+	ts.ParseJSON(resp, &db)
+	return &db
 }

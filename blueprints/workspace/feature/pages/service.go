@@ -26,6 +26,7 @@ func NewService(store Store, users users.API) *Service {
 }
 
 // Create creates a new page.
+// If DatabaseID is set in CreateIn, the page acts as a database row.
 func (s *Service) Create(ctx context.Context, in *CreateIn) (*Page, error) {
 	now := time.Now()
 	page := &Page{
@@ -33,6 +34,7 @@ func (s *Service) Create(ctx context.Context, in *CreateIn) (*Page, error) {
 		WorkspaceID: in.WorkspaceID,
 		ParentID:    in.ParentID,
 		ParentType:  in.ParentType,
+		DatabaseID:  in.DatabaseID,
 		Title:       in.Title,
 		Icon:        in.Icon,
 		Cover:       in.Cover,
@@ -48,6 +50,14 @@ func (s *Service) Create(ctx context.Context, in *CreateIn) (*Page, error) {
 
 	if page.ParentType == "" {
 		page.ParentType = ParentWorkspace
+	}
+
+	// If this is a database row, set the row position
+	if page.DatabaseID != "" {
+		maxPos, err := s.store.GetMaxRowPosition(ctx, page.DatabaseID)
+		if err == nil {
+			page.RowPosition = maxPos + 1
+		}
 	}
 
 	if err := s.store.Create(ctx, page); err != nil {

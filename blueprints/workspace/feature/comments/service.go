@@ -29,15 +29,16 @@ func NewService(store Store, users users.API) *Service {
 func (s *Service) Create(ctx context.Context, in *CreateIn) (*Comment, error) {
 	now := time.Now()
 	comment := &Comment{
-		ID:         ulid.New(),
-		PageID:     in.PageID,
-		BlockID:    in.BlockID,
-		ParentID:   in.ParentID,
-		Content:    in.Content,
-		AuthorID:   in.AuthorID,
-		IsResolved: false,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:          ulid.New(),
+		WorkspaceID: in.WorkspaceID,
+		TargetType:  in.TargetType,
+		TargetID:    in.TargetID,
+		ParentID:    in.ParentID,
+		Content:     in.Content,
+		AuthorID:    in.AuthorID,
+		IsResolved:  false,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	if err := s.store.Create(ctx, comment); err != nil {
@@ -69,9 +70,9 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.Delete(ctx, id)
 }
 
-// ListByPage lists comments for a page.
-func (s *Service) ListByPage(ctx context.Context, pageID string) ([]*Comment, error) {
-	comments, err := s.store.ListByPage(ctx, pageID)
+// ListByTarget lists comments for a specific target.
+func (s *Service) ListByTarget(ctx context.Context, workspaceID string, targetType TargetType, targetID string) ([]*Comment, error) {
+	comments, err := s.store.ListByTarget(ctx, workspaceID, targetType, targetID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +81,21 @@ func (s *Service) ListByPage(ctx context.Context, pageID string) ([]*Comment, er
 	return s.buildTree(ctx, comments)
 }
 
-// ListByBlock lists comments for a block.
+// ListByPage lists comments for a page (backwards compatibility).
+func (s *Service) ListByPage(ctx context.Context, pageID string) ([]*Comment, error) {
+	// For backwards compatibility, search without workspace filter
+	comments, err := s.store.ListByTarget(ctx, "", TargetPage, pageID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build tree and enrich
+	return s.buildTree(ctx, comments)
+}
+
+// ListByBlock lists comments for a block (backwards compatibility).
 func (s *Service) ListByBlock(ctx context.Context, blockID string) ([]*Comment, error) {
-	comments, err := s.store.ListByBlock(ctx, blockID)
+	comments, err := s.store.ListByTarget(ctx, "", TargetBlock, blockID)
 	if err != nil {
 		return nil, err
 	}

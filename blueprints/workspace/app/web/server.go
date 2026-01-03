@@ -24,8 +24,6 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/members"
 	"github.com/go-mizu/blueprints/workspace/feature/notifications"
 	"github.com/go-mizu/blueprints/workspace/feature/pages"
-	"github.com/go-mizu/blueprints/workspace/feature/rowblocks"
-	"github.com/go-mizu/blueprints/workspace/feature/rowcomments"
 	"github.com/go-mizu/blueprints/workspace/feature/rows"
 	"github.com/go-mizu/blueprints/workspace/feature/search"
 	"github.com/go-mizu/blueprints/workspace/feature/sharing"
@@ -58,8 +56,6 @@ type Server struct {
 	databases     databases.API
 	views         views.API
 	rows          rows.API
-	rowcomments   rowcomments.API
-	rowblocks     rowblocks.API
 	comments      comments.API
 	sharing       sharing.API
 	history       history.API
@@ -69,21 +65,19 @@ type Server struct {
 	templates     templates.API
 
 	// Handlers
-	authHandlers       *api.Auth
-	workspaceHandlers  *api.Workspace
-	pageHandlers       *api.Page
-	blockHandlers      *api.Block
-	databaseHandlers   *api.Database
-	viewHandlers       *api.View
-	rowHandlers           *api.Row
-	rowCommentHandlers    *api.RowComment
-	rowBlockHandlers      *api.RowBlock
-	commentHandlers       *api.Comment
-	shareHandlers      *api.Share
-	favoriteHandlers   *api.Favorite
-	searchHandlers     *api.Search
-	mediaHandlers      *api.Media
-	uiHandlers         *handler.UI
+	authHandlers      *api.Auth
+	workspaceHandlers *api.Workspace
+	pageHandlers      *api.Page
+	blockHandlers     *api.Block
+	databaseHandlers  *api.Database
+	viewHandlers      *api.View
+	rowHandlers       *api.Row
+	commentHandlers   *api.Comment
+	shareHandlers     *api.Share
+	favoriteHandlers  *api.Favorite
+	searchHandlers    *api.Search
+	mediaHandlers     *api.Media
+	uiHandlers        *handler.UI
 }
 
 // New creates a new server.
@@ -120,8 +114,6 @@ func New(cfg Config) (*Server, error) {
 	databasesStore := duckdb.NewDatabasesStore(db)
 	viewsStore := duckdb.NewViewsStore(db)
 	rowsStore := duckdb.NewRowsStore(db)
-	rowCommentsStore := duckdb.NewRowCommentsStore(db)
-	rowBlocksStore := duckdb.NewRowBlocksStore(db)
 	commentsStore := duckdb.NewCommentsStore(db)
 	sharesStore := duckdb.NewSharesStore(db)
 	historyStore := duckdb.NewHistoryStore(db)
@@ -137,9 +129,7 @@ func New(cfg Config) (*Server, error) {
 	blocksSvc := blocks.NewService(blocksStore)
 	databasesSvc := databases.NewService(databasesStore)
 	viewsSvc := views.NewService(viewsStore, pagesSvc)
-	rowsSvc := rows.NewService(rowsStore)
-	rowCommentsSvc := rowcomments.NewService(rowCommentsStore, usersSvc)
-	rowBlocksSvc := rowblocks.NewService(rowBlocksStore)
+	rowsSvc := rows.NewService(rowsStore, pagesSvc) // Rows now use pages service
 	commentsSvc := comments.NewService(commentsStore, usersSvc)
 	sharingSvc := sharing.NewService(sharesStore, usersSvc)
 	historySvc := history.NewService(historyStore, usersSvc, pagesSvc, blocksSvc)
@@ -160,8 +150,6 @@ func New(cfg Config) (*Server, error) {
 		databases:     databasesSvc,
 		views:         viewsSvc,
 		rows:          rowsSvc,
-		rowcomments:   rowCommentsSvc,
-		rowblocks:     rowBlocksSvc,
 		comments:      commentsSvc,
 		sharing:       sharingSvc,
 		history:       historySvc,
@@ -184,9 +172,7 @@ func New(cfg Config) (*Server, error) {
 	s.blockHandlers = api.NewBlock(blocksSvc, s.getUserID)
 	s.databaseHandlers = api.NewDatabase(databasesSvc, s.getUserID)
 	s.viewHandlers = api.NewView(viewsSvc, s.getUserID)
-	s.rowHandlers = api.NewRow(rowsSvc, s.getUserID)
-	s.rowCommentHandlers = api.NewRowComment(rowCommentsSvc, s.getUserID)
-	s.rowBlockHandlers = api.NewRowBlock(rowBlocksSvc)
+	s.rowHandlers = api.NewRow(rowsSvc, blocksSvc, commentsSvc, databasesSvc, s.getUserID)
 	s.commentHandlers = api.NewComment(commentsSvc, s.getUserID)
 	s.shareHandlers = api.NewShare(sharingSvc, s.getUserID)
 	s.favoriteHandlers = api.NewFavorite(favoritesSvc, s.getUserID)
@@ -253,6 +239,8 @@ func (s *Server) PageService() pages.API           { return s.pages }
 func (s *Server) BlockService() blocks.API         { return s.blocks }
 func (s *Server) DatabaseService() databases.API   { return s.databases }
 func (s *Server) ViewService() views.API           { return s.views }
+func (s *Server) RowService() rows.API             { return s.rows }
+func (s *Server) CommentService() comments.API     { return s.comments }
 
 // Handler returns the HTTP handler for testing.
 func (s *Server) Handler() http.Handler { return s.app }
@@ -332,6 +320,7 @@ func (s *Server) seedDevData() error {
 	s.db.ExecContext(ctx, "UPDATE databases SET id = ? WHERE id = ?", "dev-db-001", db.ID)
 
 	// Create realistic task rows (like Notion Tasks Tracker)
+	// Rows are now pages with database_id set
 	devRows := []struct {
 		id    string
 		props map[string]interface{}
@@ -444,16 +433,17 @@ func (s *Server) seedDevData() error {
 
 	for _, r := range devRows {
 		row, err := s.rows.Create(ctx, &rows.CreateIn{
-			DatabaseID: "dev-db-001",
-			Properties: r.props,
-			CreatedBy:  devUserID,
+			DatabaseID:  "dev-db-001",
+			WorkspaceID: ws.ID,
+			Properties:  r.props,
+			CreatedBy:   devUserID,
 		})
 		if err != nil {
 			slog.Warn("failed to create dev row", "rowID", r.id, "error", err)
 			continue
 		}
 		// Override row ID for consistency
-		s.db.ExecContext(ctx, "UPDATE database_rows SET id = ? WHERE id = ?", r.id, row.ID)
+		s.db.ExecContext(ctx, "UPDATE pages SET id = ? WHERE id = ?", r.id, row.ID)
 	}
 
 	// Create a default view
@@ -467,7 +457,7 @@ func (s *Server) seedDevData() error {
 		slog.Warn("failed to create dev view", "error", err)
 	}
 
-	// Seed sample row comments
+	// Seed sample row comments using polymorphic comments
 	sampleComments := []struct {
 		rowID   string
 		content string
@@ -479,42 +469,44 @@ func (s *Server) seedDevData() error {
 	}
 
 	for _, c := range sampleComments {
-		_, err := s.rowcomments.Create(ctx, &rowcomments.CreateIn{
-			RowID:   c.rowID,
-			Content: c.content,
-			UserID:  devUserID,
+		_, err := s.comments.Create(ctx, &comments.CreateIn{
+			WorkspaceID: ws.ID,
+			TargetType:  comments.TargetDatabaseRow,
+			TargetID:    c.rowID,
+			Content:     []blocks.RichText{{Type: "text", Text: c.content}},
+			AuthorID:    devUserID,
 		})
 		if err != nil {
 			slog.Warn("failed to create sample comment", "error", err)
 		}
 	}
 
-	// Seed sample content blocks for row3 (like the screenshot)
+	// Seed sample content blocks for row3 (which is a page)
+	// Using the standard blocks service with page_id = row3
 	sampleBlocks := []struct {
-		rowID string
 		typ   string
-		cont  string
-		props map[string]interface{}
+		cont  blocks.Content
 		order int
 	}{
-		{"row3", "heading_2", "Task description", nil, 0},
-		{"row3", "paragraph", "Provide an overview of the task and related details.", nil, 1},
-		{"row3", "heading_2", "Sub-tasks", nil, 2},
-		{"row3", "to_do", "Review previous release notes format", map[string]interface{}{"checked": false}, 3},
-		{"row3", "to_do", "Gather feature list from engineering", map[string]interface{}{"checked": false}, 4},
-		{"row3", "to_do", "Write initial draft", map[string]interface{}{"checked": false}, 5},
-		{"row3", "to_do", "Get approval from PM", map[string]interface{}{"checked": false}, 6},
-		{"row3", "to_do", "Publish to blog and email", map[string]interface{}{"checked": false}, 7},
-		{"row3", "heading_2", "Supporting files", nil, 8},
-		{"row3", "callout", "Add any relevant documents, designs, or references here.", nil, 9},
+		{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Task description"}}}, 0},
+		{string(blocks.BlockParagraph), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Provide an overview of the task and related details."}}}, 1},
+		{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Sub-tasks"}}}, 2},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Review previous release notes format"}}, Checked: ptrBool(false)}, 3},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Gather feature list from engineering"}}, Checked: ptrBool(false)}, 4},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Write initial draft"}}, Checked: ptrBool(false)}, 5},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Get approval from PM"}}, Checked: ptrBool(false)}, 6},
+		{string(blocks.BlockTodo), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Publish to blog and email"}}, Checked: ptrBool(false)}, 7},
+		{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Supporting files"}}}, 8},
+		{string(blocks.BlockCallout), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Add any relevant documents, designs, or references here."}}, Icon: "📎"}, 9},
 	}
 
 	for _, b := range sampleBlocks {
-		_, err := s.rowblocks.Create(ctx, &rowblocks.CreateIn{
-			RowID:      b.rowID,
-			Type:       rowblocks.BlockType(b.typ),
-			Content:    b.cont,
-			Properties: b.props,
+		_, err := s.blocks.Create(ctx, &blocks.CreateIn{
+			PageID:    "row3", // row3 is a page
+			Type:      blocks.BlockType(b.typ),
+			Content:   b.cont,
+			Position:  b.order,
+			CreatedBy: devUserID,
 		})
 		if err != nil {
 			slog.Warn("failed to create sample block", "error", err)
@@ -599,7 +591,7 @@ func (s *Server) setupRoutes() {
 		api.Post("/databases/{id}/views", s.authRequired(s.viewHandlers.Create))
 		api.Post("/views/{id}/query", s.authRequired(s.viewHandlers.Query))
 
-		// Rows
+		// Rows (database rows are pages with database_id set)
 		api.Get("/databases/{id}/rows", s.authRequired(s.rowHandlers.List))
 		api.Post("/databases/{id}/rows", s.authRequired(s.rowHandlers.Create))
 		api.Get("/rows/{id}", s.authRequired(s.rowHandlers.Get))
@@ -607,22 +599,20 @@ func (s *Server) setupRoutes() {
 		api.Delete("/rows/{id}", s.authRequired(s.rowHandlers.Delete))
 		api.Post("/rows/{id}/duplicate", s.authRequired(s.rowHandlers.Duplicate))
 
-		// Row Comments (for side peek)
-		api.Get("/rows/{id}/comments", s.authRequired(s.rowCommentHandlers.List))
-		api.Post("/rows/{id}/comments", s.authRequired(s.rowCommentHandlers.Create))
-		api.Get("/row-comments/{id}", s.authRequired(s.rowCommentHandlers.Get))
-		api.Patch("/row-comments/{id}", s.authRequired(s.rowCommentHandlers.Update))
-		api.Delete("/row-comments/{id}", s.authRequired(s.rowCommentHandlers.Delete))
-		api.Post("/row-comments/{id}/resolve", s.authRequired(s.rowCommentHandlers.Resolve))
-		api.Post("/row-comments/{id}/unresolve", s.authRequired(s.rowCommentHandlers.Unresolve))
+		// Row Comments (using unified comments with target_type=database_row)
+		api.Get("/rows/{id}/comments", s.authRequired(s.rowHandlers.ListComments))
+		api.Post("/rows/{id}/comments", s.authRequired(s.rowHandlers.CreateComment))
+		api.Patch("/row-comments/{id}", s.authRequired(s.rowHandlers.UpdateComment))
+		api.Delete("/row-comments/{id}", s.authRequired(s.rowHandlers.DeleteComment))
+		api.Post("/row-comments/{id}/resolve", s.authRequired(s.rowHandlers.ResolveComment))
+		api.Post("/row-comments/{id}/unresolve", s.authRequired(s.rowHandlers.UnresolveComment))
 
-		// Row Content Blocks (for side peek)
-		api.Get("/rows/{id}/blocks", s.authRequired(s.rowBlockHandlers.List))
-		api.Post("/rows/{id}/blocks", s.authRequired(s.rowBlockHandlers.Create))
-		api.Post("/rows/{id}/blocks/reorder", s.authRequired(s.rowBlockHandlers.Reorder))
-		api.Get("/row-blocks/{id}", s.authRequired(s.rowBlockHandlers.Get))
-		api.Patch("/row-blocks/{id}", s.authRequired(s.rowBlockHandlers.Update))
-		api.Delete("/row-blocks/{id}", s.authRequired(s.rowBlockHandlers.Delete))
+		// Row Content Blocks (using unified blocks with page_id = row id)
+		api.Get("/rows/{id}/blocks", s.authRequired(s.rowHandlers.ListBlocks))
+		api.Post("/rows/{id}/blocks", s.authRequired(s.rowHandlers.CreateBlock))
+		api.Post("/rows/{id}/blocks/reorder", s.authRequired(s.rowHandlers.ReorderBlocks))
+		api.Patch("/row-blocks/{id}", s.authRequired(s.rowHandlers.UpdateBlock))
+		api.Delete("/row-blocks/{id}", s.authRequired(s.rowHandlers.DeleteBlock))
 
 		// Comments
 		api.Post("/comments", s.authRequired(s.commentHandlers.Create))
@@ -649,4 +639,8 @@ func (s *Server) setupRoutes() {
 		// Media
 		api.Post("/media/upload", s.authRequired(s.mediaHandlers.Upload))
 	})
+}
+
+func ptrBool(b bool) *bool {
+	return &b
 }
