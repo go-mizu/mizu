@@ -9,6 +9,39 @@ interface TemplateContent {
   props?: Record<string, unknown>
 }
 
+// Map template/API block types to BlockNote block types
+function mapTemplateTypeToBlockNote(type: string): string {
+  const typeMap: Record<string, string> = {
+    // Text blocks
+    paragraph: 'paragraph',
+    heading_1: 'heading',
+    heading_2: 'heading',
+    heading_3: 'heading',
+    quote: 'quote',
+    callout: 'callout',
+
+    // List blocks
+    bulleted_list: 'bulletListItem',
+    numbered_list: 'numberedListItem',
+    toggle: 'toggleListItem',
+    to_do: 'checkListItem',
+
+    // Media blocks
+    image: 'image',
+    video: 'video',
+    file: 'file',
+    bookmark: 'bookmark',
+
+    // Advanced blocks
+    code: 'codeBlock',
+    equation: 'equation',
+    table: 'table',
+    divider: 'divider',
+  }
+
+  return typeMap[type] || type
+}
+
 export const TemplateBlock = createReactBlockSpec(
   {
     type: 'templateButton',
@@ -49,38 +82,89 @@ export const TemplateBlock = createReactBlockSpec(
         templateContent = []
       }
 
-      // Handle template duplication
+      // Handle template duplication - Insert template blocks after this block
       const handleDuplicate = useCallback(() => {
         if (templateContent.length === 0) {
-          // If no template content, just show a message
-          console.log('No template content to duplicate')
+          // If no template content, show a helpful message
+          const feedback = document.createElement('div')
+          feedback.textContent = 'No template content defined. Edit the template to add blocks.'
+          feedback.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            background: var(--text-tertiary);
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            animation: fadeInUp 0.3s ease-out;
+          `
+          document.body.appendChild(feedback)
+          setTimeout(() => feedback.remove(), 2000)
           return
         }
 
-        // TODO: Insert duplicated template blocks after this block
-        // This would use editor.insertBlocks() with the template content
+        try {
+          // Convert template content to BlockNote block format
+          const blocksToInsert = templateContent.map((item) => {
+            // Map template type to BlockNote block type
+            const blockType = mapTemplateTypeToBlockNote(item.type)
 
-        setDuplicateCount((prev) => prev + 1)
+            return {
+              type: blockType as any, // Cast to any for dynamic block types
+              props: item.props || {},
+              content: item.content || [],
+            }
+          })
 
-        // Visual feedback
-        const feedback = document.createElement('div')
-        feedback.textContent = 'Content created!'
-        feedback.style.cssText = `
-          position: fixed;
-          bottom: 24px;
-          right: 24px;
-          padding: 12px 20px;
-          background: var(--accent-color);
-          color: white;
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 500;
-          z-index: 9999;
-          animation: fadeInUp 0.3s ease-out;
-        `
-        document.body.appendChild(feedback)
-        setTimeout(() => feedback.remove(), 2000)
-      }, [templateContent])
+          // Insert blocks after the template button block
+          editor.insertBlocks(blocksToInsert as any, block, 'after')
+
+          setDuplicateCount((prev) => prev + 1)
+
+          // Visual feedback
+          const feedback = document.createElement('div')
+          feedback.textContent = `Created ${blocksToInsert.length} block${blocksToInsert.length !== 1 ? 's' : ''}!`
+          feedback.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            background: var(--accent-color);
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            animation: fadeInUp 0.3s ease-out;
+          `
+          document.body.appendChild(feedback)
+          setTimeout(() => feedback.remove(), 2000)
+        } catch (err) {
+          console.error('Failed to insert template blocks:', err)
+
+          // Error feedback
+          const feedback = document.createElement('div')
+          feedback.textContent = 'Failed to create content. Please try again.'
+          feedback.style.cssText = `
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            background: var(--danger-color);
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 9999;
+            animation: fadeInUp 0.3s ease-out;
+          `
+          document.body.appendChild(feedback)
+          setTimeout(() => feedback.remove(), 2000)
+        }
+      }, [templateContent, block, editor])
 
       // Toggle template preview
       const togglePreview = useCallback(() => {

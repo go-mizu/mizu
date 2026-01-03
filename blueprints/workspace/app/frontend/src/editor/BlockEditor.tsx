@@ -95,6 +95,8 @@ import { SyncedBlock } from './blocks/SyncedBlock'
 import { TemplateBlock } from './blocks/TemplateBlock'
 import { InlineDatabaseBlock } from './blocks/InlineDatabaseBlock'
 import { SimpleTableBlock } from './blocks/SimpleTableBlock'
+import { BreadcrumbBlock } from './blocks/BreadcrumbBlock'
+import { ChildPageBlock } from './blocks/ChildPageBlock'
 import { MentionInline } from './InlineMention'
 
 // Type for drag handle menu item props
@@ -516,6 +518,8 @@ const baseSchema = BlockNoteSchema.create({
     templateButton: TemplateBlock(),
     inlineDatabase: InlineDatabaseBlock(),
     simpleTable: SimpleTableBlock(),
+    breadcrumb: BreadcrumbBlock(),
+    childPage: ChildPageBlock(),
   },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
@@ -1304,6 +1308,34 @@ function getCustomSlashMenuItems(editor: EditorType): DefaultReactSuggestionItem
       group: 'Advanced blocks',
       icon: <Sparkles size={18} />,
       subtext: 'Duplicate template content',
+    },
+    {
+      title: 'Breadcrumb',
+      onItemClick: () => {
+        editor.insertBlocks(
+          [{ type: 'breadcrumb' as const }],
+          editor.getTextCursorPosition().block,
+          'after'
+        )
+      },
+      aliases: ['breadcrumb', 'path', 'navigation', 'hierarchy'],
+      group: 'Advanced blocks',
+      icon: <ChevronRight size={18} />,
+      subtext: 'Show the page path',
+    },
+    {
+      title: 'Child page',
+      onItemClick: () => {
+        editor.insertBlocks(
+          [{ type: 'childPage' as const }],
+          editor.getTextCursorPosition().block,
+          'after'
+        )
+      },
+      aliases: ['child page', 'subpage', 'nested page', 'new page'],
+      group: 'Advanced blocks',
+      icon: <FileText size={18} />,
+      subtext: 'Create a sub-page inside this page',
     },
   ]
 

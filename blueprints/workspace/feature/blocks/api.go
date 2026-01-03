@@ -45,6 +45,10 @@ const (
 	BlockChildDB    BlockType = "child_database"
 	BlockLinkedDB   BlockType = "linked_database"
 	BlockSyncedBlock BlockType = "synced_block"
+
+	// Navigation blocks
+	BlockBreadcrumb     BlockType = "breadcrumb"
+	BlockTemplateButton BlockType = "template_button"
 )
 
 // Block represents a content block.
@@ -96,6 +100,13 @@ type Content struct {
 
 	// Synced block
 	SyncedFrom string `json:"synced_from,omitempty"`
+
+	// Template button
+	ButtonText  string `json:"button_text,omitempty"`
+	ButtonStyle string `json:"button_style,omitempty"` // default, primary, outline
+
+	// Column layout
+	ColumnCount int `json:"column_count,omitempty"`
 }
 
 // RichText represents formatted text.

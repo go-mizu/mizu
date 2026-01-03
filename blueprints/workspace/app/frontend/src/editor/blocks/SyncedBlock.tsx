@@ -1,14 +1,183 @@
 import { createReactBlockSpec } from '@blocknote/react'
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Link2, RefreshCw, Unlink, ExternalLink, AlertCircle, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface SyncedBlockData {
   id: string
-  content: unknown[]
+  content: SyncedBlockContent[]
   pageId: string
   pageName: string
   lastUpdated: string
+}
+
+interface SyncedBlockContent {
+  id?: string
+  type: string
+  content?: {
+    rich_text?: Array<{ text: string; annotations?: Record<string, boolean | string> }>
+    text?: string
+    checked?: boolean
+    icon?: string
+    color?: string
+    language?: string
+    url?: string
+  }
+}
+
+// Helper function to render synced block content
+function renderSyncedBlock(block: SyncedBlockContent): React.ReactNode {
+  const { type, content } = block
+
+  // Extract text from rich_text array
+  const getText = (): string => {
+    if (content?.rich_text && Array.isArray(content.rich_text)) {
+      return content.rich_text.map((rt: { text: string }) => rt.text || '').join('')
+    }
+    return content?.text || ''
+  }
+
+  const text = getText()
+
+  switch (type) {
+    case 'paragraph':
+      return (
+        <p style={{ margin: '2px 0', lineHeight: 1.5 }}>
+          {text || <span style={{ color: 'var(--text-placeholder)' }}>Empty paragraph</span>}
+        </p>
+      )
+
+    case 'heading_1':
+      return (
+        <h1 style={{ fontSize: '1.875em', fontWeight: 600, margin: '8px 0 4px' }}>
+          {text}
+        </h1>
+      )
+
+    case 'heading_2':
+      return (
+        <h2 style={{ fontSize: '1.5em', fontWeight: 600, margin: '6px 0 4px' }}>
+          {text}
+        </h2>
+      )
+
+    case 'heading_3':
+      return (
+        <h3 style={{ fontSize: '1.25em', fontWeight: 600, margin: '4px 0' }}>
+          {text}
+        </h3>
+      )
+
+    case 'bulleted_list':
+      return (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', margin: '2px 0' }}>
+          <span style={{ color: 'var(--text-secondary)' }}>•</span>
+          <span>{text}</span>
+        </div>
+      )
+
+    case 'numbered_list':
+      return (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', margin: '2px 0' }}>
+          <span style={{ color: 'var(--text-secondary)', minWidth: '20px' }}>1.</span>
+          <span>{text}</span>
+        </div>
+      )
+
+    case 'to_do':
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '2px 0' }}>
+          <input
+            type="checkbox"
+            checked={content?.checked || false}
+            readOnly
+            style={{ width: '16px', height: '16px' }}
+          />
+          <span style={{ textDecoration: content?.checked ? 'line-through' : 'none' }}>
+            {text}
+          </span>
+        </div>
+      )
+
+    case 'quote':
+      return (
+        <blockquote
+          style={{
+            borderLeft: '3px solid var(--text-primary)',
+            paddingLeft: '14px',
+            margin: '4px 0',
+            color: 'var(--text-primary)',
+          }}
+        >
+          {text}
+        </blockquote>
+      )
+
+    case 'callout':
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '12px',
+            borderRadius: '4px',
+            background: 'var(--bg-secondary)',
+            margin: '4px 0',
+          }}
+        >
+          <span style={{ fontSize: '1.2em' }}>{content?.icon || '💡'}</span>
+          <span>{text}</span>
+        </div>
+      )
+
+    case 'code':
+      return (
+        <pre
+          style={{
+            background: 'var(--bg-secondary)',
+            padding: '12px',
+            borderRadius: '4px',
+            fontSize: '13px',
+            fontFamily: 'var(--font-mono)',
+            overflow: 'auto',
+            margin: '4px 0',
+          }}
+        >
+          <code>{text}</code>
+        </pre>
+      )
+
+    case 'divider':
+      return (
+        <hr
+          style={{
+            border: 'none',
+            borderTop: '1px solid var(--border-color)',
+            margin: '8px 0',
+          }}
+        />
+      )
+
+    case 'image':
+      return content?.url ? (
+        <img
+          src={content.url}
+          alt=""
+          style={{ maxWidth: '100%', borderRadius: '4px', margin: '4px 0' }}
+        />
+      ) : null
+
+    default:
+      // Fallback for unknown block types
+      return text ? (
+        <div style={{ margin: '2px 0' }}>{text}</div>
+      ) : (
+        <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+          [{type} block]
+        </div>
+      )
+  }
 }
 
 export const SyncedBlock = createReactBlockSpec(
@@ -328,13 +497,14 @@ export const SyncedBlock = createReactBlockSpec(
               transition: 'background 0.15s',
             }}
           >
-            {syncedData?.content ? (
-              // TODO: Render synced blocks properly using BlockNote's rendering
-              <div style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
-                {/* Placeholder for synced content rendering */}
-                <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                  Synced content would render here...
-                </p>
+            {syncedData?.content && Array.isArray(syncedData.content) && syncedData.content.length > 0 ? (
+              <div className="synced-blocks-container" style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
+                {/* Render synced blocks - simplified preview for now */}
+                {syncedData.content.map((block: any, index: number) => (
+                  <div key={block.id || index} className="synced-block-preview" style={{ marginBottom: '4px' }}>
+                    {renderSyncedBlock(block)}
+                  </div>
+                ))}
               </div>
             ) : (
               <p style={{ color: 'var(--text-tertiary)', fontSize: '14px', fontStyle: 'italic' }}>
