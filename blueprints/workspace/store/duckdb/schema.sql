@@ -140,6 +140,20 @@ CREATE TABLE IF NOT EXISTS views (
 );
 
 -- ============================================================
+-- Database Rows
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS database_rows (
+    id          VARCHAR PRIMARY KEY,
+    database_id VARCHAR NOT NULL,
+    properties  JSON DEFAULT '{}',
+    created_by  VARCHAR NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by  VARCHAR NOT NULL,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- Comments
 -- ============================================================
 
@@ -268,5 +282,7 @@ CREATE INDEX IF NOT EXISTS idx_activities_workspace ON activities(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id, workspace_id);
 CREATE INDEX IF NOT EXISTS idx_views_database ON views(database_id);
+CREATE INDEX IF NOT EXISTS idx_database_rows_database ON database_rows(database_id);
+CREATE INDEX IF NOT EXISTS idx_database_rows_created ON database_rows(database_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_members_workspace ON members(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);

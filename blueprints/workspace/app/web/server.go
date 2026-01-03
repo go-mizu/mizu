@@ -24,6 +24,7 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/members"
 	"github.com/go-mizu/blueprints/workspace/feature/notifications"
 	"github.com/go-mizu/blueprints/workspace/feature/pages"
+	"github.com/go-mizu/blueprints/workspace/feature/rows"
 	"github.com/go-mizu/blueprints/workspace/feature/search"
 	"github.com/go-mizu/blueprints/workspace/feature/sharing"
 	"github.com/go-mizu/blueprints/workspace/feature/templates"
@@ -54,6 +55,7 @@ type Server struct {
 	blocks        blocks.API
 	databases     databases.API
 	views         views.API
+	rows          rows.API
 	comments      comments.API
 	sharing       sharing.API
 	history       history.API
@@ -69,6 +71,7 @@ type Server struct {
 	blockHandlers      *api.Block
 	databaseHandlers   *api.Database
 	viewHandlers       *api.View
+	rowHandlers        *api.Row
 	commentHandlers    *api.Comment
 	shareHandlers      *api.Share
 	favoriteHandlers   *api.Favorite
@@ -110,6 +113,7 @@ func New(cfg Config) (*Server, error) {
 	blocksStore := duckdb.NewBlocksStore(db)
 	databasesStore := duckdb.NewDatabasesStore(db)
 	viewsStore := duckdb.NewViewsStore(db)
+	rowsStore := duckdb.NewRowsStore(db)
 	commentsStore := duckdb.NewCommentsStore(db)
 	sharesStore := duckdb.NewSharesStore(db)
 	historyStore := duckdb.NewHistoryStore(db)
@@ -125,6 +129,7 @@ func New(cfg Config) (*Server, error) {
 	blocksSvc := blocks.NewService(blocksStore)
 	databasesSvc := databases.NewService(databasesStore)
 	viewsSvc := views.NewService(viewsStore, pagesSvc)
+	rowsSvc := rows.NewService(rowsStore)
 	commentsSvc := comments.NewService(commentsStore, usersSvc)
 	sharingSvc := sharing.NewService(sharesStore, usersSvc)
 	historySvc := history.NewService(historyStore, usersSvc, pagesSvc, blocksSvc)
@@ -144,6 +149,7 @@ func New(cfg Config) (*Server, error) {
 		blocks:        blocksSvc,
 		databases:     databasesSvc,
 		views:         viewsSvc,
+		rows:          rowsSvc,
 		comments:      commentsSvc,
 		sharing:       sharingSvc,
 		history:       historySvc,
@@ -166,6 +172,7 @@ func New(cfg Config) (*Server, error) {
 	s.blockHandlers = api.NewBlock(blocksSvc, s.getUserID)
 	s.databaseHandlers = api.NewDatabase(databasesSvc, s.getUserID)
 	s.viewHandlers = api.NewView(viewsSvc, s.getUserID)
+	s.rowHandlers = api.NewRow(rowsSvc, s.getUserID)
 	s.commentHandlers = api.NewComment(commentsSvc, s.getUserID)
 	s.shareHandlers = api.NewShare(sharingSvc, s.getUserID)
 	s.favoriteHandlers = api.NewFavorite(favoritesSvc, s.getUserID)
@@ -297,9 +304,19 @@ func (s *Server) setupRoutes() {
 		api.Post("/views", s.authRequired(s.viewHandlers.Create))
 		api.Get("/views/{id}", s.authRequired(s.viewHandlers.Get))
 		api.Patch("/views/{id}", s.authRequired(s.viewHandlers.Update))
+		api.Put("/views/{id}", s.authRequired(s.viewHandlers.Update))
 		api.Delete("/views/{id}", s.authRequired(s.viewHandlers.Delete))
 		api.Get("/databases/{id}/views", s.authRequired(s.viewHandlers.List))
+		api.Post("/databases/{id}/views", s.authRequired(s.viewHandlers.Create))
 		api.Post("/views/{id}/query", s.authRequired(s.viewHandlers.Query))
+
+		// Rows
+		api.Get("/databases/{id}/rows", s.authRequired(s.rowHandlers.List))
+		api.Post("/databases/{id}/rows", s.authRequired(s.rowHandlers.Create))
+		api.Get("/rows/{id}", s.authRequired(s.rowHandlers.Get))
+		api.Patch("/rows/{id}", s.authRequired(s.rowHandlers.Update))
+		api.Delete("/rows/{id}", s.authRequired(s.rowHandlers.Delete))
+		api.Post("/rows/{id}/duplicate", s.authRequired(s.rowHandlers.Duplicate))
 
 		// Comments
 		api.Post("/comments", s.authRequired(s.commentHandlers.Create))

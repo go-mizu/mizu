@@ -181,6 +181,12 @@ func (h *View) Create(c *mizu.Ctx) error {
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+
+	// Allow database_id from path parameter (for POST /databases/{id}/views)
+	if dbID := c.Param("id"); dbID != "" && in.DatabaseID == "" {
+		in.DatabaseID = dbID
+	}
+
 	in.CreatedBy = userID
 	view, err := h.views.Create(c.Request().Context(), &in)
 	if err != nil {
@@ -225,7 +231,7 @@ func (h *View) List(c *mizu.Ctx) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, list)
+	return c.JSON(http.StatusOK, map[string]interface{}{"views": list})
 }
 
 func (h *View) Query(c *mizu.Ctx) error {
