@@ -608,3 +608,498 @@ func TestBundler_AddFile(t *testing.T) {
 		t.Error("Expected non-empty ZIP data")
 	}
 }
+
+func TestMarkdownConverter_Toggle(t *testing.T) {
+	converter := NewMarkdownConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockToggle,
+				Content: blocks.Content{
+					RichText: []blocks.RichText{{Type: "text", Text: "Toggle Header"}},
+				},
+				Children: []*blocks.Block{
+					{
+						Type: blocks.BlockParagraph,
+						Content: blocks.Content{
+							RichText: []blocks.RichText{{Type: "text", Text: "Toggle content"}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "<details>") {
+		t.Error("Expected <details> tag for toggle block")
+	}
+	if !strings.Contains(content, "<summary>Toggle Header</summary>") {
+		t.Error("Expected summary with toggle header")
+	}
+	if !strings.Contains(content, "Toggle content") {
+		t.Error("Expected toggle content in output")
+	}
+}
+
+func TestMarkdownConverter_Divider(t *testing.T) {
+	converter := NewMarkdownConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type:    blocks.BlockParagraph,
+				Content: blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Before"}}},
+			},
+			{
+				Type:    blocks.BlockDivider,
+				Content: blocks.Content{},
+			},
+			{
+				Type:    blocks.BlockParagraph,
+				Content: blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "After"}}},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "---") {
+		t.Error("Expected horizontal rule (---) for divider")
+	}
+}
+
+func TestMarkdownConverter_Image(t *testing.T) {
+	converter := NewMarkdownConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockImage,
+				Content: blocks.Content{
+					URL: "https://example.com/image.png",
+					Caption: []blocks.RichText{
+						{Type: "text", Text: "Image caption"},
+					},
+				},
+			},
+		},
+	}
+
+	// With images included
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "![Image caption](https://example.com/image.png)") {
+		t.Error("Expected image markdown with caption as alt text")
+	}
+
+	// Without images
+	result, err = converter.Convert(page, &Request{IncludeImages: false})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content = string(result)
+	if strings.Contains(content, "![") {
+		t.Error("Expected no image when IncludeImages is false")
+	}
+}
+
+func TestHTMLConverter_Toggle(t *testing.T) {
+	converter := NewHTMLConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockToggle,
+				Content: blocks.Content{
+					RichText: []blocks.RichText{{Type: "text", Text: "Toggle Title"}},
+				},
+				Children: []*blocks.Block{
+					{
+						Type: blocks.BlockParagraph,
+						Content: blocks.Content{
+							RichText: []blocks.RichText{{Type: "text", Text: "Nested content"}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "<details") {
+		t.Error("Expected <details> element for toggle")
+	}
+	if !strings.Contains(content, "<summary>Toggle Title</summary>") {
+		t.Error("Expected summary with toggle title")
+	}
+	if !strings.Contains(content, "Nested content") {
+		t.Error("Expected nested content in toggle")
+	}
+}
+
+func TestHTMLConverter_Divider(t *testing.T) {
+	converter := NewHTMLConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type:    blocks.BlockDivider,
+				Content: blocks.Content{},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "<hr") {
+		t.Error("Expected <hr> element for divider")
+	}
+}
+
+func TestHTMLConverter_Table(t *testing.T) {
+	converter := NewHTMLConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockTable,
+				Content: blocks.Content{
+					TableWidth: 2,
+					HasHeader:  true,
+				},
+				Children: []*blocks.Block{
+					{
+						Type: blocks.BlockTableRow,
+						Content: blocks.Content{
+							RichText: []blocks.RichText{
+								{Type: "text", Text: "Header 1"},
+								{Type: "text", Text: "Header 2"},
+							},
+						},
+					},
+					{
+						Type: blocks.BlockTableRow,
+						Content: blocks.Content{
+							RichText: []blocks.RichText{
+								{Type: "text", Text: "Cell 1"},
+								{Type: "text", Text: "Cell 2"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "<table") {
+		t.Error("Expected <table> element")
+	}
+}
+
+func TestValidateRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		req       *Request
+		wantError bool
+		errContains string
+	}{
+		{
+			name:      "missing page_id",
+			req:       &Request{Format: FormatMarkdown},
+			wantError: true,
+			errContains: "page_id",
+		},
+		{
+			name:      "missing format",
+			req:       &Request{PageID: "page-123"},
+			wantError: true,
+			errContains: "format",
+		},
+		{
+			name:      "invalid format",
+			req:       &Request{PageID: "page-123", Format: "invalid"},
+			wantError: true,
+			errContains: "invalid format",
+		},
+		{
+			name: "valid markdown request",
+			req:  &Request{PageID: "page-123", Format: FormatMarkdown},
+			wantError: false,
+		},
+		{
+			name: "valid html request",
+			req:  &Request{PageID: "page-123", Format: FormatHTML},
+			wantError: false,
+		},
+		{
+			name: "valid pdf request",
+			req:  &Request{PageID: "page-123", Format: FormatPDF},
+			wantError: false,
+		},
+	}
+
+	svc := &Service{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := svc.validateRequest(tt.req)
+			if tt.wantError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("Expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateRequest_Defaults(t *testing.T) {
+	svc := &Service{}
+	req := &Request{PageID: "page-123", Format: FormatPDF}
+
+	err := svc.validateRequest(req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Check defaults are applied
+	if req.PageSize != PageSizeLetter {
+		t.Errorf("Expected default page size 'letter', got %q", req.PageSize)
+	}
+	if req.Orientation != OrientationPortrait {
+		t.Errorf("Expected default orientation 'portrait', got %q", req.Orientation)
+	}
+	if req.Scale != 100 {
+		t.Errorf("Expected default scale 100, got %d", req.Scale)
+	}
+}
+
+func TestValidateRequest_ScaleRange(t *testing.T) {
+	svc := &Service{}
+
+	// Scale = 0 should default to 100
+	req := &Request{PageID: "page-123", Format: FormatPDF, Scale: 0}
+	_ = svc.validateRequest(req)
+	if req.Scale != 100 {
+		t.Errorf("Expected scale 100 for 0 input, got %d", req.Scale)
+	}
+
+	// Scale > 200 should default to 100
+	req = &Request{PageID: "page-123", Format: FormatPDF, Scale: 300}
+	_ = svc.validateRequest(req)
+	if req.Scale != 100 {
+		t.Errorf("Expected scale 100 for 300 input, got %d", req.Scale)
+	}
+
+	// Valid scale should be preserved
+	req = &Request{PageID: "page-123", Format: FormatPDF, Scale: 75}
+	_ = svc.validateRequest(req)
+	if req.Scale != 75 {
+		t.Errorf("Expected scale 75, got %d", req.Scale)
+	}
+}
+
+func TestGetFilename(t *testing.T) {
+	tests := []struct {
+		title    string
+		format   Format
+		isZip    bool
+		expected string
+	}{
+		{"My Page", FormatMarkdown, false, "My Page.md"},
+		{"My Page", FormatHTML, false, "My Page.html"},
+		{"My Page", FormatPDF, false, "My Page.pdf"},
+		{"My Page", FormatMarkdown, true, "My Page.zip"},
+		{"", FormatMarkdown, false, "untitled.md"},
+	}
+
+	for _, tt := range tests {
+		result := GetFilename(tt.title, tt.format, tt.isZip)
+		if result != tt.expected {
+			t.Errorf("GetFilename(%q, %q, %v) = %q, want %q",
+				tt.title, tt.format, tt.isZip, result, tt.expected)
+		}
+	}
+}
+
+func TestGetContentType(t *testing.T) {
+	tests := []struct {
+		format   Format
+		isZip    bool
+		expected string
+	}{
+		{FormatMarkdown, false, "text/markdown; charset=utf-8"},
+		{FormatHTML, false, "text/html; charset=utf-8"},
+		{FormatPDF, false, "application/pdf"},
+		{FormatMarkdown, true, "application/zip"},
+		{FormatHTML, true, "application/zip"},
+	}
+
+	for _, tt := range tests {
+		result := GetContentType(tt.format, tt.isZip)
+		if result != tt.expected {
+			t.Errorf("GetContentType(%q, %v) = %q, want %q",
+				tt.format, tt.isZip, result, tt.expected)
+		}
+	}
+}
+
+func TestDetectContentType(t *testing.T) {
+	tests := []struct {
+		filename string
+		expected string
+	}{
+		{"file.zip", "application/zip"},
+		{"file.pdf", "application/pdf"},
+		{"file.html", "text/html; charset=utf-8"},
+		{"file.HTML", "text/html; charset=utf-8"},
+		{"file.md", "text/markdown; charset=utf-8"},
+		{"file.csv", "text/csv; charset=utf-8"},
+		{"file.unknown", "application/octet-stream"},
+	}
+
+	for _, tt := range tests {
+		result := DetectContentType(tt.filename)
+		if result != tt.expected {
+			t.Errorf("DetectContentType(%q) = %q, want %q",
+				tt.filename, result, tt.expected)
+		}
+	}
+}
+
+func TestMarkdownConverter_Callout(t *testing.T) {
+	converter := NewMarkdownConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockCallout,
+				Content: blocks.Content{
+					RichText: []blocks.RichText{{Type: "text", Text: "Important note"}},
+					Icon:     "💡",
+					Color:    "yellow",
+				},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "> 💡") {
+		t.Error("Expected callout with icon as blockquote")
+	}
+	if !strings.Contains(content, "Important note") {
+		t.Error("Expected callout content")
+	}
+}
+
+func TestHTMLConverter_Bookmark(t *testing.T) {
+	converter := NewHTMLConverter()
+
+	page := &ExportedPage{
+		Title: "Test",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockBookmark,
+				Content: blocks.Content{
+					URL: "https://example.com",
+					Caption: []blocks.RichText{
+						{Type: "text", Text: "Example Site"},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := converter.Convert(page, &Request{IncludeImages: true})
+	if err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+
+	content := string(result)
+	if !strings.Contains(content, "https://example.com") {
+		t.Error("Expected bookmark URL in output")
+	}
+	if !strings.Contains(content, "bookmark") {
+		t.Error("Expected bookmark class in output")
+	}
+}
+
+func TestCreateBundle_PDF(t *testing.T) {
+	page := &ExportedPage{
+		Title: "Test Page",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockParagraph,
+				Content: blocks.Content{
+					RichText: []blocks.RichText{{Type: "text", Text: "PDF content"}},
+				},
+			},
+		},
+	}
+
+	bundle, err := CreateBundle(page, &Request{
+		Format:      FormatPDF,
+		PageSize:    PageSizeA4,
+		Orientation: OrientationPortrait,
+		Scale:       100,
+	})
+	if err != nil {
+		// PDF may fail without chromedp/wkhtmltopdf, which is expected
+		t.Skipf("PDF creation skipped (likely no PDF renderer available): %v", err)
+	}
+
+	if bundle.Filename != "Test Page.pdf" {
+		t.Errorf("Expected filename 'Test Page.pdf', got %q", bundle.Filename)
+	}
+	if bundle.ContentType != "application/pdf" {
+		t.Errorf("Expected content type 'application/pdf', got %q", bundle.ContentType)
+	}
+}

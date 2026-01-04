@@ -174,10 +174,10 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
           exit={{ scale: 0.95, opacity: 0 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
+          className="export-modal"
           style={{
             width: '520px',
             maxHeight: '90vh',
-            background: 'var(--bg-primary)',
             borderRadius: '12px',
             boxShadow: '0 20px 60px rgba(0, 0, 0, 0.2)',
             overflow: 'hidden',
