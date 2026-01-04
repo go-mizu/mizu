@@ -1456,6 +1456,14 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
     editorRef.current = editor
   }, [editor])
 
+  // Initialize global state for export (dev mode)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && editor && initialBlocks.length > 0) {
+      // Use original API-format blocks for export
+      ;(window as unknown as { __EDITOR_BLOCKS__: typeof initialBlocks }).__EDITOR_BLOCKS__ = initialBlocks
+    }
+  }, [editor, initialBlocks])
+
   // Save handler
   const saveBlocks = useCallback(async () => {
     if (!pageId) {
@@ -1492,7 +1500,16 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
       clearTimeout(saveTimeoutRef.current)
     }
     saveTimeoutRef.current = setTimeout(saveBlocks, 1000)
-  }, [saveBlocks])
+
+    // Update global state for export functionality (dev mode)
+    if (typeof window !== 'undefined' && editor) {
+      const doc = editor.document
+      if (doc && Array.isArray(doc)) {
+        const apiBlocks = blockNoteToApiBlocks(doc as PartialBlock[])
+        ;(window as unknown as { __EDITOR_BLOCKS__: Block[] }).__EDITOR_BLOCKS__ = apiBlocks
+      }
+    }
+  }, [saveBlocks, editor])
 
   // Cleanup timeout on unmount
   useEffect(() => {

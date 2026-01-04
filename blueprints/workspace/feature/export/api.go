@@ -43,12 +43,16 @@ const (
 // Request contains export parameters.
 type Request struct {
 	PageID          string      `json:"page_id"`
+	PageTitle       string      `json:"page_title,omitempty"`       // Optional page title (for dev mode)
 	Format          Format      `json:"format"`
 	IncludeSubpages bool        `json:"include_subpages"`
 	IncludeImages   bool        `json:"include_images"`
 	IncludeFiles    bool        `json:"include_files"`
 	CreateFolders   bool        `json:"create_folders"`
 	IncludeComments bool        `json:"include_comments"`
+
+	// Blocks to export (optional - if provided, uses these instead of fetching from DB)
+	Blocks []map[string]interface{} `json:"blocks,omitempty"`
 
 	// PDF-specific
 	PageSize    PageSize    `json:"page_size,omitempty"`

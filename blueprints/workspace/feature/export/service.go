@@ -2,8 +2,10 @@ package export
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,12 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/pages"
 	"github.com/go-mizu/blueprints/workspace/pkg/ulid"
 )
+
+// exportMeta stores export metadata alongside the export file.
+type exportMeta struct {
+	Filename string `json:"filename"`
+	Format   Format `json:"format"`
+}
 
 // Service implements the export API.
 type Service struct {
@@ -38,37 +46,97 @@ func NewService(pagesAPI pages.API, blocksAPI blocks.API, databasesAPI databases
 
 // Export initiates an export and returns the result.
 func (s *Service) Export(ctx context.Context, userID string, req *Request) (*Result, error) {
+	slog.Debug("starting export",
+		"page_id", req.PageID,
+		"format", req.Format,
+		"user_id", userID,
+	)
+
 	// Validate request
 	if err := s.validateRequest(req); err != nil {
+		slog.Error("export validation failed", "error", err)
 		return nil, err
 	}
 
-	// Get the page to export
-	page, err := s.pages.GetByID(ctx, req.PageID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get page: %w", err)
+	// Get or create the page for export
+	var page *pages.Page
+	if len(req.Blocks) > 0 && req.PageTitle != "" {
+		// Dev mode: use provided blocks and title
+		slog.Debug("using provided page title and blocks", "title", req.PageTitle)
+		page = &pages.Page{
+			ID:    req.PageID,
+			Title: req.PageTitle,
+		}
+	} else {
+		// Production mode: fetch from database
+		slog.Debug("fetching page", "page_id", req.PageID)
+		var err error
+		page, err = s.pages.GetByID(ctx, req.PageID)
+		if err != nil {
+			slog.Error("failed to get page for export",
+				"page_id", req.PageID,
+				"error", err,
+			)
+			return nil, fmt.Errorf("failed to get page: %w", err)
+		}
+		slog.Debug("page fetched", "title", page.Title)
 	}
 
 	// Build the export tree
+	slog.Debug("building export tree", "include_subpages", req.IncludeSubpages)
 	exportedPage, err := s.buildExportTree(ctx, page, req)
 	if err != nil {
+		slog.Error("failed to build export tree", "error", err)
 		return nil, fmt.Errorf("failed to build export tree: %w", err)
 	}
+	slog.Debug("export tree built",
+		"block_count", len(exportedPage.Blocks),
+		"children_count", len(exportedPage.Children),
+	)
 
 	// Create the export bundle
+	slog.Debug("creating export bundle", "format", req.Format)
 	bundle, err := CreateBundle(exportedPage, req)
 	if err != nil {
+		slog.Error("failed to create export bundle",
+			"format", req.Format,
+			"error", err,
+		)
 		return nil, fmt.Errorf("failed to create export: %w", err)
 	}
+	slog.Debug("export bundle created",
+		"filename", bundle.Filename,
+		"size", len(bundle.Data),
+		"content_type", bundle.ContentType,
+	)
 
 	// Generate export ID
 	exportID := ulid.New()
 
 	// Save to file
 	filePath := filepath.Join(s.exportDir, exportID)
+	slog.Debug("saving export to file", "path", filePath)
 	if err := os.WriteFile(filePath, bundle.Data, 0644); err != nil {
+		slog.Error("failed to save export file",
+			"path", filePath,
+			"error", err,
+		)
 		return nil, fmt.Errorf("failed to save export: %w", err)
 	}
+
+	// Save metadata file for filename retrieval on download
+	meta := exportMeta{Filename: bundle.Filename, Format: req.Format}
+	metaBytes, _ := json.Marshal(meta)
+	metaPath := filePath + ".meta"
+	if err := os.WriteFile(metaPath, metaBytes, 0644); err != nil {
+		slog.Warn("failed to save export metadata", "error", err)
+	}
+
+	slog.Info("export completed successfully",
+		"export_id", exportID,
+		"format", req.Format,
+		"size", len(bundle.Data),
+	)
 
 	return &Result{
 		ID:          exportID,
@@ -92,9 +160,23 @@ func (s *Service) GetExport(ctx context.Context, id string) (*Export, error) {
 		return nil, err
 	}
 
+	// Read metadata for filename
+	var filename string
+	var format Format
+	metaPath := filePath + ".meta"
+	if metaBytes, err := os.ReadFile(metaPath); err == nil {
+		var meta exportMeta
+		if json.Unmarshal(metaBytes, &meta) == nil {
+			filename = meta.Filename
+			format = meta.Format
+		}
+	}
+
 	return &Export{
 		ID:        id,
 		Status:    "completed",
+		Filename:  filename,
+		Format:    format,
 		Size:      info.Size(),
 		CreatedAt: info.ModTime(),
 		ExpiresAt: info.ModTime().Add(24 * time.Hour),
@@ -132,6 +214,11 @@ func (s *Service) Cleanup(ctx context.Context) error {
 			continue
 		}
 
+		// Skip metadata files (they'll be deleted with their export)
+		if strings.HasSuffix(entry.Name(), ".meta") {
+			continue
+		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue
@@ -141,6 +228,8 @@ func (s *Service) Cleanup(ctx context.Context) error {
 			filePath := filepath.Join(s.exportDir, entry.Name())
 			if err := os.Remove(filePath); err == nil {
 				deleted++
+				// Also remove metadata file
+				os.Remove(filePath + ".meta")
 			}
 		}
 	}
@@ -179,14 +268,22 @@ func (s *Service) validateRequest(req *Request) error {
 
 // buildExportTree builds the complete export tree for a page.
 func (s *Service) buildExportTree(ctx context.Context, page *pages.Page, req *Request) (*ExportedPage, error) {
-	// Get blocks for this page
-	pageBlocks, err := s.blocks.GetByPage(ctx, page.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get blocks: %w", err)
-	}
+	var blockTree []*blocks.Block
 
-	// Build block tree (organize parent-child relationships)
-	blockTree := s.buildBlockTree(pageBlocks)
+	// If blocks are provided in request, use those (for frontend dev mode)
+	if len(req.Blocks) > 0 {
+		blockTree = s.convertRequestBlocks(req.Blocks)
+		slog.Debug("using provided blocks from request", "count", len(blockTree))
+	} else {
+		// Get blocks for this page from database
+		pageBlocks, err := s.blocks.GetByPage(ctx, page.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get blocks: %w", err)
+		}
+
+		// Build block tree (organize parent-child relationships)
+		blockTree = s.buildBlockTree(pageBlocks)
+	}
 
 	exported := &ExportedPage{
 		ID:         page.ID,
@@ -278,6 +375,143 @@ func sortBlocksRecursive(block *blocks.Block) {
 			sortBlocksRecursive(child)
 		}
 	}
+}
+
+// convertRequestBlocks converts JSON block data from the request into Block structures.
+func (s *Service) convertRequestBlocks(reqBlocks []map[string]interface{}) []*blocks.Block {
+	var result []*blocks.Block
+	for i, rb := range reqBlocks {
+		block := &blocks.Block{
+			ID:       getString(rb, "id"),
+			Type:     blocks.BlockType(getString(rb, "type")),
+			Content:  convertContent(getMap(rb, "content")),
+			Position: i,
+		}
+
+		// Handle children recursively
+		if children, ok := rb["children"].([]interface{}); ok {
+			for j, child := range children {
+				if childMap, ok := child.(map[string]interface{}); ok {
+					childBlock := &blocks.Block{
+						ID:       getString(childMap, "id"),
+						Type:     blocks.BlockType(getString(childMap, "type")),
+						Content:  convertContent(getMap(childMap, "content")),
+						ParentID: block.ID,
+						Position: j,
+					}
+					// Handle nested children
+					if nestedChildren, ok := childMap["children"].([]interface{}); ok {
+						childBlock.Children = s.convertChildBlocks(nestedChildren, childBlock.ID)
+					}
+					block.Children = append(block.Children, childBlock)
+				}
+			}
+		}
+		result = append(result, block)
+	}
+	return result
+}
+
+// convertChildBlocks recursively converts child blocks.
+func (s *Service) convertChildBlocks(children []interface{}, parentID string) []*blocks.Block {
+	var result []*blocks.Block
+	for i, child := range children {
+		if childMap, ok := child.(map[string]interface{}); ok {
+			block := &blocks.Block{
+				ID:       getString(childMap, "id"),
+				Type:     blocks.BlockType(getString(childMap, "type")),
+				Content:  convertContent(getMap(childMap, "content")),
+				ParentID: parentID,
+				Position: i,
+			}
+			if nestedChildren, ok := childMap["children"].([]interface{}); ok {
+				block.Children = s.convertChildBlocks(nestedChildren, block.ID)
+			}
+			result = append(result, block)
+		}
+	}
+	return result
+}
+
+// getString safely gets a string from a map.
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// getBool safely gets a bool from a map.
+func getBool(m map[string]interface{}, key string) *bool {
+	if v, ok := m[key].(bool); ok {
+		return &v
+	}
+	return nil
+}
+
+// getMap safely gets a map from a map.
+func getMap(m map[string]interface{}, key string) map[string]interface{} {
+	if v, ok := m[key].(map[string]interface{}); ok {
+		return v
+	}
+	return nil
+}
+
+// convertContent converts a map to blocks.Content.
+func convertContent(m map[string]interface{}) blocks.Content {
+	if m == nil {
+		return blocks.Content{}
+	}
+
+	content := blocks.Content{
+		Icon:        getString(m, "icon"),
+		Color:       getString(m, "color"),
+		Language:    getString(m, "language"),
+		URL:         getString(m, "url"),
+		Title:       getString(m, "title"),
+		Description: getString(m, "description"),
+		DatabaseID:  getString(m, "database_id"),
+		SyncedFrom:  getString(m, "synced_from"),
+		ButtonText:  getString(m, "button_text"),
+		ButtonStyle: getString(m, "button_style"),
+		Checked:     getBool(m, "checked"),
+	}
+
+	// Convert rich_text array
+	if richText, ok := m["rich_text"].([]interface{}); ok {
+		for _, rt := range richText {
+			if rtMap, ok := rt.(map[string]interface{}); ok {
+				richTextItem := blocks.RichText{
+					Type: getString(rtMap, "type"),
+					Text: getString(rtMap, "text"),
+					Link: getString(rtMap, "link"),
+				}
+				// Convert annotations
+				if ann, ok := rtMap["annotations"].(map[string]interface{}); ok {
+					richTextItem.Annotations = blocks.Annotations{
+						Bold:          ann["bold"] == true,
+						Italic:        ann["italic"] == true,
+						Strikethrough: ann["strikethrough"] == true,
+						Underline:     ann["underline"] == true,
+						Code:          ann["code"] == true,
+						Color:         getString(ann, "color"),
+					}
+				}
+				content.RichText = append(content.RichText, richTextItem)
+			}
+		}
+	}
+
+	// Convert expression for equations (stored in expression field)
+	if expr, ok := m["expression"].(string); ok && expr != "" {
+		// For equations, store expression in rich_text as a single item
+		content.RichText = append(content.RichText, blocks.RichText{
+			Type: "text",
+			Text: expr,
+		})
+	}
+
+	return content
 }
 
 // ExportDatabase exports a database to CSV.

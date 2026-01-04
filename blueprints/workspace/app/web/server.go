@@ -266,6 +266,51 @@ func (s *Server) seedDevData() error {
 
 	slog.Info("Seeding dev data...")
 
+	// Create dev page for export testing (check if it exists)
+	_, devPageErr := s.pages.GetByID(ctx, "dev-page-001")
+	if devPageErr != nil {
+		// Create a standalone dev page for testing export
+		devPage, err := s.pages.Create(ctx, &pages.CreateIn{
+			WorkspaceID: "dev-ws-001",
+			ParentType:  pages.ParentWorkspace,
+			ParentID:    "dev-ws-001",
+			Title:       "Development Test Page",
+			Icon:        "📄",
+			CreatedBy:   devUserID,
+		})
+		if err == nil {
+			// Override ID for consistency
+			s.db.ExecContext(ctx, "UPDATE pages SET id = ? WHERE id = ?", "dev-page-001", devPage.ID)
+
+			// Add some sample blocks to the dev page
+			sampleDevBlocks := []struct {
+				typ   string
+				cont  blocks.Content
+				order int
+			}{
+				{string(blocks.BlockHeading1), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Welcome to the Test Page"}}}, 0},
+				{string(blocks.BlockParagraph), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "This is a development test page used for testing the export functionality."}}}, 1},
+				{string(blocks.BlockHeading2), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Features"}}}, 2},
+				{string(blocks.BlockBulletList), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Export to PDF"}}}, 3},
+				{string(blocks.BlockBulletList), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Export to HTML"}}}, 4},
+				{string(blocks.BlockBulletList), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Export to Markdown"}}}, 5},
+				{string(blocks.BlockDivider), blocks.Content{}, 6},
+				{string(blocks.BlockCallout), blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "PDF export requires Chrome/Chromium to be installed."}}, Icon: "💡", Color: "yellow"}, 7},
+			}
+
+			for _, b := range sampleDevBlocks {
+				s.blocks.Create(ctx, &blocks.CreateIn{
+					PageID:    "dev-page-001",
+					Type:      blocks.BlockType(b.typ),
+					Content:   b.cont,
+					Position:  b.order,
+					CreatedBy: devUserID,
+				})
+			}
+			slog.Info("Created dev-page-001 for export testing")
+		}
+	}
+
 	// Create dev workspace first (if it doesn't exist)
 	ws, _ := s.workspaces.GetByID(ctx, "dev-ws-001")
 	if ws == nil {

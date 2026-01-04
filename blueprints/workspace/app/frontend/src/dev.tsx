@@ -834,3 +834,324 @@ func main() {
     },
   },
 ]
+
+// =============================================================================
+// Database Views Demo Data
+// Sample data to preview all database view types (Table, Board, Timeline, Calendar, Gallery, List, Chart)
+// =============================================================================
+
+// Sample properties for the database
+export const devDatabaseProperties = [
+  {
+    id: 'title',
+    name: 'Task Name',
+    type: 'text',
+  },
+  {
+    id: 'status',
+    name: 'Status',
+    type: 'select',
+    options: [
+      { id: 'todo', name: 'To Do', color: '#9b9b9b' },
+      { id: 'progress', name: 'In Progress', color: '#2383e2' },
+      { id: 'review', name: 'In Review', color: '#d9730d' },
+      { id: 'done', name: 'Done', color: '#0f7b6c' },
+    ],
+  },
+  {
+    id: 'priority',
+    name: 'Priority',
+    type: 'select',
+    options: [
+      { id: 'high', name: 'High', color: '#e03e3e' },
+      { id: 'medium', name: 'Medium', color: '#dfab01' },
+      { id: 'low', name: 'Low', color: '#9b9b9b' },
+    ],
+  },
+  {
+    id: 'assignee',
+    name: 'Assignee',
+    type: 'person',
+  },
+  {
+    id: 'due_date',
+    name: 'Due Date',
+    type: 'date',
+  },
+  {
+    id: 'estimate',
+    name: 'Estimate (hrs)',
+    type: 'number',
+  },
+  {
+    id: 'tags',
+    name: 'Tags',
+    type: 'multi_select',
+    options: [
+      { id: 'frontend', name: 'Frontend', color: '#6c5ce7' },
+      { id: 'backend', name: 'Backend', color: '#e17055' },
+      { id: 'design', name: 'Design', color: '#c14c8a' },
+      { id: 'bug', name: 'Bug', color: '#e03e3e' },
+      { id: 'feature', name: 'Feature', color: '#0f7b6c' },
+    ],
+  },
+  {
+    id: 'cover',
+    name: 'Cover Image',
+    type: 'files',
+  },
+  {
+    id: 'progress_pct',
+    name: 'Progress %',
+    type: 'number',
+  },
+]
+
+// Helper to generate dates relative to today
+const daysFromNow = (days: number) => {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString()
+}
+
+// Sample rows for the database
+export const devDatabaseRows = [
+  {
+    id: 'row-1',
+    properties: {
+      title: 'Implement user authentication',
+      status: 'done',
+      priority: 'high',
+      assignee: 'Alice',
+      due_date: daysFromNow(-5),
+      estimate: 16,
+      tags: ['backend', 'feature'],
+      cover: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400',
+      progress_pct: 100,
+    },
+  },
+  {
+    id: 'row-2',
+    properties: {
+      title: 'Design dashboard mockups',
+      status: 'done',
+      priority: 'high',
+      assignee: 'Bob',
+      due_date: daysFromNow(-3),
+      estimate: 8,
+      tags: ['design', 'feature'],
+      cover: 'https://images.unsplash.com/photo-1561070791-2526d30994b5?w=400',
+      progress_pct: 100,
+    },
+  },
+  {
+    id: 'row-3',
+    properties: {
+      title: 'Build API endpoints',
+      status: 'progress',
+      priority: 'high',
+      assignee: 'Charlie',
+      due_date: daysFromNow(2),
+      estimate: 24,
+      tags: ['backend', 'feature'],
+      cover: 'https://images.unsplash.com/photo-1516116216624-53e697fedbea?w=400',
+      progress_pct: 65,
+    },
+  },
+  {
+    id: 'row-4',
+    properties: {
+      title: 'Create React components',
+      status: 'progress',
+      priority: 'medium',
+      assignee: 'Alice',
+      due_date: daysFromNow(5),
+      estimate: 20,
+      tags: ['frontend', 'feature'],
+      cover: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=400',
+      progress_pct: 40,
+    },
+  },
+  {
+    id: 'row-5',
+    properties: {
+      title: 'Fix navigation bug',
+      status: 'review',
+      priority: 'high',
+      assignee: 'Diana',
+      due_date: daysFromNow(0),
+      estimate: 4,
+      tags: ['frontend', 'bug'],
+      cover: null,
+      progress_pct: 90,
+    },
+  },
+  {
+    id: 'row-6',
+    properties: {
+      title: 'Write unit tests',
+      status: 'todo',
+      priority: 'medium',
+      assignee: 'Eve',
+      due_date: daysFromNow(7),
+      estimate: 12,
+      tags: ['backend', 'frontend'],
+      cover: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400',
+      progress_pct: 0,
+    },
+  },
+  {
+    id: 'row-7',
+    properties: {
+      title: 'Set up CI/CD pipeline',
+      status: 'todo',
+      priority: 'low',
+      assignee: 'Frank',
+      due_date: daysFromNow(14),
+      estimate: 8,
+      tags: ['backend'],
+      cover: 'https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?w=400',
+      progress_pct: 0,
+    },
+  },
+  {
+    id: 'row-8',
+    properties: {
+      title: 'Database optimization',
+      status: 'todo',
+      priority: 'medium',
+      assignee: 'Charlie',
+      due_date: daysFromNow(10),
+      estimate: 6,
+      tags: ['backend', 'bug'],
+      cover: null,
+      progress_pct: 0,
+    },
+  },
+  {
+    id: 'row-9',
+    properties: {
+      title: 'Mobile responsive design',
+      status: 'progress',
+      priority: 'medium',
+      assignee: 'Bob',
+      due_date: daysFromNow(3),
+      estimate: 10,
+      tags: ['frontend', 'design'],
+      cover: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=400',
+      progress_pct: 25,
+    },
+  },
+  {
+    id: 'row-10',
+    properties: {
+      title: 'Documentation update',
+      status: 'review',
+      priority: 'low',
+      assignee: 'Grace',
+      due_date: daysFromNow(1),
+      estimate: 3,
+      tags: ['feature'],
+      cover: null,
+      progress_pct: 85,
+    },
+  },
+  {
+    id: 'row-11',
+    properties: {
+      title: 'Performance profiling',
+      status: 'todo',
+      priority: 'high',
+      assignee: 'Henry',
+      due_date: daysFromNow(8),
+      estimate: 5,
+      tags: ['backend', 'bug'],
+      cover: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=400',
+      progress_pct: 0,
+    },
+  },
+  {
+    id: 'row-12',
+    properties: {
+      title: 'User onboarding flow',
+      status: 'progress',
+      priority: 'high',
+      assignee: 'Ivy',
+      due_date: daysFromNow(4),
+      estimate: 14,
+      tags: ['frontend', 'design', 'feature'],
+      cover: 'https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=400',
+      progress_pct: 55,
+    },
+  },
+]
+
+// Sample views configuration
+export const devDatabaseViews = [
+  {
+    id: 'view-table',
+    name: 'All Tasks',
+    type: 'table',
+    config: {
+      frozen_columns: 1,
+      row_height: 'medium',
+    },
+  },
+  {
+    id: 'view-board',
+    name: 'Kanban Board',
+    type: 'board',
+    group_by: 'status',
+    config: {
+      card_size: 'medium',
+      color_columns: true,
+    },
+  },
+  {
+    id: 'view-timeline',
+    name: 'Project Timeline',
+    type: 'timeline',
+    config: {
+      time_scale: 'week',
+      start_date_property: 'due_date',
+      show_table_panel: true,
+    },
+  },
+  {
+    id: 'view-calendar',
+    name: 'Schedule',
+    type: 'calendar',
+    calendar_by: 'due_date',
+    config: {
+      calendar_mode: 'month',
+    },
+  },
+  {
+    id: 'view-gallery',
+    name: 'Gallery',
+    type: 'gallery',
+    config: {
+      gallery_card_size: 'medium',
+      preview_source: 'files',
+      files_property_id: 'cover',
+      fit_image: true,
+      show_title: true,
+    },
+  },
+  {
+    id: 'view-list',
+    name: 'By Priority',
+    type: 'list',
+    group_by: 'priority',
+  },
+  {
+    id: 'view-chart',
+    name: 'Status Chart',
+    type: 'chart',
+    config: {
+      chart_type: 'bar',
+      chart_x_axis: { property_id: 'status' },
+      chart_y_axis: { property_id: 'estimate' },
+    },
+  },
+]
