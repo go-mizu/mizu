@@ -10,7 +10,53 @@ import {
   Block as BNBlock,
   createCodeBlockSpec,
 } from '@blocknote/core'
-import { codeBlockOptions } from '@blocknote/code-block'
+import { createHighlighter } from 'shiki'
+
+// Custom code block options with high-contrast themes
+const customCodeBlockOptions = {
+  defaultLanguage: 'text' as const,
+  indentLineWithTab: true,
+  supportedLanguages: {
+    text: { name: 'Plain Text', aliases: ['plaintext', 'txt'] },
+    javascript: { name: 'JavaScript', aliases: ['js'] },
+    typescript: { name: 'TypeScript', aliases: ['ts'] },
+    python: { name: 'Python', aliases: ['py'] },
+    go: { name: 'Go', aliases: ['golang'] },
+    rust: { name: 'Rust', aliases: ['rs'] },
+    java: { name: 'Java', aliases: [] },
+    c: { name: 'C', aliases: [] },
+    cpp: { name: 'C++', aliases: ['c++'] },
+    csharp: { name: 'C#', aliases: ['cs'] },
+    php: { name: 'PHP', aliases: [] },
+    ruby: { name: 'Ruby', aliases: ['rb'] },
+    swift: { name: 'Swift', aliases: [] },
+    kotlin: { name: 'Kotlin', aliases: ['kt'] },
+    html: { name: 'HTML', aliases: [] },
+    css: { name: 'CSS', aliases: [] },
+    scss: { name: 'SCSS', aliases: ['sass'] },
+    json: { name: 'JSON', aliases: [] },
+    yaml: { name: 'YAML', aliases: ['yml'] },
+    xml: { name: 'XML', aliases: [] },
+    markdown: { name: 'Markdown', aliases: ['md'] },
+    sql: { name: 'SQL', aliases: [] },
+    bash: { name: 'Bash', aliases: ['sh', 'shell', 'zsh'] },
+    powershell: { name: 'PowerShell', aliases: ['ps1'] },
+    dockerfile: { name: 'Dockerfile', aliases: ['docker'] },
+    graphql: { name: 'GraphQL', aliases: ['gql'] },
+    regex: { name: 'Regex', aliases: ['regexp'] },
+  },
+  // Use github themes for high contrast and good readability
+  createHighlighter: () =>
+    createHighlighter({
+      themes: ['github-light', 'github-dark'],
+      langs: [
+        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
+        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
+        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'markdown',
+        'sql', 'bash', 'powershell', 'dockerfile', 'graphql', 'regex',
+      ],
+    }),
+}
 // Note: @blocknote/code-block styles are bundled in the main mantine package
 import {
   SuggestionMenuController,
@@ -506,9 +552,8 @@ interface BlockEditorProps {
   workspaceId?: string
 }
 
-// Create code block with syntax highlighting support
-// Type assertion needed due to shiki version differences in dependencies
-const codeBlockWithHighlighting = createCodeBlockSpec(codeBlockOptions as Parameters<typeof createCodeBlockSpec>[0])
+// Create code block with syntax highlighting support using custom high-contrast themes
+const codeBlockWithHighlighting = createCodeBlockSpec(customCodeBlockOptions as Parameters<typeof createCodeBlockSpec>[0])
 
 // Custom schema with our custom blocks - wrapped with withMultiColumn for column support
 // BlockNote 0.42+ has built-in blocks for toggle (toggleListItem), divider, audio, codeBlock

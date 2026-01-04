@@ -83,32 +83,23 @@ export const CalloutBlock = createReactBlockSpec(
         updateIcon(emoji.native)
       }
 
+      const colorClass = `callout-${colorKey}`
+
       return (
         <div
-          className="callout-block"
+          className={`callout ${colorClass}`}
           data-callout-icon={block.props.icon}
           data-callout-color={block.props.backgroundColor}
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            padding: '16px',
-            borderRadius: '4px',
-            backgroundColor: bgColor,
-            border: `1px solid ${borderColor}`,
-            margin: '4px 0',
-          }}
         >
           <div className="callout-icon-wrapper" style={{ position: 'relative' }}>
             <button
               className="callout-icon"
               onClick={() => setShowIconPicker(!showIconPicker)}
               style={{
-                fontSize: '1.5em',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                padding: '0 8px 0 0',
-                lineHeight: 1,
+                padding: 0,
               }}
               title="Change icon"
             >
@@ -204,7 +195,7 @@ export const CalloutBlock = createReactBlockSpec(
             )}
           </div>
 
-          <div className="callout-content" style={{ flex: 1, minWidth: 0 }}>
+          <div className="callout-content">
             <div ref={contentRef} style={{ outline: 'none' }} />
           </div>
 
@@ -287,20 +278,13 @@ export const CalloutBlock = createReactBlockSpec(
       const colors = CALLOUT_COLORS[colorKey] || CALLOUT_COLORS.default
       return (
         <div
-          className="callout-block"
+          className={`callout callout-${colorKey}`}
           data-callout-icon={block.props.icon}
           data-callout-color={block.props.backgroundColor}
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            padding: '16px',
-            borderRadius: '4px',
-            backgroundColor: colors.bg,
-            border: `1px solid ${colors.border}`,
-          }}
+          style={{ backgroundColor: colors.bg }}
         >
-          <span style={{ fontSize: '1.5em', marginRight: '8px' }}>{block.props.icon}</span>
-          <div ref={contentRef} style={{ flex: 1 }} />
+          <span className="callout-icon">{block.props.icon}</span>
+          <div className="callout-content" ref={contentRef} />
         </div>
       )
     },

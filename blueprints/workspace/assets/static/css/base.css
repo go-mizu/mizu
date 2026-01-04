@@ -1067,6 +1067,322 @@ img, svg {
 .animate-skeleton { animation: skeleton-loading 1.5s ease-in-out infinite; }
 
 /* ==========================================================================
+   Block Editor - Notion-Exact Styling
+   ========================================================================== */
+
+/* Callout Color Variables */
+:root {
+  --callout-default: #f7f6f3;
+  --callout-gray: #f1f1ef;
+  --callout-brown: #f4eeee;
+  --callout-orange: #fbecdd;
+  --callout-yellow: #fbf3db;
+  --callout-green: #edf3ec;
+  --callout-blue: #e7f3f8;
+  --callout-purple: #f6f3f9;
+  --callout-pink: #faf1f5;
+  --callout-red: #fdebec;
+}
+
+[data-theme="dark"] {
+  --callout-default: rgba(47, 47, 47, 1);
+  --callout-gray: rgba(55, 55, 55, 1);
+  --callout-brown: rgba(61, 54, 50, 1);
+  --callout-orange: rgba(61, 50, 37, 1);
+  --callout-yellow: rgba(61, 56, 37, 1);
+  --callout-green: rgba(43, 51, 41, 1);
+  --callout-blue: rgba(37, 47, 56, 1);
+  --callout-purple: rgba(51, 43, 61, 1);
+  --callout-pink: rgba(61, 43, 53, 1);
+  --callout-red: rgba(61, 43, 43, 1);
+}
+
+/* Block Typography - Notion Exact */
+.bn-text, .text-block { font-size: 16px; line-height: 1.5; }
+.bn-h1, .text-h1 { font-size: 30px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; margin-top: 32px; margin-bottom: 4px; }
+.bn-h2, .text-h2 { font-size: 24px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; margin-top: 22px; margin-bottom: 4px; }
+.bn-h3, .text-h3 { font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; margin-top: 16px; margin-bottom: 4px; }
+.bn-code, .text-code { font-family: var(--font-mono); font-size: 13px; line-height: 1.6; }
+
+/* Callout Block - Notion Exact */
+.callout {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 12px 12px 12px;
+  border-radius: 3px;
+  margin: 1px 0;
+  border: none !important;
+}
+
+.callout-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2em;
+  line-height: 1;
+  margin-right: 8px;
+}
+
+.callout-content {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  padding-top: 2px;
+}
+
+/* Reset margins for content inside callouts */
+.callout-content [data-content-type="heading"],
+.callout-content h1,
+.callout-content h2,
+.callout-content h3 {
+  margin-top: 0 !important;
+  margin-bottom: 2px !important;
+}
+
+.callout-content [data-content-type="paragraph"],
+.callout-content p {
+  margin: 0 !important;
+}
+
+.callout-default { background: var(--callout-default); }
+.callout-gray { background: var(--callout-gray); }
+.callout-brown { background: var(--callout-brown); }
+.callout-orange { background: var(--callout-orange); }
+.callout-yellow { background: var(--callout-yellow); }
+.callout-green { background: var(--callout-green); }
+.callout-blue { background: var(--callout-blue); }
+.callout-purple { background: var(--callout-purple); }
+.callout-pink { background: var(--callout-pink); }
+.callout-red { background: var(--callout-red); }
+
+/* Quote Block - Notion Exact */
+.quote-block {
+  padding: 3px 0 3px 14px;
+  border-left: 3px solid currentColor;
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 4px 0;
+}
+
+.quote-block > div,
+.quote-block > p {
+  margin: 0;
+  border-left: none !important;
+  padding-left: 0 !important;
+}
+
+/* Code Block - Notion Exact */
+.code-block {
+  background: rgb(247, 246, 243);
+  border-radius: 3px;
+  padding: 34px 16px;
+  font-family: SFMono-Regular, Menlo, Consolas, "PT Mono", "Liberation Mono", Courier, monospace;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 4px 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+[data-theme="dark"] .code-block {
+  background: rgb(37, 37, 37);
+  color: #e3e3e3;
+}
+
+/* Divider Block */
+.divider-block { padding: 12px 0; }
+.divider-block hr { border: none; border-top: 1px solid var(--c-border); }
+
+/* List Utilities */
+.list-item { display: flex; align-items: flex-start; padding: 3px 2px; font-size: 16px; line-height: 1.5; }
+.list-bullet::before { content: '•'; margin-right: 8px; flex-shrink: 0; }
+.list-todo { gap: 8px; }
+.list-todo-checkbox { width: 16px; height: 16px; margin-top: 4px; flex-shrink: 0; cursor: pointer; }
+.list-toggle { cursor: pointer; }
+.list-toggle-icon { width: 20px; height: 20px; flex-shrink: 0; transition: transform 0.15s; }
+.list-toggle-icon.expanded { transform: rotate(90deg); }
+
+/* Equation Block */
+.equation-block {
+  padding: 8px 0;
+  text-align: center;
+  font-size: 16px;
+}
+
+/* Bookmark Block */
+.bookmark-block {
+  display: flex;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 4px 0;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+}
+
+.bookmark-block:hover { background: var(--c-bg-hover); }
+
+.bookmark-content {
+  flex: 1;
+  padding: 12px 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bookmark-title {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bookmark-description {
+  font-size: 12px;
+  color: var(--c-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bookmark-url {
+  font-size: 12px;
+  color: var(--c-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bookmark-url img { width: 14px; height: 14px; }
+
+.bookmark-image {
+  width: 140px;
+  flex-shrink: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+/* Table of Contents Block */
+.toc-block { padding: 4px 0; }
+.toc-item { display: block; padding: 4px 0; color: var(--c-text-secondary); text-decoration: none; font-size: 14px; }
+.toc-item:hover { color: var(--c-text); }
+.toc-level-1 { padding-left: 0; }
+.toc-level-2 { padding-left: 24px; }
+.toc-level-3 { padding-left: 48px; }
+
+/* Image Block */
+.image-block { margin: 8px 0; }
+.image-block img { max-width: 100%; border-radius: 4px; }
+.image-caption { font-size: 14px; color: var(--c-text-secondary); margin-top: 6px; text-align: center; }
+
+/* File Block */
+.file-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--c-bg-secondary);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.file-icon { font-size: 20px; }
+.file-info { flex: 1; min-width: 0; }
+.file-name { font-size: 14px; font-weight: 500; }
+.file-size { font-size: 12px; color: var(--c-text-secondary); }
+
+/* Simple Table Block */
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.simple-table th,
+.simple-table td {
+  border: 1px solid var(--c-border);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.simple-table th {
+  background: var(--c-bg-secondary);
+  font-weight: 500;
+}
+
+.simple-table tr:hover td { background: var(--c-bg-hover); }
+
+/* Synced Block */
+.synced-block {
+  border-left: 2px solid var(--c-accent);
+  padding-left: 12px;
+  margin: 4px 0;
+}
+
+.synced-block-header {
+  font-size: 12px;
+  color: var(--c-text-tertiary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Template Button Block */
+.template-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--c-bg-secondary);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.template-btn:hover { background: var(--c-bg-hover); }
+
+/* Breadcrumb Block */
+.breadcrumb-block {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--c-text-secondary);
+}
+
+.breadcrumb-block a { color: inherit; text-decoration: none; }
+.breadcrumb-block a:hover { color: var(--c-text); }
+.breadcrumb-separator { color: var(--c-text-tertiary); }
+
+/* Child Page Block */
+.child-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.child-page:hover { background: var(--c-bg-hover); }
+.child-page-icon { font-size: 16px; }
+
+/* ==========================================================================
    Responsive Utilities
    ========================================================================== */
 

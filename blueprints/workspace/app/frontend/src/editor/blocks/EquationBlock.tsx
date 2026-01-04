@@ -20,6 +20,7 @@ export const EquationBlock = createReactBlockSpec(
       const [error, setError] = useState<string | null>(null)
       const inputRef = useRef<HTMLTextAreaElement>(null)
       const renderedRef = useRef<HTMLDivElement>(null)
+      const previewRef = useRef<HTMLDivElement>(null)
 
       useEffect(() => {
         if (isEditing && inputRef.current) {
@@ -27,6 +28,7 @@ export const EquationBlock = createReactBlockSpec(
         }
       }, [isEditing])
 
+      // Render equation in view mode
       useEffect(() => {
         if (!isEditing && renderedRef.current && block.props.latex) {
           try {
@@ -41,6 +43,22 @@ export const EquationBlock = createReactBlockSpec(
           }
         }
       }, [block.props.latex, isEditing])
+
+      // Render preview in edit mode
+      useEffect(() => {
+        if (isEditing && previewRef.current && latexInput) {
+          try {
+            katex.render(latexInput, previewRef.current, {
+              displayMode: true,
+              throwOnError: false,
+            })
+          } catch {
+            if (previewRef.current) {
+              previewRef.current.textContent = 'Invalid LaTeX'
+            }
+          }
+        }
+      }, [latexInput, isEditing])
 
       const handleSave = () => {
         editor.updateBlock(block, { props: { ...block.props, latex: latexInput } })
@@ -67,33 +85,23 @@ export const EquationBlock = createReactBlockSpec(
                 value={latexInput}
                 onChange={(e) => setLatexInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Enter LaTeX equation (e.g., E = mc^2)"
+                placeholder="Enter LaTeX (e.g., E = mc^2, \\frac{a}{b}, \\sqrt{x})"
                 className="equation-input"
-                rows={3}
+                rows={2}
               />
-              <div className="equation-preview">
-                {latexInput && (
-                  <div
-                    ref={(el) => {
-                      if (el && latexInput) {
-                        try {
-                          katex.render(latexInput, el, {
-                            displayMode: true,
-                            throwOnError: false,
-                          })
-                        } catch {
-                          el.textContent = 'Preview unavailable'
-                        }
-                      }
-                    }}
-                  />
-                )}
-              </div>
+              {latexInput && (
+                <div className="equation-preview">
+                  <div ref={previewRef} />
+                </div>
+              )}
               <div className="equation-actions">
-                <button className="btn-secondary" onClick={() => setIsEditing(false)}>
+                <button className="equation-btn-cancel" onClick={() => {
+                  setLatexInput(block.props.latex || '')
+                  setIsEditing(false)
+                }}>
                   Cancel
                 </button>
-                <button className="btn-primary" onClick={handleSave}>
+                <button className="equation-btn-done" onClick={handleSave}>
                   Done
                 </button>
               </div>
@@ -133,18 +141,7 @@ export const EquationBlock = createReactBlockSpec(
     toExternalHTML: ({ block }) => {
       const latex = (block.props.latex as string) || ''
       return (
-        <div
-          className="equation-block"
-          data-equation-latex={latex}
-          style={{
-            padding: '16px',
-            textAlign: 'center',
-            background: '#f7f6f3',
-            borderRadius: '4px',
-            fontFamily: 'KaTeX_Math, serif',
-            fontStyle: 'italic',
-          }}
-        >
+        <div className="equation-block" data-equation-latex={latex}>
           {latex || 'Empty equation'}
         </div>
       )

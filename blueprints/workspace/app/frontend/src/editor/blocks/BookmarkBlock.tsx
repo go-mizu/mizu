@@ -499,18 +499,12 @@ export const BookmarkBlock = createReactBlockSpec(
           data-bookmark-description={description}
           data-bookmark-favicon={favicon}
           data-bookmark-sitename={siteName}
-          style={{
-            display: 'block',
-            padding: '12px 16px',
-            border: '1px solid rgba(55, 53, 47, 0.16)',
-            borderRadius: '4px',
-            textDecoration: 'none',
-            color: 'inherit',
-          }}
         >
-          <div style={{ fontWeight: 500 }}>{title || domain}</div>
-          {description && <div style={{ fontSize: '12px', color: '#787774', marginTop: '4px' }}>{description}</div>}
-          <div style={{ fontSize: '12px', color: '#9b9a97', marginTop: '8px' }}>{siteName || domain}</div>
+          <div className="bookmark-content">
+            <div className="bookmark-title">{title || domain}</div>
+            {description && <div className="bookmark-description">{description}</div>}
+            <div className="bookmark-url">{siteName || domain}</div>
+          </div>
         </a>
       )
     },

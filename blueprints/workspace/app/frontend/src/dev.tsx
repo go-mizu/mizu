@@ -394,29 +394,144 @@ func main() {
     content: { rich_text: [text('7. Equations (LaTeX)')] },
   },
   {
-    id: 'para-equations',
+    id: 'para-equations-intro',
     type: 'paragraph',
-    content: { rich_text: [text('Mathematical equations rendered with KaTeX:')] },
+    content: { rich_text: [text('Mathematical equations rendered with KaTeX. Equations integrate seamlessly with text content.')] },
   },
   {
-    id: 'eq-1',
+    id: 'h3-famous',
+    type: 'heading_3',
+    content: { rich_text: [text('Famous Equations')] },
+  },
+  {
+    id: 'para-einstein',
+    type: 'paragraph',
+    content: { rich_text: [text("Einstein's mass-energy equivalence:")] },
+  },
+  {
+    id: 'eq-einstein',
     type: 'equation',
     content: { expression: 'E = mc^2' },
   },
   {
-    id: 'eq-2',
-    type: 'equation',
-    content: { expression: '\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}' },
+    id: 'para-quadratic',
+    type: 'paragraph',
+    content: { rich_text: [text('The quadratic formula gives the solutions to any quadratic equation:')] },
   },
   {
-    id: 'eq-3',
+    id: 'eq-quadratic',
     type: 'equation',
-    content: { expression: '\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}' },
+    content: { expression: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}' },
   },
   {
-    id: 'eq-4',
+    id: 'h3-calculus',
+    type: 'heading_3',
+    content: { rich_text: [text('Calculus')] },
+  },
+  {
+    id: 'para-gaussian',
+    type: 'paragraph',
+    content: { rich_text: [text('The Gaussian integral is fundamental in probability theory and statistics:')] },
+  },
+  {
+    id: 'eq-gaussian',
+    type: 'equation',
+    content: { expression: '\\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}' },
+  },
+  {
+    id: 'para-derivative',
+    type: 'paragraph',
+    content: { rich_text: [text('Definition of the derivative:')] },
+  },
+  {
+    id: 'eq-derivative',
+    type: 'equation',
+    content: { expression: "f'(x) = \\lim_{h \\to 0} \\frac{f(x+h) - f(x)}{h}" },
+  },
+  {
+    id: 'para-taylor',
+    type: 'paragraph',
+    content: { rich_text: [text('Taylor series expansion around a point:')] },
+  },
+  {
+    id: 'eq-taylor',
+    type: 'equation',
+    content: { expression: "f(x) = \\sum_{n=0}^{\\infty} \\frac{f^{(n)}(a)}{n!}(x-a)^n" },
+  },
+  {
+    id: 'h3-series',
+    type: 'heading_3',
+    content: { rich_text: [text('Series & Summations')] },
+  },
+  {
+    id: 'para-basel',
+    type: 'paragraph',
+    content: { rich_text: [text('The Basel problem, solved by Euler:')] },
+  },
+  {
+    id: 'eq-basel',
     type: 'equation',
     content: { expression: '\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}' },
+  },
+  {
+    id: 'para-euler',
+    type: 'paragraph',
+    content: { rich_text: [text("Euler's identity, often called the most beautiful equation:")] },
+  },
+  {
+    id: 'eq-euler',
+    type: 'equation',
+    content: { expression: 'e^{i\\pi} + 1 = 0' },
+  },
+  {
+    id: 'h3-physics',
+    type: 'heading_3',
+    content: { rich_text: [text('Physics & Engineering')] },
+  },
+  {
+    id: 'para-maxwell',
+    type: 'paragraph',
+    content: { rich_text: [text("Maxwell's equations in differential form describe electromagnetism:")] },
+  },
+  {
+    id: 'eq-maxwell',
+    type: 'equation',
+    content: { expression: '\\nabla \\cdot \\mathbf{E} = \\frac{\\rho}{\\varepsilon_0}, \\quad \\nabla \\times \\mathbf{E} = -\\frac{\\partial \\mathbf{B}}{\\partial t}' },
+  },
+  {
+    id: 'para-schrodinger',
+    type: 'paragraph',
+    content: { rich_text: [text('The time-dependent Schrödinger equation in quantum mechanics:')] },
+  },
+  {
+    id: 'eq-schrodinger',
+    type: 'equation',
+    content: { expression: 'i\\hbar\\frac{\\partial}{\\partial t}\\Psi(\\mathbf{r},t) = \\hat{H}\\Psi(\\mathbf{r},t)' },
+  },
+  {
+    id: 'h3-matrices',
+    type: 'heading_3',
+    content: { rich_text: [text('Matrices & Linear Algebra')] },
+  },
+  {
+    id: 'para-matrix',
+    type: 'paragraph',
+    content: { rich_text: [text('A 2×2 matrix and its determinant:')] },
+  },
+  {
+    id: 'eq-matrix',
+    type: 'equation',
+    content: { expression: '\\mathbf{A} = \\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}, \\quad \\det(\\mathbf{A}) = ad - bc' },
+  },
+  {
+    id: 'para-eigen',
+    type: 'paragraph',
+    content: { rich_text: [text('The eigenvalue equation:')] },
+  },
+  {
+    id: 'eq-eigen',
+    type: 'equation',
+    content: { expression: '\\mathbf{A}\\mathbf{v} = \\lambda\\mathbf{v}' },
   },
 
   // ========================================
