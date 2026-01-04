@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BlockEditor } from './editor/BlockEditor'
 import { DatabaseView } from './database/DatabaseView'
 import { IconPicker } from './components/IconPicker'
+import { PageExport } from './pages/PageExport'
 import { initApp } from './app'
 import { devTestBlocks } from './dev'
 import './styles/main.css'
@@ -84,3 +85,41 @@ document.querySelectorAll('[data-icon-picker]').forEach((el) => {
     </React.StrictMode>
   )
 })
+
+// Export Modal wrapper component for dev mode
+function ExportModalWrapper() {
+  const [isOpen, setIsOpen] = useState(false)
+  const [pageInfo, setPageInfo] = useState({ pageId: '', pageTitle: '' })
+
+  useEffect(() => {
+    const handleOpenExport = (e: CustomEvent<{ pageId: string; pageTitle: string }>) => {
+      setPageInfo(e.detail)
+      setIsOpen(true)
+    }
+
+    window.addEventListener('open-export-modal', handleOpenExport as EventListener)
+    return () => {
+      window.removeEventListener('open-export-modal', handleOpenExport as EventListener)
+    }
+  }, [])
+
+  return (
+    <PageExport
+      pageId={pageInfo.pageId}
+      pageTitle={pageInfo.pageTitle}
+      isOpen={isOpen}
+      onClose={() => setIsOpen(false)}
+    />
+  )
+}
+
+// Mount export modal in dev mode
+const exportModalContainer = document.getElementById('export-modal-root')
+if (exportModalContainer && isDevMode) {
+  const root = createRoot(exportModalContainer)
+  root.render(
+    <React.StrictMode>
+      <ExportModalWrapper />
+    </React.StrictMode>
+  )
+}

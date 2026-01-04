@@ -6,18 +6,92 @@
     <title>Workspace Dev</title>
     <style>
         :root {
+            /* Base variables (--c-* prefix) used by main.css aliases */
+            --c-bg: #ffffff;
+            --c-bg-secondary: #f9fafb;
+            --c-bg-tertiary: #f3f4f6;
+            --c-bg-hover: rgba(55, 53, 47, 0.08);
+            --c-bg-active: rgba(55, 53, 47, 0.12);
+            --c-text: #1a1a1a;
+            --c-text-secondary: #6b7280;
+            --c-text-tertiary: #9ca3af;
+            --c-text-placeholder: rgba(55, 53, 47, 0.4);
+            --c-border: #e5e5e5;
+            --c-border-strong: #d1d5db;
+            --c-accent: #2563eb;
+            --c-accent-bg: rgba(37, 99, 235, 0.1);
+            --c-danger: #dc2626;
+            --c-danger-bg: rgba(220, 38, 38, 0.1);
+            --c-success: #16a34a;
+            --c-success-bg: rgba(22, 163, 74, 0.1);
+            /* Direct aliases for backwards compatibility */
             --bg-color: #ffffff;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f9fafb;
+            --bg-tertiary: #f3f4f6;
+            --bg-hover: rgba(55, 53, 47, 0.08);
             --text-color: #1a1a1a;
+            --text-primary: #1a1a1a;
+            --text-secondary: #6b7280;
+            --text-tertiary: #9ca3af;
             --sidebar-bg: #f7f7f7;
             --border-color: #e5e5e5;
             --primary-color: #2563eb;
+            --accent-color: #2563eb;
+            --accent-bg: rgba(37, 99, 235, 0.1);
+            --danger-color: #dc2626;
+            --danger-bg: rgba(220, 38, 38, 0.1);
+            --success-color: #16a34a;
+            --success-bg: rgba(22, 163, 74, 0.1);
+            /* Radius and shadow tokens */
+            --radius-sm: 4px;
+            --radius-md: 6px;
+            --radius-lg: 8px;
+            --radius-xl: 12px;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+            --transition-fast: 0.15s ease;
+            --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         [data-theme="dark"] {
+            /* Base variables (--c-* prefix) used by main.css aliases */
+            --c-bg: #1a1a1a;
+            --c-bg-secondary: #252525;
+            --c-bg-tertiary: #2d2d2d;
+            --c-bg-hover: rgba(255, 255, 255, 0.08);
+            --c-bg-active: rgba(255, 255, 255, 0.12);
+            --c-text: #e5e5e5;
+            --c-text-secondary: #a1a1a1;
+            --c-text-tertiary: #6b6b6b;
+            --c-text-placeholder: rgba(255, 255, 255, 0.4);
+            --c-border: #3a3a3a;
+            --c-border-strong: #4a4a4a;
+            --c-accent: #3b82f6;
+            --c-accent-bg: rgba(59, 130, 246, 0.15);
+            --c-danger: #ef4444;
+            --c-danger-bg: rgba(239, 68, 68, 0.15);
+            --c-success: #22c55e;
+            --c-success-bg: rgba(34, 197, 94, 0.15);
+            /* Direct aliases for backwards compatibility */
             --bg-color: #1a1a1a;
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #252525;
+            --bg-tertiary: #2d2d2d;
+            --bg-hover: rgba(255, 255, 255, 0.08);
             --text-color: #e5e5e5;
+            --text-primary: #e5e5e5;
+            --text-secondary: #a1a1a1;
+            --text-tertiary: #6b6b6b;
             --sidebar-bg: #252525;
             --border-color: #3a3a3a;
             --primary-color: #3b82f6;
+            --accent-color: #3b82f6;
+            --accent-bg: rgba(59, 130, 246, 0.15);
+            --danger-color: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.15);
+            --success-color: #22c55e;
+            --success-bg: rgba(34, 197, 94, 0.15);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -34,6 +108,8 @@
             border-right: 1px solid var(--border-color);
             padding: 16px;
             flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
         }
         .sidebar-header {
             display: flex;
@@ -81,14 +157,50 @@
         .nav-item.active { background: var(--primary-color); color: white; }
         .main-content { flex: 1; display: flex; flex-direction: column; }
         .topbar {
-            height: 48px;
+            height: 45px;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            padding: 0 16px;
+            justify-content: space-between;
+            padding: 0 12px 0 16px;
+        }
+        .topbar-left {
+            display: flex;
+            align-items: center;
             gap: 8px;
         }
-        .breadcrumb { font-size: 14px; color: var(--text-color); opacity: 0.7; }
+        .breadcrumb { font-size: 14px; color: var(--text-color); opacity: 0.65; }
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .topbar-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-color);
+            font-size: 14px;
+            font-weight: 400;
+            border-radius: 4px;
+            cursor: pointer;
+            opacity: 0.65;
+            transition: opacity 0.1s, background 0.1s;
+        }
+        .topbar-btn:hover {
+            opacity: 1;
+            background: var(--border-color);
+        }
+        .topbar-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+        .topbar-btn-icon {
+            padding: 6px;
+        }
         .content-area { flex: 1; padding: 24px; overflow-y: auto; }
         .view-toggle {
             display: flex;
@@ -128,17 +240,50 @@
         }
         #editor-root { min-height: 400px; }
         #database-root { min-height: 400px; }
-        .theme-toggle {
-            position: fixed;
-            bottom: 16px;
-            right: 16px;
-            padding: 8px 16px;
-            background: var(--sidebar-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
+        .nav-item-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+        .nav-item-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+        .theme-toggle-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: none;
+            background: var(--border-color);
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 14px;
             color: var(--text-color);
+            opacity: 0.7;
+            transition: opacity 0.15s, background 0.15s;
+        }
+        .theme-toggle-btn:hover {
+            opacity: 1;
+            background: var(--primary-color);
+            color: white;
+        }
+        .theme-toggle-btn span {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+        }
+        .theme-toggle-btn svg {
+            width: 100%;
+            height: 100%;
         }
     </style>
     <script>
@@ -158,24 +303,65 @@
             </div>
             <nav class="nav-section">
                 <div class="nav-section-title">Views</div>
-                <a href="#" class="nav-item active" data-view="editor">Block Editor</a>
-                <a href="#" class="nav-item" data-view="database">Database View</a>
+                <a href="#" class="nav-item active" data-view="editor">
+                    <span class="nav-item-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>
+                    </span>
+                    Block Editor
+                </a>
+                <a href="#" class="nav-item" data-view="database">
+                    <span class="nav-item-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                    </span>
+                    Database
+                </a>
+            </nav>
+            <nav class="nav-section">
+                <div class="nav-section-title">Features</div>
+                <a href="#" class="nav-item" id="export-demo">
+                    <span class="nav-item-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </span>
+                    Page Export
+                </a>
             </nav>
             <nav class="nav-section">
                 <div class="nav-section-title">Dev Tools</div>
                 <a href="http://localhost:3000" class="nav-item" target="_blank">Backend Server</a>
                 <a href="/@vite/debug" class="nav-item" target="_blank">Vite Debug</a>
             </nav>
+            <div class="sidebar-footer">
+                <button class="theme-toggle-btn" id="theme-toggle" title="Toggle theme">
+                    <span id="theme-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    </span>
+                </button>
+            </div>
         </aside>
 
         <main class="main-content">
             <header class="topbar">
-                <div class="breadcrumb">Dev Mode / Test Page</div>
+                <div class="topbar-left">
+                    <div class="breadcrumb">Dev Mode / Test Page</div>
+                </div>
+                <div class="topbar-actions">
+                    <button class="topbar-btn" id="share-btn" title="Share">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                        Share
+                    </button>
+                    <button class="topbar-btn" id="export-btn" title="Export">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export
+                    </button>
+                    <button class="topbar-btn topbar-btn-icon" id="more-btn" title="More options">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                    </button>
+                </div>
             </header>
             <div class="content-area">
                 <div class="view-toggle">
                     <button class="active" data-view="editor">Block Editor</button>
-                    <button data-view="database">Database View</button>
+                    <button data-view="database">Database</button>
                 </div>
 
                 <!-- Editor View -->
@@ -226,7 +412,8 @@
         </main>
     </div>
 
-    <button class="theme-toggle" id="theme-toggle">Toggle Theme</button>
+    <!-- Export Modal Root -->
+    <div id="export-modal-root"></div>
 
     <script>
         // View switching
@@ -249,12 +436,46 @@
             });
         });
 
-        // Theme toggle
-        document.getElementById('theme-toggle').addEventListener('click', () => {
+        // Theme toggle with icon update
+        const sunIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+        const moonIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+        function updateThemeIcon() {
+            const themeIcon = document.getElementById('theme-icon');
+            if (themeIcon) {
+                const current = document.documentElement.getAttribute('data-theme');
+                themeIcon.innerHTML = current === 'dark' ? sunIcon : moonIcon;
+            }
+        }
+        updateThemeIcon();
+
+        document.getElementById('theme-toggle').addEventListener('click', (e) => {
+            e.preventDefault();
             const current = document.documentElement.getAttribute('data-theme');
             const next = current === 'dark' ? 'light' : 'dark';
             document.documentElement.setAttribute('data-theme', next);
             localStorage.setItem('theme', next);
+            updateThemeIcon();
+        });
+
+        // Export - dispatch custom event for React to handle
+        function openExportModal() {
+            const pageTitle = document.getElementById('page-title')?.textContent || 'Development Test Page';
+            window.dispatchEvent(new CustomEvent('open-export-modal', {
+                detail: { pageId: 'dev-page-001', pageTitle }
+            }));
+        }
+
+        // Export demo in sidebar
+        document.getElementById('export-demo')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            openExportModal();
+        });
+
+        // Export button in topbar
+        document.getElementById('export-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            openExportModal();
         });
     </script>
 

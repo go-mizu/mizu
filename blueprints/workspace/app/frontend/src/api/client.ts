@@ -52,8 +52,30 @@ class ApiClient {
   }
 
   // Mock responses for dev mode when backend is not running
-  private getMockResponse<T>(method: string, path: string, _data?: unknown): T {
+  private getMockResponse<T>(method: string, path: string, data?: unknown): T {
     // Return appropriate mock data based on endpoint
+    if (path.startsWith('/pages/') && path.endsWith('/export')) {
+      // Mock export response with download simulation
+      const exportData = data as { format?: string } | undefined
+      const format = exportData?.format || 'pdf'
+      const filename = `export-${Date.now()}.${format}`
+      // Create a mock blob URL for dev mode download
+      const mockContent = format === 'pdf'
+        ? 'Mock PDF content for development'
+        : format === 'html'
+        ? '<html><body><h1>Mock HTML Export</h1></body></html>'
+        : '# Mock Markdown Export\n\nThis is a development mock export.'
+      const blob = new Blob([mockContent], { type: format === 'pdf' ? 'application/pdf' : 'text/plain' })
+      const downloadUrl = URL.createObjectURL(blob)
+      return {
+        id: `export-${Date.now()}`,
+        download_url: downloadUrl,
+        filename,
+        size: mockContent.length,
+        format,
+        page_count: 1,
+      } as T
+    }
     if (path.startsWith('/pages/') && path.endsWith('/blocks')) {
       return { blocks: [] } as T
     }

@@ -38,6 +38,24 @@
 }
 
 /* =============================================================================
+   Export Modal Styles
+   ============================================================================= */
+
+.export-modal {
+  background: #ffffff;
+  background: var(--bg-primary, var(--c-bg, #ffffff));
+}
+
+[data-theme="dark"] .export-modal {
+  background: #1a1a1a;
+  background: var(--bg-primary, var(--c-bg, #1a1a1a));
+}
+
+.export-modal-overlay {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* =============================================================================
    Block Editor Styles
    ============================================================================= */
 
@@ -4958,12 +4976,18 @@ tr:hover .delete-row-btn {
 
 /* Drag handle menu */
 .bn-drag-handle-menu {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  background: #ffffff;
+  background: var(--bg-primary, var(--c-bg, #ffffff));
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-lg, 0 10px 15px rgba(0, 0, 0, 0.1));
   padding: 4px;
   min-width: 200px;
+}
+
+[data-theme="dark"] .bn-drag-handle-menu {
+  background: #1a1a1a;
+  background: var(--bg-primary, var(--c-bg, #1a1a1a));
 }
 
 .bn-drag-handle-menu-item {
@@ -4979,13 +5003,19 @@ tr:hover .delete-row-btn {
 
 /* Slash menu enhancements */
 .bn-suggestion-menu {
-  background: var(--bg-primary) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-lg) !important;
+  background: #ffffff !important;
+  background: var(--bg-primary, var(--c-bg, #ffffff)) !important;
+  border: 1px solid var(--border-color, #e5e5e5) !important;
+  border-radius: var(--radius-lg, 8px) !important;
+  box-shadow: var(--shadow-lg, 0 10px 15px rgba(0, 0, 0, 0.1)) !important;
   padding: 6px !important;
   max-height: 400px;
   overflow-y: auto;
+}
+
+[data-theme="dark"] .bn-suggestion-menu {
+  background: #1a1a1a !important;
+  background: var(--bg-primary, var(--c-bg, #1a1a1a)) !important;
 }
 
 .bn-suggestion-menu-item {
@@ -5012,11 +5042,18 @@ tr:hover .delete-row-btn {
 /* Formatting toolbar enhancements */
 .bn-toolbar,
 .bn-formatting-toolbar {
-  background: var(--bg-primary) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-md) !important;
+  background: #ffffff !important;
+  background: var(--bg-primary, var(--c-bg, #ffffff)) !important;
+  border: 1px solid var(--border-color, #e5e5e5) !important;
+  border-radius: var(--radius-lg, 8px) !important;
+  box-shadow: var(--shadow-md, 0 4px 6px rgba(0, 0, 0, 0.07)) !important;
   padding: 4px 6px !important;
+}
+
+[data-theme="dark"] .bn-toolbar,
+[data-theme="dark"] .bn-formatting-toolbar {
+  background: #1a1a1a !important;
+  background: var(--bg-primary, var(--c-bg, #1a1a1a)) !important;
 }
 
 .bn-toolbar-button {
@@ -5481,9 +5518,10 @@ tr:hover .delete-row-btn {
 
 /* BlockNote slash menu overrides */
 .bn-suggestion-menu {
-  background: var(--bg-primary) !important;
-  border: 1px solid var(--border-color) !important;
-  border-radius: var(--radius-lg) !important;
+  background: #ffffff !important;
+  background: var(--bg-primary, var(--c-bg, #ffffff)) !important;
+  border: 1px solid var(--border-color, #e5e5e5) !important;
+  border-radius: var(--radius-lg, 8px) !important;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.12) !important;
   padding: 8px 0 !important;
   max-height: 450px !important;
@@ -5493,6 +5531,8 @@ tr:hover .delete-row-btn {
 }
 
 [data-theme="dark"] .bn-suggestion-menu {
+  background: #1a1a1a !important;
+  background: var(--bg-primary, var(--c-bg, #1a1a1a)) !important;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.4) !important;
 }
 
@@ -5513,21 +5553,22 @@ tr:hover .delete-row-btn {
   box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.15) !important;
 }
 
-/* Menu items */
+/* Menu items - Notion exact styling */
 .bn-suggestion-menu-item {
   display: flex !important;
   align-items: center !important;
   gap: 12px !important;
-  padding: 6px 14px !important;
-  margin: 0 4px !important;
-  border-radius: var(--radius-md) !important;
+  padding: 4px 14px !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
   cursor: pointer !important;
   transition: background 0.08s ease !important;
   color: var(--text-primary) !important;
   background: transparent !important;
   border: none !important;
-  width: calc(100% - 8px) !important;
-  min-height: 32px !important;
+  width: 100% !important;
+  min-height: 54px !important;
+  box-sizing: border-box !important;
 }
 
 .bn-suggestion-menu-item:hover,
@@ -5547,58 +5588,73 @@ tr:hover .delete-row-btn {
   background: rgba(35, 131, 226, 0.15) !important;
 }
 
-/* Icon container - square background like Notion */
+/* Icon container - Notion exact 46x46 box */
 .bn-suggestion-menu-item > div:first-child,
+.bn-suggestion-menu-item .bn-suggestion-menu-item-icon,
 .bn-suggestion-menu-item .icon {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 24px !important;
-  height: 24px !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  min-height: 46px !important;
   flex-shrink: 0 !important;
-  background: rgba(55, 53, 47, 0.04) !important;
-  border-radius: var(--radius-sm) !important;
-  border: 1px solid rgba(55, 53, 47, 0.06) !important;
+  background: var(--bg-primary) !important;
+  border-radius: 3px !important;
+  border: 1px solid rgba(55, 53, 47, 0.16) !important;
 }
 
 [data-theme="dark"] .bn-suggestion-menu-item > div:first-child,
+[data-theme="dark"] .bn-suggestion-menu-item .bn-suggestion-menu-item-icon,
 [data-theme="dark"] .bn-suggestion-menu-item .icon {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border-color: rgba(255, 255, 255, 0.06) !important;
+  background: var(--bg-tertiary) !important;
+  border-color: rgba(255, 255, 255, 0.13) !important;
 }
 
 .bn-suggestion-menu-item svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
   color: var(--text-secondary) !important;
 }
 
-/* Text content */
-.bn-suggestion-menu-item-text {
+/* Text content wrapper - must be flex column */
+.bn-suggestion-menu-item-text,
+.bn-suggestion-menu-item > div:nth-child(2) {
   display: flex !important;
   flex-direction: column !important;
-  gap: 1px !important;
+  justify-content: center !important;
+  gap: 2px !important;
   flex: 1 !important;
   min-width: 0 !important;
+  overflow: hidden !important;
 }
 
+/* Title text */
 .bn-suggestion-menu-item .title,
-.bn-suggestion-menu-item-title {
+.bn-suggestion-menu-item-title,
+.bn-suggestion-menu-item > div:nth-child(2) > span:first-child,
+.bn-suggestion-menu-item > div:nth-child(2) > div:first-child {
   font-size: 14px !important;
   font-weight: 400 !important;
   color: var(--text-primary) !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  line-height: 1.4 !important;
 }
 
+/* Subtitle text */
 .bn-suggestion-menu-item .subtext,
-.bn-suggestion-menu-item-subtitle {
+.bn-suggestion-menu-item-subtitle,
+.bn-suggestion-menu-item > div:nth-child(2) > span:last-child:not(:first-child),
+.bn-suggestion-menu-item > div:nth-child(2) > div:last-child:not(:first-child) {
   font-size: 12px !important;
   color: var(--text-tertiary) !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  line-height: 1.3 !important;
 }
 
 /* Keyboard shortcut hint */
@@ -5646,17 +5702,9 @@ tr:hover .delete-row-btn {
   font-size: 13px !important;
 }
 
-/* Keyboard navigation hint footer */
+/* Keyboard navigation hint footer - hidden for cleaner look */
 .bn-suggestion-menu::after {
-  content: "↑↓ navigate  ↵ select  esc close";
-  display: block;
-  padding: 8px 14px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  border-top: 1px solid var(--border-color);
-  margin-top: 4px;
-  text-align: center;
-  letter-spacing: 0.3px;
+  display: none !important;
 }
 
 /* Smooth scrollbar for slash menu */
@@ -7878,7 +7926,8 @@ a:focus-visible {
 /* Slash menu - Notion exact styling */
 .bn-container .bn-suggestion-menu,
 .bn-suggestion-menu {
-  background: var(--bg-primary);
+  background: #ffffff;
+  background: var(--bg-primary, var(--c-bg, #ffffff));
   border-radius: 4px;
   box-shadow: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px,
               rgba(15, 15, 15, 0.1) 0px 3px 6px,
