@@ -2,26 +2,26 @@
 
 {{define "breadcrumb"}}
 {{range .Breadcrumb}}
-<a href="/w/{{$.Workspace.Slug}}/p/{{.ID}}">{{.Title}}</a>
-<span class="breadcrumb-sep">/</span>
+<a href="/w/{{$.Workspace.Slug}}/p/{{.ID}}" class="px-1 py-0-5 rounded-sm text-tertiary max-w-37 truncate hover:bg-hover hover:text-primary transition">{{.Title}}</a>
+<span class="text-tertiary select-none">/</span>
 {{end}}
-<span class="breadcrumb-current">{{.Page.Title}}</span>
+<span class="text-primary font-normal">{{.Page.Title}}</span>
 {{end}}
 
 {{define "content"}}
-<div class="page-view" data-page-id="{{.Page.ID}}">
-    <div class="page-header">
-        <div class="page-icon-wrapper" data-icon-picker data-target="page-{{.Page.ID}}" data-current-icon="{{.Page.Icon}}">
+<div class="pt-8" data-page-id="{{.Page.ID}}">
+    <div class="flex flex-col gap-3 mb-4">
+        <div class="flex items-center gap-2" data-icon-picker data-target="page-{{.Page.ID}}" data-current-icon="{{.Page.Icon}}">
             <!-- Icon picker will be mounted here by React -->
         </div>
-        <h1 class="page-title" contenteditable="true" data-placeholder="Untitled" id="page-title">{{.Page.Title}}</h1>
-        <div class="page-actions">
-            <button class="icon-btn {{if .IsFavorite}}active{{end}}" id="favorite-btn" title="Add to favorites">
+        <h1 class="text-3xl font-bold leading-tight tracking-tight outline-none min-h-10 w-full text-primary" contenteditable="true" data-placeholder="Untitled" id="page-title">{{.Page.Title}}</h1>
+        <div class="flex gap-1">
+            <button class="btn btn-icon btn-ghost {{if .IsFavorite}}text-primary{{end}}" id="favorite-btn" title="Add to favorites">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="{{if .IsFavorite}}currentColor{{else}}none{{end}}">
                     <path d="M8 2l1.8 3.6 4 .6-2.9 2.8.7 4L8 11.4 4.4 13l.7-4L2.2 6.2l4-.6L8 2z" stroke="currentColor" stroke-width="1.5"/>
                 </svg>
             </button>
-            <button class="icon-btn" id="share-btn" title="Share">
+            <button class="btn btn-icon btn-ghost" id="share-btn" title="Share">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.5"/>
                     <circle cx="4" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
@@ -29,7 +29,7 @@
                     <path d="M6 7l4-2M6 9l4 2" stroke="currentColor" stroke-width="1.5"/>
                 </svg>
             </button>
-            <button class="icon-btn" id="more-btn" title="More">
+            <button class="btn btn-icon btn-ghost" id="more-btn" title="More">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <circle cx="4" cy="8" r="1.5" fill="currentColor"/>
                     <circle cx="8" cy="8" r="1.5" fill="currentColor"/>

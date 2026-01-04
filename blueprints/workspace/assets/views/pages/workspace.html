@@ -1,42 +1,42 @@
 {{define "title"}}{{.Workspace.Name}} - Workspace{{end}}
 
 {{define "breadcrumb"}}
-<a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
+<a href="/w/{{.Workspace.Slug}}" class="px-1 py-0-5 rounded-sm text-tertiary hover:bg-hover hover:text-primary transition">{{.Workspace.Name}}</a>
 {{end}}
 
 {{define "content"}}
-<div class="workspace-home">
-    <div class="workspace-header">
-        <h1>
-            <span class="workspace-emoji">{{if .Workspace.Icon}}{{.Workspace.Icon}}{{else}}🏠{{end}}</span>
+<div class="pt-10">
+    <div class="mb-8">
+        <h1 class="flex items-center gap-3 text-4xl font-bold">
+            <span class="text-5xl">{{if .Workspace.Icon}}{{.Workspace.Icon}}{{else}}🏠{{end}}</span>
             {{.Workspace.Name}}
         </h1>
     </div>
 
-    <div class="quick-actions">
-        <button class="action-card" id="new-page-action" data-workspace="{{.Workspace.ID}}">
-            <span class="action-icon">📄</span>
-            <span class="action-label">New page</span>
+    <div class="flex gap-4 mb-12">
+        <button class="flex-1 p-5 card card-hover flex flex-col items-center gap-2" id="new-page-action" data-workspace="{{.Workspace.ID}}">
+            <span class="text-2xl">📄</span>
+            <span class="text-base text-secondary">New page</span>
         </button>
-        <button class="action-card" id="new-database-action" data-workspace="{{.Workspace.ID}}">
-            <span class="action-icon">🗃️</span>
-            <span class="action-label">New database</span>
+        <button class="flex-1 p-5 card card-hover flex flex-col items-center gap-2" id="new-database-action" data-workspace="{{.Workspace.ID}}">
+            <span class="text-2xl">🗃️</span>
+            <span class="text-base text-secondary">New database</span>
         </button>
-        <button class="action-card" id="import-action">
-            <span class="action-icon">📥</span>
-            <span class="action-label">Import</span>
+        <button class="flex-1 p-5 card card-hover flex flex-col items-center gap-2" id="import-action">
+            <span class="text-2xl">📥</span>
+            <span class="text-base text-secondary">Import</span>
         </button>
     </div>
 
-    <section class="recent-section">
-        <h2>Recent pages</h2>
-        <div class="page-grid">
+    <section>
+        <h2 class="text-md font-semibold mb-4 text-secondary">Recent pages</h2>
+        <div class="grid grid-cols-auto gap-3">
             {{range .Pages}}
             {{if eq .ParentType "workspace"}}
-            <a href="/w/{{$.Workspace.Slug}}/p/{{.ID}}" class="page-card">
-                <div class="page-card-icon">{{if .Icon}}{{.Icon}}{{else}}📄{{end}}</div>
-                <div class="page-card-title">{{.Title}}</div>
-                <div class="page-card-meta">{{if .UpdatedAt}}Updated {{.UpdatedAt.Format "Jan 2"}}{{end}}</div>
+            <a href="/w/{{$.Workspace.Slug}}/p/{{.ID}}" class="p-4 card card-hover">
+                <div class="text-2xl mb-2">{{if .Icon}}{{.Icon}}{{else}}📄{{end}}</div>
+                <div class="font-medium mb-1">{{.Title}}</div>
+                <div class="text-sm text-secondary">{{if .UpdatedAt}}Updated {{.UpdatedAt.Format "Jan 2"}}{{end}}</div>
             </a>
             {{end}}
             {{end}}

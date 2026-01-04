@@ -1,59 +1,59 @@
 {{define "title"}}Settings - {{.Workspace.Name}}{{end}}
 
 {{define "breadcrumb"}}
-<a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
-<span class="breadcrumb-sep">/</span>
-<span class="breadcrumb-current">Settings</span>
+<a href="/w/{{.Workspace.Slug}}" class="px-1 py-0-5 rounded-sm text-tertiary hover:bg-hover hover:text-primary transition">{{.Workspace.Name}}</a>
+<span class="text-tertiary select-none">/</span>
+<span class="text-primary font-normal">Settings</span>
 {{end}}
 
 {{define "content"}}
-<div class="settings-page">
-    <div class="settings-header">
-        <h1>Workspace Settings</h1>
+<div class="pt-10">
+    <div class="mb-8">
+        <h1 class="text-4xl font-bold">Workspace Settings</h1>
     </div>
 
-    <div class="settings-content">
-        <nav class="settings-nav">
-            <button class="settings-nav-item active" data-section="general">General</button>
-            <button class="settings-nav-item" data-section="members">Members</button>
-            <button class="settings-nav-item" data-section="security">Security</button>
-            <button class="settings-nav-item danger" data-section="danger">Danger zone</button>
+    <div class="flex gap-12">
+        <nav class="flex flex-col gap-1 min-w-45">
+            <button class="py-2 px-3 rounded text-left text-secondary font-medium bg-hover text-primary transition" data-section="general">General</button>
+            <button class="py-2 px-3 rounded text-left text-secondary hover:bg-hover hover:text-primary transition" data-section="members">Members</button>
+            <button class="py-2 px-3 rounded text-left text-secondary hover:bg-hover hover:text-primary transition" data-section="security">Security</button>
+            <button class="py-2 px-3 rounded text-left text-danger hover:bg-hover transition" data-section="danger">Danger zone</button>
         </nav>
 
-        <div class="settings-sections">
+        <div class="flex-1">
             <!-- General Settings -->
-            <section class="settings-section active" id="section-general">
-                <h2>General</h2>
-                <form id="workspace-settings-form">
-                    <div class="form-group">
-                        <label for="ws-name">Workspace name</label>
-                        <input type="text" id="ws-name" name="name" value="{{.Workspace.Name}}">
+            <section id="section-general">
+                <h2 class="text-xl font-semibold mb-6">General</h2>
+                <form id="workspace-settings-form" class="flex flex-col gap-4">
+                    <div class="flex flex-col gap-1-5">
+                        <label for="ws-name" class="text-sm font-medium text-secondary">Workspace name</label>
+                        <input type="text" id="ws-name" name="name" value="{{.Workspace.Name}}" class="input">
                     </div>
-                    <div class="form-group">
-                        <label for="ws-slug">Workspace URL</label>
-                        <div class="input-prefix">
-                            <span>/w/</span>
-                            <input type="text" id="ws-slug" name="slug" value="{{.Workspace.Slug}}">
+                    <div class="flex flex-col gap-1-5">
+                        <label for="ws-slug" class="text-sm font-medium text-secondary">Workspace URL</label>
+                        <div class="flex items-center border rounded overflow-hidden">
+                            <span class="py-2-5 px-3 bg-secondary text-secondary">/w/</span>
+                            <input type="text" id="ws-slug" name="slug" value="{{.Workspace.Slug}}" class="flex-1 py-2-5 px-3 border-0 outline-none">
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="ws-icon">Icon</label>
-                        <button type="button" class="icon-picker" id="ws-icon-picker">
+                    <div class="flex flex-col gap-1-5">
+                        <label for="ws-icon" class="text-sm font-medium text-secondary">Icon</label>
+                        <button type="button" class="text-4xl p-2 border rounded w-14 h-14" id="ws-icon-picker">
                             {{if .Workspace.Icon}}{{.Workspace.Icon}}{{else}}🏠{{end}}
                         </button>
                     </div>
-                    <button type="submit" class="btn btn-primary">Save changes</button>
+                    <button type="submit" class="btn btn-primary w-auto self-start">Save changes</button>
                 </form>
             </section>
 
             <!-- Members -->
-            <section class="settings-section" id="section-members">
-                <h2>Members</h2>
-                <div class="invite-section">
-                    <h3>Invite members</h3>
-                    <form id="invite-form" class="invite-form">
-                        <input type="email" id="invite-email" placeholder="Email address" required>
-                        <select id="invite-role">
+            <section id="section-members" class="hidden">
+                <h2 class="text-xl font-semibold mb-6">Members</h2>
+                <div class="mb-8">
+                    <h3 class="text-base font-semibold mb-3">Invite members</h3>
+                    <form id="invite-form" class="flex gap-2">
+                        <input type="email" id="invite-email" placeholder="Email address" required class="input flex-1">
+                        <select id="invite-role" class="input w-auto">
                             <option value="member">Member</option>
                             <option value="admin">Admin</option>
                         </select>
@@ -61,40 +61,40 @@
                     </form>
                 </div>
 
-                <div class="members-list">
-                    <h3>Current members</h3>
-                    <table class="members-table">
+                <div>
+                    <h3 class="text-base font-semibold mb-3">Current members</h3>
+                    <table class="w-full border-collapse">
                         <thead>
                             <tr>
-                                <th>Member</th>
-                                <th>Role</th>
-                                <th>Joined</th>
-                                <th></th>
+                                <th class="text-left py-3 px-0 border-b font-medium text-secondary text-sm uppercase tracking-wider">Member</th>
+                                <th class="text-left py-3 px-0 border-b font-medium text-secondary text-sm uppercase tracking-wider">Role</th>
+                                <th class="text-left py-3 px-0 border-b font-medium text-secondary text-sm uppercase tracking-wider">Joined</th>
+                                <th class="py-3 px-0 border-b"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {{range .Members}}
                             <tr data-member-id="{{.ID}}">
-                                <td>
-                                    <div class="member-info">
-                                        <span class="member-avatar">{{slice .UserName 0 1}}</span>
+                                <td class="py-3 border-b">
+                                    <div class="flex items-center gap-3">
+                                        <span class="avatar-lg bg-gradient-purple">{{slice .UserName 0 1}}</span>
                                         <div>
-                                            <div class="member-name">{{.UserName}}</div>
-                                            <div class="member-email">{{.UserEmail}}</div>
+                                            <div class="font-medium">{{.UserName}}</div>
+                                            <div class="text-sm text-secondary">{{.UserEmail}}</div>
                                         </div>
                                     </div>
                                 </td>
-                                <td>
-                                    <select class="role-select" {{if eq .Role "owner"}}disabled{{end}}>
+                                <td class="py-3 border-b">
+                                    <select class="py-1-5 px-2 border rounded-sm bg-primary outline-none" {{if eq .Role "owner"}}disabled{{end}}>
                                         <option value="member" {{if eq .Role "member"}}selected{{end}}>Member</option>
                                         <option value="admin" {{if eq .Role "admin"}}selected{{end}}>Admin</option>
                                         <option value="owner" {{if eq .Role "owner"}}selected{{end}}>Owner</option>
                                     </select>
                                 </td>
-                                <td>{{.CreatedAt.Format "Jan 2, 2006"}}</td>
-                                <td>
+                                <td class="py-3 border-b text-secondary">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+                                <td class="py-3 border-b">
                                     {{if ne .Role "owner"}}
-                                    <button class="btn btn-sm btn-danger remove-member-btn">Remove</button>
+                                    <button class="btn btn-sm btn-danger">Remove</button>
                                     {{end}}
                                 </td>
                             </tr>
@@ -105,23 +105,23 @@
             </section>
 
             <!-- Security -->
-            <section class="settings-section" id="section-security">
-                <h2>Security</h2>
-                <div class="security-options">
-                    <div class="security-option">
-                        <div class="option-info">
-                            <h3>Require two-factor authentication</h3>
-                            <p>All members will be required to enable 2FA</p>
+            <section id="section-security" class="hidden">
+                <h2 class="text-xl font-semibold mb-6">Security</h2>
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center justify-between p-4 border rounded">
+                        <div>
+                            <h3 class="text-base font-semibold mb-1">Require two-factor authentication</h3>
+                            <p class="text-secondary text-base">All members will be required to enable 2FA</p>
                         </div>
                         <label class="toggle">
                             <input type="checkbox" id="require-2fa">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
-                    <div class="security-option">
-                        <div class="option-info">
-                            <h3>Restrict external sharing</h3>
-                            <p>Prevent sharing pages with people outside the workspace</p>
+                    <div class="flex items-center justify-between p-4 border rounded">
+                        <div>
+                            <h3 class="text-base font-semibold mb-1">Restrict external sharing</h3>
+                            <p class="text-secondary text-base">Prevent sharing pages with people outside the workspace</p>
                         </div>
                         <label class="toggle">
                             <input type="checkbox" id="restrict-sharing">
@@ -132,20 +132,20 @@
             </section>
 
             <!-- Danger Zone -->
-            <section class="settings-section" id="section-danger">
-                <h2>Danger zone</h2>
-                <div class="danger-actions">
-                    <div class="danger-action">
-                        <div class="action-info">
-                            <h3>Export workspace</h3>
-                            <p>Download all pages and databases as markdown and CSV files</p>
+            <section id="section-danger" class="hidden">
+                <h2 class="text-xl font-semibold mb-6">Danger zone</h2>
+                <div class="flex flex-col gap-3">
+                    <div class="flex items-center justify-between p-4 border rounded">
+                        <div>
+                            <h3 class="text-base font-semibold mb-1">Export workspace</h3>
+                            <p class="text-secondary text-base">Download all pages and databases as markdown and CSV files</p>
                         </div>
                         <button class="btn btn-outline" id="export-btn">Export</button>
                     </div>
-                    <div class="danger-action">
-                        <div class="action-info">
-                            <h3>Delete workspace</h3>
-                            <p>Permanently delete this workspace and all its contents. This action cannot be undone.</p>
+                    <div class="flex items-center justify-between p-4 border rounded">
+                        <div>
+                            <h3 class="text-base font-semibold mb-1">Delete workspace</h3>
+                            <p class="text-secondary text-base">Permanently delete this workspace and all its contents. This action cannot be undone.</p>
                         </div>
                         <button class="btn btn-danger" id="delete-workspace-btn">Delete workspace</button>
                     </div>

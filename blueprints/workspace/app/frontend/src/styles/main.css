@@ -1,119 +1,40 @@
 /* =============================================================================
-   Workspace UI - Notion-Style Modern CSS
+   Workspace UI - React Component Styles
+   BlockNote, Database Views, and Custom Blocks
+
+   Note: Base variables and utilities are defined in /static/css/base.css
+   This file uses --c-* variables from base.css
    ============================================================================= */
 
-/* =============================================================================
-   CSS Variables & Theme
-   ============================================================================= */
-
+/* CSS Variable aliases for compatibility with existing component code */
 :root {
-  /* Light theme (default) */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f7f6f3;
-  --bg-tertiary: #fbfbfa;
-  --bg-hover: rgba(55, 53, 47, 0.08);
-  --bg-active: rgba(55, 53, 47, 0.16);
-
-  --text-primary: #37352f;
-  --text-secondary: #787774;
-  --text-tertiary: #9b9a97;
-  --text-placeholder: #c4c4c0;
-
-  --border-color: rgba(55, 53, 47, 0.09);
-  --border-color-strong: rgba(55, 53, 47, 0.16);
-
-  --accent-color: #2383e2;
-  --accent-hover: #0073e6;
-  --accent-bg: rgba(35, 131, 226, 0.1);
-
-  --danger-color: #e03e3e;
-  --danger-bg: rgba(224, 62, 62, 0.1);
-
-  --success-color: #0f7b6c;
-  --success-bg: rgba(15, 123, 108, 0.1);
-
-  --warning-color: #9f6b01;
-  --warning-bg: rgba(159, 107, 1, 0.1);
-
-  /* Tag colors */
-  --tag-gray: rgb(227, 226, 224);
-  --tag-brown: rgb(238, 224, 218);
-  --tag-orange: rgb(250, 222, 201);
-  --tag-yellow: rgb(253, 236, 200);
-  --tag-green: rgb(219, 237, 219);
-  --tag-blue: rgb(211, 229, 239);
-  --tag-purple: rgb(232, 222, 238);
-  --tag-pink: rgb(245, 224, 233);
-  --tag-red: rgb(255, 226, 221);
-
-  /* Spacing */
-  --sidebar-width: 240px;
-  --topbar-height: 45px;
-  --content-max-width: 900px;
-  --content-padding: 60px;
-
-  /* Typography */
-  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --font-serif: Lyon-Text, Georgia, ui-serif, serif;
-
-  /* Radii */
-  --radius-sm: 3px;
-  --radius-md: 6px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-
-  /* Shadows */
-  --shadow-sm: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 3px 6px;
-  --shadow-md: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 5px 10px, rgba(15, 15, 15, 0.2) 0px 15px 40px;
-  --shadow-lg: rgba(15, 15, 15, 0.05) 0px 0px 0px 1px, rgba(15, 15, 15, 0.1) 0px 9px 24px;
-
-  /* Transitions */
-  --transition-fast: 150ms ease;
-  --transition-normal: 200ms ease;
-  --transition-slow: 300ms ease;
-}
-
-/* Dark theme */
-[data-theme="dark"] {
-  --bg-primary: #191919;
-  --bg-secondary: #202020;
-  --bg-tertiary: #252525;
-  --bg-hover: rgba(255, 255, 255, 0.055);
-  --bg-active: rgba(255, 255, 255, 0.11);
-
-  --text-primary: rgba(255, 255, 255, 0.9);
-  --text-secondary: rgba(255, 255, 255, 0.6);
-  --text-tertiary: rgba(255, 255, 255, 0.4);
-  --text-placeholder: rgba(255, 255, 255, 0.25);
-
-  --border-color: rgba(255, 255, 255, 0.094);
-  --border-color-strong: rgba(255, 255, 255, 0.14);
-
-  --accent-color: #529cca;
-  --accent-hover: #6bb8e8;
-  --accent-bg: rgba(82, 156, 202, 0.15);
-
-  --danger-color: #eb5757;
-  --danger-bg: rgba(235, 87, 87, 0.15);
-
-  --success-color: #4dab9a;
-  --success-bg: rgba(77, 171, 154, 0.15);
-
-  /* Tag colors - dark */
-  --tag-gray: rgb(69, 75, 78);
-  --tag-brown: rgb(74, 64, 54);
-  --tag-orange: rgb(92, 59, 35);
-  --tag-yellow: rgb(86, 67, 40);
-  --tag-green: rgb(36, 61, 48);
-  --tag-blue: rgb(29, 60, 78);
-  --tag-purple: rgb(60, 45, 73);
-  --tag-pink: rgb(78, 44, 60);
-  --tag-red: rgb(82, 46, 42);
-
-  --shadow-sm: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 3px 6px;
-  --shadow-md: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 5px 10px, rgba(0, 0, 0, 0.4) 0px 15px 40px;
-  --shadow-lg: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 9px 24px;
+  --bg-primary: var(--c-bg);
+  --bg-secondary: var(--c-bg-secondary);
+  --bg-tertiary: var(--c-bg-tertiary);
+  --bg-hover: var(--c-bg-hover);
+  --bg-active: var(--c-bg-active);
+  --text-primary: var(--c-text);
+  --text-secondary: var(--c-text-secondary);
+  --text-tertiary: var(--c-text-tertiary);
+  --text-placeholder: var(--c-text-placeholder);
+  --border-color: var(--c-border);
+  --border-color-strong: var(--c-border-strong);
+  --accent-color: var(--c-accent);
+  --accent-bg: var(--c-accent-bg);
+  --danger-color: var(--c-danger);
+  --danger-bg: var(--c-danger-bg);
+  --success-color: var(--c-success);
+  --success-bg: var(--c-success-bg);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --transition-fast: var(--transition-fast);
+  --transition-normal: var(--transition-normal);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
 }
 
 /* =============================================================================

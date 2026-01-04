@@ -1,27 +1,27 @@
 {{define "title"}}Sign Up - Workspace{{end}}
 
 {{define "content"}}
-<h1>Create your account</h1>
-<p class="auth-subtitle">Start organizing your work</p>
+<h1 class="text-2xl font-semibold mb-2">Create your account</h1>
+<p class="text-secondary mb-6">Start organizing your work</p>
 
-<form id="register-form" class="auth-form">
-    <div class="form-group">
-        <label for="name">Name</label>
-        <input type="text" id="name" name="name" required placeholder="Enter your name">
+<form id="register-form" class="flex flex-col gap-4">
+    <div class="flex flex-col gap-1-5">
+        <label for="name" class="text-sm font-medium text-secondary">Name</label>
+        <input type="text" id="name" name="name" required placeholder="Enter your name" class="input">
     </div>
-    <div class="form-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" name="email" required placeholder="Enter your email">
+    <div class="flex flex-col gap-1-5">
+        <label for="email" class="text-sm font-medium text-secondary">Email</label>
+        <input type="email" id="email" name="email" required placeholder="Enter your email" class="input">
     </div>
-    <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required minlength="8" placeholder="Create a password">
+    <div class="flex flex-col gap-1-5">
+        <label for="password" class="text-sm font-medium text-secondary">Password</label>
+        <input type="password" id="password" name="password" required minlength="8" placeholder="Create a password" class="input">
     </div>
-    <div class="form-error" id="register-error"></div>
+    <div id="register-error" class="text-danger text-base min-h-5 py-2 px-3 mb-2 rounded empty:p-0 empty:mb-0 empty:min-h-0"></div>
     <button type="submit" class="btn btn-primary btn-full">Create account</button>
 </form>
 
-<p class="auth-footer">
-    Already have an account? <a href="/login">Log in</a>
+<p class="mt-6 text-center text-secondary text-base">
+    Already have an account? <a href="/login" class="text-accent">Log in</a>
 </p>
 {{end}}

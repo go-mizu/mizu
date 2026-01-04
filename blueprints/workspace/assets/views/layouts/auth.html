@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{block "title" .}}Workspace{{end}}</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/base.css">
 </head>
-<body class="auth-layout">
-    <div class="auth-container">
-        <div class="auth-card">
-            <div class="auth-logo">
+<body class="min-h-screen flex items-center justify-center bg-secondary">
+    <div class="w-full max-w-sm p-5">
+        <div class="bg-primary rounded-lg shadow-md p-10">
+            <div class="flex items-center gap-3 mb-8 text-lg font-semibold">
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <rect width="40" height="40" rx="8" fill="#000"/>
                     <path d="M12 12h16v4H12zM12 20h12v4H12zM12 28h8v4H12z" fill="#fff"/>
