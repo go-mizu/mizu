@@ -31,8 +31,10 @@ export function QuickSearch({
   const [recentPages, setRecentPages] = useState<SearchResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const searchId = useRef(`search-${Math.random().toString(36).slice(2, 9)}`).current
 
   // Focus input when opened
   useEffect(() => {
@@ -40,6 +42,7 @@ export function QuickSearch({
       setQuery('')
       setResults([])
       setSelectedIndex(0)
+      setIsInitialLoad(true)
       setTimeout(() => inputRef.current?.focus(), 50)
       loadRecentPages()
     }
@@ -47,11 +50,14 @@ export function QuickSearch({
 
   // Load recent pages
   const loadRecentPages = async () => {
+    setIsInitialLoad(true)
     try {
       const data = await api.get<{ pages: SearchResult[] }>('/search/recent')
       setRecentPages(data.pages.slice(0, 5))
     } catch (err) {
       console.error('Failed to load recent pages:', err)
+    } finally {
+      setIsInitialLoad(false)
     }
   }
 
@@ -127,13 +133,31 @@ export function QuickSearch({
 
   const displayItems = query ? results : recentPages
   const showCreateOption = query.trim().length > 0
+  const activeItemId = displayItems[selectedIndex]?.id || (showCreateOption && selectedIndex === displayItems.length ? 'create-option' : undefined)
+
+  // Skeleton loader component
+  const SkeletonItem = () => (
+    <div className="search-result-item" style={{ pointerEvents: 'none' }}>
+      <div className="skeleton skeleton-avatar" style={{ width: 20, height: 20 }} />
+      <div className="skeleton skeleton-text" style={{ flex: 1, height: 14 }} />
+    </div>
+  )
 
   return (
     <>
-      <div className="quick-search-overlay" onClick={onClose} />
-      <div className="quick-search-modal">
+      <div
+        className="quick-search-overlay"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        className="quick-search-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Quick search"
+      >
         <div className="search-input-wrapper">
-          <Search size={18} className="search-icon" />
+          <Search size={18} className="search-icon" aria-hidden="true" />
           <input
             ref={inputRef}
             type="text"
@@ -142,61 +166,106 @@ export function QuickSearch({
             onKeyDown={handleKeyDown}
             placeholder="Search pages or type to create..."
             className="search-input"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={`${searchId}-listbox`}
+            aria-activedescendant={activeItemId ? `${searchId}-${activeItemId}` : undefined}
+            aria-autocomplete="list"
+            aria-label="Search pages"
           />
-          {isLoading && <div className="search-spinner" />}
+          {isLoading && (
+            <div className="search-spinner" role="status" aria-label="Searching..." />
+          )}
         </div>
 
-        <div className="search-results" ref={listRef}>
-          {!query && recentPages.length > 0 && (
+        <div
+          className="search-results"
+          ref={listRef}
+          role="listbox"
+          id={`${searchId}-listbox`}
+          aria-label={query ? 'Search results' : 'Recent pages'}
+        >
+          {/* Loading skeletons for initial load */}
+          {!query && isInitialLoad && (
             <>
               <div className="results-section-header">
-                <Clock size={14} />
+                <Clock size={14} aria-hidden="true" />
+                <span>Recent pages</span>
+              </div>
+              <SkeletonItem />
+              <SkeletonItem />
+              <SkeletonItem />
+            </>
+          )}
+
+          {!query && !isInitialLoad && recentPages.length > 0 && (
+            <>
+              <div className="results-section-header" id={`${searchId}-recent-header`}>
+                <Clock size={14} aria-hidden="true" />
                 <span>Recent pages</span>
               </div>
               {recentPages.map((page, index) => (
                 <button
                   key={page.id}
+                  id={`${searchId}-${page.id}`}
                   className={`search-result-item ${selectedIndex === index ? 'selected' : ''}`}
                   onClick={() => {
                     onNavigate(page.type, page.id)
                     onClose()
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
+                  role="option"
+                  aria-selected={selectedIndex === index}
                 >
-                  <span className="result-icon">
+                  <span className="result-icon" aria-hidden="true">
                     {page.icon || (page.type === 'database' ? <Database size={16} /> : <FileText size={16} />)}
                   </span>
                   <span className="result-title">{page.title || 'Untitled'}</span>
                   {page.parentTitle && (
-                    <span className="result-parent">{page.parentTitle}</span>
+                    <span className="result-parent">in {page.parentTitle}</span>
                   )}
                 </button>
               ))}
             </>
           )}
 
-          {query && results.length > 0 && (
+          {/* Loading skeletons for search */}
+          {query && isLoading && results.length === 0 && (
             <>
               <div className="results-section-header">
-                <Search size={14} />
+                <Search size={14} aria-hidden="true" />
+                <span>Searching...</span>
+              </div>
+              <SkeletonItem />
+              <SkeletonItem />
+            </>
+          )}
+
+          {query && results.length > 0 && (
+            <>
+              <div className="results-section-header" id={`${searchId}-results-header`}>
+                <Search size={14} aria-hidden="true" />
                 <span>Search results</span>
               </div>
               {results.map((result, index) => (
                 <button
                   key={result.id}
+                  id={`${searchId}-${result.id}`}
                   className={`search-result-item ${selectedIndex === index ? 'selected' : ''}`}
                   onClick={() => {
                     onNavigate(result.type, result.id)
                     onClose()
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
+                  role="option"
+                  aria-selected={selectedIndex === index}
                 >
-                  <span className="result-icon">
+                  <span className="result-icon" aria-hidden="true">
                     {result.icon || (result.type === 'database' ? <Database size={16} /> : <FileText size={16} />)}
                   </span>
                   <span className="result-title">{result.title || 'Untitled'}</span>
                   {result.parentTitle && (
-                    <span className="result-parent">{result.parentTitle}</span>
+                    <span className="result-parent">in {result.parentTitle}</span>
                   )}
                 </button>
               ))}
@@ -204,31 +273,50 @@ export function QuickSearch({
           )}
 
           {query && results.length === 0 && !isLoading && (
-            <div className="no-results">
+            <div className="no-results" role="status">
               <span>No results for "{query}"</span>
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                Try a different search term or create a new page
+              </p>
             </div>
           )}
 
           {showCreateOption && (
             <button
+              id={`${searchId}-create-option`}
               className={`search-result-item create-option ${selectedIndex === displayItems.length ? 'selected' : ''}`}
               onClick={() => {
                 onCreatePage?.()
                 onClose()
               }}
               onMouseEnter={() => setSelectedIndex(displayItems.length)}
+              role="option"
+              aria-selected={selectedIndex === displayItems.length}
             >
-              <span className="result-icon">
+              <span className="result-icon" aria-hidden="true">
                 <Plus size={16} />
               </span>
               <span className="result-title">Create page "{query}"</span>
-              <ArrowRight size={14} className="result-arrow" />
+              <ArrowRight size={14} className="result-arrow" aria-hidden="true" />
             </button>
+          )}
+
+          {/* Empty state for no recent pages */}
+          {!query && !isInitialLoad && recentPages.length === 0 && (
+            <div className="empty-state" style={{ padding: 32 }}>
+              <Clock size={24} style={{ color: 'var(--text-tertiary)', marginBottom: 8 }} />
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                No recent pages
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', margin: '4px 0 0' }}>
+                Start typing to search or create a page
+              </p>
+            </div>
           )}
         </div>
 
         <div className="search-footer">
-          <div className="search-hint">
+          <div className="search-hint" aria-hidden="true">
             <kbd>↑</kbd><kbd>↓</kbd> to navigate
             <kbd>↵</kbd> to select
             <kbd>esc</kbd> to close

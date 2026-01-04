@@ -23,6 +23,8 @@ import {
 } from 'lucide-react'
 import { api, Database, DatabaseRow, Property, PropertyType, User } from '../api/client'
 import { PropertyCell } from './PropertyCell'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import showToast from '../utils/toast'
 import { format, parseISO, formatDistanceToNow } from 'date-fns'
 
 // ============================================================
@@ -135,6 +137,10 @@ export function SidePeek({
   const [contentBlocks, setContentBlocks] = useState<ContentBlock[]>([])
   const [isLoadingBlocks, setIsLoadingBlocks] = useState(false)
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
+
+  // Delete confirmation dialog
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Refs
   const panelRef = useRef<HTMLDivElement>(null)
@@ -350,16 +356,26 @@ export function SidePeek({
     }
   }, [localRow, row.id, onUpdate])
 
-  // Delete row
-  const handleDelete = useCallback(async () => {
-    if (!confirm('Are you sure you want to delete this row?')) return
+  // Open delete confirmation dialog
+  const handleDeleteClick = useCallback(() => {
+    setShowMenu(false)
+    setShowDeleteConfirm(true)
+  }, [])
 
+  // Confirm delete row
+  const handleConfirmDelete = useCallback(async () => {
+    setIsDeleting(true)
     try {
       await api.delete(`/rows/${row.id}`)
+      showToast.success('Row deleted')
       onDelete?.(row.id)
       onClose()
     } catch (err) {
       console.error('Failed to delete row:', err)
+      showToast.error('Failed to delete row')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
     }
   }, [row.id, onDelete, onClose])
 
@@ -371,8 +387,10 @@ export function SidePeek({
       })
       onUpdate(newRow)
       setShowMenu(false)
+      showToast.success('Row duplicated')
     } catch (err) {
       console.error('Failed to duplicate row:', err)
+      showToast.error('Failed to duplicate row')
     }
   }, [database.id, localRow.properties, title, onUpdate])
 
@@ -739,7 +757,7 @@ export function SidePeek({
                 </button>
                 <div style={{ height: 1, background: '#e9e9e7', margin: '4px 0' }} />
                 <button
-                  onClick={handleDelete}
+                  onClick={handleDeleteClick}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1128,6 +1146,19 @@ export function SidePeek({
           }}
         />
         {panelContent}
+
+        {/* Delete confirmation dialog */}
+        <ConfirmDialog
+          isOpen={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleConfirmDelete}
+          title="Delete row?"
+          message="This action cannot be undone. The row and all its data will be permanently deleted."
+          confirmText="Delete"
+          cancelText="Cancel"
+          variant="danger"
+          isLoading={isDeleting}
+        />
       </>,
       document.body
     )
@@ -1150,6 +1181,19 @@ export function SidePeek({
         }}
       />
       {panelContent}
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleConfirmDelete}
+        title="Delete row?"
+        message="This action cannot be undone. The row and all its data will be permanently deleted."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={isDeleting}
+      />
     </>,
     document.body
   )
