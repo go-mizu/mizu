@@ -1431,7 +1431,7 @@ function FilesCell({ value, onChange }: { value: FileValue[]; onChange: (v: File
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const files = value || []
+  const files = Array.isArray(value) ? value : []
 
   const handleUpload = async (uploadFiles: FileList) => {
     setIsUploading(true)

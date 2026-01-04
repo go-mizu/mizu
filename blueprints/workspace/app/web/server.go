@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -28,6 +29,7 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/rows"
 	"github.com/go-mizu/blueprints/workspace/feature/search"
 	"github.com/go-mizu/blueprints/workspace/feature/sharing"
+	"github.com/go-mizu/blueprints/workspace/feature/synced_blocks"
 	"github.com/go-mizu/blueprints/workspace/feature/templates"
 	"github.com/go-mizu/blueprints/workspace/feature/users"
 	"github.com/go-mizu/blueprints/workspace/feature/views"
@@ -64,25 +66,28 @@ type Server struct {
 	favorites     favorites.API
 	search        search.API
 	templates     templates.API
+	syncedBlocks  synced_blocks.API
 
 	// Export service
 	exports *export.Service
 
 	// Handlers
-	authHandlers      *api.Auth
-	workspaceHandlers *api.Workspace
-	pageHandlers      *api.Page
-	blockHandlers     *api.Block
-	databaseHandlers  *api.Database
-	viewHandlers      *api.View
-	rowHandlers       *api.Row
-	commentHandlers   *api.Comment
-	shareHandlers     *api.Share
-	favoriteHandlers  *api.Favorite
-	searchHandlers    *api.Search
-	mediaHandlers     *api.Media
-	exportHandlers    *api.Export
-	uiHandlers        *handler.UI
+	authHandlers         *api.Auth
+	workspaceHandlers    *api.Workspace
+	pageHandlers         *api.Page
+	blockHandlers        *api.Block
+	databaseHandlers     *api.Database
+	viewHandlers         *api.View
+	rowHandlers          *api.Row
+	commentHandlers      *api.Comment
+	shareHandlers        *api.Share
+	favoriteHandlers     *api.Favorite
+	searchHandlers       *api.Search
+	mediaHandlers        *api.Media
+	exportHandlers       *api.Export
+	syncedBlocksHandlers *api.SyncedBlocks
+	unfurlHandlers       *api.Unfurl
+	uiHandlers           *handler.UI
 }
 
 // New creates a new server.
@@ -125,6 +130,7 @@ func New(cfg Config) (*Server, error) {
 	notificationsStore := duckdb.NewNotificationsStore(db)
 	favoritesStore := duckdb.NewFavoritesStore(db)
 	templatesStore := duckdb.NewTemplatesStore(db)
+	syncedBlocksStore := duckdb.NewSyncedBlocksStore(db)
 
 	// Create services
 	usersSvc := users.NewService(usersStore)
@@ -143,6 +149,7 @@ func New(cfg Config) (*Server, error) {
 	templatesSvc := templates.NewService(templatesStore, pagesSvc)
 	searchSvc := search.NewService(duckdb.NewSearchStore(db), pagesSvc, databasesSvc)
 	exportSvc := export.NewService(pagesSvc, blocksSvc, databasesSvc, filepath.Join(cfg.DataDir, "exports"))
+	syncedBlocksSvc := synced_blocks.NewService(syncedBlocksStore, blocksSvc, pagesSvc)
 
 	s := &Server{
 		app:           mizu.New(),
@@ -164,6 +171,7 @@ func New(cfg Config) (*Server, error) {
 		search:        searchSvc,
 		templates:     templatesSvc,
 		exports:       exportSvc,
+		syncedBlocks:  syncedBlocksSvc,
 	}
 
 	// Parse templates
@@ -186,6 +194,8 @@ func New(cfg Config) (*Server, error) {
 	s.searchHandlers = api.NewSearch(searchSvc, s.getUserID)
 	s.mediaHandlers = api.NewMedia(filepath.Join(cfg.DataDir, "uploads"), s.getUserID)
 	s.exportHandlers = api.NewExport(exportSvc, s.getUserID)
+	s.syncedBlocksHandlers = api.NewSyncedBlocks(syncedBlocksSvc, s.getUserID)
+	s.unfurlHandlers = api.NewUnfurl()
 	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workspacesSvc, membersSvc, pagesSvc, blocksSvc, databasesSvc, viewsSvc, rowsSvc, favoritesSvc, s.getUserID)
 
 	s.setupRoutes()
@@ -566,6 +576,50 @@ func (s *Server) seedDevData() error {
 		}
 	}
 
+	// Seed sample synced blocks
+	syncedBlockContent := []blocks.Block{
+		{
+			ID:   "synced-block-content-1",
+			Type: blocks.BlockParagraph,
+			Content: blocks.Content{
+				RichText: []blocks.RichText{{Type: "text", Text: "This is synced content from another page. Changes here will reflect everywhere this block is used."}},
+			},
+		},
+		{
+			ID:   "synced-block-content-2",
+			Type: blocks.BlockCallout,
+			Content: blocks.Content{
+				RichText: []blocks.RichText{{Type: "text", Text: "Synced blocks are powerful for keeping documentation consistent across your workspace."}},
+				Icon:     "💡",
+			},
+		},
+	}
+
+	_, err = s.syncedBlocks.Create(ctx, &synced_blocks.CreateIn{
+		WorkspaceID: "dev-ws-001",
+		PageID:      "dev-page-001",
+		BlockIDs:    []string{"synced-block-content-1", "synced-block-content-2"},
+		CreatedBy:   devUserID,
+	})
+	if err != nil {
+		// Create directly in store if service fails (blocks may not exist)
+		slog.Warn("failed to create synced block via service, creating directly", "error", err)
+
+		// Insert the synced block directly
+		contentJSON, _ := json.Marshal(syncedBlockContent)
+		_, directErr := s.db.ExecContext(ctx, `
+			INSERT INTO synced_blocks (id, workspace_id, original_id, page_id, page_name, content, last_updated, created_at, created_by)
+			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+		`, "dev-synced-001", "dev-ws-001", "synced-block-content-1", "dev-page-001", "Development Test Page", string(contentJSON), devUserID)
+		if directErr != nil {
+			slog.Warn("failed to create synced block directly", "error", directErr)
+		} else {
+			slog.Info("Created dev synced block: dev-synced-001")
+		}
+	} else {
+		slog.Info("Created dev synced block via service")
+	}
+
 	slog.Info("Dev data seeded successfully")
 	return nil
 }
@@ -618,6 +672,7 @@ func (s *Server) setupRoutes() {
 		api.Post("/pages/{id}/archive", s.authRequired(s.pageHandlers.Archive))
 		api.Post("/pages/{id}/restore", s.authRequired(s.pageHandlers.Restore))
 		api.Post("/pages/{id}/duplicate", s.authRequired(s.pageHandlers.Duplicate))
+		api.Get("/pages/{id}/hierarchy", s.authRequired(s.pageHandlers.GetHierarchy))
 
 		// Blocks
 		api.Post("/blocks", s.authRequired(s.blockHandlers.Create))
@@ -696,6 +751,17 @@ func (s *Server) setupRoutes() {
 		api.Post("/pages/{id}/export", s.authRequired(s.exportHandlers.ExportPage))
 		api.Get("/exports/{id}", s.authRequired(s.exportHandlers.GetExport))
 		api.Get("/exports/{id}/download", s.authRequired(s.exportHandlers.Download))
+
+		// Synced Blocks
+		api.Get("/synced-blocks/{id}", s.authRequired(s.syncedBlocksHandlers.Get))
+		api.Post("/synced-blocks", s.authRequired(s.syncedBlocksHandlers.Create))
+		api.Patch("/synced-blocks/{id}", s.authRequired(s.syncedBlocksHandlers.Update))
+		api.Delete("/synced-blocks/{id}", s.authRequired(s.syncedBlocksHandlers.Delete))
+		api.Get("/pages/{pageID}/synced-blocks", s.authRequired(s.syncedBlocksHandlers.ListByPage))
+		api.Get("/workspaces/{workspaceID}/synced-blocks", s.authRequired(s.syncedBlocksHandlers.ListByWorkspace))
+
+		// URL Unfurl (for bookmarks)
+		api.Get("/unfurl", s.unfurlHandlers.Get)
 	})
 }
 

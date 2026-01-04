@@ -694,7 +694,7 @@ func main() {
   {
     id: 'synced-1',
     type: 'synced_block',
-    content: { sync_id: 'test-sync-id', original_page_name: 'Source Page' },
+    content: { sync_id: '01KE4Z3444J86VXGRSK70DX5MS', original_page_name: 'Development Test Page' },
   },
   {
     id: 'h2-template',

@@ -145,6 +145,28 @@ func (h *Page) Duplicate(c *mizu.Ctx) error {
 	return c.JSON(http.StatusCreated, page)
 }
 
+// GetHierarchy returns the page hierarchy/breadcrumb path.
+func (h *Page) GetHierarchy(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	path, err := h.pages.GetBreadcrumb(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "page not found"})
+	}
+
+	// Also include the current page in the path
+	page, err := h.pages.GetByID(c.Request().Context(), id)
+	if err == nil {
+		path = append(path, &pages.PageRef{
+			ID:    page.ID,
+			Title: page.Title,
+			Icon:  page.Icon,
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{"path": path})
+}
+
 // UpdateBlocks updates all blocks for a page.
 func (h *Page) UpdateBlocks(c *mizu.Ctx) error {
 	pageID := c.Param("id")

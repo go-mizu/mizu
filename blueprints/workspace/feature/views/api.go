@@ -42,26 +42,40 @@ type View struct {
 // ViewConfig holds view-specific configuration.
 type ViewConfig struct {
 	// Table view
-	FrozenColumns int           `json:"frozen_columns,omitempty"`
-	RowHeight     string        `json:"row_height,omitempty"` // small, medium, tall, extra_tall
-	WrapCells     bool          `json:"wrap_cells,omitempty"`
-	Calculations  []Calculation `json:"calculations,omitempty"`
+	FrozenColumns  int               `json:"frozen_columns,omitempty"`
+	RowHeight      string            `json:"row_height,omitempty"` // small, medium, tall, extra_tall
+	WrapCells      bool              `json:"wrap_cells,omitempty"`
+	WrapColumns    map[string]bool   `json:"wrap_columns,omitempty"`
+	Calculations   []Calculation     `json:"calculations,omitempty"`
+	PropertyWidths map[string]int    `json:"property_widths,omitempty"`
+	PropertyOrder  []string          `json:"property_order,omitempty"`
 
 	// Board view
-	CardSize     string `json:"card_size,omitempty"` // small, medium, large
-	CardPreview  string `json:"card_preview,omitempty"`
-	ColorColumns bool   `json:"color_columns,omitempty"`
+	CardSize         string   `json:"card_size,omitempty"` // small, medium, large
+	CardPreview      string   `json:"card_preview,omitempty"`
+	CardPreviewProp  string   `json:"card_preview_property,omitempty"`
+	FitCardImage     bool     `json:"fit_card_image,omitempty"`
+	ColorColumns     bool     `json:"color_columns,omitempty"`
+	HideEmptyGroups  bool     `json:"hide_empty_groups,omitempty"`
+	CardProperties   []string `json:"card_properties,omitempty"`
+	ColumnOrder      []string `json:"column_order,omitempty"`
 
 	// Timeline view
-	TimeScale         string `json:"time_scale,omitempty"` // hours, days, weeks, months, quarters, years
-	StartDateProperty string `json:"start_date_property,omitempty"`
-	EndDateProperty   string `json:"end_date_property,omitempty"`
-	ShowTablePanel    bool   `json:"show_table_panel,omitempty"`
-	TablePanelWidth   int    `json:"table_panel_width,omitempty"`
+	TimeScale         string       `json:"time_scale,omitempty"` // hours, days, weeks, months, quarters, years
+	StartDateProperty string       `json:"start_date_property,omitempty"`
+	EndDateProperty   string       `json:"end_date_property,omitempty"`
+	ShowTablePanel    bool         `json:"show_table_panel,omitempty"`
+	TablePanelWidth   int          `json:"table_panel_width,omitempty"`
+	TablePanelProps   []string     `json:"table_panel_properties,omitempty"`
+	Dependencies      []Dependency `json:"dependencies,omitempty"`
+	ShowDependencies  bool         `json:"show_dependencies,omitempty"`
+	ShowMilestones    bool         `json:"show_milestones,omitempty"`
 
 	// Calendar view
-	CalendarMode      string `json:"calendar_mode,omitempty"` // month, week
+	CalendarMode      string `json:"calendar_mode,omitempty"` // month, week, day
 	StartWeekOnMonday bool   `json:"start_week_on_monday,omitempty"`
+	EventColorProp    string `json:"event_color_property,omitempty"`
+	ShowWeekends      bool   `json:"show_weekends,omitempty"`
 
 	// Gallery view
 	GalleryCardSize string `json:"gallery_card_size,omitempty"` // small, medium, large
@@ -69,18 +83,49 @@ type ViewConfig struct {
 	FilesPropertyID string `json:"files_property_id,omitempty"`
 	FitImage        bool   `json:"fit_image,omitempty"`
 	ShowTitle       bool   `json:"show_title,omitempty"`
+	HideCardNames   bool   `json:"hide_card_names,omitempty"`
 
 	// Chart view
-	ChartType  string       `json:"chart_type,omitempty"` // vertical_bar, horizontal_bar, line, donut
-	ChartXAxis *AxisConfig  `json:"chart_x_axis,omitempty"`
-	ChartYAxis *AxisConfig  `json:"chart_y_axis,omitempty"`
-	ChartStyle *StyleConfig `json:"chart_style,omitempty"`
+	ChartType       string       `json:"chart_type,omitempty"` // vertical_bar, horizontal_bar, line, donut
+	ChartXAxis      *AxisConfig  `json:"chart_x_axis,omitempty"`
+	ChartYAxis      *AxisConfig  `json:"chart_y_axis,omitempty"`
+	ChartGroupBy    string       `json:"chart_group_by,omitempty"`
+	ChartStyle      *StyleConfig `json:"chart_style,omitempty"`
+	ChartAggregation string      `json:"chart_aggregation,omitempty"` // count, sum, average, min, max
+
+	// List view
+	ListShowProperties []string `json:"list_show_properties,omitempty"`
+	ListCompact        bool     `json:"list_compact,omitempty"`
+}
+
+// Dependency represents a timeline dependency between rows.
+type Dependency struct {
+	FromRowID string `json:"from_row_id"`
+	ToRowID   string `json:"to_row_id"`
+	Type      string `json:"type"` // finish_to_start, start_to_start, finish_to_finish, start_to_finish
 }
 
 // Calculation represents a column calculation.
+// Types:
+// - count_all: Count all rows
+// - count_values: Count non-empty values
+// - count_unique: Count unique values
+// - count_empty: Count empty values
+// - count_not_empty: Count non-empty values
+// - percent_empty: Percentage of empty values
+// - percent_not_empty: Percentage of non-empty values
+// - sum: Sum of numeric values
+// - average: Average of numeric values
+// - median: Median of numeric values
+// - min: Minimum value
+// - max: Maximum value
+// - range: Difference between max and min
+// - earliest_date: Earliest date
+// - latest_date: Latest date
+// - date_range: Difference between latest and earliest dates
 type Calculation struct {
 	PropertyID string `json:"property_id"`
-	Type       string `json:"type"` // count_all, sum, average, min, max, etc.
+	Type       string `json:"type"`
 }
 
 // AxisConfig holds chart axis configuration.
@@ -95,14 +140,17 @@ type AxisConfig struct {
 // StyleConfig holds chart style configuration.
 type StyleConfig struct {
 	Height          string `json:"height,omitempty"` // small, medium, large, extra_large
-	GridLine        string `json:"grid_line,omitempty"`
-	XAxisName       string `json:"x_axis_name,omitempty"`
-	YAxisName       string `json:"y_axis_name,omitempty"`
+	GridLines       bool   `json:"grid_lines,omitempty"`
+	XAxisLabels     bool   `json:"x_axis_labels,omitempty"`
+	YAxisLabels     bool   `json:"y_axis_labels,omitempty"`
 	DataLabels      bool   `json:"data_labels,omitempty"`
 	SmoothLine      bool   `json:"smooth_line,omitempty"`
 	GradientArea    bool   `json:"gradient_area,omitempty"`
 	ShowCenterValue bool   `json:"show_center_value,omitempty"`
 	ShowLegend      bool   `json:"show_legend,omitempty"`
+	ColorScheme     string `json:"color_scheme,omitempty"` // auto, colorful, or specific color
+	ColorByValue    bool   `json:"color_by_value,omitempty"`
+	Stacked         bool   `json:"stacked,omitempty"` // For bar charts
 }
 
 // ViewProp holds view-specific property configuration.

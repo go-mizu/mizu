@@ -66,6 +66,8 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
   const [searchQuery, setSearchQuery] = useState('')
   const viewMenuRef = useRef<HTMLDivElement>(null)
   const addViewMenuRef = useRef<HTMLDivElement>(null)
+  const [viewMenuPosition, setViewMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [addViewMenuPosition, setAddViewMenuPosition] = useState<{ x: number; y: number } | null>(null)
 
   // Get views for this database
   const views = storedViews[databaseId] || initialData.views || []
@@ -101,9 +103,11 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
     const handleClickOutside = (e: MouseEvent) => {
       if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
         setShowViewMenu(null)
+        setViewMenuPosition(null)
       }
       if (addViewMenuRef.current && !addViewMenuRef.current.contains(e.target as Node)) {
         setShowAddViewMenu(false)
+        setAddViewMenuPosition(null)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -407,7 +411,14 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    setShowViewMenu(showViewMenu === view.id ? null : view.id)
+                    if (showViewMenu === view.id) {
+                      setShowViewMenu(null)
+                      setViewMenuPosition(null)
+                    } else {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setViewMenuPosition({ x: rect.left, y: rect.bottom + 4 })
+                      setShowViewMenu(view.id)
+                    }
                   }}
                   style={{
                     width: 20,
@@ -430,21 +441,20 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
               </>
             )}
 
-            {/* View menu */}
-            {showViewMenu === view.id && (
+            {/* View menu - rendered via portal below */}
+            {showViewMenu === view.id && viewMenuPosition && (
               <div
                 ref={viewMenuRef}
                 style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  marginTop: 4,
+                  position: 'fixed',
+                  top: viewMenuPosition.y,
+                  left: viewMenuPosition.x,
                   background: 'var(--bg-primary)',
                   border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-md)',
                   boxShadow: 'var(--shadow-lg)',
                   minWidth: 180,
-                  zIndex: 100,
+                  zIndex: 10000,
                 }}
               >
                 <button
@@ -517,7 +527,16 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
         {/* Add view button */}
         <div ref={addViewMenuRef} style={{ position: 'relative' }}>
           <button
-            onClick={() => setShowAddViewMenu(!showAddViewMenu)}
+            onClick={(e) => {
+              if (showAddViewMenu) {
+                setShowAddViewMenu(false)
+                setAddViewMenuPosition(null)
+              } else {
+                const rect = e.currentTarget.getBoundingClientRect()
+                setAddViewMenuPosition({ x: rect.left, y: rect.bottom + 4 })
+                setShowAddViewMenu(true)
+              }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -534,18 +553,17 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
             <Plus size={14} />
             Add view
           </button>
-          {showAddViewMenu && (
+          {showAddViewMenu && addViewMenuPosition && (
             <div style={{
-              position: 'absolute',
-              top: '100%',
-              left: 0,
-              marginTop: 4,
+              position: 'fixed',
+              top: addViewMenuPosition.y,
+              left: addViewMenuPosition.x,
               background: 'var(--bg-primary)',
               border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)',
               boxShadow: 'var(--shadow-lg)',
               minWidth: 180,
-              zIndex: 100,
+              zIndex: 10000,
             }}>
               {(['table', 'board', 'list', 'calendar', 'gallery', 'timeline', 'chart'] as ViewType[]).map((type) => (
                 <button
