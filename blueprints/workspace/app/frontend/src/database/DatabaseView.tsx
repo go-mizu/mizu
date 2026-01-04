@@ -11,6 +11,8 @@ import { SortPanel } from './SortPanel'
 import { api, Database, DatabaseRow, Property, Filter, Sort, View } from '../api/client'
 import { useDatabaseStore } from '../stores/databaseStore'
 import { motion, AnimatePresence } from 'framer-motion'
+import { ConfirmDialog, AlertDialog } from '../components/ConfirmDialog'
+import toast from 'react-hot-toast'
 import {
   Plus,
   MoreHorizontal,
@@ -64,6 +66,17 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
   const addViewMenuRef = useRef<HTMLDivElement>(null)
   const [viewMenuPosition, setViewMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [addViewMenuPosition, setAddViewMenuPosition] = useState<{ x: number; y: number } | null>(null)
+
+  // Dialog states
+  const [deleteViewDialog, setDeleteViewDialog] = useState<{ isOpen: boolean; viewId: string | null }>({
+    isOpen: false,
+    viewId: null,
+  })
+  const [alertDialog, setAlertDialog] = useState<{ isOpen: boolean; title: string; message: string }>({
+    isOpen: false,
+    title: '',
+    message: '',
+  })
 
   // Get views for this database
   const views = storedViews[databaseId] || initialData.views || []
@@ -166,26 +179,41 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
     setShowViewMenu(null)
   }, [databaseId, createView, setActiveView])
 
-  // Handle delete view
-  const handleDeleteView = useCallback(async (viewId: string) => {
+  // Handle delete view - open confirmation dialog
+  const handleDeleteView = useCallback((viewId: string) => {
     if (views.length <= 1) {
-      alert('Cannot delete the only view')
+      setAlertDialog({
+        isOpen: true,
+        title: 'Cannot delete view',
+        message: 'This is the only view in this database. Create another view before deleting this one.',
+      })
       return
     }
 
-    if (!confirm('Delete this view?')) return
-
-    await deleteView(viewId)
-
-    // Switch to first remaining view
-    const remaining = views.find(v => v.id !== viewId)
-    if (remaining) {
-      setCurrentViewId(remaining.id)
-      setActiveView(remaining.id)
-    }
-
+    setDeleteViewDialog({ isOpen: true, viewId })
     setShowViewMenu(null)
-  }, [views, deleteView, setActiveView])
+  }, [views.length])
+
+  // Confirm delete view
+  const handleConfirmDeleteView = useCallback(async () => {
+    if (!deleteViewDialog.viewId) return
+
+    try {
+      await deleteView(deleteViewDialog.viewId)
+
+      // Switch to first remaining view
+      const remaining = views.find(v => v.id !== deleteViewDialog.viewId)
+      if (remaining) {
+        setCurrentViewId(remaining.id)
+        setActiveView(remaining.id)
+      }
+
+      toast.success('View deleted')
+    } catch (err) {
+      console.error('Failed to delete view:', err)
+      toast.error('Failed to delete view')
+    }
+  }, [deleteViewDialog.viewId, views, deleteView, setActiveView])
 
   // Save view config when filters/sorts change
   const saveViewConfig = useCallback(async () => {
@@ -740,6 +768,27 @@ export function DatabaseView({ databaseId, viewId: initialViewId, viewType: init
       <div className="database-content" style={{ flex: 1, overflow: 'auto' }}>
         {renderView()}
       </div>
+
+      {/* Delete view confirmation dialog */}
+      <ConfirmDialog
+        isOpen={deleteViewDialog.isOpen}
+        onClose={() => setDeleteViewDialog({ isOpen: false, viewId: null })}
+        onConfirm={handleConfirmDeleteView}
+        title="Delete view?"
+        message="This action cannot be undone. The view configuration will be permanently removed."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
+
+      {/* Alert dialog */}
+      <AlertDialog
+        isOpen={alertDialog.isOpen}
+        onClose={() => setAlertDialog({ isOpen: false, title: '', message: '' })}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        variant="warning"
+      />
     </div>
   )
 }
