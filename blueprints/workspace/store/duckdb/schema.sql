@@ -263,6 +263,30 @@ CREATE TABLE IF NOT EXISTS templates (
 );
 
 -- ============================================================
+-- Synced Blocks
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS synced_blocks (
+    id            VARCHAR PRIMARY KEY,
+    workspace_id  VARCHAR NOT NULL,
+    original_id   VARCHAR NOT NULL,        -- Original block ID
+    page_id       VARCHAR NOT NULL,        -- Page containing the original
+    page_name     VARCHAR DEFAULT '',      -- Name of the original page
+    content       JSON DEFAULT '[]',       -- The synced block content
+    last_updated  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by    VARCHAR NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS synced_block_references (
+    id              VARCHAR PRIMARY KEY,
+    synced_block_id VARCHAR NOT NULL,
+    page_id         VARCHAR NOT NULL,      -- Page where this reference exists
+    block_id        VARCHAR NOT NULL,      -- The block containing this reference
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
 -- Search (page access tracking)
 -- ============================================================
 
@@ -312,3 +336,12 @@ CREATE INDEX IF NOT EXISTS idx_activities_workspace_time
 
 CREATE INDEX IF NOT EXISTS idx_shares_token
     ON shares(token);
+
+CREATE INDEX IF NOT EXISTS idx_synced_blocks_workspace
+    ON synced_blocks(workspace_id);
+
+CREATE INDEX IF NOT EXISTS idx_synced_blocks_page
+    ON synced_blocks(page_id);
+
+CREATE INDEX IF NOT EXISTS idx_synced_block_refs_block
+    ON synced_block_references(synced_block_id);

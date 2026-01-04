@@ -17,7 +17,11 @@ async function fetchUrlMetadata(url: string): Promise<BookmarkMetadata> {
     // Try to fetch metadata from our API
     const response = await fetch(`/api/v1/unfurl?url=${encodeURIComponent(url)}`)
     if (response.ok) {
-      return await response.json()
+      // Check content type before parsing JSON
+      const contentType = response.headers.get('content-type')
+      if (contentType && contentType.includes('application/json')) {
+        return await response.json()
+      }
     }
   } catch (err) {
     console.warn('Failed to fetch URL metadata from API:', err)

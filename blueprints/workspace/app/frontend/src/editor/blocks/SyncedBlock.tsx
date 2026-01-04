@@ -220,11 +220,17 @@ export const SyncedBlock = createReactBlockSpec(
         setError(null)
 
         try {
-          // TODO: Replace with actual API call
           const response = await fetch(`/api/v1/synced-blocks/${syncId}`)
           if (!response.ok) {
             throw new Error('Failed to fetch synced content')
           }
+
+          // Check content type before parsing JSON
+          const contentType = response.headers.get('content-type')
+          if (!contentType || !contentType.includes('application/json')) {
+            throw new Error('Invalid response format')
+          }
+
           const data = await response.json()
           setSyncedData(data)
           setLastSynced(new Date())

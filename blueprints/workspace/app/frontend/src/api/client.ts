@@ -1,8 +1,5 @@
 const API_BASE = '/api/v1'
 
-// Check if we're in dev mode without a backend
-const isDevMode = import.meta.env?.DEV ?? false
-
 // Helper to convert blocks to markdown (for dev mode export)
 function blocksToMarkdown(blocks: Array<{ type: string; content?: Record<string, unknown>; children?: unknown[] }>, indent = ''): string {
   let md = ''
@@ -126,44 +123,11 @@ class ApiClient {
 
       return JSON.parse(text)
     } catch (error) {
-      // In dev mode, return mock data instead of crashing
-      if (isDevMode) {
-        console.warn(`[API Dev Mode] ${method} ${path} failed:`, error)
-        return this.getMockResponse<T>(method, path, data)
-      }
+      // Always throw the error - don't silently return mock data
+      // This ensures backend connection issues are visible during development
+      console.error(`[API] ${method} ${path} failed:`, error)
       throw error
     }
-  }
-
-  // Mock responses for dev mode when backend is not running
-  private getMockResponse<T>(method: string, path: string, data?: unknown): T {
-    // Return appropriate mock data based on endpoint
-    if (path.startsWith('/pages/') && path.endsWith('/export')) {
-      // In dev mode, export requests should go to the backend
-      // The backend handles PDF generation using chromedp
-      // This mock should not be used - throw to trigger backend call
-      throw new Error('Export requires backend - dev mode mock disabled')
-    }
-    if (path.startsWith('/pages/') && path.endsWith('/blocks')) {
-      return { blocks: [] } as T
-    }
-    if (path.startsWith('/pages')) {
-      return { id: 'mock-page', title: 'Mock Page', blocks: [] } as T
-    }
-    if (path.startsWith('/databases')) {
-      return { id: 'mock-db', name: 'Untitled', records: [], properties: [], views: [] } as T
-    }
-    if (path.startsWith('/workspaces')) {
-      return { id: 'mock-ws', name: 'Mock Workspace', slug: 'mock' } as T
-    }
-    if (path.startsWith('/search')) {
-      return { results: [], users: [], databases: [] } as T
-    }
-    if (path.startsWith('/media/upload')) {
-      return { id: 'mock-media', url: 'https://via.placeholder.com/400', filename: 'mock.jpg', type: 'image/jpeg' } as T
-    }
-    // Default empty response
-    return {} as T
   }
 
   get<T>(path: string): Promise<T> {
@@ -357,6 +321,114 @@ export interface ViewConfig {
   groupBy?: string | null
   hiddenProperties?: string[]
   propertyWidths?: Record<string, number>
+
+  // Table view
+  frozen_columns?: number
+  row_height?: 'small' | 'medium' | 'tall' | 'extra_tall'
+  wrap_cells?: boolean
+  wrap_columns?: Record<string, boolean>
+  calculations?: ColumnCalculation[]
+  property_order?: string[]
+
+  // Board view
+  card_size?: 'small' | 'medium' | 'large'
+  card_preview?: 'none' | 'page_cover' | 'page_content' | 'files'
+  card_preview_property?: string
+  fit_card_image?: boolean
+  color_columns?: boolean
+  hide_empty_groups?: boolean
+  card_properties?: string[]
+  column_order?: string[]
+
+  // Timeline view
+  time_scale?: 'hours' | 'days' | 'weeks' | 'months' | 'quarters' | 'years'
+  start_date_property?: string
+  end_date_property?: string
+  show_table_panel?: boolean
+  table_panel_width?: number
+  table_panel_properties?: string[]
+  dependencies?: Dependency[]
+  show_dependencies?: boolean
+  show_milestones?: boolean
+
+  // Calendar view
+  calendar_mode?: 'month' | 'week' | 'day'
+  start_week_on_monday?: boolean
+  event_color_property?: string
+  show_weekends?: boolean
+
+  // Gallery view
+  gallery_card_size?: 'small' | 'medium' | 'large'
+  preview_source?: 'page_cover' | 'page_content' | 'files' | 'none'
+  files_property_id?: string
+  fit_image?: boolean
+  show_title?: boolean
+  hide_card_names?: boolean
+
+  // Chart view
+  chart_type?: 'vertical_bar' | 'horizontal_bar' | 'line' | 'donut'
+  chart_x_axis?: AxisConfig
+  chart_y_axis?: AxisConfig
+  chart_group_by?: string
+  chart_style?: ChartStyleConfig
+  chart_aggregation?: 'count' | 'sum' | 'average' | 'min' | 'max'
+
+  // List view
+  list_show_properties?: string[]
+  list_compact?: boolean
+}
+
+export interface Dependency {
+  from_row_id: string
+  to_row_id: string
+  type: 'finish_to_start' | 'start_to_start' | 'finish_to_finish' | 'start_to_finish'
+}
+
+export type CalculationType =
+  | 'none'
+  | 'count_all'
+  | 'count_values'
+  | 'count_unique'
+  | 'count_empty'
+  | 'count_not_empty'
+  | 'percent_empty'
+  | 'percent_not_empty'
+  | 'sum'
+  | 'average'
+  | 'median'
+  | 'min'
+  | 'max'
+  | 'range'
+  | 'earliest_date'
+  | 'latest_date'
+  | 'date_range'
+
+export interface ColumnCalculation {
+  property_id: string
+  type: CalculationType
+}
+
+export interface AxisConfig {
+  property_id: string
+  sort?: 'ascending' | 'descending' | 'none'
+  visible_groups?: string[]
+  omit_zero_values?: boolean
+  cumulative?: boolean
+}
+
+export interface ChartStyleConfig {
+  height?: 'small' | 'medium' | 'large' | 'extra_large'
+  grid_lines?: boolean
+  x_axis_labels?: boolean
+  y_axis_labels?: boolean
+  data_labels?: boolean
+  smooth_line?: boolean
+  gradient_area?: boolean
+  show_center_value?: boolean
+  show_legend?: boolean
+  color_scheme?: string
+  color_by_value?: boolean
+  stacked?: boolean
 }
 
 export interface Filter {

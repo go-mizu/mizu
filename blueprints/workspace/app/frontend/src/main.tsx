@@ -9,6 +9,7 @@ const BlockEditor = lazy(() => import('./editor/BlockEditor').then(m => ({ defau
 const DatabaseView = lazy(() => import('./database/DatabaseView').then(m => ({ default: m.DatabaseView })))
 const IconPicker = lazy(() => import('./components/IconPicker').then(m => ({ default: m.IconPicker })))
 const PageExport = lazy(() => import('./pages/PageExport').then(m => ({ default: m.PageExport })))
+const DatabaseViewShowcase = lazy(() => import('./dev/DatabaseViewShowcase').then(m => ({ default: m.DatabaseViewShowcase })))
 
 // Loading fallback component
 function LoadingFallback() {
@@ -175,6 +176,19 @@ if (exportModalContainer && isDevMode) {
   root.render(
     <React.StrictMode>
       <ExportModalWrapper />
+    </React.StrictMode>
+  )
+}
+
+// Mount views showcase in dev mode
+const viewsShowcaseContainer = document.getElementById('views-showcase-root')
+if (viewsShowcaseContainer && isDevMode) {
+  const root = createRoot(viewsShowcaseContainer)
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<LoadingFallback />}>
+        <DatabaseViewShowcase />
+      </Suspense>
     </React.StrictMode>
   )
 }
