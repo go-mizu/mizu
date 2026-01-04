@@ -646,9 +646,10 @@ func (s *Server) setupRoutes() {
 
 	// API routes
 	s.app.Group("/api/v1", func(api *mizu.Router) {
-		// Auth
-		api.Post("/auth/register", s.authHandlers.Register)
-		api.Post("/auth/login", s.authHandlers.Login)
+		// Auth (with rate limiting to prevent brute-force attacks)
+		authRateLimit := AuthRateLimiter.RateLimit
+		api.Post("/auth/register", authRateLimit(s.authHandlers.Register))
+		api.Post("/auth/login", authRateLimit(s.authHandlers.Login))
 		api.Post("/auth/logout", s.authRequired(s.authHandlers.Logout))
 		api.Get("/auth/me", s.authRequired(s.authHandlers.Me))
 

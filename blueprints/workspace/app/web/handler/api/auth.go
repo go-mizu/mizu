@@ -80,23 +80,30 @@ func (h *Auth) Me(c *mizu.Ctx) error {
 }
 
 func setSessionCookie(c *mizu.Ctx, session *users.Session) {
+	// Determine if we should set Secure flag based on request
+	secure := c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https"
+
 	http.SetCookie(c.Writer(), &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    session.ID,
 		Path:     "/",
 		Expires:  session.ExpiresAt,
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 func clearSessionCookie(c *mizu.Ctx) {
+	secure := c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https"
+
 	http.SetCookie(c.Writer(), &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
