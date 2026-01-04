@@ -1,20 +1,20 @@
 {{define "title"}}{{.Database.Title}} - Workspace{{end}}
 
 {{define "breadcrumb"}}
-<a href="/w/{{.Workspace.Slug}}">{{.Workspace.Name}}</a>
-<span class="breadcrumb-sep">/</span>
-<span class="breadcrumb-current">{{.Database.Title}}</span>
+<a href="/w/{{.Workspace.Slug}}" class="px-1 py-0-5 rounded-sm text-tertiary hover:bg-hover hover:text-primary transition">{{.Workspace.Name}}</a>
+<span class="text-tertiary select-none">/</span>
+<span class="text-primary font-normal">{{.Database.Title}}</span>
 {{end}}
 
 {{define "content"}}
-<div class="database-view" data-database-id="{{.Database.ID}}">
-    <div class="database-header">
-        <div class="database-icon-wrapper" data-icon-picker data-target="database-{{.Database.ID}}" data-current-icon="{{.Database.Icon}}">
+<div class="pt-10" data-database-id="{{.Database.ID}}">
+    <div class="flex items-start gap-2 mb-4">
+        <div data-icon-picker data-target="database-{{.Database.ID}}" data-current-icon="{{.Database.Icon}}">
             <!-- Icon picker will be mounted here by React -->
         </div>
-        <h1 class="database-title" contenteditable="true" id="database-title">{{.Database.Title}}</h1>
-        <div class="database-actions">
-            <button class="icon-btn" id="database-settings-btn" title="Settings">
+        <h1 class="flex-1 text-4xl font-bold outline-none" contenteditable="true" id="database-title">{{.Database.Title}}</h1>
+        <div class="flex gap-2 items-center">
+            <button class="btn btn-icon btn-ghost" id="database-settings-btn" title="Settings">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
                     <path d="M8 2v2M8 12v2M14 8h-2M4 8H2M12.2 3.8l-1.4 1.4M5.2 10.8l-1.4 1.4M12.2 12.2l-1.4-1.4M5.2 5.2L3.8 3.8" stroke="currentColor" stroke-width="1.5"/>
@@ -25,7 +25,7 @@
 
     <!-- Database Description -->
     {{if .Database.Description}}
-    <p class="database-description">{{.Database.Description}}</p>
+    <p class="text-secondary mb-6 text-base">{{.Database.Description}}</p>
     {{end}}
 
     <!-- React Database View Mount Point -->
