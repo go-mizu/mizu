@@ -9,7 +9,11 @@ import {
   Block as BNBlock,
   createCodeBlockSpec,
 } from '@blocknote/core'
-import { createHighlighter } from 'shiki'
+import { createHighlighter, type BundledLanguage } from 'shiki'
+
+// Only load the most common languages upfront to reduce bundle size
+// Other languages will be loaded on-demand by shiki when needed
+const COMMON_LANGS: BundledLanguage[] = ['javascript', 'typescript', 'json', 'html', 'css', 'markdown']
 
 // Custom code block options with high-contrast themes
 const customCodeBlockOptions = {
@@ -45,15 +49,12 @@ const customCodeBlockOptions = {
     regex: { name: 'Regex', aliases: ['regexp'] },
   },
   // Use github themes for high contrast and good readability
+  // Only load common languages initially to reduce bundle size
+  // Other languages are loaded on-demand by shiki when needed
   createHighlighter: () =>
     createHighlighter({
       themes: ['github-light', 'github-dark'],
-      langs: [
-        'javascript', 'typescript', 'python', 'go', 'rust', 'java',
-        'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin',
-        'html', 'css', 'scss', 'json', 'yaml', 'xml', 'markdown',
-        'sql', 'bash', 'powershell', 'dockerfile', 'graphql', 'regex',
-      ],
+      langs: COMMON_LANGS,
     }),
 }
 // Note: @blocknote/code-block styles are bundled in the main mantine package

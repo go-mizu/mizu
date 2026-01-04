@@ -12,6 +12,11 @@ export default defineConfig({
   build: {
     outDir: '../../assets/static/dist',
     emptyOutDir: true,
+    // Enable minification and tree-shaking optimizations
+    minify: 'esbuild',
+    target: 'es2020',
+    // Increase chunk size warning limit (we're handling chunking manually)
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'src/main.tsx'),
@@ -25,35 +30,87 @@ export default defineConfig({
           }
           return 'assets/[name]-[hash][extname]'
         },
-        // Split large dependencies into separate chunks for better caching
-        manualChunks: {
-          // React core
-          'react-vendor': ['react', 'react-dom'],
-          // BlockNote editor (large)
-          'blocknote': [
-            '@blocknote/core',
-            '@blocknote/react',
-            '@blocknote/mantine',
-            '@blocknote/xl-multi-column',
-          ],
-          // Syntax highlighting (large - loads many language grammars)
-          'shiki': ['shiki'],
-          // Data grid for database views
-          'datagrid': [
-            '@glideapps/glide-data-grid',
-            '@glideapps/glide-data-grid-cells',
-          ],
-          // Emoji picker
-          'emoji': ['emoji-mart', '@emoji-mart/react', '@emoji-mart/data'],
-          // Math equations
-          'katex': ['katex'],
-          // Animation library
-          'motion': ['framer-motion'],
-          // UI components
-          'mantine': ['@mantine/core', '@mantine/hooks'],
+        // Optimized chunk splitting strategy for better caching and smaller initial load
+        manualChunks(id) {
+          // React core - always loaded
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
+            return 'react-vendor'
+          }
+
+          // Mantine UI - core UI components
+          if (id.includes('node_modules/@mantine/')) {
+            return 'mantine'
+          }
+
+          // BlockNote editor - split into separate chunk (large, lazy-loaded)
+          if (id.includes('node_modules/@blocknote/') || id.includes('node_modules/@tiptap/')) {
+            return 'blocknote'
+          }
+
+          // Shiki syntax highlighting - languages loaded on-demand
+          // Only bundle shiki core, grammars are loaded dynamically
+          if (id.includes('node_modules/shiki/')) {
+            // Split shiki core from language grammars
+            if (id.includes('/langs/')) {
+              // Each language grammar gets its own chunk for on-demand loading
+              const match = id.match(/\/langs\/([^/]+)/)
+              if (match) {
+                return `shiki-lang-${match[1].replace('.mjs', '')}`
+              }
+            }
+            return 'shiki-core'
+          }
+
+          // Data grid - split for database views
+          if (id.includes('node_modules/@glideapps/')) {
+            return 'datagrid'
+          }
+
+          // Emoji picker - lazy loaded
+          if (id.includes('node_modules/emoji-mart') || id.includes('node_modules/@emoji-mart/')) {
+            return 'emoji'
+          }
+
+          // KaTeX math - lazy loaded when equations are used
+          if (id.includes('node_modules/katex')) {
+            return 'katex'
+          }
+
+          // Framer Motion - animations
+          if (id.includes('node_modules/framer-motion')) {
+            return 'motion'
+          }
+
+          // Recharts - charts for database views
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
+            return 'charts'
+          }
+
+          // PDF viewer - lazy loaded
+          if (id.includes('node_modules/react-pdf') || id.includes('node_modules/pdfjs-dist')) {
+            return 'pdf'
+          }
+
+          // Date utilities
+          if (id.includes('node_modules/date-fns') || id.includes('node_modules/dayjs')) {
+            return 'date-utils'
+          }
+
+          // Lucide icons - tree-shake by keeping in main bundle
+          // Individual icons are tree-shaken by rollup
         },
       },
+      // Ensure proper tree-shaking
+      treeshake: {
+        moduleSideEffects: 'no-external',
+        propertyReadSideEffects: false,
+      },
     },
+  },
+  // Optimize dependencies for faster dev server and better tree-shaking
+  optimizeDeps: {
+    include: ['react', 'react-dom', '@mantine/core', '@mantine/hooks'],
+    exclude: ['@emoji-mart/data'], // Exclude large data files from pre-bundling
   },
   server: {
     proxy: {

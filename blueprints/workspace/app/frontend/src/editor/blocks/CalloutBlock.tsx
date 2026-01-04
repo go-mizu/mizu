@@ -1,7 +1,18 @@
 import { createReactBlockSpec } from '@blocknote/react'
-import { useState, useRef, useEffect } from 'react'
-import data from '@emoji-mart/data'
-import Picker from '@emoji-mart/react'
+import { useState, useRef, useEffect, lazy, Suspense } from 'react'
+
+// Lazy load emoji picker and data for better bundle size
+const EmojiPicker = lazy(() =>
+  Promise.all([
+    import('@emoji-mart/react'),
+    import('@emoji-mart/data'),
+  ]).then(([pickerModule, dataModule]) => ({
+    default: (props: { onEmojiSelect: (emoji: { native: string }) => void; theme: 'light' | 'dark' }) => {
+      const Picker = pickerModule.default
+      return <Picker data={dataModule.default} {...props} previewPosition="none" skinTonePosition="search" />
+    },
+  }))
+)
 
 const CALLOUT_COLORS: Record<string, { bg: string; border: string; darkBg: string; darkBorder: string }> = {
   default: { bg: '#f7f6f3', border: '#e3e2de', darkBg: '#2f2f2f', darkBorder: '#404040' },
@@ -173,7 +184,7 @@ export const CalloutBlock = createReactBlockSpec(
               </div>
             )}
 
-            {/* Full emoji picker */}
+            {/* Full emoji picker - lazy loaded */}
             {showFullEmojiPicker && (
               <div
                 ref={emojiPickerRef}
@@ -184,13 +195,12 @@ export const CalloutBlock = createReactBlockSpec(
                   zIndex: 200,
                 }}
               >
-                <Picker
-                  data={data}
-                  onEmojiSelect={handleEmojiSelect}
-                  theme={isDark ? 'dark' : 'light'}
-                  previewPosition="none"
-                  skinTonePosition="search"
-                />
+                <Suspense fallback={<div style={{ padding: 16, color: '#666' }}>Loading...</div>}>
+                  <EmojiPicker
+                    onEmojiSelect={handleEmojiSelect}
+                    theme={isDark ? 'dark' : 'light'}
+                  />
+                </Suspense>
               </div>
             )}
           </div>
