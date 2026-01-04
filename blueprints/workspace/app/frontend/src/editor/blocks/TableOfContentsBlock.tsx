@@ -74,9 +74,8 @@ export const TableOfContentsBlock = createReactBlockSpec(
             {headings.map((heading) => (
               <button
                 key={heading.id}
-                className={`toc-item level-${heading.level}`}
+                className={`toc-item toc-level-${heading.level}`}
                 onClick={() => scrollToHeading(heading.id)}
-                style={{ paddingLeft: `${(heading.level - 1) * 16 + 8}px` }}
               >
                 {heading.text}
               </button>
@@ -95,9 +94,9 @@ export const TableOfContentsBlock = createReactBlockSpec(
     // Convert to external HTML for clipboard/export
     toExternalHTML: () => {
       return (
-        <div className="toc-block" data-block-type="tableOfContents" style={{ padding: '16px', background: '#f7f6f3', borderRadius: '4px' }}>
+        <div className="toc-block" data-block-type="tableOfContents">
           <strong>Table of Contents</strong>
-          <p style={{ fontSize: '12px', color: '#787774', marginTop: '4px' }}>Auto-generated from headings</p>
+          <p className="text-sm text-secondary mt-1">Auto-generated from headings</p>
         </div>
       )
     },

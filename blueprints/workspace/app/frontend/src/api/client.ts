@@ -1,7 +1,6 @@
 const API_BASE = '/api/v1'
 
 // Check if we're in dev mode without a backend
-// @ts-expect-error Vite provides import.meta.env
 const isDevMode = import.meta.env?.DEV ?? false
 
 interface RequestOptions {

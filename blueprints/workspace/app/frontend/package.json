@@ -42,6 +42,7 @@
     "react-pdf": "^9.2.0",
     "react-virtuoso": "^4.12.0",
     "recharts": "^2.14.0",
+    "shiki": "^3.20.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
