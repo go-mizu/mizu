@@ -93,7 +93,7 @@ import {
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
 // xl-multi-column styles are bundled with the main package
-import { MantineProvider } from '@mantine/core'
+// Note: BlockNote handles MantineProvider internally - no need to wrap with it
 import {
   Type,
   Heading1,
@@ -1642,9 +1642,8 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
   const effectiveTheme = theme === 'dark' ? 'dark' : 'light'
 
   return (
-    <MantineProvider>
-      <div className="block-editor">
-        <div className="editor-status">
+    <div className="block-editor">
+      <div className="editor-status">
           {isSaving && <span className="save-indicator saving">Saving...</span>}
           {saveError && <span className="save-indicator error">{saveError}</span>}
           {!isSaving && !saveError && lastSaved && (
@@ -1758,7 +1757,6 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
           />
         </BlockNoteView>
       </div>
-    </MantineProvider>
   )
 }
 

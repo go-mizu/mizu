@@ -5010,6 +5010,7 @@ tr:hover .delete-row-btn {
 }
 
 /* Formatting toolbar enhancements */
+.bn-toolbar,
 .bn-formatting-toolbar {
   background: var(--bg-primary) !important;
   border: 1px solid var(--border-color) !important;
@@ -6897,7 +6898,9 @@ a:focus-visible {
 }
 
 /* Formatting toolbar - Notion exact */
+.bn-container .bn-toolbar,
 .bn-container .bn-formatting-toolbar,
+.bn-toolbar,
 .bn-formatting-toolbar {
   display: flex;
   align-items: center;
@@ -6910,7 +6913,9 @@ a:focus-visible {
   gap: 1px;
 }
 
+[data-theme="dark"] .bn-container .bn-toolbar,
 [data-theme="dark"] .bn-container .bn-formatting-toolbar,
+[data-theme="dark"] .bn-toolbar,
 [data-theme="dark"] .bn-formatting-toolbar {
   background: rgb(32, 32, 32);
   box-shadow: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px,
@@ -6918,7 +6923,9 @@ a:focus-visible {
               rgba(0, 0, 0, 0.4) 0px 9px 24px;
 }
 
+.bn-container .bn-toolbar button,
 .bn-container .bn-formatting-toolbar button,
+.bn-toolbar button,
 .bn-formatting-toolbar button {
   min-width: 28px;
   height: 28px;
@@ -6933,23 +6940,31 @@ a:focus-visible {
   transition: background 0.1s;
 }
 
+.bn-container .bn-toolbar button:hover,
 .bn-container .bn-formatting-toolbar button:hover,
+.bn-toolbar button:hover,
 .bn-formatting-toolbar button:hover {
   background: rgba(55, 53, 47, 0.08);
 }
 
+.bn-container .bn-toolbar button[data-active="true"],
 .bn-container .bn-formatting-toolbar button[data-active="true"],
+.bn-toolbar button[data-active="true"],
 .bn-formatting-toolbar button[data-active="true"] {
   background: rgba(35, 131, 226, 0.1);
   color: rgb(35, 131, 226);
 }
 
+[data-theme="dark"] .bn-container .bn-toolbar button,
 [data-theme="dark"] .bn-container .bn-formatting-toolbar button,
+[data-theme="dark"] .bn-toolbar button,
 [data-theme="dark"] .bn-formatting-toolbar button {
   color: rgba(255, 255, 255, 0.85);
 }
 
+[data-theme="dark"] .bn-container .bn-toolbar button:hover,
 [data-theme="dark"] .bn-container .bn-formatting-toolbar button:hover,
+[data-theme="dark"] .bn-toolbar button:hover,
 [data-theme="dark"] .bn-formatting-toolbar button:hover {
   background: rgba(255, 255, 255, 0.08);
 }
