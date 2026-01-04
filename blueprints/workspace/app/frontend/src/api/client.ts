@@ -3,6 +3,90 @@ const API_BASE = '/api/v1'
 // Check if we're in dev mode without a backend
 const isDevMode = import.meta.env?.DEV ?? false
 
+// Helper to convert blocks to markdown (for dev mode export)
+function blocksToMarkdown(blocks: Array<{ type: string; content?: Record<string, unknown>; children?: unknown[] }>, indent = ''): string {
+  let md = ''
+  let listCounter = 0
+
+  for (const block of blocks) {
+    const richText = block.content?.rich_text as Array<{ text: string; annotations?: Record<string, boolean> }> | undefined
+    const text = richText?.map(rt => {
+      let t = rt.text || ''
+      if (rt.annotations?.bold) t = `**${t}**`
+      if (rt.annotations?.italic) t = `*${t}*`
+      if (rt.annotations?.code) t = `\`${t}\``
+      if (rt.annotations?.strikethrough) t = `~~${t}~~`
+      return t
+    }).join('') || ''
+
+    switch (block.type) {
+      case 'paragraph':
+        if (text) md += `${indent}${text}\n\n`
+        break
+      case 'heading_1':
+        md += `# ${text}\n\n`
+        listCounter = 0
+        break
+      case 'heading_2':
+        md += `## ${text}\n\n`
+        listCounter = 0
+        break
+      case 'heading_3':
+        md += `### ${text}\n\n`
+        listCounter = 0
+        break
+      case 'bulleted_list_item':
+        md += `${indent}- ${text}\n`
+        if (block.children) {
+          md += blocksToMarkdown(block.children as Array<{ type: string; content?: Record<string, unknown>; children?: unknown[] }>, indent + '  ')
+        }
+        break
+      case 'numbered_list_item':
+        listCounter++
+        md += `${indent}${listCounter}. ${text}\n`
+        if (block.children) {
+          md += blocksToMarkdown(block.children as Array<{ type: string; content?: Record<string, unknown>; children?: unknown[] }>, indent + '  ')
+        }
+        break
+      case 'to_do':
+        md += `${indent}- [${block.content?.checked ? 'x' : ' '}] ${text}\n`
+        break
+      case 'toggle':
+        md += `<details>\n<summary>${text}</summary>\n\n`
+        if (block.children) {
+          md += blocksToMarkdown(block.children as Array<{ type: string; content?: Record<string, unknown>; children?: unknown[] }>)
+        }
+        md += `</details>\n\n`
+        break
+      case 'quote':
+        md += `> ${text}\n\n`
+        break
+      case 'callout':
+        md += `> ${block.content?.icon || '💡'} ${text}\n\n`
+        break
+      case 'code':
+        md += `\`\`\`${block.content?.language || ''}\n${text}\n\`\`\`\n\n`
+        break
+      case 'divider':
+        md += `---\n\n`
+        listCounter = 0
+        break
+      case 'image':
+        md += `![${block.content?.caption || 'Image'}](${block.content?.url || ''})\n\n`
+        break
+      case 'bookmark':
+        md += `[${block.content?.title || block.content?.url || 'Bookmark'}](${block.content?.url || ''})\n\n`
+        break
+      case 'equation':
+        md += `$$\n${block.content?.expression || ''}\n$$\n\n`
+        break
+      default:
+        if (text) md += `${text}\n\n`
+    }
+  }
+  return md
+}
+
 interface RequestOptions {
   method: string
   headers: Record<string, string>
@@ -55,26 +139,10 @@ class ApiClient {
   private getMockResponse<T>(method: string, path: string, data?: unknown): T {
     // Return appropriate mock data based on endpoint
     if (path.startsWith('/pages/') && path.endsWith('/export')) {
-      // Mock export response with download simulation
-      const exportData = data as { format?: string } | undefined
-      const format = exportData?.format || 'pdf'
-      const filename = `export-${Date.now()}.${format}`
-      // Create a mock blob URL for dev mode download
-      const mockContent = format === 'pdf'
-        ? 'Mock PDF content for development'
-        : format === 'html'
-        ? '<html><body><h1>Mock HTML Export</h1></body></html>'
-        : '# Mock Markdown Export\n\nThis is a development mock export.'
-      const blob = new Blob([mockContent], { type: format === 'pdf' ? 'application/pdf' : 'text/plain' })
-      const downloadUrl = URL.createObjectURL(blob)
-      return {
-        id: `export-${Date.now()}`,
-        download_url: downloadUrl,
-        filename,
-        size: mockContent.length,
-        format,
-        page_count: 1,
-      } as T
+      // In dev mode, export requests should go to the backend
+      // The backend handles PDF generation using chromedp
+      // This mock should not be used - throw to trigger backend call
+      throw new Error('Export requires backend - dev mode mock disabled')
     }
     if (path.startsWith('/pages/') && path.endsWith('/blocks')) {
       return { blocks: [] } as T

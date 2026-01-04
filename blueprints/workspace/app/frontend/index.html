@@ -158,7 +158,6 @@
         .main-content { flex: 1; display: flex; flex-direction: column; }
         .topbar {
             height: 45px;
-            border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -317,15 +316,6 @@
                 </a>
             </nav>
             <nav class="nav-section">
-                <div class="nav-section-title">Features</div>
-                <a href="#" class="nav-item" id="export-demo">
-                    <span class="nav-item-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    </span>
-                    Page Export
-                </a>
-            </nav>
-            <nav class="nav-section">
                 <div class="nav-section-title">Dev Tools</div>
                 <a href="http://localhost:3000" class="nav-item" target="_blank">Backend Server</a>
                 <a href="/@vite/debug" class="nav-item" target="_blank">Vite Debug</a>
@@ -382,30 +372,8 @@
                     <div id="database-root"
                          data-database-id="dev-db-001"
                          data-view-type="table"
-                         data-data='{
-  "database": {"id":"dev-db-001","name":"Test Database"},
-  "rows":[
-    {"id":"row1","database_id":"dev-db-001","properties":{"title":"Project Alpha","description":"Main project description","progress":75,"status":"in-progress","tags":["frontend","urgent"],"priority":"high","due_date":"2024-03-15","completed":false,"website":"https://example.com","email":"alice@example.com","phone":"+1-555-0101","assignee":"Alice"},"created_at":"2024-01-15T10:00:00Z","updated_at":"2024-01-20T14:30:00Z"},
-    {"id":"row2","database_id":"dev-db-001","properties":{"title":"Project Beta","description":"Secondary project","progress":100,"status":"done","tags":["backend"],"priority":"low","due_date":"2024-02-28","completed":true,"website":"https://beta.example.com","email":"bob@example.com","phone":"+1-555-0102","assignee":"Bob"},"created_at":"2024-01-10T09:00:00Z","updated_at":"2024-02-28T16:00:00Z"},
-    {"id":"row3","database_id":"dev-db-001","properties":{"title":"Project Gamma","description":"New initiative","progress":25,"status":"todo","tags":["design","review"],"priority":"medium","due_date":"2024-04-30","completed":false,"website":"","email":"charlie@example.com","phone":"","assignee":"Charlie"},"created_at":"2024-02-01T11:00:00Z","updated_at":"2024-02-05T10:00:00Z"},
-    {"id":"row4","database_id":"dev-db-001","properties":{"title":"Project Delta","description":"","progress":50,"status":"in-progress","tags":[],"priority":"high","due_date":"2024-03-20","completed":false,"website":"https://delta.io","email":"","phone":"+1-555-0104","assignee":""},"created_at":"2024-02-10T08:00:00Z","updated_at":"2024-02-15T12:00:00Z"}
-  ],
-  "properties":[
-    {"id":"title","name":"Title","type":"text"},
-    {"id":"description","name":"Description","type":"text"},
-    {"id":"progress","name":"Progress","type":"number"},
-    {"id":"status","name":"Status","type":"status","options":[{"id":"todo","name":"Todo","color":"gray"},{"id":"in-progress","name":"In Progress","color":"blue"},{"id":"done","name":"Done","color":"green"}]},
-    {"id":"tags","name":"Tags","type":"multi_select","options":[{"id":"frontend","name":"Frontend","color":"blue"},{"id":"backend","name":"Backend","color":"purple"},{"id":"design","name":"Design","color":"pink"},{"id":"urgent","name":"Urgent","color":"red"},{"id":"review","name":"Review","color":"yellow"}]},
-    {"id":"priority","name":"Priority","type":"select","options":[{"id":"low","name":"Low","color":"gray"},{"id":"medium","name":"Medium","color":"yellow"},{"id":"high","name":"High","color":"red"}]},
-    {"id":"due_date","name":"Due Date","type":"date"},
-    {"id":"completed","name":"Completed","type":"checkbox"},
-    {"id":"website","name":"Website","type":"url"},
-    {"id":"email","name":"Email","type":"email"},
-    {"id":"phone","name":"Phone","type":"phone"},
-    {"id":"assignee","name":"Assignee","type":"person"}
-  ],
-  "views":[]
-}'>
+                         data-data="">
+                         <!-- Dev mode: comprehensive test data loaded from dev.tsx -->
                     </div>
                 </div>
             </div>
@@ -465,12 +433,6 @@
                 detail: { pageId: 'dev-page-001', pageTitle }
             }));
         }
-
-        // Export demo in sidebar
-        document.getElementById('export-demo')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            openExportModal();
-        });
 
         // Export button in topbar
         document.getElementById('export-btn')?.addEventListener('click', (e) => {

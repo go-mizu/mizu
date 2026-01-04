@@ -84,6 +84,48 @@ update: ## Update dependencies
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
+.PHONY: check-deps
+check-deps: ## Check if required dependencies are installed
+	@echo "Checking dependencies..."
+	@echo -n "  Chrome/Chromium (required for PDF export): "
+	@if [ -f "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then \
+		echo "\033[32mfound\033[0m (macOS)"; \
+	elif command -v google-chrome >/dev/null 2>&1; then \
+		echo "\033[32mfound\033[0m ($$(command -v google-chrome))"; \
+	elif command -v chromium >/dev/null 2>&1; then \
+		echo "\033[32mfound\033[0m ($$(command -v chromium))"; \
+	elif command -v chromium-browser >/dev/null 2>&1; then \
+		echo "\033[32mfound\033[0m ($$(command -v chromium-browser))"; \
+	else \
+		echo "\033[31mnot found\033[0m"; \
+		echo "    PDF export requires Chrome or Chromium."; \
+		echo "    Install: https://www.google.com/chrome/ or 'brew install chromium'"; \
+	fi
+	@echo -n "  pnpm: "
+	@if command -v pnpm >/dev/null 2>&1; then \
+		echo "\033[32mfound\033[0m ($$(pnpm --version))"; \
+	else \
+		echo "\033[31mnot found\033[0m"; \
+		echo "    Install: npm install -g pnpm"; \
+	fi
+	@echo ""
+
+.PHONY: install-chrome
+install-chrome: ## Install Chrome/Chromium (macOS only)
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		if [ -f "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then \
+			echo "Chrome already installed"; \
+		else \
+			echo "Installing Chromium via Homebrew..."; \
+			brew install --cask chromium || echo "Failed. Please install Chrome from https://www.google.com/chrome/"; \
+		fi \
+	else \
+		echo "Please install Chrome/Chromium for your platform:"; \
+		echo "  Ubuntu/Debian: sudo apt install chromium-browser"; \
+		echo "  Fedora: sudo dnf install chromium"; \
+		echo "  Or download from: https://www.google.com/chrome/"; \
+	fi
+
 .PHONY: help
 help: ## Show available commands
 	@echo ""

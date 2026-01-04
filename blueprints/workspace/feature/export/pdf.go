@@ -3,10 +3,10 @@ package export
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
+	"runtime"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -26,23 +26,26 @@ func NewPDFConverter() *PDFConverter {
 
 // Convert converts an exported page to PDF.
 func (c *PDFConverter) Convert(exportedPage *ExportedPage, opts *Request) ([]byte, error) {
+	slog.Debug("starting PDF conversion", "title", exportedPage.Title)
+
 	// First convert to HTML
 	htmlContent, err := c.htmlConverter.Convert(exportedPage, opts)
 	if err != nil {
+		slog.Error("PDF: failed to generate HTML", "error", err)
 		return nil, fmt.Errorf("failed to generate HTML: %w", err)
 	}
+	slog.Debug("PDF: HTML content generated", "size", len(htmlContent))
 
-	// Try chromedp first, fall back to wkhtmltopdf
+	// Use chromedp (headless Chrome) for PDF generation
+	slog.Debug("PDF: starting chromedp conversion")
 	pdfData, err := c.convertWithChromedp(htmlContent, opts)
 	if err != nil {
-		// Try wkhtmltopdf as fallback
-		pdfData, err = c.convertWithWkhtmltopdf(htmlContent, opts)
-		if err != nil {
-			// Return HTML as fallback if PDF generation fails
-			return htmlContent, fmt.Errorf("PDF generation failed, returning HTML: %w", err)
-		}
+		slog.Error("PDF: chromedp conversion failed", "error", err)
+		return nil, fmt.Errorf("PDF generation failed: %w. "+
+			"Please ensure Chrome or Chromium is installed (https://www.google.com/chrome/)", err)
 	}
 
+	slog.Info("PDF: generated using chromedp", "size", len(pdfData))
 	return pdfData, nil
 }
 
@@ -56,10 +59,83 @@ func (c *PDFConverter) Extension() string {
 	return ".pdf"
 }
 
+// findChrome attempts to find Chrome/Chromium executable.
+func findChrome() (string, error) {
+	// Check common Chrome paths based on OS
+	var paths []string
+
+	switch runtime.GOOS {
+	case "darwin":
+		paths = []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+			"/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+		}
+	case "linux":
+		paths = []string{
+			"/usr/bin/google-chrome",
+			"/usr/bin/google-chrome-stable",
+			"/usr/bin/chromium",
+			"/usr/bin/chromium-browser",
+			"/snap/bin/chromium",
+		}
+	case "windows":
+		paths = []string{
+			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+		}
+	}
+
+	// Check each path
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+
+	// Try PATH
+	for _, name := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("Chrome/Chromium not found. Install Google Chrome or set CHROME_PATH environment variable")
+}
+
 // convertWithChromedp uses headless Chrome to generate PDF.
 func (c *PDFConverter) convertWithChromedp(htmlContent []byte, opts *Request) ([]byte, error) {
+	// Check if Chrome is available
+	chromePath, err := findChrome()
+	if err != nil {
+		// Check environment variable
+		if envPath := os.Getenv("CHROME_PATH"); envPath != "" {
+			if _, statErr := os.Stat(envPath); statErr == nil {
+				chromePath = envPath
+			}
+		}
+		if chromePath == "" {
+			slog.Error("Chrome not found",
+				"error", err,
+				"hint", "Install Google Chrome or set CHROME_PATH environment variable",
+			)
+			return nil, err
+		}
+	}
+	slog.Debug("PDF: using Chrome", "path", chromePath)
+
+	// Create allocator with explicit Chrome path
+	allocCtx, allocCancel := chromedp.NewExecAllocator(
+		context.Background(),
+		chromedp.ExecPath(chromePath),
+		chromedp.Headless,
+		chromedp.DisableGPU,
+		chromedp.NoSandbox, // Required for some environments
+	)
+	defer allocCancel()
+
 	// Create context
-	ctx, cancel := chromedp.NewContext(context.Background())
+	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
 	// Set timeout
@@ -88,6 +164,12 @@ func (c *PDFConverter) convertWithChromedp(htmlContent []byte, opts *Request) ([
 	}
 	tmpFile.Close()
 
+	slog.Debug("PDF: starting Chrome",
+		"temp_file", tmpFile.Name(),
+		"page_size", opts.PageSize,
+		"orientation", opts.Orientation,
+	)
+
 	var pdfData []byte
 
 	// Navigate to HTML and print to PDF
@@ -112,62 +194,14 @@ func (c *PDFConverter) convertWithChromedp(htmlContent []byte, opts *Request) ([
 	)
 
 	if err != nil {
+		slog.Error("PDF: chromedp execution failed",
+			"error", err,
+			"chrome_path", chromePath,
+		)
 		return nil, fmt.Errorf("chromedp PDF generation failed: %w", err)
 	}
 
-	return pdfData, nil
-}
-
-// convertWithWkhtmltopdf uses wkhtmltopdf as a fallback.
-func (c *PDFConverter) convertWithWkhtmltopdf(htmlContent []byte, opts *Request) ([]byte, error) {
-	// Check if wkhtmltopdf is available
-	_, err := exec.LookPath("wkhtmltopdf")
-	if err != nil {
-		return nil, fmt.Errorf("wkhtmltopdf not found: %w", err)
-	}
-
-	// Create temporary files
-	tmpDir, err := os.MkdirTemp("", "export-")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	htmlPath := filepath.Join(tmpDir, "input.html")
-	pdfPath := filepath.Join(tmpDir, "output.pdf")
-
-	if err := os.WriteFile(htmlPath, htmlContent, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write HTML file: %w", err)
-	}
-
-	// Build wkhtmltopdf command
-	args := []string{
-		"--enable-local-file-access",
-		"--page-size", c.wkhtmlPageSize(opts.PageSize),
-		"--orientation", c.wkhtmlOrientation(opts.Orientation),
-		"--margin-top", "12.7mm",
-		"--margin-bottom", "12.7mm",
-		"--margin-left", "12.7mm",
-		"--margin-right", "12.7mm",
-		"--print-media-type",
-	}
-
-	if opts.Scale > 0 && opts.Scale <= 200 {
-		args = append(args, "--zoom", fmt.Sprintf("%.2f", float64(opts.Scale)/100.0))
-	}
-
-	args = append(args, htmlPath, pdfPath)
-
-	cmd := exec.Command("wkhtmltopdf", args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("wkhtmltopdf failed: %w, output: %s", err, string(output))
-	}
-
-	pdfData, err := os.ReadFile(pdfPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read PDF output: %w", err)
-	}
-
+	slog.Debug("PDF: chromedp completed", "pdf_size", len(pdfData))
 	return pdfData, nil
 }
 
@@ -189,92 +223,3 @@ func (c *PDFConverter) getPageDimensions(pageSize PageSize) (width, height float
 	}
 }
 
-// wkhtmlPageSize converts page size to wkhtmltopdf format.
-func (c *PDFConverter) wkhtmlPageSize(pageSize PageSize) string {
-	switch pageSize {
-	case PageSizeA4:
-		return "A4"
-	case PageSizeA3:
-		return "A3"
-	case PageSizeLetter:
-		return "Letter"
-	case PageSizeLegal:
-		return "Legal"
-	case PageSizeTabloid:
-		return "Tabloid"
-	default:
-		return "Letter"
-	}
-}
-
-// wkhtmlOrientation converts orientation to wkhtmltopdf format.
-func (c *PDFConverter) wkhtmlOrientation(orientation Orientation) string {
-	if orientation == OrientationLandscape {
-		return "Landscape"
-	}
-	return "Portrait"
-}
-
-// PDFConvertSimple provides a simple PDF conversion using just HTML + inline styles
-// This is a fallback when neither chromedp nor wkhtmltopdf is available.
-type PDFConvertSimple struct {
-	htmlConverter *HTMLConverter
-}
-
-// NewPDFConverterSimple creates a simple PDF converter that returns HTML.
-func NewPDFConverterSimple() *PDFConvertSimple {
-	return &PDFConvertSimple{
-		htmlConverter: NewHTMLConverter(),
-	}
-}
-
-// Convert returns HTML content (fallback when no PDF tools available).
-func (c *PDFConvertSimple) Convert(page *ExportedPage, opts *Request) ([]byte, error) {
-	// Modify HTML to include print CSS
-	htmlContent, err := c.htmlConverter.Convert(page, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Inject print-specific CSS
-	printCSS := `
-<style>
-@page {
-  size: ` + c.getPageSizeCSS(opts.PageSize, opts.Orientation) + `;
-  margin: 1in;
-}
-body {
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-</style>
-</head>`
-
-	result := strings.Replace(string(htmlContent), "</head>", printCSS, 1)
-	return []byte(result), nil
-}
-
-// getPageSizeCSS returns the CSS @page size value.
-func (c *PDFConvertSimple) getPageSizeCSS(pageSize PageSize, orientation Orientation) string {
-	var size string
-	switch pageSize {
-	case PageSizeA4:
-		size = "A4"
-	case PageSizeA3:
-		size = "A3"
-	case PageSizeLetter:
-		size = "letter"
-	case PageSizeLegal:
-		size = "legal"
-	case PageSizeTabloid:
-		size = "ledger"
-	default:
-		size = "letter"
-	}
-
-	if orientation == OrientationLandscape {
-		size += " landscape"
-	}
-
-	return size
-}

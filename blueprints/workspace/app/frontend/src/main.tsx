@@ -1,12 +1,30 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BlockEditor } from './editor/BlockEditor'
-import { DatabaseView } from './database/DatabaseView'
-import { IconPicker } from './components/IconPicker'
-import { PageExport } from './pages/PageExport'
 import { initApp } from './app'
-import { devTestBlocks } from './dev'
+import { devTestBlocks, devDatabaseProperties, devDatabaseRows, devDatabaseViews } from './dev'
 import './styles/main.css'
+
+// Lazy load heavy components for better initial bundle size
+const BlockEditor = lazy(() => import('./editor/BlockEditor').then(m => ({ default: m.BlockEditor })))
+const DatabaseView = lazy(() => import('./database/DatabaseView').then(m => ({ default: m.DatabaseView })))
+const IconPicker = lazy(() => import('./components/IconPicker').then(m => ({ default: m.IconPicker })))
+const PageExport = lazy(() => import('./pages/PageExport').then(m => ({ default: m.PageExport })))
+
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '40px',
+      color: 'var(--text-secondary, #6b7280)',
+      fontSize: '14px',
+    }}>
+      Loading...
+    </div>
+  )
+}
 
 // Initialize the app
 initApp()
@@ -36,13 +54,20 @@ if (editorContainer) {
     initialBlocks = devTestBlocks
   }
 
+  // Expose dev blocks to window for export functionality
+  if (isDevMode) {
+    (window as unknown as { __DEV_BLOCKS__: typeof initialBlocks }).__DEV_BLOCKS__ = initialBlocks
+  }
+
   const root = createRoot(editorContainer)
   root.render(
     <React.StrictMode>
-      <BlockEditor
-        pageId={pageId}
-        initialBlocks={initialBlocks}
-      />
+      <Suspense fallback={<LoadingFallback />}>
+        <BlockEditor
+          pageId={pageId}
+          initialBlocks={initialBlocks}
+        />
+      </Suspense>
     </React.StrictMode>
   )
 }
@@ -54,14 +79,36 @@ if (databaseContainer) {
   const viewType = databaseContainer.dataset.viewType || 'table'
   const initialData = databaseContainer.dataset.data
 
+  // In dev mode with empty data, use comprehensive test data
+  let dbInitialData: { rows: unknown[]; properties: unknown[]; views: unknown[] } = { rows: [], properties: [], views: [] }
+  if (initialData && initialData.trim()) {
+    try {
+      dbInitialData = JSON.parse(initialData)
+    } catch (e) {
+      console.warn('Failed to parse initial database data:', e)
+    }
+  }
+
+  // Use dev data in dev mode when no data provided
+  if (isDevMode && dbInitialData.rows.length === 0) {
+    console.log('Dev mode: Loading comprehensive database test data')
+    dbInitialData = {
+      rows: devDatabaseRows as unknown[],
+      properties: devDatabaseProperties as unknown[],
+      views: devDatabaseViews as unknown[],
+    }
+  }
+
   const root = createRoot(databaseContainer)
   root.render(
     <React.StrictMode>
-      <DatabaseView
-        databaseId={databaseId}
-        viewType={viewType as 'table' | 'board' | 'list' | 'calendar' | 'gallery'}
-        initialData={initialData ? JSON.parse(initialData) : { rows: [], properties: [] }}
-      />
+      <Suspense fallback={<LoadingFallback />}>
+        <DatabaseView
+          databaseId={databaseId || 'dev-database'}
+          viewType={viewType as 'table' | 'board' | 'list' | 'calendar' | 'gallery' | 'timeline' | 'chart'}
+          initialData={dbInitialData as Parameters<typeof DatabaseView>[0]['initialData']}
+        />
+      </Suspense>
     </React.StrictMode>
   )
 }
@@ -75,13 +122,15 @@ document.querySelectorAll('[data-icon-picker]').forEach((el) => {
   const root = createRoot(container)
   root.render(
     <React.StrictMode>
-      <IconPicker
-        currentIcon={currentIcon}
-        onSelect={(icon) => {
-          const event = new CustomEvent('iconSelected', { detail: { target, icon } })
-          document.dispatchEvent(event)
-        }}
-      />
+      <Suspense fallback={<LoadingFallback />}>
+        <IconPicker
+          currentIcon={currentIcon}
+          onSelect={(icon) => {
+            const event = new CustomEvent('iconSelected', { detail: { target, icon } })
+            document.dispatchEvent(event)
+          }}
+        />
+      </Suspense>
     </React.StrictMode>
   )
 })
@@ -95,6 +144,10 @@ function ExportModalWrapper() {
     const handleOpenExport = (e: CustomEvent<{ pageId: string; pageTitle: string }>) => {
       setPageInfo(e.detail)
       setIsOpen(true)
+      // Set page title for dev mode export
+      if (isDevMode) {
+        (window as unknown as { __DEV_PAGE_TITLE__: string }).__DEV_PAGE_TITLE__ = e.detail.pageTitle
+      }
     }
 
     window.addEventListener('open-export-modal', handleOpenExport as EventListener)
@@ -104,12 +157,14 @@ function ExportModalWrapper() {
   }, [])
 
   return (
-    <PageExport
-      pageId={pageInfo.pageId}
-      pageTitle={pageInfo.pageTitle}
-      isOpen={isOpen}
-      onClose={() => setIsOpen(false)}
-    />
+    <Suspense fallback={null}>
+      <PageExport
+        pageId={pageInfo.pageId}
+        pageTitle={pageInfo.pageTitle}
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+      />
+    </Suspense>
   )
 }
 

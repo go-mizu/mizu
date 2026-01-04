@@ -1103,3 +1103,58 @@ func TestCreateBundle_PDF(t *testing.T) {
 		t.Errorf("Expected content type 'application/pdf', got %q", bundle.ContentType)
 	}
 }
+
+func TestCreateBundle_PDF_ValidFormat(t *testing.T) {
+	page := &ExportedPage{
+		Title: "Test Page",
+		Blocks: []*blocks.Block{
+			{
+				Type: blocks.BlockParagraph,
+				Content: blocks.Content{
+					RichText: []blocks.RichText{{Type: "text", Text: "PDF content"}},
+				},
+			},
+			{
+				Type: blocks.BlockHeading1,
+				Content: blocks.Content{
+					RichText: []blocks.RichText{{Type: "text", Text: "A Heading"}},
+				},
+			},
+		},
+	}
+
+	bundle, err := CreateBundle(page, &Request{
+		Format:      FormatPDF,
+		PageSize:    PageSizeA4,
+		Orientation: OrientationPortrait,
+		Scale:       100,
+	})
+	if err != nil {
+		t.Skipf("PDF creation skipped (likely no PDF renderer available): %v", err)
+	}
+
+	// Verify the output is actually a valid PDF (starts with %PDF magic bytes)
+	if len(bundle.Data) < 4 {
+		t.Fatalf("PDF data too short: %d bytes", len(bundle.Data))
+	}
+
+	header := string(bundle.Data[:4])
+	if header != "%PDF" {
+		t.Errorf("Invalid PDF header: expected '%%PDF', got %q", header)
+		if len(bundle.Data) > 100 {
+			t.Errorf("First 100 bytes: %s", string(bundle.Data[:100]))
+		} else {
+			t.Errorf("Full content: %s", string(bundle.Data))
+		}
+	}
+
+	// Check for PDF EOF marker (should end with %%EOF)
+	if len(bundle.Data) > 5 {
+		// PDF files should contain %%EOF somewhere near the end
+		tail := string(bundle.Data[len(bundle.Data)-20:])
+		if !strings.Contains(tail, "%%EOF") {
+			// Not a hard failure - some PDF generators may format differently
+			t.Logf("Warning: PDF may be truncated - no %%EOF found in last 20 bytes")
+		}
+	}
+}

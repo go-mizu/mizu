@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-mizu/mizu"
@@ -26,17 +27,41 @@ func (h *Export) ExportPage(c *mizu.Ctx) error {
 	pageID := c.Param("id")
 	userID := h.getUserID(c)
 
+	slog.Debug("export request received",
+		"page_id", pageID,
+		"user_id", userID,
+	)
+
 	var req export.Request
-	if err := c.BindJSON(&req, 1<<20); err != nil {
+	if err := c.BindJSON(&req, 10<<20); err != nil { // 10MB to accommodate blocks
+		slog.Error("export request parse failed", "error", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+
+	slog.Debug("export request parsed",
+		"format", req.Format,
+		"include_subpages", req.IncludeSubpages,
+		"page_size", req.PageSize,
+	)
 
 	req.PageID = pageID
 
 	result, err := h.exports.Export(c.Request().Context(), userID, &req)
 	if err != nil {
+		slog.Error("export failed",
+			"page_id", pageID,
+			"format", req.Format,
+			"error", err,
+		)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+
+	slog.Info("export completed",
+		"page_id", pageID,
+		"format", req.Format,
+		"filename", result.Filename,
+		"size", result.Size,
+	)
 
 	return c.JSON(http.StatusOK, result)
 }

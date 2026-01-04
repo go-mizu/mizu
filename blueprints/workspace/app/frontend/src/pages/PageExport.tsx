@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Download,
@@ -91,6 +91,16 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
     scale: 100,
   })
 
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSuccess(false)
+      setError(null)
+      setExportProgress(0)
+      setIsExporting(false)
+    }
+  }, [isOpen])
+
   // Handle export
   const handleExport = useCallback(async () => {
     setIsExporting(true)
@@ -104,6 +114,9 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
         setExportProgress((prev) => Math.min(prev + 10, 90))
       }, 200)
 
+      // Get current editor blocks if available (dev mode)
+      const editorBlocks = (window as unknown as { __EDITOR_BLOCKS__?: unknown[] }).__EDITOR_BLOCKS__
+
       // Request export from API
       const response = await api.post<{
         id: string
@@ -114,6 +127,7 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
         page_count: number
       }>(`/pages/${pageId}/export`, {
         format: selectedFormat,
+        page_title: pageTitle,
         include_subpages: options.includeSubpages,
         include_images: options.includeImages,
         include_files: options.includeFiles,
@@ -122,6 +136,7 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
         page_size: options.pageSize,
         orientation: options.orientation,
         scale: options.scale,
+        blocks: editorBlocks || undefined,
       })
 
       clearInterval(progressInterval)
