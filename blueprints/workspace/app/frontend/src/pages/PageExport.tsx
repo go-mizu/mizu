@@ -12,17 +12,23 @@ import {
   Settings,
   Image,
   Link,
+  FolderTree,
+  MessageSquare,
+  File,
 } from 'lucide-react'
 import { api } from '../api/client'
 
-type ExportFormat = 'pdf' | 'markdown' | 'html' | 'docx' | 'png'
+type ExportFormat = 'pdf' | 'markdown' | 'html'
 
 interface ExportOptions {
   includeSubpages: boolean
   includeImages: boolean
-  includeLinks: boolean
-  pageSize: 'a4' | 'letter' | 'auto'
+  includeFiles: boolean
+  createFolders: boolean
+  includeComments: boolean
+  pageSize: 'a4' | 'a3' | 'letter' | 'legal' | 'tabloid' | 'auto'
   orientation: 'portrait' | 'landscape'
+  scale: number
 }
 
 interface PageExportProps {
@@ -47,27 +53,24 @@ const formatOptions: Array<{
   {
     id: 'markdown',
     label: 'Markdown',
-    description: 'Plain text with formatting',
+    description: 'MD files with CSV for databases',
     icon: <FileCode size={20} />,
   },
   {
     id: 'html',
     label: 'HTML',
-    description: 'Web page format',
+    description: 'Web page with styles',
     icon: <FileType size={20} />,
   },
-  {
-    id: 'docx',
-    label: 'Word',
-    description: 'Microsoft Word document',
-    icon: <FileText size={20} />,
-  },
-  {
-    id: 'png',
-    label: 'Image',
-    description: 'PNG screenshot',
-    icon: <Image size={20} />,
-  },
+]
+
+const pageSizeOptions = [
+  { value: 'a4', label: 'A4' },
+  { value: 'a3', label: 'A3' },
+  { value: 'letter', label: 'Letter' },
+  { value: 'legal', label: 'Legal' },
+  { value: 'tabloid', label: 'Tabloid' },
+  { value: 'auto', label: 'Auto' },
 ]
 
 export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportProps) {
@@ -80,9 +83,12 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
   const [options, setOptions] = useState<ExportOptions>({
     includeSubpages: false,
     includeImages: true,
-    includeLinks: true,
+    includeFiles: true,
+    createFolders: true,
+    includeComments: false,
     pageSize: 'a4',
     orientation: 'portrait',
+    scale: 100,
   })
 
   // Handle export
@@ -99,22 +105,33 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
       }, 200)
 
       // Request export from API
-      const response = await api.post<{ downloadUrl: string }>(
-        `/pages/${pageId}/export`,
-        {
-          format: selectedFormat,
-          options,
-        }
-      )
+      const response = await api.post<{
+        id: string
+        download_url: string
+        filename: string
+        size: number
+        format: string
+        page_count: number
+      }>(`/pages/${pageId}/export`, {
+        format: selectedFormat,
+        include_subpages: options.includeSubpages,
+        include_images: options.includeImages,
+        include_files: options.includeFiles,
+        create_folders: options.createFolders,
+        include_comments: options.includeComments,
+        page_size: options.pageSize,
+        orientation: options.orientation,
+        scale: options.scale,
+      })
 
       clearInterval(progressInterval)
       setExportProgress(100)
 
       // Trigger download
-      if (response.downloadUrl) {
+      if (response.download_url) {
         const link = document.createElement('a')
-        link.href = response.downloadUrl
-        link.download = `${pageTitle}.${selectedFormat}`
+        link.href = response.download_url
+        link.download = response.filename || `${pageTitle}.${selectedFormat}`
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
@@ -158,7 +175,7 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
           style={{
-            width: '480px',
+            width: '520px',
             maxHeight: '90vh',
             background: 'var(--bg-primary)',
             borderRadius: '12px',
@@ -339,6 +356,15 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                         >
                           {format.label}
                         </span>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: 'var(--text-tertiary)',
+                            textAlign: 'center',
+                          }}
+                        >
+                          {format.description}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -362,7 +388,7 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                   }}
                 >
                   <Settings size={14} />
-                  Advanced Options
+                  Export Options
                   <ChevronDown
                     size={14}
                     style={{
@@ -409,27 +435,61 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                             disabled={isExporting}
                             style={{ width: '16px', height: '16px' }}
                           />
-                          <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <FolderTree size={14} style={{ color: 'var(--text-tertiary)' }} />
+                            <div>
+                              <span
+                                style={{
+                                  fontSize: '14px',
+                                  fontWeight: 500,
+                                  color: 'var(--text-primary)',
+                                }}
+                              >
+                                Include subpages
+                              </span>
+                              <p
+                                style={{
+                                  fontSize: '12px',
+                                  color: 'var(--text-tertiary)',
+                                  margin: '2px 0 0',
+                                }}
+                              >
+                                Export all nested pages as well
+                              </p>
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Create folders for subpages */}
+                        {options.includeSubpages && (
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '12px',
+                              cursor: 'pointer',
+                              paddingLeft: '28px',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={options.createFolders}
+                              onChange={(e) =>
+                                setOptions({ ...options, createFolders: e.target.checked })
+                              }
+                              disabled={isExporting}
+                              style={{ width: '16px', height: '16px' }}
+                            />
                             <span
                               style={{
                                 fontSize: '14px',
-                                fontWeight: 500,
                                 color: 'var(--text-primary)',
                               }}
                             >
-                              Include subpages
+                              Create folders for subpages
                             </span>
-                            <p
-                              style={{
-                                fontSize: '12px',
-                                color: 'var(--text-tertiary)',
-                                margin: '2px 0 0',
-                              }}
-                            >
-                              Export all nested pages as well
-                            </p>
-                          </div>
-                        </label>
+                          </label>
+                        )}
 
                         {/* Include images */}
                         <label
@@ -462,7 +522,7 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                           </div>
                         </label>
 
-                        {/* Include links */}
+                        {/* Include files */}
                         <label
                           style={{
                             display: 'flex',
@@ -473,22 +533,53 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                         >
                           <input
                             type="checkbox"
-                            checked={options.includeLinks}
+                            checked={options.includeFiles}
                             onChange={(e) =>
-                              setOptions({ ...options, includeLinks: e.target.checked })
+                              setOptions({ ...options, includeFiles: e.target.checked })
                             }
                             disabled={isExporting}
                             style={{ width: '16px', height: '16px' }}
                           />
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Link size={14} style={{ color: 'var(--text-tertiary)' }} />
+                            <File size={14} style={{ color: 'var(--text-tertiary)' }} />
                             <span
                               style={{
                                 fontSize: '14px',
                                 color: 'var(--text-primary)',
                               }}
                             >
-                              Preserve links
+                              Include files and attachments
+                            </span>
+                          </div>
+                        </label>
+
+                        {/* Include comments */}
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={options.includeComments}
+                            onChange={(e) =>
+                              setOptions({ ...options, includeComments: e.target.checked })
+                            }
+                            disabled={isExporting}
+                            style={{ width: '16px', height: '16px' }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <MessageSquare size={14} style={{ color: 'var(--text-tertiary)' }} />
+                            <span
+                              style={{
+                                fontSize: '14px',
+                                color: 'var(--text-primary)',
+                              }}
+                            >
+                              Include comments
                             </span>
                           </div>
                         </label>
@@ -534,9 +625,11 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                                     color: 'var(--text-primary)',
                                   }}
                                 >
-                                  <option value="a4">A4</option>
-                                  <option value="letter">Letter</option>
-                                  <option value="auto">Auto</option>
+                                  {pageSizeOptions.map((size) => (
+                                    <option key={size.value} value={size.value}>
+                                      {size.label}
+                                    </option>
+                                  ))}
                                 </select>
                               </div>
                               <div style={{ flex: 1 }}>
@@ -573,6 +666,35 @@ export function PageExport({ pageId, pageTitle, isOpen, onClose }: PageExportPro
                                   <option value="landscape">Landscape</option>
                                 </select>
                               </div>
+                            </div>
+                            <div>
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontSize: '12px',
+                                  color: 'var(--text-tertiary)',
+                                  marginBottom: '6px',
+                                }}
+                              >
+                                Scale: {options.scale}%
+                              </label>
+                              <input
+                                type="range"
+                                min="50"
+                                max="200"
+                                step="10"
+                                value={options.scale}
+                                onChange={(e) =>
+                                  setOptions({
+                                    ...options,
+                                    scale: parseInt(e.target.value),
+                                  })
+                                }
+                                disabled={isExporting}
+                                style={{
+                                  width: '100%',
+                                }}
+                              />
                             </div>
                           </>
                         )}

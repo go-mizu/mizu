@@ -19,6 +19,7 @@ import (
 	"github.com/go-mizu/blueprints/workspace/feature/blocks"
 	"github.com/go-mizu/blueprints/workspace/feature/comments"
 	"github.com/go-mizu/blueprints/workspace/feature/databases"
+	"github.com/go-mizu/blueprints/workspace/feature/export"
 	"github.com/go-mizu/blueprints/workspace/feature/favorites"
 	"github.com/go-mizu/blueprints/workspace/feature/history"
 	"github.com/go-mizu/blueprints/workspace/feature/members"
@@ -64,6 +65,9 @@ type Server struct {
 	search        search.API
 	templates     templates.API
 
+	// Export service
+	exports *export.Service
+
 	// Handlers
 	authHandlers      *api.Auth
 	workspaceHandlers *api.Workspace
@@ -77,6 +81,7 @@ type Server struct {
 	favoriteHandlers  *api.Favorite
 	searchHandlers    *api.Search
 	mediaHandlers     *api.Media
+	exportHandlers    *api.Export
 	uiHandlers        *handler.UI
 }
 
@@ -137,6 +142,7 @@ func New(cfg Config) (*Server, error) {
 	favoritesSvc := favorites.NewService(favoritesStore, pagesSvc)
 	templatesSvc := templates.NewService(templatesStore, pagesSvc)
 	searchSvc := search.NewService(duckdb.NewSearchStore(db), pagesSvc, databasesSvc)
+	exportSvc := export.NewService(pagesSvc, blocksSvc, databasesSvc, filepath.Join(cfg.DataDir, "exports"))
 
 	s := &Server{
 		app:           mizu.New(),
@@ -157,6 +163,7 @@ func New(cfg Config) (*Server, error) {
 		favorites:     favoritesSvc,
 		search:        searchSvc,
 		templates:     templatesSvc,
+		exports:       exportSvc,
 	}
 
 	// Parse templates
@@ -178,6 +185,7 @@ func New(cfg Config) (*Server, error) {
 	s.favoriteHandlers = api.NewFavorite(favoritesSvc, s.getUserID)
 	s.searchHandlers = api.NewSearch(searchSvc, s.getUserID)
 	s.mediaHandlers = api.NewMedia(filepath.Join(cfg.DataDir, "uploads"), s.getUserID)
+	s.exportHandlers = api.NewExport(exportSvc, s.getUserID)
 	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workspacesSvc, membersSvc, pagesSvc, blocksSvc, databasesSvc, viewsSvc, rowsSvc, favoritesSvc, s.getUserID)
 
 	s.setupRoutes()
@@ -638,6 +646,11 @@ func (s *Server) setupRoutes() {
 
 		// Media
 		api.Post("/media/upload", s.authRequired(s.mediaHandlers.Upload))
+
+		// Export
+		api.Post("/pages/{id}/export", s.authRequired(s.exportHandlers.ExportPage))
+		api.Get("/exports/{id}", s.authRequired(s.exportHandlers.GetExport))
+		api.Get("/exports/{id}/download", s.authRequired(s.exportHandlers.Download))
 	})
 }
 
