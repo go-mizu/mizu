@@ -5,7 +5,6 @@ import {
   defaultBlockSpecs,
   defaultInlineContentSpecs,
   defaultStyleSpecs,
-  filterSuggestionItems,
   PartialBlock,
   Block as BNBlock,
   createCodeBlockSpec,
@@ -84,6 +83,20 @@ import {
   useSelectedBlocks,
 } from '@blocknote/react'
 import { combineByGroup } from '@blocknote/core'
+
+// Helper function to filter suggestion items by query (replacement for removed filterSuggestionItems)
+function filterSlashMenuItems<T extends { title: string; aliases?: string[]; group?: string }>(
+  items: T[],
+  query: string
+): T[] {
+  if (!query) return items
+  const lowerQuery = query.toLowerCase()
+  return items.filter((item) => {
+    const titleMatch = item.title.toLowerCase().includes(lowerQuery)
+    const aliasMatch = item.aliases?.some((alias) => alias.toLowerCase().includes(lowerQuery))
+    return titleMatch || aliasMatch
+  })
+}
 import {
   withMultiColumn,
   multiColumnDropCursor,
@@ -145,22 +158,26 @@ import { BreadcrumbBlock } from './blocks/BreadcrumbBlock'
 import { ChildPageBlock } from './blocks/ChildPageBlock'
 import { MentionInline } from './InlineMention'
 
-// Type for drag handle menu item props
+// Type for drag handle menu item props - now uses children render prop pattern
 interface DragHandleItemProps {
-  block: any
   children: React.ReactNode
 }
 
-// Custom Drag Handle Menu Items
-function DuplicateBlockItem({ block, children }: DragHandleItemProps) {
+// Custom Drag Handle Menu Items - these now get block from editor selection
+function DuplicateBlockItem({ children }: DragHandleItemProps) {
   const editor = useBlockNoteEditor()
   const Components = useComponentsContext()!
+  const selectedBlocks = useSelectedBlocks(editor)
 
   return (
     <Components.Generic.Menu.Item
       onClick={() => {
-        const blockCopy = { ...block, id: undefined }
-        editor.insertBlocks([blockCopy], block, 'after')
+        const block = selectedBlocks[0]
+        if (block) {
+          // Create a copy without the id so a new one is generated
+          const { id: _id, ...blockWithoutId } = block as any
+          editor.insertBlocks([blockWithoutId], block, 'after')
+        }
       }}
     >
       {children}
@@ -168,14 +185,19 @@ function DuplicateBlockItem({ block, children }: DragHandleItemProps) {
   )
 }
 
-function CopyLinkItem({ block, children }: DragHandleItemProps) {
+function CopyLinkItem({ children }: DragHandleItemProps) {
+  const editor = useBlockNoteEditor()
   const Components = useComponentsContext()!
+  const selectedBlocks = useSelectedBlocks(editor)
 
   return (
     <Components.Generic.Menu.Item
       onClick={() => {
-        const url = `${window.location.origin}${window.location.pathname}#block-${block.id}`
-        navigator.clipboard.writeText(url)
+        const block = selectedBlocks[0]
+        if (block) {
+          const url = `${window.location.origin}${window.location.pathname}#block-${block.id}`
+          navigator.clipboard.writeText(url)
+        }
       }}
     >
       {children}
@@ -183,9 +205,10 @@ function CopyLinkItem({ block, children }: DragHandleItemProps) {
   )
 }
 
-function TurnIntoItem({ block, children }: DragHandleItemProps) {
+function TurnIntoItem({ children }: DragHandleItemProps) {
   const editor = useBlockNoteEditor()
   const Components = useComponentsContext()!
+  const selectedBlocks = useSelectedBlocks(editor)
 
   const turnIntoOptions = [
     { type: 'paragraph', label: 'Text' },
@@ -210,10 +233,13 @@ function TurnIntoItem({ block, children }: DragHandleItemProps) {
           <Components.Generic.Menu.Item
             key={`${option.type}-${option.label}`}
             onClick={() => {
-              editor.updateBlock(block, {
-                type: option.type as any,
-                props: option.props as any,
-              })
+              const block = selectedBlocks[0]
+              if (block) {
+                editor.updateBlock(block, {
+                  type: option.type as any,
+                  props: option.props as any,
+                })
+              }
             }}
           >
             {option.label}
@@ -439,16 +465,20 @@ function ToolbarSeparator() {
   return <div className="toolbar-separator" />
 }
 
-function MoveUpItem({ block, children }: DragHandleItemProps) {
+function MoveUpItem({ children }: DragHandleItemProps) {
   const editor = useBlockNoteEditor()
   const Components = useComponentsContext()!
+  const selectedBlocks = useSelectedBlocks(editor)
 
   return (
     <Components.Generic.Menu.Item
       onClick={() => {
-        // Set cursor to this block first, then move
-        editor.setTextCursorPosition(block, 'start')
-        editor.moveBlocksUp()
+        const block = selectedBlocks[0]
+        if (block) {
+          // Set cursor to this block first, then move
+          editor.setTextCursorPosition(block, 'start')
+          editor.moveBlocksUp()
+        }
       }}
     >
       {children}
@@ -456,16 +486,20 @@ function MoveUpItem({ block, children }: DragHandleItemProps) {
   )
 }
 
-function MoveDownItem({ block, children }: DragHandleItemProps) {
+function MoveDownItem({ children }: DragHandleItemProps) {
   const editor = useBlockNoteEditor()
   const Components = useComponentsContext()!
+  const selectedBlocks = useSelectedBlocks(editor)
 
   return (
     <Components.Generic.Menu.Item
       onClick={() => {
-        // Set cursor to this block first, then move
-        editor.setTextCursorPosition(block, 'start')
-        editor.moveBlocksDown()
+        const block = selectedBlocks[0]
+        if (block) {
+          // Set cursor to this block first, then move
+          editor.setTextCursorPosition(block, 'start')
+          editor.moveBlocksDown()
+        }
       }}
     >
       {children}
@@ -473,17 +507,17 @@ function MoveDownItem({ block, children }: DragHandleItemProps) {
   )
 }
 
-// Custom Drag Handle Menu component - receives block prop and passes to children
-function CustomDragHandleMenu({ block }: { block: any }) {
+// Custom Drag Handle Menu component - items get block from editor context
+function CustomDragHandleMenu() {
   return (
-    <DragHandleMenu block={block}>
-      <RemoveBlockItem block={block}>Delete</RemoveBlockItem>
-      <DuplicateBlockItem block={block}>Duplicate</DuplicateBlockItem>
-      <TurnIntoItem block={block}>Turn into</TurnIntoItem>
-      <BlockColorsItem block={block}>Colors</BlockColorsItem>
-      <CopyLinkItem block={block}>Copy link to block</CopyLinkItem>
-      <MoveUpItem block={block}>Move up</MoveUpItem>
-      <MoveDownItem block={block}>Move down</MoveDownItem>
+    <DragHandleMenu>
+      <RemoveBlockItem>Delete</RemoveBlockItem>
+      <DuplicateBlockItem>Duplicate</DuplicateBlockItem>
+      <TurnIntoItem>Turn into</TurnIntoItem>
+      <BlockColorsItem>Colors</BlockColorsItem>
+      <CopyLinkItem>Copy link to block</CopyLinkItem>
+      <MoveUpItem>Move up</MoveUpItem>
+      <MoveDownItem>Move down</MoveDownItem>
     </DragHandleMenu>
   )
 }
@@ -1679,10 +1713,10 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
         >
           {/* Side menu with add button and drag handle for block manipulation */}
           <SideMenuController
-            sideMenu={(props) => (
-              <SideMenu {...props}>
-                <AddBlockButton {...props} />
-                <DragHandleButton {...props} dragHandleMenu={CustomDragHandleMenu} />
+            sideMenu={() => (
+              <SideMenu dragHandleMenu={CustomDragHandleMenu}>
+                <AddBlockButton />
+                <DragHandleButton />
               </SideMenu>
             )}
           />
@@ -1694,11 +1728,11 @@ export function BlockEditor({ pageId, initialBlocks, theme = 'light', onSave, wo
                 const customItems = getCustomSlashMenuItems(editor)
                 const multiColumnItems = getMultiColumnSlashMenuItems(editor)
                 const allItems = combineByGroup(customItems, multiColumnItems)
-                return filterSuggestionItems(allItems, query)
+                return filterSlashMenuItems(allItems, query)
               } catch (err) {
                 console.error('Error loading slash menu items:', err)
                 // Return default items as fallback
-                return filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query)
+                return filterSlashMenuItems(getDefaultReactSlashMenuItems(editor), query)
               }
             }}
           />

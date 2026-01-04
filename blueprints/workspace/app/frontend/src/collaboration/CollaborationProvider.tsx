@@ -71,8 +71,8 @@ export function CollaborationProvider({ children, wsUrl = '/ws/collaborate' }: C
   const [currentUser, setCurrentUser] = useState<CollaboratorPresence | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
-  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval>>()
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const pageIdRef = useRef<string>('')
 
   // Send message through WebSocket
