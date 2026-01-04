@@ -191,17 +191,106 @@ export const devTestBlocks = [
   {
     id: 'h2-toggle',
     type: 'heading_2',
-    content: { rich_text: [text('Toggle List')] },
+    content: { rich_text: [text('Toggle List (Nested)')] },
   },
   {
     id: 'toggle-1',
     type: 'toggle',
-    content: { rich_text: [text('Click to expand this toggle')] },
+    content: { rich_text: [text('Getting Started Guide')] },
+    children: [
+      {
+        id: 'toggle-1-child-1',
+        type: 'paragraph',
+        content: { rich_text: [text('Welcome! This toggle contains helpful information to get you started.')] },
+      },
+      {
+        id: 'toggle-1-child-2',
+        type: 'bulleted_list_item',
+        content: { rich_text: [text('Step 1: Create a new page')] },
+      },
+      {
+        id: 'toggle-1-child-3',
+        type: 'bulleted_list_item',
+        content: { rich_text: [text('Step 2: Add some blocks')] },
+      },
+      {
+        id: 'toggle-1-child-4',
+        type: 'bulleted_list_item',
+        content: { rich_text: [text('Step 3: Share with your team')] },
+      },
+    ],
   },
   {
     id: 'toggle-2',
     type: 'toggle',
-    content: { rich_text: [text('Another toggle with content')] },
+    content: { rich_text: [text('Advanced Features')] },
+    children: [
+      {
+        id: 'toggle-2-child-1',
+        type: 'paragraph',
+        content: { rich_text: [text('Explore these advanced capabilities:')] },
+      },
+      {
+        id: 'toggle-2-nested-1',
+        type: 'toggle',
+        content: { rich_text: [text('Keyboard Shortcuts')] },
+        children: [
+          {
+            id: 'toggle-2-nested-1-child-1',
+            type: 'paragraph',
+            content: { rich_text: [text('Cmd/Ctrl + B', { code: true }), text(' - Bold text')] },
+          },
+          {
+            id: 'toggle-2-nested-1-child-2',
+            type: 'paragraph',
+            content: { rich_text: [text('Cmd/Ctrl + I', { code: true }), text(' - Italic text')] },
+          },
+          {
+            id: 'toggle-2-nested-1-child-3',
+            type: 'paragraph',
+            content: { rich_text: [text('Cmd/Ctrl + /', { code: true }), text(' - Open slash menu')] },
+          },
+        ],
+      },
+      {
+        id: 'toggle-2-nested-2',
+        type: 'toggle',
+        content: { rich_text: [text('Database Features')] },
+        children: [
+          {
+            id: 'toggle-2-nested-2-child-1',
+            type: 'bulleted_list_item',
+            content: { rich_text: [text('Create tables, boards, and calendars')] },
+          },
+          {
+            id: 'toggle-2-nested-2-child-2',
+            type: 'bulleted_list_item',
+            content: { rich_text: [text('Filter and sort your data')] },
+          },
+          {
+            id: 'toggle-2-nested-2-child-3',
+            type: 'bulleted_list_item',
+            content: { rich_text: [text('Link databases together')] },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'toggle-3',
+    type: 'toggle',
+    content: { rich_text: [text('Pro Tips')] },
+    children: [
+      {
+        id: 'toggle-3-child-1',
+        type: 'callout',
+        content: {
+          rich_text: [text('Use toggle lists to organize FAQ sections, documentation, or any content that benefits from progressive disclosure.')],
+          icon: '💡',
+          color: 'blue',
+        },
+      },
+    ],
   },
 
   // ========================================

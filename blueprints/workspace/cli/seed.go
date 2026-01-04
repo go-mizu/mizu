@@ -478,8 +478,7 @@ func createDevTestBlocks(ctx context.Context, blockSvc blocks.API, pageID, userI
 		{blocks.BlockTodo, blocks.Content{RichText: rt("Another pending task"), Checked: ptrBool(false)}},
 
 		{blocks.BlockHeading2, blocks.Content{RichText: rt("Toggle List")}},
-		{blocks.BlockToggle, blocks.Content{RichText: rt("Click to expand this toggle")}},
-		{blocks.BlockToggle, blocks.Content{RichText: rt("Another toggle with content")}},
+		// Note: Nested toggles are created separately below with parent_id references
 
 		// ========================================
 		// Section: Callouts
@@ -831,6 +830,167 @@ exit 0`}},
 			Type:      bc.Type,
 			Content:   bc.Content,
 			Position:  i,
+			CreatedBy: userID,
+		})
+	}
+
+	// Create nested toggle examples
+	createNestedToggles(ctx, blockSvc, pageID, userID, len(testBlocks))
+}
+
+// createNestedToggles creates toggle blocks with nested children to demonstrate the feature
+func createNestedToggles(ctx context.Context, blockSvc blocks.API, pageID, userID string, startPos int) {
+	// Create first toggle with nested content
+	toggle1, _ := blockSvc.Create(ctx, &blocks.CreateIn{
+		PageID:    pageID,
+		Type:      blocks.BlockToggle,
+		Content:   blocks.Content{RichText: rt("Getting Started Guide")},
+		Position:  startPos,
+		CreatedBy: userID,
+	})
+	if toggle1 != nil {
+		// Add children to the first toggle
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle1.ID,
+			Type:      blocks.BlockParagraph,
+			Content:   blocks.Content{RichText: rt("Welcome! This toggle contains helpful information to get you started.")},
+			Position:  0,
+			CreatedBy: userID,
+		})
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle1.ID,
+			Type:      blocks.BlockBulletList,
+			Content:   blocks.Content{RichText: rt("Step 1: Create a new page")},
+			Position:  1,
+			CreatedBy: userID,
+		})
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle1.ID,
+			Type:      blocks.BlockBulletList,
+			Content:   blocks.Content{RichText: rt("Step 2: Add some blocks")},
+			Position:  2,
+			CreatedBy: userID,
+		})
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle1.ID,
+			Type:      blocks.BlockBulletList,
+			Content:   blocks.Content{RichText: rt("Step 3: Share with your team")},
+			Position:  3,
+			CreatedBy: userID,
+		})
+	}
+
+	// Create second toggle with nested toggle (deeply nested)
+	toggle2, _ := blockSvc.Create(ctx, &blocks.CreateIn{
+		PageID:    pageID,
+		Type:      blocks.BlockToggle,
+		Content:   blocks.Content{RichText: rt("Advanced Features")},
+		Position:  startPos + 1,
+		CreatedBy: userID,
+	})
+	if toggle2 != nil {
+		// Add a paragraph and a nested toggle
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle2.ID,
+			Type:      blocks.BlockParagraph,
+			Content:   blocks.Content{RichText: rt("Explore these advanced capabilities:")},
+			Position:  0,
+			CreatedBy: userID,
+		})
+
+		// Nested toggle inside toggle2
+		nestedToggle, _ := blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle2.ID,
+			Type:      blocks.BlockToggle,
+			Content:   blocks.Content{RichText: rt("Keyboard Shortcuts")},
+			Position:  1,
+			CreatedBy: userID,
+		})
+		if nestedToggle != nil {
+			blockSvc.Create(ctx, &blocks.CreateIn{
+				PageID:    pageID,
+				ParentID:  nestedToggle.ID,
+				Type:      blocks.BlockParagraph,
+				Content:   blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Cmd/Ctrl + B", Annotations: blocks.Annotations{Code: true}}, {Type: "text", Text: " - Bold text"}}},
+				Position:  0,
+				CreatedBy: userID,
+			})
+			blockSvc.Create(ctx, &blocks.CreateIn{
+				PageID:    pageID,
+				ParentID:  nestedToggle.ID,
+				Type:      blocks.BlockParagraph,
+				Content:   blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Cmd/Ctrl + I", Annotations: blocks.Annotations{Code: true}}, {Type: "text", Text: " - Italic text"}}},
+				Position:  1,
+				CreatedBy: userID,
+			})
+			blockSvc.Create(ctx, &blocks.CreateIn{
+				PageID:    pageID,
+				ParentID:  nestedToggle.ID,
+				Type:      blocks.BlockParagraph,
+				Content:   blocks.Content{RichText: []blocks.RichText{{Type: "text", Text: "Cmd/Ctrl + /", Annotations: blocks.Annotations{Code: true}}, {Type: "text", Text: " - Open slash menu"}}},
+				Position:  2,
+				CreatedBy: userID,
+			})
+		}
+
+		// Another nested toggle
+		nestedToggle2, _ := blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle2.ID,
+			Type:      blocks.BlockToggle,
+			Content:   blocks.Content{RichText: rt("Database Features")},
+			Position:  2,
+			CreatedBy: userID,
+		})
+		if nestedToggle2 != nil {
+			blockSvc.Create(ctx, &blocks.CreateIn{
+				PageID:    pageID,
+				ParentID:  nestedToggle2.ID,
+				Type:      blocks.BlockBulletList,
+				Content:   blocks.Content{RichText: rt("Create tables, boards, and calendars")},
+				Position:  0,
+				CreatedBy: userID,
+			})
+			blockSvc.Create(ctx, &blocks.CreateIn{
+				PageID:    pageID,
+				ParentID:  nestedToggle2.ID,
+				Type:      blocks.BlockBulletList,
+				Content:   blocks.Content{RichText: rt("Filter and sort your data")},
+				Position:  1,
+				CreatedBy: userID,
+			})
+			blockSvc.Create(ctx, &blocks.CreateIn{
+				PageID:    pageID,
+				ParentID:  nestedToggle2.ID,
+				Type:      blocks.BlockBulletList,
+				Content:   blocks.Content{RichText: rt("Link databases together")},
+				Position:  2,
+				CreatedBy: userID,
+			})
+		}
+	}
+
+	// Create third toggle - simple with callout
+	toggle3, _ := blockSvc.Create(ctx, &blocks.CreateIn{
+		PageID:    pageID,
+		Type:      blocks.BlockToggle,
+		Content:   blocks.Content{RichText: rt("Pro Tips")},
+		Position:  startPos + 2,
+		CreatedBy: userID,
+	})
+	if toggle3 != nil {
+		blockSvc.Create(ctx, &blocks.CreateIn{
+			PageID:    pageID,
+			ParentID:  toggle3.ID,
+			Type:      blocks.BlockCallout,
+			Content:   blocks.Content{RichText: rt("Use toggle lists to organize FAQ sections, documentation, or any content that benefits from progressive disclosure."), Icon: "💡", Color: "blue"},
+			Position:  0,
 			CreatedBy: userID,
 		})
 	}
