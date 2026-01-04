@@ -13,14 +13,10 @@ import { useDatabaseStore } from '../stores/databaseStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Plus,
-  ChevronDown,
   MoreHorizontal,
   Edit2,
   Copy,
   Trash2,
-  Lock,
-  Unlock,
-  Search,
 } from 'lucide-react'
 
 export type ViewType = 'table' | 'board' | 'list' | 'calendar' | 'gallery' | 'timeline' | 'chart'

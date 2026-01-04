@@ -122,6 +122,9 @@ type API interface {
 	// Search
 	Search(ctx context.Context, workspaceID, query string, opts SearchOpts) ([]*Page, error)
 	GetRecent(ctx context.Context, userID, workspaceID string, limit int) ([]*Page, error)
+
+	// Authorization
+	CanAccess(ctx context.Context, pageID, userID string) (bool, error)
 }
 
 // Store defines the data access contract for pages.

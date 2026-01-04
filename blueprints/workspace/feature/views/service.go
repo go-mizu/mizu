@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -451,11 +452,9 @@ func compareStrings(a, b string) int {
 }
 
 // stableSort performs a stable sort using the provided less function.
+// Uses Go's built-in sort.SliceStable for O(n log n) performance.
 func stableSort(items []*pages.Page, less func(a, b *pages.Page) bool) {
-	n := len(items)
-	for i := 1; i < n; i++ {
-		for j := i; j > 0 && less(items[j], items[j-1]); j-- {
-			items[j], items[j-1] = items[j-1], items[j]
-		}
-	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return less(items[i], items[j])
+	})
 }
