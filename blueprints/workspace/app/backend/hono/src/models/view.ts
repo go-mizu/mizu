@@ -84,6 +84,10 @@ export const CreateViewSchema = z.object({
   databaseId: z.string(),
   name: z.string().min(1).max(255),
   type: ViewTypeSchema.optional(),
+  filter: FilterGroupSchema.optional().nullable(),
+  sorts: z.array(SortSchema).optional().nullable(),
+  groupBy: z.string().optional().nullable(),
+  calendarBy: z.string().optional().nullable(),
 });
 
 export const UpdateViewSchema = z.object({

@@ -61,7 +61,12 @@ export class PageService {
   }
 
   async delete(id: string): Promise<void> {
-    // Delete blocks first
+    // Cascade delete child pages first
+    const children = await this.store.pages.listByParent(id, 'page');
+    for (const child of children) {
+      await this.delete(child.id);
+    }
+    // Delete blocks
     await this.store.blocks.deleteByPage(id);
     // Delete page
     await this.store.pages.delete(id);

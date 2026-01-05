@@ -212,8 +212,8 @@ describe('Block E2E Tests', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await res.json() as { block: { content: { richText: { text: string }[] } } };
-      expect(data.block.content.richText[0].text).toBe('Updated content');
+      const data = await res.json() as { block: { content: { richText: { text: { content: string } }[] } } };
+      expect(data.block.content.richText[0].text.content).toBe('Updated content');
     });
 
     it('should update block type', async () => {
@@ -330,10 +330,10 @@ describe('Block E2E Tests', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await res.json() as { blocks: { content: { richText: { text: string }[] } }[] };
-      expect(data.blocks[0].content.richText[0].text).toBe('First');
-      expect(data.blocks[1].content.richText[0].text).toBe('Second');
-      expect(data.blocks[2].content.richText[0].text).toBe('Third');
+      const data = await res.json() as { blocks: { content: { richText: { text: { content: string } }[] } }[] };
+      expect(data.blocks[0].content.richText[0].text.content).toBe('First');
+      expect(data.blocks[1].content.richText[0].text.content).toBe('Second');
+      expect(data.blocks[2].content.richText[0].text.content).toBe('Third');
     });
 
     it('should build hierarchical tree structure', async () => {
@@ -349,13 +349,12 @@ describe('Block E2E Tests', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await res.json() as { blocks: { id: string; parentId?: string }[] };
+      const data = await res.json() as { blocks: { id: string; children?: { id: string }[] }[] };
 
-      const rootBlocks = data.blocks.filter(b => !b.parentId);
-      const childBlocks = data.blocks.filter(b => b.parentId === parentBlock.id);
-
-      expect(rootBlocks.length).toBe(1);
-      expect(childBlocks.length).toBe(2);
+      // Tree structure: root blocks are at top level, children are nested
+      expect(data.blocks.length).toBe(1);
+      expect(data.blocks[0].id).toBe(parentBlock.id);
+      expect(data.blocks[0].children?.length).toBe(2);
     });
   });
 });

@@ -13,6 +13,10 @@ export class ViewService {
       databaseId: input.databaseId,
       name: input.name,
       type: input.type ?? 'table',
+      filter: input.filter,
+      sorts: input.sorts,
+      groupBy: input.groupBy,
+      calendarBy: input.calendarBy,
       position,
     });
   }

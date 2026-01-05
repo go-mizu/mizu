@@ -345,13 +345,16 @@ describe('Integration E2E Tests', () => {
         content: { richText: [{ type: 'text', text: { content: 'console.log("Hello");' } }], language: 'javascript' },
       });
 
-      // 2. Get all blocks
+      // 2. Get all blocks (returns tree structure)
       const blocksRes = await app.request(`/api/v1/pages/${page.id}/blocks`, {
         headers: withSession({}, sessionId),
       });
       expect(blocksRes.status).toBe(200);
       const blocksData = await blocksRes.json() as { blocks: any[] };
-      expect(blocksData.blocks.length).toBe(6); // 5 root + 1 nested
+      expect(blocksData.blocks.length).toBe(5); // 5 root blocks
+      // Nested block is inside toggle.children
+      const toggleBlock = blocksData.blocks.find((b: any) => b.type === 'toggle');
+      expect(toggleBlock?.children?.length).toBe(1);
 
       // 3. Move paragraph before heading
       const moveRes = await app.request(`/api/v1/blocks/${paragraph.id}/move`, {
@@ -387,7 +390,7 @@ describe('Integration E2E Tests', () => {
         headers: withSession({}, sessionId),
       });
       const finalData = await finalRes.json() as { blocks: any[] };
-      expect(finalData.blocks.length).toBe(5); // One deleted
+      expect(finalData.blocks.length).toBe(4); // Was 5 root blocks, one deleted
     });
   });
 });

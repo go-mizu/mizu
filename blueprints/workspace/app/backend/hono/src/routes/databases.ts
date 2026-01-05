@@ -74,7 +74,9 @@ databaseRoutes.post(
     const services = createServices(store);
 
     const database = await services.databases.addProperty(id, input);
-    return c.json({ database }, 201);
+    // Find the newly added property
+    const property = database.properties.find(p => p.name === input.name);
+    return c.json({ property, database }, 201);
   }
 );
 
@@ -90,7 +92,9 @@ databaseRoutes.patch(
     const services = createServices(store);
 
     const database = await services.databases.updateProperty(id, propId, input);
-    return c.json({ database });
+    // Find the updated property
+    const property = database.properties.find(p => p.id === propId);
+    return c.json({ property, database });
   }
 );
 
@@ -102,7 +106,7 @@ databaseRoutes.delete('/:id/properties/:propId', async (c) => {
   const services = createServices(store);
 
   const database = await services.databases.deleteProperty(id, propId);
-  return c.json({ database });
+  return c.json({ success: true, database });
 });
 
 // List views

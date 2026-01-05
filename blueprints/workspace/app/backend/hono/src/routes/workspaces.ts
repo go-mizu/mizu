@@ -42,12 +42,19 @@ workspaceRoutes.get('/:id', async (c) => {
   const store = c.get('store');
   const services = createServices(store);
 
-  const workspace = await services.workspaces.getById(id, userId);
-  if (!workspace) {
+  // First check if workspace exists
+  const workspaceExists = await store.workspaces.getById(id);
+  if (!workspaceExists) {
     return c.json({ error: 'Workspace not found' }, 404);
   }
 
-  return c.json({ workspace });
+  // Then check membership
+  const member = await services.workspaces.checkMembership(id, userId);
+  if (!member) {
+    return c.json({ error: 'Permission denied' }, 403);
+  }
+
+  return c.json({ workspace: workspaceExists });
 });
 
 // Update workspace
