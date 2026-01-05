@@ -7,19 +7,55 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { clearRateLimitStore } from '../../middleware/ratelimit';
 
-// Use file-based SQLite for tests (to persist across requests)
-let dbCounter = 0;
+// Test driver type
+export type TestDriver = 'sqlite' | 'postgres';
 
-export function createTestApp() {
+// Get test driver from environment variable
+function getTestDriver(): TestDriver {
+  const driver = process.env.TEST_DRIVER?.toLowerCase();
+  if (driver === 'postgres') return 'postgres';
+  return 'sqlite';
+}
+
+// Get current test driver (useful for test conditionals)
+export function getCurrentTestDriver(): TestDriver {
+  return getTestDriver();
+}
+
+// Check if PostgreSQL tests are available
+export function isPostgresAvailable(): boolean {
+  return !!process.env.POSTGRES_DSN;
+}
+
+export function createTestApp(driver?: TestDriver) {
   // Clear rate limit store to ensure test isolation
   clearRateLimitStore();
 
-  // Use a unique temp file for each test app to ensure isolation
-  const dbPath = join(tmpdir(), `test-db-${randomUUID()}.sqlite`);
-  const storeConfig: StoreConfig = {
-    driver: 'sqlite',
-    sqlitePath: dbPath,
-  };
+  const actualDriver = driver ?? getTestDriver();
+  let storeConfig: StoreConfig;
+
+  if (actualDriver === 'postgres') {
+    const pgUrl = process.env.POSTGRES_DSN;
+    if (!pgUrl) {
+      throw new Error('POSTGRES_DSN environment variable required for postgres tests');
+    }
+    // Create unique schema for test isolation
+    // Each test app gets its own schema that is dropped when the store closes
+    const testSchema = `test_${randomUUID().replace(/-/g, '')}`;
+    storeConfig = {
+      driver: 'postgres',
+      postgresUrl: pgUrl,
+      postgresSchema: testSchema,
+    };
+  } else {
+    // Use a unique temp file for each test app to ensure isolation
+    const dbPath = join(tmpdir(), `test-db-${randomUUID()}.sqlite`);
+    storeConfig = {
+      driver: 'sqlite',
+      sqlitePath: dbPath,
+    };
+  }
+
   return createApp({ storeConfig });
 }
 
