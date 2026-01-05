@@ -27,7 +27,9 @@ export async function createStore(config: StoreConfig): Promise<Store> {
         throw new Error('PostgreSQL URL required for postgres driver');
       }
       const { PostgresStore } = await import('./postgres');
-      const store = new PostgresStore(config.postgresUrl);
+      const store = new PostgresStore(config.postgresUrl, {
+        schema: config.postgresSchema,
+      });
       await store.init();
       return store;
     }

@@ -8,6 +8,9 @@
     "build": "tsc && vite build",
     "deploy": "wrangler deploy",
     "test": "vitest",
+    "test:e2e": "vitest run src/tests/e2e",
+    "test:e2e:sqlite": "TEST_DRIVER=sqlite vitest run src/tests/e2e",
+    "test:e2e:postgres": "TEST_DRIVER=postgres vitest run src/tests/e2e --fileParallelism=false",
     "test:coverage": "vitest --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
@@ -18,7 +21,8 @@
     "hono": "^4.11.3",
     "zod": "^4.3.5",
     "@hono/zod-validator": "^0.7.6",
-    "ulid": "^3.0.2"
+    "ulid": "^3.0.2",
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260103.0",

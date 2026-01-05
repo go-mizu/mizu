@@ -212,4 +212,5 @@ export interface StoreConfig {
   sqlitePath?: string;
   // PostgreSQL
   postgresUrl?: string;
+  postgresSchema?: string; // Optional schema for test isolation
 }
