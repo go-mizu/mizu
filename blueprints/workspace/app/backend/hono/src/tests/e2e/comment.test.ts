@@ -177,8 +177,8 @@ describe('Comment E2E Tests', () => {
       });
 
       expect(res.status).toBe(200);
-      const data = await res.json() as { comment: { content: { text: string }[] } };
-      expect(data.comment.content[0].text).toBe('Updated');
+      const data = await res.json() as { comment: { content: { text: { content: string } }[] } };
+      expect(data.comment.content[0].text.content).toBe('Updated');
     });
 
     it('should not allow non-author to update', async () => {

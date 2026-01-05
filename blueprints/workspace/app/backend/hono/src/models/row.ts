@@ -9,7 +9,7 @@ export const RowSchema = z.object({
   workspaceId: z.string(),
   title: z.string().default(''),
   icon: z.string().optional().nullable(),
-  properties: z.record(z.unknown()).default({}),
+  properties: z.record(z.string(), z.unknown()).default({}),
   rowPosition: z.number(),
   createdBy: z.string(),
   createdAt: z.string(),
@@ -20,14 +20,14 @@ export const CreateRowSchema = z.object({
   databaseId: z.string(),
   title: z.string().optional(),
   icon: z.string().optional(),
-  properties: z.record(z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
   afterId: z.string().optional(),
 });
 
 export const UpdateRowSchema = z.object({
   title: z.string().optional(),
   icon: z.string().optional().nullable(),
-  properties: z.record(z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const MoveRowSchema = z.object({

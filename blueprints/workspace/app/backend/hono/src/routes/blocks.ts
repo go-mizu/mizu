@@ -23,6 +23,19 @@ blockRoutes.post(
   }
 );
 
+// Get block by ID
+blockRoutes.get('/:id', async (c) => {
+  const id = c.req.param('id');
+  const store = c.get('store');
+  const services = createServices(store);
+
+  const block = await services.blocks.getById(id);
+  if (!block) {
+    return c.json({ error: 'Block not found' }, 404);
+  }
+  return c.json({ block });
+});
+
 // Update block
 blockRoutes.patch(
   '/:id',

@@ -474,25 +474,98 @@ class SQLitePageStore implements PageStore {
     }
   ): Promise<PaginatedResult<Page>> {
     const limit = options?.limit ?? 50;
-    let sql = 'SELECT * FROM pages WHERE database_id = ? AND is_archived = 0';
-    const params: unknown[] = [databaseId];
 
-    if (options?.cursor) {
-      sql += ' AND row_position > ?';
-      params.push(parseFloat(options.cursor));
+    // Fetch all items for filtering/sorting
+    const rows = this.db.prepare(
+      'SELECT * FROM pages WHERE database_id = ? AND is_archived = 0'
+    ).all(databaseId) as Record<string, unknown>[];
+
+    let items = rows.map((row) => this.mapRow(row));
+
+    // Apply filter in memory
+    if (options?.filter) {
+      items = items.filter((item) => this.matchesFilter(item, options.filter!));
     }
 
-    sql += ' ORDER BY row_position ASC LIMIT ?';
-    params.push(limit + 1);
+    // Apply sorts in memory
+    if (options?.sorts && options.sorts.length > 0) {
+      items = this.applySorts(items, options.sorts);
+    } else {
+      items.sort((a, b) => (a.rowPosition ?? 0) - (b.rowPosition ?? 0));
+    }
 
-    const rows = this.db.prepare(sql).all(...params) as Record<string, unknown>[];
-    const items = rows.slice(0, limit).map((row) => this.mapRow(row));
-    const hasMore = rows.length > limit;
+    // Apply cursor and pagination
+    if (options?.cursor) {
+      const cursorPos = parseFloat(options.cursor);
+      const cursorIndex = items.findIndex((item) => (item.rowPosition ?? 0) > cursorPos);
+      items = cursorIndex >= 0 ? items.slice(cursorIndex) : [];
+    }
+
+    const hasMore = items.length > limit;
+    items = items.slice(0, limit);
     const nextCursor = hasMore
       ? String(items[items.length - 1]?.rowPosition ?? 0)
       : undefined;
 
     return { items, nextCursor, hasMore };
+  }
+
+  private matchesFilter(item: Page, filter: FilterGroup): boolean {
+    const results = filter.conditions.map((condition) => {
+      if ('type' in condition) {
+        return this.matchesFilter(item, condition as FilterGroup);
+      }
+      return this.matchesCondition(item, condition);
+    });
+    return filter.type === 'and' ? results.every(Boolean) : results.some(Boolean);
+  }
+
+  private matchesCondition(item: Page, condition: { propertyId: string; operator: string; value?: unknown }): boolean {
+    const value = item.properties?.[condition.propertyId];
+    const target = condition.value;
+
+    switch (condition.operator) {
+      case 'equals':
+        return value === target;
+      case 'not_equals':
+        return value !== target;
+      case 'contains':
+        return typeof value === 'string' && typeof target === 'string' && value.includes(target);
+      case 'not_contains':
+        return typeof value === 'string' && typeof target === 'string' && !value.includes(target);
+      case 'is_empty':
+        return value === null || value === undefined || value === '';
+      case 'is_not_empty':
+        return value !== null && value !== undefined && value !== '';
+      default:
+        return true;
+    }
+  }
+
+  private applySorts(items: Page[], sorts: Sort[]): Page[] {
+    return [...items].sort((a, b) => {
+      for (const sort of sorts) {
+        const aVal = a.properties?.[sort.propertyId];
+        const bVal = b.properties?.[sort.propertyId];
+
+        let cmp = 0;
+        if (aVal == null && bVal == null) cmp = 0;
+        else if (aVal == null) cmp = 1;
+        else if (bVal == null) cmp = -1;
+        else if (typeof aVal === 'string' && typeof bVal === 'string') {
+          cmp = aVal.localeCompare(bVal);
+        } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+          cmp = aVal - bVal;
+        } else {
+          cmp = String(aVal).localeCompare(String(bVal));
+        }
+
+        if (cmp !== 0) {
+          return sort.direction === 'descending' ? -cmp : cmp;
+        }
+      }
+      return 0;
+    });
   }
 
   async update(id: string, data: Partial<Page>): Promise<Page> {

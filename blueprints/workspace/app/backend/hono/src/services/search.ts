@@ -25,10 +25,10 @@ export class SearchService {
     const results: SearchResult[] = [];
     const lowerQuery = query.toLowerCase();
 
-    // Search pages
+    // Search pages (excluding database rows)
     const pages = await this.store.pages.listByWorkspace(workspaceId, { includeArchived: false });
     for (const page of pages) {
-      if (page.title.toLowerCase().includes(lowerQuery)) {
+      if (!page.databaseId && page.title.toLowerCase().includes(lowerQuery)) {
         results.push({
           type: 'page',
           id: page.id,
@@ -38,7 +38,7 @@ export class SearchService {
       }
     }
 
-    // Search databases
+    // Search databases and their rows
     const databases = await this.store.databases.listByWorkspace(workspaceId);
     for (const db of databases) {
       if (db.title.toLowerCase().includes(lowerQuery)) {
@@ -48,6 +48,22 @@ export class SearchService {
           title: db.title || 'Untitled Database',
           icon: db.icon,
         });
+      }
+
+      // Search database rows
+      const rows = await this.store.pages.listByDatabase(db.id, { limit: 100 });
+      for (const row of rows.items) {
+        // Check row title or properties.title
+        const rowTitle = row.title || (row.properties?.title as string) || '';
+        if (rowTitle.toLowerCase().includes(lowerQuery)) {
+          results.push({
+            type: 'page',
+            id: row.id,
+            title: rowTitle || 'Untitled',
+            icon: row.icon,
+            parentTitle: db.title,
+          });
+        }
       }
     }
 

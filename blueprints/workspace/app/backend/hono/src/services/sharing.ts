@@ -68,13 +68,18 @@ export class ShareService {
     return null;
   }
 
-  async validateLinkAccess(token: string, password?: string): Promise<{ share: Share; pageId: string } | null> {
-    const share = await this.getByToken(token);
-    if (!share) return null;
+  async validateLinkAccess(token: string, password?: string): Promise<{ share: Share; pageId: string } | { error: 'not_found' | 'expired' | 'password_required' } > {
+    const share = await this.store.shares.getByToken(token);
+    if (!share) return { error: 'not_found' };
+
+    // Check expiration
+    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+      return { error: 'expired' };
+    }
 
     // Check password if required
     if (share.password && share.password !== password) {
-      return null;
+      return { error: 'password_required' };
     }
 
     return { share, pageId: share.pageId };
