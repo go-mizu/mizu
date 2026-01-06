@@ -59,6 +59,8 @@ func (s *Server) authRequired(h mizu.Handler) mizu.Handler {
 			http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
 			return nil
 		}
+		// Set X-User-ID header for handlers to access
+		c.Request().Header.Set("X-User-ID", userID)
 		return h(c)
 	}
 }

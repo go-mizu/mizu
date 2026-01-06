@@ -71,7 +71,7 @@ func (s *CellsStore) GetRange(ctx context.Context, sheetID string, startRow, sta
 	}
 	defer rows.Close()
 
-	var result []*cells.Cell
+	result := make([]*cells.Cell, 0)
 	for rows.Next() {
 		cell := &cells.Cell{}
 		var value, format, hyperlink sql.NullString
@@ -216,7 +216,7 @@ func (s *CellsStore) GetMergedRegions(ctx context.Context, sheetID string) ([]*c
 	}
 	defer rows.Close()
 
-	var result []*cells.MergedRegion
+	result := make([]*cells.MergedRegion, 0)
 	for rows.Next() {
 		region := &cells.MergedRegion{}
 		if err := rows.Scan(&region.ID, &region.SheetID, &region.StartRow,

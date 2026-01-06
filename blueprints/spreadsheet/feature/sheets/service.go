@@ -26,11 +26,27 @@ func NewService(store Store) *Service {
 func (s *Service) Create(ctx context.Context, in *CreateIn) (*Sheet, error) {
 	now := time.Now()
 
+	// Auto-calculate index if not specified
+	index := in.Index
+	if index == 0 {
+		// Get existing sheets and find max index
+		existing, err := s.store.ListByWorkbook(ctx, in.WorkbookID)
+		if err == nil && len(existing) > 0 {
+			maxIndex := 0
+			for _, sh := range existing {
+				if sh.Index > maxIndex {
+					maxIndex = sh.Index
+				}
+			}
+			index = maxIndex + 1
+		}
+	}
+
 	sheet := &Sheet{
 		ID:               ulid.New(),
 		WorkbookID:       in.WorkbookID,
 		Name:             in.Name,
-		Index:            in.Index,
+		Index:            index,
 		Color:            in.Color,
 		GridColor:        "#E2E8F0",
 		DefaultRowHeight: 21,

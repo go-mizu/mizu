@@ -109,7 +109,7 @@ func (s *SheetsStore) ListByWorkbook(ctx context.Context, workbookID string) ([]
 	}
 	defer rows.Close()
 
-	var result []*sheets.Sheet
+	result := make([]*sheets.Sheet, 0)
 	for rows.Next() {
 		sheet := &sheets.Sheet{}
 		var rowHeights, colWidths, hiddenRows, hiddenCols sql.NullString
@@ -170,8 +170,19 @@ func (s *SheetsStore) Update(ctx context.Context, sheet *sheets.Sheet) error {
 	return err
 }
 
-// Delete deletes a sheet.
+// Delete deletes a sheet and all related data.
 func (s *SheetsStore) Delete(ctx context.Context, id string) error {
+	// Delete related data first (foreign key constraints)
+	s.db.ExecContext(ctx, `DELETE FROM merged_regions WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM cells WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM conditional_formats WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM data_validations WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM charts WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM pivot_tables WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM comments WHERE sheet_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM auto_filters WHERE sheet_id = ?`, id)
+
+	// Delete the sheet itself
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sheets WHERE id = ?`, id)
 	return err
 }

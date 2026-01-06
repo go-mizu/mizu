@@ -75,11 +75,28 @@ func (h *Sheet) Update(c *mizu.Ctx) error {
 // Delete deletes a sheet.
 func (h *Sheet) Delete(c *mizu.Ctx) error {
 	id := c.Param("id")
+	ctx := c.Request().Context()
 
-	if err := h.sheets.Delete(c.Request().Context(), id); err != nil {
+	// Get the sheet to find its workbook
+	sheet, err := h.sheets.GetByID(ctx, id)
+	if err != nil {
 		if err == sheets.ErrNotFound {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "sheet not found"})
 		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// Check if this is the last sheet in the workbook
+	allSheets, err := h.sheets.List(ctx, sheet.WorkbookID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	if len(allSheets) <= 1 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot delete the last sheet in a workbook"})
+	}
+
+	if err := h.sheets.Delete(ctx, id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 

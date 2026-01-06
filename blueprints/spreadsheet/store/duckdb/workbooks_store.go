@@ -60,7 +60,7 @@ func (s *WorkbooksStore) ListByOwner(ctx context.Context, ownerID string) ([]*wo
 	}
 	defer rows.Close()
 
-	var result []*workbooks.Workbook
+	result := make([]*workbooks.Workbook, 0)
 	for rows.Next() {
 		wb := &workbooks.Workbook{}
 		var settings sql.NullString
@@ -85,8 +85,14 @@ func (s *WorkbooksStore) Update(ctx context.Context, wb *workbooks.Workbook) err
 	return err
 }
 
-// Delete deletes a workbook.
+// Delete deletes a workbook and related data.
 func (s *WorkbooksStore) Delete(ctx context.Context, id string) error {
+	// Delete related data first (foreign key constraints)
+	s.db.ExecContext(ctx, `DELETE FROM named_ranges WHERE workbook_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM shares WHERE workbook_id = ?`, id)
+	s.db.ExecContext(ctx, `DELETE FROM versions WHERE workbook_id = ?`, id)
+
+	// Delete the workbook itself
 	_, err := s.db.ExecContext(ctx, `DELETE FROM workbooks WHERE id = ?`, id)
 	return err
 }
