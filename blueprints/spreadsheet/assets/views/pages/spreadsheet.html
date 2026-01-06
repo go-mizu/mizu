@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spreadsheet</title>
+    <link rel="stylesheet" href="/static/dist/css/main.css">
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        // Pass data to React app
+        window.__SPREADSHEET_DATA__ = {
+            workbookID: "{{.WorkbookID}}",
+            sheetID: "{{.SheetID}}"
+        };
+    </script>
+    <script type="module" src="/static/dist/js/main.js"></script>
+</body>
+</html>
