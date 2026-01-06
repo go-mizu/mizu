@@ -6,6 +6,8 @@ const isDesktop = process.env.DESKTOP === 'true'
 
 export default defineConfig({
   plugins: [react()],
+  // Set base path for asset URLs - desktop uses root, web uses /static/dist/
+  base: isDesktop ? '/' : '/static/dist/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

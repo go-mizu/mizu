@@ -1,0 +1,27 @@
+{{define "title"}}Error - Workspace{{end}}
+
+{{define "breadcrumb"}}
+<span class="px-1 py-0-5 text-tertiary">Error</span>
+{{end}}
+
+{{define "content"}}
+<div class="pt-20 text-center">
+    <div class="text-6xl mb-6">{{if eq .Code 404}}{{else}}{{end}}</div>
+    <h1 class="text-3xl font-bold mb-4 text-primary">{{.Title}}</h1>
+    <p class="text-lg text-secondary mb-8">{{.Message}}</p>
+    <div class="flex gap-3 justify-center">
+        <button onclick="history.back()" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="mr-2">
+                <path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Go Back
+        </button>
+        <a href="/app" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="mr-2">
+                <path d="M2 8l6-6 6 6M4 7v6a1 1 0 001 1h2v-3a1 1 0 011-1h0a1 1 0 011 1v3h2a1 1 0 001-1V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Home
+        </a>
+    </div>
+</div>
+{{end}}

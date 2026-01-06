@@ -106,7 +106,7 @@ func (h *UI) Workspace(c *mizu.Ctx) error {
 
 	ws, err := h.workspaces.GetBySlug(c.Request().Context(), workspaceSlug)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "workspace not found"})
+		return h.renderError(c, http.StatusNotFound, "Workspace Not Found", "The workspace you're looking for doesn't exist or has been deleted.")
 	}
 
 	user, _ := h.users.GetByID(c.Request().Context(), userID)
@@ -133,12 +133,12 @@ func (h *UI) Page(c *mizu.Ctx) error {
 
 	ws, err := h.workspaces.GetBySlug(c.Request().Context(), workspaceSlug)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "workspace not found"})
+		return h.renderError(c, http.StatusNotFound, "Workspace Not Found", "The workspace you're looking for doesn't exist or has been deleted.")
 	}
 
 	page, err := h.pages.GetByID(c.Request().Context(), pageID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "page not found"})
+		return h.renderError(c, http.StatusNotFound, "Page Not Found", "The page you're looking for doesn't exist or has been deleted.")
 	}
 
 	blocksList, _ := h.blocks.GetByPage(c.Request().Context(), pageID)
@@ -148,6 +148,12 @@ func (h *UI) Page(c *mizu.Ctx) error {
 	favs, _ := h.favorites.List(c.Request().Context(), userID, ws.ID)
 	wsList, _ := h.workspaces.ListByUser(c.Request().Context(), userID)
 
+	// Convert blocks to JSON for the frontend editor (ensure empty array, not null)
+	if blocksList == nil {
+		blocksList = []*blocks.Block{}
+	}
+	blocksJSON, _ := json.Marshal(blocksList)
+
 	data := map[string]interface{}{
 		"User":       user,
 		"Workspace":  ws,
@@ -155,7 +161,7 @@ func (h *UI) Page(c *mizu.Ctx) error {
 		"Pages":      pagesList,
 		"Favorites":  favs,
 		"Page":       page,
-		"Blocks":     blocksList,
+		"BlocksJSON": template.JS(blocksJSON),
 		"Breadcrumb": breadcrumb,
 	}
 
@@ -170,12 +176,12 @@ func (h *UI) Database(c *mizu.Ctx) error {
 
 	ws, err := h.workspaces.GetBySlug(c.Request().Context(), workspaceSlug)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "workspace not found"})
+		return h.renderError(c, http.StatusNotFound, "Workspace Not Found", "The workspace you're looking for doesn't exist or has been deleted.")
 	}
 
 	db, err := h.databases.GetByID(c.Request().Context(), databaseID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "database not found"})
+		return h.renderError(c, http.StatusNotFound, "Database Not Found", "The database you're looking for doesn't exist or has been deleted.")
 	}
 
 	viewsList, _ := h.views.ListByDatabase(c.Request().Context(), databaseID)
@@ -235,7 +241,7 @@ func (h *UI) Search(c *mizu.Ctx) error {
 
 	ws, err := h.workspaces.GetBySlug(c.Request().Context(), workspaceSlug)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "workspace not found"})
+		return h.renderError(c, http.StatusNotFound, "Workspace Not Found", "The workspace you're looking for doesn't exist or has been deleted.")
 	}
 
 	user, _ := h.users.GetByID(c.Request().Context(), userID)
@@ -260,7 +266,7 @@ func (h *UI) Settings(c *mizu.Ctx) error {
 
 	ws, err := h.workspaces.GetBySlug(c.Request().Context(), workspaceSlug)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "workspace not found"})
+		return h.renderError(c, http.StatusNotFound, "Workspace Not Found", "The workspace you're looking for doesn't exist or has been deleted.")
 	}
 
 	user, _ := h.users.GetByID(c.Request().Context(), userID)
@@ -284,5 +290,23 @@ func (h *UI) render(c *mizu.Ctx, name string, data interface{}) error {
 	}
 
 	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
+	return tmpl.Execute(c.Writer(), data)
+}
+
+func (h *UI) renderError(c *mizu.Ctx, code int, title, message string) error {
+	tmpl, ok := h.templates["error"]
+	if !ok {
+		// Fallback to JSON if error template not found
+		return c.JSON(code, map[string]string{"error": message})
+	}
+
+	data := map[string]interface{}{
+		"Code":    code,
+		"Title":   title,
+		"Message": message,
+	}
+
+	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
+	c.Writer().WriteHeader(code)
 	return tmpl.Execute(c.Writer(), data)
 }

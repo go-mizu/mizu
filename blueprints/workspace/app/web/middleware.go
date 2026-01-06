@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -26,11 +27,13 @@ func (s *Server) getUserID(c *mizu.Ctx) string {
 
 	cookie, err := c.Request().Cookie(sessionCookieName)
 	if err != nil {
+		slog.Debug("no session cookie found", "path", c.Request().URL.Path)
 		return ""
 	}
 
 	user, err := s.users.GetBySession(c.Request().Context(), cookie.Value)
 	if err != nil {
+		slog.Debug("session lookup failed", "session_id", cookie.Value[:8]+"...", "error", err)
 		return ""
 	}
 
