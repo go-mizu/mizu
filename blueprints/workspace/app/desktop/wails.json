@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Workspace",
+  "outputfilename": "Workspace",
+  "frontend:dir": "./frontend",
+  "wailsjsdir": "./frontend/wailsjs",
+  "author": {
+    "name": "Mizu",
+    "email": "hello@mizu.dev"
+  },
+  "info": {
+    "productName": "Workspace",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2025 Mizu",
+    "comments": "A Notion-like workspace for your desktop"
+  }
+}

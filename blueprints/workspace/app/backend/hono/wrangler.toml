@@ -3,13 +3,18 @@ main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Static assets
+[assets]
+directory = "./static"
+binding = "ASSETS"
+
 [vars]
 ENVIRONMENT = "production"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "workspace"
-database_id = "your-database-id"
+database_name = "workspace-local"
+database_id = "local"
 
 [[r2_buckets]]
 binding = "UPLOADS"
@@ -18,13 +23,3 @@ bucket_name = "workspace-uploads"
 [dev]
 port = 8787
 local_protocol = "http"
-
-# Local development with D1
-[[d1_databases]]
-binding = "DB"
-database_name = "workspace-local"
-database_id = "local"
-
-# Migrations
-[migrations]
-dir = "src/store/d1/migrations"

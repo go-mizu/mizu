@@ -1,7 +1,13 @@
-import { ulid } from 'ulid';
-
 export function generateId(): string {
-  return ulid();
+  // Generate ULID-like ID without the ulid library (which calls crypto in global scope)
+  const timestamp = Date.now().toString(36).padStart(10, '0');
+  const randomBytes = new Uint8Array(10);
+  crypto.getRandomValues(randomBytes);
+  const random = Array.from(randomBytes)
+    .map((b) => b.toString(36).padStart(2, '0'))
+    .join('')
+    .slice(0, 16);
+  return (timestamp + random).toUpperCase();
 }
 
 export function generateToken(): string {
