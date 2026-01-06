@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-mizu/mizu"
@@ -86,6 +87,26 @@ func New(cfg Config) (*Server, error) {
 	workbooksSvc := workbooks.NewService(workbooksStore)
 	sheetsSvc := sheets.NewService(sheetsStore)
 	cellsSvc := cells.NewService(cellsStore, usersSvc.GetSecret())
+
+	// Create dev user in dev mode
+	if cfg.Dev {
+		ctx := context.Background()
+		// Check if dev user exists
+		if _, err := usersStore.GetByID(ctx, devUserID); err != nil {
+			// Create dev user
+			now := time.Now()
+			devUser := &users.User{
+				ID:        devUserID,
+				Email:     "dev@example.com",
+				Name:      "Developer",
+				Password:  "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy", // "password"
+				CreatedAt: now,
+				UpdatedAt: now,
+			}
+			usersStore.Create(ctx, devUser)
+			slog.Info("Created dev user", "id", devUserID, "email", "dev@example.com")
+		}
+	}
 
 	s := &Server{
 		app:       mizu.New(),

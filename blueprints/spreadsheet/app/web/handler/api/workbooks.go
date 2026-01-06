@@ -120,11 +120,21 @@ func (h *Workbook) Update(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, wb)
 }
 
-// Delete deletes a workbook.
+// Delete deletes a workbook and all its sheets.
 func (h *Workbook) Delete(c *mizu.Ctx) error {
 	id := c.Param("id")
+	ctx := c.Request().Context()
 
-	if err := h.workbooks.Delete(c.Request().Context(), id); err != nil {
+	// First delete all sheets in the workbook (this will cascade delete cells)
+	sheetList, err := h.sheets.List(ctx, id)
+	if err == nil {
+		for _, sheet := range sheetList {
+			// Note: Sheet deletion should cascade to cells via the store
+			h.sheets.Delete(ctx, sheet.ID)
+		}
+	}
+
+	if err := h.workbooks.Delete(ctx, id); err != nil {
 		if err == workbooks.ErrNotFound {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "workbook not found"})
 		}
