@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+const isDesktop = process.env.DESKTOP === 'true'
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -10,7 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../../assets/static/dist',
+    outDir: isDesktop ? '../desktop/build/frontend' : '../../assets/static/dist',
     emptyOutDir: true,
     // Enable minification and tree-shaking optimizations
     minify: 'esbuild',
@@ -18,9 +20,10 @@ export default defineConfig({
     // Increase chunk size warning limit (we're handling chunking manually)
     chunkSizeWarningLimit: 600,
     rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'src/main.tsx'),
-      },
+      // For desktop builds, use index.html as entry; for web builds, use main.tsx directly
+      input: isDesktop
+        ? path.resolve(__dirname, 'index.html')
+        : { main: path.resolve(__dirname, 'src/main.tsx') },
       output: {
         entryFileNames: 'js/[name].js',
         chunkFileNames: 'js/[name]-[hash].js',

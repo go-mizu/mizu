@@ -9,21 +9,24 @@ interface RateLimitEntry {
 // In-memory rate limiter (resets on worker restart)
 const rateLimitStore = new Map<string, RateLimitEntry>();
 
-// Cleanup old entries periodically
-setInterval(() => {
+// Cleanup old entries on each request (lazy cleanup)
+function cleanupExpiredEntries() {
   const now = Date.now();
   for (const [key, entry] of rateLimitStore.entries()) {
     if (entry.resetAt < now) {
       rateLimitStore.delete(key);
     }
   }
-}, 60000); // Every minute
+}
 
 export function rateLimit(limit: number, windowMs: number) {
   return createMiddleware<{
     Bindings: Env;
     Variables: Variables;
   }>(async (c, next) => {
+    // Lazy cleanup of expired entries
+    cleanupExpiredEntries();
+
     // Get client IP
     const ip =
       c.req.header('cf-connecting-ip') ??

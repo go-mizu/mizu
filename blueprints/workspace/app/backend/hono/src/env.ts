@@ -2,6 +2,7 @@ export interface Env {
   // Cloudflare bindings
   DB: D1Database;
   UPLOADS: R2Bucket;
+  ASSETS?: Fetcher;
 
   // Environment variables
   ENVIRONMENT: string;

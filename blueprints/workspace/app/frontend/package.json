@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "dev:desktop": "DESKTOP=true vite --host",
+    "build:desktop": "DESKTOP=true vite build"
   },
   "dependencies": {
     "@blocknote/code-block": "^0.45.0",

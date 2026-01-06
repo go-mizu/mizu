@@ -126,9 +126,49 @@ install-chrome: ## Install Chrome/Chromium (macOS only)
 		echo "  Or download from: https://www.google.com/chrome/"; \
 	fi
 
+# Desktop application targets
+DESKTOP_DIR := app/desktop
+CGO_LDFLAGS_DARWIN := -mmacosx-version-min=11.0
+
+.PHONY: desktop-dev
+desktop-dev: ## Run desktop app in development mode
+	@cd $(DESKTOP_DIR) && CGO_LDFLAGS="$(CGO_LDFLAGS_DARWIN)" GOWORK=off wails dev
+
+.PHONY: desktop-build
+desktop-build: ## Build desktop app for current platform
+	@cd $(DESKTOP_DIR) && CGO_LDFLAGS="$(CGO_LDFLAGS_DARWIN)" GOWORK=off wails build -clean
+
+.PHONY: desktop-build-darwin
+desktop-build-darwin: ## Build desktop app for macOS (universal binary)
+	@cd $(DESKTOP_DIR) && CGO_LDFLAGS="$(CGO_LDFLAGS_DARWIN)" GOWORK=off wails build -clean -platform darwin/universal
+
+.PHONY: desktop-build-windows
+desktop-build-windows: ## Build desktop app for Windows (amd64)
+	@cd $(DESKTOP_DIR) && GOWORK=off wails build -clean -platform windows/amd64
+
+.PHONY: desktop-build-linux
+desktop-build-linux: ## Build desktop app for Linux (amd64)
+	@cd $(DESKTOP_DIR) && GOWORK=off wails build -clean -platform linux/amd64
+
+.PHONY: desktop-build-all
+desktop-build-all: ## Build desktop app for all platforms
+	@echo "Building for macOS..."
+	@cd $(DESKTOP_DIR) && CGO_LDFLAGS="$(CGO_LDFLAGS_DARWIN)" GOWORK=off wails build -clean -platform darwin/universal
+	@echo "Building for Windows..."
+	@cd $(DESKTOP_DIR) && GOWORK=off wails build -clean -platform windows/amd64
+	@echo "Building for Linux..."
+	@cd $(DESKTOP_DIR) && GOWORK=off wails build -clean -platform linux/amd64
+	@echo "All desktop builds complete!"
+
+.PHONY: desktop-clean
+desktop-clean: ## Clean desktop build artifacts
+	@rm -rf $(DESKTOP_DIR)/build/bin
+	@rm -rf $(DESKTOP_DIR)/build/frontend
+	@echo "Desktop build artifacts cleaned"
+
 .PHONY: help
 help: ## Show available commands
 	@echo ""
 	@grep -E '^[a-zA-Z0-9_\-]+:.*?## ' $(MAKEFILE_LIST) | \
-	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	  sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
