@@ -49,6 +49,11 @@ func (h *Auth) Login(c *mizu.Ctx) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 	}
 
+	// Verify session was created
+	if session == nil || session.ID == "" {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create session"})
+	}
+
 	setSessionCookie(c, session)
 	return c.JSON(http.StatusOK, user)
 }
@@ -83,15 +88,22 @@ func setSessionCookie(c *mizu.Ctx, session *users.Session) {
 	// Determine if we should set Secure flag based on request
 	secure := c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https"
 
-	http.SetCookie(c.Writer(), &http.Cookie{
+	cookie := &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    session.ID,
 		Path:     "/",
-		Expires:  session.ExpiresAt,
+		MaxAge:   30 * 24 * 60 * 60, // 30 days in seconds
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+
+	// Also set Expires for older browsers that don't support MaxAge
+	if !session.ExpiresAt.IsZero() {
+		cookie.Expires = session.ExpiresAt
+	}
+
+	http.SetCookie(c.Writer(), cookie)
 }
 
 func clearSessionCookie(c *mizu.Ctx) {

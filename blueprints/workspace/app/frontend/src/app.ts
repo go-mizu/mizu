@@ -117,7 +117,11 @@ function initSidebar() {
   if (addPageBtn) {
     addPageBtn.addEventListener('click', async () => {
       const workspaceId = addPageBtn.dataset.workspace
-      if (!workspaceId) return
+      const workspaceSlug = getWorkspaceSlug()
+      if (!workspaceId || !workspaceSlug) {
+        console.error('Workspace not found')
+        return
+      }
 
       try {
         const page = await api.post<{ id: string }>('/pages', {
@@ -126,13 +130,18 @@ function initSidebar() {
           parent_type: 'workspace',
           parent_id: workspaceId,
         })
-        const workspaceSlug = window.location.pathname.split('/')[2]
         window.location.href = `/w/${workspaceSlug}/p/${page.id}`
       } catch (err) {
         console.error('Failed to create page:', err)
       }
     })
   }
+}
+
+// Helper to safely get workspace slug from URL
+function getWorkspaceSlug(): string | null {
+  const match = window.location.pathname.match(/^\/w\/([^/]+)/)
+  return match ? match[1] : null
 }
 
 // Keyboard shortcuts
@@ -146,7 +155,7 @@ function initKeyboardShortcuts() {
         searchInput.focus()
       } else {
         // Navigate to search page
-        const workspaceSlug = window.location.pathname.split('/')[2]
+        const workspaceSlug = getWorkspaceSlug()
         if (workspaceSlug) {
           window.location.href = `/w/${workspaceSlug}/search`
         }
@@ -221,7 +230,8 @@ function initSearch() {
       searchResults.innerHTML = '<div class="results-loading">Searching...</div>'
 
       try {
-        const workspaceSlug = window.location.pathname.split('/')[2]
+        const workspaceSlug = getWorkspaceSlug()
+        if (!workspaceSlug) return
         const ws = await api.get<{ id: string }>(`/workspaces/${workspaceSlug}`)
         const results = await api.get<{ id: string; title: string; icon?: string; snippet?: string }[]>(
           `/search?workspace_id=${ws.id}&q=${encodeURIComponent(query)}`
@@ -321,7 +331,8 @@ function initSettings() {
   if (workspaceSettingsForm) {
     workspaceSettingsForm.addEventListener('submit', async (e) => {
       e.preventDefault()
-      const workspaceSlug = window.location.pathname.split('/')[2]
+      const workspaceSlug = getWorkspaceSlug()
+      if (!workspaceSlug) return
 
       try {
         const ws = await api.get<{ id: string }>(`/workspaces/${workspaceSlug}`)
@@ -346,7 +357,8 @@ function initSettings() {
   if (inviteForm) {
     inviteForm.addEventListener('submit', async (e) => {
       e.preventDefault()
-      const workspaceSlug = window.location.pathname.split('/')[2]
+      const workspaceSlug = getWorkspaceSlug()
+      if (!workspaceSlug) return
 
       try {
         const ws = await api.get<{ id: string }>(`/workspaces/${workspaceSlug}`)
@@ -370,7 +382,8 @@ function initSettings() {
         return
       }
 
-      const workspaceSlug = window.location.pathname.split('/')[2]
+      const workspaceSlug = getWorkspaceSlug()
+      if (!workspaceSlug) return
 
       try {
         const ws = await api.get<{ id: string }>(`/workspaces/${workspaceSlug}`)
@@ -390,7 +403,8 @@ function initQuickActions() {
   if (newPageAction) {
     newPageAction.addEventListener('click', async () => {
       const workspaceId = newPageAction.dataset.workspace
-      if (!workspaceId) return
+      const workspaceSlug = getWorkspaceSlug()
+      if (!workspaceId || !workspaceSlug) return
 
       try {
         const page = await api.post<{ id: string }>('/pages', {
@@ -399,7 +413,6 @@ function initQuickActions() {
           parent_type: 'workspace',
           parent_id: workspaceId,
         })
-        const workspaceSlug = window.location.pathname.split('/')[2]
         window.location.href = `/w/${workspaceSlug}/p/${page.id}`
       } catch (err) {
         console.error('Failed to create page:', err)
@@ -411,14 +424,14 @@ function initQuickActions() {
   if (newDatabaseAction) {
     newDatabaseAction.addEventListener('click', async () => {
       const workspaceId = newDatabaseAction.dataset.workspace
-      if (!workspaceId) return
+      const workspaceSlug = getWorkspaceSlug()
+      if (!workspaceId || !workspaceSlug) return
 
       try {
         const db = await api.post<{ id: string }>('/databases', {
           workspace_id: workspaceId,
           name: 'Untitled Database',
         })
-        const workspaceSlug = window.location.pathname.split('/')[2]
         window.location.href = `/w/${workspaceSlug}/d/${db.id}`
       } catch (err) {
         console.error('Failed to create database:', err)
