@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS charts (
     size        JSON NOT NULL,
     data_ranges JSON NOT NULL,
     title       JSON,
+    subtitle    JSON,
     legend      JSON,
     axes        JSON,
     series      JSON,
@@ -150,6 +151,8 @@ CREATE TABLE IF NOT EXISTS charts (
     updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sheet_id) REFERENCES sheets(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_charts_sheet ON charts(sheet_id);
 
 -- Pivot tables table
 CREATE TABLE IF NOT EXISTS pivot_tables (

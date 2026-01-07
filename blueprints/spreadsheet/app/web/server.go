@@ -18,6 +18,7 @@ import (
 	"github.com/go-mizu/blueprints/spreadsheet/app/web/handler/api"
 	"github.com/go-mizu/blueprints/spreadsheet/assets"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/cells"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/charts"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/export"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/importer"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
@@ -45,6 +46,7 @@ type Server struct {
 	workbooks workbooks.API
 	sheets    sheets.API
 	cells     cells.API
+	charts    charts.API
 	exporter  export.API
 	importer  importer.API
 
@@ -53,6 +55,7 @@ type Server struct {
 	workbookHandlers     *api.Workbook
 	sheetHandlers        *api.Sheet
 	cellHandlers         *api.Cell
+	chartsHandlers       *api.Charts
 	importExportHandlers *api.ImportExport
 	uiHandlers           *handler.UI
 }
@@ -87,12 +90,17 @@ func New(cfg Config) (*Server, error) {
 	workbooksStore := duckdb.NewWorkbooksStore(db)
 	sheetsStore := duckdb.NewSheetsStore(db)
 	cellsStore := duckdb.NewCellsStore(db)
+	chartsStore := duckdb.NewChartsStore(db)
 
 	// Create services
 	usersSvc := users.NewService(usersStore)
 	workbooksSvc := workbooks.NewService(workbooksStore)
 	sheetsSvc := sheets.NewService(sheetsStore)
 	cellsSvc := cells.NewService(cellsStore, usersSvc.GetSecret())
+
+	// Create cell data provider adapter for charts
+	cellProvider := &cellDataProviderAdapter{cells: cellsSvc}
+	chartsSvc := charts.NewService(chartsStore, cellProvider)
 
 	// Wire up sheet resolver for cross-sheet formula evaluation
 	cellsSvc.SetSheetResolver(sheetsSvc)
@@ -156,6 +164,300 @@ func New(cfg Config) (*Server, error) {
 					}
 					slog.Info("Created sample workbook", "id", wb.ID)
 				}
+
+				// Create Charts demo sheet
+				chartsSheet, err := sheetsSvc.Create(ctx, &sheets.CreateIn{
+					WorkbookID: wb.ID,
+					Name:       "Charts",
+					Index:      1,
+					CreatedBy:  devUserID,
+				})
+				if err == nil {
+					// Add demo data for charts
+					chartsDemoData := [][]interface{}{
+						// Monthly Sales Data (A1:E7) - Row 0-6
+						{"Month", "Sales", "Expenses", "Profit", "Growth"},
+						{"Jan", 12000, 8000, 4000, 0},
+						{"Feb", 15000, 9000, 6000, 50},
+						{"Mar", 18000, 10000, 8000, 33},
+						{"Apr", 14000, 9500, 4500, -44},
+						{"May", 20000, 11000, 9000, 100},
+						{"Jun", 25000, 12000, 13000, 44},
+						// Blank row - Row 7
+						{},
+						// Regional Data (A9:C13) - Row 8-12
+						{"Region", "Q1 Sales", "Q2 Sales"},
+						{"North", 45000, 52000},
+						{"South", 38000, 41000},
+						{"East", 32000, 45000},
+						{"West", 28000, 35000},
+						// Blank row - Row 13
+						{},
+						// Category Distribution (A15:B19) - Row 14-18
+						{"Category", "Market Share"},
+						{"Product A", 35},
+						{"Product B", 25},
+						{"Product C", 22},
+						{"Product D", 18},
+						// Blank row - Row 19
+						{},
+						// Radar Chart Data (A21:F26) - Row 20-25
+						{"Metric", "Team A", "Team B", "Team C", "Team D", "Team E"},
+						{"Speed", 85, 72, 90, 68, 78},
+						{"Quality", 78, 88, 75, 92, 82},
+						{"Efficiency", 92, 75, 80, 85, 70},
+						{"Innovation", 70, 82, 88, 75, 90},
+						{"Collaboration", 88, 90, 72, 80, 85},
+						// Blank row - Row 26
+						{},
+						// Scatter Plot Data (A28:C38) - Row 27-37
+						{"Item", "X Value", "Y Value"},
+						{"Point 1", 10, 25},
+						{"Point 2", 15, 35},
+						{"Point 3", 22, 42},
+						{"Point 4", 28, 38},
+						{"Point 5", 35, 55},
+						{"Point 6", 42, 48},
+						{"Point 7", 50, 65},
+						{"Point 8", 58, 72},
+						{"Point 9", 65, 78},
+						{"Point 10", 75, 85},
+						// Blank row - Row 38
+						{},
+						// Stacked Data (A40:D45) - Row 39-44
+						{"Quarter", "Hardware", "Software", "Services"},
+						{"Q1", 25000, 35000, 18000},
+						{"Q2", 28000, 40000, 22000},
+						{"Q3", 32000, 45000, 25000},
+						{"Q4", 38000, 52000, 30000},
+					}
+					for row, rowData := range chartsDemoData {
+						for col, value := range rowData {
+							if value == nil {
+								continue
+							}
+							var formula string
+							var cellValue interface{}
+							if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
+								formula = strVal
+							} else {
+								cellValue = value
+							}
+							cellsSvc.Set(ctx, chartsSheet.ID, row, col, &cells.SetCellIn{
+								Value:   cellValue,
+								Formula: formula,
+							})
+						}
+					}
+
+					// Create demo charts
+					// 1. Line Chart - Monthly Sales Trend
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Sales Trend",
+						ChartType: charts.ChartTypeLine,
+						Position:  charts.Position{Row: 0, Col: 6, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 500, Height: 300},
+						DataRanges: []charts.DataRange{{
+							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Monthly Sales Trend", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Axes: &charts.AxesConfig{
+							XAxis: &charts.AxisConfig{GridLines: false},
+							YAxis: &charts.AxisConfig{GridLines: true, Title: &charts.ChartTitle{Text: "Amount ($)"}},
+						},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 2. Column Chart - Regional Comparison
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Regional Sales",
+						ChartType: charts.ChartTypeColumn,
+						Position:  charts.Position{Row: 0, Col: 12, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 450, Height: 300},
+						DataRanges: []charts.DataRange{{
+							StartRow: 8, StartCol: 0, EndRow: 12, EndCol: 2,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Regional Sales Comparison", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 3. Pie Chart - Market Share
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Market Share",
+						ChartType: charts.ChartTypePie,
+						Position:  charts.Position{Row: 16, Col: 6, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 400, Height: 350},
+						DataRanges: []charts.DataRange{{
+							StartRow: 14, StartCol: 0, EndRow: 18, EndCol: 1,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Product Market Share", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "right"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 4. Doughnut Chart - Same data as pie
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Market Share (Doughnut)",
+						ChartType: charts.ChartTypeDoughnut,
+						Position:  charts.Position{Row: 16, Col: 12, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 400, Height: 350},
+						DataRanges: []charts.DataRange{{
+							StartRow: 14, StartCol: 0, EndRow: 18, EndCol: 1,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Market Share (Doughnut)", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "right"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true, CutoutPercentage: 50},
+					})
+
+					// 5. Bar Chart - Regional Comparison (Horizontal)
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Regional Bar",
+						ChartType: charts.ChartTypeBar,
+						Position:  charts.Position{Row: 32, Col: 6, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 450, Height: 300},
+						DataRanges: []charts.DataRange{{
+							StartRow: 8, StartCol: 0, EndRow: 12, EndCol: 2,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Regional Sales (Horizontal)", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 6. Area Chart - Sales Trend
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Sales Area",
+						ChartType: charts.ChartTypeArea,
+						Position:  charts.Position{Row: 32, Col: 12, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 500, Height: 300},
+						DataRanges: []charts.DataRange{{
+							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Sales, Expenses & Profit (Area)", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 7. Stacked Column Chart
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Revenue Breakdown",
+						ChartType: charts.ChartTypeStackedColumn,
+						Position:  charts.Position{Row: 48, Col: 6, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 500, Height: 320},
+						DataRanges: []charts.DataRange{{
+							StartRow: 39, StartCol: 0, EndRow: 43, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Quarterly Revenue by Segment", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 8. Radar Chart - Team Performance
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Team Performance",
+						ChartType: charts.ChartTypeRadar,
+						Position:  charts.Position{Row: 48, Col: 12, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 450, Height: 350},
+						DataRanges: []charts.DataRange{{
+							StartRow: 20, StartCol: 0, EndRow: 25, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Team Performance Comparison", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 9. Scatter Chart - Correlation
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "XY Correlation",
+						ChartType: charts.ChartTypeScatter,
+						Position:  charts.Position{Row: 64, Col: 6, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 480, Height: 320},
+						DataRanges: []charts.DataRange{{
+							StartRow: 27, StartCol: 1, EndRow: 37, EndCol: 2,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "X vs Y Correlation", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: false, Position: "none"},
+						Axes: &charts.AxesConfig{
+							XAxis: &charts.AxisConfig{Title: &charts.ChartTitle{Text: "X Value"}, GridLines: true},
+							YAxis: &charts.AxisConfig{Title: &charts.ChartTitle{Text: "Y Value"}, GridLines: true},
+						},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 10. Stacked Bar Chart (Horizontal Stacked)
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Revenue Stacked Bar",
+						ChartType: charts.ChartTypeStackedBar,
+						Position:  charts.Position{Row: 64, Col: 12, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 500, Height: 320},
+						DataRanges: []charts.DataRange{{
+							StartRow: 39, StartCol: 0, EndRow: 43, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Revenue by Segment (Horizontal)", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 11. Stacked Area Chart
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Sales Stacked Area",
+						ChartType: charts.ChartTypeStackedArea,
+						Position:  charts.Position{Row: 80, Col: 6, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 500, Height: 300},
+						DataRanges: []charts.DataRange{{
+							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Sales Trend (Stacked Area)", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					// 12. Combo Chart - Mixed Line and Column
+					chartsSvc.Create(ctx, &charts.CreateIn{
+						SheetID:   chartsSheet.ID,
+						Name:      "Sales Combo",
+						ChartType: charts.ChartTypeCombo,
+						Position:  charts.Position{Row: 80, Col: 12, OffsetX: 0, OffsetY: 0},
+						Size:      charts.Size{Width: 500, Height: 300},
+						DataRanges: []charts.DataRange{{
+							StartRow: 0, StartCol: 0, EndRow: 6, EndCol: 3,
+							HasHeader: true,
+						}},
+						Title: &charts.ChartTitle{Text: "Sales vs Profit (Combo)", FontSize: 16, Bold: true},
+						Legend: &charts.LegendConfig{Enabled: true, Position: "bottom"},
+						Series: []charts.SeriesConfig{
+							{Name: "Sales", ChartType: charts.ChartTypeColumn, Color: "#4CAF50"},
+							{Name: "Expenses", ChartType: charts.ChartTypeColumn, Color: "#FF9800"},
+							{Name: "Profit", ChartType: charts.ChartTypeLine, Color: "#2196F3", BorderWidth: 3},
+						},
+						Options: &charts.ChartOptions{Animated: true, TooltipEnabled: true, Interactive: true},
+					})
+
+					slog.Info("Created Charts demo sheet with 12 chart types", "id", chartsSheet.ID)
+				}
 			}
 		}
 	}
@@ -172,6 +474,7 @@ func New(cfg Config) (*Server, error) {
 		workbooks: workbooksSvc,
 		sheets:    sheetsSvc,
 		cells:     cellsSvc,
+		charts:    chartsSvc,
 		exporter:  exportSvc,
 		importer:  importSvc,
 	}
@@ -187,6 +490,7 @@ func New(cfg Config) (*Server, error) {
 	s.workbookHandlers = api.NewWorkbook(workbooksSvc, sheetsSvc, s.getUserID)
 	s.sheetHandlers = api.NewSheet(sheetsSvc, s.getUserID)
 	s.cellHandlers = api.NewCell(cellsSvc, sheetsSvc, s.getUserID)
+	s.chartsHandlers = api.NewCharts(chartsSvc, s.getUserID)
 	s.importExportHandlers = api.NewImportExport(exportSvc, importSvc, s.getUserID)
 	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workbooksSvc)
 
@@ -315,5 +619,58 @@ func (s *Server) setupRoutes() {
 		api.Get("/sheets/{id}/export", s.authRequired(s.importExportHandlers.ExportSheet))
 		api.Post("/sheets/{id}/export", s.authRequired(s.importExportHandlers.ExportSheet))
 		api.Post("/sheets/{id}/import", s.authRequired(s.importExportHandlers.ImportToSheet))
+
+		// Charts
+		api.Post("/charts", s.authRequired(s.chartsHandlers.Create))
+		api.Get("/charts/{id}", s.authRequired(s.chartsHandlers.Get))
+		api.Patch("/charts/{id}", s.authRequired(s.chartsHandlers.Update))
+		api.Delete("/charts/{id}", s.authRequired(s.chartsHandlers.Delete))
+		api.Post("/charts/{id}/duplicate", s.authRequired(s.chartsHandlers.Duplicate))
+		api.Get("/charts/{id}/data", s.authRequired(s.chartsHandlers.GetData))
+		api.Get("/sheets/{sheetId}/charts", s.authRequired(s.chartsHandlers.ListBySheet))
 	})
+}
+
+// ChartService returns the charts service.
+func (s *Server) ChartService() charts.API { return s.charts }
+
+// cellDataProviderAdapter adapts cells.API to charts.CellDataProvider.
+type cellDataProviderAdapter struct {
+	cells cells.API
+}
+
+// GetCellValues retrieves cell values in a range.
+func (a *cellDataProviderAdapter) GetCellValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error) {
+	cellList, err := a.cells.GetRange(ctx, sheetID, startRow, startCol, endRow, endCol)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate dimensions
+	numRows := endRow - startRow + 1
+	numCols := endCol - startCol + 1
+
+	// Initialize 2D array
+	result := make([][]interface{}, numRows)
+	for i := range result {
+		result[i] = make([]interface{}, numCols)
+	}
+
+	// Populate with cell values
+	for _, cell := range cellList {
+		rowIdx := cell.Row - startRow
+		colIdx := cell.Col - startCol
+		if rowIdx >= 0 && rowIdx < numRows && colIdx >= 0 && colIdx < numCols {
+			// Use display value if available (for formulas), otherwise use value
+			if cell.Formula != "" && cell.Display != "" {
+				result[rowIdx][colIdx] = cell.Display
+			} else if cell.Value != nil {
+				result[rowIdx][colIdx] = cell.Value
+			} else {
+				result[rowIdx][colIdx] = cell.Display
+			}
+		}
+	}
+
+	return result, nil
 }
