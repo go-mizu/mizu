@@ -8,32 +8,32 @@ import (
 
 // Sheet represents a single sheet within a workbook.
 type Sheet struct {
-	ID               string         `json:"id"`
-	WorkbookID       string         `json:"workbook_id"`
-	Name             string         `json:"name"`
-	Index            int            `json:"index"`
-	Hidden           bool           `json:"hidden"`
-	Color            string         `json:"color,omitempty"`
-	GridColor        string         `json:"grid_color"`
-	FrozenRows       int            `json:"frozen_rows"`
-	FrozenCols       int            `json:"frozen_cols"`
-	DefaultRowHeight int            `json:"default_row_height"`
-	DefaultColWidth  int            `json:"default_col_width"`
-	RowHeights       map[int]int    `json:"row_heights,omitempty"`
-	ColWidths        map[int]int    `json:"col_widths,omitempty"`
-	HiddenRows       []int          `json:"hidden_rows,omitempty"`
-	HiddenCols       []int          `json:"hidden_cols,omitempty"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
+	ID               string      `json:"id"`
+	WorkbookID       string      `json:"workbookId"`
+	Name             string      `json:"name"`
+	Index            int         `json:"index"`
+	Hidden           bool        `json:"hidden"`
+	Color            string      `json:"color,omitempty"`
+	GridColor        string      `json:"gridColor"`
+	FrozenRows       int         `json:"frozenRows"`
+	FrozenCols       int         `json:"frozenCols"`
+	DefaultRowHeight int         `json:"defaultRowHeight"`
+	DefaultColWidth  int         `json:"defaultColWidth"`
+	RowHeights       map[int]int `json:"rowHeights,omitempty"`
+	ColWidths        map[int]int `json:"colWidths,omitempty"`
+	HiddenRows       []int       `json:"hiddenRows,omitempty"`
+	HiddenCols       []int       `json:"hiddenCols,omitempty"`
+	CreatedAt        time.Time   `json:"createdAt"`
+	UpdatedAt        time.Time   `json:"updatedAt"`
 }
 
 // CreateIn contains sheet creation input.
 type CreateIn struct {
-	WorkbookID string `json:"workbook_id"`
+	WorkbookID string `json:"workbookId"`
 	Name       string `json:"name"`
 	Index      int    `json:"index"`
 	Color      string `json:"color,omitempty"`
-	CreatedBy  string `json:"created_by"`
+	CreatedBy  string `json:"createdBy"`
 }
 
 // UpdateIn contains sheet update input.
@@ -42,11 +42,11 @@ type UpdateIn struct {
 	Index            int    `json:"index,omitempty"`
 	Hidden           *bool  `json:"hidden,omitempty"`
 	Color            string `json:"color,omitempty"`
-	GridColor        string `json:"grid_color,omitempty"`
-	FrozenRows       *int   `json:"frozen_rows,omitempty"`
-	FrozenCols       *int   `json:"frozen_cols,omitempty"`
-	DefaultRowHeight *int   `json:"default_row_height,omitempty"`
-	DefaultColWidth  *int   `json:"default_col_width,omitempty"`
+	GridColor        string `json:"gridColor,omitempty"`
+	FrozenRows       *int   `json:"frozenRows,omitempty"`
+	FrozenCols       *int   `json:"frozenCols,omitempty"`
+	DefaultRowHeight *int   `json:"defaultRowHeight,omitempty"`
+	DefaultColWidth  *int   `json:"defaultColWidth,omitempty"`
 }
 
 // API defines the sheets service interface.

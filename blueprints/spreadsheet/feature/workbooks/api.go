@@ -10,28 +10,28 @@ import (
 type Workbook struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
-	OwnerID   string    `json:"owner_id"`
+	OwnerID   string    `json:"ownerId"`
 	Settings  Settings  `json:"settings"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Settings contains workbook-level settings.
 type Settings struct {
-	Locale          string `json:"locale"`           // e.g., "en-US"
-	TimeZone        string `json:"time_zone"`        // e.g., "America/New_York"
-	CalculationMode string `json:"calculation_mode"` // "auto" or "manual"
-	IterativeCalc   bool   `json:"iterative_calc"`
-	MaxIterations   int    `json:"max_iterations"`
-	MaxChange       float64 `json:"max_change"`
+	Locale          string  `json:"locale"`          // e.g., "en-US"
+	TimeZone        string  `json:"timeZone"`        // e.g., "America/New_York"
+	CalculationMode string  `json:"calculationMode"` // "auto" or "manual"
+	IterativeCalc   bool    `json:"iterativeCalc"`
+	MaxIterations   int     `json:"maxIterations"`
+	MaxChange       float64 `json:"maxChange"`
 }
 
 // CreateIn contains workbook creation input.
 type CreateIn struct {
 	Name      string   `json:"name"`
-	OwnerID   string   `json:"owner_id"`
+	OwnerID   string   `json:"ownerId"`
 	Settings  Settings `json:"settings,omitempty"`
-	CreatedBy string   `json:"created_by"`
+	CreatedBy string   `json:"createdBy"`
 }
 
 // UpdateIn contains workbook update input.
