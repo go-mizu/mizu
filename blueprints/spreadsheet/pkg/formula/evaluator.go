@@ -13,11 +13,15 @@ type CellGetter interface {
 	GetCellValue(ctx context.Context, sheetID string, row, col int) (interface{}, error)
 	GetRangeValues(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([][]interface{}, error)
 	GetNamedRange(ctx context.Context, name string) (sheetID string, startRow, startCol, endRow, endCol int, err error)
+	// ResolveSheetName resolves a sheet name to a sheet ID within a workbook.
+	// If the name is already a valid ID, it returns it unchanged.
+	ResolveSheetName(ctx context.Context, workbookID, sheetName string) (sheetID string, err error)
 }
 
 // EvalContext holds context for formula evaluation.
 type EvalContext struct {
 	SheetID     string
+	WorkbookID  string
 	CurrentRow  int
 	CurrentCol  int
 	CellGetter  CellGetter
@@ -85,8 +89,24 @@ func (e *Evaluator) evaluateReference(ctx context.Context, node *ASTNode) (inter
 
 	// Check for sheet prefix
 	if idx := strings.Index(ref, "!"); idx > 0 {
-		sheetID = ref[:idx]
+		sheetName := ref[:idx]
 		ref = ref[idx+1:]
+
+		// Strip quotes from sheet name if present
+		sheetName = strings.Trim(sheetName, "'")
+
+		// Resolve sheet name to ID
+		if e.ctx.CellGetter != nil && e.ctx.WorkbookID != "" {
+			resolvedID, err := e.ctx.CellGetter.ResolveSheetName(ctx, e.ctx.WorkbookID, sheetName)
+			if err == nil && resolvedID != "" {
+				sheetID = resolvedID
+			} else {
+				// If resolution fails, use the name as-is (might be an ID already)
+				sheetID = sheetName
+			}
+		} else {
+			sheetID = sheetName
+		}
 	}
 
 	row, col, err := ParseCellRef(ref)
@@ -107,8 +127,24 @@ func (e *Evaluator) evaluateRange(ctx context.Context, node *ASTNode) (interface
 
 	// Check for sheet prefix
 	if idx := strings.Index(rangeStr, "!"); idx > 0 {
-		sheetID = rangeStr[:idx]
+		sheetName := rangeStr[:idx]
 		rangeStr = rangeStr[idx+1:]
+
+		// Strip quotes from sheet name if present
+		sheetName = strings.Trim(sheetName, "'")
+
+		// Resolve sheet name to ID
+		if e.ctx.CellGetter != nil && e.ctx.WorkbookID != "" {
+			resolvedID, err := e.ctx.CellGetter.ResolveSheetName(ctx, e.ctx.WorkbookID, sheetName)
+			if err == nil && resolvedID != "" {
+				sheetID = resolvedID
+			} else {
+				// If resolution fails, use the name as-is (might be an ID already)
+				sheetID = sheetName
+			}
+		} else {
+			sheetID = sheetName
+		}
 	}
 
 	startRow, startCol, endRow, endCol, err := ParseRangeRef(rangeStr)

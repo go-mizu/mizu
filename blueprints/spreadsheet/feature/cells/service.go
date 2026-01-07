@@ -17,14 +17,26 @@ var (
 	ErrInvalidRange = errors.New("invalid range")
 )
 
+// SheetResolver resolves sheet names to IDs.
+type SheetResolver interface {
+	ResolveSheetName(ctx context.Context, workbookID, sheetName string) (string, error)
+	GetSheetWorkbook(ctx context.Context, sheetID string) (string, error)
+}
+
 // Service implements the cells API.
 type Service struct {
-	store Store
+	store         Store
+	sheetResolver SheetResolver
 }
 
 // NewService creates a new cells service.
 func NewService(store Store, secret string) *Service {
 	return &Service{store: store}
+}
+
+// SetSheetResolver sets the sheet resolver for cross-sheet formula evaluation.
+func (s *Service) SetSheetResolver(resolver SheetResolver) {
+	s.sheetResolver = resolver
 }
 
 // Get retrieves a cell by position.
@@ -419,12 +431,22 @@ func (s *Service) evaluateFormula(ctx context.Context, sheetID, formulaStr strin
 		return nil, "", err
 	}
 
+	// Get workbook ID for cross-sheet references
+	var workbookID string
+	if s.sheetResolver != nil {
+		workbookID, _ = s.sheetResolver.GetSheetWorkbook(ctx, sheetID)
+	}
+
 	// Create cell getter adapter
-	cellGetter := &cellGetterAdapter{store: s.store}
+	cellGetter := &cellGetterAdapter{
+		store:         s.store,
+		sheetResolver: s.sheetResolver,
+	}
 
 	// Create evaluator context
 	evalCtx := &formula.EvalContext{
 		SheetID:    sheetID,
+		WorkbookID: workbookID,
 		CurrentRow: row,
 		CurrentCol: col,
 		CellGetter: cellGetter,
@@ -446,7 +468,8 @@ func (s *Service) evaluateFormula(ctx context.Context, sheetID, formulaStr strin
 
 // cellGetterAdapter adapts Store to formula.CellGetter interface.
 type cellGetterAdapter struct {
-	store Store
+	store         Store
+	sheetResolver SheetResolver
 }
 
 func (a *cellGetterAdapter) GetCellValue(ctx context.Context, sheetID string, row, col int) (interface{}, error) {
@@ -489,6 +512,13 @@ func (a *cellGetterAdapter) GetRangeValues(ctx context.Context, sheetID string, 
 func (a *cellGetterAdapter) GetNamedRange(ctx context.Context, name string) (sheetID string, startRow, startCol, endRow, endCol int, err error) {
 	// Named ranges not implemented yet
 	return "", 0, 0, 0, 0, fmt.Errorf("named range not found: %s", name)
+}
+
+func (a *cellGetterAdapter) ResolveSheetName(ctx context.Context, workbookID, sheetName string) (string, error) {
+	if a.sheetResolver == nil {
+		return "", fmt.Errorf("sheet resolver not available")
+	}
+	return a.sheetResolver.ResolveSheetName(ctx, workbookID, sheetName)
 }
 
 // detectCellType detects the type of a cell value.

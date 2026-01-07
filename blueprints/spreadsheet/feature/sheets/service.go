@@ -214,3 +214,30 @@ func copyIntSlice(s []int) []int {
 	copy(result, s)
 	return result
 }
+
+// ResolveSheetName resolves a sheet name to a sheet ID within a workbook.
+// This implements the cells.SheetResolver interface.
+func (s *Service) ResolveSheetName(ctx context.Context, workbookID, sheetName string) (string, error) {
+	sheets, err := s.store.ListByWorkbook(ctx, workbookID)
+	if err != nil {
+		return "", err
+	}
+
+	for _, sheet := range sheets {
+		if sheet.Name == sheetName {
+			return sheet.ID, nil
+		}
+	}
+
+	return "", ErrNotFound
+}
+
+// GetSheetWorkbook returns the workbook ID for a sheet.
+// This implements the cells.SheetResolver interface.
+func (s *Service) GetSheetWorkbook(ctx context.Context, sheetID string) (string, error) {
+	sheet, err := s.store.GetByID(ctx, sheetID)
+	if err != nil {
+		return "", err
+	}
+	return sheet.WorkbookID, nil
+}
