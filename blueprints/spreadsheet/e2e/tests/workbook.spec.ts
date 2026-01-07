@@ -20,7 +20,7 @@ test.describe('Workbook API', () => {
       const workbook = data.workbook as Workbook;
       expect(workbook.id).toBeDefined();
       expect(workbook.name).toBe('My Spreadsheet');
-      expect(workbook.owner_id).toBeDefined();
+      expect(workbook.ownerId).toBeDefined();
     });
 
     test('should auto-create default sheet when creating workbook', async () => {

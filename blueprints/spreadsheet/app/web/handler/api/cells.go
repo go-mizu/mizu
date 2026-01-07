@@ -132,7 +132,7 @@ func (h *Cell) InsertRows(c *mizu.Ctx) error {
 	sheetID := c.Param("sheetID")
 
 	var in struct {
-		StartRow int `json:"startRow"`
+		RowIndex int `json:"rowIndex"`
 		Count    int `json:"count"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
@@ -143,7 +143,7 @@ func (h *Cell) InsertRows(c *mizu.Ctx) error {
 		in.Count = 1
 	}
 
-	if err := h.cells.InsertRows(c.Request().Context(), sheetID, in.StartRow, in.Count); err != nil {
+	if err := h.cells.InsertRows(c.Request().Context(), sheetID, in.RowIndex, in.Count); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -178,7 +178,7 @@ func (h *Cell) InsertCols(c *mizu.Ctx) error {
 	sheetID := c.Param("sheetID")
 
 	var in struct {
-		StartCol int `json:"startCol"`
+		ColIndex int `json:"colIndex"`
 		Count    int `json:"count"`
 	}
 	if err := c.BindJSON(&in, 1<<20); err != nil {
@@ -189,7 +189,7 @@ func (h *Cell) InsertCols(c *mizu.Ctx) error {
 		in.Count = 1
 	}
 
-	if err := h.cells.InsertCols(c.Request().Context(), sheetID, in.StartCol, in.Count); err != nil {
+	if err := h.cells.InsertCols(c.Request().Context(), sheetID, in.ColIndex, in.Count); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 

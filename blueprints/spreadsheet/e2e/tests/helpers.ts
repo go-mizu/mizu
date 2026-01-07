@@ -13,39 +13,39 @@ export interface User {
 export interface Workbook {
   id: string;
   name: string;
-  owner_id: string;
+  ownerId: string;
   settings?: Record<string, unknown>;
 }
 
 export interface Sheet {
   id: string;
-  workbook_id: string;
+  workbookId: string;
   name: string;
   index: number;
   hidden?: boolean;
   color?: string;
-  frozen_rows?: number;
-  frozen_cols?: number;
+  frozenRows?: number;
+  frozenCols?: number;
 }
 
 export interface Cell {
   id: string;
-  sheet_id: string;
+  sheetId: string;
   row: number;
   col: number;
   value: unknown;
   formula?: string;
   display?: string;
-  cell_type?: string;
+  type?: string;
 }
 
 export interface MergedRegion {
   id: string;
-  sheet_id: string;
-  start_row: number;
-  start_col: number;
-  end_row: number;
-  end_col: number;
+  sheetId: string;
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
 }
 
 // API Client for direct API testing
@@ -152,7 +152,7 @@ export class APIClient {
   async createSheet(workbookId: string, name: string, options?: { index?: number; color?: string }) {
     const res = await this.request.post(`${API_BASE}/sheets`, {
       headers: this.headers(),
-      data: { workbook_id: workbookId, name, ...options },
+      data: { workbookId, name, ...options },
     });
     return res;
   }
@@ -164,7 +164,7 @@ export class APIClient {
     return res;
   }
 
-  async updateSheet(id: string, data: { name?: string; color?: string; frozen_rows?: number; frozen_cols?: number }) {
+  async updateSheet(id: string, data: { name?: string; color?: string; frozenRows?: number; frozenCols?: number }) {
     const res = await this.request.patch(`${API_BASE}/sheets/${id}`, {
       headers: this.headers(),
       data,

@@ -13,8 +13,8 @@ type User struct {
 	Name      string    `json:"name"`
 	Password  string    `json:"-"` // Never expose password
 	Avatar    string    `json:"avatar,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // RegisterIn contains registration input.

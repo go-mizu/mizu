@@ -257,10 +257,10 @@ test.describe('Cell API', () => {
       expect(res.ok()).toBeTruthy();
 
       const merge = await res.json();
-      expect(merge.start_row).toBe(0);
-      expect(merge.start_col).toBe(0);
-      expect(merge.end_row).toBe(2);
-      expect(merge.end_col).toBe(2);
+      expect(merge.startRow).toBe(0);
+      expect(merge.startCol).toBe(0);
+      expect(merge.endRow).toBe(2);
+      expect(merge.endCol).toBe(2);
     });
 
     test('should get merged regions', async () => {

@@ -21,7 +21,7 @@ test.describe('Sheet API', () => {
       const sheet = (await res.json()) as Sheet;
       expect(sheet.id).toBeDefined();
       expect(sheet.name).toBe('New Sheet');
-      expect(sheet.workbook_id).toBe(workbookId);
+      expect(sheet.workbookId).toBe(workbookId);
       expect(sheet.hidden).toBeFalsy();
     });
 
@@ -95,12 +95,12 @@ test.describe('Sheet API', () => {
     test('should update frozen rows and columns', async () => {
       const sheet = await getFirstSheet(api, workbookId);
 
-      const res = await api.updateSheet(sheet.id, { frozen_rows: 2, frozen_cols: 1 });
+      const res = await api.updateSheet(sheet.id, { frozenRows: 2, frozenCols: 1 });
       expect(res.ok()).toBeTruthy();
 
       const updated = (await res.json()) as Sheet;
-      expect(updated.frozen_rows).toBe(2);
-      expect(updated.frozen_cols).toBe(1);
+      expect(updated.frozenRows).toBe(2);
+      expect(updated.frozenCols).toBe(1);
     });
 
     test('should update multiple properties at once', async () => {
@@ -109,14 +109,14 @@ test.describe('Sheet API', () => {
       const res = await api.updateSheet(sheet.id, {
         name: 'Updated Sheet',
         color: '#10B981',
-        frozen_rows: 1,
+        frozenRows: 1,
       });
       expect(res.ok()).toBeTruthy();
 
       const updated = (await res.json()) as Sheet;
       expect(updated.name).toBe('Updated Sheet');
       expect(updated.color).toBe('#10B981');
-      expect(updated.frozen_rows).toBe(1);
+      expect(updated.frozenRows).toBe(1);
     });
   });
 

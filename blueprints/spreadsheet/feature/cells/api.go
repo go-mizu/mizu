@@ -21,7 +21,7 @@ const (
 // Cell represents a single cell in a sheet.
 type Cell struct {
 	ID        string      `json:"id"`
-	SheetID   string      `json:"sheet_id"`
+	SheetID   string      `json:"sheetId"`
 	Row       int         `json:"row"`
 	Col       int         `json:"col"`
 	Value     interface{} `json:"value"`
@@ -31,38 +31,38 @@ type Cell struct {
 	Format    Format      `json:"format"`
 	Hyperlink *Hyperlink  `json:"hyperlink,omitempty"`
 	Note      string      `json:"note,omitempty"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
 // Format contains cell formatting options.
 type Format struct {
 	// Font
-	FontFamily    string `json:"font_family,omitempty"`
-	FontSize      int    `json:"font_size,omitempty"`
-	FontColor     string `json:"font_color,omitempty"`
+	FontFamily    string `json:"fontFamily,omitempty"`
+	FontSize      int    `json:"fontSize,omitempty"`
+	FontColor     string `json:"fontColor,omitempty"`
 	Bold          bool   `json:"bold,omitempty"`
 	Italic        bool   `json:"italic,omitempty"`
 	Underline     bool   `json:"underline,omitempty"`
 	Strikethrough bool   `json:"strikethrough,omitempty"`
 
 	// Fill
-	BackgroundColor string `json:"background_color,omitempty"`
+	BackgroundColor string `json:"backgroundColor,omitempty"`
 
 	// Alignment
-	HAlign       string `json:"h_align,omitempty"` // left, center, right
-	VAlign       string `json:"v_align,omitempty"` // top, middle, bottom
-	WrapText     bool   `json:"wrap_text,omitempty"`
-	TextRotation int    `json:"text_rotation,omitempty"` // -90 to 90
+	HAlign       string `json:"hAlign,omitempty"` // left, center, right
+	VAlign       string `json:"vAlign,omitempty"` // top, middle, bottom
+	WrapText     bool   `json:"wrapText,omitempty"`
+	TextRotation int    `json:"textRotation,omitempty"` // -90 to 90
 	Indent       int    `json:"indent,omitempty"`
 
 	// Borders
-	BorderTop    Border `json:"border_top,omitempty"`
-	BorderRight  Border `json:"border_right,omitempty"`
-	BorderBottom Border `json:"border_bottom,omitempty"`
-	BorderLeft   Border `json:"border_left,omitempty"`
+	BorderTop    Border `json:"borderTop,omitempty"`
+	BorderRight  Border `json:"borderRight,omitempty"`
+	BorderBottom Border `json:"borderBottom,omitempty"`
+	BorderLeft   Border `json:"borderLeft,omitempty"`
 
 	// Number format
-	NumberFormat string `json:"number_format,omitempty"` // "0.00", "#,##0", "yyyy-mm-dd"
+	NumberFormat string `json:"numberFormat,omitempty"` // "0.00", "#,##0", "yyyy-mm-dd"
 }
 
 // Border represents a cell border.
@@ -142,11 +142,11 @@ type BatchSetIn struct {
 // MergedRegion represents a merged cell region.
 type MergedRegion struct {
 	ID       string `json:"id"`
-	SheetID  string `json:"sheet_id"`
-	StartRow int    `json:"start_row"`
-	StartCol int    `json:"start_col"`
-	EndRow   int    `json:"end_row"`
-	EndCol   int    `json:"end_col"`
+	SheetID  string `json:"sheetId"`
+	StartRow int    `json:"startRow"`
+	StartCol int    `json:"startCol"`
+	EndRow   int    `json:"endRow"`
+	EndCol   int    `json:"endCol"`
 }
 
 // API defines the cells service interface.
