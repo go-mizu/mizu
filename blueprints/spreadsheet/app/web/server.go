@@ -94,6 +94,9 @@ func New(cfg Config) (*Server, error) {
 	sheetsSvc := sheets.NewService(sheetsStore)
 	cellsSvc := cells.NewService(cellsStore, usersSvc.GetSecret())
 
+	// Wire up sheet resolver for cross-sheet formula evaluation
+	cellsSvc.SetSheetResolver(sheetsSvc)
+
 	// Create dev user in dev mode
 	if cfg.Dev {
 		ctx := context.Background()

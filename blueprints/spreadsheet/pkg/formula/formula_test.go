@@ -336,6 +336,11 @@ func (m *mockCellGetter) GetNamedRange(ctx context.Context, name string) (sheetI
 	return "", 0, 0, 0, 0, nil
 }
 
+func (m *mockCellGetter) ResolveSheetName(ctx context.Context, workbookID, sheetName string) (string, error) {
+	// For testing, just return the sheet name as the ID
+	return sheetName, nil
+}
+
 // TestEvaluator tests the formula evaluator.
 func TestEvaluator(t *testing.T) {
 	ctx := context.Background()
