@@ -177,8 +177,8 @@ describe('ImportDialog', () => {
     });
   });
 
-  it('should render with initialFormat prop', () => {
-    render(<ImportDialog {...defaultProps} initialFormat="xlsx" />);
+  it('should render with format prop', () => {
+    render(<ImportDialog {...defaultProps} format="xlsx" />);
 
     // The dialog should render correctly with any initial format
     expect(screen.getByText('Import File')).toBeInTheDocument();

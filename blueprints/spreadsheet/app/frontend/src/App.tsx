@@ -593,52 +593,6 @@ function App() {
     handleFormatChange(formatUpdate);
   }, [currentSelection, handleFormatChange]);
 
-  // Export CSV handler
-  const handleExportCSV = useCallback(() => {
-    if (!cells || cells.size === 0) {
-      alert('No data to export');
-      return;
-    }
-
-    // Find the bounds of the data
-    let maxRow = 0, maxCol = 0;
-    cells.forEach((cell) => {
-      if (cell.value !== null) {
-        maxRow = Math.max(maxRow, cell.row);
-        maxCol = Math.max(maxCol, cell.col);
-      }
-    });
-
-    // Build CSV content
-    const rows: string[] = [];
-    for (let row = 0; row <= maxRow; row++) {
-      const rowData: string[] = [];
-      for (let col = 0; col <= maxCol; col++) {
-        const cell = cells.get(`${row}:${col}`);
-        const value = cell?.display ?? cell?.value ?? '';
-        // Escape quotes and wrap in quotes if contains comma, newline, or quote
-        const stringValue = String(value);
-        if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
-          rowData.push(`"${stringValue.replace(/"/g, '""')}"`);
-        } else {
-          rowData.push(stringValue);
-        }
-      }
-      rows.push(rowData.join(','));
-    }
-
-    const csvContent = rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${currentWorkbook?.name || 'spreadsheet'}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [cells, currentWorkbook]);
-
   // Export handler using API
   const handleExport = useCallback(async (format: ExportFormat, options: ExportOptions) => {
     if (!currentWorkbook) {
