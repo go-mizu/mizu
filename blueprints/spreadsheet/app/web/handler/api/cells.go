@@ -293,3 +293,41 @@ func (h *Cell) Evaluate(c *mizu.Ctx) error {
 		"result": result,
 	})
 }
+
+// CopyRange copies a range of cells to a new location.
+func (h *Cell) CopyRange(c *mizu.Ctx) error {
+	sheetID := c.Param("sheetID")
+
+	var in struct {
+		SourceRange struct {
+			StartRow int `json:"startRow"`
+			StartCol int `json:"startCol"`
+			EndRow   int `json:"endRow"`
+			EndCol   int `json:"endCol"`
+		} `json:"sourceRange"`
+		DestRow     int    `json:"destRow"`
+		DestCol     int    `json:"destCol"`
+		DestSheetID string `json:"destSheetId"`
+	}
+	if err := c.BindJSON(&in, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	destSheetID := in.DestSheetID
+	if destSheetID == "" {
+		destSheetID = sheetID
+	}
+
+	sourceRange := cells.Range{
+		StartRow: in.SourceRange.StartRow,
+		StartCol: in.SourceRange.StartCol,
+		EndRow:   in.SourceRange.EndRow,
+		EndCol:   in.SourceRange.EndCol,
+	}
+
+	if err := h.cells.CopyRange(c.Request().Context(), sheetID, sourceRange, destSheetID, in.DestRow, in.DestCol); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}

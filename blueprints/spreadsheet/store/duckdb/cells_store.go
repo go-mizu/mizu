@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/cells"
+	"github.com/go-mizu/blueprints/spreadsheet/pkg/formula"
 )
 
 // CellsStore implements cells.Store.
@@ -228,54 +229,88 @@ func (s *CellsStore) GetMergedRegions(ctx context.Context, sheetID string) ([]*c
 	return result, nil
 }
 
-// ShiftRows shifts rows (for insert/delete operations).
+// ShiftRows shifts rows (for insert/delete operations) and updates formula references.
 func (s *CellsStore) ShiftRows(ctx context.Context, sheetID string, startRow, count int) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// First, update all formulas in the sheet
+	if err := s.shiftFormulasInTx(ctx, tx, sheetID, "row", startRow, count); err != nil {
+		return err
+	}
+
 	if count > 0 {
 		// Insert - shift rows down
-		_, err := s.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			UPDATE cells SET row_num = row_num + ?
 			WHERE sheet_id = ? AND row_num >= ?
 		`, count, sheetID, startRow)
-		return err
+		if err != nil {
+			return err
+		}
 	} else {
 		// Delete - remove rows then shift up
-		_, err := s.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			DELETE FROM cells WHERE sheet_id = ? AND row_num = ?
 		`, sheetID, startRow)
 		if err != nil {
 			return err
 		}
-		_, err = s.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			UPDATE cells SET row_num = row_num - 1
 			WHERE sheet_id = ? AND row_num > ?
 		`, sheetID, startRow)
-		return err
+		if err != nil {
+			return err
+		}
 	}
+
+	return tx.Commit()
 }
 
-// ShiftCols shifts columns (for insert/delete operations).
+// ShiftCols shifts columns (for insert/delete operations) and updates formula references.
 func (s *CellsStore) ShiftCols(ctx context.Context, sheetID string, startCol, count int) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// First, update all formulas in the sheet
+	if err := s.shiftFormulasInTx(ctx, tx, sheetID, "col", startCol, count); err != nil {
+		return err
+	}
+
 	if count > 0 {
 		// Insert - shift columns right
-		_, err := s.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			UPDATE cells SET col_num = col_num + ?
 			WHERE sheet_id = ? AND col_num >= ?
 		`, count, sheetID, startCol)
-		return err
+		if err != nil {
+			return err
+		}
 	} else {
 		// Delete - remove columns then shift left
-		_, err := s.db.ExecContext(ctx, `
+		_, err := tx.ExecContext(ctx, `
 			DELETE FROM cells WHERE sheet_id = ? AND col_num = ?
 		`, sheetID, startCol)
 		if err != nil {
 			return err
 		}
-		_, err = s.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			UPDATE cells SET col_num = col_num - 1
 			WHERE sheet_id = ? AND col_num > ?
 		`, sheetID, startCol)
-		return err
+		if err != nil {
+			return err
+		}
 	}
+
+	return tx.Commit()
 }
 
 // GetByPositions retrieves multiple cells by their positions in a single query.
@@ -369,6 +404,11 @@ func (s *CellsStore) DeleteRowsRange(ctx context.Context, sheetID string, startR
 	}
 	defer tx.Rollback()
 
+	// First, update all formulas in the sheet (negative count for deletion)
+	if err := s.shiftFormulasInTx(ctx, tx, sheetID, "row", startRow, -count); err != nil {
+		return err
+	}
+
 	// Delete all rows in the range at once
 	endRow := startRow + count - 1
 	_, err = tx.ExecContext(ctx, `
@@ -403,6 +443,11 @@ func (s *CellsStore) DeleteColsRange(ctx context.Context, sheetID string, startC
 	}
 	defer tx.Rollback()
 
+	// First, update all formulas in the sheet (negative count for deletion)
+	if err := s.shiftFormulasInTx(ctx, tx, sheetID, "col", startCol, -count); err != nil {
+		return err
+	}
+
 	// Delete all columns in the range at once
 	endCol := startCol + count - 1
 	_, err = tx.ExecContext(ctx, `
@@ -422,4 +467,58 @@ func (s *CellsStore) DeleteColsRange(ctx context.Context, sheetID string, startC
 	}
 
 	return tx.Commit()
+}
+
+// shiftFormulasInTx updates all formula references in cells when rows/columns are inserted or deleted.
+func (s *CellsStore) shiftFormulasInTx(ctx context.Context, tx *sql.Tx, sheetID, shiftType string, startIndex, count int) error {
+	// Get all cells with formulas
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, formula FROM cells
+		WHERE sheet_id = ? AND formula IS NOT NULL AND formula != ''
+	`, sheetID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// Collect cells that need formula updates
+	type formulaUpdate struct {
+		id      string
+		formula string
+	}
+	var updates []formulaUpdate
+
+	for rows.Next() {
+		var id, oldFormula string
+		if err := rows.Scan(&id, &oldFormula); err != nil {
+			return err
+		}
+
+		// Shift the formula
+		newFormula := formula.ShiftFormula(oldFormula, shiftType, startIndex, count, "")
+		if newFormula != oldFormula {
+			updates = append(updates, formulaUpdate{id: id, formula: newFormula})
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Update the formulas
+	if len(updates) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `UPDATE cells SET formula = ? WHERE id = ?`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, u := range updates {
+			if _, err := stmt.ExecContext(ctx, u.formula, u.id); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
