@@ -498,7 +498,10 @@ func formatDisplay(value interface{}, format Format) string {
 		return ""
 	}
 
-	// TODO: Implement full number formatting
+	if format.NumberFormat != "" {
+		return formula.FormatValue(value, format.NumberFormat)
+	}
+
 	return fmt.Sprintf("%v", value)
 }
 

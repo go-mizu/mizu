@@ -526,6 +526,50 @@ func TestFunctions(t *testing.T) {
 		{name: "ISNUMBER false", fn: "ISNUMBER", args: []interface{}{"text"}, want: false},
 		{name: "ISTEXT true", fn: "ISTEXT", args: []interface{}{"hello"}, want: true},
 		{name: "ISTEXT false", fn: "ISTEXT", args: []interface{}{42.0}, want: false},
+
+		// New math functions
+		{name: "TRUNC", fn: "TRUNC", args: []interface{}{3.567, 2.0}, want: 3.56},
+		{name: "TRUNC no decimals", fn: "TRUNC", args: []interface{}{3.567}, want: 3.0},
+		{name: "GCD", fn: "GCD", args: []interface{}{12.0, 18.0}, want: 6.0},
+		{name: "GCD three", fn: "GCD", args: []interface{}{24.0, 36.0, 48.0}, want: 12.0},
+		{name: "LCM", fn: "LCM", args: []interface{}{4.0, 6.0}, want: 12.0},
+		{name: "FACT", fn: "FACT", args: []interface{}{5.0}, want: 120.0},
+		{name: "FACT zero", fn: "FACT", args: []interface{}{0.0}, want: 1.0},
+		{name: "COMBIN", fn: "COMBIN", args: []interface{}{5.0, 2.0}, want: 10.0},
+		{name: "PERMUT", fn: "PERMUT", args: []interface{}{5.0, 2.0}, want: 20.0},
+		{name: "QUOTIENT", fn: "QUOTIENT", args: []interface{}{10.0, 3.0}, want: 3.0},
+		{name: "MROUND", fn: "MROUND", args: []interface{}{7.0, 3.0}, want: 6.0},
+		{name: "ODD", fn: "ODD", args: []interface{}{2.5}, want: 3.0},
+		{name: "EVEN", fn: "EVEN", args: []interface{}{3.0}, want: 4.0},
+
+		// Hyperbolic functions
+		{name: "SINH", fn: "SINH", args: []interface{}{0.0}, want: 0.0},
+		{name: "COSH", fn: "COSH", args: []interface{}{0.0}, want: 1.0},
+		{name: "TANH", fn: "TANH", args: []interface{}{0.0}, want: 0.0},
+
+		// New text functions
+		{name: "EXACT match", fn: "EXACT", args: []interface{}{"hello", "hello"}, want: true},
+		{name: "EXACT different", fn: "EXACT", args: []interface{}{"hello", "Hello"}, want: false},
+		{name: "DOLLAR", fn: "DOLLAR", args: []interface{}{1234.567, 2.0}, want: "$1,234.57"},
+		{name: "REGEXMATCH true", fn: "REGEXMATCH", args: []interface{}{"hello world", "wo.*d"}, want: true},
+		{name: "REGEXMATCH false", fn: "REGEXMATCH", args: []interface{}{"hello", "wo.*d"}, want: false},
+		{name: "REGEXEXTRACT", fn: "REGEXEXTRACT", args: []interface{}{"hello123world", "[0-9]+"}, want: "123"},
+		{name: "REGEXREPLACE", fn: "REGEXREPLACE", args: []interface{}{"hello123", "[0-9]+", "XXX"}, want: "helloXXX"},
+
+		// Date/Time functions
+		{name: "TIME", fn: "TIME", args: []interface{}{12.0, 30.0, 45.0}, want: 0.5213541666666667},
+
+		// New information functions
+		{name: "ISEVEN true", fn: "ISEVEN", args: []interface{}{4.0}, want: true},
+		{name: "ISEVEN false", fn: "ISEVEN", args: []interface{}{5.0}, want: false},
+		{name: "ISODD true", fn: "ISODD", args: []interface{}{5.0}, want: true},
+		{name: "ISODD false", fn: "ISODD", args: []interface{}{4.0}, want: false},
+		{name: "ADDRESS", fn: "ADDRESS", args: []interface{}{1.0, 1.0, 1.0}, want: "$A$1"},
+		{name: "ADDRESS relative", fn: "ADDRESS", args: []interface{}{1.0, 1.0, 4.0}, want: "A1"},
+
+		// Conditional aggregates with criteria
+		{name: "COUNTIF", fn: "COUNTIF", args: []interface{}{[][]interface{}{{1.0, 2.0, 3.0, 4.0, 5.0}}, ">2"}, want: 3.0},
+		{name: "SUMIF", fn: "SUMIF", args: []interface{}{[][]interface{}{{1.0, 2.0, 3.0, 4.0, 5.0}}, ">2"}, want: 12.0},
 	}
 
 	for _, tt := range tests {
