@@ -146,6 +146,8 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
+            console.log('[Login] Attempting login for:', email);
+
             try {
                 const res = await fetch('/api/v1/auth/login', {
                     method: 'POST',
@@ -153,20 +155,33 @@
                     body: JSON.stringify({ email, password })
                 });
 
+                console.log('[Login] Response status:', res.status);
+
                 const data = await res.json();
+                console.log('[Login] Response data:', data);
 
                 if (!res.ok) {
-                    throw new Error(data.error || 'Login failed');
+                    const errorMsg = data.error || 'Login failed';
+                    console.error('[Login] Login failed:', errorMsg);
+                    throw new Error(errorMsg);
                 }
 
-                // Store token
-                localStorage.setItem('token', data.token);
+                console.log('[Login] Login successful, storing token');
+                // Store token (use 'auth_token' to match React app's api.ts)
+                localStorage.setItem('auth_token', data.token);
                 localStorage.setItem('user', JSON.stringify(data.user));
 
                 // Redirect to app
+                console.log('[Login] Redirecting to /app');
                 window.location.href = '/app';
             } catch (err) {
-                errorEl.textContent = err.message;
+                console.error('[Login] Error:', err);
+                // Show user-friendly error message
+                let message = err.message;
+                if (message === 'invalid credentials') {
+                    message = 'Invalid email or password. Please check your credentials and try again.';
+                }
+                errorEl.textContent = message;
                 errorEl.style.display = 'block';
             }
         });

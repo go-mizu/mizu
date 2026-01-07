@@ -95,4 +95,16 @@ type Store interface {
 	ListByWorkbook(ctx context.Context, workbookID string) ([]*Sheet, error)
 	Update(ctx context.Context, sheet *Sheet) error
 	Delete(ctx context.Context, id string) error
+	// UpdateRowHeight updates a single row height without loading the full object.
+	UpdateRowHeight(ctx context.Context, sheetID string, row, height int) error
+	// UpdateColWidth updates a single column width without loading the full object.
+	UpdateColWidth(ctx context.Context, sheetID string, col, width int) error
+	// AddHiddenRow adds a row to the hidden rows list.
+	AddHiddenRow(ctx context.Context, sheetID string, row int) error
+	// RemoveHiddenRow removes a row from the hidden rows list.
+	RemoveHiddenRow(ctx context.Context, sheetID string, row int) error
+	// AddHiddenCol adds a column to the hidden columns list.
+	AddHiddenCol(ctx context.Context, sheetID string, col int) error
+	// RemoveHiddenCol removes a column from the hidden columns list.
+	RemoveHiddenCol(ctx context.Context, sheetID string, col int) error
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataEditor, {
   GridCell,
   GridCellKind,
@@ -10,6 +10,13 @@ import DataEditor, {
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { useSpreadsheetStore } from './stores/spreadsheet';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useUndoRedoStore, createCellSnapshot, createEmptySnapshot } from './hooks/useUndoRedo';
+import { useClipboardStore, readSystemClipboard } from './hooks/useClipboard';
+import { ContextMenu } from './components/ContextMenu';
+import { FindReplaceDialog, FindOptions } from './components/FindReplaceDialog';
+import { Toolbar } from './components/Toolbar';
+import type { Cell, CellFormat, CellPosition, Selection } from './types';
 
 // Generate column headers A, B, C, ..., Z, AA, AB, etc.
 function getColumnLabel(index: number): string {
@@ -27,13 +34,6 @@ function getColumnLabel(index: number): string {
 const NUM_ROWS = 1000;
 const NUM_COLS = 26;
 
-// Generate columns
-const columns: GridColumn[] = Array.from({ length: NUM_COLS }, (_, i) => ({
-  id: getColumnLabel(i),
-  title: getColumnLabel(i),
-  width: 100,
-}));
-
 function App() {
   const {
     user,
@@ -42,7 +42,10 @@ function App() {
     currentWorkbook,
     currentSheet,
     sheets,
+    cells,
+    mergedRegions,
     activeCell,
+    selection,
     formulaBarValue,
     loading,
     error,
@@ -55,10 +58,69 @@ function App() {
     createSheet,
     getCell,
     setCell,
+    setCellFormat,
+    deleteCell,
+    batchUpdateCells,
+    insertRows,
+    deleteRows,
+    insertCols,
+    deleteCols,
+    mergeCells,
+    unmergeCells,
     setActiveCell,
+    setSelection,
     setFormulaBarValue,
     clearError,
   } = useSpreadsheetStore();
+
+  const {
+    pushAction,
+    undo: undoAction,
+    redo: redoAction,
+    canUndo,
+    canRedo,
+    setUndoing,
+    setRedoing,
+  } = useUndoRedoStore();
+
+  const {
+    copy: clipboardCopy,
+    cut: clipboardCut,
+    getData: getClipboardData,
+    clearCut,
+  } = useClipboardStore();
+
+  // Local state
+  const [isEditing, setIsEditing] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [findDialogOpen, setFindDialogOpen] = useState(false);
+  const [findDialogMode, setFindDialogMode] = useState<'find' | 'replace'>('find');
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+
+  // Generate columns with custom widths
+  const columns: GridColumn[] = useMemo(() =>
+    Array.from({ length: NUM_COLS }, (_, i) => {
+      const id = getColumnLabel(i);
+      return {
+        id,
+        title: id,
+        width: columnWidths[id] || 100,
+      };
+    }), [columnWidths]);
+
+  // Current selection (single cell or range)
+  const currentSelection: Selection | null = useMemo(() => {
+    if (selection) return selection;
+    if (activeCell) {
+      return {
+        startRow: activeCell.row,
+        startCol: activeCell.col,
+        endRow: activeCell.row,
+        endCol: activeCell.col,
+      };
+    }
+    return null;
+  }, [selection, activeCell]);
 
   // Check auth on mount
   useEffect(() => {
@@ -68,7 +130,6 @@ function App() {
   // Auto-login in dev mode
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      // Try dev login
       login('dev@example.com', 'password').catch(() => {
         // Ignore login error in dev mode
       });
@@ -79,7 +140,6 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       loadWorkbooks().then(() => {
-        // Auto-create or load first workbook
         const store = useSpreadsheetStore.getState();
         if (store.workbooks.length > 0) {
           loadWorkbook(store.workbooks[0].id);
@@ -90,7 +150,617 @@ function App() {
     }
   }, [isAuthenticated, loadWorkbooks, loadWorkbook, createWorkbook]);
 
-  // Get cell content
+  // Get cells in a selection range
+  const getCellsInRange = useCallback((sel: Selection): Cell[] => {
+    const result: Cell[] = [];
+    for (let row = sel.startRow; row <= sel.endRow; row++) {
+      for (let col = sel.startCol; col <= sel.endCol; col++) {
+        const cell = getCell(row, col);
+        if (cell) {
+          result.push(cell);
+        } else {
+          // Create virtual cell for empty cells
+          result.push({
+            id: `${row}:${col}`,
+            sheetId: currentSheet?.id || '',
+            row,
+            col,
+            value: null,
+            type: 'text',
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+    return result;
+  }, [getCell, currentSheet]);
+
+  // Undo operation
+  const handleUndo = useCallback(async () => {
+    const action = undoAction();
+    if (!action || !currentSheet || action.sheetId !== currentSheet.id) return;
+
+    setUndoing(true);
+    try {
+      // Restore previous state
+      const updates = action.data.before.map(snapshot => ({
+        row: snapshot.row,
+        col: snapshot.col,
+        value: snapshot.value,
+        formula: snapshot.formula,
+      }));
+
+      if (updates.length === 1) {
+        const u = updates[0];
+        if (u.value === null && !u.formula) {
+          await deleteCell(u.row, u.col);
+        } else {
+          await setCell(u.row, u.col, u.value, u.formula);
+        }
+      } else {
+        await batchUpdateCells(updates);
+      }
+    } finally {
+      setUndoing(false);
+    }
+  }, [undoAction, currentSheet, setUndoing, deleteCell, setCell, batchUpdateCells]);
+
+  // Redo operation
+  const handleRedo = useCallback(async () => {
+    const action = redoAction();
+    if (!action || !currentSheet || action.sheetId !== currentSheet.id) return;
+
+    setRedoing(true);
+    try {
+      // Apply the changes again
+      const updates = action.data.after.map(snapshot => ({
+        row: snapshot.row,
+        col: snapshot.col,
+        value: snapshot.value,
+        formula: snapshot.formula,
+      }));
+
+      if (updates.length === 1) {
+        const u = updates[0];
+        if (u.value === null && !u.formula) {
+          await deleteCell(u.row, u.col);
+        } else {
+          await setCell(u.row, u.col, u.value, u.formula);
+        }
+      } else {
+        await batchUpdateCells(updates);
+      }
+    } finally {
+      setRedoing(false);
+    }
+  }, [redoAction, currentSheet, setRedoing, deleteCell, setCell, batchUpdateCells]);
+
+  // Copy operation
+  const handleCopy = useCallback(async () => {
+    if (!currentSelection || !currentSheet) return;
+    const cellsToClip = getCellsInRange(currentSelection);
+    await clipboardCopy(cellsToClip, currentSelection, currentSheet.id);
+  }, [currentSelection, currentSheet, getCellsInRange, clipboardCopy]);
+
+  // Cut operation
+  const handleCut = useCallback(async () => {
+    if (!currentSelection || !currentSheet) return;
+    const cellsToClip = getCellsInRange(currentSelection);
+    await clipboardCut(cellsToClip, currentSelection, currentSheet.id);
+  }, [currentSelection, currentSheet, getCellsInRange, clipboardCut]);
+
+  // Paste operation
+  const handlePaste = useCallback(async (valuesOnly: boolean = false) => {
+    if (!activeCell || !currentSheet) return;
+
+    const clipData = getClipboardData();
+
+    if (clipData && clipData.source === 'internal') {
+      // Paste from internal clipboard
+      const offsetRow = activeCell.row - clipData.bounds.startRow;
+      const offsetCol = activeCell.col - clipData.bounds.startCol;
+
+      const beforeSnapshots = [];
+      const afterSnapshots = [];
+
+      for (const cell of clipData.cells) {
+        const targetRow = cell.row + offsetRow;
+        const targetCol = cell.col + offsetCol;
+
+        if (targetRow >= 0 && targetRow < NUM_ROWS && targetCol >= 0 && targetCol < NUM_COLS) {
+          const existingCell = getCell(targetRow, targetCol);
+          beforeSnapshots.push(createCellSnapshot(existingCell, targetRow, targetCol));
+
+          afterSnapshots.push({
+            row: targetRow,
+            col: targetCol,
+            value: cell.value,
+            formula: valuesOnly ? undefined : cell.formula,
+            format: valuesOnly ? undefined : cell.format,
+            display: cell.display,
+          });
+        }
+      }
+
+      // Batch update
+      await batchUpdateCells(afterSnapshots.map(s => ({
+        row: s.row,
+        col: s.col,
+        value: s.formula ? undefined : s.value,
+        formula: s.formula,
+      })));
+
+      // Push undo action
+      pushAction({
+        type: 'batch_edit',
+        sheetId: currentSheet.id,
+        data: {
+          before: beforeSnapshots,
+          after: afterSnapshots,
+        },
+      });
+
+      // If this was a cut operation, clear the source cells
+      if (clipData.isCut && clipData.sourceSheetId === currentSheet.id) {
+        const clearUpdates = clipData.cells.map(cell => ({
+          row: cell.row,
+          col: cell.col,
+          value: null,
+        }));
+        await batchUpdateCells(clearUpdates);
+        clearCut();
+      }
+    } else {
+      // Try to read from system clipboard
+      const systemData = await readSystemClipboard();
+      if (systemData && systemData.length > 0) {
+        const beforeSnapshots = [];
+        const afterSnapshots = [];
+
+        for (let rowIdx = 0; rowIdx < systemData.length; rowIdx++) {
+          for (let colIdx = 0; colIdx < systemData[rowIdx].length; colIdx++) {
+            const targetRow = activeCell.row + rowIdx;
+            const targetCol = activeCell.col + colIdx;
+
+            if (targetRow >= 0 && targetRow < NUM_ROWS && targetCol >= 0 && targetCol < NUM_COLS) {
+              const existingCell = getCell(targetRow, targetCol);
+              beforeSnapshots.push(createCellSnapshot(existingCell, targetRow, targetCol));
+
+              afterSnapshots.push({
+                row: targetRow,
+                col: targetCol,
+                value: systemData[rowIdx][colIdx],
+              });
+            }
+          }
+        }
+
+        await batchUpdateCells(afterSnapshots.map(s => ({
+          row: s.row,
+          col: s.col,
+          value: s.value,
+        })));
+
+        pushAction({
+          type: 'batch_edit',
+          sheetId: currentSheet.id,
+          data: {
+            before: beforeSnapshots,
+            after: afterSnapshots,
+          },
+        });
+      }
+    }
+  }, [activeCell, currentSheet, getClipboardData, getCell, batchUpdateCells, pushAction, clearCut]);
+
+  // Delete/Clear selection
+  const handleClearSelection = useCallback(async () => {
+    if (!currentSelection || !currentSheet) return;
+
+    const beforeSnapshots = [];
+    const afterSnapshots = [];
+
+    for (let row = currentSelection.startRow; row <= currentSelection.endRow; row++) {
+      for (let col = currentSelection.startCol; col <= currentSelection.endCol; col++) {
+        const existingCell = getCell(row, col);
+        if (existingCell && existingCell.value !== null) {
+          beforeSnapshots.push(createCellSnapshot(existingCell, row, col));
+          afterSnapshots.push(createEmptySnapshot(row, col));
+        }
+      }
+    }
+
+    if (beforeSnapshots.length > 0) {
+      await batchUpdateCells(afterSnapshots.map(s => ({
+        row: s.row,
+        col: s.col,
+        value: null,
+      })));
+
+      pushAction({
+        type: 'clear',
+        sheetId: currentSheet.id,
+        data: {
+          before: beforeSnapshots,
+          after: afterSnapshots,
+        },
+      });
+    }
+  }, [currentSelection, currentSheet, getCell, batchUpdateCells, pushAction]);
+
+  // Format cells
+  const handleFormatChange = useCallback(async (format: Partial<CellFormat>) => {
+    if (!currentSelection || !currentSheet) return;
+
+    for (let row = currentSelection.startRow; row <= currentSelection.endRow; row++) {
+      for (let col = currentSelection.startCol; col <= currentSelection.endCol; col++) {
+        const existingCell = getCell(row, col);
+        const newFormat = { ...existingCell?.format, ...format };
+        await setCellFormat(row, col, newFormat);
+      }
+    }
+  }, [currentSelection, currentSheet, getCell, setCellFormat]);
+
+  // Navigation helpers
+  const moveActiveCell = useCallback((rowDelta: number, colDelta: number) => {
+    if (!activeCell) {
+      setActiveCell({ row: 0, col: 0 });
+      return;
+    }
+
+    const newRow = Math.max(0, Math.min(NUM_ROWS - 1, activeCell.row + rowDelta));
+    const newCol = Math.max(0, Math.min(NUM_COLS - 1, activeCell.col + colDelta));
+    setActiveCell({ row: newRow, col: newCol });
+    setSelection(null);
+  }, [activeCell, setActiveCell, setSelection]);
+
+  const extendSelection = useCallback((rowDelta: number, colDelta: number) => {
+    if (!activeCell) return;
+
+    const current = currentSelection || {
+      startRow: activeCell.row,
+      startCol: activeCell.col,
+      endRow: activeCell.row,
+      endCol: activeCell.col,
+    };
+
+    const newEndRow = Math.max(0, Math.min(NUM_ROWS - 1, current.endRow + rowDelta));
+    const newEndCol = Math.max(0, Math.min(NUM_COLS - 1, current.endCol + colDelta));
+
+    setSelection({
+      startRow: current.startRow,
+      startCol: current.startCol,
+      endRow: newEndRow,
+      endCol: newEndCol,
+    });
+  }, [activeCell, currentSelection, setSelection]);
+
+  const selectAll = useCallback(() => {
+    setSelection({
+      startRow: 0,
+      startCol: 0,
+      endRow: NUM_ROWS - 1,
+      endCol: NUM_COLS - 1,
+    });
+  }, [setSelection]);
+
+  // Start editing current cell
+  const startEditing = useCallback(() => {
+    setIsEditing(true);
+    // Focus formula bar or trigger cell editing
+  }, []);
+
+  // Cancel editing
+  const cancelEditing = useCallback(() => {
+    setIsEditing(false);
+    setContextMenu(null);
+    if (findDialogOpen) setFindDialogOpen(false);
+  }, [findDialogOpen]);
+
+  // Open find dialog
+  const openFindDialog = useCallback(() => {
+    setFindDialogMode('find');
+    setFindDialogOpen(true);
+  }, []);
+
+  const openReplaceDialog = useCallback(() => {
+    setFindDialogMode('replace');
+    setFindDialogOpen(true);
+  }, []);
+
+  // Find functionality
+  const handleFindAll = useCallback((searchText: string, options: FindOptions): CellPosition[] => {
+    const results: CellPosition[] = [];
+    const searchLower = options.matchCase ? searchText : searchText.toLowerCase();
+
+    cells.forEach((cell) => {
+      const valueToSearch = options.searchIn === 'formulas'
+        ? (cell.formula || '')
+        : String(cell.display ?? cell.value ?? '');
+
+      const compareValue = options.matchCase ? valueToSearch : valueToSearch.toLowerCase();
+
+      let matches = false;
+      if (options.useRegex) {
+        try {
+          const regex = new RegExp(searchText, options.matchCase ? '' : 'i');
+          matches = options.matchEntireCell
+            ? regex.test(valueToSearch) && valueToSearch.match(regex)?.[0] === valueToSearch
+            : regex.test(valueToSearch);
+        } catch {
+          // Invalid regex
+        }
+      } else {
+        matches = options.matchEntireCell
+          ? compareValue === searchLower
+          : compareValue.includes(searchLower);
+      }
+
+      if (matches) {
+        results.push({ row: cell.row, col: cell.col });
+      }
+    });
+
+    // Sort by row then column
+    results.sort((a, b) => a.row - b.row || a.col - b.col);
+    return results;
+  }, [cells]);
+
+  const handleFind = useCallback((searchText: string, options: FindOptions): CellPosition | null => {
+    const results = handleFindAll(searchText, options);
+    return results.length > 0 ? results[0] : null;
+  }, [handleFindAll]);
+
+  const handleReplace = useCallback(async (findText: string, replaceText: string, options: FindOptions): Promise<boolean> => {
+    if (!activeCell || !currentSheet) return false;
+
+    const cell = getCell(activeCell.row, activeCell.col);
+    if (!cell) return false;
+
+    const valueToSearch = options.searchIn === 'formulas'
+      ? (cell.formula || '')
+      : String(cell.display ?? cell.value ?? '');
+
+    let newValue: string;
+    if (options.useRegex) {
+      try {
+        const regex = new RegExp(findText, options.matchCase ? 'g' : 'gi');
+        newValue = valueToSearch.replace(regex, replaceText);
+      } catch {
+        return false;
+      }
+    } else {
+      const searchPattern = options.matchCase ? findText : findText.toLowerCase();
+      const compareValue = options.matchCase ? valueToSearch : valueToSearch.toLowerCase();
+
+      if (options.matchEntireCell && compareValue !== searchPattern) {
+        return false;
+      }
+
+      if (!compareValue.includes(searchPattern)) {
+        return false;
+      }
+
+      newValue = valueToSearch.replace(
+        new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.matchCase ? 'g' : 'gi'),
+        replaceText
+      );
+    }
+
+    const beforeSnapshot = createCellSnapshot(cell, activeCell.row, activeCell.col);
+
+    if (options.searchIn === 'formulas' && cell.formula) {
+      await setCell(activeCell.row, activeCell.col, null, newValue);
+    } else {
+      await setCell(activeCell.row, activeCell.col, newValue);
+    }
+
+    pushAction({
+      type: 'cell_edit',
+      sheetId: currentSheet.id,
+      data: {
+        before: [beforeSnapshot],
+        after: [{ row: activeCell.row, col: activeCell.col, value: newValue }],
+      },
+    });
+
+    return true;
+  }, [activeCell, currentSheet, getCell, setCell, pushAction]);
+
+  const handleReplaceAll = useCallback(async (findText: string, replaceText: string, options: FindOptions): Promise<number> => {
+    const results = handleFindAll(findText, options);
+    if (results.length === 0 || !currentSheet) return 0;
+
+    const beforeSnapshots = [];
+    const afterSnapshots = [];
+
+    for (const pos of results) {
+      const cell = getCell(pos.row, pos.col);
+      if (!cell) continue;
+
+      const valueToSearch = options.searchIn === 'formulas'
+        ? (cell.formula || '')
+        : String(cell.display ?? cell.value ?? '');
+
+      let newValue: string;
+      if (options.useRegex) {
+        try {
+          const regex = new RegExp(findText, options.matchCase ? 'g' : 'gi');
+          newValue = valueToSearch.replace(regex, replaceText);
+        } catch {
+          continue;
+        }
+      } else {
+        newValue = valueToSearch.replace(
+          new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.matchCase ? 'g' : 'gi'),
+          replaceText
+        );
+      }
+
+      beforeSnapshots.push(createCellSnapshot(cell, pos.row, pos.col));
+      afterSnapshots.push({
+        row: pos.row,
+        col: pos.col,
+        value: options.searchIn === 'formulas' ? null : newValue,
+        formula: options.searchIn === 'formulas' ? newValue : undefined,
+      });
+    }
+
+    await batchUpdateCells(afterSnapshots.map(s => ({
+      row: s.row,
+      col: s.col,
+      value: s.formula ? undefined : s.value,
+      formula: s.formula,
+    })));
+
+    pushAction({
+      type: 'batch_edit',
+      sheetId: currentSheet.id,
+      data: {
+        before: beforeSnapshots,
+        after: afterSnapshots,
+      },
+    });
+
+    return beforeSnapshots.length;
+  }, [handleFindAll, currentSheet, getCell, batchUpdateCells, pushAction]);
+
+  const navigateToResult = useCallback((position: CellPosition) => {
+    setActiveCell(position);
+    setSelection(null);
+  }, [setActiveCell, setSelection]);
+
+  // Row/Column operations
+  const handleInsertRowAbove = useCallback(async () => {
+    if (!currentSelection) return;
+    await insertRows(currentSelection.startRow, 1);
+  }, [currentSelection, insertRows]);
+
+  const handleInsertRowBelow = useCallback(async () => {
+    if (!currentSelection) return;
+    await insertRows(currentSelection.endRow + 1, 1);
+  }, [currentSelection, insertRows]);
+
+  const handleDeleteRow = useCallback(async () => {
+    if (!currentSelection) return;
+    const count = currentSelection.endRow - currentSelection.startRow + 1;
+    await deleteRows(currentSelection.startRow, count);
+  }, [currentSelection, deleteRows]);
+
+  const handleInsertColLeft = useCallback(async () => {
+    if (!currentSelection) return;
+    await insertCols(currentSelection.startCol, 1);
+  }, [currentSelection, insertCols]);
+
+  const handleInsertColRight = useCallback(async () => {
+    if (!currentSelection) return;
+    await insertCols(currentSelection.endCol + 1, 1);
+  }, [currentSelection, insertCols]);
+
+  const handleDeleteCol = useCallback(async () => {
+    if (!currentSelection) return;
+    const count = currentSelection.endCol - currentSelection.startCol + 1;
+    await deleteCols(currentSelection.startCol, count);
+  }, [currentSelection, deleteCols]);
+
+  // Merge cells
+  const handleMergeCells = useCallback(async () => {
+    if (!currentSelection) return;
+    await mergeCells(
+      currentSelection.startRow,
+      currentSelection.startCol,
+      currentSelection.endRow,
+      currentSelection.endCol
+    );
+  }, [currentSelection, mergeCells]);
+
+  const handleUnmergeCells = useCallback(async () => {
+    if (!currentSelection) return;
+    await unmergeCells(
+      currentSelection.startRow,
+      currentSelection.startCol,
+      currentSelection.endRow,
+      currentSelection.endCol
+    );
+  }, [currentSelection, unmergeCells]);
+
+  // Check if current selection can be merged
+  const canMerge = useMemo(() => {
+    if (!currentSelection) return false;
+    return currentSelection.startRow !== currentSelection.endRow ||
+           currentSelection.startCol !== currentSelection.endCol;
+  }, [currentSelection]);
+
+  // Check if current selection has merged cells
+  const hasMergedCells = useMemo(() => {
+    if (!currentSelection || !mergedRegions) return false;
+    return mergedRegions.some(region =>
+      region.startRow === currentSelection.startRow &&
+      region.startCol === currentSelection.startCol &&
+      region.endRow === currentSelection.endRow &&
+      region.endCol === currentSelection.endCol
+    );
+  }, [currentSelection, mergedRegions]);
+
+  // Get current cell format
+  const currentCellFormat = useMemo(() => {
+    if (!activeCell) return undefined;
+    const cell = getCell(activeCell.row, activeCell.col);
+    return cell?.format;
+  }, [activeCell, getCell]);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onMoveUp: () => moveActiveCell(-1, 0),
+    onMoveDown: () => moveActiveCell(1, 0),
+    onMoveLeft: () => moveActiveCell(0, -1),
+    onMoveRight: () => moveActiveCell(0, 1),
+    onTab: () => moveActiveCell(0, 1),
+    onShiftTab: () => moveActiveCell(0, -1),
+    onMoveToStart: () => setActiveCell({ row: 0, col: 0 }),
+    onMoveToEnd: () => {
+      // Find last used cell
+      let maxRow = 0, maxCol = 0;
+      cells.forEach((cell) => {
+        if (cell.value !== null) {
+          maxRow = Math.max(maxRow, cell.row);
+          maxCol = Math.max(maxCol, cell.col);
+        }
+      });
+      setActiveCell({ row: maxRow, col: maxCol });
+    },
+    onExtendUp: () => extendSelection(-1, 0),
+    onExtendDown: () => extendSelection(1, 0),
+    onExtendLeft: () => extendSelection(0, -1),
+    onExtendRight: () => extendSelection(0, 1),
+    onSelectAll: selectAll,
+    onEdit: startEditing,
+    onDelete: handleClearSelection,
+    onEscape: cancelEditing,
+    onEnter: () => {
+      if (isEditing) {
+        setIsEditing(false);
+        moveActiveCell(1, 0);
+      } else {
+        startEditing();
+      }
+    },
+    onCopy: handleCopy,
+    onCut: handleCut,
+    onPaste: () => handlePaste(false),
+    onPasteValues: () => handlePaste(true),
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+    onBold: () => handleFormatChange({ bold: !currentCellFormat?.bold }),
+    onItalic: () => handleFormatChange({ italic: !currentCellFormat?.italic }),
+    onUnderline: () => handleFormatChange({ underline: !currentCellFormat?.underline }),
+    onStrikethrough: () => handleFormatChange({ strikethrough: !currentCellFormat?.strikethrough }),
+    onFind: openFindDialog,
+    onReplace: openReplaceDialog,
+    isEditing: () => isEditing,
+  }, true);
+
+  // Get cell content for grid
   const getContent = useCallback(
     (cell: Item): GridCell => {
       const [col, row] = cell;
@@ -105,11 +775,20 @@ function App() {
         };
       }
 
+      // Apply formatting to display
+      const themeOverride: Record<string, unknown> = {};
+      if (cellData.format) {
+        if (cellData.format.bold) themeOverride.baseFontStyle = 'bold';
+        if (cellData.format.fontColor) themeOverride.textDark = cellData.format.fontColor;
+        if (cellData.format.backgroundColor) themeOverride.bgCell = cellData.format.backgroundColor;
+      }
+
       return {
         kind: GridCellKind.Text,
         allowOverlay: true,
         displayData: cellData.display || String(cellData.value ?? ''),
         data: cellData.formula || String(cellData.value ?? ''),
+        themeOverride: Object.keys(themeOverride).length > 0 ? themeOverride : undefined,
       };
     },
     [getCell]
@@ -117,41 +796,79 @@ function App() {
 
   // Handle cell edit
   const onCellEdited = useCallback(
-    (cell: Item, newValue: EditableGridCell) => {
-      if (newValue.kind !== GridCellKind.Text) return;
+    async (cell: Item, newValue: EditableGridCell) => {
+      if (newValue.kind !== GridCellKind.Text || !currentSheet) return;
 
       const [col, row] = cell;
       const value = newValue.data;
+      const existingCell = getCell(row, col);
+      const beforeSnapshot = createCellSnapshot(existingCell, row, col);
 
       if (value === '') {
-        // Clear cell
-        setCell(row, col, null);
+        await setCell(row, col, null);
+        pushAction({
+          type: 'cell_edit',
+          sheetId: currentSheet.id,
+          data: {
+            before: [beforeSnapshot],
+            after: [createEmptySnapshot(row, col)],
+          },
+        });
       } else if (value.startsWith('=')) {
-        // Formula
-        setCell(row, col, null, value);
+        await setCell(row, col, null, value);
+        pushAction({
+          type: 'cell_edit',
+          sheetId: currentSheet.id,
+          data: {
+            before: [beforeSnapshot],
+            after: [{ row, col, value: null, formula: value }],
+          },
+        });
       } else {
-        // Try to parse as number
         const num = parseFloat(value);
-        if (!isNaN(num) && isFinite(num)) {
-          setCell(row, col, num);
-        } else {
-          setCell(row, col, value);
-        }
+        const finalValue = !isNaN(num) && isFinite(num) ? num : value;
+        await setCell(row, col, finalValue);
+        pushAction({
+          type: 'cell_edit',
+          sheetId: currentSheet.id,
+          data: {
+            before: [beforeSnapshot],
+            after: [{ row, col, value: finalValue }],
+          },
+        });
       }
     },
-    [setCell]
+    [currentSheet, getCell, setCell, pushAction]
   );
 
   // Handle selection change
   const onSelectionChange = useCallback(
-    (selection: GridSelection) => {
-      if (selection.current?.cell) {
-        const [col, row] = selection.current.cell;
+    (sel: GridSelection) => {
+      if (sel.current?.cell) {
+        const [col, row] = sel.current.cell;
         setActiveCell({ row, col });
+
+        // Check if there's a range selection
+        if (sel.current.range && (sel.current.range.width > 1 || sel.current.range.height > 1)) {
+          setSelection({
+            startRow: sel.current.range.y,
+            startCol: sel.current.range.x,
+            endRow: sel.current.range.y + sel.current.range.height - 1,
+            endCol: sel.current.range.x + sel.current.range.width - 1,
+          });
+        } else {
+          setSelection(null);
+        }
       }
     },
-    [setActiveCell]
+    [setActiveCell, setSelection]
   );
+
+  // Handle right-click context menu
+  const handleContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY });
+  }, []);
 
   // Handle formula bar change
   const handleFormulaBarChange = useCallback(
@@ -163,25 +880,57 @@ function App() {
 
   // Handle formula bar submit
   const handleFormulaBarSubmit = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter' && activeCell) {
+    async (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' && activeCell && currentSheet) {
         const value = formulaBarValue;
+        const existingCell = getCell(activeCell.row, activeCell.col);
+        const beforeSnapshot = createCellSnapshot(existingCell, activeCell.row, activeCell.col);
+
         if (value === '') {
-          setCell(activeCell.row, activeCell.col, null);
+          await setCell(activeCell.row, activeCell.col, null);
+          pushAction({
+            type: 'cell_edit',
+            sheetId: currentSheet.id,
+            data: {
+              before: [beforeSnapshot],
+              after: [createEmptySnapshot(activeCell.row, activeCell.col)],
+            },
+          });
         } else if (value.startsWith('=')) {
-          setCell(activeCell.row, activeCell.col, null, value);
+          await setCell(activeCell.row, activeCell.col, null, value);
+          pushAction({
+            type: 'cell_edit',
+            sheetId: currentSheet.id,
+            data: {
+              before: [beforeSnapshot],
+              after: [{ row: activeCell.row, col: activeCell.col, value: null, formula: value }],
+            },
+          });
         } else {
           const num = parseFloat(value);
-          if (!isNaN(num) && isFinite(num)) {
-            setCell(activeCell.row, activeCell.col, num);
-          } else {
-            setCell(activeCell.row, activeCell.col, value);
-          }
+          const finalValue = !isNaN(num) && isFinite(num) ? num : value;
+          await setCell(activeCell.row, activeCell.col, finalValue);
+          pushAction({
+            type: 'cell_edit',
+            sheetId: currentSheet.id,
+            data: {
+              before: [beforeSnapshot],
+              after: [{ row: activeCell.row, col: activeCell.col, value: finalValue }],
+            },
+          });
         }
       }
     },
-    [activeCell, formulaBarValue, setCell]
+    [activeCell, currentSheet, formulaBarValue, getCell, setCell, pushAction]
   );
+
+  // Handle column resize
+  const handleColumnResize = useCallback((column: GridColumn, newSize: number) => {
+    setColumnWidths(prev => ({
+      ...prev,
+      [column.id as string]: newSize,
+    }));
+  }, []);
 
   // Active cell reference string
   const activeCellRef = useMemo(() => {
@@ -189,7 +938,7 @@ function App() {
     return `${getColumnLabel(activeCell.col)}${activeCell.row + 1}`;
   }, [activeCell]);
 
-  // Grid selection
+  // Grid selection state
   const gridSelection: GridSelection = useMemo(() => {
     if (!activeCell) {
       return {
@@ -197,21 +946,29 @@ function App() {
         rows: CompactSelection.empty(),
       };
     }
+
+    const sel = currentSelection || {
+      startRow: activeCell.row,
+      startCol: activeCell.col,
+      endRow: activeCell.row,
+      endCol: activeCell.col,
+    };
+
     return {
       columns: CompactSelection.empty(),
       rows: CompactSelection.empty(),
       current: {
         cell: [activeCell.col, activeCell.row],
         range: {
-          x: activeCell.col,
-          y: activeCell.row,
-          width: 1,
-          height: 1,
+          x: sel.startCol,
+          y: sel.startRow,
+          width: sel.endCol - sel.startCol + 1,
+          height: sel.endRow - sel.startRow + 1,
         },
         rangeStack: [],
       },
     };
-  }, [activeCell]);
+  }, [activeCell, currentSelection]);
 
   if (authLoading) {
     return (
@@ -222,7 +979,7 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" onContextMenu={handleContextMenu}>
       <header className="header">
         <div className="header-left">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="logo">
@@ -245,51 +1002,19 @@ function App() {
         </div>
       )}
 
-      <div className="toolbar">
-        <div className="toolbar-group">
-          <button title="Undo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 10h10a5 5 0 0 1 5 5v2M3 10l5-5M3 10l5 5" />
-            </svg>
-          </button>
-          <button title="Redo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 10H11a5 5 0 0 0-5 5v2M21 10l-5-5M21 10l-5 5" />
-            </svg>
-          </button>
-        </div>
-        <div className="toolbar-divider" />
-        <div className="toolbar-group">
-          <select className="font-select" defaultValue="Arial">
-            <option value="Arial">Arial</option>
-            <option value="Helvetica">Helvetica</option>
-            <option value="Times New Roman">Times New Roman</option>
-            <option value="Courier New">Courier New</option>
-          </select>
-          <select className="size-select" defaultValue="10">
-            <option value="8">8</option>
-            <option value="9">9</option>
-            <option value="10">10</option>
-            <option value="11">11</option>
-            <option value="12">12</option>
-            <option value="14">14</option>
-            <option value="18">18</option>
-            <option value="24">24</option>
-          </select>
-        </div>
-        <div className="toolbar-divider" />
-        <div className="toolbar-group">
-          <button title="Bold" className="format-btn">
-            <strong>B</strong>
-          </button>
-          <button title="Italic" className="format-btn">
-            <em>I</em>
-          </button>
-          <button title="Underline" className="format-btn">
-            <u>U</u>
-          </button>
-        </div>
-      </div>
+      <Toolbar
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={canUndo()}
+        canRedo={canRedo()}
+        onFormatChange={handleFormatChange}
+        currentFormat={currentCellFormat}
+        onFind={openFindDialog}
+        onMergeCells={handleMergeCells}
+        onUnmergeCells={handleUnmergeCells}
+        canMerge={canMerge}
+        hasMergedCells={hasMergedCells}
+      />
 
       <div className="formula-bar">
         <div className="cell-ref">{activeCellRef}</div>
@@ -314,9 +1039,14 @@ function App() {
           onCellEdited={onCellEdited}
           gridSelection={gridSelection}
           onGridSelectionChange={onSelectionChange}
+          onColumnResize={handleColumnResize}
           rowMarkers="number"
+          rangeSelect="rect"
+          columnSelect="single"
+          rowSelect="single"
           smoothScrollX
           smoothScrollY
+          getCellsForSelection={true}
           theme={{
             bgCell: '#ffffff',
             bgHeader: '#f8f9fa',
@@ -343,6 +1073,42 @@ function App() {
           </div>
         ))}
       </footer>
+
+      {/* Context Menu */}
+      {contextMenu && currentSelection && (
+        <ContextMenu
+          position={contextMenu}
+          selection={currentSelection}
+          onClose={() => setContextMenu(null)}
+          onCut={handleCut}
+          onCopy={handleCopy}
+          onPaste={() => handlePaste(false)}
+          onPasteValuesOnly={() => handlePaste(true)}
+          onClearContents={handleClearSelection}
+          onInsertRowAbove={handleInsertRowAbove}
+          onInsertRowBelow={handleInsertRowBelow}
+          onInsertColLeft={handleInsertColLeft}
+          onInsertColRight={handleInsertColRight}
+          onDeleteRow={handleDeleteRow}
+          onDeleteCol={handleDeleteCol}
+          onMergeCells={handleMergeCells}
+          onUnmergeCells={handleUnmergeCells}
+          hasMergedCells={hasMergedCells}
+          canMerge={canMerge}
+        />
+      )}
+
+      {/* Find & Replace Dialog */}
+      <FindReplaceDialog
+        isOpen={findDialogOpen}
+        mode={findDialogMode}
+        onClose={() => setFindDialogOpen(false)}
+        onFind={handleFind}
+        onFindAll={handleFindAll}
+        onReplace={handleReplace}
+        onReplaceAll={handleReplaceAll}
+        onNavigateToResult={navigateToResult}
+      />
     </div>
   );
 }

@@ -86,13 +86,61 @@ func (s *WorkbooksStore) Update(ctx context.Context, wb *workbooks.Workbook) err
 }
 
 // Delete deletes a workbook and related data.
+// Properly handles cascade deletes with error checking.
 func (s *WorkbooksStore) Delete(ctx context.Context, id string) error {
-	// Delete related data first (foreign key constraints)
-	s.db.ExecContext(ctx, `DELETE FROM named_ranges WHERE workbook_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM shares WHERE workbook_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM versions WHERE workbook_id = ?`, id)
+	// First get all sheet IDs for this workbook to cascade delete sheet-related data
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM sheets WHERE workbook_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	var sheetIDs []string
+	for rows.Next() {
+		var sheetID string
+		if err := rows.Scan(&sheetID); err != nil {
+			rows.Close()
+			return err
+		}
+		sheetIDs = append(sheetIDs, sheetID)
+	}
+	rows.Close()
+
+	// Delete all sheet-related data for each sheet
+	for _, sheetID := range sheetIDs {
+		// Delete comment_replies first (nested FK)
+		if _, err := s.db.ExecContext(ctx, `
+			DELETE FROM comment_replies WHERE comment_id IN (
+				SELECT id FROM comments WHERE sheet_id = ?
+			)
+		`, sheetID); err != nil {
+			return err
+		}
+
+		// Delete sheet-related tables (named_ranges deleted at workbook level)
+		sheetTables := []string{
+			"merged_regions", "cells", "conditional_formats", "data_validations",
+			"charts", "pivot_tables", "comments", "auto_filters",
+		}
+		for _, table := range sheetTables {
+			if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE sheet_id = ?`, sheetID); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Delete sheets themselves
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM sheets WHERE workbook_id = ?`, id); err != nil {
+		return err
+	}
+
+	// Delete workbook-level related data
+	workbookTables := []string{"named_ranges", "shares", "versions"}
+	for _, table := range workbookTables {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE workbook_id = ?`, id); err != nil {
+			return err
+		}
+	}
 
 	// Delete the workbook itself
-	_, err := s.db.ExecContext(ctx, `DELETE FROM workbooks WHERE id = ?`, id)
+	_, err = s.db.ExecContext(ctx, `DELETE FROM workbooks WHERE id = ?`, id)
 	return err
 }

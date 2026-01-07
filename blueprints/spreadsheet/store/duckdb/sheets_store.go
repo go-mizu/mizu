@@ -171,18 +171,197 @@ func (s *SheetsStore) Update(ctx context.Context, sheet *sheets.Sheet) error {
 }
 
 // Delete deletes a sheet and all related data.
+// Properly handles cascade deletes with error checking.
 func (s *SheetsStore) Delete(ctx context.Context, id string) error {
-	// Delete related data first (foreign key constraints)
-	s.db.ExecContext(ctx, `DELETE FROM merged_regions WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM cells WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM conditional_formats WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM data_validations WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM charts WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM pivot_tables WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM comments WHERE sheet_id = ?`, id)
-	s.db.ExecContext(ctx, `DELETE FROM auto_filters WHERE sheet_id = ?`, id)
+	// First, delete comment_replies for all comments in this sheet (nested FK)
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM comment_replies WHERE comment_id IN (
+			SELECT id FROM comments WHERE sheet_id = ?
+		)
+	`, id); err != nil {
+		return err
+	}
+
+	// Delete related data in correct order (foreign key constraints)
+	// named_ranges has FK to sheets via sheet_id
+	tables := []string{
+		"named_ranges", "merged_regions", "cells", "conditional_formats",
+		"data_validations", "charts", "pivot_tables", "comments", "auto_filters",
+	}
+	for _, table := range tables {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+` WHERE sheet_id = ?`, id); err != nil {
+			return err
+		}
+	}
 
 	// Delete the sheet itself
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sheets WHERE id = ?`, id)
+	return err
+}
+
+// UpdateRowHeight updates a single row height using JSON patch operation.
+func (s *SheetsStore) UpdateRowHeight(ctx context.Context, sheetID string, row, height int) error {
+	// Fetch current row_heights, update it, and save back - but only that field
+	var rowHeightsStr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CAST(row_heights AS VARCHAR) FROM sheets WHERE id = ?
+	`, sheetID).Scan(&rowHeightsStr)
+	if err != nil {
+		return err
+	}
+
+	rowHeights := make(map[int]int)
+	if rowHeightsStr.Valid {
+		json.Unmarshal([]byte(rowHeightsStr.String), &rowHeights)
+	}
+	rowHeights[row] = height
+
+	updated, _ := json.Marshal(rowHeights)
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sheets SET row_heights = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, string(updated), sheetID)
+	return err
+}
+
+// UpdateColWidth updates a single column width using JSON patch operation.
+func (s *SheetsStore) UpdateColWidth(ctx context.Context, sheetID string, col, width int) error {
+	var colWidthsStr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CAST(col_widths AS VARCHAR) FROM sheets WHERE id = ?
+	`, sheetID).Scan(&colWidthsStr)
+	if err != nil {
+		return err
+	}
+
+	colWidths := make(map[int]int)
+	if colWidthsStr.Valid {
+		json.Unmarshal([]byte(colWidthsStr.String), &colWidths)
+	}
+	colWidths[col] = width
+
+	updated, _ := json.Marshal(colWidths)
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sheets SET col_widths = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, string(updated), sheetID)
+	return err
+}
+
+// AddHiddenRow adds a row to the hidden rows list.
+func (s *SheetsStore) AddHiddenRow(ctx context.Context, sheetID string, row int) error {
+	var hiddenRowsStr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CAST(hidden_rows AS VARCHAR) FROM sheets WHERE id = ?
+	`, sheetID).Scan(&hiddenRowsStr)
+	if err != nil {
+		return err
+	}
+
+	var hiddenRows []int
+	if hiddenRowsStr.Valid {
+		json.Unmarshal([]byte(hiddenRowsStr.String), &hiddenRows)
+	}
+
+	// Check if already hidden
+	for _, r := range hiddenRows {
+		if r == row {
+			return nil
+		}
+	}
+
+	hiddenRows = append(hiddenRows, row)
+	updated, _ := json.Marshal(hiddenRows)
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sheets SET hidden_rows = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, string(updated), sheetID)
+	return err
+}
+
+// RemoveHiddenRow removes a row from the hidden rows list.
+func (s *SheetsStore) RemoveHiddenRow(ctx context.Context, sheetID string, row int) error {
+	var hiddenRowsStr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CAST(hidden_rows AS VARCHAR) FROM sheets WHERE id = ?
+	`, sheetID).Scan(&hiddenRowsStr)
+	if err != nil {
+		return err
+	}
+
+	var hiddenRows []int
+	if hiddenRowsStr.Valid {
+		json.Unmarshal([]byte(hiddenRowsStr.String), &hiddenRows)
+	}
+
+	// Remove the row
+	newHidden := make([]int, 0, len(hiddenRows))
+	for _, r := range hiddenRows {
+		if r != row {
+			newHidden = append(newHidden, r)
+		}
+	}
+
+	updated, _ := json.Marshal(newHidden)
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sheets SET hidden_rows = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, string(updated), sheetID)
+	return err
+}
+
+// AddHiddenCol adds a column to the hidden columns list.
+func (s *SheetsStore) AddHiddenCol(ctx context.Context, sheetID string, col int) error {
+	var hiddenColsStr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CAST(hidden_cols AS VARCHAR) FROM sheets WHERE id = ?
+	`, sheetID).Scan(&hiddenColsStr)
+	if err != nil {
+		return err
+	}
+
+	var hiddenCols []int
+	if hiddenColsStr.Valid {
+		json.Unmarshal([]byte(hiddenColsStr.String), &hiddenCols)
+	}
+
+	// Check if already hidden
+	for _, c := range hiddenCols {
+		if c == col {
+			return nil
+		}
+	}
+
+	hiddenCols = append(hiddenCols, col)
+	updated, _ := json.Marshal(hiddenCols)
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sheets SET hidden_cols = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, string(updated), sheetID)
+	return err
+}
+
+// RemoveHiddenCol removes a column from the hidden columns list.
+func (s *SheetsStore) RemoveHiddenCol(ctx context.Context, sheetID string, col int) error {
+	var hiddenColsStr sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT CAST(hidden_cols AS VARCHAR) FROM sheets WHERE id = ?
+	`, sheetID).Scan(&hiddenColsStr)
+	if err != nil {
+		return err
+	}
+
+	var hiddenCols []int
+	if hiddenColsStr.Valid {
+		json.Unmarshal([]byte(hiddenColsStr.String), &hiddenCols)
+	}
+
+	// Remove the column
+	newHidden := make([]int, 0, len(hiddenCols))
+	for _, c := range hiddenCols {
+		if c != col {
+			newHidden = append(newHidden, c)
+		}
+	}
+
+	updated, _ := json.Marshal(newHidden)
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE sheets SET hidden_cols = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, string(updated), sheetID)
 	return err
 }
