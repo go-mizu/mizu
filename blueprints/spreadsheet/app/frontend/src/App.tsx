@@ -16,7 +16,10 @@ import { useClipboardStore, readSystemClipboard } from './hooks/useClipboard';
 import { ContextMenu } from './components/ContextMenu';
 import { FindReplaceDialog, FindOptions } from './components/FindReplaceDialog';
 import { Toolbar } from './components/Toolbar';
-import type { Cell, CellFormat, CellPosition, Selection } from './types';
+import { MenuBar, Menu } from './components/MenuBar';
+import { StatusBar } from './components/StatusBar';
+import { SheetTabContextMenu } from './components/SheetTabContextMenu';
+import type { Cell, CellFormat, CellPosition, Selection, Sheet } from './types';
 
 // Generate column headers A, B, C, ..., Z, AA, AB, etc.
 function getColumnLabel(index: number): string {
@@ -96,6 +99,14 @@ function App() {
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findDialogMode, setFindDialogMode] = useState<'find' | 'replace'>('find');
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
+  const [zoom, setZoom] = useState(100);
+  const [sheetTabContextMenu, setSheetTabContextMenu] = useState<{
+    x: number;
+    y: number;
+    sheetId: string;
+    sheetName: string;
+  } | null>(null);
+  const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
 
   // Generate columns with custom widths
   const columns: GridColumn[] = useMemo(() =>
@@ -466,6 +477,49 @@ function App() {
   const openReplaceDialog = useCallback(() => {
     setFindDialogMode('replace');
     setFindDialogOpen(true);
+  }, []);
+
+  // Sheet tab context menu handlers
+  const handleSheetTabContextMenu = useCallback((event: React.MouseEvent, sheet: Sheet) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSheetTabContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      sheetId: sheet.id,
+      sheetName: sheet.name,
+    });
+  }, []);
+
+  const handleDeleteSheet = useCallback(async (sheetId: string) => {
+    // Would call deleteSheet from store
+    console.log('Delete sheet:', sheetId);
+  }, []);
+
+  const handleDuplicateSheet = useCallback(async (sheetId: string) => {
+    const sheet = sheets.find(s => s.id === sheetId);
+    if (sheet) {
+      await createSheet(`${sheet.name} (Copy)`);
+    }
+  }, [sheets, createSheet]);
+
+  const handleRenameSheet = useCallback((sheetId: string) => {
+    setEditingSheetId(sheetId);
+  }, []);
+
+  const handleChangeSheetColor = useCallback((sheetId: string, color: string) => {
+    // Would call updateSheet with color
+    console.log('Change sheet color:', sheetId, color);
+  }, []);
+
+  const handleHideSheet = useCallback((sheetId: string) => {
+    // Would call updateSheet with hidden: true
+    console.log('Hide sheet:', sheetId);
+  }, []);
+
+  // Zoom handler
+  const handleZoomChange = useCallback((newZoom: number) => {
+    setZoom(Math.max(50, Math.min(200, newZoom)));
   }, []);
 
   // Find functionality
@@ -970,6 +1024,134 @@ function App() {
     };
   }, [activeCell, currentSelection]);
 
+  // Menu bar configuration
+  const menus: Menu[] = useMemo(() => [
+    {
+      id: 'file',
+      label: 'File',
+      items: [
+        { id: 'new', label: 'New', shortcut: 'Ctrl+N', action: () => createWorkbook('Untitled Spreadsheet') },
+        { id: 'divider1', label: '', divider: true },
+        { id: 'download', label: 'Download', submenu: [
+          { id: 'xlsx', label: 'Microsoft Excel (.xlsx)', action: () => console.log('Download XLSX') },
+          { id: 'csv', label: 'CSV (.csv)', action: () => console.log('Download CSV') },
+          { id: 'pdf', label: 'PDF (.pdf)', action: () => console.log('Download PDF') },
+        ]},
+        { id: 'divider2', label: '', divider: true },
+        { id: 'print', label: 'Print', shortcut: 'Ctrl+P', action: () => window.print() },
+      ],
+    },
+    {
+      id: 'edit',
+      label: 'Edit',
+      items: [
+        { id: 'undo', label: 'Undo', shortcut: 'Ctrl+Z', action: handleUndo, disabled: !canUndo() },
+        { id: 'redo', label: 'Redo', shortcut: 'Ctrl+Y', action: handleRedo, disabled: !canRedo() },
+        { id: 'divider1', label: '', divider: true },
+        { id: 'cut', label: 'Cut', shortcut: 'Ctrl+X', action: handleCut },
+        { id: 'copy', label: 'Copy', shortcut: 'Ctrl+C', action: handleCopy },
+        { id: 'paste', label: 'Paste', shortcut: 'Ctrl+V', action: () => handlePaste(false) },
+        { id: 'paste-values', label: 'Paste values only', shortcut: 'Ctrl+Shift+V', action: () => handlePaste(true) },
+        { id: 'divider2', label: '', divider: true },
+        { id: 'find', label: 'Find and replace', shortcut: 'Ctrl+H', action: openReplaceDialog },
+        { id: 'divider3', label: '', divider: true },
+        { id: 'delete', label: 'Delete values', action: handleClearSelection },
+      ],
+    },
+    {
+      id: 'view',
+      label: 'View',
+      items: [
+        { id: 'freeze', label: 'Freeze', submenu: [
+          { id: 'no-rows', label: 'No rows', action: () => console.log('Unfreeze rows') },
+          { id: '1-row', label: '1 row', action: () => console.log('Freeze 1 row') },
+          { id: '2-rows', label: '2 rows', action: () => console.log('Freeze 2 rows') },
+        ]},
+        { id: 'divider1', label: '', divider: true },
+        { id: 'zoom', label: 'Zoom', submenu: [
+          { id: 'zoom-50', label: '50%', action: () => handleZoomChange(50) },
+          { id: 'zoom-75', label: '75%', action: () => handleZoomChange(75) },
+          { id: 'zoom-100', label: '100%', action: () => handleZoomChange(100) },
+          { id: 'zoom-125', label: '125%', action: () => handleZoomChange(125) },
+          { id: 'zoom-150', label: '150%', action: () => handleZoomChange(150) },
+          { id: 'zoom-200', label: '200%', action: () => handleZoomChange(200) },
+        ]},
+      ],
+    },
+    {
+      id: 'insert',
+      label: 'Insert',
+      items: [
+        { id: 'row-above', label: 'Row above', action: handleInsertRowAbove },
+        { id: 'row-below', label: 'Row below', action: handleInsertRowBelow },
+        { id: 'divider1', label: '', divider: true },
+        { id: 'col-left', label: 'Column left', action: handleInsertColLeft },
+        { id: 'col-right', label: 'Column right', action: handleInsertColRight },
+      ],
+    },
+    {
+      id: 'format',
+      label: 'Format',
+      items: [
+        { id: 'number', label: 'Number', submenu: [
+          { id: 'auto', label: 'Automatic', action: () => handleFormatChange({ numberFormat: '' }) },
+          { id: 'plain', label: 'Plain text', action: () => handleFormatChange({ numberFormat: '@' }) },
+          { id: 'number', label: 'Number', action: () => handleFormatChange({ numberFormat: '#,##0.00' }) },
+          { id: 'currency', label: 'Currency', action: () => handleFormatChange({ numberFormat: '$#,##0.00' }) },
+          { id: 'percent', label: 'Percent', action: () => handleFormatChange({ numberFormat: '0.00%' }) },
+        ]},
+        { id: 'divider1', label: '', divider: true },
+        { id: 'bold', label: 'Bold', shortcut: 'Ctrl+B', action: () => handleFormatChange({ bold: !currentCellFormat?.bold }) },
+        { id: 'italic', label: 'Italic', shortcut: 'Ctrl+I', action: () => handleFormatChange({ italic: !currentCellFormat?.italic }) },
+        { id: 'underline', label: 'Underline', shortcut: 'Ctrl+U', action: () => handleFormatChange({ underline: !currentCellFormat?.underline }) },
+        { id: 'strikethrough', label: 'Strikethrough', action: () => handleFormatChange({ strikethrough: !currentCellFormat?.strikethrough }) },
+        { id: 'divider2', label: '', divider: true },
+        { id: 'align', label: 'Align', submenu: [
+          { id: 'left', label: 'Left', action: () => handleFormatChange({ hAlign: 'left' }) },
+          { id: 'center', label: 'Center', action: () => handleFormatChange({ hAlign: 'center' }) },
+          { id: 'right', label: 'Right', action: () => handleFormatChange({ hAlign: 'right' }) },
+        ]},
+        { id: 'valign', label: 'Vertical align', submenu: [
+          { id: 'top', label: 'Top', action: () => handleFormatChange({ vAlign: 'top' }) },
+          { id: 'middle', label: 'Middle', action: () => handleFormatChange({ vAlign: 'middle' }) },
+          { id: 'bottom', label: 'Bottom', action: () => handleFormatChange({ vAlign: 'bottom' }) },
+        ]},
+        { id: 'divider3', label: '', divider: true },
+        { id: 'merge', label: 'Merge cells', action: handleMergeCells, disabled: !canMerge },
+        { id: 'unmerge', label: 'Unmerge cells', action: handleUnmergeCells, disabled: !hasMergedCells },
+      ],
+    },
+    {
+      id: 'data',
+      label: 'Data',
+      items: [
+        { id: 'sort-az', label: 'Sort sheet A to Z', action: () => console.log('Sort A-Z') },
+        { id: 'sort-za', label: 'Sort sheet Z to A', action: () => console.log('Sort Z-A') },
+      ],
+    },
+    {
+      id: 'tools',
+      label: 'Tools',
+      items: [
+        { id: 'autocomplete', label: 'Enable autocomplete', checked: true, action: () => console.log('Toggle autocomplete') },
+      ],
+    },
+    {
+      id: 'help',
+      label: 'Help',
+      items: [
+        { id: 'shortcuts', label: 'Keyboard shortcuts', action: () => console.log('Show shortcuts') },
+        { id: 'divider1', label: '', divider: true },
+        { id: 'help', label: 'Help', action: () => console.log('Show help') },
+      ],
+    },
+  ], [
+    createWorkbook, handleUndo, handleRedo, canUndo, canRedo, handleCut, handleCopy, handlePaste,
+    openReplaceDialog, handleClearSelection, handleZoomChange, handleInsertRowAbove, handleInsertRowBelow,
+    handleInsertColLeft, handleInsertColRight, handleFormatChange, currentCellFormat, handleMergeCells,
+    handleUnmergeCells, canMerge, hasMergedCells
+  ]);
+
   if (authLoading) {
     return (
       <div className="app loading">
@@ -995,6 +1177,8 @@ function App() {
         </div>
       </header>
 
+      <MenuBar menus={menus} />
+
       {error && (
         <div className="error-banner">
           <span>{error}</span>
@@ -1014,6 +1198,8 @@ function App() {
         onUnmergeCells={handleUnmergeCells}
         canMerge={canMerge}
         hasMergedCells={hasMergedCells}
+        zoom={zoom}
+        onZoomChange={handleZoomChange}
       />
 
       <div className="formula-bar">
@@ -1031,7 +1217,7 @@ function App() {
         </div>
       </div>
 
-      <div className="grid-container">
+      <div className="grid-container" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left', width: `${10000 / zoom}%`, height: `${10000 / zoom}%` }}>
         <DataEditor
           getCellContent={getContent}
           columns={columns}
@@ -1059,6 +1245,13 @@ function App() {
         />
       </div>
 
+      <StatusBar
+        cells={cells}
+        selection={currentSelection}
+        zoom={zoom}
+        onZoomChange={handleZoomChange}
+      />
+
       <footer className="sheet-tabs">
         <button className="add-sheet" onClick={() => createSheet(`Sheet${sheets.length + 1}`)}>
           +
@@ -1068,8 +1261,30 @@ function App() {
             key={sheet.id}
             className={`sheet-tab ${currentSheet?.id === sheet.id ? 'active' : ''}`}
             onClick={() => selectSheet(sheet.id)}
+            onContextMenu={(e) => handleSheetTabContextMenu(e, sheet)}
+            onDoubleClick={() => setEditingSheetId(sheet.id)}
           >
-            {sheet.name}
+            {editingSheetId === sheet.id ? (
+              <input
+                type="text"
+                className="sheet-tab-name"
+                defaultValue={sheet.name}
+                autoFocus
+                onBlur={() => setEditingSheetId(null)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setEditingSheetId(null);
+                  } else if (e.key === 'Escape') {
+                    setEditingSheetId(null);
+                  }
+                }}
+              />
+            ) : (
+              sheet.name
+            )}
+            {sheet.color && (
+              <div className="sheet-tab-color" style={{ backgroundColor: sheet.color }} />
+            )}
           </div>
         ))}
       </footer>
@@ -1109,6 +1324,22 @@ function App() {
         onReplaceAll={handleReplaceAll}
         onNavigateToResult={navigateToResult}
       />
+
+      {/* Sheet Tab Context Menu */}
+      {sheetTabContextMenu && (
+        <SheetTabContextMenu
+          position={{ x: sheetTabContextMenu.x, y: sheetTabContextMenu.y }}
+          sheetId={sheetTabContextMenu.sheetId}
+          sheetName={sheetTabContextMenu.sheetName}
+          onClose={() => setSheetTabContextMenu(null)}
+          onDelete={handleDeleteSheet}
+          onDuplicate={handleDuplicateSheet}
+          onRename={handleRenameSheet}
+          onChangeColor={handleChangeSheetColor}
+          onHide={handleHideSheet}
+          canDelete={sheets.length > 1}
+        />
+      )}
     </div>
   );
 }

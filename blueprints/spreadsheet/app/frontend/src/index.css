@@ -825,3 +825,671 @@ body {
   border: 1px solid var(--color-primary);
   pointer-events: none;
 }
+
+/* ================================
+   Menu Bar
+   ================================ */
+.menu-bar {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+.menu-trigger {
+  position: relative;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--color-text);
+  user-select: none;
+}
+
+.menu-trigger:hover,
+.menu-trigger.active {
+  background: var(--color-bg-secondary);
+}
+
+.menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  z-index: 1000;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  font-size: 13px;
+  position: relative;
+}
+
+.menu-item:hover {
+  background: var(--color-bg-secondary);
+}
+
+.menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.menu-item.active {
+  background: var(--color-selection);
+}
+
+.menu-item-check {
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: var(--color-primary);
+}
+
+.menu-item-label {
+  flex: 1;
+}
+
+.menu-item-shortcut {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  margin-left: 16px;
+}
+
+.menu-item-arrow {
+  margin-left: 8px;
+  color: var(--color-text-secondary);
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+.menu-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  min-width: 180px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  z-index: 1001;
+}
+
+/* ================================
+   Status Bar
+   ================================ */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 12px;
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border);
+  font-size: 12px;
+}
+
+.status-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+  cursor: default;
+}
+
+.status-stat-label {
+  font-weight: 500;
+}
+
+.status-stat-value {
+  color: var(--color-text);
+}
+
+.status-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.status-zoom-btn:hover:not(:disabled) {
+  background: var(--color-border);
+}
+
+.status-zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.status-zoom-value {
+  min-width: 40px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+/* ================================
+   Sheet Tab Context Menu
+   ================================ */
+.sheet-tab-context-menu {
+  min-width: 180px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+}
+
+.sheet-tab-context-menu .context-menu-item.has-submenu {
+  position: relative;
+}
+
+.sheet-tab-context-menu .context-menu-arrow {
+  margin-left: auto;
+  color: var(--color-text-secondary);
+}
+
+.color-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  z-index: 1001;
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.color-option {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.color-option:hover {
+  border-color: var(--color-text);
+  transform: scale(1.1);
+}
+
+.color-option.selected {
+  border: 2px solid var(--color-primary);
+}
+
+.color-option.no-color {
+  background: #ffffff !important;
+}
+
+/* Sheet tab color indicator */
+.sheet-tab-color {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+}
+
+/* ================================
+   Borders Dropdown
+   ================================ */
+.borders-dropdown {
+  position: relative;
+}
+
+.borders-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.borders-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  z-index: 1000;
+}
+
+.borders-section {
+  padding: 2px 0;
+}
+
+.borders-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+.borders-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  font-size: 13px;
+  gap: 8px;
+  position: relative;
+}
+
+.borders-option:hover {
+  background: var(--color-bg-secondary);
+}
+
+.borders-option.has-submenu {
+  cursor: default;
+}
+
+.borders-option svg {
+  flex-shrink: 0;
+}
+
+.borders-option-label {
+  flex: 1;
+}
+
+.borders-color-preview {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+}
+
+.borders-style-preview {
+  display: flex;
+  align-items: center;
+}
+
+.borders-color-picker,
+.borders-style-picker {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  z-index: 1001;
+}
+
+.borders-color-picker .color-grid {
+  grid-template-columns: repeat(10, 1fr);
+  width: 200px;
+}
+
+.borders-color-picker .color-option {
+  width: 18px;
+  height: 18px;
+}
+
+.borders-style-picker {
+  min-width: 120px;
+}
+
+.style-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  gap: 8px;
+  border-radius: 2px;
+}
+
+.style-option:hover {
+  background: var(--color-bg-secondary);
+}
+
+.style-option.selected {
+  background: var(--color-selection);
+}
+
+.style-option span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+/* ================================
+   Vertical Alignment Icons
+   ================================ */
+.valign-top-icon,
+.valign-middle-icon,
+.valign-bottom-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ================================
+   Freeze Lines
+   ================================ */
+.freeze-line-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #c0c0c0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.freeze-line-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #c0c0c0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.freeze-area {
+  background: rgba(248, 249, 250, 0.5);
+}
+
+/* ================================
+   Formula Autocomplete
+   ================================ */
+.formula-autocomplete {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+}
+
+.autocomplete-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background: var(--color-selection);
+}
+
+.autocomplete-name {
+  font-weight: 500;
+  color: var(--color-primary);
+  margin-right: 8px;
+}
+
+.autocomplete-signature {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  flex: 1;
+}
+
+.autocomplete-description {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+/* ================================
+   Editable title
+   ================================ */
+.title-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--color-text);
+  padding: 2px 8px;
+  outline: none;
+  min-width: 100px;
+}
+
+.title-input:hover {
+  border-color: var(--color-border);
+}
+
+.title-input:focus {
+  border-color: var(--color-primary);
+  background: var(--color-bg);
+}
+
+/* ================================
+   Improved toolbar buttons
+   ================================ */
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0 4px;
+}
+
+.toolbar-btn:hover {
+  background: var(--color-bg-secondary);
+}
+
+.toolbar-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.toolbar-btn.active {
+  background: var(--color-selection);
+  color: var(--color-primary);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Dropdown indicators */
+.toolbar-btn .dropdown-arrow {
+  margin-left: 2px;
+}
+
+/* ================================
+   Zoom Container in Toolbar
+   ================================ */
+.zoom-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom-container input[type="range"] {
+  width: 80px;
+  cursor: pointer;
+}
+
+/* ================================
+   Number Format Dropdown
+   ================================ */
+.number-format-dropdown {
+  position: relative;
+}
+
+.number-format-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 180px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  z-index: 1000;
+}
+
+.number-format-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.number-format-option:hover {
+  background: var(--color-bg-secondary);
+}
+
+.number-format-option.selected {
+  background: var(--color-selection);
+}
+
+.number-format-example {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+/* ================================
+   Improved Sheet Tabs
+   ================================ */
+.sheet-tabs {
+  display: flex;
+  align-items: center;
+  height: var(--sheet-tabs-height);
+  padding: 0 8px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.sheet-tabs::-webkit-scrollbar {
+  height: 0;
+}
+
+.sheet-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 16px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sheet-tab.active {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-bg);
+  margin-bottom: -1px;
+  color: var(--color-text);
+}
+
+.sheet-tab:hover:not(.active) {
+  background: var(--color-bg-secondary);
+}
+
+.sheet-tab-name {
+  outline: none;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  min-width: 20px;
+}
+
+.sheet-tab-name:focus {
+  background: var(--color-bg);
+  border-radius: 2px;
+  padding: 0 4px;
+  margin: 0 -4px;
+}
