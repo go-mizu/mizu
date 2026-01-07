@@ -298,6 +298,9 @@ func (s *Server) setupRoutes() {
 		api.Post("/sheets/{sheetID}/merge", s.authRequired(s.cellHandlers.Merge))
 		api.Post("/sheets/{sheetID}/unmerge", s.authRequired(s.cellHandlers.Unmerge))
 
+		// Copy range
+		api.Post("/sheets/{sheetID}/copy-range", s.authRequired(s.cellHandlers.CopyRange))
+
 		// Formula evaluation
 		api.Post("/formula/evaluate", s.authRequired(s.cellHandlers.Evaluate))
 

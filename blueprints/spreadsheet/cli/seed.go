@@ -129,11 +129,19 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		CreatedBy:  ownerUser.ID,
 	})
 
-	srv.SheetService().Create(ctx, &sheets.CreateIn{
+	sheet3, _ := srv.SheetService().Create(ctx, &sheets.CreateIn{
 		WorkbookID: wb.ID,
-		Name:       "Charts",
+		Name:       "Formulas Demo",
 		Index:      2,
-		Color:      "#3B82F6",
+		Color:      "#10B981",
+		CreatedBy:  ownerUser.ID,
+	})
+
+	sheet4, _ := srv.SheetService().Create(ctx, &sheets.CreateIn{
+		WorkbookID: wb.ID,
+		Name:       "Inventory",
+		Index:      3,
+		Color:      "#F59E0B",
 		CreatedBy:  ownerUser.ID,
 	})
 
@@ -245,6 +253,185 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Create Formulas Demo sheet data
+	if sheet3 != nil {
+		formulasData := [][]interface{}{
+			{"Formula Type", "Example", "Result"},
+			{"", "", ""},
+			{"Math Functions", "", ""},
+			{"SUM", "=SUM(10,20,30)", "=SUM(10,20,30)"},
+			{"AVERAGE", "=AVERAGE(10,20,30)", "=AVERAGE(10,20,30)"},
+			{"MAX/MIN", "=MAX(10,20,30)", "=MAX(10,20,30)"},
+			{"ROUND", "=ROUND(3.14159,2)", "=ROUND(3.14159,2)"},
+			{"SQRT", "=SQRT(144)", "=SQRT(144)"},
+			{"POWER", "=POWER(2,10)", "=POWER(2,10)"},
+			{"", "", ""},
+			{"Text Functions", "", ""},
+			{"CONCATENATE", `=CONCATENATE("Hello"," ","World")`, `=CONCATENATE("Hello"," ","World")`},
+			{"UPPER", `=UPPER("hello")`, `=UPPER("hello")`},
+			{"LEN", `=LEN("Spreadsheet")`, `=LEN("Spreadsheet")`},
+			{"LEFT", `=LEFT("Hello",3)`, `=LEFT("Hello",3)`},
+			{"MID", `=MID("Spreadsheet",7,5)`, `=MID("Spreadsheet",7,5)`},
+			{"", "", ""},
+			{"Logical Functions", "", ""},
+			{"IF", "=IF(10>5,\"Yes\",\"No\")", "=IF(10>5,\"Yes\",\"No\")"},
+			{"AND", "=AND(TRUE,TRUE)", "=AND(TRUE,TRUE)"},
+			{"OR", "=OR(TRUE,FALSE)", "=OR(TRUE,FALSE)"},
+			{"NOT", "=NOT(FALSE)", "=NOT(FALSE)"},
+			{"", "", ""},
+			{"Statistical Functions", "", ""},
+			{"COUNT", "=COUNT(1,2,3,\"a\")", "=COUNT(1,2,3,\"a\")"},
+			{"COUNTA", "=COUNTA(1,2,3,\"a\")", "=COUNTA(1,2,3,\"a\")"},
+			{"MEDIAN", "=MEDIAN(1,2,3,4,5)", "=MEDIAN(1,2,3,4,5)"},
+			{"STDEV", "=STDEV(1,2,3,4,5)", "=STDEV(1,2,3,4,5)"},
+			{"", "", ""},
+			{"Date Functions", "", ""},
+			{"TODAY", "=TODAY()", "=TODAY()"},
+			{"NOW", "=NOW()", "=NOW()"},
+			{"YEAR", "=YEAR(TODAY())", "=YEAR(TODAY())"},
+			{"MONTH", "=MONTH(TODAY())", "=MONTH(TODAY())"},
+			{"", "", ""},
+			{"Cross-Sheet References", "", ""},
+			{"Total Revenue", "='Sales Data'!F8", "='Sales Data'!F8"},
+			{"Q1 Sales", "='Sales Data'!B8", "='Sales Data'!B8"},
+		}
+
+		for row, rowData := range formulasData {
+			for col, value := range rowData {
+				var formula string
+				var cellValue interface{}
+
+				if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
+					formula = strVal
+				} else {
+					cellValue = value
+				}
+
+				srv.CellService().Set(ctx, sheet3.ID, row, col, &cells.SetCellIn{
+					Value:   cellValue,
+					Formula: formula,
+				})
+			}
+		}
+
+		// Apply formatting to formula headers
+		headerRows := []int{0, 2, 10, 16, 22, 28, 34}
+		for _, row := range headerRows {
+			for col := 0; col < 3; col++ {
+				srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
+					SheetID: sheet3.ID,
+					Row:     row,
+					Col:     col,
+					Format: cells.Format{
+						Bold:            true,
+						BackgroundColor: "#E5E7EB",
+					},
+				})
+			}
+		}
+
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 0, 150)
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 1, 250)
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 2, 150)
+	}
+
+	// Create Inventory sheet with lookup data
+	if sheet4 != nil {
+		inventoryData := [][]interface{}{
+			{"SKU", "Product Name", "Category", "Price", "Stock", "Status", "Value"},
+			{"SKU001", "Laptop Pro 15", "Electronics", 1299.99, 45, "=IF(E2<10,\"Low Stock\",IF(E2<25,\"Medium\",\"In Stock\"))", "=D2*E2"},
+			{"SKU002", "Wireless Mouse", "Accessories", 29.99, 150, "=IF(E3<10,\"Low Stock\",IF(E3<25,\"Medium\",\"In Stock\"))", "=D3*E3"},
+			{"SKU003", "USB-C Hub", "Accessories", 59.99, 8, "=IF(E4<10,\"Low Stock\",IF(E4<25,\"Medium\",\"In Stock\"))", "=D4*E4"},
+			{"SKU004", "Monitor 27\"", "Electronics", 449.99, 22, "=IF(E5<10,\"Low Stock\",IF(E5<25,\"Medium\",\"In Stock\"))", "=D5*E5"},
+			{"SKU005", "Keyboard Mech", "Accessories", 89.99, 65, "=IF(E6<10,\"Low Stock\",IF(E6<25,\"Medium\",\"In Stock\"))", "=D6*E6"},
+			{"SKU006", "Webcam HD", "Electronics", 79.99, 5, "=IF(E7<10,\"Low Stock\",IF(E7<25,\"Medium\",\"In Stock\"))", "=D7*E7"},
+			{"SKU007", "Headphones BT", "Audio", 149.99, 35, "=IF(E8<10,\"Low Stock\",IF(E8<25,\"Medium\",\"In Stock\"))", "=D8*E8"},
+			{"SKU008", "Speakers 2.1", "Audio", 199.99, 18, "=IF(E9<10,\"Low Stock\",IF(E9<25,\"Medium\",\"In Stock\"))", "=D9*E9"},
+			{"", "", "", "", "", "", ""},
+			{"", "", "Totals:", "=AVERAGE(D2:D9)", "=SUM(E2:E9)", "", "=SUM(G2:G9)"},
+			{"", "", "", "", "", "", ""},
+			{"", "Lookup Demo", "", "", "", "", ""},
+			{"", "Enter SKU:", "SKU003", "", "", "", ""},
+			{"", "Product:", "=VLOOKUP(C14,A2:G9,2,FALSE)", "", "", "", ""},
+			{"", "Price:", "=VLOOKUP(C14,A2:G9,4,FALSE)", "", "", "", ""},
+			{"", "Stock:", "=VLOOKUP(C14,A2:G9,5,FALSE)", "", "", "", ""},
+		}
+
+		for row, rowData := range inventoryData {
+			for col, value := range rowData {
+				var formula string
+				var cellValue interface{}
+
+				if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
+					formula = strVal
+				} else {
+					cellValue = value
+				}
+
+				srv.CellService().Set(ctx, sheet4.ID, row, col, &cells.SetCellIn{
+					Value:   cellValue,
+					Formula: formula,
+				})
+			}
+		}
+
+		// Apply formatting to header
+		for col := 0; col < 7; col++ {
+			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
+				SheetID: sheet4.ID,
+				Row:     0,
+				Col:     col,
+				Format: cells.Format{
+					Bold:            true,
+					BackgroundColor: "#F59E0B",
+					FontColor:       "#FFFFFF",
+					HAlign:          "center",
+				},
+			})
+		}
+
+		// Price format
+		for row := 1; row < 11; row++ {
+			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
+				SheetID: sheet4.ID,
+				Row:     row,
+				Col:     3,
+				Format: cells.Format{
+					NumberFormat: "$#,##0.00",
+					HAlign:       "right",
+				},
+			})
+			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
+				SheetID: sheet4.ID,
+				Row:     row,
+				Col:     6,
+				Format: cells.Format{
+					NumberFormat: "$#,##0.00",
+					HAlign:       "right",
+				},
+			})
+		}
+
+		// Lookup section formatting
+		srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
+			SheetID: sheet4.ID,
+			Row:     12,
+			Col:     1,
+			Format: cells.Format{
+				Bold:            true,
+				BackgroundColor: "#FEF3C7",
+			},
+		})
+
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 0, 80)
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 1, 140)
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 2, 100)
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 3, 80)
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 4, 60)
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 5, 80)
+		srv.SheetService().SetColWidth(ctx, sheet4.ID, 6, 100)
+	}
+
 	// Set column widths for better display
 	srv.SheetService().SetColWidth(ctx, sheet1.ID, 0, 120) // Product column
 	for col := 1; col < 7; col++ {
@@ -261,7 +448,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		"Users", fmt.Sprintf("%d users (alice, bob, charlie)", len(createdUsers)),
 		"Password", "password123",
 		"Workbook", wb.Name,
-		"Sheets", "Sales Data, Summary, Charts",
+		"Sheets", "Sales Data, Summary, Formulas Demo, Inventory",
 	)
 	Blank()
 	Hint("Start the server with: spreadsheet serve")

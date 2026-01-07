@@ -280,6 +280,25 @@ export class APIClient {
     return res;
   }
 
+  // Copy Range
+  async copyRange(sheetId: string, data: {
+    sourceRange: { startRow: number; startCol: number; endRow: number; endCol: number };
+    destRow: number;
+    destCol: number;
+    destSheetId?: string;
+  }) {
+    const res = await this.request.post(`${API_BASE}/sheets/${sheetId}/copy-range`, {
+      headers: this.headers(),
+      data: {
+        sourceRange: data.sourceRange,
+        destRow: data.destRow,
+        destCol: data.destCol,
+        destSheetId: data.destSheetId,
+      },
+    });
+    return res;
+  }
+
   // Formula
   async evaluateFormula(formula: string, context?: { sheetId?: string; row?: number; col?: number }) {
     const res = await this.request.post(`${API_BASE}/formula/evaluate`, {

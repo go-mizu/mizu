@@ -319,7 +319,7 @@ func (s *Service) GetMergedRegions(ctx context.Context, sheetID string) ([]*Merg
 	return s.store.GetMergedRegions(ctx, sheetID)
 }
 
-// CopyRange copies a range of cells.
+// CopyRange copies a range of cells with formula adjustment.
 func (s *Service) CopyRange(ctx context.Context, sourceSheetID string, sourceRange Range, destSheetID string, destRow, destCol int) error {
 	cells, err := s.store.GetRange(ctx, sourceSheetID, sourceRange.StartRow, sourceRange.StartCol, sourceRange.EndRow, sourceRange.EndCol)
 	if err != nil {
@@ -333,18 +333,38 @@ func (s *Service) CopyRange(ctx context.Context, sourceSheetID string, sourceRan
 	now := time.Now()
 
 	for _, cell := range cells {
+		newFormula := cell.Formula
+		// Adjust formula references if copying within same sheet or to different sheet
+		if newFormula != "" {
+			newFormula = formula.AdjustFormulaForCopy(newFormula, rowOffset, colOffset, "")
+		}
+
 		newCell := &Cell{
 			ID:        ulid.New(),
 			SheetID:   destSheetID,
 			Row:       cell.Row + rowOffset,
 			Col:       cell.Col + colOffset,
 			Value:     cell.Value,
-			Formula:   cell.Formula, // TODO: Adjust formula references
+			Formula:   newFormula,
 			Display:   cell.Display,
 			Type:      cell.Type,
 			Format:    cell.Format,
 			UpdatedAt: now,
 		}
+
+		// Re-evaluate formula if it was adjusted
+		if newFormula != "" && newFormula != cell.Formula {
+			value, display, err := s.evaluateFormula(ctx, destSheetID, newFormula, newCell.Row, newCell.Col)
+			if err != nil {
+				newCell.Value = nil
+				newCell.Display = fmt.Sprintf("#ERROR: %v", err)
+				newCell.Type = CellTypeError
+			} else {
+				newCell.Value = value
+				newCell.Display = display
+			}
+		}
+
 		newCells = append(newCells, newCell)
 	}
 
