@@ -18,6 +18,8 @@ import (
 	"github.com/go-mizu/blueprints/spreadsheet/app/web/handler/api"
 	"github.com/go-mizu/blueprints/spreadsheet/assets"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/cells"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/export"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/importer"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/users"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/workbooks"
@@ -43,13 +45,16 @@ type Server struct {
 	workbooks workbooks.API
 	sheets    sheets.API
 	cells     cells.API
+	exporter  export.API
+	importer  importer.API
 
 	// Handlers
-	authHandlers     *api.Auth
-	workbookHandlers *api.Workbook
-	sheetHandlers    *api.Sheet
-	cellHandlers     *api.Cell
-	uiHandlers       *handler.UI
+	authHandlers         *api.Auth
+	workbookHandlers     *api.Workbook
+	sheetHandlers        *api.Sheet
+	cellHandlers         *api.Cell
+	importExportHandlers *api.ImportExport
+	uiHandlers           *handler.UI
 }
 
 // New creates a new server.
@@ -152,6 +157,10 @@ func New(cfg Config) (*Server, error) {
 		}
 	}
 
+	// Create export and import services
+	exportSvc := export.NewService(workbooksSvc, sheetsSvc, cellsSvc)
+	importSvc := importer.NewService(workbooksSvc, sheetsSvc, cellsSvc)
+
 	s := &Server{
 		app:       mizu.New(),
 		cfg:       cfg,
@@ -160,6 +169,8 @@ func New(cfg Config) (*Server, error) {
 		workbooks: workbooksSvc,
 		sheets:    sheetsSvc,
 		cells:     cellsSvc,
+		exporter:  exportSvc,
+		importer:  importSvc,
 	}
 
 	// Parse templates
@@ -173,6 +184,7 @@ func New(cfg Config) (*Server, error) {
 	s.workbookHandlers = api.NewWorkbook(workbooksSvc, sheetsSvc, s.getUserID)
 	s.sheetHandlers = api.NewSheet(sheetsSvc, s.getUserID)
 	s.cellHandlers = api.NewCell(cellsSvc, sheetsSvc, s.getUserID)
+	s.importExportHandlers = api.NewImportExport(exportSvc, importSvc, s.getUserID)
 	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workbooksSvc)
 
 	s.setupRoutes()
@@ -288,5 +300,14 @@ func (s *Server) setupRoutes() {
 
 		// Formula evaluation
 		api.Post("/formula/evaluate", s.authRequired(s.cellHandlers.Evaluate))
+
+		// Import/Export
+		api.Get("/formats", s.authRequired(s.importExportHandlers.SupportedFormats))
+		api.Get("/workbooks/{id}/export", s.authRequired(s.importExportHandlers.ExportWorkbook))
+		api.Post("/workbooks/{id}/export", s.authRequired(s.importExportHandlers.ExportWorkbook))
+		api.Post("/workbooks/{id}/import", s.authRequired(s.importExportHandlers.ImportToWorkbook))
+		api.Get("/sheets/{id}/export", s.authRequired(s.importExportHandlers.ExportSheet))
+		api.Post("/sheets/{id}/export", s.authRequired(s.importExportHandlers.ExportSheet))
+		api.Post("/sheets/{id}/import", s.authRequired(s.importExportHandlers.ImportToSheet))
 	})
 }

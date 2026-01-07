@@ -288,6 +288,104 @@ export class APIClient {
     });
     return res;
   }
+
+  // Export
+  async exportWorkbook(workbookId: string, format: string, options?: Record<string, unknown>) {
+    const params = new URLSearchParams({ format });
+    if (options?.formatting) params.append('formatting', 'true');
+    if (options?.formulas) params.append('formulas', 'true');
+    if (options?.headers) params.append('headers', 'true');
+    if (options?.gridlines) params.append('gridlines', 'true');
+    if (options?.metadata) params.append('metadata', 'true');
+    if (options?.orientation) params.append('orientation', options.orientation as string);
+    if (options?.paperSize) params.append('paperSize', options.paperSize as string);
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await this.request.get(`${API_BASE}/workbooks/${workbookId}/export?${params}`, {
+      headers,
+    });
+    return res;
+  }
+
+  async exportSheet(sheetId: string, format: string, options?: Record<string, unknown>) {
+    const params = new URLSearchParams({ format });
+    if (options?.formatting) params.append('formatting', 'true');
+    if (options?.formulas) params.append('formulas', 'true');
+    if (options?.headers) params.append('headers', 'true');
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await this.request.get(`${API_BASE}/sheets/${sheetId}/export?${params}`, {
+      headers,
+    });
+    return res;
+  }
+
+  // Import
+  async importToWorkbook(workbookId: string, fileContent: string | Buffer, filename: string, options?: Record<string, unknown>) {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await this.request.post(`${API_BASE}/workbooks/${workbookId}/import`, {
+      headers,
+      multipart: {
+        file: {
+          name: filename,
+          mimeType: this.getMimeType(filename),
+          buffer: Buffer.from(fileContent),
+        },
+        ...(options?.hasHeaders && { hasHeaders: 'true' }),
+        ...(options?.skipEmptyRows && { skipEmptyRows: 'true' }),
+        ...(options?.autoDetectTypes && { autoDetectTypes: 'true' }),
+        ...(options?.importFormatting && { importFormatting: 'true' }),
+        ...(options?.importFormulas && { importFormulas: 'true' }),
+        ...(options?.sheetName && { sheetName: options.sheetName as string }),
+      },
+    });
+    return res;
+  }
+
+  async importToSheet(sheetId: string, fileContent: string | Buffer, filename: string, options?: Record<string, unknown>) {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await this.request.post(`${API_BASE}/sheets/${sheetId}/import`, {
+      headers,
+      multipart: {
+        file: {
+          name: filename,
+          mimeType: this.getMimeType(filename),
+          buffer: Buffer.from(fileContent),
+        },
+        ...(options?.hasHeaders && { hasHeaders: 'true' }),
+        ...(options?.skipEmptyRows && { skipEmptyRows: 'true' }),
+        ...(options?.autoDetectTypes && { autoDetectTypes: 'true' }),
+      },
+    });
+    return res;
+  }
+
+  private getMimeType(filename: string): string {
+    const ext = filename.toLowerCase().split('.').pop();
+    switch (ext) {
+      case 'csv': return 'text/csv';
+      case 'tsv': return 'text/tab-separated-values';
+      case 'xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'json': return 'application/json';
+      default: return 'application/octet-stream';
+    }
+  }
 }
 
 // Test Fixtures Helper
