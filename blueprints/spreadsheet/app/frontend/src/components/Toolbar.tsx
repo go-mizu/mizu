@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import type { CellFormat } from '../types';
+import { getCurrencyFormat, getPercentFormat, increaseDecimalPlaces, decreaseDecimalPlaces } from '../utils/numberFormat';
 
 interface ToolbarProps {
   onUndo: () => void;
@@ -13,6 +14,8 @@ interface ToolbarProps {
   onUnmergeCells: () => void;
   canMerge: boolean;
   hasMergedCells: boolean;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
 }
 
 // Icons
@@ -133,6 +136,27 @@ const CommentIcon = () => (
   </svg>
 );
 
+const AlignTopIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="4" y1="4" x2="20" y2="4" />
+    <rect x="8" y="8" width="8" height="10" rx="1" />
+  </svg>
+);
+
+const AlignMiddleIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <rect x="8" y="6" width="8" height="12" rx="1" />
+  </svg>
+);
+
+const AlignBottomIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="4" y1="20" x2="20" y2="20" />
+    <rect x="8" y="6" width="8" height="10" rx="1" />
+  </svg>
+);
+
 const BorderIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -177,6 +201,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onUnmergeCells,
   canMerge,
   hasMergedCells,
+  zoom = 100,
+  onZoomChange,
 }) => {
   const handleFontFamilyChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     onFormatChange({ fontFamily: e.target.value });
@@ -206,6 +232,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     onFormatChange({ hAlign: align });
   }, [onFormatChange]);
 
+  const setVerticalAlignment = useCallback((align: 'top' | 'middle' | 'bottom') => {
+    onFormatChange({ vAlign: align });
+  }, [onFormatChange]);
+
   const toggleWrapText = useCallback(() => {
     onFormatChange({ wrapText: !currentFormat?.wrapText });
   }, [onFormatChange, currentFormat]);
@@ -217,6 +247,29 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const handleFillColor = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     onFormatChange({ backgroundColor: e.target.value });
   }, [onFormatChange]);
+
+  // Number formatting handlers
+  const handleCurrency = useCallback(() => {
+    onFormatChange({ numberFormat: getCurrencyFormat() });
+  }, [onFormatChange]);
+
+  const handlePercent = useCallback(() => {
+    onFormatChange({ numberFormat: getPercentFormat() });
+  }, [onFormatChange]);
+
+  const handleDecimalIncrease = useCallback(() => {
+    onFormatChange({ numberFormat: increaseDecimalPlaces(currentFormat?.numberFormat) });
+  }, [onFormatChange, currentFormat]);
+
+  const handleDecimalDecrease = useCallback(() => {
+    onFormatChange({ numberFormat: decreaseDecimalPlaces(currentFormat?.numberFormat) });
+  }, [onFormatChange, currentFormat]);
+
+  const handleZoomSelect = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (onZoomChange) {
+      onZoomChange(parseInt(e.target.value, 10));
+    }
+  }, [onZoomChange]);
 
   return (
     <div className="toolbar">
@@ -250,7 +303,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Zoom */}
       <div className="toolbar-group">
-        <select className="zoom-select" defaultValue="100">
+        <select className="zoom-select" value={zoom} onChange={handleZoomSelect}>
           <option value="50">50%</option>
           <option value="75">75%</option>
           <option value="90">90%</option>
@@ -358,23 +411,23 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Number format */}
       <div className="toolbar-group">
-        <button title="Currency">
+        <button title="Format as currency" onClick={handleCurrency}>
           <CurrencyIcon />
         </button>
-        <button title="Percent">
+        <button title="Format as percent" onClick={handlePercent}>
           <PercentIcon />
         </button>
-        <button title="Decrease decimal">
+        <button title="Decrease decimal places" onClick={handleDecimalDecrease}>
           <DecimalDecreaseIcon />
         </button>
-        <button title="Increase decimal">
+        <button title="Increase decimal places" onClick={handleDecimalIncrease}>
           <DecimalIncreaseIcon />
         </button>
       </div>
 
       <div className="toolbar-divider" />
 
-      {/* Alignment */}
+      {/* Horizontal Alignment */}
       <div className="toolbar-group">
         <button
           title="Align left"
@@ -396,6 +449,33 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           onClick={() => setAlignment('right')}
         >
           <AlignRightIcon />
+        </button>
+      </div>
+
+      <div className="toolbar-divider" />
+
+      {/* Vertical Alignment */}
+      <div className="toolbar-group">
+        <button
+          title="Align top"
+          className={currentFormat?.vAlign === 'top' ? 'active' : ''}
+          onClick={() => setVerticalAlignment('top')}
+        >
+          <AlignTopIcon />
+        </button>
+        <button
+          title="Align middle"
+          className={currentFormat?.vAlign === 'middle' ? 'active' : ''}
+          onClick={() => setVerticalAlignment('middle')}
+        >
+          <AlignMiddleIcon />
+        </button>
+        <button
+          title="Align bottom"
+          className={currentFormat?.vAlign === 'bottom' ? 'active' : ''}
+          onClick={() => setVerticalAlignment('bottom')}
+        >
+          <AlignBottomIcon />
         </button>
       </div>
 
