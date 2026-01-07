@@ -217,6 +217,180 @@ class ApiClient {
   async evaluateFormula(req: EvaluateFormulaRequest): Promise<EvaluateFormulaResponse> {
     return this.request<EvaluateFormulaResponse>('POST', '/formula/evaluate', req);
   }
+
+  // Import/Export
+  async exportWorkbook(
+    workbookId: string,
+    format: string,
+    options?: ExportOptions
+  ): Promise<Blob> {
+    const params = new URLSearchParams({ format });
+    if (options?.formatting) params.append('formatting', 'true');
+    if (options?.formulas) params.append('formulas', 'true');
+    if (options?.headers) params.append('headers', 'true');
+    if (options?.gridlines) params.append('gridlines', 'true');
+    if (options?.orientation) params.append('orientation', options.orientation);
+    if (options?.paperSize) params.append('paperSize', options.paperSize);
+    if (options?.compact) params.append('compact', 'true');
+    if (options?.metadata) params.append('metadata', 'true');
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/workbooks/${workbookId}/export?${params}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
+
+  async exportSheet(
+    sheetId: string,
+    format: string,
+    options?: ExportOptions
+  ): Promise<Blob> {
+    const params = new URLSearchParams({ format });
+    if (options?.formatting) params.append('formatting', 'true');
+    if (options?.formulas) params.append('formulas', 'true');
+    if (options?.headers) params.append('headers', 'true');
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/sheets/${sheetId}/export?${params}`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.statusText}`);
+    }
+
+    return response.blob();
+  }
+
+  async importToWorkbook(
+    workbookId: string,
+    file: File,
+    options?: ImportOptions
+  ): Promise<ImportResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (options?.hasHeaders) formData.append('hasHeaders', 'true');
+    if (options?.skipEmptyRows) formData.append('skipEmptyRows', 'true');
+    if (options?.trimWhitespace) formData.append('trimWhitespace', 'true');
+    if (options?.autoDetectTypes !== false) formData.append('autoDetectTypes', 'true');
+    if (options?.importFormatting) formData.append('importFormatting', 'true');
+    if (options?.importFormulas) formData.append('importFormulas', 'true');
+    if (options?.importSheet) formData.append('importSheet', options.importSheet);
+    if (options?.sheetName) formData.append('sheetName', options.sheetName);
+    if (options?.format) formData.append('format', options.format);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/workbooks/${workbookId}/import`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Import failed');
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async importToSheet(
+    sheetId: string,
+    file: File,
+    options?: ImportOptions
+  ): Promise<ImportResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (options?.hasHeaders) formData.append('hasHeaders', 'true');
+    if (options?.skipEmptyRows) formData.append('skipEmptyRows', 'true');
+    if (options?.trimWhitespace) formData.append('trimWhitespace', 'true');
+    if (options?.autoDetectTypes !== false) formData.append('autoDetectTypes', 'true');
+    if (options?.importFormatting) formData.append('importFormatting', 'true');
+    if (options?.importFormulas) formData.append('importFormulas', 'true');
+    if (options?.format) formData.append('format', options.format);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/sheets/${sheetId}/import`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Import failed');
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
+  async getSupportedFormats(): Promise<{ import: string[]; export: string[] }> {
+    return this.request<{ import: string[]; export: string[] }>('GET', '/formats');
+  }
+}
+
+// Export types
+export interface ExportOptions {
+  formatting?: boolean;
+  formulas?: boolean;
+  headers?: boolean;
+  gridlines?: boolean;
+  orientation?: 'portrait' | 'landscape';
+  paperSize?: 'letter' | 'a4' | 'legal';
+  compact?: boolean;
+  metadata?: boolean;
+}
+
+export interface ImportOptions {
+  hasHeaders?: boolean;
+  skipEmptyRows?: boolean;
+  trimWhitespace?: boolean;
+  autoDetectTypes?: boolean;
+  importFormatting?: boolean;
+  importFormulas?: boolean;
+  importSheet?: string;
+  sheetName?: string;
+  format?: string;
+}
+
+export interface ImportResult {
+  sheetId: string;
+  rowsImported: number;
+  colsImported: number;
+  cellsImported: number;
+  warnings?: string[];
 }
 
 export const api = new ApiClient();

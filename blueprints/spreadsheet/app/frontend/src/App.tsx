@@ -19,6 +19,9 @@ import { Toolbar } from './components/Toolbar';
 import { MenuBar, Menu } from './components/MenuBar';
 import { StatusBar } from './components/StatusBar';
 import { SheetTabContextMenu } from './components/SheetTabContextMenu';
+import { ImportDialog } from './components/ImportDialog';
+import { ExportDialog, ExportFormat } from './components/ExportDialog';
+import { api, ExportOptions, ImportOptions, ImportResult } from './utils/api';
 import type { Cell, CellFormat, CellPosition, CellValue, Selection, Sheet } from './types';
 
 // Generate column headers A, B, C, ..., Z, AA, AB, etc.
@@ -110,6 +113,9 @@ function App() {
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [formatPainterFormat, setFormatPainterFormat] = useState<CellFormat | null>(null);
   const [keyboardShortcutsOpen, setKeyboardShortcutsOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importFormat, setImportFormat] = useState<string | undefined>(undefined);
 
   // Generate columns with custom widths
   const columns: GridColumn[] = useMemo(() =>
@@ -632,6 +638,50 @@ function App() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }, [cells, currentWorkbook]);
+
+  // Export handler using API
+  const handleExport = useCallback(async (format: ExportFormat, options: ExportOptions) => {
+    if (!currentWorkbook) {
+      alert('No workbook to export');
+      return;
+    }
+
+    try {
+      const blob = await api.exportWorkbook(currentWorkbook.id, format, options);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      const ext = format === 'xlsx' ? '.xlsx' : format === 'pdf' ? '.pdf' : format === 'json' ? '.json' : format === 'html' ? '.html' : format === 'tsv' ? '.tsv' : '.csv';
+      link.download = `${currentWorkbook.name}${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Export failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
+  }, [currentWorkbook]);
+
+  // Import handler using API
+  const handleImport = useCallback(async (file: File, options: ImportOptions): Promise<ImportResult> => {
+    if (!currentWorkbook) {
+      throw new Error('No workbook selected');
+    }
+
+    const result = await api.importToWorkbook(currentWorkbook.id, file, options);
+
+    // Reload sheets after import
+    await loadWorkbook(currentWorkbook.id);
+
+    return result;
+  }, [currentWorkbook, loadWorkbook]);
+
+  // Open import dialog for specific format
+  const openImportDialog = useCallback((format?: string) => {
+    setImportFormat(format);
+    setImportDialogOpen(true);
+  }, []);
 
   // Sort handlers
   const handleSortAZ = useCallback(async () => {
@@ -1260,10 +1310,19 @@ function App() {
       items: [
         { id: 'new', label: 'New', shortcut: 'Ctrl+N', action: () => createWorkbook('Untitled Spreadsheet') },
         { id: 'divider1', label: '', divider: true },
+        { id: 'import', label: 'Import', submenu: [
+          { id: 'import-csv', label: 'CSV file (.csv)', action: () => openImportDialog('csv') },
+          { id: 'import-tsv', label: 'TSV file (.tsv)', action: () => openImportDialog('tsv') },
+          { id: 'import-xlsx', label: 'Excel file (.xlsx)', action: () => openImportDialog('xlsx') },
+          { id: 'import-json', label: 'JSON file (.json)', action: () => openImportDialog('json') },
+        ]},
         { id: 'download', label: 'Download', submenu: [
-          { id: 'xlsx', label: 'Microsoft Excel (.xlsx)', action: () => alert('XLSX export requires a library like exceljs. CSV export is available.') },
-          { id: 'csv', label: 'CSV (.csv)', action: handleExportCSV },
-          { id: 'pdf', label: 'PDF (.pdf)', action: () => window.print() },
+          { id: 'xlsx', label: 'Microsoft Excel (.xlsx)', action: () => handleExport('xlsx', { formatting: true, formulas: true }) },
+          { id: 'csv', label: 'Comma-separated values (.csv)', action: () => handleExport('csv', {}) },
+          { id: 'tsv', label: 'Tab-separated values (.tsv)', action: () => handleExport('tsv', {}) },
+          { id: 'json', label: 'JSON (.json)', action: () => handleExport('json', { metadata: true }) },
+          { id: 'pdf', label: 'PDF document (.pdf)', action: () => handleExport('pdf', { gridlines: true }) },
+          { id: 'html', label: 'Web page (.html)', action: () => handleExport('html', { formatting: true }) },
         ]},
         { id: 'divider2', label: '', divider: true },
         { id: 'print', label: 'Print', shortcut: 'Ctrl+P', action: handlePrint },
@@ -1390,7 +1449,7 @@ function App() {
     createWorkbook, handleUndo, handleRedo, canUndo, canRedo, handleCut, handleCopy, handlePaste,
     openReplaceDialog, handleClearSelection, handleZoomChange, handleInsertRowAbove, handleInsertRowBelow,
     handleInsertColLeft, handleInsertColRight, handleFormatChange, currentCellFormat, handleMergeCells,
-    handleUnmergeCells, canMerge, hasMergedCells, handleExportCSV, handlePrint, handleSortAZ, handleSortZA,
+    handleUnmergeCells, canMerge, hasMergedCells, handleExport, openImportDialog, handlePrint, handleSortAZ, handleSortZA,
     handleInsertLink, handleInsertComment
   ]);
 
@@ -1640,6 +1699,22 @@ function App() {
           canDelete={sheets.length > 1}
         />
       )}
+
+      {/* Import Dialog */}
+      <ImportDialog
+        isOpen={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onImport={handleImport}
+        format={importFormat}
+      />
+
+      {/* Export Dialog */}
+      <ExportDialog
+        isOpen={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        onExport={handleExport}
+        workbookName={currentWorkbook?.name || 'spreadsheet'}
+      />
     </div>
   );
 }

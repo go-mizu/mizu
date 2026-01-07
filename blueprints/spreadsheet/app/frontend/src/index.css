@@ -1596,3 +1596,371 @@ body {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ================================
+   Import/Export Dialogs
+   ================================ */
+.import-dialog,
+.export-dialog {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  width: 500px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.import-dialog .dialog-header,
+.export-dialog .dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.import-dialog .dialog-header h2,
+.export-dialog .dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.import-dialog .close-btn,
+.export-dialog .close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0;
+  line-height: 1;
+}
+
+.import-dialog .close-btn:hover,
+.export-dialog .close-btn:hover {
+  color: var(--color-text);
+}
+
+.dialog-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+}
+
+.btn-primary {
+  padding: 8px 20px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 8px 20px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg-secondary);
+}
+
+/* File Dropzone */
+.file-dropzone {
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 20px;
+}
+
+.file-dropzone:hover,
+.file-dropzone.active {
+  border-color: var(--color-primary);
+  background: var(--color-selection);
+}
+
+.file-dropzone.has-file {
+  border-style: solid;
+  border-color: var(--color-primary);
+  background: var(--color-selection);
+}
+
+.dropzone-text p {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.dropzone-text .supported-formats {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.file-name {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.file-size {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+/* Import/Export Options */
+.import-options,
+.export-options {
+  margin-bottom: 20px;
+}
+
+.import-options h3,
+.export-options h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.checkbox-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkbox-option span {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.text-option {
+  margin-top: 12px;
+}
+
+.text-option label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.text-option input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.text-option input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.select-option label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  min-width: 80px;
+}
+
+.select-option select {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Format Selection */
+.format-selection {
+  margin-bottom: 20px;
+}
+
+.format-selection h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.format-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.format-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.format-option:hover {
+  border-color: var(--color-primary);
+  background: var(--color-selection);
+}
+
+.format-option.selected {
+  border-color: var(--color-primary);
+  background: var(--color-selection);
+}
+
+.format-option input {
+  margin-top: 2px;
+}
+
+.format-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.format-name {
+  font-weight: 500;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.format-ext {
+  color: var(--color-primary);
+  font-size: 12px;
+}
+
+.format-desc {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+/* Export Preview */
+.export-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.preview-label {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.preview-filename {
+  font-weight: 500;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+/* Import Result */
+.import-result {
+  padding: 16px;
+  background: #e8f5e9;
+  border-radius: 4px;
+  margin-top: 16px;
+}
+
+.import-result h4 {
+  margin: 0 0 8px 0;
+  color: #2e7d32;
+  font-size: 14px;
+}
+
+.import-result p {
+  margin: 4px 0;
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.import-warnings {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #c8e6c9;
+}
+
+.import-warnings h5 {
+  margin: 0 0 8px 0;
+  color: #f57c00;
+  font-size: 13px;
+}
+
+.import-warnings ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.import-warnings li {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+/* Import/Export Errors */
+.import-error,
+.export-error {
+  padding: 12px;
+  background: #ffebee;
+  border-radius: 4px;
+  color: #c62828;
+  font-size: 13px;
+  margin-top: 16px;
+}
