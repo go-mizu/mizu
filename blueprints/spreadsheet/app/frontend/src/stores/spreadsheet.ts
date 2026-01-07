@@ -10,6 +10,9 @@ import type {
   Selection,
   CellPosition,
   MergedRegion,
+  Chart,
+  CreateChartRequest,
+  UpdateChartRequest,
 } from '../types';
 
 interface SpreadsheetState {
@@ -25,6 +28,10 @@ interface SpreadsheetState {
   currentSheet: Sheet | null;
   cells: Map<string, Cell>;
   mergedRegions: MergedRegion[];
+  charts: Chart[];
+  selectedChart: Chart | null;
+  chartEditorOpen: boolean;
+  editingChart: Chart | null;
 
   // UI State
   selection: Selection | null;
@@ -73,6 +80,16 @@ interface SpreadsheetState {
   mergeCells: (startRow: number, startCol: number, endRow: number, endCol: number) => Promise<void>;
   unmergeCells: (startRow: number, startCol: number, endRow: number, endCol: number) => Promise<void>;
 
+  // Actions - Charts
+  loadCharts: () => Promise<void>;
+  createChart: (data: CreateChartRequest) => Promise<Chart>;
+  updateChart: (id: string, data: UpdateChartRequest) => Promise<void>;
+  deleteChart: (id: string) => Promise<void>;
+  duplicateChart: (id: string) => Promise<void>;
+  selectChart: (chart: Chart | null) => void;
+  openChartEditor: (chart?: Chart) => void;
+  closeChartEditor: () => void;
+
   // Actions - Selection
   setSelection: (selection: Selection | null) => void;
   setActiveCell: (position: CellPosition | null) => void;
@@ -97,6 +114,10 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   currentSheet: null,
   cells: new Map(),
   mergedRegions: [],
+  charts: [],
+  selectedChart: null,
+  chartEditorOpen: false,
+  editingChart: null,
 
   selection: null,
   activeCell: null,
@@ -143,6 +164,10 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
         currentSheet: null,
         cells: new Map(),
         mergedRegions: [],
+        charts: [],
+        selectedChart: null,
+        chartEditorOpen: false,
+        editingChart: null,
       });
     }
   },
@@ -244,12 +269,13 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     const sheet = sheets.find((s) => s.id === sheetId);
     if (!sheet) return;
 
-    set({ currentSheet: sheet, cells: new Map(), mergedRegions: [] });
+    set({ currentSheet: sheet, cells: new Map(), mergedRegions: [], charts: [], selectedChart: null });
 
-    // Load initial cells and merges
+    // Load initial cells, merges, and charts
     await Promise.all([
       get().loadCells(0, 0, 100, 26),
       get().loadMerges(),
+      get().loadCharts(),
     ]);
   },
 
@@ -513,6 +539,80 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
       set({ error: err.message || 'Failed to unmerge cells' });
     }
   },
+
+  // Chart actions
+  loadCharts: async () => {
+    const { currentSheet } = get();
+    if (!currentSheet) return;
+
+    try {
+      const charts = await api.listCharts(currentSheet.id);
+      set({ charts });
+    } catch (e) {
+      const err = e as { message?: string };
+      set({ error: err.message || 'Failed to load charts' });
+    }
+  },
+
+  createChart: async (data) => {
+    try {
+      const chart = await api.createChart(data);
+      set((state) => ({ charts: [...state.charts, chart] }));
+      return chart;
+    } catch (e) {
+      const err = e as { message?: string };
+      set({ error: err.message || 'Failed to create chart' });
+      throw e;
+    }
+  },
+
+  updateChart: async (id, data) => {
+    try {
+      const chart = await api.updateChart(id, data);
+      set((state) => ({
+        charts: state.charts.map((c) => (c.id === id ? chart : c)),
+        selectedChart: state.selectedChart?.id === id ? chart : state.selectedChart,
+      }));
+    } catch (e) {
+      const err = e as { message?: string };
+      set({ error: err.message || 'Failed to update chart' });
+    }
+  },
+
+  deleteChart: async (id) => {
+    try {
+      await api.deleteChart(id);
+      set((state) => ({
+        charts: state.charts.filter((c) => c.id !== id),
+        selectedChart: state.selectedChart?.id === id ? null : state.selectedChart,
+      }));
+    } catch (e) {
+      const err = e as { message?: string };
+      set({ error: err.message || 'Failed to delete chart' });
+    }
+  },
+
+  duplicateChart: async (id) => {
+    try {
+      const chart = await api.duplicateChart(id);
+      set((state) => ({ charts: [...state.charts, chart] }));
+    } catch (e) {
+      const err = e as { message?: string };
+      set({ error: err.message || 'Failed to duplicate chart' });
+    }
+  },
+
+  selectChart: (chart) => set({ selectedChart: chart }),
+
+  openChartEditor: (chart) => set({
+    chartEditorOpen: true,
+    editingChart: chart || null,
+  }),
+
+  closeChartEditor: () => set({
+    chartEditorOpen: false,
+    editingChart: null,
+  }),
 
   // Selection actions
   setSelection: (selection) => set({ selection }),

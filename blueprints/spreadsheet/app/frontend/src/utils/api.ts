@@ -22,6 +22,10 @@ import type {
   EvaluateFormulaRequest,
   EvaluateFormulaResponse,
   ApiError,
+  Chart,
+  ChartData,
+  CreateChartRequest,
+  UpdateChartRequest,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -358,6 +362,35 @@ class ApiClient {
 
   async getSupportedFormats(): Promise<{ import: string[]; export: string[] }> {
     return this.request<{ import: string[]; export: string[] }>('GET', '/formats');
+  }
+
+  // Charts
+  async createChart(req: CreateChartRequest): Promise<Chart> {
+    return this.request<Chart>('POST', '/charts', req);
+  }
+
+  async getChart(id: string): Promise<Chart> {
+    return this.request<Chart>('GET', `/charts/${id}`);
+  }
+
+  async updateChart(id: string, req: UpdateChartRequest): Promise<Chart> {
+    return this.request<Chart>('PATCH', `/charts/${id}`, req);
+  }
+
+  async deleteChart(id: string): Promise<void> {
+    return this.request<void>('DELETE', `/charts/${id}`);
+  }
+
+  async duplicateChart(id: string): Promise<Chart> {
+    return this.request<Chart>('POST', `/charts/${id}/duplicate`);
+  }
+
+  async getChartData(id: string): Promise<ChartData> {
+    return this.request<ChartData>('GET', `/charts/${id}/data`);
+  }
+
+  async listCharts(sheetId: string): Promise<Chart[]> {
+    return this.request<Chart[]>('GET', `/sheets/${sheetId}/charts`);
   }
 }
 

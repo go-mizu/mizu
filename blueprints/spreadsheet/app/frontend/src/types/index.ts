@@ -223,3 +223,200 @@ export interface CellPosition {
   row: number;
   col: number;
 }
+
+// Chart Types
+export type ChartType =
+  | 'line'
+  | 'bar'
+  | 'column'
+  | 'pie'
+  | 'doughnut'
+  | 'area'
+  | 'scatter'
+  | 'combo'
+  | 'stacked_bar'
+  | 'stacked_column'
+  | 'stacked_area'
+  | 'radar'
+  | 'bubble'
+  | 'waterfall'
+  | 'histogram'
+  | 'treemap'
+  | 'gauge'
+  | 'candlestick';
+
+export interface Chart {
+  id: string;
+  sheetId: string;
+  name: string;
+  chartType: ChartType;
+  position: ChartPosition;
+  size: ChartSize;
+  dataRanges: DataRange[];
+  title?: ChartTitle;
+  subtitle?: ChartTitle;
+  legend?: LegendConfig;
+  axes?: AxesConfig;
+  series?: SeriesConfig[];
+  options?: ChartOptions;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChartPosition {
+  row: number;
+  col: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface ChartSize {
+  width: number;
+  height: number;
+}
+
+export interface DataRange {
+  sheetId?: string;
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+  hasHeader: boolean;
+}
+
+export interface ChartTitle {
+  text: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'none';
+}
+
+export interface LegendConfig {
+  enabled: boolean;
+  position: 'top' | 'bottom' | 'left' | 'right' | 'none';
+  alignment?: 'start' | 'center' | 'end';
+  fontFamily?: string;
+  fontSize?: number;
+  fontColor?: string;
+}
+
+export interface AxesConfig {
+  xAxis?: AxisConfig;
+  yAxis?: AxisConfig;
+  y2Axis?: AxisConfig;
+}
+
+export interface AxisConfig {
+  title?: ChartTitle;
+  min?: number;
+  max?: number;
+  stepSize?: number;
+  gridLines: boolean;
+  gridColor?: string;
+  tickColor?: string;
+  labelFormat?: string;
+  logarithmic?: boolean;
+  reversed?: boolean;
+}
+
+export interface SeriesConfig {
+  name: string;
+  dataRange?: DataRange;
+  chartType?: ChartType;
+  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  pointStyle?: 'circle' | 'triangle' | 'rect' | 'star' | 'cross';
+  pointRadius?: number;
+  fill?: boolean;
+  tension?: number;
+  yAxisId?: string;
+  stack?: string;
+  dataLabels?: DataLabels;
+  trendline?: Trendline;
+}
+
+export interface DataLabels {
+  enabled: boolean;
+  position: 'top' | 'center' | 'bottom' | 'outside';
+  format?: string;
+  fontSize?: number;
+  fontColor?: string;
+}
+
+export interface Trendline {
+  type: 'linear' | 'exponential' | 'polynomial' | 'moving_average';
+  degree?: number;
+  period?: number;
+  color?: string;
+  width?: number;
+  showEquation?: boolean;
+  showR2?: boolean;
+}
+
+export interface ChartOptions {
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  animated?: boolean;
+  animationDuration?: number;
+  interactive?: boolean;
+  hoverMode?: 'nearest' | 'point' | 'index' | 'dataset';
+  tooltipEnabled?: boolean;
+  cutoutPercentage?: number;
+  startAngle?: number;
+  is3D?: boolean;
+  sparkline?: boolean;
+}
+
+export interface ChartData {
+  labels: string[];
+  datasets: ChartDataset[];
+  metadata?: unknown;
+}
+
+export interface ChartDataset {
+  label: string;
+  data: number[];
+  backgroundColor?: string | string[];
+  borderColor?: string | string[];
+  borderWidth?: number;
+  fill?: boolean;
+  tension?: number;
+  pointRadius?: number;
+  pointStyle?: string;
+}
+
+export interface CreateChartRequest {
+  sheetId: string;
+  name: string;
+  chartType: ChartType;
+  position: ChartPosition;
+  size: ChartSize;
+  dataRanges: DataRange[];
+  title?: ChartTitle;
+  subtitle?: ChartTitle;
+  legend?: LegendConfig;
+  axes?: AxesConfig;
+  series?: SeriesConfig[];
+  options?: ChartOptions;
+}
+
+export interface UpdateChartRequest {
+  name?: string;
+  chartType?: ChartType;
+  position?: ChartPosition;
+  size?: ChartSize;
+  dataRanges?: DataRange[];
+  title?: ChartTitle;
+  subtitle?: ChartTitle;
+  legend?: LegendConfig;
+  axes?: AxesConfig;
+  series?: SeriesConfig[];
+  options?: ChartOptions;
+}
