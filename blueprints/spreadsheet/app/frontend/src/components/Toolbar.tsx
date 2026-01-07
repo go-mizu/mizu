@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import type { CellFormat } from '../types';
 import { getCurrencyFormat, getPercentFormat, increaseDecimalPlaces, decreaseDecimalPlaces } from '../utils/numberFormat';
 
@@ -16,6 +16,12 @@ interface ToolbarProps {
   hasMergedCells: boolean;
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
+  onPrint?: () => void;
+  onFormatPainter?: () => void;
+  isFormatPainterActive?: boolean;
+  onInsertLink?: () => void;
+  onInsertComment?: () => void;
+  onApplyBorder?: (type: string, border: { style: string; color: string } | null) => void;
 }
 
 // Icons
@@ -189,6 +195,124 @@ const FontFamilies = [
   'Comic Sans MS',
 ];
 
+// Border Type Icons
+const AllBordersIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="16" height="16" />
+    <line x1="9" y1="1" x2="9" y2="17" />
+    <line x1="1" y1="9" x2="17" y2="9" />
+  </svg>
+);
+
+const OuterBordersIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="16" height="16" />
+  </svg>
+);
+
+const NoBordersIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="16" height="16" strokeDasharray="2,2" />
+    <line x1="4" y1="4" x2="14" y2="14" strokeWidth="2" stroke="#ea4335" />
+    <line x1="14" y1="4" x2="4" y2="14" strokeWidth="2" stroke="#ea4335" />
+  </svg>
+);
+
+const BottomBorderIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="16" height="16" strokeDasharray="2,2" />
+    <line x1="1" y1="17" x2="17" y2="17" strokeWidth="2" />
+  </svg>
+);
+
+const TopBorderIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="16" height="16" strokeDasharray="2,2" />
+    <line x1="1" y1="1" x2="17" y2="1" strokeWidth="2" />
+  </svg>
+);
+
+// Borders Menu Component
+interface BordersMenuProps {
+  onApplyBorder?: (type: string, border: { style: string; color: string } | null) => void;
+}
+
+const BordersMenu: React.FC<BordersMenuProps> = ({ onApplyBorder }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const borderOptions = [
+    { type: 'all', label: 'All borders', icon: <AllBordersIcon /> },
+    { type: 'outer', label: 'Outer borders', icon: <OuterBordersIcon /> },
+    { type: 'bottom', label: 'Bottom border', icon: <BottomBorderIcon /> },
+    { type: 'top', label: 'Top border', icon: <TopBorderIcon /> },
+    { type: 'clear', label: 'Clear borders', icon: <NoBordersIcon /> },
+  ];
+
+  const handleSelect = (type: string) => {
+    if (onApplyBorder) {
+      if (type === 'clear') {
+        onApplyBorder(type, null);
+      } else {
+        onApplyBorder(type, { style: 'thin', color: '#000000' });
+      }
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="borders-dropdown" style={{ position: 'relative' }}>
+      <button
+        title="Borders"
+        onClick={() => setIsOpen(!isOpen)}
+        className={isOpen ? 'active' : ''}
+      >
+        <BorderIcon />
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ marginLeft: 2 }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="borders-menu" style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          background: 'white',
+          border: '1px solid #dadce0',
+          borderRadius: 4,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          zIndex: 100,
+          minWidth: 150,
+          padding: '4px 0',
+        }}>
+          {borderOptions.map(({ type, label, icon }) => (
+            <button
+              key={type}
+              className="borders-option"
+              onClick={() => handleSelect(type)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                width: '100%',
+                padding: '6px 12px',
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                fontSize: 13,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f3f4')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+            >
+              {icon}
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const Toolbar: React.FC<ToolbarProps> = ({
   onUndo,
   onRedo,
@@ -203,6 +327,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   hasMergedCells,
   zoom = 100,
   onZoomChange,
+  onPrint,
+  onFormatPainter,
+  isFormatPainterActive = false,
+  onInsertLink,
+  onInsertComment,
+  onApplyBorder,
 }) => {
   const handleFontFamilyChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     onFormatChange({ fontFamily: e.target.value });
@@ -291,10 +421,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           <RedoIcon />
         </button>
-        <button title="Print (Ctrl+P)">
+        <button title="Print (Ctrl+P)" onClick={onPrint}>
           <PrintIcon />
         </button>
-        <button title="Format painter">
+        <button
+          title="Format painter"
+          onClick={onFormatPainter}
+          className={isFormatPainterActive ? 'active' : ''}
+        >
           <FormatPainterIcon />
         </button>
       </div>
@@ -402,9 +536,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             style={{ backgroundColor: currentFormat?.backgroundColor || '#ffffff' }}
           />
         </label>
-        <button title="Borders">
-          <BorderIcon />
-        </button>
+        <BordersMenu onApplyBorder={onApplyBorder} />
       </div>
 
       <div className="toolbar-divider" />
@@ -504,10 +636,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Insert */}
       <div className="toolbar-group">
-        <button title="Insert link">
+        <button title="Insert link" onClick={onInsertLink}>
           <LinkIcon />
         </button>
-        <button title="Insert comment">
+        <button title="Insert comment" onClick={onInsertComment}>
           <CommentIcon />
         </button>
       </div>
