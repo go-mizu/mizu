@@ -73,9 +73,9 @@ func (s *Service) Set(ctx context.Context, sheetID string, row, col int, in *Set
 		cell.Note = existing.Note
 	}
 
-	// Apply format if provided
+	// Apply format if provided - use direct assignment since frontend sends complete format
 	if in.Format != nil {
-		cell.Format = mergeFormats(cell.Format, *in.Format)
+		cell.Format = *in.Format
 	}
 
 	if in.Formula != "" {
@@ -141,9 +141,9 @@ func (s *Service) BatchUpdate(ctx context.Context, sheetID string, in *BatchUpda
 			cell.Note = existing.Note
 		}
 
-		// Apply format if provided
+		// Apply format if provided - use direct assignment since frontend sends complete format
 		if update.Format != nil {
-			cell.Format = mergeFormats(cell.Format, *update.Format)
+			cell.Format = *update.Format
 		}
 
 		if update.Formula != "" {

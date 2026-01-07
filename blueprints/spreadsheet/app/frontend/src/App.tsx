@@ -7,6 +7,8 @@ import DataEditor, {
   EditableGridCell,
   GridSelection,
   CompactSelection,
+  type Theme,
+  type Rectangle,
 } from '@glideapps/glide-data-grid';
 import '@glideapps/glide-data-grid/dist/index.css';
 import { useSpreadsheetStore } from './stores/spreadsheet';
@@ -21,6 +23,9 @@ import { StatusBar } from './components/StatusBar';
 import { SheetTabContextMenu } from './components/SheetTabContextMenu';
 import { ImportDialog } from './components/ImportDialog';
 import { ExportDialog, ExportFormat } from './components/ExportDialog';
+import { ChartOverlay } from './components/Charts/ChartOverlay';
+import { ChartEditorDialog } from './components/Charts/ChartEditorDialog';
+import type { CreateChartRequest, UpdateChartRequest } from './types';
 import { api, ExportOptions, ImportOptions, ImportResult } from './utils/api';
 import type { Cell, CellFormat, CellPosition, CellValue, Selection, Sheet } from './types';
 
@@ -78,6 +83,17 @@ function App() {
     setFormulaBarValue,
     clearError,
     deleteSheet,
+    // Chart state and actions
+    charts,
+    selectedChart,
+    chartEditorOpen,
+    editingChart,
+    createChart,
+    updateChart,
+    deleteChart,
+    selectChart,
+    openChartEditor,
+    closeChartEditor,
   } = useSpreadsheetStore();
 
   const {
@@ -637,6 +653,23 @@ function App() {
     setImportDialogOpen(true);
   }, []);
 
+  // Chart handlers
+  const handleInsertChart = useCallback(() => {
+    openChartEditor();
+  }, [openChartEditor]);
+
+  const handleChartSave = useCallback(async (data: CreateChartRequest | UpdateChartRequest) => {
+    if (editingChart) {
+      await updateChart(editingChart.id, data as UpdateChartRequest);
+    } else {
+      await createChart(data as CreateChartRequest);
+    }
+  }, [editingChart, updateChart, createChart]);
+
+  const handleChartUpdate = useCallback(async (chartId: string, updates: UpdateChartRequest) => {
+    await updateChart(chartId, updates);
+  }, [updateChart]);
+
   // Sort handlers
   const handleSortAZ = useCallback(async () => {
     if (!currentSelection || !currentSheet) return;
@@ -969,7 +1002,7 @@ function App() {
     if (!activeCell) return undefined;
     const cell = getCell(activeCell.row, activeCell.col);
     return cell?.format;
-  }, [activeCell, getCell]);
+  }, [activeCell, getCell, cells]);  // cells dependency ensures update when format changes
 
   // Format painter handler
   const handleFormatPainter = useCallback(() => {
@@ -1061,12 +1094,33 @@ function App() {
         };
       }
 
-      // Apply formatting to display
-      const themeOverride: Record<string, unknown> = {};
-      if (cellData.format) {
-        if (cellData.format.bold) themeOverride.baseFontStyle = 'bold';
-        if (cellData.format.fontColor) themeOverride.textDark = cellData.format.fontColor;
-        if (cellData.format.backgroundColor) themeOverride.bgCell = cellData.format.backgroundColor;
+      const format = cellData.format;
+      const themeOverride: Partial<Theme> = {};
+
+      if (format) {
+        // Build baseFontStyle string: [style] [weight] size
+        // CSS font shorthand: font-style font-weight font-size font-family
+        const fontSize = format.fontSize || 13;
+        const fontStyleParts: string[] = [];
+
+        if (format.italic) fontStyleParts.push('italic');
+        if (format.bold) fontStyleParts.push('bold');
+        fontStyleParts.push(`${fontSize}px`);
+
+        themeOverride.baseFontStyle = fontStyleParts.join(' ');
+
+        // Font family
+        if (format.fontFamily) {
+          themeOverride.fontFamily = format.fontFamily;
+        }
+
+        // Colors
+        if (format.fontColor) {
+          themeOverride.textDark = format.fontColor;
+        }
+        if (format.backgroundColor) {
+          themeOverride.bgCell = format.backgroundColor;
+        }
       }
 
       return {
@@ -1075,9 +1129,11 @@ function App() {
         displayData: cellData.display || String(cellData.value ?? ''),
         data: cellData.formula || String(cellData.value ?? ''),
         themeOverride: Object.keys(themeOverride).length > 0 ? themeOverride : undefined,
+        contentAlign: format?.hAlign,
+        allowWrapping: format?.wrapText,
       };
     },
-    [getCell]
+    [getCell, cells]  // cells dependency ensures re-render when format changes
   );
 
   // Handle cell edit
@@ -1331,6 +1387,8 @@ function App() {
         { id: 'divider2', label: '', divider: true },
         { id: 'link', label: 'Insert link', action: handleInsertLink },
         { id: 'comment', label: 'Insert comment', action: handleInsertComment },
+        { id: 'divider3', label: '', divider: true },
+        { id: 'chart', label: 'Chart', action: handleInsertChart },
       ],
     },
     {
@@ -1404,7 +1462,7 @@ function App() {
     openReplaceDialog, handleClearSelection, handleZoomChange, handleInsertRowAbove, handleInsertRowBelow,
     handleInsertColLeft, handleInsertColRight, handleFormatChange, currentCellFormat, handleMergeCells,
     handleUnmergeCells, canMerge, hasMergedCells, handleExport, openImportDialog, handlePrint, handleSortAZ, handleSortZA,
-    handleInsertLink, handleInsertComment
+    handleInsertLink, handleInsertComment, handleInsertChart
   ]);
 
   if (authLoading) {
@@ -1478,7 +1536,7 @@ function App() {
         </div>
       </div>
 
-      <div className="grid-container" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left', width: `${10000 / zoom}%`, height: `${10000 / zoom}%` }}>
+      <div className="grid-container" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left', width: `${10000 / zoom}%`, height: `${10000 / zoom}%`, position: 'relative' }}>
         <DataEditor
           getCellContent={getContent}
           columns={columns}
@@ -1503,6 +1561,128 @@ function App() {
             accentColor: '#1a73e8',
             accentLight: '#e8f0fe',
           }}
+          drawCell={(args: {
+            ctx: CanvasRenderingContext2D;
+            cell: GridCell;
+            theme: Theme;
+            rect: Rectangle;
+            col: number;
+            row: number;
+            hoverAmount: number;
+            hoverX: number | undefined;
+            hoverY: number | undefined;
+            highlighted: boolean;
+            imageLoader: unknown;
+          }, drawContent: () => void) => {
+            // Draw the default content first
+            drawContent();
+
+            // Get cell data for custom formatting
+            const cellData = getCell(args.row, args.col);
+            if (!cellData?.format) return;
+
+            const { ctx, rect, theme } = args;
+            const format = cellData.format;
+            const padding = theme.cellHorizontalPadding ?? 8;
+            const textColor = format.fontColor || theme.textDark;
+
+            // Draw underline
+            if (format.underline) {
+              ctx.save();
+              ctx.strokeStyle = textColor;
+              ctx.lineWidth = 1;
+              const y = rect.y + rect.height - (theme.cellVerticalPadding ?? 6) - 2;
+              ctx.beginPath();
+              ctx.moveTo(rect.x + padding, y);
+              ctx.lineTo(rect.x + rect.width - padding, y);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // Draw strikethrough
+            if (format.strikethrough) {
+              ctx.save();
+              ctx.strokeStyle = textColor;
+              ctx.lineWidth = 1;
+              const y = rect.y + rect.height / 2;
+              ctx.beginPath();
+              ctx.moveTo(rect.x + padding, y);
+              ctx.lineTo(rect.x + rect.width - padding, y);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // Draw borders
+            ctx.save();
+
+            // Border top
+            if (format.borderTop) {
+              ctx.strokeStyle = format.borderTop.color;
+              ctx.lineWidth = format.borderTop.style === 'thick' ? 3 : format.borderTop.style === 'medium' ? 2 : 1;
+              if (format.borderTop.style === 'dashed') ctx.setLineDash([4, 4]);
+              else if (format.borderTop.style === 'dotted') ctx.setLineDash([2, 2]);
+              else ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.moveTo(rect.x, rect.y + 0.5);
+              ctx.lineTo(rect.x + rect.width, rect.y + 0.5);
+              ctx.stroke();
+            }
+
+            // Border right
+            if (format.borderRight) {
+              ctx.strokeStyle = format.borderRight.color;
+              ctx.lineWidth = format.borderRight.style === 'thick' ? 3 : format.borderRight.style === 'medium' ? 2 : 1;
+              if (format.borderRight.style === 'dashed') ctx.setLineDash([4, 4]);
+              else if (format.borderRight.style === 'dotted') ctx.setLineDash([2, 2]);
+              else ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.moveTo(rect.x + rect.width - 0.5, rect.y);
+              ctx.lineTo(rect.x + rect.width - 0.5, rect.y + rect.height);
+              ctx.stroke();
+            }
+
+            // Border bottom
+            if (format.borderBottom) {
+              ctx.strokeStyle = format.borderBottom.color;
+              ctx.lineWidth = format.borderBottom.style === 'thick' ? 3 : format.borderBottom.style === 'medium' ? 2 : 1;
+              if (format.borderBottom.style === 'dashed') ctx.setLineDash([4, 4]);
+              else if (format.borderBottom.style === 'dotted') ctx.setLineDash([2, 2]);
+              else ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.moveTo(rect.x, rect.y + rect.height - 0.5);
+              ctx.lineTo(rect.x + rect.width, rect.y + rect.height - 0.5);
+              ctx.stroke();
+            }
+
+            // Border left
+            if (format.borderLeft) {
+              ctx.strokeStyle = format.borderLeft.color;
+              ctx.lineWidth = format.borderLeft.style === 'thick' ? 3 : format.borderLeft.style === 'medium' ? 2 : 1;
+              if (format.borderLeft.style === 'dashed') ctx.setLineDash([4, 4]);
+              else if (format.borderLeft.style === 'dotted') ctx.setLineDash([2, 2]);
+              else ctx.setLineDash([]);
+              ctx.beginPath();
+              ctx.moveTo(rect.x + 0.5, rect.y);
+              ctx.lineTo(rect.x + 0.5, rect.y + rect.height);
+              ctx.stroke();
+            }
+
+            ctx.restore();
+          }}
+        />
+        <ChartOverlay
+          charts={charts}
+          selectedChart={selectedChart}
+          onSelectChart={selectChart}
+          onEditChart={(chart) => openChartEditor(chart)}
+          onDeleteChart={deleteChart}
+          onUpdateChart={handleChartUpdate}
+          rowHeight={24}
+          colWidth={100}
+          scrollLeft={0}
+          scrollTop={0}
+          headerHeight={32}
+          headerWidth={50}
         />
       </div>
 
@@ -1668,6 +1848,16 @@ function App() {
         onClose={() => setExportDialogOpen(false)}
         onExport={handleExport}
         workbookName={currentWorkbook?.name || 'spreadsheet'}
+      />
+
+      {/* Chart Editor Dialog */}
+      <ChartEditorDialog
+        opened={chartEditorOpen}
+        onClose={closeChartEditor}
+        chart={editingChart || undefined}
+        selection={currentSelection || undefined}
+        sheetId={currentSheet?.id || ''}
+        onSave={handleChartSave}
       />
     </div>
   );
