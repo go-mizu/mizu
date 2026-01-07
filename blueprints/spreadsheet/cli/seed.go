@@ -270,47 +270,227 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create Formulas Demo sheet data
+	// Create Formulas Demo sheet data - Comprehensive showcase of all 209+ functions
 	if sheet3 != nil {
 		formulasData := [][]interface{}{
-			{"Formula Type", "Example", "Result"},
-			{"", "", ""},
-			{"Math Functions", "", ""},
-			{"SUM", "=SUM(10,20,30)", "=SUM(10,20,30)"},
-			{"AVERAGE", "=AVERAGE(10,20,30)", "=AVERAGE(10,20,30)"},
-			{"MAX/MIN", "=MAX(10,20,30)", "=MAX(10,20,30)"},
-			{"ROUND", "=ROUND(3.14159,2)", "=ROUND(3.14159,2)"},
-			{"SQRT", "=SQRT(144)", "=SQRT(144)"},
-			{"POWER", "=POWER(2,10)", "=POWER(2,10)"},
-			{"", "", ""},
-			{"Text Functions", "", ""},
-			{"CONCATENATE", `=CONCATENATE("Hello"," ","World")`, `=CONCATENATE("Hello"," ","World")`},
-			{"UPPER", `=UPPER("hello")`, `=UPPER("hello")`},
-			{"LEN", `=LEN("Spreadsheet")`, `=LEN("Spreadsheet")`},
-			{"LEFT", `=LEFT("Hello",3)`, `=LEFT("Hello",3)`},
-			{"MID", `=MID("Spreadsheet",7,5)`, `=MID("Spreadsheet",7,5)`},
-			{"", "", ""},
-			{"Logical Functions", "", ""},
-			{"IF", "=IF(10>5,\"Yes\",\"No\")", "=IF(10>5,\"Yes\",\"No\")"},
-			{"AND", "=AND(TRUE,TRUE)", "=AND(TRUE,TRUE)"},
-			{"OR", "=OR(TRUE,FALSE)", "=OR(TRUE,FALSE)"},
-			{"NOT", "=NOT(FALSE)", "=NOT(FALSE)"},
-			{"", "", ""},
-			{"Statistical Functions", "", ""},
-			{"COUNT", "=COUNT(1,2,3,\"a\")", "=COUNT(1,2,3,\"a\")"},
-			{"COUNTA", "=COUNTA(1,2,3,\"a\")", "=COUNTA(1,2,3,\"a\")"},
-			{"MEDIAN", "=MEDIAN(1,2,3,4,5)", "=MEDIAN(1,2,3,4,5)"},
-			{"STDEV", "=STDEV(1,2,3,4,5)", "=STDEV(1,2,3,4,5)"},
-			{"", "", ""},
-			{"Date Functions", "", ""},
-			{"TODAY", "=TODAY()", "=TODAY()"},
-			{"NOW", "=NOW()", "=NOW()"},
-			{"YEAR", "=YEAR(TODAY())", "=YEAR(TODAY())"},
-			{"MONTH", "=MONTH(TODAY())", "=MONTH(TODAY())"},
-			{"", "", ""},
-			{"Cross-Sheet References", "", ""},
-			{"Total Revenue", "='Sales Data'!F8", "='Sales Data'!F8"},
-			{"Q1 Sales", "='Sales Data'!B8", "='Sales Data'!B8"},
+			// Header
+			{"FORMULAS DEMO", "Example Formula", "Result", "Description"},
+			{"209+ Google Sheets Compatible Functions", "", "", ""},
+			{"", "", "", ""},
+
+			// ===== MATH FUNCTIONS (40) =====
+			{"MATH FUNCTIONS (40)", "", "", ""},
+			{"SUM", "=SUM(10,20,30)", "=SUM(10,20,30)", "Sum of values"},
+			{"AVERAGE", "=AVERAGE(10,20,30,40)", "=AVERAGE(10,20,30,40)", "Average of values"},
+			{"MAX", "=MAX(5,15,25)", "=MAX(5,15,25)", "Maximum value"},
+			{"MIN", "=MIN(5,15,25)", "=MIN(5,15,25)", "Minimum value"},
+			{"COUNT", "=COUNT(1,2,\"a\",3)", "=COUNT(1,2,\"a\",3)", "Count numbers"},
+			{"COUNTA", "=COUNTA(1,\"a\",\"\",3)", "=COUNTA(1,\"a\",\"\",3)", "Count non-empty"},
+			{"ABS", "=ABS(-50)", "=ABS(-50)", "Absolute value"},
+			{"ROUND", "=ROUND(3.14159,2)", "=ROUND(3.14159,2)", "Round to decimals"},
+			{"ROUNDUP", "=ROUNDUP(3.14159,2)", "=ROUNDUP(3.14159,2)", "Round up"},
+			{"ROUNDDOWN", "=ROUNDDOWN(3.14159,2)", "=ROUNDDOWN(3.14159,2)", "Round down"},
+			{"FLOOR", "=FLOOR(7.8,1)", "=FLOOR(7.8,1)", "Round down to multiple"},
+			{"CEILING", "=CEILING(7.2,1)", "=CEILING(7.2,1)", "Round up to multiple"},
+			{"INT", "=INT(5.9)", "=INT(5.9)", "Integer part"},
+			{"MOD", "=MOD(17,5)", "=MOD(17,5)", "Remainder"},
+			{"POWER", "=POWER(2,10)", "=POWER(2,10)", "Raise to power"},
+			{"SQRT", "=SQRT(144)", "=SQRT(144)", "Square root"},
+			{"EXP", "=EXP(1)", "=EXP(1)", "e raised to power"},
+			{"LN", "=LN(10)", "=LN(10)", "Natural logarithm"},
+			{"LOG", "=LOG(100,10)", "=LOG(100,10)", "Logarithm with base"},
+			{"LOG10", "=LOG10(1000)", "=LOG10(1000)", "Base-10 logarithm"},
+			{"PI", "=PI()", "=PI()", "Pi constant"},
+			{"PRODUCT", "=PRODUCT(2,3,4)", "=PRODUCT(2,3,4)", "Product of values"},
+			{"SUMSQ", "=SUMSQ(3,4)", "=SUMSQ(3,4)", "Sum of squares"},
+			{"SIGN", "=SIGN(-5)", "=SIGN(-5)", "Sign of number"},
+			{"TRUNC", "=TRUNC(3.14159,3)", "=TRUNC(3.14159,3)", "Truncate number"},
+			{"GCD", "=GCD(48,18)", "=GCD(48,18)", "Greatest common divisor"},
+			{"LCM", "=LCM(4,6)", "=LCM(4,6)", "Least common multiple"},
+			{"FACT", "=FACT(5)", "=FACT(5)", "Factorial"},
+			{"COMBIN", "=COMBIN(10,3)", "=COMBIN(10,3)", "Combinations"},
+			{"PERMUT", "=PERMUT(10,3)", "=PERMUT(10,3)", "Permutations"},
+			{"QUOTIENT", "=QUOTIENT(10,3)", "=QUOTIENT(10,3)", "Integer division"},
+			{"MROUND", "=MROUND(10,3)", "=MROUND(10,3)", "Round to multiple"},
+			{"ODD", "=ODD(4)", "=ODD(4)", "Round to odd"},
+			{"EVEN", "=EVEN(3)", "=EVEN(3)", "Round to even"},
+			{"", "", "", ""},
+
+			// ===== TRIGONOMETRIC FUNCTIONS (15) =====
+			{"TRIGONOMETRIC (15)", "", "", ""},
+			{"SIN", "=SIN(RADIANS(30))", "=SIN(RADIANS(30))", "Sine"},
+			{"COS", "=COS(RADIANS(60))", "=COS(RADIANS(60))", "Cosine"},
+			{"TAN", "=TAN(RADIANS(45))", "=TAN(RADIANS(45))", "Tangent"},
+			{"ASIN", "=DEGREES(ASIN(0.5))", "=DEGREES(ASIN(0.5))", "Arcsine in degrees"},
+			{"ACOS", "=DEGREES(ACOS(0.5))", "=DEGREES(ACOS(0.5))", "Arccosine in degrees"},
+			{"ATAN", "=DEGREES(ATAN(1))", "=DEGREES(ATAN(1))", "Arctangent in degrees"},
+			{"RADIANS", "=RADIANS(180)", "=RADIANS(180)", "Degrees to radians"},
+			{"DEGREES", "=DEGREES(PI())", "=DEGREES(PI())", "Radians to degrees"},
+			{"SINH", "=SINH(1)", "=SINH(1)", "Hyperbolic sine"},
+			{"COSH", "=COSH(1)", "=COSH(1)", "Hyperbolic cosine"},
+			{"TANH", "=TANH(1)", "=TANH(1)", "Hyperbolic tangent"},
+			{"", "", "", ""},
+
+			// ===== TEXT FUNCTIONS (31) =====
+			{"TEXT FUNCTIONS (31)", "", "", ""},
+			{"CONCATENATE", `=CONCATENATE("Hello"," ","World")`, `=CONCATENATE("Hello"," ","World")`, "Join strings"},
+			{"LEFT", `=LEFT("Spreadsheet",6)`, `=LEFT("Spreadsheet",6)`, "Left characters"},
+			{"RIGHT", `=RIGHT("Spreadsheet",5)`, `=RIGHT("Spreadsheet",5)`, "Right characters"},
+			{"MID", `=MID("Spreadsheet",7,5)`, `=MID("Spreadsheet",7,5)`, "Middle characters"},
+			{"LEN", `=LEN("Hello World")`, `=LEN("Hello World")`, "String length"},
+			{"UPPER", `=UPPER("hello")`, `=UPPER("hello")`, "Uppercase"},
+			{"LOWER", `=LOWER("HELLO")`, `=LOWER("HELLO")`, "Lowercase"},
+			{"PROPER", `=PROPER("hello world")`, `=PROPER("hello world")`, "Title case"},
+			{"TRIM", `=TRIM("  hello  ")`, `=TRIM("  hello  ")`, "Remove extra spaces"},
+			{"SUBSTITUTE", `=SUBSTITUTE("Hello","l","L")`, `=SUBSTITUTE("Hello","l","L")`, "Replace text"},
+			{"REPLACE", `=REPLACE("Hello",2,3,"i")`, `=REPLACE("Hello",2,3,"i")`, "Replace by position"},
+			{"REPT", `=REPT("*",5)`, `=REPT("*",5)`, "Repeat text"},
+			{"FIND", `=FIND("e","Hello")`, `=FIND("e","Hello")`, "Find (case-sensitive)"},
+			{"SEARCH", `=SEARCH("E","Hello")`, `=SEARCH("E","Hello")`, "Search (case-insensitive)"},
+			{"TEXT", `=TEXT(1234.5,"$#,##0.00")`, `=TEXT(1234.5,"$#,##0.00")`, "Format as text"},
+			{"VALUE", `=VALUE("123.45")`, `=VALUE("123.45")`, "Text to number"},
+			{"CHAR", "=CHAR(65)", "=CHAR(65)", "Character from code"},
+			{"CODE", `=CODE("A")`, `=CODE("A")`, "Code from character"},
+			{"EXACT", `=EXACT("Hello","hello")`, `=EXACT("Hello","hello")`, "Exact match"},
+			{"", "", "", ""},
+
+			// ===== LOGICAL FUNCTIONS (11) =====
+			{"LOGICAL FUNCTIONS (11)", "", "", ""},
+			{"IF", `=IF(10>5,"Yes","No")`, `=IF(10>5,"Yes","No")`, "Conditional"},
+			{"AND", "=AND(TRUE,TRUE,FALSE)", "=AND(TRUE,TRUE,FALSE)", "Logical AND"},
+			{"OR", "=OR(FALSE,TRUE,FALSE)", "=OR(FALSE,TRUE,FALSE)", "Logical OR"},
+			{"NOT", "=NOT(FALSE)", "=NOT(FALSE)", "Logical NOT"},
+			{"XOR", "=XOR(TRUE,FALSE)", "=XOR(TRUE,FALSE)", "Exclusive OR"},
+			{"IFS", `=IFS(1>2,"A",2>1,"B",TRUE,"C")`, `=IFS(1>2,"A",2>1,"B",TRUE,"C")`, "Multiple conditions"},
+			{"SWITCH", `=SWITCH(2,1,"One",2,"Two",3,"Three")`, `=SWITCH(2,1,"One",2,"Two",3,"Three")`, "Switch case"},
+			{"IFERROR", "=IFERROR(1/0,\"Error!\")", "=IFERROR(1/0,\"Error!\")", "Handle errors"},
+			{"TRUE", "=TRUE()", "=TRUE()", "Boolean true"},
+			{"FALSE", "=FALSE()", "=FALSE()", "Boolean false"},
+			{"", "", "", ""},
+
+			// ===== LOOKUP & REFERENCE (18) =====
+			{"LOOKUP & REFERENCE (18)", "", "", ""},
+			{"INDEX", "=INDEX({10,20,30},2)", "=INDEX({10,20,30},2)", "Array indexing"},
+			{"MATCH", `=MATCH("b",{"a","b","c"},0)`, `=MATCH("b",{"a","b","c"},0)`, "Find position"},
+			{"CHOOSE", `=CHOOSE(2,"a","b","c")`, `=CHOOSE(2,"a","b","c")`, "Choose from list"},
+			{"ROW", "=ROW()", "=ROW()", "Current row"},
+			{"COLUMN", "=COLUMN()", "=COLUMN()", "Current column"},
+			{"ADDRESS", "=ADDRESS(1,1)", "=ADDRESS(1,1)", "Cell address"},
+			{"ADDRESS (relative)", "=ADDRESS(1,1,4)", "=ADDRESS(1,1,4)", "Relative address"},
+			{"", "", "", ""},
+
+			// ===== STATISTICAL (27) =====
+			{"STATISTICAL (27)", "", "", ""},
+			{"MEDIAN", "=MEDIAN(1,2,3,4,5)", "=MEDIAN(1,2,3,4,5)", "Median value"},
+			{"MODE", "=MODE(1,2,2,3,3,3)", "=MODE(1,2,2,3,3,3)", "Most common"},
+			{"STDEV", "=STDEV(1,2,3,4,5)", "=STDEV(1,2,3,4,5)", "Standard deviation"},
+			{"STDEVP", "=STDEVP(1,2,3,4,5)", "=STDEVP(1,2,3,4,5)", "Population std dev"},
+			{"VAR", "=VAR(1,2,3,4,5)", "=VAR(1,2,3,4,5)", "Variance"},
+			{"VARP", "=VARP(1,2,3,4,5)", "=VARP(1,2,3,4,5)", "Population variance"},
+			{"LARGE", "=LARGE({10,20,30,40,50},2)", "=LARGE({10,20,30,40,50},2)", "Kth largest"},
+			{"SMALL", "=SMALL({10,20,30,40,50},2)", "=SMALL({10,20,30,40,50},2)", "Kth smallest"},
+			{"PERCENTILE", "=PERCENTILE({1,2,3,4,5},0.5)", "=PERCENTILE({1,2,3,4,5},0.5)", "Value at percentile"},
+			{"QUARTILE", "=QUARTILE({1,2,3,4,5},2)", "=QUARTILE({1,2,3,4,5},2)", "Quartile value"},
+			{"GEOMEAN", "=GEOMEAN(2,4,8)", "=GEOMEAN(2,4,8)", "Geometric mean"},
+			{"HARMEAN", "=HARMEAN(2,4,8)", "=HARMEAN(2,4,8)", "Harmonic mean"},
+			{"AVEDEV", "=AVEDEV(1,2,3,4,5)", "=AVEDEV(1,2,3,4,5)", "Average deviation"},
+			{"DEVSQ", "=DEVSQ(1,2,3,4,5)", "=DEVSQ(1,2,3,4,5)", "Sum squared deviations"},
+			{"", "", "", ""},
+
+			// ===== CONDITIONAL AGGREGATES (8) =====
+			{"CONDITIONAL AGGREGATES (8)", "", "", ""},
+			{"SUMIF", "=SUMIF({1,2,3,4,5},\">2\")", "=SUMIF({1,2,3,4,5},\">2\")", "Sum if condition"},
+			{"COUNTIF", "=COUNTIF({1,2,3,4,5},\">2\")", "=COUNTIF({1,2,3,4,5},\">2\")", "Count if condition"},
+			{"AVERAGEIF", "=AVERAGEIF({1,2,3,4,5},\">2\")", "=AVERAGEIF({1,2,3,4,5},\">2\")", "Average if condition"},
+			{"", "", "", ""},
+
+			// ===== DATE & TIME (21) =====
+			{"DATE & TIME (21)", "", "", ""},
+			{"TODAY", "=TODAY()", "=TODAY()", "Current date"},
+			{"NOW", "=NOW()", "=NOW()", "Current date/time"},
+			{"DATE", "=DATE(2025,1,15)", "=DATE(2025,1,15)", "Create date"},
+			{"YEAR", "=YEAR(TODAY())", "=YEAR(TODAY())", "Extract year"},
+			{"MONTH", "=MONTH(TODAY())", "=MONTH(TODAY())", "Extract month"},
+			{"DAY", "=DAY(TODAY())", "=DAY(TODAY())", "Extract day"},
+			{"HOUR", "=HOUR(NOW())", "=HOUR(NOW())", "Extract hour"},
+			{"MINUTE", "=MINUTE(NOW())", "=MINUTE(NOW())", "Extract minute"},
+			{"SECOND", "=SECOND(NOW())", "=SECOND(NOW())", "Extract second"},
+			{"WEEKDAY", "=WEEKDAY(TODAY())", "=WEEKDAY(TODAY())", "Day of week"},
+			{"EOMONTH", "=EOMONTH(TODAY(),0)", "=EOMONTH(TODAY(),0)", "End of month"},
+			{"EDATE", "=EDATE(TODAY(),3)", "=EDATE(TODAY(),3)", "Add months"},
+			{"DAYS", `=DAYS("2025-12-31","2025-01-01")`, `=DAYS("2025-12-31","2025-01-01")`, "Days between"},
+			{"WEEKNUM", "=WEEKNUM(TODAY())", "=WEEKNUM(TODAY())", "Week number"},
+			{"ISOWEEKNUM", "=ISOWEEKNUM(TODAY())", "=ISOWEEKNUM(TODAY())", "ISO week number"},
+			{"", "", "", ""},
+
+			// ===== INFORMATION (13) =====
+			{"INFORMATION (13)", "", "", ""},
+			{"ISBLANK", `=ISBLANK("")`, `=ISBLANK("")`, "Is blank?"},
+			{"ISNUMBER", "=ISNUMBER(123)", "=ISNUMBER(123)", "Is number?"},
+			{"ISTEXT", `=ISTEXT("Hello")`, `=ISTEXT("Hello")`, "Is text?"},
+			{"ISLOGICAL", "=ISLOGICAL(TRUE)", "=ISLOGICAL(TRUE)", "Is boolean?"},
+			{"ISEVEN", "=ISEVEN(4)", "=ISEVEN(4)", "Is even?"},
+			{"ISODD", "=ISODD(5)", "=ISODD(5)", "Is odd?"},
+			{"TYPE", "=TYPE(123)", "=TYPE(123)", "Data type (1=num)"},
+			{"TYPE (text)", `=TYPE("Hi")`, `=TYPE("Hi")`, "Data type (2=text)"},
+			{"TYPE (bool)", "=TYPE(TRUE)", "=TYPE(TRUE)", "Data type (4=bool)"},
+			{"", "", "", ""},
+
+			// ===== ARRAY FUNCTIONS (7) =====
+			{"ARRAY FUNCTIONS (7)", "", "", ""},
+			{"SEQUENCE", "=SEQUENCE(5)", "=SEQUENCE(5)", "Generate sequence"},
+			{"SEQUENCE (2D)", "=SEQUENCE(3,3,1,1)", "=SEQUENCE(3,3,1,1)", "3x3 matrix"},
+			{"TRANSPOSE", "=TRANSPOSE({1,2,3})", "=TRANSPOSE({1,2,3})", "Transpose array"},
+			{"", "", "", ""},
+
+			// ===== MODERN ARRAY (11) =====
+			{"MODERN ARRAY (11)", "", "", ""},
+			{"TAKE", "=TAKE({1,2,3,4,5},3)", "=TAKE({1,2,3,4,5},3)", "First N elements"},
+			{"DROP", "=DROP({1,2,3,4,5},2)", "=DROP({1,2,3,4,5},2)", "Skip N elements"},
+			{"HSTACK", "=HSTACK({1,2},{3,4})", "=HSTACK({1,2},{3,4})", "Stack horizontally"},
+			{"VSTACK", "=VSTACK({1,2},{3,4})", "=VSTACK({1,2},{3,4})", "Stack vertically"},
+			{"TOCOL", "=TOCOL({{1,2},{3,4}})", "=TOCOL({{1,2},{3,4}})", "Flatten to column"},
+			{"TOROW", "=TOROW({{1,2},{3,4}})", "=TOROW({{1,2},{3,4}})", "Flatten to row"},
+			{"", "", "", ""},
+
+			// ===== TEXT ARRAY (4) =====
+			{"TEXT ARRAY (4)", "", "", ""},
+			{"TEXTSPLIT", `=TEXTSPLIT("a,b,c",",")`, `=TEXTSPLIT("a,b,c",",")`, "Split text to array"},
+			{"ARRAYTOTEXT", "=ARRAYTOTEXT({1,2,3})", "=ARRAYTOTEXT({1,2,3})", "Array to text"},
+			{"", "", "", ""},
+
+			// ===== FINANCIAL (9) =====
+			{"FINANCIAL (9)", "", "", ""},
+			{"PMT", "=PMT(0.05/12,60,10000)", "=PMT(0.05/12,60,10000)", "Payment amount"},
+			{"FV", "=FV(0.05/12,60,-200,0)", "=FV(0.05/12,60,-200,0)", "Future value"},
+			{"PV", "=PV(0.05/12,60,-200)", "=PV(0.05/12,60,-200)", "Present value"},
+			{"NPER", "=NPER(0.05/12,-200,10000)", "=NPER(0.05/12,-200,10000)", "Number of periods"},
+			{"", "", "", ""},
+
+			// ===== ENGINEERING/BASE CONVERSION (12) =====
+			{"ENGINEERING (12)", "", "", ""},
+			{"DEC2BIN", "=DEC2BIN(10)", "=DEC2BIN(10)", "Decimal to binary"},
+			{"DEC2HEX", "=DEC2HEX(255)", "=DEC2HEX(255)", "Decimal to hex"},
+			{"DEC2OCT", "=DEC2OCT(64)", "=DEC2OCT(64)", "Decimal to octal"},
+			{"BIN2DEC", `=BIN2DEC("1010")`, `=BIN2DEC("1010")`, "Binary to decimal"},
+			{"HEX2DEC", `=HEX2DEC("FF")`, `=HEX2DEC("FF")`, "Hex to decimal"},
+			{"OCT2DEC", `=OCT2DEC("17")`, `=OCT2DEC("17")`, "Octal to decimal"},
+			{"HEX2BIN", `=HEX2BIN("A")`, `=HEX2BIN("A")`, "Hex to binary"},
+			{"BIN2HEX", `=BIN2HEX("1111")`, `=BIN2HEX("1111")`, "Binary to hex"},
+			{"", "", "", ""},
+
+			// ===== CROSS-SHEET REFERENCES =====
+			{"CROSS-SHEET REFERENCES", "", "", ""},
+			{"Total Revenue", "='Sales Data'!F8", "='Sales Data'!F8", "Reference other sheet"},
+			{"Q1 Sales", "='Sales Data'!B8", "='Sales Data'!B8", "Sum from other sheet"},
+			{"Q4 Sales", "='Sales Data'!E8", "='Sales Data'!E8", "Cross-sheet formula"},
+			{"", "", "", ""},
+
+			// ===== REGEX (3) =====
+			{"REGEX FUNCTIONS (3)", "", "", ""},
+			{"REGEXMATCH", `=REGEXMATCH("hello123","[0-9]+")`, `=REGEXMATCH("hello123","[0-9]+")`, "Pattern match"},
+			{"REGEXEXTRACT", `=REGEXEXTRACT("hello123","[0-9]+")`, `=REGEXEXTRACT("hello123","[0-9]+")`, "Extract match"},
+			{"REGEXREPLACE", `=REGEXREPLACE("hello123","[0-9]+","!")`, `=REGEXREPLACE("hello123","[0-9]+","!")`, "Replace match"},
 		}
 
 		for row, rowData := range formulasData {
@@ -331,25 +511,47 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Apply formatting to formula headers
-		headerRows := []int{0, 2, 10, 16, 22, 28, 34}
-		for _, row := range headerRows {
-			for col := 0; col < 3; col++ {
+		// Apply formatting to main header
+		for col := 0; col < 4; col++ {
+			srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
+				SheetID: sheet3.ID,
+				Row:     0,
+				Col:     col,
+				Format: cells.Format{
+					Bold:            true,
+					FontSize:        16,
+					BackgroundColor: "#10B981",
+					FontColor:       "#FFFFFF",
+					HAlign:          "center",
+				},
+			})
+		}
+
+		// Apply formatting to category headers
+		categoryRows := []int{3, 38, 50, 62, 73, 81, 96, 105, 122, 130, 137, 144, 151, 158, 169, 180}
+		for _, row := range categoryRows {
+			if row >= len(formulasData) {
+				continue
+			}
+			for col := 0; col < 4; col++ {
 				srv.CellService().SetFormat(ctx, &cells.SetFormatIn{
 					SheetID: sheet3.ID,
 					Row:     row,
 					Col:     col,
 					Format: cells.Format{
 						Bold:            true,
-						BackgroundColor: "#E5E7EB",
+						FontSize:        12,
+						BackgroundColor: "#1F2937",
+						FontColor:       "#FFFFFF",
 					},
 				})
 			}
 		}
 
-		srv.SheetService().SetColWidth(ctx, sheet3.ID, 0, 150)
-		srv.SheetService().SetColWidth(ctx, sheet3.ID, 1, 250)
-		srv.SheetService().SetColWidth(ctx, sheet3.ID, 2, 150)
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 0, 180)
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 1, 320)
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 2, 180)
+		srv.SheetService().SetColWidth(ctx, sheet3.ID, 3, 200)
 	}
 
 	// Create Inventory sheet with lookup data
