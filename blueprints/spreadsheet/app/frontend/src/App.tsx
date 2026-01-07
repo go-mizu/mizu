@@ -19,7 +19,7 @@ import { Toolbar } from './components/Toolbar';
 import { MenuBar, Menu } from './components/MenuBar';
 import { StatusBar } from './components/StatusBar';
 import { SheetTabContextMenu } from './components/SheetTabContextMenu';
-import type { Cell, CellFormat, CellPosition, Selection, Sheet } from './types';
+import type { Cell, CellFormat, CellPosition, CellValue, Selection, Sheet } from './types';
 
 // Generate column headers A, B, C, ..., Z, AA, AB, etc.
 function getColumnLabel(index: number): string {
@@ -74,6 +74,7 @@ function App() {
     setSelection,
     setFormulaBarValue,
     clearError,
+    deleteSheet,
   } = useSpreadsheetStore();
 
   const {
@@ -107,6 +108,8 @@ function App() {
     sheetName: string;
   } | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
+  const [formatPainterFormat, setFormatPainterFormat] = useState<CellFormat | null>(null);
+  const [keyboardShortcutsOpen, setKeyboardShortcutsOpen] = useState(false);
 
   // Generate columns with custom widths
   const columns: GridColumn[] = useMemo(() =>
@@ -492,9 +495,14 @@ function App() {
   }, []);
 
   const handleDeleteSheet = useCallback(async (sheetId: string) => {
-    // Would call deleteSheet from store
-    console.log('Delete sheet:', sheetId);
-  }, []);
+    if (sheets.length <= 1) {
+      alert('Cannot delete the last sheet');
+      return;
+    }
+    if (confirm('Are you sure you want to delete this sheet?')) {
+      await deleteSheet(sheetId);
+    }
+  }, [sheets.length, deleteSheet]);
 
   const handleDuplicateSheet = useCallback(async (sheetId: string) => {
     const sheet = sheets.find(s => s.id === sheetId);
@@ -507,20 +515,216 @@ function App() {
     setEditingSheetId(sheetId);
   }, []);
 
-  const handleChangeSheetColor = useCallback((sheetId: string, color: string) => {
-    // Would call updateSheet with color
-    console.log('Change sheet color:', sheetId, color);
+  const handleChangeSheetColor = useCallback((_sheetId: string, _color: string) => {
+    // Sheet color is a UI-only feature for now
+    // Would need to add color field to Sheet type and update API
+    alert('Sheet color change is a UI customization feature. Coming soon!');
   }, []);
 
-  const handleHideSheet = useCallback((sheetId: string) => {
-    // Would call updateSheet with hidden: true
-    console.log('Hide sheet:', sheetId);
+  const handleHideSheet = useCallback((_sheetId: string) => {
+    // Hide sheet is a UI-only feature for now
+    // Would need to add hidden field to Sheet type and update API
+    alert('Sheet hiding feature coming soon!');
   }, []);
 
   // Zoom handler
   const handleZoomChange = useCallback((newZoom: number) => {
     setZoom(Math.max(50, Math.min(200, newZoom)));
   }, []);
+
+  // Print handler
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  // Insert link handler
+  const handleInsertLink = useCallback(() => {
+    const url = prompt('Enter URL:');
+    if (url && activeCell) {
+      setCell(activeCell.row, activeCell.col, url);
+    }
+  }, [activeCell, setCell]);
+
+  // Insert comment handler
+  const handleInsertComment = useCallback(() => {
+    const comment = prompt('Enter comment:');
+    if (comment) {
+      // Store comment (for now, just log - full implementation needs backend support)
+      console.log('Comment added:', comment);
+    }
+  }, []);
+
+  // Apply border handler
+  const handleApplyBorder = useCallback((type: string, border: { style: string; color: string } | null) => {
+    if (!currentSelection) return;
+
+    // Apply border format to selection
+    const borderValue = border ? {
+      style: border.style as 'thin' | 'medium' | 'thick' | 'dashed' | 'dotted' | 'double',
+      color: border.color,
+    } : undefined;
+
+    const formatUpdate: Partial<CellFormat> = {};
+    if (type === 'all' || type === 'outer' || type === 'top') {
+      formatUpdate.borderTop = borderValue;
+    }
+    if (type === 'all' || type === 'outer' || type === 'bottom') {
+      formatUpdate.borderBottom = borderValue;
+    }
+    if (type === 'all' || type === 'outer' || type === 'left') {
+      formatUpdate.borderLeft = borderValue;
+    }
+    if (type === 'all' || type === 'outer' || type === 'right') {
+      formatUpdate.borderRight = borderValue;
+    }
+    if (type === 'clear') {
+      formatUpdate.borderTop = undefined;
+      formatUpdate.borderBottom = undefined;
+      formatUpdate.borderLeft = undefined;
+      formatUpdate.borderRight = undefined;
+    }
+
+    handleFormatChange(formatUpdate);
+  }, [currentSelection, handleFormatChange]);
+
+  // Export CSV handler
+  const handleExportCSV = useCallback(() => {
+    if (!cells || cells.size === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    // Find the bounds of the data
+    let maxRow = 0, maxCol = 0;
+    cells.forEach((cell) => {
+      if (cell.value !== null) {
+        maxRow = Math.max(maxRow, cell.row);
+        maxCol = Math.max(maxCol, cell.col);
+      }
+    });
+
+    // Build CSV content
+    const rows: string[] = [];
+    for (let row = 0; row <= maxRow; row++) {
+      const rowData: string[] = [];
+      for (let col = 0; col <= maxCol; col++) {
+        const cell = cells.get(`${row}:${col}`);
+        const value = cell?.display ?? cell?.value ?? '';
+        // Escape quotes and wrap in quotes if contains comma, newline, or quote
+        const stringValue = String(value);
+        if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) {
+          rowData.push(`"${stringValue.replace(/"/g, '""')}"`);
+        } else {
+          rowData.push(stringValue);
+        }
+      }
+      rows.push(rowData.join(','));
+    }
+
+    const csvContent = rows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${currentWorkbook?.name || 'spreadsheet'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [cells, currentWorkbook]);
+
+  // Sort handlers
+  const handleSortAZ = useCallback(async () => {
+    if (!currentSelection || !currentSheet) return;
+
+    const startRow = currentSelection.startRow;
+    const endRow = currentSelection.endRow;
+
+    // Get all cells in the selected range
+    const cellsToSort: Array<{ row: number; values: Array<{ col: number; value: CellValue; formula?: string }> }> = [];
+
+    for (let row = startRow; row <= endRow; row++) {
+      const rowCells: Array<{ col: number; value: CellValue; formula?: string }> = [];
+      for (let c = currentSelection.startCol; c <= currentSelection.endCol; c++) {
+        const cell = getCell(row, c);
+        const value: CellValue = cell?.display ?? cell?.value ?? '';
+        rowCells.push({
+          col: c,
+          value,
+          formula: cell?.formula,
+        });
+      }
+      cellsToSort.push({ row, values: rowCells });
+    }
+
+    // Sort by the first column in selection
+    cellsToSort.sort((a, b) => {
+      const aVal = a.values[0]?.value ?? '';
+      const bVal = b.values[0]?.value ?? '';
+      return String(aVal).localeCompare(String(bVal));
+    });
+
+    // Apply sorted values
+    const updates: Array<{ row: number; col: number; value?: CellValue; formula?: string }> = [];
+    for (let i = 0; i < cellsToSort.length; i++) {
+      const targetRow = startRow + i;
+      for (const cellData of cellsToSort[i].values) {
+        updates.push({
+          row: targetRow,
+          col: cellData.col,
+          value: cellData.formula ? undefined : cellData.value,
+          formula: cellData.formula,
+        });
+      }
+    }
+
+    await batchUpdateCells(updates);
+  }, [currentSelection, currentSheet, getCell, batchUpdateCells]);
+
+  const handleSortZA = useCallback(async () => {
+    if (!currentSelection || !currentSheet) return;
+
+    const startRow = currentSelection.startRow;
+    const endRow = currentSelection.endRow;
+
+    const cellsToSort: Array<{ row: number; values: Array<{ col: number; value: CellValue; formula?: string }> }> = [];
+
+    for (let row = startRow; row <= endRow; row++) {
+      const rowCells: Array<{ col: number; value: CellValue; formula?: string }> = [];
+      for (let c = currentSelection.startCol; c <= currentSelection.endCol; c++) {
+        const cell = getCell(row, c);
+        const value: CellValue = cell?.display ?? cell?.value ?? '';
+        rowCells.push({
+          col: c,
+          value,
+          formula: cell?.formula,
+        });
+      }
+      cellsToSort.push({ row, values: rowCells });
+    }
+
+    // Sort descending
+    cellsToSort.sort((a, b) => {
+      const aVal = a.values[0]?.value ?? '';
+      const bVal = b.values[0]?.value ?? '';
+      return String(bVal).localeCompare(String(aVal));
+    });
+
+    const updates: Array<{ row: number; col: number; value?: CellValue; formula?: string }> = [];
+    for (let i = 0; i < cellsToSort.length; i++) {
+      const targetRow = startRow + i;
+      for (const cellData of cellsToSort[i].values) {
+        updates.push({
+          row: targetRow,
+          col: cellData.col,
+          value: cellData.formula ? undefined : cellData.value,
+          formula: cellData.formula,
+        });
+      }
+    }
+
+    await batchUpdateCells(updates);
+  }, [currentSelection, currentSheet, getCell, batchUpdateCells]);
 
   // Find functionality
   const handleFindAll = useCallback((searchText: string, options: FindOptions): CellPosition[] => {
@@ -762,6 +966,30 @@ function App() {
     const cell = getCell(activeCell.row, activeCell.col);
     return cell?.format;
   }, [activeCell, getCell]);
+
+  // Format painter handler
+  const handleFormatPainter = useCallback(() => {
+    if (formatPainterFormat) {
+      // Apply format to current selection
+      if (currentSelection) {
+        handleFormatChange(formatPainterFormat);
+      }
+      setFormatPainterFormat(null);
+    } else {
+      // Copy format from current cell
+      if (currentCellFormat) {
+        setFormatPainterFormat(currentCellFormat);
+      }
+    }
+  }, [formatPainterFormat, currentSelection, currentCellFormat, handleFormatChange]);
+
+  // Apply format painter on cell selection when active
+  useEffect(() => {
+    if (formatPainterFormat && activeCell && currentSelection) {
+      handleFormatChange(formatPainterFormat);
+      setFormatPainterFormat(null);
+    }
+  }, [activeCell, currentSelection, formatPainterFormat]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -1033,12 +1261,12 @@ function App() {
         { id: 'new', label: 'New', shortcut: 'Ctrl+N', action: () => createWorkbook('Untitled Spreadsheet') },
         { id: 'divider1', label: '', divider: true },
         { id: 'download', label: 'Download', submenu: [
-          { id: 'xlsx', label: 'Microsoft Excel (.xlsx)', action: () => console.log('Download XLSX') },
-          { id: 'csv', label: 'CSV (.csv)', action: () => console.log('Download CSV') },
-          { id: 'pdf', label: 'PDF (.pdf)', action: () => console.log('Download PDF') },
+          { id: 'xlsx', label: 'Microsoft Excel (.xlsx)', action: () => alert('XLSX export requires a library like exceljs. CSV export is available.') },
+          { id: 'csv', label: 'CSV (.csv)', action: handleExportCSV },
+          { id: 'pdf', label: 'PDF (.pdf)', action: () => window.print() },
         ]},
         { id: 'divider2', label: '', divider: true },
-        { id: 'print', label: 'Print', shortcut: 'Ctrl+P', action: () => window.print() },
+        { id: 'print', label: 'Print', shortcut: 'Ctrl+P', action: handlePrint },
       ],
     },
     {
@@ -1063,9 +1291,9 @@ function App() {
       label: 'View',
       items: [
         { id: 'freeze', label: 'Freeze', submenu: [
-          { id: 'no-rows', label: 'No rows', action: () => console.log('Unfreeze rows') },
-          { id: '1-row', label: '1 row', action: () => console.log('Freeze 1 row') },
-          { id: '2-rows', label: '2 rows', action: () => console.log('Freeze 2 rows') },
+          { id: 'no-rows', label: 'No rows', action: () => alert('Freeze panes requires grid library support') },
+          { id: '1-row', label: '1 row', action: () => alert('Freeze panes requires grid library support') },
+          { id: '2-rows', label: '2 rows', action: () => alert('Freeze panes requires grid library support') },
         ]},
         { id: 'divider1', label: '', divider: true },
         { id: 'zoom', label: 'Zoom', submenu: [
@@ -1087,6 +1315,9 @@ function App() {
         { id: 'divider1', label: '', divider: true },
         { id: 'col-left', label: 'Column left', action: handleInsertColLeft },
         { id: 'col-right', label: 'Column right', action: handleInsertColRight },
+        { id: 'divider2', label: '', divider: true },
+        { id: 'link', label: 'Insert link', action: handleInsertLink },
+        { id: 'comment', label: 'Insert comment', action: handleInsertComment },
       ],
     },
     {
@@ -1119,37 +1350,48 @@ function App() {
         { id: 'divider3', label: '', divider: true },
         { id: 'merge', label: 'Merge cells', action: handleMergeCells, disabled: !canMerge },
         { id: 'unmerge', label: 'Unmerge cells', action: handleUnmergeCells, disabled: !hasMergedCells },
+        { id: 'divider4', label: '', divider: true },
+        { id: 'clear-format', label: 'Clear formatting', action: () => handleFormatChange({
+          bold: false,
+          italic: false,
+          underline: false,
+          strikethrough: false,
+          fontColor: undefined,
+          backgroundColor: undefined,
+          numberFormat: '',
+        }) },
       ],
     },
     {
       id: 'data',
       label: 'Data',
       items: [
-        { id: 'sort-az', label: 'Sort sheet A to Z', action: () => console.log('Sort A-Z') },
-        { id: 'sort-za', label: 'Sort sheet Z to A', action: () => console.log('Sort Z-A') },
+        { id: 'sort-az', label: 'Sort selection A to Z', action: handleSortAZ },
+        { id: 'sort-za', label: 'Sort selection Z to A', action: handleSortZA },
       ],
     },
     {
       id: 'tools',
       label: 'Tools',
       items: [
-        { id: 'autocomplete', label: 'Enable autocomplete', checked: true, action: () => console.log('Toggle autocomplete') },
+        { id: 'autocomplete', label: 'Enable autocomplete', checked: true, action: () => alert('Autocomplete toggle not yet implemented') },
       ],
     },
     {
       id: 'help',
       label: 'Help',
       items: [
-        { id: 'shortcuts', label: 'Keyboard shortcuts', action: () => console.log('Show shortcuts') },
+        { id: 'shortcuts', label: 'Keyboard shortcuts', action: () => setKeyboardShortcutsOpen(true) },
         { id: 'divider1', label: '', divider: true },
-        { id: 'help', label: 'Help', action: () => console.log('Show help') },
+        { id: 'help', label: 'Help', action: () => window.open('https://github.com/go-mizu/mizu/tree/main/blueprints/spreadsheet', '_blank') },
       ],
     },
   ], [
     createWorkbook, handleUndo, handleRedo, canUndo, canRedo, handleCut, handleCopy, handlePaste,
     openReplaceDialog, handleClearSelection, handleZoomChange, handleInsertRowAbove, handleInsertRowBelow,
     handleInsertColLeft, handleInsertColRight, handleFormatChange, currentCellFormat, handleMergeCells,
-    handleUnmergeCells, canMerge, hasMergedCells
+    handleUnmergeCells, canMerge, hasMergedCells, handleExportCSV, handlePrint, handleSortAZ, handleSortZA,
+    handleInsertLink, handleInsertComment
   ]);
 
   if (authLoading) {
@@ -1200,6 +1442,12 @@ function App() {
         hasMergedCells={hasMergedCells}
         zoom={zoom}
         onZoomChange={handleZoomChange}
+        onPrint={handlePrint}
+        onFormatPainter={handleFormatPainter}
+        isFormatPainterActive={formatPainterFormat !== null}
+        onInsertLink={handleInsertLink}
+        onInsertComment={handleInsertComment}
+        onApplyBorder={handleApplyBorder}
       />
 
       <div className="formula-bar">
@@ -1324,6 +1572,58 @@ function App() {
         onReplaceAll={handleReplaceAll}
         onNavigateToResult={navigateToResult}
       />
+
+      {/* Keyboard Shortcuts Dialog */}
+      {keyboardShortcutsOpen && (
+        <div className="dialog-overlay" onClick={() => setKeyboardShortcutsOpen(false)}>
+          <div className="keyboard-shortcuts-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-header">
+              <h2>Keyboard Shortcuts</h2>
+              <button className="close-btn" onClick={() => setKeyboardShortcutsOpen(false)}>&times;</button>
+            </div>
+            <div className="shortcuts-content">
+              <div className="shortcut-section">
+                <h3>General</h3>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Z</kbd> Undo</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Y</kbd> Redo</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>S</kbd> Save</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>P</kbd> Print</div>
+              </div>
+              <div className="shortcut-section">
+                <h3>Editing</h3>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>C</kbd> Copy</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>X</kbd> Cut</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>V</kbd> Paste</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>A</kbd> Select All</div>
+                <div className="shortcut-item"><kbd>F2</kbd> Edit Cell</div>
+                <div className="shortcut-item"><kbd>Delete</kbd> Clear Cell</div>
+                <div className="shortcut-item"><kbd>Escape</kbd> Cancel Edit</div>
+              </div>
+              <div className="shortcut-section">
+                <h3>Formatting</h3>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>B</kbd> Bold</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>I</kbd> Italic</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>U</kbd> Underline</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>5</kbd> Strikethrough</div>
+              </div>
+              <div className="shortcut-section">
+                <h3>Navigation</h3>
+                <div className="shortcut-item"><kbd>Arrow Keys</kbd> Move Selection</div>
+                <div className="shortcut-item"><kbd>Tab</kbd> Move Right</div>
+                <div className="shortcut-item"><kbd>Shift</kbd>+<kbd>Tab</kbd> Move Left</div>
+                <div className="shortcut-item"><kbd>Enter</kbd> Move Down</div>
+                <div className="shortcut-item"><kbd>Shift</kbd>+<kbd>Enter</kbd> Move Up</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Home</kbd> Go to A1</div>
+              </div>
+              <div className="shortcut-section">
+                <h3>Find</h3>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>F</kbd> Find</div>
+                <div className="shortcut-item"><kbd>Ctrl</kbd>+<kbd>H</kbd> Find & Replace</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sheet Tab Context Menu */}
       {sheetTabContextMenu && (

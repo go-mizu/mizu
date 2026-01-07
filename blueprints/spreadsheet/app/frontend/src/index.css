@@ -1493,3 +1493,106 @@ body {
   padding: 0 4px;
   margin: 0 -4px;
 }
+
+/* Keyboard Shortcuts Dialog */
+.keyboard-shortcuts-dialog {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  width: 600px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.keyboard-shortcuts-dialog .dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.keyboard-shortcuts-dialog .dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.keyboard-shortcuts-dialog .close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0;
+  line-height: 1;
+}
+
+.keyboard-shortcuts-dialog .close-btn:hover {
+  color: var(--color-text);
+}
+
+.shortcuts-content {
+  padding: 20px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.shortcut-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.shortcut-item kbd {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+/* Format Painter Active State */
+.toolbar-btn.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* Borders Dropdown */
+.borders-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.borders-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.borders-menu {
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
