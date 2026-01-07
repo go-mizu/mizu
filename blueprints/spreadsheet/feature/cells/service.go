@@ -94,9 +94,22 @@ func (s *Service) Set(ctx context.Context, sheetID string, row, col int, in *Set
 }
 
 // BatchUpdate updates multiple cells at once.
+// Optimized to fetch all existing cells in a single query instead of N+1 queries.
 func (s *Service) BatchUpdate(ctx context.Context, sheetID string, in *BatchUpdateIn) ([]*Cell, error) {
 	cells := make([]*Cell, 0, len(in.Cells))
 	now := time.Now()
+
+	// Collect all positions we need to check - single query instead of N queries
+	positions := make([]CellPosition, len(in.Cells))
+	for i, update := range in.Cells {
+		positions[i] = CellPosition{Row: update.Row, Col: update.Col}
+	}
+
+	// Fetch all existing cells in one query
+	existingCells, err := s.store.GetByPositions(ctx, sheetID, positions)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, update := range in.Cells {
 		cell := &Cell{
@@ -107,9 +120,9 @@ func (s *Service) BatchUpdate(ctx context.Context, sheetID string, in *BatchUpda
 			UpdatedAt: now,
 		}
 
-		// Check if cell already exists
-		existing, err := s.store.Get(ctx, sheetID, update.Row, update.Col)
-		if err == nil && existing != nil {
+		// Check if cell already exists using the pre-fetched map
+		pos := CellPosition{Row: update.Row, Col: update.Col}
+		if existing, ok := existingCells[pos]; ok {
 			cell.ID = existing.ID
 			cell.Format = existing.Format
 			cell.Hyperlink = existing.Hyperlink
@@ -178,20 +191,54 @@ func (s *Service) SetFormat(ctx context.Context, in *SetFormatIn) error {
 }
 
 // SetRangeFormat sets formatting for a range.
+// Optimized to fetch all cells once and batch update instead of N×M queries.
 func (s *Service) SetRangeFormat(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int, format Format) error {
+	// Fetch all existing cells in the range with a single query
+	existingCells, err := s.store.GetRange(ctx, sheetID, startRow, startCol, endRow, endCol)
+	if err != nil {
+		return err
+	}
+
+	// Create a map for quick lookup
+	existingMap := make(map[CellPosition]*Cell)
+	for _, cell := range existingCells {
+		pos := CellPosition{Row: cell.Row, Col: cell.Col}
+		existingMap[pos] = cell
+	}
+
+	// Build list of cells to update
+	now := time.Now()
+	cellsToUpdate := make([]*Cell, 0, (endRow-startRow+1)*(endCol-startCol+1))
+
 	for row := startRow; row <= endRow; row++ {
 		for col := startCol; col <= endCol; col++ {
-			if err := s.SetFormat(ctx, &SetFormatIn{
-				SheetID: sheetID,
-				Row:     row,
-				Col:     col,
-				Format:  format,
-			}); err != nil {
-				return err
+			pos := CellPosition{Row: row, Col: col}
+			var cell *Cell
+
+			if existing, ok := existingMap[pos]; ok {
+				// Update existing cell
+				cell = existing
+			} else {
+				// Create new empty cell with format
+				cell = &Cell{
+					ID:      ulid.New(),
+					SheetID: sheetID,
+					Row:     row,
+					Col:     col,
+					Type:    CellTypeText,
+				}
 			}
+
+			cell.Format = mergeFormats(cell.Format, format)
+			cell.Display = formatDisplay(cell.Value, cell.Format)
+			cell.UpdatedAt = now
+
+			cellsToUpdate = append(cellsToUpdate, cell)
 		}
 	}
-	return nil
+
+	// Batch update all cells at once
+	return s.store.BatchSet(ctx, cellsToUpdate)
 }
 
 // Clear clears a cell.
@@ -315,23 +362,15 @@ func (s *Service) InsertCols(ctx context.Context, sheetID string, colIndex, coun
 }
 
 // DeleteRows deletes rows starting at the specified index.
+// Optimized to use single batch operation instead of N sequential operations.
 func (s *Service) DeleteRows(ctx context.Context, sheetID string, startRow, count int) error {
-	for i := 0; i < count; i++ {
-		if err := s.store.ShiftRows(ctx, sheetID, startRow, -1); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.store.DeleteRowsRange(ctx, sheetID, startRow, count)
 }
 
 // DeleteCols deletes columns starting at the specified index.
+// Optimized to use single batch operation instead of N sequential operations.
 func (s *Service) DeleteCols(ctx context.Context, sheetID string, startCol, count int) error {
-	for i := 0; i < count; i++ {
-		if err := s.store.ShiftCols(ctx, sheetID, startCol, -1); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.store.DeleteColsRange(ctx, sheetID, startCol, count)
 }
 
 // EvaluateFormula evaluates a formula and returns the result.

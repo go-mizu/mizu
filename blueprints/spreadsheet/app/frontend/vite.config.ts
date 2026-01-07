@@ -6,6 +6,7 @@ const isDesktop = process.env.DESKTOP === 'true'
 
 export default defineConfig({
   plugins: [react()],
+  base: '/static/dist/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -16,6 +17,14 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
+        entryFileNames: 'js/main.js',
+        chunkFileNames: 'js/[name].js',
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name?.endsWith('.css')) {
+            return 'css/main.css'
+          }
+          return 'assets/[name][extname]'
+        },
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],
           'mantine': ['@mantine/core', '@mantine/hooks'],

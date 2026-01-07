@@ -21,6 +21,7 @@ import (
 	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/users"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/workbooks"
+	"github.com/go-mizu/blueprints/spreadsheet/pkg/password"
 	"github.com/go-mizu/blueprints/spreadsheet/store/duckdb"
 )
 
@@ -95,16 +96,59 @@ func New(cfg Config) (*Server, error) {
 		if _, err := usersStore.GetByID(ctx, devUserID); err != nil {
 			// Create dev user
 			now := time.Now()
+			hash, _ := password.Hash("password")
 			devUser := &users.User{
 				ID:        devUserID,
 				Email:     "dev@example.com",
 				Name:      "Developer",
-				Password:  "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy", // "password"
+				Password:  hash,
 				CreatedAt: now,
 				UpdatedAt: now,
 			}
 			usersStore.Create(ctx, devUser)
 			slog.Info("Created dev user", "id", devUserID, "email", "dev@example.com")
+
+			// Create a sample workbook for the dev user
+			wb, err := workbooksSvc.Create(ctx, &workbooks.CreateIn{
+				Name:      "Sample Spreadsheet",
+				OwnerID:   devUserID,
+				CreatedBy: devUserID,
+			})
+			if err == nil {
+				// Create a sheet
+				sheet, err := sheetsSvc.Create(ctx, &sheets.CreateIn{
+					WorkbookID: wb.ID,
+					Name:       "Sheet1",
+					Index:      0,
+					CreatedBy:  devUserID,
+				})
+				if err == nil {
+					// Add sample data
+					sampleData := [][]interface{}{
+						{"Product", "Q1", "Q2", "Q3", "Q4", "Total"},
+						{"Laptops", 15000, 18000, 22000, 25000, "=SUM(B2:E2)"},
+						{"Phones", 25000, 28000, 32000, 35000, "=SUM(B3:E3)"},
+						{"Tablets", 8000, 9500, 11000, 12500, "=SUM(B4:E4)"},
+						{"Total", "=SUM(B2:B4)", "=SUM(C2:C4)", "=SUM(D2:D4)", "=SUM(E2:E4)", "=SUM(F2:F4)"},
+					}
+					for row, rowData := range sampleData {
+						for col, value := range rowData {
+							var formula string
+							var cellValue interface{}
+							if strVal, ok := value.(string); ok && len(strVal) > 0 && strVal[0] == '=' {
+								formula = strVal
+							} else {
+								cellValue = value
+							}
+							cellsSvc.Set(ctx, sheet.ID, row, col, &cells.SetCellIn{
+								Value:   cellValue,
+								Formula: formula,
+							})
+						}
+					}
+					slog.Info("Created sample workbook", "id", wb.ID)
+				}
+			}
 		}
 	}
 

@@ -151,6 +151,8 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
 
+            console.log('[Register] Attempting registration for:', email);
+
             try {
                 const res = await fetch('/api/v1/auth/register', {
                     method: 'POST',
@@ -158,20 +160,33 @@
                     body: JSON.stringify({ name, email, password })
                 });
 
+                console.log('[Register] Response status:', res.status);
+
                 const data = await res.json();
+                console.log('[Register] Response data:', data);
 
                 if (!res.ok) {
-                    throw new Error(data.error || 'Registration failed');
+                    const errorMsg = data.error || 'Registration failed';
+                    console.error('[Register] Registration failed:', errorMsg);
+                    throw new Error(errorMsg);
                 }
 
-                // Store token
-                localStorage.setItem('token', data.token);
+                console.log('[Register] Registration successful, storing token');
+                // Store token (use 'auth_token' to match React app's api.ts)
+                localStorage.setItem('auth_token', data.token);
                 localStorage.setItem('user', JSON.stringify(data.user));
 
                 // Redirect to app
+                console.log('[Register] Redirecting to /app');
                 window.location.href = '/app';
             } catch (err) {
-                errorEl.textContent = err.message;
+                console.error('[Register] Error:', err);
+                // Show user-friendly error message
+                let message = err.message;
+                if (message === 'email already exists') {
+                    message = 'An account with this email already exists. Please sign in instead.';
+                }
+                errorEl.textContent = message;
                 errorEl.style.display = 'block';
             }
         });

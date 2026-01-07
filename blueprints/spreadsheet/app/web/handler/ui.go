@@ -2,7 +2,6 @@ package handler
 
 import (
 	"html/template"
-	"net/http"
 
 	"github.com/go-mizu/mizu"
 
@@ -36,11 +35,13 @@ func (h *UI) Register(c *mizu.Ctx) error {
 	return h.tmpl.ExecuteTemplate(c.Writer(), "register.html", nil)
 }
 
-// AppRedirect redirects to the first workbook or creates a new one.
+// AppRedirect redirects to the React application.
+// The React app handles authentication check and workbook loading.
 func (h *UI) AppRedirect(c *mizu.Ctx) error {
-	// For now, just redirect to create a new workbook
-	http.Redirect(c.Writer(), c.Request(), "/login", http.StatusFound)
-	return nil
+	return h.tmpl.ExecuteTemplate(c.Writer(), "spreadsheet.html", map[string]any{
+		"WorkbookID": "",
+		"SheetID":    "",
+	})
 }
 
 // Spreadsheet renders the main spreadsheet application.

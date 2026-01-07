@@ -277,3 +277,149 @@ func (s *CellsStore) ShiftCols(ctx context.Context, sheetID string, startCol, co
 		return err
 	}
 }
+
+// GetByPositions retrieves multiple cells by their positions in a single query.
+// This avoids N+1 query problems when batch updating cells.
+func (s *CellsStore) GetByPositions(ctx context.Context, sheetID string, positions []cells.CellPosition) (map[cells.CellPosition]*cells.Cell, error) {
+	if len(positions) == 0 {
+		return make(map[cells.CellPosition]*cells.Cell), nil
+	}
+
+	// Find bounding box of all positions for efficient range query
+	minRow, maxRow := positions[0].Row, positions[0].Row
+	minCol, maxCol := positions[0].Col, positions[0].Col
+	posSet := make(map[cells.CellPosition]bool, len(positions))
+
+	for _, pos := range positions {
+		posSet[pos] = true
+		if pos.Row < minRow {
+			minRow = pos.Row
+		}
+		if pos.Row > maxRow {
+			maxRow = pos.Row
+		}
+		if pos.Col < minCol {
+			minCol = pos.Col
+		}
+		if pos.Col > maxCol {
+			maxCol = pos.Col
+		}
+	}
+
+	// Query all cells in the bounding box
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, sheet_id, row_num, col_num, CAST(value AS VARCHAR), formula, display, cell_type,
+			CAST(format AS VARCHAR), CAST(hyperlink AS VARCHAR), note, updated_at
+		FROM cells
+		WHERE sheet_id = ?
+			AND row_num >= ? AND row_num <= ?
+			AND col_num >= ? AND col_num <= ?
+	`, sheetID, minRow, maxRow, minCol, maxCol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[cells.CellPosition]*cells.Cell)
+	for rows.Next() {
+		cell := &cells.Cell{}
+		var value, format, hyperlink sql.NullString
+		var note sql.NullString
+
+		if err := rows.Scan(&cell.ID, &cell.SheetID, &cell.Row, &cell.Col,
+			&value, &cell.Formula, &cell.Display, &cell.Type,
+			&format, &hyperlink, &note, &cell.UpdatedAt); err != nil {
+			return nil, err
+		}
+
+		pos := cells.CellPosition{Row: cell.Row, Col: cell.Col}
+		// Only include cells that were requested
+		if !posSet[pos] {
+			continue
+		}
+
+		if value.Valid {
+			json.Unmarshal([]byte(value.String), &cell.Value)
+		}
+		if format.Valid {
+			json.Unmarshal([]byte(format.String), &cell.Format)
+		}
+		if hyperlink.Valid {
+			json.Unmarshal([]byte(hyperlink.String), &cell.Hyperlink)
+		}
+		if note.Valid {
+			cell.Note = note.String
+		}
+
+		result[pos] = cell
+	}
+	return result, nil
+}
+
+// DeleteRowsRange deletes multiple rows and shifts remaining cells up in a single operation.
+// This is more efficient than calling ShiftRows in a loop.
+func (s *CellsStore) DeleteRowsRange(ctx context.Context, sheetID string, startRow, count int) error {
+	if count <= 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete all rows in the range at once
+	endRow := startRow + count - 1
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM cells WHERE sheet_id = ? AND row_num >= ? AND row_num <= ?
+	`, sheetID, startRow, endRow)
+	if err != nil {
+		return err
+	}
+
+	// Shift remaining rows up by count
+	_, err = tx.ExecContext(ctx, `
+		UPDATE cells SET row_num = row_num - ?
+		WHERE sheet_id = ? AND row_num > ?
+	`, count, sheetID, endRow)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// DeleteColsRange deletes multiple columns and shifts remaining cells left in a single operation.
+// This is more efficient than calling ShiftCols in a loop.
+func (s *CellsStore) DeleteColsRange(ctx context.Context, sheetID string, startCol, count int) error {
+	if count <= 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete all columns in the range at once
+	endCol := startCol + count - 1
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM cells WHERE sheet_id = ? AND col_num >= ? AND col_num <= ?
+	`, sheetID, startCol, endCol)
+	if err != nil {
+		return err
+	}
+
+	// Shift remaining columns left by count
+	_, err = tx.ExecContext(ctx, `
+		UPDATE cells SET col_num = col_num - ?
+		WHERE sheet_id = ? AND col_num > ?
+	`, count, sheetID, endCol)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}

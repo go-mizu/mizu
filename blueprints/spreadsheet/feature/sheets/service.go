@@ -160,113 +160,39 @@ func (s *Service) Copy(ctx context.Context, id string, newName string) (*Sheet, 
 }
 
 // SetRowHeight sets the height of a specific row.
+// Optimized to only update the specific field without loading the full object.
 func (s *Service) SetRowHeight(ctx context.Context, sheetID string, row int, height int) error {
-	sheet, err := s.store.GetByID(ctx, sheetID)
-	if err != nil {
-		return err
-	}
-
-	if sheet.RowHeights == nil {
-		sheet.RowHeights = make(map[int]int)
-	}
-	sheet.RowHeights[row] = height
-	sheet.UpdatedAt = time.Now()
-
-	return s.store.Update(ctx, sheet)
+	return s.store.UpdateRowHeight(ctx, sheetID, row, height)
 }
 
 // SetColWidth sets the width of a specific column.
+// Optimized to only update the specific field without loading the full object.
 func (s *Service) SetColWidth(ctx context.Context, sheetID string, col int, width int) error {
-	sheet, err := s.store.GetByID(ctx, sheetID)
-	if err != nil {
-		return err
-	}
-
-	if sheet.ColWidths == nil {
-		sheet.ColWidths = make(map[int]int)
-	}
-	sheet.ColWidths[col] = width
-	sheet.UpdatedAt = time.Now()
-
-	return s.store.Update(ctx, sheet)
+	return s.store.UpdateColWidth(ctx, sheetID, col, width)
 }
 
 // HideRow hides a row.
+// Optimized to only update the hidden rows list without loading the full object.
 func (s *Service) HideRow(ctx context.Context, sheetID string, row int) error {
-	sheet, err := s.store.GetByID(ctx, sheetID)
-	if err != nil {
-		return err
-	}
-
-	// Check if already hidden
-	for _, r := range sheet.HiddenRows {
-		if r == row {
-			return nil
-		}
-	}
-
-	sheet.HiddenRows = append(sheet.HiddenRows, row)
-	sheet.UpdatedAt = time.Now()
-
-	return s.store.Update(ctx, sheet)
+	return s.store.AddHiddenRow(ctx, sheetID, row)
 }
 
 // HideCol hides a column.
+// Optimized to only update the hidden columns list without loading the full object.
 func (s *Service) HideCol(ctx context.Context, sheetID string, col int) error {
-	sheet, err := s.store.GetByID(ctx, sheetID)
-	if err != nil {
-		return err
-	}
-
-	// Check if already hidden
-	for _, c := range sheet.HiddenCols {
-		if c == col {
-			return nil
-		}
-	}
-
-	sheet.HiddenCols = append(sheet.HiddenCols, col)
-	sheet.UpdatedAt = time.Now()
-
-	return s.store.Update(ctx, sheet)
+	return s.store.AddHiddenCol(ctx, sheetID, col)
 }
 
 // ShowRow shows a hidden row.
+// Optimized to only update the hidden rows list without loading the full object.
 func (s *Service) ShowRow(ctx context.Context, sheetID string, row int) error {
-	sheet, err := s.store.GetByID(ctx, sheetID)
-	if err != nil {
-		return err
-	}
-
-	newHidden := make([]int, 0, len(sheet.HiddenRows))
-	for _, r := range sheet.HiddenRows {
-		if r != row {
-			newHidden = append(newHidden, r)
-		}
-	}
-	sheet.HiddenRows = newHidden
-	sheet.UpdatedAt = time.Now()
-
-	return s.store.Update(ctx, sheet)
+	return s.store.RemoveHiddenRow(ctx, sheetID, row)
 }
 
 // ShowCol shows a hidden column.
+// Optimized to only update the hidden columns list without loading the full object.
 func (s *Service) ShowCol(ctx context.Context, sheetID string, col int) error {
-	sheet, err := s.store.GetByID(ctx, sheetID)
-	if err != nil {
-		return err
-	}
-
-	newHidden := make([]int, 0, len(sheet.HiddenCols))
-	for _, c := range sheet.HiddenCols {
-		if c != col {
-			newHidden = append(newHidden, c)
-		}
-	}
-	sheet.HiddenCols = newHidden
-	sheet.UpdatedAt = time.Now()
-
-	return s.store.Update(ctx, sheet)
+	return s.store.RemoveHiddenCol(ctx, sheetID, col)
 }
 
 func copyIntMap(m map[int]int) map[int]int {

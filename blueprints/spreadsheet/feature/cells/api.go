@@ -212,14 +212,26 @@ type API interface {
 	EvaluateFormula(ctx context.Context, sheetID, formula string) (interface{}, error)
 }
 
+// CellPosition represents a cell position for batch lookups.
+type CellPosition struct {
+	Row int
+	Col int
+}
+
 // Store defines the cells data access interface.
 type Store interface {
 	Get(ctx context.Context, sheetID string, row, col int) (*Cell, error)
 	GetRange(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([]*Cell, error)
+	// GetByPositions retrieves multiple cells by their positions in a single query.
+	GetByPositions(ctx context.Context, sheetID string, positions []CellPosition) (map[CellPosition]*Cell, error)
 	Set(ctx context.Context, cell *Cell) error
 	BatchSet(ctx context.Context, cells []*Cell) error
 	Delete(ctx context.Context, sheetID string, row, col int) error
 	DeleteRange(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error
+	// DeleteRowsRange deletes multiple rows and shifts remaining cells up in a single operation.
+	DeleteRowsRange(ctx context.Context, sheetID string, startRow, count int) error
+	// DeleteColsRange deletes multiple columns and shifts remaining cells left in a single operation.
+	DeleteColsRange(ctx context.Context, sheetID string, startCol, count int) error
 	CreateMerge(ctx context.Context, region *MergedRegion) error
 	DeleteMerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error
 	GetMergedRegions(ctx context.Context, sheetID string) ([]*MergedRegion, error)
