@@ -137,7 +137,10 @@ func (h *ImportExport) ExportWorkbook(c *mizu.Ctx) error {
 
 	result, err := h.exporter.ExportWorkbook(c.Request().Context(), workbookID, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to export workbook"})
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error":   "export_failed",
+			"message": err.Error(),
+		})
 	}
 
 	// SECURITY: Sanitize filename to prevent header injection
@@ -181,7 +184,10 @@ func (h *ImportExport) ExportSheet(c *mizu.Ctx) error {
 
 	result, err := h.exporter.ExportSheet(c.Request().Context(), sheetID, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to export sheet"})
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error":   "export_failed",
+			"message": err.Error(),
+		})
 	}
 
 	// SECURITY: Sanitize filename to prevent header injection
@@ -236,7 +242,10 @@ func (h *ImportExport) ImportToWorkbook(c *mizu.Ctx) error {
 
 	result, err := h.importer.ImportToWorkbook(c.Request().Context(), workbookID, file, header.Filename, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to import file"})
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error":   "import_failed",
+			"message": err.Error(),
+		})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -283,7 +292,10 @@ func (h *ImportExport) ImportToSheet(c *mizu.Ctx) error {
 
 	result, err := h.importer.ImportToSheet(c.Request().Context(), sheetID, file, header.Filename, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to import file"})
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error":   "import_failed",
+			"message": err.Error(),
+		})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
