@@ -14,6 +14,7 @@ import (
 	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/users"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/workbooks"
+	"github.com/go-mizu/blueprints/spreadsheet/store/cached"
 	"github.com/go-mizu/blueprints/spreadsheet/store/duckdb"
 	"github.com/go-mizu/blueprints/spreadsheet/store/postgres"
 	"github.com/go-mizu/blueprints/spreadsheet/store/sqlite"
@@ -37,6 +38,7 @@ func NewDriverRegistry() *DriverRegistry {
 	r.setupFuncs["sqlite"] = setupSQLite
 	r.setupFuncs["swandb"] = setupSwanDB
 	r.setupFuncs["postgres"] = setupPostgres
+	r.setupFuncs["cached_sqlite"] = setupCachedSQLite
 
 	return r
 }
@@ -269,4 +271,49 @@ func createFixture(
 		Workbook: wb,
 		Sheet:    sheet,
 	}, nil
+}
+
+// setupCachedSQLite initializes SQLite driver with in-memory cache.
+func setupCachedSQLite() (*DriverContext, error) {
+	tmpFile, err := os.CreateTemp("", "storebench-cached-*.db")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	db, err := sql.Open("sqlite3", tmpFile.Name()+"?_foreign_keys=on&_journal_mode=WAL")
+	if err != nil {
+		os.Remove(tmpFile.Name())
+		return nil, fmt.Errorf("failed to open sqlite: %w", err)
+	}
+
+	store, err := sqlite.New(db)
+	if err != nil {
+		db.Close()
+		os.Remove(tmpFile.Name())
+		return nil, fmt.Errorf("failed to create sqlite store: %w", err)
+	}
+
+	if err := store.Ensure(context.Background()); err != nil {
+		db.Close()
+		os.Remove(tmpFile.Name())
+		return nil, fmt.Errorf("failed to ensure sqlite schema: %w", err)
+	}
+
+	ctx, err := createFixture(db, "cached_sqlite", sqlite.NewUsersStore(db), sqlite.NewWorkbooksStore(db), sqlite.NewSheetsStore(db))
+	if err != nil {
+		db.Close()
+		os.Remove(tmpFile.Name())
+		return nil, err
+	}
+
+	// Wrap the SQLite cells store with cached store
+	underlyingCellsStore := sqlite.NewCellsStore(db)
+	cachedCellsStore := cached.New(underlyingCellsStore, cached.Config{
+		FlushInterval:  100 * time.Millisecond, // Fast flush for benchmarks
+		FlushThreshold: 50,
+	})
+
+	ctx.CellsStore = cachedCellsStore
+	return ctx, nil
 }
