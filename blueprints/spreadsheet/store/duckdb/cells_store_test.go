@@ -1084,3 +1084,248 @@ func TestCellsStore_LargeNote(t *testing.T) {
 		t.Errorf("Note length = %d, want %d", len(got.Note), len(largeNote))
 	}
 }
+
+// =============================================================================
+// Performance Tests for GetByPositions
+// =============================================================================
+
+func TestCellsStore_GetByPositions_Empty(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	result, err := store.GetByPositions(ctx, f.Sheet.ID, []cells.CellPosition{})
+	if err != nil {
+		t.Fatalf("GetByPositions() error = %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("GetByPositions() returned nil, want empty map")
+	}
+	if len(result) != 0 {
+		t.Errorf("GetByPositions() returned %d cells, want 0", len(result))
+	}
+}
+
+func TestCellsStore_GetByPositions_Sparse(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create sparse cells (far apart positions)
+	CreateTestCell(t, f.DB, f.Sheet.ID, 0, 0)
+	CreateTestCell(t, f.DB, f.Sheet.ID, 50, 50)
+	CreateTestCell(t, f.DB, f.Sheet.ID, 100, 100)
+
+	// Request only the positions we created (sparse query should use IN clause)
+	positions := []cells.CellPosition{
+		{Row: 0, Col: 0},
+		{Row: 50, Col: 50},
+		{Row: 100, Col: 100},
+		{Row: 25, Col: 25}, // This one doesn't exist
+	}
+
+	result, err := store.GetByPositions(ctx, f.Sheet.ID, positions)
+	if err != nil {
+		t.Fatalf("GetByPositions() error = %v", err)
+	}
+
+	// Should return 3 cells (only existing ones)
+	if len(result) != 3 {
+		t.Errorf("GetByPositions() returned %d cells, want 3", len(result))
+	}
+
+	// Verify correct cells returned
+	if _, ok := result[cells.CellPosition{Row: 0, Col: 0}]; !ok {
+		t.Error("Missing cell at (0,0)")
+	}
+	if _, ok := result[cells.CellPosition{Row: 50, Col: 50}]; !ok {
+		t.Error("Missing cell at (50,50)")
+	}
+	if _, ok := result[cells.CellPosition{Row: 100, Col: 100}]; !ok {
+		t.Error("Missing cell at (100,100)")
+	}
+}
+
+func TestCellsStore_GetByPositions_Dense(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create a dense 5x5 grid
+	for row := 0; row < 5; row++ {
+		for col := 0; col < 5; col++ {
+			CreateTestCell(t, f.DB, f.Sheet.ID, row, col)
+		}
+	}
+
+	// Request all 25 positions (dense query should use bounding box)
+	positions := make([]cells.CellPosition, 0, 25)
+	for row := 0; row < 5; row++ {
+		for col := 0; col < 5; col++ {
+			positions = append(positions, cells.CellPosition{Row: row, Col: col})
+		}
+	}
+
+	result, err := store.GetByPositions(ctx, f.Sheet.ID, positions)
+	if err != nil {
+		t.Fatalf("GetByPositions() error = %v", err)
+	}
+
+	// Should return all 25 cells
+	if len(result) != 25 {
+		t.Errorf("GetByPositions() returned %d cells, want 25", len(result))
+	}
+}
+
+func TestCellsStore_GetByPositions_MixedExistence(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create some cells in a grid but not all
+	CreateTestCell(t, f.DB, f.Sheet.ID, 0, 0)
+	CreateTestCell(t, f.DB, f.Sheet.ID, 1, 1)
+	CreateTestCell(t, f.DB, f.Sheet.ID, 2, 2)
+
+	// Request mix of existing and non-existing positions
+	positions := []cells.CellPosition{
+		{Row: 0, Col: 0}, // exists
+		{Row: 0, Col: 1}, // doesn't exist
+		{Row: 1, Col: 1}, // exists
+		{Row: 1, Col: 0}, // doesn't exist
+		{Row: 2, Col: 2}, // exists
+	}
+
+	result, err := store.GetByPositions(ctx, f.Sheet.ID, positions)
+	if err != nil {
+		t.Fatalf("GetByPositions() error = %v", err)
+	}
+
+	// Should return only 3 existing cells
+	if len(result) != 3 {
+		t.Errorf("GetByPositions() returned %d cells, want 3", len(result))
+	}
+}
+
+// =============================================================================
+// Performance Tests for DeleteRowsRange and DeleteColsRange
+// =============================================================================
+
+func TestCellsStore_DeleteRowsRange(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create 10 rows of cells
+	for row := 0; row < 10; row++ {
+		CreateTestCell(t, f.DB, f.Sheet.ID, row, 0)
+	}
+
+	// Delete rows 3-5 (3 rows starting at row 3)
+	if err := store.DeleteRowsRange(ctx, f.Sheet.ID, 3, 3); err != nil {
+		t.Fatalf("DeleteRowsRange() error = %v", err)
+	}
+
+	// Rows 0-2 should be unchanged
+	for row := 0; row < 3; row++ {
+		cell, err := store.Get(ctx, f.Sheet.ID, row, 0)
+		if err != nil {
+			t.Fatalf("Get(%d,0) error = %v", row, err)
+		}
+		if cell.Row != row {
+			t.Errorf("Cell at row %d has row = %d", row, cell.Row)
+		}
+	}
+
+	// Former rows 6-9 should now be at rows 3-6
+	for i := 0; i < 4; i++ {
+		cell, err := store.Get(ctx, f.Sheet.ID, 3+i, 0)
+		if err != nil {
+			t.Fatalf("Get(%d,0) error = %v", 3+i, err)
+		}
+		if cell.Row != 3+i {
+			t.Errorf("Cell at row %d has row = %d", 3+i, cell.Row)
+		}
+	}
+
+	// Total should be 7 cells
+	all, err := store.GetRange(ctx, f.Sheet.ID, 0, 0, 20, 0)
+	if err != nil {
+		t.Fatalf("GetRange() error = %v", err)
+	}
+	if len(all) != 7 {
+		t.Errorf("Total cells = %d, want 7", len(all))
+	}
+}
+
+func TestCellsStore_DeleteColsRange(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create 10 columns of cells
+	for col := 0; col < 10; col++ {
+		CreateTestCell(t, f.DB, f.Sheet.ID, 0, col)
+	}
+
+	// Delete columns 2-4 (3 columns starting at col 2)
+	if err := store.DeleteColsRange(ctx, f.Sheet.ID, 2, 3); err != nil {
+		t.Fatalf("DeleteColsRange() error = %v", err)
+	}
+
+	// Columns 0-1 should be unchanged
+	for col := 0; col < 2; col++ {
+		cell, err := store.Get(ctx, f.Sheet.ID, 0, col)
+		if err != nil {
+			t.Fatalf("Get(0,%d) error = %v", col, err)
+		}
+		if cell.Col != col {
+			t.Errorf("Cell at col %d has col = %d", col, cell.Col)
+		}
+	}
+
+	// Former columns 5-9 should now be at columns 2-6
+	for i := 0; i < 5; i++ {
+		cell, err := store.Get(ctx, f.Sheet.ID, 0, 2+i)
+		if err != nil {
+			t.Fatalf("Get(0,%d) error = %v", 2+i, err)
+		}
+		if cell.Col != 2+i {
+			t.Errorf("Cell at col %d has col = %d", 2+i, cell.Col)
+		}
+	}
+
+	// Total should be 7 cells
+	all, err := store.GetRange(ctx, f.Sheet.ID, 0, 0, 0, 20)
+	if err != nil {
+		t.Fatalf("GetRange() error = %v", err)
+	}
+	if len(all) != 7 {
+		t.Errorf("Total cells = %d, want 7", len(all))
+	}
+}
+
+func TestCellsStore_DeleteRowsRange_ZeroCount(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create some cells
+	CreateTestCell(t, f.DB, f.Sheet.ID, 0, 0)
+	CreateTestCell(t, f.DB, f.Sheet.ID, 1, 0)
+
+	// Delete 0 rows (should be no-op)
+	if err := store.DeleteRowsRange(ctx, f.Sheet.ID, 0, 0); err != nil {
+		t.Fatalf("DeleteRowsRange(count=0) error = %v", err)
+	}
+
+	// Both cells should still exist
+	all, err := store.GetRange(ctx, f.Sheet.ID, 0, 0, 10, 0)
+	if err != nil {
+		t.Fatalf("GetRange() error = %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("Total cells = %d, want 2", len(all))
+	}
+}
