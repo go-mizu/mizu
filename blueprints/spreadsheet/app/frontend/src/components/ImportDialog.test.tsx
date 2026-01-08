@@ -3,11 +3,18 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ImportDialog } from './ImportDialog';
 
 describe('ImportDialog', () => {
+  const mockResult = {
+    sheetId: 'sheet-123',
+    rowsImported: 10,
+    colsImported: 5,
+    cellsImported: 50,
+  };
+
   const defaultProps = {
     isOpen: true,
     onClose: vi.fn(),
-    onImport: vi.fn(),
-    sheetName: 'Sheet1',
+    onImport: vi.fn().mockResolvedValue(mockResult),
+    onSuccess: vi.fn(),
   };
 
   beforeEach(() => {
@@ -99,9 +106,11 @@ describe('ImportDialog', () => {
     });
   });
 
-  it('should call onImport when Import button clicked with file', async () => {
-    const onImport = vi.fn().mockResolvedValue(undefined);
-    render(<ImportDialog {...defaultProps} onImport={onImport} />);
+  it('should call onImport, onSuccess, and onClose on successful import', async () => {
+    const onImport = vi.fn().mockResolvedValue(mockResult);
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    render(<ImportDialog {...defaultProps} onImport={onImport} onClose={onClose} onSuccess={onSuccess} />);
 
     const file = new File(['col1,col2'], 'test.csv', { type: 'text/csv' });
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -124,6 +133,12 @@ describe('ImportDialog', () => {
       const [calledFile, calledOptions] = onImport.mock.calls[0];
       expect(calledFile.name).toBe('test.csv');
       expect(calledOptions).toHaveProperty('autoDetectTypes');
+    });
+
+    // Should auto-close and call onSuccess
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+      expect(onSuccess).toHaveBeenCalledWith(mockResult);
     });
   });
 

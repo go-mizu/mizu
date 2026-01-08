@@ -303,7 +303,8 @@ class ApiClient {
   async importToWorkbook(
     workbookId: string,
     file: File,
-    options?: ImportOptions
+    options?: ImportOptions,
+    onProgress?: (progress: ImportProgress) => void
   ): Promise<ImportResult> {
     const formData = new FormData();
     formData.append('file', file);
@@ -319,24 +320,78 @@ class ApiClient {
     if (options?.format) formData.append('format', options.format);
 
     const token = this.getToken();
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
-    const response = await fetch(`${API_BASE}/workbooks/${workbookId}/import`, {
-      method: 'POST',
-      headers,
-      body: formData,
+    // Use XMLHttpRequest for progress tracking
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const startTime = Date.now();
+      let lastLoaded = 0;
+      let lastTime = startTime;
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const now = Date.now();
+          const timeDelta = (now - lastTime) / 1000; // seconds
+          const loadedDelta = e.loaded - lastLoaded;
+          const speed = timeDelta > 0 ? loadedDelta / timeDelta : 0;
+
+          lastLoaded = e.loaded;
+          lastTime = now;
+
+          onProgress({
+            phase: 'uploading',
+            loaded: e.loaded,
+            total: e.total,
+            speed,
+          });
+        }
+      });
+
+      xhr.upload.addEventListener('loadend', () => {
+        if (onProgress) {
+          onProgress({
+            phase: 'processing',
+            loaded: file.size,
+            total: file.size,
+            speed: 0,
+          });
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            resolve(result.data);
+          } catch {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText);
+            reject(new Error(error.message || error.error || 'Import failed'));
+          } catch {
+            reject(new Error(`Import failed: ${xhr.statusText}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during import'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Import was cancelled'));
+      });
+
+      xhr.open('POST', `${API_BASE}/workbooks/${workbookId}/import`);
+
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      xhr.send(formData);
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || error.error || 'Import failed');
-    }
-
-    const result = await response.json();
-    return result.data;
   }
 
   async importToSheet(
@@ -432,6 +487,13 @@ export interface ImportOptions {
   importSheet?: string;
   sheetName?: string;
   format?: string;
+}
+
+export interface ImportProgress {
+  phase: 'uploading' | 'processing';
+  loaded: number;
+  total: number;
+  speed: number; // bytes per second
 }
 
 export interface ImportResult {

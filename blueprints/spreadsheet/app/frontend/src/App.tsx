@@ -26,7 +26,7 @@ import { ExportDialog, ExportFormat } from './components/ExportDialog';
 import { ChartOverlay } from './components/Charts/ChartOverlay';
 import { ChartEditorDialog } from './components/Charts/ChartEditorDialog';
 import type { CreateChartRequest, UpdateChartRequest } from './types';
-import { api, ExportOptions, ImportOptions, ImportResult } from './utils/api';
+import { api, ExportOptions, ImportOptions, ImportResult, ImportProgress } from './utils/api';
 import type { Cell, CellFormat, CellPosition, CellValue, Selection, Sheet } from './types';
 
 // Generate column headers A, B, C, ..., Z, AA, AB, etc.
@@ -701,18 +701,29 @@ function App() {
   }, [currentWorkbook]);
 
   // Import handler using API
-  const handleImport = useCallback(async (file: File, options: ImportOptions): Promise<ImportResult> => {
+  const handleImport = useCallback(async (
+    file: File,
+    options: ImportOptions,
+    onProgress?: (progress: ImportProgress) => void
+  ): Promise<ImportResult> => {
     if (!currentWorkbook) {
       throw new Error('No workbook selected');
     }
 
-    const result = await api.importToWorkbook(currentWorkbook.id, file, options);
+    const result = await api.importToWorkbook(currentWorkbook.id, file, options, onProgress);
 
     // Reload sheets after import
     await loadWorkbook(currentWorkbook.id);
 
     return result;
   }, [currentWorkbook, loadWorkbook]);
+
+  // Handle successful import - select the new sheet
+  const handleImportSuccess = useCallback((result: ImportResult) => {
+    if (result.sheetId) {
+      selectSheet(result.sheetId);
+    }
+  }, [selectSheet]);
 
   // Open import dialog for specific format
   const openImportDialog = useCallback((format?: string) => {
@@ -1897,6 +1908,7 @@ function App() {
         isOpen={importDialogOpen}
         onClose={() => setImportDialogOpen(false)}
         onImport={handleImport}
+        onSuccess={handleImportSuccess}
         format={importFormat}
       />
 
