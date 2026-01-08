@@ -1,39 +1,121 @@
 package api
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/export"
 	"github.com/go-mizu/blueprints/spreadsheet/feature/importer"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/workbooks"
 )
 
 // ImportExport handles import and export endpoints.
 type ImportExport struct {
 	exporter  export.API
 	importer  importer.API
+	workbooks workbooks.API
+	sheets    sheets.API
 	getUserID func(*mizu.Ctx) string
 }
 
 // NewImportExport creates a new ImportExport handler.
-func NewImportExport(exporter export.API, importer importer.API, getUserID func(*mizu.Ctx) string) *ImportExport {
+func NewImportExport(exporter export.API, importer importer.API, workbooks workbooks.API, sheets sheets.API, getUserID func(*mizu.Ctx) string) *ImportExport {
 	return &ImportExport{
 		exporter:  exporter,
 		importer:  importer,
+		workbooks: workbooks,
+		sheets:    sheets,
 		getUserID: getUserID,
 	}
 }
 
-// ExportWorkbook exports a workbook.
-func (h *ImportExport) ExportWorkbook(c *mizu.Ctx) error {
+// sanitizeFilename removes potentially dangerous characters from filenames
+// to prevent HTTP header injection attacks.
+func sanitizeFilename(filename string) string {
+	// Replace characters that could be used for header injection
+	replacer := strings.NewReplacer(
+		"\"", "_",
+		"\\", "_",
+		"\n", "_",
+		"\r", "_",
+		"\x00", "_",
+	)
+	return replacer.Replace(filename)
+}
+
+// checkWorkbookAccess verifies the user has access to the workbook.
+// Returns true if access is granted, false if denied (response already written).
+func (h *ImportExport) checkWorkbookAccess(c *mizu.Ctx, workbookID string) bool {
 	userID := h.getUserID(c)
 	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return false
 	}
 
+	wb, err := h.workbooks.GetByID(c.Request().Context(), workbookID)
+	if err != nil {
+		if err == workbooks.ErrNotFound {
+			c.JSON(http.StatusNotFound, map[string]string{"error": "workbook not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to verify access"})
+		}
+		return false
+	}
+
+	if wb.OwnerID != userID {
+		c.JSON(http.StatusForbidden, map[string]string{"error": "access denied"})
+		return false
+	}
+
+	return true
+}
+
+// checkSheetAccess verifies the user has access to the sheet via workbook ownership.
+// Returns true if access is granted, false if denied (response already written).
+func (h *ImportExport) checkSheetAccess(c *mizu.Ctx, sheetID string) bool {
+	userID := h.getUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return false
+	}
+
+	sheet, err := h.sheets.GetByID(c.Request().Context(), sheetID)
+	if err != nil {
+		if err == sheets.ErrNotFound {
+			c.JSON(http.StatusNotFound, map[string]string{"error": "sheet not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve sheet"})
+		}
+		return false
+	}
+
+	wb, err := h.workbooks.GetByID(c.Request().Context(), sheet.WorkbookID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to verify access"})
+		return false
+	}
+
+	if wb.OwnerID != userID {
+		c.JSON(http.StatusForbidden, map[string]string{"error": "access denied"})
+		return false
+	}
+
+	return true
+}
+
+// ExportWorkbook exports a workbook.
+func (h *ImportExport) ExportWorkbook(c *mizu.Ctx) error {
 	workbookID := c.Param("id")
+
+	// SECURITY: Verify user has access to the workbook
+	if !h.checkWorkbookAccess(c, workbookID) {
+		return nil // Response already written
+	}
 
 	// Get format from query or body
 	format := export.Format(c.Query("format"))
@@ -55,13 +137,16 @@ func (h *ImportExport) ExportWorkbook(c *mizu.Ctx) error {
 
 	result, err := h.exporter.ExportWorkbook(c.Request().Context(), workbookID, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to export workbook"})
 	}
+
+	// SECURITY: Sanitize filename to prevent header injection
+	safeFilename := sanitizeFilename(result.Filename)
 
 	// Set response headers
 	c.Writer().Header().Set("Content-Type", result.ContentType)
-	c.Writer().Header().Set("Content-Disposition", "attachment; filename=\""+result.Filename+"\"")
-	c.Writer().Header().Set("Content-Length", string(rune(result.Size)))
+	c.Writer().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", safeFilename))
+	c.Writer().Header().Set("Content-Length", fmt.Sprintf("%d", result.Size))
 
 	// Stream response
 	io.Copy(c.Writer(), result.Data)
@@ -70,12 +155,12 @@ func (h *ImportExport) ExportWorkbook(c *mizu.Ctx) error {
 
 // ExportSheet exports a single sheet.
 func (h *ImportExport) ExportSheet(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
-
 	sheetID := c.Param("id")
+
+	// SECURITY: Verify user has access to the sheet
+	if !h.checkSheetAccess(c, sheetID) {
+		return nil // Response already written
+	}
 
 	// Get format from query
 	format := export.Format(c.Query("format"))
@@ -96,12 +181,15 @@ func (h *ImportExport) ExportSheet(c *mizu.Ctx) error {
 
 	result, err := h.exporter.ExportSheet(c.Request().Context(), sheetID, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to export sheet"})
 	}
+
+	// SECURITY: Sanitize filename to prevent header injection
+	safeFilename := sanitizeFilename(result.Filename)
 
 	// Set response headers
 	c.Writer().Header().Set("Content-Type", result.ContentType)
-	c.Writer().Header().Set("Content-Disposition", "attachment; filename=\""+result.Filename+"\"")
+	c.Writer().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", safeFilename))
 
 	// Stream response
 	io.Copy(c.Writer(), result.Data)
@@ -110,12 +198,12 @@ func (h *ImportExport) ExportSheet(c *mizu.Ctx) error {
 
 // ImportToWorkbook imports a file to a workbook.
 func (h *ImportExport) ImportToWorkbook(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
-
 	workbookID := c.Param("id")
+
+	// SECURITY: Verify user has access to the workbook
+	if !h.checkWorkbookAccess(c, workbookID) {
+		return nil // Response already written
+	}
 
 	// Parse multipart form (50MB max)
 	if err := c.Request().ParseMultipartForm(50 << 20); err != nil {
@@ -131,16 +219,16 @@ func (h *ImportExport) ImportToWorkbook(c *mizu.Ctx) error {
 
 	// Parse options from form
 	opts := &importer.Options{
-		HasHeaders:       c.Request().FormValue("hasHeaders") == "true",
-		SkipEmptyRows:    c.Request().FormValue("skipEmptyRows") == "true",
-		TrimWhitespace:   c.Request().FormValue("trimWhitespace") == "true",
+		HasHeaders:        c.Request().FormValue("hasHeaders") == "true",
+		SkipEmptyRows:     c.Request().FormValue("skipEmptyRows") == "true",
+		TrimWhitespace:    c.Request().FormValue("trimWhitespace") == "true",
 		OverwriteExisting: c.Request().FormValue("overwriteExisting") == "true",
-		AutoDetectTypes:  c.Request().FormValue("autoDetectTypes") != "false", // Default true
-		ImportFormatting: c.Request().FormValue("importFormatting") == "true",
-		ImportFormulas:   c.Request().FormValue("importFormulas") == "true",
-		ImportSheet:      c.Request().FormValue("importSheet"),
-		SheetName:        c.Request().FormValue("sheetName"),
-		CreateNewSheet:   true,
+		AutoDetectTypes:   c.Request().FormValue("autoDetectTypes") != "false", // Default true
+		ImportFormatting:  c.Request().FormValue("importFormatting") == "true",
+		ImportFormulas:    c.Request().FormValue("importFormulas") == "true",
+		ImportSheet:       c.Request().FormValue("importSheet"),
+		SheetName:         c.Request().FormValue("sheetName"),
+		CreateNewSheet:    true,
 	}
 
 	// Detect format
@@ -148,7 +236,7 @@ func (h *ImportExport) ImportToWorkbook(c *mizu.Ctx) error {
 
 	result, err := h.importer.ImportToWorkbook(c.Request().Context(), workbookID, file, header.Filename, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to import file"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -159,12 +247,12 @@ func (h *ImportExport) ImportToWorkbook(c *mizu.Ctx) error {
 
 // ImportToSheet imports a file to an existing sheet.
 func (h *ImportExport) ImportToSheet(c *mizu.Ctx) error {
-	userID := h.getUserID(c)
-	if userID == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-	}
-
 	sheetID := c.Param("id")
+
+	// SECURITY: Verify user has access to the sheet
+	if !h.checkSheetAccess(c, sheetID) {
+		return nil // Response already written
+	}
 
 	// Parse multipart form (50MB max)
 	if err := c.Request().ParseMultipartForm(50 << 20); err != nil {
@@ -180,14 +268,14 @@ func (h *ImportExport) ImportToSheet(c *mizu.Ctx) error {
 
 	// Parse options from form
 	opts := &importer.Options{
-		HasHeaders:       c.Request().FormValue("hasHeaders") == "true",
-		SkipEmptyRows:    c.Request().FormValue("skipEmptyRows") == "true",
-		TrimWhitespace:   c.Request().FormValue("trimWhitespace") == "true",
+		HasHeaders:        c.Request().FormValue("hasHeaders") == "true",
+		SkipEmptyRows:     c.Request().FormValue("skipEmptyRows") == "true",
+		TrimWhitespace:    c.Request().FormValue("trimWhitespace") == "true",
 		OverwriteExisting: c.Request().FormValue("overwriteExisting") != "false", // Default true for existing sheet
-		AutoDetectTypes:  c.Request().FormValue("autoDetectTypes") != "false",
-		ImportFormatting: c.Request().FormValue("importFormatting") == "true",
-		ImportFormulas:   c.Request().FormValue("importFormulas") == "true",
-		ImportSheet:      c.Request().FormValue("importSheet"),
+		AutoDetectTypes:   c.Request().FormValue("autoDetectTypes") != "false",
+		ImportFormatting:  c.Request().FormValue("importFormatting") == "true",
+		ImportFormulas:    c.Request().FormValue("importFormulas") == "true",
+		ImportSheet:       c.Request().FormValue("importSheet"),
 	}
 
 	// Detect format
@@ -195,7 +283,7 @@ func (h *ImportExport) ImportToSheet(c *mizu.Ctx) error {
 
 	result, err := h.importer.ImportToSheet(c.Request().Context(), sheetID, file, header.Filename, format, opts)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to import file"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{

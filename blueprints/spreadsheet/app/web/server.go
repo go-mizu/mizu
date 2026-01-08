@@ -488,10 +488,10 @@ func New(cfg Config) (*Server, error) {
 	// Create handlers
 	s.authHandlers = api.NewAuth(usersSvc)
 	s.workbookHandlers = api.NewWorkbook(workbooksSvc, sheetsSvc, s.getUserID)
-	s.sheetHandlers = api.NewSheet(sheetsSvc, s.getUserID)
-	s.cellHandlers = api.NewCell(cellsSvc, sheetsSvc, s.getUserID)
-	s.chartsHandlers = api.NewCharts(chartsSvc, s.getUserID)
-	s.importExportHandlers = api.NewImportExport(exportSvc, importSvc, s.getUserID)
+	s.sheetHandlers = api.NewSheet(sheetsSvc, workbooksSvc, s.getUserID)
+	s.cellHandlers = api.NewCell(cellsSvc, sheetsSvc, workbooksSvc, s.getUserID)
+	s.chartsHandlers = api.NewCharts(chartsSvc, sheetsSvc, workbooksSvc, s.getUserID)
+	s.importExportHandlers = api.NewImportExport(exportSvc, importSvc, workbooksSvc, sheetsSvc, s.getUserID)
 	s.uiHandlers = handler.NewUI(tmpl, usersSvc, workbooksSvc)
 
 	s.setupRoutes()

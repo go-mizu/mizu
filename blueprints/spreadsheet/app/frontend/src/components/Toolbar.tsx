@@ -24,162 +24,167 @@ interface ToolbarProps {
   onApplyBorder?: (type: string, border: { style: string; color: string } | null) => void;
 }
 
-// Icons
+// Google Sheets style icons - clean, simple, modern design
 const UndoIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M3 10h10a5 5 0 0 1 5 5v2M3 10l5-5M3 10l5 5" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
   </svg>
 );
 
 const RedoIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M21 10H11a5 5 0 0 0-5 5v2M21 10l-5-5M21 10l-5 5" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/>
   </svg>
 );
 
 const PrintIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M6 9V2h12v7" />
-    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-    <rect x="6" y="14" width="12" height="8" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/>
   </svg>
 );
 
 const FormatPainterIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
-    <path d="M13.5 6.5l4 4" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M18 4V3c0-.55-.45-1-1-1H5c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1h12c.55 0 1-.45 1-1V6h1v4H9v11c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-9h8V4h-3z"/>
   </svg>
 );
 
 const CurrencyIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="12" y1="1" x2="12" y2="23" />
-    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/>
   </svg>
 );
 
 const PercentIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="19" y1="5" x2="5" y2="19" />
-    <circle cx="6.5" cy="6.5" r="2.5" />
-    <circle cx="17.5" cy="17.5" r="2.5" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M7.5 11C9.43 11 11 9.43 11 7.5S9.43 4 7.5 4 4 5.57 4 7.5 5.57 11 7.5 11zm0-5C8.33 6 9 6.67 9 7.5S8.33 9 7.5 9 6 8.33 6 7.5 6.67 6 7.5 6zM4.41 19.5L19.5 4.42 20.91 5.84 5.83 20.92zM16.5 13c-1.93 0-3.5 1.57-3.5 3.5s1.57 3.5 3.5 3.5 3.5-1.57 3.5-3.5-1.57-3.5-3.5-3.5zm0 5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
   </svg>
 );
 
 const DecimalDecreaseIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <text x="2" y="16" fontSize="10" fill="currentColor">.0</text>
-    <path d="M16 12l4-4m0 0l4 4m-4-4v8" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 7l5 5H7z"/>
+    <path d="M4 17h2v2H4zm4 0h2v2H8z"/>
+    <circle cx="3" cy="18" r="1.5"/>
   </svg>
 );
 
 const DecimalIncreaseIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <text x="2" y="16" fontSize="10" fill="currentColor">.00</text>
-    <path d="M16 16l4 4m0 0l4-4m-4 4v-8" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 17l-5-5h10z"/>
+    <path d="M4 5h2v2H4zm4 0h2v2H8zm4 0h2v2h-2z"/>
+    <circle cx="3" cy="6" r="1.5"/>
   </svg>
 );
 
 const AlignLeftIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="3" y1="12" x2="15" y2="12" />
-    <line x1="3" y1="18" x2="18" y2="18" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z"/>
   </svg>
 );
 
 const AlignCenterIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="6" y1="12" x2="18" y2="12" />
-    <line x1="4" y1="18" x2="20" y2="18" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M7 15v2h10v-2H7zm-4 6h18v-2H3v2zm0-8h18v-2H3v2zm4-6v2h10V7H7zM3 3v2h18V3H3z"/>
   </svg>
 );
 
 const AlignRightIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="9" y1="12" x2="21" y2="12" />
-    <line x1="6" y1="18" x2="21" y2="18" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z"/>
   </svg>
 );
 
 const WrapTextIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <path d="M3 12h15a3 3 0 1 1 0 6h-4" />
-    <polyline points="12 15 15 18 12 21" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3 3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"/>
   </svg>
 );
 
 const MergeIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <path d="M9 3v18" />
-    <path d="M3 9h18" />
-    <path d="M7 12h10M12 7v10" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M5 10h2V8h10v2h2V8c0-1.1-.9-2-2-2H7c-1.1 0-2 .9-2 2v2zm0 4h2v2h10v-2h2v2c0 1.1-.9 2-2 2H7c-1.1 0-2-.9-2-2v-2zm12-3H7v2h10v-2z"/>
   </svg>
 );
 
 const SearchIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="11" cy="11" r="8" />
-    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
   </svg>
 );
 
 const LinkIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
   </svg>
 );
 
 const CommentIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
   </svg>
 );
 
 const AlignTopIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="4" y1="4" x2="20" y2="4" />
-    <rect x="8" y="8" width="8" height="10" rx="1" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 11h3v10h2V11h3l-4-4-4 4zM4 3v2h16V3H4z"/>
   </svg>
 );
 
 const AlignMiddleIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="4" y1="12" x2="20" y2="12" />
-    <rect x="8" y="6" width="8" height="12" rx="1" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 19h3v4h2v-4h3l-4-4-4 4zm8-14h-3V1h-2v4H8l4 4 4-4zM4 11v2h16v-2H4z"/>
   </svg>
 );
 
 const AlignBottomIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <line x1="4" y1="20" x2="20" y2="20" />
-    <rect x="8" y="6" width="8" height="10" rx="1" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M16 13h-3V3h-2v10H8l4 4 4-4zM4 19v2h16v-2H4z"/>
   </svg>
 );
 
 const BorderIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="3" y="3" width="18" height="18" rx="2" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M13 7h-2v2h2V7zm0 4h-2v2h2v-2zm4 0h-2v2h2v-2zM3 3v18h18V3H3zm16 16H5V5h14v14zm-6-4h-2v2h2v-2zm-4-4H7v2h2v-2z"/>
   </svg>
 );
 
 const FillColorIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M19 11l-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0L19 11z" />
-    <path d="M5 21h14" strokeWidth="3" stroke="currentColor" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/>
+    <path d="M2 20h20v4H2z" fillOpacity="0.36"/>
   </svg>
 );
 
 const TextColorIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M4 20h16" strokeWidth="3" />
-    <path d="M12 4L6 16h2l1.5-3h5l1.5 3h2L12 4z" />
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M11 3L5.5 17h2.25l1.12-3h6.25l1.12 3h2.25L13 3h-2zm-1.38 9L12 5.67 14.38 12H9.62z"/>
+    <path d="M2 20h20v4H2z" fillOpacity="0.36"/>
+  </svg>
+);
+
+// Text formatting icons (B, I, U, S) - Google style
+const BoldIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/>
+  </svg>
+);
+
+const ItalicIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z"/>
+  </svg>
+);
+
+const UnderlineIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z"/>
+  </svg>
+);
+
+const StrikethroughIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M10 19h4v-3h-4v3zM5 4v3h5v3h4V7h5V4H5zM3 14h18v-2H3v2z"/>
   </svg>
 );
 
@@ -195,40 +200,73 @@ const FontFamilies = [
   'Comic Sans MS',
 ];
 
-// Border Type Icons
+// Border Type Icons - Google Sheets style
 const AllBordersIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="1" y="1" width="16" height="16" />
-    <line x1="9" y1="1" x2="9" y2="17" />
-    <line x1="1" y1="9" x2="17" y2="9" />
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h16v16H1V1zm1 1v6h6V2H2zm7 0v6h6V2H9zM2 9v6h6V9H2zm7 0v6h6V9H9z"/>
   </svg>
 );
 
 const OuterBordersIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="1" y="1" width="16" height="16" />
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h16v16H1V1zm1 1v14h14V2H2z"/>
   </svg>
 );
 
 const NoBordersIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="1" y="1" width="16" height="16" strokeDasharray="2,2" />
-    <line x1="4" y1="4" x2="14" y2="14" strokeWidth="2" stroke="#ea4335" />
-    <line x1="14" y1="4" x2="4" y2="14" strokeWidth="2" stroke="#ea4335" />
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h2v2H1V1zm4 0h2v2H5V1zm4 0h2v2H9V1zm4 0h2v2h-2V1zm4 0h2v2h-2V1zM1 5h2v2H1V5zm16 0h2v2h-2V5zM1 9h2v2H1V9zm16 0h2v2h-2V9zM1 13h2v2H1v-2zm16 0h2v2h-2v-2zM1 17h2v-2H1v2zm4 0h2v-2H5v2zm4 0h2v-2H9v2zm4 0h2v-2h-2v2zm4 0h2v-2h-2v2z" opacity="0.3"/>
+    <path d="M4 4l10 10M14 4L4 14" stroke="#ea4335" strokeWidth="2" fill="none"/>
   </svg>
 );
 
 const BottomBorderIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="1" y="1" width="16" height="16" strokeDasharray="2,2" />
-    <line x1="1" y1="17" x2="17" y2="17" strokeWidth="2" />
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h2v2H1V1zm4 0h2v2H5V1zm4 0h2v2H9V1zm4 0h2v2h-2V1zM1 5h2v2H1V5zm12 0h2v2h-2V5zM1 9h2v2H1V9zm12 0h2v2h-2V9zM1 13h2v2H1v-2zm12 0h2v2h-2v-2z" opacity="0.3"/>
+    <path d="M1 17h16v-2H1v2z"/>
   </svg>
 );
 
 const TopBorderIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="1" y="1" width="16" height="16" strokeDasharray="2,2" />
-    <line x1="1" y1="1" x2="17" y2="1" strokeWidth="2" />
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 5h2v2H1V5zm12 0h2v2h-2V5zM1 9h2v2H1V9zm12 0h2v2h-2V9zM1 13h2v2H1v-2zm4 0h2v2H5v-2zm4 0h2v2H9v-2zm4 0h2v2h-2v-2z" opacity="0.3"/>
+    <path d="M1 1h16v2H1V1z"/>
+  </svg>
+);
+
+// Left and Right border icons for completeness
+const LeftBorderIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M5 1h2v2H5V1zm4 0h2v2H9V1zm4 0h2v2h-2V1zM13 5h2v2h-2V5zM13 9h2v2h-2V9zM5 13h2v2H5v-2zm4 0h2v2H9v-2zm4 0h2v2h-2v-2z" opacity="0.3"/>
+    <path d="M1 1h2v16H1V1z"/>
+  </svg>
+);
+
+const RightBorderIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h2v2H1V1zm4 0h2v2H5V1zm4 0h2v2H9V1zM1 5h2v2H1V5zM1 9h2v2H1V9zM1 13h2v2H1v-2zm4 0h2v2H5v-2zm4 0h2v2H9v-2z" opacity="0.3"/>
+    <path d="M15 1h2v16h-2V1z"/>
+  </svg>
+);
+
+const InnerHorizontalIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h2v2H1V1zm4 0h2v2H5V1zm4 0h2v2H9V1zm4 0h2v2h-2V1zM1 5h2v2H1V5zm12 0h2v2h-2V5zM1 13h2v2H1v-2zm4 0h2v2H5v-2zm4 0h2v2H9v-2zm4 0h2v2h-2v-2z" opacity="0.3"/>
+    <path d="M1 9h16v2H1V9z"/>
+  </svg>
+);
+
+const InnerVerticalIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+    <path d="M1 1h2v2H1V1zm12 0h2v2h-2V1zM1 5h2v2H1V5zm12 0h2v2h-2V5zM1 9h2v2H1V9zm12 0h2v2h-2V9zM1 13h2v2H1v-2zm12 0h2v2h-2v-2z" opacity="0.3"/>
+    <path d="M8 1h2v16H8V1z"/>
+  </svg>
+);
+
+// Dropdown arrow icon
+const DropdownArrowIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M7 10l5 5 5-5z"/>
   </svg>
 );
 
@@ -242,9 +280,14 @@ const BordersMenu: React.FC<BordersMenuProps> = ({ onApplyBorder }) => {
 
   const borderOptions = [
     { type: 'all', label: 'All borders', icon: <AllBordersIcon /> },
+    { type: 'inner', label: 'Inner borders', icon: <InnerHorizontalIcon /> },
+    { type: 'horizontal', label: 'Horizontal', icon: <InnerHorizontalIcon /> },
+    { type: 'vertical', label: 'Vertical', icon: <InnerVerticalIcon /> },
     { type: 'outer', label: 'Outer borders', icon: <OuterBordersIcon /> },
-    { type: 'bottom', label: 'Bottom border', icon: <BottomBorderIcon /> },
+    { type: 'left', label: 'Left border', icon: <LeftBorderIcon /> },
+    { type: 'right', label: 'Right border', icon: <RightBorderIcon /> },
     { type: 'top', label: 'Top border', icon: <TopBorderIcon /> },
+    { type: 'bottom', label: 'Bottom border', icon: <BottomBorderIcon /> },
     { type: 'clear', label: 'Clear borders', icon: <NoBordersIcon /> },
   ];
 
@@ -265,49 +308,59 @@ const BordersMenu: React.FC<BordersMenuProps> = ({ onApplyBorder }) => {
         title="Borders"
         onClick={() => setIsOpen(!isOpen)}
         className={isOpen ? 'active' : ''}
+        style={{ display: 'flex', alignItems: 'center', gap: 2 }}
       >
         <BorderIcon />
-        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ marginLeft: 2 }}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        <DropdownArrowIcon />
       </button>
       {isOpen && (
-        <div className="borders-menu" style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          background: 'white',
-          border: '1px solid #dadce0',
-          borderRadius: 4,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-          zIndex: 100,
-          minWidth: 150,
-          padding: '4px 0',
-        }}>
-          {borderOptions.map(({ type, label, icon }) => (
-            <button
-              key={type}
-              className="borders-option"
-              onClick={() => handleSelect(type)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                width: '100%',
-                padding: '6px 12px',
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                fontSize: 13,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f3f4')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-            >
-              {icon}
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
+        <>
+          <div
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="borders-menu" style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            background: 'white',
+            border: '1px solid #dadce0',
+            borderRadius: 8,
+            boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+            zIndex: 100,
+            minWidth: 180,
+            padding: '4px 0',
+          }}>
+            {borderOptions.map(({ type, label, icon }, index) => (
+              <React.Fragment key={type}>
+                {index === 5 && <div style={{ height: 1, background: '#dadce0', margin: '4px 0' }} />}
+                {index === 9 && <div style={{ height: 1, background: '#dadce0', margin: '4px 0' }} />}
+                <button
+                  className="borders-option"
+                  onClick={() => handleSelect(type)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: 'none',
+                    background: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    color: '#202124',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f3f4')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', width: 18 }}>{icon}</span>
+                  <span>{label}</span>
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -478,31 +531,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="toolbar-group">
         <button
           title="Bold (Ctrl+B)"
-          className={`format-btn ${currentFormat?.bold ? 'active' : ''}`}
+          className={currentFormat?.bold ? 'active' : ''}
           onClick={toggleBold}
         >
-          <strong>B</strong>
+          <BoldIcon />
         </button>
         <button
           title="Italic (Ctrl+I)"
-          className={`format-btn ${currentFormat?.italic ? 'active' : ''}`}
+          className={currentFormat?.italic ? 'active' : ''}
           onClick={toggleItalic}
         >
-          <em>I</em>
+          <ItalicIcon />
         </button>
         <button
           title="Underline (Ctrl+U)"
-          className={`format-btn ${currentFormat?.underline ? 'active' : ''}`}
+          className={currentFormat?.underline ? 'active' : ''}
           onClick={toggleUnderline}
         >
-          <u>U</u>
+          <UnderlineIcon />
         </button>
         <button
-          title="Strikethrough (Ctrl+5)"
-          className={`format-btn ${currentFormat?.strikethrough ? 'active' : ''}`}
+          title="Strikethrough (Alt+Shift+5)"
+          className={currentFormat?.strikethrough ? 'active' : ''}
           onClick={toggleStrikethrough}
         >
-          <s>S</s>
+          <StrikethroughIcon />
         </button>
       </div>
 

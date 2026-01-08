@@ -3,11 +3,11 @@ package jwt
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -77,30 +77,27 @@ func Verify(token, secret string) (*Claims, error) {
 		return nil, ErrInvalidToken
 	}
 
-	if time.Now().Unix() > claims.ExpiresAt {
+	now := time.Now().Unix()
+	if now > claims.ExpiresAt {
 		return nil, ErrExpiredToken
+	}
+
+	// Validate NotBefore claim if present
+	if claims.NotBefore > 0 && now < claims.NotBefore {
+		return nil, ErrInvalidToken
 	}
 
 	return &claims, nil
 }
 
-// UserID extracts the user ID from a token without full verification.
-func UserID(token string) (string, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", ErrInvalidToken
-	}
-
-	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+// UserID extracts the user ID from a verified token.
+// SECURITY: This function now requires the secret and verifies the token.
+// The previous implementation extracted claims without verification which was unsafe.
+func UserID(token, secret string) (string, error) {
+	claims, err := Verify(token, secret)
 	if err != nil {
-		return "", ErrInvalidToken
+		return "", err
 	}
-
-	var claims Claims
-	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
-		return "", ErrInvalidToken
-	}
-
 	return claims.UserID, nil
 }
 
@@ -110,7 +107,11 @@ func sign(message, secret string) string {
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// GenerateSecret generates a random secret for JWT signing.
+// GenerateSecret generates a cryptographically secure random secret for JWT signing.
 func GenerateSecret() string {
-	return fmt.Sprintf("spreadsheet-secret-%d", time.Now().UnixNano())
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("jwt: failed to generate random secret: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
 }

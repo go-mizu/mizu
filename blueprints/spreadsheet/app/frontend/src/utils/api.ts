@@ -30,12 +30,26 @@ import type {
 
 const API_BASE = '/api/v1';
 
+/**
+ * SECURITY NOTE: Authentication tokens are stored in localStorage.
+ *
+ * This approach has the following security implications:
+ * - Tokens are vulnerable to XSS attacks (any JS on the page can access them)
+ * - Tokens persist across browser sessions
+ *
+ * For production applications, consider:
+ * - Using HttpOnly cookies for token storage
+ * - Implementing CSRF protection
+ * - Using short-lived access tokens with refresh tokens
+ * - Adding token revocation mechanisms
+ */
 class ApiClient {
   private token: string | null = null;
 
   setToken(token: string | null) {
     this.token = token;
     if (token) {
+      // SECURITY: localStorage is accessible to any JavaScript on the page
       localStorage.setItem('auth_token', token);
     } else {
       localStorage.removeItem('auth_token');
