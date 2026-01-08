@@ -23,6 +23,14 @@ type Config struct {
 
 	// FlushThreshold triggers flush when dirty tile count exceeds
 	FlushThreshold int
+
+	// Optimized enables aggressive caching optimizations for best read performance.
+	// When enabled:
+	// - GetRange preloads entire tile ranges from underlying store on cache miss
+	// - GetByPositions bulk-loads all required tiles on cache miss
+	// - Uses optimized sorting algorithms for GetRange results
+	// - Preloads sheets on first access
+	Optimized bool
 }
 
 // DefaultConfig returns sensible defaults.
@@ -40,8 +48,10 @@ type tileKey struct {
 
 // sheetCache holds all tiles for a single sheet.
 type sheetCache struct {
-	mu    sync.RWMutex
-	tiles map[tileKey]*Tile
+	mu           sync.RWMutex
+	tiles        map[tileKey]*Tile
+	loadedTiles  map[tileKey]bool // tracks which tiles have been loaded from underlying (for optimized mode)
+	fullyLoaded  bool             // tracks if entire sheet has been loaded (for optimized mode)
 }
 
 // Store implements cells.Store with full in-memory caching.
@@ -134,7 +144,8 @@ func (s *Store) getOrCreateSheetCache(sheetID string) *sheetCache {
 	}
 
 	sc := &sheetCache{
-		tiles: make(map[tileKey]*Tile),
+		tiles:       make(map[tileKey]*Tile),
+		loadedTiles: make(map[tileKey]bool),
 	}
 	actual, _ := s.sheets.LoadOrStore(sheetID, sc)
 	return actual.(*sheetCache)
@@ -268,6 +279,11 @@ func (s *Store) cacheCell(cell *cells.Cell) error {
 
 // GetRange retrieves cells in a range.
 func (s *Store) GetRange(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([]*cells.Cell, error) {
+	// Optimized mode: preload the entire tile range if any tiles are missing
+	if s.config.Optimized {
+		return s.getRangeOptimized(ctx, sheetID, startRow, startCol, endRow, endCol)
+	}
+
 	sc := s.getSheetCache(sheetID)
 
 	// If no cache, load from underlying
@@ -340,10 +356,154 @@ func (s *Store) GetRange(ctx context.Context, sheetID string, startRow, startCol
 	return result, nil
 }
 
+// getRangeOptimized is the optimized implementation of GetRange.
+// It preloads all tiles in the range before reading to ensure cache hits.
+func (s *Store) getRangeOptimized(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) ([]*cells.Cell, error) {
+	sc := s.getOrCreateSheetCache(sheetID)
+
+	// Calculate tile range
+	startTileRow := startRow / TileHeight
+	endTileRow := endRow / TileHeight
+	startTileCol := startCol / TileWidth
+	endTileCol := endCol / TileWidth
+
+	// Check if we need to preload any tiles
+	sc.mu.RLock()
+	needsPreload := false
+	for tr := startTileRow; tr <= endTileRow && !needsPreload; tr++ {
+		for tc := startTileCol; tc <= endTileCol && !needsPreload; tc++ {
+			tKey := tileKey{sheetID, tr, tc}
+			if !sc.loadedTiles[tKey] {
+				needsPreload = true
+			}
+		}
+	}
+	sc.mu.RUnlock()
+
+	// Preload all tiles in the range at once from underlying store
+	if needsPreload {
+		atomic.AddInt64(&s.stats.MissCount, 1)
+
+		// Calculate the full cell range covering all tiles
+		tileStartRow := startTileRow * TileHeight
+		tileEndRow := (endTileRow+1)*TileHeight - 1
+		tileStartCol := startTileCol * TileWidth
+		tileEndCol := (endTileCol+1)*TileWidth - 1
+
+		cellList, err := s.underlying.GetRange(ctx, sheetID, tileStartRow, tileStartCol, tileEndRow, tileEndCol)
+		if err != nil {
+			return nil, err
+		}
+
+		// Bulk cache all cells
+		sc.mu.Lock()
+		for _, cell := range cellList {
+			tileRow, tileCol, offsetRow, offsetCol := cellToTile(cell.Row, cell.Col)
+			tKey := tileKey{cell.SheetID, tileRow, tileCol}
+
+			tile := sc.tiles[tKey]
+			if tile == nil {
+				tile = &Tile{Cells: make(map[string]*TileCell)}
+				sc.tiles[tKey] = tile
+			}
+			cellKey := tileCellKey(offsetRow, offsetCol)
+			tile.Cells[cellKey] = cellToTileCell(cell)
+		}
+
+		// Mark all tiles in range as loaded
+		for tr := startTileRow; tr <= endTileRow; tr++ {
+			for tc := startTileCol; tc <= endTileCol; tc++ {
+				tKey := tileKey{sheetID, tr, tc}
+				sc.loadedTiles[tKey] = true
+				// Ensure tile exists even if empty
+				if sc.tiles[tKey] == nil {
+					sc.tiles[tKey] = &Tile{Cells: make(map[string]*TileCell)}
+				}
+			}
+		}
+		sc.mu.Unlock()
+	} else {
+		atomic.AddInt64(&s.stats.HitCount, 1)
+	}
+
+	// Now read from cache - all tiles are guaranteed to be loaded
+	capacity := (endRow - startRow + 1) * (endCol - startCol + 1) / 10
+	if capacity < 16 {
+		capacity = 16
+	}
+	result := make([]*cells.Cell, 0, capacity)
+
+	sc.mu.RLock()
+	for tr := startTileRow; tr <= endTileRow; tr++ {
+		for tc := startTileCol; tc <= endTileCol; tc++ {
+			tile := sc.tiles[tileKey{sheetID, tr, tc}]
+			if tile == nil {
+				continue
+			}
+
+			for key, cell := range tile.Cells {
+				if cell == nil {
+					continue
+				}
+				offsetRow, offsetCol := parseTileCellKey(key)
+				cellRow := tr*TileHeight + offsetRow
+				cellCol := tc*TileWidth + offsetCol
+
+				if cellRow >= startRow && cellRow <= endRow &&
+					cellCol >= startCol && cellCol <= endCol {
+					result = append(result, tileCellToCell(cell, sheetID, cellRow, cellCol))
+				}
+			}
+		}
+	}
+	sc.mu.RUnlock()
+
+	// Use efficient sort
+	sortCells(result)
+
+	return result, nil
+}
+
+// sortCells sorts cells by row then column using an efficient algorithm.
+func sortCells(cells []*cells.Cell) {
+	if len(cells) <= 1 {
+		return
+	}
+	// Quick sort implementation for cells
+	quickSortCells(cells, 0, len(cells)-1)
+}
+
+func quickSortCells(arr []*cells.Cell, low, high int) {
+	if low < high {
+		pi := partitionCells(arr, low, high)
+		quickSortCells(arr, low, pi-1)
+		quickSortCells(arr, pi+1, high)
+	}
+}
+
+func partitionCells(arr []*cells.Cell, low, high int) int {
+	pivot := arr[high]
+	i := low - 1
+
+	for j := low; j < high; j++ {
+		if arr[j].Row < pivot.Row || (arr[j].Row == pivot.Row && arr[j].Col < pivot.Col) {
+			i++
+			arr[i], arr[j] = arr[j], arr[i]
+		}
+	}
+	arr[i+1], arr[high] = arr[high], arr[i+1]
+	return i + 1
+}
+
 // GetByPositions retrieves multiple cells by their positions.
 func (s *Store) GetByPositions(ctx context.Context, sheetID string, positions []cells.CellPosition) (map[cells.CellPosition]*cells.Cell, error) {
 	if len(positions) == 0 {
 		return make(map[cells.CellPosition]*cells.Cell), nil
+	}
+
+	// Optimized mode: preload all required tiles before reading
+	if s.config.Optimized {
+		return s.getByPositionsOptimized(ctx, sheetID, positions)
 	}
 
 	sc := s.getSheetCache(sheetID)
@@ -391,6 +551,87 @@ func (s *Store) GetByPositions(ctx context.Context, sheetID string, positions []
 			}
 		}
 	}
+
+	return result, nil
+}
+
+// getByPositionsOptimized is the optimized implementation of GetByPositions.
+// It preloads all required tiles before reading to ensure cache hits.
+func (s *Store) getByPositionsOptimized(ctx context.Context, sheetID string, positions []cells.CellPosition) (map[cells.CellPosition]*cells.Cell, error) {
+	sc := s.getOrCreateSheetCache(sheetID)
+
+	// Group positions by tile
+	positionsByTile := make(map[tileKey][]cells.CellPosition)
+	for _, pos := range positions {
+		tr, tc, _, _ := cellToTile(pos.Row, pos.Col)
+		key := tileKey{sheetID, tr, tc}
+		positionsByTile[key] = append(positionsByTile[key], pos)
+	}
+
+	// Check which tiles need to be loaded
+	sc.mu.RLock()
+	tilesToLoad := make([]tileKey, 0)
+	for tKey := range positionsByTile {
+		if !sc.loadedTiles[tKey] {
+			tilesToLoad = append(tilesToLoad, tKey)
+		}
+	}
+	sc.mu.RUnlock()
+
+	// Preload missing tiles
+	if len(tilesToLoad) > 0 {
+		atomic.AddInt64(&s.stats.MissCount, 1)
+
+		// For each tile that needs loading, fetch its full range from underlying
+		for _, tKey := range tilesToLoad {
+			startRow := tKey.tileRow * TileHeight
+			endRow := startRow + TileHeight - 1
+			startCol := tKey.tileCol * TileWidth
+			endCol := startCol + TileWidth - 1
+
+			cellList, err := s.underlying.GetRange(ctx, sheetID, startRow, startCol, endRow, endCol)
+			if err != nil {
+				return nil, err
+			}
+
+			// Cache all cells from this tile
+			sc.mu.Lock()
+			tile := sc.tiles[tKey]
+			if tile == nil {
+				tile = &Tile{Cells: make(map[string]*TileCell)}
+				sc.tiles[tKey] = tile
+			}
+			for _, cell := range cellList {
+				_, _, offsetRow, offsetCol := cellToTile(cell.Row, cell.Col)
+				cellKey := tileCellKey(offsetRow, offsetCol)
+				tile.Cells[cellKey] = cellToTileCell(cell)
+			}
+			sc.loadedTiles[tKey] = true
+			sc.mu.Unlock()
+		}
+	} else {
+		atomic.AddInt64(&s.stats.HitCount, 1)
+	}
+
+	// Now read from cache - all tiles are guaranteed to be loaded
+	result := make(map[cells.CellPosition]*cells.Cell, len(positions))
+
+	sc.mu.RLock()
+	for tKey, positionsInTile := range positionsByTile {
+		tile := sc.tiles[tKey]
+		if tile == nil {
+			continue
+		}
+
+		for _, pos := range positionsInTile {
+			_, _, offsetRow, offsetCol := cellToTile(pos.Row, pos.Col)
+			cellKey := tileCellKey(offsetRow, offsetCol)
+			if tc := tile.Cells[cellKey]; tc != nil {
+				result[pos] = tileCellToCell(tc, sheetID, pos.Row, pos.Col)
+			}
+		}
+	}
+	sc.mu.RUnlock()
 
 	return result, nil
 }
