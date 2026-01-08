@@ -82,15 +82,17 @@ type BenchmarkRunner struct {
 	drivers  map[string]*DriverContext
 	results  []BenchResult
 	registry *DriverRegistry
+	progress *ProgressDisplay
 }
 
 // NewBenchmarkRunner creates a new benchmark runner.
-func NewBenchmarkRunner(config *BenchConfig) *BenchmarkRunner {
+func NewBenchmarkRunner(config *BenchConfig, progress *ProgressDisplay) *BenchmarkRunner {
 	return &BenchmarkRunner{
 		config:   config,
 		drivers:  make(map[string]*DriverContext),
 		results:  []BenchResult{},
 		registry: NewDriverRegistry(),
+		progress: progress,
 	}
 }
 
@@ -108,19 +110,16 @@ func (r *BenchmarkRunner) Run() (*BenchResults, error) {
 	}
 
 	// Initialize drivers
+	fmt.Println("Initializing drivers...")
 	drivers := r.getDriverList()
 	for _, driverName := range drivers {
-		if r.config.Verbose {
-			fmt.Printf("Initializing driver: %s\n", driverName)
-		}
 		ctx, err := r.registry.SetupDriver(driverName)
 		if err != nil {
-			if r.config.Verbose {
-				fmt.Printf("  Skipping %s: %v\n", driverName, err)
-			}
+			r.progress.PrintDriverInit(driverName, false, err)
 			continue
 		}
 		r.drivers[driverName] = ctx
+		r.progress.PrintDriverInit(driverName, true, nil)
 	}
 
 	if len(r.drivers) == 0 {
@@ -129,31 +128,36 @@ func (r *BenchmarkRunner) Run() (*BenchResults, error) {
 
 	defer r.cleanupDrivers()
 
+	// Estimate total benchmarks and start progress
+	totalBenches := EstimateBenchmarkCount(r.config, len(r.drivers))
+	r.progress.Start(totalBenches)
+
 	// Run benchmarks by category
 	categories := r.getCategoryList()
 	for _, cat := range categories {
-		if r.config.Verbose {
-			fmt.Printf("\n=== Category: %s ===\n", cat)
-		}
+		r.progress.SetPhase(cat)
+		r.progress.PrintPhaseHeader(cat + " benchmarks")
 		r.runCategory(cat)
 	}
 
 	// Run use case benchmarks
 	usecases := r.getUsecaseList()
-	for _, uc := range usecases {
-		if r.config.Verbose {
-			fmt.Printf("\n=== Use Case: %s ===\n", uc)
+	if len(usecases) > 0 {
+		r.progress.SetPhase("usecase")
+		r.progress.PrintPhaseHeader("use case benchmarks")
+		for _, uc := range usecases {
+			r.runUsecase(uc)
 		}
-		r.runUsecase(uc)
 	}
 
 	// Run load tests if requested
 	if r.config.RunLoad {
-		if r.config.Verbose {
-			fmt.Printf("\n=== Load Tests ===\n")
-		}
+		r.progress.SetPhase("load")
+		r.progress.PrintPhaseHeader("load tests")
 		r.runLoadTests()
 	}
+
+	r.progress.Stop()
 
 	endTime := time.Now()
 
@@ -237,14 +241,14 @@ func (r *BenchmarkRunner) runCellBenchmarks() {
 	// BatchSet benchmarks
 	for _, size := range sizes {
 		for name, ctx := range r.drivers {
-			if r.config.Verbose {
-				fmt.Printf("  Running BatchSet_%d for %s...\n", size, name)
-			}
+			benchName := fmt.Sprintf("BatchSet_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkBatchSet(ctx, size)
 			result.Category = "cells"
-			result.Name = fmt.Sprintf("BatchSet_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 
@@ -256,11 +260,14 @@ func (r *BenchmarkRunner) runCellBenchmarks() {
 
 	for _, size := range readSizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("GetByPositions_Sparse_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkGetByPositionsSparse(ctx, size)
 			result.Category = "cells"
-			result.Name = fmt.Sprintf("GetByPositions_Sparse_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 
@@ -272,11 +279,14 @@ func (r *BenchmarkRunner) runCellBenchmarks() {
 
 	for _, size := range denseSizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("GetByPositions_Dense_%dx%d", size.rows, size.cols)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkGetByPositionsDense(ctx, size.rows, size.cols)
 			result.Category = "cells"
-			result.Name = fmt.Sprintf("GetByPositions_Dense_%dx%d", size.rows, size.cols)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 
@@ -288,11 +298,14 @@ func (r *BenchmarkRunner) runCellBenchmarks() {
 
 	for _, size := range rangeSizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("GetRange_%dx%d", size.rows, size.cols)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkGetRange(ctx, size.rows, size.cols)
 			result.Category = "cells"
-			result.Name = fmt.Sprintf("GetRange_%dx%d", size.rows, size.cols)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 }
@@ -499,11 +512,14 @@ func (r *BenchmarkRunner) runRowBenchmarks() {
 
 	for _, size := range sizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("ShiftRows_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkShiftRows(ctx, size)
 			result.Category = "rows"
-			result.Name = fmt.Sprintf("ShiftRows_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 
@@ -514,11 +530,14 @@ func (r *BenchmarkRunner) runRowBenchmarks() {
 
 	for _, size := range colSizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("ShiftCols_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkShiftCols(ctx, size)
 			result.Category = "rows"
-			result.Name = fmt.Sprintf("ShiftCols_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 }
@@ -596,22 +615,28 @@ func (r *BenchmarkRunner) runMergeBenchmarks() {
 	// Individual merges
 	for _, size := range sizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("CreateMerge_Individual_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkCreateMergeIndividual(ctx, size)
 			result.Category = "merge"
-			result.Name = fmt.Sprintf("CreateMerge_Individual_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 
 	// Batch merges
 	for _, size := range sizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("BatchCreateMerge_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkBatchCreateMerge(ctx, size)
 			result.Category = "merge"
-			result.Name = fmt.Sprintf("BatchCreateMerge_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 }
@@ -695,27 +720,36 @@ func (r *BenchmarkRunner) runFormatBenchmarks() {
 	}
 
 	for name, ctx := range r.drivers {
+		benchName := "BatchSet_WithFormat"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkBatchSetWithFormat(ctx, count)
 		result.Category = "format"
-		result.Name = "BatchSet_WithFormat"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 
 	for name, ctx := range r.drivers {
+		benchName := "BatchSet_NoFormat"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkBatchSetNoFormat(ctx, count)
 		result.Category = "format"
-		result.Name = "BatchSet_NoFormat"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 
 	for name, ctx := range r.drivers {
+		benchName := "BatchSet_PartialFormat"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkBatchSetPartialFormat(ctx, count)
 		result.Category = "format"
-		result.Name = "BatchSet_PartialFormat"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 }
 
@@ -849,11 +883,14 @@ func (r *BenchmarkRunner) runQueryBenchmarks() {
 
 	for _, size := range sizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("Query_NonEmpty_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkQueryNonEmpty(ctx, size)
 			result.Category = "query"
-			result.Name = fmt.Sprintf("Query_NonEmpty_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 }
@@ -895,11 +932,14 @@ func (r *BenchmarkRunner) benchmarkQueryNonEmpty(ctx *DriverContext, count int) 
 func (r *BenchmarkRunner) runFinancialUsecase() {
 	// Financial modeling: 500 rows × 50 cols, 30% formulas, heavy formatting
 	for name, ctx := range r.drivers {
+		benchName := "Financial_Workbook"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkFinancialWorkbook(ctx)
 		result.Category = "usecase"
-		result.Name = "Financial_Workbook"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 }
 
@@ -983,11 +1023,14 @@ func (r *BenchmarkRunner) runImportUsecase() {
 
 	for _, size := range sizes {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("Import_CSV_%d", size)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkCSVImport(ctx, size)
 			result.Category = "usecase"
-			result.Name = fmt.Sprintf("Import_CSV_%d", size)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 }
@@ -1048,11 +1091,14 @@ func (r *BenchmarkRunner) benchmarkCSVImport(ctx *DriverContext, totalCells int)
 
 func (r *BenchmarkRunner) runReportUsecase() {
 	for name, ctx := range r.drivers {
+		benchName := "Report_Generation"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkReportGeneration(ctx)
 		result.Category = "usecase"
-		result.Name = "Report_Generation"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 }
 
@@ -1098,11 +1144,14 @@ func (r *BenchmarkRunner) benchmarkReportGeneration(ctx *DriverContext) BenchRes
 
 func (r *BenchmarkRunner) runSparseUsecase() {
 	for name, ctx := range r.drivers {
+		benchName := "Sparse_Data"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkSparseData(ctx)
 		result.Category = "usecase"
-		result.Name = "Sparse_Data"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 }
 
@@ -1166,11 +1215,14 @@ func (r *BenchmarkRunner) benchmarkSparseData(ctx *DriverContext) BenchResult {
 
 func (r *BenchmarkRunner) runBulkUsecase() {
 	for name, ctx := range r.drivers {
+		benchName := "Bulk_Operations"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkBulkOperations(ctx)
 		result.Category = "usecase"
-		result.Name = "Bulk_Operations"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 }
 
@@ -1239,21 +1291,27 @@ func (r *BenchmarkRunner) runLoadTests() {
 
 	for _, rate := range rates {
 		for name, ctx := range r.drivers {
+			benchName := fmt.Sprintf("Sustained_Write_%d_cps", rate)
+			r.progress.StartBenchmark(benchName, name)
 			result := r.benchmarkSustainedWrite(ctx, rate)
 			result.Category = "load"
-			result.Name = fmt.Sprintf("Sustained_Write_%d_cps", rate)
+			result.Name = benchName
 			result.Driver = name
 			r.results = append(r.results, result)
+			r.progress.CompleteBenchmark(&result)
 		}
 	}
 
 	// L2: Mixed workload
 	for name, ctx := range r.drivers {
+		benchName := "Mixed_Workload"
+		r.progress.StartBenchmark(benchName, name)
 		result := r.benchmarkMixedWorkload(ctx)
 		result.Category = "load"
-		result.Name = "Mixed_Workload"
+		result.Name = benchName
 		result.Driver = name
 		r.results = append(r.results, result)
+		r.progress.CompleteBenchmark(&result)
 	}
 }
 

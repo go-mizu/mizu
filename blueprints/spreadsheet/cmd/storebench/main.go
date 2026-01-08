@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
-	"time"
 )
 
 var (
@@ -58,18 +58,28 @@ func main() {
 		os.Setenv("POSTGRES_TEST_DSN", *postgresDSN)
 	}
 
-	fmt.Println("=== Spreadsheet Storage Benchmark ===")
-	fmt.Printf("Drivers: %v\n", driverList)
-	fmt.Printf("Categories: %v\n", categoryList)
-	fmt.Printf("Output: %s\n", *outputFile)
-	fmt.Println()
+	// Create progress display
+	progress := NewProgressDisplay(os.Stdout)
+	progress.PrintHeader(config)
 
 	// Run benchmarks
-	runner := NewBenchmarkRunner(config)
+	runner := NewBenchmarkRunner(config, progress)
 	results, err := runner.Run()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error running benchmarks: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\nError running benchmarks: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Print summary
+	progress.PrintSummary(results)
+
+	// Ensure output directory exists
+	outputDir := filepath.Dir(*outputFile)
+	if outputDir != "" && outputDir != "." {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Generate report
@@ -82,7 +92,6 @@ func main() {
 	}
 
 	fmt.Printf("\nReport written to: %s\n", *outputFile)
-	printSummary(results)
 }
 
 func parseList(s string) []string {
@@ -100,45 +109,3 @@ func parseList(s string) []string {
 	return result
 }
 
-func printSummary(results *BenchResults) {
-	fmt.Println("\n=== Summary ===")
-	fmt.Printf("Total benchmarks: %d\n", len(results.Results))
-	fmt.Printf("Total duration: %v\n", results.TotalDuration.Round(time.Millisecond))
-
-	// Find fastest driver per category
-	categoryWins := make(map[string]map[string]int)
-	for _, r := range results.Results {
-		if categoryWins[r.Category] == nil {
-			categoryWins[r.Category] = make(map[string]int)
-		}
-	}
-
-	// Group by benchmark name and find fastest
-	byName := make(map[string][]BenchResult)
-	for _, r := range results.Results {
-		key := r.Category + "/" + r.Name
-		byName[key] = append(byName[key], r)
-	}
-
-	for _, rs := range byName {
-		if len(rs) < 2 {
-			continue
-		}
-		fastest := rs[0]
-		for _, r := range rs[1:] {
-			if r.NsPerOp < fastest.NsPerOp {
-				fastest = r
-			}
-		}
-		categoryWins[fastest.Category][fastest.Driver]++
-	}
-
-	fmt.Println("\nWins by category:")
-	for cat, wins := range categoryWins {
-		fmt.Printf("  %s: ", cat)
-		for driver, count := range wins {
-			fmt.Printf("%s=%d ", driver, count)
-		}
-		fmt.Println()
-	}
-}
