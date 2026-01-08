@@ -69,7 +69,6 @@ function App() {
     createSheet,
     getCell,
     setCell,
-    setCellFormat,
     deleteCell,
     batchUpdateCells,
     batchSetCellFormat,
