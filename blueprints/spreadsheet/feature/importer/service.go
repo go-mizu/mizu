@@ -375,7 +375,7 @@ func (s *Service) importCellsToSheet(ctx context.Context, sheetID string, sheetI
 		SheetID: sheetID,
 	}
 
-	// Batch import cells
+	// Prepare cells for import
 	var cellsToImport []*cells.Cell
 	maxRow, maxCol := 0, 0
 
@@ -424,38 +424,63 @@ func (s *Service) importCellsToSheet(ctx context.Context, sheetID string, sheetI
 		cellsToImport = append(cellsToImport, cell)
 	}
 
-	// Import in batches
+	// Configure batch processor
 	batchSize := 500
-	for i := 0; i < len(cellsToImport); i += batchSize {
-		end := i + batchSize
-		if end > len(cellsToImport) {
-			end = len(cellsToImport)
-		}
+	workers := 4
+	if opts.BatchSize > 0 {
+		batchSize = opts.BatchSize
+	}
+	if opts.Workers > 0 {
+		workers = opts.Workers
+	}
 
-		batch := cellsToImport[i:end]
-		updates := make([]cells.CellUpdate, len(batch))
-		for j, cell := range batch {
-			updates[j] = cells.CellUpdate{
-				Row:     cell.Row,
-				Col:     cell.Col,
-				Value:   cell.Value,
-				Formula: cell.Formula,
-				Format:  &cell.Format,
+	// Use parallel processing for large imports when enabled
+	if opts.ParallelProcessing && len(cellsToImport) > batchSize*2 {
+		processor := NewBatchProcessor(s.cells, batchSize, workers)
+		imported, warnings := processor.ProcessCells(ctx, sheetID, cellsToImport)
+		result.Warnings = append(result.Warnings, warnings...)
+		_ = imported // Count is tracked separately
+	} else {
+		// Sequential batch processing for small imports or when parallel is disabled
+		for i := 0; i < len(cellsToImport); i += batchSize {
+			end := i + batchSize
+			if end > len(cellsToImport) {
+				end = len(cellsToImport)
 			}
-		}
 
-		_, err := s.cells.BatchUpdate(ctx, sheetID, &cells.BatchUpdateIn{Cells: updates})
-		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("Batch import failed at row %d: %v", i/batchSize, err))
+			batch := cellsToImport[i:end]
+			updates := make([]cells.CellUpdate, len(batch))
+			for j, cell := range batch {
+				updates[j] = cells.CellUpdate{
+					Row:     cell.Row,
+					Col:     cell.Col,
+					Value:   cell.Value,
+					Formula: cell.Formula,
+					Format:  &cell.Format,
+				}
+			}
+
+			_, err := s.cells.BatchUpdate(ctx, sheetID, &cells.BatchUpdateIn{Cells: updates})
+			if err != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Batch import failed at row %d: %v", i/batchSize, err))
+			}
 		}
 	}
 
-	// Import merged regions
-	for _, mr := range sheetImport.MergedRegions {
-		_, err := s.cells.Merge(ctx, sheetID, mr.StartRow, mr.StartCol, mr.EndRow, mr.EndCol)
+	// Import merged regions using batch operation for better performance
+	if len(sheetImport.MergedRegions) > 0 {
+		regions := make([]cells.MergedRegion, len(sheetImport.MergedRegions))
+		for i, mr := range sheetImport.MergedRegions {
+			regions[i] = cells.MergedRegion{
+				StartRow: mr.StartRow,
+				StartCol: mr.StartCol,
+				EndRow:   mr.EndRow,
+				EndCol:   mr.EndCol,
+			}
+		}
+		_, err := s.cells.BatchMerge(ctx, sheetID, regions)
 		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("Failed to merge region (%d,%d)-(%d,%d): %v",
-				mr.StartRow, mr.StartCol, mr.EndRow, mr.EndCol, err))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Failed to batch merge regions: %v", err))
 		}
 	}
 

@@ -634,6 +634,66 @@ func TestCellsStore_GetMergedRegions_Empty(t *testing.T) {
 	}
 }
 
+func TestCellsStore_BatchCreateMerge(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Create multiple merge regions in a batch
+	regions := []*cells.MergedRegion{
+		{
+			ID:       NewTestID(),
+			SheetID:  f.Sheet.ID,
+			StartRow: 0,
+			StartCol: 0,
+			EndRow:   1,
+			EndCol:   1,
+		},
+		{
+			ID:       NewTestID(),
+			SheetID:  f.Sheet.ID,
+			StartRow: 3,
+			StartCol: 0,
+			EndRow:   4,
+			EndCol:   2,
+		},
+		{
+			ID:       NewTestID(),
+			SheetID:  f.Sheet.ID,
+			StartRow: 6,
+			StartCol: 0,
+			EndRow:   8,
+			EndCol:   3,
+		},
+	}
+
+	if err := store.BatchCreateMerge(ctx, regions); err != nil {
+		t.Fatalf("BatchCreateMerge() error = %v", err)
+	}
+
+	// Verify all regions were created
+	created, err := store.GetMergedRegions(ctx, f.Sheet.ID)
+	if err != nil {
+		t.Fatalf("GetMergedRegions() error = %v", err)
+	}
+
+	if len(created) != 3 {
+		t.Errorf("Expected 3 merged regions, got %d", len(created))
+	}
+}
+
+func TestCellsStore_BatchCreateMerge_Empty(t *testing.T) {
+	f := SetupTestFixture(t)
+	store := NewCellsStore(f.DB)
+	ctx := context.Background()
+
+	// Empty batch should succeed without error
+	err := store.BatchCreateMerge(ctx, []*cells.MergedRegion{})
+	if err != nil {
+		t.Errorf("BatchCreateMerge() empty list error = %v, want nil", err)
+	}
+}
+
 func TestCellsStore_GetMergedRegions_MultipleSheets(t *testing.T) {
 	f := SetupTestFixture(t)
 	store := NewCellsStore(f.DB)

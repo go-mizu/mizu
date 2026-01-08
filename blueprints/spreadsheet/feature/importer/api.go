@@ -43,6 +43,11 @@ type Options struct {
 	// Sheet creation
 	CreateNewSheet bool   `json:"createNewSheet,omitempty"`
 	SheetName      string `json:"sheetName,omitempty"`
+
+	// Performance options
+	ParallelProcessing bool `json:"parallelProcessing,omitempty"` // Enable parallel batch processing
+	BatchSize          int  `json:"batchSize,omitempty"`          // Batch size for imports (default 500)
+	Workers            int  `json:"workers,omitempty"`            // Number of parallel workers (default 4)
 }
 
 // Result contains the result of an import operation.

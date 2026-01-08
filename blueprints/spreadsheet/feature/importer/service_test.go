@@ -184,6 +184,21 @@ func (m *mockCellsAPI) Merge(ctx context.Context, sheetID string, startRow, star
 	return region, nil
 }
 
+func (m *mockCellsAPI) BatchMerge(ctx context.Context, sheetID string, regions []cells.MergedRegion) ([]*cells.MergedRegion, error) {
+	result := make([]*cells.MergedRegion, len(regions))
+	for i, r := range regions {
+		result[i] = &cells.MergedRegion{
+			SheetID:  sheetID,
+			StartRow: r.StartRow,
+			StartCol: r.StartCol,
+			EndRow:   r.EndRow,
+			EndCol:   r.EndCol,
+		}
+		m.mergedRegions = append(m.mergedRegions, result[i])
+	}
+	return result, nil
+}
+
 func (m *mockCellsAPI) Unmerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error {
 	return nil
 }

@@ -397,6 +397,31 @@ func (s *Service) Merge(ctx context.Context, sheetID string, startRow, startCol,
 	return region, nil
 }
 
+// BatchMerge merges multiple cell regions in a single operation.
+func (s *Service) BatchMerge(ctx context.Context, sheetID string, regions []MergedRegion) ([]*MergedRegion, error) {
+	if len(regions) == 0 {
+		return []*MergedRegion{}, nil
+	}
+
+	result := make([]*MergedRegion, len(regions))
+	for i, r := range regions {
+		result[i] = &MergedRegion{
+			ID:       ulid.New(),
+			SheetID:  sheetID,
+			StartRow: r.StartRow,
+			StartCol: r.StartCol,
+			EndRow:   r.EndRow,
+			EndCol:   r.EndCol,
+		}
+	}
+
+	if err := s.store.BatchCreateMerge(ctx, result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 // Unmerge unmerges cells.
 func (s *Service) Unmerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error {
 	return s.store.DeleteMerge(ctx, sheetID, startRow, startCol, endRow, endCol)
