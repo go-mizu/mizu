@@ -4,6 +4,67 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+// Mock XMLHttpRequest for import tests
+// The response is set via mockXHRResponse before calling the API
+let mockXHRResponse: { status: number; statusText: string; responseText: string } = {
+  status: 200,
+  statusText: 'OK',
+  responseText: '',
+};
+
+interface MockXHRInstance {
+  open: ReturnType<typeof vi.fn>;
+  setRequestHeader: ReturnType<typeof vi.fn>;
+  send: ReturnType<typeof vi.fn>;
+}
+
+let lastMockXHRInstance: MockXHRInstance | null = null;
+
+class MockXHR {
+  status: number = 200;
+  statusText: string = 'OK';
+  responseText: string = '';
+  upload = {
+    addEventListener: vi.fn(),
+  };
+  _loadHandler: Function | null = null;
+  _errorHandler: Function | null = null;
+  _abortHandler: Function | null = null;
+
+  addEventListener(event: string, handler: Function) {
+    if (event === 'load') {
+      this._loadHandler = handler;
+    } else if (event === 'error') {
+      this._errorHandler = handler;
+    } else if (event === 'abort') {
+      this._abortHandler = handler;
+    }
+  }
+
+  open = vi.fn();
+  setRequestHeader = vi.fn();
+
+  send = vi.fn(() => {
+    // Apply the mock response
+    this.status = mockXHRResponse.status;
+    this.statusText = mockXHRResponse.statusText;
+    this.responseText = mockXHRResponse.responseText;
+
+    // Simulate async response
+    setTimeout(() => {
+      if (this._loadHandler) {
+        this._loadHandler();
+      }
+    }, 0);
+  });
+
+  constructor() {
+    lastMockXHRInstance = this;
+  }
+}
+
+(global as any).XMLHttpRequest = MockXHR;
+
 // Import after mocking fetch
 import { api } from './api';
 
@@ -301,6 +362,8 @@ describe('API Client', () => {
   describe('import', () => {
     beforeEach(() => {
       localStorage.setItem('auth_token', 'test-token');
+      // Reset XHR mock
+      mockXHRResponse = { status: 200, statusText: 'OK', responseText: '' };
     });
 
     it('should import CSV to workbook', async () => {
@@ -311,22 +374,20 @@ describe('API Client', () => {
         cellsImported: 500,
         warnings: [],
       };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: mockData }),
-      });
+
+      // Set mock response BEFORE calling the API
+      mockXHRResponse = {
+        status: 200,
+        statusText: 'OK',
+        responseText: JSON.stringify({ data: mockData }),
+      };
 
       const file = new File(['col1,col2\nval1,val2'], 'test.csv', { type: 'text/csv' });
       const result = await api.importToWorkbook('wb1', file, {});
 
       expect(result).toEqual(mockData);
-      expect(mockFetch).toHaveBeenCalled();
-
-      // Verify FormData was used
-      const call = mockFetch.mock.calls[0];
-      expect(call[0]).toBe('/api/v1/workbooks/wb1/import');
-      expect(call[1].method).toBe('POST');
-      expect(call[1].body).toBeInstanceOf(FormData);
+      expect(lastMockXHRInstance?.open).toHaveBeenCalledWith('POST', '/api/v1/workbooks/wb1/import');
+      expect(lastMockXHRInstance?.setRequestHeader).toHaveBeenCalledWith('Authorization', 'Bearer test-token');
     });
 
     it('should import XLSX to sheet with options', async () => {
@@ -353,16 +414,16 @@ describe('API Client', () => {
     });
 
     it('should handle import error', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
+      // Set mock error response BEFORE calling the API
+      mockXHRResponse = {
         status: 400,
         statusText: 'Bad Request',
-        text: () => Promise.resolve('Invalid CSV format'),
-      });
+        responseText: JSON.stringify({ error: 'Invalid CSV format', message: 'Invalid CSV format' }),
+      };
 
       const file = new File(['invalid data'], 'test.csv', { type: 'text/csv' });
 
-      await expect(api.importToWorkbook('wb1', file, {})).rejects.toThrow();
+      await expect(api.importToWorkbook('wb1', file, {})).rejects.toThrow('Invalid CSV format');
     });
 
     it('should import JSON file', async () => {
@@ -373,10 +434,13 @@ describe('API Client', () => {
         cellsImported: 30,
         warnings: [],
       };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ data: mockData }),
-      });
+
+      // Set mock response BEFORE calling the API
+      mockXHRResponse = {
+        status: 200,
+        statusText: 'OK',
+        responseText: JSON.stringify({ data: mockData }),
+      };
 
       const jsonData = JSON.stringify({
         version: '1.0',
