@@ -198,6 +198,38 @@ func (s *CellsStore) CreateMerge(ctx context.Context, region *cells.MergedRegion
 	return err
 }
 
+// BatchCreateMerge creates multiple merged regions in a single transaction.
+// This is more efficient than calling CreateMerge multiple times.
+func (s *CellsStore) BatchCreateMerge(ctx context.Context, regions []*cells.MergedRegion) error {
+	if len(regions) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO merged_regions (id, sheet_id, start_row, start_col, end_row, end_col)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, region := range regions {
+		if _, err := stmt.ExecContext(ctx, region.ID, region.SheetID,
+			region.StartRow, region.StartCol, region.EndRow, region.EndCol); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // DeleteMerge deletes a merged region.
 func (s *CellsStore) DeleteMerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error {
 	_, err := s.db.ExecContext(ctx, `

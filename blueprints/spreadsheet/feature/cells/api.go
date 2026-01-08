@@ -187,6 +187,10 @@ type API interface {
 	// Merge merges cells.
 	Merge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) (*MergedRegion, error)
 
+	// BatchMerge merges multiple cell regions in a single operation.
+	// This is more efficient than calling Merge multiple times.
+	BatchMerge(ctx context.Context, sheetID string, regions []MergedRegion) ([]*MergedRegion, error)
+
 	// Unmerge unmerges cells.
 	Unmerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error
 
@@ -233,6 +237,9 @@ type Store interface {
 	// DeleteColsRange deletes multiple columns and shifts remaining cells left in a single operation.
 	DeleteColsRange(ctx context.Context, sheetID string, startCol, count int) error
 	CreateMerge(ctx context.Context, region *MergedRegion) error
+	// BatchCreateMerge creates multiple merged regions in a single transaction.
+	// This is more efficient than calling CreateMerge multiple times.
+	BatchCreateMerge(ctx context.Context, regions []*MergedRegion) error
 	DeleteMerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error
 	GetMergedRegions(ctx context.Context, sheetID string) ([]*MergedRegion, error)
 	ShiftRows(ctx context.Context, sheetID string, startRow, count int) error
