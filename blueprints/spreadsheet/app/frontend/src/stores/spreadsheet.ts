@@ -68,6 +68,7 @@ interface SpreadsheetState {
   setCellFormat: (row: number, col: number, format: CellFormat) => Promise<void>;
   deleteCell: (row: number, col: number) => Promise<void>;
   batchUpdateCells: (updates: Array<{ row: number; col: number; value?: CellValue; formula?: string }>) => Promise<void>;
+  batchSetCellFormat: (updates: Array<{ row: number; col: number; format: CellFormat }>) => Promise<void>;
 
   // Actions - Row/Column
   insertRows: (rowIndex: number, count: number) => Promise<void>;
@@ -434,6 +435,41 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     } catch (e) {
       const err = e as { message?: string };
       set({ error: err.message || 'Failed to update cells' });
+    }
+  },
+
+  // Batch set cell format - optimized to send all format changes in one request
+  batchSetCellFormat: async (updates) => {
+    const { currentSheet, cells } = get();
+    if (!currentSheet || updates.length === 0) return;
+
+    try {
+      // Build batch update request with existing cell values and new formats
+      const batchUpdates = updates.map((u) => {
+        const existingCell = cells.get(cellKey(u.row, u.col));
+        return {
+          row: u.row,
+          col: u.col,
+          value: existingCell?.value,
+          formula: existingCell?.formula,
+          format: u.format,
+        };
+      });
+
+      const cellsArray = await api.batchUpdateCells(currentSheet.id, {
+        cells: batchUpdates,
+      });
+
+      set((state) => {
+        const newCells = new Map(state.cells);
+        for (const cell of cellsArray) {
+          newCells.set(cellKey(cell.row, cell.col), cell);
+        }
+        return { cells: newCells };
+      });
+    } catch (e) {
+      const err = e as { message?: string };
+      set({ error: err.message || 'Failed to format cells' });
     }
   },
 

@@ -72,6 +72,7 @@ function App() {
     setCellFormat,
     deleteCell,
     batchUpdateCells,
+    batchSetCellFormat,
     insertRows,
     deleteRows,
     insertCols,
@@ -189,16 +190,19 @@ function App() {
     }
   }, [isAuthenticated, loadWorkbooks, loadWorkbook, createWorkbook]);
 
-  // Get cells in a selection range
-  const getCellsInRange = useCallback((sel: Selection): Cell[] => {
+  // Get cells in a selection range - optimized sparse implementation
+  // Only returns existing cells, uses lightweight placeholders for empty cells
+  const getCellsInRange = useCallback((sel: Selection, includeEmpty: boolean = true): Cell[] => {
     const result: Cell[] = [];
+    const emptyTimestamp = new Date().toISOString(); // Single timestamp for all empty cells in this call
+
     for (let row = sel.startRow; row <= sel.endRow; row++) {
       for (let col = sel.startCol; col <= sel.endCol; col++) {
         const cell = getCell(row, col);
         if (cell) {
           result.push(cell);
-        } else {
-          // Create virtual cell for empty cells
+        } else if (includeEmpty) {
+          // Lightweight placeholder for empty cells (reuse timestamp)
           result.push({
             id: `${row}:${col}`,
             sheetId: currentSheet?.id || '',
@@ -206,7 +210,7 @@ function App() {
             col,
             value: null,
             type: 'text',
-            updatedAt: new Date().toISOString(),
+            updatedAt: emptyTimestamp,
           });
         }
       }
@@ -427,18 +431,24 @@ function App() {
     }
   }, [currentSelection, currentSheet, getCell, batchUpdateCells, pushAction]);
 
-  // Format cells
+  // Format cells - optimized to use batch update for all cells at once
   const handleFormatChange = useCallback(async (format: Partial<CellFormat>) => {
     if (!currentSelection || !currentSheet) return;
+
+    // Collect all format updates
+    const updates: Array<{ row: number; col: number; format: CellFormat }> = [];
 
     for (let row = currentSelection.startRow; row <= currentSelection.endRow; row++) {
       for (let col = currentSelection.startCol; col <= currentSelection.endCol; col++) {
         const existingCell = getCell(row, col);
         const newFormat = { ...existingCell?.format, ...format };
-        await setCellFormat(row, col, newFormat);
+        updates.push({ row, col, format: newFormat });
       }
     }
-  }, [currentSelection, currentSheet, getCell, setCellFormat]);
+
+    // Send all updates in one batch request
+    await batchSetCellFormat(updates);
+  }, [currentSelection, currentSheet, getCell, batchSetCellFormat]);
 
   // Navigation helpers
   const moveActiveCell = useCallback((rowDelta: number, colDelta: number) => {
@@ -579,7 +589,7 @@ function App() {
     }
   }, []);
 
-  // Apply border handler
+  // Apply border handler - optimized to use batch updates
   const handleApplyBorder = useCallback(async (type: string, border: { style: string; color: string } | null) => {
     if (!currentSelection || !currentSheet) return;
 
@@ -590,6 +600,9 @@ function App() {
     } : undefined;
 
     const { startRow, endRow, startCol, endCol } = currentSelection;
+
+    // Collect all format updates for batch processing
+    const updates: Array<{ row: number; col: number; format: CellFormat }> = [];
 
     // For complex border types, we need to apply borders per-cell
     for (let row = startRow; row <= endRow; row++) {
@@ -603,65 +616,66 @@ function App() {
           formatUpdate.borderBottom = undefined;
           formatUpdate.borderLeft = undefined;
           formatUpdate.borderRight = undefined;
-          await setCellFormat(row, col, formatUpdate);
-          continue;
+        } else {
+          // Handle each border type
+          const isTopEdge = row === startRow;
+          const isBottomEdge = row === endRow;
+          const isLeftEdge = col === startCol;
+          const isRightEdge = col === endCol;
+
+          // All borders - every cell gets all 4 borders
+          if (type === 'all') {
+            formatUpdate.borderTop = borderValue;
+            formatUpdate.borderBottom = borderValue;
+            formatUpdate.borderLeft = borderValue;
+            formatUpdate.borderRight = borderValue;
+          }
+          // Outer borders - only edges
+          else if (type === 'outer') {
+            if (isTopEdge) formatUpdate.borderTop = borderValue;
+            if (isBottomEdge) formatUpdate.borderBottom = borderValue;
+            if (isLeftEdge) formatUpdate.borderLeft = borderValue;
+            if (isRightEdge) formatUpdate.borderRight = borderValue;
+          }
+          // Inner borders - horizontal and vertical inner lines
+          else if (type === 'inner') {
+            if (!isTopEdge) formatUpdate.borderTop = borderValue;
+            if (!isBottomEdge) formatUpdate.borderBottom = borderValue;
+            if (!isLeftEdge) formatUpdate.borderLeft = borderValue;
+            if (!isRightEdge) formatUpdate.borderRight = borderValue;
+          }
+          // Horizontal only - top/bottom of each cell (inner horizontal)
+          else if (type === 'horizontal') {
+            if (!isTopEdge) formatUpdate.borderTop = borderValue;
+            if (!isBottomEdge) formatUpdate.borderBottom = borderValue;
+          }
+          // Vertical only - left/right of each cell (inner vertical)
+          else if (type === 'vertical') {
+            if (!isLeftEdge) formatUpdate.borderLeft = borderValue;
+            if (!isRightEdge) formatUpdate.borderRight = borderValue;
+          }
+          // Single edge borders
+          else if (type === 'top' && isTopEdge) {
+            formatUpdate.borderTop = borderValue;
+          }
+          else if (type === 'bottom' && isBottomEdge) {
+            formatUpdate.borderBottom = borderValue;
+          }
+          else if (type === 'left' && isLeftEdge) {
+            formatUpdate.borderLeft = borderValue;
+          }
+          else if (type === 'right' && isRightEdge) {
+            formatUpdate.borderRight = borderValue;
+          }
         }
 
-        // Handle each border type
-        const isTopEdge = row === startRow;
-        const isBottomEdge = row === endRow;
-        const isLeftEdge = col === startCol;
-        const isRightEdge = col === endCol;
-
-        // All borders - every cell gets all 4 borders
-        if (type === 'all') {
-          formatUpdate.borderTop = borderValue;
-          formatUpdate.borderBottom = borderValue;
-          formatUpdate.borderLeft = borderValue;
-          formatUpdate.borderRight = borderValue;
-        }
-        // Outer borders - only edges
-        else if (type === 'outer') {
-          if (isTopEdge) formatUpdate.borderTop = borderValue;
-          if (isBottomEdge) formatUpdate.borderBottom = borderValue;
-          if (isLeftEdge) formatUpdate.borderLeft = borderValue;
-          if (isRightEdge) formatUpdate.borderRight = borderValue;
-        }
-        // Inner borders - horizontal and vertical inner lines
-        else if (type === 'inner') {
-          if (!isTopEdge) formatUpdate.borderTop = borderValue;
-          if (!isBottomEdge) formatUpdate.borderBottom = borderValue;
-          if (!isLeftEdge) formatUpdate.borderLeft = borderValue;
-          if (!isRightEdge) formatUpdate.borderRight = borderValue;
-        }
-        // Horizontal only - top/bottom of each cell (inner horizontal)
-        else if (type === 'horizontal') {
-          if (!isTopEdge) formatUpdate.borderTop = borderValue;
-          if (!isBottomEdge) formatUpdate.borderBottom = borderValue;
-        }
-        // Vertical only - left/right of each cell (inner vertical)
-        else if (type === 'vertical') {
-          if (!isLeftEdge) formatUpdate.borderLeft = borderValue;
-          if (!isRightEdge) formatUpdate.borderRight = borderValue;
-        }
-        // Single edge borders
-        else if (type === 'top' && isTopEdge) {
-          formatUpdate.borderTop = borderValue;
-        }
-        else if (type === 'bottom' && isBottomEdge) {
-          formatUpdate.borderBottom = borderValue;
-        }
-        else if (type === 'left' && isLeftEdge) {
-          formatUpdate.borderLeft = borderValue;
-        }
-        else if (type === 'right' && isRightEdge) {
-          formatUpdate.borderRight = borderValue;
-        }
-
-        await setCellFormat(row, col, formatUpdate);
+        updates.push({ row, col, format: formatUpdate as CellFormat });
       }
     }
-  }, [currentSelection, currentSheet, getCell, setCellFormat]);
+
+    // Send all updates in one batch request
+    await batchSetCellFormat(updates);
+  }, [currentSelection, currentSheet, getCell, batchSetCellFormat]);
 
   // Export handler using API
   const handleExport = useCallback(async (format: ExportFormat, options: ExportOptions) => {
@@ -817,28 +831,41 @@ function App() {
     await batchUpdateCells(updates);
   }, [currentSelection, currentSheet, getCell, batchUpdateCells]);
 
-  // Find functionality
-  const handleFindAll = useCallback((searchText: string, options: FindOptions): CellPosition[] => {
+  // Find functionality - optimized with early exit for large result sets
+  const handleFindAll = useCallback((searchText: string, options: FindOptions, maxResults: number = 1000): CellPosition[] => {
     const results: CellPosition[] = [];
     const searchLower = options.matchCase ? searchText : searchText.toLowerCase();
 
-    cells.forEach((cell) => {
+    // Pre-compile regex if needed (avoid recompiling per cell)
+    let regex: RegExp | null = null;
+    if (options.useRegex) {
+      try {
+        regex = new RegExp(searchText, options.matchCase ? '' : 'i');
+      } catch {
+        // Invalid regex - return empty results
+        return results;
+      }
+    }
+
+    // Use for...of with break support instead of forEach for early exit
+    for (const cell of cells.values()) {
+      // Early exit if we've found enough results
+      if (results.length >= maxResults) break;
+
       const valueToSearch = options.searchIn === 'formulas'
         ? (cell.formula || '')
         : String(cell.display ?? cell.value ?? '');
 
+      // Skip empty cells for performance
+      if (!valueToSearch) continue;
+
       const compareValue = options.matchCase ? valueToSearch : valueToSearch.toLowerCase();
 
       let matches = false;
-      if (options.useRegex) {
-        try {
-          const regex = new RegExp(searchText, options.matchCase ? '' : 'i');
-          matches = options.matchEntireCell
-            ? regex.test(valueToSearch) && valueToSearch.match(regex)?.[0] === valueToSearch
-            : regex.test(valueToSearch);
-        } catch {
-          // Invalid regex
-        }
+      if (regex) {
+        matches = options.matchEntireCell
+          ? regex.test(valueToSearch) && valueToSearch.match(regex)?.[0] === valueToSearch
+          : regex.test(valueToSearch);
       } else {
         matches = options.matchEntireCell
           ? compareValue === searchLower
@@ -848,7 +875,7 @@ function App() {
       if (matches) {
         results.push({ row: cell.row, col: cell.col });
       }
-    });
+    }
 
     // Sort by row then column
     results.sort((a, b) => a.row - b.row || a.col - b.col);
@@ -1635,13 +1662,21 @@ function App() {
             const cellData = getCell(args.row, args.col);
             if (!cellData?.format) return;
 
-            const { ctx, rect, theme } = args;
             const format = cellData.format;
+
+            // Early return if no custom drawing needed (performance optimization)
+            const hasUnderline = format.underline;
+            const hasStrikethrough = format.strikethrough;
+            const hasBorders = format.borderTop || format.borderRight || format.borderBottom || format.borderLeft;
+
+            if (!hasUnderline && !hasStrikethrough && !hasBorders) return;
+
+            const { ctx, rect, theme } = args;
             const padding = theme.cellHorizontalPadding ?? 8;
             const textColor = format.fontColor || theme.textDark;
 
             // Draw underline
-            if (format.underline) {
+            if (hasUnderline) {
               ctx.save();
               ctx.strokeStyle = textColor;
               ctx.lineWidth = 1;
@@ -1654,7 +1689,7 @@ function App() {
             }
 
             // Draw strikethrough
-            if (format.strikethrough) {
+            if (hasStrikethrough) {
               ctx.save();
               ctx.strokeStyle = textColor;
               ctx.lineWidth = 1;
@@ -1666,62 +1701,32 @@ function App() {
               ctx.restore();
             }
 
-            // Draw borders
-            ctx.save();
+            // Draw borders (only if any exist)
+            if (hasBorders) {
+              ctx.save();
 
-            // Border top
-            if (format.borderTop) {
-              ctx.strokeStyle = format.borderTop.color;
-              ctx.lineWidth = format.borderTop.style === 'thick' ? 3 : format.borderTop.style === 'medium' ? 2 : 1;
-              if (format.borderTop.style === 'dashed') ctx.setLineDash([4, 4]);
-              else if (format.borderTop.style === 'dotted') ctx.setLineDash([2, 2]);
-              else ctx.setLineDash([]);
-              ctx.beginPath();
-              ctx.moveTo(rect.x, rect.y + 0.5);
-              ctx.lineTo(rect.x + rect.width, rect.y + 0.5);
-              ctx.stroke();
+              // Helper to draw a border line
+              const drawBorder = (border: typeof format.borderTop, x1: number, y1: number, x2: number, y2: number) => {
+                if (!border) return;
+                ctx.strokeStyle = border.color;
+                ctx.lineWidth = border.style === 'thick' ? 3 : border.style === 'medium' ? 2 : 1;
+                if (border.style === 'dashed') ctx.setLineDash([4, 4]);
+                else if (border.style === 'dotted') ctx.setLineDash([2, 2]);
+                else ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+              };
+
+              // Draw each border
+              drawBorder(format.borderTop, rect.x, rect.y + 0.5, rect.x + rect.width, rect.y + 0.5);
+              drawBorder(format.borderRight, rect.x + rect.width - 0.5, rect.y, rect.x + rect.width - 0.5, rect.y + rect.height);
+              drawBorder(format.borderBottom, rect.x, rect.y + rect.height - 0.5, rect.x + rect.width, rect.y + rect.height - 0.5);
+              drawBorder(format.borderLeft, rect.x + 0.5, rect.y, rect.x + 0.5, rect.y + rect.height);
+
+              ctx.restore();
             }
-
-            // Border right
-            if (format.borderRight) {
-              ctx.strokeStyle = format.borderRight.color;
-              ctx.lineWidth = format.borderRight.style === 'thick' ? 3 : format.borderRight.style === 'medium' ? 2 : 1;
-              if (format.borderRight.style === 'dashed') ctx.setLineDash([4, 4]);
-              else if (format.borderRight.style === 'dotted') ctx.setLineDash([2, 2]);
-              else ctx.setLineDash([]);
-              ctx.beginPath();
-              ctx.moveTo(rect.x + rect.width - 0.5, rect.y);
-              ctx.lineTo(rect.x + rect.width - 0.5, rect.y + rect.height);
-              ctx.stroke();
-            }
-
-            // Border bottom
-            if (format.borderBottom) {
-              ctx.strokeStyle = format.borderBottom.color;
-              ctx.lineWidth = format.borderBottom.style === 'thick' ? 3 : format.borderBottom.style === 'medium' ? 2 : 1;
-              if (format.borderBottom.style === 'dashed') ctx.setLineDash([4, 4]);
-              else if (format.borderBottom.style === 'dotted') ctx.setLineDash([2, 2]);
-              else ctx.setLineDash([]);
-              ctx.beginPath();
-              ctx.moveTo(rect.x, rect.y + rect.height - 0.5);
-              ctx.lineTo(rect.x + rect.width, rect.y + rect.height - 0.5);
-              ctx.stroke();
-            }
-
-            // Border left
-            if (format.borderLeft) {
-              ctx.strokeStyle = format.borderLeft.color;
-              ctx.lineWidth = format.borderLeft.style === 'thick' ? 3 : format.borderLeft.style === 'medium' ? 2 : 1;
-              if (format.borderLeft.style === 'dashed') ctx.setLineDash([4, 4]);
-              else if (format.borderLeft.style === 'dotted') ctx.setLineDash([2, 2]);
-              else ctx.setLineDash([]);
-              ctx.beginPath();
-              ctx.moveTo(rect.x + 0.5, rect.y);
-              ctx.lineTo(rect.x + 0.5, rect.y + rect.height);
-              ctx.stroke();
-            }
-
-            ctx.restore();
           }}
         />
         <ChartOverlay

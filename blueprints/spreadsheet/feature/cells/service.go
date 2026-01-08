@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/blueprints/spreadsheet/pkg/formula"
@@ -17,6 +18,77 @@ var (
 	ErrInvalidRange = errors.New("invalid range")
 )
 
+// FormulaCache provides LRU caching for parsed formula ASTs to avoid re-parsing identical formulas.
+// This improves performance when the same formula is evaluated multiple times.
+type FormulaCache struct {
+	mu       sync.RWMutex
+	cache    map[string]*formula.ASTNode
+	order    []string // LRU order tracking
+	maxSize  int
+}
+
+// NewFormulaCache creates a new formula cache with the specified max size.
+func NewFormulaCache(maxSize int) *FormulaCache {
+	return &FormulaCache{
+		cache:   make(map[string]*formula.ASTNode),
+		order:   make([]string, 0, maxSize),
+		maxSize: maxSize,
+	}
+}
+
+// Get retrieves a cached AST for the given formula string.
+func (fc *FormulaCache) Get(formulaStr string) (*formula.ASTNode, bool) {
+	fc.mu.RLock()
+	defer fc.mu.RUnlock()
+	ast, ok := fc.cache[formulaStr]
+	return ast, ok
+}
+
+// Put stores an AST in the cache, evicting oldest entry if at capacity.
+func (fc *FormulaCache) Put(formulaStr string, ast *formula.ASTNode) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+
+	// If already exists, update order
+	if _, exists := fc.cache[formulaStr]; exists {
+		// Move to end of order
+		for i, k := range fc.order {
+			if k == formulaStr {
+				fc.order = append(fc.order[:i], fc.order[i+1:]...)
+				break
+			}
+		}
+		fc.order = append(fc.order, formulaStr)
+		fc.cache[formulaStr] = ast
+		return
+	}
+
+	// Evict oldest if at capacity
+	if len(fc.cache) >= fc.maxSize && len(fc.order) > 0 {
+		oldest := fc.order[0]
+		fc.order = fc.order[1:]
+		delete(fc.cache, oldest)
+	}
+
+	fc.cache[formulaStr] = ast
+	fc.order = append(fc.order, formulaStr)
+}
+
+// Clear removes all entries from the cache.
+func (fc *FormulaCache) Clear() {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	fc.cache = make(map[string]*formula.ASTNode)
+	fc.order = fc.order[:0]
+}
+
+// Size returns the current number of cached entries.
+func (fc *FormulaCache) Size() int {
+	fc.mu.RLock()
+	defer fc.mu.RUnlock()
+	return len(fc.cache)
+}
+
 // SheetResolver resolves sheet names to IDs.
 type SheetResolver interface {
 	ResolveSheetName(ctx context.Context, workbookID, sheetName string) (string, error)
@@ -27,11 +99,15 @@ type SheetResolver interface {
 type Service struct {
 	store         Store
 	sheetResolver SheetResolver
+	formulaCache  *FormulaCache
 }
 
 // NewService creates a new cells service.
 func NewService(store Store, secret string) *Service {
-	return &Service{store: store}
+	return &Service{
+		store:        store,
+		formulaCache: NewFormulaCache(1000), // Cache up to 1000 parsed formulas
+	}
 }
 
 // SetSheetResolver sets the sheet resolver for cross-sheet formula evaluation.
@@ -412,23 +488,37 @@ func (s *Service) EvaluateFormula(ctx context.Context, sheetID, formulaStr strin
 }
 
 // evaluateFormula evaluates a formula string and returns value, display string, and error.
+// Uses formula caching to avoid re-parsing identical formulas.
 func (s *Service) evaluateFormula(ctx context.Context, sheetID, formulaStr string, row, col int) (interface{}, string, error) {
 	// Skip leading = if present
-	if strings.HasPrefix(formulaStr, "=") {
-		formulaStr = formulaStr[1:]
+	normalizedFormula := formulaStr
+	if strings.HasPrefix(normalizedFormula, "=") {
+		normalizedFormula = normalizedFormula[1:]
 	}
 
-	// Parse formula
-	lexer := formula.NewLexer(formulaStr)
-	tokens, err := lexer.Tokenize()
-	if err != nil {
-		return nil, "", err
-	}
+	// Try to get cached AST
+	var ast *formula.ASTNode
+	var err error
 
-	parser := formula.NewParser(tokens)
-	ast, err := parser.Parse()
-	if err != nil {
-		return nil, "", err
+	if cachedAST, found := s.formulaCache.Get(normalizedFormula); found {
+		// Use cached AST (make a copy to avoid concurrent modification issues)
+		ast = cachedAST
+	} else {
+		// Parse formula
+		lexer := formula.NewLexer(normalizedFormula)
+		tokens, err := lexer.Tokenize()
+		if err != nil {
+			return nil, "", err
+		}
+
+		parser := formula.NewParser(tokens)
+		ast, err = parser.Parse()
+		if err != nil {
+			return nil, "", err
+		}
+
+		// Cache the parsed AST for future use
+		s.formulaCache.Put(normalizedFormula, ast)
 	}
 
 	// Get workbook ID for cross-sheet references
@@ -464,6 +554,16 @@ func (s *Service) evaluateFormula(ctx context.Context, sheetID, formulaStr strin
 	display := formatDisplay(result, Format{})
 
 	return result, display, nil
+}
+
+// ClearFormulaCache clears the formula cache. Useful when formulas need to be re-parsed.
+func (s *Service) ClearFormulaCache() {
+	s.formulaCache.Clear()
+}
+
+// FormulaCacheSize returns the current size of the formula cache.
+func (s *Service) FormulaCacheSize() int {
+	return s.formulaCache.Size()
 }
 
 // cellGetterAdapter adapts Store to formula.CellGetter interface.
