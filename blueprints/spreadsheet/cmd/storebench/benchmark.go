@@ -172,7 +172,7 @@ func (r *BenchmarkRunner) Run() (*BenchResults, error) {
 
 func (r *BenchmarkRunner) getDriverList() []string {
 	if contains(r.config.Drivers, "all") {
-		return []string{"duckdb", "sqlite", "swandb", "postgres"}
+		return []string{"duckdb", "sqlite", "swandb", "postgres", "cached_sqlite"}
 	}
 	return r.config.Drivers
 }

@@ -9,31 +9,52 @@ import (
 	"strings"
 )
 
-var (
-	outputFile     = flag.String("output", "benchmark_report.md", "Output file for benchmark report")
-	driversFlag    = flag.String("drivers", "duckdb,sqlite,swandb", "Comma-separated list of drivers to test (duckdb,postgres,sqlite,swandb)")
-	categoriesFlag = flag.String("categories", "all", "Benchmark categories: all,cells,rows,merge,format,import,query")
-	usecasesFlag   = flag.String("usecases", "all", "Use cases: all,financial,import,collaboration,report,sparse,bulk")
-	loadTests      = flag.Bool("load", false, "Run load tests")
-	quick          = flag.Bool("quick", false, "Run quick subset of benchmarks")
-	verbose        = flag.Bool("v", false, "Verbose output")
-	warmup         = flag.Int("warmup", 3, "Number of warmup iterations")
-	iterations     = flag.Int("iter", 5, "Number of benchmark iterations")
-	postgresDSN    = flag.String("postgres-dsn", "", "PostgreSQL DSN (default: from POSTGRES_TEST_DSN env)")
-)
-
 func main() {
-	flag.Parse()
+	// Check for subcommand
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		runCmd := flag.NewFlagSet("run", flag.ExitOnError)
+		outputFile := runCmd.String("output", "benchmark_report.md", "Output file for benchmark report")
+		driversFlag := runCmd.String("drivers", "all", "Comma-separated list of drivers to test (duckdb,postgres,sqlite,swandb,cached_sqlite)")
+		categoriesFlag := runCmd.String("categories", "all", "Benchmark categories: all,cells,rows,merge,format,import,query")
+		usecasesFlag := runCmd.String("usecases", "all", "Use cases: all,financial,import,collaboration,report,sparse,bulk")
+		loadTests := runCmd.Bool("load", false, "Run load tests")
+		quick := runCmd.Bool("quick", false, "Run quick subset of benchmarks")
+		verbose := runCmd.Bool("v", false, "Verbose output")
+		warmup := runCmd.Int("warmup", 3, "Number of warmup iterations")
+		iterations := runCmd.Int("iter", 5, "Number of benchmark iterations")
+		postgresDSN := runCmd.String("postgres-dsn", "", "PostgreSQL DSN (default: from POSTGRES_TEST_DSN env)")
 
+		runCmd.Parse(os.Args[2:])
+		runBenchmarks(*outputFile, *driversFlag, *categoriesFlag, *usecasesFlag, *loadTests, *quick, *verbose, *warmup, *iterations, *postgresDSN)
+		return
+	}
+
+	// No subcommand - use global flags for backwards compatibility
+	outputFile := flag.String("output", "benchmark_report.md", "Output file for benchmark report")
+	driversFlag := flag.String("drivers", "all", "Comma-separated list of drivers to test (duckdb,postgres,sqlite,swandb,cached_sqlite)")
+	categoriesFlag := flag.String("categories", "all", "Benchmark categories: all,cells,rows,merge,format,import,query")
+	usecasesFlag := flag.String("usecases", "all", "Use cases: all,financial,import,collaboration,report,sparse,bulk")
+	loadTests := flag.Bool("load", false, "Run load tests")
+	quick := flag.Bool("quick", false, "Run quick subset of benchmarks")
+	verbose := flag.Bool("v", false, "Verbose output")
+	warmup := flag.Int("warmup", 3, "Number of warmup iterations")
+	iterations := flag.Int("iter", 5, "Number of benchmark iterations")
+	postgresDSN := flag.String("postgres-dsn", "", "PostgreSQL DSN (default: from POSTGRES_TEST_DSN env)")
+
+	flag.Parse()
+	runBenchmarks(*outputFile, *driversFlag, *categoriesFlag, *usecasesFlag, *loadTests, *quick, *verbose, *warmup, *iterations, *postgresDSN)
+}
+
+func runBenchmarks(outputFile, driversFlag, categoriesFlag, usecasesFlag string, loadTests, quick, verbose bool, warmup, iterations int, postgresDSN string) {
 	// Parse drivers
-	driverList := parseList(*driversFlag)
-	categoryList := parseList(*categoriesFlag)
-	usecaseList := parseList(*usecasesFlag)
+	driverList := parseList(driversFlag)
+	categoryList := parseList(categoriesFlag)
+	usecaseList := parseList(usecasesFlag)
 
 	// Adjust iterations for quick mode
-	warmupCount := *warmup
-	iterCount := *iterations
-	if *quick {
+	warmupCount := warmup
+	iterCount := iterations
+	if quick {
 		if warmupCount > 1 {
 			warmupCount = 1
 		}
@@ -46,16 +67,16 @@ func main() {
 		Drivers:    driverList,
 		Categories: categoryList,
 		Usecases:   usecaseList,
-		RunLoad:    *loadTests,
-		Quick:      *quick,
-		Verbose:    *verbose,
+		RunLoad:    loadTests,
+		Quick:      quick,
+		Verbose:    verbose,
 		Warmup:     warmupCount,
 		Iterations: iterCount,
 	}
 
 	// Setup PostgreSQL DSN
-	if *postgresDSN != "" {
-		os.Setenv("POSTGRES_TEST_DSN", *postgresDSN)
+	if postgresDSN != "" {
+		os.Setenv("POSTGRES_TEST_DSN", postgresDSN)
 	}
 
 	// Create progress display
@@ -74,7 +95,7 @@ func main() {
 	progress.PrintSummary(results)
 
 	// Ensure output directory exists
-	outputDir := filepath.Dir(*outputFile)
+	outputDir := filepath.Dir(outputFile)
 	if outputDir != "" && outputDir != "." {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
@@ -86,12 +107,12 @@ func main() {
 	report := GenerateMarkdownReport(results, config)
 
 	// Write report
-	if err := os.WriteFile(*outputFile, []byte(report), 0644); err != nil {
+	if err := os.WriteFile(outputFile, []byte(report), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing report: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\nReport written to: %s\n", *outputFile)
+	fmt.Printf("\nReport written to: %s\n", outputFile)
 }
 
 func parseList(s string) []string {
