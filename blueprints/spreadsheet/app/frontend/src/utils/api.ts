@@ -132,11 +132,13 @@ class ApiClient {
   }
 
   async getWorkbook(id: string): Promise<Workbook> {
-    return this.request<Workbook>('GET', `/workbooks/${id}`);
+    const response = await this.request<{ workbook: Workbook; sheets: Sheet[] }>('GET', `/workbooks/${id}`);
+    return response.workbook;
   }
 
   async createWorkbook(req: CreateWorkbookRequest): Promise<Workbook> {
-    return this.request<Workbook>('POST', '/workbooks', req);
+    const response = await this.request<{ workbook: Workbook; sheet: Sheet }>('POST', '/workbooks', req);
+    return response.workbook;
   }
 
   async updateWorkbook(id: string, req: UpdateWorkbookRequest): Promise<Workbook> {
@@ -330,7 +332,7 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Import failed');
+      throw new Error(error.message || error.error || 'Import failed');
     }
 
     const result = await response.json();
@@ -367,7 +369,7 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Import failed');
+      throw new Error(error.message || error.error || 'Import failed');
     }
 
     const result = await response.json();

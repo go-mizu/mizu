@@ -109,11 +109,36 @@ describe('API Client', () => {
       expect(result).toEqual(mockWorkbooks);
     });
 
-    it('should create workbook', async () => {
-      const mockWorkbook = { id: '1', name: 'New Workbook' };
+    it('should get workbook by id', async () => {
+      const mockWorkbook = { id: '1', name: 'Test Workbook', ownerId: 'user1' };
+      const mockSheets = [
+        { id: 'sh1', name: 'Sheet1', workbookId: '1' },
+        { id: 'sh2', name: 'Sheet2', workbookId: '1' },
+      ];
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockWorkbook),
+        json: () => Promise.resolve({ workbook: mockWorkbook, sheets: mockSheets }),
+      });
+
+      const result = await api.getWorkbook('1');
+
+      expect(result).toEqual(mockWorkbook);
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/workbooks/1', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token',
+        },
+        body: undefined,
+      });
+    });
+
+    it('should create workbook', async () => {
+      const mockWorkbook = { id: '1', name: 'New Workbook' };
+      const mockSheet = { id: 'sh1', name: 'Sheet1' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ workbook: mockWorkbook, sheet: mockSheet }),
       });
 
       const result = await api.createWorkbook({ name: 'New Workbook' });
