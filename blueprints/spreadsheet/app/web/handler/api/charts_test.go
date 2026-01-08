@@ -13,6 +13,8 @@ import (
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/spreadsheet/feature/charts"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/sheets"
+	"github.com/go-mizu/blueprints/spreadsheet/feature/workbooks"
 )
 
 // mockChartsAPI implements charts.API for testing.
@@ -146,18 +148,145 @@ func isValidChartType(t charts.ChartType) bool {
 	return false
 }
 
+// chartTestSheetsAPI implements sheets.API for chart testing.
+type chartTestSheetsAPI struct {
+	sheets map[string]*sheets.Sheet
+}
+
+func newChartTestSheetsAPI() *chartTestSheetsAPI {
+	return &chartTestSheetsAPI{sheets: make(map[string]*sheets.Sheet)}
+}
+
+func (m *chartTestSheetsAPI) Create(ctx context.Context, in *sheets.CreateIn) (*sheets.Sheet, error) {
+	now := time.Now()
+	sheet := &sheets.Sheet{
+		ID:         "sheet-" + in.Name,
+		WorkbookID: in.WorkbookID,
+		Name:       in.Name,
+		Index:      in.Index,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	m.sheets[sheet.ID] = sheet
+	return sheet, nil
+}
+
+func (m *chartTestSheetsAPI) GetByID(ctx context.Context, id string) (*sheets.Sheet, error) {
+	if sheet, ok := m.sheets[id]; ok {
+		return sheet, nil
+	}
+	return nil, sheets.ErrNotFound
+}
+
+func (m *chartTestSheetsAPI) List(ctx context.Context, workbookID string) ([]*sheets.Sheet, error) {
+	var result []*sheets.Sheet
+	for _, sheet := range m.sheets {
+		if sheet.WorkbookID == workbookID {
+			result = append(result, sheet)
+		}
+	}
+	return result, nil
+}
+
+func (m *chartTestSheetsAPI) Update(ctx context.Context, id string, in *sheets.UpdateIn) (*sheets.Sheet, error) {
+	return nil, nil
+}
+
+func (m *chartTestSheetsAPI) Delete(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *chartTestSheetsAPI) Copy(ctx context.Context, id string, newName string) (*sheets.Sheet, error) {
+	return nil, nil
+}
+
+func (m *chartTestSheetsAPI) SetRowHeight(ctx context.Context, sheetID string, row int, height int) error {
+	return nil
+}
+
+func (m *chartTestSheetsAPI) SetColWidth(ctx context.Context, sheetID string, col int, width int) error {
+	return nil
+}
+
+func (m *chartTestSheetsAPI) HideRow(ctx context.Context, sheetID string, row int) error {
+	return nil
+}
+
+func (m *chartTestSheetsAPI) HideCol(ctx context.Context, sheetID string, col int) error {
+	return nil
+}
+
+func (m *chartTestSheetsAPI) ShowRow(ctx context.Context, sheetID string, row int) error {
+	return nil
+}
+
+func (m *chartTestSheetsAPI) ShowCol(ctx context.Context, sheetID string, col int) error {
+	return nil
+}
+
+// chartTestWorkbooksAPI implements workbooks.API for chart testing.
+type chartTestWorkbooksAPI struct {
+	workbooks map[string]*workbooks.Workbook
+}
+
+func newChartTestWorkbooksAPI() *chartTestWorkbooksAPI {
+	return &chartTestWorkbooksAPI{workbooks: make(map[string]*workbooks.Workbook)}
+}
+
+func (m *chartTestWorkbooksAPI) Create(ctx context.Context, in *workbooks.CreateIn) (*workbooks.Workbook, error) {
+	return nil, nil
+}
+
+func (m *chartTestWorkbooksAPI) GetByID(ctx context.Context, id string) (*workbooks.Workbook, error) {
+	if wb, ok := m.workbooks[id]; ok {
+		return wb, nil
+	}
+	return nil, workbooks.ErrNotFound
+}
+
+func (m *chartTestWorkbooksAPI) List(ctx context.Context, ownerID string) ([]*workbooks.Workbook, error) {
+	return nil, nil
+}
+
+func (m *chartTestWorkbooksAPI) Update(ctx context.Context, id string, in *workbooks.UpdateIn) (*workbooks.Workbook, error) {
+	return nil, nil
+}
+
+func (m *chartTestWorkbooksAPI) Delete(ctx context.Context, id string) error {
+	return nil
+}
+
+func (m *chartTestWorkbooksAPI) Copy(ctx context.Context, id string, newName string, userID string) (*workbooks.Workbook, error) {
+	return nil, nil
+}
+
 func mockGetUserID(c *mizu.Ctx) string {
 	return "user-1"
 }
 
-func setupChartsHandler() (*Charts, *mockChartsAPI) {
-	mock := newMockChartsAPI()
-	handler := NewCharts(mock, mockGetUserID)
-	return handler, mock
+func setupChartsHandler() (*Charts, *mockChartsAPI, *chartTestSheetsAPI, *chartTestWorkbooksAPI) {
+	mockCharts := newMockChartsAPI()
+	mockSheets := newChartTestSheetsAPI()
+	mockWorkbooks := newChartTestWorkbooksAPI()
+
+	// Set up default sheet and workbook that charts can reference
+	mockWorkbooks.workbooks["wb-1"] = &workbooks.Workbook{
+		ID:      "wb-1",
+		Name:    "Test Workbook",
+		OwnerID: "user-1",
+	}
+	mockSheets.sheets["sheet-1"] = &sheets.Sheet{
+		ID:         "sheet-1",
+		WorkbookID: "wb-1",
+		Name:       "Sheet 1",
+	}
+
+	handler := NewCharts(mockCharts, mockSheets, mockWorkbooks, mockGetUserID)
+	return handler, mockCharts, mockSheets, mockWorkbooks
 }
 
 func TestCharts_Create(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Post("/charts", handler.Create)
 
@@ -194,7 +323,7 @@ func TestCharts_Create(t *testing.T) {
 }
 
 func TestCharts_Create_InvalidType(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Post("/charts", handler.Create)
 
@@ -219,7 +348,7 @@ func TestCharts_Create_InvalidType(t *testing.T) {
 }
 
 func TestCharts_Create_EmptyDataRange(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Post("/charts", handler.Create)
 
@@ -244,7 +373,7 @@ func TestCharts_Create_EmptyDataRange(t *testing.T) {
 }
 
 func TestCharts_Create_InvalidJSON(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Post("/charts", handler.Create)
 
@@ -262,7 +391,7 @@ func TestCharts_Create_InvalidJSON(t *testing.T) {
 }
 
 func TestCharts_Get(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Get("/charts/{id}", handler.Get)
 
@@ -294,7 +423,7 @@ func TestCharts_Get(t *testing.T) {
 }
 
 func TestCharts_Get_NotFound(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Get("/charts/{id}", handler.Get)
 
@@ -309,7 +438,7 @@ func TestCharts_Get_NotFound(t *testing.T) {
 }
 
 func TestCharts_Update(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Patch("/charts/{id}", handler.Update)
 
@@ -353,7 +482,7 @@ func TestCharts_Update(t *testing.T) {
 }
 
 func TestCharts_Update_NotFound(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Patch("/charts/{id}", handler.Update)
 
@@ -371,12 +500,13 @@ func TestCharts_Update_NotFound(t *testing.T) {
 }
 
 func TestCharts_Update_InvalidType(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Patch("/charts/{id}", handler.Update)
 
 	mock.charts["chart-1"] = &charts.Chart{
 		ID:        "chart-1",
+		SheetID:   "sheet-1", // Required for authorization check
 		ChartType: charts.ChartTypeLine,
 	}
 
@@ -394,11 +524,11 @@ func TestCharts_Update_InvalidType(t *testing.T) {
 }
 
 func TestCharts_Delete(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Delete("/charts/{id}", handler.Delete)
 
-	mock.charts["chart-1"] = &charts.Chart{ID: "chart-1"}
+	mock.charts["chart-1"] = &charts.Chart{ID: "chart-1", SheetID: "sheet-1"}
 
 	req := httptest.NewRequest(http.MethodDelete, "/charts/chart-1", nil)
 	rec := httptest.NewRecorder()
@@ -415,7 +545,7 @@ func TestCharts_Delete(t *testing.T) {
 }
 
 func TestCharts_Delete_NotFound(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Delete("/charts/{id}", handler.Delete)
 
@@ -430,7 +560,7 @@ func TestCharts_Delete_NotFound(t *testing.T) {
 }
 
 func TestCharts_ListBySheet(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Get("/sheets/{sheetId}/charts", handler.ListBySheet)
 
@@ -459,7 +589,7 @@ func TestCharts_ListBySheet(t *testing.T) {
 }
 
 func TestCharts_Duplicate(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Post("/charts/{id}/duplicate", handler.Duplicate)
 
@@ -495,7 +625,7 @@ func TestCharts_Duplicate(t *testing.T) {
 }
 
 func TestCharts_Duplicate_NotFound(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Post("/charts/{id}/duplicate", handler.Duplicate)
 
@@ -510,7 +640,7 @@ func TestCharts_Duplicate_NotFound(t *testing.T) {
 }
 
 func TestCharts_GetData(t *testing.T) {
-	handler, mock := setupChartsHandler()
+	handler, mock, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Get("/charts/{id}/data", handler.GetData)
 
@@ -543,7 +673,7 @@ func TestCharts_GetData(t *testing.T) {
 }
 
 func TestCharts_GetData_NotFound(t *testing.T) {
-	handler, _ := setupChartsHandler()
+	handler, _, _, _ := setupChartsHandler()
 	app := mizu.New()
 	app.Get("/charts/{id}/data", handler.GetData)
 

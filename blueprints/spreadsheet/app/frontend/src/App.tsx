@@ -164,8 +164,11 @@ function App() {
   }, [checkAuth]);
 
   // Auto-login in dev mode
+  // SECURITY: Only enabled when VITE_DEV_AUTO_LOGIN is explicitly set to 'true'
+  // This prevents accidental auto-login in production builds
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    const devAutoLogin = import.meta.env.VITE_DEV_AUTO_LOGIN === 'true';
+    if (devAutoLogin && !authLoading && !isAuthenticated) {
       login('dev@example.com', 'password').catch(() => {
         // Ignore login error in dev mode
       });
@@ -577,8 +580,8 @@ function App() {
   }, []);
 
   // Apply border handler
-  const handleApplyBorder = useCallback((type: string, border: { style: string; color: string } | null) => {
-    if (!currentSelection) return;
+  const handleApplyBorder = useCallback(async (type: string, border: { style: string; color: string } | null) => {
+    if (!currentSelection || !currentSheet) return;
 
     // Apply border format to selection
     const borderValue = border ? {
@@ -586,28 +589,79 @@ function App() {
       color: border.color,
     } : undefined;
 
-    const formatUpdate: Partial<CellFormat> = {};
-    if (type === 'all' || type === 'outer' || type === 'top') {
-      formatUpdate.borderTop = borderValue;
-    }
-    if (type === 'all' || type === 'outer' || type === 'bottom') {
-      formatUpdate.borderBottom = borderValue;
-    }
-    if (type === 'all' || type === 'outer' || type === 'left') {
-      formatUpdate.borderLeft = borderValue;
-    }
-    if (type === 'all' || type === 'outer' || type === 'right') {
-      formatUpdate.borderRight = borderValue;
-    }
-    if (type === 'clear') {
-      formatUpdate.borderTop = undefined;
-      formatUpdate.borderBottom = undefined;
-      formatUpdate.borderLeft = undefined;
-      formatUpdate.borderRight = undefined;
-    }
+    const { startRow, endRow, startCol, endCol } = currentSelection;
 
-    handleFormatChange(formatUpdate);
-  }, [currentSelection, handleFormatChange]);
+    // For complex border types, we need to apply borders per-cell
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const existingCell = getCell(row, col);
+        const formatUpdate: Partial<CellFormat> = { ...existingCell?.format };
+
+        // Clear all borders for 'clear' type
+        if (type === 'clear') {
+          formatUpdate.borderTop = undefined;
+          formatUpdate.borderBottom = undefined;
+          formatUpdate.borderLeft = undefined;
+          formatUpdate.borderRight = undefined;
+          await setCellFormat(row, col, formatUpdate);
+          continue;
+        }
+
+        // Handle each border type
+        const isTopEdge = row === startRow;
+        const isBottomEdge = row === endRow;
+        const isLeftEdge = col === startCol;
+        const isRightEdge = col === endCol;
+
+        // All borders - every cell gets all 4 borders
+        if (type === 'all') {
+          formatUpdate.borderTop = borderValue;
+          formatUpdate.borderBottom = borderValue;
+          formatUpdate.borderLeft = borderValue;
+          formatUpdate.borderRight = borderValue;
+        }
+        // Outer borders - only edges
+        else if (type === 'outer') {
+          if (isTopEdge) formatUpdate.borderTop = borderValue;
+          if (isBottomEdge) formatUpdate.borderBottom = borderValue;
+          if (isLeftEdge) formatUpdate.borderLeft = borderValue;
+          if (isRightEdge) formatUpdate.borderRight = borderValue;
+        }
+        // Inner borders - horizontal and vertical inner lines
+        else if (type === 'inner') {
+          if (!isTopEdge) formatUpdate.borderTop = borderValue;
+          if (!isBottomEdge) formatUpdate.borderBottom = borderValue;
+          if (!isLeftEdge) formatUpdate.borderLeft = borderValue;
+          if (!isRightEdge) formatUpdate.borderRight = borderValue;
+        }
+        // Horizontal only - top/bottom of each cell (inner horizontal)
+        else if (type === 'horizontal') {
+          if (!isTopEdge) formatUpdate.borderTop = borderValue;
+          if (!isBottomEdge) formatUpdate.borderBottom = borderValue;
+        }
+        // Vertical only - left/right of each cell (inner vertical)
+        else if (type === 'vertical') {
+          if (!isLeftEdge) formatUpdate.borderLeft = borderValue;
+          if (!isRightEdge) formatUpdate.borderRight = borderValue;
+        }
+        // Single edge borders
+        else if (type === 'top' && isTopEdge) {
+          formatUpdate.borderTop = borderValue;
+        }
+        else if (type === 'bottom' && isBottomEdge) {
+          formatUpdate.borderBottom = borderValue;
+        }
+        else if (type === 'left' && isLeftEdge) {
+          formatUpdate.borderLeft = borderValue;
+        }
+        else if (type === 'right' && isRightEdge) {
+          formatUpdate.borderRight = borderValue;
+        }
+
+        await setCellFormat(row, col, formatUpdate);
+      }
+    }
+  }, [currentSelection, currentSheet, getCell, setCellFormat]);
 
   // Export handler using API
   const handleExport = useCallback(async (format: ExportFormat, options: ExportOptions) => {

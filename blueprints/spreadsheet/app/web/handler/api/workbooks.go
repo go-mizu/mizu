@@ -25,6 +25,35 @@ func NewWorkbook(workbooks workbooks.API, sheets sheets.API, getUserID func(*miz
 	}
 }
 
+// checkWorkbookAccess verifies the user has access to the workbook.
+// Returns the workbook if access is granted, or nil if access is denied.
+// When nil is returned, the response has already been written.
+func (h *Workbook) checkWorkbookAccess(c *mizu.Ctx, workbookID string) *workbooks.Workbook {
+	userID := h.getUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return nil
+	}
+
+	wb, err := h.workbooks.GetByID(c.Request().Context(), workbookID)
+	if err != nil {
+		if err == workbooks.ErrNotFound {
+			c.JSON(http.StatusNotFound, map[string]string{"error": "workbook not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve workbook"})
+		}
+		return nil
+	}
+
+	// SECURITY: Verify ownership to prevent IDOR attacks
+	if wb.OwnerID != userID {
+		c.JSON(http.StatusForbidden, map[string]string{"error": "access denied"})
+		return nil
+	}
+
+	return wb
+}
+
 // List lists workbooks for the current user.
 func (h *Workbook) List(c *mizu.Ctx) error {
 	userID := h.getUserID(c)
@@ -80,18 +109,16 @@ func (h *Workbook) Create(c *mizu.Ctx) error {
 func (h *Workbook) Get(c *mizu.Ctx) error {
 	id := c.Param("id")
 
-	wb, err := h.workbooks.GetByID(c.Request().Context(), id)
-	if err != nil {
-		if err == workbooks.ErrNotFound {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "workbook not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	// SECURITY: Verify ownership before returning workbook data
+	wb := h.checkWorkbookAccess(c, id)
+	if wb == nil {
+		return nil // Response already written
 	}
 
 	// Get sheets for this workbook
 	sheetList, err := h.sheets.List(c.Request().Context(), id)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve sheets"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -104,6 +131,11 @@ func (h *Workbook) Get(c *mizu.Ctx) error {
 func (h *Workbook) Update(c *mizu.Ctx) error {
 	id := c.Param("id")
 
+	// SECURITY: Verify ownership before allowing update
+	if h.checkWorkbookAccess(c, id) == nil {
+		return nil // Response already written
+	}
+
 	var in workbooks.UpdateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -114,7 +146,7 @@ func (h *Workbook) Update(c *mizu.Ctx) error {
 		if err == workbooks.ErrNotFound {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "workbook not found"})
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update workbook"})
 	}
 
 	return c.JSON(http.StatusOK, wb)
@@ -124,6 +156,11 @@ func (h *Workbook) Update(c *mizu.Ctx) error {
 func (h *Workbook) Delete(c *mizu.Ctx) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
+
+	// SECURITY: Verify ownership before allowing deletion
+	if h.checkWorkbookAccess(c, id) == nil {
+		return nil // Response already written
+	}
 
 	// First delete all sheets in the workbook (this will cascade delete cells)
 	sheetList, err := h.sheets.List(ctx, id)
@@ -138,7 +175,7 @@ func (h *Workbook) Delete(c *mizu.Ctx) error {
 		if err == workbooks.ErrNotFound {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "workbook not found"})
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete workbook"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -148,9 +185,14 @@ func (h *Workbook) Delete(c *mizu.Ctx) error {
 func (h *Workbook) ListSheets(c *mizu.Ctx) error {
 	id := c.Param("id")
 
+	// SECURITY: Verify ownership before listing sheets
+	if h.checkWorkbookAccess(c, id) == nil {
+		return nil // Response already written
+	}
+
 	list, err := h.sheets.List(c.Request().Context(), id)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve sheets"})
 	}
 
 	return c.JSON(http.StatusOK, list)
