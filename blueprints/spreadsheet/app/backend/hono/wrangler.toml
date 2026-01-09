@@ -1,0 +1,56 @@
+# Cloudflare Workers configuration
+# https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "spreadsheet-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Development settings
+[dev]
+port = 3000
+local_protocol = "http"
+
+# D1 Database binding
+# Create with: wrangler d1 create spreadsheet-db
+[[d1_databases]]
+binding = "DB"
+database_name = "spreadsheet-db"
+database_id = "YOUR_D1_DATABASE_ID"  # Replace after running: wrangler d1 create spreadsheet-db
+
+# Environment variables
+[vars]
+JWT_SECRET = "your-jwt-secret-change-in-production"
+NODE_ENV = "production"
+
+# Production environment
+[env.production]
+name = "spreadsheet-api-prod"
+
+[env.production.vars]
+NODE_ENV = "production"
+
+# Staging environment
+[env.staging]
+name = "spreadsheet-api-staging"
+
+[env.staging.vars]
+NODE_ENV = "staging"
+
+# Static assets (frontend)
+# Uncomment if serving frontend from Workers
+# [site]
+# bucket = "../frontend/dist"
+
+# Routes (optional - configure in Cloudflare dashboard or here)
+# routes = [
+#   { pattern = "api.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]
+
+# Limits
+[limits]
+cpu_ms = 50
+
+# Observability
+[observability]
+enabled = true
