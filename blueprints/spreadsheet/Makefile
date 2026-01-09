@@ -72,6 +72,12 @@ test-go: ## Run Go tests only
 test-v: ## Run all tests with verbose output
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
 
+.PHONY: storebench
+storebench: ## Build storebench binary to $$HOME/bin/storebench
+	@mkdir -p $(HOME)/bin
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(HOME)/bin/storebench ./cmd/storebench
+	@echo "Built: $(HOME)/bin/storebench"
+
 .PHONY: clean
 clean: ## Remove binary and data directory
 	@rm -f $(BINARY)

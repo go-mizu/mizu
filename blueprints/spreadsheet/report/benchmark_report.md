@@ -1,6 +1,6 @@
 # Spreadsheet Storage Benchmark Report
 
-**Generated**: 2026-01-09T01:26:04+07:00
+**Generated**: 2026-01-09T08:07:43+07:00
 
 ## System Information
 
@@ -14,7 +14,7 @@
 
 ## Configuration
 
-- **Drivers**: cached_sqlite, optimized_cached_sqlite
+- **Drivers**: cached_sqlite, sqlite
 - **Categories**: all
 - **Iterations**: 2
 - **Warmup**: 1
@@ -22,7 +22,7 @@
 
 ## Summary
 
-- **Total Duration**: 626ms
+- **Total Duration**: 1.526s
 - **Benchmarks Run**: 48
 - **By Category**:
   - cells: 16
@@ -39,17 +39,17 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 23.9us | 4184801 cells/sec | 100 | 248 |
-| optimized_cached_sqlite | 17.2us | 5804167 cells/sec | 100 | 248 |
+| cached_sqlite | 21.4us | 4664832 cells/sec | 100 | 248 |
+| sqlite | 204.1us | 490047 cells/sec | 100 | 451 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### BatchSet_500
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 63.4us | 7886933 cells/sec | 500 | 1062 |
-| optimized_cached_sqlite | 65.8us | 7604563 cells/sec | 500 | 1063 |
+| cached_sqlite | 65.5us | 7628812 cells/sec | 500 | 1063 |
+| sqlite | 533.5us | 937133 cells/sec | 500 | 1670 |
 
 **Fastest**: cached_sqlite
 
@@ -57,55 +57,55 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 14.8us | 6770022 cells/sec | 100 | 0 |
-| optimized_cached_sqlite | 1.2us | 80000000 cells/sec | 100 | 0 |
+| cached_sqlite | 1.7us | 57836900 cells/sec | 100 | 0 |
+| sqlite | 149.1us | 670862 cells/sec | 100 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### GetByPositions_Dense_20x20
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 53.5us | 7476636 cells/sec | 400 | 0 |
-| optimized_cached_sqlite | 4.5us | 89726335 cells/sec | 400 | 0 |
+| cached_sqlite | 1.2us | 336983993 cells/sec | 400 | 0 |
+| sqlite | 806.9us | 495714 cells/sec | 400 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### GetByPositions_Sparse_10
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 1.9us | 5219207 cells/sec | 10 | 0 |
-| optimized_cached_sqlite | 250ns | 40000000 cells/sec | 10 | 0 |
+| cached_sqlite | 333ns | 30030030 cells/sec | 10 | 0 |
+| sqlite | 79.1us | 126416 cells/sec | 10 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### GetByPositions_Sparse_100
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 21.0us | 4762132 cells/sec | 100 | 0 |
-| optimized_cached_sqlite | 3.4us | 29629630 cells/sec | 100 | 0 |
+| cached_sqlite | 729ns | 137174211 cells/sec | 100 | 0 |
+| sqlite | 661.6us | 151143 cells/sec | 100 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### GetRange_100x50
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 23.73ms | 210705 cells/sec | 5000 | 0 |
-| optimized_cached_sqlite | 187ns | 26737967914 cells/sec | 5000 | 0 |
+| cached_sqlite | 188ns | 26595744681 cells/sec | 5000 | 0 |
+| sqlite | 30.22ms | 165437 cells/sec | 5000 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### GetRange_10x10
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 19.0us | 5251825 cells/sec | 100 | 0 |
-| optimized_cached_sqlite | 104ns | 961538462 cells/sec | 100 | 0 |
+| cached_sqlite | 104ns | 961538462 cells/sec | 100 | 0 |
+| sqlite | 164.1us | 609448 cells/sec | 100 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ## Format Benchmarks
 
@@ -113,26 +113,26 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 63.5us | 7879227 cells/sec | 500 | 0 |
-| optimized_cached_sqlite | 62.8us | 7965462 cells/sec | 500 | 0 |
+| cached_sqlite | 62.0us | 8067249 cells/sec | 500 | 0 |
+| sqlite | 1.72ms | 291542 cells/sec | 500 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### BatchSet_PartialFormat
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 74.8us | 6688963 cells/sec | 500 | 0 |
-| optimized_cached_sqlite | 72.9us | 6857112 cells/sec | 500 | 0 |
+| cached_sqlite | 80.4us | 6219292 cells/sec | 500 | 0 |
+| sqlite | 510.5us | 979513 cells/sec | 500 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### BatchSet_WithFormat
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 72.9us | 6859181 cells/sec | 500 | 0 |
-| optimized_cached_sqlite | 192.3us | 2599658 cells/sec | 500 | 0 |
+| cached_sqlite | 68.6us | 7288205 cells/sec | 500 | 0 |
+| sqlite | 848.3us | 589420 cells/sec | 500 | 0 |
 
 **Fastest**: cached_sqlite
 
@@ -142,37 +142,37 @@
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 56.7us | 56708 | 10 |
-| optimized_cached_sqlite | 47.6us | 47646 | 10 |
+| cached_sqlite | 57.7us | 57708 | 10 |
+| sqlite | 46.8us | 46750 | 10 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: sqlite
 
 ### BatchCreateMerge_50
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 100.2us | 100208 | 50 |
-| optimized_cached_sqlite | 95.8us | 95833 | 50 |
+| cached_sqlite | 96.6us | 96583 | 50 |
+| sqlite | 93.2us | 93208 | 50 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: sqlite
 
 ### CreateMerge_Individual_10
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 161.0us | 160999 | 10 |
-| optimized_cached_sqlite | 150.5us | 150500 | 10 |
+| cached_sqlite | 161.7us | 161749 | 10 |
+| sqlite | 140.6us | 140563 | 10 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: sqlite
 
 ### CreateMerge_Individual_50
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 740.1us | 740104 | 50 |
-| optimized_cached_sqlite | 729.0us | 729020 | 50 |
+| cached_sqlite | 722.3us | 722271 | 50 |
+| sqlite | 721.8us | 721791 | 50 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: sqlite
 
 ## Query Benchmarks
 
@@ -180,19 +180,19 @@
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 1.41ms | 1409250 | 1000 |
-| optimized_cached_sqlite | 19.8us | 19750 | 1000 |
+| cached_sqlite | 12.3us | 12271 | 1000 |
+| sqlite | 2.25ms | 2245417 | 1000 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### Query_NonEmpty_5000
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 19.09ms | 19090521 | 5000 |
-| optimized_cached_sqlite | 18.1us | 18146 | 5000 |
+| cached_sqlite | 26.1us | 26083 | 5000 |
+| sqlite | 26.14ms | 26140271 | 5000 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ## Rows Benchmarks
 
@@ -200,37 +200,37 @@
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 25.89ms | 25885250 | 1 |
-| optimized_cached_sqlite | 27.19ms | 27187500 | 1 |
+| cached_sqlite | 26.52ms | 26519771 | 1 |
+| sqlite | 18.96ms | 18963875 | 1 |
 
-**Fastest**: cached_sqlite
+**Fastest**: sqlite
 
 ### ShiftCols_10
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 24.57ms | 24571958 | 10 |
-| optimized_cached_sqlite | 23.44ms | 23438958 | 10 |
+| cached_sqlite | 25.78ms | 25776145 | 10 |
+| sqlite | 18.90ms | 18901312 | 10 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: sqlite
 
 ### ShiftRows_1
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 13.49ms | 13489146 | 1 |
-| optimized_cached_sqlite | 8.89ms | 8890271 | 1 |
+| cached_sqlite | 9.15ms | 9148458 | 1 |
+| sqlite | 10.85ms | 10854104 | 1 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### ShiftRows_100
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| cached_sqlite | 8.65ms | 8654500 | 100 |
-| optimized_cached_sqlite | 9.06ms | 9062333 | 100 |
+| cached_sqlite | 8.98ms | 8982104 | 100 |
+| sqlite | 7.14ms | 7137374 | 100 |
 
-**Fastest**: cached_sqlite
+**Fastest**: sqlite
 
 ## Usecase Benchmarks
 
@@ -238,17 +238,17 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 1.97ms | 1016518 cells/sec | 2000 | 0 |
-| optimized_cached_sqlite | 333.4us | 5999250 cells/sec | 2000 | 0 |
+| cached_sqlite | 330.6us | 6048765 cells/sec | 2000 | 0 |
+| sqlite | 8.98ms | 222685 cells/sec | 2000 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ### Import_CSV_10000
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 4.73ms | 2115973 cells/sec | 10000 | 0 |
-| optimized_cached_sqlite | 4.74ms | 2108009 cells/sec | 10000 | 0 |
+| cached_sqlite | 5.11ms | 1956955 cells/sec | 10000 | 0 |
+| sqlite | 76.40ms | 130888 cells/sec | 10000 | 0 |
 
 **Fastest**: cached_sqlite
 
@@ -256,41 +256,41 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| cached_sqlite | 34.42ms | 1452472 cells/sec | 50000 | 0 |
-| optimized_cached_sqlite | 30.04ms | 1664700 cells/sec | 50000 | 0 |
+| cached_sqlite | 26.52ms | 1885304 cells/sec | 50000 | 0 |
+| sqlite | 392.85ms | 127276 cells/sec | 50000 | 0 |
 
-**Fastest**: optimized_cached_sqlite
+**Fastest**: cached_sqlite
 
 ## Driver Comparison
 
 ### Performance Wins by Category
 
-| Category | cached_sqlite | optimized_cached_sqlite |
+| Category | cached_sqlite | sqlite |
 |----------|------|------|
-| cells | 1 | 7 |
-| format | 1 | 2 |
+| cells | 8 | - |
+| format | 3 | - |
 | merge | - | 4 |
-| query | - | 2 |
-| rows | 2 | 2 |
-| usecase | 1 | 2 |
+| query | 2 | - |
+| rows | 1 | 3 |
+| usecase | 3 | - |
 
 ### Overall Winners
 
-- **1st**: optimized_cached_sqlite (19 wins)
-- **2nd**: cached_sqlite (5 wins)
+- **1st**: cached_sqlite (17 wins)
+- **2nd**: sqlite (7 wins)
 
 ### Relative Performance (vs Fastest)
 
 | Driver | Avg Relative Time | Interpretation |
 |--------|-------------------|----------------|
-| cached_sqlite | 5344.33x | Significantly slower |
-| optimized_cached_sqlite | 1.07x | Fastest or near-fastest |
+| cached_sqlite | 1.06x | Fastest or near-fastest |
+| sqlite | 6898.47x | Significantly slower |
 
 ## Recommendations
 
 ### Financial Modeling
 
-**Recommended**: optimized_cached_sqlite
+**Recommended**: cached_sqlite
 
 **Reasons**:
 - Best performance for cell operations
@@ -299,7 +299,7 @@
 
 ### Data Import Pipeline
 
-**Recommended**: optimized_cached_sqlite
+**Recommended**: cached_sqlite
 
 **Reasons**:
 - Highest batch import throughput
@@ -308,7 +308,7 @@
 
 ### Report Generation
 
-**Recommended**: optimized_cached_sqlite
+**Recommended**: cached_sqlite
 
 **Reasons**:
 - Fast range query performance
