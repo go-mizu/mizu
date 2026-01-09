@@ -148,6 +148,10 @@ func (m *mockCellsAPI) Merge(ctx context.Context, sheetID string, startRow, star
 	return nil, nil
 }
 
+func (m *mockCellsAPI) BatchMerge(ctx context.Context, sheetID string, regions []cells.MergedRegion) ([]*cells.MergedRegion, error) {
+	return nil, nil
+}
+
 func (m *mockCellsAPI) Unmerge(ctx context.Context, sheetID string, startRow, startCol, endRow, endCol int) error {
 	return nil
 }
