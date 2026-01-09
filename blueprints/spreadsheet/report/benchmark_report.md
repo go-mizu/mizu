@@ -1,6 +1,6 @@
 # Spreadsheet Storage Benchmark Report
 
-**Generated**: 2026-01-09T00:28:31+07:00
+**Generated**: 2026-01-09T01:26:04+07:00
 
 ## System Information
 
@@ -14,7 +14,7 @@
 
 ## Configuration
 
-- **Drivers**: duckdb, sqlite, swandb
+- **Drivers**: cached_sqlite, optimized_cached_sqlite
 - **Categories**: all
 - **Iterations**: 2
 - **Warmup**: 1
@@ -22,20 +22,16 @@
 
 ## Summary
 
-- **Total Duration**: 3m29.29s
-- **Benchmarks Run**: 72
+- **Total Duration**: 626ms
+- **Benchmarks Run**: 48
 - **By Category**:
-  - cells: 24
-  - rows: 12
-  - merge: 12
-  - format: 9
-  - query: 6
-  - usecase: 9
+  - cells: 16
+  - rows: 8
+  - merge: 8
+  - format: 6
+  - query: 4
+  - usecase: 6
 
-- **Errors**: 3 benchmarks failed
-  - rows/ShiftRows_1 (duckdb): Constraint Error: Duplicate key "sheet_id: 01KEFAEH7KG3THXFVCFGP523MM, row_num: 87, col_num: 10" violates unique constraint.
-  - rows/ShiftCols_1 (duckdb): Constraint Error: Duplicate key "sheet_id: 01KEFAEQCG18WVH4ANNVSH1E21, row_num: 38, col_num: 46" violates unique constraint.
-  - rows/ShiftCols_10 (duckdb): Constraint Error: Duplicate key "sheet_id: 01KEFAEY8YN5DNNQY04GH1QS5N, row_num: 66, col_num: 47" violates unique constraint.
 
 ## Cells Benchmarks
 
@@ -43,81 +39,73 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 90.90ms | 1100 cells/sec | 100 | 6898 |
-| sqlite | 204.2us | 489697 cells/sec | 100 | 443 |
-| swandb | 2.48ms | 40274 cells/sec | 100 | 581 |
+| cached_sqlite | 23.9us | 4184801 cells/sec | 100 | 248 |
+| optimized_cached_sqlite | 17.2us | 5804167 cells/sec | 100 | 248 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### BatchSet_500
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 531.48ms | 941 cells/sec | 500 | 34195 |
-| sqlite | 576.8us | 866834 cells/sec | 500 | 1665 |
-| swandb | 3.78ms | 132169 cells/sec | 500 | 1787 |
+| cached_sqlite | 63.4us | 7886933 cells/sec | 500 | 1062 |
+| optimized_cached_sqlite | 65.8us | 7604563 cells/sec | 500 | 1063 |
 
-**Fastest**: sqlite
+**Fastest**: cached_sqlite
 
 ### GetByPositions_Dense_10x10
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 794.1us | 125935 cells/sec | 100 | 0 |
-| sqlite | 197.9us | 505316 cells/sec | 100 | 0 |
-| swandb | 359.3us | 278342 cells/sec | 100 | 0 |
+| cached_sqlite | 14.8us | 6770022 cells/sec | 100 | 0 |
+| optimized_cached_sqlite | 1.2us | 80000000 cells/sec | 100 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### GetByPositions_Dense_20x20
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 1.78ms | 225209 cells/sec | 400 | 0 |
-| sqlite | 952.2us | 420086 cells/sec | 400 | 0 |
-| swandb | 1.18ms | 340233 cells/sec | 400 | 0 |
+| cached_sqlite | 53.5us | 7476636 cells/sec | 400 | 0 |
+| optimized_cached_sqlite | 4.5us | 89726335 cells/sec | 400 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### GetByPositions_Sparse_10
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 660.2us | 15147 cells/sec | 10 | 0 |
-| sqlite | 74.6us | 134077 cells/sec | 10 | 0 |
-| swandb | 1.57ms | 6354 cells/sec | 10 | 0 |
+| cached_sqlite | 1.9us | 5219207 cells/sec | 10 | 0 |
+| optimized_cached_sqlite | 250ns | 40000000 cells/sec | 10 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### GetByPositions_Sparse_100
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 786.1us | 127210 cells/sec | 100 | 0 |
-| sqlite | 943.4us | 105995 cells/sec | 100 | 0 |
-| swandb | 14.78ms | 6767 cells/sec | 100 | 0 |
+| cached_sqlite | 21.0us | 4762132 cells/sec | 100 | 0 |
+| optimized_cached_sqlite | 3.4us | 29629630 cells/sec | 100 | 0 |
 
-**Fastest**: duckdb
+**Fastest**: optimized_cached_sqlite
 
 ### GetRange_100x50
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 17.32ms | 288655 cells/sec | 5000 | 0 |
-| sqlite | 38.75ms | 129043 cells/sec | 5000 | 0 |
-| swandb | 37.83ms | 132166 cells/sec | 5000 | 0 |
+| cached_sqlite | 23.73ms | 210705 cells/sec | 5000 | 0 |
+| optimized_cached_sqlite | 187ns | 26737967914 cells/sec | 5000 | 0 |
 
-**Fastest**: duckdb
+**Fastest**: optimized_cached_sqlite
 
 ### GetRange_10x10
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 820.6us | 121855 cells/sec | 100 | 0 |
-| sqlite | 220.0us | 454632 cells/sec | 100 | 0 |
-| swandb | 503.5us | 198626 cells/sec | 100 | 0 |
+| cached_sqlite | 19.0us | 5251825 cells/sec | 100 | 0 |
+| optimized_cached_sqlite | 104ns | 961538462 cells/sec | 100 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ## Format Benchmarks
 
@@ -125,31 +113,28 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 685.58ms | 729 cells/sec | 500 | 0 |
-| sqlite | 1.78ms | 281031 cells/sec | 500 | 0 |
-| swandb | 5.05ms | 99037 cells/sec | 500 | 0 |
+| cached_sqlite | 63.5us | 7879227 cells/sec | 500 | 0 |
+| optimized_cached_sqlite | 62.8us | 7965462 cells/sec | 500 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### BatchSet_PartialFormat
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 709.15ms | 705 cells/sec | 500 | 0 |
-| sqlite | 668.9us | 747500 cells/sec | 500 | 0 |
-| swandb | 4.50ms | 111169 cells/sec | 500 | 0 |
+| cached_sqlite | 74.8us | 6688963 cells/sec | 500 | 0 |
+| optimized_cached_sqlite | 72.9us | 6857112 cells/sec | 500 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### BatchSet_WithFormat
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 699.73ms | 715 cells/sec | 500 | 0 |
-| sqlite | 882.2us | 566787 cells/sec | 500 | 0 |
-| swandb | 5.06ms | 98720 cells/sec | 500 | 0 |
+| cached_sqlite | 72.9us | 6859181 cells/sec | 500 | 0 |
+| optimized_cached_sqlite | 192.3us | 2599658 cells/sec | 500 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: cached_sqlite
 
 ## Merge Benchmarks
 
@@ -157,41 +142,37 @@
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 1.44ms | 1437562 | 10 |
-| sqlite | 67.1us | 67145 | 10 |
-| swandb | 1.51ms | 1514625 | 10 |
+| cached_sqlite | 56.7us | 56708 | 10 |
+| optimized_cached_sqlite | 47.6us | 47646 | 10 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### BatchCreateMerge_50
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 7.16ms | 7162146 | 50 |
-| sqlite | 127.7us | 127687 | 50 |
-| swandb | 6.63ms | 6626229 | 50 |
+| cached_sqlite | 100.2us | 100208 | 50 |
+| optimized_cached_sqlite | 95.8us | 95833 | 50 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### CreateMerge_Individual_10
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 2.98ms | 2975958 | 10 |
-| sqlite | 409.9us | 409854 | 10 |
-| swandb | 3.03ms | 3034417 | 10 |
+| cached_sqlite | 161.0us | 160999 | 10 |
+| optimized_cached_sqlite | 150.5us | 150500 | 10 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### CreateMerge_Individual_50
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 13.22ms | 13223979 | 50 |
-| sqlite | 1.60ms | 1599895 | 50 |
-| swandb | 16.61ms | 16608750 | 50 |
+| cached_sqlite | 740.1us | 740104 | 50 |
+| optimized_cached_sqlite | 729.0us | 729020 | 50 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ## Query Benchmarks
 
@@ -199,21 +180,19 @@
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 5.06ms | 5055374 | 1000 |
-| sqlite | 3.23ms | 3231333 | 1000 |
-| swandb | 3.74ms | 3738583 | 1000 |
+| cached_sqlite | 1.41ms | 1409250 | 1000 |
+| optimized_cached_sqlite | 19.8us | 19750 | 1000 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### Query_NonEmpty_5000
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 17.60ms | 17603166 | 5000 |
-| sqlite | 32.54ms | 32537771 | 5000 |
-| swandb | 34.95ms | 34953270 | 5000 |
+| cached_sqlite | 19.09ms | 19090521 | 5000 |
+| optimized_cached_sqlite | 18.1us | 18146 | 5000 |
 
-**Fastest**: duckdb
+**Fastest**: optimized_cached_sqlite
 
 ## Rows Benchmarks
 
@@ -221,41 +200,37 @@
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | ERROR | - | - |
-| sqlite | 25.62ms | 25619312 | 1 |
-| swandb | 28.27ms | 28270062 | 1 |
+| cached_sqlite | 25.89ms | 25885250 | 1 |
+| optimized_cached_sqlite | 27.19ms | 27187500 | 1 |
 
-**Fastest**: sqlite
+**Fastest**: cached_sqlite
 
 ### ShiftCols_10
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | ERROR | - | - |
-| sqlite | 25.70ms | 25695083 | 10 |
-| swandb | 28.01ms | 28006229 | 10 |
+| cached_sqlite | 24.57ms | 24571958 | 10 |
+| optimized_cached_sqlite | 23.44ms | 23438958 | 10 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### ShiftRows_1
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | ERROR | - | - |
-| sqlite | 12.01ms | 12009375 | 1 |
-| swandb | 11.46ms | 11456104 | 1 |
+| cached_sqlite | 13.49ms | 13489146 | 1 |
+| optimized_cached_sqlite | 8.89ms | 8890271 | 1 |
 
-**Fastest**: swandb
+**Fastest**: optimized_cached_sqlite
 
 ### ShiftRows_100
 
 | Driver | Duration | ns/op | Cells/Op |
 |--------|----------|-------|----------|
-| duckdb | 7.43ms | 7432354 | 100 |
-| sqlite | 9.62ms | 9617583 | 100 |
-| swandb | 11.20ms | 11196125 | 100 |
+| cached_sqlite | 8.65ms | 8654500 | 100 |
+| optimized_cached_sqlite | 9.06ms | 9062333 | 100 |
 
-**Fastest**: duckdb
+**Fastest**: cached_sqlite
 
 ## Usecase Benchmarks
 
@@ -263,64 +238,59 @@
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 2.81s | 711 cells/sec | 2000 | 0 |
-| sqlite | 11.33ms | 176598 cells/sec | 2000 | 0 |
-| swandb | 13.21ms | 151433 cells/sec | 2000 | 0 |
+| cached_sqlite | 1.97ms | 1016518 cells/sec | 2000 | 0 |
+| optimized_cached_sqlite | 333.4us | 5999250 cells/sec | 2000 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ### Import_CSV_10000
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 14.69s | 681 cells/sec | 10000 | 0 |
-| sqlite | 102.18ms | 97862 cells/sec | 10000 | 0 |
-| swandb | 111.36ms | 89801 cells/sec | 10000 | 0 |
+| cached_sqlite | 4.73ms | 2115973 cells/sec | 10000 | 0 |
+| optimized_cached_sqlite | 4.74ms | 2108009 cells/sec | 10000 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: cached_sqlite
 
 ### Import_CSV_50000
 
 | Driver | Duration | Throughput | Cells/Op | Allocs/Op |
 |--------|----------|------------|----------|----------|
-| duckdb | 64.78s | 772 cells/sec | 50000 | 0 |
-| sqlite | 494.75ms | 101061 cells/sec | 50000 | 0 |
-| swandb | 570.61ms | 87626 cells/sec | 50000 | 0 |
+| cached_sqlite | 34.42ms | 1452472 cells/sec | 50000 | 0 |
+| optimized_cached_sqlite | 30.04ms | 1664700 cells/sec | 50000 | 0 |
 
-**Fastest**: sqlite
+**Fastest**: optimized_cached_sqlite
 
 ## Driver Comparison
 
 ### Performance Wins by Category
 
-| Category | duckdb | sqlite | swandb |
-|----------|------|------|------|
-| cells | 2 | 6 | - |
-| format | - | 3 | - |
-| merge | - | 4 | - |
-| query | 1 | 1 | - |
-| rows | 1 | 2 | 1 |
-| usecase | - | 3 | - |
+| Category | cached_sqlite | optimized_cached_sqlite |
+|----------|------|------|
+| cells | 1 | 7 |
+| format | 1 | 2 |
+| merge | - | 4 |
+| query | - | 2 |
+| rows | 2 | 2 |
+| usecase | 1 | 2 |
 
 ### Overall Winners
 
-- **1st**: sqlite (19 wins)
-- **2nd**: duckdb (4 wins)
-- **3rd**: swandb (1 wins)
+- **1st**: optimized_cached_sqlite (19 wins)
+- **2nd**: cached_sqlite (5 wins)
 
 ### Relative Performance (vs Fastest)
 
 | Driver | Avg Relative Time | Interpretation |
 |--------|-------------------|----------------|
-| duckdb | 202.17x | Significantly slower |
-| sqlite | 1.11x | Competitive |
-| swandb | 7.71x | Significantly slower |
+| cached_sqlite | 5344.33x | Significantly slower |
+| optimized_cached_sqlite | 1.07x | Fastest or near-fastest |
 
 ## Recommendations
 
 ### Financial Modeling
 
-**Recommended**: sqlite
+**Recommended**: optimized_cached_sqlite
 
 **Reasons**:
 - Best performance for cell operations
@@ -329,7 +299,7 @@
 
 ### Data Import Pipeline
 
-**Recommended**: sqlite
+**Recommended**: optimized_cached_sqlite
 
 **Reasons**:
 - Highest batch import throughput
@@ -338,7 +308,7 @@
 
 ### Report Generation
 
-**Recommended**: sqlite
+**Recommended**: optimized_cached_sqlite
 
 **Reasons**:
 - Fast range query performance
