@@ -1,3 +1,30 @@
+/**
+ * Database types and interfaces
+ *
+ * Re-exports entity types from main types file and defines the Database interface
+ */
+
+// Re-export entity types
+export type {
+  User,
+  CreateUserInput,
+  Session,
+  CreateSessionInput,
+  Workbook,
+  CreateWorkbookInput,
+  UpdateWorkbookInput,
+  Sheet,
+  CreateSheetInput,
+  UpdateSheetInput,
+  Cell,
+  UpsertCellInput,
+  MergedRegion,
+  CreateMergeInput,
+  Chart,
+  CreateChartInput,
+  UpdateChartInput,
+} from '../types/index.js';
+
 import type {
   User,
   CreateUserInput,
@@ -20,6 +47,9 @@ import type {
 
 /**
  * Database interface - abstracts PostgreSQL and SQLite/D1
+ *
+ * Both drivers (SqliteDriver and PostgresDriver) implement this interface.
+ * Cell storage uses tile-based storage internally for better performance.
  */
 export interface Database {
   // ============================================================================
@@ -57,7 +87,7 @@ export interface Database {
   getMaxSheetIndex(workbookId: string): Promise<number>;
 
   // ============================================================================
-  // Cells
+  // Cells (tile-based storage internally)
   // ============================================================================
   getCell(sheetId: string, row: number, col: number): Promise<Cell | null>;
   getCellsBySheet(sheetId: string): Promise<Cell[]>;
