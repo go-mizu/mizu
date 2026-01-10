@@ -98,6 +98,7 @@ type API interface {
 	SetSorts(ctx context.Context, viewID string, sorts []SortSpec) error
 	SetGroups(ctx context.Context, viewID string, groups []GroupSpec) error
 	SetFieldConfig(ctx context.Context, viewID string, config []FieldViewConfig) error
+	SetConfig(ctx context.Context, viewID string, config map[string]interface{}) error
 }
 
 // Store defines the views data access interface.

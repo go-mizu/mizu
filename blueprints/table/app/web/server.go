@@ -19,6 +19,7 @@ import (
 	"github.com/go-mizu/blueprints/table/feature/bases"
 	"github.com/go-mizu/blueprints/table/feature/comments"
 	"github.com/go-mizu/blueprints/table/feature/fields"
+	"github.com/go-mizu/blueprints/table/feature/importexport"
 	"github.com/go-mizu/blueprints/table/feature/records"
 	"github.com/go-mizu/blueprints/table/feature/shares"
 	"github.com/go-mizu/blueprints/table/feature/tables"
@@ -42,15 +43,16 @@ type Server struct {
 	store *duckdb.Store
 
 	// Services
-	users      *users.Service
-	workspaces *workspaces.Service
-	bases      *bases.Service
-	tables     *tables.Service
-	fields     *fields.Service
-	records    *records.Service
-	views      *views.Service
-	comments   *comments.Service
-	shares     *shares.Service
+	users        *users.Service
+	workspaces   *workspaces.Service
+	bases        *bases.Service
+	tables       *tables.Service
+	fields       *fields.Service
+	records      *records.Service
+	views        *views.Service
+	comments     *comments.Service
+	shares       *shares.Service
+	importexport *importexport.Service
 
 	// Handlers
 	authHandlers       *api.Auth
@@ -88,20 +90,22 @@ func New(cfg Config) (*Server, error) {
 	viewsSvc := views.NewService(store.Views())
 	commentsSvc := comments.NewService(store.Comments())
 	sharesSvc := shares.NewService(store.Shares())
+	importexportSvc := importexport.NewService(basesSvc, tablesSvc, fieldsSvc, recordsSvc, viewsSvc)
 
 	s := &Server{
-		app:        mizu.New(),
-		cfg:        cfg,
-		store:      store,
-		users:      usersSvc,
-		workspaces: workspacesSvc,
-		bases:      basesSvc,
-		tables:     tablesSvc,
-		fields:     fieldsSvc,
-		records:    recordsSvc,
-		views:      viewsSvc,
-		comments:   commentsSvc,
-		shares:     sharesSvc,
+		app:          mizu.New(),
+		cfg:          cfg,
+		store:        store,
+		users:        usersSvc,
+		workspaces:   workspacesSvc,
+		bases:        basesSvc,
+		tables:       tablesSvc,
+		fields:       fieldsSvc,
+		records:      recordsSvc,
+		views:        viewsSvc,
+		comments:     commentsSvc,
+		shares:       sharesSvc,
+		importexport: importexportSvc,
 	}
 
 	// Create handlers
@@ -175,6 +179,11 @@ func (s *Server) RecordService() *records.Service {
 // ViewService returns the views service.
 func (s *Server) ViewService() *views.Service {
 	return s.views
+}
+
+// ImportExportService returns the import/export service.
+func (s *Server) ImportExportService() *importexport.Service {
+	return s.importexport
 }
 
 // Init initializes the database schema (already done in New).
