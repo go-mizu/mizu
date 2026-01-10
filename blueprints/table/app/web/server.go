@@ -53,15 +53,16 @@ type Server struct {
 	shares     *shares.Service
 
 	// Handlers
-	authHandlers      *api.Auth
-	workspaceHandlers *api.Workspace
-	baseHandlers      *api.Base
-	tableHandlers     *api.Table
-	fieldHandlers     *api.Field
-	recordHandlers    *api.Record
-	viewHandlers      *api.View
-	commentHandlers   *api.Comment
-	shareHandlers     *api.Share
+	authHandlers       *api.Auth
+	workspaceHandlers  *api.Workspace
+	baseHandlers       *api.Base
+	tableHandlers      *api.Table
+	fieldHandlers      *api.Field
+	recordHandlers     *api.Record
+	viewHandlers       *api.View
+	commentHandlers    *api.Comment
+	shareHandlers      *api.Share
+	publicFormHandlers *api.PublicForm
 }
 
 // New creates a new server.
@@ -113,6 +114,7 @@ func New(cfg Config) (*Server, error) {
 	s.viewHandlers = api.NewView(viewsSvc, s.getUserID)
 	s.commentHandlers = api.NewComment(commentsSvc, usersSvc, s.getUserID)
 	s.shareHandlers = api.NewShare(sharesSvc, basesSvc, tablesSvc, s.getUserID)
+	s.publicFormHandlers = api.NewPublicForm(viewsSvc, tablesSvc, fieldsSvc, recordsSvc)
 
 	s.setupRoutes()
 
@@ -260,6 +262,10 @@ func (s *Server) setupRoutes() {
 		r.Post("/shares", s.authRequired(s.shareHandlers.Create))
 		r.Delete("/shares/{id}", s.authRequired(s.shareHandlers.Delete))
 		r.Get("/shares/token/{token}", s.shareHandlers.GetByToken) // Public endpoint
+
+		// Public forms (no auth required)
+		r.Get("/public/forms/{viewId}", s.publicFormHandlers.GetForm)
+		r.Post("/public/forms/{viewId}/submit", s.publicFormHandlers.SubmitForm)
 	})
 
 	// Serve static files

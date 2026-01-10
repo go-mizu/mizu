@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { useBaseStore } from './stores/baseStore';
 import { LoginForm } from './components/auth/LoginForm';
@@ -13,8 +13,20 @@ import { GalleryView } from './components/views/gallery/GalleryView';
 import { TimelineView } from './components/views/timeline/TimelineView';
 import { FormView } from './components/views/form/FormView';
 import { ListView } from './components/views/list/ListView';
+import { PublicFormPage } from './pages/PublicFormPage';
 
 function App() {
+  // Check for public form route
+  const publicFormViewId = useMemo(() => {
+    const path = window.location.pathname;
+    const match = path.match(/^\/form\/([^/]+)$/);
+    return match ? match[1] : null;
+  }, []);
+
+  // If this is a public form route, render the public form page
+  if (publicFormViewId) {
+    return <PublicFormPage viewId={publicFormViewId} />;
+  }
   const { isAuthenticated, isLoading: authLoading, checkAuth } = useAuthStore();
   const {
     workspaces,
