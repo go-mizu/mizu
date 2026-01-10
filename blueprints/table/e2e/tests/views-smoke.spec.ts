@@ -25,8 +25,8 @@ test('switch between seeded views and create list view', async ({ page }) => {
   await expect(page.getByText('Scale:')).toBeVisible();
 
   await chooseView(page, 'Submit Task');
-  await expect(page.getByRole('button', { name: 'Submit' })).toBeVisible();
-  await expect(page.getByText('Submit a New Task')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Submit', exact: true })).toBeVisible();
+  await expect(page.getByText('Tasks Form')).toBeVisible();
 
   await openViewMenu(page);
   await page.getByRole('button', { name: 'Create view' }).click();
