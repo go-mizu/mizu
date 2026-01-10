@@ -282,6 +282,14 @@ export interface ViewSettings {
   end_field_id?: string;
   time_scale?: 'day' | 'week' | 'month' | 'quarter' | 'year';
   group_field_id?: string;
+  group_field_ids?: string[];       // Support up to 3 levels of grouping
+  color_field_id?: string;          // Field for bar colors
+  label_field_ids?: string[];       // Fields to show on bars
+  timeline_row_height?: 'compact' | 'medium' | 'tall';
+  show_dependencies?: boolean;
+  show_today_marker?: boolean;
+  fit_to_window?: boolean;
+  collapsed_groups?: string[];      // IDs of collapsed swimlanes
 
   // Form
   title?: string;
@@ -313,6 +321,19 @@ export interface Share {
   email?: string;
   token?: string;
   expires_at?: string;
+  created_by: string;
+  created_at: string;
+}
+
+// Dependency (for Timeline/Gantt view)
+export type DependencyType = 'finish_to_start' | 'start_to_start' | 'finish_to_finish' | 'start_to_finish';
+
+export interface Dependency {
+  id: string;
+  table_id: string;
+  source_record_id: string;
+  target_record_id: string;
+  type: DependencyType;
   created_by: string;
   created_at: string;
 }
