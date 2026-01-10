@@ -5,8 +5,8 @@ import { secureHeaders } from 'hono/secure-headers';
 import BetterSqlite3 from 'better-sqlite3';
 import type { Env, Variables } from '../src/types/index.js';
 import type { Database } from '../src/db/types.js';
-import { SqliteDatabase } from '../src/db/sqlite.js';
-import { schema } from '../src/db/schema.js';
+import { SqliteDriver } from '../src/db/driver/sqlite/index.js';
+import { sqliteSchema } from '../src/db/schema.js';
 import { corsMiddleware } from '../src/middleware/cors.js';
 import { errorHandler } from '../src/middleware/error.js';
 import { auth } from '../src/routes/auth.js';
@@ -14,25 +14,6 @@ import { workbooks } from '../src/routes/workbooks.js';
 import { sheets } from '../src/routes/sheets.js';
 import { cells } from '../src/routes/cells.js';
 import { charts, sheetCharts } from '../src/routes/charts.js';
-
-/**
- * Better-sqlite3 adapter for testing
- */
-class BetterSqlite3Adapter {
-  constructor(private db: BetterSqlite3.Database) {}
-
-  async run(sql: string, params: unknown[] = []): Promise<void> {
-    this.db.prepare(sql).run(...params);
-  }
-
-  async get<T>(sql: string, params: unknown[] = []): Promise<T | null> {
-    return this.db.prepare(sql).get(...params) as T | null;
-  }
-
-  async all<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-    return this.db.prepare(sql).all(...params) as T[];
-  }
-}
 
 /**
  * Create a test database with schema applied
@@ -44,10 +25,9 @@ export function createTestDb(): { db: Database; rawDb: BetterSqlite3.Database } 
   rawDb.pragma('foreign_keys = ON');
 
   // Apply schema - execute the entire script at once
-  rawDb.exec(schema);
+  rawDb.exec(sqliteSchema);
 
-  const adapter = new BetterSqlite3Adapter(rawDb);
-  const db = new SqliteDatabase(adapter);
+  const db = SqliteDriver.fromBetterSqlite(rawDb);
 
   return { db, rawDb };
 }

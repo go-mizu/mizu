@@ -4,10 +4,13 @@ import path from 'path'
 
 const isDesktop = process.env.DESKTOP === 'true'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  // Set base path for asset URLs - desktop uses root, web uses /static/dist/
-  base: isDesktop ? '/' : '/static/dist/',
+  // Set base path for asset URLs
+  // - Desktop uses root
+  // - Dev mode uses root (for index.html to work correctly)
+  // - Production web build uses /static/dist/ (served by Go backend)
+  base: (isDesktop || mode === 'development') ? '/' : '/static/dist/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -166,4 +169,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
