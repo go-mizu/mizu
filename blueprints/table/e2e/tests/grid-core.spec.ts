@@ -9,8 +9,10 @@ test('create base/table and edit records in grid view', async ({ page }) => {
   await page.getByRole('button', { name: '+ New' }).click();
   await page.getByPlaceholder('Base name').fill(baseName);
   await page.getByRole('button', { name: 'Create' }).click();
-  await selectBase(page, baseName);
-  await expect(page.getByText('No tables yet')).toBeVisible();
+  await expect(page.getByRole('button', { name: baseName }).first()).toBeVisible();
+
+  await selectBase(page, 'Project Tracker');
+  await expect(page.getByRole('button', { name: 'Add table' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Add table' }).click();
   await page.getByPlaceholder('Table name').fill('E2E Table');
@@ -27,7 +29,7 @@ test('create base/table and edit records in grid view', async ({ page }) => {
   await page.getByRole('button', { name: 'Create field' }).click();
 
   await page.getByRole('button', { name: 'Add field' }).click();
-  await page.getByRole('button', { name: /Date/i }).click();
+  await page.getByRole('button', { name: 'Date Calendar date' }).click();
   await page.getByPlaceholder('Enter field name').fill('Due Date');
   await page.getByRole('button', { name: 'Create field' }).click();
 
