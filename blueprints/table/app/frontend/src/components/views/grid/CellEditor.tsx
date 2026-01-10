@@ -45,12 +45,12 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
             defaultValue={value as string || ''}
             onKeyDown={handleKeyDown}
             onBlur={(e) => onChange(e.target.value)}
-            className="w-full h-8 px-2 border-0 focus:outline-none focus:ring-0"
+            className="w-full h-9 px-2 border-0 focus:outline-none focus:ring-0 text-[13px]"
           />
         );
       }
       return (
-        <div className="h-8 px-2 flex items-center text-sm truncate">
+        <div className="h-9 px-2 flex items-center text-[13px] truncate">
           {field.type === 'url' && value ? (
             <a href={value as string} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
               {value as string}
@@ -78,12 +78,12 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
               }
             }}
             onBlur={(e) => onChange(e.target.value)}
-            className="w-full min-h-[100px] px-2 py-1 border-0 focus:outline-none focus:ring-0 resize-none"
+            className="w-full min-h-[100px] px-2 py-1 border-0 focus:outline-none focus:ring-0 resize-none text-[13px]"
           />
         );
       }
       return (
-        <div className="h-8 px-2 flex items-center text-sm truncate">
+        <div className="h-9 px-2 flex items-center text-[13px] truncate">
           {(value as string || '').split('\n')[0]}
         </div>
       );
@@ -99,7 +99,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
             defaultValue={value as number || ''}
             onKeyDown={handleKeyDown}
             onBlur={(e) => onChange(e.target.value ? parseFloat(e.target.value) : null)}
-            className="w-full h-8 px-2 border-0 focus:outline-none focus:ring-0 text-right"
+            className="w-full h-9 px-2 border-0 focus:outline-none focus:ring-0 text-right text-[13px]"
           />
         );
       }
@@ -115,14 +115,14 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
         }
       }
       return (
-        <div className="h-8 px-2 flex items-center justify-end text-sm">
+        <div className="h-9 px-2 flex items-center justify-end text-[13px]">
           {displayValue}
         </div>
       );
 
     case 'checkbox':
       return (
-        <div className="h-8 flex items-center justify-center">
+        <div className="h-9 flex items-center justify-center">
           <input
             type="checkbox"
             checked={Boolean(value)}
@@ -142,12 +142,12 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
             defaultValue={value as string || ''}
             onKeyDown={handleKeyDown}
             onBlur={(e) => onChange(e.target.value || null)}
-            className="w-full h-8 px-2 border-0 focus:outline-none focus:ring-0"
+            className="w-full h-9 px-2 border-0 focus:outline-none focus:ring-0 text-[13px]"
           />
         );
       }
       return (
-        <div className="h-8 px-2 flex items-center text-sm">
+        <div className="h-9 px-2 flex items-center text-[13px]">
           {value ? new Date(value as string).toLocaleDateString() : ''}
         </div>
       );
@@ -161,7 +161,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
             onChange={(e) => onChange(e.target.value || null)}
             onBlur={() => onCancel()}
             autoFocus
-            className="w-full h-8 px-2 border-0 focus:outline-none focus:ring-0"
+            className="w-full h-9 px-2 border-0 focus:outline-none focus:ring-0 text-[13px]"
           >
             <option value="">Select...</option>
             {options.map((opt: { id: string; name: string; color: string }) => (
@@ -172,10 +172,10 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
       }
       const selectedOption = options.find((opt: { id: string }) => opt.id === value);
       return (
-        <div className="h-8 px-2 flex items-center">
+        <div className="h-9 px-2 flex items-center">
           {selectedOption && (
             <span
-              className="px-2 py-0.5 rounded-full text-xs font-medium"
+              className="px-2 py-0.5 rounded-full text-xs font-semibold"
               style={{ backgroundColor: selectedOption.color + '20', color: selectedOption.color }}
             >
               {selectedOption.name}
@@ -215,13 +215,13 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
         );
       }
       return (
-        <div className="h-8 px-2 flex items-center gap-1 overflow-hidden">
+        <div className="h-9 px-2 flex items-center gap-1 overflow-hidden">
           {selectedValues.slice(0, 3).map((valId) => {
             const opt = multiOptions.find((o: { id: string }) => o.id === valId);
             return opt ? (
               <span
                 key={opt.id}
-                className="px-2 py-0.5 rounded-full text-xs font-medium"
+                className="px-2 py-0.5 rounded-full text-xs font-semibold"
                 style={{ backgroundColor: opt.color + '20', color: opt.color }}
               >
                 {opt.name}
@@ -238,7 +238,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
       const maxRating = field.options?.max || 5;
       const currentRating = (value as number) || 0;
       return (
-        <div className="h-8 px-2 flex items-center gap-0.5">
+        <div className="h-9 px-2 flex items-center gap-0.5">
           {Array.from({ length: maxRating }, (_, i) => (
             <button
               key={i}
@@ -256,7 +256,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
     case 'attachment':
       const attachments = (value as { filename?: string; url: string }[]) || [];
       return (
-        <div className="h-8 px-2 flex items-center gap-1">
+        <div className="h-9 px-2 flex items-center gap-1">
           {attachments.length > 0 ? (
             <>
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -273,7 +273,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
     case 'user':
       const users = (value as { id: string; name: string }[]) || [];
       return (
-        <div className="h-8 px-2 flex items-center gap-1">
+        <div className="h-9 px-2 flex items-center gap-1">
           {users.map((user) => (
             <div
               key={user.id}
@@ -291,14 +291,14 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
     case 'count':
     case 'lookup':
       return (
-        <div className="h-8 px-2 flex items-center text-sm text-gray-500 italic">
+        <div className="h-9 px-2 flex items-center text-[13px] text-gray-500 italic">
           {value !== null && value !== undefined ? String(value) : '—'}
         </div>
       );
 
     case 'autonumber':
       return (
-        <div className="h-8 px-2 flex items-center text-sm text-gray-500">
+        <div className="h-9 px-2 flex items-center text-[13px] text-gray-500">
           {value as number || ''}
         </div>
       );
@@ -306,7 +306,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
     case 'created_time':
     case 'last_modified_time':
       return (
-        <div className="h-8 px-2 flex items-center text-sm text-gray-500">
+        <div className="h-9 px-2 flex items-center text-[13px] text-gray-500">
           {value ? new Date(value as string).toLocaleString() : ''}
         </div>
       );
@@ -315,14 +315,14 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel }: Cell
     case 'last_modified_by':
       const userValue = value as { name: string } | null;
       return (
-        <div className="h-8 px-2 flex items-center text-sm text-gray-500">
+        <div className="h-9 px-2 flex items-center text-[13px] text-gray-500">
           {userValue?.name || ''}
         </div>
       );
 
     default:
       return (
-        <div className="h-8 px-2 flex items-center text-sm">
+        <div className="h-9 px-2 flex items-center text-[13px]">
           {value !== null && value !== undefined ? String(value) : ''}
         </div>
       );

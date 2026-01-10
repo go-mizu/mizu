@@ -134,7 +134,7 @@ export function KanbanView() {
         {columns.map((column) => (
           <div
             key={column.id}
-            className={`flex-shrink-0 w-72 bg-gray-100 rounded-lg flex flex-col ${
+            className={`flex-shrink-0 w-72 bg-slate-50 rounded-xl border border-slate-200 flex flex-col ${
               dragOverColumn === column.id ? 'ring-2 ring-primary' : ''
             }`}
             onDragOver={(e) => handleDragOver(e, column.id)}
@@ -142,13 +142,15 @@ export function KanbanView() {
             onDrop={() => handleDrop(column.id)}
           >
             {/* Column header */}
-            <div className="p-3 flex items-center gap-2">
+            <div className="p-3 flex items-center gap-2 border-b border-slate-200">
               <span
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: column.color }}
               />
-              <span className="font-medium text-gray-900">{column.name}</span>
-              <span className="text-sm text-gray-500 ml-auto">{column.records.length}</span>
+              <span className="font-semibold text-gray-900">{column.name}</span>
+              <span className="text-xs text-slate-500 ml-auto bg-white border border-slate-200 rounded-full px-2 py-0.5">
+                {column.records.length}
+              </span>
             </div>
 
             {/* Cards */}
@@ -159,7 +161,7 @@ export function KanbanView() {
                   draggable
                   onDragStart={() => handleDragStart(record)}
                   onClick={() => setExpandedRecord(record)}
-                  className={`bg-white rounded-lg shadow-sm border border-gray-200 p-3 cursor-pointer hover:shadow-md transition-shadow ${
+                  className={`bg-white rounded-lg shadow-sm border border-slate-200 p-3 cursor-pointer hover:shadow-md transition-shadow ${
                     draggedRecord?.id === record.id ? 'opacity-50' : ''
                   }`}
                 >
@@ -188,7 +190,7 @@ export function KanbanView() {
               {/* Add card button */}
               <button
                 onClick={() => handleAddCard(column.id)}
-                className="w-full p-2 text-sm text-gray-500 hover:bg-gray-200 rounded-lg flex items-center justify-center gap-1 transition-colors"
+                className="w-full p-2 text-sm text-slate-500 hover:bg-white rounded-lg flex items-center justify-center gap-1 transition-colors border border-transparent hover:border-slate-200"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

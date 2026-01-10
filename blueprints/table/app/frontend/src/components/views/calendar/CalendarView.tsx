@@ -129,7 +129,7 @@ export function CalendarView() {
           <div className="flex gap-1">
             <button
               onClick={goToPreviousMonth}
-              className="p-2 hover:bg-gray-100 rounded-md"
+              className="p-2 hover:bg-slate-50 rounded-md"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -137,7 +137,7 @@ export function CalendarView() {
             </button>
             <button
               onClick={goToNextMonth}
-              className="p-2 hover:bg-gray-100 rounded-md"
+              className="p-2 hover:bg-slate-50 rounded-md"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -145,20 +145,17 @@ export function CalendarView() {
             </button>
           </div>
         </div>
-        <button
-          onClick={goToToday}
-          className="btn btn-secondary"
-        >
+        <button onClick={goToToday} className="btn btn-secondary">
           Today
         </button>
       </div>
 
       {/* Calendar grid */}
-      <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
+      <div className="flex-1 border border-slate-200 rounded-xl overflow-hidden bg-white">
         {/* Week day headers */}
-        <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
+        <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
           {weekDays.map((day) => (
-            <div key={day} className="p-2 text-center text-sm font-medium text-gray-600">
+            <div key={day} className="p-2 text-center text-sm font-semibold text-slate-600">
               {day}
             </div>
           ))}
@@ -169,8 +166,8 @@ export function CalendarView() {
           {calendarDays.map((day, index) => (
             <div
               key={index}
-              className={`min-h-[100px] border-b border-r border-gray-200 p-1 ${
-                !day.isCurrentMonth ? 'bg-gray-50' : ''
+              className={`min-h-[100px] border-b border-r border-slate-200 p-1 ${
+                !day.isCurrentMonth ? 'bg-slate-50' : ''
               }`}
             >
               <div className="flex items-center justify-between mb-1">
@@ -188,7 +185,7 @@ export function CalendarView() {
                 {day.isCurrentMonth && (
                   <button
                     onClick={() => handleAddRecord(day.date)}
-                    className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded opacity-0 hover:opacity-100"
+                    className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-slate-100 rounded opacity-0 hover:opacity-100"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -203,7 +200,7 @@ export function CalendarView() {
                   <button
                     key={record.id}
                     onClick={() => setExpandedRecord(record)}
-                    className="w-full text-left text-xs p-1 bg-primary-100 text-primary-700 rounded truncate hover:bg-primary-200"
+                    className="w-full text-left text-xs p-1 bg-primary-50 text-primary-700 rounded truncate hover:bg-primary-100"
                   >
                     {getRecordTitle(record)}
                   </button>

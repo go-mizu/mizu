@@ -63,13 +63,13 @@ export function ViewToolbar() {
   const hasGroup = groupBy !== null;
 
   return (
-    <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3">
+    <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
       {/* View selector */}
       <div className="relative">
         <button
           onClick={() => setShowViewMenu(!showViewMenu)}
           data-testid="view-selector"
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200"
         >
           {currentViewType && (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,10 +134,10 @@ export function ViewToolbar() {
       <div className="relative" ref={filterRef}>
         <button
           onClick={() => setShowFilter(!showFilter)}
-          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 ${
+          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
             hasFilters
-              ? 'bg-primary-50 text-primary-700'
-              : 'text-gray-600 hover:bg-gray-100'
+              ? 'bg-primary-50 text-primary-700 border-primary-100'
+              : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,10 +162,10 @@ export function ViewToolbar() {
       <div className="relative" ref={sortRef}>
         <button
           onClick={() => setShowSort(!showSort)}
-          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 ${
+          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
             hasSorts
-              ? 'bg-primary-50 text-primary-700'
-              : 'text-gray-600 hover:bg-gray-100'
+              ? 'bg-primary-50 text-primary-700 border-primary-100'
+              : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -190,10 +190,10 @@ export function ViewToolbar() {
       <div className="relative" ref={groupRef}>
         <button
           onClick={() => setShowGroup(!showGroup)}
-          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 ${
+          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
             hasGroup
-              ? 'bg-primary-50 text-primary-700'
-              : 'text-gray-600 hover:bg-gray-100'
+              ? 'bg-primary-50 text-primary-700 border-primary-100'
+              : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

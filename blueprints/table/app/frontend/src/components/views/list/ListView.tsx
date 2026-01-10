@@ -127,7 +127,7 @@ export function ListView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-2">
           {selectedRecords.size > 0 && (
             <>
@@ -151,14 +151,14 @@ export function ListView() {
       {/* List */}
       <div className="flex-1 overflow-auto">
         {/* Select all header */}
-        <div className="sticky top-0 bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center gap-3">
+        <div className="sticky top-0 bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center gap-3">
           <input
             type="checkbox"
             checked={selectedRecords.size === records.length && records.length > 0}
             onChange={toggleAll}
             className="w-4 h-4 rounded border-gray-300"
           />
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-semibold text-slate-700">
             {primaryField?.name || 'Name'}
           </span>
         </div>
@@ -175,7 +175,7 @@ export function ListView() {
             return (
               <div
                 key={record.id}
-                className={`px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-gray-50 ${
+                className={`px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-slate-50 ${
                   isSelected ? 'bg-primary-50' : ''
                 }`}
                 onClick={() => setExpandedRecord(record)}
@@ -214,7 +214,7 @@ export function ListView() {
                     </div>
                   ) : (
                     <div
-                      className="font-medium text-gray-900 truncate hover:text-primary"
+                      className="font-semibold text-gray-900 truncate hover:text-primary"
                       onDoubleClick={(e) => startEditing(record, e)}
                     >
                       {primaryValue}
@@ -229,13 +229,13 @@ export function ListView() {
                         if (value === null || value === undefined) return null;
 
                         return (
-                          <div key={field.id} className="text-sm text-gray-500">
-                            <span className="text-gray-400">{field.name}: </span>
-                            {field.type === 'single_select' ? (
-                              <SelectBadge field={field} value={value as string} />
-                            ) : (
-                              formatCellValue(value, field)
-                            )}
+                        <div key={field.id} className="text-sm text-gray-500">
+                          <span className="text-slate-400">{field.name}: </span>
+                          {field.type === 'single_select' ? (
+                            <SelectBadge field={field} value={value as string} />
+                          ) : (
+                            formatCellValue(value, field)
+                          )}
                           </div>
                         );
                       })}

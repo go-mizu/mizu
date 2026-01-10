@@ -143,7 +143,7 @@ export function FilterBuilder({ onClose }: FilterBuilderProps) {
                 className={`px-2 py-1 text-xs rounded-full border transition-colors ${
                   selectedValues.includes(opt.id)
                     ? 'border-primary bg-primary-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-slate-200 hover:border-slate-300'
                 }`}
                 style={selectedValues.includes(opt.id) ? { backgroundColor: opt.color + '20', color: opt.color } : {}}
               >
@@ -227,7 +227,7 @@ export function FilterBuilder({ onClose }: FilterBuilderProps) {
   return (
     <div className="p-4 min-w-[400px]">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-gray-900">Filter records</h3>
+        <h3 className="font-semibold text-gray-900">Filter records</h3>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -237,19 +237,19 @@ export function FilterBuilder({ onClose }: FilterBuilderProps) {
 
       {localFilters.length > 0 && (
         <div className="mb-3">
-          <span className="text-sm text-gray-600">Show records where</span>
+          <span className="text-sm text-slate-600">Show records where</span>
           {localFilters.length > 1 && (
             <select
               value={conjunction}
               onChange={(e) => setConjunction(e.target.value as 'and' | 'or')}
-              className="ml-2 text-sm border border-gray-300 rounded px-2 py-1"
+              className="ml-2 text-sm border border-slate-200 rounded px-2 py-1"
             >
               <option value="and">all</option>
               <option value="or">any</option>
             </select>
           )}
           {localFilters.length > 1 && (
-            <span className="text-sm text-gray-600 ml-1">conditions match</span>
+            <span className="text-sm text-slate-600 ml-1">conditions match</span>
           )}
         </div>
       )}
@@ -322,10 +322,10 @@ export function FilterBuilder({ onClose }: FilterBuilderProps) {
       </button>
 
       {/* Action buttons */}
-      <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
+      <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
         <button
           onClick={clearFilters}
-          className="text-sm text-gray-600 hover:text-gray-800"
+          className="text-sm text-slate-600 hover:text-slate-800"
         >
           Clear all
         </button>

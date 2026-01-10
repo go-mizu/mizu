@@ -54,10 +54,10 @@ export function GalleryView() {
             <div
               key={record.id}
               onClick={() => setExpandedRecord(record)}
-              className="bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+              className="bg-white rounded-xl border border-slate-200 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
             >
               {/* Cover image */}
-              <div className="aspect-video bg-gray-100 relative">
+              <div className="aspect-video bg-slate-100 relative">
                 {coverImage ? (
                   <img
                     src={coverImage}
@@ -75,7 +75,7 @@ export function GalleryView() {
 
               {/* Card content */}
               <div className="p-3">
-                <h3 className="font-medium text-gray-900 mb-2 truncate">
+                <h3 className="font-semibold text-gray-900 mb-2 truncate">
                   {getRecordTitle(record)}
                 </h3>
 
@@ -86,7 +86,7 @@ export function GalleryView() {
 
                     return (
                       <div key={field.id} className="flex items-start gap-2 text-sm">
-                        <span className="text-gray-500 flex-shrink-0">{field.name}:</span>
+                        <span className="text-slate-500 flex-shrink-0">{field.name}:</span>
                         <span className="text-gray-900 truncate">
                           {renderFieldValue(field, value)}
                         </span>
@@ -102,7 +102,7 @@ export function GalleryView() {
         {/* Add new card */}
         <button
           onClick={handleAddRecord}
-          className="bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center min-h-[200px] hover:border-gray-300 hover:bg-gray-100 transition-colors"
+          className="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center min-h-[200px] hover:border-slate-300 hover:bg-slate-100 transition-colors"
         >
           <div className="text-center">
             <svg className="w-8 h-8 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">

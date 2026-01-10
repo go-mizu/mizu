@@ -239,11 +239,11 @@ export function GridView() {
       )}
       <div className="flex-1 overflow-auto">
       <table className="w-full border-collapse">
-        <thead className="sticky top-0 z-10 bg-gray-50">
+        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
           <tr>
             {/* Row number and checkbox column */}
-            <th className="w-16 border-b border-r border-gray-200 bg-gray-50 p-0">
-              <div className="flex items-center justify-center h-8">
+            <th className="w-16 border-b border-r border-slate-200 bg-slate-50 p-0">
+              <div className="flex items-center justify-center h-9">
                 <input
                   type="checkbox"
                   checked={selectedRows.size === displayRecords.length && displayRecords.length > 0}
@@ -259,7 +259,7 @@ export function GridView() {
             ))}
 
             {/* Add field button */}
-            <th className="w-32 border-b border-gray-200 bg-gray-50 p-0">
+            <th className="w-32 border-b border-slate-200 bg-slate-50 p-0">
               <AddFieldButton />
             </th>
           </tr>
@@ -268,12 +268,12 @@ export function GridView() {
           {displayRecords.map((record, rowIndex) => (
             <tr
               key={record.id}
-              className={`group ${selectedRows.has(record.id) ? 'bg-primary-50' : 'hover:bg-gray-50'}`}
+              className={`group ${selectedRows.has(record.id) ? 'bg-primary-50' : 'hover:bg-slate-50'}`}
               onContextMenu={(e) => handleRowContextMenu(e, record.id)}
             >
               {/* Row number and checkbox */}
-              <td className="border-b border-r border-gray-200 p-0">
-                <div className="flex items-center justify-center h-8 gap-1">
+              <td className="border-b border-r border-slate-200 p-0">
+                <div className="flex items-center justify-center h-9 gap-1">
                   <input
                     type="checkbox"
                     checked={selectedRows.has(record.id)}
@@ -303,7 +303,7 @@ export function GridView() {
                 return (
                   <td
                     key={field.id}
-                    className={`border-b border-r border-gray-200 p-0 ${
+                    className={`border-b border-r border-slate-200 p-0 ${
                       isSelected ? 'ring-2 ring-primary ring-inset' : ''
                     }`}
                     onClick={() => handleCellClick(record.id, field.id)}
@@ -321,16 +321,16 @@ export function GridView() {
               })}
 
               {/* Empty cell for add field column */}
-              <td className="border-b border-gray-200" />
+              <td className="border-b border-slate-200" />
             </tr>
           ))}
 
           {/* Add row button */}
           <tr>
-            <td colSpan={fields.length + 2} className="border-b border-gray-200 p-0">
+            <td colSpan={fields.length + 2} className="border-b border-slate-200 p-0">
               <button
                 onClick={handleAddRow}
-                className="w-full h-8 text-left px-4 text-sm text-gray-500 hover:bg-gray-50 flex items-center gap-2"
+                className="w-full h-9 text-left px-4 text-sm text-slate-500 hover:bg-slate-50 flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

@@ -52,7 +52,7 @@ function App() {
   // Loading state
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-[#f6f7fb]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
@@ -91,7 +91,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex bg-[#f6f7fb]">
       {/* Sidebar */}
       <Sidebar
         isOpen={sidebarOpen}
