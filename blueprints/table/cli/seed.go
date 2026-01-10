@@ -15,14 +15,15 @@ func NewSeed() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "seed",
 		Short: "Seed the database with demo data",
-		Long: `Seed the Table database with demo data for testing.
+		Long: `Seed the Table database with comprehensive demo data for testing.
 
-Creates a complete workspace with bases and tables:
+Creates a complete workspace showcasing all Airtable-like features:
   - 3 users (alice, bob, charlie)
   - Personal workspace for Alice
-  - Sample base with projects and tasks tables
-  - Various field types and records
-  - Multiple views (grid, kanban, calendar)
+  - Project Tracker base with Tasks and Projects tables
+  - All 7 view types (grid, kanban, calendar, gallery, timeline, form, list)
+  - 15+ field types including selects, dates, ratings, checkboxes, etc.
+  - Sample comments and records
 
 To reset the database, delete the data directory first:
   rm -rf ~/data/blueprint/table && table seed
