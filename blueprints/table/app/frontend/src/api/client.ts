@@ -150,7 +150,7 @@ export const tablesApi = {
     });
   },
 
-  async get(id: string): Promise<{ table: Table }> {
+  async get(id: string): Promise<{ table: Table; fields?: Field[]; views?: View[] }> {
     return apiFetch(`/tables/${id}`);
   },
 

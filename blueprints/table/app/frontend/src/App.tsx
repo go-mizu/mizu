@@ -120,7 +120,7 @@ function App() {
         {currentBase && <TableTabs />}
 
         {/* View toolbar */}
-        {currentTable && currentView && <ViewToolbar />}
+        {currentTable && <ViewToolbar />}
 
         {/* Main view area */}
         <div className="flex-1 overflow-hidden">
@@ -128,8 +128,15 @@ function App() {
             <div className="flex items-center justify-center h-full">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
-          ) : currentTable ? (
+          ) : currentTable && currentView ? (
             renderView()
+          ) : currentTable ? (
+            <div className="flex items-center justify-center h-full text-gray-500">
+              <div className="text-center">
+                <p className="text-lg">No views yet</p>
+                <p className="text-sm mt-1">Use "Create view" to add your first view</p>
+              </div>
+            </div>
           ) : currentBase ? (
             <div className="flex items-center justify-center h-full text-gray-500">
               <div className="text-center">

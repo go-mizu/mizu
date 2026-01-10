@@ -57,6 +57,7 @@ export function ViewToolbar() {
   };
 
   const currentViewType = VIEW_TYPES.find(v => v.type === currentView?.type);
+  const viewLabel = currentView?.name || (views.length > 0 ? 'Select view' : 'Views');
   const hasFilters = filters.length > 0;
   const hasSorts = sorts.length > 0;
   const hasGroup = groupBy !== null;
@@ -67,6 +68,7 @@ export function ViewToolbar() {
       <div className="relative">
         <button
           onClick={() => setShowViewMenu(!showViewMenu)}
+          data-testid="view-selector"
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md"
         >
           {currentViewType && (
@@ -74,7 +76,7 @@ export function ViewToolbar() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={currentViewType.icon} />
             </svg>
           )}
-          {currentView?.name}
+          {viewLabel}
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
@@ -84,26 +86,30 @@ export function ViewToolbar() {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowViewMenu(false)} />
             <div className="dropdown-menu animate-slide-in mt-1">
-              {views.map((view) => {
-                const viewType = VIEW_TYPES.find(v => v.type === view.type);
-                return (
-                  <button
-                    key={view.id}
-                    onClick={() => {
-                      selectView(view.id);
-                      setShowViewMenu(false);
-                    }}
-                    className={`dropdown-item w-full text-left ${view.id === currentView?.id ? 'bg-primary-50 text-primary' : ''}`}
-                  >
-                    {viewType && (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={viewType.icon} />
-                      </svg>
-                    )}
-                    {view.name}
-                  </button>
-                );
-              })}
+              {views.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-gray-500">No views yet</div>
+              ) : (
+                views.map((view) => {
+                  const viewType = VIEW_TYPES.find(v => v.type === view.type);
+                  return (
+                    <button
+                      key={view.id}
+                      onClick={() => {
+                        selectView(view.id);
+                        setShowViewMenu(false);
+                      }}
+                      className={`dropdown-item w-full text-left ${view.id === currentView?.id ? 'bg-primary-50 text-primary' : ''}`}
+                    >
+                      {viewType && (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={viewType.icon} />
+                        </svg>
+                      )}
+                      {view.name}
+                    </button>
+                  );
+                })
+              )}
               <hr className="my-1" />
               <button
                 onClick={() => {
