@@ -46,6 +46,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHei
   // Render based on field type
   switch (field.type) {
     case 'text':
+    case 'single_line_text':
     case 'email':
     case 'url':
     case 'phone':
@@ -78,6 +79,7 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHei
       );
 
     case 'long_text':
+    case 'rich_text':
       if (isEditing) {
         return (
           <textarea
@@ -119,11 +121,16 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHei
       let displayValue = '';
       if (numValue !== null && numValue !== undefined) {
         if (field.type === 'currency') {
-          displayValue = `$${numValue.toLocaleString()}`;
+          const currencySymbol = field.options?.currency_symbol || '$';
+          const precision = field.options?.precision ?? 2;
+          displayValue = `${currencySymbol}${numValue.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision })}`;
         } else if (field.type === 'percent') {
           displayValue = `${numValue}%`;
         } else {
-          displayValue = numValue.toLocaleString();
+          const precision = field.options?.precision;
+          displayValue = precision !== undefined
+            ? numValue.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision })
+            : numValue.toLocaleString();
         }
       }
       return (
@@ -265,16 +272,150 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHei
         </div>
       );
 
+    case 'duration':
+      const durationSeconds = (value as number) || 0;
+      const durationHours = Math.floor(durationSeconds / 3600);
+      const durationMinutes = Math.floor((durationSeconds % 3600) / 60);
+      const durationSecs = durationSeconds % 60;
+      const durationFormat = field.options?.format || 'h:mm';
+
+      if (isEditing) {
+        return (
+          <div className="flex items-center gap-1 px-1 h-9">
+            <input
+              ref={inputRef as React.RefObject<HTMLInputElement>}
+              type="number"
+              min="0"
+              defaultValue={durationHours || ''}
+              placeholder="0"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const h = parseInt((e.target as HTMLInputElement).value) || 0;
+                  const parent = (e.target as HTMLInputElement).parentElement;
+                  const minInput = parent?.querySelectorAll('input')[1] as HTMLInputElement;
+                  const m = parseInt(minInput?.value) || 0;
+                  onChange(h * 3600 + m * 60);
+                } else if (e.key === 'Escape') {
+                  onCancel();
+                }
+              }}
+              onBlur={(e) => {
+                const h = parseInt(e.target.value) || 0;
+                const parent = e.target.parentElement;
+                const minInput = parent?.querySelectorAll('input')[1] as HTMLInputElement;
+                const m = parseInt(minInput?.value) || 0;
+                onChange(h * 3600 + m * 60);
+              }}
+              className="w-12 h-7 px-1 border border-gray-300 rounded text-center text-[13px] focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-gray-400 text-xs">h</span>
+            <input
+              type="number"
+              min="0"
+              max="59"
+              defaultValue={durationMinutes || ''}
+              placeholder="0"
+              className="w-12 h-7 px-1 border border-gray-300 rounded text-center text-[13px] focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-gray-400 text-xs">m</span>
+          </div>
+        );
+      }
+
+      let durationDisplay = '';
+      if (durationSeconds > 0) {
+        if (durationFormat === 'h:mm:ss') {
+          durationDisplay = `${durationHours}:${durationMinutes.toString().padStart(2, '0')}:${durationSecs.toString().padStart(2, '0')}`;
+        } else {
+          durationDisplay = `${durationHours}:${durationMinutes.toString().padStart(2, '0')}`;
+        }
+      }
+      return (
+        <div className="h-9 px-2 flex items-center text-[13px] text-gray-600">
+          {durationDisplay || '—'}
+        </div>
+      );
+
+    case 'barcode':
+      const barcodeValue = value as string || '';
+      const barcodeType = field.options?.barcode_type || 'CODE128';
+      if (isEditing) {
+        return (
+          <input
+            ref={inputRef as React.RefObject<HTMLInputElement>}
+            type="text"
+            defaultValue={barcodeValue}
+            onKeyDown={handleKeyDown}
+            onBlur={(e) => onChange(e.target.value || null)}
+            className="w-full h-9 px-2 border-0 focus:outline-none focus:ring-0 text-[13px] font-mono"
+            placeholder="Enter barcode..."
+          />
+        );
+      }
+      return (
+        <div className="h-9 px-2 flex items-center gap-2 text-[13px]">
+          {barcodeValue ? (
+            <>
+              <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h2M4 12h2m10 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+              <span className="font-mono truncate" title={`${barcodeType}: ${barcodeValue}`}>{barcodeValue}</span>
+            </>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </div>
+      );
+
+    case 'button':
+      const buttonLabel = field.options?.label || field.name || 'Click';
+      const buttonUrl = field.options?.url;
+      const buttonColor = field.options?.color || '#2563eb';
+      return (
+        <div className="h-9 px-2 flex items-center">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (buttonUrl) {
+                window.open(buttonUrl, '_blank', 'noopener,noreferrer');
+              }
+            }}
+            className="px-3 py-1 rounded text-xs font-medium text-white transition-opacity hover:opacity-80"
+            style={{ backgroundColor: buttonColor }}
+          >
+            {buttonLabel}
+          </button>
+        </div>
+      );
+
     case 'attachment':
-      const attachments = (value as { filename?: string; url: string }[]) || [];
+      const attachments = (value as { id?: string; filename?: string; url: string; mime_type?: string }[]) || [];
+      const imageAttachments = attachments.filter(a => a.mime_type?.startsWith('image/') || a.url?.match(/\.(jpg|jpeg|png|gif|webp)/i));
+
       return (
         <div className="h-9 px-2 flex items-center gap-1">
           {attachments.length > 0 ? (
             <>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-              <span className="text-sm text-gray-600">{attachments.length} file(s)</span>
+              {imageAttachments.length > 0 ? (
+                <div className="flex -space-x-1">
+                  {imageAttachments.slice(0, 3).map((att, idx) => (
+                    <img
+                      key={att.id || idx}
+                      src={att.url}
+                      alt={att.filename || 'attachment'}
+                      className="w-7 h-7 rounded object-cover border-2 border-white"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              )}
+              <span className="text-xs text-gray-500 ml-1">
+                {attachments.length > 3 ? `+${attachments.length - 3}` : attachments.length > 1 ? attachments.length : ''}
+              </span>
             </>
           ) : (
             <span className="text-sm text-gray-400">+ Add</span>

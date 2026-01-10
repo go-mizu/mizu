@@ -218,9 +218,9 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	assigneeField := createField("Assignee", "collaborator", nil)
 	notesField := createField("Notes", "long_text", nil)
 
-	// Additional field types
-	createField("Completed", "checkbox", nil)
-	createField("Effort (pts)", "number", nil)
+	// Additional field types demonstrating all capabilities
+	completedField := createField("Completed", "checkbox", nil)
+	effortField := createField("Effort (pts)", "number", map[string]any{"precision": 0})
 	ratingField := createField("Confidence", "rating", map[string]any{"max": 5})
 	tagsField := createField("Tags", "multi_select", map[string]any{
 		"choices": []map[string]any{
@@ -232,11 +232,25 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			{"id": "tag-6", "name": "Docs", "color": "#F59E0B"},
 		},
 	})
-	budgetField := createField("Budget", "currency", nil)
+	budgetField := createField("Budget", "currency", map[string]any{
+		"currency_symbol": "$",
+		"precision":       2,
+	})
 	progressField := createField("Progress", "percent", nil)
 	emailField := createField("Contact Email", "email", nil)
 	urlField := createField("Reference URL", "url", nil)
 	thumbnailField := createField("Thumbnail", "attachment", nil)
+
+	// New field types for comprehensive demo
+	phoneField := createField("Phone", "phone", nil)
+	durationField := createField("Time Spent", "duration", map[string]any{"format": "h:mm"})
+	barcodeField := createField("Asset ID", "barcode", map[string]any{"barcode_type": "CODE128"})
+	// Button field - displays a clickable button, no data value needed
+	_ = createField("View Docs", "button", map[string]any{
+		"label": "Open Docs",
+		"url":   "https://docs.example.com",
+		"color": "#2563eb",
+	})
 	Step("", "Fields ready", time.Since(sectionStart))
 
 	// Create sample records with realistic data
@@ -256,6 +270,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		Email     string
 		URL       string
 		Thumbnail string
+		Phone     string
+		Duration  int // in seconds
+		Barcode   string
+		Completed bool
+		Effort    int
 	}{
 		// Currently In Progress Tasks with overlapping dates for timeline stacking demo
 		{
@@ -272,6 +291,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "design@example.com",
 			URL:       "https://figma.com/file/hero-design",
 			Thumbnail: "https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?w=800&q=80",
+			Phone:     "+1 (415) 555-0101",
+			Duration:  14400, // 4 hours
+			Barcode:   "TASK-2024-001",
+			Completed: false,
+			Effort:    8,
 		},
 		{
 			Name:      "Landing Page A/B Testing",
@@ -287,6 +311,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "growth@example.com",
 			URL:       "https://optimizely.com",
 			Thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+			Phone:     "+1 (415) 555-0102",
+			Duration:  7200, // 2 hours
+			Barcode:   "TASK-2024-002",
+			Completed: false,
+			Effort:    5,
 		},
 		{
 			Name:      "Database Schema Migration v2",
@@ -302,6 +331,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "database@example.com",
 			URL:       "https://dbdiagram.io/d/schema-v2",
 			Thumbnail: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&q=80",
+			Phone:     "+1 (415) 555-0103",
+			Duration:  28800, // 8 hours
+			Barcode:   "TASK-2024-003",
+			Completed: false,
+			Effort:    13,
 		},
 		{
 			Name:      "Performance Optimization - Initial Load",
@@ -317,6 +351,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "perf@example.com",
 			URL:       "https://web.dev/performance",
 			Thumbnail: "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=800&q=80",
+			Phone:     "+1 (415) 555-0104",
+			Duration:  21600, // 6 hours
+			Barcode:   "TASK-2024-004",
+			Completed: false,
+			Effort:    13,
 		},
 		{
 			Name:      "Customer Onboarding Flow Redesign",
@@ -332,6 +371,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "growth@example.com",
 			URL:       "https://hotjar.com/recordings/onboarding",
 			Thumbnail: "https://images.unsplash.com/photo-1553484771-371a605b060b?w=800&q=80",
+			Phone:     "+1 (415) 555-0105",
+			Duration:  36000, // 10 hours
+			Barcode:   "TASK-2024-005",
+			Completed: false,
+			Effort:    21,
 		},
 		{
 			Name:      "Accessibility Compliance (WCAG 2.1)",
@@ -347,6 +391,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "a11y@example.com",
 			URL:       "https://www.w3.org/WAI/WCAG21/quickref",
 			Thumbnail: "https://images.unsplash.com/photo-1573164713988-8665fc963095?w=800&q=80",
+			Phone:     "+1 (415) 555-0106",
+			Duration:  10800, // 3 hours
+			Barcode:   "TASK-2024-006",
+			Completed: false,
+			Effort:    8,
 		},
 
 		// Under Review Tasks
@@ -364,6 +413,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "mobile@example.com",
 			URL:       "https://responsively.app",
 			Thumbnail: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&q=80",
+			Phone:     "+1 (415) 555-0107",
+			Duration:  18000, // 5 hours
+			Barcode:   "TASK-2024-007",
+			Completed: false,
+			Effort:    5,
 		},
 		{
 			Name:      "Code Review Sprint - Q1 PRs",
@@ -379,6 +433,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "reviews@example.com",
 			URL:       "https://github.com/example/pulls",
 			Thumbnail: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&q=80",
+			Phone:     "+1 (415) 555-0108",
+			Duration:  14400, // 4 hours
+			Barcode:   "TASK-2024-008",
+			Completed: false,
+			Effort:    3,
 		},
 
 		// Completed Tasks (past dates)
@@ -396,6 +455,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "security@example.com",
 			URL:       "https://github.com/example/issues/142",
 			Thumbnail: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&q=80",
+			Phone:     "+1 (415) 555-0109",
+			Duration:  32400, // 9 hours
+			Barcode:   "TASK-2024-009",
+			Completed: true,
+			Effort:    8,
 		},
 		{
 			Name:      "Email Template System",
@@ -411,6 +475,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "comms@example.com",
 			URL:       "https://mjml.io",
 			Thumbnail: "https://images.unsplash.com/photo-1596526131083-e8c633c948d2?w=800&q=80",
+			Phone:     "+1 (415) 555-0110",
+			Duration:  43200, // 12 hours
+			Barcode:   "TASK-2024-010",
+			Completed: true,
+			Effort:    13,
 		},
 		{
 			Name:      "CI/CD Pipeline Setup",
@@ -426,6 +495,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "devops@example.com",
 			URL:       "https://github.com/features/actions",
 			Thumbnail: "https://images.unsplash.com/photo-1618401471353-b98afee0b2eb?w=800&q=80",
+			Phone:     "+1 (415) 555-0111",
+			Duration:  28800, // 8 hours
+			Barcode:   "TASK-2024-011",
+			Completed: true,
+			Effort:    8,
 		},
 		{
 			Name:      "User Research Interviews",
@@ -441,6 +515,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "research@example.com",
 			URL:       "https://notion.so/user-research",
 			Thumbnail: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80",
+			Phone:     "+1 (415) 555-0112",
+			Duration:  54000, // 15 hours
+			Barcode:   "TASK-2024-012",
+			Completed: true,
+			Effort:    13,
 		},
 
 		// Not Started / Upcoming Tasks (future dates)
@@ -458,6 +537,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "docs@example.com",
 			URL:       "https://docs.example.com/api",
 			Thumbnail: "https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?w=800&q=80",
+			Phone:     "+1 (415) 555-0113",
+			Duration:  3600, // 1 hour (just started)
+			Barcode:   "TASK-2024-013",
+			Completed: false,
+			Effort:    8,
 		},
 		{
 			Name:      "Security Audit & Penetration Testing",
@@ -473,6 +557,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "security@example.com",
 			URL:       "https://owasp.org/Top10",
 			Thumbnail: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=800&q=80",
+			Phone:     "+1 (415) 555-0114",
+			Duration:  0,
+			Barcode:   "TASK-2024-014",
+			Completed: false,
+			Effort:    21,
 		},
 		{
 			Name:      "User Preferences Dashboard",
@@ -488,6 +577,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "product@example.com",
 			URL:       "https://linear.app/example/issue/ENG-234",
 			Thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+			Phone:     "+1 (415) 555-0115",
+			Duration:  1800, // 30 minutes
+			Barcode:   "TASK-2024-015",
+			Completed: false,
+			Effort:    13,
 		},
 		{
 			Name:      "API Rate Limiting Implementation",
@@ -503,6 +597,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "api@example.com",
 			URL:       "https://redis.io/topics/rate-limiting",
 			Thumbnail: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
+			Phone:     "+1 (415) 555-0116",
+			Duration:  0,
+			Barcode:   "TASK-2024-016",
+			Completed: false,
+			Effort:    8,
 		},
 		{
 			Name:      "Dependency Security Updates",
@@ -518,6 +617,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "devops@example.com",
 			URL:       "https://snyk.io/dashboard",
 			Thumbnail: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&q=80",
+			Phone:     "+1 (415) 555-0117",
+			Duration:  0,
+			Barcode:   "TASK-2024-017",
+			Completed: false,
+			Effort:    3,
 		},
 		{
 			Name:      "Unit Test Coverage Push to 80%",
@@ -533,6 +637,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "qa@example.com",
 			URL:       "https://codecov.io/gh/example",
 			Thumbnail: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80",
+			Phone:     "+1 (415) 555-0118",
+			Duration:  900, // 15 minutes
+			Barcode:   "TASK-2024-018",
+			Completed: false,
+			Effort:    8,
 		},
 		{
 			Name:      "Analytics Dashboard Implementation",
@@ -548,6 +657,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "analytics@example.com",
 			URL:       "https://mixpanel.com",
 			Thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+			Phone:     "+1 (415) 555-0119",
+			Duration:  0,
+			Barcode:   "TASK-2024-019",
+			Completed: false,
+			Effort:    21,
 		},
 		{
 			Name:      "Mobile App Beta Launch",
@@ -563,6 +677,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "mobile@example.com",
 			URL:       "https://testflight.apple.com",
 			Thumbnail: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&q=80",
+			Phone:     "+1 (415) 555-0120",
+			Duration:  0,
+			Barcode:   "TASK-2024-020",
+			Completed: false,
+			Effort:    34,
 		},
 		{
 			Name:      "Internationalization (i18n) Support",
@@ -578,6 +697,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "i18n@example.com",
 			URL:       "https://crowdin.com",
 			Thumbnail: "https://images.unsplash.com/photo-1516321497487-e288fb19713f?w=800&q=80",
+			Phone:     "+1 (415) 555-0121",
+			Duration:  0,
+			Barcode:   "TASK-2024-021",
+			Completed: false,
+			Effort:    21,
 		},
 		{
 			Name:      "Payment System Integration",
@@ -593,6 +717,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "billing@example.com",
 			URL:       "https://stripe.com/docs",
 			Thumbnail: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&q=80",
+			Phone:     "+1 (415) 555-0122",
+			Duration:  0,
+			Barcode:   "TASK-2024-022",
+			Completed: false,
+			Effort:    21,
 		},
 		{
 			Name:      "Video Tutorial Series",
@@ -608,6 +737,11 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Email:     "content@example.com",
 			URL:       "https://www.youtube.com",
 			Thumbnail: "https://images.unsplash.com/photo-1492619375914-88005aa9e8fb?w=800&q=80",
+			Phone:     "+1 (415) 555-0123",
+			Duration:  0,
+			Barcode:   "TASK-2024-023",
+			Completed: false,
+			Effort:    34,
 		},
 	}
 
@@ -667,6 +801,23 @@ func runSeed(cmd *cobra.Command, args []string) error {
 				},
 			}
 		}
+		// New field types
+		if phoneField != nil && task.Phone != "" {
+			cells[phoneField.ID] = task.Phone
+		}
+		if durationField != nil && task.Duration > 0 {
+			cells[durationField.ID] = task.Duration
+		}
+		if barcodeField != nil && task.Barcode != "" {
+			cells[barcodeField.ID] = task.Barcode
+		}
+		if completedField != nil {
+			cells[completedField.ID] = task.Completed
+		}
+		if effortField != nil && task.Effort > 0 {
+			cells[effortField.ID] = task.Effort
+		}
+		// Button field is computed, no value needed
 
 		recordsData = append(recordsData, cells)
 	}
@@ -904,7 +1055,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		"Users", fmt.Sprintf("%d users (alice, bob, charlie)", userCount),
 		"Password", "password123",
 		"Base", "Project Tracker",
-		"Tables", fmt.Sprintf("Tasks (%d records, 16 fields with images), Projects (6 records, 10 fields)", recordCount),
+		"Tables", fmt.Sprintf("Tasks (%d records, 20 fields showcasing all types), Projects (6 records, 10 fields)", recordCount),
 		"Views", fmt.Sprintf("%d views (Grid, Kanban x2, Calendar, Gallery, Timeline, Form, List)", viewCount),
 	)
 	Blank()

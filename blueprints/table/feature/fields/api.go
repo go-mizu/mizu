@@ -15,10 +15,11 @@ var (
 	ErrInvalidType   = errors.New("invalid field type")
 )
 
-// Field types
+// Field types - Airtable compatible
 const (
 	TypeSingleLineText    = "single_line_text"
 	TypeLongText          = "long_text"
+	TypeRichText          = "rich_text"
 	TypeNumber            = "number"
 	TypeCurrency          = "currency"
 	TypePercent           = "percent"

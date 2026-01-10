@@ -1,8 +1,9 @@
-// Field types
+// Field types - Airtable compatible
 export type FieldType =
   | 'text'
   | 'single_line_text'
   | 'long_text'
+  | 'rich_text'
   | 'number'
   | 'currency'
   | 'percent'
@@ -151,6 +152,17 @@ export interface FieldOptions {
   linked_field_id?: string;
   rollup_field_id?: string;
   aggregation?: string;
+
+  // Duration options
+  duration_format?: 'h:mm' | 'h:mm:ss';
+
+  // Barcode options
+  barcode_type?: 'CODE128' | 'CODE39' | 'QR' | 'EAN13' | 'UPC';
+
+  // Button options
+  label?: string;
+  url?: string;
+  // color is already defined above for checkbox, reused for button
 }
 
 // Select option
