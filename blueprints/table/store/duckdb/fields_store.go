@@ -52,7 +52,7 @@ func (s *FieldsStore) Create(ctx context.Context, field *fields.Field) error {
 // GetByID retrieves a field by ID.
 func (s *FieldsStore) GetByID(ctx context.Context, id string) (*fields.Field, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, table_id, name, type, description, options, position, is_primary, is_computed, is_hidden, width, created_by, created_at, updated_at
+		SELECT id, table_id, name, type, description, CAST(options AS VARCHAR), position, is_primary, is_computed, is_hidden, width, created_by, created_at, updated_at
 		FROM fields WHERE id = $1
 	`, id)
 	return s.scanField(row)
@@ -88,7 +88,7 @@ func (s *FieldsStore) Delete(ctx context.Context, id string) error {
 // ListByTable lists all fields in a table.
 func (s *FieldsStore) ListByTable(ctx context.Context, tableID string) ([]*fields.Field, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, table_id, name, type, description, options, position, is_primary, is_computed, is_hidden, width, created_by, created_at, updated_at
+		SELECT id, table_id, name, type, description, CAST(options AS VARCHAR), position, is_primary, is_computed, is_hidden, width, created_by, created_at, updated_at
 		FROM fields WHERE table_id = $1
 		ORDER BY position ASC
 	`, tableID)

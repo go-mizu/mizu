@@ -100,6 +100,35 @@ func createTestField(t *testing.T, store *duckdb.Store, tbl *tables.Table, name,
 	return field
 }
 
+func createTestRecord(t *testing.T, store *duckdb.Store, tbl *tables.Table, user *users.User, cells map[string]any) *records.Record {
+	t.Helper()
+	rec := &records.Record{
+		ID:        ulid.New(),
+		TableID:   tbl.ID,
+		Cells:     cells,
+		CreatedBy: user.ID,
+	}
+	if err := store.Records().Create(context.Background(), rec); err != nil {
+		t.Fatalf("failed to create record: %v", err)
+	}
+	return rec
+}
+
+func createTestView(t *testing.T, store *duckdb.Store, tbl *tables.Table, user *users.User, name string) *views.View {
+	t.Helper()
+	view := &views.View{
+		ID:        ulid.New(),
+		TableID:   tbl.ID,
+		Name:      name,
+		Type:      views.TypeGrid,
+		CreatedBy: user.ID,
+	}
+	if err := store.Views().Create(context.Background(), view); err != nil {
+		t.Fatalf("failed to create view: %v", err)
+	}
+	return view
+}
+
 // TestUsersStore tests user CRUD operations.
 func TestUsersStore(t *testing.T) {
 	store := setupTestStore(t)

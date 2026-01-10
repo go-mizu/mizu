@@ -22,7 +22,7 @@ func NewWebhooksStore(db *sql.DB) *WebhooksStore {
 // Create creates a new webhook.
 func (s *WebhooksStore) Create(ctx context.Context, webhook *webhooks.Webhook) error {
 	webhook.CreatedAt = time.Now()
-	if webhook.IsActive {
+	if !webhook.IsActive {
 		webhook.IsActive = true
 	}
 
