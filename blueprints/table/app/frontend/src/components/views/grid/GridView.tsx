@@ -67,7 +67,7 @@ export function GridView() {
   const [showSummaryBar, setShowSummaryBar] = useState(true);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [rowHeight, setRowHeight] = useState<RowHeightKey>('short');
-  const [frozenColumnCount, setFrozenColumnCount] = useState(1);
+  const [frozenColumnCount, setFrozenColumnCount] = useState(0);
   const [cellRange, setCellRange] = useState<CellRange | null>(null);
   const [rowColorFieldId, setRowColorFieldId] = useState<string | null>(null);
   const [summaryConfig, setSummaryConfig] = useState<Record<string, SummaryFunction>>({});
