@@ -237,8 +237,8 @@ export interface Sort {
 // Group
 export interface Group {
   field_id: string;
-  order?: 'asc' | 'desc';
-  collapsed?: string[];
+  direction?: 'asc' | 'desc';
+  collapsed?: boolean;
 }
 
 // Field config (per view)
@@ -246,6 +246,7 @@ export interface FieldConfig {
   field_id: string;
   visible: boolean;
   width?: number;
+  position?: number;
 }
 
 // View settings
@@ -254,6 +255,9 @@ export interface ViewSettings {
   row_height?: 'short' | 'medium' | 'tall' | 'extra_tall';
   frozen_columns?: number;
   show_row_numbers?: boolean;
+  header_height?: number;
+  row_color_field_id?: string;
+  summary_functions?: Record<string, string>;
 
   // Kanban
   card_size?: 'small' | 'medium' | 'large';

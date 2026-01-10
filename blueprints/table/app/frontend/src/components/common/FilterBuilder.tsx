@@ -76,9 +76,9 @@ const needsValue = (operator: string): boolean => {
 };
 
 export function FilterBuilder({ onClose }: FilterBuilderProps) {
-  const { fields, filters, setFilters } = useBaseStore();
+  const { fields, filters, filterConjunction, setFilters } = useBaseStore();
   const [localFilters, setLocalFilters] = useState<Filter[]>(filters.length > 0 ? [...filters] : []);
-  const [conjunction, setConjunction] = useState<'and' | 'or'>('and');
+  const [conjunction, setConjunction] = useState<'and' | 'or'>(filterConjunction);
 
   const filterableFields = fields.filter(f => !['formula', 'rollup', 'count', 'lookup'].includes(f.type));
 

@@ -316,6 +316,41 @@ export const viewsApi = {
       body: JSON.stringify({ view_ids: viewIds }),
     });
   },
+
+  async setFilters(id: string, filters: View['filters']): Promise<{ view: View }> {
+    return apiFetch(`/views/${id}/filters`, {
+      method: 'PATCH',
+      body: JSON.stringify({ filters }),
+    });
+  },
+
+  async setSorts(id: string, sorts: View['sorts']): Promise<{ view: View }> {
+    return apiFetch(`/views/${id}/sorts`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sorts }),
+    });
+  },
+
+  async setGroups(id: string, groups: View['groups']): Promise<{ view: View }> {
+    return apiFetch(`/views/${id}/groups`, {
+      method: 'PATCH',
+      body: JSON.stringify({ groups }),
+    });
+  },
+
+  async setFieldConfig(id: string, fieldConfig: View['field_config']): Promise<{ view: View }> {
+    return apiFetch(`/views/${id}/field-config`, {
+      method: 'PATCH',
+      body: JSON.stringify({ field_config: fieldConfig }),
+    });
+  },
+
+  async setConfig(id: string, config: View['config']): Promise<{ view: View }> {
+    return apiFetch(`/views/${id}/config`, {
+      method: 'PATCH',
+      body: JSON.stringify({ config }),
+    });
+  },
 };
 
 // Comments API
