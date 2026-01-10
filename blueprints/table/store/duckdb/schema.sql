@@ -1,369 +1,279 @@
--- schema.sql
--- Table Blueprint - Airtable-style database schema (DuckDB oriented)
+-- Table Store Schema for DuckDB
 
--- ============================================================
--- Users and authentication
--- ============================================================
-
+-- Users
 CREATE TABLE IF NOT EXISTS users (
-    id            VARCHAR PRIMARY KEY,
-    email         VARCHAR UNIQUE NOT NULL,
-    name          VARCHAR NOT NULL,
-    avatar_url    VARCHAR,
+    id VARCHAR PRIMARY KEY,
+    email VARCHAR UNIQUE NOT NULL,
+    name VARCHAR NOT NULL,
     password_hash VARCHAR NOT NULL,
-    settings      JSON DEFAULT '{}',
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-    id         VARCHAR PRIMARY KEY,
-    user_id    VARCHAR NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Workspaces (organizations)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS workspaces (
-    id         VARCHAR PRIMARY KEY,
-    name       VARCHAR NOT NULL,
-    slug       VARCHAR UNIQUE NOT NULL,
-    icon       VARCHAR,
-    plan       VARCHAR DEFAULT 'free',
-    settings   JSON DEFAULT '{}',
-    owner_id   VARCHAR NOT NULL,
+    avatar_url VARCHAR,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS workspace_members (
-    id           VARCHAR PRIMARY KEY,
-    workspace_id VARCHAR NOT NULL,
-    user_id      VARCHAR NOT NULL,
-    role         VARCHAR NOT NULL DEFAULT 'member',
-    joined_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    invited_by   VARCHAR,
-    UNIQUE(workspace_id, user_id)
-);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
 
--- ============================================================
--- Bases (projects/databases)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS bases (
-    id           VARCHAR PRIMARY KEY,
-    workspace_id VARCHAR NOT NULL,
-    name         VARCHAR NOT NULL,
-    description  VARCHAR,
-    icon         VARCHAR,
-    color        VARCHAR DEFAULT '#2D7FF9',
-    settings     JSON DEFAULT '{}',
-    is_template  BOOLEAN DEFAULT FALSE,
-    created_by   VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Tables
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS tables (
-    id               VARCHAR PRIMARY KEY,
-    base_id          VARCHAR NOT NULL,
-    name             VARCHAR NOT NULL,
-    description      VARCHAR,
-    icon             VARCHAR,
-    position         INTEGER DEFAULT 0,
-    primary_field_id VARCHAR,
-    settings         JSON DEFAULT '{}',
-    created_by       VARCHAR NOT NULL,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Fields (columns)
--- ============================================================
--- Types: text, long_text, number, currency, percent, single_select,
---        multi_select, date, checkbox, rating, duration, phone, email,
---        url, attachment, user, created_time, modified_time, created_by,
---        modified_by, autonumber, barcode, formula, rollup, count, lookup, link
-
-CREATE TABLE IF NOT EXISTS fields (
-    id           VARCHAR PRIMARY KEY,
-    table_id     VARCHAR NOT NULL,
-    name         VARCHAR NOT NULL,
-    type         VARCHAR NOT NULL,
-    description  VARCHAR,
-    options      JSON DEFAULT '{}',
-    position     INTEGER DEFAULT 0,
-    is_primary   BOOLEAN DEFAULT FALSE,
-    is_computed  BOOLEAN DEFAULT FALSE,
-    is_hidden    BOOLEAN DEFAULT FALSE,
-    width        INTEGER DEFAULT 200,
-    created_by   VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Select options (for single/multi-select fields)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS select_options (
-    id       VARCHAR PRIMARY KEY,
-    field_id VARCHAR NOT NULL,
-    name     VARCHAR NOT NULL,
-    color    VARCHAR NOT NULL DEFAULT '#CFDFFF',
-    position INTEGER DEFAULT 0
-);
-
--- ============================================================
--- Records (rows)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS records (
-    id           VARCHAR PRIMARY KEY,
-    table_id     VARCHAR NOT NULL,
-    position     BIGINT DEFAULT 0,
-    created_by   VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_by   VARCHAR NOT NULL,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Cell values (sparse storage - only non-empty cells)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS cell_values (
-    id           VARCHAR PRIMARY KEY,
-    record_id    VARCHAR NOT NULL,
-    field_id     VARCHAR NOT NULL,
-    value        JSON,
-    text_value   VARCHAR,     -- For text search indexing
-    number_value DOUBLE,      -- For numeric sorting/filtering
-    date_value   TIMESTAMP,   -- For date operations
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(record_id, field_id)
-);
-
--- ============================================================
--- Linked records (relationships between records)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS linked_records (
-    id               VARCHAR PRIMARY KEY,
-    field_id         VARCHAR NOT NULL,
-    source_record_id VARCHAR NOT NULL,
-    target_record_id VARCHAR NOT NULL,
-    position         INTEGER DEFAULT 0,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(field_id, source_record_id, target_record_id)
-);
-
--- ============================================================
--- Attachments
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS attachments (
-    id            VARCHAR PRIMARY KEY,
-    record_id     VARCHAR NOT NULL,
-    field_id      VARCHAR NOT NULL,
-    filename      VARCHAR NOT NULL,
-    size          BIGINT NOT NULL,
-    mime_type     VARCHAR NOT NULL,
-    url           VARCHAR NOT NULL,
-    thumbnail_url VARCHAR,
-    width         INTEGER,
-    height        INTEGER,
-    position      INTEGER DEFAULT 0,
-    uploaded_by   VARCHAR NOT NULL,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Views
--- ============================================================
--- Types: grid, kanban, calendar, gallery, form, timeline, list
-
-CREATE TABLE IF NOT EXISTS views (
-    id           VARCHAR PRIMARY KEY,
-    table_id     VARCHAR NOT NULL,
-    name         VARCHAR NOT NULL,
-    type         VARCHAR NOT NULL DEFAULT 'grid',
-    filters      JSON DEFAULT '[]',
-    sorts        JSON DEFAULT '[]',
-    groups       JSON DEFAULT '[]',
-    field_config JSON DEFAULT '[]',
-    settings     JSON DEFAULT '{}',
-    position     INTEGER DEFAULT 0,
-    is_default   BOOLEAN DEFAULT FALSE,
-    is_locked    BOOLEAN DEFAULT FALSE,
-    created_by   VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Comments
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS comments (
-    id           VARCHAR PRIMARY KEY,
-    record_id    VARCHAR NOT NULL,
-    parent_id    VARCHAR,
-    author_id    VARCHAR NOT NULL,
-    content      JSON NOT NULL,
-    is_resolved  BOOLEAN DEFAULT FALSE,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Sharing
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS shares (
-    id           VARCHAR PRIMARY KEY,
-    base_id      VARCHAR NOT NULL,
-    type         VARCHAR NOT NULL,            -- invite, public_link
-    permission   VARCHAR NOT NULL DEFAULT 'read',
-    user_id      VARCHAR,
-    email        VARCHAR,
-    token        VARCHAR UNIQUE,
-    password     VARCHAR,
-    expires_at   TIMESTAMP,
-    created_by   VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Activity log
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS activities (
-    id           VARCHAR PRIMARY KEY,
-    base_id      VARCHAR NOT NULL,
-    table_id     VARCHAR,
-    record_id    VARCHAR,
-    field_id     VARCHAR,
-    actor_id     VARCHAR NOT NULL,
-    action       VARCHAR NOT NULL,
-    old_value    JSON,
-    new_value    JSON,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- Notifications
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS notifications (
-    id         VARCHAR PRIMARY KEY,
-    user_id    VARCHAR NOT NULL,
-    type       VARCHAR NOT NULL,
-    title      VARCHAR NOT NULL,
-    body       VARCHAR,
-    base_id    VARCHAR,
-    record_id  VARCHAR,
-    actor_id   VARCHAR,
-    is_read    BOOLEAN DEFAULT FALSE,
+-- Sessions
+CREATE TABLE IF NOT EXISTS sessions (
+    id VARCHAR PRIMARY KEY,
+    user_id VARCHAR NOT NULL,
+    token VARCHAR UNIQUE NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- Favorites
--- ============================================================
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
-CREATE TABLE IF NOT EXISTS favorites (
-    id           VARCHAR PRIMARY KEY,
-    user_id      VARCHAR NOT NULL,
-    base_id      VARCHAR NOT NULL,
-    workspace_id VARCHAR NOT NULL,
-    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, base_id)
+-- Workspaces
+CREATE TABLE IF NOT EXISTS workspaces (
+    id VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    slug VARCHAR UNIQUE NOT NULL,
+    icon VARCHAR,
+    plan VARCHAR DEFAULT 'free',
+    owner_id VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- Indexes
--- ============================================================
+CREATE INDEX IF NOT EXISTS idx_workspaces_slug ON workspaces(slug);
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);
 
-CREATE INDEX IF NOT EXISTS idx_sessions_user_expires
-    ON sessions(user_id, expires_at);
+-- Workspace members
+CREATE TABLE IF NOT EXISTS workspace_members (
+    id VARCHAR PRIMARY KEY,
+    workspace_id VARCHAR NOT NULL,
+    user_id VARCHAR NOT NULL,
+    role VARCHAR NOT NULL DEFAULT 'member',
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workspace_id, user_id)
+);
 
-CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace
-    ON workspace_members(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace ON workspace_members(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_workspace_members_user
-    ON workspace_members(user_id);
+-- Bases
+CREATE TABLE IF NOT EXISTS bases (
+    id VARCHAR PRIMARY KEY,
+    workspace_id VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    icon VARCHAR,
+    color VARCHAR DEFAULT '#2563EB',
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_bases_workspace
-    ON bases(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_bases_workspace ON bases(workspace_id);
 
-CREATE INDEX IF NOT EXISTS idx_tables_base_position
-    ON tables(base_id, position);
+-- Tables
+CREATE TABLE IF NOT EXISTS tables (
+    id VARCHAR PRIMARY KEY,
+    base_id VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    description TEXT,
+    icon VARCHAR,
+    position INTEGER DEFAULT 0,
+    primary_field_id VARCHAR,
+    auto_number_seq BIGINT DEFAULT 0,
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_fields_table_position
-    ON fields(table_id, position);
+CREATE INDEX IF NOT EXISTS idx_tables_base ON tables(base_id);
 
-CREATE INDEX IF NOT EXISTS idx_select_options_field
-    ON select_options(field_id, position);
+-- Fields (columns)
+CREATE TABLE IF NOT EXISTS fields (
+    id VARCHAR PRIMARY KEY,
+    table_id VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    type VARCHAR NOT NULL,
+    description TEXT,
+    options JSON,
+    position INTEGER DEFAULT 0,
+    is_primary BOOLEAN DEFAULT FALSE,
+    is_computed BOOLEAN DEFAULT FALSE,
+    is_hidden BOOLEAN DEFAULT FALSE,
+    width INTEGER DEFAULT 200,
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_records_table_position
-    ON records(table_id, position);
+CREATE INDEX IF NOT EXISTS idx_fields_table ON fields(table_id);
+CREATE INDEX IF NOT EXISTS idx_fields_position ON fields(table_id, position);
 
-CREATE INDEX IF NOT EXISTS idx_cell_values_record
-    ON cell_values(record_id);
+-- Select choices (for single_select and multi_select fields)
+CREATE TABLE IF NOT EXISTS select_choices (
+    id VARCHAR PRIMARY KEY,
+    field_id VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    color VARCHAR DEFAULT '#6B7280',
+    position INTEGER DEFAULT 0
+);
 
-CREATE INDEX IF NOT EXISTS idx_cell_values_field
-    ON cell_values(field_id);
+CREATE INDEX IF NOT EXISTS idx_select_choices_field ON select_choices(field_id);
 
-CREATE INDEX IF NOT EXISTS idx_cell_values_text
-    ON cell_values(text_value);
+-- Records (rows with JSON cells - optimized storage)
+CREATE TABLE IF NOT EXISTS records (
+    id VARCHAR PRIMARY KEY,
+    table_id VARCHAR NOT NULL,
+    cells JSON NOT NULL DEFAULT '{}',
+    position INTEGER DEFAULT 0,
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR
+);
 
-CREATE INDEX IF NOT EXISTS idx_cell_values_number
-    ON cell_values(number_value);
+CREATE INDEX IF NOT EXISTS idx_records_table ON records(table_id);
+CREATE INDEX IF NOT EXISTS idx_records_position ON records(table_id, position);
+CREATE INDEX IF NOT EXISTS idx_records_created ON records(table_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_cell_values_date
-    ON cell_values(date_value);
+-- Views
+CREATE TABLE IF NOT EXISTS views (
+    id VARCHAR PRIMARY KEY,
+    table_id VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    type VARCHAR NOT NULL DEFAULT 'grid',
+    config JSON,
+    filters JSON DEFAULT '[]',
+    sorts JSON DEFAULT '[]',
+    groups JSON DEFAULT '[]',
+    field_config JSON DEFAULT '[]',
+    position INTEGER DEFAULT 0,
+    is_default BOOLEAN DEFAULT FALSE,
+    is_locked BOOLEAN DEFAULT FALSE,
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_linked_records_source
-    ON linked_records(source_record_id);
+CREATE INDEX IF NOT EXISTS idx_views_table ON views(table_id);
 
-CREATE INDEX IF NOT EXISTS idx_linked_records_target
-    ON linked_records(target_record_id);
+-- Operations log (for history, undo/redo, and time-travel)
+CREATE TABLE IF NOT EXISTS operations (
+    id VARCHAR PRIMARY KEY,
+    table_id VARCHAR,
+    record_id VARCHAR,
+    field_id VARCHAR,
+    view_id VARCHAR,
+    op_type VARCHAR NOT NULL,
+    old_value JSON,
+    new_value JSON,
+    user_id VARCHAR NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_linked_records_field
-    ON linked_records(field_id);
+CREATE INDEX IF NOT EXISTS idx_operations_table ON operations(table_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_operations_record ON operations(record_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_operations_user ON operations(user_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_operations_time ON operations(timestamp DESC);
 
-CREATE INDEX IF NOT EXISTS idx_attachments_record_field
-    ON attachments(record_id, field_id);
+-- Snapshots (for efficient time-travel queries)
+CREATE TABLE IF NOT EXISTS snapshots (
+    id VARCHAR PRIMARY KEY,
+    table_id VARCHAR NOT NULL,
+    data BLOB,
+    op_cursor VARCHAR,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_views_table_position
-    ON views(table_id, position);
+CREATE INDEX IF NOT EXISTS idx_snapshots_table ON snapshots(table_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_comments_record
-    ON comments(record_id);
+-- Shares
+CREATE TABLE IF NOT EXISTS shares (
+    id VARCHAR PRIMARY KEY,
+    base_id VARCHAR NOT NULL,
+    table_id VARCHAR,
+    view_id VARCHAR,
+    type VARCHAR NOT NULL,
+    permission VARCHAR NOT NULL DEFAULT 'read',
+    user_id VARCHAR,
+    email VARCHAR,
+    token VARCHAR UNIQUE,
+    expires_at TIMESTAMP,
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_shares_base
-    ON shares(base_id);
+CREATE INDEX IF NOT EXISTS idx_shares_base ON shares(base_id);
+CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(token);
+CREATE INDEX IF NOT EXISTS idx_shares_user ON shares(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_shares_token
-    ON shares(token);
+-- Attachments
+CREATE TABLE IF NOT EXISTS attachments (
+    id VARCHAR PRIMARY KEY,
+    record_id VARCHAR NOT NULL,
+    field_id VARCHAR NOT NULL,
+    filename VARCHAR NOT NULL,
+    size BIGINT NOT NULL,
+    mime_type VARCHAR NOT NULL,
+    url VARCHAR NOT NULL,
+    thumbnail_url VARCHAR,
+    width INTEGER,
+    height INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_activities_base_time
-    ON activities(base_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_attachments_record ON attachments(record_id, field_id);
 
-CREATE INDEX IF NOT EXISTS idx_activities_record
-    ON activities(record_id);
+-- Comments
+CREATE TABLE IF NOT EXISTS comments (
+    id VARCHAR PRIMARY KEY,
+    record_id VARCHAR NOT NULL,
+    parent_id VARCHAR,
+    user_id VARCHAR NOT NULL,
+    content TEXT NOT NULL,
+    is_resolved BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-CREATE INDEX IF NOT EXISTS idx_notifications_user_read
-    ON notifications(user_id, is_read, created_at);
+CREATE INDEX IF NOT EXISTS idx_comments_record ON comments(record_id);
+CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id);
 
-CREATE INDEX IF NOT EXISTS idx_favorites_user
-    ON favorites(user_id);
+-- Webhooks
+CREATE TABLE IF NOT EXISTS webhooks (
+    id VARCHAR PRIMARY KEY,
+    base_id VARCHAR NOT NULL,
+    table_id VARCHAR,
+    url VARCHAR NOT NULL,
+    events JSON NOT NULL,
+    secret VARCHAR,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by VARCHAR NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhooks_base ON webhooks(base_id);
+CREATE INDEX IF NOT EXISTS idx_webhooks_table ON webhooks(table_id);
+
+-- Webhook deliveries
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id VARCHAR PRIMARY KEY,
+    webhook_id VARCHAR NOT NULL,
+    event VARCHAR NOT NULL,
+    payload TEXT NOT NULL,
+    status_code INTEGER,
+    response TEXT,
+    duration_ms INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries(webhook_id, created_at DESC);
+
+-- Linked record relationships (for efficient bi-directional lookup)
+CREATE TABLE IF NOT EXISTS record_links (
+    id VARCHAR PRIMARY KEY,
+    source_record_id VARCHAR NOT NULL,
+    source_field_id VARCHAR NOT NULL,
+    target_record_id VARCHAR NOT NULL,
+    position INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_record_links_source ON record_links(source_record_id, source_field_id);
+CREATE INDEX IF NOT EXISTS idx_record_links_target ON record_links(target_record_id);
