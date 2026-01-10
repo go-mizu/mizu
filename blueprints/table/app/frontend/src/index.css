@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #f5f5f5;
+}
+
+/* Select option colors */
+.select-color-blue { background-color: #CFDFFF; color: #1D4ED8; }
+.select-color-cyan { background-color: #D0F0FD; color: #0891B2; }
+.select-color-teal { background-color: #C2F5E9; color: #0D9488; }
+.select-color-green { background-color: #D1F7C4; color: #16A34A; }
+.select-color-yellow { background-color: #FEE2A8; color: #CA8A04; }
+.select-color-orange { background-color: #FFDCE5; color: #EA580C; }
+.select-color-pink { background-color: #FFD1E5; color: #DB2777; }
+.select-color-purple { background-color: #EDE2FE; color: #7C3AED; }
+.select-color-gray { background-color: #E0E0E0; color: #525252; }
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Grid styles */
+.grid-cell {
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  background: white;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-cell:focus-within {
+  outline: 2px solid #2D7FF9;
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+.grid-header-cell {
+  background: #f9fafb;
+  font-weight: 500;
+  color: #374151;
+  user-select: none;
+}
+
+.grid-row-number {
+  background: #f9fafb;
+  color: #9ca3af;
+  font-size: 12px;
+  justify-content: center;
+  min-width: 50px;
+}
+
+/* Button styles */
+.btn {
+  @apply px-4 py-2 rounded-md font-medium transition-colors duration-150;
+}
+
+.btn-primary {
+  @apply bg-primary text-white hover:bg-primary-600;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-700 hover:bg-gray-200;
+}
+
+.btn-danger {
+  @apply bg-danger text-white hover:bg-red-600;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+}
+
+/* Dropdown menu */
+.dropdown-menu {
+  @apply absolute bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] z-50;
+}
+
+.dropdown-item {
+  @apply px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer flex items-center gap-2;
+}
+
+.dropdown-item-danger {
+  @apply text-danger hover:bg-red-50;
+}
+
+/* Modal styles */
+.modal-overlay {
+  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+}
+
+.modal-content {
+  @apply bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto;
+}
+
+.modal-header {
+  @apply px-6 py-4 border-b border-gray-200 flex items-center justify-between;
+}
+
+.modal-body {
+  @apply px-6 py-4;
+}
+
+.modal-footer {
+  @apply px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute bg-gray-900 text-white text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap;
+}
+
+/* Animation */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.15s ease-out;
+}
+
+/* Kanban styles */
+.kanban-column {
+  @apply bg-gray-100 rounded-lg p-3 min-w-[280px] max-w-[280px];
+}
+
+.kanban-card {
+  @apply bg-white rounded-lg p-3 shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow;
+}
+
+/* Calendar styles */
+.calendar-event {
+  @apply rounded px-2 py-1 text-xs truncate cursor-pointer;
+}
+
+/* Timeline styles */
+.timeline-bar {
+  @apply absolute h-6 rounded cursor-pointer;
+}
+
+/* Gallery styles */
+.gallery-card {
+  @apply bg-white rounded-lg overflow-hidden shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer;
+}
+
+.gallery-card-image {
+  @apply w-full h-40 object-cover bg-gray-100;
+}
