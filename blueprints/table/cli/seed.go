@@ -1045,6 +1045,305 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		Step("", "Projects table ready", time.Since(sectionStart))
 	}
 
+	// Create Team Members table
+	teamStart := time.Now()
+	stepStart = time.Now()
+	fmt.Printf("  Creating table 'Team Members'... ")
+	teamTable, err := srv.TableService().Create(ctx, ownerUserID, tables.CreateIn{
+		BaseID: base.ID,
+		Name:   "Team Members",
+	})
+	if err != nil {
+		fmt.Printf("✗ %v\n", err)
+	} else {
+		fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+
+		// Create team member fields
+		fmt.Print("  Creating team fields...\n")
+		teamNameField := createFieldForTable(srv, ctx, teamTable.ID, "Name", "single_line_text", nil, ownerUserID)
+		teamEmailField := createFieldForTable(srv, ctx, teamTable.ID, "Email", "email", nil, ownerUserID)
+		teamRoleField := createFieldForTable(srv, ctx, teamTable.ID, "Role", "single_select", map[string]any{
+			"choices": []map[string]any{
+				{"id": "role-1", "name": "Engineer", "color": "#3B82F6"},
+				{"id": "role-2", "name": "Designer", "color": "#EC4899"},
+				{"id": "role-3", "name": "Product Manager", "color": "#8B5CF6"},
+				{"id": "role-4", "name": "QA Engineer", "color": "#10B981"},
+				{"id": "role-5", "name": "DevOps", "color": "#F59E0B"},
+				{"id": "role-6", "name": "Team Lead", "color": "#EF4444"},
+			},
+		}, ownerUserID)
+		teamDeptField := createFieldForTable(srv, ctx, teamTable.ID, "Department", "single_select", map[string]any{
+			"choices": []map[string]any{
+				{"id": "dept-1", "name": "Engineering", "color": "#3B82F6"},
+				{"id": "dept-2", "name": "Design", "color": "#EC4899"},
+				{"id": "dept-3", "name": "Product", "color": "#8B5CF6"},
+				{"id": "dept-4", "name": "Marketing", "color": "#F59E0B"},
+			},
+		}, ownerUserID)
+		teamPhoneField := createFieldForTable(srv, ctx, teamTable.ID, "Phone", "phone", nil, ownerUserID)
+		teamStartField := createFieldForTable(srv, ctx, teamTable.ID, "Start Date", "date", nil, ownerUserID)
+		teamSkillsField := createFieldForTable(srv, ctx, teamTable.ID, "Skills", "multi_select", map[string]any{
+			"choices": []map[string]any{
+				{"id": "skill-1", "name": "React", "color": "#61DAFB"},
+				{"id": "skill-2", "name": "Go", "color": "#00ADD8"},
+				{"id": "skill-3", "name": "Python", "color": "#3776AB"},
+				{"id": "skill-4", "name": "TypeScript", "color": "#3178C6"},
+				{"id": "skill-5", "name": "Figma", "color": "#F24E1E"},
+				{"id": "skill-6", "name": "SQL", "color": "#336791"},
+				{"id": "skill-7", "name": "Docker", "color": "#2496ED"},
+				{"id": "skill-8", "name": "AWS", "color": "#FF9900"},
+			},
+		}, ownerUserID)
+		teamActiveField := createFieldForTable(srv, ctx, teamTable.ID, "Active", "checkbox", nil, ownerUserID)
+		teamAvatarField := createFieldForTable(srv, ctx, teamTable.ID, "Avatar", "attachment", nil, ownerUserID)
+		teamSalaryField := createFieldForTable(srv, ctx, teamTable.ID, "Salary", "currency", map[string]any{
+			"currency_symbol": "$",
+			"precision":       0,
+		}, ownerUserID)
+
+		// Team member data
+		teamMembers := []struct {
+			Name       string
+			Email      string
+			Role       string
+			Dept       string
+			Phone      string
+			StartDays  int
+			Skills     []string
+			Active     bool
+			Avatar     string
+			Salary     float64
+		}{
+			{"Alice Johnson", "alice@example.com", "role-6", "dept-1", "+1 (415) 555-1001", -730, []string{"skill-1", "skill-4", "skill-7"}, true, "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200", 145000},
+			{"Bob Smith", "bob@example.com", "role-1", "dept-1", "+1 (415) 555-1002", -365, []string{"skill-2", "skill-6", "skill-8"}, true, "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200", 125000},
+			{"Charlie Brown", "charlie@example.com", "role-2", "dept-2", "+1 (415) 555-1003", -180, []string{"skill-5"}, true, "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200", 115000},
+			{"Diana Martinez", "diana@example.com", "role-1", "dept-1", "+1 (415) 555-1004", -90, []string{"skill-1", "skill-3", "skill-4"}, true, "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200", 120000},
+			{"Edward Kim", "edward@example.com", "role-3", "dept-3", "+1 (415) 555-1005", -540, []string{}, true, "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200", 140000},
+			{"Fiona Chen", "fiona@example.com", "role-4", "dept-1", "+1 (415) 555-1006", -270, []string{"skill-3", "skill-6"}, true, "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200", 105000},
+			{"George Wilson", "george@example.com", "role-5", "dept-1", "+1 (415) 555-1007", -450, []string{"skill-7", "skill-8"}, true, "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200", 135000},
+			{"Hannah Lee", "hannah@example.com", "role-1", "dept-1", "+1 (415) 555-1008", -60, []string{"skill-1", "skill-2", "skill-4"}, true, "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200", 110000},
+		}
+
+		var teamRecords []map[string]any
+		for _, tm := range teamMembers {
+			fmt.Printf("    • %s\n", tm.Name)
+			cells := make(map[string]any)
+			if teamNameField != nil {
+				cells[teamNameField.ID] = tm.Name
+			}
+			if teamEmailField != nil {
+				cells[teamEmailField.ID] = tm.Email
+			}
+			if teamRoleField != nil {
+				cells[teamRoleField.ID] = tm.Role
+			}
+			if teamDeptField != nil {
+				cells[teamDeptField.ID] = tm.Dept
+			}
+			if teamPhoneField != nil {
+				cells[teamPhoneField.ID] = tm.Phone
+			}
+			if teamStartField != nil {
+				cells[teamStartField.ID] = time.Now().AddDate(0, 0, tm.StartDays).Format("2006-01-02")
+			}
+			if teamSkillsField != nil && len(tm.Skills) > 0 {
+				cells[teamSkillsField.ID] = tm.Skills
+			}
+			if teamActiveField != nil {
+				cells[teamActiveField.ID] = tm.Active
+			}
+			if teamAvatarField != nil && tm.Avatar != "" {
+				cells[teamAvatarField.ID] = []map[string]any{
+					{
+						"id":        fmt.Sprintf("avatar-%s", tm.Email),
+						"filename":  "avatar.jpg",
+						"url":       tm.Avatar,
+						"mime_type": "image/jpeg",
+						"size":      10000,
+					},
+				}
+			}
+			if teamSalaryField != nil {
+				cells[teamSalaryField.ID] = tm.Salary
+			}
+			teamRecords = append(teamRecords, cells)
+		}
+
+		stepStart = time.Now()
+		fmt.Printf("  Inserting %d team member records... ", len(teamRecords))
+		if _, err := srv.RecordService().CreateBatch(ctx, teamTable.ID, teamRecords, ownerUserID); err != nil {
+			fmt.Printf("✗ %v\n", err)
+		} else {
+			fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+		}
+
+		// Create team views
+		teamViewTypes := []struct {
+			Name   string
+			Type   string
+			Config map[string]any
+		}{
+			{"All Members", "grid", nil},
+			{"By Role", "kanban", map[string]any{"groupBy": teamRoleField.ID}},
+			{"By Department", "kanban", map[string]any{"groupBy": teamDeptField.ID}},
+			{"Team Gallery", "gallery", map[string]any{"cover_field_id": teamAvatarField.ID}},
+		}
+
+		for _, vt := range teamViewTypes {
+			view, err := srv.ViewService().Create(ctx, ownerUserID, views.CreateIn{
+				TableID: teamTable.ID,
+				Name:    vt.Name,
+				Type:    vt.Type,
+			})
+			if err == nil && vt.Config != nil && view != nil {
+				srv.ViewService().SetConfig(ctx, view.ID, vt.Config)
+			}
+		}
+		Step("", "Team Members table ready", time.Since(teamStart))
+	}
+
+	// Create Clients table
+	clientStart := time.Now()
+	stepStart = time.Now()
+	fmt.Printf("  Creating table 'Clients'... ")
+	clientTable, err := srv.TableService().Create(ctx, ownerUserID, tables.CreateIn{
+		BaseID: base.ID,
+		Name:   "Clients",
+	})
+	if err != nil {
+		fmt.Printf("✗ %v\n", err)
+	} else {
+		fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+
+		// Create client fields
+		fmt.Print("  Creating client fields...\n")
+		clientNameField := createFieldForTable(srv, ctx, clientTable.ID, "Company", "single_line_text", nil, ownerUserID)
+		clientContactField := createFieldForTable(srv, ctx, clientTable.ID, "Contact Name", "single_line_text", nil, ownerUserID)
+		clientEmailField := createFieldForTable(srv, ctx, clientTable.ID, "Email", "email", nil, ownerUserID)
+		clientPhoneField := createFieldForTable(srv, ctx, clientTable.ID, "Phone", "phone", nil, ownerUserID)
+		clientWebsiteField := createFieldForTable(srv, ctx, clientTable.ID, "Website", "url", nil, ownerUserID)
+		clientStatusField := createFieldForTable(srv, ctx, clientTable.ID, "Status", "single_select", map[string]any{
+			"choices": []map[string]any{
+				{"id": "cstat-1", "name": "Lead", "color": "#6B7280"},
+				{"id": "cstat-2", "name": "Prospect", "color": "#F59E0B"},
+				{"id": "cstat-3", "name": "Active", "color": "#10B981"},
+				{"id": "cstat-4", "name": "Churned", "color": "#EF4444"},
+			},
+		}, ownerUserID)
+		clientContractField := createFieldForTable(srv, ctx, clientTable.ID, "Contract Value", "currency", map[string]any{
+			"currency_symbol": "$",
+			"precision":       0,
+		}, ownerUserID)
+		clientRenewalField := createFieldForTable(srv, ctx, clientTable.ID, "Renewal Date", "date", nil, ownerUserID)
+		clientNotesField := createFieldForTable(srv, ctx, clientTable.ID, "Notes", "long_text", nil, ownerUserID)
+		clientLogoField := createFieldForTable(srv, ctx, clientTable.ID, "Logo", "attachment", nil, ownerUserID)
+		clientSatisfactionField := createFieldForTable(srv, ctx, clientTable.ID, "Satisfaction", "rating", map[string]any{"max": 5}, ownerUserID)
+
+		// Client data
+		clients := []struct {
+			Company      string
+			Contact      string
+			Email        string
+			Phone        string
+			Website      string
+			Status       string
+			Contract     float64
+			RenewalDays  int
+			Notes        string
+			Logo         string
+			Satisfaction int
+		}{
+			{"Acme Corporation", "John Davis", "john@acme.com", "+1 (800) 555-2001", "https://acme.example.com", "cstat-3", 250000, 90, "Enterprise client since 2021. Very engaged with product roadmap.", "https://logo.clearbit.com/acme.com", 5},
+			{"TechStart Inc", "Sarah Miller", "sarah@techstart.io", "+1 (800) 555-2002", "https://techstart.io", "cstat-3", 75000, 180, "Fast-growing startup. Interested in advanced features.", "https://logo.clearbit.com/stripe.com", 4},
+			{"Global Industries", "Michael Brown", "m.brown@global.com", "+1 (800) 555-2003", "https://global-ind.example.com", "cstat-2", 500000, 45, "Large enterprise prospect. Currently in pilot phase.", "https://logo.clearbit.com/ibm.com", 3},
+			{"Creative Agency Co", "Emily White", "emily@creative.co", "+1 (800) 555-2004", "https://creative.co", "cstat-3", 45000, 270, "Design agency with multiple teams using the product.", "https://logo.clearbit.com/figma.com", 5},
+			{"DataFlow Systems", "Robert Johnson", "robert@dataflow.io", "+1 (800) 555-2005", "https://dataflow.io", "cstat-3", 120000, 120, "Data analytics company. Heavy API usage.", "https://logo.clearbit.com/snowflake.com", 4},
+			{"Retail Plus", "Lisa Anderson", "lisa@retailplus.com", "+1 (800) 555-2006", "https://retailplus.com", "cstat-4", 80000, -30, "Churned due to budget cuts. Keep in touch for Q2.", "https://logo.clearbit.com/shopify.com", 2},
+			{"Healthcare Solutions", "David Wilson", "david@healthsol.org", "+1 (800) 555-2007", "https://healthsol.org", "cstat-1", 0, 0, "New lead from conference. Schedule demo for next week.", "https://logo.clearbit.com/epic.com", 0},
+			{"EduTech Learning", "Jennifer Taylor", "j.taylor@edutech.edu", "+1 (800) 555-2008", "https://edutech.edu", "cstat-2", 150000, 60, "Education sector prospect. RFP submitted.", "https://logo.clearbit.com/coursera.org", 3},
+		}
+
+		var clientRecords []map[string]any
+		for _, c := range clients {
+			fmt.Printf("    • %s\n", c.Company)
+			cells := make(map[string]any)
+			if clientNameField != nil {
+				cells[clientNameField.ID] = c.Company
+			}
+			if clientContactField != nil {
+				cells[clientContactField.ID] = c.Contact
+			}
+			if clientEmailField != nil {
+				cells[clientEmailField.ID] = c.Email
+			}
+			if clientPhoneField != nil {
+				cells[clientPhoneField.ID] = c.Phone
+			}
+			if clientWebsiteField != nil {
+				cells[clientWebsiteField.ID] = c.Website
+			}
+			if clientStatusField != nil {
+				cells[clientStatusField.ID] = c.Status
+			}
+			if clientContractField != nil && c.Contract > 0 {
+				cells[clientContractField.ID] = c.Contract
+			}
+			if clientRenewalField != nil && c.RenewalDays != 0 {
+				cells[clientRenewalField.ID] = time.Now().AddDate(0, 0, c.RenewalDays).Format("2006-01-02")
+			}
+			if clientNotesField != nil {
+				cells[clientNotesField.ID] = c.Notes
+			}
+			if clientLogoField != nil && c.Logo != "" {
+				cells[clientLogoField.ID] = []map[string]any{
+					{
+						"id":        fmt.Sprintf("logo-%s", c.Company),
+						"filename":  "logo.png",
+						"url":       c.Logo,
+						"mime_type": "image/png",
+						"size":      5000,
+					},
+				}
+			}
+			if clientSatisfactionField != nil && c.Satisfaction > 0 {
+				cells[clientSatisfactionField.ID] = c.Satisfaction
+			}
+			clientRecords = append(clientRecords, cells)
+		}
+
+		stepStart = time.Now()
+		fmt.Printf("  Inserting %d client records... ", len(clientRecords))
+		if _, err := srv.RecordService().CreateBatch(ctx, clientTable.ID, clientRecords, ownerUserID); err != nil {
+			fmt.Printf("✗ %v\n", err)
+		} else {
+			fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+		}
+
+		// Create client views
+		clientViewTypes := []struct {
+			Name   string
+			Type   string
+			Config map[string]any
+		}{
+			{"All Clients", "grid", nil},
+			{"Pipeline", "kanban", map[string]any{"groupBy": clientStatusField.ID}},
+			{"Client Gallery", "gallery", map[string]any{"cover_field_id": clientLogoField.ID}},
+			{"Renewals", "calendar", map[string]any{"dateField": clientRenewalField.ID}},
+		}
+
+		for _, vt := range clientViewTypes {
+			view, err := srv.ViewService().Create(ctx, ownerUserID, views.CreateIn{
+				TableID: clientTable.ID,
+				Name:    vt.Name,
+				Type:    vt.Type,
+			})
+			if err == nil && vt.Config != nil && view != nil {
+				srv.ViewService().SetConfig(ctx, view.ID, vt.Config)
+			}
+		}
+		Step("", "Clients table ready", time.Since(clientStart))
+	}
+
 	Blank()
 	Step("", "Database seeded", time.Since(totalStart))
 	Blank()
@@ -1055,8 +1354,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		"Users", fmt.Sprintf("%d users (alice, bob, charlie)", userCount),
 		"Password", "password123",
 		"Base", "Project Tracker",
-		"Tables", fmt.Sprintf("Tasks (%d records, 20 fields showcasing all types), Projects (6 records, 10 fields)", recordCount),
-		"Views", fmt.Sprintf("%d views (Grid, Kanban x2, Calendar, Gallery, Timeline, Form, List)", viewCount),
+		"Tables", fmt.Sprintf("Tasks (%d records), Projects (6), Team Members (8), Clients (8)", recordCount),
+		"Views", fmt.Sprintf("%d+ views across all tables (Grid, Kanban, Calendar, Gallery, Timeline, Form, List)", viewCount),
 	)
 	Blank()
 	Hint("Start server: table serve")
