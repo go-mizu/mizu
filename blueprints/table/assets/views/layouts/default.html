@@ -1,0 +1,16 @@
+{{define "default"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}Table{{end}}</title>
+    <link rel="stylesheet" href="/static/dist/css/main.css">
+    {{block "head" .}}{{end}}
+</head>
+<body class="min-h-screen bg-gray-50">
+    {{block "content" .}}{{end}}
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}

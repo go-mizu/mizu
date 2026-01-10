@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useBaseStore } from '../../stores/baseStore';
 import type { ViewType } from '../../types';
+import { FilterBuilder } from '../common/FilterBuilder';
+import { SortBuilder } from '../common/SortBuilder';
+import { GroupBuilder } from '../common/GroupBuilder';
 
 const VIEW_TYPES: { type: ViewType; label: string; icon: string }[] = [
   { type: 'grid', label: 'Grid', icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z' },
@@ -9,14 +12,40 @@ const VIEW_TYPES: { type: ViewType; label: string; icon: string }[] = [
   { type: 'gallery', label: 'Gallery', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
   { type: 'timeline', label: 'Timeline', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { type: 'form', label: 'Form', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { type: 'list', label: 'List', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
 ];
 
 export function ViewToolbar() {
-  const { views, currentView, selectView, createView } = useBaseStore();
+  const { views, currentView, selectView, createView, filters, sorts, groupBy } = useBaseStore();
   const [showViewMenu, setShowViewMenu] = useState(false);
   const [showNewView, setShowNewView] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const [showSort, setShowSort] = useState(false);
+  const [showGroup, setShowGroup] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [newViewType, setNewViewType] = useState<ViewType>('grid');
+
+  const filterRef = useRef<HTMLDivElement>(null);
+  const sortRef = useRef<HTMLDivElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setShowFilter(false);
+      }
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
+        setShowSort(false);
+      }
+      if (groupRef.current && !groupRef.current.contains(e.target as Node)) {
+        setShowGroup(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleCreateView = async () => {
     if (!newViewName.trim()) return;
@@ -28,6 +57,9 @@ export function ViewToolbar() {
   };
 
   const currentViewType = VIEW_TYPES.find(v => v.type === currentView?.type);
+  const hasFilters = filters.length > 0;
+  const hasSorts = sorts.length > 0;
+  const hasGroup = groupBy !== null;
 
   return (
     <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3">
@@ -93,28 +125,86 @@ export function ViewToolbar() {
       <div className="flex-1" />
 
       {/* Filter button */}
-      <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md flex items-center gap-1">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-        </svg>
-        Filter
-      </button>
+      <div className="relative" ref={filterRef}>
+        <button
+          onClick={() => setShowFilter(!showFilter)}
+          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 ${
+            hasFilters
+              ? 'bg-primary-50 text-primary-700'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          Filter
+          {hasFilters && (
+            <span className="ml-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {filters.length}
+            </span>
+          )}
+        </button>
+
+        {showFilter && (
+          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+            <FilterBuilder onClose={() => setShowFilter(false)} />
+          </div>
+        )}
+      </div>
 
       {/* Sort button */}
-      <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md flex items-center gap-1">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-        </svg>
-        Sort
-      </button>
+      <div className="relative" ref={sortRef}>
+        <button
+          onClick={() => setShowSort(!showSort)}
+          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 ${
+            hasSorts
+              ? 'bg-primary-50 text-primary-700'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+          </svg>
+          Sort
+          {hasSorts && (
+            <span className="ml-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+              {sorts.length}
+            </span>
+          )}
+        </button>
+
+        {showSort && (
+          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+            <SortBuilder onClose={() => setShowSort(false)} />
+          </div>
+        )}
+      </div>
 
       {/* Group button */}
-      <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-md flex items-center gap-1">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-        </svg>
-        Group
-      </button>
+      <div className="relative" ref={groupRef}>
+        <button
+          onClick={() => setShowGroup(!showGroup)}
+          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 ${
+            hasGroup
+              ? 'bg-primary-50 text-primary-700'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          Group
+          {hasGroup && (
+            <span className="ml-1 w-2 h-2 rounded-full bg-primary" />
+          )}
+        </button>
+
+        {showGroup && (
+          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+            <GroupBuilder onClose={() => setShowGroup(false)} />
+          </div>
+        )}
+      </div>
 
       {/* New view modal */}
       {showNewView && (

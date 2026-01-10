@@ -47,7 +47,7 @@ backend-dev: ## Start backend dev server
 install-deps: frontend-install backend-install ## Install all dependencies
 
 .PHONY: build
-build: frontend-build ## Build table binary (includes frontend build)
+build: frontend-build backend-build ## Build table binary (includes frontend build)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) .
 	@echo "Built: $(BINARY) ($(VERSION))"

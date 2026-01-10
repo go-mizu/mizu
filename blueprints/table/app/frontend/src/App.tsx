@@ -10,6 +10,9 @@ import { GridView } from './components/views/grid/GridView';
 import { KanbanView } from './components/views/kanban/KanbanView';
 import { CalendarView } from './components/views/calendar/CalendarView';
 import { GalleryView } from './components/views/gallery/GalleryView';
+import { TimelineView } from './components/views/timeline/TimelineView';
+import { FormView } from './components/views/form/FormView';
+import { ListView } from './components/views/list/ListView';
 
 function App() {
   const { isAuthenticated, isLoading: authLoading, checkAuth } = useAuthStore();
@@ -77,11 +80,11 @@ function App() {
       case 'gallery':
         return <GalleryView />;
       case 'timeline':
-        return <div className="p-4 text-gray-500">Timeline view coming soon...</div>;
+        return <TimelineView />;
       case 'form':
-        return <div className="p-4 text-gray-500">Form view coming soon...</div>;
+        return <FormView />;
       case 'list':
-        return <div className="p-4 text-gray-500">List view coming soon...</div>;
+        return <ListView />;
       default:
         return <GridView />;
     }
