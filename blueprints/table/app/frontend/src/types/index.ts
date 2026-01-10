@@ -1,6 +1,7 @@
 // Field types
 export type FieldType =
   | 'text'
+  | 'single_line_text'
   | 'long_text'
   | 'number'
   | 'currency'
@@ -17,6 +18,7 @@ export type FieldType =
   | 'url'
   | 'attachment'
   | 'user'
+  | 'collaborator'
   | 'created_time'
   | 'last_modified_time'
   | 'created_by'
@@ -249,6 +251,35 @@ export interface FieldConfig {
   position?: number;
 }
 
+// Form field condition for conditional visibility
+export interface FormFieldCondition {
+  field_id: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'is_empty' | 'is_not_empty';
+  value: unknown;
+}
+
+// Form field configuration (per-field settings in form view)
+export interface FormFieldConfig {
+  field_id: string;
+  visible: boolean;
+  required: boolean;
+  help_text?: string;
+  default_value?: unknown;
+  placeholder?: string;
+  position: number;
+  conditions?: FormFieldCondition[];
+  section_id?: string;
+}
+
+// Form section for organizing fields
+export interface FormSection {
+  id: string;
+  title: string;
+  description?: string;
+  position: number;
+  collapsed?: boolean;
+}
+
 // View settings
 export interface ViewSettings {
   // Grid
@@ -291,12 +322,25 @@ export interface ViewSettings {
   fit_to_window?: boolean;
   collapsed_groups?: string[];      // IDs of collapsed swimlanes
 
-  // Form
+  // Form - Comprehensive Airtable-compatible settings
   title?: string;
   description?: string;
   submit_button_text?: string;
+  success_message?: string;
   show_branding?: boolean;
   redirect_url?: string;
+  cover_image_url?: string;
+  logo_url?: string;
+  theme_color?: string;
+  is_public?: boolean;
+  require_password?: boolean;
+  form_password?: string;
+  submission_limit?: number;
+  close_date?: string;
+  allow_multiple_submissions?: boolean;
+  notify_emails?: string[];
+  form_field_configs?: FormFieldConfig[];
+  form_sections?: FormSection[];
 }
 
 // Comment

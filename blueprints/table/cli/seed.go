@@ -271,7 +271,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Tags:      []string{"tag-1", "tag-3"},
 			Email:     "design@example.com",
 			URL:       "https://figma.com/file/hero-design",
-			Thumbnail: "https://images.unsplash.com/photo-1561070791-2526d30994b5?w=800&q=80",
+			Thumbnail: "https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?w=800&q=80",
 		},
 		{
 			Name:      "Landing Page A/B Testing",
@@ -286,7 +286,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Tags:      []string{"tag-1", "tag-5"},
 			Email:     "growth@example.com",
 			URL:       "https://optimizely.com",
-			Thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80",
+			Thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
 		},
 		{
 			Name:      "Database Schema Migration v2",
@@ -301,7 +301,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Tags:      []string{"tag-2"},
 			Email:     "database@example.com",
 			URL:       "https://dbdiagram.io/d/schema-v2",
-			Thumbnail: "https://images.unsplash.com/photo-1544383835-bda2bc66a55d?w=800&q=80",
+			Thumbnail: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&q=80",
 		},
 		{
 			Name:      "Performance Optimization - Initial Load",
@@ -694,9 +694,20 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		{"By Status", "kanban", map[string]any{"groupBy": statusField.ID}},
 		{"By Priority", "kanban", map[string]any{"groupBy": priorityField.ID}},
 		{"Calendar", "calendar", map[string]any{"dateField": dueDateField.ID}},
-		{"Gallery", "gallery", nil},
+		{"Gallery", "gallery", map[string]any{"cover_field_id": thumbnailField.ID}},
 		{"Timeline", "timeline", map[string]any{"dateField": startDateField.ID, "endDateField": dueDateField.ID}},
-		{"Submit Task", "form", map[string]any{"title": "Submit a New Task", "description": "Use this form to submit a new task."}},
+		{"Submit Task", "form", map[string]any{
+			"title":                       "Submit a New Task",
+			"description":                 "Use this form to submit a new task to the project tracker. All submissions will be reviewed by the team.",
+			"submit_button_text":          "Submit Task",
+			"success_message":             "Thank you for your submission! Your task has been added to the tracker and will be reviewed shortly.",
+			"theme_color":                 "#2563eb",
+			"cover_image_url":             "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1200&q=80",
+			"show_branding":               true,
+			"allow_multiple_submissions":  true,
+			"is_public":                   true,
+		}},
+		{"Task List", "list", nil},
 	}
 
 	viewCount := 0
@@ -704,7 +715,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		stepStart = time.Now()
 		fmt.Printf("    • %s (%s)... ", vt.Name, vt.Type)
 
-		_, err := srv.ViewService().Create(ctx, ownerUserID, views.CreateIn{
+		view, err := srv.ViewService().Create(ctx, ownerUserID, views.CreateIn{
 			TableID: table.ID,
 			Name:    vt.Name,
 			Type:    vt.Type,
@@ -712,6 +723,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			fmt.Printf("✗ %v\n", err)
 		} else {
+			// Set view config if provided
+			if vt.Config != nil && view != nil {
+				srv.ViewService().SetConfig(ctx, view.ID, vt.Config)
+			}
 			viewCount++
 			fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
 		}
@@ -890,7 +905,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		"Password", "password123",
 		"Base", "Project Tracker",
 		"Tables", fmt.Sprintf("Tasks (%d records, 16 fields with images), Projects (6 records, 10 fields)", recordCount),
-		"Views", fmt.Sprintf("%d views (Grid, Kanban x2, Calendar, Gallery, Timeline, Form)", viewCount),
+		"Views", fmt.Sprintf("%d views (Grid, Kanban x2, Calendar, Gallery, Timeline, Form, List)", viewCount),
 	)
 	Blank()
 	Hint("Start server: table serve")
