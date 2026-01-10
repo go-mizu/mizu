@@ -38,25 +38,29 @@ export function RecordModal({ record, onClose }: RecordModalProps) {
 
     switch (field.type) {
       case 'text':
+      case 'single_line_text':
       case 'email':
       case 'url':
       case 'phone':
         return (
           <input
-            type={field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : 'text'}
+            type={field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : field.type === 'phone' ? 'tel' : 'text'}
             value={(value as string) || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
             className="input"
+            placeholder={field.type === 'email' ? 'email@example.com' : field.type === 'url' ? 'https://' : field.type === 'phone' ? '+1 (555) 000-0000' : ''}
           />
         );
 
       case 'long_text':
+      case 'rich_text':
         return (
           <textarea
             value={(value as string) || ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
             className="input min-h-[100px]"
             rows={4}
+            placeholder={field.type === 'rich_text' ? 'Supports markdown formatting...' : ''}
           />
         );
 
@@ -157,6 +161,126 @@ export function RecordModal({ record, onClose }: RecordModalProps) {
                 </svg>
               </button>
             ))}
+          </div>
+        );
+
+      case 'duration':
+        const durationSeconds = (value as number) || 0;
+        const hours = Math.floor(durationSeconds / 3600);
+        const minutes = Math.floor((durationSeconds % 3600) / 60);
+        return (
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <input
+                type="number"
+                min="0"
+                value={hours || ''}
+                onChange={(e) => {
+                  const h = parseInt(e.target.value) || 0;
+                  handleFieldChange(field.id, h * 3600 + minutes * 60);
+                }}
+                className="input"
+                placeholder="0"
+              />
+              <span className="text-xs text-gray-500 mt-1 block">Hours</span>
+            </div>
+            <div className="flex-1">
+              <input
+                type="number"
+                min="0"
+                max="59"
+                value={minutes || ''}
+                onChange={(e) => {
+                  const m = parseInt(e.target.value) || 0;
+                  handleFieldChange(field.id, hours * 3600 + m * 60);
+                }}
+                className="input"
+                placeholder="0"
+              />
+              <span className="text-xs text-gray-500 mt-1 block">Minutes</span>
+            </div>
+          </div>
+        );
+
+      case 'barcode':
+        return (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={(value as string) || ''}
+              onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
+              className="input font-mono"
+              placeholder="Enter barcode value..."
+            />
+            {value && (
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h2M4 12h2m10 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span className="font-mono text-sm">{value as string}</span>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'button':
+        const buttonUrl = field.options?.url;
+        const buttonLabel = field.options?.label || field.name || 'Click';
+        const buttonColor = field.options?.color || '#2563eb';
+        return (
+          <div className="py-2">
+            <button
+              type="button"
+              onClick={() => buttonUrl && window.open(buttonUrl, '_blank', 'noopener,noreferrer')}
+              className="px-4 py-2 rounded-lg text-white font-medium transition-opacity hover:opacity-80"
+              style={{ backgroundColor: buttonColor }}
+            >
+              {buttonLabel}
+            </button>
+            {buttonUrl && (
+              <p className="text-xs text-gray-500 mt-2">Opens: {buttonUrl}</p>
+            )}
+          </div>
+        );
+
+      case 'attachment':
+        const attachments = (value as { id?: string; filename?: string; url: string; mime_type?: string; size?: number }[]) || [];
+        return (
+          <div className="space-y-3">
+            {attachments.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {attachments.map((att, idx) => (
+                  <div key={att.id || idx} className="relative group">
+                    {att.mime_type?.startsWith('image/') || att.url?.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
+                      <img
+                        src={att.url}
+                        alt={att.filename || 'attachment'}
+                        className="w-full h-24 object-cover rounded-lg border border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-full h-24 bg-slate-100 rounded-lg border border-slate-200 flex flex-col items-center justify-center">
+                        <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="text-xs text-slate-500 mt-1 truncate max-w-full px-1">{att.filename}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        const remaining = attachments.filter((_, i) => i !== idx);
+                        handleFieldChange(field.id, remaining.length > 0 ? remaining as unknown as CellValue : null);
+                      }}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="text-sm text-gray-500 italic">
+              {attachments.length === 0 ? 'No attachments' : `${attachments.length} file(s)`}
+            </div>
           </div>
         );
 

@@ -117,7 +117,7 @@ func (s *Service) ListSelectChoices(ctx context.Context, fieldID string) ([]*Sel
 
 func isValidType(t string) bool {
 	switch t {
-	case TypeSingleLineText, TypeLongText, TypeNumber, TypeCurrency, TypePercent,
+	case TypeSingleLineText, TypeLongText, TypeRichText, TypeNumber, TypeCurrency, TypePercent,
 		TypeDuration, TypeRating, TypeSingleSelect, TypeMultiSelect, TypeCheckbox,
 		TypeDate, TypeDateTime, TypeCreatedTime, TypeLastModifiedTime,
 		TypeLink, TypeLookup, TypeRollup, TypeCount,
@@ -126,7 +126,7 @@ func isValidType(t string) bool {
 		TypeEmail, TypeURL, TypePhone:
 		return true
 	// Also accept frontend naming conventions
-	case "text", "user":
+	case "text", "user", "datetime", "autonumber":
 		return true
 	}
 	return false
