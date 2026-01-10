@@ -22,10 +22,15 @@ func NewSharesStore(db *sql.DB) *SharesStore {
 func (s *SharesStore) Create(ctx context.Context, share *shares.Share) error {
 	share.CreatedAt = time.Now()
 
+	var token *string
+	if share.Token != "" {
+		token = &share.Token
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO shares (id, base_id, table_id, view_id, type, permission, user_id, email, token, expires_at, created_by, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-	`, share.ID, share.BaseID, share.TableID, share.ViewID, share.Type, share.Permission, share.UserID, share.Email, share.Token, share.ExpiresAt, share.CreatedBy, share.CreatedAt)
+	`, share.ID, share.BaseID, share.TableID, share.ViewID, share.Type, share.Permission, share.UserID, share.Email, token, share.ExpiresAt, share.CreatedBy, share.CreatedAt)
 	return err
 }
 

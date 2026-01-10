@@ -15,9 +15,9 @@ func TestFieldsStoreBehaviors(t *testing.T) {
 	user := createTestUser(t, store)
 	ws := createTestWorkspace(t, store, user)
 	base := createTestBase(t, store, ws, user)
-	tbl := createTestTable(t, store, base, user)
 
 	t.Run("Defaults and GetByID", func(t *testing.T) {
+		tbl := createTestTable(t, store, base, user)
 		options := json.RawMessage(`{"precision":2}`)
 		field := &fields.Field{
 			ID:        ulid.New(),
@@ -45,6 +45,7 @@ func TestFieldsStoreBehaviors(t *testing.T) {
 	})
 
 	t.Run("Reorder updates positions", func(t *testing.T) {
+		tbl := createTestTable(t, store, base, user)
 		f1 := createTestField(t, store, tbl, "One", fields.TypeSingleLineText, user)
 		f2 := createTestField(t, store, tbl, "Two", fields.TypeSingleLineText, user)
 		f3 := createTestField(t, store, tbl, "Three", fields.TypeSingleLineText, user)
@@ -66,6 +67,7 @@ func TestFieldsStoreBehaviors(t *testing.T) {
 	})
 
 	t.Run("Select choices lifecycle", func(t *testing.T) {
+		tbl := createTestTable(t, store, base, user)
 		field := createTestField(t, store, tbl, "Status", fields.TypeSingleSelect, user)
 
 		if err := store.Fields().AddSelectChoice(ctx, &fields.SelectChoice{

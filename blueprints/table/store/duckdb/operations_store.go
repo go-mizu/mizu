@@ -55,7 +55,8 @@ func (s *OperationsStore) CreateBatch(ctx context.Context, ops []*operations.Ope
 // GetByID retrieves an operation by ID.
 func (s *OperationsStore) GetByID(ctx context.Context, id string) (*operations.Operation, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, table_id, record_id, field_id, view_id, op_type, old_value, new_value, user_id, timestamp
+		SELECT id, table_id, record_id, field_id, view_id, op_type,
+			CAST(old_value AS VARCHAR), CAST(new_value AS VARCHAR), user_id, timestamp
 		FROM operations WHERE id = $1
 	`, id)
 	return s.scanOperation(row)
@@ -68,7 +69,8 @@ func (s *OperationsStore) ListByTable(ctx context.Context, tableID string, opts 
 	}
 
 	query := `
-		SELECT id, table_id, record_id, field_id, view_id, op_type, old_value, new_value, user_id, timestamp
+		SELECT id, table_id, record_id, field_id, view_id, op_type,
+			CAST(old_value AS VARCHAR), CAST(new_value AS VARCHAR), user_id, timestamp
 		FROM operations WHERE table_id = $1
 	`
 	args := []any{tableID}
@@ -101,7 +103,8 @@ func (s *OperationsStore) ListByRecord(ctx context.Context, recordID string, opt
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, table_id, record_id, field_id, view_id, op_type, old_value, new_value, user_id, timestamp
+		SELECT id, table_id, record_id, field_id, view_id, op_type,
+			CAST(old_value AS VARCHAR), CAST(new_value AS VARCHAR), user_id, timestamp
 		FROM operations WHERE record_id = $1
 		ORDER BY timestamp DESC
 		LIMIT $2
@@ -121,7 +124,8 @@ func (s *OperationsStore) ListByUser(ctx context.Context, userID string, opts op
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, table_id, record_id, field_id, view_id, op_type, old_value, new_value, user_id, timestamp
+		SELECT id, table_id, record_id, field_id, view_id, op_type,
+			CAST(old_value AS VARCHAR), CAST(new_value AS VARCHAR), user_id, timestamp
 		FROM operations WHERE user_id = $1
 		ORDER BY timestamp DESC
 		LIMIT $2

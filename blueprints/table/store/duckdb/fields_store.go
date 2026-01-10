@@ -80,6 +80,9 @@ func (s *FieldsStore) Update(ctx context.Context, field *fields.Field) error {
 func (s *FieldsStore) Delete(ctx context.Context, id string) error {
 	// Delete select choices
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM select_choices WHERE field_id = $1`, id)
+	// Delete attachments and record links tied to the field
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM attachments WHERE field_id = $1`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM record_links WHERE source_field_id = $1`, id)
 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM fields WHERE id = $1`, id)
 	return err

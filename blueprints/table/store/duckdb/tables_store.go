@@ -61,9 +61,36 @@ func (s *TablesStore) Update(ctx context.Context, tbl *tables.Table) error {
 
 // Delete deletes a table and all related data.
 func (s *TablesStore) Delete(ctx context.Context, id string) error {
-	// Delete related data
+	// Delete related data in dependency order
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM record_links
+		WHERE source_record_id IN (SELECT id FROM records WHERE table_id = $1)
+		   OR target_record_id IN (SELECT id FROM records WHERE table_id = $1)
+		   OR source_field_id IN (SELECT id FROM fields WHERE table_id = $1)
+	`, id)
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM comments
+		WHERE record_id IN (SELECT id FROM records WHERE table_id = $1)
+	`, id)
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM attachments
+		WHERE record_id IN (SELECT id FROM records WHERE table_id = $1)
+		   OR field_id IN (SELECT id FROM fields WHERE table_id = $1)
+	`, id)
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM operations
+		WHERE table_id = $1
+		   OR record_id IN (SELECT id FROM records WHERE table_id = $1)
+		   OR field_id IN (SELECT id FROM fields WHERE table_id = $1)
+		   OR view_id IN (SELECT id FROM views WHERE table_id = $1)
+	`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM snapshots WHERE table_id = $1`, id)
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM views WHERE table_id = $1`, id)
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM records WHERE table_id = $1`, id)
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM select_choices
+		WHERE field_id IN (SELECT id FROM fields WHERE table_id = $1)
+	`, id)
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM fields WHERE table_id = $1`, id)
 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM tables WHERE id = $1`, id)
