@@ -221,8 +221,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 	// Additional field types
 	createField("Completed", "checkbox", nil)
 	createField("Effort (pts)", "number", nil)
-	createField("Confidence", "rating", map[string]any{"max": 5})
-	createField("Tags", "multi_select", map[string]any{
+	ratingField := createField("Confidence", "rating", map[string]any{"max": 5})
+	tagsField := createField("Tags", "multi_select", map[string]any{
 		"choices": []map[string]any{
 			{"id": "tag-1", "name": "Frontend", "color": "#3B82F6"},
 			{"id": "tag-2", "name": "Backend", "color": "#10B981"},
@@ -232,13 +232,14 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			{"id": "tag-6", "name": "Docs", "color": "#F59E0B"},
 		},
 	})
-	createField("Budget", "currency", nil)
-	createField("Progress", "percent", nil)
-	createField("Contact Email", "email", nil)
-	createField("Reference URL", "url", nil)
+	budgetField := createField("Budget", "currency", nil)
+	progressField := createField("Progress", "percent", nil)
+	emailField := createField("Contact Email", "email", nil)
+	urlField := createField("Reference URL", "url", nil)
+	thumbnailField := createField("Thumbnail", "attachment", nil)
 	Step("", "Fields ready", time.Since(sectionStart))
 
-	// Create sample records
+	// Create sample records with realistic data
 	sectionStart = time.Now()
 	fmt.Print("  Preparing records...\n")
 	tasks := []struct {
@@ -248,19 +249,254 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		StartDays int
 		DueDays   int
 		Notes     string
+		Progress  int
+		Budget    float64
+		Rating    int
+		Tags      []string
+		Email     string
+		URL       string
+		Thumbnail string
 	}{
-		{"Design new landing page", "status-2", "priority-3", -5, 3, "Create mockups in Figma"},
-		{"Write documentation", "status-1", "priority-2", 0, 7, "Focus on API docs"},
-		{"Fix login bug", "status-4", "priority-3", -10, -2, "Issue was in session handling"},
-		{"Review pull requests", "status-3", "priority-2", -1, 1, "3 PRs pending review"},
-		{"Update dependencies", "status-1", "priority-1", 7, 14, "Check for security updates"},
-		{"Implement user settings", "status-1", "priority-2", 3, 10, "Add theme toggle and preferences"},
-		{"Performance optimization", "status-2", "priority-4", -3, 5, "Focus on initial load time"},
-		{"Write unit tests", "status-1", "priority-2", 7, 14, "Target 80% coverage"},
-		{"Database migration", "status-2", "priority-3", -2, 4, "Migrate to new schema"},
-		{"API rate limiting", "status-1", "priority-2", 5, 12, "Implement throttling"},
-		{"Mobile responsive fixes", "status-3", "priority-2", -4, 2, "Fix breakpoints"},
-		{"Security audit", "status-1", "priority-4", 1, 8, "Run penetration tests"},
+		{
+			Name:      "Redesign Homepage Hero Section",
+			Status:    "status-2",
+			Priority:  "priority-3",
+			StartDays: -5,
+			DueDays:   3,
+			Notes:     "Create a modern, eye-catching hero section with animated gradient background and clear CTA buttons. Use Figma for mockups.",
+			Progress:  65,
+			Budget:    5000,
+			Rating:    4,
+			Tags:      []string{"tag-1", "tag-3"},
+			Email:     "design@example.com",
+			URL:       "https://figma.com/file/hero-design",
+			Thumbnail: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80",
+		},
+		{
+			Name:      "API Documentation Overhaul",
+			Status:    "status-1",
+			Priority:  "priority-2",
+			StartDays: 0,
+			DueDays:   7,
+			Notes:     "Comprehensive API documentation with interactive examples using OpenAPI/Swagger. Include authentication flows and rate limiting info.",
+			Progress:  15,
+			Budget:    3000,
+			Rating:    3,
+			Tags:      []string{"tag-2", "tag-6"},
+			Email:     "docs@example.com",
+			URL:       "https://docs.example.com/api",
+			Thumbnail: "https://images.unsplash.com/photo-1456406644174-8ddd4cd52a06?w=800&q=80",
+		},
+		{
+			Name:      "Fix Authentication Session Bug",
+			Status:    "status-4",
+			Priority:  "priority-3",
+			StartDays: -10,
+			DueDays:   -2,
+			Notes:     "Critical bug in session handling causing intermittent logouts. Root cause: race condition in token refresh. Fixed with mutex lock.",
+			Progress:  100,
+			Budget:    1500,
+			Rating:    5,
+			Tags:      []string{"tag-2", "tag-4"},
+			Email:     "security@example.com",
+			URL:       "https://github.com/example/issues/142",
+			Thumbnail: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&q=80",
+		},
+		{
+			Name:      "Code Review Sprint - Q1 PRs",
+			Status:    "status-3",
+			Priority:  "priority-2",
+			StartDays: -1,
+			DueDays:   1,
+			Notes:     "Review pending pull requests from the team. Focus on code quality, test coverage, and performance implications. 8 PRs in queue.",
+			Progress:  80,
+			Budget:    0,
+			Rating:    4,
+			Tags:      []string{"tag-1", "tag-2"},
+			Email:     "reviews@example.com",
+			URL:       "https://github.com/example/pulls",
+			Thumbnail: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800&q=80",
+		},
+		{
+			Name:      "Dependency Security Updates",
+			Status:    "status-1",
+			Priority:  "priority-1",
+			StartDays: 7,
+			DueDays:   14,
+			Notes:     "Update all npm packages to latest versions. Run security audit with npm audit and fix vulnerabilities. Update Go modules.",
+			Progress:  0,
+			Budget:    500,
+			Rating:    2,
+			Tags:      []string{"tag-2"},
+			Email:     "devops@example.com",
+			URL:       "https://snyk.io/dashboard",
+			Thumbnail: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&q=80",
+		},
+		{
+			Name:      "User Preferences Dashboard",
+			Status:    "status-1",
+			Priority:  "priority-2",
+			StartDays: 3,
+			DueDays:   10,
+			Notes:     "New settings page with dark/light theme toggle, notification preferences, language selection, and data export options.",
+			Progress:  10,
+			Budget:    8000,
+			Rating:    4,
+			Tags:      []string{"tag-1", "tag-5"},
+			Email:     "product@example.com",
+			URL:       "https://linear.app/example/issue/ENG-234",
+			Thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+		},
+		{
+			Name:      "Performance Optimization - Initial Load",
+			Status:    "status-2",
+			Priority:  "priority-4",
+			StartDays: -3,
+			DueDays:   5,
+			Notes:     "Reduce initial page load time from 4.2s to under 2s. Focus on code splitting, lazy loading, and image optimization.",
+			Progress:  45,
+			Budget:    6000,
+			Rating:    5,
+			Tags:      []string{"tag-1", "tag-2"},
+			Email:     "perf@example.com",
+			URL:       "https://web.dev/performance",
+			Thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80",
+		},
+		{
+			Name:      "Unit Test Coverage Push to 80%",
+			Status:    "status-1",
+			Priority:  "priority-2",
+			StartDays: 7,
+			DueDays:   14,
+			Notes:     "Current coverage at 62%. Need to add tests for auth module, API handlers, and utility functions. Set up coverage reports in CI.",
+			Progress:  5,
+			Budget:    2500,
+			Rating:    3,
+			Tags:      []string{"tag-2"},
+			Email:     "qa@example.com",
+			URL:       "https://codecov.io/gh/example",
+			Thumbnail: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&q=80",
+		},
+		{
+			Name:      "Database Schema Migration v2",
+			Status:    "status-2",
+			Priority:  "priority-3",
+			StartDays: -2,
+			DueDays:   4,
+			Notes:     "Migrate from legacy schema to new normalized structure. Add proper indexes, foreign keys, and update ORM models. Zero downtime migration.",
+			Progress:  70,
+			Budget:    4000,
+			Rating:    4,
+			Tags:      []string{"tag-2"},
+			Email:     "database@example.com",
+			URL:       "https://dbdiagram.io/d/schema-v2",
+			Thumbnail: "https://images.unsplash.com/photo-1544383835-bda2bc66a55d?w=800&q=80",
+		},
+		{
+			Name:      "API Rate Limiting Implementation",
+			Status:    "status-1",
+			Priority:  "priority-2",
+			StartDays: 5,
+			DueDays:   12,
+			Notes:     "Implement sliding window rate limiting with Redis. Configure limits per endpoint and user tier. Add rate limit headers to responses.",
+			Progress:  0,
+			Budget:    3500,
+			Rating:    3,
+			Tags:      []string{"tag-2", "tag-5"},
+			Email:     "api@example.com",
+			URL:       "https://redis.io/topics/rate-limiting",
+			Thumbnail: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80",
+		},
+		{
+			Name:      "Mobile Responsive Breakpoint Fixes",
+			Status:    "status-3",
+			Priority:  "priority-2",
+			StartDays: -4,
+			DueDays:   2,
+			Notes:     "Fix layout issues on tablets (768-1024px). Navigation menu collapse, card grid adjustments, and form input sizing.",
+			Progress:  90,
+			Budget:    2000,
+			Rating:    4,
+			Tags:      []string{"tag-1", "tag-3"},
+			Email:     "mobile@example.com",
+			URL:       "https://responsively.app",
+			Thumbnail: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=800&q=80",
+		},
+		{
+			Name:      "Security Audit & Penetration Testing",
+			Status:    "status-1",
+			Priority:  "priority-4",
+			StartDays: 1,
+			DueDays:   8,
+			Notes:     "Comprehensive security audit including OWASP Top 10 review, dependency scanning, and penetration testing with external vendor.",
+			Progress:  0,
+			Budget:    15000,
+			Rating:    5,
+			Tags:      []string{"tag-2"},
+			Email:     "security@example.com",
+			URL:       "https://owasp.org/Top10",
+			Thumbnail: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=800&q=80",
+		},
+		{
+			Name:      "Customer Onboarding Flow Redesign",
+			Status:    "status-2",
+			Priority:  "priority-3",
+			StartDays: -7,
+			DueDays:   6,
+			Notes:     "Streamline the signup process. Add progress indicator, reduce form fields, implement social login, and create welcome email sequence.",
+			Progress:  55,
+			Budget:    7500,
+			Rating:    4,
+			Tags:      []string{"tag-1", "tag-3", "tag-5"},
+			Email:     "growth@example.com",
+			URL:       "https://hotjar.com/recordings/onboarding",
+			Thumbnail: "https://images.unsplash.com/photo-1553484771-371a605b060b?w=800&q=80",
+		},
+		{
+			Name:      "Analytics Dashboard Implementation",
+			Status:    "status-1",
+			Priority:  "priority-2",
+			StartDays: 10,
+			DueDays:   21,
+			Notes:     "Build real-time analytics dashboard with charts for user engagement, revenue metrics, and conversion funnels. Use Chart.js and WebSockets.",
+			Progress:  0,
+			Budget:    12000,
+			Rating:    4,
+			Tags:      []string{"tag-1", "tag-2", "tag-5"},
+			Email:     "analytics@example.com",
+			URL:       "https://mixpanel.com",
+			Thumbnail: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+		},
+		{
+			Name:      "Email Template System",
+			Status:    "status-4",
+			Priority:  "priority-2",
+			StartDays: -14,
+			DueDays:   -5,
+			Notes:     "Created reusable email template system with MJML. Includes welcome, password reset, invoice, and notification templates.",
+			Progress:  100,
+			Budget:    4500,
+			Rating:    5,
+			Tags:      []string{"tag-1", "tag-5"},
+			Email:     "comms@example.com",
+			URL:       "https://mjml.io",
+			Thumbnail: "https://images.unsplash.com/photo-1596526131083-e8c633c948d2?w=800&q=80",
+		},
+		{
+			Name:      "Accessibility Compliance (WCAG 2.1)",
+			Status:    "status-2",
+			Priority:  "priority-2",
+			StartDays: -1,
+			DueDays:   9,
+			Notes:     "Audit and fix accessibility issues. Add ARIA labels, keyboard navigation, color contrast fixes, and screen reader support.",
+			Progress:  35,
+			Budget:    5500,
+			Rating:    4,
+			Tags:      []string{"tag-1"},
+			Email:     "a11y@example.com",
+			URL:       "https://www.w3.org/WAI/WCAG21/quickref",
+			Thumbnail: "https://images.unsplash.com/photo-1573164713988-8665fc963095?w=800&q=80",
+		},
 	}
 
 	var recordsData []map[string]any
@@ -288,6 +524,36 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 		if assigneeField != nil {
 			cells[assigneeField.ID] = ownerUserID
+		}
+		if progressField != nil {
+			cells[progressField.ID] = task.Progress
+		}
+		if budgetField != nil && task.Budget > 0 {
+			cells[budgetField.ID] = task.Budget
+		}
+		if ratingField != nil {
+			cells[ratingField.ID] = task.Rating
+		}
+		if tagsField != nil && len(task.Tags) > 0 {
+			cells[tagsField.ID] = task.Tags
+		}
+		if emailField != nil {
+			cells[emailField.ID] = task.Email
+		}
+		if urlField != nil {
+			cells[urlField.ID] = task.URL
+		}
+		if thumbnailField != nil && task.Thumbnail != "" {
+			// Create attachment structure for the thumbnail
+			cells[thumbnailField.ID] = []map[string]any{
+				{
+					"id":        fmt.Sprintf("thumb-%d", len(recordsData)+1),
+					"filename":  "thumbnail.jpg",
+					"url":       task.Thumbnail,
+					"mime_type": "image/jpeg",
+					"size":      50000,
+				},
+			}
 		}
 
 		recordsData = append(recordsData, cells)
@@ -403,7 +669,7 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		"Users", fmt.Sprintf("%d users (alice, bob, charlie)", userCount),
 		"Password", "password123",
 		"Base", "Project Tracker",
-		"Tables", fmt.Sprintf("Tasks (%d records, 15 fields), Projects (4 records)", recordCount),
+		"Tables", fmt.Sprintf("Tasks (%d records, 16 fields with images), Projects (4 records)", recordCount),
 		"Views", fmt.Sprintf("%d views (Grid, Kanban x2, Calendar, Gallery, Timeline, Form)", viewCount),
 	)
 	Blank()
