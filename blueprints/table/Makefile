@@ -15,13 +15,12 @@ TIME    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDVARS := -X github.com/go-mizu/blueprints/table/cli.Version=$(VERSION) -X github.com/go-mizu/blueprints/table/cli.Commit=$(COMMIT) -X github.com/go-mizu/blueprints/table/cli.BuildTime=$(TIME)
 GO_LDFLAGS ?= -s -w $(LDVARS)
 
-# Frontend/Backend configuration
+# Frontend configuration
 FRONTEND_DIR := app/frontend
-BACKEND_DIR := app/backend/hono
+ASSETS_DIR := assets/static
 
 # Ports
-GO_PORT ?= 8080
-BACKEND_PORT ?= 3000
+PORT ?= 8080
 FRONTEND_PORT ?= 5173
 
 # ============================================================================
@@ -32,12 +31,8 @@ FRONTEND_PORT ?= 5173
 frontend-install: ## Install frontend dependencies
 	@cd $(FRONTEND_DIR) && pnpm install
 
-.PHONY: backend-install
-backend-install: ## Install backend dependencies
-	@cd $(BACKEND_DIR) && pnpm install
-
 .PHONY: install-deps
-install-deps: frontend-install backend-install ## Install all dependencies
+install-deps: frontend-install ## Install all dependencies
 
 # ============================================================================
 # Build
@@ -47,14 +42,16 @@ install-deps: frontend-install backend-install ## Install all dependencies
 frontend-build: ## Build frontend for production
 	@echo "Building frontend..."
 	@cd $(FRONTEND_DIR) && pnpm run build
-	@echo "Frontend built to assets/static/dist"
-
-.PHONY: backend-build
-backend-build: ## Build backend TypeScript
-	@cd $(BACKEND_DIR) && pnpm run build 2>/dev/null || true
+	@echo "Frontend built to $(ASSETS_DIR)"
 
 .PHONY: build
 build: frontend-build ## Build table binary (includes frontend build)
+	@mkdir -p $(dir $(BINARY))
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) .
+	@echo "Built: $(BINARY) ($(VERSION))"
+
+.PHONY: build-quick
+build-quick: ## Build table binary without frontend (for development)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) .
 	@echo "Built: $(BINARY) ($(VERSION))"
@@ -67,41 +64,72 @@ install: build ## Install table binary to $$HOME/bin/table (alias for build)
 # ============================================================================
 
 .PHONY: frontend-dev
-frontend-dev: ## Start frontend dev server (port 5173)
-	@echo "Starting frontend dev server on http://localhost:$(FRONTEND_PORT)"
-	@echo "API requests will be proxied to http://localhost:$(BACKEND_PORT)"
+frontend-dev: ## Start frontend dev server (port 5173) with HMR
+	@echo ""
+	@echo "\033[36m┌─────────────────────────────────────────────────────────┐\033[0m"
+	@echo "\033[36m│           Table Blueprint - Frontend Dev Mode           │\033[0m"
+	@echo "\033[36m└─────────────────────────────────────────────────────────┘\033[0m"
+	@echo ""
+	@echo "  \033[32mFrontend:\033[0m  http://localhost:$(FRONTEND_PORT)"
+	@echo "  \033[33mBackend:\033[0m   http://localhost:$(PORT) (proxied)"
+	@echo ""
+	@echo "  \033[90mFeatures: HMR enabled, API proxy active\033[0m"
+	@echo "  \033[90mLogin: alice@example.com / password123\033[0m"
+	@echo ""
 	@cd $(FRONTEND_DIR) && pnpm run dev
 
 .PHONY: backend-dev
-backend-dev: ## Start backend dev server (port 3000)
-	@echo "Starting backend dev server on http://localhost:$(BACKEND_PORT)"
-	@cd $(BACKEND_DIR) && PORT=$(BACKEND_PORT) DATA_DIR=$(DATA_DIR) pnpm run dev
+backend-dev: ## Start Go backend server (port 8080)
+	@echo ""
+	@echo "\033[36m┌─────────────────────────────────────────────────────────┐\033[0m"
+	@echo "\033[36m│           Table Blueprint - Backend Dev Mode            │\033[0m"
+	@echo "\033[36m└─────────────────────────────────────────────────────────┘\033[0m"
+	@echo ""
+	@echo "  \033[32mAPI Server:\033[0m  http://localhost:$(PORT)"
+	@echo "  \033[33mDatabase:\033[0m    $(DATA_DIR)/table.db"
+	@echo ""
+	@GOWORK=off $(GO) run . serve --addr :$(PORT) --dev
 
 .PHONY: run
-run: ## Run backend server directly (development mode)
-	@cd $(BACKEND_DIR) && PORT=$(BACKEND_PORT) DATA_DIR=$(DATA_DIR) pnpm run dev
+run: ## Run Go server directly (development mode)
+	@GOWORK=off $(GO) run . serve --addr :$(PORT)
 
 .PHONY: dev
 dev: ## Instructions to run in dev mode
 	@echo ""
-	@echo "\033[36mDevelopment Mode\033[0m"
+	@echo "\033[36m┌─────────────────────────────────────────────────────────┐\033[0m"
+	@echo "\033[36m│        Table Blueprint - Development Mode Setup         │\033[0m"
+	@echo "\033[36m└─────────────────────────────────────────────────────────┘\033[0m"
 	@echo ""
-	@echo "Run these commands in separate terminals:"
+	@echo "\033[33m1. Start Go Backend Server\033[0m (Terminal 1)"
 	@echo ""
-	@echo "  \033[32m# Terminal 1: Backend API server (port $(BACKEND_PORT))\033[0m"
-	@echo "  make backend-dev"
+	@echo "   \033[32mmake backend-dev\033[0m"
+	@echo "   → Runs on http://localhost:$(PORT)"
 	@echo ""
-	@echo "  \033[32m# Terminal 2: Frontend dev server (port $(FRONTEND_PORT))\033[0m"
-	@echo "  make frontend-dev"
+	@echo "\033[33m2. Start Frontend Dev Server\033[0m (Terminal 2)"
 	@echo ""
-	@echo "Then open http://localhost:$(FRONTEND_PORT) in your browser."
+	@echo "   \033[32mmake frontend-dev\033[0m"
+	@echo "   → Runs on http://localhost:$(FRONTEND_PORT) with HMR"
+	@echo ""
+	@echo "\033[33m3. Open Browser\033[0m"
+	@echo ""
+	@echo "   → http://localhost:$(FRONTEND_PORT)"
+	@echo "   → Login: alice@example.com / password123"
+	@echo ""
+	@echo "\033[90mFeatures to explore:\033[0m"
+	@echo "   • 7 View Types: Grid, Kanban, Calendar, Gallery, Timeline, Form, List"
+	@echo "   • 15 Field Types: Text, Select, Date, Rating, Checkbox, Currency, etc."
+	@echo "   • Filtering, Sorting, Grouping"
+	@echo "   • Comments & Activity tracking"
 	@echo ""
 
 .PHONY: dev-all
-dev-all: ## Run both backend and frontend in parallel (requires tmux or background jobs)
-	@echo "Starting backend and frontend..."
+dev-all: ## Run both backend and frontend in parallel
+	@echo ""
+	@echo "\033[36mStarting Table Blueprint in Development Mode...\033[0m"
+	@echo ""
 	@trap 'kill 0' INT; \
-		(cd $(BACKEND_DIR) && PORT=$(BACKEND_PORT) DATA_DIR=$(DATA_DIR) pnpm run dev) & \
+		(GOWORK=off $(GO) run . serve --addr :$(PORT)) & \
 		sleep 2 && \
 		(cd $(FRONTEND_DIR) && pnpm run dev) & \
 		wait
@@ -119,11 +147,10 @@ seed: ## Seed the database with sample data
 	@GOWORK=off $(GO) run . seed
 
 .PHONY: serve
-serve: ## Start the web server (Go wrapper that embeds frontend and proxies API)
+serve: ## Start the web server (Go server serves API + embedded frontend)
 	@echo "Starting Table server..."
-	@echo "Go server on http://localhost:$(GO_PORT) (serves static files)"
-	@echo "Node.js backend on http://localhost:$(BACKEND_PORT) (API)"
-	@GOWORK=off $(GO) run . serve --dev --addr :$(GO_PORT)
+	@echo "Server: http://localhost:$(PORT)"
+	@GOWORK=off $(GO) run . serve --addr :$(PORT)
 
 # ============================================================================
 # Testing
@@ -153,7 +180,7 @@ clean: ## Remove binary and data directory
 
 .PHONY: clean-build
 clean-build: ## Remove built assets only
-	@rm -rf assets/static/dist
+	@rm -rf $(ASSETS_DIR)
 	@rm -f $(BINARY)
 	@echo "Cleaned build artifacts"
 
@@ -197,8 +224,8 @@ setup: check-deps install-deps init seed ## Full setup: check deps, install, ini
 	@echo "To start in development mode:"
 	@echo "  make dev        # Shows instructions for running backend + frontend"
 	@echo ""
-	@echo "To start with Go server (production-like):"
-	@echo "  make serve      # Go serves static files and proxies API"
+	@echo "To start production server:"
+	@echo "  make serve      # Go serves static files and API"
 	@echo ""
 	@echo "Login with: alice@example.com / password123"
 
@@ -223,7 +250,7 @@ help: ## Show available commands
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "\033[33mBuild:\033[0m"
-	@grep -E '^(frontend-build|backend-build|build|install):.*?## ' $(MAKEFILE_LIST) | \
+	@grep -E '^(frontend-build|build|build-quick|install):.*?## ' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "\033[33mDatabase & Server:\033[0m"
