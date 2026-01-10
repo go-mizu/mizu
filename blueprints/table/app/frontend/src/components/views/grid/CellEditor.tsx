@@ -473,6 +473,32 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHei
         </div>
       );
 
+    case 'link':
+      // Link field - displays linked records
+      const linkedRecords = (value as unknown as { id: string; primary_value: string }[]) || [];
+      return (
+        <div className="h-9 px-2 flex items-center gap-1 overflow-hidden">
+          {linkedRecords.length > 0 ? (
+            <>
+              {linkedRecords.slice(0, 3).map((record) => (
+                <span
+                  key={record.id}
+                  className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium truncate max-w-[100px]"
+                  title={record.primary_value}
+                >
+                  {record.primary_value}
+                </span>
+              ))}
+              {linkedRecords.length > 3 && (
+                <span className="text-xs text-gray-500">+{linkedRecords.length - 3}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-sm text-gray-400">+ Link record</span>
+          )}
+        </div>
+      );
+
     default:
       return (
         <div className="h-9 px-2 flex items-center text-[13px]">

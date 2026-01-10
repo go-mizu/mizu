@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useBaseStore } from '../../../stores/baseStore';
-import type { Field, FieldType } from '../../../types';
+import type { Field, FieldType, Sort } from '../../../types';
 
 interface FieldHeaderProps {
   field: Field;
@@ -12,6 +12,7 @@ interface FieldHeaderProps {
   onReorder: (fromId: string, toId: string) => void;
   isFrozen?: boolean;
   frozenOffset?: number;
+  onAutoFit?: () => void;
 }
 
 const FIELD_TYPE_ICONS: Record<FieldType, string> = {
@@ -49,12 +50,41 @@ const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   last_modified_by: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
 };
 
-export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, onHide, onReorder, isFrozen, frozenOffset }: FieldHeaderProps) {
-  const { updateField, deleteField } = useBaseStore();
+export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, onHide, onReorder, isFrozen, frozenOffset, onAutoFit }: FieldHeaderProps) {
+  const { updateField, deleteField, currentView, setSorts } = useBaseStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(field.name);
   const [dragOver, setDragOver] = useState(false);
+
+  // Find sort for this field
+  const fieldSort = useMemo(() => {
+    return currentView?.sorts?.find((s: Sort) => s.field_id === field.id);
+  }, [currentView?.sorts, field.id]);
+
+  const sortIndex = useMemo(() => {
+    if (!fieldSort || !currentView?.sorts) return -1;
+    return currentView.sorts.findIndex((s: Sort) => s.field_id === field.id);
+  }, [currentView?.sorts, fieldSort, field.id]);
+
+  // Toggle sort on this field
+  const handleSortClick = () => {
+    const currentSorts = currentView?.sorts || [];
+    const existingIndex = currentSorts.findIndex((s: Sort) => s.field_id === field.id);
+
+    if (existingIndex === -1) {
+      // Add new sort
+      setSorts([...currentSorts, { field_id: field.id, direction: 'asc' }]);
+    } else if (currentSorts[existingIndex].direction === 'asc') {
+      // Toggle to desc
+      const newSorts = [...currentSorts];
+      newSorts[existingIndex] = { ...newSorts[existingIndex], direction: 'desc' };
+      setSorts(newSorts);
+    } else {
+      // Remove sort
+      setSorts(currentSorts.filter((_: Sort, i: number) => i !== existingIndex));
+    }
+  };
 
   const handleSave = async () => {
     if (name.trim() && name !== field.name) {
@@ -171,6 +201,26 @@ export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, 
           </span>
         )}
 
+        {/* Sort indicator */}
+        {fieldSort && (
+          <button
+            onClick={handleSortClick}
+            className="flex items-center gap-0.5 px-1 py-0.5 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200"
+            title={`Sorted ${fieldSort.direction === 'asc' ? 'ascending' : 'descending'}${sortIndex >= 0 ? ` (${sortIndex + 1})` : ''}`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {fieldSort.direction === 'asc' ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              )}
+            </svg>
+            {(currentView?.sorts?.length || 0) > 1 && (
+              <span className="text-[10px] font-medium">{sortIndex + 1}</span>
+            )}
+          </button>
+        )}
+
         <button
           onClick={() => setShowMenu(!showMenu)}
           className="flex-shrink-0 p-0.5 text-gray-400 hover:text-gray-600 rounded"
@@ -209,6 +259,46 @@ export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, 
               Field settings
             </button>
             <hr className="my-1" />
+            {/* Sort options */}
+            <button
+              onClick={() => {
+                const currentSorts = currentView?.sorts || [];
+                const newSorts = currentSorts.filter((s: Sort) => s.field_id !== field.id);
+                setSorts([...newSorts, { field_id: field.id, direction: 'asc' }]);
+                setShowMenu(false);
+              }}
+              className={`dropdown-item w-full text-left ${fieldSort?.direction === 'asc' ? 'bg-primary-50' : ''}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+              </svg>
+              Sort A → Z
+              {fieldSort?.direction === 'asc' && (
+                <svg className="w-4 h-4 ml-auto text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                const currentSorts = currentView?.sorts || [];
+                const newSorts = currentSorts.filter((s: Sort) => s.field_id !== field.id);
+                setSorts([...newSorts, { field_id: field.id, direction: 'desc' }]);
+                setShowMenu(false);
+              }}
+              className={`dropdown-item w-full text-left ${fieldSort?.direction === 'desc' ? 'bg-primary-50' : ''}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
+              </svg>
+              Sort Z → A
+              {fieldSort?.direction === 'desc' && (
+                <svg className="w-4 h-4 ml-auto text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+            <hr className="my-1" />
             <button
               onClick={() => {
                 onHide();
@@ -237,6 +327,14 @@ export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, 
       <div
         className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-primary-200"
         onMouseDown={handleResizeStart}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (onAutoFit) {
+            onAutoFit();
+          }
+        }}
+        title="Drag to resize, double-click to auto-fit"
       />
     </th>
   );
