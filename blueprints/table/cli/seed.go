@@ -1253,14 +1253,14 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			Logo         string
 			Satisfaction int
 		}{
-			{"Acme Corporation", "John Davis", "john@acme.com", "+1 (800) 555-2001", "https://acme.example.com", "cstat-3", 250000, 90, "Enterprise client since 2021. Very engaged with product roadmap.", "https://logo.clearbit.com/acme.com", 5},
-			{"TechStart Inc", "Sarah Miller", "sarah@techstart.io", "+1 (800) 555-2002", "https://techstart.io", "cstat-3", 75000, 180, "Fast-growing startup. Interested in advanced features.", "https://logo.clearbit.com/stripe.com", 4},
-			{"Global Industries", "Michael Brown", "m.brown@global.com", "+1 (800) 555-2003", "https://global-ind.example.com", "cstat-2", 500000, 45, "Large enterprise prospect. Currently in pilot phase.", "https://logo.clearbit.com/ibm.com", 3},
-			{"Creative Agency Co", "Emily White", "emily@creative.co", "+1 (800) 555-2004", "https://creative.co", "cstat-3", 45000, 270, "Design agency with multiple teams using the product.", "https://logo.clearbit.com/figma.com", 5},
-			{"DataFlow Systems", "Robert Johnson", "robert@dataflow.io", "+1 (800) 555-2005", "https://dataflow.io", "cstat-3", 120000, 120, "Data analytics company. Heavy API usage.", "https://logo.clearbit.com/snowflake.com", 4},
-			{"Retail Plus", "Lisa Anderson", "lisa@retailplus.com", "+1 (800) 555-2006", "https://retailplus.com", "cstat-4", 80000, -30, "Churned due to budget cuts. Keep in touch for Q2.", "https://logo.clearbit.com/shopify.com", 2},
-			{"Healthcare Solutions", "David Wilson", "david@healthsol.org", "+1 (800) 555-2007", "https://healthsol.org", "cstat-1", 0, 0, "New lead from conference. Schedule demo for next week.", "https://logo.clearbit.com/epic.com", 0},
-			{"EduTech Learning", "Jennifer Taylor", "j.taylor@edutech.edu", "+1 (800) 555-2008", "https://edutech.edu", "cstat-2", 150000, 60, "Education sector prospect. RFP submitted.", "https://logo.clearbit.com/coursera.org", 3},
+			{"Acme Corporation", "John Davis", "john@acme.com", "+1 (800) 555-2001", "https://acme.example.com", "cstat-3", 250000, 90, "Enterprise client since 2021. Very engaged with product roadmap.", "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=200&q=80", 5},
+			{"TechStart Inc", "Sarah Miller", "sarah@techstart.io", "+1 (800) 555-2002", "https://techstart.io", "cstat-3", 75000, 180, "Fast-growing startup. Interested in advanced features.", "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=200&q=80", 4},
+			{"Global Industries", "Michael Brown", "m.brown@global.com", "+1 (800) 555-2003", "https://global-ind.example.com", "cstat-2", 500000, 45, "Large enterprise prospect. Currently in pilot phase.", "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=200&q=80", 3},
+			{"Creative Agency Co", "Emily White", "emily@creative.co", "+1 (800) 555-2004", "https://creative.co", "cstat-3", 45000, 270, "Design agency with multiple teams using the product.", "https://images.unsplash.com/photo-1497366216548-37526070297c?w=200&q=80", 5},
+			{"DataFlow Systems", "Robert Johnson", "robert@dataflow.io", "+1 (800) 555-2005", "https://dataflow.io", "cstat-3", 120000, 120, "Data analytics company. Heavy API usage.", "https://images.unsplash.com/photo-1497215842964-222b430dc094?w=200&q=80", 4},
+			{"Retail Plus", "Lisa Anderson", "lisa@retailplus.com", "+1 (800) 555-2006", "https://retailplus.com", "cstat-4", 80000, -30, "Churned due to budget cuts. Keep in touch for Q2.", "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=200&q=80", 2},
+			{"Healthcare Solutions", "David Wilson", "david@healthsol.org", "+1 (800) 555-2007", "https://healthsol.org", "cstat-1", 0, 0, "New lead from conference. Schedule demo for next week.", "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=200&q=80", 0},
+			{"EduTech Learning", "Jennifer Taylor", "j.taylor@edutech.edu", "+1 (800) 555-2008", "https://edutech.edu", "cstat-2", 150000, 60, "Education sector prospect. RFP submitted.", "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=200&q=80", 3},
 		}
 
 		var clientRecords []map[string]any
