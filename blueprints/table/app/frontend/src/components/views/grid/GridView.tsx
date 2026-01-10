@@ -26,9 +26,35 @@ export function GridView() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; recordId: string } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
+  // Handle bulk delete of selected rows
+  const handleBulkDelete = async () => {
+    if (selectedRows.size === 0) return;
+    const count = selectedRows.size;
+    if (!window.confirm(`Delete ${count} record${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+
+    for (const recordId of selectedRows) {
+      await deleteRecord(recordId);
+    }
+    setSelectedRows(new Set());
+  };
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Handle bulk delete with Delete/Backspace when rows are selected
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRows.size > 0 && !editingCell && !selectedCell) {
+        e.preventDefault();
+        handleBulkDelete();
+        return;
+      }
+
+      // Handle Cmd/Ctrl+A for select all
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a' && !editingCell) {
+        e.preventDefault();
+        setSelectedRows(new Set(displayRecords.map(r => r.id)));
+        return;
+      }
+
       if (!selectedCell || editingCell) return;
 
       const currentRecordIndex = displayRecords.findIndex(r => r.id === selectedCell.recordId);
@@ -59,6 +85,26 @@ export function GridView() {
             setSelectedCell({ recordId: selectedCell.recordId, fieldId: fields[currentFieldIndex + 1].id });
           }
           break;
+        case 'Tab':
+          e.preventDefault();
+          if (e.shiftKey) {
+            // Move to previous cell
+            if (currentFieldIndex > 0) {
+              setSelectedCell({ recordId: selectedCell.recordId, fieldId: fields[currentFieldIndex - 1].id });
+            } else if (currentRecordIndex > 0) {
+              // Go to last field of previous row
+              setSelectedCell({ recordId: displayRecords[currentRecordIndex - 1].id, fieldId: fields[fields.length - 1].id });
+            }
+          } else {
+            // Move to next cell
+            if (currentFieldIndex < fields.length - 1) {
+              setSelectedCell({ recordId: selectedCell.recordId, fieldId: fields[currentFieldIndex + 1].id });
+            } else if (currentRecordIndex < displayRecords.length - 1) {
+              // Go to first field of next row
+              setSelectedCell({ recordId: displayRecords[currentRecordIndex + 1].id, fieldId: fields[0].id });
+            }
+          }
+          break;
         case 'Enter':
           e.preventDefault();
           setEditingCell(selectedCell);
@@ -66,6 +112,7 @@ export function GridView() {
         case 'Escape':
           e.preventDefault();
           setSelectedCell(null);
+          setSelectedRows(new Set());
           break;
         case 'Delete':
         case 'Backspace':
@@ -79,7 +126,7 @@ export function GridView() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCell, editingCell, displayRecords, fields, updateCellValue]);
+  }, [selectedCell, editingCell, displayRecords, fields, updateCellValue, selectedRows]);
 
   const handleCellClick = (recordId: string, fieldId: string) => {
     setSelectedCell({ recordId, fieldId });
@@ -163,7 +210,34 @@ export function GridView() {
   }
 
   return (
-    <div className="flex-1 overflow-auto" ref={gridRef}>
+    <div className="flex-1 overflow-auto flex flex-col" ref={gridRef}>
+      {/* Selection bar */}
+      {selectedRows.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-primary-50 border-b border-primary-200">
+          <span className="text-sm font-medium text-primary-700">
+            {selectedRows.size} row{selectedRows.size > 1 ? 's' : ''} selected
+          </span>
+          <button
+            onClick={() => setSelectedRows(new Set())}
+            className="text-sm text-primary-600 hover:text-primary-800"
+          >
+            Clear selection
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            className="text-sm text-red-600 hover:text-red-800 flex items-center gap-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete selected
+          </button>
+          <span className="text-xs text-gray-500 ml-auto">
+            Press Delete or Backspace to delete • Escape to clear
+          </span>
+        </div>
+      )}
+      <div className="flex-1 overflow-auto">
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10 bg-gray-50">
           <tr>
@@ -309,6 +383,7 @@ export function GridView() {
           onClose={() => setExpandedRecord(null)}
         />
       )}
+      </div>
     </div>
   );
 }

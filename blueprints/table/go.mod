@@ -1,14 +1,15 @@
 module github.com/go-mizu/blueprints/table
 
-go 1.24.2
+go 1.24.11
 
 require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/duckdb/duckdb-go/v2 v2.5.4
-	github.com/mattn/go-sqlite3 v1.14.33
+	github.com/go-mizu/mizu v0.5.14
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/crypto v0.46.0
 )
 
 require (
