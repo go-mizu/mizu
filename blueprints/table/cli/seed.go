@@ -183,10 +183,10 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		}
 
 		field, err := srv.FieldService().Create(ctx, ownerUserID, fields.CreateIn{
-			TableID:     table.ID,
-			Name:        name,
-			Type:        fieldType,
-			Options:     optionsJSON,
+			TableID: table.ID,
+			Name:    name,
+			Type:    fieldType,
+			Options: optionsJSON,
 		})
 		if err != nil {
 			fmt.Printf("✗ %v\n", err)
@@ -390,8 +390,8 @@ func runSeed(cmd *cobra.Command, args []string) error {
 			fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
 		}
 		Step("", "Project records ready", time.Since(projectStart))
+		Step("", "Projects table ready", time.Since(sectionStart))
 	}
-	Step("", "Projects table ready", time.Since(sectionStart))
 
 	Blank()
 	Step("", "Database seeded", time.Since(totalStart))

@@ -155,7 +155,16 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     set({ isLoading: true });
     try {
       const { base, tables } = await basesApi.get(id);
-      set({ currentBase: base, tables, isLoading: false });
+      set({
+        currentBase: base,
+        tables,
+        currentTable: null,
+        fields: [],
+        views: [],
+        currentView: null,
+        records: [],
+        isLoading: false,
+      });
 
       // Auto-select first table
       if (tables.length > 0) {
@@ -195,17 +204,17 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   selectTable: async (id: string) => {
     set({ isLoading: true });
     try {
-      const { table } = await tablesApi.get(id);
+      const { table, fields, views } = await tablesApi.get(id);
       set({
         currentTable: table,
-        fields: table.fields || [],
-        views: table.views || [],
+        fields: fields || table.fields || [],
+        views: views || table.views || [],
         isLoading: false,
       });
 
       // Auto-select default view or first view
-      const views = table.views || [];
-      const defaultView = views.find(v => v.is_default) || views[0];
+      const resolvedViews = views || table.views || [];
+      const defaultView = resolvedViews.find(v => v.is_default) || resolvedViews[0];
       if (defaultView) {
         set({ currentView: defaultView });
       }

@@ -146,11 +146,10 @@ func (s *WorkspacesStore) ListMembers(ctx context.Context, workspaceID string) (
 // ListByUser lists all workspaces a user belongs to.
 func (s *WorkspacesStore) ListByUser(ctx context.Context, userID string) ([]*workspaces.Workspace, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT w.id, w.name, w.slug, w.icon, w.plan, w.owner_id, w.created_at, w.updated_at
+		SELECT DISTINCT w.id, w.name, w.slug, w.icon, w.plan, w.owner_id, w.created_at, w.updated_at
 		FROM workspaces w
 		LEFT JOIN workspace_members wm ON w.id = wm.workspace_id
 		WHERE w.owner_id = $1 OR wm.user_id = $1
-		GROUP BY w.id
 		ORDER BY w.name ASC
 	`, userID)
 	if err != nil {
