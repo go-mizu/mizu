@@ -57,10 +57,25 @@ func (s *BasesStore) Update(ctx context.Context, base *bases.Base) error {
 
 // Delete deletes a base and all related data.
 func (s *BasesStore) Delete(ctx context.Context, id string) error {
-	// Delete related tables first (cascades to fields, records, views)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM tables WHERE base_id = $1`, id)
+	// Delete related webhooks and deliveries
+	_, _ = s.db.ExecContext(ctx, `
+		DELETE FROM webhook_deliveries
+		WHERE webhook_id IN (SELECT id FROM webhooks WHERE base_id = $1)
+	`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM webhooks WHERE base_id = $1`, id)
+	// Delete shares for the base
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM shares WHERE base_id = $1`, id)
+
+	// Delete tables and their related data using the tables store
+	tableIDs, err := s.fetchTableIDs(ctx, id)
 	if err != nil {
 		return err
+	}
+	tableStore := NewTablesStore(s.db)
+	for _, tableID := range tableIDs {
+		if err := tableStore.Delete(ctx, tableID); err != nil {
+			return err
+		}
 	}
 
 	_, err = s.db.ExecContext(ctx, `DELETE FROM bases WHERE id = $1`, id)
@@ -127,4 +142,22 @@ func (s *BasesStore) scanBaseRows(rows *sql.Rows) (*bases.Base, error) {
 		base.Icon = icon.String
 	}
 	return base, nil
+}
+
+func (s *BasesStore) fetchTableIDs(ctx context.Context, baseID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM tables WHERE base_id = $1`, baseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tableIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		tableIDs = append(tableIDs, id)
+	}
+	return tableIDs, rows.Err()
 }

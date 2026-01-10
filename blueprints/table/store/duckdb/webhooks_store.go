@@ -38,7 +38,7 @@ func (s *WebhooksStore) Create(ctx context.Context, webhook *webhooks.Webhook) e
 // GetByID retrieves a webhook by ID.
 func (s *WebhooksStore) GetByID(ctx context.Context, id string) (*webhooks.Webhook, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, base_id, table_id, url, events, secret, is_active, created_by, created_at
+		SELECT id, base_id, table_id, url, CAST(events AS VARCHAR), secret, is_active, created_by, created_at
 		FROM webhooks WHERE id = $1
 	`, id)
 	return s.scanWebhook(row)
@@ -68,7 +68,7 @@ func (s *WebhooksStore) Delete(ctx context.Context, id string) error {
 // ListByBase lists all webhooks for a base.
 func (s *WebhooksStore) ListByBase(ctx context.Context, baseID string) ([]*webhooks.Webhook, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, base_id, table_id, url, events, secret, is_active, created_by, created_at
+		SELECT id, base_id, table_id, url, CAST(events AS VARCHAR), secret, is_active, created_by, created_at
 		FROM webhooks WHERE base_id = $1
 		ORDER BY created_at DESC
 	`, baseID)
@@ -83,7 +83,7 @@ func (s *WebhooksStore) ListByBase(ctx context.Context, baseID string) ([]*webho
 // ListByTable lists all webhooks for a table.
 func (s *WebhooksStore) ListByTable(ctx context.Context, tableID string) ([]*webhooks.Webhook, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, base_id, table_id, url, events, secret, is_active, created_by, created_at
+		SELECT id, base_id, table_id, url, CAST(events AS VARCHAR), secret, is_active, created_by, created_at
 		FROM webhooks WHERE table_id = $1
 		ORDER BY created_at DESC
 	`, tableID)

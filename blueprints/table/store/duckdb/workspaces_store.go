@@ -67,7 +67,20 @@ func (s *WorkspacesStore) Update(ctx context.Context, ws *workspaces.Workspace) 
 
 // Delete deletes a workspace.
 func (s *WorkspacesStore) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM workspaces WHERE id = $1`, id)
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM workspace_members WHERE workspace_id = $1`, id)
+
+	baseIDs, err := s.fetchBaseIDs(ctx, id)
+	if err != nil {
+		return err
+	}
+	baseStore := NewBasesStore(s.db)
+	for _, baseID := range baseIDs {
+		if err := baseStore.Delete(ctx, baseID); err != nil {
+			return err
+		}
+	}
+
+	_, err = s.db.ExecContext(ctx, `DELETE FROM workspaces WHERE id = $1`, id)
 	return err
 }
 
@@ -199,4 +212,22 @@ func (s *WorkspacesStore) scanWorkspaceRows(rows *sql.Rows) (*workspaces.Workspa
 		ws.Icon = icon.String
 	}
 	return ws, nil
+}
+
+func (s *WorkspacesStore) fetchBaseIDs(ctx context.Context, workspaceID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM bases WHERE workspace_id = $1`, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var baseIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		baseIDs = append(baseIDs, id)
+	}
+	return baseIDs, rows.Err()
 }
