@@ -1,9 +1,19 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useBaseStore } from '../../stores/baseStore';
 import type { ViewType } from '../../types';
 import { FilterBuilder } from '../common/FilterBuilder';
 import { SortBuilder } from '../common/SortBuilder';
 import { GroupBuilder } from '../common/GroupBuilder';
+import { RowColorConfig } from './grid/RowColorConfig';
+import { normalizeFieldConfig } from './grid/fieldConfig';
+import { exportToCSV, exportToTSV } from '../../utils/exportCsv';
+
+const ROW_HEIGHT_OPTIONS = [
+  { value: 'short', label: 'Short', height: 36 },
+  { value: 'medium', label: 'Medium', height: 56 },
+  { value: 'tall', label: 'Tall', height: 96 },
+  { value: 'extra_tall', label: 'Extra Tall', height: 144 },
+] as const;
 
 const VIEW_TYPES: { type: ViewType; label: string; icon: string }[] = [
   { type: 'grid', label: 'Grid', icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z' },
@@ -16,18 +26,26 @@ const VIEW_TYPES: { type: ViewType; label: string; icon: string }[] = [
 ];
 
 export function ViewToolbar() {
-  const { views, currentView, selectView, createView, filters, sorts, groupBy } = useBaseStore();
+  const { views, currentView, selectView, createView, filters, sorts, groupBy, fields, updateViewFieldConfig, updateViewConfig, getSortedRecords, currentTable } = useBaseStore();
   const [showViewMenu, setShowViewMenu] = useState(false);
   const [showNewView, setShowNewView] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
   const [showSort, setShowSort] = useState(false);
   const [showGroup, setShowGroup] = useState(false);
+  const [showColor, setShowColor] = useState(false);
+  const [showFields, setShowFields] = useState(false);
+  const [showRowHeight, setShowRowHeight] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [newViewType, setNewViewType] = useState<ViewType>('grid');
 
   const filterRef = useRef<HTMLDivElement>(null);
   const sortRef = useRef<HTMLDivElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
+  const colorRef = useRef<HTMLDivElement>(null);
+  const fieldsRef = useRef<HTMLDivElement>(null);
+  const rowHeightRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -41,11 +59,56 @@ export function ViewToolbar() {
       if (groupRef.current && !groupRef.current.contains(e.target as Node)) {
         setShowGroup(false);
       }
+      if (colorRef.current && !colorRef.current.contains(e.target as Node)) {
+        setShowColor(false);
+      }
+      if (fieldsRef.current && !fieldsRef.current.contains(e.target as Node)) {
+        setShowFields(false);
+      }
+      if (rowHeightRef.current && !rowHeightRef.current.contains(e.target as Node)) {
+        setShowRowHeight(false);
+      }
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setShowExport(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Get current row height from view config
+  const currentRowHeight = useMemo(() => {
+    if (!currentView?.config) return 'short';
+    const config = typeof currentView.config === 'string'
+      ? JSON.parse(currentView.config)
+      : currentView.config;
+    return config.row_height || 'short';
+  }, [currentView?.config]);
+
+  // Handle row height change
+  const handleRowHeightChange = async (height: string) => {
+    await updateViewConfig({ row_height: height });
+    setShowRowHeight(false);
+  };
+
+  // Handle export
+  const handleExport = async (format: 'csv' | 'tsv') => {
+    const records = getSortedRecords();
+    const visibleFieldsList = fieldConfig
+      .filter(c => c.visible)
+      .map(c => fields.find(f => f.id === c.field_id))
+      .filter((f): f is NonNullable<typeof f> => f !== undefined);
+
+    const filename = `${currentTable?.name || 'export'}_${new Date().toISOString().split('T')[0]}`;
+
+    if (format === 'csv') {
+      exportToCSV(records, visibleFieldsList, { filename: `${filename}.csv` });
+    } else {
+      exportToTSV(records, visibleFieldsList, { filename: `${filename}.tsv` });
+    }
+    setShowExport(false);
+  };
 
   const handleCreateView = async () => {
     if (!newViewName.trim()) return;
@@ -61,6 +124,32 @@ export function ViewToolbar() {
   const hasFilters = filters.length > 0;
   const hasSorts = sorts.length > 0;
   const hasGroup = groupBy !== null;
+  const showFieldButton = currentView?.type === 'grid';
+
+  // Check if row coloring is active
+  const currentRowColorFieldId = useMemo(() => {
+    if (!currentView?.config) return null;
+    const config = typeof currentView.config === 'string'
+      ? JSON.parse(currentView.config)
+      : currentView.config;
+    return config.row_color_field_id || null;
+  }, [currentView?.config]);
+  const hasRowColor = currentRowColorFieldId !== null;
+  const fieldConfig = useMemo(() => normalizeFieldConfig(fields, currentView?.field_config), [fields, currentView?.field_config]);
+  const hiddenCount = fieldConfig.filter((config) => !config.visible).length;
+
+  const toggleFieldVisibility = (fieldId: string) => {
+    const nextConfig = fieldConfig.map((config) => {
+      if (config.field_id !== fieldId) return config;
+      return { ...config, visible: !config.visible };
+    });
+    updateViewFieldConfig(nextConfig);
+  };
+
+  const showAllFields = () => {
+    const nextConfig = fieldConfig.map((config) => ({ ...config, visible: true }));
+    updateViewFieldConfig(nextConfig);
+  };
 
   return (
     <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
@@ -208,6 +297,174 @@ export function ViewToolbar() {
         {showGroup && (
           <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
             <GroupBuilder onClose={() => setShowGroup(false)} />
+          </div>
+        )}
+      </div>
+
+      {/* Color button (Grid only) */}
+      {showFieldButton && (
+        <div className="relative" ref={colorRef}>
+          <button
+            onClick={() => setShowColor(!showColor)}
+            className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
+              hasRowColor
+                ? 'bg-primary-50 text-primary-700 border-primary-100'
+                : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+            </svg>
+            Color
+            {hasRowColor && (
+              <span className="ml-1 w-2 h-2 rounded-full bg-primary" />
+            )}
+          </button>
+
+          {showColor && (
+            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+              <RowColorConfig onClose={() => setShowColor(false)} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Fields button (Grid only) */}
+      {showFieldButton && (
+        <div className="relative" ref={fieldsRef}>
+          <button
+            onClick={() => setShowFields(!showFields)}
+            className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
+              hiddenCount > 0
+                ? 'bg-primary-50 text-primary-700 border-primary-100'
+                : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            Fields
+            {hiddenCount > 0 && (
+              <span className="ml-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                {hiddenCount}
+              </span>
+            )}
+          </button>
+
+          {showFields && (
+            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in min-w-[240px]">
+              <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-900">Visible fields</span>
+                <button
+                  onClick={showAllFields}
+                  className="text-xs text-primary hover:text-primary-600"
+                >
+                  Show all
+                </button>
+              </div>
+              <div className="max-h-[320px] overflow-auto p-2 space-y-1">
+                {fieldConfig.map((config) => {
+                  const field = fields.find((f) => f.id === config.field_id);
+                  if (!field) return null;
+                  return (
+                    <label
+                      key={field.id}
+                      className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-slate-50 text-sm text-gray-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={config.visible}
+                        onChange={() => toggleFieldVisibility(field.id)}
+                        className="w-4 h-4 rounded border-gray-300"
+                      />
+                      <span className="truncate">{field.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Row Height button (Grid only) */}
+      {showFieldButton && (
+        <div className="relative" ref={rowHeightRef}>
+          <button
+            onClick={() => setShowRowHeight(!showRowHeight)}
+            className="px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200"
+            title="Row height"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+
+          {showRowHeight && (
+            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in min-w-[160px]">
+              <div className="p-2 border-b border-gray-200">
+                <span className="text-xs font-semibold text-gray-500 uppercase">Row Height</span>
+              </div>
+              <div className="p-1">
+                {ROW_HEIGHT_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => handleRowHeightChange(option.value)}
+                    className={`dropdown-item w-full text-left flex items-center justify-between ${
+                      currentRowHeight === option.value ? 'bg-primary-50 text-primary-700' : ''
+                    }`}
+                  >
+                    <span>{option.label}</span>
+                    {currentRowHeight === option.value && (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Export button */}
+      <div className="relative" ref={exportRef}>
+        <button
+          onClick={() => setShowExport(!showExport)}
+          className="px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200"
+          title="Export"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </button>
+
+        {showExport && (
+          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in min-w-[160px]">
+            <div className="p-2 border-b border-gray-200">
+              <span className="text-xs font-semibold text-gray-500 uppercase">Export Data</span>
+            </div>
+            <div className="p-1">
+              <button
+                onClick={() => handleExport('csv')}
+                className="dropdown-item w-full text-left flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download CSV
+              </button>
+              <button
+                onClick={() => handleExport('tsv')}
+                className="dropdown-item w-full text-left flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Download TSV
+              </button>
+            </div>
           </div>
         )}
       </div>

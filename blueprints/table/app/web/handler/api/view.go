@@ -48,7 +48,7 @@ func (h *View) Get(c *mizu.Ctx) error {
 
 // Update updates a view.
 func (h *View) Update(c *mizu.Ctx) error {
-	id := c.Param("id")
+ 	id := c.Param("id")
 
 	var in views.UpdateIn
 	if err := c.BindJSON(&in, 1<<20); err != nil {
@@ -61,6 +61,136 @@ func (h *View) Update(c *mizu.Ctx) error {
 			return NotFound(c, "view not found")
 		}
 		return InternalError(c, "failed to update view")
+	}
+
+	return OK(c, map[string]any{"view": view})
+}
+
+// ViewFiltersRequest is the request body for setting view filters.
+type ViewFiltersRequest struct {
+	Filters []views.Filter `json:"filters"`
+}
+
+// SetFilters sets filters for a view.
+func (h *View) SetFilters(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var req ViewFiltersRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+
+	if err := h.views.SetFilters(c.Context(), id, req.Filters); err != nil {
+		return InternalError(c, "failed to update view filters")
+	}
+
+	view, err := h.views.GetByID(c.Context(), id)
+	if err != nil {
+		return InternalError(c, "failed to load view")
+	}
+
+	return OK(c, map[string]any{"view": view})
+}
+
+// ViewSortsRequest is the request body for setting view sorts.
+type ViewSortsRequest struct {
+	Sorts []views.SortSpec `json:"sorts"`
+}
+
+// SetSorts sets sorts for a view.
+func (h *View) SetSorts(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var req ViewSortsRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+
+	if err := h.views.SetSorts(c.Context(), id, req.Sorts); err != nil {
+		return InternalError(c, "failed to update view sorts")
+	}
+
+	view, err := h.views.GetByID(c.Context(), id)
+	if err != nil {
+		return InternalError(c, "failed to load view")
+	}
+
+	return OK(c, map[string]any{"view": view})
+}
+
+// ViewGroupsRequest is the request body for setting view groups.
+type ViewGroupsRequest struct {
+	Groups []views.GroupSpec `json:"groups"`
+}
+
+// SetGroups sets groups for a view.
+func (h *View) SetGroups(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var req ViewGroupsRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+
+	if err := h.views.SetGroups(c.Context(), id, req.Groups); err != nil {
+		return InternalError(c, "failed to update view groups")
+	}
+
+	view, err := h.views.GetByID(c.Context(), id)
+	if err != nil {
+		return InternalError(c, "failed to load view")
+	}
+
+	return OK(c, map[string]any{"view": view})
+}
+
+// ViewFieldConfigRequest is the request body for setting view field configuration.
+type ViewFieldConfigRequest struct {
+	FieldConfig []views.FieldViewConfig `json:"field_config"`
+}
+
+// SetFieldConfig sets field configuration for a view.
+func (h *View) SetFieldConfig(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var req ViewFieldConfigRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+
+	if err := h.views.SetFieldConfig(c.Context(), id, req.FieldConfig); err != nil {
+		return InternalError(c, "failed to update view field config")
+	}
+
+	view, err := h.views.GetByID(c.Context(), id)
+	if err != nil {
+		return InternalError(c, "failed to load view")
+	}
+
+	return OK(c, map[string]any{"view": view})
+}
+
+// ViewConfigRequest is the request body for setting view config.
+type ViewConfigRequest struct {
+	Config map[string]any `json:"config"`
+}
+
+// SetConfig sets config for a view.
+func (h *View) SetConfig(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var req ViewConfigRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return BadRequest(c, "invalid request body")
+	}
+
+	if err := h.views.SetConfig(c.Context(), id, req.Config); err != nil {
+		return InternalError(c, "failed to update view config")
+	}
+
+	view, err := h.views.GetByID(c.Context(), id)
+	if err != nil {
+		return InternalError(c, "failed to load view")
 	}
 
 	return OK(c, map[string]any{"view": view})

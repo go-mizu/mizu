@@ -4,6 +4,14 @@ import type { Field, FieldType } from '../../../types';
 
 interface FieldHeaderProps {
   field: Field;
+  width: number;
+  height?: number;
+  onResize: (width: number) => void;
+  onResizeEnd: (width: number) => void;
+  onHide: () => void;
+  onReorder: (fromId: string, toId: string) => void;
+  isFrozen?: boolean;
+  frozenOffset?: number;
 }
 
 const FIELD_TYPE_ICONS: Record<FieldType, string> = {
@@ -38,8 +46,8 @@ const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   last_modified_by: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
 };
 
-export function FieldHeader({ field }: FieldHeaderProps) {
-  const { updateField, deleteField, reorderFields, fields } = useBaseStore();
+export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, onHide, onReorder, isFrozen, frozenOffset }: FieldHeaderProps) {
+  const { updateField, deleteField } = useBaseStore();
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(field.name);
@@ -78,29 +86,54 @@ export function FieldHeader({ field }: FieldHeaderProps) {
     e.preventDefault();
     setDragOver(false);
     const draggedId = e.dataTransfer.getData('text/plain');
-    if (draggedId !== field.id) {
-      const fromIndex = fields.findIndex(f => f.id === draggedId);
-      const toIndex = fields.findIndex(f => f.id === field.id);
-      if (fromIndex !== -1 && toIndex !== -1) {
-        reorderFields(fromIndex, toIndex);
-      }
+    if (draggedId && draggedId !== field.id) {
+      onReorder(draggedId, field.id);
     }
+  };
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = width;
+    const minWidth = 120;
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const nextWidth = Math.max(minWidth, startWidth + moveEvent.clientX - startX);
+      onResize(nextWidth);
+    };
+
+    const handleUp = (upEvent: MouseEvent) => {
+      const nextWidth = Math.max(minWidth, startWidth + upEvent.clientX - startX);
+      onResize(nextWidth);
+      onResizeEnd(nextWidth);
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
   };
 
   const icon = FIELD_TYPE_ICONS[field.type] || FIELD_TYPE_ICONS.text;
 
   return (
     <th
-      className={`min-w-[150px] border-b border-r border-slate-200 bg-slate-50 p-0 ${
+      className={`min-w-[150px] border-b border-r border-slate-200 bg-slate-50 p-0 relative ${
         dragOver ? 'bg-primary-50' : ''
-      }`}
+      } ${isFrozen ? 'sticky z-20' : ''}`}
+      style={{
+        width,
+        height,
+        ...(isFrozen && frozenOffset !== undefined ? { left: frozenOffset } : {}),
+      }}
       draggable
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="flex items-center h-9 px-2 gap-2">
+      <div className="flex items-center px-2 gap-2 h-full" style={{ minHeight: 36 }}>
         <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} />
         </svg>
@@ -123,7 +156,9 @@ export function FieldHeader({ field }: FieldHeaderProps) {
           />
         ) : (
           <span
-            className="flex-1 min-w-0 text-sm font-semibold text-slate-700 truncate cursor-pointer"
+            className={`flex-1 min-w-0 text-sm font-semibold text-slate-700 cursor-pointer ${
+              height > 40 ? 'whitespace-normal line-clamp-2' : 'truncate'
+            }`}
             onClick={() => {
               setName(field.name);
               setIsEditing(true);
@@ -172,6 +207,19 @@ export function FieldHeader({ field }: FieldHeaderProps) {
             </button>
             <hr className="my-1" />
             <button
+              onClick={() => {
+                onHide();
+                setShowMenu(false);
+              }}
+              className="dropdown-item w-full text-left"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-5.523 0-10-4.477-10-10 0-1.2.212-2.35.6-3.414m2.54 4.154A6.005 6.005 0 0012 18a5.99 5.99 0 003.716-1.284M6.3 6.3A5.987 5.987 0 0112 6c.943 0 1.846.218 2.65.606m3.45 3.45A9.957 9.957 0 0122 12c0 1.2-.212 2.35-.6 3.414M3 3l18 18" />
+              </svg>
+              Hide field
+            </button>
+            <hr className="my-1" />
+            <button
               onClick={handleDelete}
               className="dropdown-item dropdown-item-danger w-full text-left"
             >
@@ -183,6 +231,10 @@ export function FieldHeader({ field }: FieldHeaderProps) {
           </div>
         </>
       )}
+      <div
+        className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-primary-200"
+        onMouseDown={handleResizeStart}
+      />
     </th>
   );
 }

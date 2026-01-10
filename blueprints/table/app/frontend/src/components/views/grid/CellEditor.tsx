@@ -1,15 +1,27 @@
 import { useRef, useEffect } from 'react';
 import type { Field, CellValue } from '../../../types';
 
+type RowHeightKey = 'short' | 'medium' | 'tall' | 'extra_tall';
+
+const ROW_HEIGHT_CLASSES: Record<RowHeightKey, string> = {
+  short: 'h-9',
+  medium: 'h-14',
+  tall: 'h-24',
+  extra_tall: 'h-36',
+};
+
 interface CellEditorProps {
   field: Field;
   value: CellValue;
   isEditing: boolean;
   onChange: (value: CellValue) => void;
   onCancel: () => void;
+  rowHeight?: RowHeightKey;
 }
 
-export function CellEditor({ field, value, isEditing, onChange, onCancel }: CellEditorProps) {
+export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHeight: _rowHeight = 'short' }: CellEditorProps) {
+  void _rowHeight; // Future use for taller row layouts
+  void ROW_HEIGHT_CLASSES; // Future use
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   useEffect(() => {

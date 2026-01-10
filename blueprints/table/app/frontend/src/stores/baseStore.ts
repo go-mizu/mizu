@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Workspace, Base, Table, Field, View, TableRecord, SelectOption, Comment, Filter, Sort, CellValue } from '../types';
+import type { Workspace, Base, Table, Field, View, TableRecord, SelectOption, Comment, Filter, Sort, CellValue, FieldConfig, Group } from '../types';
 import { workspacesApi, basesApi, tablesApi, fieldsApi, recordsApi, viewsApi, commentsApi } from '../api/client';
 
 interface BaseState {
@@ -66,6 +66,8 @@ interface BaseState {
   createView: (name: string, type: string) => Promise<View>;
   updateView: (id: string, data: Partial<View>) => Promise<void>;
   deleteView: (id: string) => Promise<void>;
+  updateViewFieldConfig: (fieldConfig: FieldConfig[]) => void;
+  updateViewConfig: (config: Record<string, unknown>) => void;
 
   // Actions - Records
   loadRecords: (tableId: string, reset?: boolean) => Promise<void>;
@@ -217,6 +219,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       const defaultView = resolvedViews.find(v => v.is_default) || resolvedViews[0];
       if (defaultView) {
         set({ currentView: defaultView });
+        syncViewState(defaultView, set);
       }
 
       // Load records
@@ -280,7 +283,13 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     const fields = [...get().fields];
     const [removed] = fields.splice(fromIndex, 1);
     fields.splice(toIndex, 0, removed);
-    set({ fields });
+    const updated = fields.map((field, index) => ({ ...field, position: index }));
+    set({ fields: updated });
+    const table = get().currentTable;
+    if (!table) return;
+    void fieldsApi.reorder(table.id, updated.map(field => field.id)).catch((err) => {
+      set({ error: (err as Error).message });
+    });
   },
 
   // Select Options
@@ -342,6 +351,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     const view = get().views.find(v => v.id === id);
     if (view) {
       set({ currentView: view });
+      syncViewState(view, set);
     }
   },
 
@@ -368,6 +378,33 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     set({
       views,
       currentView: get().currentView?.id === id ? views[0] : get().currentView,
+    });
+    syncViewState(get().currentView?.id === id ? views[0] : get().currentView, set);
+  },
+
+  updateViewFieldConfig: (fieldConfig: FieldConfig[]) => {
+    const view = get().currentView;
+    if (!view) return;
+    const nextView = { ...view, field_config: fieldConfig };
+    set({
+      currentView: nextView,
+      views: get().views.map(v => v.id === view.id ? nextView : v),
+    });
+    void viewsApi.setFieldConfig(view.id, fieldConfig).catch((err) => {
+      set({ error: (err as Error).message });
+    });
+  },
+
+  updateViewConfig: (config: Record<string, unknown>) => {
+    const view = get().currentView;
+    if (!view) return;
+    const nextView = { ...view, config };
+    set({
+      currentView: nextView,
+      views: get().views.map(v => v.id === view.id ? nextView : v),
+    });
+    void viewsApi.setConfig(view.id, config).catch((err) => {
+      set({ error: (err as Error).message });
     });
   },
 
@@ -442,14 +479,50 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // Filter, Sort, Group
   setFilters: (filters: Filter[], conjunction: 'and' | 'or' = 'and') => {
     set({ filters, filterConjunction: conjunction });
+    const view = get().currentView;
+    if (!view) return;
+    const config = resolveViewConfig(view);
+    config.filter_conjunction = conjunction;
+    const nextView = { ...view, filters, config };
+    set({
+      currentView: nextView,
+      views: get().views.map(v => v.id === view.id ? nextView : v),
+    });
+    void viewsApi.setFilters(view.id, filters).catch((err) => {
+      set({ error: (err as Error).message });
+    });
+    void viewsApi.setConfig(view.id, config).catch((err) => {
+      set({ error: (err as Error).message });
+    });
   },
 
   setSorts: (sorts: Sort[]) => {
     set({ sorts });
+    const view = get().currentView;
+    if (!view) return;
+    const nextView = { ...view, sorts };
+    set({
+      currentView: nextView,
+      views: get().views.map(v => v.id === view.id ? nextView : v),
+    });
+    void viewsApi.setSorts(view.id, sorts).catch((err) => {
+      set({ error: (err as Error).message });
+    });
   },
 
   setGroupBy: (fieldId: string | null) => {
     set({ groupBy: fieldId });
+    const view = get().currentView;
+    if (!view) return;
+    const groups: Group[] = fieldId ? [{ field_id: fieldId, direction: 'asc' as const, collapsed: false }] : [];
+    const nextView = { ...view, groups };
+    set({
+      currentView: nextView,
+      views: get().views.map(v => v.id === view.id ? nextView : v),
+    });
+    void viewsApi.setGroups(view.id, groups).catch((err) => {
+      set({ error: (err as Error).message });
+    });
   },
 
   getFilteredRecords: () => {
@@ -540,6 +613,32 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // Utilities
   clearError: () => set({ error: null }),
 }));
+
+function syncViewState(view: View | null | undefined, set: (partial: Partial<BaseState>) => void) {
+  if (!view) {
+    set({ filters: [], sorts: [], groupBy: null, filterConjunction: 'and' });
+    return;
+  }
+  const config = resolveViewConfig(view);
+  set({
+    filters: view.filters || [],
+    sorts: view.sorts || [],
+    groupBy: view.groups?.[0]?.field_id ?? null,
+    filterConjunction: (config.filter_conjunction as 'and' | 'or') || 'and',
+  });
+}
+
+function resolveViewConfig(view: View): Record<string, unknown> {
+  if (!view.config) return {};
+  if (typeof view.config === 'string') {
+    try {
+      return JSON.parse(view.config) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return { ...view.config } as Record<string, unknown>;
+}
 
 // Helper function to evaluate a filter condition
 function evaluateFilter(value: CellValue, operator: string, filterValue: CellValue, _field: Field): boolean {
