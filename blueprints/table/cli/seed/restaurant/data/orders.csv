@@ -1,0 +1,11 @@
+_id,Order Number,Table,Server,Items,Total,Status,Time,Notes
+,ORD-001,Table 5,Maria,2x Crispy Calamari 1x Filet Mignon 1x Grilled Salmon 2x House Red Wine,136.95,Served,2024-01-15,Anniversary celebration
+,ORD-002,Table 3,James,1x Burrata Salad 2x Chicken Parmesan 1x Tiramisu,83.96,Preparing,2024-01-15,No nuts in salad
+,ORD-003,Table 8,Maria,3x Lobster Risotto 3x Sparkling Water,131.94,New,2024-01-15,VIP guests
+,ORD-004,Bar 2,James,2x House Red Wine 1x Truffle Fries,35.97,Paid,2024-01-15,
+,ORD-005,Table 1,Sofia,1x Crispy Calamari 1x Filet Mignon 1x Chocolate Lava Cake,75.97,Ready,2024-01-15,Medium rare steak
+,ORD-006,Patio 1,Maria,2x Burrata Salad 2x Grilled Salmon 2x Seasonal Vegetables,117.94,Preparing,2024-01-15,Outdoor seating
+,ORD-007,Table 7,James,4x Chicken Parmesan 4x Sparkling Water,127.92,New,2024-01-15,Family dinner
+,ORD-008,Private,Sofia,6x Lobster Risotto 6x House Red Wine 2x Tiramisu,337.88,Preparing,2024-01-15,Business dinner - separate checks
+,ORD-009,Table 4,Maria,1x Filet Mignon 1x Truffle Fries 1x House Red Wine,68.97,Paid,2024-01-15,Regular customer
+,ORD-010,Bar 1,Sofia,3x House Red Wine,38.97,Served,2024-01-15,Happy hour guests

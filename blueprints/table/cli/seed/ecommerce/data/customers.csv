@@ -1,0 +1,11 @@
+_id,Name,Email,Phone,Address,Orders Count,Total Spent,VIP,Notes
+,Sarah Johnson,sarah.j@email.com,+1 (415) 555-1001,123 Main St San Francisco CA 94102,12,2450.85,true,Preferred customer since 2022
+,Michael Chen,m.chen@email.com,+1 (415) 555-1002,456 Oak Ave Oakland CA 94612,8,1280.50,false,
+,Emily Davis,emily.d@email.com,+1 (415) 555-1003,789 Pine Rd Berkeley CA 94704,5,650.25,false,Birthday in March
+,Robert Wilson,r.wilson@email.com,+1 (415) 555-1004,321 Elm St San Jose CA 95112,3,450.00,false,New customer
+,Amanda Lee,a.lee@email.com,+1 (415) 555-1005,654 Cedar Ln Palo Alto CA 94301,15,3200.75,true,VIP - always expedite shipping
+,James Brown,j.brown@email.com,+1 (415) 555-1006,987 Maple Dr Sunnyvale CA 94086,2,299.99,false,Had return issue resolved
+,Lisa Martinez,lisa.m@email.com,+1 (415) 555-1007,147 Birch Way Mountain View CA 94040,7,890.50,false,Prefers email communication
+,David Kim,d.kim@email.com,+1 (415) 555-1008,258 Spruce Ct Fremont CA 94538,4,520.00,false,
+,Jennifer Taylor,j.taylor@email.com,+1 (415) 555-1009,369 Willow Ave Redwood City CA 94061,9,1450.25,true,Influencer partnership
+,Thomas Garcia,t.garcia@email.com,+1 (415) 555-1010,741 Ash Blvd San Mateo CA 94401,1,229.96,false,First order pending

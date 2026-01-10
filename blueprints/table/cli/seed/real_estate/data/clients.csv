@@ -1,0 +1,9 @@
+_id,Name,Email,Phone,Budget Min,Budget Max,Preferred Type,Pre-approved,Notes
+,James Wilson,james.wilson@email.com,+1 (415) 555-8001,800000,1300000,Single Family,true,Looking for family home. Good schools important.
+,Emily Brown,emily.brown@email.com,+1 (415) 555-8002,600000,900000,Condo,true,Young professional. Wants walkable neighborhood.
+,Michael Lee,michael.lee@email.com,+1 (415) 555-8003,500000,750000,Townhouse,true,First-time buyer. Prefers East Bay.
+,David Kim,david.kim@email.com,+1 (415) 555-8004,2000000,4000000,Single Family,true,Tech executive. Cash buyer.
+,Jennifer Martinez,jennifer.m@email.com,+1 (415) 555-8005,400000,600000,Condo,false,Getting pre-approval this week.
+,Robert Garcia,robert.garcia@email.com,+1 (415) 555-8006,1000000,1500000,Single Family,true,Relocating from LA.
+,Thomas Chen,thomas.chen@email.com,+1 (415) 555-8007,1000000,2000000,Any,true,Investment buyer. Looking for rental income.
+,Amanda Lee,amanda.lee@email.com,+1 (415) 555-8008,700000,1000000,Townhouse,true,Downsizing from larger home.

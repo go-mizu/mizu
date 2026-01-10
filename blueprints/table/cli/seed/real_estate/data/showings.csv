@@ -1,0 +1,11 @@
+_id,Property,Agent,Client,Date,Time,Status,Feedback,Notes
+,123 Oak Street San Francisco CA,Sarah Miller,James Wilson,2024-01-15,10:00 AM,Completed,4,Liked the layout. Concerned about street parking.
+,456 Marina Blvd San Francisco CA,John Davis,Emily Brown,2024-01-15,2:00 PM,Completed,5,Loved the views! Wants to make an offer.
+,789 Hill Drive Oakland CA,Sarah Miller,Michael Lee,2024-01-16,11:00 AM,Completed,3,Too far from BART station.
+,321 Pacific Ave Sausalito CA,Michael Chen,David Kim,2024-01-17,3:00 PM,Scheduled,0,VIP client - bring champagne.
+,555 Market Street San Francisco CA,John Davis,Jennifer Martinez,2024-01-17,4:30 PM,Scheduled,0,First-time buyer.
+,123 Oak Street San Francisco CA,Sarah Miller,Robert Garcia,2024-01-18,9:00 AM,Scheduled,0,Second showing - bringing spouse.
+,234 Valley Road Berkeley CA,Lisa Wang,Thomas Chen,2024-01-16,1:00 PM,Completed,4,Interested as investment. Running numbers.
+,567 Sunset Blvd Mill Valley CA,Lisa Wang,Amanda Lee,2024-01-14,11:00 AM,Cancelled,0,Client had emergency.
+,888 Redwood Lane Palo Alto CA,Michael Chen,William Park,2024-01-10,2:00 PM,Completed,5,Made offer same day.
+,321 Pacific Ave Sausalito CA,Michael Chen,Sarah Johnson,2024-01-13,10:00 AM,No Show,0,Did not show up. Could not reach.
