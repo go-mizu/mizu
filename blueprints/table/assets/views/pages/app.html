@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Table - Airtable Alternative</title>
+    <link rel="stylesheet" href="/static/dist/css/main.css">
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        // Pass server data to React app
+        window.__TABLE_DATA__ = {
+            baseId: "{{.BaseID}}",
+            tableId: "{{.TableID}}",
+            viewId: "{{.ViewID}}"
+        };
+    </script>
+    <script type="module" src="/static/dist/js/main.js"></script>
+</body>
+</html>

@@ -10,11 +10,14 @@ export function GridView() {
   const {
     currentTable,
     fields,
-    records,
     createRecord,
     deleteRecord,
-    updateCellValue
+    updateCellValue,
+    getSortedRecords,
   } = useBaseStore();
+
+  // Get filtered and sorted records
+  const displayRecords = getSortedRecords();
 
   const [selectedCell, setSelectedCell] = useState<{ recordId: string; fieldId: string } | null>(null);
   const [editingCell, setEditingCell] = useState<{ recordId: string; fieldId: string } | null>(null);
@@ -28,20 +31,20 @@ export function GridView() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!selectedCell || editingCell) return;
 
-      const currentRecordIndex = records.findIndex(r => r.id === selectedCell.recordId);
+      const currentRecordIndex = displayRecords.findIndex(r => r.id === selectedCell.recordId);
       const currentFieldIndex = fields.findIndex(f => f.id === selectedCell.fieldId);
 
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
           if (currentRecordIndex > 0) {
-            setSelectedCell({ recordId: records[currentRecordIndex - 1].id, fieldId: selectedCell.fieldId });
+            setSelectedCell({ recordId: displayRecords[currentRecordIndex - 1].id, fieldId: selectedCell.fieldId });
           }
           break;
         case 'ArrowDown':
           e.preventDefault();
-          if (currentRecordIndex < records.length - 1) {
-            setSelectedCell({ recordId: records[currentRecordIndex + 1].id, fieldId: selectedCell.fieldId });
+          if (currentRecordIndex < displayRecords.length - 1) {
+            setSelectedCell({ recordId: displayRecords[currentRecordIndex + 1].id, fieldId: selectedCell.fieldId });
           }
           break;
         case 'ArrowLeft':
@@ -76,7 +79,7 @@ export function GridView() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCell, editingCell, records, fields, updateCellValue]);
+  }, [selectedCell, editingCell, displayRecords, fields, updateCellValue]);
 
   const handleCellClick = (recordId: string, fieldId: string) => {
     setSelectedCell({ recordId, fieldId });
@@ -121,12 +124,12 @@ export function GridView() {
     if (e.shiftKey && selectedRows.size > 0) {
       // Range selection
       const lastSelected = Array.from(selectedRows).pop()!;
-      const lastIndex = records.findIndex(r => r.id === lastSelected);
-      const currentIndex = records.findIndex(r => r.id === recordId);
+      const lastIndex = displayRecords.findIndex(r => r.id === lastSelected);
+      const currentIndex = displayRecords.findIndex(r => r.id === recordId);
       const start = Math.min(lastIndex, currentIndex);
       const end = Math.max(lastIndex, currentIndex);
       for (let i = start; i <= end; i++) {
-        newSelection.add(records[i].id);
+        newSelection.add(displayRecords[i].id);
       }
     } else if (e.metaKey || e.ctrlKey) {
       // Toggle selection
@@ -144,10 +147,10 @@ export function GridView() {
   };
 
   const toggleAllRows = () => {
-    if (selectedRows.size === records.length) {
+    if (selectedRows.size === displayRecords.length) {
       setSelectedRows(new Set());
     } else {
-      setSelectedRows(new Set(records.map(r => r.id)));
+      setSelectedRows(new Set(displayRecords.map(r => r.id)));
     }
   };
 
@@ -169,7 +172,7 @@ export function GridView() {
               <div className="flex items-center justify-center h-8">
                 <input
                   type="checkbox"
-                  checked={selectedRows.size === records.length && records.length > 0}
+                  checked={selectedRows.size === displayRecords.length && displayRecords.length > 0}
                   onChange={toggleAllRows}
                   className="w-4 h-4 rounded border-gray-300"
                 />
@@ -188,7 +191,7 @@ export function GridView() {
           </tr>
         </thead>
         <tbody>
-          {records.map((record, rowIndex) => (
+          {displayRecords.map((record, rowIndex) => (
             <tr
               key={record.id}
               className={`group ${selectedRows.has(record.id) ? 'bg-primary-50' : 'hover:bg-gray-50'}`}
@@ -275,7 +278,7 @@ export function GridView() {
           >
             <button
               onClick={() => {
-                const record = records.find(r => r.id === contextMenu.recordId);
+                const record = displayRecords.find(r => r.id === contextMenu.recordId);
                 if (record) handleExpandRecord(record);
                 setContextMenu(null);
               }}

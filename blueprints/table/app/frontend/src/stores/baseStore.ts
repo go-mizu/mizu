@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Workspace, Base, Table, Field, View, TableRecord, SelectOption, Comment } from '../types';
+import type { Workspace, Base, Table, Field, View, TableRecord, SelectOption, Comment, Filter, Sort, CellValue } from '../types';
 import { workspacesApi, basesApi, tablesApi, fieldsApi, recordsApi, viewsApi, commentsApi } from '../api/client';
 
 interface BaseState {
@@ -15,6 +15,12 @@ interface BaseState {
   currentView: View | null;
   records: TableRecord[];
   comments: Comment[];
+
+  // Filter, Sort, Group
+  filters: Filter[];
+  filterConjunction: 'and' | 'or';
+  sorts: Sort[];
+  groupBy: string | null;
 
   // Pagination
   nextCursor: string | null;
@@ -74,6 +80,14 @@ interface BaseState {
   createComment: (recordId: string, content: string) => Promise<Comment>;
   deleteComment: (commentId: string) => Promise<void>;
 
+  // Actions - Filter, Sort, Group
+  setFilters: (filters: Filter[], conjunction?: 'and' | 'or') => void;
+  setSorts: (sorts: Sort[]) => void;
+  setGroupBy: (fieldId: string | null) => void;
+  getFilteredRecords: () => TableRecord[];
+  getSortedRecords: () => TableRecord[];
+  getGroupedRecords: () => { group: string; records: TableRecord[] }[];
+
   // Utilities
   clearError: () => void;
 }
@@ -91,6 +105,10 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   currentView: null,
   records: [],
   comments: [],
+  filters: [],
+  filterConjunction: 'and',
+  sorts: [],
+  groupBy: null,
   nextCursor: null,
   hasMore: false,
   isLoading: false,
@@ -412,6 +430,242 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     set({ comments: get().comments.filter(c => c.id !== commentId) });
   },
 
+  // Filter, Sort, Group
+  setFilters: (filters: Filter[], conjunction: 'and' | 'or' = 'and') => {
+    set({ filters, filterConjunction: conjunction });
+  },
+
+  setSorts: (sorts: Sort[]) => {
+    set({ sorts });
+  },
+
+  setGroupBy: (fieldId: string | null) => {
+    set({ groupBy: fieldId });
+  },
+
+  getFilteredRecords: () => {
+    const { records, filters, filterConjunction, fields } = get();
+    if (filters.length === 0) return records;
+
+    return records.filter(record => {
+      const results = filters.map(filter => {
+        const field = fields.find(f => f.id === filter.field_id);
+        if (!field) return true;
+
+        const value = record.values[filter.field_id] as CellValue;
+        return evaluateFilter(value, filter.operator, filter.value as CellValue, field);
+      });
+
+      return filterConjunction === 'and'
+        ? results.every(Boolean)
+        : results.some(Boolean);
+    });
+  },
+
+  getSortedRecords: () => {
+    const { sorts, fields } = get();
+    const filtered = get().getFilteredRecords();
+    if (sorts.length === 0) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      for (const sort of sorts) {
+        const field = fields.find(f => f.id === sort.field_id);
+        if (!field) continue;
+
+        const aVal = a.values[sort.field_id];
+        const bVal = b.values[sort.field_id];
+        const comparison = compareValues(aVal, bVal, field.type);
+
+        if (comparison !== 0) {
+          return sort.direction === 'asc' ? comparison : -comparison;
+        }
+      }
+      return 0;
+    });
+  },
+
+  getGroupedRecords: () => {
+    const { groupBy, fields } = get();
+    const sorted = get().getSortedRecords();
+
+    if (!groupBy) {
+      return [{ group: '', records: sorted }];
+    }
+
+    const field = fields.find(f => f.id === groupBy);
+    if (!field) {
+      return [{ group: '', records: sorted }];
+    }
+
+    const groups = new Map<string, TableRecord[]>();
+    const uncategorized: TableRecord[] = [];
+
+    sorted.forEach(record => {
+      const value = record.values[groupBy];
+      if (value === null || value === undefined) {
+        uncategorized.push(record);
+      } else {
+        const groupKey = String(value);
+        if (!groups.has(groupKey)) {
+          groups.set(groupKey, []);
+        }
+        groups.get(groupKey)!.push(record);
+      }
+    });
+
+    const result: { group: string; records: TableRecord[] }[] = [];
+
+    // Add grouped records
+    groups.forEach((records, group) => {
+      result.push({ group, records });
+    });
+
+    // Add uncategorized at the end
+    if (uncategorized.length > 0) {
+      result.push({ group: '(Empty)', records: uncategorized });
+    }
+
+    return result;
+  },
+
   // Utilities
   clearError: () => set({ error: null }),
 }));
+
+// Helper function to evaluate a filter condition
+function evaluateFilter(value: CellValue, operator: string, filterValue: CellValue, _field: Field): boolean {
+  const isEmpty = value === null || value === undefined || value === '';
+  const isArray = Array.isArray(value);
+
+  switch (operator) {
+    case 'is_empty':
+      return isEmpty || (isArray && value.length === 0);
+    case 'is_not_empty':
+      return !isEmpty && (!isArray || value.length > 0);
+    case 'is_checked':
+      return value === true;
+    case 'is_not_checked':
+      return value !== true;
+    case 'contains':
+      return String(value || '').toLowerCase().includes(String(filterValue || '').toLowerCase());
+    case 'not_contains':
+      return !String(value || '').toLowerCase().includes(String(filterValue || '').toLowerCase());
+    case 'is':
+      if (typeof value === 'string' && typeof filterValue === 'string') {
+        return value.toLowerCase() === filterValue.toLowerCase();
+      }
+      return value === filterValue;
+    case 'is_not':
+      if (typeof value === 'string' && typeof filterValue === 'string') {
+        return value.toLowerCase() !== filterValue.toLowerCase();
+      }
+      return value !== filterValue;
+    case 'starts_with':
+      return String(value || '').toLowerCase().startsWith(String(filterValue || '').toLowerCase());
+    case 'ends_with':
+      return String(value || '').toLowerCase().endsWith(String(filterValue || '').toLowerCase());
+    case 'eq':
+      return Number(value) === Number(filterValue);
+    case 'neq':
+      return Number(value) !== Number(filterValue);
+    case 'lt':
+      return Number(value) < Number(filterValue);
+    case 'lte':
+      return Number(value) <= Number(filterValue);
+    case 'gt':
+      return Number(value) > Number(filterValue);
+    case 'gte':
+      return Number(value) >= Number(filterValue);
+    case 'is_any_of':
+      if (Array.isArray(filterValue)) {
+        const filterArr = filterValue as string[];
+        if (Array.isArray(value) && typeof value[0] === 'string') {
+          const valueArr = value as string[];
+          return filterArr.some((fv) => valueArr.includes(fv));
+        }
+        return filterArr.includes(value as string);
+      }
+      return false;
+    case 'is_none_of':
+      if (Array.isArray(filterValue)) {
+        const filterArr = filterValue as string[];
+        if (Array.isArray(value) && typeof value[0] === 'string') {
+          const valueArr = value as string[];
+          return !filterArr.some((fv) => valueArr.includes(fv));
+        }
+        return !filterArr.includes(value as string);
+      }
+      return true;
+    case 'is_before':
+      return new Date(value as string) < new Date(filterValue as string);
+    case 'is_after':
+      return new Date(value as string) > new Date(filterValue as string);
+    case 'is_on_or_before':
+      return new Date(value as string) <= new Date(filterValue as string);
+    case 'is_on_or_after':
+      return new Date(value as string) >= new Date(filterValue as string);
+    case 'is_within':
+      return evaluateDateWithin(value as string, filterValue as string);
+    default:
+      return true;
+  }
+}
+
+// Helper function to compare values for sorting
+function compareValues(a: CellValue, b: CellValue, fieldType: string): number {
+  // Handle nulls
+  if (a === null || a === undefined) return 1;
+  if (b === null || b === undefined) return -1;
+
+  // Number fields
+  if (['number', 'currency', 'percent', 'rating', 'duration'].includes(fieldType)) {
+    return Number(a) - Number(b);
+  }
+
+  // Date fields
+  if (['date', 'datetime', 'created_time', 'last_modified_time'].includes(fieldType)) {
+    return new Date(a as string).getTime() - new Date(b as string).getTime();
+  }
+
+  // Checkbox
+  if (fieldType === 'checkbox') {
+    return (a === true ? 1 : 0) - (b === true ? 1 : 0);
+  }
+
+  // Default: string comparison
+  return String(a).localeCompare(String(b));
+}
+
+// Helper function to evaluate date "is within" condition
+function evaluateDateWithin(value: string, period: string): boolean {
+  if (!value) return false;
+
+  const date = new Date(value);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case 'today':
+      return date >= today && date < new Date(today.getTime() + 86400000);
+    case 'yesterday':
+      const yesterday = new Date(today.getTime() - 86400000);
+      return date >= yesterday && date < today;
+    case 'tomorrow':
+      const tomorrow = new Date(today.getTime() + 86400000);
+      return date >= tomorrow && date < new Date(tomorrow.getTime() + 86400000);
+    case 'past_week':
+      return date >= new Date(today.getTime() - 7 * 86400000) && date < now;
+    case 'past_month':
+      return date >= new Date(today.getTime() - 30 * 86400000) && date < now;
+    case 'past_year':
+      return date >= new Date(today.getTime() - 365 * 86400000) && date < now;
+    case 'next_week':
+      return date > now && date <= new Date(today.getTime() + 7 * 86400000);
+    case 'next_month':
+      return date > now && date <= new Date(today.getTime() + 30 * 86400000);
+    case 'next_year':
+      return date > now && date <= new Date(today.getTime() + 365 * 86400000);
+    default:
+      return true;
+  }
+}
