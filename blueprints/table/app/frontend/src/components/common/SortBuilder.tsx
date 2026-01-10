@@ -66,7 +66,7 @@ export function SortBuilder({ onClose }: SortBuilderProps) {
   return (
     <div className="p-4 min-w-[350px]">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-gray-900">Sort records</h3>
+        <h3 className="font-semibold text-gray-900">Sort records</h3>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -153,10 +153,10 @@ export function SortBuilder({ onClose }: SortBuilderProps) {
       </button>
 
       {/* Action buttons */}
-      <div className="mt-4 pt-3 border-t border-gray-200 flex items-center justify-between">
+      <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
         <button
           onClick={clearSorts}
-          className="text-sm text-gray-600 hover:text-gray-800"
+          className="text-sm text-slate-600 hover:text-slate-800"
         >
           Clear all
         </button>

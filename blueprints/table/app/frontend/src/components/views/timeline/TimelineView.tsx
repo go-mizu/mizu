@@ -190,7 +190,7 @@ export function TimelineView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header controls */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-4">
           <h2 className="text-lg font-semibold text-gray-900">
             {viewStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
@@ -198,7 +198,7 @@ export function TimelineView() {
           <div className="flex gap-1">
             <button
               onClick={() => navigateTimeline('prev')}
-              className="p-2 hover:bg-gray-100 rounded-md"
+              className="p-2 hover:bg-slate-50 rounded-md"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -206,7 +206,7 @@ export function TimelineView() {
             </button>
             <button
               onClick={() => navigateTimeline('next')}
-              className="p-2 hover:bg-gray-100 rounded-md"
+              className="p-2 hover:bg-slate-50 rounded-md"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -238,15 +238,15 @@ export function TimelineView() {
       <div className="flex-1 overflow-auto">
         <div className="min-w-max">
           {/* Column headers */}
-          <div className="flex border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
-            <div className="w-48 flex-shrink-0 p-2 border-r border-gray-200 font-medium text-sm text-gray-700">
+          <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
+            <div className="w-48 flex-shrink-0 p-2 border-r border-slate-200 font-semibold text-sm text-slate-700">
               Records
             </div>
             <div className="flex">
               {columns.map((col, i) => (
                 <div
                   key={i}
-                  className="border-r border-gray-200 p-2 text-center text-sm text-gray-600"
+                  className="border-r border-slate-200 p-2 text-center text-sm text-slate-600"
                   style={{ width: columnWidth }}
                 >
                   {col.label}
@@ -260,11 +260,11 @@ export function TimelineView() {
             {recordBars.map((bar) => (
               <div
                 key={bar.record.id}
-                className="flex border-b border-gray-100 hover:bg-gray-50"
+                className="flex border-b border-slate-100 hover:bg-slate-50"
                 style={{ height: 40 }}
               >
                 {/* Record name */}
-                <div className="w-48 flex-shrink-0 px-2 flex items-center border-r border-gray-200">
+                <div className="w-48 flex-shrink-0 px-2 flex items-center border-r border-slate-200">
                   <button
                     onClick={() => setExpandedRecord(bar.record)}
                     className="text-sm text-gray-900 truncate hover:text-primary"
@@ -280,7 +280,7 @@ export function TimelineView() {
                     {columns.map((_, i) => (
                       <div
                         key={i}
-                        className="border-r border-gray-100"
+                        className="border-r border-slate-100"
                         style={{ width: columnWidth }}
                       />
                     ))}
@@ -303,8 +303,8 @@ export function TimelineView() {
             ))}
 
             {/* Add record row */}
-            <div className="flex border-b border-gray-100 hover:bg-gray-50" style={{ height: 40 }}>
-              <div className="w-48 flex-shrink-0 px-2 flex items-center border-r border-gray-200">
+            <div className="flex border-b border-slate-100 hover:bg-slate-50" style={{ height: 40 }}>
+              <div className="w-48 flex-shrink-0 px-2 flex items-center border-r border-slate-200">
                 <button
                   onClick={() => handleAddRecord(viewStart)}
                   className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"

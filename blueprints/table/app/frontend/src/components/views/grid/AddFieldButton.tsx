@@ -72,7 +72,7 @@ export function AddFieldButton() {
     <div className="relative">
       <button
         onClick={() => setShowMenu(true)}
-        className="h-8 px-3 text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+        className="h-9 px-3 text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1 rounded-md hover:bg-slate-50"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -83,7 +83,7 @@ export function AddFieldButton() {
       {showMenu && (
         <>
           <div className="fixed inset-0 z-40" onClick={handleClose} />
-          <div className="absolute right-0 top-full mt-1 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-[400px] overflow-hidden flex flex-col">
+          <div className="absolute right-0 top-full mt-1 w-80 bg-white rounded-xl shadow-lg border border-gray-200 z-50 max-h-[400px] overflow-hidden flex flex-col">
             {showNameInput && selectedType ? (
               <>
                 <div className="p-4 border-b border-gray-200">
@@ -119,7 +119,7 @@ export function AddFieldButton() {
                     </div>
                   </div>
                 </div>
-                <div className="p-4 bg-gray-50 flex justify-end gap-2">
+                <div className="p-4 bg-slate-50 flex justify-end gap-2">
                   <button onClick={handleClose} className="btn btn-secondary">Cancel</button>
                   <button onClick={handleCreate} className="btn btn-primary" disabled={!fieldName.trim()}>
                     Create field

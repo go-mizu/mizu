@@ -22,14 +22,14 @@ export function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#f6f7fb] py-12 px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Table</h1>
-          <p className="mt-2 text-gray-600">Your data, organized.</p>
+          <h1 className="text-3xl font-semibold text-gray-900">Table</h1>
+          <p className="mt-2 text-slate-600">Your data, organized.</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-md p-8">
+        <div className="bg-white rounded-xl shadow-md p-8 border border-slate-200">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">
             {mode === 'login' ? 'Sign in' : 'Create account'}
           </h2>

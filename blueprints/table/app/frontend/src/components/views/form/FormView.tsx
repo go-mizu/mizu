@@ -83,14 +83,14 @@ export function FormView() {
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Form preview */}
-      <div className="flex-1 overflow-auto bg-gray-100 p-8">
+      <div className="flex-1 overflow-auto bg-slate-100 p-8">
         <div className="max-w-2xl mx-auto">
-          <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-slate-200">
             {/* Form header */}
-            <div className="p-6 border-b border-gray-200">
-              <h1 className="text-2xl font-bold text-gray-900">{formTitle}</h1>
+            <div className="p-6 border-b border-slate-200">
+              <h1 className="text-2xl font-semibold text-gray-900">{formTitle}</h1>
               {formDescription && (
-                <p className="mt-2 text-gray-600">{formDescription}</p>
+                <p className="mt-2 text-slate-600">{formDescription}</p>
               )}
             </div>
 
@@ -119,7 +119,7 @@ export function FormView() {
             </div>
 
             {/* Submit button */}
-            <div className="p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+            <div className="p-6 border-t border-slate-200 bg-slate-50 rounded-b-xl">
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -143,10 +143,10 @@ export function FormView() {
       </div>
 
       {/* Configuration panel */}
-      <div className={`${showConfig ? 'w-80' : 'w-12'} border-l border-gray-200 bg-white flex flex-col transition-all duration-200`}>
+      <div className={`${showConfig ? 'w-80' : 'w-12'} border-l border-slate-200 bg-white flex flex-col transition-all duration-200`}>
         <button
           onClick={() => setShowConfig(!showConfig)}
-          className="p-3 border-b border-gray-200 hover:bg-gray-50 flex items-center justify-center"
+          className="p-3 border-b border-slate-200 hover:bg-slate-50 flex items-center justify-center"
         >
           <svg className={`w-5 h-5 text-gray-600 transform ${showConfig ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -155,14 +155,14 @@ export function FormView() {
 
         {showConfig && (
           <div className="flex-1 overflow-auto p-4">
-            <h3 className="font-medium text-gray-900 mb-4">Form Configuration</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">Form Configuration</h3>
 
             <div className="space-y-3">
               {fields.map(field => {
                 const config = fieldConfigs.find(c => c.fieldId === field.id);
 
                 return (
-                  <div key={field.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                  <div key={field.id} className="flex items-center justify-between p-2 rounded hover:bg-slate-50">
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
@@ -172,7 +172,7 @@ export function FormView() {
                       />
                       <span className="text-sm text-gray-700">{field.name}</span>
                     </div>
-                    <label className="flex items-center gap-1 text-xs text-gray-500">
+                    <label className="flex items-center gap-1 text-xs text-slate-500">
                       <input
                         type="checkbox"
                         checked={config?.required || false}
@@ -421,13 +421,13 @@ function FormField({ field, value, onChange, required }: FormFieldProps) {
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-semibold text-slate-700 mb-2">
         {field.name}
         {required && <span className="text-danger ml-1">*</span>}
       </label>
       {renderInput()}
       {field.description && (
-        <p className="mt-1 text-xs text-gray-500">{field.description}</p>
+        <p className="mt-1 text-xs text-slate-500">{field.description}</p>
       )}
     </div>
   );

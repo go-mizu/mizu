@@ -23,7 +23,7 @@ export function GroupBuilder({ onClose }: GroupBuilderProps) {
   return (
     <div className="p-4 min-w-[280px]">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-gray-900">Group records</h3>
+        <h3 className="font-semibold text-gray-900">Group records</h3>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -36,7 +36,7 @@ export function GroupBuilder({ onClose }: GroupBuilderProps) {
         <button
           onClick={() => handleSelectGroup(null)}
           className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 ${
-            groupBy === null ? 'bg-primary-50 text-primary' : 'hover:bg-gray-100'
+            groupBy === null ? 'bg-primary-50 text-primary' : 'hover:bg-slate-50'
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,7 +51,7 @@ export function GroupBuilder({ onClose }: GroupBuilderProps) {
             key={field.id}
             onClick={() => handleSelectGroup(field.id)}
             className={`w-full text-left px-3 py-2 rounded-md text-sm flex items-center gap-2 ${
-              groupBy === field.id ? 'bg-primary-50 text-primary' : 'hover:bg-gray-100'
+              groupBy === field.id ? 'bg-primary-50 text-primary' : 'hover:bg-slate-50'
             }`}
           >
             <FieldIcon type={field.type} />

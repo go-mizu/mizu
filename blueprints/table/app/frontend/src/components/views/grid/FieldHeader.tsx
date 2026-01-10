@@ -91,7 +91,7 @@ export function FieldHeader({ field }: FieldHeaderProps) {
 
   return (
     <th
-      className={`min-w-[150px] border-b border-r border-gray-200 bg-gray-50 p-0 ${
+      className={`min-w-[150px] border-b border-r border-slate-200 bg-slate-50 p-0 ${
         dragOver ? 'bg-primary-50' : ''
       }`}
       draggable
@@ -100,8 +100,8 @@ export function FieldHeader({ field }: FieldHeaderProps) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="flex items-center h-8 px-2 gap-2">
-        <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-center h-9 px-2 gap-2">
+        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={icon} />
         </svg>
 
@@ -118,12 +118,12 @@ export function FieldHeader({ field }: FieldHeaderProps) {
                 setIsEditing(false);
               }
             }}
-            className="flex-1 min-w-0 text-sm font-medium border-0 bg-transparent focus:outline-none focus:ring-0"
+            className="flex-1 min-w-0 text-sm font-semibold border-0 bg-transparent focus:outline-none focus:ring-0"
             autoFocus
           />
         ) : (
           <span
-            className="flex-1 min-w-0 text-sm font-medium text-gray-700 truncate cursor-pointer"
+            className="flex-1 min-w-0 text-sm font-semibold text-slate-700 truncate cursor-pointer"
             onClick={() => {
               setName(field.name);
               setIsEditing(true);
