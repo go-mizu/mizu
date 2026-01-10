@@ -1,0 +1,11 @@
+_id,Name,Email,Phone,Event,Ticket Type,Status,Checked In,Notes
+,Jennifer Martinez,j.martinez@company.com,+1 (415) 555-3001,Tech Summit 2024,VIP,Confirmed,false,Needs wheelchair access
+,Thomas Brown,t.brown@startup.io,+1 (415) 555-3002,Tech Summit 2024,Early Bird,Confirmed,false,Vegetarian meals
+,Lisa Wang,lisa.w@corp.com,+1 (415) 555-3003,Design Workshop,General,Confirmed,false,
+,Kevin Park,k.park@tech.co,+1 (415) 555-3004,AI Workshop Series,VIP,Confirmed,false,Requested front row seat
+,Maria Santos,m.santos@agency.com,+1 (415) 555-3005,Design Workshop,General,Registered,false,First time attendee
+,James Wilson,j.wilson@company.com,+1 (415) 555-3006,Tech Summit 2024,General,Cancelled,false,Refund processed
+,Emily Chen,e.chen@edu.org,+1 (415) 555-3007,Cloud Computing Webinar,Student,Confirmed,false,
+,Robert Garcia,r.garcia@startup.io,+1 (415) 555-3008,Startup Networking Meetup,General,Checked In,true,Investor
+,Amanda Johnson,a.johnson@corp.com,+1 (415) 555-3009,Annual Charity Gala,VIP,Confirmed,false,Table sponsor
+,David Lee,d.lee@tech.co,+1 (415) 555-3010,Developer Meetup,General,Checked In,true,Speaking

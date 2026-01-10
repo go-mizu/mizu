@@ -29,7 +29,16 @@ func NewSeed() *cobra.Command {
 		Long: `Seed the Table database with demo data from a seed directory.
 
 Available seeds:
-  - project_tracker (default): Complete workspace with Tasks, Projects, Team Members, and Clients tables
+  - project_tracker (default): Tasks, Projects, Team Members, Clients
+  - crm: Leads, Contacts, Deals, Companies (Sales CRM)
+  - inventory: Products, Suppliers, Orders, Warehouses
+  - hr: Employees, Departments, Leave Requests, Performance Reviews
+  - real_estate: Properties, Agents, Showings, Clients
+  - restaurant: Menu Items, Orders, Tables, Reservations
+  - ecommerce: Products, Categories, Orders, Customers
+  - event_management: Events, Venues, Speakers, Attendees
+  - bug_tracker: Issues, Sprints, Components, Milestones
+  - library: Books, Authors, Members, Loans
 
 Creates:
   - 3 users (alice, bob, charlie)
@@ -41,7 +50,8 @@ To reset the database, delete the data directory first:
 
 Examples:
   table seed                              # Seed with project_tracker (default)
-  table seed --name project_tracker       # Explicitly specify seed name
+  table seed --name crm                   # Seed with Sales CRM data
+  table seed --name ecommerce             # Seed with E-Commerce data
   table seed --data /path/to              # Seed specific database`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSeed(seedName)

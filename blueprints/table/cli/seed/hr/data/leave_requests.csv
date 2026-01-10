@@ -1,0 +1,11 @@
+_id,Employee,Type,Start Date,End Date,Days,Status,Reason,Approved By
+,Emily Rodriguez,Vacation,2024-02-12,2024-02-16,5,Approved,Family vacation to Hawaii,Sarah Chen
+,Michael Johnson,Sick Leave,2024-01-22,2024-01-23,2,Approved,Flu symptoms,Sarah Chen
+,Amanda Lee,Personal,2024-01-29,2024-01-29,1,Approved,Doctor appointment,David Kim
+,Maria Santos,Parental,2024-01-08,2024-04-08,65,Approved,Maternity leave,Robert Taylor
+,Kevin Park,Vacation,2024-03-01,2024-03-08,6,Pending,Ski trip to Colorado,
+,Thomas Garcia,Sick Leave,2024-01-15,2024-01-15,1,Approved,Migraine,David Kim
+,Robert Taylor,Vacation,2024-02-19,2024-02-23,5,Approved,Anniversary trip,Jessica Brown
+,Lisa Martinez,Personal,2024-01-25,2024-01-25,1,Denied,Too many team members out,James Wilson
+,David Kim,Vacation,2024-04-01,2024-04-12,10,Pending,International trip,
+,Jessica Brown,Vacation,2024-03-15,2024-03-22,6,Approved,Spring break with kids,James Wilson

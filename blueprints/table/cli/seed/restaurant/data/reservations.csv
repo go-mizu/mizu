@@ -1,0 +1,11 @@
+_id,Guest Name,Phone,Email,Party Size,Date,Time,Table,Status,Notes
+,Johnson Family,+1 (415) 555-9001,johnson@email.com,4,2024-01-16,7:00 PM,Table 6,Confirmed,Birthday celebration - bring cake
+,Smith Wedding Party,+1 (415) 555-9002,smith@email.com,12,2024-01-17,6:30 PM,Private,Confirmed,Rehearsal dinner
+,Chen Business,+1 (415) 555-9003,chen@corp.com,6,2024-01-16,12:00 PM,Table 7,Confirmed,Business lunch - need privacy
+,Martinez Date Night,+1 (415) 555-9004,martinez@email.com,2,2024-01-16,8:00 PM,Patio 3,Confirmed,Anniversary - champagne on arrival
+,Williams Group,+1 (415) 555-9005,williams@email.com,8,2024-01-18,7:30 PM,Table 7,Pending,Waiting for confirmation
+,Davis Solo,+1 (415) 555-9006,davis@email.com,1,2024-01-16,6:00 PM,Bar 2,Confirmed,Regular - usual seat
+,Thompson Party,+1 (415) 555-9007,thompson@email.com,6,2024-01-15,8:30 PM,Table 5,Completed,Great evening
+,Garcia Family,+1 (415) 555-9008,garcia@email.com,5,2024-01-14,7:00 PM,Table 7,Cancelled,Rescheduling
+,Lee Anniversary,+1 (415) 555-9009,lee@email.com,2,2024-01-19,8:00 PM,Table 1,Confirmed,Window seat requested
+,Brown Celebration,+1 (415) 555-9010,brown@email.com,10,2024-01-20,7:00 PM,Private,Pending,Graduation party
