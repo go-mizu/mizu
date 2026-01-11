@@ -11,6 +11,7 @@ interface KanbanCardProps {
   colorField: Field | undefined;
   config: KanbanConfig;
   isDragging?: boolean;
+  hideEmptyFields?: boolean;
   onClick: () => void;
 }
 
@@ -22,6 +23,7 @@ export function KanbanCard({
   colorField,
   config,
   isDragging,
+  hideEmptyFields,
   onClick,
 }: KanbanCardProps) {
   const {
@@ -58,8 +60,21 @@ export function KanbanCard({
   // Get card background color from color field
   const cardColor = getCardColor(record, colorField);
 
-  // Get fields to display (limited by card size)
-  const fieldsToShow = displayFields.slice(0, sizeConfig.fieldCount);
+  // Get fields to display (limited by card size, optionally hiding empty fields)
+  const fieldsToShow = (() => {
+    let fields = displayFields.slice(0, sizeConfig.fieldCount);
+
+    if (hideEmptyFields) {
+      fields = fields.filter((field) => {
+        const value = record.values[field.id];
+        if (value === null || value === undefined || value === '') return false;
+        if (Array.isArray(value) && value.length === 0) return false;
+        return true;
+      });
+    }
+
+    return fields;
+  })();
 
   return (
     <div
