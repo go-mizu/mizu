@@ -22,22 +22,19 @@ export default defineConfig(({ mode }) => {
       outDir: '../../assets/static/dist',
       emptyOutDir: true,
       sourcemap: true,
+      manifest: true, // Generate manifest.json for asset versioning
       rollupOptions: {
         output: {
-          entryFileNames: 'js/main.js',
-          chunkFileNames: 'js/[name].js',
+          // Use content hashing for cache busting
+          entryFileNames: 'js/main-[hash].js',
+          chunkFileNames: 'js/[name]-[hash].js',
           assetFileNames: (assetInfo) => {
             if (assetInfo.name?.endsWith('.css')) {
-              return 'css/main.css';
+              return 'css/main-[hash].css';
             }
-            return 'assets/[name][extname]';
+            return 'assets/[name]-[hash][extname]';
           },
           manualChunks(id) {
-            // React core - changes rarely
-            if (id.includes('node_modules/react-dom') ||
-                id.includes('node_modules/react/')) {
-              return 'react-vendor';
-            }
             // DnD kit - used for drag-drop
             if (id.includes('node_modules/@dnd-kit/')) {
               return 'dnd';
@@ -50,6 +47,13 @@ export default defineConfig(({ mode }) => {
             if (id.includes('node_modules/zustand')) {
               return 'zustand';
             }
+            // React core - changes rarely
+            if (id.includes('node_modules/react-dom') ||
+                id.includes('node_modules/react/') ||
+                id.includes('node_modules/scheduler')) {
+              return 'react-vendor';
+            }
+            // Note: recharts/d3, tiptap/prosemirror are handled via lazy loading
           },
         },
       },

@@ -5,11 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{block "title" .}}Table{{end}}</title>
-    <link rel="stylesheet" href="/static/dist/css/main.css">
-    {{block "head" .}}{{end}}
+    {{range assetCSS "src/main.tsx"}}<link rel="stylesheet" href="{{.}}">
+    {{end}}{{block "head" .}}{{end}}
 </head>
 <body class="min-h-screen bg-gray-50">
     {{block "content" .}}{{end}}
+    <script type="module" src="{{asset "index.html"}}"></script>
     {{block "scripts" .}}{{end}}
 </body>
 </html>

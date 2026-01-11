@@ -1,14 +1,31 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { useBaseStore } from '../../../stores/baseStore';
 import type { DashboardWidget, WidgetData, DashboardConfig } from '../../../types';
-import { ChartWidget } from './widgets/ChartWidget';
 import { NumberWidget } from './widgets/NumberWidget';
 import { ListWidget } from './widgets/ListWidget';
 import { AddWidgetModal } from './AddWidgetModal';
 
+// Lazy load ChartWidget to split recharts (~400KB) into separate chunk
+const ChartWidget = lazy(() => import('./widgets/ChartWidget').then(m => ({ default: m.ChartWidget })));
+
 interface DashboardDataResponse {
   widgets: WidgetData[];
   updated_at: string;
+}
+
+// Loading placeholder while chart chunk loads
+function ChartLoadingPlaceholder({ title }: { title: string }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 h-full flex flex-col">
+      <h3 className="text-sm font-medium text-gray-700 mb-3">{title}</h3>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="w-32 h-32 bg-gray-200 rounded-full"></div>
+          <div className="mt-4 h-4 bg-gray-200 rounded w-24"></div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function DashboardView() {
@@ -146,11 +163,13 @@ export function DashboardView() {
       switch (widget.type) {
         case 'chart':
           return (
-            <ChartWidget
-              widget={widget}
-              data={data}
-              isLoading={isLoading}
-            />
+            <Suspense fallback={<ChartLoadingPlaceholder title={widget.title} />}>
+              <ChartWidget
+                widget={widget}
+                data={data}
+                isLoading={isLoading}
+              />
+            </Suspense>
           );
         case 'number':
           return (
