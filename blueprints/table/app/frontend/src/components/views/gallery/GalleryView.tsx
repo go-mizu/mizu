@@ -182,26 +182,26 @@ export function GalleryView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-600">
+      <div className="view-toolbar">
+        <div className="view-toolbar-left">
+          <span className="view-toolbar-count">
             {visibleRecords.length} record{visibleRecords.length !== 1 ? 's' : ''}
             {!config.showEmptyCards && visibleRecords.length !== records.length && (
-              <span className="text-slate-400 ml-1">
+              <span className="text-[var(--at-muted)] ml-1">
                 ({records.length - visibleRecords.length} hidden)
               </span>
             )}
           </span>
           {coverField && (
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-[var(--at-muted)]">
               Cover: {coverField.name}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 relative">
+        <div className="view-toolbar-right relative">
           <button
             onClick={() => setShowSettings(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-slate-100 rounded-lg transition-colors"
+            className="toolbar-btn"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -242,17 +242,13 @@ export function GalleryView() {
             {/* Add new card */}
             <button
               onClick={handleAddRecord}
-              className={`
-                bg-slate-50 rounded-xl border-2 border-dashed border-slate-200
-                flex items-center justify-center min-h-[200px]
-                hover:border-slate-300 hover:bg-slate-100 transition-colors
-              `}
+              className="bg-[var(--at-surface-muted)] rounded-xl border-2 border-dashed border-[var(--at-border)] flex items-center justify-center min-h-[200px] hover:border-[var(--at-primary)] hover:bg-[var(--at-surface-hover)] transition-colors group"
             >
               <div className="text-center">
-                <svg className="w-8 h-8 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-8 h-8 mx-auto text-[var(--at-muted)] group-hover:text-[var(--at-primary)] mb-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span className="text-sm text-gray-500">Add record</span>
+                <span className="text-sm text-[var(--at-text-secondary)] group-hover:text-[var(--at-primary)] transition-colors">Add record</span>
               </div>
             </button>
           </div>
@@ -301,28 +297,33 @@ interface EmptyStateProps {
 
 function EmptyState({ onAddRecord, hasRecords }: EmptyStateProps) {
   return (
-    <div className="flex-1 flex items-center justify-center text-gray-500 min-h-[400px]">
-      <div className="text-center max-w-md">
-        <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
+    <div className="flex-1 flex items-center justify-center min-h-[400px] bg-[var(--at-bg)]">
+      <div className="empty-state animate-fade-in">
+        <div className="empty-state-icon-wrapper">
+          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
         {hasRecords ? (
           <>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No cards with images</h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <h3 className="empty-state-title">No cards with images</h3>
+            <p className="empty-state-description">
               All records are hidden because they don't have cover images.
               Enable "Show cards without cover images" in settings.
             </p>
           </>
         ) : (
           <>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No records yet</h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <h3 className="empty-state-title">No records yet</h3>
+            <p className="empty-state-description">
               Create your first record to see it displayed as a gallery card.
             </p>
           </>
         )}
-        <button onClick={onAddRecord} className="btn btn-primary">
+        <button onClick={onAddRecord} className="btn btn-primary mt-2">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
           Add record
         </button>
       </div>

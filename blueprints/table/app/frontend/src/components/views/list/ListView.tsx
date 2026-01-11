@@ -127,23 +127,23 @@ export function ListView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
-        <div className="flex items-center gap-2">
+      <div className="view-toolbar">
+        <div className="view-toolbar-left">
           {selectedRecords.size > 0 && (
             <>
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-[var(--at-text-secondary)]">
                 {selectedRecords.size} selected
               </span>
               <button
                 onClick={handleDeleteSelected}
-                className="text-sm text-danger hover:text-danger-600"
+                className="btn btn-danger text-sm"
               >
                 Delete
               </button>
             </>
           )}
         </div>
-        <div className="text-sm text-gray-500">
+        <div className="view-toolbar-count">
           {records.length} record{records.length !== 1 ? 's' : ''}
         </div>
       </div>
@@ -151,14 +151,14 @@ export function ListView() {
       {/* List */}
       <div className="flex-1 overflow-auto">
         {/* Select all header */}
-        <div className="sticky top-0 bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center gap-3">
+        <div className="sticky top-0 bg-[var(--at-surface-muted)] border-b border-[var(--at-border)] px-4 py-2 flex items-center gap-3">
           <input
             type="checkbox"
             checked={selectedRecords.size === records.length && records.length > 0}
             onChange={toggleAll}
-            className="w-4 h-4 rounded border-gray-300"
+            className="checkbox"
           />
-          <span className="text-sm font-semibold text-slate-700">
+          <span className="text-sm font-semibold text-[var(--at-text)]">
             {primaryField?.name || 'Name'}
           </span>
         </div>
@@ -175,8 +175,8 @@ export function ListView() {
             return (
               <div
                 key={record.id}
-                className={`px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-slate-50 ${
-                  isSelected ? 'bg-primary-50' : ''
+                className={`px-4 py-3 flex items-start gap-3 cursor-pointer hover:bg-[var(--at-surface-hover)] ${
+                  isSelected ? 'bg-[var(--at-primary-soft)]' : ''
                 }`}
                 onClick={() => setExpandedRecord(record)}
               >
@@ -186,7 +186,7 @@ export function ListView() {
                   checked={isSelected}
                   onChange={(e) => toggleSelection(record.id, e as any)}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-4 h-4 rounded border-gray-300 mt-1"
+                  className="checkbox mt-1"
                 />
 
                 {/* Content */}
@@ -230,7 +230,7 @@ export function ListView() {
 
                         return (
                         <div key={field.id} className="text-sm text-gray-500">
-                          <span className="text-slate-400">{field.name}: </span>
+                          <span className="text-[var(--at-muted)]">{field.name}: </span>
                           {field.type === 'single_select' ? (
                             <SelectBadge field={field} value={value as string} />
                           ) : (
@@ -263,7 +263,7 @@ export function ListView() {
         {/* Add record */}
         <button
           onClick={handleAddRecord}
-          className="w-full px-4 py-3 text-left text-sm text-gray-500 hover:bg-gray-50 flex items-center gap-2"
+          className="w-full px-4 py-3 text-left text-sm text-[var(--at-text-secondary)] hover:bg-[var(--at-surface-hover)] flex items-center gap-2 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -273,16 +273,19 @@ export function ListView() {
 
         {/* Empty state */}
         {records.length === 0 && (
-          <div className="flex items-center justify-center h-64 text-gray-500">
-            <div className="text-center">
-              <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <p>No records yet</p>
-              <button
-                onClick={handleAddRecord}
-                className="mt-2 btn btn-primary"
-              >
+          <div className="flex items-center justify-center h-64 py-12">
+            <div className="empty-state animate-fade-in">
+              <div className="empty-state-icon-wrapper">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <h3 className="empty-state-title">No records yet</h3>
+              <p className="empty-state-description">Create your first record to get started</p>
+              <button onClick={handleAddRecord} className="btn btn-primary mt-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
                 Add your first record
               </button>
             </div>
