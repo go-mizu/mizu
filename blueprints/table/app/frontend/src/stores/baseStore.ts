@@ -529,9 +529,12 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     const { records, filters, filterConjunction, fields } = get();
     if (filters.length === 0) return records;
 
+    // Pre-build field map for O(1) lookups instead of O(n) per filter
+    const fieldMap = new Map(fields.map(f => [f.id, f]));
+
     return records.filter(record => {
       const results = filters.map(filter => {
-        const field = fields.find(f => f.id === filter.field_id);
+        const field = fieldMap.get(filter.field_id);
         if (!field) return true;
 
         const value = record.values[filter.field_id] as CellValue;
@@ -549,14 +552,22 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     const filtered = get().getFilteredRecords();
     if (sorts.length === 0) return filtered;
 
-    return [...filtered].sort((a, b) => {
-      for (const sort of sorts) {
-        const field = fields.find(f => f.id === sort.field_id);
-        if (!field) continue;
+    // Pre-build field map for O(1) lookups
+    const fieldMap = new Map(fields.map(f => [f.id, f]));
 
+    // Pre-resolve field types for sorts to avoid repeated map lookups
+    const sortFields = sorts.map(sort => ({
+      ...sort,
+      field: fieldMap.get(sort.field_id),
+    })).filter(s => s.field);
+
+    if (sortFields.length === 0) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      for (const sort of sortFields) {
         const aVal = a.values[sort.field_id];
         const bVal = b.values[sort.field_id];
-        const comparison = compareValues(aVal, bVal, field.type);
+        const comparison = compareValues(aVal, bVal, sort.field!.type);
 
         if (comparison !== 0) {
           return sort.direction === 'asc' ? comparison : -comparison;
@@ -574,12 +585,14 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       return [{ group: '', records: sorted }];
     }
 
-    const field = fields.find(f => f.id === groupBy);
+    // Pre-build field map for O(1) lookup
+    const fieldMap = new Map(fields.map(f => [f.id, f]));
+    const field = fieldMap.get(groupBy);
     if (!field) {
       return [{ group: '', records: sorted }];
     }
 
-    // Build a lookup map for select options (ID -> name)
+    // Build option map once (memoizable in future)
     const optionMap = new Map<string, string>();
     if (field.type === 'single_select' || field.type === 'multi_select') {
       const options = field.select_options || field.options?.choices || [];
@@ -600,18 +613,21 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     const groups = new Map<string, TableRecord[]>();
     const uncategorized: TableRecord[] = [];
 
-    sorted.forEach(record => {
+    // Single pass through sorted records
+    for (const record of sorted) {
       const value = record.values[groupBy];
       if (value === null || value === undefined) {
         uncategorized.push(record);
       } else {
         const groupKey = getDisplayLabel(value);
-        if (!groups.has(groupKey)) {
-          groups.set(groupKey, []);
+        const groupRecords = groups.get(groupKey);
+        if (groupRecords) {
+          groupRecords.push(record);
+        } else {
+          groups.set(groupKey, [record]);
         }
-        groups.get(groupKey)!.push(record);
       }
-    });
+    }
 
     const result: { group: string; records: TableRecord[] }[] = [];
 
