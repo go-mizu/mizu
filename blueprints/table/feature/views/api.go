@@ -15,12 +15,14 @@ var (
 
 // View types
 const (
-	TypeGrid     = "grid"
-	TypeKanban   = "kanban"
-	TypeCalendar = "calendar"
-	TypeGallery  = "gallery"
-	TypeTimeline = "timeline"
-	TypeForm     = "form"
+	TypeGrid      = "grid"
+	TypeKanban    = "kanban"
+	TypeCalendar  = "calendar"
+	TypeGallery   = "gallery"
+	TypeTimeline  = "timeline"
+	TypeForm      = "form"
+	TypeList      = "list"
+	TypeDashboard = "dashboard"
 )
 
 // View represents a saved view of a table.

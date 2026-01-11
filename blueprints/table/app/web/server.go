@@ -18,6 +18,7 @@ import (
 	"github.com/go-mizu/blueprints/table/assets"
 	"github.com/go-mizu/blueprints/table/feature/bases"
 	"github.com/go-mizu/blueprints/table/feature/comments"
+	"github.com/go-mizu/blueprints/table/feature/dashboard"
 	"github.com/go-mizu/blueprints/table/feature/fields"
 	"github.com/go-mizu/blueprints/table/feature/importexport"
 	"github.com/go-mizu/blueprints/table/feature/records"
@@ -53,6 +54,7 @@ type Server struct {
 	comments     *comments.Service
 	shares       *shares.Service
 	importexport *importexport.Service
+	dashboard    *dashboard.Service
 
 	// Handlers
 	authHandlers       *api.Auth
@@ -65,6 +67,7 @@ type Server struct {
 	commentHandlers    *api.Comment
 	shareHandlers      *api.Share
 	publicFormHandlers *api.PublicForm
+	dashboardHandlers  *api.Dashboard
 }
 
 // New creates a new server.
@@ -91,6 +94,7 @@ func New(cfg Config) (*Server, error) {
 	commentsSvc := comments.NewService(store.Comments())
 	sharesSvc := shares.NewService(store.Shares())
 	importexportSvc := importexport.NewService(basesSvc, tablesSvc, fieldsSvc, recordsSvc, viewsSvc)
+	dashboardSvc := dashboard.NewService(viewsSvc, recordsSvc, fieldsSvc)
 
 	s := &Server{
 		app:          mizu.New(),
@@ -106,6 +110,7 @@ func New(cfg Config) (*Server, error) {
 		comments:     commentsSvc,
 		shares:       sharesSvc,
 		importexport: importexportSvc,
+		dashboard:    dashboardSvc,
 	}
 
 	// Create handlers
@@ -119,6 +124,7 @@ func New(cfg Config) (*Server, error) {
 	s.commentHandlers = api.NewComment(commentsSvc, usersSvc, s.getUserID)
 	s.shareHandlers = api.NewShare(sharesSvc, basesSvc, tablesSvc, s.getUserID)
 	s.publicFormHandlers = api.NewPublicForm(viewsSvc, tablesSvc, fieldsSvc, recordsSvc)
+	s.dashboardHandlers = api.NewDashboard(dashboardSvc, viewsSvc, s.getUserID)
 
 	s.setupRoutes()
 
@@ -275,6 +281,12 @@ func (s *Server) setupRoutes() {
 		// Public forms (no auth required)
 		r.Get("/public/forms/{viewId}", s.publicFormHandlers.GetForm)
 		r.Post("/public/forms/{viewId}/submit", s.publicFormHandlers.SubmitForm)
+
+		// Dashboard
+		r.Get("/views/{id}/dashboard/data", s.authRequired(s.dashboardHandlers.GetData))
+		r.Post("/views/{id}/dashboard/widgets", s.authRequired(s.dashboardHandlers.AddWidget))
+		r.Patch("/views/{id}/dashboard/widgets/{widgetId}", s.authRequired(s.dashboardHandlers.UpdateWidget))
+		r.Delete("/views/{id}/dashboard/widgets/{widgetId}", s.authRequired(s.dashboardHandlers.DeleteWidget))
 	})
 
 	// Serve static files

@@ -13,6 +13,7 @@ import { GalleryView } from './components/views/gallery/GalleryView';
 import { TimelineView } from './components/views/timeline/TimelineView';
 import { FormView } from './components/views/form/FormView';
 import { ListView } from './components/views/list/ListView';
+import { DashboardView } from './components/views/dashboard/DashboardView';
 import { PublicFormPage } from './pages/PublicFormPage';
 
 function App() {
@@ -97,6 +98,8 @@ function App() {
         return <FormView />;
       case 'list':
         return <ListView />;
+      case 'dashboard':
+        return <DashboardView />;
       default:
         return <GridView />;
     }
