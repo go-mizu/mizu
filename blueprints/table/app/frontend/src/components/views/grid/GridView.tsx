@@ -10,7 +10,6 @@ import { SearchBar } from './SearchBar';
 import { SummaryBar, type SummaryFunction } from './SummaryBar';
 import { FillHandle } from './FillHandle';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
-import { GridToolbar } from './GridToolbar';
 import { normalizeFieldConfig } from './fieldConfig';
 import { copyToClipboard, parseClipboardData, stringToCellValue, generateFillSequence } from './clipboardUtils';
 import { VirtualizedBody } from './VirtualizedBody';
@@ -825,95 +824,6 @@ export function GridView() {
     }
   };
 
-  // Handle row height change
-  const handleRowHeightChange = useCallback((height: RowHeightKey) => {
-    setRowHeight(height);
-    const viewConfig = currentView?.config && typeof currentView.config === 'object'
-      ? currentView.config as Record<string, unknown>
-      : {};
-    updateViewConfig({ ...viewConfig, row_height: height });
-  }, [currentView?.config, updateViewConfig]);
-
-  // Handle row color field change
-  const handleRowColorFieldIdChange = useCallback((fieldId: string | null) => {
-    setRowColorFieldId(fieldId);
-    const viewConfig = currentView?.config && typeof currentView.config === 'object'
-      ? currentView.config as Record<string, unknown>
-      : {};
-    updateViewConfig({ ...viewConfig, row_color_field_id: fieldId });
-  }, [currentView?.config, updateViewConfig]);
-
-  // Handle show summary bar change
-  const handleShowSummaryBarChange = useCallback((show: boolean) => {
-    setShowSummaryBar(show);
-    const viewConfig = currentView?.config && typeof currentView.config === 'object'
-      ? currentView.config as Record<string, unknown>
-      : {};
-    updateViewConfig({ ...viewConfig, show_summary_bar: show });
-  }, [currentView?.config, updateViewConfig]);
-
-  // Toggle field visibility
-  const toggleFieldVisibility = useCallback((fieldId: string) => {
-    const currentConfig = fieldConfig.find(c => c.field_id === fieldId);
-    if (!currentConfig) return;
-    const nextConfig = fieldConfig.map(config => {
-      if (config.field_id !== fieldId) return config;
-      return { ...config, visible: !config.visible };
-    });
-    updateViewFieldConfig(nextConfig);
-  }, [fieldConfig, updateViewFieldConfig]);
-
-  // Export records
-  const handleExport = useCallback((format: 'csv' | 'json') => {
-    const exportFields = visibleFields;
-    const exportRecords = displayRecords;
-
-    if (format === 'csv') {
-      // CSV export
-      const headers = exportFields.map(f => `"${f.name.replace(/"/g, '""')}"`).join(',');
-      const rows = exportRecords.map(record => {
-        return exportFields.map(field => {
-          const value = record.values[field.id];
-          if (value === null || value === undefined) return '';
-          if (typeof value === 'string') return `"${value.replace(/"/g, '""')}"`;
-          if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-          if (Array.isArray(value)) {
-            const arrayStr = value.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
-            return `"${arrayStr.replace(/"/g, '""')}"`;
-          }
-          return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
-        }).join(',');
-      }).join('\n');
-
-      const csv = `${headers}\n${rows}`;
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${currentTable?.name || 'export'}_${new Date().toISOString().split('T')[0]}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } else {
-      // JSON export
-      const data = exportRecords.map(record => {
-        const row: Record<string, unknown> = {};
-        exportFields.forEach(field => {
-          row[field.name] = record.values[field.id] ?? null;
-        });
-        return row;
-      });
-
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${currentTable?.name || 'export'}_${new Date().toISOString().split('T')[0]}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-    }
-  }, [visibleFields, displayRecords, currentTable]);
-
   if (!currentTable) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -933,19 +843,6 @@ export function GridView() {
         isOpen={showSearch}
         onClose={() => setShowSearch(false)}
         onNavigate={navigateToCell}
-      />
-
-      {/* Grid Toolbar */}
-      <GridToolbar
-        rowHeight={rowHeight}
-        onRowHeightChange={handleRowHeightChange}
-        showSummaryBar={showSummaryBar}
-        onShowSummaryBarChange={handleShowSummaryBarChange}
-        rowColorFieldId={rowColorFieldId}
-        onRowColorFieldIdChange={handleRowColorFieldIdChange}
-        visibleFields={visibleFields}
-        onToggleFieldVisibility={toggleFieldVisibility}
-        onExport={handleExport}
       />
 
       {/* Selection bar */}
