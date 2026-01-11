@@ -423,7 +423,7 @@ export interface ViewSettings {
   // Timeline
   start_field_id?: string;
   end_field_id?: string;
-  time_scale?: 'day' | 'week' | 'month' | 'quarter' | 'year';
+  time_scale?: 'day' | 'week' | '2weeks' | 'month' | 'quarter' | 'year';
   group_field_id?: string;
   group_field_ids?: string[];       // Support up to 3 levels of grouping
   color_field_id?: string;          // Field for bar colors
@@ -432,6 +432,7 @@ export interface ViewSettings {
   show_dependencies?: boolean;
   show_today_marker?: boolean;
   fit_to_window?: boolean;
+  layout_mode?: 'standard' | 'gantt'; // Gantt mode shows each record on its own row
   collapsed_groups?: string[];      // IDs of collapsed swimlanes
 
   // Form - Comprehensive Airtable-compatible settings

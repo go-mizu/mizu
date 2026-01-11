@@ -1,13 +1,16 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useBaseStore } from '../../../stores/baseStore';
-import type { TableRecord, Field } from '../../../types';
+import type { TableRecord, Field, Dependency } from '../../../types';
 import { RecordSidebar } from '../RecordSidebar';
 import { TimelineSettings } from './TimelineSettings';
 import { RecordBar } from './RecordBar';
 import { RecordPreview } from './RecordPreview';
 import { TodayMarker } from './TodayMarker';
+import { TimelineSummaryBar } from './TimelineSummaryBar';
+import { DependencyArrow, DependencyCreator } from './DependencyArrow';
 
-type TimeScale = 'day' | 'week' | 'month' | 'quarter' | 'year';
+type TimeScale = 'day' | 'week' | '2weeks' | 'month' | 'quarter' | 'year';
+type LayoutMode = 'standard' | 'gantt';
 
 interface RecordBarData {
   record: TableRecord;
@@ -18,6 +21,7 @@ interface RecordBarData {
   row: number;
   stackIndex: number;
   groupKey: string;
+  top: number;
 }
 
 interface GroupData {
@@ -27,6 +31,8 @@ interface GroupData {
   color?: string;
   isCollapsed: boolean;
   rowCount: number;
+  level: number;
+  parentKey?: string;
 }
 
 export function TimelineView() {
@@ -43,8 +49,27 @@ export function TimelineView() {
     new Set(currentView?.settings?.collapsed_groups || [])
   );
 
+  // New state for enhanced features
+  const [showWeekends, setShowWeekends] = useState(currentView?.settings?.show_weekends ?? true);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('standard');
+  const [showSummaryBar, setShowSummaryBar] = useState(true);
+
+  // Drag-to-create state
+  const [isCreating, setIsCreating] = useState(false);
+  const [createStart, setCreateStart] = useState<{ x: number; date: Date; groupKey: string } | null>(null);
+  const [createEnd, setCreateEnd] = useState<{ x: number; date: Date } | null>(null);
+
+  // Dependency state
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [isCreatingDependency, setIsCreatingDependency] = useState(false);
+  const [dependencySource, setDependencySource] = useState<{ recordId: string; x: number; y: number; side: 'start' | 'end' } | null>(null);
+  const [dependencyTarget, setDependencyTarget] = useState<{ x: number; y: number } | null>(null);
+  const [selectedDependency, setSelectedDependency] = useState<string | null>(null);
+  const showDependencies = currentView?.settings?.show_dependencies ?? true;
+
   const hoverTimeoutRef = useRef<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const timelineContentRef = useRef<HTMLDivElement>(null);
 
   const [viewStart, setViewStart] = useState(() => {
     const now = new Date();
@@ -55,11 +80,10 @@ export function TimelineView() {
   const startFieldId = currentView?.settings?.start_field_id || currentView?.config?.dateField;
   const endFieldId = currentView?.settings?.end_field_id || currentView?.config?.endDateField;
   const groupFieldId = currentView?.settings?.group_field_id;
+  const groupFieldIds = currentView?.settings?.group_field_ids || (groupFieldId ? [groupFieldId] : []);
   const colorFieldId = currentView?.settings?.color_field_id;
   const labelFieldIds = currentView?.settings?.label_field_ids;
   const showTodayMarker = currentView?.settings?.show_today_marker ?? true;
-  // Dependencies will be implemented in a future update
-  // const showDependencies = currentView?.settings?.show_dependencies ?? true;
   const rowHeightSetting = currentView?.settings?.timeline_row_height || 'medium';
 
   const rowHeight = rowHeightSetting === 'compact' ? 32 : rowHeightSetting === 'tall' ? 48 : 40;
@@ -83,20 +107,20 @@ export function TimelineView() {
     return dateFields[1] || dateFields[0];
   }, [fields, dateFields, endFieldId]);
 
-  // Get grouping field
-  const groupField = useMemo(() => {
-    if (groupFieldId) {
-      return fields.find(f => f.id === groupFieldId);
-    }
-    return null;
-  }, [fields, groupFieldId]);
+  // Get grouping fields
+  const groupFields = useMemo(() => {
+    return groupFieldIds
+      .map(id => fields.find(f => f.id === id))
+      .filter((f): f is Field => f !== undefined);
+  }, [fields, groupFieldIds]);
+
+  const groupField = groupFields[0];
 
   // Get color field
   const colorField = useMemo(() => {
     if (colorFieldId) {
       return fields.find(f => f.id === colorFieldId);
     }
-    // Default to first single_select field
     return fields.find(f => f.type === 'single_select');
   }, [fields, colorFieldId]);
 
@@ -107,7 +131,7 @@ export function TimelineView() {
   const { columnWidth, columns, totalWidth, msPerPixel } = useMemo(() => {
     let end: Date;
     let colWidth: number;
-    const cols: { date: Date; label: string; subLabel?: string }[] = [];
+    const cols: { date: Date; label: string; subLabel?: string; isWeekend?: boolean }[] = [];
 
     const start = new Date(viewStart);
 
@@ -117,16 +141,18 @@ export function TimelineView() {
         end.setDate(end.getDate() + 60);
         colWidth = 40;
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
           cols.push({
             date: new Date(d),
             label: d.getDate().toString(),
             subLabel: d.getDate() === 1 ? d.toLocaleDateString('en-US', { month: 'short' }) : undefined,
+            isWeekend,
           });
         }
         break;
       case 'week':
         end = new Date(start);
-        end.setDate(end.getDate() + 168); // 24 weeks
+        end.setDate(end.getDate() + 168);
         colWidth = 60;
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 7)) {
           const weekNum = getWeekNumber(d);
@@ -134,6 +160,21 @@ export function TimelineView() {
             date: new Date(d),
             label: `W${weekNum}`,
             subLabel: d.getDate() <= 7 ? d.toLocaleDateString('en-US', { month: 'short' }) : undefined,
+          });
+        }
+        break;
+      case '2weeks':
+        end = new Date(start);
+        end.setDate(end.getDate() + 336);
+        colWidth = 100;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 14)) {
+          const weekNum = getWeekNumber(d);
+          cols.push({
+            date: new Date(d),
+            label: `W${weekNum}-${weekNum + 1}`,
+            subLabel: d.getMonth() !== new Date(d.getTime() + 86400000 * 13).getMonth()
+              ? d.toLocaleDateString('en-US', { month: 'short' })
+              : undefined,
           });
         }
         break;
@@ -175,11 +216,21 @@ export function TimelineView() {
         break;
     }
 
-    const total = cols.length * colWidth;
+    // Filter weekends if needed (only for day view)
+    const filteredCols = !showWeekends && timeScale === 'day'
+      ? cols.filter(col => !col.isWeekend)
+      : cols;
+
+    const total = filteredCols.length * colWidth;
     const msPerPx = (end.getTime() - start.getTime()) / total;
 
-    return { columnWidth: colWidth, columns: cols, totalWidth: total, msPerPixel: msPerPx };
-  }, [viewStart, timeScale]);
+    return {
+      columnWidth: colWidth,
+      columns: filteredCols,
+      totalWidth: total,
+      msPerPixel: msPerPx
+    };
+  }, [viewStart, timeScale, showWeekends]);
 
   // Calculate today marker position
   const todayPosition = useMemo(() => {
@@ -189,8 +240,8 @@ export function TimelineView() {
   }, [viewStart, msPerPixel]);
 
   // Group records and calculate bar positions
-  const { groups, totalHeight } = useMemo(() => {
-    if (!startField) return { groups: [], totalHeight: 0 };
+  const { groups, totalHeight, recordBars } = useMemo(() => {
+    if (!startField) return { groups: [], totalHeight: 0, recordBars: new Map<string, RecordBarData>() };
 
     const recordsWithDates = records.filter(record => {
       const startDate = record.values[startField.id];
@@ -225,7 +276,9 @@ export function TimelineView() {
 
     // Calculate bar positions for each group
     const processedGroups: GroupData[] = [];
+    const allBars = new Map<string, RecordBarData>();
     let currentRow = 0;
+    let cumulativeTop = 0;
 
     // Sort groups - put '(Empty)' at the end
     const sortedGroupKeys = Array.from(groupedRecords.keys()).sort((a, b) => {
@@ -242,7 +295,19 @@ export function TimelineView() {
       const bars: RecordBarData[] = [];
       const occupiedSlots: { left: number; right: number; row: number }[] = [];
 
-      groupRecords.forEach(record => {
+      // For Gantt mode, each record gets its own row
+      const useGanttLayout = layoutMode === 'gantt';
+
+      // Sort records by start date for Gantt layout
+      const sortedRecords = useGanttLayout
+        ? [...groupRecords].sort((a, b) => {
+            const aStart = new Date(a.values[startField.id] as string).getTime();
+            const bStart = new Date(b.values[startField.id] as string).getTime();
+            return aStart - bStart;
+          })
+        : groupRecords;
+
+      sortedRecords.forEach((record, recordIndex) => {
         const startDate = new Date(record.values[startField.id] as string);
         const endDate = endField && record.values[endField.id]
           ? new Date(record.values[endField.id] as string)
@@ -252,21 +317,29 @@ export function TimelineView() {
         const endX = Math.min(totalWidth, (endDate.getTime() - viewStart.getTime()) / msPerPixel);
         const width = Math.max(30, endX - startX);
 
-        // Find a row that doesn't overlap
-        let stackIndex = 0;
-        for (let i = 0; i <= occupiedSlots.length; i++) {
-          const overlapping = occupiedSlots.filter(
-            slot => slot.row === i && !(startX >= slot.right || startX + width <= slot.left)
-          );
-          if (overlapping.length === 0) {
-            stackIndex = i;
-            break;
+        let stackIndex: number;
+
+        if (useGanttLayout) {
+          // Gantt: each record on its own row
+          stackIndex = recordIndex;
+        } else {
+          // Standard: stack overlapping records
+          stackIndex = 0;
+          for (let i = 0; i <= occupiedSlots.length; i++) {
+            const overlapping = occupiedSlots.filter(
+              slot => slot.row === i && !(startX >= slot.right || startX + width <= slot.left)
+            );
+            if (overlapping.length === 0) {
+              stackIndex = i;
+              break;
+            }
           }
         }
 
         occupiedSlots.push({ left: startX, right: startX + width, row: stackIndex });
 
-        bars.push({
+        const barHeight = rowHeight === 32 ? 24 : rowHeight === 48 ? 36 : 28;
+        const barData: RecordBarData = {
           record,
           left: startX,
           width,
@@ -275,7 +348,11 @@ export function TimelineView() {
           row: currentRow,
           stackIndex,
           groupKey,
-        });
+          top: cumulativeTop + (groupField ? 36 : 0) + 4 + stackIndex * (barHeight + 4),
+        };
+
+        bars.push(barData);
+        allBars.set(record.id, barData);
       });
 
       // Calculate row count based on stacking
@@ -296,15 +373,17 @@ export function TimelineView() {
         color: groupColor,
         isCollapsed,
         rowCount,
+        level: 0,
       });
 
+      cumulativeTop += (groupField ? 36 : 0) + (isCollapsed ? 0 : rowCount * rowHeight);
       currentRow += rowCount;
     });
 
-    const total = processedGroups.reduce((sum, g) => sum + (g.isCollapsed ? 0 : g.rowCount) * rowHeight + 36, 0);
+    const total = cumulativeTop + rowHeight; // Extra row for "Add record"
 
-    return { groups: processedGroups, totalHeight: total };
-  }, [records, startField, endField, primaryField, colorField, groupField, fields, viewStart, msPerPixel, totalWidth, collapsedGroups, rowHeight]);
+    return { groups: processedGroups, totalHeight: total, recordBars: allBars };
+  }, [records, startField, endField, primaryField, colorField, groupField, fields, viewStart, msPerPixel, totalWidth, collapsedGroups, rowHeight, layoutMode]);
 
   // Navigation
   const navigateTimeline = (direction: 'prev' | 'next') => {
@@ -314,6 +393,7 @@ export function TimelineView() {
         newStart.setDate(newStart.getDate() + (direction === 'next' ? 14 : -14));
         break;
       case 'week':
+      case '2weeks':
         newStart.setDate(newStart.getDate() + (direction === 'next' ? 56 : -56));
         break;
       case 'month':
@@ -334,6 +414,7 @@ export function TimelineView() {
     switch (timeScale) {
       case 'day':
       case 'week':
+      case '2weeks':
         setViewStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
         break;
       default:
@@ -342,10 +423,24 @@ export function TimelineView() {
   };
 
   // Handlers
-  const handleAddRecord = async (date?: Date) => {
+  const handleAddRecord = async (date?: Date, groupKey?: string) => {
     if (!startField) return;
     const recordDate = date || viewStart;
-    await createRecord({ [startField.id]: recordDate.toISOString().split('T')[0] });
+    const values: Record<string, unknown> = {
+      [startField.id]: recordDate.toISOString().split('T')[0],
+    };
+
+    // Set group field value if applicable
+    if (groupField && groupKey && groupKey !== 'All Records' && groupKey !== '(Empty)') {
+      if (groupField.type === 'single_select') {
+        const choice = groupField.options?.choices?.find(c => c.name === groupKey);
+        if (choice) values[groupField.id] = choice.id;
+      } else {
+        values[groupField.id] = groupKey;
+      }
+    }
+
+    await createRecord(values);
   };
 
   const handleDateChange = useCallback(async (recordId: string, startDate: string, endDate?: string) => {
@@ -387,6 +482,110 @@ export function TimelineView() {
       return next;
     });
   };
+
+  // Drag-to-create handlers
+  const handleTimelineMouseDown = useCallback((e: React.MouseEvent, groupKey: string) => {
+    if (e.target !== e.currentTarget) return; // Only on empty space
+    if (!startField) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const date = new Date(viewStart.getTime() + x * msPerPixel);
+
+    setIsCreating(true);
+    setCreateStart({ x, date, groupKey });
+    setCreateEnd({ x, date });
+  }, [viewStart, msPerPixel, startField]);
+
+  const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isCreating || !createStart) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const date = new Date(viewStart.getTime() + x * msPerPixel);
+
+    setCreateEnd({ x, date });
+  }, [isCreating, createStart, viewStart, msPerPixel]);
+
+  const handleTimelineMouseUp = useCallback(async () => {
+    if (!isCreating || !createStart || !createEnd || !startField) {
+      setIsCreating(false);
+      setCreateStart(null);
+      setCreateEnd(null);
+      return;
+    }
+
+    const startDate = createStart.date < createEnd.date ? createStart.date : createEnd.date;
+    const endDate = createStart.date < createEnd.date ? createEnd.date : createStart.date;
+
+    // Only create if dragged at least 5 pixels
+    if (Math.abs(createEnd.x - createStart.x) > 5) {
+      const values: Record<string, unknown> = {
+        [startField.id]: startDate.toISOString().split('T')[0],
+      };
+
+      if (endField) {
+        values[endField.id] = endDate.toISOString().split('T')[0];
+      }
+
+      // Set group field value if applicable
+      if (groupField && createStart.groupKey && createStart.groupKey !== 'All Records' && createStart.groupKey !== '(Empty)') {
+        if (groupField.type === 'single_select') {
+          const choice = groupField.options?.choices?.find(c => c.name === createStart.groupKey);
+          if (choice) values[groupField.id] = choice.id;
+        } else {
+          values[groupField.id] = createStart.groupKey;
+        }
+      }
+
+      await createRecord(values);
+    }
+
+    setIsCreating(false);
+    setCreateStart(null);
+    setCreateEnd(null);
+  }, [isCreating, createStart, createEnd, startField, endField, groupField, createRecord]);
+
+  // Dependency handlers (_handleDependencyDragStart is for future use when wiring bar edge drag)
+  const _handleDependencyDragStart = useCallback((recordId: string, x: number, y: number, side: 'start' | 'end') => {
+    setIsCreatingDependency(true);
+    setDependencySource({ recordId, x, y, side });
+    setDependencyTarget({ x, y });
+  }, []);
+  void _handleDependencyDragStart; // Prevent unused variable warning
+
+  const handleDependencyDragMove = useCallback((e: React.MouseEvent) => {
+    if (!isCreatingDependency) return;
+    const rect = timelineContentRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setDependencyTarget({
+      x: e.clientX - rect.left + 224, // Account for sidebar
+      y: e.clientY - rect.top,
+    });
+  }, [isCreatingDependency]);
+
+  const handleDependencyDragEnd = useCallback((targetRecordId?: string) => {
+    if (dependencySource && targetRecordId && targetRecordId !== dependencySource.recordId) {
+      const newDependency: Dependency = {
+        id: `dep-${Date.now()}`,
+        table_id: '',
+        source_record_id: dependencySource.recordId,
+        target_record_id: targetRecordId,
+        type: dependencySource.side === 'end' ? 'finish_to_start' : 'start_to_start',
+        created_by: '',
+        created_at: new Date().toISOString(),
+      };
+      setDependencies(prev => [...prev, newDependency]);
+    }
+    setIsCreatingDependency(false);
+    setDependencySource(null);
+    setDependencyTarget(null);
+  }, [dependencySource]);
+
+  const handleDeleteDependency = useCallback((depId: string) => {
+    setDependencies(prev => prev.filter(d => d.id !== depId));
+    setSelectedDependency(null);
+  }, []);
 
   // Empty state
   if (!startField) {
@@ -440,6 +639,37 @@ export function TimelineView() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Layout mode toggle */}
+          <div className="flex items-center gap-1 border rounded-md overflow-hidden">
+            <button
+              onClick={() => setLayoutMode('standard')}
+              className={`px-2 py-1 text-xs ${layoutMode === 'standard' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              title="Standard layout"
+            >
+              Standard
+            </button>
+            <button
+              onClick={() => setLayoutMode('gantt')}
+              className={`px-2 py-1 text-xs ${layoutMode === 'gantt' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              title="Gantt layout (one record per row)"
+            >
+              Gantt
+            </button>
+          </div>
+
+          {/* Workdays toggle (day view only) */}
+          {timeScale === 'day' && (
+            <button
+              onClick={() => setShowWeekends(!showWeekends)}
+              className={`px-2 py-1 text-xs border rounded-md transition-colors ${
+                !showWeekends ? 'bg-primary text-white border-primary' : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              title={showWeekends ? 'Show weekdays only' : 'Show all days'}
+            >
+              {showWeekends ? 'All days' : 'Weekdays'}
+            </button>
+          )}
+
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-600">Scale:</span>
             <select
@@ -449,11 +679,23 @@ export function TimelineView() {
             >
               <option value="day">Day</option>
               <option value="week">Week</option>
+              <option value="2weeks">2 Weeks</option>
               <option value="month">Month</option>
               <option value="quarter">Quarter</option>
               <option value="year">Year</option>
             </select>
           </div>
+
+          {/* Summary bar toggle */}
+          <button
+            onClick={() => setShowSummaryBar(!showSummaryBar)}
+            className={`p-2 rounded-md transition-colors ${showSummaryBar ? 'bg-primary/10 text-primary' : 'hover:bg-slate-100 text-slate-600'}`}
+            title="Toggle summary bar"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </button>
 
           <div className="relative">
             <button
@@ -472,8 +714,13 @@ export function TimelineView() {
       </div>
 
       {/* Timeline grid */}
-      <div ref={gridRef} className="flex-1 overflow-auto">
-        <div className="min-w-max">
+      <div
+        ref={gridRef}
+        className="flex-1 overflow-auto"
+        onMouseMove={handleDependencyDragMove}
+        onMouseUp={() => handleDependencyDragEnd()}
+      >
+        <div className="min-w-max" ref={timelineContentRef}>
           {/* Column headers */}
           <div className="flex border-b border-slate-200 bg-white sticky top-0 z-20">
             <div className="w-56 flex-shrink-0 p-3 border-r border-slate-200 bg-slate-50">
@@ -488,7 +735,7 @@ export function TimelineView() {
                   <div
                     key={i}
                     className={`border-r border-slate-100 p-2 text-center flex flex-col justify-center ${
-                      isToday ? 'bg-red-50' : ''
+                      isToday ? 'bg-red-50' : col.isWeekend ? 'bg-slate-50' : ''
                     }`}
                     style={{ width: columnWidth }}
                   >
@@ -506,6 +753,49 @@ export function TimelineView() {
 
           {/* Groups and records */}
           <div className="relative">
+            {/* SVG overlay for dependencies */}
+            {showDependencies && (
+              <svg
+                className="absolute inset-0 pointer-events-none z-15"
+                style={{ overflow: 'visible', width: totalWidth + 224, height: totalHeight }}
+              >
+                {dependencies.map(dep => {
+                  const sourceBar = recordBars.get(dep.source_record_id);
+                  const targetBar = recordBars.get(dep.target_record_id);
+                  if (!sourceBar || !targetBar) return null;
+
+                  const barHeight = rowHeight === 32 ? 24 : rowHeight === 48 ? 36 : 28;
+
+                  return (
+                    <DependencyArrow
+                      key={dep.id}
+                      sourceX={sourceBar.left + 224}
+                      sourceY={sourceBar.top + barHeight / 2}
+                      sourceWidth={sourceBar.width}
+                      targetX={targetBar.left + 224}
+                      targetY={targetBar.top + barHeight / 2}
+                      targetWidth={targetBar.width}
+                      type={dep.type}
+                      isHighlighted={selectedDependency === dep.id}
+                      onClick={() => {
+                        setSelectedDependency(dep.id);
+                      }}
+                    />
+                  );
+                })}
+
+                {/* Dependency creation line */}
+                {isCreatingDependency && dependencySource && dependencyTarget && (
+                  <DependencyCreator
+                    startX={dependencySource.x}
+                    startY={dependencySource.y}
+                    endX={dependencyTarget.x}
+                    endY={dependencyTarget.y}
+                  />
+                )}
+              </svg>
+            )}
+
             {/* Today marker */}
             {showTodayMarker && (
               <TodayMarker
@@ -570,28 +860,54 @@ export function TimelineView() {
 
                     {/* Timeline area */}
                     <div
-                      className="relative flex-1"
+                      className={`relative flex-1 ${isCreating ? 'cursor-crosshair' : ''}`}
                       style={{
                         width: totalWidth,
                         height: Math.max(rowHeight, group.rowCount * rowHeight),
+                      }}
+                      onMouseDown={(e) => handleTimelineMouseDown(e, group.key)}
+                      onMouseMove={handleTimelineMouseMove}
+                      onMouseUp={handleTimelineMouseUp}
+                      onMouseLeave={() => {
+                        if (isCreating) {
+                          setIsCreating(false);
+                          setCreateStart(null);
+                          setCreateEnd(null);
+                        }
                       }}
                     >
                       {/* Grid lines */}
                       <div className="absolute inset-0 flex">
                         {columns.map((col, i) => {
                           const isToday = isSameDay(col.date, new Date());
-                          const isWeekend = col.date.getDay() === 0 || col.date.getDay() === 6;
                           return (
                             <div
                               key={i}
                               className={`border-r border-slate-100 ${
-                                isToday ? 'bg-red-50/50' : isWeekend && timeScale === 'day' ? 'bg-slate-50' : ''
+                                isToday ? 'bg-red-50/50' : col.isWeekend && timeScale === 'day' ? 'bg-slate-50' : ''
                               }`}
                               style={{ width: columnWidth }}
                             />
                           );
                         })}
                       </div>
+
+                      {/* Drag-to-create preview */}
+                      {isCreating && createStart && createEnd && createStart.groupKey === group.key && (
+                        <div
+                          className="absolute rounded bg-primary/30 border-2 border-primary border-dashed z-30"
+                          style={{
+                            left: Math.min(createStart.x, createEnd.x),
+                            width: Math.abs(createEnd.x - createStart.x),
+                            height: rowHeight - 8,
+                            top: 4,
+                          }}
+                        >
+                          <span className="text-xs text-primary font-medium px-2">
+                            New record
+                          </span>
+                        </div>
+                      )}
 
                       {/* Record bars */}
                       {group.records.map((bar) => (
@@ -637,6 +953,18 @@ export function TimelineView() {
             </div>
           </div>
         </div>
+
+        {/* Summary bar */}
+        {showSummaryBar && startField && (
+          <TimelineSummaryBar
+            records={records}
+            fields={fields}
+            columns={columns}
+            columnWidth={columnWidth}
+            startField={startField}
+            endField={endField}
+          />
+        )}
       </div>
 
       {/* Empty state overlay */}
@@ -654,6 +982,25 @@ export function TimelineView() {
               Create first record
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Selected dependency actions */}
+      {selectedDependency && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-lg shadow-lg border border-slate-200 px-4 py-2 flex items-center gap-3 z-50">
+          <span className="text-sm text-slate-600">Dependency selected</span>
+          <button
+            onClick={() => handleDeleteDependency(selectedDependency)}
+            className="text-sm text-red-600 hover:text-red-700 font-medium"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setSelectedDependency(null)}
+            className="text-sm text-slate-500 hover:text-slate-700"
+          >
+            Cancel
+          </button>
         </div>
       )}
 
