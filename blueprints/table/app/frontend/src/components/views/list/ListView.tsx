@@ -4,8 +4,9 @@ import { useBaseStore } from '../../../stores/baseStore';
 import type { TableRecord, Field, CellValue } from '../../../types';
 import { RecordSidebar } from '../RecordSidebar';
 
-// Virtualization threshold - use virtualization for large lists
-const VIRTUALIZATION_THRESHOLD = 100;
+// Virtualization threshold - lowered from 100 to 50 for better performance
+// 50 rows at 72px height = 3600px, reasonable for most viewports
+const VIRTUALIZATION_THRESHOLD = 50;
 
 export function ListView() {
   const {

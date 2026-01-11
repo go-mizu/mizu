@@ -100,6 +100,14 @@ type RecordUpdate struct {
 	Cells map[string]interface{} `json:"cells"`
 }
 
+// CellUpdate contains an update for a single cell (record + field + value).
+// Used for batch cell updates across multiple records.
+type CellUpdate struct {
+	RecordID string      `json:"record_id"`
+	FieldID  string      `json:"field_id"`
+	Value    interface{} `json:"value"`
+}
+
 // API defines the records service interface.
 type API interface {
 	Create(ctx context.Context, tableID string, cells map[string]interface{}, userID string) (*Record, error)
@@ -136,6 +144,7 @@ type Store interface {
 
 	// Cell operations
 	UpdateCell(ctx context.Context, recordID, fieldID string, value interface{}) error
+	UpdateCellsBatch(ctx context.Context, updates []CellUpdate) error
 	ClearCell(ctx context.Context, recordID, fieldID string) error
 
 	// Links

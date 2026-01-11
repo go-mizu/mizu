@@ -120,10 +120,10 @@ func (s *ViewsStore) scanView(row *sql.Row) (*views.View, error) {
 	if config.Valid {
 		view.Config = json.RawMessage(config.String)
 	}
-	view.Filters = unmarshalJSONSlice[views.Filter](config.String, filters.String)
-	view.Sorts = unmarshalJSONSlice[views.SortSpec](config.String, sorts.String)
-	view.Groups = unmarshalJSONSlice[views.GroupSpec](config.String, groups.String)
-	view.FieldConfig = unmarshalJSONSlice[views.FieldViewConfig](config.String, fieldConfig.String)
+	view.Filters = unmarshalJSONSlice[views.Filter](filters.String)
+	view.Sorts = unmarshalJSONSlice[views.SortSpec](sorts.String)
+	view.Groups = unmarshalJSONSlice[views.GroupSpec](groups.String)
+	view.FieldConfig = unmarshalJSONSlice[views.FieldViewConfig](fieldConfig.String)
 
 	return view, nil
 }
@@ -140,10 +140,10 @@ func (s *ViewsStore) scanViewRows(rows *sql.Rows) (*views.View, error) {
 	if config.Valid {
 		view.Config = json.RawMessage(config.String)
 	}
-	view.Filters = unmarshalJSONSlice[views.Filter](config.String, filters.String)
-	view.Sorts = unmarshalJSONSlice[views.SortSpec](config.String, sorts.String)
-	view.Groups = unmarshalJSONSlice[views.GroupSpec](config.String, groups.String)
-	view.FieldConfig = unmarshalJSONSlice[views.FieldViewConfig](config.String, fieldConfig.String)
+	view.Filters = unmarshalJSONSlice[views.Filter](filters.String)
+	view.Sorts = unmarshalJSONSlice[views.SortSpec](sorts.String)
+	view.Groups = unmarshalJSONSlice[views.GroupSpec](groups.String)
+	view.FieldConfig = unmarshalJSONSlice[views.FieldViewConfig](fieldConfig.String)
 
 	return view, nil
 }
@@ -161,11 +161,76 @@ func marshalJSON(v any) *string {
 }
 
 // unmarshalJSONSlice handles SQLite TEXT columns storing JSON arrays
-func unmarshalJSONSlice[T any](_, jsonStr string) []T {
+func unmarshalJSONSlice[T any](jsonStr string) []T {
 	if jsonStr == "" {
 		return nil
 	}
 	var result []T
 	json.Unmarshal([]byte(jsonStr), &result)
 	return result
+}
+
+// UpdatePositionsBatch updates multiple view positions in a single query.
+// This is more efficient than calling Update multiple times for view reordering.
+func (s *ViewsStore) UpdatePositionsBatch(ctx context.Context, viewPositions map[string]int) error {
+	if len(viewPositions) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	// Use a transaction for atomicity and better performance
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Prepare statement for reuse
+	stmt, err := tx.PrepareContext(ctx, `UPDATE views SET position = ?, updated_at = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for viewID, position := range viewPositions {
+		if _, err := stmt.ExecContext(ctx, position, now, viewID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// UpdateFilters updates only the filters column without fetching the full view.
+// This avoids the read-modify-write pattern for better performance.
+func (s *ViewsStore) UpdateFilters(ctx context.Context, viewID string, filters []views.Filter) error {
+	now := time.Now()
+	filtersStr := marshalJSON(filters)
+	_, err := s.db.ExecContext(ctx, `UPDATE views SET filters = ?, updated_at = ? WHERE id = ?`, filtersStr, now, viewID)
+	return err
+}
+
+// UpdateSorts updates only the sorts column without fetching the full view.
+func (s *ViewsStore) UpdateSorts(ctx context.Context, viewID string, sorts []views.SortSpec) error {
+	now := time.Now()
+	sortsStr := marshalJSON(sorts)
+	_, err := s.db.ExecContext(ctx, `UPDATE views SET sorts = ?, updated_at = ? WHERE id = ?`, sortsStr, now, viewID)
+	return err
+}
+
+// UpdateGroups updates only the groups column without fetching the full view.
+func (s *ViewsStore) UpdateGroups(ctx context.Context, viewID string, groups []views.GroupSpec) error {
+	now := time.Now()
+	groupsStr := marshalJSON(groups)
+	_, err := s.db.ExecContext(ctx, `UPDATE views SET groups = ?, updated_at = ? WHERE id = ?`, groupsStr, now, viewID)
+	return err
+}
+
+// UpdateFieldConfig updates only the field_config column without fetching the full view.
+func (s *ViewsStore) UpdateFieldConfig(ctx context.Context, viewID string, fieldConfig []views.FieldViewConfig) error {
+	now := time.Now()
+	fieldConfigStr := marshalJSON(fieldConfig)
+	_, err := s.db.ExecContext(ctx, `UPDATE views SET field_config = ?, updated_at = ? WHERE id = ?`, fieldConfigStr, now, viewID)
+	return err
 }

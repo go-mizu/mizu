@@ -14,8 +14,9 @@ import { normalizeFieldConfig } from './fieldConfig';
 import { copyToClipboard, parseClipboardData, stringToCellValue, generateFillSequence } from './clipboardUtils';
 import { VirtualizedBody } from './VirtualizedBody';
 
-// Threshold for enabling virtualization
-const VIRTUALIZATION_THRESHOLD = 100;
+// Threshold for enabling virtualization - lowered from 100 to 50 for better performance
+// 50 rows at 36px height = 1800px, reasonable for most viewports
+const VIRTUALIZATION_THRESHOLD = 50;
 
 // Row height options
 const ROW_HEIGHTS = {
@@ -650,15 +651,23 @@ export function GridView() {
     return rowIdx >= minRow && rowIdx <= maxRow && colIdx >= minCol && colIdx <= maxCol;
   };
 
-  // Calculate frozen column left offset
-  const getFrozenColumnOffset = (colIdx: number): number => {
-    let offset = 64; // Row number column width
-    for (let i = 0; i < colIdx; i++) {
+  // Pre-compute cumulative frozen column offsets for O(1) lookup instead of O(n) calculation per cell
+  // This is a significant performance improvement for grids with many columns and frozen columns
+  const frozenColumnOffsets = useMemo(() => {
+    const offsets: number[] = [64]; // Start with row number column width
+    let cumulative = 64;
+    for (let i = 0; i < visibleFields.length; i++) {
       const field = visibleFields[i];
-      offset += columnWidths[field.id] || field.width || 200;
+      cumulative += columnWidths[field.id] || field.width || 200;
+      offsets.push(cumulative);
     }
-    return offset;
-  };
+    return offsets;
+  }, [visibleFields, columnWidths]);
+
+  // O(1) lookup using pre-computed offsets instead of O(n) loop per cell
+  const getFrozenColumnOffset = useCallback((colIdx: number): number => {
+    return frozenColumnOffsets[colIdx] ?? 64;
+  }, [frozenColumnOffsets]);
 
   const handleAddRow = async () => {
     await createRecord({});
