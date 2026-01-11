@@ -1,0 +1,5 @@
+_id,Name,Start Date,End Date,Goal,Status,Capacity,Velocity
+,Sprint 23,2024-01-01,2024-01-14,Complete authentication overhaul and API rate limiting,Completed,40,38
+,Sprint 24,2024-01-15,2024-01-28,Fix critical bugs and improve performance,Active,45,0
+,Sprint 25,2024-01-29,2024-02-11,Feature development and dependency updates,Planning,42,0
+,Sprint 26,2024-02-12,2024-02-25,Q1 release preparation,Planning,40,0

@@ -1,0 +1,7 @@
+_id,Name,Location,Capacity (sqft),Manager,Phone,Active,Notes
+,Main Distribution Center,500 Industrial Way Chicago IL,150000,James Wilson,+1 (312) 555-5001,true,Primary hub for all products
+,West Coast Facility,200 Harbor Blvd Los Angeles CA,85000,Maria Santos,+1 (310) 555-5002,true,West coast distribution
+,East Coast Hub,100 Logistics Park Newark NJ,120000,Kevin Park,+1 (973) 555-5003,true,East coast operations
+,Tech Storage Unit,50 Tech Lane San Jose CA,25000,Amanda Lee,+1 (408) 555-5004,true,Electronics only
+,Overflow Storage,75 Extra Space Dr Dallas TX,45000,Robert Brown,+1 (214) 555-5005,true,Seasonal overflow
+,Old Warehouse B,300 Legacy Rd Detroit MI,60000,Tom Johnson,+1 (313) 555-5006,false,Decommissioned - moving inventory

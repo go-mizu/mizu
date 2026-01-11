@@ -1,0 +1,9 @@
+_id,Name,Parent,Description,Slug,Active,Image
+,Electronics,,Gadgets and tech devices,electronics,true,"[{""id"":""img-1"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Clothing,,Fashion and apparel,clothing,true,"[{""id"":""img-2"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1445205170230-053b83016050?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Home,,Home and living products,home,true,"[{""id"":""img-3"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Sports,,Sports and outdoor gear,sports,true,"[{""id"":""img-4"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1461896836934- voices-of-2018?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Books,,Books and reading material,books,true,"[{""id"":""img-5"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Audio,Electronics,Headphones and speakers,audio,true,"[{""id"":""img-6"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Wearables,Electronics,Smart watches and fitness trackers,wearables,true,"[{""id"":""img-7"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"
+,Mens,Clothing,Mens fashion,mens,true,"[{""id"":""img-8"",""filename"":""cat.jpg"",""url"":""https://images.unsplash.com/photo-1490578474895-699cd4e2cf59?w=400&q=80"",""mime_type"":""image/jpeg"",""size"":10000}]"

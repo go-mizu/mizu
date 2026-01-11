@@ -1,0 +1,6 @@
+_id,Name,Version,Due Date,Status,Progress,Description
+,Q1 2024 Release,2.0.0,2024-03-31,In Progress,45,Major release with new features and bug fixes
+,Security Update,1.9.5,2024-01-31,In Progress,80,Critical security patches and dependency updates
+,Performance Release,2.1.0,2024-04-30,Planned,10,Focus on performance improvements
+,Mobile Launch,2.0.0-mobile,2024-05-15,Planned,5,Initial mobile app release
+,Q4 2023 Release,1.9.0,2023-12-15,Released,100,Previous quarter release

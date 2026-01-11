@@ -1,0 +1,143 @@
+{
+  "version": "1.0",
+  "exported_at": "2024-01-01T00:00:00Z",
+  "base": {
+    "id": "seed-base-restaurant",
+    "workspace_id": "",
+    "name": "Restaurant Management",
+    "description": "Restaurant menu and order management",
+    "icon": "",
+    "color": "#EF4444",
+    "created_by": "",
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "tables": [
+    {
+      "table": {
+        "id": "seed-table-menu",
+        "base_id": "seed-base-restaurant",
+        "name": "Menu Items",
+        "description": "Restaurant menu",
+        "icon": "",
+        "position": 0,
+        "primary_field_id": "seed-field-menu-name",
+        "created_by": "",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+      },
+      "fields": [
+        {"id": "seed-field-menu-name", "table_id": "seed-table-menu", "name": "Name", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-category", "table_id": "seed-table-menu", "name": "Category", "type": "single_select", "description": "", "options": {"choices": [{"id": "mcat-1", "name": "Appetizers", "color": "#F59E0B"}, {"id": "mcat-2", "name": "Main Course", "color": "#EF4444"}, {"id": "mcat-3", "name": "Desserts", "color": "#EC4899"}, {"id": "mcat-4", "name": "Beverages", "color": "#3B82F6"}, {"id": "mcat-5", "name": "Sides", "color": "#10B981"}]}, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-price", "table_id": "seed-table-menu", "name": "Price", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-cost", "table_id": "seed-table-menu", "name": "Cost", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-desc", "table_id": "seed-table-menu", "name": "Description", "type": "long_text", "description": "", "options": null, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-allergens", "table_id": "seed-table-menu", "name": "Allergens", "type": "multi_select", "description": "", "options": {"choices": [{"id": "all-1", "name": "Gluten", "color": "#F59E0B"}, {"id": "all-2", "name": "Dairy", "color": "#3B82F6"}, {"id": "all-3", "name": "Nuts", "color": "#EF4444"}, {"id": "all-4", "name": "Shellfish", "color": "#EC4899"}, {"id": "all-5", "name": "Eggs", "color": "#10B981"}]}, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-available", "table_id": "seed-table-menu", "name": "Available", "type": "checkbox", "description": "", "options": null, "position": 6, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-menu-image", "table_id": "seed-table-menu", "name": "Image", "type": "attachment", "description": "", "options": null, "position": 7, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {
+        "seed-field-menu-category": [{"id": "mcat-1", "field_id": "seed-field-menu-category", "name": "Appetizers", "color": "#F59E0B", "position": 0}, {"id": "mcat-2", "field_id": "seed-field-menu-category", "name": "Main Course", "color": "#EF4444", "position": 1}, {"id": "mcat-3", "field_id": "seed-field-menu-category", "name": "Desserts", "color": "#EC4899", "position": 2}, {"id": "mcat-4", "field_id": "seed-field-menu-category", "name": "Beverages", "color": "#3B82F6", "position": 3}, {"id": "mcat-5", "field_id": "seed-field-menu-category", "name": "Sides", "color": "#10B981", "position": 4}],
+        "seed-field-menu-allergens": [{"id": "all-1", "field_id": "seed-field-menu-allergens", "name": "Gluten", "color": "#F59E0B", "position": 0}, {"id": "all-2", "field_id": "seed-field-menu-allergens", "name": "Dairy", "color": "#3B82F6", "position": 1}, {"id": "all-3", "field_id": "seed-field-menu-allergens", "name": "Nuts", "color": "#EF4444", "position": 2}, {"id": "all-4", "field_id": "seed-field-menu-allergens", "name": "Shellfish", "color": "#EC4899", "position": 3}, {"id": "all-5", "field_id": "seed-field-menu-allergens", "name": "Eggs", "color": "#10B981", "position": 4}]
+      },
+      "views": [
+        {"id": "seed-view-menu-all", "table_id": "seed-table-menu", "name": "Full Menu", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-menu-category", "table_id": "seed-table-menu", "name": "By Category", "type": "kanban", "config": {"groupBy": "seed-field-menu-category"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 1, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-menu-gallery", "table_id": "seed-table-menu", "name": "Menu Gallery", "type": "gallery", "config": {"cover_field_id": "seed-field-menu-image"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 2, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ]
+    },
+    {
+      "table": {
+        "id": "seed-table-orders",
+        "base_id": "seed-base-restaurant",
+        "name": "Orders",
+        "description": "Customer orders",
+        "icon": "",
+        "position": 1,
+        "primary_field_id": "seed-field-order-num",
+        "created_by": "",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+      },
+      "fields": [
+        {"id": "seed-field-order-num", "table_id": "seed-table-orders", "name": "Order Number", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-table", "table_id": "seed-table-orders", "name": "Table", "type": "single_line_text", "description": "", "options": null, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-server", "table_id": "seed-table-orders", "name": "Server", "type": "single_line_text", "description": "", "options": null, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-items", "table_id": "seed-table-orders", "name": "Items", "type": "long_text", "description": "", "options": null, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-total", "table_id": "seed-table-orders", "name": "Total", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-status", "table_id": "seed-table-orders", "name": "Status", "type": "single_select", "description": "", "options": {"choices": [{"id": "ost-1", "name": "New", "color": "#6B7280"}, {"id": "ost-2", "name": "Preparing", "color": "#F59E0B"}, {"id": "ost-3", "name": "Ready", "color": "#3B82F6"}, {"id": "ost-4", "name": "Served", "color": "#10B981"}, {"id": "ost-5", "name": "Paid", "color": "#8B5CF6"}]}, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-time", "table_id": "seed-table-orders", "name": "Time", "type": "date", "description": "", "options": null, "position": 6, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-order-notes", "table_id": "seed-table-orders", "name": "Notes", "type": "long_text", "description": "", "options": null, "position": 7, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {
+        "seed-field-order-status": [{"id": "ost-1", "field_id": "seed-field-order-status", "name": "New", "color": "#6B7280", "position": 0}, {"id": "ost-2", "field_id": "seed-field-order-status", "name": "Preparing", "color": "#F59E0B", "position": 1}, {"id": "ost-3", "field_id": "seed-field-order-status", "name": "Ready", "color": "#3B82F6", "position": 2}, {"id": "ost-4", "field_id": "seed-field-order-status", "name": "Served", "color": "#10B981", "position": 3}, {"id": "ost-5", "field_id": "seed-field-order-status", "name": "Paid", "color": "#8B5CF6", "position": 4}]
+      },
+      "views": [
+        {"id": "seed-view-order-all", "table_id": "seed-table-orders", "name": "All Orders", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-order-status", "table_id": "seed-table-orders", "name": "Kitchen View", "type": "kanban", "config": {"groupBy": "seed-field-order-status"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 1, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ]
+    },
+    {
+      "table": {
+        "id": "seed-table-tables",
+        "base_id": "seed-base-restaurant",
+        "name": "Tables",
+        "description": "Restaurant tables",
+        "icon": "",
+        "position": 2,
+        "primary_field_id": "seed-field-tbl-num",
+        "created_by": "",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+      },
+      "fields": [
+        {"id": "seed-field-tbl-num", "table_id": "seed-table-tables", "name": "Table Number", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-tbl-capacity", "table_id": "seed-table-tables", "name": "Capacity", "type": "number", "description": "", "options": {"precision": 0}, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-tbl-section", "table_id": "seed-table-tables", "name": "Section", "type": "single_select", "description": "", "options": {"choices": [{"id": "sec-1", "name": "Main Floor", "color": "#3B82F6"}, {"id": "sec-2", "name": "Patio", "color": "#10B981"}, {"id": "sec-3", "name": "Private", "color": "#8B5CF6"}, {"id": "sec-4", "name": "Bar", "color": "#F59E0B"}]}, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-tbl-status", "table_id": "seed-table-tables", "name": "Status", "type": "single_select", "description": "", "options": {"choices": [{"id": "tst-1", "name": "Available", "color": "#10B981"}, {"id": "tst-2", "name": "Occupied", "color": "#EF4444"}, {"id": "tst-3", "name": "Reserved", "color": "#F59E0B"}, {"id": "tst-4", "name": "Cleaning", "color": "#6B7280"}]}, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-tbl-notes", "table_id": "seed-table-tables", "name": "Notes", "type": "long_text", "description": "", "options": null, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {
+        "seed-field-tbl-section": [{"id": "sec-1", "field_id": "seed-field-tbl-section", "name": "Main Floor", "color": "#3B82F6", "position": 0}, {"id": "sec-2", "field_id": "seed-field-tbl-section", "name": "Patio", "color": "#10B981", "position": 1}, {"id": "sec-3", "field_id": "seed-field-tbl-section", "name": "Private", "color": "#8B5CF6", "position": 2}, {"id": "sec-4", "field_id": "seed-field-tbl-section", "name": "Bar", "color": "#F59E0B", "position": 3}],
+        "seed-field-tbl-status": [{"id": "tst-1", "field_id": "seed-field-tbl-status", "name": "Available", "color": "#10B981", "position": 0}, {"id": "tst-2", "field_id": "seed-field-tbl-status", "name": "Occupied", "color": "#EF4444", "position": 1}, {"id": "tst-3", "field_id": "seed-field-tbl-status", "name": "Reserved", "color": "#F59E0B", "position": 2}, {"id": "tst-4", "field_id": "seed-field-tbl-status", "name": "Cleaning", "color": "#6B7280", "position": 3}]
+      },
+      "views": [
+        {"id": "seed-view-tbl-all", "table_id": "seed-table-tables", "name": "All Tables", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-tbl-status", "table_id": "seed-table-tables", "name": "Table Status", "type": "kanban", "config": {"groupBy": "seed-field-tbl-status"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 1, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ]
+    },
+    {
+      "table": {
+        "id": "seed-table-reservations",
+        "base_id": "seed-base-restaurant",
+        "name": "Reservations",
+        "description": "Table reservations",
+        "icon": "",
+        "position": 3,
+        "primary_field_id": "seed-field-res-guest",
+        "created_by": "",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+      },
+      "fields": [
+        {"id": "seed-field-res-guest", "table_id": "seed-table-reservations", "name": "Guest Name", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-phone", "table_id": "seed-table-reservations", "name": "Phone", "type": "phone", "description": "", "options": null, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-email", "table_id": "seed-table-reservations", "name": "Email", "type": "email", "description": "", "options": null, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-party", "table_id": "seed-table-reservations", "name": "Party Size", "type": "number", "description": "", "options": {"precision": 0}, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-date", "table_id": "seed-table-reservations", "name": "Date", "type": "date", "description": "", "options": null, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-time", "table_id": "seed-table-reservations", "name": "Time", "type": "single_line_text", "description": "", "options": null, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-table", "table_id": "seed-table-reservations", "name": "Table", "type": "single_line_text", "description": "", "options": null, "position": 6, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-status", "table_id": "seed-table-reservations", "name": "Status", "type": "single_select", "description": "", "options": {"choices": [{"id": "rst-1", "name": "Confirmed", "color": "#10B981"}, {"id": "rst-2", "name": "Pending", "color": "#F59E0B"}, {"id": "rst-3", "name": "Cancelled", "color": "#EF4444"}, {"id": "rst-4", "name": "Completed", "color": "#6B7280"}]}, "position": 7, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-res-notes", "table_id": "seed-table-reservations", "name": "Notes", "type": "long_text", "description": "", "options": null, "position": 8, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {
+        "seed-field-res-status": [{"id": "rst-1", "field_id": "seed-field-res-status", "name": "Confirmed", "color": "#10B981", "position": 0}, {"id": "rst-2", "field_id": "seed-field-res-status", "name": "Pending", "color": "#F59E0B", "position": 1}, {"id": "rst-3", "field_id": "seed-field-res-status", "name": "Cancelled", "color": "#EF4444", "position": 2}, {"id": "rst-4", "field_id": "seed-field-res-status", "name": "Completed", "color": "#6B7280", "position": 3}]
+      },
+      "views": [
+        {"id": "seed-view-res-all", "table_id": "seed-table-reservations", "name": "All Reservations", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-res-calendar", "table_id": "seed-table-reservations", "name": "Calendar", "type": "calendar", "config": {"dateField": "seed-field-res-date"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 1, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-res-status", "table_id": "seed-table-reservations", "name": "By Status", "type": "kanban", "config": {"groupBy": "seed-field-res-status"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 2, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ]
+    }
+  ]
+}

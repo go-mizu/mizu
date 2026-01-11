@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "exported_at": "2024-01-01T00:00:00Z",
+  "base": {
+    "id": "seed-base-ecommerce",
+    "workspace_id": "",
+    "name": "E-Commerce",
+    "description": "Online store product catalog and orders",
+    "icon": "",
+    "color": "#8B5CF6",
+    "created_by": "",
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  },
+  "tables": [
+    {
+      "table": {"id": "seed-table-products", "base_id": "seed-base-ecommerce", "name": "Products", "description": "Product catalog", "icon": "", "position": 0, "primary_field_id": "seed-field-prod-name", "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+      "fields": [
+        {"id": "seed-field-prod-name", "table_id": "seed-table-products", "name": "Name", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-sku", "table_id": "seed-table-products", "name": "SKU", "type": "single_line_text", "description": "", "options": null, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-category", "table_id": "seed-table-products", "name": "Category", "type": "single_select", "description": "", "options": {"choices": [{"id": "cat-1", "name": "Electronics", "color": "#3B82F6"}, {"id": "cat-2", "name": "Clothing", "color": "#EC4899"}, {"id": "cat-3", "name": "Home", "color": "#10B981"}, {"id": "cat-4", "name": "Sports", "color": "#F59E0B"}, {"id": "cat-5", "name": "Books", "color": "#8B5CF6"}]}, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-price", "table_id": "seed-table-products", "name": "Price", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-compare", "table_id": "seed-table-products", "name": "Compare Price", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-stock", "table_id": "seed-table-products", "name": "Stock", "type": "number", "description": "", "options": {"precision": 0}, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-desc", "table_id": "seed-table-products", "name": "Description", "type": "long_text", "description": "", "options": null, "position": 6, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-prod-images", "table_id": "seed-table-products", "name": "Images", "type": "attachment", "description": "", "options": null, "position": 7, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {"seed-field-prod-category": [{"id": "cat-1", "field_id": "seed-field-prod-category", "name": "Electronics", "color": "#3B82F6", "position": 0}, {"id": "cat-2", "field_id": "seed-field-prod-category", "name": "Clothing", "color": "#EC4899", "position": 1}, {"id": "cat-3", "field_id": "seed-field-prod-category", "name": "Home", "color": "#10B981", "position": 2}, {"id": "cat-4", "field_id": "seed-field-prod-category", "name": "Sports", "color": "#F59E0B", "position": 3}, {"id": "cat-5", "field_id": "seed-field-prod-category", "name": "Books", "color": "#8B5CF6", "position": 4}]},
+      "views": [
+        {"id": "seed-view-prod-all", "table_id": "seed-table-products", "name": "All Products", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-prod-cat", "table_id": "seed-table-products", "name": "By Category", "type": "kanban", "config": {"groupBy": "seed-field-prod-category"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 1, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-prod-gallery", "table_id": "seed-table-products", "name": "Product Gallery", "type": "gallery", "config": {"cover_field_id": "seed-field-prod-images"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 2, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ]
+    },
+    {
+      "table": {"id": "seed-table-categories", "base_id": "seed-base-ecommerce", "name": "Categories", "description": "Product categories", "icon": "", "position": 1, "primary_field_id": "seed-field-cat-name", "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+      "fields": [
+        {"id": "seed-field-cat-name", "table_id": "seed-table-categories", "name": "Name", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cat-parent", "table_id": "seed-table-categories", "name": "Parent", "type": "single_line_text", "description": "", "options": null, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cat-desc", "table_id": "seed-table-categories", "name": "Description", "type": "long_text", "description": "", "options": null, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cat-slug", "table_id": "seed-table-categories", "name": "Slug", "type": "single_line_text", "description": "", "options": null, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cat-active", "table_id": "seed-table-categories", "name": "Active", "type": "checkbox", "description": "", "options": null, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cat-image", "table_id": "seed-table-categories", "name": "Image", "type": "attachment", "description": "", "options": null, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {},
+      "views": [{"id": "seed-view-cat-all", "table_id": "seed-table-categories", "name": "All Categories", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}]
+    },
+    {
+      "table": {"id": "seed-table-orders", "base_id": "seed-base-ecommerce", "name": "Orders", "description": "Customer orders", "icon": "", "position": 2, "primary_field_id": "seed-field-ord-num", "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+      "fields": [
+        {"id": "seed-field-ord-num", "table_id": "seed-table-orders", "name": "Order Number", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-ord-customer", "table_id": "seed-table-orders", "name": "Customer", "type": "single_line_text", "description": "", "options": null, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-ord-email", "table_id": "seed-table-orders", "name": "Email", "type": "email", "description": "", "options": null, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-ord-items", "table_id": "seed-table-orders", "name": "Items", "type": "long_text", "description": "", "options": null, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-ord-total", "table_id": "seed-table-orders", "name": "Total", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-ord-status", "table_id": "seed-table-orders", "name": "Status", "type": "single_select", "description": "", "options": {"choices": [{"id": "ost-1", "name": "Pending", "color": "#F59E0B"}, {"id": "ost-2", "name": "Processing", "color": "#3B82F6"}, {"id": "ost-3", "name": "Shipped", "color": "#8B5CF6"}, {"id": "ost-4", "name": "Delivered", "color": "#10B981"}, {"id": "ost-5", "name": "Cancelled", "color": "#EF4444"}]}, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-ord-date", "table_id": "seed-table-orders", "name": "Date", "type": "date", "description": "", "options": null, "position": 6, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {"seed-field-ord-status": [{"id": "ost-1", "field_id": "seed-field-ord-status", "name": "Pending", "color": "#F59E0B", "position": 0}, {"id": "ost-2", "field_id": "seed-field-ord-status", "name": "Processing", "color": "#3B82F6", "position": 1}, {"id": "ost-3", "field_id": "seed-field-ord-status", "name": "Shipped", "color": "#8B5CF6", "position": 2}, {"id": "ost-4", "field_id": "seed-field-ord-status", "name": "Delivered", "color": "#10B981", "position": 3}, {"id": "ost-5", "field_id": "seed-field-ord-status", "name": "Cancelled", "color": "#EF4444", "position": 4}]},
+      "views": [
+        {"id": "seed-view-ord-all", "table_id": "seed-table-orders", "name": "All Orders", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-view-ord-status", "table_id": "seed-table-orders", "name": "By Status", "type": "kanban", "config": {"groupBy": "seed-field-ord-status"}, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 1, "is_default": false, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ]
+    },
+    {
+      "table": {"id": "seed-table-customers", "base_id": "seed-base-ecommerce", "name": "Customers", "description": "Customer database", "icon": "", "position": 3, "primary_field_id": "seed-field-cust-name", "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+      "fields": [
+        {"id": "seed-field-cust-name", "table_id": "seed-table-customers", "name": "Name", "type": "single_line_text", "description": "", "options": null, "position": 0, "is_primary": true, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-email", "table_id": "seed-table-customers", "name": "Email", "type": "email", "description": "", "options": null, "position": 1, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-phone", "table_id": "seed-table-customers", "name": "Phone", "type": "phone", "description": "", "options": null, "position": 2, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-address", "table_id": "seed-table-customers", "name": "Address", "type": "long_text", "description": "", "options": null, "position": 3, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-orders", "table_id": "seed-table-customers", "name": "Orders Count", "type": "number", "description": "", "options": {"precision": 0}, "position": 4, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-spent", "table_id": "seed-table-customers", "name": "Total Spent", "type": "currency", "description": "", "options": {"currency_symbol": "$", "precision": 2}, "position": 5, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-vip", "table_id": "seed-table-customers", "name": "VIP", "type": "checkbox", "description": "", "options": null, "position": 6, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"},
+        {"id": "seed-field-cust-notes", "table_id": "seed-table-customers", "name": "Notes", "type": "long_text", "description": "", "options": null, "position": 7, "is_primary": false, "is_computed": false, "is_hidden": false, "width": 200, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}
+      ],
+      "choices": {},
+      "views": [{"id": "seed-view-cust-all", "table_id": "seed-table-customers", "name": "All Customers", "type": "grid", "config": null, "filters": null, "sorts": null, "groups": null, "field_config": null, "position": 0, "is_default": true, "is_locked": false, "created_by": "", "created_at": "2024-01-01T00:00:00Z", "updated_at": "2024-01-01T00:00:00Z"}]
+    }
+  ]
+}

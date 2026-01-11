@@ -1,0 +1,13 @@
+_id,Title,Type,Priority,Status,Assignee,Reporter,Component,Sprint,Description,Steps to Reproduce
+,Login button not responding on mobile,Bug,Critical,In Progress,,Sarah Chen,Frontend,Sprint 24,Login button fails to trigger on iOS Safari,1. Open app on iOS Safari 2. Navigate to login 3. Tap login button 4. Nothing happens
+,Add dark mode support,Feature,Medium,Open,,Michael Johnson,Frontend,Sprint 25,Users have requested dark mode theme support,N/A - Feature request
+,API response time too slow,Bug,High,In Review,,Emily Rodriguez,API,Sprint 24,GET /users endpoint takes over 5 seconds,1. Call GET /api/users 2. Observe response time 3. See 5+ second delay
+,Implement user notifications,Feature,High,In Progress,,David Kim,Backend,Sprint 24,Add real-time notification system for user activities,N/A - Feature request
+,Database connection pool exhausted,Bug,Critical,Testing,,Amanda Lee,Database,Sprint 24,Connection pool runs out under heavy load,1. Simulate 100 concurrent users 2. Observe connection errors 3. See pool exhausted message
+,Update dependencies to latest versions,Task,Low,Open,,Kevin Park,Infrastructure,Sprint 25,Security audit requires updating npm packages,N/A - Maintenance task
+,Improve search performance,Improvement,Medium,In Progress,,Lisa Martinez,Backend,Sprint 24,Search queries need optimization for large datasets,N/A - Performance improvement
+,Fix memory leak in dashboard,Bug,High,In Review,,Thomas Garcia,Frontend,Sprint 24,Dashboard component leaks memory over time,1. Open dashboard 2. Leave open for 1 hour 3. Observe memory usage increase
+,Add export to CSV feature,Feature,Medium,Open,,Jennifer Martinez,Frontend,Sprint 25,Users need to export data to CSV format,N/A - Feature request
+,Refactor authentication module,Improvement,Medium,In Progress,,Robert Wilson,Backend,Sprint 24,Current auth code is hard to maintain,N/A - Technical debt
+,Fix timezone handling in reports,Bug,High,Testing,,Maria Santos,Backend,Sprint 24,Reports show wrong times for non-UTC users,1. Set timezone to PST 2. Generate report 3. See incorrect timestamps
+,Add API rate limiting,Task,High,Closed,,James Wilson,API,Sprint 23,Implement rate limiting to prevent abuse,N/A - Completed

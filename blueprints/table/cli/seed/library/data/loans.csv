@@ -1,0 +1,19 @@
+_id,Book,Member,Checkout Date,Due Date,Return Date,Status,Renewals,Fine
+,To Kill a Mockingbird,Emily Watson,2024-01-08,2024-01-22,,Active,0,0.00
+,1984,Emily Watson,2024-01-10,2024-01-24,,Active,0,0.00
+,Dune,James Chen,2024-01-12,2024-01-26,,Active,0,0.00
+,Murder on the Orient Express,Sarah Johnson,2024-01-05,2024-01-19,,Active,1,0.00
+,The Great Gatsby,Sarah Johnson,2023-12-20,2024-01-03,2024-01-05,Returned,0,0.50
+,Foundation,Michael Brown,2024-01-11,2024-01-25,,Active,0,0.00
+,Sapiens,Jennifer Davis,2024-01-09,2024-01-23,,Active,0,0.00
+,Harry Potter and the Sorcerer's Stone,Jennifer Davis,2024-01-09,2024-01-23,,Active,0,0.00
+,A Brief History of Time,David Wilson,2024-01-02,2024-01-16,,Overdue,1,1.25
+,Steve Jobs,Lisa Martinez,2024-01-07,2024-01-21,,Active,0,0.00
+,Gone Girl,Kevin Park,2024-01-06,2024-01-20,,Active,0,0.00
+,Atomic Habits,Thomas Garcia,2024-01-04,2024-01-18,,Active,0,0.00
+,Charlotte's Web,Maria Santos,2024-01-11,2024-01-25,,Active,0,0.00
+,Neuromancer,Nicole Thompson,2024-01-03,2024-01-17,,Overdue,0,0.75
+,Pride and Prejudice,Emily Watson,2023-12-15,2023-12-29,2023-12-28,Returned,0,0.00
+,The Hitchhiker's Guide to the Galaxy,James Chen,2023-12-28,2024-01-11,2024-01-10,Returned,0,0.00
+,The Maltese Falcon,Robert Taylor,2023-11-15,2023-11-29,,Lost,0,25.00
+,Where the Wild Things Are,Amanda Lee,2024-01-13,2024-01-27,,Active,0,0.00

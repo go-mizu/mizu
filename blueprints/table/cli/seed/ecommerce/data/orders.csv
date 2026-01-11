@@ -1,0 +1,11 @@
+_id,Order Number,Customer,Email,Items,Total,Status,Date
+,ORD-10001,Sarah Johnson,sarah.j@email.com,2x Wireless Earbuds Pro 1x Smart Watch Series 5,599.97,Delivered,2024-01-10
+,ORD-10002,Michael Chen,m.chen@email.com,3x Premium Cotton T-Shirt 1x Slim Fit Jeans,184.96,Shipped,2024-01-12
+,ORD-10003,Emily Davis,emily.d@email.com,1x Modern Table Lamp 1x Throw Blanket Cozy,149.98,Processing,2024-01-14
+,ORD-10004,Robert Wilson,r.wilson@email.com,1x Yoga Mat Premium 1x Running Shoes Air,179.98,Pending,2024-01-15
+,ORD-10005,Amanda Lee,a.lee@email.com,2x Bluetooth Speaker 1x Wireless Earbuds Pro,309.97,Delivered,2024-01-08
+,ORD-10006,James Brown,j.brown@email.com,1x Smart Watch Series 5,299.99,Cancelled,2024-01-11
+,ORD-10007,Lisa Martinez,lisa.m@email.com,4x Bestseller Novel Collection,99.96,Shipped,2024-01-13
+,ORD-10008,David Kim,d.kim@email.com,1x Running Shoes Air 2x Premium Cotton T-Shirt,199.97,Processing,2024-01-14
+,ORD-10009,Jennifer Taylor,j.taylor@email.com,1x Modern Table Lamp,89.99,Delivered,2024-01-06
+,ORD-10010,Thomas Garcia,t.garcia@email.com,2x Slim Fit Jeans 2x Premium Cotton T-Shirt,229.96,Pending,2024-01-15

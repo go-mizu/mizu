@@ -1,0 +1,8 @@
+_id,Name,Owner,Description,Repository,Active
+,Frontend,Sarah Chen,React-based web application,https://github.com/company/frontend,true
+,Backend,Michael Johnson,Node.js API server,https://github.com/company/backend,true
+,API,Emily Rodriguez,REST API and GraphQL endpoints,https://github.com/company/api,true
+,Database,David Kim,PostgreSQL database and migrations,https://github.com/company/database,true
+,Infrastructure,Amanda Lee,AWS infrastructure and CI/CD,https://github.com/company/infra,true
+,Mobile,Kevin Park,React Native mobile apps,https://github.com/company/mobile,true
+,Legacy,Robert Taylor,Deprecated legacy system,https://github.com/company/legacy,false
