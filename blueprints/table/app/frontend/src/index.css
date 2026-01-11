@@ -1,6 +1,22 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #E9F1FF;
+  --color-primary-100: #D7E6FF;
+  --color-primary-200: #B3D0FF;
+  --color-primary-300: #8AB8FF;
+  --color-primary-400: #5A97F7;
+  --color-primary-500: #2E7FF0;
+  --color-primary-600: #1D63D6;
+  --color-primary-700: #184CAF;
+  --color-primary-800: #143A82;
+  --color-primary-900: #0E2457;
+  --color-primary: #2E7FF0;
+  --color-success: #20C933;
+  --color-danger: #F04438;
+  --color-warning: #FCAE40;
+  --color-purple: #8B46FF;
+}
 
 * {
   box-sizing: border-box;
@@ -138,7 +154,7 @@ body {
 
 /* Modal styles */
 .modal-overlay {
-  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
 }
 
 .modal-content {

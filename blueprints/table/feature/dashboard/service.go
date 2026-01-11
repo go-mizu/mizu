@@ -468,6 +468,11 @@ func (s *Service) computeChartData(
 		return nil, fmt.Errorf("group by field not found: %s", widget.Config.GroupByField)
 	}
 
+	// Check if stacking is enabled
+	if widget.Config.Stacking != "" && widget.Config.Stacking != StackNone && widget.Config.SecondaryGroup != "" {
+		return s.computeStackedChartData(filteredRecords, widget, fieldMap)
+	}
+
 	// Count or aggregate by group
 	groups := make(map[string]float64)
 	groupColors := make(map[string]string)
@@ -522,6 +527,101 @@ func (s *Service) computeChartData(
 		Labels: labels,
 		Values: values,
 		Colors: colors,
+	}, nil
+}
+
+// computeStackedChartData computes stacked chart data with multiple series.
+func (s *Service) computeStackedChartData(
+	filteredRecords []*records.Record,
+	widget *Widget,
+	fieldMap map[string]*fields.Field,
+) (*ChartData, error) {
+	// Create a 2D grouping: primary group -> secondary group -> count/value
+	// Example: Status -> Priority -> count
+	stackedData := make(map[string]map[string]float64)
+	allSecondaryGroups := make(map[string]bool)
+
+	for _, record := range filteredRecords {
+		primaryValue := "Unknown"
+		if v, ok := record.Cells[widget.Config.GroupByField]; ok && v != nil {
+			primaryValue = fmt.Sprintf("%v", v)
+		}
+
+		secondaryValue := "Unknown"
+		if v, ok := record.Cells[widget.Config.SecondaryGroup]; ok && v != nil {
+			secondaryValue = fmt.Sprintf("%v", v)
+		}
+
+		if stackedData[primaryValue] == nil {
+			stackedData[primaryValue] = make(map[string]float64)
+		}
+		allSecondaryGroups[secondaryValue] = true
+
+		switch widget.Config.Aggregation {
+		case AggSum, AggAvg:
+			if widget.Config.ValueField != "" {
+				if v, ok := record.Cells[widget.Config.ValueField]; ok && v != nil {
+					if numVal, ok := v.(float64); ok {
+						stackedData[primaryValue][secondaryValue] += numVal
+					}
+				}
+			} else {
+				stackedData[primaryValue][secondaryValue]++
+			}
+		default: // Default to count
+			stackedData[primaryValue][secondaryValue]++
+		}
+	}
+
+	// Get sorted primary labels (x-axis)
+	var labels []string
+	for label := range stackedData {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+
+	// Get sorted secondary group names (series names)
+	var seriesNames []string
+	for name := range allSecondaryGroups {
+		seriesNames = append(seriesNames, name)
+	}
+	sort.Strings(seriesNames)
+
+	// Build series data
+	var series []ChartSeries
+	for i, seriesName := range seriesNames {
+		var values []float64
+		for _, label := range labels {
+			value := 0.0
+			if secondaryMap, ok := stackedData[label]; ok {
+				if v, ok := secondaryMap[seriesName]; ok {
+					value = v
+				}
+			}
+			values = append(values, value)
+		}
+
+		series = append(series, ChartSeries{
+			Name:   seriesName,
+			Values: values,
+			Color:  s.getDefaultColor(i),
+		})
+	}
+
+	// Also compute simple values (totals) for backwards compatibility
+	var values []float64
+	for _, label := range labels {
+		total := 0.0
+		for _, val := range stackedData[label] {
+			total += val
+		}
+		values = append(values, total)
+	}
+
+	return &ChartData{
+		Labels: labels,
+		Values: values,
+		Series: series,
 	}, nil
 }
 

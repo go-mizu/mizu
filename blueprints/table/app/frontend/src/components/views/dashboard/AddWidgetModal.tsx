@@ -95,6 +95,8 @@ export function AddWidgetModal({
   const [groupByField, setGroupByField] = useState(editingWidget?.config.group_by_field || '');
   const [aggregation, setAggregation] = useState<AggregationType>(editingWidget?.config.aggregation || 'count');
   const [valueField, setValueField] = useState(editingWidget?.config.field_id || '');
+  const [stacking, setStacking] = useState<StackingType>(editingWidget?.config.stacking || 'none');
+  const [secondaryGroup, setSecondaryGroup] = useState(editingWidget?.config.secondary_group || '');
 
   const tableFields = fields.filter(f => f.table_id === tableId);
   const selectFields = tableFields.filter(f =>
@@ -138,6 +140,10 @@ export function AddWidgetModal({
           chart_type: chartType,
           group_by_field: groupByField,
           show_legend: true,
+          ...(chartType === 'bar' && stacking !== 'none' && {
+            stacking,
+            secondary_group: secondaryGroup || undefined,
+          }),
         }),
         ...(selectedType === 'number' && {
           field_id: valueField || undefined,
@@ -171,7 +177,7 @@ export function AddWidgetModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
@@ -282,6 +288,56 @@ export function AddWidgetModal({
                       </p>
                     )}
                   </div>
+
+                  {/* Stacking options - only for bar charts */}
+                  {chartType === 'bar' && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Stacking
+                        </label>
+                        <select
+                          value={stacking}
+                          onChange={e => setStacking(e.target.value as StackingType)}
+                          className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-primary"
+                        >
+                          {stackingTypes.map(({ type, label }) => (
+                            <option key={type} value={type}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {stackingTypes.find(s => s.type === stacking)?.description}
+                        </p>
+                      </div>
+
+                      {stacking !== 'none' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Stack By (Secondary Group)
+                          </label>
+                          <select
+                            value={secondaryGroup}
+                            onChange={e => setSecondaryGroup(e.target.value)}
+                            className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-primary"
+                          >
+                            <option value="">Select a field</option>
+                            {selectFields
+                              .filter(f => f.id !== groupByField)
+                              .map(field => (
+                                <option key={field.id} value={field.id}>
+                                  {field.name}
+                                </option>
+                              ))}
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Choose a second field to create stacked segments
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </>
               )}
 

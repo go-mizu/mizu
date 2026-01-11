@@ -35,13 +35,17 @@ type RecordLink struct {
 
 // ListOpts contains options for listing records.
 type ListOpts struct {
-	ViewID     string     // Apply view's filters/sorts
-	FilterBy   string     // Filter formula
-	SortBy     []SortSpec // Sort specification
-	Fields     []string   // Only return these fields
-	Offset     int        // Pagination offset
-	Limit      int        // Max records to return
-	CellFormat string     // "json" or "string"
+	ViewID      string     // Apply view's filters/sorts
+	FilterBy    string     // Filter formula (legacy)
+	Filters     []Filter   // Filter conditions
+	FilterLogic string     // "and" or "or" (default: and)
+	SortBy      []SortSpec // Sort specification
+	GroupBy     string     // Field ID to group by
+	Search      string     // Full-text search query
+	Fields      []string   // Only return these fields
+	Offset      int        // Pagination offset
+	Limit       int        // Max records to return
+	CellFormat  string     // "json" or "string"
 }
 
 // SortSpec defines a sort specification.
@@ -49,6 +53,39 @@ type SortSpec struct {
 	FieldID   string `json:"field_id"`
 	Direction string `json:"direction"` // asc, desc
 }
+
+// Filter defines a filter condition.
+type Filter struct {
+	FieldID  string      `json:"field_id"`
+	Operator string      `json:"operator"` // equals, not_equals, contains, etc.
+	Value    interface{} `json:"value"`
+}
+
+// Supported filter operators
+const (
+	OpEquals              = "equals"
+	OpNotEquals           = "not_equals"
+	OpContains            = "contains"
+	OpNotContains         = "not_contains"
+	OpStartsWith          = "starts_with"
+	OpEndsWith            = "ends_with"
+	OpIsEmpty             = "is_empty"
+	OpIsNotEmpty          = "is_not_empty"
+	OpGreaterThan         = "greater_than"
+	OpGreaterThanOrEqual  = "greater_than_or_equal"
+	OpLessThan            = "less_than"
+	OpLessThanOrEqual     = "less_than_or_equal"
+	OpBetween             = "between"
+	OpIn                  = "in"
+	OpNotIn               = "not_in"
+	OpIsBefore            = "is_before"
+	OpIsAfter             = "is_after"
+	OpIsWithin            = "is_within"
+	OpIsChecked           = "is_checked"
+	OpIsUnchecked         = "is_unchecked"
+	OpIsAnyOf             = "is_any_of"
+	OpIsNoneOf            = "is_none_of"
+)
 
 // RecordList represents a paginated list of records.
 type RecordList struct {
