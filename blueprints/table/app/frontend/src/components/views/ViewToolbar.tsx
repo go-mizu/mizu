@@ -39,6 +39,8 @@ export function ViewToolbar() {
   const [showExport, setShowExport] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [newViewType, setNewViewType] = useState<ViewType>('grid');
+  const [isCreatingView, setIsCreatingView] = useState(false);
+  const [createViewError, setCreateViewError] = useState<string | null>(null);
 
   const filterRef = useRef<HTMLDivElement>(null);
   const sortRef = useRef<HTMLDivElement>(null);
@@ -112,12 +114,33 @@ export function ViewToolbar() {
   };
 
   const handleCreateView = async () => {
-    if (!newViewName.trim()) return;
-    const view = await createView(newViewName.trim(), newViewType);
+    if (!newViewName.trim()) {
+      setCreateViewError('Please enter a view name');
+      return;
+    }
+
+    setIsCreatingView(true);
+    setCreateViewError(null);
+
+    try {
+      const view = await createView(newViewName.trim(), newViewType);
+      setNewViewName('');
+      setNewViewType('grid');
+      setShowNewView(false);
+      await selectView(view.id);
+    } catch (err) {
+      setCreateViewError(err instanceof Error ? err.message : 'Failed to create view');
+    } finally {
+      setIsCreatingView(false);
+    }
+  };
+
+  // Reset error when modal is closed
+  const handleCloseNewViewModal = () => {
+    setShowNewView(false);
     setNewViewName('');
     setNewViewType('grid');
-    setShowNewView(false);
-    await selectView(view.id);
+    setCreateViewError(null);
   };
 
   const currentViewType = VIEW_TYPES.find(v => v.type === currentView?.type);
@@ -472,40 +495,55 @@ export function ViewToolbar() {
 
       {/* New view modal */}
       {showNewView && (
-        <div className="modal-overlay" onClick={() => setShowNewView(false)}>
+        <div className="modal-overlay" onClick={handleCloseNewViewModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="text-lg font-semibold">Create view</h3>
-              <button onClick={() => setShowNewView(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={handleCloseNewViewModal} className="text-gray-400 hover:text-gray-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
             <div className="modal-body space-y-4">
+              {createViewError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  {createViewError}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                 <input
                   type="text"
                   value={newViewName}
-                  onChange={(e) => setNewViewName(e.target.value)}
+                  onChange={(e) => {
+                    setNewViewName(e.target.value);
+                    if (createViewError) setCreateViewError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isCreatingView) {
+                      handleCreateView();
+                    }
+                  }}
                   className="input"
                   placeholder="View name"
                   autoFocus
+                  disabled={isCreatingView}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {VIEW_TYPES.map((viewType) => (
                     <button
                       key={viewType.type}
-                      onClick={() => setNewViewType(viewType.type)}
-                      className={`p-3 rounded-md border-2 text-center ${
+                      onClick={() => !isCreatingView && setNewViewType(viewType.type)}
+                      disabled={isCreatingView}
+                      className={`p-3 rounded-md border-2 text-center transition-colors ${
                         newViewType === viewType.type
                           ? 'border-primary bg-primary-50'
                           : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                      } ${isCreatingView ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <svg className="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={viewType.icon} />
@@ -517,8 +555,26 @@ export function ViewToolbar() {
               </div>
             </div>
             <div className="modal-footer">
-              <button onClick={() => setShowNewView(false)} className="btn btn-secondary">Cancel</button>
-              <button onClick={handleCreateView} className="btn btn-primary">Create view</button>
+              <button
+                onClick={handleCloseNewViewModal}
+                className="btn btn-secondary"
+                disabled={isCreatingView}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateView}
+                className="btn btn-primary flex items-center gap-2"
+                disabled={isCreatingView || !newViewName.trim()}
+              >
+                {isCreatingView && (
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {isCreatingView ? 'Creating...' : 'Create view'}
+              </button>
             </div>
           </div>
         </div>

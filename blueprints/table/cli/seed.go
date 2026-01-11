@@ -29,7 +29,7 @@ func NewSeed() *cobra.Command {
 		Long: `Seed the Table database with demo data from a seed directory.
 
 Available seeds:
-  - project_tracker (default): Tasks, Projects, Team Members, Clients
+  - project_tracker: Tasks, Projects, Team Members, Clients
   - crm: Leads, Contacts, Deals, Companies (Sales CRM)
   - inventory: Products, Suppliers, Orders, Warehouses
   - hr: Employees, Departments, Leave Requests, Performance Reviews
@@ -43,22 +43,22 @@ Available seeds:
 Creates:
   - 3 users (alice, bob, charlie)
   - Personal workspace for Alice
-  - Selected base with tables, fields, views, and sample records
+  - All bases (default) or a specific base with tables, fields, views, and sample records
 
 To reset the database, delete the data directory first:
   rm -rf ~/data/blueprint/table && table seed
 
 Examples:
-  table seed                              # Seed with project_tracker (default)
-  table seed --name crm                   # Seed with Sales CRM data
-  table seed --name ecommerce             # Seed with E-Commerce data
+  table seed                              # Seed ALL datasets (default)
+  table seed --name crm                   # Seed only Sales CRM data
+  table seed --name ecommerce             # Seed only E-Commerce data
   table seed --data /path/to              # Seed specific database`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSeed(seedName)
 		},
 	}
 
-	cmd.Flags().StringVarP(&seedName, "name", "n", "project_tracker", "Name of the seed dataset to use")
+	cmd.Flags().StringVarP(&seedName, "name", "n", "", "Name of a specific seed dataset to use (default: all)")
 
 	return cmd
 }
@@ -74,13 +74,43 @@ var seedUsers = []struct {
 	{"charlie@example.com", "Charlie Brown", "password123"},
 }
 
+// listAvailableSeeds returns all seed directories from the embedded filesystem
+func listAvailableSeeds() ([]string, error) {
+	entries, err := seedFS.ReadDir("seed")
+	if err != nil {
+		return nil, fmt.Errorf("read seed directory: %w", err)
+	}
+
+	var seeds []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			seeds = append(seeds, entry.Name())
+		}
+	}
+	return seeds, nil
+}
+
 func runSeed(seedName string) error {
 	Blank()
 	Header("", "Seed Database")
 	Blank()
 
-	Summary("Data", dataDir)
-	Summary("Seed", seedName)
+	// Determine which seeds to run
+	var seedsToRun []string
+	if seedName == "" {
+		// Default: seed all
+		var err error
+		seedsToRun, err = listAvailableSeeds()
+		if err != nil {
+			return err
+		}
+		Summary("Data", dataDir)
+		Summary("Seed", fmt.Sprintf("all (%d datasets)", len(seedsToRun)))
+	} else {
+		seedsToRun = []string{seedName}
+		Summary("Data", dataDir)
+		Summary("Seed", seedName)
+	}
 	Blank()
 
 	totalStart := time.Now()
@@ -159,39 +189,51 @@ func runSeed(seedName string) error {
 	}
 	Step("", "Workspace ready", time.Since(sectionStart))
 
-	// Extract seed data to temp directory and import
-	sectionStart = time.Now()
-	stepStart = time.Now()
-	fmt.Printf("  Extracting seed data '%s'... ", seedName)
+	// Track totals across all seeds
+	var totalTables, totalViews, totalRecords int
+	var baseNames []string
 
-	tempDir, err := extractSeedData(seedName)
-	if err != nil {
-		fmt.Printf("✗ %v\n", err)
-		return err
-	}
-	defer os.RemoveAll(tempDir)
-	fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+	// Import each seed
+	for i, seed := range seedsToRun {
+		sectionStart = time.Now()
+		stepStart = time.Now()
+		fmt.Printf("  [%d/%d] Extracting seed data '%s'... ", i+1, len(seedsToRun), seed)
 
-	// Import the base using importexport service
-	stepStart = time.Now()
-	fmt.Printf("  Importing base from seed... ")
-	base, err := srv.ImportExportService().Import(ctx, ws.ID, ownerUserID, tempDir)
-	if err != nil {
-		fmt.Printf("✗ %v\n", err)
-		return err
-	}
-	fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
-	Step("", fmt.Sprintf("Base '%s' imported", base.Name), time.Since(sectionStart))
+		tempDir, err := extractSeedData(seed)
+		if err != nil {
+			fmt.Printf("✗ %v\n", err)
+			return err
+		}
 
-	// Get statistics
-	tables, _ := srv.TableService().ListByBase(ctx, base.ID)
-	tableCount := len(tables)
-	var viewCount, recordCount int
-	for _, tbl := range tables {
-		views, _ := srv.ViewService().ListByTable(ctx, tbl.ID)
-		viewCount += len(views)
-		recs, _ := srv.RecordService().List(ctx, tbl.ID, records.ListOpts{Limit: 1})
-		recordCount += recs.Total
+		fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+
+		// Import the base using importexport service
+		stepStart = time.Now()
+		fmt.Printf("  [%d/%d] Importing base from seed... ", i+1, len(seedsToRun))
+		base, err := srv.ImportExportService().Import(ctx, ws.ID, ownerUserID, tempDir)
+		os.RemoveAll(tempDir) // Clean up temp dir immediately after import
+		if err != nil {
+			fmt.Printf("✗ %v\n", err)
+			return err
+		}
+		fmt.Printf("✓ (%v)\n", time.Since(stepStart).Round(time.Millisecond))
+		Step("", fmt.Sprintf("Base '%s' imported", base.Name), time.Since(sectionStart))
+
+		// Get statistics for this base
+		tables, _ := srv.TableService().ListByBase(ctx, base.ID)
+		tableCount := len(tables)
+		var viewCount, recordCount int
+		for _, tbl := range tables {
+			views, _ := srv.ViewService().ListByTable(ctx, tbl.ID)
+			viewCount += len(views)
+			recs, _ := srv.RecordService().List(ctx, tbl.ID, records.ListOpts{Limit: 1})
+			recordCount += recs.Total
+		}
+
+		totalTables += tableCount
+		totalViews += viewCount
+		totalRecords += recordCount
+		baseNames = append(baseNames, base.Name)
 	}
 
 	Blank()
@@ -200,14 +242,25 @@ func runSeed(seedName string) error {
 	Success("Sample data created")
 	Blank()
 
-	Summary(
-		"Users", fmt.Sprintf("%d users (alice, bob, charlie)", userCount),
-		"Password", "password123",
-		"Base", base.Name,
-		"Tables", fmt.Sprintf("%d tables", tableCount),
-		"Views", fmt.Sprintf("%d views", viewCount),
-		"Records", fmt.Sprintf("%d records", recordCount),
-	)
+	if len(seedsToRun) == 1 {
+		Summary(
+			"Users", fmt.Sprintf("%d users (alice, bob, charlie)", userCount),
+			"Password", "password123",
+			"Base", baseNames[0],
+			"Tables", fmt.Sprintf("%d tables", totalTables),
+			"Views", fmt.Sprintf("%d views", totalViews),
+			"Records", fmt.Sprintf("%d records", totalRecords),
+		)
+	} else {
+		Summary(
+			"Users", fmt.Sprintf("%d users (alice, bob, charlie)", userCount),
+			"Password", "password123",
+			"Bases", fmt.Sprintf("%d bases", len(baseNames)),
+			"Tables", fmt.Sprintf("%d tables", totalTables),
+			"Views", fmt.Sprintf("%d views", totalViews),
+			"Records", fmt.Sprintf("%d records", totalRecords),
+		)
+	}
 	Blank()
 	Hint("Start server: table serve")
 	Hint("Login with: alice@example.com / password123")
