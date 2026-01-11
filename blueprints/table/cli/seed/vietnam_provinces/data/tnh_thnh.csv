@@ -1,0 +1,35 @@
+_id,Name,Code,Type,Region
+,Thành phố Hà Nội,01,Thành phố,Đồng bằng sông Hồng
+,Tỉnh Cao Bằng,04,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Tuyên Quang,08,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Điện Biên,11,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Lai Châu,12,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Sơn La,14,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Lào Cai,15,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Thái Nguyên,19,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Lạng Sơn,20,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Quảng Ninh,22,Tỉnh,Trung du và miền núi phía Bắc
+,Tỉnh Bắc Ninh,24,Tỉnh,Đồng bằng sông Hồng
+,Tỉnh Phú Thọ,25,Tỉnh,Trung du và miền núi phía Bắc
+,Thành phố Hải Phòng,31,Thành phố,Đồng bằng sông Hồng
+,Tỉnh Hưng Yên,33,Tỉnh,Đồng bằng sông Hồng
+,Tỉnh Ninh Bình,37,Tỉnh,Đồng bằng sông Hồng
+,Tỉnh Thanh Hóa,38,Tỉnh,Bắc Trung Bộ
+,Tỉnh Nghệ An,40,Tỉnh,Bắc Trung Bộ
+,Tỉnh Hà Tĩnh,42,Tỉnh,Bắc Trung Bộ
+,Tỉnh Quảng Trị,44,Tỉnh,Bắc Trung Bộ
+,Thành phố Huế,46,Thành phố,Bắc Trung Bộ
+,Thành phố Đà Nẵng,48,Thành phố,Duyên hải Nam Trung Bộ
+,Tỉnh Quảng Ngãi,51,Tỉnh,Duyên hải Nam Trung Bộ
+,Tỉnh Gia Lai,52,Tỉnh,Tây Nguyên
+,Tỉnh Khánh Hòa,56,Tỉnh,Duyên hải Nam Trung Bộ
+,Tỉnh Đắk Lắk,66,Tỉnh,Tây Nguyên
+,Tỉnh Lâm Đồng,68,Tỉnh,Tây Nguyên
+,Tỉnh Đồng Nai,75,Tỉnh,Đông Nam Bộ
+,Thành phố Hồ Chí Minh,79,Thành phố,Đông Nam Bộ
+,Tỉnh Tây Ninh,80,Tỉnh,Đông Nam Bộ
+,Tỉnh Đồng Tháp,82,Tỉnh,Đồng bằng sông Cửu Long
+,Tỉnh Vĩnh Long,86,Tỉnh,Đồng bằng sông Cửu Long
+,Tỉnh An Giang,91,Tỉnh,Đồng bằng sông Cửu Long
+,Thành phố Cần Thơ,92,Thành phố,Đồng bằng sông Cửu Long
+,Tỉnh Cà Mau,96,Tỉnh,Đồng bằng sông Cửu Long

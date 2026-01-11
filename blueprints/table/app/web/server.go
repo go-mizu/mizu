@@ -262,6 +262,11 @@ func (s *Server) setupRoutes() {
 		r.Delete("/views/{id}", s.authRequired(s.viewHandlers.Delete))
 		r.Post("/views/{id}/duplicate", s.authRequired(s.viewHandlers.Duplicate))
 		r.Post("/views/{tableId}/reorder", s.authRequired(s.viewHandlers.Reorder))
+		r.Patch("/views/{id}/filters", s.authRequired(s.viewHandlers.SetFilters))
+		r.Patch("/views/{id}/sorts", s.authRequired(s.viewHandlers.SetSorts))
+		r.Patch("/views/{id}/groups", s.authRequired(s.viewHandlers.SetGroups))
+		r.Patch("/views/{id}/field-config", s.authRequired(s.viewHandlers.SetFieldConfig))
+		r.Patch("/views/{id}/config", s.authRequired(s.viewHandlers.SetConfig))
 
 		// Comments
 		r.Get("/comments/record/{recordId}", s.authRequired(s.commentHandlers.ListByRecord))

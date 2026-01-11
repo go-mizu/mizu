@@ -579,6 +579,24 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       return [{ group: '', records: sorted }];
     }
 
+    // Build a lookup map for select options (ID -> name)
+    const optionMap = new Map<string, string>();
+    if (field.type === 'single_select' || field.type === 'multi_select') {
+      const options = field.select_options || field.options?.choices || [];
+      options.forEach((opt: { id: string; name: string }) => {
+        optionMap.set(opt.id, opt.name);
+      });
+    }
+
+    // Helper to get display label for a value
+    const getDisplayLabel = (value: CellValue): string => {
+      if (value === null || value === undefined) return '';
+      if (field.type === 'single_select') {
+        return optionMap.get(String(value)) || String(value);
+      }
+      return String(value);
+    };
+
     const groups = new Map<string, TableRecord[]>();
     const uncategorized: TableRecord[] = [];
 
@@ -587,7 +605,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
       if (value === null || value === undefined) {
         uncategorized.push(record);
       } else {
-        const groupKey = String(value);
+        const groupKey = getDisplayLabel(value);
         if (!groups.has(groupKey)) {
           groups.set(groupKey, []);
         }
