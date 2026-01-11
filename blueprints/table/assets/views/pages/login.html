@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Table</title>
-    <link rel="stylesheet" href="/static/dist/css/main.css">
+    {{range assetCSS "src/main.tsx"}}<link rel="stylesheet" href="{{.}}">
+    {{end}}
 </head>
 <body>
     <div id="root"></div>
-    <script type="module" src="/static/dist/js/main.js"></script>
+    <script type="module" src="{{asset "index.html"}}"></script>
 </body>
 </html>
