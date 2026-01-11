@@ -120,9 +120,14 @@ export function GridView() {
     }
   }, [groupBy]);
 
+  // Memoized index maps for O(1) lookups (performance optimization)
   const recordIndexMap = useMemo(() => {
     return new Map(displayRecords.map((record, index) => [record.id, index]));
   }, [displayRecords]);
+
+  const fieldIndexMap = useMemo(() => {
+    return new Map(visibleFields.map((field, index) => [field.id, index]));
+  }, [visibleFields]);
 
   // Load view settings from config
   useEffect(() => {
@@ -206,7 +211,7 @@ export function GridView() {
     setSelectedRows(new Set());
   };
 
-  // Handle copy operation
+  // Handle copy operation - uses index maps for O(1) lookups
   const handleCopy = useCallback(async () => {
     if (!selectedCell && !cellRange) return;
 
@@ -218,8 +223,10 @@ export function GridView() {
       startCol = Math.min(cellRange.startCol, cellRange.endCol);
       endCol = Math.max(cellRange.startCol, cellRange.endCol);
     } else if (selectedCell) {
-      const rowIdx = displayRecords.findIndex(r => r.id === selectedCell.recordId);
-      const colIdx = visibleFields.findIndex(f => f.id === selectedCell.fieldId);
+      // Use index maps for O(1) lookup instead of O(n) findIndex
+      const rowIdx = recordIndexMap.get(selectedCell.recordId) ?? -1;
+      const colIdx = fieldIndexMap.get(selectedCell.fieldId) ?? -1;
+      if (rowIdx === -1 || colIdx === -1) return;
       startRow = endRow = rowIdx;
       startCol = endCol = colIdx;
     } else {
@@ -235,7 +242,7 @@ export function GridView() {
     );
   }, [selectedCell, cellRange, displayRecords, visibleFields]);
 
-  // Handle paste operation
+  // Handle paste operation - uses index maps for O(1) lookups
   const handlePaste = useCallback(async () => {
     if (!selectedCell) return;
 
@@ -244,8 +251,9 @@ export function GridView() {
       const parsed = parseClipboardData(text);
       if (parsed.length === 0) return;
 
-      const startRowIdx = displayRecords.findIndex(r => r.id === selectedCell.recordId);
-      const startColIdx = visibleFields.findIndex(f => f.id === selectedCell.fieldId);
+      // Use index maps for O(1) lookup instead of O(n) findIndex
+      const startRowIdx = recordIndexMap.get(selectedCell.recordId) ?? -1;
+      const startColIdx = fieldIndexMap.get(selectedCell.fieldId) ?? -1;
       if (startRowIdx === -1 || startColIdx === -1) return;
 
       const updates: { recordId: string; fieldId: string; oldValue: CellValue; newValue: CellValue }[] = [];
@@ -321,12 +329,13 @@ export function GridView() {
     }
   }, [redo, updateCellValue]);
 
-  // Handle fill operation from fill handle
+  // Handle fill operation from fill handle - uses index maps for O(1) lookups
   const handleFillEnd = useCallback(async (deltaRows: number, _deltaCols: number) => {
     if (!selectedCell || deltaRows === 0) return;
 
-    const startRowIdx = displayRecords.findIndex(r => r.id === selectedCell.recordId);
-    const colIdx = visibleFields.findIndex(f => f.id === selectedCell.fieldId);
+    // Use index maps for O(1) lookup instead of O(n) findIndex
+    const startRowIdx = recordIndexMap.get(selectedCell.recordId) ?? -1;
+    const colIdx = fieldIndexMap.get(selectedCell.fieldId) ?? -1;
     if (startRowIdx === -1 || colIdx === -1) return;
 
     const field = visibleFields[colIdx];
@@ -826,7 +835,7 @@ export function GridView() {
 
   if (!currentTable) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
+      <div className="flex-1 flex items-center justify-center text-[var(--at-muted)]">
         Select a table to view records
       </div>
     );
@@ -870,7 +879,7 @@ export function GridView() {
             {canUndo() && (
               <button
                 onClick={handleUndo}
-                className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                className="text-sm text-[var(--at-text-secondary)] hover:text-[var(--at-text)] flex items-center gap-1"
                 title="Undo (Cmd/Ctrl+Z)"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -881,7 +890,7 @@ export function GridView() {
             {canRedo() && (
               <button
                 onClick={handleRedo}
-                className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                className="text-sm text-[var(--at-text-secondary)] hover:text-[var(--at-text)] flex items-center gap-1"
                 title="Redo (Cmd/Ctrl+Shift+Z)"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -889,7 +898,7 @@ export function GridView() {
                 </svg>
               </button>
             )}
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-[var(--at-muted)]">
               Delete/Backspace to delete • Escape to clear
             </span>
           </div>
@@ -904,11 +913,11 @@ export function GridView() {
           ))}
           <col style={{ width: 128 }} />
         </colgroup>
-        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+        <thead className="sticky top-0 z-10 bg-[var(--at-surface-muted)] shadow-sm">
           <tr style={{ height: headerHeight }}>
             {/* Row number and checkbox column - frozen */}
             <th
-              className="border-b border-r border-slate-200 bg-slate-50 p-0 sticky left-0 z-20 relative"
+              className="border-b border-r border-[var(--at-border)] bg-[var(--at-surface-muted)] p-0 sticky left-0 z-20 relative"
               style={{ height: headerHeight, width: 64 }}
             >
               <div className="flex items-center justify-center h-full">
@@ -916,7 +925,7 @@ export function GridView() {
                   type="checkbox"
                   checked={selectedRows.size === displayRecords.length && displayRecords.length > 0}
                   onChange={toggleAllRows}
-                  className="w-4 h-4 rounded border-gray-300"
+                  className="w-4 h-4 rounded border-[var(--at-border-strong)]"
                 />
               </div>
             </th>
@@ -942,7 +951,7 @@ export function GridView() {
             })}
 
             {/* Add field button */}
-            <th className="border-b border-slate-200 bg-slate-50 p-0" style={{ height: headerHeight, width: 128 }}>
+            <th className="border-b border-[var(--at-border)] bg-[var(--at-surface-muted)] p-0" style={{ height: headerHeight, width: 128 }}>
               <AddFieldButton />
             </th>
           </tr>
@@ -1016,11 +1025,11 @@ export function GridView() {
           {groupedRecords.map(({ group, records: groupRecords }) => (
             <Fragment key={group || 'ungrouped'}>
               {groupBy && (
-                <tr className="bg-slate-50">
-                  <td colSpan={visibleFields.length + 2} className="border-b border-slate-200 px-3 py-2">
+                <tr className="bg-[var(--at-surface-muted)]">
+                  <td colSpan={visibleFields.length + 2} className="border-b border-[var(--at-border)] px-3 py-2">
                     <button
                       onClick={() => toggleGroupCollapse(group)}
-                      className="flex items-center gap-2 text-sm font-semibold text-slate-700"
+                      className="flex items-center gap-2 text-sm font-semibold text-[var(--at-text)]"
                     >
                       <svg
                         className={`w-4 h-4 transition-transform ${collapsedGroups.has(group) ? '-rotate-90' : ''}`}
@@ -1031,7 +1040,7 @@ export function GridView() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                       <span>{group || '(Empty)'}</span>
-                      <span className="text-xs text-slate-500 font-normal">{groupRecords.length}</span>
+                      <span className="text-xs text-[var(--at-muted)] font-normal">{groupRecords.length}</span>
                     </button>
                   </td>
                 </tr>
@@ -1044,7 +1053,7 @@ export function GridView() {
                   <tr
                     key={record.id}
                     data-row={rowIndex}
-                    className={`group ${selectedRows.has(record.id) ? 'bg-primary-50' : 'hover:bg-slate-50'}`}
+                    className={`group ${selectedRows.has(record.id) ? 'bg-primary-50' : 'hover:bg-[var(--at-surface-muted)]'}`}
                     style={{
                       height: currentRowHeight.height,
                       backgroundColor: rowColor && !selectedRows.has(record.id) ? `${rowColor}15` : undefined,
@@ -1052,7 +1061,7 @@ export function GridView() {
                     onContextMenu={(e) => handleRowContextMenu(e, record.id)}
                   >
                     {/* Row number and checkbox - frozen */}
-                    <td className="border-b border-r border-slate-200 p-0 sticky left-0 bg-white z-10 relative w-16">
+                    <td className="border-b border-r border-[var(--at-border)] p-0 sticky left-0 bg-white z-10 relative w-16">
                       {/* Row color indicator bar */}
                       {rowColor && (
                         <div
@@ -1065,14 +1074,14 @@ export function GridView() {
                           type="checkbox"
                           checked={selectedRows.has(record.id)}
                           onChange={(e) => toggleRowSelection(record.id, e as unknown as React.MouseEvent)}
-                          className="w-4 h-4 rounded border-gray-300 opacity-0 group-hover:opacity-100 checked:opacity-100"
+                          className="w-4 h-4 rounded border-[var(--at-border-strong)] opacity-0 group-hover:opacity-100 checked:opacity-100"
                         />
-                        <span className="text-xs text-gray-400 w-6 text-center group-hover:hidden">
+                        <span className="text-xs text-[var(--at-muted)] w-6 text-center group-hover:hidden">
                           {rowIndex + 1}
                         </span>
                         <button
                           onClick={() => handleExpandRecord(record)}
-                          className="hidden group-hover:block text-gray-400 hover:text-gray-600"
+                          className="hidden group-hover:block text-[var(--at-muted)] hover:text-[var(--at-text)]"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -1095,11 +1104,11 @@ export function GridView() {
                           key={field.id}
                           data-row={rowIndex}
                           data-field={field.id}
-                          className={`border-b border-r border-slate-200 p-0 relative ${
+                          className={`border-b border-r border-[var(--at-border)] p-0 relative ${
                             isSelected ? 'ring-2 ring-primary ring-inset z-10' : ''
                           } ${isInRange && !isSelected ? 'bg-primary-50/50' : ''} ${
                             isFrozen ? 'sticky bg-white z-10' : ''
-                          } ${isLastFrozen && frozenColumnCount > 0 ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-0.5 after:bg-slate-300 after:shadow-sm' : ''}`}
+                          } ${isLastFrozen && frozenColumnCount > 0 ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-0.5 after:bg-[var(--at-border-strong)] after:shadow-sm' : ''}`}
                           style={{
                             width: columnWidths[field.id] || field.width || 200,
                             height: currentRowHeight.height,
@@ -1132,7 +1141,7 @@ export function GridView() {
                     })}
 
                     {/* Empty cell for add field column */}
-                    <td className="border-b border-slate-200" style={{ height: currentRowHeight.height }} />
+                    <td className="border-b border-[var(--at-border)]" style={{ height: currentRowHeight.height }} />
                   </tr>
                 );
               })}
@@ -1152,10 +1161,10 @@ export function GridView() {
 
           {/* Add row button */}
           <tr>
-            <td colSpan={visibleFields.length + 2} className="border-b border-slate-200 p-0">
+            <td colSpan={visibleFields.length + 2} className="border-b border-[var(--at-border)] p-0">
               <button
                 onClick={handleAddRow}
-                className={`w-full ${currentRowHeight.class} text-left px-4 text-sm text-slate-500 hover:bg-slate-50 flex items-center gap-2`}
+                className={`w-full ${currentRowHeight.class} text-left px-4 text-sm text-[var(--at-muted)] hover:bg-[var(--at-surface-muted)] flex items-center gap-2`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

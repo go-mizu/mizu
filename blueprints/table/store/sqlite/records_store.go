@@ -52,6 +52,7 @@ func (s *RecordsStore) Create(ctx context.Context, record *records.Record) error
 }
 
 // CreateBatch creates multiple records efficiently using batch insert.
+// Uses strings.Builder for efficient query construction.
 func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) error {
 	if len(recs) == 0 {
 		return nil
@@ -71,16 +72,16 @@ func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) 
 	// Process in batches of 100 to avoid SQLite's variable limit (SQLITE_MAX_VARIABLE_NUMBER)
 	batchSize := 100
 	for i := 0; i < len(recs); i += batchSize {
-		end := i + batchSize
-		if end > len(recs) {
-			end = len(recs)
-		}
+		end := min(i+batchSize, len(recs))
 		batch := recs[i:end]
 
-		// Build batch insert query
-		query := `INSERT INTO records (id, table_id, cells, position, created_by, created_at, updated_at, updated_by) VALUES `
+		// Build batch insert query using strings.Builder for efficiency
+		var sb strings.Builder
+		// Pre-allocate: base query (~90 chars) + placeholder per record (~25 chars) + separators
+		sb.Grow(100 + len(batch)*28)
+		sb.WriteString(`INSERT INTO records (id, table_id, cells, position, created_by, created_at, updated_at, updated_by) VALUES `)
+
 		args := make([]any, 0, len(batch)*8)
-		placeholders := make([]string, len(batch))
 
 		for j, rec := range batch {
 			rec.CreatedAt = now
@@ -96,14 +97,15 @@ func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) 
 				return err
 			}
 
-			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?)"
+			if j > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString("(?, ?, ?, ?, ?, ?, ?, ?)")
 			args = append(args, rec.ID, rec.TableID, string(cellsJSON), rec.Position,
 				rec.CreatedBy, rec.CreatedAt, rec.UpdatedAt, rec.UpdatedBy)
 		}
 
-		query += strings.Join(placeholders, ", ")
-
-		if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
+		if _, err := s.db.ExecContext(ctx, sb.String(), args...); err != nil {
 			return err
 		}
 	}
@@ -121,23 +123,29 @@ func (s *RecordsStore) GetByID(ctx context.Context, id string) (*records.Record,
 }
 
 // GetByIDs retrieves multiple records by IDs efficiently using IN clause.
+// Uses strings.Builder for efficient query construction.
 func (s *RecordsStore) GetByIDs(ctx context.Context, ids []string) (map[string]*records.Record, error) {
 	if len(ids) == 0 {
 		return make(map[string]*records.Record), nil
 	}
 
-	// Build query with placeholders
-	placeholders := make([]string, len(ids))
+	// Build query with placeholders using strings.Builder for efficiency
+	var sb strings.Builder
+	// Pre-allocate: base query (~100 chars) + placeholders (3 chars each: "?, ")
+	sb.Grow(120 + len(ids)*3)
+	sb.WriteString(`SELECT id, table_id, cells, position, created_by, created_at, updated_at, updated_by FROM records WHERE id IN (`)
+
 	args := make([]any, len(ids))
 	for i, id := range ids {
-		placeholders[i] = "?"
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteByte('?')
 		args[i] = id
 	}
+	sb.WriteByte(')')
 
-	query := fmt.Sprintf(`
-		SELECT id, table_id, cells, position, created_by, created_at, updated_at, updated_by
-		FROM records WHERE id IN (%s)
-	`, strings.Join(placeholders, ", "))
+	query := sb.String()
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -204,9 +212,11 @@ func (s *RecordsStore) DeleteBatch(ctx context.Context, ids []string) error {
 	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM comments WHERE record_id IN (%s)`, inClause), args...)
 	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM attachments WHERE record_id IN (%s)`, inClause), args...)
 
-	// For record_links we need double the args
-	doubleArgs := append(args, args...)
-	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM record_links WHERE source_record_id IN (%s) OR target_record_id IN (%s)`, inClause, inClause), doubleArgs...)
+	// For record_links we need double the args - pre-allocate to avoid memory allocation
+	linkArgs := make([]any, 0, len(ids)*2)
+	linkArgs = append(linkArgs, args...)
+	linkArgs = append(linkArgs, args...)
+	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM record_links WHERE source_record_id IN (%s) OR target_record_id IN (%s)`, inClause, inClause), linkArgs...)
 
 	// Delete records
 	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM records WHERE id IN (%s)`, inClause), args...)
@@ -250,45 +260,41 @@ func (s *RecordsStore) List(ctx context.Context, tableID string, opts records.Li
 	}, rows.Err()
 }
 
-// UpdateCell updates a single cell value.
+// UpdateCell updates a single cell value using SQLite JSON functions for better performance.
+// This avoids a read-modify-write cycle by updating the JSON directly in the database.
 func (s *RecordsStore) UpdateCell(ctx context.Context, recordID, fieldID string, value any) error {
-	rec, err := s.GetByID(ctx, recordID)
+	now := time.Now()
+
+	// Marshal the value to JSON
+	valueJSON, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 
-	rec.Cells[fieldID] = value
-	rec.UpdatedAt = time.Now()
-
-	cellsJSON, err := json.Marshal(rec.Cells)
-	if err != nil {
-		return err
-	}
-
+	// Use json_set to update the cell directly in the database
+	// This is more efficient than read-modify-write pattern
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE records SET cells = ?, updated_at = ? WHERE id = ?
-	`, string(cellsJSON), rec.UpdatedAt, recordID)
+		UPDATE records
+		SET cells = json_set(cells, '$.' || ?, json(?)),
+		    updated_at = ?
+		WHERE id = ?
+	`, fieldID, string(valueJSON), now, recordID)
 	return err
 }
 
-// ClearCell clears a cell value.
+// ClearCell clears a cell value using SQLite JSON functions for better performance.
+// This avoids a read-modify-write cycle by removing the key directly in the database.
 func (s *RecordsStore) ClearCell(ctx context.Context, recordID, fieldID string) error {
-	rec, err := s.GetByID(ctx, recordID)
-	if err != nil {
-		return err
-	}
+	now := time.Now()
 
-	delete(rec.Cells, fieldID)
-	rec.UpdatedAt = time.Now()
-
-	cellsJSON, err := json.Marshal(rec.Cells)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE records SET cells = ?, updated_at = ? WHERE id = ?
-	`, string(cellsJSON), rec.UpdatedAt, recordID)
+	// Use json_remove to delete the cell directly in the database
+	// This is more efficient than read-modify-write pattern
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE records
+		SET cells = json_remove(cells, '$.' || ?),
+		    updated_at = ?
+		WHERE id = ?
+	`, fieldID, now, recordID)
 	return err
 }
 

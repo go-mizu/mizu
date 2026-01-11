@@ -127,6 +127,32 @@ export function TimelineView() {
   // Get primary field for display
   const primaryField = fields.find(f => f.type === 'text' || (f.type as string) === 'single_line_text') || fields[0];
 
+  // Memoize record index map for O(1) lookups (performance optimization)
+  const recordIndexMap = useMemo(
+    () => new Map(records.map((r, i) => [r.id, i])),
+    [records]
+  );
+
+  // Memoized navigation helper using recordIndexMap (O(1) instead of O(n))
+  const getRecordNavigation = useCallback((record: TableRecord | null) => {
+    if (!record) return { hasPrev: false, hasNext: false, position: 0 };
+    const index = recordIndexMap.get(record.id) ?? -1;
+    return {
+      hasPrev: index > 0,
+      hasNext: index < records.length - 1,
+      position: index + 1,
+    };
+  }, [recordIndexMap, records.length]);
+
+  const handleNavigateRecord = useCallback((direction: 'prev' | 'next') => {
+    if (!expandedRecord) return;
+    const currentIndex = recordIndexMap.get(expandedRecord.id) ?? -1;
+    const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex >= 0 && newIndex < records.length) {
+      setExpandedRecord(records[newIndex]);
+    }
+  }, [expandedRecord, recordIndexMap, records]);
+
   // Calculate visible time range and columns
   const { columnWidth, columns, totalWidth, msPerPixel } = useMemo(() => {
     let end: Date;
@@ -239,40 +265,55 @@ export function TimelineView() {
     return position;
   }, [viewStart, msPerPixel]);
 
-  // Group records and calculate bar positions
-  const { groups, totalHeight, recordBars } = useMemo(() => {
-    if (!startField) return { groups: [], totalHeight: 0, recordBars: new Map<string, RecordBarData>() };
-
-    const recordsWithDates = records.filter(record => {
+  // Step 1: Filter records with valid dates (fewer dependencies = fewer recalculations)
+  const recordsWithDates = useMemo(() => {
+    if (!startField) return [];
+    return records.filter(record => {
       const startDate = record.values[startField.id];
       return startDate !== null && startDate !== undefined;
     });
+  }, [records, startField]);
 
-    // Group records
-    const groupedRecords = new Map<string, TableRecord[]>();
-
-    if (groupField) {
-      recordsWithDates.forEach(record => {
-        const groupValue = record.values[groupField.id];
-        let groupKey = '(Empty)';
-
-        if (groupValue !== null && groupValue !== undefined && groupValue !== '') {
-          if (groupField.type === 'single_select') {
-            const choice = groupField.options?.choices?.find(c => c.id === groupValue);
-            groupKey = choice?.name || String(groupValue);
-          } else {
-            groupKey = String(groupValue);
-          }
-        }
-
-        if (!groupedRecords.has(groupKey)) {
-          groupedRecords.set(groupKey, []);
-        }
-        groupedRecords.get(groupKey)!.push(record);
-      });
-    } else {
-      groupedRecords.set('All Records', recordsWithDates);
+  // Step 2: Group records (depends only on filtered records and groupField)
+  const groupedRecordsMap = useMemo(() => {
+    const grouped = new Map<string, TableRecord[]>();
+    if (!groupField) {
+      grouped.set('All Records', recordsWithDates);
+      return grouped;
     }
+
+    // Build choice lookup map once for O(1) access
+    const choiceMap = new Map<string, string>();
+    if (groupField.type === 'single_select') {
+      groupField.options?.choices?.forEach(c => choiceMap.set(c.id, c.name));
+    }
+
+    recordsWithDates.forEach(record => {
+      const groupValue = record.values[groupField.id];
+      let groupKey = '(Empty)';
+
+      if (groupValue !== null && groupValue !== undefined && groupValue !== '') {
+        if (groupField.type === 'single_select') {
+          groupKey = choiceMap.get(String(groupValue)) || String(groupValue);
+        } else {
+          groupKey = String(groupValue);
+        }
+      }
+
+      const existing = grouped.get(groupKey);
+      if (existing) {
+        existing.push(record);
+      } else {
+        grouped.set(groupKey, [record]);
+      }
+    });
+
+    return grouped;
+  }, [recordsWithDates, groupField]);
+
+  // Step 3: Calculate bar positions for each group (layout-dependent computation)
+  const { groups, totalHeight, recordBars } = useMemo(() => {
+    if (!startField) return { groups: [], totalHeight: 0, recordBars: new Map<string, RecordBarData>() };
 
     // Calculate bar positions for each group
     const processedGroups: GroupData[] = [];
@@ -281,14 +322,14 @@ export function TimelineView() {
     let cumulativeTop = 0;
 
     // Sort groups - put '(Empty)' at the end
-    const sortedGroupKeys = Array.from(groupedRecords.keys()).sort((a, b) => {
+    const sortedGroupKeys = Array.from(groupedRecordsMap.keys()).sort((a, b) => {
       if (a === '(Empty)') return 1;
       if (b === '(Empty)') return -1;
       return a.localeCompare(b);
     });
 
     sortedGroupKeys.forEach(groupKey => {
-      const groupRecords = groupedRecords.get(groupKey)!;
+      const groupRecords = groupedRecordsMap.get(groupKey)!;
       const isCollapsed = collapsedGroups.has(groupKey);
 
       // Calculate bar positions
@@ -383,7 +424,7 @@ export function TimelineView() {
     const total = cumulativeTop + rowHeight; // Extra row for "Add record"
 
     return { groups: processedGroups, totalHeight: total, recordBars: allBars };
-  }, [records, startField, endField, primaryField, colorField, groupField, fields, viewStart, msPerPixel, totalWidth, collapsedGroups, rowHeight, layoutMode]);
+  }, [groupedRecordsMap, startField, endField, primaryField, colorField, groupField, fields, viewStart, msPerPixel, totalWidth, collapsedGroups, rowHeight, layoutMode]);
 
   // Navigation
   const navigateTimeline = (direction: 'prev' | 'next') => {
@@ -857,7 +898,7 @@ export function TimelineView() {
                       {!groupField && group.records.map((bar) => (
                         <div
                           key={bar.record.id}
-                          className="px-3 flex items-center border-b border-slate-50 hover:bg-[var(--at-surface-muted)]"
+                          className="px-3 flex items-center border-b border-[var(--at-border-light)] hover:bg-[var(--at-surface-muted)]"
                           style={{ height: rowHeight }}
                         >
                           <button
@@ -983,10 +1024,10 @@ export function TimelineView() {
       {records.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-white/80">
           <div className="text-center pointer-events-auto">
-            <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 mx-auto mb-4 text-[var(--at-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <p className="text-gray-500 mb-4">No records to display</p>
+            <p className="text-[var(--at-muted)] mb-4">No records to display</p>
             <button
               onClick={() => handleAddRecord(new Date())}
               className="btn btn-primary"
@@ -1035,16 +1076,10 @@ export function TimelineView() {
         <RecordSidebar
           record={expandedRecord}
           onClose={() => setExpandedRecord(null)}
-          onNavigate={(direction) => {
-            const currentIndex = records.findIndex(r => r.id === expandedRecord.id);
-            const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
-            if (newIndex >= 0 && newIndex < records.length) {
-              setExpandedRecord(records[newIndex]);
-            }
-          }}
-          hasPrev={records.findIndex(r => r.id === expandedRecord.id) > 0}
-          hasNext={records.findIndex(r => r.id === expandedRecord.id) < records.length - 1}
-          position={records.findIndex(r => r.id === expandedRecord.id) + 1}
+          onNavigate={handleNavigateRecord}
+          hasPrev={getRecordNavigation(expandedRecord).hasPrev}
+          hasNext={getRecordNavigation(expandedRecord).hasNext}
+          position={getRecordNavigation(expandedRecord).position}
           total={records.length}
         />
       )}
