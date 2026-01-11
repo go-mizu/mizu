@@ -15,6 +15,7 @@ import { FormView } from './components/views/form/FormView';
 import { ListView } from './components/views/list/ListView';
 import { DashboardView } from './components/views/dashboard/DashboardView';
 import { PublicFormPage } from './pages/PublicFormPage';
+import { RecordPage } from './pages/RecordPage';
 
 function App() {
   // Check for public form route
@@ -22,6 +23,18 @@ function App() {
     const path = window.location.pathname;
     const match = path.match(/^\/form\/([^/]+)$/);
     return match ? match[1] : null;
+  }, []);
+
+  // Check for record page route
+  const recordPageParams = useMemo(() => {
+    const path = window.location.pathname;
+    const search = window.location.search;
+    const match = path.match(/^\/record\/([^/]+)$/);
+    if (match) {
+      const viewId = new URLSearchParams(search).get('view') || undefined;
+      return { recordId: match[1], viewId };
+    }
+    return null;
   }, []);
 
   // If this is a public form route, render the public form page
@@ -77,6 +90,21 @@ function App() {
   // Not authenticated - show login
   if (!isAuthenticated) {
     return <LoginForm />;
+  }
+
+  // If this is a record page route, render the record page
+  if (recordPageParams && currentTable) {
+    return (
+      <RecordPage
+        recordId={recordPageParams.recordId}
+        tableId={currentTable.id}
+        viewId={recordPageParams.viewId}
+        onBack={() => {
+          window.history.pushState({}, '', '/');
+          window.location.reload();
+        }}
+      />
+    );
   }
 
   // Render current view

@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useBaseStore } from '../../../stores/baseStore';
 import type { TableRecord, Field, Attachment } from '../../../types';
-import { RecordModal } from '../RecordModal';
+import { RecordSidebar } from '../RecordSidebar';
 import { GalleryCard } from './GalleryCard';
 import { GallerySettings } from './GallerySettings';
 import { DEFAULT_GALLERY_CONFIG, CARD_SIZES, type GalleryConfig } from './types';
@@ -272,11 +272,22 @@ export function GalleryView() {
         </div>
       )}
 
-      {/* Record modal */}
+      {/* Record sidebar */}
       {expandedRecord && (
-        <RecordModal
+        <RecordSidebar
           record={expandedRecord}
           onClose={() => setExpandedRecord(null)}
+          onNavigate={(direction) => {
+            const currentIndex = records.findIndex(r => r.id === expandedRecord.id);
+            const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+            if (newIndex >= 0 && newIndex < records.length) {
+              setExpandedRecord(records[newIndex]);
+            }
+          }}
+          hasPrev={records.findIndex(r => r.id === expandedRecord.id) > 0}
+          hasNext={records.findIndex(r => r.id === expandedRecord.id) < records.length - 1}
+          position={records.findIndex(r => r.id === expandedRecord.id) + 1}
+          total={records.length}
         />
       )}
     </div>
