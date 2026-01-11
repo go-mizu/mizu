@@ -98,16 +98,63 @@ func (s *Service) Update(ctx context.Context, id string, cells map[string]interf
 	return record, nil
 }
 
-// UpdateBatch updates multiple records.
+// UpdateBatch updates multiple records efficiently using batch operations.
+// Pre-allocates result slice and uses batch cell updates for better performance.
 func (s *Service) UpdateBatch(ctx context.Context, updates []RecordUpdate, userID string) ([]*Record, error) {
-	var results []*Record
+	if len(updates) == 0 {
+		return nil, nil
+	}
+
+	// Pre-allocate results slice with known capacity
+	results := make([]*Record, 0, len(updates))
+
+	// Collect all record IDs for batch fetch
+	ids := make([]string, len(updates))
+	for i, update := range updates {
+		ids[i] = update.ID
+	}
+
+	// Batch fetch all records at once (1 query instead of N)
+	recordMap, err := s.store.GetByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect all cell updates for batch operation
+	var cellUpdates []CellUpdate
 	for _, update := range updates {
-		record, err := s.Update(ctx, update.ID, update.Cells, userID)
-		if err != nil {
-			return nil, err
+		record, ok := recordMap[update.ID]
+		if !ok {
+			return nil, ErrNotFound
 		}
+
+		// Merge cells and collect updates
+		if record.Cells == nil {
+			record.Cells = make(map[string]interface{})
+		}
+		for k, v := range update.Cells {
+			if v == nil {
+				delete(record.Cells, k)
+			} else {
+				record.Cells[k] = v
+				cellUpdates = append(cellUpdates, CellUpdate{
+					RecordID: record.ID,
+					FieldID:  k,
+					Value:    v,
+				})
+			}
+		}
+		record.UpdatedBy = userID
 		results = append(results, record)
 	}
+
+	// Batch update all cells at once (1 transaction instead of N queries)
+	if len(cellUpdates) > 0 {
+		if err := s.store.UpdateCellsBatch(ctx, cellUpdates); err != nil {
+			return nil, err
+		}
+	}
+
 	return results, nil
 }
 
@@ -142,12 +189,23 @@ func (s *Service) ClearCell(ctx context.Context, recordID, fieldID string, userI
 	return s.store.ClearCell(ctx, recordID, fieldID)
 }
 
-// UpdateFieldValues updates a field value across multiple records.
+// UpdateFieldValues updates a field value across multiple records efficiently.
+// Uses batch cell update for better performance (1 transaction instead of N queries).
 func (s *Service) UpdateFieldValues(ctx context.Context, tableID, fieldID string, updates map[string]interface{}, userID string) error {
-	for recordID, value := range updates {
-		if err := s.store.UpdateCell(ctx, recordID, fieldID, value); err != nil {
-			return err
-		}
+	if len(updates) == 0 {
+		return nil
 	}
-	return nil
+
+	// Convert map to CellUpdate slice for batch operation
+	cellUpdates := make([]CellUpdate, 0, len(updates))
+	for recordID, value := range updates {
+		cellUpdates = append(cellUpdates, CellUpdate{
+			RecordID: recordID,
+			FieldID:  fieldID,
+			Value:    value,
+		})
+	}
+
+	// Batch update all cells at once
+	return s.store.UpdateCellsBatch(ctx, cellUpdates)
 }

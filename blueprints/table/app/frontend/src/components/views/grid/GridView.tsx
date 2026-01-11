@@ -383,14 +383,16 @@ export function GridView() {
     });
   }, [selectedCell, displayRecords, createRecord, pushAction]);
 
-  // Navigate to cell (for search)
+  // Navigate to cell (for search) - uses recordIndexMap for O(1) lookup
   const navigateToCell = useCallback((recordId: string, fieldId: string) => {
     setSelectedCell({ recordId, fieldId });
-    // Scroll cell into view
-    const rowIdx = displayRecords.findIndex(r => r.id === recordId);
-    const cellElement = document.querySelector(`[data-row="${rowIdx}"][data-field="${fieldId}"]`);
-    cellElement?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-  }, [displayRecords]);
+    // Scroll cell into view - use recordIndexMap for O(1) lookup instead of O(n) findIndex
+    const rowIdx = recordIndexMap.get(recordId) ?? -1;
+    if (rowIdx !== -1) {
+      const cellElement = document.querySelector(`[data-row="${rowIdx}"][data-field="${fieldId}"]`);
+      cellElement?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }
+  }, [recordIndexMap]);
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -742,6 +744,7 @@ export function GridView() {
   };
 
   // Auto-fit column width based on content
+  // Samples first 100 records for performance instead of iterating all records
   const handleAutoFit = useCallback((fieldId: string) => {
     const field = fields.find(f => f.id === fieldId);
     if (!field) return;
@@ -749,10 +752,12 @@ export function GridView() {
     // Calculate max content width
     let maxWidth = field.name.length * 8 + 60; // Header text + padding + icon
 
-    // Check all visible records
-    displayRecords.forEach(record => {
+    // Sample first 100 records for performance (sufficient for accurate width estimation)
+    const sampleSize = Math.min(displayRecords.length, 100);
+    for (let i = 0; i < sampleSize; i++) {
+      const record = displayRecords[i];
       const value = record.values[fieldId];
-      if (value === null || value === undefined) return;
+      if (value === null || value === undefined) continue;
 
       let contentWidth = 60; // Base padding
       if (typeof value === 'string') {
@@ -765,7 +770,7 @@ export function GridView() {
       }
 
       maxWidth = Math.max(maxWidth, contentWidth);
-    });
+    }
 
     // Clamp between min and max
     const finalWidth = Math.max(120, Math.min(maxWidth, 600));
@@ -806,18 +811,21 @@ export function GridView() {
     return record.values[fieldId] ?? null;
   };
 
+  // Toggle row selection - uses recordIndexMap for O(1) lookups in range selection
   const toggleRowSelection = (recordId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const newSelection = new Set(selectedRows);
     if (e.shiftKey && selectedRows.size > 0) {
-      // Range selection
+      // Range selection - use recordIndexMap for O(1) lookup instead of O(n) findIndex
       const lastSelected = Array.from(selectedRows).pop()!;
-      const lastIndex = displayRecords.findIndex(r => r.id === lastSelected);
-      const currentIndex = displayRecords.findIndex(r => r.id === recordId);
-      const start = Math.min(lastIndex, currentIndex);
-      const end = Math.max(lastIndex, currentIndex);
-      for (let i = start; i <= end; i++) {
-        newSelection.add(displayRecords[i].id);
+      const lastIndex = recordIndexMap.get(lastSelected) ?? -1;
+      const currentIndex = recordIndexMap.get(recordId) ?? -1;
+      if (lastIndex !== -1 && currentIndex !== -1) {
+        const start = Math.min(lastIndex, currentIndex);
+        const end = Math.max(lastIndex, currentIndex);
+        for (let i = start; i <= end; i++) {
+          newSelection.add(displayRecords[i].id);
+        }
       }
     } else if (e.metaKey || e.ctrlKey) {
       // Toggle selection

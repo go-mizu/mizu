@@ -83,6 +83,7 @@ func (s *ViewsStore) Delete(ctx context.Context, id string) error {
 }
 
 // ListByTable lists all views in a table.
+// Pre-allocates slice with expected capacity to avoid multiple allocations.
 func (s *ViewsStore) ListByTable(ctx context.Context, tableID string) ([]*views.View, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, table_id, name, type, config, filters, sorts, groups, field_config, position, is_default, is_locked, created_by, created_at, updated_at
@@ -94,7 +95,8 @@ func (s *ViewsStore) ListByTable(ctx context.Context, tableID string) ([]*views.
 	}
 	defer rows.Close()
 
-	var viewList []*views.View
+	// Pre-allocate with typical capacity (most tables have 3-10 views)
+	viewList := make([]*views.View, 0, 8)
 	for rows.Next() {
 		view, err := s.scanViewRows(rows)
 		if err != nil {

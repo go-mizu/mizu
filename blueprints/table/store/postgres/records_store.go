@@ -350,6 +350,47 @@ func (s *RecordsStore) ListLinksByTarget(ctx context.Context, targetRecordID str
 	return links, rows.Err()
 }
 
+// UpdateCellsBatch updates multiple cell values efficiently using a single transaction.
+// Uses PostgreSQL's jsonb_set for efficient atomic updates.
+func (s *RecordsStore) UpdateCellsBatch(ctx context.Context, updates []records.CellUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	// Use a transaction for atomicity and better performance
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Prepare statement for reuse
+	stmt, err := tx.PrepareContext(ctx, `
+		UPDATE records
+		SET cells = jsonb_set(cells, $1, $2::jsonb), updated_at = $3
+		WHERE id = $4
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, update := range updates {
+		valueJSON, err := json.Marshal(update.Value)
+		if err != nil {
+			return err
+		}
+
+		if _, err := stmt.ExecContext(ctx, "{"+update.FieldID+"}", valueJSON, now, update.RecordID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *RecordsStore) scanRecord(row *sql.Row) (*records.Record, error) {
 	rec := &records.Record{}
 	var cellsJSON []byte

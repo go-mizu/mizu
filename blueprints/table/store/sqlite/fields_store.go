@@ -91,6 +91,7 @@ func (s *FieldsStore) Delete(ctx context.Context, id string) error {
 }
 
 // ListByTable lists all fields in a table.
+// Pre-allocates slice with expected capacity to avoid multiple allocations.
 func (s *FieldsStore) ListByTable(ctx context.Context, tableID string) ([]*fields.Field, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, table_id, name, type, description, options, position, is_primary, is_computed, is_hidden, width, created_by, created_at, updated_at
@@ -102,7 +103,8 @@ func (s *FieldsStore) ListByTable(ctx context.Context, tableID string) ([]*field
 	}
 	defer rows.Close()
 
-	var fieldList []*fields.Field
+	// Pre-allocate with typical capacity (most tables have 5-20 fields)
+	fieldList := make([]*fields.Field, 0, 16)
 	for rows.Next() {
 		field, err := s.scanFieldRows(rows)
 		if err != nil {
@@ -166,21 +168,33 @@ func (s *FieldsStore) AddSelectChoice(ctx context.Context, choice *fields.Select
 	return err
 }
 
-// UpdateSelectChoice updates a select choice.
+// UpdateSelectChoice updates a select choice efficiently using a single query.
+// Combines name and color updates into one UPDATE statement for better performance.
 func (s *FieldsStore) UpdateSelectChoice(ctx context.Context, choiceID string, in fields.UpdateChoiceIn) error {
+	// Build dynamic UPDATE query based on which fields are provided
+	var setClauses []string
+	var args []any
+
 	if in.Name != "" {
-		_, err := s.db.ExecContext(ctx, `UPDATE select_choices SET name = ? WHERE id = ?`, in.Name, choiceID)
-		if err != nil {
-			return err
-		}
+		setClauses = append(setClauses, "name = ?")
+		args = append(args, in.Name)
 	}
 	if in.Color != "" {
-		_, err := s.db.ExecContext(ctx, `UPDATE select_choices SET color = ? WHERE id = ?`, in.Color, choiceID)
-		if err != nil {
-			return err
-		}
+		setClauses = append(setClauses, "color = ?")
+		args = append(args, in.Color)
 	}
-	return nil
+
+	// Nothing to update
+	if len(setClauses) == 0 {
+		return nil
+	}
+
+	// Add choiceID as the last argument for WHERE clause
+	args = append(args, choiceID)
+
+	query := fmt.Sprintf("UPDATE select_choices SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 // DeleteSelectChoice deletes a select choice.
