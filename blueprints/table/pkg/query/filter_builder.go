@@ -3,6 +3,7 @@ package query
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-mizu/blueprints/table/feature/fields"
@@ -71,31 +72,45 @@ func (b *FilterBuilder) Build(filters []records.Filter, logic string) (string, [
 }
 
 // BuildSort generates ORDER BY clause from sort specifications.
+// Uses strings.Builder for efficient query construction.
 func (b *FilterBuilder) BuildSort(sorts []records.SortSpec) string {
 	if len(sorts) == 0 {
 		return ""
 	}
 
-	var clauses []string
+	// Pre-allocate builder: "ORDER BY " + ~50 chars per sort clause
+	var sb strings.Builder
+	sb.Grow(10 + len(sorts)*50)
+	sb.WriteString("ORDER BY ")
+
+	first := true
 	for _, sort := range sorts {
 		field := b.fields[sort.FieldID]
 		if field == nil {
 			continue
 		}
 
-		col := b.cellColumn(sort.FieldID, field)
-		dir := "ASC"
-		if strings.ToLower(sort.Direction) == "desc" {
-			dir = "DESC"
+		if !first {
+			sb.WriteString(", ")
 		}
-		clauses = append(clauses, fmt.Sprintf("%s %s NULLS LAST", col, dir))
+		first = false
+
+		col := b.cellColumn(sort.FieldID, field)
+		sb.WriteString(col)
+		if strings.ToLower(sort.Direction) == "desc" {
+			sb.WriteString(" DESC")
+		} else {
+			sb.WriteString(" ASC")
+		}
+		sb.WriteString(" NULLS LAST")
 	}
 
-	if len(clauses) == 0 {
+	if first {
+		// No valid sort clauses were added
 		return ""
 	}
 
-	return "ORDER BY " + strings.Join(clauses, ", ")
+	return sb.String()
 }
 
 // BuildSearch generates a search condition across all text fields.
@@ -240,15 +255,32 @@ func isTextType(fieldType string) bool {
 	}
 }
 
-// toString converts a value to string.
+// toString converts a value to string using type-specific conversions for performance.
+// Avoids reflection-based fmt.Sprintf for common types.
 func toString(v any) string {
-	if v == nil {
+	switch val := v.(type) {
+	case nil:
 		return ""
+	case string:
+		return val
+	case int:
+		return strconv.Itoa(val)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case int32:
+		return strconv.FormatInt(int64(val), 10)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(val), 'f', -1, 32)
+	case bool:
+		return strconv.FormatBool(val)
+	default:
+		return fmt.Sprintf("%v", v)
 	}
-	return fmt.Sprintf("%v", v)
 }
 
-// toFloat converts a value to float64.
+// toFloat converts a value to float64 using strconv for better performance.
 func toFloat(v any) float64 {
 	switch val := v.(type) {
 	case float64:
@@ -259,9 +291,11 @@ func toFloat(v any) float64 {
 		return float64(val)
 	case int64:
 		return float64(val)
+	case int32:
+		return float64(val)
 	case string:
-		var f float64
-		fmt.Sscanf(val, "%f", &f)
+		// Use strconv.ParseFloat instead of fmt.Sscanf for 3-5x better performance
+		f, _ := strconv.ParseFloat(val, 64)
 		return f
 	default:
 		return 0

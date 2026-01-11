@@ -39,7 +39,14 @@ func Open(dataDir string) (*Store, error) {
 
 	dbPath := filepath.Join(dataDir, "table.db")
 	// SQLite connection string with pragmas for better performance
-	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+	// - WAL mode: enables concurrent reads during writes
+	// - synchronous=NORMAL: good balance of safety and speed
+	// - busy_timeout: wait up to 5s for locks
+	// - foreign_keys: enforce referential integrity
+	// - cache_size: 64MB page cache for faster reads
+	// - mmap_size: 256MB memory-mapped I/O for large datasets
+	// - temp_store=MEMORY: store temp tables in memory
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=cache_size(-64000)&_pragma=mmap_size(268435456)&_pragma=temp_store(MEMORY)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

@@ -16,6 +16,9 @@ interface BaseState {
   records: TableRecord[];
   comments: Comment[];
 
+  // Cached field map for O(1) lookups (performance optimization)
+  _fieldMap: Map<string, Field>;
+
   // Filter, Sort, Group
   filters: Filter[];
   filterConjunction: 'and' | 'or';
@@ -107,6 +110,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   currentView: null,
   records: [],
   comments: [],
+  _fieldMap: new Map(),
   filters: [],
   filterConjunction: 'and',
   sorts: [],
@@ -207,9 +211,11 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     set({ isLoading: true });
     try {
       const { table, fields, views } = await tablesApi.get(id);
+      const resolvedFields = fields || table.fields || [];
       set({
         currentTable: table,
-        fields: fields || table.fields || [],
+        fields: resolvedFields,
+        _fieldMap: new Map(resolvedFields.map(f => [f.id, f])),
         views: views || table.views || [],
         isLoading: false,
       });
@@ -257,7 +263,10 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   // Fields
   loadFields: async (tableId: string) => {
     const { fields } = await tablesApi.getFields(tableId);
-    set({ fields });
+    set({
+      fields,
+      _fieldMap: new Map(fields.map(f => [f.id, f])),
+    });
   },
 
   createField: async (name: string, type: string, options?: Record<string, unknown>) => {
@@ -265,18 +274,30 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     if (!table) throw new Error('No table selected');
 
     const { field } = await fieldsApi.create(table.id, name, type, options);
-    set({ fields: [...get().fields, field] });
+    const newFields = [...get().fields, field];
+    set({
+      fields: newFields,
+      _fieldMap: new Map(newFields.map(f => [f.id, f])),
+    });
     return field;
   },
 
   updateField: async (id: string, data: Partial<Field>) => {
     const { field } = await fieldsApi.update(id, data);
-    set({ fields: get().fields.map(f => f.id === id ? field : f) });
+    const newFields = get().fields.map(f => f.id === id ? field : f);
+    set({
+      fields: newFields,
+      _fieldMap: new Map(newFields.map(f => [f.id, f])),
+    });
   },
 
   deleteField: async (id: string) => {
     await fieldsApi.delete(id);
-    set({ fields: get().fields.filter(f => f.id !== id) });
+    const newFields = get().fields.filter(f => f.id !== id);
+    set({
+      fields: newFields,
+      _fieldMap: new Map(newFields.map(f => [f.id, f])),
+    });
   },
 
   reorderFields: (fromIndex: number, toIndex: number) => {
@@ -284,7 +305,10 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     const [removed] = fields.splice(fromIndex, 1);
     fields.splice(toIndex, 0, removed);
     const updated = fields.map((field, index) => ({ ...field, position: index }));
-    set({ fields: updated });
+    set({
+      fields: updated,
+      _fieldMap: new Map(updated.map(f => [f.id, f])),
+    });
     const table = get().currentTable;
     if (!table) return;
     void fieldsApi.reorder(table.id, updated.map(field => field.id)).catch((err) => {
@@ -526,15 +550,13 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   },
 
   getFilteredRecords: () => {
-    const { records, filters, filterConjunction, fields } = get();
+    const { records, filters, filterConjunction, _fieldMap } = get();
     if (filters.length === 0) return records;
 
-    // Pre-build field map for O(1) lookups instead of O(n) per filter
-    const fieldMap = new Map(fields.map(f => [f.id, f]));
-
+    // Use cached field map for O(1) lookups (already built when fields change)
     return records.filter(record => {
       const results = filters.map(filter => {
-        const field = fieldMap.get(filter.field_id);
+        const field = _fieldMap.get(filter.field_id);
         if (!field) return true;
 
         const value = record.values[filter.field_id] as CellValue;
@@ -548,17 +570,15 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   },
 
   getSortedRecords: () => {
-    const { sorts, fields } = get();
+    const { sorts, _fieldMap } = get();
     const filtered = get().getFilteredRecords();
     if (sorts.length === 0) return filtered;
 
-    // Pre-build field map for O(1) lookups
-    const fieldMap = new Map(fields.map(f => [f.id, f]));
-
+    // Use cached field map for O(1) lookups
     // Pre-resolve field types for sorts to avoid repeated map lookups
     const sortFields = sorts.map(sort => ({
       ...sort,
-      field: fieldMap.get(sort.field_id),
+      field: _fieldMap.get(sort.field_id),
     })).filter(s => s.field);
 
     if (sortFields.length === 0) return filtered;
@@ -578,16 +598,15 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   },
 
   getGroupedRecords: () => {
-    const { groupBy, fields } = get();
+    const { groupBy, _fieldMap } = get();
     const sorted = get().getSortedRecords();
 
     if (!groupBy) {
       return [{ group: '', records: sorted }];
     }
 
-    // Pre-build field map for O(1) lookup
-    const fieldMap = new Map(fields.map(f => [f.id, f]));
-    const field = fieldMap.get(groupBy);
+    // Use cached field map for O(1) lookup
+    const field = _fieldMap.get(groupBy);
     if (!field) {
       return [{ group: '', records: sorted }];
     }
