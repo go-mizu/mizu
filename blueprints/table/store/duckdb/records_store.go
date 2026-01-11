@@ -363,6 +363,77 @@ func (s *RecordsStore) ListLinksByTarget(ctx context.Context, targetRecordID str
 	return links, rows.Err()
 }
 
+// UpdateCellsBatch updates multiple cell values efficiently using a single transaction.
+// DuckDB doesn't support JSON path updates like SQLite/PostgreSQL, so we use read-modify-write pattern.
+func (s *RecordsStore) UpdateCellsBatch(ctx context.Context, updates []records.CellUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	// Use a transaction for atomicity and better performance
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Group updates by record ID for efficient batch processing
+	recordUpdates := make(map[string]map[string]any)
+	for _, update := range updates {
+		if recordUpdates[update.RecordID] == nil {
+			recordUpdates[update.RecordID] = make(map[string]any)
+		}
+		recordUpdates[update.RecordID][update.FieldID] = update.Value
+	}
+
+	// Process each record's updates
+	for recordID, cellUpdates := range recordUpdates {
+		// Fetch current record
+		row := tx.QueryRowContext(ctx, `
+			SELECT cells FROM records WHERE id = $1
+		`, recordID)
+
+		var cells any
+		if err := row.Scan(&cells); err != nil {
+			return err
+		}
+
+		// Parse existing cells
+		var existingCells map[string]any
+		switch v := cells.(type) {
+		case map[string]any:
+			existingCells = v
+		case string:
+			if err := json.Unmarshal([]byte(v), &existingCells); err != nil {
+				existingCells = make(map[string]any)
+			}
+		default:
+			existingCells = make(map[string]any)
+		}
+
+		// Apply updates
+		for fieldID, value := range cellUpdates {
+			existingCells[fieldID] = value
+		}
+
+		// Marshal and update
+		cellsJSON, err := json.Marshal(existingCells)
+		if err != nil {
+			return err
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE records SET cells = $1, updated_at = $2 WHERE id = $3
+		`, string(cellsJSON), now, recordID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *RecordsStore) scanRecord(row *sql.Row) (*records.Record, error) {
 	rec := &records.Record{}
 	var cells any
