@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useBaseStore } from '../../../stores/baseStore';
 import type { TableRecord, Field } from '../../../types';
-import { RecordModal } from '../RecordModal';
+import { RecordSidebar } from '../RecordSidebar';
 import { TimelineSettings } from './TimelineSettings';
 import { RecordBar } from './RecordBar';
 import { RecordPreview } from './RecordPreview';
@@ -671,11 +671,22 @@ export function TimelineView() {
         />
       )}
 
-      {/* Record modal */}
+      {/* Record sidebar */}
       {expandedRecord && (
-        <RecordModal
+        <RecordSidebar
           record={expandedRecord}
           onClose={() => setExpandedRecord(null)}
+          onNavigate={(direction) => {
+            const currentIndex = records.findIndex(r => r.id === expandedRecord.id);
+            const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+            if (newIndex >= 0 && newIndex < records.length) {
+              setExpandedRecord(records[newIndex]);
+            }
+          }}
+          hasPrev={records.findIndex(r => r.id === expandedRecord.id) > 0}
+          hasNext={records.findIndex(r => r.id === expandedRecord.id) < records.length - 1}
+          position={records.findIndex(r => r.id === expandedRecord.id) + 1}
+          total={records.length}
         />
       )}
     </div>

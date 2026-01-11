@@ -14,7 +14,7 @@ import {
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useBaseStore } from '../../../stores/baseStore';
 import type { TableRecord, Field } from '../../../types';
-import { RecordModal } from '../RecordModal';
+import { RecordSidebar } from '../RecordSidebar';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCardOverlay } from './KanbanCard';
 import { KanbanSettings } from './KanbanSettings';
@@ -446,11 +446,22 @@ export function KanbanView() {
         </DragOverlay>
       </DndContext>
 
-      {/* Record modal */}
+      {/* Record sidebar */}
       {expandedRecord && (
-        <RecordModal
+        <RecordSidebar
           record={expandedRecord}
           onClose={() => setExpandedRecord(null)}
+          onNavigate={(direction) => {
+            const currentIndex = records.findIndex(r => r.id === expandedRecord.id);
+            const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+            if (newIndex >= 0 && newIndex < records.length) {
+              setExpandedRecord(records[newIndex]);
+            }
+          }}
+          hasPrev={records.findIndex(r => r.id === expandedRecord.id) > 0}
+          hasNext={records.findIndex(r => r.id === expandedRecord.id) < records.length - 1}
+          position={records.findIndex(r => r.id === expandedRecord.id) + 1}
+          total={records.length}
         />
       )}
     </div>

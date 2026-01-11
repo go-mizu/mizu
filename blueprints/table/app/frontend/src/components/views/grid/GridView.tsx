@@ -5,7 +5,7 @@ import type { TableRecord, CellValue } from '../../../types';
 import { CellEditor } from './CellEditor';
 import { FieldHeader } from './FieldHeader';
 import { AddFieldButton } from './AddFieldButton';
-import { RecordModal } from '../RecordModal';
+import { RecordSidebar } from '../RecordSidebar';
 import { SearchBar } from './SearchBar';
 import { SummaryBar, type SummaryFunction } from './SummaryBar';
 import { FillHandle } from './FillHandle';
@@ -672,6 +672,30 @@ export function GridView() {
     setExpandedRecord(record);
   };
 
+  // Get navigation info for the expanded record
+  const getRecordNavigation = useCallback((record: TableRecord | null) => {
+    if (!record) return { hasPrev: false, hasNext: false, position: 0, total: 0 };
+    const index = recordIndexMap.get(record.id);
+    if (index === undefined) return { hasPrev: false, hasNext: false, position: 0, total: 0 };
+    return {
+      hasPrev: index > 0,
+      hasNext: index < displayRecords.length - 1,
+      position: index + 1,
+      total: displayRecords.length
+    };
+  }, [recordIndexMap, displayRecords]);
+
+  const handleNavigateRecord = useCallback((direction: 'prev' | 'next') => {
+    if (!expandedRecord) return;
+    const currentIndex = recordIndexMap.get(expandedRecord.id);
+    if (currentIndex === undefined) return;
+
+    const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex >= 0 && newIndex < displayRecords.length) {
+      setExpandedRecord(displayRecords[newIndex]);
+    }
+  }, [expandedRecord, recordIndexMap, displayRecords]);
+
   const toggleGroupCollapse = (group: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -1301,11 +1325,16 @@ export function GridView() {
         </>
       )}
 
-      {/* Record modal */}
+      {/* Record sidebar */}
       {expandedRecord && (
-        <RecordModal
+        <RecordSidebar
           record={expandedRecord}
           onClose={() => setExpandedRecord(null)}
+          onNavigate={handleNavigateRecord}
+          hasPrev={getRecordNavigation(expandedRecord).hasPrev}
+          hasNext={getRecordNavigation(expandedRecord).hasNext}
+          position={getRecordNavigation(expandedRecord).position}
+          total={getRecordNavigation(expandedRecord).total}
         />
       )}
 
