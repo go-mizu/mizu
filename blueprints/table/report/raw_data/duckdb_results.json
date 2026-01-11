@@ -1,0 +1,616 @@
+[
+  {
+    "scenario": "record_create",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 391542,
+      "max": 660084,
+      "avg": 444601,
+      "p50": 430833,
+      "p90": 489209,
+      "p95": 535875,
+      "p99": 614708,
+      "std_dev": 52669,
+      "total_time": 22466083,
+      "ops_per_sec": 2225.577106609995
+    },
+    "timestamp": "2026-01-11T22:13:16.029946+07:00"
+  },
+  {
+    "scenario": "record_get_by_id",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 130834,
+      "max": 202167,
+      "avg": 147414,
+      "p50": 142167,
+      "p90": 159292,
+      "p95": 172167,
+      "p99": 201208,
+      "std_dev": 14904,
+      "total_time": 28788292,
+      "ops_per_sec": 1736.8171755378887
+    },
+    "timestamp": "2026-01-11T22:13:16.058764+07:00"
+  },
+  {
+    "scenario": "record_update",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 269334,
+      "max": 502292,
+      "avg": 310600,
+      "p50": 300583,
+      "p90": 340083,
+      "p95": 365208,
+      "p99": 408958,
+      "std_dev": 38619,
+      "total_time": 38946792,
+      "ops_per_sec": 1283.802784064988
+    },
+    "timestamp": "2026-01-11T22:13:16.097734+07:00"
+  },
+  {
+    "scenario": "record_update_cell",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 310625,
+      "max": 536792,
+      "avg": 350950,
+      "p50": 340875,
+      "p90": 373125,
+      "p95": 396875,
+      "p99": 432917,
+      "std_dev": 35826,
+      "total_time": 40496792,
+      "ops_per_sec": 1234.6656989521541
+    },
+    "timestamp": "2026-01-11T22:13:16.138258+07:00"
+  },
+  {
+    "scenario": "record_delete",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 451500,
+      "max": 616500,
+      "avg": 487142,
+      "p50": 482542,
+      "p90": 502542,
+      "p95": 527250,
+      "p99": 606250,
+      "std_dev": 31789,
+      "total_time": 48374750,
+      "ops_per_sec": 1033.5970728530897
+    },
+    "timestamp": "2026-01-11T22:13:16.186654+07:00"
+  },
+  {
+    "scenario": "batch_create_10",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 829833,
+      "max": 1375417,
+      "avg": 942450,
+      "p50": 919625,
+      "p90": 1001500,
+      "p95": 1033958,
+      "p99": 1258625,
+      "std_dev": 90758,
+      "total_time": 47881916,
+      "ops_per_sec": 1044.235573196361,
+      "records_ops": 500,
+      "records_per_sec": 10442.35573196361
+    },
+    "timestamp": "2026-01-11T22:13:16.234557+07:00"
+  },
+  {
+    "scenario": "batch_create_100",
+    "backend": "duckdb",
+    "stats": {
+      "count": 25,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 6032334,
+      "max": 7469750,
+      "avg": 6452118,
+      "p50": 6352041,
+      "p90": 6807875,
+      "p95": 6840625,
+      "p99": 6882375,
+      "std_dev": 311848,
+      "total_time": 163735291,
+      "ops_per_sec": 152.68547084330157,
+      "records_ops": 2500,
+      "records_per_sec": 15268.547084330157
+    },
+    "timestamp": "2026-01-11T22:13:16.398313+07:00"
+  },
+  {
+    "scenario": "batch_create_500",
+    "backend": "duckdb",
+    "stats": {
+      "count": 10,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 89268459,
+      "max": 98110500,
+      "avg": 93360425,
+      "p50": 92807250,
+      "p90": 96115958,
+      "p95": 96115958,
+      "p99": 96115958,
+      "std_dev": 2625391,
+      "total_time": 938718708,
+      "ops_per_sec": 10.65281847988908,
+      "records_ops": 5000,
+      "records_per_sec": 5326.409239944539
+    },
+    "timestamp": "2026-01-11T22:13:17.337062+07:00"
+  },
+  {
+    "scenario": "batch_get_by_ids_10",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 358666,
+      "max": 754958,
+      "avg": 443095,
+      "p50": 410458,
+      "p90": 533459,
+      "p95": 704250,
+      "p99": 723875,
+      "std_dev": 90564,
+      "total_time": 73146750,
+      "ops_per_sec": 683.5573692611086,
+      "records_ops": 500,
+      "records_per_sec": 6835.573692611087
+    },
+    "timestamp": "2026-01-11T22:13:17.410233+07:00"
+  },
+  {
+    "scenario": "batch_get_by_ids_100",
+    "backend": "duckdb",
+    "stats": {
+      "count": 25,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 1493459,
+      "max": 2135292,
+      "avg": 1705501,
+      "p50": 1669916,
+      "p90": 1877084,
+      "p95": 1881084,
+      "p99": 1951208,
+      "std_dev": 144275,
+      "total_time": 204972209,
+      "ops_per_sec": 121.96775417490866,
+      "records_ops": 2500,
+      "records_per_sec": 12196.775417490866
+    },
+    "timestamp": "2026-01-11T22:13:17.615225+07:00"
+  },
+  {
+    "scenario": "batch_delete_10",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 1230750,
+      "max": 1743292,
+      "avg": 1398080,
+      "p50": 1378916,
+      "p90": 1489292,
+      "p95": 1586375,
+      "p99": 1661875,
+      "std_dev": 96368,
+      "total_time": 120950333,
+      "ops_per_sec": 413.3928262934175,
+      "records_ops": 500,
+      "records_per_sec": 4133.928262934175
+    },
+    "timestamp": "2026-01-11T22:13:17.736203+07:00"
+  },
+  {
+    "scenario": "batch_delete_100",
+    "backend": "duckdb",
+    "stats": {
+      "count": 25,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 4673167,
+      "max": 5634125,
+      "avg": 5059501,
+      "p50": 5077084,
+      "p90": 5259417,
+      "p95": 5300125,
+      "p99": 5302333,
+      "std_dev": 207569,
+      "total_time": 289918250,
+      "ops_per_sec": 86.23120483101702,
+      "records_ops": 2500,
+      "records_per_sec": 8623.120483101702
+    },
+    "timestamp": "2026-01-11T22:13:18.026146+07:00"
+  },
+  {
+    "scenario": "list_100_records",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 974417,
+      "max": 1865250,
+      "avg": 1259715,
+      "p50": 1220584,
+      "p90": 1478875,
+      "p95": 1527542,
+      "p99": 1651166,
+      "std_dev": 185397,
+      "total_time": 62999959,
+      "ops_per_sec": 793.6513101540273
+    },
+    "timestamp": "2026-01-11T22:13:18.161361+07:00"
+  },
+  {
+    "scenario": "list_500_records",
+    "backend": "duckdb",
+    "stats": {
+      "count": 25,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 2618875,
+      "max": 3640458,
+      "avg": 3081936,
+      "p50": 3117250,
+      "p90": 3405625,
+      "p95": 3419167,
+      "p99": 3483625,
+      "std_dev": 245145,
+      "total_time": 77059250,
+      "ops_per_sec": 324.4256854303669
+    },
+    "timestamp": "2026-01-11T22:13:18.238445+07:00"
+  },
+  {
+    "scenario": "list_with_sort",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 960667,
+      "max": 1879000,
+      "avg": 1211855,
+      "p50": 1193666,
+      "p90": 1394875,
+      "p95": 1398625,
+      "p99": 1473625,
+      "std_dev": 166621,
+      "total_time": 60604584,
+      "ops_per_sec": 825.0201007897356
+    },
+    "timestamp": "2026-01-11T22:13:18.299074+07:00"
+  },
+  {
+    "scenario": "list_with_filter",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 888000,
+      "max": 1560541,
+      "avg": 1133555,
+      "p50": 1110333,
+      "p90": 1366125,
+      "p95": 1417042,
+      "p99": 1456000,
+      "std_dev": 146783,
+      "total_time": 56691292,
+      "ops_per_sec": 881.9696682869743
+    },
+    "timestamp": "2026-01-11T22:13:18.355789+07:00"
+  },
+  {
+    "scenario": "field_create",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 450125,
+      "max": 756750,
+      "avg": 564690,
+      "p50": 547750,
+      "p90": 645875,
+      "p95": 721666,
+      "p99": 738041,
+      "std_dev": 72221,
+      "total_time": 29048666,
+      "ops_per_sec": 1721.2494370653715
+    },
+    "timestamp": "2026-01-11T22:13:18.384865+07:00"
+  },
+  {
+    "scenario": "field_list_by_table",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 296459,
+      "max": 680042,
+      "avg": 380572,
+      "p50": 366500,
+      "p90": 444750,
+      "p95": 456459,
+      "p99": 471416,
+      "std_dev": 63437,
+      "total_time": 19034125,
+      "ops_per_sec": 2626.860966816179
+    },
+    "timestamp": "2026-01-11T22:13:18.403916+07:00"
+  },
+  {
+    "scenario": "field_update",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 334667,
+      "max": 541250,
+      "avg": 404741,
+      "p50": 396917,
+      "p90": 461750,
+      "p95": 468417,
+      "p99": 518000,
+      "std_dev": 46178,
+      "total_time": 50703667,
+      "ops_per_sec": 986.1219702314627
+    },
+    "timestamp": "2026-01-11T22:13:18.454647+07:00"
+  },
+  {
+    "scenario": "select_choice_add",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 322083,
+      "max": 501375,
+      "avg": 380171,
+      "p50": 359792,
+      "p90": 440667,
+      "p95": 456375,
+      "p99": 471375,
+      "std_dev": 44540,
+      "total_time": 20108041,
+      "ops_per_sec": 2486.567438369556
+    },
+    "timestamp": "2026-01-11T22:13:18.474776+07:00"
+  },
+  {
+    "scenario": "select_choice_list",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 196000,
+      "max": 418375,
+      "avg": 253445,
+      "p50": 237916,
+      "p90": 331167,
+      "p95": 336667,
+      "p99": 345250,
+      "std_dev": 47665,
+      "total_time": 21451708,
+      "ops_per_sec": 2330.8167349658124
+    },
+    "timestamp": "2026-01-11T22:13:18.49625+07:00"
+  },
+  {
+    "scenario": "concurrent_reads_10",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 139959,
+      "max": 1329708,
+      "avg": 492552,
+      "p50": 501333,
+      "p90": 675791,
+      "p95": 786792,
+      "p99": 1103042,
+      "std_dev": 223539,
+      "total_time": 9742875,
+      "ops_per_sec": 5131.955403307546
+    },
+    "timestamp": "2026-01-11T22:13:18.506017+07:00"
+  },
+  {
+    "scenario": "concurrent_writes_10",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 637375,
+      "max": 4595625,
+      "avg": 2379396,
+      "p50": 2294875,
+      "p90": 3553333,
+      "p95": 3867667,
+      "p99": 4361750,
+      "std_dev": 856287,
+      "total_time": 12400625,
+      "ops_per_sec": 4032.054835945769
+    },
+    "timestamp": "2026-01-11T22:13:18.51844+07:00"
+  },
+  {
+    "scenario": "concurrent_mixed_10",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 138666,
+      "max": 3278042,
+      "avg": 789729,
+      "p50": 447917,
+      "p90": 1668750,
+      "p95": 2499750,
+      "p99": 2621083,
+      "std_dev": 744568,
+      "total_time": 11349083,
+      "ops_per_sec": 4405.642288456257
+    },
+    "timestamp": "2026-01-11T22:13:18.529806+07:00"
+  },
+  {
+    "scenario": "concurrent_reads_25",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 166625,
+      "max": 2206791,
+      "avg": 618455,
+      "p50": 578291,
+      "p90": 849625,
+      "p95": 985917,
+      "p99": 2145083,
+      "std_dev": 407925,
+      "total_time": 9543875,
+      "ops_per_sec": 5238.962161595788
+    },
+    "timestamp": "2026-01-11T22:13:18.539365+07:00"
+  },
+  {
+    "scenario": "concurrent_writes_25",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 747958,
+      "max": 15484042,
+      "avg": 7597059,
+      "p50": 5984083,
+      "p90": 13577458,
+      "p95": 14307541,
+      "p99": 15055458,
+      "std_dev": 4613004,
+      "total_time": 16860458,
+      "ops_per_sec": 2965.518493032633
+    },
+    "timestamp": "2026-01-11T22:13:18.556244+07:00"
+  },
+  {
+    "scenario": "concurrent_mixed_25",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 183042,
+      "max": 3422625,
+      "avg": 1184598,
+      "p50": 1005333,
+      "p90": 2409334,
+      "p95": 2901667,
+      "p99": 3283917,
+      "std_dev": 848405,
+      "total_time": 10227042,
+      "ops_per_sec": 4888.999184710496
+    },
+    "timestamp": "2026-01-11T22:13:18.566489+07:00"
+  },
+  {
+    "scenario": "concurrent_reads_50",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 141084,
+      "max": 1272541,
+      "avg": 491005,
+      "p50": 448083,
+      "p90": 799667,
+      "p95": 965375,
+      "p99": 974125,
+      "std_dev": 255140,
+      "total_time": 9548584,
+      "ops_per_sec": 5236.378503870312
+    },
+    "timestamp": "2026-01-11T22:13:18.576055+07:00"
+  },
+  {
+    "scenario": "concurrent_writes_50",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 721334,
+      "max": 16024250,
+      "avg": 7867276,
+      "p50": 7781334,
+      "p90": 12542833,
+      "p95": 12958417,
+      "p99": 13268709,
+      "std_dev": 3994557,
+      "total_time": 16111541,
+      "ops_per_sec": 3103.365469510334
+    },
+    "timestamp": "2026-01-11T22:13:18.592189+07:00"
+  },
+  {
+    "scenario": "concurrent_mixed_50",
+    "backend": "duckdb",
+    "stats": {
+      "count": 50,
+      "errors": 0,
+      "error_rate": 0,
+      "min": 174875,
+      "max": 3739375,
+      "avg": 1549390,
+      "p50": 1473333,
+      "p90": 2722125,
+      "p95": 2947042,
+      "p99": 3418666,
+      "std_dev": 930206,
+      "total_time": 12005125,
+      "ops_per_sec": 4164.887912454056
+    },
+    "timestamp": "2026-01-11T22:13:18.604215+07:00"
+  }
+]

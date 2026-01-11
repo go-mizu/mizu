@@ -27,7 +27,7 @@ import (
 	"github.com/go-mizu/blueprints/table/feature/users"
 	"github.com/go-mizu/blueprints/table/feature/views"
 	"github.com/go-mizu/blueprints/table/feature/workspaces"
-	"github.com/go-mizu/blueprints/table/store/duckdb"
+	"github.com/go-mizu/blueprints/table/store/sqlite"
 )
 
 // Config holds server configuration.
@@ -41,7 +41,7 @@ type Config struct {
 type Server struct {
 	app   *mizu.App
 	cfg   Config
-	store *duckdb.Store
+	store *sqlite.Store
 
 	// Services
 	users        *users.Service
@@ -78,7 +78,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	// Open store
-	store, err := duckdb.Open(cfg.DataDir)
+	store, err := sqlite.Open(cfg.DataDir)
 	if err != nil {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
