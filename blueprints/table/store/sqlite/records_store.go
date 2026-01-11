@@ -244,7 +244,8 @@ func (s *RecordsStore) List(ctx context.Context, tableID string, opts records.Li
 	}
 	defer rows.Close()
 
-	var recordList []*records.Record
+	// Pre-allocate slice with expected capacity to avoid multiple allocations
+	recordList := make([]*records.Record, 0, min(opts.Limit, total-opts.Offset))
 	for rows.Next() {
 		rec, err := s.scanRecordRows(rows)
 		if err != nil {
@@ -337,7 +338,8 @@ func (s *RecordsStore) ListLinksBySource(ctx context.Context, recordID, fieldID 
 	}
 	defer rows.Close()
 
-	var links []*records.RecordLink
+	// Pre-allocate with small initial capacity
+	links := make([]*records.RecordLink, 0, 8)
 	for rows.Next() {
 		link := &records.RecordLink{}
 		if err := rows.Scan(&link.ID, &link.SourceRecordID, &link.SourceFieldID, &link.TargetRecordID, &link.Position); err != nil {
@@ -359,7 +361,8 @@ func (s *RecordsStore) ListLinksByTarget(ctx context.Context, targetRecordID str
 	}
 	defer rows.Close()
 
-	var links []*records.RecordLink
+	// Pre-allocate with small initial capacity
+	links := make([]*records.RecordLink, 0, 8)
 	for rows.Next() {
 		link := &records.RecordLink{}
 		if err := rows.Scan(&link.ID, &link.SourceRecordID, &link.SourceFieldID, &link.TargetRecordID, &link.Position); err != nil {
@@ -368,6 +371,48 @@ func (s *RecordsStore) ListLinksByTarget(ctx context.Context, targetRecordID str
 		links = append(links, link)
 	}
 	return links, rows.Err()
+}
+
+// UpdateCellsBatch updates multiple cell values efficiently using a single transaction.
+// This is more efficient than calling UpdateCell multiple times for bulk operations.
+func (s *RecordsStore) UpdateCellsBatch(ctx context.Context, updates []records.CellUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	// Use a transaction for atomicity and better performance
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Prepare statement for reuse
+	stmt, err := tx.PrepareContext(ctx, `
+		UPDATE records
+		SET cells = json_set(cells, '$.' || ?, json(?)),
+		    updated_at = ?
+		WHERE id = ?
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, update := range updates {
+		valueJSON, err := json.Marshal(update.Value)
+		if err != nil {
+			return err
+		}
+
+		if _, err := stmt.ExecContext(ctx, update.FieldID, string(valueJSON), now, update.RecordID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *RecordsStore) scanRecord(row *sql.Row) (*records.Record, error) {

@@ -622,32 +622,40 @@ select.input {
   50% { transform: translateY(-4px); }
 }
 
+/* Animation classes optimized with will-change hints for GPU acceleration */
 .animate-slide-in {
   animation: slideIn var(--duration-normal) var(--ease-out);
+  will-change: transform, opacity;
 }
 
 .animate-slide-in-right {
   animation: slideInRight var(--duration-normal) var(--ease-out);
+  will-change: transform, opacity;
 }
 
 .animate-fade-in {
   animation: fadeIn var(--duration-normal) var(--ease-out);
+  will-change: opacity;
 }
 
 .animate-scale-in {
   animation: scaleIn var(--duration-normal) var(--ease-out);
+  will-change: transform, opacity;
 }
 
 .animate-pulse {
   animation: pulse 2s var(--ease-in-out) infinite;
+  will-change: opacity;
 }
 
 .animate-spin {
   animation: spin 1s linear infinite;
+  will-change: transform;
 }
 
 .animate-bounce {
   animation: bounce 1s var(--ease-in-out) infinite;
+  will-change: transform;
 }
 
 /* =============================================================================
@@ -1031,6 +1039,7 @@ select.input {
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s ease-in-out infinite;
   border-radius: var(--radius-sm);
+  will-change: background-position;
 }
 
 @keyframes skeleton-loading {

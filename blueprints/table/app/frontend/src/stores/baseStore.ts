@@ -77,6 +77,7 @@ interface BaseState {
   loadMoreRecords: () => Promise<void>;
   createRecord: (fields?: Record<string, unknown>) => Promise<TableRecord>;
   updateRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  updateRecordsBatch: (updates: Array<{ id: string; fields: Record<string, unknown> }>) => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
   updateCellValue: (recordId: string, fieldId: string, value: unknown) => Promise<void>;
 
@@ -468,6 +469,25 @@ export const useBaseStore = create<BaseState>((set, get) => ({
   updateRecord: async (id: string, fields: Record<string, unknown>) => {
     const { record } = await recordsApi.update(id, fields);
     set({ records: get().records.map(r => r.id === id ? record : r) });
+  },
+
+  // Batch update for better performance when updating multiple records at once
+  // This prevents N re-renders by batching all updates into a single state mutation
+  updateRecordsBatch: async (updates: Array<{ id: string; fields: Record<string, unknown> }>) => {
+    if (updates.length === 0) return;
+
+    // Perform all API calls in parallel
+    const results = await Promise.all(
+      updates.map(({ id, fields }) => recordsApi.update(id, fields))
+    );
+
+    // Build a map of updated records for O(1) lookup
+    const updatedMap = new Map(results.map(({ record }) => [record.id, record]));
+
+    // Apply all updates in a single state mutation
+    set({
+      records: get().records.map(r => updatedMap.get(r.id) || r),
+    });
   },
 
   deleteRecord: async (id: string) => {
