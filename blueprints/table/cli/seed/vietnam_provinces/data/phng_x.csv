@@ -1,0 +1,3322 @@
+_id,Name,Code,Province,Type
+,Phường Ba Đình,00004,Thành phố Hà Nội,Phường
+,Phường Ngọc Hà,00008,Thành phố Hà Nội,Phường
+,Phường Giảng Võ,00025,Thành phố Hà Nội,Phường
+,Phường Hoàn Kiếm,00070,Thành phố Hà Nội,Phường
+,Phường Cửa Nam,00082,Thành phố Hà Nội,Phường
+,Phường Phú Thượng,00091,Thành phố Hà Nội,Phường
+,Phường Hồng Hà,00097,Thành phố Hà Nội,Phường
+,Phường Tây Hồ,00103,Thành phố Hà Nội,Phường
+,Phường Bồ Đề,00118,Thành phố Hà Nội,Phường
+,Phường Việt Hưng,00127,Thành phố Hà Nội,Phường
+,Phường Phúc Lợi,00136,Thành phố Hà Nội,Phường
+,Phường Long Biên,00145,Thành phố Hà Nội,Phường
+,Phường Nghĩa Đô,00160,Thành phố Hà Nội,Phường
+,Phường Cầu Giấy,00166,Thành phố Hà Nội,Phường
+,Phường Yên Hòa,00175,Thành phố Hà Nội,Phường
+,Phường Ô Chợ Dừa,00190,Thành phố Hà Nội,Phường
+,Phường Láng,00199,Thành phố Hà Nội,Phường
+,Phường Văn Miếu - Quốc Tử Giám,00226,Thành phố Hà Nội,Phường
+,Phường Kim Liên,00229,Thành phố Hà Nội,Phường
+,Phường Đống Đa,00235,Thành phố Hà Nội,Phường
+,Phường Hai Bà Trưng,00256,Thành phố Hà Nội,Phường
+,Phường Vĩnh Tuy,00283,Thành phố Hà Nội,Phường
+,Phường Bạch Mai,00292,Thành phố Hà Nội,Phường
+,Phường Vĩnh Hưng,00301,Thành phố Hà Nội,Phường
+,Phường Định Công,00316,Thành phố Hà Nội,Phường
+,Phường Tương Mai,00322,Thành phố Hà Nội,Phường
+,Phường Lĩnh Nam,00328,Thành phố Hà Nội,Phường
+,Phường Hoàng Mai,00331,Thành phố Hà Nội,Phường
+,Phường Hoàng Liệt,00337,Thành phố Hà Nội,Phường
+,Phường Yên Sở,00340,Thành phố Hà Nội,Phường
+,Phường Phương Liệt,00352,Thành phố Hà Nội,Phường
+,Phường Khương Đình,00364,Thành phố Hà Nội,Phường
+,Phường Thanh Xuân,00367,Thành phố Hà Nội,Phường
+,Phường Từ Liêm,00592,Thành phố Hà Nội,Phường
+,Phường Thượng Cát,00598,Thành phố Hà Nội,Phường
+,Phường Đông Ngạc,00602,Thành phố Hà Nội,Phường
+,Phường Xuân Đỉnh,00611,Thành phố Hà Nội,Phường
+,Phường Tây Tựu,00613,Thành phố Hà Nội,Phường
+,Phường Phú Diễn,00619,Thành phố Hà Nội,Phường
+,Phường Xuân Phương,00622,Thành phố Hà Nội,Phường
+,Phường Tây Mỗ,00634,Thành phố Hà Nội,Phường
+,Phường Đại Mỗ,00637,Thành phố Hà Nội,Phường
+,Phường Thanh Liệt,00643,Thành phố Hà Nội,Phường
+,Phường Kiến Hưng,09552,Thành phố Hà Nội,Phường
+,Phường Hà Đông,09556,Thành phố Hà Nội,Phường
+,Phường Yên Nghĩa,09562,Thành phố Hà Nội,Phường
+,Phường Phú Lương,09568,Thành phố Hà Nội,Phường
+,Phường Sơn Tây,09574,Thành phố Hà Nội,Phường
+,Phường Tùng Thiện,09604,Thành phố Hà Nội,Phường
+,Phường Dương Nội,09886,Thành phố Hà Nội,Phường
+,Phường Chương Mỹ,10015,Thành phố Hà Nội,Phường
+,Xã Sóc Sơn,00376,Thành phố Hà Nội,Xã
+,Xã Kim Anh,00382,Thành phố Hà Nội,Xã
+,Xã Trung Giã,00385,Thành phố Hà Nội,Xã
+,Xã Đa Phúc,00430,Thành phố Hà Nội,Xã
+,Xã Nội Bài,00433,Thành phố Hà Nội,Xã
+,Xã Đông Anh,00454,Thành phố Hà Nội,Xã
+,Xã Phúc Thịnh,00466,Thành phố Hà Nội,Xã
+,Xã Thư Lâm,00475,Thành phố Hà Nội,Xã
+,Xã Thiên Lộc,00493,Thành phố Hà Nội,Xã
+,Xã Vĩnh Thanh,00508,Thành phố Hà Nội,Xã
+,Xã Phù Đổng,00541,Thành phố Hà Nội,Xã
+,Xã Thuận An,00562,Thành phố Hà Nội,Xã
+,Xã Gia Lâm,00565,Thành phố Hà Nội,Xã
+,Xã Bát Tràng,00577,Thành phố Hà Nội,Xã
+,Xã Thanh Trì,00640,Thành phố Hà Nội,Xã
+,Xã Đại Thanh,00664,Thành phố Hà Nội,Xã
+,Xã Ngọc Hồi,00679,Thành phố Hà Nội,Xã
+,Xã Nam Phù,00685,Thành phố Hà Nội,Xã
+,Xã Yên Xuân,04930,Thành phố Hà Nội,Xã
+,Xã Quang Minh,08974,Thành phố Hà Nội,Xã
+,Xã Yên Lãng,08980,Thành phố Hà Nội,Xã
+,Xã Tiến Thắng,08995,Thành phố Hà Nội,Xã
+,Xã Mê Linh,09022,Thành phố Hà Nội,Xã
+,Xã Đoài Phương,09616,Thành phố Hà Nội,Xã
+,Xã Quảng Oai,09619,Thành phố Hà Nội,Xã
+,Xã Cổ Đô,09634,Thành phố Hà Nội,Xã
+,Xã Minh Châu,09661,Thành phố Hà Nội,Xã
+,Xã Vật Lại,09664,Thành phố Hà Nội,Xã
+,Xã Bất Bạt,09676,Thành phố Hà Nội,Xã
+,Xã Suối Hai,09694,Thành phố Hà Nội,Xã
+,Xã Ba Vì,09700,Thành phố Hà Nội,Xã
+,Xã Yên Bài,09706,Thành phố Hà Nội,Xã
+,Xã Phúc Thọ,09715,Thành phố Hà Nội,Xã
+,Xã Phúc Lộc,09739,Thành phố Hà Nội,Xã
+,Xã Hát Môn,09772,Thành phố Hà Nội,Xã
+,Xã Đan Phượng,09784,Thành phố Hà Nội,Xã
+,Xã Liên Minh,09787,Thành phố Hà Nội,Xã
+,Xã Ô Diên,09817,Thành phố Hà Nội,Xã
+,Xã Hoài Đức,09832,Thành phố Hà Nội,Xã
+,Xã Dương Hòa,09856,Thành phố Hà Nội,Xã
+,Xã Sơn Đồng,09871,Thành phố Hà Nội,Xã
+,Xã An Khánh,09877,Thành phố Hà Nội,Xã
+,Xã Quốc Oai,09895,Thành phố Hà Nội,Xã
+,Xã Kiều Phú,09910,Thành phố Hà Nội,Xã
+,Xã Hưng Đạo,09931,Thành phố Hà Nội,Xã
+,Xã Phú Cát,09952,Thành phố Hà Nội,Xã
+,Xã Thạch Thất,09955,Thành phố Hà Nội,Xã
+,Xã Hạ Bằng,09982,Thành phố Hà Nội,Xã
+,Xã Hòa Lạc,09988,Thành phố Hà Nội,Xã
+,Xã Tây Phương,10003,Thành phố Hà Nội,Xã
+,Xã Phú Nghĩa,10030,Thành phố Hà Nội,Xã
+,Xã Xuân Mai,10045,Thành phố Hà Nội,Xã
+,Xã Quảng Bị,10072,Thành phố Hà Nội,Xã
+,Xã Trần Phú,10081,Thành phố Hà Nội,Xã
+,Xã Hòa Phú,10096,Thành phố Hà Nội,Xã
+,Xã Thanh Oai,10114,Thành phố Hà Nội,Xã
+,Xã Bình Minh,10126,Thành phố Hà Nội,Xã
+,Xã Tam Hưng,10144,Thành phố Hà Nội,Xã
+,Xã Dân Hòa,10180,Thành phố Hà Nội,Xã
+,Xã Thường Tín,10183,Thành phố Hà Nội,Xã
+,Xã Hồng Vân,10210,Thành phố Hà Nội,Xã
+,Xã Thượng Phúc,10231,Thành phố Hà Nội,Xã
+,Xã Chương Dương,10237,Thành phố Hà Nội,Xã
+,Xã Phú Xuyên,10273,Thành phố Hà Nội,Xã
+,Xã Phượng Dực,10279,Thành phố Hà Nội,Xã
+,Xã Chuyên Mỹ,10330,Thành phố Hà Nội,Xã
+,Xã Đại Xuyên,10342,Thành phố Hà Nội,Xã
+,Xã Vân Đình,10354,Thành phố Hà Nội,Xã
+,Xã Ứng Thiên,10369,Thành phố Hà Nội,Xã
+,Xã Ứng Hòa,10402,Thành phố Hà Nội,Xã
+,Xã Hòa Xá,10417,Thành phố Hà Nội,Xã
+,Xã Mỹ Đức,10441,Thành phố Hà Nội,Xã
+,Xã Phúc Sơn,10459,Thành phố Hà Nội,Xã
+,Xã Hồng Sơn,10465,Thành phố Hà Nội,Xã
+,Xã Hương Sơn,10489,Thành phố Hà Nội,Xã
+,Phường Thục Phán,01273,Tỉnh Cao Bằng,Phường
+,Phường Nùng Trí Cao,01279,Tỉnh Cao Bằng,Phường
+,Phường Tân Giang,01288,Tỉnh Cao Bằng,Phường
+,Xã Bảo Lâm,01290,Tỉnh Cao Bằng,Xã
+,Xã Lý Bôn,01294,Tỉnh Cao Bằng,Xã
+,Xã Nam Quang,01297,Tỉnh Cao Bằng,Xã
+,Xã Quảng Lâm,01304,Tỉnh Cao Bằng,Xã
+,Xã Yên Thổ,01318,Tỉnh Cao Bằng,Xã
+,Xã Bảo Lạc,01321,Tỉnh Cao Bằng,Xã
+,Xã Cốc Pàng,01324,Tỉnh Cao Bằng,Xã
+,Xã Cô Ba,01327,Tỉnh Cao Bằng,Xã
+,Xã Khánh Xuân,01336,Tỉnh Cao Bằng,Xã
+,Xã Xuân Trường,01339,Tỉnh Cao Bằng,Xã
+,Xã Hưng Đạo,01351,Tỉnh Cao Bằng,Xã
+,Xã Huy Giáp,01354,Tỉnh Cao Bằng,Xã
+,Xã Sơn Lộ,01360,Tỉnh Cao Bằng,Xã
+,Xã Thông Nông,01363,Tỉnh Cao Bằng,Xã
+,Xã Cần Yên,01366,Tỉnh Cao Bằng,Xã
+,Xã Thanh Long,01387,Tỉnh Cao Bằng,Xã
+,Xã Trường Hà,01392,Tỉnh Cao Bằng,Xã
+,Xã Lũng Nặm,01393,Tỉnh Cao Bằng,Xã
+,Xã Tổng Cọt,01414,Tỉnh Cao Bằng,Xã
+,Xã Hà Quảng,01438,Tỉnh Cao Bằng,Xã
+,Xã Trà Lĩnh,01447,Tỉnh Cao Bằng,Xã
+,Xã Quang Hán,01456,Tỉnh Cao Bằng,Xã
+,Xã Quang Trung,01465,Tỉnh Cao Bằng,Xã
+,Xã Trùng Khánh,01477,Tỉnh Cao Bằng,Xã
+,Xã Đình Phong,01489,Tỉnh Cao Bằng,Xã
+,Xã Đàm Thủy,01501,Tỉnh Cao Bằng,Xã
+,Xã Đoài Dương,01525,Tỉnh Cao Bằng,Xã
+,Xã Lý Quốc,01537,Tỉnh Cao Bằng,Xã
+,Xã Quang Long,01552,Tỉnh Cao Bằng,Xã
+,Xã Hạ Lang,01558,Tỉnh Cao Bằng,Xã
+,Xã Vinh Quý,01561,Tỉnh Cao Bằng,Xã
+,Xã Quảng Uyên,01576,Tỉnh Cao Bằng,Xã
+,Xã Độc Lập,01594,Tỉnh Cao Bằng,Xã
+,Xã Hạnh Phúc,01618,Tỉnh Cao Bằng,Xã
+,Xã Bế Văn Đàn,01636,Tỉnh Cao Bằng,Xã
+,Xã Phục Hòa,01648,Tỉnh Cao Bằng,Xã
+,Xã Hòa An,01654,Tỉnh Cao Bằng,Xã
+,Xã Nam Tuấn,01660,Tỉnh Cao Bằng,Xã
+,Xã Nguyễn Huệ,01699,Tỉnh Cao Bằng,Xã
+,Xã Bạch Đằng,01708,Tỉnh Cao Bằng,Xã
+,Xã Nguyên Bình,01726,Tỉnh Cao Bằng,Xã
+,Xã Tĩnh Túc,01729,Tỉnh Cao Bằng,Xã
+,Xã Ca Thành,01738,Tỉnh Cao Bằng,Xã
+,Xã Minh Tâm,01747,Tỉnh Cao Bằng,Xã
+,Xã Phan Thanh,01768,Tỉnh Cao Bằng,Xã
+,Xã Tam Kim,01774,Tỉnh Cao Bằng,Xã
+,Xã Thành Công,01777,Tỉnh Cao Bằng,Xã
+,Xã Đông Khê,01786,Tỉnh Cao Bằng,Xã
+,Xã Canh Tân,01789,Tỉnh Cao Bằng,Xã
+,Xã Kim Đồng,01792,Tỉnh Cao Bằng,Xã
+,Xã Minh Khai,01795,Tỉnh Cao Bằng,Xã
+,Xã Thạch An,01807,Tỉnh Cao Bằng,Xã
+,Xã Đức Long,01822,Tỉnh Cao Bằng,Xã
+,Phường Hà Giang 2,00691,Tỉnh Tuyên Quang,Phường
+,Phường Hà Giang 1,00694,Tỉnh Tuyên Quang,Phường
+,Phường Nông Tiến,02212,Tỉnh Tuyên Quang,Phường
+,Phường Minh Xuân,02215,Tỉnh Tuyên Quang,Phường
+,Phường Mỹ Lâm,02509,Tỉnh Tuyên Quang,Phường
+,Phường An Tường,02512,Tỉnh Tuyên Quang,Phường
+,Phường Bình Thuận,02524,Tỉnh Tuyên Quang,Phường
+,Xã Ngọc Đường,00700,Tỉnh Tuyên Quang,Xã
+,Xã Phú Linh,00706,Tỉnh Tuyên Quang,Xã
+,Xã Lũng Cú,00715,Tỉnh Tuyên Quang,Xã
+,Xã Đồng Văn,00721,Tỉnh Tuyên Quang,Xã
+,Xã Sà Phìn,00733,Tỉnh Tuyên Quang,Xã
+,Xã Phó Bảng,00745,Tỉnh Tuyên Quang,Xã
+,Xã Lũng Phìn,00763,Tỉnh Tuyên Quang,Xã
+,Xã Mèo Vạc,00769,Tỉnh Tuyên Quang,Xã
+,Xã Sơn Vĩ,00778,Tỉnh Tuyên Quang,Xã
+,Xã Sủng Máng,00787,Tỉnh Tuyên Quang,Xã
+,Xã Khâu Vai,00802,Tỉnh Tuyên Quang,Xã
+,Xã Tát Ngà,00808,Tỉnh Tuyên Quang,Xã
+,Xã Niêm Sơn,00817,Tỉnh Tuyên Quang,Xã
+,Xã Yên Minh,00820,Tỉnh Tuyên Quang,Xã
+,Xã Thắng Mố,00829,Tỉnh Tuyên Quang,Xã
+,Xã Bạch Đích,00832,Tỉnh Tuyên Quang,Xã
+,Xã Mậu Duệ,00847,Tỉnh Tuyên Quang,Xã
+,Xã Ngọc Long,00859,Tỉnh Tuyên Quang,Xã
+,Xã Đường Thượng,00865,Tỉnh Tuyên Quang,Xã
+,Xã Du Già,00871,Tỉnh Tuyên Quang,Xã
+,Xã Quản Bạ,00874,Tỉnh Tuyên Quang,Xã
+,Xã Cán Tỷ,00883,Tỉnh Tuyên Quang,Xã
+,Xã Nghĩa Thuận,00889,Tỉnh Tuyên Quang,Xã
+,Xã Tùng Vài,00892,Tỉnh Tuyên Quang,Xã
+,Xã Lùng Tám,00901,Tỉnh Tuyên Quang,Xã
+,Xã Vị Xuyên,00913,Tỉnh Tuyên Quang,Xã
+,Xã Minh Tân,00919,Tỉnh Tuyên Quang,Xã
+,Xã Thuận Hòa,00922,Tỉnh Tuyên Quang,Xã
+,Xã Tùng Bá,00925,Tỉnh Tuyên Quang,Xã
+,Xã Thanh Thủy,00928,Tỉnh Tuyên Quang,Xã
+,Xã Lao Chải,00937,Tỉnh Tuyên Quang,Xã
+,Xã Cao Bồ,00952,Tỉnh Tuyên Quang,Xã
+,Xã Thượng Sơn,00958,Tỉnh Tuyên Quang,Xã
+,Xã Việt Lâm,00967,Tỉnh Tuyên Quang,Xã
+,Xã Linh Hồ,00970,Tỉnh Tuyên Quang,Xã
+,Xã Bạch Ngọc,00976,Tỉnh Tuyên Quang,Xã
+,Xã Minh Sơn,00982,Tỉnh Tuyên Quang,Xã
+,Xã Giáp Trung,00985,Tỉnh Tuyên Quang,Xã
+,Xã Bắc Mê,00991,Tỉnh Tuyên Quang,Xã
+,Xã Minh Ngọc,00994,Tỉnh Tuyên Quang,Xã
+,Xã Yên Cường,01006,Tỉnh Tuyên Quang,Xã
+,Xã Đường Hồng,01012,Tỉnh Tuyên Quang,Xã
+,Xã Hoàng Su Phì,01021,Tỉnh Tuyên Quang,Xã
+,Xã Bản Máy,01024,Tỉnh Tuyên Quang,Xã
+,Xã Thàng Tín,01033,Tỉnh Tuyên Quang,Xã
+,Xã Tân Tiến,01051,Tỉnh Tuyên Quang,Xã
+,Xã Pờ Ly Ngài,01057,Tỉnh Tuyên Quang,Xã
+,Xã Nậm Dịch,01075,Tỉnh Tuyên Quang,Xã
+,Xã Hồ Thầu,01084,Tỉnh Tuyên Quang,Xã
+,Xã Thông Nguyên,01090,Tỉnh Tuyên Quang,Xã
+,Xã Pà Vầy Sủ,01096,Tỉnh Tuyên Quang,Xã
+,Xã Xín Mần,01108,Tỉnh Tuyên Quang,Xã
+,Xã Trung Thịnh,01117,Tỉnh Tuyên Quang,Xã
+,Xã Nấm Dẩn,01141,Tỉnh Tuyên Quang,Xã
+,Xã Quảng Nguyên,01144,Tỉnh Tuyên Quang,Xã
+,Xã Khuôn Lùng,01147,Tỉnh Tuyên Quang,Xã
+,Xã Bắc Quang,01153,Tỉnh Tuyên Quang,Xã
+,Xã Vĩnh Tuy,01156,Tỉnh Tuyên Quang,Xã
+,Xã Đồng Tâm,01165,Tỉnh Tuyên Quang,Xã
+,Xã Tân Quang,01171,Tỉnh Tuyên Quang,Xã
+,Xã Bằng Hành,01180,Tỉnh Tuyên Quang,Xã
+,Xã Liên Hiệp,01192,Tỉnh Tuyên Quang,Xã
+,Xã Hùng An,01201,Tỉnh Tuyên Quang,Xã
+,Xã Đồng Yên,01216,Tỉnh Tuyên Quang,Xã
+,Xã Tiên Nguyên,01225,Tỉnh Tuyên Quang,Xã
+,Xã Yên Thành,01234,Tỉnh Tuyên Quang,Xã
+,Xã Quang Bình,01237,Tỉnh Tuyên Quang,Xã
+,Xã Tân Trịnh,01243,Tỉnh Tuyên Quang,Xã
+,Xã Bằng Lang,01246,Tỉnh Tuyên Quang,Xã
+,Xã Xuân Giang,01255,Tỉnh Tuyên Quang,Xã
+,Xã Tiên Yên,01261,Tỉnh Tuyên Quang,Xã
+,Xã Nà Hang,02221,Tỉnh Tuyên Quang,Xã
+,Xã Thượng Nông,02239,Tỉnh Tuyên Quang,Xã
+,Xã Côn Lôn,02245,Tỉnh Tuyên Quang,Xã
+,Xã Yên Hoa,02248,Tỉnh Tuyên Quang,Xã
+,Xã Hồng Thái,02260,Tỉnh Tuyên Quang,Xã
+,Xã Lâm Bình,02266,Tỉnh Tuyên Quang,Xã
+,Xã Thượng Lâm,02269,Tỉnh Tuyên Quang,Xã
+,Xã Chiêm Hóa,02287,Tỉnh Tuyên Quang,Xã
+,Xã Bình An,02296,Tỉnh Tuyên Quang,Xã
+,Xã Minh Quang,02302,Tỉnh Tuyên Quang,Xã
+,Xã Trung Hà,02305,Tỉnh Tuyên Quang,Xã
+,Xã Tân Mỹ,02308,Tỉnh Tuyên Quang,Xã
+,Xã Yên Lập,02317,Tỉnh Tuyên Quang,Xã
+,Xã Tân An,02320,Tỉnh Tuyên Quang,Xã
+,Xã Kiên Đài,02332,Tỉnh Tuyên Quang,Xã
+,Xã Kim Bình,02350,Tỉnh Tuyên Quang,Xã
+,Xã Hòa An,02353,Tỉnh Tuyên Quang,Xã
+,Xã Tri Phú,02359,Tỉnh Tuyên Quang,Xã
+,Xã Yên Nguyên,02365,Tỉnh Tuyên Quang,Xã
+,Xã Hàm Yên,02374,Tỉnh Tuyên Quang,Xã
+,Xã Bạch Xa,02380,Tỉnh Tuyên Quang,Xã
+,Xã Phù Lưu,02392,Tỉnh Tuyên Quang,Xã
+,Xã Yên Phú,02398,Tỉnh Tuyên Quang,Xã
+,Xã Bình Xa,02404,Tỉnh Tuyên Quang,Xã
+,Xã Thái Sơn,02407,Tỉnh Tuyên Quang,Xã
+,Xã Thái Hòa,02419,Tỉnh Tuyên Quang,Xã
+,Xã Hùng Đức,02425,Tỉnh Tuyên Quang,Xã
+,Xã Lực Hành,02434,Tỉnh Tuyên Quang,Xã
+,Xã Kiến Thiết,02437,Tỉnh Tuyên Quang,Xã
+,Xã Xuân Vân,02449,Tỉnh Tuyên Quang,Xã
+,Xã Hùng Lợi,02455,Tỉnh Tuyên Quang,Xã
+,Xã Trung Sơn,02458,Tỉnh Tuyên Quang,Xã
+,Xã Tân Long,02470,Tỉnh Tuyên Quang,Xã
+,Xã Yên Sơn,02473,Tỉnh Tuyên Quang,Xã
+,Xã Thái Bình,02494,Tỉnh Tuyên Quang,Xã
+,Xã Nhữ Khê,02530,Tỉnh Tuyên Quang,Xã
+,Xã Sơn Dương,02536,Tỉnh Tuyên Quang,Xã
+,Xã Tân Trào,02545,Tỉnh Tuyên Quang,Xã
+,Xã Bình Ca,02548,Tỉnh Tuyên Quang,Xã
+,Xã Minh Thanh,02554,Tỉnh Tuyên Quang,Xã
+,Xã Đông Thọ,02572,Tỉnh Tuyên Quang,Xã
+,Xã Tân Thanh,02578,Tỉnh Tuyên Quang,Xã
+,Xã Hồng Sơn,02608,Tỉnh Tuyên Quang,Xã
+,Xã Phú Lương,02611,Tỉnh Tuyên Quang,Xã
+,Xã Sơn Thủy,02620,Tỉnh Tuyên Quang,Xã
+,Xã Trường Sinh,02623,Tỉnh Tuyên Quang,Xã
+,Phường Điện Biên Phủ,03127,Tỉnh Điện Biên,Phường
+,Phường Mường Lay,03151,Tỉnh Điện Biên,Phường
+,Phường Mường Thanh,03334,Tỉnh Điện Biên,Phường
+,Xã Sín Thầu,03158,Tỉnh Điện Biên,Xã
+,Xã Mường Nhé,03160,Tỉnh Điện Biên,Xã
+,Xã Nậm Kè,03162,Tỉnh Điện Biên,Xã
+,Xã Mường Toong,03163,Tỉnh Điện Biên,Xã
+,Xã Quảng Lâm,03164,Tỉnh Điện Biên,Xã
+,Xã Mường Chà,03166,Tỉnh Điện Biên,Xã
+,Xã Nà Hỳ,03169,Tỉnh Điện Biên,Xã
+,Xã Na Sang,03172,Tỉnh Điện Biên,Xã
+,Xã Chà Tở,03175,Tỉnh Điện Biên,Xã
+,Xã Nà Bủng,03176,Tỉnh Điện Biên,Xã
+,Xã Mường Tùng,03181,Tỉnh Điện Biên,Xã
+,Xã Pa Ham,03193,Tỉnh Điện Biên,Xã
+,Xã Nậm Nèn,03194,Tỉnh Điện Biên,Xã
+,Xã Si Pa Phìn,03199,Tỉnh Điện Biên,Xã
+,Xã Mường Pồn,03202,Tỉnh Điện Biên,Xã
+,Xã Na Son,03203,Tỉnh Điện Biên,Xã
+,Xã Xa Dung,03208,Tỉnh Điện Biên,Xã
+,Xã Mường Luân,03214,Tỉnh Điện Biên,Xã
+,Xã Tủa Chùa,03217,Tỉnh Điện Biên,Xã
+,Xã Tủa Thàng,03220,Tỉnh Điện Biên,Xã
+,Xã Sín Chải,03226,Tỉnh Điện Biên,Xã
+,Xã Sính Phình,03241,Tỉnh Điện Biên,Xã
+,Xã Sáng Nhè,03244,Tỉnh Điện Biên,Xã
+,Xã Tuần Giáo,03253,Tỉnh Điện Biên,Xã
+,Xã Mường Ảng,03256,Tỉnh Điện Biên,Xã
+,Xã Pú Nhung,03260,Tỉnh Điện Biên,Xã
+,Xã Mường Mùn,03268,Tỉnh Điện Biên,Xã
+,Xã Chiềng Sinh,03283,Tỉnh Điện Biên,Xã
+,Xã Quài Tở,03295,Tỉnh Điện Biên,Xã
+,Xã Búng Lao,03301,Tỉnh Điện Biên,Xã
+,Xã Mường Lạn,03313,Tỉnh Điện Biên,Xã
+,Xã Nà Tấu,03316,Tỉnh Điện Biên,Xã
+,Xã Mường Phăng,03325,Tỉnh Điện Biên,Xã
+,Xã Thanh Nưa,03328,Tỉnh Điện Biên,Xã
+,Xã Thanh Yên,03349,Tỉnh Điện Biên,Xã
+,Xã Thanh An,03352,Tỉnh Điện Biên,Xã
+,Xã Sam Mứn,03356,Tỉnh Điện Biên,Xã
+,Xã Núa Ngam,03358,Tỉnh Điện Biên,Xã
+,Xã Mường Nhà,03368,Tỉnh Điện Biên,Xã
+,Xã Pu Nhi,03370,Tỉnh Điện Biên,Xã
+,Xã Phình Giàng,03382,Tỉnh Điện Biên,Xã
+,Xã Tìa Dình,03385,Tỉnh Điện Biên,Xã
+,Phường Đoàn Kết,03388,Tỉnh Lai Châu,Phường
+,Phường Tân Phong,03408,Tỉnh Lai Châu,Phường
+,Xã Bình Lư,03390,Tỉnh Lai Châu,Xã
+,Xã Sin Suối Hồ,03394,Tỉnh Lai Châu,Xã
+,Xã Tả Lèng,03405,Tỉnh Lai Châu,Xã
+,Xã Bản Bo,03424,Tỉnh Lai Châu,Xã
+,Xã Khun Há,03430,Tỉnh Lai Châu,Xã
+,Xã Bum Tở,03433,Tỉnh Lai Châu,Xã
+,Xã Nậm Hàng,03434,Tỉnh Lai Châu,Xã
+,Xã Thu Lũm,03439,Tỉnh Lai Châu,Xã
+,Xã Pa Ủ,03442,Tỉnh Lai Châu,Xã
+,Xã Mường Tè,03445,Tỉnh Lai Châu,Xã
+,Xã Mù Cả,03451,Tỉnh Lai Châu,Xã
+,Xã Hua Bum,03460,Tỉnh Lai Châu,Xã
+,Xã Tà Tổng,03463,Tỉnh Lai Châu,Xã
+,Xã Bum Nưa,03466,Tỉnh Lai Châu,Xã
+,Xã Mường Mô,03472,Tỉnh Lai Châu,Xã
+,Xã Sìn Hồ,03478,Tỉnh Lai Châu,Xã
+,Xã Lê Lợi,03487,Tỉnh Lai Châu,Xã
+,Xã Pa Tần,03503,Tỉnh Lai Châu,Xã
+,Xã Hồng Thu,03508,Tỉnh Lai Châu,Xã
+,Xã Nậm Tăm,03517,Tỉnh Lai Châu,Xã
+,Xã Tủa Sín Chải,03529,Tỉnh Lai Châu,Xã
+,Xã Pu Sam Cáp,03532,Tỉnh Lai Châu,Xã
+,Xã Nậm Mạ,03538,Tỉnh Lai Châu,Xã
+,Xã Nậm Cuổi,03544,Tỉnh Lai Châu,Xã
+,Xã Phong Thổ,03549,Tỉnh Lai Châu,Xã
+,Xã Sì Lở Lầu,03562,Tỉnh Lai Châu,Xã
+,Xã Dào San,03571,Tỉnh Lai Châu,Xã
+,Xã Khổng Lào,03583,Tỉnh Lai Châu,Xã
+,Xã Than Uyên,03595,Tỉnh Lai Châu,Xã
+,Xã Tân Uyên,03598,Tỉnh Lai Châu,Xã
+,Xã Mường Khoa,03601,Tỉnh Lai Châu,Xã
+,Xã Nậm Sỏ,03613,Tỉnh Lai Châu,Xã
+,Xã Pắc Ta,03616,Tỉnh Lai Châu,Xã
+,Xã Mường Than,03618,Tỉnh Lai Châu,Xã
+,Xã Mường Kim,03637,Tỉnh Lai Châu,Xã
+,Xã Khoen On,03640,Tỉnh Lai Châu,Xã
+,Phường Tô Hiệu,03646,Tỉnh Sơn La,Phường
+,Phường Chiềng An,03664,Tỉnh Sơn La,Phường
+,Phường Chiềng Cơi,03670,Tỉnh Sơn La,Phường
+,Phường Chiềng Sinh,03679,Tỉnh Sơn La,Phường
+,Phường Mộc Sơn,03979,Tỉnh Sơn La,Phường
+,Phường Mộc Châu,03980,Tỉnh Sơn La,Phường
+,Phường Thảo Nguyên,03982,Tỉnh Sơn La,Phường
+,Phường Vân Sơn,04033,Tỉnh Sơn La,Phường
+,Xã Mường Chiên,03688,Tỉnh Sơn La,Xã
+,Xã Mường Giôn,03694,Tỉnh Sơn La,Xã
+,Xã Quỳnh Nhai,03703,Tỉnh Sơn La,Xã
+,Xã Mường Sại,03712,Tỉnh Sơn La,Xã
+,Xã Thuận Châu,03721,Tỉnh Sơn La,Xã
+,Xã Bình Thuận,03724,Tỉnh Sơn La,Xã
+,Xã Mường É,03727,Tỉnh Sơn La,Xã
+,Xã Chiềng La,03754,Tỉnh Sơn La,Xã
+,Xã Mường Khiêng,03757,Tỉnh Sơn La,Xã
+,Xã Mường Bám,03760,Tỉnh Sơn La,Xã
+,Xã Long Hẹ,03763,Tỉnh Sơn La,Xã
+,Xã Co Mạ,03781,Tỉnh Sơn La,Xã
+,Xã Nậm Lầu,03784,Tỉnh Sơn La,Xã
+,Xã Muổi Nọi,03799,Tỉnh Sơn La,Xã
+,Xã Mường La,03808,Tỉnh Sơn La,Xã
+,Xã Chiềng Lao,03814,Tỉnh Sơn La,Xã
+,Xã Ngọc Chiến,03820,Tỉnh Sơn La,Xã
+,Xã Mường Bú,03847,Tỉnh Sơn La,Xã
+,Xã Chiềng Hoa,03850,Tỉnh Sơn La,Xã
+,Xã Bắc Yên,03856,Tỉnh Sơn La,Xã
+,Xã Xím Vàng,03862,Tỉnh Sơn La,Xã
+,Xã Tà Xùa,03868,Tỉnh Sơn La,Xã
+,Xã Pắc Ngà,03871,Tỉnh Sơn La,Xã
+,Xã Tạ Khoa,03880,Tỉnh Sơn La,Xã
+,Xã Chiềng Sại,03892,Tỉnh Sơn La,Xã
+,Xã Suối Tọ,03901,Tỉnh Sơn La,Xã
+,Xã Mường Cơi,03907,Tỉnh Sơn La,Xã
+,Xã Phù Yên,03910,Tỉnh Sơn La,Xã
+,Xã Gia Phù,03922,Tỉnh Sơn La,Xã
+,Xã Mường Bang,03943,Tỉnh Sơn La,Xã
+,Xã Tường Hạ,03958,Tỉnh Sơn La,Xã
+,Xã Kim Bon,03961,Tỉnh Sơn La,Xã
+,Xã Tân Phong,03970,Tỉnh Sơn La,Xã
+,Xã Chiềng Sơn,03985,Tỉnh Sơn La,Xã
+,Xã Tân Yên,03997,Tỉnh Sơn La,Xã
+,Xã Đoàn Kết,04000,Tỉnh Sơn La,Xã
+,Xã Song Khủa,04006,Tỉnh Sơn La,Xã
+,Xã Tô Múa,04018,Tỉnh Sơn La,Xã
+,Xã Lóng Sập,04045,Tỉnh Sơn La,Xã
+,Xã Vân Hồ,04048,Tỉnh Sơn La,Xã
+,Xã Xuân Nha,04057,Tỉnh Sơn La,Xã
+,Xã Yên Châu,04075,Tỉnh Sơn La,Xã
+,Xã Chiềng Hặc,04078,Tỉnh Sơn La,Xã
+,Xã Yên Sơn,04087,Tỉnh Sơn La,Xã
+,Xã Lóng Phiêng,04096,Tỉnh Sơn La,Xã
+,Xã Phiêng Khoài,04099,Tỉnh Sơn La,Xã
+,Xã Mai Sơn,04105,Tỉnh Sơn La,Xã
+,Xã Chiềng Sung,04108,Tỉnh Sơn La,Xã
+,Xã Mường Chanh,04117,Tỉnh Sơn La,Xã
+,Xã Chiềng Mung,04123,Tỉnh Sơn La,Xã
+,Xã Chiềng Mai,04132,Tỉnh Sơn La,Xã
+,Xã Tà Hộc,04136,Tỉnh Sơn La,Xã
+,Xã Phiêng Cằm,04144,Tỉnh Sơn La,Xã
+,Xã Phiêng Pằn,04159,Tỉnh Sơn La,Xã
+,Xã Sông Mã,04168,Tỉnh Sơn La,Xã
+,Xã Bó Sinh,04171,Tỉnh Sơn La,Xã
+,Xã Mường Lầm,04183,Tỉnh Sơn La,Xã
+,Xã Nậm Ty,04186,Tỉnh Sơn La,Xã
+,Xã Chiềng Sơ,04195,Tỉnh Sơn La,Xã
+,Xã Chiềng Khoong,04204,Tỉnh Sơn La,Xã
+,Xã Huổi Một,04210,Tỉnh Sơn La,Xã
+,Xã Mường Hung,04219,Tỉnh Sơn La,Xã
+,Xã Chiềng Khương,04222,Tỉnh Sơn La,Xã
+,Xã Púng Bánh,04228,Tỉnh Sơn La,Xã
+,Xã Sốp Cộp,04231,Tỉnh Sơn La,Xã
+,Xã Mường Lèo,04240,Tỉnh Sơn La,Xã
+,Xã Mường Lạn,04246,Tỉnh Sơn La,Xã
+,Phường Lào Cai,02647,Tỉnh Lào Cai,Phường
+,Phường Cam Đường,02671,Tỉnh Lào Cai,Phường
+,Phường Sa Pa,03006,Tỉnh Lào Cai,Phường
+,Phường Yên Bái,04252,Tỉnh Lào Cai,Phường
+,Phường Nam Cường,04273,Tỉnh Lào Cai,Phường
+,Phường Văn Phú,04279,Tỉnh Lào Cai,Phường
+,Phường Nghĩa Lộ,04288,Tỉnh Lào Cai,Phường
+,Phường Âu Lâu,04543,Tỉnh Lào Cai,Phường
+,Phường Trung Tâm,04663,Tỉnh Lào Cai,Phường
+,Phường Cầu Thia,04681,Tỉnh Lào Cai,Phường
+,Xã Hợp Thành,02680,Tỉnh Lào Cai,Xã
+,Xã Bát Xát,02683,Tỉnh Lào Cai,Xã
+,Xã A Mú Sung,02686,Tỉnh Lào Cai,Xã
+,Xã Trịnh Tường,02695,Tỉnh Lào Cai,Xã
+,Xã Y Tý,02701,Tỉnh Lào Cai,Xã
+,Xã Dền Sáng,02707,Tỉnh Lào Cai,Xã
+,Xã Bản Xèo,02725,Tỉnh Lào Cai,Xã
+,Xã Mường Hum,02728,Tỉnh Lào Cai,Xã
+,Xã Cốc San,02746,Tỉnh Lào Cai,Xã
+,Xã Pha Long,02752,Tỉnh Lào Cai,Xã
+,Xã Mường Khương,02761,Tỉnh Lào Cai,Xã
+,Xã Cao Sơn,02782,Tỉnh Lào Cai,Xã
+,Xã Bản Lầu,02788,Tỉnh Lào Cai,Xã
+,Xã Si Ma Cai,02809,Tỉnh Lào Cai,Xã
+,Xã Sín Chéng,02824,Tỉnh Lào Cai,Xã
+,Xã Bắc Hà,02839,Tỉnh Lào Cai,Xã
+,Xã Tả Củ Tỷ,02842,Tỉnh Lào Cai,Xã
+,Xã Lùng Phình,02848,Tỉnh Lào Cai,Xã
+,Xã Bản Liền,02869,Tỉnh Lào Cai,Xã
+,Xã Bảo Nhai,02890,Tỉnh Lào Cai,Xã
+,Xã Cốc Lầu,02896,Tỉnh Lào Cai,Xã
+,Xã Phong Hải,02902,Tỉnh Lào Cai,Xã
+,Xã Bảo Thắng,02905,Tỉnh Lào Cai,Xã
+,Xã Tằng Loỏng,02908,Tỉnh Lào Cai,Xã
+,Xã Gia Phú,02923,Tỉnh Lào Cai,Xã
+,Xã Xuân Quang,02926,Tỉnh Lào Cai,Xã
+,Xã Bảo Yên,02947,Tỉnh Lào Cai,Xã
+,Xã Nghĩa Đô,02953,Tỉnh Lào Cai,Xã
+,Xã Xuân Hòa,02962,Tỉnh Lào Cai,Xã
+,Xã Thượng Hà,02968,Tỉnh Lào Cai,Xã
+,Xã Bảo Hà,02989,Tỉnh Lào Cai,Xã
+,Xã Phúc Khánh,02998,Tỉnh Lào Cai,Xã
+,Xã Ngũ Chỉ Sơn,03004,Tỉnh Lào Cai,Xã
+,Xã Tả Phìn,03013,Tỉnh Lào Cai,Xã
+,Xã Tả Van,03037,Tỉnh Lào Cai,Xã
+,Xã Mường Bo,03043,Tỉnh Lào Cai,Xã
+,Xã Bản Hồ,03046,Tỉnh Lào Cai,Xã
+,Xã Võ Lao,03061,Tỉnh Lào Cai,Xã
+,Xã Nậm Chày,03076,Tỉnh Lào Cai,Xã
+,Xã Văn Bàn,03082,Tỉnh Lào Cai,Xã
+,Xã Nậm Xé,03085,Tỉnh Lào Cai,Xã
+,Xã Chiềng Ken,03091,Tỉnh Lào Cai,Xã
+,Xã Khánh Yên,03103,Tỉnh Lào Cai,Xã
+,Xã Dương Quỳ,03106,Tỉnh Lào Cai,Xã
+,Xã Minh Lương,03121,Tỉnh Lào Cai,Xã
+,Xã Lục Yên,04303,Tỉnh Lào Cai,Xã
+,Xã Lâm Thượng,04309,Tỉnh Lào Cai,Xã
+,Xã Tân Lĩnh,04336,Tỉnh Lào Cai,Xã
+,Xã Khánh Hòa,04342,Tỉnh Lào Cai,Xã
+,Xã Mường Lai,04345,Tỉnh Lào Cai,Xã
+,Xã Phúc Lợi,04363,Tỉnh Lào Cai,Xã
+,Xã Mậu A,04375,Tỉnh Lào Cai,Xã
+,Xã Lâm Giang,04381,Tỉnh Lào Cai,Xã
+,Xã Châu Quế,04387,Tỉnh Lào Cai,Xã
+,Xã Đông Cuông,04399,Tỉnh Lào Cai,Xã
+,Xã Phong Dụ Hạ,04402,Tỉnh Lào Cai,Xã
+,Xã Phong Dụ Thượng,04423,Tỉnh Lào Cai,Xã
+,Xã Tân Hợp,04429,Tỉnh Lào Cai,Xã
+,Xã Xuân Ái,04441,Tỉnh Lào Cai,Xã
+,Xã Mỏ Vàng,04450,Tỉnh Lào Cai,Xã
+,Xã Mù Cang Chải,04456,Tỉnh Lào Cai,Xã
+,Xã Nậm Có,04462,Tỉnh Lào Cai,Xã
+,Xã Khao Mang,04465,Tỉnh Lào Cai,Xã
+,Xã Lao Chải,04474,Tỉnh Lào Cai,Xã
+,Xã Chế Tạo,04489,Tỉnh Lào Cai,Xã
+,Xã Púng Luông,04492,Tỉnh Lào Cai,Xã
+,Xã Trấn Yên,04498,Tỉnh Lào Cai,Xã
+,Xã Quy Mông,04531,Tỉnh Lào Cai,Xã
+,Xã Lương Thịnh,04537,Tỉnh Lào Cai,Xã
+,Xã Việt Hồng,04564,Tỉnh Lào Cai,Xã
+,Xã Hưng Khánh,04576,Tỉnh Lào Cai,Xã
+,Xã Hạnh Phúc,04585,Tỉnh Lào Cai,Xã
+,Xã Tà Xi Láng,04603,Tỉnh Lào Cai,Xã
+,Xã Trạm Tấu,04606,Tỉnh Lào Cai,Xã
+,Xã Phình Hồ,04609,Tỉnh Lào Cai,Xã
+,Xã Tú Lệ,04630,Tỉnh Lào Cai,Xã
+,Xã Gia Hội,04636,Tỉnh Lào Cai,Xã
+,Xã Sơn Lương,04651,Tỉnh Lào Cai,Xã
+,Xã Liên Sơn,04660,Tỉnh Lào Cai,Xã
+,Xã Văn Chấn,04672,Tỉnh Lào Cai,Xã
+,Xã Cát Thịnh,04693,Tỉnh Lào Cai,Xã
+,Xã Chấn Thịnh,04699,Tỉnh Lào Cai,Xã
+,Xã Thượng Bằng La,04705,Tỉnh Lào Cai,Xã
+,Xã Nghĩa Tâm,04711,Tỉnh Lào Cai,Xã
+,Xã Yên Bình,04714,Tỉnh Lào Cai,Xã
+,Xã Thác Bà,04717,Tỉnh Lào Cai,Xã
+,Xã Cảm Nhân,04726,Tỉnh Lào Cai,Xã
+,Xã Yên Thành,04744,Tỉnh Lào Cai,Xã
+,Xã Bảo Ái,04750,Tỉnh Lào Cai,Xã
+,Phường Đức Xuân,01840,Tỉnh Thái Nguyên,Phường
+,Phường Bắc Kạn,01843,Tỉnh Thái Nguyên,Phường
+,Phường Phan Đình Phùng,05443,Tỉnh Thái Nguyên,Phường
+,Phường Quyết Thắng,05455,Tỉnh Thái Nguyên,Phường
+,Phường Gia Sàng,05467,Tỉnh Thái Nguyên,Phường
+,Phường Quan Triều,05482,Tỉnh Thái Nguyên,Phường
+,Phường Tích Lương,05500,Tỉnh Thái Nguyên,Phường
+,Phường Sông Công,05518,Tỉnh Thái Nguyên,Phường
+,Phường Bách Quang,05528,Tỉnh Thái Nguyên,Phường
+,Phường Bá Xuyên,05533,Tỉnh Thái Nguyên,Phường
+,Phường Linh Sơn,05710,Tỉnh Thái Nguyên,Phường
+,Phường Phúc Thuận,05857,Tỉnh Thái Nguyên,Phường
+,Phường Phổ Yên,05860,Tỉnh Thái Nguyên,Phường
+,Phường Vạn Xuân,05890,Tỉnh Thái Nguyên,Phường
+,Phường Trung Thành,05899,Tỉnh Thái Nguyên,Phường
+,Xã Phong Quang,01849,Tỉnh Thái Nguyên,Xã
+,Xã Bằng Thành,01864,Tỉnh Thái Nguyên,Xã
+,Xã Cao Minh,01879,Tỉnh Thái Nguyên,Xã
+,Xã Nghiên Loan,01882,Tỉnh Thái Nguyên,Xã
+,Xã Phúc Lộc,01894,Tỉnh Thái Nguyên,Xã
+,Xã Ba Bể,01906,Tỉnh Thái Nguyên,Xã
+,Xã Chợ Rã,01912,Tỉnh Thái Nguyên,Xã
+,Xã Thượng Minh,01921,Tỉnh Thái Nguyên,Xã
+,Xã Đồng Phúc,01933,Tỉnh Thái Nguyên,Xã
+,Xã Nà Phặc,01936,Tỉnh Thái Nguyên,Xã
+,Xã Bằng Vân,01942,Tỉnh Thái Nguyên,Xã
+,Xã Ngân Sơn,01954,Tỉnh Thái Nguyên,Xã
+,Xã Thượng Quan,01957,Tỉnh Thái Nguyên,Xã
+,Xã Hiệp Lực,01960,Tỉnh Thái Nguyên,Xã
+,Xã Phủ Thông,01969,Tỉnh Thái Nguyên,Xã
+,Xã Vĩnh Thông,01981,Tỉnh Thái Nguyên,Xã
+,Xã Cẩm Giàng,02008,Tỉnh Thái Nguyên,Xã
+,Xã Bạch Thông,02014,Tỉnh Thái Nguyên,Xã
+,Xã Chợ Đồn,02020,Tỉnh Thái Nguyên,Xã
+,Xã Nam Cường,02026,Tỉnh Thái Nguyên,Xã
+,Xã Quảng Bạch,02038,Tỉnh Thái Nguyên,Xã
+,Xã Yên Thịnh,02044,Tỉnh Thái Nguyên,Xã
+,Xã Nghĩa Tá,02071,Tỉnh Thái Nguyên,Xã
+,Xã Yên Phong,02083,Tỉnh Thái Nguyên,Xã
+,Xã Chợ Mới,02086,Tỉnh Thái Nguyên,Xã
+,Xã Thanh Mai,02101,Tỉnh Thái Nguyên,Xã
+,Xã Tân Kỳ,02104,Tỉnh Thái Nguyên,Xã
+,Xã Thanh Thịnh,02107,Tỉnh Thái Nguyên,Xã
+,Xã Yên Bình,02116,Tỉnh Thái Nguyên,Xã
+,Xã Văn Lang,02143,Tỉnh Thái Nguyên,Xã
+,Xã Cường Lợi,02152,Tỉnh Thái Nguyên,Xã
+,Xã Na Rì,02155,Tỉnh Thái Nguyên,Xã
+,Xã Trần Phú,02176,Tỉnh Thái Nguyên,Xã
+,Xã Côn Minh,02185,Tỉnh Thái Nguyên,Xã
+,Xã Xuân Dương,02191,Tỉnh Thái Nguyên,Xã
+,Xã Đại Phúc,05488,Tỉnh Thái Nguyên,Xã
+,Xã Tân Cương,05503,Tỉnh Thái Nguyên,Xã
+,Xã Lam Vỹ,05542,Tỉnh Thái Nguyên,Xã
+,Xã Kim Phượng,05551,Tỉnh Thái Nguyên,Xã
+,Xã Phượng Tiến,05563,Tỉnh Thái Nguyên,Xã
+,Xã Định Hóa,05569,Tỉnh Thái Nguyên,Xã
+,Xã Trung Hội,05581,Tỉnh Thái Nguyên,Xã
+,Xã Bình Yên,05587,Tỉnh Thái Nguyên,Xã
+,Xã Phú Đình,05602,Tỉnh Thái Nguyên,Xã
+,Xã Bình Thành,05605,Tỉnh Thái Nguyên,Xã
+,Xã Phú Lương,05611,Tỉnh Thái Nguyên,Xã
+,Xã Yên Trạch,05620,Tỉnh Thái Nguyên,Xã
+,Xã Hợp Thành,05632,Tỉnh Thái Nguyên,Xã
+,Xã Vô Tranh,05641,Tỉnh Thái Nguyên,Xã
+,Xã Trại Cau,05662,Tỉnh Thái Nguyên,Xã
+,Xã Văn Lăng,05665,Tỉnh Thái Nguyên,Xã
+,Xã Quang Sơn,05674,Tỉnh Thái Nguyên,Xã
+,Xã Văn Hán,05680,Tỉnh Thái Nguyên,Xã
+,Xã Đồng Hỷ,05692,Tỉnh Thái Nguyên,Xã
+,Xã Nam Hòa,05707,Tỉnh Thái Nguyên,Xã
+,Xã Võ Nhai,05716,Tỉnh Thái Nguyên,Xã
+,Xã Sảng Mộc,05719,Tỉnh Thái Nguyên,Xã
+,Xã Nghinh Tường,05722,Tỉnh Thái Nguyên,Xã
+,Xã Thần Sa,05725,Tỉnh Thái Nguyên,Xã
+,Xã La Hiên,05740,Tỉnh Thái Nguyên,Xã
+,Xã Tràng Xá,05746,Tỉnh Thái Nguyên,Xã
+,Xã Dân Tiến,05755,Tỉnh Thái Nguyên,Xã
+,Xã Phú Xuyên,05773,Tỉnh Thái Nguyên,Xã
+,Xã Đức Lương,05776,Tỉnh Thái Nguyên,Xã
+,Xã Phú Lạc,05788,Tỉnh Thái Nguyên,Xã
+,Xã Phú Thịnh,05800,Tỉnh Thái Nguyên,Xã
+,Xã An Khánh,05809,Tỉnh Thái Nguyên,Xã
+,Xã La Bằng,05818,Tỉnh Thái Nguyên,Xã
+,Xã Đại Từ,05830,Tỉnh Thái Nguyên,Xã
+,Xã Vạn Phú,05845,Tỉnh Thái Nguyên,Xã
+,Xã Quân Chu,05851,Tỉnh Thái Nguyên,Xã
+,Xã Thành Công,05881,Tỉnh Thái Nguyên,Xã
+,Xã Phú Bình,05908,Tỉnh Thái Nguyên,Xã
+,Xã Tân Khánh,05917,Tỉnh Thái Nguyên,Xã
+,Xã Tân Thành,05923,Tỉnh Thái Nguyên,Xã
+,Xã Điềm Thụy,05941,Tỉnh Thái Nguyên,Xã
+,Xã Kha Sơn,05953,Tỉnh Thái Nguyên,Xã
+,Phường Đông Kinh,05977,Tỉnh Lạng Sơn,Phường
+,Phường Lương Văn Tri,05983,Tỉnh Lạng Sơn,Phường
+,Phường Tam Thanh,05986,Tỉnh Lạng Sơn,Phường
+,Phường Kỳ Lừa,06187,Tỉnh Lạng Sơn,Phường
+,Xã Đoàn Kết,06001,Tỉnh Lạng Sơn,Xã
+,Xã Quốc Khánh,06004,Tỉnh Lạng Sơn,Xã
+,Xã Tân Tiến,06019,Tỉnh Lạng Sơn,Xã
+,Xã Kháng Chiến,06037,Tỉnh Lạng Sơn,Xã
+,Xã Thất Khê,06040,Tỉnh Lạng Sơn,Xã
+,Xã Tràng Định,06046,Tỉnh Lạng Sơn,Xã
+,Xã Quốc Việt,06058,Tỉnh Lạng Sơn,Xã
+,Xã Hoa Thám,06073,Tỉnh Lạng Sơn,Xã
+,Xã Quý Hòa,06076,Tỉnh Lạng Sơn,Xã
+,Xã Hồng Phong,06079,Tỉnh Lạng Sơn,Xã
+,Xã Thiện Hòa,06085,Tỉnh Lạng Sơn,Xã
+,Xã Thiện Thuật,06091,Tỉnh Lạng Sơn,Xã
+,Xã Thiện Long,06103,Tỉnh Lạng Sơn,Xã
+,Xã Bình Gia,06112,Tỉnh Lạng Sơn,Xã
+,Xã Tân Văn,06115,Tỉnh Lạng Sơn,Xã
+,Xã Na Sầm,06124,Tỉnh Lạng Sơn,Xã
+,Xã Thụy Hùng,06148,Tỉnh Lạng Sơn,Xã
+,Xã Hội Hoan,06151,Tỉnh Lạng Sơn,Xã
+,Xã Văn Lãng,06154,Tỉnh Lạng Sơn,Xã
+,Xã Hoàng Văn Thụ,06172,Tỉnh Lạng Sơn,Xã
+,Xã Đồng Đăng,06184,Tỉnh Lạng Sơn,Xã
+,Xã Ba Sơn,06196,Tỉnh Lạng Sơn,Xã
+,Xã Cao Lộc,06211,Tỉnh Lạng Sơn,Xã
+,Xã Công Sơn,06220,Tỉnh Lạng Sơn,Xã
+,Xã Văn Quan,06253,Tỉnh Lạng Sơn,Xã
+,Xã Điềm He,06280,Tỉnh Lạng Sơn,Xã
+,Xã Khánh Khê,06286,Tỉnh Lạng Sơn,Xã
+,Xã Yên Phúc,06298,Tỉnh Lạng Sơn,Xã
+,Xã Tri Lễ,06313,Tỉnh Lạng Sơn,Xã
+,Xã Tân Đoàn,06316,Tỉnh Lạng Sơn,Xã
+,Xã Bắc Sơn,06325,Tỉnh Lạng Sơn,Xã
+,Xã Tân Tri,06337,Tỉnh Lạng Sơn,Xã
+,Xã Hưng Vũ,06349,Tỉnh Lạng Sơn,Xã
+,Xã Vũ Lễ,06364,Tỉnh Lạng Sơn,Xã
+,Xã Vũ Lăng,06367,Tỉnh Lạng Sơn,Xã
+,Xã Nhất Hòa,06376,Tỉnh Lạng Sơn,Xã
+,Xã Hữu Lũng,06385,Tỉnh Lạng Sơn,Xã
+,Xã Yên Bình,06391,Tỉnh Lạng Sơn,Xã
+,Xã Hữu Liên,06400,Tỉnh Lạng Sơn,Xã
+,Xã Vân Nham,06415,Tỉnh Lạng Sơn,Xã
+,Xã Cai Kinh,06427,Tỉnh Lạng Sơn,Xã
+,Xã Thiện Tân,06436,Tỉnh Lạng Sơn,Xã
+,Xã Tân Thành,06445,Tỉnh Lạng Sơn,Xã
+,Xã Tuấn Sơn,06457,Tỉnh Lạng Sơn,Xã
+,Xã Chi Lăng,06463,Tỉnh Lạng Sơn,Xã
+,Xã Bằng Mạc,06475,Tỉnh Lạng Sơn,Xã
+,Xã Chiến Thắng,06481,Tỉnh Lạng Sơn,Xã
+,Xã Nhân Lý,06496,Tỉnh Lạng Sơn,Xã
+,Xã Vạn Linh,06505,Tỉnh Lạng Sơn,Xã
+,Xã Quan Sơn,06517,Tỉnh Lạng Sơn,Xã
+,Xã Na Dương,06526,Tỉnh Lạng Sơn,Xã
+,Xã Lộc Bình,06529,Tỉnh Lạng Sơn,Xã
+,Xã Mẫu Sơn,06541,Tỉnh Lạng Sơn,Xã
+,Xã Khuất Xá,06565,Tỉnh Lạng Sơn,Xã
+,Xã Thống Nhất,06577,Tỉnh Lạng Sơn,Xã
+,Xã Lợi Bác,06601,Tỉnh Lạng Sơn,Xã
+,Xã Xuân Dương,06607,Tỉnh Lạng Sơn,Xã
+,Xã Đình Lập,06613,Tỉnh Lạng Sơn,Xã
+,Xã Thái Bình,06616,Tỉnh Lạng Sơn,Xã
+,Xã Kiên Mộc,06625,Tỉnh Lạng Sơn,Xã
+,Xã Châu Sơn,06637,Tỉnh Lạng Sơn,Xã
+,Phường Hà Tu,06652,Tỉnh Quảng Ninh,Phường
+,Phường Cao Xanh,06658,Tỉnh Quảng Ninh,Phường
+,Phường Việt Hưng,06661,Tỉnh Quảng Ninh,Phường
+,Phường Bãi Cháy,06673,Tỉnh Quảng Ninh,Phường
+,Phường Hà Lầm,06676,Tỉnh Quảng Ninh,Phường
+,Phường Hồng Gai,06685,Tỉnh Quảng Ninh,Phường
+,Phường Hạ Long,06688,Tỉnh Quảng Ninh,Phường
+,Phường Tuần Châu,06706,Tỉnh Quảng Ninh,Phường
+,Phường Móng Cái 2,06709,Tỉnh Quảng Ninh,Phường
+,Phường Móng Cái 1,06712,Tỉnh Quảng Ninh,Phường
+,Phường Móng Cái 3,06736,Tỉnh Quảng Ninh,Phường
+,Phường Mông Dương,06760,Tỉnh Quảng Ninh,Phường
+,Phường Quang Hanh,06778,Tỉnh Quảng Ninh,Phường
+,Phường Cửa Ông,06781,Tỉnh Quảng Ninh,Phường
+,Phường Cẩm Phả,06793,Tỉnh Quảng Ninh,Phường
+,Phường Uông Bí,06811,Tỉnh Quảng Ninh,Phường
+,Phường Vàng Danh,06820,Tỉnh Quảng Ninh,Phường
+,Phường Yên Tử,06832,Tỉnh Quảng Ninh,Phường
+,Phường Hoành Bồ,07030,Tỉnh Quảng Ninh,Phường
+,Phường Mạo Khê,07069,Tỉnh Quảng Ninh,Phường
+,Phường Bình Khê,07081,Tỉnh Quảng Ninh,Phường
+,Phường An Sinh,07090,Tỉnh Quảng Ninh,Phường
+,Phường Đông Triều,07093,Tỉnh Quảng Ninh,Phường
+,Phường Hoàng Quế,07114,Tỉnh Quảng Ninh,Phường
+,Phường Quảng Yên,07132,Tỉnh Quảng Ninh,Phường
+,Phường Đông Mai,07135,Tỉnh Quảng Ninh,Phường
+,Phường Hiệp Hòa,07147,Tỉnh Quảng Ninh,Phường
+,Phường Hà An,07168,Tỉnh Quảng Ninh,Phường
+,Phường Liên Hòa,07180,Tỉnh Quảng Ninh,Phường
+,Phường Phong Cốc,07183,Tỉnh Quảng Ninh,Phường
+,Xã Hải Sơn,06724,Tỉnh Quảng Ninh,Xã
+,Xã Hải Ninh,06733,Tỉnh Quảng Ninh,Xã
+,Xã Vĩnh Thực,06757,Tỉnh Quảng Ninh,Xã
+,Xã Hải Hòa,06799,Tỉnh Quảng Ninh,Xã
+,Xã Bình Liêu,06838,Tỉnh Quảng Ninh,Xã
+,Xã Hoành Mô,06841,Tỉnh Quảng Ninh,Xã
+,Xã Lục Hồn,06856,Tỉnh Quảng Ninh,Xã
+,Xã Tiên Yên,06862,Tỉnh Quảng Ninh,Xã
+,Xã Điền Xá,06874,Tỉnh Quảng Ninh,Xã
+,Xã Đông Ngũ,06877,Tỉnh Quảng Ninh,Xã
+,Xã Hải Lạng,06886,Tỉnh Quảng Ninh,Xã
+,Xã Đầm Hà,06895,Tỉnh Quảng Ninh,Xã
+,Xã Quảng Tân,06913,Tỉnh Quảng Ninh,Xã
+,Xã Quảng Hà,06922,Tỉnh Quảng Ninh,Xã
+,Xã Quảng Đức,06931,Tỉnh Quảng Ninh,Xã
+,Xã Đường Hoa,06946,Tỉnh Quảng Ninh,Xã
+,Xã Cái Chiên,06967,Tỉnh Quảng Ninh,Xã
+,Xã Ba Chẽ,06978,Tỉnh Quảng Ninh,Xã
+,Xã Kỳ Thượng,06979,Tỉnh Quảng Ninh,Xã
+,Xã Lương Minh,06985,Tỉnh Quảng Ninh,Xã
+,Xã Quảng La,07054,Tỉnh Quảng Ninh,Xã
+,Xã Thống Nhất,07060,Tỉnh Quảng Ninh,Xã
+,Đặc khu Vân Đồn,06994,Tỉnh Quảng Ninh,Đặc khu
+,Đặc khu Cô Tô,07192,Tỉnh Quảng Ninh,Đặc khu
+,Xã Mỹ Thái,07420,Tỉnh Bắc Ninh,Xã
+,Phường Bắc Giang,07210,Tỉnh Bắc Ninh,Phường
+,Phường Đa Mai,07228,Tỉnh Bắc Ninh,Phường
+,Phường Chũ,07525,Tỉnh Bắc Ninh,Phường
+,Phường Phượng Sơn,07612,Tỉnh Bắc Ninh,Phường
+,Phường Yên Dũng,07681,Tỉnh Bắc Ninh,Phường
+,Phường Tân An,07682,Tỉnh Bắc Ninh,Phường
+,Phường Tiền Phong,07696,Tỉnh Bắc Ninh,Phường
+,Phường Tân Tiến,07699,Tỉnh Bắc Ninh,Phường
+,Phường Cảnh Thụy,07738,Tỉnh Bắc Ninh,Phường
+,Phường Tự Lạn,07774,Tỉnh Bắc Ninh,Phường
+,Phường Việt Yên,07777,Tỉnh Bắc Ninh,Phường
+,Phường Nếnh,07795,Tỉnh Bắc Ninh,Phường
+,Phường Vân Hà,07798,Tỉnh Bắc Ninh,Phường
+,Phường Vũ Ninh,09169,Tỉnh Bắc Ninh,Phường
+,Phường Kinh Bắc,09187,Tỉnh Bắc Ninh,Phường
+,Phường Võ Cường,09190,Tỉnh Bắc Ninh,Phường
+,Phường Quế Võ,09247,Tỉnh Bắc Ninh,Phường
+,Phường Nhân Hòa,09253,Tỉnh Bắc Ninh,Phường
+,Phường Phương Liễu,09265,Tỉnh Bắc Ninh,Phường
+,Phường Nam Sơn,09286,Tỉnh Bắc Ninh,Phường
+,Phường Bồng Lai,09295,Tỉnh Bắc Ninh,Phường
+,Phường Đào Viên,09301,Tỉnh Bắc Ninh,Phường
+,Phường Hạp Lĩnh,09325,Tỉnh Bắc Ninh,Phường
+,Phường Từ Sơn,09367,Tỉnh Bắc Ninh,Phường
+,Phường Tam Sơn,09370,Tỉnh Bắc Ninh,Phường
+,Phường Phù Khê,09379,Tỉnh Bắc Ninh,Phường
+,Phường Đồng Nguyên,09385,Tỉnh Bắc Ninh,Phường
+,Phường Thuận Thành,09400,Tỉnh Bắc Ninh,Phường
+,Phường Mão Điền,09409,Tỉnh Bắc Ninh,Phường
+,Phường Trí Quả,09427,Tỉnh Bắc Ninh,Phường
+,Phường Trạm Lộ,09430,Tỉnh Bắc Ninh,Phường
+,Phường Song Liễu,09433,Tỉnh Bắc Ninh,Phường
+,Phường Ninh Xá,09445,Tỉnh Bắc Ninh,Phường
+,Xã Xuân Lương,07246,Tỉnh Bắc Ninh,Xã
+,Xã Tam Tiến,07264,Tỉnh Bắc Ninh,Xã
+,Xã Đồng Kỳ,07282,Tỉnh Bắc Ninh,Xã
+,Xã Yên Thế,07288,Tỉnh Bắc Ninh,Xã
+,Xã Bố Hạ,07294,Tỉnh Bắc Ninh,Xã
+,Xã Nhã Nam,07306,Tỉnh Bắc Ninh,Xã
+,Xã Phúc Hòa,07330,Tỉnh Bắc Ninh,Xã
+,Xã Quang Trung,07333,Tỉnh Bắc Ninh,Xã
+,Xã Tân Yên,07339,Tỉnh Bắc Ninh,Xã
+,Xã Ngọc Thiện,07351,Tỉnh Bắc Ninh,Xã
+,Xã Lạng Giang,07375,Tỉnh Bắc Ninh,Xã
+,Xã Tiên Lục,07381,Tỉnh Bắc Ninh,Xã
+,Xã Kép,07399,Tỉnh Bắc Ninh,Xã
+,Xã Tân Dĩnh,07432,Tỉnh Bắc Ninh,Xã
+,Xã Lục Nam,07444,Tỉnh Bắc Ninh,Xã
+,Xã Đông Phú,07450,Tỉnh Bắc Ninh,Xã
+,Xã Bảo Đài,07462,Tỉnh Bắc Ninh,Xã
+,Xã Nghĩa Phương,07486,Tỉnh Bắc Ninh,Xã
+,Xã Trường Sơn,07489,Tỉnh Bắc Ninh,Xã
+,Xã Lục Sơn,07492,Tỉnh Bắc Ninh,Xã
+,Xã Bắc Lũng,07498,Tỉnh Bắc Ninh,Xã
+,Xã Cẩm Lý,07519,Tỉnh Bắc Ninh,Xã
+,Xã Tân Sơn,07531,Tỉnh Bắc Ninh,Xã
+,Xã Sa Lý,07534,Tỉnh Bắc Ninh,Xã
+,Xã Biên Sơn,07537,Tỉnh Bắc Ninh,Xã
+,Xã Sơn Hải,07543,Tỉnh Bắc Ninh,Xã
+,Xã Kiên Lao,07552,Tỉnh Bắc Ninh,Xã
+,Xã Biển Động,07573,Tỉnh Bắc Ninh,Xã
+,Xã Lục Ngạn,07582,Tỉnh Bắc Ninh,Xã
+,Xã Đèo Gia,07594,Tỉnh Bắc Ninh,Xã
+,Xã Nam Dương,07603,Tỉnh Bắc Ninh,Xã
+,Xã Sơn Động,07615,Tỉnh Bắc Ninh,Xã
+,Xã Tây Yên Tử,07616,Tỉnh Bắc Ninh,Xã
+,Xã Vân Sơn,07621,Tỉnh Bắc Ninh,Xã
+,Xã Đại Sơn,07627,Tỉnh Bắc Ninh,Xã
+,Xã Yên Định,07642,Tỉnh Bắc Ninh,Xã
+,Xã An Lạc,07654,Tỉnh Bắc Ninh,Xã
+,Xã Tuấn Đạo,07663,Tỉnh Bắc Ninh,Xã
+,Xã Dương Hưu,07672,Tỉnh Bắc Ninh,Xã
+,Xã Đồng Việt,07735,Tỉnh Bắc Ninh,Xã
+,Xã Hoàng Vân,07822,Tỉnh Bắc Ninh,Xã
+,Xã Hiệp Hòa,07840,Tỉnh Bắc Ninh,Xã
+,Xã Hợp Thịnh,07864,Tỉnh Bắc Ninh,Xã
+,Xã Xuân Cẩm,07870,Tỉnh Bắc Ninh,Xã
+,Xã Yên Phong,09193,Tỉnh Bắc Ninh,Xã
+,Xã Tam Giang,09202,Tỉnh Bắc Ninh,Xã
+,Xã Yên Trung,09205,Tỉnh Bắc Ninh,Xã
+,Xã Tam Đa,09208,Tỉnh Bắc Ninh,Xã
+,Xã Văn Môn,09238,Tỉnh Bắc Ninh,Xã
+,Xã Phù Lãng,09292,Tỉnh Bắc Ninh,Xã
+,Xã Chi Lăng,09313,Tỉnh Bắc Ninh,Xã
+,Xã Tiên Du,09319,Tỉnh Bắc Ninh,Xã
+,Xã Liên Bão,09334,Tỉnh Bắc Ninh,Xã
+,Xã Đại Đồng,09340,Tỉnh Bắc Ninh,Xã
+,Xã Tân Chi,09343,Tỉnh Bắc Ninh,Xã
+,Xã Phật Tích,09349,Tỉnh Bắc Ninh,Xã
+,Xã Gia Bình,09454,Tỉnh Bắc Ninh,Xã
+,Xã Cao Đức,09466,Tỉnh Bắc Ninh,Xã
+,Xã Đại Lai,09469,Tỉnh Bắc Ninh,Xã
+,Xã Nhân Thắng,09475,Tỉnh Bắc Ninh,Xã
+,Xã Đông Cứu,09487,Tỉnh Bắc Ninh,Xã
+,Xã Lương Tài,09496,Tỉnh Bắc Ninh,Xã
+,Xã Trung Kênh,09499,Tỉnh Bắc Ninh,Xã
+,Xã Trung Chính,09523,Tỉnh Bắc Ninh,Xã
+,Xã Lâm Thao,09529,Tỉnh Bắc Ninh,Xã
+,Xã Kim Bôi,04978,Tỉnh Phú Thọ,Xã
+,Phường Tân Hòa,04792,Tỉnh Phú Thọ,Phường
+,Phường Hòa Bình,04795,Tỉnh Phú Thọ,Phường
+,Phường Thống Nhất,04828,Tỉnh Phú Thọ,Phường
+,Phường Kỳ Sơn,04894,Tỉnh Phú Thọ,Phường
+,Phường Nông Trang,07894,Tỉnh Phú Thọ,Phường
+,Phường Việt Trì,07900,Tỉnh Phú Thọ,Phường
+,Phường Thanh Miếu,07909,Tỉnh Phú Thọ,Phường
+,Phường Vân Phú,07918,Tỉnh Phú Thọ,Phường
+,Phường Phú Thọ,07942,Tỉnh Phú Thọ,Phường
+,Phường Âu Cơ,07948,Tỉnh Phú Thọ,Phường
+,Phường Phong Châu,07954,Tỉnh Phú Thọ,Phường
+,Phường Vĩnh Yên,08707,Tỉnh Phú Thọ,Phường
+,Phường Vĩnh Phúc,08716,Tỉnh Phú Thọ,Phường
+,Phường Phúc Yên,08740,Tỉnh Phú Thọ,Phường
+,Phường Xuân Hòa,08746,Tỉnh Phú Thọ,Phường
+,Xã Đà Bắc,04831,Tỉnh Phú Thọ,Xã
+,Xã Đức Nhàn,04846,Tỉnh Phú Thọ,Xã
+,Xã Tân Pheo,04849,Tỉnh Phú Thọ,Xã
+,Xã Quy Đức,04873,Tỉnh Phú Thọ,Xã
+,Xã Cao Sơn,04876,Tỉnh Phú Thọ,Xã
+,Xã Tiền Phong,04891,Tỉnh Phú Thọ,Xã
+,Xã Thịnh Minh,04897,Tỉnh Phú Thọ,Xã
+,Xã Lương Sơn,04924,Tỉnh Phú Thọ,Xã
+,Xã Liên Sơn,04960,Tỉnh Phú Thọ,Xã
+,Xã Nật Sơn,04990,Tỉnh Phú Thọ,Xã
+,Xã Mường Động,05014,Tỉnh Phú Thọ,Xã
+,Xã Cao Dương,05047,Tỉnh Phú Thọ,Xã
+,Xã Hợp Kim,05068,Tỉnh Phú Thọ,Xã
+,Xã Dũng Tiến,05086,Tỉnh Phú Thọ,Xã
+,Xã Cao Phong,05089,Tỉnh Phú Thọ,Xã
+,Xã Thung Nai,05092,Tỉnh Phú Thọ,Xã
+,Xã Mường Thàng,05116,Tỉnh Phú Thọ,Xã
+,Xã Tân Lạc,05128,Tỉnh Phú Thọ,Xã
+,Xã Mường Hoa,05134,Tỉnh Phú Thọ,Xã
+,Xã Vân Sơn,05152,Tỉnh Phú Thọ,Xã
+,Xã Mường Bi,05158,Tỉnh Phú Thọ,Xã
+,Xã Toàn Thắng,05191,Tỉnh Phú Thọ,Xã
+,Xã Mai Châu,05200,Tỉnh Phú Thọ,Xã
+,Xã Tân Mai,05206,Tỉnh Phú Thọ,Xã
+,Xã Pà Cò,05212,Tỉnh Phú Thọ,Xã
+,Xã Bao La,05245,Tỉnh Phú Thọ,Xã
+,Xã Mai Hạ,05251,Tỉnh Phú Thọ,Xã
+,Xã Lạc Sơn,05266,Tỉnh Phú Thọ,Xã
+,Xã Mường Vang,05287,Tỉnh Phú Thọ,Xã
+,Xã Nhân Nghĩa,05290,Tỉnh Phú Thọ,Xã
+,Xã Thượng Cốc,05293,Tỉnh Phú Thọ,Xã
+,Xã Yên Phú,05305,Tỉnh Phú Thọ,Xã
+,Xã Quyết Thắng,05323,Tỉnh Phú Thọ,Xã
+,Xã Ngọc Sơn,05329,Tỉnh Phú Thọ,Xã
+,Xã Đại Đồng,05347,Tỉnh Phú Thọ,Xã
+,Xã Yên Thủy,05353,Tỉnh Phú Thọ,Xã
+,Xã Lạc Lương,05362,Tỉnh Phú Thọ,Xã
+,Xã Yên Trị,05386,Tỉnh Phú Thọ,Xã
+,Xã Lạc Thủy,05392,Tỉnh Phú Thọ,Xã
+,Xã An Nghĩa,05395,Tỉnh Phú Thọ,Xã
+,Xã An Bình,05425,Tỉnh Phú Thọ,Xã
+,Xã Đoan Hùng,07969,Tỉnh Phú Thọ,Xã
+,Xã Bằng Luân,07996,Tỉnh Phú Thọ,Xã
+,Xã Chí Đám,07999,Tỉnh Phú Thọ,Xã
+,Xã Tây Cốc,08023,Tỉnh Phú Thọ,Xã
+,Xã Chân Mộng,08038,Tỉnh Phú Thọ,Xã
+,Xã Hạ Hòa,08053,Tỉnh Phú Thọ,Xã
+,Xã Đan Thượng,08071,Tỉnh Phú Thọ,Xã
+,Xã Hiền Lương,08110,Tỉnh Phú Thọ,Xã
+,Xã Yên Kỳ,08113,Tỉnh Phú Thọ,Xã
+,Xã Văn Lang,08134,Tỉnh Phú Thọ,Xã
+,Xã Vĩnh Chân,08143,Tỉnh Phú Thọ,Xã
+,Xã Thanh Ba,08152,Tỉnh Phú Thọ,Xã
+,Xã Quảng Yên,08173,Tỉnh Phú Thọ,Xã
+,Xã Hoàng Cương,08203,Tỉnh Phú Thọ,Xã
+,Xã Đông Thành,08209,Tỉnh Phú Thọ,Xã
+,Xã Chí Tiên,08218,Tỉnh Phú Thọ,Xã
+,Xã Liên Minh,08227,Tỉnh Phú Thọ,Xã
+,Xã Phù Ninh,08230,Tỉnh Phú Thọ,Xã
+,Xã Phú Mỹ,08236,Tỉnh Phú Thọ,Xã
+,Xã Trạm Thản,08245,Tỉnh Phú Thọ,Xã
+,Xã Dân Chủ,08254,Tỉnh Phú Thọ,Xã
+,Xã Bình Phú,08275,Tỉnh Phú Thọ,Xã
+,Xã Yên Lập,08290,Tỉnh Phú Thọ,Xã
+,Xã Sơn Lương,08296,Tỉnh Phú Thọ,Xã
+,Xã Xuân Viên,08305,Tỉnh Phú Thọ,Xã
+,Xã Trung Sơn,08311,Tỉnh Phú Thọ,Xã
+,Xã Thượng Long,08323,Tỉnh Phú Thọ,Xã
+,Xã Minh Hòa,08338,Tỉnh Phú Thọ,Xã
+,Xã Cẩm Khê,08341,Tỉnh Phú Thọ,Xã
+,Xã Tiên Lương,08344,Tỉnh Phú Thọ,Xã
+,Xã Vân Bán,08377,Tỉnh Phú Thọ,Xã
+,Xã Phú Khê,08398,Tỉnh Phú Thọ,Xã
+,Xã Hùng Việt,08416,Tỉnh Phú Thọ,Xã
+,Xã Đồng Lương,08431,Tỉnh Phú Thọ,Xã
+,Xã Tam Nông,08434,Tỉnh Phú Thọ,Xã
+,Xã Hiền Quan,08443,Tỉnh Phú Thọ,Xã
+,Xã Vạn Xuân,08467,Tỉnh Phú Thọ,Xã
+,Xã Thọ Văn,08479,Tỉnh Phú Thọ,Xã
+,Xã Lâm Thao,08494,Tỉnh Phú Thọ,Xã
+,Xã Xuân Lũng,08500,Tỉnh Phú Thọ,Xã
+,Xã Hy Cương,08515,Tỉnh Phú Thọ,Xã
+,Xã Phùng Nguyên,08521,Tỉnh Phú Thọ,Xã
+,Xã Bản Nguyên,08527,Tỉnh Phú Thọ,Xã
+,Xã Thanh Sơn,08542,Tỉnh Phú Thọ,Xã
+,Xã Thu Cúc,08545,Tỉnh Phú Thọ,Xã
+,Xã Lai Đồng,08560,Tỉnh Phú Thọ,Xã
+,Xã Tân Sơn,08566,Tỉnh Phú Thọ,Xã
+,Xã Võ Miếu,08584,Tỉnh Phú Thọ,Xã
+,Xã Xuân Đài,08590,Tỉnh Phú Thọ,Xã
+,Xã Minh Đài,08593,Tỉnh Phú Thọ,Xã
+,Xã Văn Miếu,08611,Tỉnh Phú Thọ,Xã
+,Xã Cự Đồng,08614,Tỉnh Phú Thọ,Xã
+,Xã Long Cốc,08620,Tỉnh Phú Thọ,Xã
+,Xã Hương Cần,08632,Tỉnh Phú Thọ,Xã
+,Xã Khả Cửu,08635,Tỉnh Phú Thọ,Xã
+,Xã Yên Sơn,08656,Tỉnh Phú Thọ,Xã
+,Xã Đào Xá,08662,Tỉnh Phú Thọ,Xã
+,Xã Thanh Thủy,08674,Tỉnh Phú Thọ,Xã
+,Xã Tu Vũ,08686,Tỉnh Phú Thọ,Xã
+,Xã Lập Thạch,08761,Tỉnh Phú Thọ,Xã
+,Xã Hợp Lý,08770,Tỉnh Phú Thọ,Xã
+,Xã Yên Lãng,08773,Tỉnh Phú Thọ,Xã
+,Xã Hải Lựu,08782,Tỉnh Phú Thọ,Xã
+,Xã Thái Hòa,08788,Tỉnh Phú Thọ,Xã
+,Xã Liên Hòa,08812,Tỉnh Phú Thọ,Xã
+,Xã Tam Sơn,08824,Tỉnh Phú Thọ,Xã
+,Xã Tiên Lữ,08842,Tỉnh Phú Thọ,Xã
+,Xã Sông Lô,08848,Tỉnh Phú Thọ,Xã
+,Xã Sơn Đông,08866,Tỉnh Phú Thọ,Xã
+,Xã Tam Dương,08869,Tỉnh Phú Thọ,Xã
+,Xã Tam Dương Bắc,08872,Tỉnh Phú Thọ,Xã
+,Xã Hoàng An,08896,Tỉnh Phú Thọ,Xã
+,Xã Hội Thịnh,08905,Tỉnh Phú Thọ,Xã
+,Xã Tam Đảo,08911,Tỉnh Phú Thọ,Xã
+,Xã Đạo Trù,08914,Tỉnh Phú Thọ,Xã
+,Xã Đại Đình,08923,Tỉnh Phú Thọ,Xã
+,Xã Bình Nguyên,08935,Tỉnh Phú Thọ,Xã
+,Xã Bình Tuyền,08944,Tỉnh Phú Thọ,Xã
+,Xã Bình Xuyên,08950,Tỉnh Phú Thọ,Xã
+,Xã Xuân Lãng,08971,Tỉnh Phú Thọ,Xã
+,Xã Yên Lạc,09025,Tỉnh Phú Thọ,Xã
+,Xã Tề Lỗ,09040,Tỉnh Phú Thọ,Xã
+,Xã Tam Hồng,09043,Tỉnh Phú Thọ,Xã
+,Xã Nguyệt Đức,09052,Tỉnh Phú Thọ,Xã
+,Xã Liên Châu,09064,Tỉnh Phú Thọ,Xã
+,Xã Vĩnh Tường,09076,Tỉnh Phú Thọ,Xã
+,Xã Vĩnh An,09079,Tỉnh Phú Thọ,Xã
+,Xã Vĩnh Hưng,09100,Tỉnh Phú Thọ,Xã
+,Xã Vĩnh Thành,09106,Tỉnh Phú Thọ,Xã
+,Xã Thổ Tang,09112,Tỉnh Phú Thọ,Xã
+,Xã Vĩnh Phú,09154,Tỉnh Phú Thọ,Xã
+,Phường Thành Đông,10507,Thành phố Hải Phòng,Phường
+,Phường Hải Dương,10525,Thành phố Hải Phòng,Phường
+,Phường Lê Thanh Nghị,10532,Thành phố Hải Phòng,Phường
+,Phường Tân Hưng,10537,Thành phố Hải Phòng,Phường
+,Phường Việt Hòa,10543,Thành phố Hải Phòng,Phường
+,Phường Chí Linh,10546,Thành phố Hải Phòng,Phường
+,Phường Chu Văn An,10549,Thành phố Hải Phòng,Phường
+,Phường Nguyễn Trãi,10552,Thành phố Hải Phòng,Phường
+,Phường Trần Hưng Đạo,10570,Thành phố Hải Phòng,Phường
+,Phường Trần Nhân Tông,10573,Thành phố Hải Phòng,Phường
+,Phường Lê Đại Hành,10603,Thành phố Hải Phòng,Phường
+,Phường Ái Quốc,10660,Thành phố Hải Phòng,Phường
+,Phường Kinh Môn,10675,Thành phố Hải Phòng,Phường
+,Phường Bắc An Phụ,10678,Thành phố Hải Phòng,Phường
+,Phường Nhị Chiểu,10714,Thành phố Hải Phòng,Phường
+,Phường Phạm Sư Mạnh,10726,Thành phố Hải Phòng,Phường
+,Phường Trần Liễu,10729,Thành phố Hải Phòng,Phường
+,Phường Nguyễn Đại Năng,10744,Thành phố Hải Phòng,Phường
+,Phường Nam Đồng,10837,Thành phố Hải Phòng,Phường
+,Phường Tứ Minh,10891,Thành phố Hải Phòng,Phường
+,Phường Thạch Khôi,11002,Thành phố Hải Phòng,Phường
+,Phường Hồng Bàng,11311,Thành phố Hải Phòng,Phường
+,Phường Ngô Quyền,11329,Thành phố Hải Phòng,Phường
+,Phường Gia Viên,11359,Thành phố Hải Phòng,Phường
+,Phường Lê Chân,11383,Thành phố Hải Phòng,Phường
+,Phường An Biên,11407,Thành phố Hải Phòng,Phường
+,Phường Đông Hải,11411,Thành phố Hải Phòng,Phường
+,Phường Hải An,11413,Thành phố Hải Phòng,Phường
+,Phường Kiến An,11443,Thành phố Hải Phòng,Phường
+,Phường Phù Liễn,11446,Thành phố Hải Phòng,Phường
+,Phường Đồ Sơn,11455,Thành phố Hải Phòng,Phường
+,Phường Bạch Đằng,11473,Thành phố Hải Phòng,Phường
+,Phường Lưu Kiếm,11488,Thành phố Hải Phòng,Phường
+,Phường Lê Ích Mộc,11506,Thành phố Hải Phòng,Phường
+,Phường Hòa Bình,11533,Thành phố Hải Phòng,Phường
+,Phường Nam Triệu,11542,Thành phố Hải Phòng,Phường
+,Phường Thiên Hương,11557,Thành phố Hải Phòng,Phường
+,Phường Thủy Nguyên,11560,Thành phố Hải Phòng,Phường
+,Phường An Dương,11581,Thành phố Hải Phòng,Phường
+,Phường An Phong,11593,Thành phố Hải Phòng,Phường
+,Phường Hồng An,11602,Thành phố Hải Phòng,Phường
+,Phường An Hải,11617,Thành phố Hải Phòng,Phường
+,Phường Hưng Đạo,11689,Thành phố Hải Phòng,Phường
+,Phường Dương Kinh,11692,Thành phố Hải Phòng,Phường
+,Phường Nam Đồ Sơn,11737,Thành phố Hải Phòng,Phường
+,Xã Nam Sách,10606,Thành phố Hải Phòng,Xã
+,Xã Hợp Tiến,10615,Thành phố Hải Phòng,Xã
+,Xã Trần Phú,10633,Thành phố Hải Phòng,Xã
+,Xã Thái Tân,10642,Thành phố Hải Phòng,Xã
+,Xã An Phú,10645,Thành phố Hải Phòng,Xã
+,Xã Nam An Phụ,10705,Thành phố Hải Phòng,Xã
+,Xã Phú Thái,10750,Thành phố Hải Phòng,Xã
+,Xã Lai Khê,10756,Thành phố Hải Phòng,Xã
+,Xã An Thành,10792,Thành phố Hải Phòng,Xã
+,Xã Kim Thành,10804,Thành phố Hải Phòng,Xã
+,Xã Thanh Hà,10813,Thành phố Hải Phòng,Xã
+,Xã Hà Bắc,10816,Thành phố Hải Phòng,Xã
+,Xã Hà Nam,10843,Thành phố Hải Phòng,Xã
+,Xã Hà Tây,10846,Thành phố Hải Phòng,Xã
+,Xã Hà Đông,10882,Thành phố Hải Phòng,Xã
+,Xã Cẩm Giang,10888,Thành phố Hải Phòng,Xã
+,Xã Cẩm Giàng,10903,Thành phố Hải Phòng,Xã
+,Xã Tuệ Tĩnh,10909,Thành phố Hải Phòng,Xã
+,Xã Mao Điền,10930,Thành phố Hải Phòng,Xã
+,Xã Kẻ Sặt,10945,Thành phố Hải Phòng,Xã
+,Xã Bình Giang,10966,Thành phố Hải Phòng,Xã
+,Xã Đường An,10972,Thành phố Hải Phòng,Xã
+,Xã Thượng Hồng,10993,Thành phố Hải Phòng,Xã
+,Xã Gia Lộc,10999,Thành phố Hải Phòng,Xã
+,Xã Yết Kiêu,11020,Thành phố Hải Phòng,Xã
+,Xã Gia Phúc,11050,Thành phố Hải Phòng,Xã
+,Xã Trường Tân,11065,Thành phố Hải Phòng,Xã
+,Xã Tứ Kỳ,11074,Thành phố Hải Phòng,Xã
+,Xã Đại Sơn,11086,Thành phố Hải Phòng,Xã
+,Xã Tân Kỳ,11113,Thành phố Hải Phòng,Xã
+,Xã Chí Minh,11131,Thành phố Hải Phòng,Xã
+,Xã Lạc Phượng,11140,Thành phố Hải Phòng,Xã
+,Xã Nguyên Giáp,11146,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Lại,11164,Thành phố Hải Phòng,Xã
+,Xã Tân An,11167,Thành phố Hải Phòng,Xã
+,Xã Ninh Giang,11203,Thành phố Hải Phòng,Xã
+,Xã Hồng Châu,11218,Thành phố Hải Phòng,Xã
+,Xã Khúc Thừa Dụ,11224,Thành phố Hải Phòng,Xã
+,Xã Thanh Miện,11239,Thành phố Hải Phòng,Xã
+,Xã Nguyễn Lương Bằng,11242,Thành phố Hải Phòng,Xã
+,Xã Bắc Thanh Miện,11254,Thành phố Hải Phòng,Xã
+,Xã Hải Hưng,11257,Thành phố Hải Phòng,Xã
+,Xã Nam Thanh Miện,11284,Thành phố Hải Phòng,Xã
+,Xã Việt Khê,11503,Thành phố Hải Phòng,Xã
+,Xã An Lão,11629,Thành phố Hải Phòng,Xã
+,Xã An Trường,11635,Thành phố Hải Phòng,Xã
+,Xã An Quang,11647,Thành phố Hải Phòng,Xã
+,Xã An Khánh,11668,Thành phố Hải Phòng,Xã
+,Xã An Hưng,11674,Thành phố Hải Phòng,Xã
+,Xã Kiến Thụy,11680,Thành phố Hải Phòng,Xã
+,Xã Nghi Dương,11713,Thành phố Hải Phòng,Xã
+,Xã Kiến Minh,11725,Thành phố Hải Phòng,Xã
+,Xã Kiến Hưng,11728,Thành phố Hải Phòng,Xã
+,Xã Kiến Hải,11749,Thành phố Hải Phòng,Xã
+,Xã Tiên Lãng,11755,Thành phố Hải Phòng,Xã
+,Xã Quyết Thắng,11761,Thành phố Hải Phòng,Xã
+,Xã Tân Minh,11779,Thành phố Hải Phòng,Xã
+,Xã Tiên Minh,11791,Thành phố Hải Phòng,Xã
+,Xã Chấn Hưng,11806,Thành phố Hải Phòng,Xã
+,Xã Hùng Thắng,11809,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Bảo,11824,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Thịnh,11836,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Thuận,11842,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Hòa,11848,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Hải,11875,Thành phố Hải Phòng,Xã
+,Xã Vĩnh Am,11887,Thành phố Hải Phòng,Xã
+,Xã Nguyễn Bỉnh Khiêm,11911,Thành phố Hải Phòng,Xã
+,Đặc khu Cát Hải,11914,Thành phố Hải Phòng,Đặc khu
+,Đặc khu Bạch Long Vĩ,11948,Thành phố Hải Phòng,Đặc khu
+,Phường Phố Hiến,11953,Tỉnh Hưng Yên,Phường
+,Phường Hồng Châu,11980,Tỉnh Hưng Yên,Phường
+,Phường Sơn Nam,11983,Tỉnh Hưng Yên,Phường
+,Phường Mỹ Hào,12103,Tỉnh Hưng Yên,Phường
+,Phường Thượng Hồng,12127,Tỉnh Hưng Yên,Phường
+,Phường Đường Hào,12133,Tỉnh Hưng Yên,Phường
+,Phường Trần Hưng Đạo,12452,Tỉnh Hưng Yên,Phường
+,Phường Trần Lãm,12454,Tỉnh Hưng Yên,Phường
+,Phường Vũ Phúc,12466,Tỉnh Hưng Yên,Phường
+,Phường Trà Lý,12817,Tỉnh Hưng Yên,Phường
+,Phường Thái Bình,13225,Tỉnh Hưng Yên,Phường
+,Xã Tân Hưng,11977,Tỉnh Hưng Yên,Xã
+,Xã Lạc Đạo,11992,Tỉnh Hưng Yên,Xã
+,Xã Đại Đồng,11995,Tỉnh Hưng Yên,Xã
+,Xã Như Quỳnh,12004,Tỉnh Hưng Yên,Xã
+,Xã Văn Giang,12019,Tỉnh Hưng Yên,Xã
+,Xã Phụng Công,12025,Tỉnh Hưng Yên,Xã
+,Xã Nghĩa Trụ,12031,Tỉnh Hưng Yên,Xã
+,Xã Mễ Sở,12049,Tỉnh Hưng Yên,Xã
+,Xã Nguyễn Văn Linh,12064,Tỉnh Hưng Yên,Xã
+,Xã Hoàn Long,12070,Tỉnh Hưng Yên,Xã
+,Xã Yên Mỹ,12073,Tỉnh Hưng Yên,Xã
+,Xã Việt Yên,12091,Tỉnh Hưng Yên,Xã
+,Xã Ân Thi,12142,Tỉnh Hưng Yên,Xã
+,Xã Phạm Ngũ Lão,12148,Tỉnh Hưng Yên,Xã
+,Xã Xuân Trúc,12166,Tỉnh Hưng Yên,Xã
+,Xã Nguyễn Trãi,12184,Tỉnh Hưng Yên,Xã
+,Xã Hồng Quang,12196,Tỉnh Hưng Yên,Xã
+,Xã Khoái Châu,12205,Tỉnh Hưng Yên,Xã
+,Xã Triệu Việt Vương,12223,Tỉnh Hưng Yên,Xã
+,Xã Việt Tiến,12238,Tỉnh Hưng Yên,Xã
+,Xã Châu Ninh,12247,Tỉnh Hưng Yên,Xã
+,Xã Chí Minh,12271,Tỉnh Hưng Yên,Xã
+,Xã Lương Bằng,12280,Tỉnh Hưng Yên,Xã
+,Xã Nghĩa Dân,12286,Tỉnh Hưng Yên,Xã
+,Xã Đức Hợp,12313,Tỉnh Hưng Yên,Xã
+,Xã Hiệp Cường,12322,Tỉnh Hưng Yên,Xã
+,Xã Hoàng Hoa Thám,12337,Tỉnh Hưng Yên,Xã
+,Xã Tiên Hoa,12361,Tỉnh Hưng Yên,Xã
+,Xã Tiên Lữ,12364,Tỉnh Hưng Yên,Xã
+,Xã Quang Hưng,12391,Tỉnh Hưng Yên,Xã
+,Xã Đoàn Đào,12406,Tỉnh Hưng Yên,Xã
+,Xã Tiên Tiến,12424,Tỉnh Hưng Yên,Xã
+,Xã Tống Trân,12427,Tỉnh Hưng Yên,Xã
+,Xã Quỳnh Phụ,12472,Tỉnh Hưng Yên,Xã
+,Xã A Sào,12499,Tỉnh Hưng Yên,Xã
+,Xã Minh Thọ,12511,Tỉnh Hưng Yên,Xã
+,Xã Ngọc Lâm,12517,Tỉnh Hưng Yên,Xã
+,Xã Phụ Dực,12523,Tỉnh Hưng Yên,Xã
+,Xã Đồng Bằng,12526,Tỉnh Hưng Yên,Xã
+,Xã Nguyễn Du,12532,Tỉnh Hưng Yên,Xã
+,Xã Quỳnh An,12577,Tỉnh Hưng Yên,Xã
+,Xã Tân Tiến,12583,Tỉnh Hưng Yên,Xã
+,Xã Hưng Hà,12586,Tỉnh Hưng Yên,Xã
+,Xã Ngự Thiên,12595,Tỉnh Hưng Yên,Xã
+,Xã Long Hưng,12613,Tỉnh Hưng Yên,Xã
+,Xã Diên Hà,12619,Tỉnh Hưng Yên,Xã
+,Xã Thần Khê,12631,Tỉnh Hưng Yên,Xã
+,Xã Tiên La,12634,Tỉnh Hưng Yên,Xã
+,Xã Lê Quý Đôn,12676,Tỉnh Hưng Yên,Xã
+,Xã Hồng Minh,12685,Tỉnh Hưng Yên,Xã
+,Xã Đông Hưng,12688,Tỉnh Hưng Yên,Xã
+,Xã Bắc Đông Hưng,12694,Tỉnh Hưng Yên,Xã
+,Xã Bắc Tiên Hưng,12700,Tỉnh Hưng Yên,Xã
+,Xã Đông Tiên Hưng,12736,Tỉnh Hưng Yên,Xã
+,Xã Bắc Đông Quan,12745,Tỉnh Hưng Yên,Xã
+,Xã Tiên Hưng,12754,Tỉnh Hưng Yên,Xã
+,Xã Nam Tiên Hưng,12763,Tỉnh Hưng Yên,Xã
+,Xã Nam Đông Hưng,12775,Tỉnh Hưng Yên,Xã
+,Xã Đông Quan,12793,Tỉnh Hưng Yên,Xã
+,Xã Thái Thụy,12826,Tỉnh Hưng Yên,Xã
+,Xã Tây Thụy Anh,12850,Tỉnh Hưng Yên,Xã
+,Xã Bắc Thụy Anh,12859,Tỉnh Hưng Yên,Xã
+,Xã Đông Thụy Anh,12862,Tỉnh Hưng Yên,Xã
+,Xã Thụy Anh,12865,Tỉnh Hưng Yên,Xã
+,Xã Nam Thụy Anh,12904,Tỉnh Hưng Yên,Xã
+,Xã Bắc Thái Ninh,12916,Tỉnh Hưng Yên,Xã
+,Xã Tây Thái Ninh,12919,Tỉnh Hưng Yên,Xã
+,Xã Thái Ninh,12922,Tỉnh Hưng Yên,Xã
+,Xã Đông Thái Ninh,12943,Tỉnh Hưng Yên,Xã
+,Xã Nam Thái Ninh,12961,Tỉnh Hưng Yên,Xã
+,Xã Tiền Hải,12970,Tỉnh Hưng Yên,Xã
+,Xã Đông Tiền Hải,12988,Tỉnh Hưng Yên,Xã
+,Xã Đồng Châu,13003,Tỉnh Hưng Yên,Xã
+,Xã Ái Quốc,13021,Tỉnh Hưng Yên,Xã
+,Xã Tây Tiền Hải,13039,Tỉnh Hưng Yên,Xã
+,Xã Nam Cường,13057,Tỉnh Hưng Yên,Xã
+,Xã Nam Tiền Hải,13063,Tỉnh Hưng Yên,Xã
+,Xã Hưng Phú,13066,Tỉnh Hưng Yên,Xã
+,Xã Kiến Xương,13075,Tỉnh Hưng Yên,Xã
+,Xã Trà Giang,13093,Tỉnh Hưng Yên,Xã
+,Xã Bình Nguyên,13096,Tỉnh Hưng Yên,Xã
+,Xã Lê Lợi,13120,Tỉnh Hưng Yên,Xã
+,Xã Quang Lịch,13132,Tỉnh Hưng Yên,Xã
+,Xã Vũ Quý,13141,Tỉnh Hưng Yên,Xã
+,Xã Hồng Vũ,13159,Tỉnh Hưng Yên,Xã
+,Xã Bình Thanh,13183,Tỉnh Hưng Yên,Xã
+,Xã Bình Định,13186,Tỉnh Hưng Yên,Xã
+,Xã Vũ Thư,13192,Tỉnh Hưng Yên,Xã
+,Xã Vạn Xuân,13219,Tỉnh Hưng Yên,Xã
+,Xã Thư Trì,13222,Tỉnh Hưng Yên,Xã
+,Xã Tân Thuận,13246,Tỉnh Hưng Yên,Xã
+,Xã Thư Vũ,13264,Tỉnh Hưng Yên,Xã
+,Xã Vũ Tiên,13279,Tỉnh Hưng Yên,Xã
+,Phường Phủ Lý,13285,Tỉnh Ninh Bình,Phường
+,Phường Phù Vân,13291,Tỉnh Ninh Bình,Phường
+,Phường Châu Sơn,13318,Tỉnh Ninh Bình,Phường
+,Phường Duy Tiên,13324,Tỉnh Ninh Bình,Phường
+,Phường Duy Tân,13330,Tỉnh Ninh Bình,Phường
+,Phường Duy Hà,13336,Tỉnh Ninh Bình,Phường
+,Phường Đồng Văn,13348,Tỉnh Ninh Bình,Phường
+,Phường Tiên Sơn,13363,Tỉnh Ninh Bình,Phường
+,Phường Hà Nam,13366,Tỉnh Ninh Bình,Phường
+,Phường Kim Bảng,13384,Tỉnh Ninh Bình,Phường
+,Phường Lê Hồ,13393,Tỉnh Ninh Bình,Phường
+,Phường Nguyễn Úy,13396,Tỉnh Ninh Bình,Phường
+,Phường Kim Thanh,13402,Tỉnh Ninh Bình,Phường
+,Phường Tam Chúc,13420,Tỉnh Ninh Bình,Phường
+,Phường Lý Thường Kiệt,13435,Tỉnh Ninh Bình,Phường
+,Phường Liêm Tuyền,13444,Tỉnh Ninh Bình,Phường
+,Phường Nam Định,13669,Tỉnh Ninh Bình,Phường
+,Phường Thiên Trường,13684,Tỉnh Ninh Bình,Phường
+,Phường Đông A,13693,Tỉnh Ninh Bình,Phường
+,Phường Thành Nam,13699,Tỉnh Ninh Bình,Phường
+,Phường Mỹ Lộc,13708,Tỉnh Ninh Bình,Phường
+,Phường Trường Thi,13777,Tỉnh Ninh Bình,Phường
+,Phường Vị Khê,13972,Tỉnh Ninh Bình,Phường
+,Phường Hồng Quang,13984,Tỉnh Ninh Bình,Phường
+,Phường Hoa Lư,14329,Tỉnh Ninh Bình,Phường
+,Phường Nam Hoa Lư,14359,Tỉnh Ninh Bình,Phường
+,Phường Tam Điệp,14362,Tỉnh Ninh Bình,Phường
+,Phường Trung Sơn,14365,Tỉnh Ninh Bình,Phường
+,Phường Yên Sơn,14371,Tỉnh Ninh Bình,Phường
+,Phường Tây Hoa Lư,14533,Tỉnh Ninh Bình,Phường
+,Phường Đông Hoa Lư,14566,Tỉnh Ninh Bình,Phường
+,Phường Yên Thắng,14725,Tỉnh Ninh Bình,Phường
+,Xã Liêm Hà,13456,Tỉnh Ninh Bình,Xã
+,Xã Tân Thanh,13474,Tỉnh Ninh Bình,Xã
+,Xã Thanh Bình,13483,Tỉnh Ninh Bình,Xã
+,Xã Thanh Lâm,13489,Tỉnh Ninh Bình,Xã
+,Xã Thanh Liêm,13495,Tỉnh Ninh Bình,Xã
+,Xã Bình Mỹ,13501,Tỉnh Ninh Bình,Xã
+,Xã Bình Lục,13504,Tỉnh Ninh Bình,Xã
+,Xã Bình Giang,13531,Tỉnh Ninh Bình,Xã
+,Xã Bình An,13540,Tỉnh Ninh Bình,Xã
+,Xã Bình Sơn,13558,Tỉnh Ninh Bình,Xã
+,Xã Lý Nhân,13573,Tỉnh Ninh Bình,Xã
+,Xã Bắc Lý,13579,Tỉnh Ninh Bình,Xã
+,Xã Nam Xang,13591,Tỉnh Ninh Bình,Xã
+,Xã Trần Thương,13594,Tỉnh Ninh Bình,Xã
+,Xã Vĩnh Trụ,13597,Tỉnh Ninh Bình,Xã
+,Xã Nhân Hà,13609,Tỉnh Ninh Bình,Xã
+,Xã Nam Lý,13627,Tỉnh Ninh Bình,Xã
+,Xã Vụ Bản,13741,Tỉnh Ninh Bình,Xã
+,Xã Minh Tân,13750,Tỉnh Ninh Bình,Xã
+,Xã Hiển Khánh,13753,Tỉnh Ninh Bình,Xã
+,Xã Liên Minh,13786,Tỉnh Ninh Bình,Xã
+,Xã Ý Yên,13795,Tỉnh Ninh Bình,Xã
+,Xã Tân Minh,13807,Tỉnh Ninh Bình,Xã
+,Xã Phong Doanh,13822,Tỉnh Ninh Bình,Xã
+,Xã Vũ Dương,13834,Tỉnh Ninh Bình,Xã
+,Xã Vạn Thắng,13864,Tỉnh Ninh Bình,Xã
+,Xã Yên Cường,13870,Tỉnh Ninh Bình,Xã
+,Xã Yên Đồng,13879,Tỉnh Ninh Bình,Xã
+,Xã Nghĩa Hưng,13891,Tỉnh Ninh Bình,Xã
+,Xã Rạng Đông,13894,Tỉnh Ninh Bình,Xã
+,Xã Đồng Thịnh,13900,Tỉnh Ninh Bình,Xã
+,Xã Nghĩa Sơn,13918,Tỉnh Ninh Bình,Xã
+,Xã Hồng Phong,13927,Tỉnh Ninh Bình,Xã
+,Xã Quỹ Nhất,13939,Tỉnh Ninh Bình,Xã
+,Xã Nghĩa Lâm,13957,Tỉnh Ninh Bình,Xã
+,Xã Nam Trực,13966,Tỉnh Ninh Bình,Xã
+,Xã Nam Hồng,13987,Tỉnh Ninh Bình,Xã
+,Xã Nam Ninh,14005,Tỉnh Ninh Bình,Xã
+,Xã Nam Minh,14011,Tỉnh Ninh Bình,Xã
+,Xã Nam Đồng,14014,Tỉnh Ninh Bình,Xã
+,Xã Cổ Lễ,14026,Tỉnh Ninh Bình,Xã
+,Xã Ninh Giang,14038,Tỉnh Ninh Bình,Xã
+,Xã Trực Ninh,14053,Tỉnh Ninh Bình,Xã
+,Xã Cát Thành,14056,Tỉnh Ninh Bình,Xã
+,Xã Quang Hưng,14062,Tỉnh Ninh Bình,Xã
+,Xã Minh Thái,14071,Tỉnh Ninh Bình,Xã
+,Xã Ninh Cường,14077,Tỉnh Ninh Bình,Xã
+,Xã Xuân Trường,14089,Tỉnh Ninh Bình,Xã
+,Xã Xuân Hồng,14095,Tỉnh Ninh Bình,Xã
+,Xã Xuân Giang,14104,Tỉnh Ninh Bình,Xã
+,Xã Xuân Hưng,14122,Tỉnh Ninh Bình,Xã
+,Xã Giao Minh,14161,Tỉnh Ninh Bình,Xã
+,Xã Giao Thủy,14167,Tỉnh Ninh Bình,Xã
+,Xã Giao Hưng,14179,Tỉnh Ninh Bình,Xã
+,Xã Giao Hòa,14182,Tỉnh Ninh Bình,Xã
+,Xã Giao Bình,14194,Tỉnh Ninh Bình,Xã
+,Xã Giao Phúc,14203,Tỉnh Ninh Bình,Xã
+,Xã Giao Ninh,14212,Tỉnh Ninh Bình,Xã
+,Xã Hải Hậu,14215,Tỉnh Ninh Bình,Xã
+,Xã Hải Tiến,14218,Tỉnh Ninh Bình,Xã
+,Xã Hải Thịnh,14221,Tỉnh Ninh Bình,Xã
+,Xã Hải Anh,14236,Tỉnh Ninh Bình,Xã
+,Xã Hải Hưng,14248,Tỉnh Ninh Bình,Xã
+,Xã Hải An,14281,Tỉnh Ninh Bình,Xã
+,Xã Hải Quang,14287,Tỉnh Ninh Bình,Xã
+,Xã Hải Xuân,14308,Tỉnh Ninh Bình,Xã
+,Xã Gia Lâm,14389,Tỉnh Ninh Bình,Xã
+,Xã Gia Tường,14401,Tỉnh Ninh Bình,Xã
+,Xã Cúc Phương,14404,Tỉnh Ninh Bình,Xã
+,Xã Phú Sơn,14407,Tỉnh Ninh Bình,Xã
+,Xã Nho Quan,14428,Tỉnh Ninh Bình,Xã
+,Xã Thanh Sơn,14434,Tỉnh Ninh Bình,Xã
+,Xã Quỳnh Lưu,14452,Tỉnh Ninh Bình,Xã
+,Xã Phú Long,14458,Tỉnh Ninh Bình,Xã
+,Xã Gia Viễn,14464,Tỉnh Ninh Bình,Xã
+,Xã Gia Hưng,14482,Tỉnh Ninh Bình,Xã
+,Xã Gia Vân,14488,Tỉnh Ninh Bình,Xã
+,Xã Gia Trấn,14494,Tỉnh Ninh Bình,Xã
+,Xã Đại Hoàng,14500,Tỉnh Ninh Bình,Xã
+,Xã Gia Phong,14524,Tỉnh Ninh Bình,Xã
+,Xã Yên Khánh,14560,Tỉnh Ninh Bình,Xã
+,Xã Khánh Thiện,14563,Tỉnh Ninh Bình,Xã
+,Xã Khánh Trung,14608,Tỉnh Ninh Bình,Xã
+,Xã Khánh Nhạc,14611,Tỉnh Ninh Bình,Xã
+,Xã Khánh Hội,14614,Tỉnh Ninh Bình,Xã
+,Xã Phát Diệm,14620,Tỉnh Ninh Bình,Xã
+,Xã Bình Minh,14623,Tỉnh Ninh Bình,Xã
+,Xã Kim Sơn,14638,Tỉnh Ninh Bình,Xã
+,Xã Quang Thiện,14647,Tỉnh Ninh Bình,Xã
+,Xã Chất Bình,14653,Tỉnh Ninh Bình,Xã
+,Xã Lai Thành,14674,Tỉnh Ninh Bình,Xã
+,Xã Định Hóa,14677,Tỉnh Ninh Bình,Xã
+,Xã Kim Đông,14698,Tỉnh Ninh Bình,Xã
+,Xã Yên Mô,14701,Tỉnh Ninh Bình,Xã
+,Xã Yên Từ,14728,Tỉnh Ninh Bình,Xã
+,Xã Yên Mạc,14743,Tỉnh Ninh Bình,Xã
+,Xã Đồng Thái,14746,Tỉnh Ninh Bình,Xã
+,Phường Hàm Rồng,14758,Tỉnh Thanh Hóa,Phường
+,Phường Hạc Thành,14797,Tỉnh Thanh Hóa,Phường
+,Phường Bỉm Sơn,14812,Tỉnh Thanh Hóa,Phường
+,Phường Quang Trung,14818,Tỉnh Thanh Hóa,Phường
+,Phường Đông Tiến,15853,Tỉnh Thanh Hóa,Phường
+,Phường Nguyệt Viên,15925,Tỉnh Thanh Hóa,Phường
+,Phường Đông Sơn,16378,Tỉnh Thanh Hóa,Phường
+,Phường Đông Quang,16417,Tỉnh Thanh Hóa,Phường
+,Phường Nam Sầm Sơn,16516,Tỉnh Thanh Hóa,Phường
+,Phường Quảng Phú,16522,Tỉnh Thanh Hóa,Phường
+,Phường Sầm Sơn,16531,Tỉnh Thanh Hóa,Phường
+,Phường Tĩnh Gia,16561,Tỉnh Thanh Hóa,Phường
+,Phường Ngọc Sơn,16576,Tỉnh Thanh Hóa,Phường
+,Phường Tân Dân,16594,Tỉnh Thanh Hóa,Phường
+,Phường Hải Lĩnh,16597,Tỉnh Thanh Hóa,Phường
+,Phường Đào Duy Từ,16609,Tỉnh Thanh Hóa,Phường
+,Phường Trúc Lâm,16624,Tỉnh Thanh Hóa,Phường
+,Phường Hải Bình,16645,Tỉnh Thanh Hóa,Phường
+,Phường Nghi Sơn,16654,Tỉnh Thanh Hóa,Phường
+,Xã Mường Lát,14845,Tỉnh Thanh Hóa,Xã
+,Xã Tam Chung,14848,Tỉnh Thanh Hóa,Xã
+,Xã Mường Lý,14854,Tỉnh Thanh Hóa,Xã
+,Xã Trung Lý,14857,Tỉnh Thanh Hóa,Xã
+,Xã Quang Chiểu,14860,Tỉnh Thanh Hóa,Xã
+,Xã Pù Nhi,14863,Tỉnh Thanh Hóa,Xã
+,Xã Nhi Sơn,14864,Tỉnh Thanh Hóa,Xã
+,Xã Mường Chanh,14866,Tỉnh Thanh Hóa,Xã
+,Xã Hồi Xuân,14869,Tỉnh Thanh Hóa,Xã
+,Xã Trung Thành,14872,Tỉnh Thanh Hóa,Xã
+,Xã Trung Sơn,14875,Tỉnh Thanh Hóa,Xã
+,Xã Phú Lệ,14878,Tỉnh Thanh Hóa,Xã
+,Xã Phú Xuân,14890,Tỉnh Thanh Hóa,Xã
+,Xã Hiền Kiệt,14896,Tỉnh Thanh Hóa,Xã
+,Xã Nam Xuân,14902,Tỉnh Thanh Hóa,Xã
+,Xã Thiên Phủ,14908,Tỉnh Thanh Hóa,Xã
+,Xã Bá Thước,14923,Tỉnh Thanh Hóa,Xã
+,Xã Điền Quang,14932,Tỉnh Thanh Hóa,Xã
+,Xã Điền Lư,14950,Tỉnh Thanh Hóa,Xã
+,Xã Quý Lương,14953,Tỉnh Thanh Hóa,Xã
+,Xã Pù Luông,14956,Tỉnh Thanh Hóa,Xã
+,Xã Cổ Lũng,14959,Tỉnh Thanh Hóa,Xã
+,Xã Văn Nho,14974,Tỉnh Thanh Hóa,Xã
+,Xã Thiết Ống,14980,Tỉnh Thanh Hóa,Xã
+,Xã Trung Hạ,15001,Tỉnh Thanh Hóa,Xã
+,Xã Tam Thanh,15007,Tỉnh Thanh Hóa,Xã
+,Xã Sơn Thủy,15010,Tỉnh Thanh Hóa,Xã
+,Xã Na Mèo,15013,Tỉnh Thanh Hóa,Xã
+,Xã Quan Sơn,15016,Tỉnh Thanh Hóa,Xã
+,Xã Tam Lư,15019,Tỉnh Thanh Hóa,Xã
+,Xã Sơn Điện,15022,Tỉnh Thanh Hóa,Xã
+,Xã Mường Mìn,15025,Tỉnh Thanh Hóa,Xã
+,Xã Yên Khương,15031,Tỉnh Thanh Hóa,Xã
+,Xã Yên Thắng,15034,Tỉnh Thanh Hóa,Xã
+,Xã Giao An,15043,Tỉnh Thanh Hóa,Xã
+,Xã Văn Phú,15049,Tỉnh Thanh Hóa,Xã
+,Xã Linh Sơn,15055,Tỉnh Thanh Hóa,Xã
+,Xã Đồng Lương,15058,Tỉnh Thanh Hóa,Xã
+,Xã Ngọc Lặc,15061,Tỉnh Thanh Hóa,Xã
+,Xã Thạch Lập,15085,Tỉnh Thanh Hóa,Xã
+,Xã Ngọc Liên,15091,Tỉnh Thanh Hóa,Xã
+,Xã Nguyệt Ấn,15106,Tỉnh Thanh Hóa,Xã
+,Xã Kiên Thọ,15112,Tỉnh Thanh Hóa,Xã
+,Xã Minh Sơn,15124,Tỉnh Thanh Hóa,Xã
+,Xã Cẩm Thủy,15127,Tỉnh Thanh Hóa,Xã
+,Xã Cẩm Thạch,15142,Tỉnh Thanh Hóa,Xã
+,Xã Cẩm Tú,15148,Tỉnh Thanh Hóa,Xã
+,Xã Cẩm Vân,15163,Tỉnh Thanh Hóa,Xã
+,Xã Cẩm Tân,15178,Tỉnh Thanh Hóa,Xã
+,Xã Kim Tân,15187,Tỉnh Thanh Hóa,Xã
+,Xã Vân Du,15190,Tỉnh Thanh Hóa,Xã
+,Xã Thạch Quảng,15199,Tỉnh Thanh Hóa,Xã
+,Xã Thạch Bình,15211,Tỉnh Thanh Hóa,Xã
+,Xã Thành Vinh,15229,Tỉnh Thanh Hóa,Xã
+,Xã Ngọc Trạo,15250,Tỉnh Thanh Hóa,Xã
+,Xã Hà Trung,15271,Tỉnh Thanh Hóa,Xã
+,Xã Hà Long,15274,Tỉnh Thanh Hóa,Xã
+,Xã Hoạt Giang,15286,Tỉnh Thanh Hóa,Xã
+,Xã Lĩnh Toại,15298,Tỉnh Thanh Hóa,Xã
+,Xã Tống Sơn,15316,Tỉnh Thanh Hóa,Xã
+,Xã Vĩnh Lộc,15349,Tỉnh Thanh Hóa,Xã
+,Xã Tây Đô,15361,Tỉnh Thanh Hóa,Xã
+,Xã Biện Thượng,15382,Tỉnh Thanh Hóa,Xã
+,Xã Yên Phú,15409,Tỉnh Thanh Hóa,Xã
+,Xã Quý Lộc,15412,Tỉnh Thanh Hóa,Xã
+,Xã Yên Trường,15421,Tỉnh Thanh Hóa,Xã
+,Xã Yên Ninh,15442,Tỉnh Thanh Hóa,Xã
+,Xã Định Hòa,15448,Tỉnh Thanh Hóa,Xã
+,Xã Định Tân,15457,Tỉnh Thanh Hóa,Xã
+,Xã Yên Định,15469,Tỉnh Thanh Hóa,Xã
+,Xã Thọ Xuân,15499,Tỉnh Thanh Hóa,Xã
+,Xã Thọ Long,15505,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Hòa,15520,Tỉnh Thanh Hóa,Xã
+,Xã Lam Sơn,15544,Tỉnh Thanh Hóa,Xã
+,Xã Sao Vàng,15553,Tỉnh Thanh Hóa,Xã
+,Xã Thọ Lập,15568,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Tín,15574,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Lập,15592,Tỉnh Thanh Hóa,Xã
+,Xã Bát Mọt,15607,Tỉnh Thanh Hóa,Xã
+,Xã Yên Nhân,15610,Tỉnh Thanh Hóa,Xã
+,Xã Vạn Xuân,15622,Tỉnh Thanh Hóa,Xã
+,Xã Lương Sơn,15628,Tỉnh Thanh Hóa,Xã
+,Xã Luận Thành,15634,Tỉnh Thanh Hóa,Xã
+,Xã Thắng Lộc,15643,Tỉnh Thanh Hóa,Xã
+,Xã Thường Xuân,15646,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Chinh,15658,Tỉnh Thanh Hóa,Xã
+,Xã Tân Thành,15661,Tỉnh Thanh Hóa,Xã
+,Xã Triệu Sơn,15664,Tỉnh Thanh Hóa,Xã
+,Xã Thọ Bình,15667,Tỉnh Thanh Hóa,Xã
+,Xã Hợp Tiến,15682,Tỉnh Thanh Hóa,Xã
+,Xã Tân Ninh,15715,Tỉnh Thanh Hóa,Xã
+,Xã Đồng Tiến,15724,Tỉnh Thanh Hóa,Xã
+,Xã Thọ Ngọc,15754,Tỉnh Thanh Hóa,Xã
+,Xã Thọ Phú,15763,Tỉnh Thanh Hóa,Xã
+,Xã An Nông,15766,Tỉnh Thanh Hóa,Xã
+,Xã Thiệu Hóa,15772,Tỉnh Thanh Hóa,Xã
+,Xã Thiệu Tiến,15778,Tỉnh Thanh Hóa,Xã
+,Xã Thiệu Quang,15796,Tỉnh Thanh Hóa,Xã
+,Xã Thiệu Toán,15820,Tỉnh Thanh Hóa,Xã
+,Xã Thiệu Trung,15835,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Hóa,15865,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Giang,15880,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Phú,15889,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Sơn,15910,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Lộc,15961,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Châu,15976,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Tiến,15991,Tỉnh Thanh Hóa,Xã
+,Xã Hoằng Thanh,16000,Tỉnh Thanh Hóa,Xã
+,Xã Hậu Lộc,16012,Tỉnh Thanh Hóa,Xã
+,Xã Triệu Lộc,16021,Tỉnh Thanh Hóa,Xã
+,Xã Đông Thành,16033,Tỉnh Thanh Hóa,Xã
+,Xã Hoa Lộc,16072,Tỉnh Thanh Hóa,Xã
+,Xã Vạn Lộc,16078,Tỉnh Thanh Hóa,Xã
+,Xã Nga Sơn,16093,Tỉnh Thanh Hóa,Xã
+,Xã Tân Tiến,16108,Tỉnh Thanh Hóa,Xã
+,Xã Nga Thắng,16114,Tỉnh Thanh Hóa,Xã
+,Xã Hồ Vương,16138,Tỉnh Thanh Hóa,Xã
+,Xã Nga An,16144,Tỉnh Thanh Hóa,Xã
+,Xã Ba Đình,16171,Tỉnh Thanh Hóa,Xã
+,Xã Như Xuân,16174,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Bình,16177,Tỉnh Thanh Hóa,Xã
+,Xã Hóa Quỳ,16186,Tỉnh Thanh Hóa,Xã
+,Xã Thanh Phong,16213,Tỉnh Thanh Hóa,Xã
+,Xã Thanh Quân,16222,Tỉnh Thanh Hóa,Xã
+,Xã Thượng Ninh,16225,Tỉnh Thanh Hóa,Xã
+,Xã Như Thanh,16228,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Du,16234,Tỉnh Thanh Hóa,Xã
+,Xã Mậu Lâm,16249,Tỉnh Thanh Hóa,Xã
+,Xã Xuân Thái,16258,Tỉnh Thanh Hóa,Xã
+,Xã Yên Thọ,16264,Tỉnh Thanh Hóa,Xã
+,Xã Thanh Kỳ,16273,Tỉnh Thanh Hóa,Xã
+,Xã Nông Cống,16279,Tỉnh Thanh Hóa,Xã
+,Xã Trung Chính,16297,Tỉnh Thanh Hóa,Xã
+,Xã Thắng Lợi,16309,Tỉnh Thanh Hóa,Xã
+,Xã Thăng Bình,16342,Tỉnh Thanh Hóa,Xã
+,Xã Trường Văn,16348,Tỉnh Thanh Hóa,Xã
+,Xã Tượng Lĩnh,16363,Tỉnh Thanh Hóa,Xã
+,Xã Công Chính,16369,Tỉnh Thanh Hóa,Xã
+,Xã Lưu Vệ,16438,Tỉnh Thanh Hóa,Xã
+,Xã Quảng Yên,16480,Tỉnh Thanh Hóa,Xã
+,Xã Quảng Chính,16489,Tỉnh Thanh Hóa,Xã
+,Xã Quảng Ngọc,16498,Tỉnh Thanh Hóa,Xã
+,Xã Quảng Ninh,16540,Tỉnh Thanh Hóa,Xã
+,Xã Quảng Bình,16543,Tỉnh Thanh Hóa,Xã
+,Xã Tiên Trang,16549,Tỉnh Thanh Hóa,Xã
+,Xã Các Sơn,16591,Tỉnh Thanh Hóa,Xã
+,Xã Trường Lâm,16636,Tỉnh Thanh Hóa,Xã
+,Phường Thành Vinh,16681,Tỉnh Nghệ An,Phường
+,Phường Trường Vinh,16690,Tỉnh Nghệ An,Phường
+,Phường Vinh Phú,16702,Tỉnh Nghệ An,Phường
+,Phường Vinh Lộc,16708,Tỉnh Nghệ An,Phường
+,Phường Cửa Lò,16732,Tỉnh Nghệ An,Phường
+,Phường Thái Hòa,16939,Tỉnh Nghệ An,Phường
+,Phường Tây Hiếu,17011,Tỉnh Nghệ An,Phường
+,Phường Hoàng Mai,17110,Tỉnh Nghệ An,Phường
+,Phường Quỳnh Mai,17125,Tỉnh Nghệ An,Phường
+,Phường Tân Mai,17128,Tỉnh Nghệ An,Phường
+,Phường Vinh Hưng,17920,Tỉnh Nghệ An,Phường
+,Xã Quế Phong,16738,Tỉnh Nghệ An,Xã
+,Xã Thông Thụ,16744,Tỉnh Nghệ An,Xã
+,Xã Tiền Phong,16750,Tỉnh Nghệ An,Xã
+,Xã Tri Lễ,16756,Tỉnh Nghệ An,Xã
+,Xã Mường Quàng,16774,Tỉnh Nghệ An,Xã
+,Xã Quỳ Châu,16777,Tỉnh Nghệ An,Xã
+,Xã Châu Tiến,16792,Tỉnh Nghệ An,Xã
+,Xã Hùng Chân,16801,Tỉnh Nghệ An,Xã
+,Xã Châu Bình,16804,Tỉnh Nghệ An,Xã
+,Xã Mường Xén,16813,Tỉnh Nghệ An,Xã
+,Xã Mỹ Lý,16816,Tỉnh Nghệ An,Xã
+,Xã Bắc Lý,16819,Tỉnh Nghệ An,Xã
+,Xã Keng Đu,16822,Tỉnh Nghệ An,Xã
+,Xã Huồi Tụ,16828,Tỉnh Nghệ An,Xã
+,Xã Mường Lống,16831,Tỉnh Nghệ An,Xã
+,Xã Na Loi,16834,Tỉnh Nghệ An,Xã
+,Xã Nậm Cắn,16837,Tỉnh Nghệ An,Xã
+,Xã Hữu Kiệm,16849,Tỉnh Nghệ An,Xã
+,Xã Chiêu Lưu,16855,Tỉnh Nghệ An,Xã
+,Xã Mường Típ,16858,Tỉnh Nghệ An,Xã
+,Xã Na Ngoi,16870,Tỉnh Nghệ An,Xã
+,Xã Tương Dương,16876,Tỉnh Nghệ An,Xã
+,Xã Nhôn Mai,16882,Tỉnh Nghệ An,Xã
+,Xã Hữu Khuông,16885,Tỉnh Nghệ An,Xã
+,Xã Nga My,16903,Tỉnh Nghệ An,Xã
+,Xã Lượng Minh,16906,Tỉnh Nghệ An,Xã
+,Xã Yên Hòa,16909,Tỉnh Nghệ An,Xã
+,Xã Yên Na,16912,Tỉnh Nghệ An,Xã
+,Xã Tam Quang,16933,Tỉnh Nghệ An,Xã
+,Xã Tam Thái,16936,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Đàn,16941,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Lâm,16951,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Thọ,16969,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Hưng,16972,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Mai,16975,Tỉnh Nghệ An,Xã
+,Xã Đông Hiếu,17017,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Lộc,17029,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Khánh,17032,Tỉnh Nghệ An,Xã
+,Xã Quỳ Hợp,17035,Tỉnh Nghệ An,Xã
+,Xã Châu Hồng,17044,Tỉnh Nghệ An,Xã
+,Xã Châu Lộc,17056,Tỉnh Nghệ An,Xã
+,Xã Tam Hợp,17059,Tỉnh Nghệ An,Xã
+,Xã Minh Hợp,17071,Tỉnh Nghệ An,Xã
+,Xã Mường Ham,17077,Tỉnh Nghệ An,Xã
+,Xã Mường Chọng,17089,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Văn,17143,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Tam,17149,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Sơn,17170,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Anh,17176,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Lưu,17179,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Phú,17212,Tỉnh Nghệ An,Xã
+,Xã Quỳnh Thắng,17224,Tỉnh Nghệ An,Xã
+,Xã Bình Chuẩn,17230,Tỉnh Nghệ An,Xã
+,Xã Mậu Thạch,17239,Tỉnh Nghệ An,Xã
+,Xã Cam Phục,17242,Tỉnh Nghệ An,Xã
+,Xã Châu Khê,17248,Tỉnh Nghệ An,Xã
+,Xã Con Cuông,17254,Tỉnh Nghệ An,Xã
+,Xã Môn Sơn,17263,Tỉnh Nghệ An,Xã
+,Xã Tân Kỳ,17266,Tỉnh Nghệ An,Xã
+,Xã Tân Phú,17272,Tỉnh Nghệ An,Xã
+,Xã Giai Xuân,17278,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Đồng,17284,Tỉnh Nghệ An,Xã
+,Xã Tiên Đồng,17287,Tỉnh Nghệ An,Xã
+,Xã Tân An,17305,Tỉnh Nghệ An,Xã
+,Xã Nghĩa Hành,17326,Tỉnh Nghệ An,Xã
+,Xã Anh Sơn,17329,Tỉnh Nghệ An,Xã
+,Xã Thành Bình Thọ,17335,Tỉnh Nghệ An,Xã
+,Xã Nhân Hòa,17344,Tỉnh Nghệ An,Xã
+,Xã Vĩnh Tường,17357,Tỉnh Nghệ An,Xã
+,Xã Anh Sơn Đông,17365,Tỉnh Nghệ An,Xã
+,Xã Yên Xuân,17380,Tỉnh Nghệ An,Xã
+,Xã Hùng Châu,17395,Tỉnh Nghệ An,Xã
+,Xã Đức Châu,17416,Tỉnh Nghệ An,Xã
+,Xã Hải Châu,17419,Tỉnh Nghệ An,Xã
+,Xã Quảng Châu,17443,Tỉnh Nghệ An,Xã
+,Xã Diễn Châu,17464,Tỉnh Nghệ An,Xã
+,Xã Minh Châu,17476,Tỉnh Nghệ An,Xã
+,Xã An Châu,17479,Tỉnh Nghệ An,Xã
+,Xã Tân Châu,17488,Tỉnh Nghệ An,Xã
+,Xã Yên Thành,17506,Tỉnh Nghệ An,Xã
+,Xã Bình Minh,17515,Tỉnh Nghệ An,Xã
+,Xã Quang Đồng,17521,Tỉnh Nghệ An,Xã
+,Xã Giai Lạc,17524,Tỉnh Nghệ An,Xã
+,Xã Đông Thành,17530,Tỉnh Nghệ An,Xã
+,Xã Vân Du,17560,Tỉnh Nghệ An,Xã
+,Xã Quan Thành,17569,Tỉnh Nghệ An,Xã
+,Xã Hợp Minh,17605,Tỉnh Nghệ An,Xã
+,Xã Vân Tụ,17611,Tỉnh Nghệ An,Xã
+,Xã Bạch Ngọc,17623,Tỉnh Nghệ An,Xã
+,Xã Lương Sơn,17641,Tỉnh Nghệ An,Xã
+,Xã Đô Lương,17662,Tỉnh Nghệ An,Xã
+,Xã Văn Hiến,17677,Tỉnh Nghệ An,Xã
+,Xã Thuần Trung,17689,Tỉnh Nghệ An,Xã
+,Xã Bạch Hà,17707,Tỉnh Nghệ An,Xã
+,Xã Đại Đồng,17713,Tỉnh Nghệ An,Xã
+,Xã Hạnh Lâm,17722,Tỉnh Nghệ An,Xã
+,Xã Cát Ngạn,17728,Tỉnh Nghệ An,Xã
+,Xã Tam Đồng,17743,Tỉnh Nghệ An,Xã
+,Xã Sơn Lâm,17759,Tỉnh Nghệ An,Xã
+,Xã Hoa Quân,17770,Tỉnh Nghệ An,Xã
+,Xã Xuân Lâm,17779,Tỉnh Nghệ An,Xã
+,Xã Kim Bảng,17791,Tỉnh Nghệ An,Xã
+,Xã Bích Hào,17818,Tỉnh Nghệ An,Xã
+,Xã Nghi Lộc,17827,Tỉnh Nghệ An,Xã
+,Xã Hải Lộc,17833,Tỉnh Nghệ An,Xã
+,Xã Thần Lĩnh,17842,Tỉnh Nghệ An,Xã
+,Xã Văn Kiều,17854,Tỉnh Nghệ An,Xã
+,Xã Phúc Lộc,17857,Tỉnh Nghệ An,Xã
+,Xã Trung Lộc,17866,Tỉnh Nghệ An,Xã
+,Xã Đông Lộc,17878,Tỉnh Nghệ An,Xã
+,Xã Nam Đàn,17935,Tỉnh Nghệ An,Xã
+,Xã Đại Huệ,17944,Tỉnh Nghệ An,Xã
+,Xã Vạn An,17950,Tỉnh Nghệ An,Xã
+,Xã Kim Liên,17971,Tỉnh Nghệ An,Xã
+,Xã Thiên Nhẫn,17989,Tỉnh Nghệ An,Xã
+,Xã Hưng Nguyên,18001,Tỉnh Nghệ An,Xã
+,Xã Yên Trung,18007,Tỉnh Nghệ An,Xã
+,Xã Hưng Nguyên Nam,18028,Tỉnh Nghệ An,Xã
+,Xã Lam Thành,18040,Tỉnh Nghệ An,Xã
+,Phường Thành Sen,18073,Tỉnh Hà Tĩnh,Phường
+,Phường Trần Phú,18100,Tỉnh Hà Tĩnh,Phường
+,Phường Bắc Hồng Lĩnh,18115,Tỉnh Hà Tĩnh,Phường
+,Phường Nam Hồng Lĩnh,18118,Tỉnh Hà Tĩnh,Phường
+,Phường Hà Huy Tập,18652,Tỉnh Hà Tĩnh,Phường
+,Phường Sông Trí,18754,Tỉnh Hà Tĩnh,Phường
+,Phường Hải Ninh,18781,Tỉnh Hà Tĩnh,Phường
+,Phường Vũng Áng,18823,Tỉnh Hà Tĩnh,Phường
+,Phường Hoành Sơn,18832,Tỉnh Hà Tĩnh,Phường
+,Xã Hương Sơn,18133,Tỉnh Hà Tĩnh,Xã
+,Xã Sơn Hồng,18160,Tỉnh Hà Tĩnh,Xã
+,Xã Sơn Tiến,18163,Tỉnh Hà Tĩnh,Xã
+,Xã Sơn Tây,18172,Tỉnh Hà Tĩnh,Xã
+,Xã Sơn Giang,18184,Tỉnh Hà Tĩnh,Xã
+,Xã Sơn Kim 1,18196,Tỉnh Hà Tĩnh,Xã
+,Xã Sơn Kim 2,18199,Tỉnh Hà Tĩnh,Xã
+,Xã Tứ Mỹ,18202,Tỉnh Hà Tĩnh,Xã
+,Xã Kim Hoa,18223,Tỉnh Hà Tĩnh,Xã
+,Xã Đức Thọ,18229,Tỉnh Hà Tĩnh,Xã
+,Xã Đức Minh,18244,Tỉnh Hà Tĩnh,Xã
+,Xã Đức Quang,18262,Tỉnh Hà Tĩnh,Xã
+,Xã Đức Thịnh,18277,Tỉnh Hà Tĩnh,Xã
+,Xã Đức Đồng,18304,Tỉnh Hà Tĩnh,Xã
+,Xã Vũ Quang,18313,Tỉnh Hà Tĩnh,Xã
+,Xã Mai Hoa,18322,Tỉnh Hà Tĩnh,Xã
+,Xã Thượng Đức,18328,Tỉnh Hà Tĩnh,Xã
+,Xã Nghi Xuân,18352,Tỉnh Hà Tĩnh,Xã
+,Xã Đan Hải,18364,Tỉnh Hà Tĩnh,Xã
+,Xã Tiên Điền,18373,Tỉnh Hà Tĩnh,Xã
+,Xã Cổ Đạm,18394,Tỉnh Hà Tĩnh,Xã
+,Xã Can Lộc,18406,Tỉnh Hà Tĩnh,Xã
+,Xã Hồng Lộc,18409,Tỉnh Hà Tĩnh,Xã
+,Xã Tùng Lộc,18418,Tỉnh Hà Tĩnh,Xã
+,Xã Trường Lưu,18436,Tỉnh Hà Tĩnh,Xã
+,Xã Gia Hanh,18466,Tỉnh Hà Tĩnh,Xã
+,Xã Xuân Lộc,18481,Tỉnh Hà Tĩnh,Xã
+,Xã Đồng Lộc,18484,Tỉnh Hà Tĩnh,Xã
+,Xã Hương Khê,18496,Tỉnh Hà Tĩnh,Xã
+,Xã Hà Linh,18502,Tỉnh Hà Tĩnh,Xã
+,Xã Hương Bình,18523,Tỉnh Hà Tĩnh,Xã
+,Xã Hương Phố,18532,Tỉnh Hà Tĩnh,Xã
+,Xã Hương Xuân,18544,Tỉnh Hà Tĩnh,Xã
+,Xã Phúc Trạch,18547,Tỉnh Hà Tĩnh,Xã
+,Xã Hương Đô,18550,Tỉnh Hà Tĩnh,Xã
+,Xã Thạch Hà,18562,Tỉnh Hà Tĩnh,Xã
+,Xã Lộc Hà,18568,Tỉnh Hà Tĩnh,Xã
+,Xã Mai Phụ,18583,Tỉnh Hà Tĩnh,Xã
+,Xã Đông Kinh,18586,Tỉnh Hà Tĩnh,Xã
+,Xã Việt Xuyên,18601,Tỉnh Hà Tĩnh,Xã
+,Xã Thạch Khê,18604,Tỉnh Hà Tĩnh,Xã
+,Xã Đồng Tiến,18619,Tỉnh Hà Tĩnh,Xã
+,Xã Thạch Lạc,18628,Tỉnh Hà Tĩnh,Xã
+,Xã Toàn Lưu,18634,Tỉnh Hà Tĩnh,Xã
+,Xã Thạch Xuân,18667,Tỉnh Hà Tĩnh,Xã
+,Xã Cẩm Xuyên,18673,Tỉnh Hà Tĩnh,Xã
+,Xã Thiên Cầm,18676,Tỉnh Hà Tĩnh,Xã
+,Xã Yên Hòa,18682,Tỉnh Hà Tĩnh,Xã
+,Xã Cẩm Bình,18685,Tỉnh Hà Tĩnh,Xã
+,Xã Cẩm Hưng,18736,Tỉnh Hà Tĩnh,Xã
+,Xã Cẩm Duệ,18739,Tỉnh Hà Tĩnh,Xã
+,Xã Cẩm Trung,18742,Tỉnh Hà Tĩnh,Xã
+,Xã Cẩm Lạc,18748,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Xuân,18766,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Anh,18775,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Văn,18787,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Khang,18790,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Hoa,18814,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Lạc,18838,Tỉnh Hà Tĩnh,Xã
+,Xã Kỳ Thượng,18844,Tỉnh Hà Tĩnh,Xã
+,Phường Đồng Thuận,18859,Tỉnh Quảng Trị,Phường
+,Phường Đồng Sơn,18871,Tỉnh Quảng Trị,Phường
+,Phường Đồng Hới,18880,Tỉnh Quảng Trị,Phường
+,Phường Ba Đồn,19009,Tỉnh Quảng Trị,Phường
+,Phường Bắc Gianh,19066,Tỉnh Quảng Trị,Phường
+,Phường Đông Hà,19333,Tỉnh Quảng Trị,Phường
+,Phường Nam Đông Hà,19351,Tỉnh Quảng Trị,Phường
+,Phường Quảng Trị,19360,Tỉnh Quảng Trị,Phường
+,Xã Minh Hóa,18901,Tỉnh Quảng Trị,Xã
+,Xã Dân Hóa,18904,Tỉnh Quảng Trị,Xã
+,Xã Tân Thành,18919,Tỉnh Quảng Trị,Xã
+,Xã Kim Điền,18922,Tỉnh Quảng Trị,Xã
+,Xã Kim Phú,18943,Tỉnh Quảng Trị,Xã
+,Xã Đồng Lê,18949,Tỉnh Quảng Trị,Xã
+,Xã Tuyên Sơn,18952,Tỉnh Quảng Trị,Xã
+,Xã Tuyên Lâm,18958,Tỉnh Quảng Trị,Xã
+,Xã Tuyên Phú,18985,Tỉnh Quảng Trị,Xã
+,Xã Tuyên Bình,18991,Tỉnh Quảng Trị,Xã
+,Xã Tuyên Hóa,18997,Tỉnh Quảng Trị,Xã
+,Xã Phú Trạch,19021,Tỉnh Quảng Trị,Xã
+,Xã Trung Thuần,19030,Tỉnh Quảng Trị,Xã
+,Xã Hòa Trạch,19033,Tỉnh Quảng Trị,Xã
+,Xã Tân Gianh,19051,Tỉnh Quảng Trị,Xã
+,Xã Quảng Trạch,19057,Tỉnh Quảng Trị,Xã
+,Xã Nam Ba Đồn,19075,Tỉnh Quảng Trị,Xã
+,Xã Nam Gianh,19093,Tỉnh Quảng Trị,Xã
+,Xã Hoàn Lão,19111,Tỉnh Quảng Trị,Xã
+,Xã Bắc Trạch,19126,Tỉnh Quảng Trị,Xã
+,Xã Phong Nha,19138,Tỉnh Quảng Trị,Xã
+,Xã Bố Trạch,19141,Tỉnh Quảng Trị,Xã
+,Xã Thượng Trạch,19147,Tỉnh Quảng Trị,Xã
+,Xã Đông Trạch,19159,Tỉnh Quảng Trị,Xã
+,Xã Nam Trạch,19198,Tỉnh Quảng Trị,Xã
+,Xã Trường Sơn,19204,Tỉnh Quảng Trị,Xã
+,Xã Quảng Ninh,19207,Tỉnh Quảng Trị,Xã
+,Xã Ninh Châu,19225,Tỉnh Quảng Trị,Xã
+,Xã Trường Ninh,19237,Tỉnh Quảng Trị,Xã
+,Xã Lệ Ninh,19246,Tỉnh Quảng Trị,Xã
+,Xã Lệ Thủy,19249,Tỉnh Quảng Trị,Xã
+,Xã Cam Hồng,19255,Tỉnh Quảng Trị,Xã
+,Xã Sen Ngư,19288,Tỉnh Quảng Trị,Xã
+,Xã Tân Mỹ,19291,Tỉnh Quảng Trị,Xã
+,Xã Trường Phú,19309,Tỉnh Quảng Trị,Xã
+,Xã Kim Ngân,19318,Tỉnh Quảng Trị,Xã
+,Xã Vĩnh Linh,19363,Tỉnh Quảng Trị,Xã
+,Xã Bến Quan,19366,Tỉnh Quảng Trị,Xã
+,Xã Vĩnh Hoàng,19372,Tỉnh Quảng Trị,Xã
+,Xã Vĩnh Thủy,19405,Tỉnh Quảng Trị,Xã
+,Xã Cửa Tùng,19414,Tỉnh Quảng Trị,Xã
+,Xã Khe Sanh,19429,Tỉnh Quảng Trị,Xã
+,Xã Lao Bảo,19432,Tỉnh Quảng Trị,Xã
+,Xã Hướng Lập,19435,Tỉnh Quảng Trị,Xã
+,Xã Hướng Phùng,19441,Tỉnh Quảng Trị,Xã
+,Xã Tân Lập,19462,Tỉnh Quảng Trị,Xã
+,Xã A Dơi,19483,Tỉnh Quảng Trị,Xã
+,Xã Lìa,19489,Tỉnh Quảng Trị,Xã
+,Xã Gio Linh,19495,Tỉnh Quảng Trị,Xã
+,Xã Cửa Việt,19496,Tỉnh Quảng Trị,Xã
+,Xã Bến Hải,19501,Tỉnh Quảng Trị,Xã
+,Xã Cồn Tiên,19537,Tỉnh Quảng Trị,Xã
+,Xã Hướng Hiệp,19555,Tỉnh Quảng Trị,Xã
+,Xã Đakrông,19564,Tỉnh Quảng Trị,Xã
+,Xã Ba Lòng,19567,Tỉnh Quảng Trị,Xã
+,Xã Tà Rụt,19588,Tỉnh Quảng Trị,Xã
+,Xã La Lay,19594,Tỉnh Quảng Trị,Xã
+,Xã Cam Lộ,19597,Tỉnh Quảng Trị,Xã
+,Xã Hiếu Giang,19603,Tỉnh Quảng Trị,Xã
+,Xã Triệu Phong,19624,Tỉnh Quảng Trị,Xã
+,Xã Nam Cửa Việt,19639,Tỉnh Quảng Trị,Xã
+,Xã Triệu Bình,19645,Tỉnh Quảng Trị,Xã
+,Xã Triệu Cơ,19654,Tỉnh Quảng Trị,Xã
+,Xã Ái Tử,19669,Tỉnh Quảng Trị,Xã
+,Xã Diên Sanh,19681,Tỉnh Quảng Trị,Xã
+,Xã Vĩnh Định,19699,Tỉnh Quảng Trị,Xã
+,Xã Hải Lăng,19702,Tỉnh Quảng Trị,Xã
+,Xã Nam Hải Lăng,19735,Tỉnh Quảng Trị,Xã
+,Xã Mỹ Thủy,19741,Tỉnh Quảng Trị,Xã
+,Đặc khu Cồn Cỏ,19742,Tỉnh Quảng Trị,Đặc khu
+,Phường Phú Xuân,19753,Thành phố Huế,Phường
+,Phường Kim Long,19774,Thành phố Huế,Phường
+,Phường Vỹ Dạ,19777,Thành phố Huế,Phường
+,Phường Thuận Hóa,19789,Thành phố Huế,Phường
+,Phường Hương An,19804,Thành phố Huế,Phường
+,Phường Thủy Xuân,19813,Thành phố Huế,Phường
+,Phường An Cựu,19815,Thành phố Huế,Phường
+,Phường Phong Điền,19819,Thành phố Huế,Phường
+,Phường Phong Phú,19828,Thành phố Huế,Phường
+,Phường Phong Dinh,19831,Thành phố Huế,Phường
+,Phường Phong Thái,19858,Thành phố Huế,Phường
+,Phường Phong Quảng,19873,Thành phố Huế,Phường
+,Phường Thuận An,19900,Thành phố Huế,Phường
+,Phường Dương Nỗ,19909,Thành phố Huế,Phường
+,Phường Mỹ Thượng,19930,Thành phố Huế,Phường
+,Phường Phú Bài,19960,Thành phố Huế,Phường
+,Phường Thanh Thủy,19969,Thành phố Huế,Phường
+,Phường Hương Thủy,19975,Thành phố Huế,Phường
+,Phường Hương Trà,19996,Thành phố Huế,Phường
+,Phường Hóa Châu,20014,Thành phố Huế,Phường
+,Phường Kim Trà,20017,Thành phố Huế,Phường
+,Xã Quảng Điền,19867,Thành phố Huế,Xã
+,Xã Đan Điền,19885,Thành phố Huế,Xã
+,Xã Phú Hồ,19918,Thành phố Huế,Xã
+,Xã Phú Vang,19942,Thành phố Huế,Xã
+,Xã Phú Vinh,19945,Thành phố Huế,Xã
+,Xã Bình Điền,20035,Thành phố Huế,Xã
+,Xã A Lưới 2,20044,Thành phố Huế,Xã
+,Xã A Lưới 5,20050,Thành phố Huế,Xã
+,Xã A Lưới 1,20056,Thành phố Huế,Xã
+,Xã A Lưới 3,20071,Thành phố Huế,Xã
+,Xã A Lưới 4,20101,Thành phố Huế,Xã
+,Xã Phú Lộc,20107,Thành phố Huế,Xã
+,Xã Vinh Lộc,20122,Thành phố Huế,Xã
+,Xã Hưng Lộc,20131,Thành phố Huế,Xã
+,Xã Chân Mây - Lăng Cô,20137,Thành phố Huế,Xã
+,Xã Lộc An,20140,Thành phố Huế,Xã
+,Xã Khe Tre,20161,Thành phố Huế,Xã
+,Xã Nam Đông,20179,Thành phố Huế,Xã
+,Xã Long Quảng,20182,Thành phố Huế,Xã
+,Phường Hải Vân,20194,Thành phố Đà Nẵng,Phường
+,Phường Liên Chiểu,20197,Thành phố Đà Nẵng,Phường
+,Phường Hòa Khánh,20200,Thành phố Đà Nẵng,Phường
+,Phường Thanh Khê,20209,Thành phố Đà Nẵng,Phường
+,Phường Hải Châu,20242,Thành phố Đà Nẵng,Phường
+,Phường Hòa Cường,20257,Thành phố Đà Nẵng,Phường
+,Phường Cẩm Lệ,20260,Thành phố Đà Nẵng,Phường
+,Phường Sơn Trà,20263,Thành phố Đà Nẵng,Phường
+,Phường An Hải,20275,Thành phố Đà Nẵng,Phường
+,Phường Ngũ Hành Sơn,20285,Thành phố Đà Nẵng,Phường
+,Phường An Khê,20305,Thành phố Đà Nẵng,Phường
+,Phường Hòa Xuân,20314,Thành phố Đà Nẵng,Phường
+,Phường Bàn Thạch,20335,Thành phố Đà Nẵng,Phường
+,Phường Tam Kỳ,20341,Thành phố Đà Nẵng,Phường
+,Phường Hương Trà,20350,Thành phố Đà Nẵng,Phường
+,Phường Quảng Phú,20356,Thành phố Đà Nẵng,Phường
+,Phường Hội An Tây,20401,Thành phố Đà Nẵng,Phường
+,Phường Hội An,20410,Thành phố Đà Nẵng,Phường
+,Phường Hội An Đông,20413,Thành phố Đà Nẵng,Phường
+,Phường Điện Bàn,20551,Thành phố Đà Nẵng,Phường
+,Phường Điện Bàn Bắc,20557,Thành phố Đà Nẵng,Phường
+,Phường An Thắng,20575,Thành phố Đà Nẵng,Phường
+,Phường Điện Bàn Đông,20579,Thành phố Đà Nẵng,Phường
+,Xã Bà Nà,20308,Thành phố Đà Nẵng,Xã
+,Xã Hòa Vang,20320,Thành phố Đà Nẵng,Xã
+,Xã Hòa Tiến,20332,Thành phố Đà Nẵng,Xã
+,Xã Chiên Đàn,20364,Thành phố Đà Nẵng,Xã
+,Xã Tây Hồ,20380,Thành phố Đà Nẵng,Xã
+,Xã Phú Ninh,20392,Thành phố Đà Nẵng,Xã
+,Xã Tân Hiệp,20434,Thành phố Đà Nẵng,Xã
+,Xã Hùng Sơn,20443,Thành phố Đà Nẵng,Xã
+,Xã Tây Giang,20455,Thành phố Đà Nẵng,Xã
+,Xã Avương,20458,Thành phố Đà Nẵng,Xã
+,Xã Đông Giang,20467,Thành phố Đà Nẵng,Xã
+,Xã Sông Kôn,20476,Thành phố Đà Nẵng,Xã
+,Xã Sông Vàng,20485,Thành phố Đà Nẵng,Xã
+,Xã Bến Hiên,20494,Thành phố Đà Nẵng,Xã
+,Xã Đại Lộc,20500,Thành phố Đà Nẵng,Xã
+,Xã Thượng Đức,20506,Thành phố Đà Nẵng,Xã
+,Xã Hà Nha,20515,Thành phố Đà Nẵng,Xã
+,Xã Vu Gia,20539,Thành phố Đà Nẵng,Xã
+,Xã Phú Thuận,20542,Thành phố Đà Nẵng,Xã
+,Xã Điện Bàn Tây,20569,Thành phố Đà Nẵng,Xã
+,Xã Gò Nổi,20587,Thành phố Đà Nẵng,Xã
+,Xã Nam Phước,20599,Thành phố Đà Nẵng,Xã
+,Xã Thu Bồn,20611,Thành phố Đà Nẵng,Xã
+,Xã Duy Xuyên,20623,Thành phố Đà Nẵng,Xã
+,Xã Duy Nghĩa,20635,Thành phố Đà Nẵng,Xã
+,Xã Quế Sơn,20641,Thành phố Đà Nẵng,Xã
+,Xã Xuân Phú,20650,Thành phố Đà Nẵng,Xã
+,Xã Nông Sơn,20656,Thành phố Đà Nẵng,Xã
+,Xã Quế Sơn Trung,20662,Thành phố Đà Nẵng,Xã
+,Xã Quế Phước,20669,Thành phố Đà Nẵng,Xã
+,Xã Thạnh Mỹ,20695,Thành phố Đà Nẵng,Xã
+,Xã La Êê,20698,Thành phố Đà Nẵng,Xã
+,Xã La Dêê,20704,Thành phố Đà Nẵng,Xã
+,Xã Nam Giang,20707,Thành phố Đà Nẵng,Xã
+,Xã Bến Giằng,20710,Thành phố Đà Nẵng,Xã
+,Xã Đắc Pring,20716,Thành phố Đà Nẵng,Xã
+,Xã Khâm Đức,20722,Thành phố Đà Nẵng,Xã
+,Xã Phước Hiệp,20728,Thành phố Đà Nẵng,Xã
+,Xã Phước Năng,20734,Thành phố Đà Nẵng,Xã
+,Xã Phước Chánh,20740,Thành phố Đà Nẵng,Xã
+,Xã Phước Thành,20752,Thành phố Đà Nẵng,Xã
+,Xã Việt An,20767,Thành phố Đà Nẵng,Xã
+,Xã Phước Trà,20770,Thành phố Đà Nẵng,Xã
+,Xã Hiệp Đức,20779,Thành phố Đà Nẵng,Xã
+,Xã Thăng Bình,20791,Thành phố Đà Nẵng,Xã
+,Xã Thăng An,20794,Thành phố Đà Nẵng,Xã
+,Xã Đồng Dương,20818,Thành phố Đà Nẵng,Xã
+,Xã Thăng Phú,20827,Thành phố Đà Nẵng,Xã
+,Xã Thăng Trường,20836,Thành phố Đà Nẵng,Xã
+,Xã Thăng Điền,20848,Thành phố Đà Nẵng,Xã
+,Xã Tiên Phước,20854,Thành phố Đà Nẵng,Xã
+,Xã Sơn Cẩm Hà,20857,Thành phố Đà Nẵng,Xã
+,Xã Lãnh Ngọc,20875,Thành phố Đà Nẵng,Xã
+,Xã Thạnh Bình,20878,Thành phố Đà Nẵng,Xã
+,Xã Trà My,20900,Thành phố Đà Nẵng,Xã
+,Xã Trà Liên,20908,Thành phố Đà Nẵng,Xã
+,Xã Trà Đốc,20920,Thành phố Đà Nẵng,Xã
+,Xã Trà Tân,20923,Thành phố Đà Nẵng,Xã
+,Xã Trà Giáp,20929,Thành phố Đà Nẵng,Xã
+,Xã Trà Leng,20938,Thành phố Đà Nẵng,Xã
+,Xã Trà Tập,20941,Thành phố Đà Nẵng,Xã
+,Xã Nam Trà My,20944,Thành phố Đà Nẵng,Xã
+,Xã Trà Linh,20950,Thành phố Đà Nẵng,Xã
+,Xã Trà Vân,20959,Thành phố Đà Nẵng,Xã
+,Xã Núi Thành,20965,Thành phố Đà Nẵng,Xã
+,Xã Tam Xuân,20971,Thành phố Đà Nẵng,Xã
+,Xã Đức Phú,20977,Thành phố Đà Nẵng,Xã
+,Xã Tam Anh,20984,Thành phố Đà Nẵng,Xã
+,Xã Tam Hải,20992,Thành phố Đà Nẵng,Xã
+,Xã Tam Mỹ,21004,Thành phố Đà Nẵng,Xã
+,Đặc khu Hoàng Sa,20333,Thành phố Đà Nẵng,Đặc khu
+,Phường Cẩm Thành,21025,Tỉnh Quảng Ngãi,Phường
+,Phường Nghĩa Lộ,21028,Tỉnh Quảng Ngãi,Phường
+,Phường Trương Quang Trọng,21172,Tỉnh Quảng Ngãi,Phường
+,Phường Đức Phổ,21439,Tỉnh Quảng Ngãi,Phường
+,Phường Trà Câu,21451,Tỉnh Quảng Ngãi,Phường
+,Phường Sa Huỳnh,21478,Tỉnh Quảng Ngãi,Phường
+,Phường Đăk Cấm,23284,Tỉnh Quảng Ngãi,Phường
+,Phường Kon Tum,23293,Tỉnh Quảng Ngãi,Phường
+,Phường Đăk Bla,23302,Tỉnh Quảng Ngãi,Phường
+,Xã An Phú,21034,Tỉnh Quảng Ngãi,Xã
+,Xã Bình Sơn,21040,Tỉnh Quảng Ngãi,Xã
+,Xã Vạn Tường,21061,Tỉnh Quảng Ngãi,Xã
+,Xã Bình Minh,21085,Tỉnh Quảng Ngãi,Xã
+,Xã Bình Chương,21100,Tỉnh Quảng Ngãi,Xã
+,Xã Đông Sơn,21109,Tỉnh Quảng Ngãi,Xã
+,Xã Trà Bồng,21115,Tỉnh Quảng Ngãi,Xã
+,Xã Thanh Bồng,21124,Tỉnh Quảng Ngãi,Xã
+,Xã Đông Trà Bồng,21127,Tỉnh Quảng Ngãi,Xã
+,Xã Cà Đam,21136,Tỉnh Quảng Ngãi,Xã
+,Xã Tây Trà,21154,Tỉnh Quảng Ngãi,Xã
+,Xã Tây Trà Bồng,21157,Tỉnh Quảng Ngãi,Xã
+,Xã Thọ Phong,21181,Tỉnh Quảng Ngãi,Xã
+,Xã Trường Giang,21196,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Gia,21205,Tỉnh Quảng Ngãi,Xã
+,Xã Tịnh Khê,21211,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Tịnh,21220,Tỉnh Quảng Ngãi,Xã
+,Xã Tư Nghĩa,21235,Tỉnh Quảng Ngãi,Xã
+,Xã Vệ Giang,21238,Tỉnh Quảng Ngãi,Xã
+,Xã Trà Giang,21244,Tỉnh Quảng Ngãi,Xã
+,Xã Nghĩa Giang,21250,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Hà,21289,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Hạ,21292,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Linh,21307,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Thủy,21319,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Kỳ,21325,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Tây Thượng,21334,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Tây,21340,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Tây Hạ,21343,Tỉnh Quảng Ngãi,Xã
+,Xã Sơn Mai,21349,Tỉnh Quảng Ngãi,Xã
+,Xã Minh Long,21361,Tỉnh Quảng Ngãi,Xã
+,Xã Nghĩa Hành,21364,Tỉnh Quảng Ngãi,Xã
+,Xã Phước Giang,21370,Tỉnh Quảng Ngãi,Xã
+,Xã Đình Cương,21385,Tỉnh Quảng Ngãi,Xã
+,Xã Thiện Tín,21388,Tỉnh Quảng Ngãi,Xã
+,Xã Mộ Đức,21400,Tỉnh Quảng Ngãi,Xã
+,Xã Long Phụng,21409,Tỉnh Quảng Ngãi,Xã
+,Xã Mỏ Cày,21421,Tỉnh Quảng Ngãi,Xã
+,Xã Lân Phong,21433,Tỉnh Quảng Ngãi,Xã
+,Xã Nguyễn Nghiêm,21457,Tỉnh Quảng Ngãi,Xã
+,Xã Khánh Cường,21472,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Tơ,21484,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Vinh,21490,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Động,21496,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Dinh,21499,Tỉnh Quảng Ngãi,Xã
+,Xã Đặng Thùy Trâm,21520,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Tô,21523,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Vì,21529,Tỉnh Quảng Ngãi,Xã
+,Xã Ba Xa,21538,Tỉnh Quảng Ngãi,Xã
+,Xã Ngọk Bay,23317,Tỉnh Quảng Ngãi,Xã
+,Xã Ia Chim,23326,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Rơ Wa,23332,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Pék,23341,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Plô,23344,Tỉnh Quảng Ngãi,Xã
+,Xã Xốp,23356,Tỉnh Quảng Ngãi,Xã
+,Xã Ngọc Linh,23365,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Long,23368,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Môn,23374,Tỉnh Quảng Ngãi,Xã
+,Xã Bờ Y,23377,Tỉnh Quảng Ngãi,Xã
+,Xã Dục Nông,23383,Tỉnh Quảng Ngãi,Xã
+,Xã Sa Loong,23392,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Tô,23401,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Sao,23416,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Tờ Kan,23419,Tỉnh Quảng Ngãi,Xã
+,Xã Tu Mơ Rông,23425,Tỉnh Quảng Ngãi,Xã
+,Xã Ngọk Tụ,23428,Tỉnh Quảng Ngãi,Xã
+,Xã Kon Đào,23430,Tỉnh Quảng Ngãi,Xã
+,Xã Măng Ri,23446,Tỉnh Quảng Ngãi,Xã
+,Xã Măng Bút,23455,Tỉnh Quảng Ngãi,Xã
+,Xã Măng Đen,23473,Tỉnh Quảng Ngãi,Xã
+,Xã Kon Plông,23476,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Rve,23479,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Kôi,23485,Tỉnh Quảng Ngãi,Xã
+,Xã Kon Braih,23497,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Hà,23500,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Pxi,23504,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Ui,23510,Tỉnh Quảng Ngãi,Xã
+,Xã Đăk Mar,23512,Tỉnh Quảng Ngãi,Xã
+,Xã Ngọk Réo,23515,Tỉnh Quảng Ngãi,Xã
+,Xã Sa Thầy,23527,Tỉnh Quảng Ngãi,Xã
+,Xã Rờ Kơi,23530,Tỉnh Quảng Ngãi,Xã
+,Xã Sa Bình,23534,Tỉnh Quảng Ngãi,Xã
+,Xã Ia Đal,23535,Tỉnh Quảng Ngãi,Xã
+,Xã Mô Rai,23536,Tỉnh Quảng Ngãi,Xã
+,Xã Ia Tơi,23538,Tỉnh Quảng Ngãi,Xã
+,Xã Ya Ly,23548,Tỉnh Quảng Ngãi,Xã
+,Đặc khu Lý Sơn,21548,Tỉnh Quảng Ngãi,Đặc khu
+,Phường Quy Nhơn Bắc,21553,Tỉnh Gia Lai,Phường
+,Phường Quy Nhơn,21583,Tỉnh Gia Lai,Phường
+,Phường Quy Nhơn Tây,21589,Tỉnh Gia Lai,Phường
+,Phường Quy Nhơn Nam,21592,Tỉnh Gia Lai,Phường
+,Phường Quy Nhơn Đông,21601,Tỉnh Gia Lai,Phường
+,Phường Tam Quan,21637,Tỉnh Gia Lai,Phường
+,Phường Bồng Sơn,21640,Tỉnh Gia Lai,Phường
+,Phường Hoài Nhơn Bắc,21655,Tỉnh Gia Lai,Phường
+,Phường Hoài Nhơn Tây,21661,Tỉnh Gia Lai,Phường
+,Phường Hoài Nhơn,21664,Tỉnh Gia Lai,Phường
+,Phường Hoài Nhơn Đông,21670,Tỉnh Gia Lai,Phường
+,Phường Hoài Nhơn Nam,21673,Tỉnh Gia Lai,Phường
+,Phường Bình Định,21907,Tỉnh Gia Lai,Phường
+,Phường An Nhơn,21910,Tỉnh Gia Lai,Phường
+,Phường An Nhơn Bắc,21925,Tỉnh Gia Lai,Phường
+,Phường An Nhơn Đông,21934,Tỉnh Gia Lai,Phường
+,Phường An Nhơn Nam,21943,Tỉnh Gia Lai,Phường
+,Phường Diên Hồng,23563,Tỉnh Gia Lai,Phường
+,Phường Pleiku,23575,Tỉnh Gia Lai,Phường
+,Phường Thống Nhất,23584,Tỉnh Gia Lai,Phường
+,Phường Hội Phú,23586,Tỉnh Gia Lai,Phường
+,Phường An Phú,23602,Tỉnh Gia Lai,Phường
+,Phường An Bình,23614,Tỉnh Gia Lai,Phường
+,Phường An Khê,23617,Tỉnh Gia Lai,Phường
+,Phường Ayun Pa,24044,Tỉnh Gia Lai,Phường
+,Xã Nhơn Châu,21607,Tỉnh Gia Lai,Xã
+,Xã An Lão,21609,Tỉnh Gia Lai,Xã
+,Xã An Vinh,21616,Tỉnh Gia Lai,Xã
+,Xã An Toàn,21622,Tỉnh Gia Lai,Xã
+,Xã An Hòa,21628,Tỉnh Gia Lai,Xã
+,Xã Hoài Ân,21688,Tỉnh Gia Lai,Xã
+,Xã Ân Hảo,21697,Tỉnh Gia Lai,Xã
+,Xã Vạn Đức,21703,Tỉnh Gia Lai,Xã
+,Xã Ân Tường,21715,Tỉnh Gia Lai,Xã
+,Xã Kim Sơn,21727,Tỉnh Gia Lai,Xã
+,Xã Phù Mỹ,21730,Tỉnh Gia Lai,Xã
+,Xã Bình Dương,21733,Tỉnh Gia Lai,Xã
+,Xã Phù Mỹ Bắc,21739,Tỉnh Gia Lai,Xã
+,Xã Phù Mỹ Đông,21751,Tỉnh Gia Lai,Xã
+,Xã Phù Mỹ Tây,21757,Tỉnh Gia Lai,Xã
+,Xã An Lương,21769,Tỉnh Gia Lai,Xã
+,Xã Phù Mỹ Nam,21775,Tỉnh Gia Lai,Xã
+,Xã Vĩnh Thạnh,21786,Tỉnh Gia Lai,Xã
+,Xã Vĩnh Sơn,21787,Tỉnh Gia Lai,Xã
+,Xã Vĩnh Thịnh,21796,Tỉnh Gia Lai,Xã
+,Xã Vĩnh Quang,21805,Tỉnh Gia Lai,Xã
+,Xã Tây Sơn,21808,Tỉnh Gia Lai,Xã
+,Xã Bình Hiệp,21817,Tỉnh Gia Lai,Xã
+,Xã Bình Khê,21820,Tỉnh Gia Lai,Xã
+,Xã Bình An,21829,Tỉnh Gia Lai,Xã
+,Xã Bình Phú,21835,Tỉnh Gia Lai,Xã
+,Xã Phù Cát,21853,Tỉnh Gia Lai,Xã
+,Xã Đề Gi,21859,Tỉnh Gia Lai,Xã
+,Xã Hội Sơn,21868,Tỉnh Gia Lai,Xã
+,Xã Hòa Hội,21871,Tỉnh Gia Lai,Xã
+,Xã Cát Tiến,21880,Tỉnh Gia Lai,Xã
+,Xã Xuân An,21892,Tỉnh Gia Lai,Xã
+,Xã Ngô Mây,21901,Tỉnh Gia Lai,Xã
+,Xã An Nhơn Tây,21940,Tỉnh Gia Lai,Xã
+,Xã Tuy Phước,21952,Tỉnh Gia Lai,Xã
+,Xã Tuy Phước Bắc,21964,Tỉnh Gia Lai,Xã
+,Xã Tuy Phước Đông,21970,Tỉnh Gia Lai,Xã
+,Xã Tuy Phước Tây,21985,Tỉnh Gia Lai,Xã
+,Xã Vân Canh,21994,Tỉnh Gia Lai,Xã
+,Xã Canh Liên,21997,Tỉnh Gia Lai,Xã
+,Xã Canh Vinh,22006,Tỉnh Gia Lai,Xã
+,Xã Biển Hồ,23590,Tỉnh Gia Lai,Xã
+,Xã Gào,23611,Tỉnh Gia Lai,Xã
+,Xã Cửu An,23629,Tỉnh Gia Lai,Xã
+,Xã Kbang,23638,Tỉnh Gia Lai,Xã
+,Xã Đak Rong,23644,Tỉnh Gia Lai,Xã
+,Xã Sơn Lang,23647,Tỉnh Gia Lai,Xã
+,Xã Krong,23650,Tỉnh Gia Lai,Xã
+,Xã Tơ Tung,23668,Tỉnh Gia Lai,Xã
+,Xã Kông Bơ La,23674,Tỉnh Gia Lai,Xã
+,Xã Đak Đoa,23677,Tỉnh Gia Lai,Xã
+,Xã Đak Sơmei,23683,Tỉnh Gia Lai,Xã
+,Xã Kon Gang,23701,Tỉnh Gia Lai,Xã
+,Xã Ia Băng,23710,Tỉnh Gia Lai,Xã
+,Xã KDang,23714,Tỉnh Gia Lai,Xã
+,Xã Chư Păh,23722,Tỉnh Gia Lai,Xã
+,Xã Ia Khươl,23728,Tỉnh Gia Lai,Xã
+,Xã Ia Ly,23734,Tỉnh Gia Lai,Xã
+,Xã Ia Mơ,23938,Tỉnh Gia Lai,Xã
+,Xã Ia Phí,23749,Tỉnh Gia Lai,Xã
+,Xã Ia Grai,23764,Tỉnh Gia Lai,Xã
+,Xã Ia Hrung,23767,Tỉnh Gia Lai,Xã
+,Xã Ia Krái,23776,Tỉnh Gia Lai,Xã
+,Xã Ia O,23782,Tỉnh Gia Lai,Xã
+,Xã Ia Chia,23788,Tỉnh Gia Lai,Xã
+,Xã Mang Yang,23794,Tỉnh Gia Lai,Xã
+,Xã Ayun,23798,Tỉnh Gia Lai,Xã
+,Xã Hra,23799,Tỉnh Gia Lai,Xã
+,Xã Lơ Pang,23812,Tỉnh Gia Lai,Xã
+,Xã Kon Chiêng,23818,Tỉnh Gia Lai,Xã
+,Xã Kông Chro,23824,Tỉnh Gia Lai,Xã
+,Xã Chư Krey,23830,Tỉnh Gia Lai,Xã
+,Xã Ya Ma,23833,Tỉnh Gia Lai,Xã
+,Xã SRó,23839,Tỉnh Gia Lai,Xã
+,Xã Đăk Song,23842,Tỉnh Gia Lai,Xã
+,Xã Chơ Long,23851,Tỉnh Gia Lai,Xã
+,Xã Đức Cơ,23857,Tỉnh Gia Lai,Xã
+,Xã Ia Krêl,23866,Tỉnh Gia Lai,Xã
+,Xã Ia Dơk,23869,Tỉnh Gia Lai,Xã
+,Xã Ia Dom,23872,Tỉnh Gia Lai,Xã
+,Xã Ia Pnôn,23881,Tỉnh Gia Lai,Xã
+,Xã Ia Nan,23884,Tỉnh Gia Lai,Xã
+,Xã Chư Prông,23887,Tỉnh Gia Lai,Xã
+,Xã Bàu Cạn,23896,Tỉnh Gia Lai,Xã
+,Xã Ia Tôr,23908,Tỉnh Gia Lai,Xã
+,Xã Ia Boòng,23911,Tỉnh Gia Lai,Xã
+,Xã Ia Púch,23917,Tỉnh Gia Lai,Xã
+,Xã Ia Pia,23926,Tỉnh Gia Lai,Xã
+,Xã Ia Lâu,23935,Tỉnh Gia Lai,Xã
+,Xã Chư Sê,23941,Tỉnh Gia Lai,Xã
+,Xã Chư Pưh,23942,Tỉnh Gia Lai,Xã
+,Xã Bờ Ngoong,23947,Tỉnh Gia Lai,Xã
+,Xã Al Bá,23954,Tỉnh Gia Lai,Xã
+,Xã Ia Hrú,23971,Tỉnh Gia Lai,Xã
+,Xã Ia Ko,23977,Tỉnh Gia Lai,Xã
+,Xã Ia Le,23986,Tỉnh Gia Lai,Xã
+,Xã Đak Pơ,23995,Tỉnh Gia Lai,Xã
+,Xã Ya Hội,24007,Tỉnh Gia Lai,Xã
+,Xã Pờ Tó,24013,Tỉnh Gia Lai,Xã
+,Xã Ia Pa,24022,Tỉnh Gia Lai,Xã
+,Xã Ia Tul,24028,Tỉnh Gia Lai,Xã
+,Xã Phú Thiện,24043,Tỉnh Gia Lai,Xã
+,Xã Chư A Thai,24049,Tỉnh Gia Lai,Xã
+,Xã Ia Hiao,24061,Tỉnh Gia Lai,Xã
+,Xã Ia Rbol,24065,Tỉnh Gia Lai,Xã
+,Xã Ia Sao,24073,Tỉnh Gia Lai,Xã
+,Xã Phú Túc,24076,Tỉnh Gia Lai,Xã
+,Xã Ia Dreh,24100,Tỉnh Gia Lai,Xã
+,Xã Uar,24109,Tỉnh Gia Lai,Xã
+,Xã Ia Rsai,24112,Tỉnh Gia Lai,Xã
+,Phường Bắc Nha Trang,22333,Tỉnh Khánh Hòa,Phường
+,Phường Nha Trang,22366,Tỉnh Khánh Hòa,Phường
+,Phường Tây Nha Trang,22390,Tỉnh Khánh Hòa,Phường
+,Phường Nam Nha Trang,22402,Tỉnh Khánh Hòa,Phường
+,Phường Bắc Cam Ranh,22411,Tỉnh Khánh Hòa,Phường
+,Phường Cam Ranh,22420,Tỉnh Khánh Hòa,Phường
+,Phường Ba Ngòi,22423,Tỉnh Khánh Hòa,Phường
+,Phường Cam Linh,22432,Tỉnh Khánh Hòa,Phường
+,Phường Ninh Hòa,22528,Tỉnh Khánh Hòa,Phường
+,Phường Đông Ninh Hòa,22561,Tỉnh Khánh Hòa,Phường
+,Phường Hòa Thắng,22591,Tỉnh Khánh Hòa,Phường
+,Phường Đô Vinh,22738,Tỉnh Khánh Hòa,Phường
+,Phường Bảo An,22741,Tỉnh Khánh Hòa,Phường
+,Phường Phan Rang,22759,Tỉnh Khánh Hòa,Phường
+,Phường Đông Hải,22780,Tỉnh Khánh Hòa,Phường
+,Phường Ninh Chử,22834,Tỉnh Khánh Hòa,Phường
+,Xã Cam Hiệp,22435,Tỉnh Khánh Hòa,Xã
+,Xã Cam Lâm,22453,Tỉnh Khánh Hòa,Xã
+,Xã Cam An,22465,Tỉnh Khánh Hòa,Xã
+,Xã Nam Cam Ranh,22480,Tỉnh Khánh Hòa,Xã
+,Xã Vạn Ninh,22489,Tỉnh Khánh Hòa,Xã
+,Xã Tu Bông,22498,Tỉnh Khánh Hòa,Xã
+,Xã Đại Lãnh,22504,Tỉnh Khánh Hòa,Xã
+,Xã Vạn Thắng,22516,Tỉnh Khánh Hòa,Xã
+,Xã Vạn Hưng,22525,Tỉnh Khánh Hòa,Xã
+,Xã Bắc Ninh Hòa,22546,Tỉnh Khánh Hòa,Xã
+,Xã Tây Ninh Hòa,22552,Tỉnh Khánh Hòa,Xã
+,Xã Hòa Trí,22558,Tỉnh Khánh Hòa,Xã
+,Xã Tân Định,22576,Tỉnh Khánh Hòa,Xã
+,Xã Nam Ninh Hòa,22597,Tỉnh Khánh Hòa,Xã
+,Xã Khánh Vĩnh,22609,Tỉnh Khánh Hòa,Xã
+,Xã Trung Khánh Vĩnh,22612,Tỉnh Khánh Hòa,Xã
+,Xã Bắc Khánh Vĩnh,22615,Tỉnh Khánh Hòa,Xã
+,Xã Tây Khánh Vĩnh,22624,Tỉnh Khánh Hòa,Xã
+,Xã Nam Khánh Vĩnh,22648,Tỉnh Khánh Hòa,Xã
+,Xã Diên Khánh,22651,Tỉnh Khánh Hòa,Xã
+,Xã Diên Điền,22657,Tỉnh Khánh Hòa,Xã
+,Xã Diên Lâm,22660,Tỉnh Khánh Hòa,Xã
+,Xã Diên Thọ,22672,Tỉnh Khánh Hòa,Xã
+,Xã Diên Lạc,22678,Tỉnh Khánh Hòa,Xã
+,Xã Suối Hiệp,22702,Tỉnh Khánh Hòa,Xã
+,Xã Suối Dầu,22708,Tỉnh Khánh Hòa,Xã
+,Xã Khánh Sơn,22714,Tỉnh Khánh Hòa,Xã
+,Xã Tây Khánh Sơn,22720,Tỉnh Khánh Hòa,Xã
+,Xã Đông Khánh Sơn,22732,Tỉnh Khánh Hòa,Xã
+,Xã Bác Ái Tây,22786,Tỉnh Khánh Hòa,Xã
+,Xã Bác Ái,22795,Tỉnh Khánh Hòa,Xã
+,Xã Bác Ái Đông,22801,Tỉnh Khánh Hòa,Xã
+,Xã Ninh Sơn,22810,Tỉnh Khánh Hòa,Xã
+,Xã Lâm Sơn,22813,Tỉnh Khánh Hòa,Xã
+,Xã Mỹ Sơn,22822,Tỉnh Khánh Hòa,Xã
+,Xã Anh Dũng,22828,Tỉnh Khánh Hòa,Xã
+,Xã Công Hải,22840,Tỉnh Khánh Hòa,Xã
+,Xã Vĩnh Hải,22846,Tỉnh Khánh Hòa,Xã
+,Xã Thuận Bắc,22849,Tỉnh Khánh Hòa,Xã
+,Xã Ninh Hải,22852,Tỉnh Khánh Hòa,Xã
+,Xã Xuân Hải,22861,Tỉnh Khánh Hòa,Xã
+,Xã Ninh Phước,22870,Tỉnh Khánh Hòa,Xã
+,Xã Phước Hậu,22873,Tỉnh Khánh Hòa,Xã
+,Xã Phước Dinh,22888,Tỉnh Khánh Hòa,Xã
+,Xã Phước Hữu,22891,Tỉnh Khánh Hòa,Xã
+,Xã Thuận Nam,22897,Tỉnh Khánh Hòa,Xã
+,Xã Phước Hà,22900,Tỉnh Khánh Hòa,Xã
+,Xã Cà Ná,22909,Tỉnh Khánh Hòa,Xã
+,Đặc khu Trường Sa,22736,Tỉnh Khánh Hòa,Đặc khu
+,Phường Tuy Hòa,22015,Tỉnh Đắk Lắk,Phường
+,Phường Bình Kiến,22045,Tỉnh Đắk Lắk,Phường
+,Phường Sông Cầu,22051,Tỉnh Đắk Lắk,Phường
+,Phường Xuân Đài,22076,Tỉnh Đắk Lắk,Phường
+,Phường Phú Yên,22240,Tỉnh Đắk Lắk,Phường
+,Phường Đông Hòa,22258,Tỉnh Đắk Lắk,Phường
+,Phường Hòa Hiệp,22261,Tỉnh Đắk Lắk,Phường
+,Phường Tân Lập,24121,Tỉnh Đắk Lắk,Phường
+,Phường Buôn Ma Thuột,24133,Tỉnh Đắk Lắk,Phường
+,Phường Thành Nhất,24154,Tỉnh Đắk Lắk,Phường
+,Phường Tân An,24163,Tỉnh Đắk Lắk,Phường
+,Phường Ea Kao,24169,Tỉnh Đắk Lắk,Phường
+,Phường Buôn Hồ,24305,Tỉnh Đắk Lắk,Phường
+,Phường Cư Bao,24340,Tỉnh Đắk Lắk,Phường
+,Xã Xuân Lộc,22057,Tỉnh Đắk Lắk,Xã
+,Xã Xuân Cảnh,22060,Tỉnh Đắk Lắk,Xã
+,Xã Xuân Thọ,22075,Tỉnh Đắk Lắk,Xã
+,Xã Đồng Xuân,22081,Tỉnh Đắk Lắk,Xã
+,Xã Xuân Lãnh,22090,Tỉnh Đắk Lắk,Xã
+,Xã Phú Mỡ,22096,Tỉnh Đắk Lắk,Xã
+,Xã Xuân Phước,22111,Tỉnh Đắk Lắk,Xã
+,Xã Tuy An Bắc,22114,Tỉnh Đắk Lắk,Xã
+,Xã Tuy An Đông,22120,Tỉnh Đắk Lắk,Xã
+,Xã Tuy An Tây,22132,Tỉnh Đắk Lắk,Xã
+,Xã Ô Loan,22147,Tỉnh Đắk Lắk,Xã
+,Xã Tuy An Nam,22153,Tỉnh Đắk Lắk,Xã
+,Xã Sơn Hòa,22165,Tỉnh Đắk Lắk,Xã
+,Xã Tây Sơn,22171,Tỉnh Đắk Lắk,Xã
+,Xã Vân Hòa,22177,Tỉnh Đắk Lắk,Xã
+,Xã Suối Trai,22192,Tỉnh Đắk Lắk,Xã
+,Xã Sông Hinh,22207,Tỉnh Đắk Lắk,Xã
+,Xã Đức Bình,22222,Tỉnh Đắk Lắk,Xã
+,Xã Ea Bá,22225,Tỉnh Đắk Lắk,Xã
+,Xã Ea Ly,22237,Tỉnh Đắk Lắk,Xã
+,Xã Sơn Thành,22250,Tỉnh Đắk Lắk,Xã
+,Xã Tây Hòa,22255,Tỉnh Đắk Lắk,Xã
+,Xã Hòa Thịnh,22276,Tỉnh Đắk Lắk,Xã
+,Xã Hòa Mỹ,22285,Tỉnh Đắk Lắk,Xã
+,Xã Hòa Xuân,22291,Tỉnh Đắk Lắk,Xã
+,Xã Phú Hòa 2,22303,Tỉnh Đắk Lắk,Xã
+,Xã Phú Hòa 1,22319,Tỉnh Đắk Lắk,Xã
+,Xã Hòa Phú,24175,Tỉnh Đắk Lắk,Xã
+,Xã Ea Drăng,24181,Tỉnh Đắk Lắk,Xã
+,Xã Ea H'Leo,24184,Tỉnh Đắk Lắk,Xã
+,Xã Ea Hiao,24187,Tỉnh Đắk Lắk,Xã
+,Xã Ea Wy,24193,Tỉnh Đắk Lắk,Xã
+,Xã Ea Khăl,24208,Tỉnh Đắk Lắk,Xã
+,Xã Ea Súp,24211,Tỉnh Đắk Lắk,Xã
+,Xã Ia Lốp,24214,Tỉnh Đắk Lắk,Xã
+,Xã Ea Rốk,24217,Tỉnh Đắk Lắk,Xã
+,Xã Ia Rvê,24221,Tỉnh Đắk Lắk,Xã
+,Xã Ea Bung,24229,Tỉnh Đắk Lắk,Xã
+,Xã Buôn Đôn,24235,Tỉnh Đắk Lắk,Xã
+,Xã Ea Wer,24241,Tỉnh Đắk Lắk,Xã
+,Xã Ea Nuôl,24250,Tỉnh Đắk Lắk,Xã
+,Xã Quảng Phú,24259,Tỉnh Đắk Lắk,Xã
+,Xã Ea Kiết,24265,Tỉnh Đắk Lắk,Xã
+,Xã Ea Tul,24277,Tỉnh Đắk Lắk,Xã
+,Xã Cư M'gar,24280,Tỉnh Đắk Lắk,Xã
+,Xã Ea M'Droh,24286,Tỉnh Đắk Lắk,Xã
+,Xã Cuôr Đăng,24301,Tỉnh Đắk Lắk,Xã
+,Xã Krông Búk,24310,Tỉnh Đắk Lắk,Xã
+,Xã Cư Pơng,24313,Tỉnh Đắk Lắk,Xã
+,Xã Pơng Drang,24316,Tỉnh Đắk Lắk,Xã
+,Xã Ea Drông,24328,Tỉnh Đắk Lắk,Xã
+,Xã Krông Năng,24343,Tỉnh Đắk Lắk,Xã
+,Xã Dliê Ya,24346,Tỉnh Đắk Lắk,Xã
+,Xã Tam Giang,24352,Tỉnh Đắk Lắk,Xã
+,Xã Phú Xuân,24364,Tỉnh Đắk Lắk,Xã
+,Xã Ea Kar,24373,Tỉnh Đắk Lắk,Xã
+,Xã Ea Knốp,24376,Tỉnh Đắk Lắk,Xã
+,Xã Ea Păl,24400,Tỉnh Đắk Lắk,Xã
+,Xã Ea Ô,24403,Tỉnh Đắk Lắk,Xã
+,Xã Cư Yang,24406,Tỉnh Đắk Lắk,Xã
+,Xã M'Drắk,24412,Tỉnh Đắk Lắk,Xã
+,Xã Cư Prao,24415,Tỉnh Đắk Lắk,Xã
+,Xã Ea Riêng,24433,Tỉnh Đắk Lắk,Xã
+,Xã Cư M'ta,24436,Tỉnh Đắk Lắk,Xã
+,Xã Krông Á,24444,Tỉnh Đắk Lắk,Xã
+,Xã Ea Trang,24445,Tỉnh Đắk Lắk,Xã
+,Xã Krông Bông,24448,Tỉnh Đắk Lắk,Xã
+,Xã Dang Kang,24454,Tỉnh Đắk Lắk,Xã
+,Xã Hòa Sơn,24472,Tỉnh Đắk Lắk,Xã
+,Xã Cư Pui,24478,Tỉnh Đắk Lắk,Xã
+,Xã Yang Mao,24484,Tỉnh Đắk Lắk,Xã
+,Xã Krông Pắc,24490,Tỉnh Đắk Lắk,Xã
+,Xã Ea Kly,24496,Tỉnh Đắk Lắk,Xã
+,Xã Ea Phê,24502,Tỉnh Đắk Lắk,Xã
+,Xã Ea Knuếc,24505,Tỉnh Đắk Lắk,Xã
+,Xã Tân Tiến,24526,Tỉnh Đắk Lắk,Xã
+,Xã Vụ Bổn,24529,Tỉnh Đắk Lắk,Xã
+,Xã Krông Ana,24538,Tỉnh Đắk Lắk,Xã
+,Xã Ea Ning,24540,Tỉnh Đắk Lắk,Xã
+,Xã Ea Ktur,24544,Tỉnh Đắk Lắk,Xã
+,Xã Ea Na,24559,Tỉnh Đắk Lắk,Xã
+,Xã Dray Bhăng,24561,Tỉnh Đắk Lắk,Xã
+,Xã Dur Kmăl,24568,Tỉnh Đắk Lắk,Xã
+,Xã Liên Sơn Lắk,24580,Tỉnh Đắk Lắk,Xã
+,Xã Đắk Liêng,24595,Tỉnh Đắk Lắk,Xã
+,Xã Đắk Phơi,24598,Tỉnh Đắk Lắk,Xã
+,Xã Krông Nô,24604,Tỉnh Đắk Lắk,Xã
+,Xã Nam Ka,24607,Tỉnh Đắk Lắk,Xã
+,Phường Mũi Né,22918,Tỉnh Lâm Đồng,Phường
+,Phường Phú Thủy,22924,Tỉnh Lâm Đồng,Phường
+,Phường Hàm Thắng,22933,Tỉnh Lâm Đồng,Phường
+,Phường Phan Thiết,22945,Tỉnh Lâm Đồng,Phường
+,Phường Tiến Thành,22954,Tỉnh Lâm Đồng,Phường
+,Phường Bình Thuận,22960,Tỉnh Lâm Đồng,Phường
+,Phường Phước Hội,23231,Tỉnh Lâm Đồng,Phường
+,Phường La Gi,23235,Tỉnh Lâm Đồng,Phường
+,Phường Bắc Gia Nghĩa,24611,Tỉnh Lâm Đồng,Phường
+,Phường Nam Gia Nghĩa,24615,Tỉnh Lâm Đồng,Phường
+,Phường Đông Gia Nghĩa,24617,Tỉnh Lâm Đồng,Phường
+,Phường Lâm Viên - Đà Lạt,24778,Tỉnh Lâm Đồng,Phường
+,Phường Xuân Hương - Đà Lạt,24781,Tỉnh Lâm Đồng,Phường
+,Phường Cam Ly - Đà Lạt,24787,Tỉnh Lâm Đồng,Phường
+,Phường Xuân Trường - Đà Lạt,24805,Tỉnh Lâm Đồng,Phường
+,Phường 2 Bảo Lộc,24820,Tỉnh Lâm Đồng,Phường
+,Phường 1 Bảo Lộc,24823,Tỉnh Lâm Đồng,Phường
+,Phường B'Lao,24829,Tỉnh Lâm Đồng,Phường
+,Phường 3 Bảo Lộc,24841,Tỉnh Lâm Đồng,Phường
+,Phường Lang Biang - Đà Lạt,24846,Tỉnh Lâm Đồng,Phường
+,Xã Tuyên Quang,22963,Tỉnh Lâm Đồng,Xã
+,Xã Liên Hương,22969,Tỉnh Lâm Đồng,Xã
+,Xã Phan Rí Cửa,22972,Tỉnh Lâm Đồng,Xã
+,Xã Tuy Phong,22978,Tỉnh Lâm Đồng,Xã
+,Xã Vĩnh Hảo,22981,Tỉnh Lâm Đồng,Xã
+,Xã Bắc Bình,23005,Tỉnh Lâm Đồng,Xã
+,Xã Phan Sơn,23008,Tỉnh Lâm Đồng,Xã
+,Xã Hải Ninh,23020,Tỉnh Lâm Đồng,Xã
+,Xã Sông Lũy,23023,Tỉnh Lâm Đồng,Xã
+,Xã Lương Sơn,23032,Tỉnh Lâm Đồng,Xã
+,Xã Hồng Thái,23041,Tỉnh Lâm Đồng,Xã
+,Xã Hòa Thắng,23053,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Thuận,23059,Tỉnh Lâm Đồng,Xã
+,Xã La Dạ,23065,Tỉnh Lâm Đồng,Xã
+,Xã Đông Giang,23074,Tỉnh Lâm Đồng,Xã
+,Xã Hồng Sơn,23086,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Thuận Bắc,23089,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Liêm,23095,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Thuận Nam,23110,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Thạnh,23122,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Kiệm,23128,Tỉnh Lâm Đồng,Xã
+,Xã Tân Lập,23134,Tỉnh Lâm Đồng,Xã
+,Xã Tân Thành,23143,Tỉnh Lâm Đồng,Xã
+,Xã Tánh Linh,23149,Tỉnh Lâm Đồng,Xã
+,Xã Bắc Ruộng,23152,Tỉnh Lâm Đồng,Xã
+,Xã Nghị Đức,23158,Tỉnh Lâm Đồng,Xã
+,Xã Đồng Kho,23173,Tỉnh Lâm Đồng,Xã
+,Xã Suối Kiết,23188,Tỉnh Lâm Đồng,Xã
+,Xã Đức Linh,23191,Tỉnh Lâm Đồng,Xã
+,Xã Hoài Đức,23194,Tỉnh Lâm Đồng,Xã
+,Xã Nam Thành,23200,Tỉnh Lâm Đồng,Xã
+,Xã Trà Tân,23227,Tỉnh Lâm Đồng,Xã
+,Xã Tân Minh,23230,Tỉnh Lâm Đồng,Xã
+,Xã Hàm Tân,23236,Tỉnh Lâm Đồng,Xã
+,Xã Tân Hải,23246,Tỉnh Lâm Đồng,Xã
+,Xã Sơn Mỹ,23266,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Sơn,24616,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Hòa,24620,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Khê,24631,Tỉnh Lâm Đồng,Xã
+,Xã Tà Đùng,24637,Tỉnh Lâm Đồng,Xã
+,Xã Cư Jút,24640,Tỉnh Lâm Đồng,Xã
+,Xã Đắk Wil,24646,Tỉnh Lâm Đồng,Xã
+,Xã Nam Dong,24649,Tỉnh Lâm Đồng,Xã
+,Xã Đức Lập,24664,Tỉnh Lâm Đồng,Xã
+,Xã Đắk Mil,24670,Tỉnh Lâm Đồng,Xã
+,Xã Đắk Sắk,24678,Tỉnh Lâm Đồng,Xã
+,Xã Thuận An,24682,Tỉnh Lâm Đồng,Xã
+,Xã Krông Nô,24688,Tỉnh Lâm Đồng,Xã
+,Xã Nam Đà,24697,Tỉnh Lâm Đồng,Xã
+,Xã Nâm Nung,24703,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Phú,24712,Tỉnh Lâm Đồng,Xã
+,Xã Đức An,24717,Tỉnh Lâm Đồng,Xã
+,Xã Đắk Song,24718,Tỉnh Lâm Đồng,Xã
+,Xã Thuận Hạnh,24722,Tỉnh Lâm Đồng,Xã
+,Xã Trường Xuân,24730,Tỉnh Lâm Đồng,Xã
+,Xã Kiến Đức,24733,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Trực,24736,Tỉnh Lâm Đồng,Xã
+,Xã Tuy Đức,24739,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Tân,24748,Tỉnh Lâm Đồng,Xã
+,Xã Nhân Cơ,24751,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Tín,24760,Tỉnh Lâm Đồng,Xã
+,Xã Lạc Dương,24848,Tỉnh Lâm Đồng,Xã
+,Xã Đam Rông 4,24853,Tỉnh Lâm Đồng,Xã
+,Xã Nam Ban Lâm Hà,24868,Tỉnh Lâm Đồng,Xã
+,Xã Đinh Văn Lâm Hà,24871,Tỉnh Lâm Đồng,Xã
+,Xã Đam Rông 3,24875,Tỉnh Lâm Đồng,Xã
+,Xã Đam Rông 2,24877,Tỉnh Lâm Đồng,Xã
+,Xã Nam Hà Lâm Hà,24883,Tỉnh Lâm Đồng,Xã
+,Xã Đam Rông 1,24886,Tỉnh Lâm Đồng,Xã
+,Xã Phú Sơn Lâm Hà,24895,Tỉnh Lâm Đồng,Xã
+,Xã Phúc Thọ Lâm Hà,24907,Tỉnh Lâm Đồng,Xã
+,Xã Tân Hà Lâm Hà,24916,Tỉnh Lâm Đồng,Xã
+,Xã Đơn Dương,24931,Tỉnh Lâm Đồng,Xã
+,Xã D'Ran,24934,Tỉnh Lâm Đồng,Xã
+,Xã Ka Đô,24943,Tỉnh Lâm Đồng,Xã
+,Xã Quảng Lập,24955,Tỉnh Lâm Đồng,Xã
+,Xã Đức Trọng,24958,Tỉnh Lâm Đồng,Xã
+,Xã Hiệp Thạnh,24967,Tỉnh Lâm Đồng,Xã
+,Xã Tân Hội,24976,Tỉnh Lâm Đồng,Xã
+,Xã Ninh Gia,24985,Tỉnh Lâm Đồng,Xã
+,Xã Tà Năng,24988,Tỉnh Lâm Đồng,Xã
+,Xã Tà Hine,24991,Tỉnh Lâm Đồng,Xã
+,Xã Di Linh,25000,Tỉnh Lâm Đồng,Xã
+,Xã Đinh Trang Thượng,25007,Tỉnh Lâm Đồng,Xã
+,Xã Gia Hiệp,25015,Tỉnh Lâm Đồng,Xã
+,Xã Bảo Thuận,25018,Tỉnh Lâm Đồng,Xã
+,Xã Hòa Ninh,25036,Tỉnh Lâm Đồng,Xã
+,Xã Hòa Bắc,25042,Tỉnh Lâm Đồng,Xã
+,Xã Sơn Điền,25051,Tỉnh Lâm Đồng,Xã
+,Xã Bảo Lâm 1,25054,Tỉnh Lâm Đồng,Xã
+,Xã Bảo Lâm 5,25057,Tỉnh Lâm Đồng,Xã
+,Xã Bảo Lâm 4,25063,Tỉnh Lâm Đồng,Xã
+,Xã Bảo Lâm 2,25084,Tỉnh Lâm Đồng,Xã
+,Xã Bảo Lâm 3,25093,Tỉnh Lâm Đồng,Xã
+,Xã Đạ Huoai,25099,Tỉnh Lâm Đồng,Xã
+,Xã Đạ Huoai 2,25105,Tỉnh Lâm Đồng,Xã
+,Xã Đạ Huoai 3,25114,Tỉnh Lâm Đồng,Xã
+,Xã Đạ Tẻh,25126,Tỉnh Lâm Đồng,Xã
+,Xã Đạ Tẻh 3,25135,Tỉnh Lâm Đồng,Xã
+,Xã Đạ Tẻh 2,25138,Tỉnh Lâm Đồng,Xã
+,Xã Cát Tiên,25159,Tỉnh Lâm Đồng,Xã
+,Xã Cát Tiên 3,25162,Tỉnh Lâm Đồng,Xã
+,Xã Cát Tiên 2,25180,Tỉnh Lâm Đồng,Xã
+,Đặc khu Phú Quý,23272,Tỉnh Lâm Đồng,Đặc khu
+,Phường Bình Phước,25195,Tỉnh Đồng Nai,Phường
+,Phường Đồng Xoài,25210,Tỉnh Đồng Nai,Phường
+,Phường Phước Long,25217,Tỉnh Đồng Nai,Phường
+,Phường Phước Bình,25220,Tỉnh Đồng Nai,Phường
+,Phường Bình Long,25326,Tỉnh Đồng Nai,Phường
+,Phường An Lộc,25333,Tỉnh Đồng Nai,Phường
+,Phường Chơn Thành,25432,Tỉnh Đồng Nai,Phường
+,Phường Minh Hưng,25441,Tỉnh Đồng Nai,Phường
+,Phường Trảng Dài,25993,Tỉnh Đồng Nai,Phường
+,Phường Hố Nai,26005,Tỉnh Đồng Nai,Phường
+,Phường Tam Hiệp,26017,Tỉnh Đồng Nai,Phường
+,Phường Long Bình,26020,Tỉnh Đồng Nai,Phường
+,Phường Trấn Biên,26041,Tỉnh Đồng Nai,Phường
+,Phường Biên Hòa,26068,Tỉnh Đồng Nai,Phường
+,Phường Long Khánh,26080,Tỉnh Đồng Nai,Phường
+,Phường Bình Lộc,26089,Tỉnh Đồng Nai,Phường
+,Phường Bảo Vinh,26098,Tỉnh Đồng Nai,Phường
+,Phường Xuân Lập,26104,Tỉnh Đồng Nai,Phường
+,Phường Hàng Gòn,26113,Tỉnh Đồng Nai,Phường
+,Phường Tân Triều,26188,Tỉnh Đồng Nai,Phường
+,Phường Tam Phước,26374,Tỉnh Đồng Nai,Phường
+,Phường Phước Tân,26377,Tỉnh Đồng Nai,Phường
+,Phường Long Hưng,26380,Tỉnh Đồng Nai,Phường
+,Xã Bù Gia Mập,25222,Tỉnh Đồng Nai,Xã
+,Xã Đăk Ơ,25225,Tỉnh Đồng Nai,Xã
+,Xã Đa Kia,25231,Tỉnh Đồng Nai,Xã
+,Xã Bình Tân,25246,Tỉnh Đồng Nai,Xã
+,Xã Phú Riềng,25252,Tỉnh Đồng Nai,Xã
+,Xã Long Hà,25255,Tỉnh Đồng Nai,Xã
+,Xã Phú Trung,25261,Tỉnh Đồng Nai,Xã
+,Xã Phú Nghĩa,25267,Tỉnh Đồng Nai,Xã
+,Xã Lộc Ninh,25270,Tỉnh Đồng Nai,Xã
+,Xã Lộc Tấn,25279,Tỉnh Đồng Nai,Xã
+,Xã Lộc Thạnh,25280,Tỉnh Đồng Nai,Xã
+,Xã Lộc Quang,25292,Tỉnh Đồng Nai,Xã
+,Xã Lộc Thành,25294,Tỉnh Đồng Nai,Xã
+,Xã Lộc Hưng,25303,Tỉnh Đồng Nai,Xã
+,Xã Thiện Hưng,25308,Tỉnh Đồng Nai,Xã
+,Xã Hưng Phước,25309,Tỉnh Đồng Nai,Xã
+,Xã Tân Tiến,25318,Tỉnh Đồng Nai,Xã
+,Xã Tân Hưng,25345,Tỉnh Đồng Nai,Xã
+,Xã Minh Đức,25349,Tỉnh Đồng Nai,Xã
+,Xã Tân Quan,25351,Tỉnh Đồng Nai,Xã
+,Xã Tân Khai,25357,Tỉnh Đồng Nai,Xã
+,Xã Đồng Phú,25363,Tỉnh Đồng Nai,Xã
+,Xã Tân Lợi,25378,Tỉnh Đồng Nai,Xã
+,Xã Thuận Lợi,25387,Tỉnh Đồng Nai,Xã
+,Xã Đồng Tâm,25390,Tỉnh Đồng Nai,Xã
+,Xã Bù Đăng,25396,Tỉnh Đồng Nai,Xã
+,Xã Đak Nhau,25399,Tỉnh Đồng Nai,Xã
+,Xã Thọ Sơn,25402,Tỉnh Đồng Nai,Xã
+,Xã Bom Bo,25405,Tỉnh Đồng Nai,Xã
+,Xã Nghĩa Trung,25417,Tỉnh Đồng Nai,Xã
+,Xã Phước Sơn,25420,Tỉnh Đồng Nai,Xã
+,Xã Nha Bích,25450,Tỉnh Đồng Nai,Xã
+,Xã Tân Phú,26116,Tỉnh Đồng Nai,Xã
+,Xã Đak Lua,26119,Tỉnh Đồng Nai,Xã
+,Xã Nam Cát Tiên,26122,Tỉnh Đồng Nai,Xã
+,Xã Tà Lài,26134,Tỉnh Đồng Nai,Xã
+,Xã Phú Lâm,26158,Tỉnh Đồng Nai,Xã
+,Xã Trị An,26170,Tỉnh Đồng Nai,Xã
+,Xã Phú Lý,26173,Tỉnh Đồng Nai,Xã
+,Xã Tân An,26179,Tỉnh Đồng Nai,Xã
+,Xã Định Quán,26206,Tỉnh Đồng Nai,Xã
+,Xã Thanh Sơn,26209,Tỉnh Đồng Nai,Xã
+,Xã Phú Vinh,26215,Tỉnh Đồng Nai,Xã
+,Xã Phú Hòa,26221,Tỉnh Đồng Nai,Xã
+,Xã La Ngà,26227,Tỉnh Đồng Nai,Xã
+,Xã Trảng Bom,26248,Tỉnh Đồng Nai,Xã
+,Xã Bàu Hàm,26254,Tỉnh Đồng Nai,Xã
+,Xã Bình Minh,26278,Tỉnh Đồng Nai,Xã
+,Xã Hưng Thịnh,26281,Tỉnh Đồng Nai,Xã
+,Xã An Viễn,26296,Tỉnh Đồng Nai,Xã
+,Xã Thống Nhất,26299,Tỉnh Đồng Nai,Xã
+,Xã Gia Kiệm,26311,Tỉnh Đồng Nai,Xã
+,Xã Dầu Giây,26326,Tỉnh Đồng Nai,Xã
+,Xã Xuân Quế,26332,Tỉnh Đồng Nai,Xã
+,Xã Cẩm Mỹ,26341,Tỉnh Đồng Nai,Xã
+,Xã Xuân Đường,26347,Tỉnh Đồng Nai,Xã
+,Xã Xuân Đông,26359,Tỉnh Đồng Nai,Xã
+,Xã Sông Ray,26362,Tỉnh Đồng Nai,Xã
+,Xã Long Thành,26368,Tỉnh Đồng Nai,Xã
+,Xã An Phước,26383,Tỉnh Đồng Nai,Xã
+,Xã Bình An,26389,Tỉnh Đồng Nai,Xã
+,Xã Long Phước,26413,Tỉnh Đồng Nai,Xã
+,Xã Phước Thái,26422,Tỉnh Đồng Nai,Xã
+,Xã Xuân Lộc,26425,Tỉnh Đồng Nai,Xã
+,Xã Xuân Bắc,26428,Tỉnh Đồng Nai,Xã
+,Xã Xuân Thành,26434,Tỉnh Đồng Nai,Xã
+,Xã Xuân Hòa,26446,Tỉnh Đồng Nai,Xã
+,Xã Xuân Phú,26458,Tỉnh Đồng Nai,Xã
+,Xã Xuân Định,26461,Tỉnh Đồng Nai,Xã
+,Xã Nhơn Trạch,26485,Tỉnh Đồng Nai,Xã
+,Xã Đại Phước,26491,Tỉnh Đồng Nai,Xã
+,Xã Phước An,26503,Tỉnh Đồng Nai,Xã
+,Phường Thủ Dầu Một,25747,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Lợi,25750,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Dương,25760,Thành phố Hồ Chí Minh,Phường
+,Phường Phú An,25768,Thành phố Hồ Chí Minh,Phường
+,Phường Chánh Hiệp,25771,Thành phố Hồ Chí Minh,Phường
+,Phường Bến Cát,25813,Thành phố Hồ Chí Minh,Phường
+,Phường Chánh Phú Hòa,25837,Thành phố Hồ Chí Minh,Phường
+,Phường Long Nguyên,25840,Thành phố Hồ Chí Minh,Phường
+,Phường Tây Nam,25843,Thành phố Hồ Chí Minh,Phường
+,Phường Thới Hòa,25846,Thành phố Hồ Chí Minh,Phường
+,Phường Hòa Lợi,25849,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Uyên,25888,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Khánh,25891,Thành phố Hồ Chí Minh,Phường
+,Phường Vĩnh Tân,25912,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Cơ,25915,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Hiệp,25920,Thành phố Hồ Chí Minh,Phường
+,Phường Dĩ An,25942,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Đông Hiệp,25945,Thành phố Hồ Chí Minh,Phường
+,Phường Đông Hòa,25951,Thành phố Hồ Chí Minh,Phường
+,Phường Lái Thiêu,25966,Thành phố Hồ Chí Minh,Phường
+,Phường Thuận Giao,25969,Thành phố Hồ Chí Minh,Phường
+,Phường An Phú,25975,Thành phố Hồ Chí Minh,Phường
+,Phường Thuận An,25978,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Hòa,25987,Thành phố Hồ Chí Minh,Phường
+,Phường Vũng Tàu,26506,Thành phố Hồ Chí Minh,Phường
+,Phường Tam Thắng,26526,Thành phố Hồ Chí Minh,Phường
+,Phường Rạch Dừa,26536,Thành phố Hồ Chí Minh,Phường
+,Phường Phước Thắng,26542,Thành phố Hồ Chí Minh,Phường
+,Phường Bà Rịa,26560,Thành phố Hồ Chí Minh,Phường
+,Phường Long Hương,26566,Thành phố Hồ Chí Minh,Phường
+,Phường Tam Long,26572,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Mỹ,26704,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Hải,26710,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Phước,26713,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Thành,26725,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Định,26737,Thành phố Hồ Chí Minh,Phường
+,Phường Sài Gòn,26740,Thành phố Hồ Chí Minh,Phường
+,Phường Bến Thành,26743,Thành phố Hồ Chí Minh,Phường
+,Phường Cầu Ông Lãnh,26758,Thành phố Hồ Chí Minh,Phường
+,Phường An Phú Đông,26767,Thành phố Hồ Chí Minh,Phường
+,Phường Thới An,26773,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Thới Hiệp,26782,Thành phố Hồ Chí Minh,Phường
+,Phường Trung Mỹ Tây,26785,Thành phố Hồ Chí Minh,Phường
+,Phường Đông Hưng Thuận,26791,Thành phố Hồ Chí Minh,Phường
+,Phường Linh Xuân,26800,Thành phố Hồ Chí Minh,Phường
+,Phường Tam Bình,26803,Thành phố Hồ Chí Minh,Phường
+,Phường Hiệp Bình,26809,Thành phố Hồ Chí Minh,Phường
+,Phường Thủ Đức,26824,Thành phố Hồ Chí Minh,Phường
+,Phường Long Bình,26833,Thành phố Hồ Chí Minh,Phường
+,Phường Tăng Nhơn Phú,26842,Thành phố Hồ Chí Minh,Phường
+,Phường Phước Long,26848,Thành phố Hồ Chí Minh,Phường
+,Phường Long Phước,26857,Thành phố Hồ Chí Minh,Phường
+,Phường Long Trường,26860,Thành phố Hồ Chí Minh,Phường
+,Phường An Nhơn,26876,Thành phố Hồ Chí Minh,Phường
+,Phường An Hội Đông,26878,Thành phố Hồ Chí Minh,Phường
+,Phường An Hội Tây,26882,Thành phố Hồ Chí Minh,Phường
+,Phường Gò Vấp,26884,Thành phố Hồ Chí Minh,Phường
+,Phường Hạnh Thông,26890,Thành phố Hồ Chí Minh,Phường
+,Phường Thông Tây Hội,26898,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Lợi Trung,26905,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Quới,26911,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Thạnh,26929,Thành phố Hồ Chí Minh,Phường
+,Phường Gia Định,26944,Thành phố Hồ Chí Minh,Phường
+,Phường Thạnh Mỹ Tây,26956,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Sơn Nhất,26968,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Sơn Hòa,26977,Thành phố Hồ Chí Minh,Phường
+,Phường Bảy Hiền,26983,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Hòa,26995,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Bình,27004,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Sơn,27007,Thành phố Hồ Chí Minh,Phường
+,Phường Tây Thạnh,27013,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Sơn Nhì,27019,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Thọ Hòa,27022,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Thạnh,27028,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Phú,27031,Thành phố Hồ Chí Minh,Phường
+,Phường Đức Nhuận,27043,Thành phố Hồ Chí Minh,Phường
+,Phường Cầu Kiệu,27058,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Nhuận,27073,Thành phố Hồ Chí Minh,Phường
+,Phường An Khánh,27094,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Trưng,27097,Thành phố Hồ Chí Minh,Phường
+,Phường Cát Lái,27112,Thành phố Hồ Chí Minh,Phường
+,Phường Xuân Hòa,27139,Thành phố Hồ Chí Minh,Phường
+,Phường Nhiêu Lộc,27142,Thành phố Hồ Chí Minh,Phường
+,Phường Bàn Cờ,27154,Thành phố Hồ Chí Minh,Phường
+,Phường Hòa Hưng,27163,Thành phố Hồ Chí Minh,Phường
+,Phường Diên Hồng,27169,Thành phố Hồ Chí Minh,Phường
+,Phường Vườn Lài,27190,Thành phố Hồ Chí Minh,Phường
+,Phường Hòa Bình,27211,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Thọ,27226,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Thới,27232,Thành phố Hồ Chí Minh,Phường
+,Phường Minh Phụng,27238,Thành phố Hồ Chí Minh,Phường
+,Phường Xóm Chiếu,27259,Thành phố Hồ Chí Minh,Phường
+,Phường Khánh Hội,27265,Thành phố Hồ Chí Minh,Phường
+,Phường Vĩnh Hội,27286,Thành phố Hồ Chí Minh,Phường
+,Phường Chợ Quán,27301,Thành phố Hồ Chí Minh,Phường
+,Phường An Đông,27316,Thành phố Hồ Chí Minh,Phường
+,Phường Chợ Lớn,27343,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Lâm,27349,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Phú,27364,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Tây,27367,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Tiên,27373,Thành phố Hồ Chí Minh,Phường
+,Phường Chánh Hưng,27418,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Đông,27424,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Định,27427,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Hưng Hòa,27439,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Tân,27442,Thành phố Hồ Chí Minh,Phường
+,Phường Bình Trị Đông,27448,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Tạo,27457,Thành phố Hồ Chí Minh,Phường
+,Phường An Lạc,27460,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Hưng,27475,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Thuận,27478,Thành phố Hồ Chí Minh,Phường
+,Phường Phú Thuận,27484,Thành phố Hồ Chí Minh,Phường
+,Phường Tân Mỹ,27487,Thành phố Hồ Chí Minh,Phường
+,Xã Dầu Tiếng,25777,Thành phố Hồ Chí Minh,Xã
+,Xã Minh Thạnh,25780,Thành phố Hồ Chí Minh,Xã
+,Xã Long Hòa,25792,Thành phố Hồ Chí Minh,Xã
+,Xã Thanh An,25807,Thành phố Hồ Chí Minh,Xã
+,Xã Trừ Văn Thố,25819,Thành phố Hồ Chí Minh,Xã
+,Xã Bàu Bàng,25822,Thành phố Hồ Chí Minh,Xã
+,Xã Phú Giáo,25858,Thành phố Hồ Chí Minh,Xã
+,Xã Phước Thành,25864,Thành phố Hồ Chí Minh,Xã
+,Xã An Long,25867,Thành phố Hồ Chí Minh,Xã
+,Xã Phước Hòa,25882,Thành phố Hồ Chí Minh,Xã
+,Xã Bắc Tân Uyên,25906,Thành phố Hồ Chí Minh,Xã
+,Xã Thường Tân,25909,Thành phố Hồ Chí Minh,Xã
+,Xã Long Sơn,26545,Thành phố Hồ Chí Minh,Xã
+,Xã Ngãi Giao,26575,Thành phố Hồ Chí Minh,Xã
+,Xã Xuân Sơn,26584,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Giã,26590,Thành phố Hồ Chí Minh,Xã
+,Xã Châu Đức,26596,Thành phố Hồ Chí Minh,Xã
+,Xã Kim Long,26608,Thành phố Hồ Chí Minh,Xã
+,Xã Nghĩa Thành,26617,Thành phố Hồ Chí Minh,Xã
+,Xã Hồ Tràm,26620,Thành phố Hồ Chí Minh,Xã
+,Xã Xuyên Mộc,26632,Thành phố Hồ Chí Minh,Xã
+,Xã Bàu Lâm,26638,Thành phố Hồ Chí Minh,Xã
+,Xã Hòa Hội,26641,Thành phố Hồ Chí Minh,Xã
+,Xã Hòa Hiệp,26647,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Châu,26656,Thành phố Hồ Chí Minh,Xã
+,Xã Long Điền,26659,Thành phố Hồ Chí Minh,Xã
+,Xã Long Hải,26662,Thành phố Hồ Chí Minh,Xã
+,Xã Đất Đỏ,26680,Thành phố Hồ Chí Minh,Xã
+,Xã Phước Hải,26686,Thành phố Hồ Chí Minh,Xã
+,Xã Châu Pha,26728,Thành phố Hồ Chí Minh,Xã
+,Xã Tân An Hội,27496,Thành phố Hồ Chí Minh,Xã
+,Xã An Nhơn Tây,27508,Thành phố Hồ Chí Minh,Xã
+,Xã Nhuận Đức,27511,Thành phố Hồ Chí Minh,Xã
+,Xã Thái Mỹ,27526,Thành phố Hồ Chí Minh,Xã
+,Xã Phú Hòa Đông,27541,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Mỹ,27544,Thành phố Hồ Chí Minh,Xã
+,Xã Củ Chi,27553,Thành phố Hồ Chí Minh,Xã
+,Xã Hóc Môn,27559,Thành phố Hồ Chí Minh,Xã
+,Xã Đông Thạnh,27568,Thành phố Hồ Chí Minh,Xã
+,Xã Xuân Thới Sơn,27577,Thành phố Hồ Chí Minh,Xã
+,Xã Bà Điểm,27592,Thành phố Hồ Chí Minh,Xã
+,Xã Tân Nhựt,27595,Thành phố Hồ Chí Minh,Xã
+,Xã Vĩnh Lộc,27601,Thành phố Hồ Chí Minh,Xã
+,Xã Tân Vĩnh Lộc,27604,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Lợi,27610,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Hưng,27619,Thành phố Hồ Chí Minh,Xã
+,Xã Hưng Long,27628,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Chánh,27637,Thành phố Hồ Chí Minh,Xã
+,Xã Nhà Bè,27655,Thành phố Hồ Chí Minh,Xã
+,Xã Hiệp Phước,27658,Thành phố Hồ Chí Minh,Xã
+,Xã Cần Giờ,27664,Thành phố Hồ Chí Minh,Xã
+,Xã Bình Khánh,27667,Thành phố Hồ Chí Minh,Xã
+,Xã An Thới Đông,27673,Thành phố Hồ Chí Minh,Xã
+,Xã Thạnh An,27676,Thành phố Hồ Chí Minh,Xã
+,Đặc khu Côn Đảo,26732,Thành phố Hồ Chí Minh,Đặc khu
+,Phường Tân Ninh,25459,Tỉnh Tây Ninh,Phường
+,Phường Bình Minh,25480,Tỉnh Tây Ninh,Phường
+,Phường Ninh Thạnh,25567,Tỉnh Tây Ninh,Phường
+,Phường Long Hoa,25630,Tỉnh Tây Ninh,Phường
+,Phường Thanh Điền,25633,Tỉnh Tây Ninh,Phường
+,Phường Hòa Thành,25645,Tỉnh Tây Ninh,Phường
+,Phường Gò Dầu,25654,Tỉnh Tây Ninh,Phường
+,Phường Gia Lộc,25672,Tỉnh Tây Ninh,Phường
+,Phường Trảng Bàng,25708,Tỉnh Tây Ninh,Phường
+,Phường An Tịnh,25732,Tỉnh Tây Ninh,Phường
+,Phường Long An,27694,Tỉnh Tây Ninh,Phường
+,Phường Tân An,27712,Tỉnh Tây Ninh,Phường
+,Phường Khánh Hậu,27715,Tỉnh Tây Ninh,Phường
+,Phường Kiến Tường,27787,Tỉnh Tây Ninh,Phường
+,Xã Tân Biên,25486,Tỉnh Tây Ninh,Xã
+,Xã Tân Lập,25489,Tỉnh Tây Ninh,Xã
+,Xã Thạnh Bình,25498,Tỉnh Tây Ninh,Xã
+,Xã Trà Vong,25510,Tỉnh Tây Ninh,Xã
+,Xã Tân Châu,25516,Tỉnh Tây Ninh,Xã
+,Xã Tân Đông,25522,Tỉnh Tây Ninh,Xã
+,Xã Tân Hội,25525,Tỉnh Tây Ninh,Xã
+,Xã Tân Hòa,25531,Tỉnh Tây Ninh,Xã
+,Xã Tân Thành,25534,Tỉnh Tây Ninh,Xã
+,Xã Tân Phú,25549,Tỉnh Tây Ninh,Xã
+,Xã Dương Minh Châu,25552,Tỉnh Tây Ninh,Xã
+,Xã Cầu Khởi,25573,Tỉnh Tây Ninh,Xã
+,Xã Lộc Ninh,25579,Tỉnh Tây Ninh,Xã
+,Xã Châu Thành,25585,Tỉnh Tây Ninh,Xã
+,Xã Hảo Đước,25588,Tỉnh Tây Ninh,Xã
+,Xã Phước Vinh,25591,Tỉnh Tây Ninh,Xã
+,Xã Hòa Hội,25606,Tỉnh Tây Ninh,Xã
+,Xã Ninh Điền,25621,Tỉnh Tây Ninh,Xã
+,Xã Thạnh Đức,25657,Tỉnh Tây Ninh,Xã
+,Xã Phước Thạnh,25663,Tỉnh Tây Ninh,Xã
+,Xã Truông Mít,25666,Tỉnh Tây Ninh,Xã
+,Xã Bến Cầu,25681,Tỉnh Tây Ninh,Xã
+,Xã Long Chữ,25684,Tỉnh Tây Ninh,Xã
+,Xã Long Thuận,25702,Tỉnh Tây Ninh,Xã
+,Xã Hưng Thuận,25711,Tỉnh Tây Ninh,Xã
+,Xã Phước Chỉ,25729,Tỉnh Tây Ninh,Xã
+,Xã Tân Hưng,27721,Tỉnh Tây Ninh,Xã
+,Xã Hưng Điền,27727,Tỉnh Tây Ninh,Xã
+,Xã Vĩnh Thạnh,27736,Tỉnh Tây Ninh,Xã
+,Xã Vĩnh Châu,27748,Tỉnh Tây Ninh,Xã
+,Xã Vĩnh Hưng,27757,Tỉnh Tây Ninh,Xã
+,Xã Khánh Hưng,27763,Tỉnh Tây Ninh,Xã
+,Xã Tuyên Bình,27775,Tỉnh Tây Ninh,Xã
+,Xã Bình Hiệp,27793,Tỉnh Tây Ninh,Xã
+,Xã Bình Hòa,27811,Tỉnh Tây Ninh,Xã
+,Xã Tuyên Thạnh,27817,Tỉnh Tây Ninh,Xã
+,Xã Mộc Hóa,27823,Tỉnh Tây Ninh,Xã
+,Xã Tân Thạnh,27826,Tỉnh Tây Ninh,Xã
+,Xã Nhơn Hòa Lập,27838,Tỉnh Tây Ninh,Xã
+,Xã Hậu Thạnh,27841,Tỉnh Tây Ninh,Xã
+,Xã Nhơn Ninh,27856,Tỉnh Tây Ninh,Xã
+,Xã Thạnh Hóa,27865,Tỉnh Tây Ninh,Xã
+,Xã Bình Thành,27868,Tỉnh Tây Ninh,Xã
+,Xã Thạnh Phước,27877,Tỉnh Tây Ninh,Xã
+,Xã Tân Tây,27889,Tỉnh Tây Ninh,Xã
+,Xã Đông Thành,27898,Tỉnh Tây Ninh,Xã
+,Xã Mỹ Quý,27907,Tỉnh Tây Ninh,Xã
+,Xã Đức Huệ,27925,Tỉnh Tây Ninh,Xã
+,Xã Hậu Nghĩa,27931,Tỉnh Tây Ninh,Xã
+,Xã Đức Hòa,27937,Tỉnh Tây Ninh,Xã
+,Xã An Ninh,27943,Tỉnh Tây Ninh,Xã
+,Xã Hiệp Hòa,27952,Tỉnh Tây Ninh,Xã
+,Xã Đức Lập,27964,Tỉnh Tây Ninh,Xã
+,Xã Mỹ Hạnh,27976,Tỉnh Tây Ninh,Xã
+,Xã Hòa Khánh,27979,Tỉnh Tây Ninh,Xã
+,Xã Bến Lức,27991,Tỉnh Tây Ninh,Xã
+,Xã Thạnh Lợi,27994,Tỉnh Tây Ninh,Xã
+,Xã Lương Hòa,28003,Tỉnh Tây Ninh,Xã
+,Xã Bình Đức,28015,Tỉnh Tây Ninh,Xã
+,Xã Mỹ Yên,28018,Tỉnh Tây Ninh,Xã
+,Xã Thủ Thừa,28036,Tỉnh Tây Ninh,Xã
+,Xã Mỹ Thạnh,28051,Tỉnh Tây Ninh,Xã
+,Xã Mỹ An,28066,Tỉnh Tây Ninh,Xã
+,Xã Tân Long,28072,Tỉnh Tây Ninh,Xã
+,Xã Tân Trụ,28075,Tỉnh Tây Ninh,Xã
+,Xã Nhựt Tảo,28087,Tỉnh Tây Ninh,Xã
+,Xã Vàm Cỏ,28093,Tỉnh Tây Ninh,Xã
+,Xã Cần Đước,28108,Tỉnh Tây Ninh,Xã
+,Xã Rạch Kiến,28114,Tỉnh Tây Ninh,Xã
+,Xã Long Cang,28126,Tỉnh Tây Ninh,Xã
+,Xã Mỹ Lệ,28132,Tỉnh Tây Ninh,Xã
+,Xã Tân Lân,28138,Tỉnh Tây Ninh,Xã
+,Xã Long Hựu,28144,Tỉnh Tây Ninh,Xã
+,Xã Cần Giuộc,28159,Tỉnh Tây Ninh,Xã
+,Xã Phước Lý,28165,Tỉnh Tây Ninh,Xã
+,Xã Mỹ Lộc,28177,Tỉnh Tây Ninh,Xã
+,Xã Phước Vĩnh Tây,28201,Tỉnh Tây Ninh,Xã
+,Xã Tân Tập,28207,Tỉnh Tây Ninh,Xã
+,Xã Tầm Vu,28210,Tỉnh Tây Ninh,Xã
+,Xã Vĩnh Công,28222,Tỉnh Tây Ninh,Xã
+,Xã Thuận Mỹ,28225,Tỉnh Tây Ninh,Xã
+,Xã An Lục Long,28243,Tỉnh Tây Ninh,Xã
+,Xã An Phước,29944,Tỉnh Đồng Tháp,Xã
+,Phường Đạo Thạnh,28249,Tỉnh Đồng Tháp,Phường
+,Phường Mỹ Tho,28261,Tỉnh Đồng Tháp,Phường
+,Phường Thới Sơn,28270,Tỉnh Đồng Tháp,Phường
+,Phường Mỹ Phong,28273,Tỉnh Đồng Tháp,Phường
+,Phường Trung An,28285,Tỉnh Đồng Tháp,Phường
+,Phường Long Thuận,28297,Tỉnh Đồng Tháp,Phường
+,Phường Gò Công,28306,Tỉnh Đồng Tháp,Phường
+,Phường Bình Xuân,28315,Tỉnh Đồng Tháp,Phường
+,Phường Mỹ Phước Tây,28435,Tỉnh Đồng Tháp,Phường
+,Phường Thanh Hòa,28436,Tỉnh Đồng Tháp,Phường
+,Phường Cai Lậy,28439,Tỉnh Đồng Tháp,Phường
+,Phường Nhị Quý,28477,Tỉnh Đồng Tháp,Phường
+,Phường Sơn Qui,28729,Tỉnh Đồng Tháp,Phường
+,Phường Cao Lãnh,29869,Tỉnh Đồng Tháp,Phường
+,Phường Mỹ Ngãi,29884,Tỉnh Đồng Tháp,Phường
+,Phường Mỹ Trà,29888,Tỉnh Đồng Tháp,Phường
+,Phường Sa Đéc,29905,Tỉnh Đồng Tháp,Phường
+,Phường An Bình,29954,Tỉnh Đồng Tháp,Phường
+,Phường Hồng Ngự,29955,Tỉnh Đồng Tháp,Phường
+,Phường Thường Lạc,29978,Tỉnh Đồng Tháp,Phường
+,Xã Tân Phước 1,28321,Tỉnh Đồng Tháp,Xã
+,Xã Tân Phước 2,28327,Tỉnh Đồng Tháp,Xã
+,Xã Hưng Thạnh,28336,Tỉnh Đồng Tháp,Xã
+,Xã Tân Phước 3,28345,Tỉnh Đồng Tháp,Xã
+,Xã Cái Bè,28360,Tỉnh Đồng Tháp,Xã
+,Xã Hậu Mỹ,28366,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Thiện,28378,Tỉnh Đồng Tháp,Xã
+,Xã Hội Cư,28393,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Đức Tây,28405,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Lợi,28414,Tỉnh Đồng Tháp,Xã
+,Xã Thanh Hưng,28426,Tỉnh Đồng Tháp,Xã
+,Xã An Hữu,28429,Tỉnh Đồng Tháp,Xã
+,Xã Thạnh Phú,28444,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Thành,28456,Tỉnh Đồng Tháp,Xã
+,Xã Tân Phú,28468,Tỉnh Đồng Tháp,Xã
+,Xã Bình Phú,28471,Tỉnh Đồng Tháp,Xã
+,Xã Hiệp Đức,28501,Tỉnh Đồng Tháp,Xã
+,Xã Long Tiên,28504,Tỉnh Đồng Tháp,Xã
+,Xã Ngũ Hiệp,28516,Tỉnh Đồng Tháp,Xã
+,Xã Châu Thành,28519,Tỉnh Đồng Tháp,Xã
+,Xã Tân Hương,28525,Tỉnh Đồng Tháp,Xã
+,Xã Long Hưng,28537,Tỉnh Đồng Tháp,Xã
+,Xã Long Định,28543,Tỉnh Đồng Tháp,Xã
+,Xã Bình Trưng,28564,Tỉnh Đồng Tháp,Xã
+,Xã Vĩnh Kim,28576,Tỉnh Đồng Tháp,Xã
+,Xã Kim Sơn,28582,Tỉnh Đồng Tháp,Xã
+,Xã Chợ Gạo,28594,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Tịnh An,28603,Tỉnh Đồng Tháp,Xã
+,Xã Lương Hòa Lạc,28615,Tỉnh Đồng Tháp,Xã
+,Xã Tân Thuận Bình,28627,Tỉnh Đồng Tháp,Xã
+,Xã An Thạnh Thủy,28633,Tỉnh Đồng Tháp,Xã
+,Xã Bình Ninh,28648,Tỉnh Đồng Tháp,Xã
+,Xã Vĩnh Bình,28651,Tỉnh Đồng Tháp,Xã
+,Xã Đồng Sơn,28660,Tỉnh Đồng Tháp,Xã
+,Xã Phú Thành,28663,Tỉnh Đồng Tháp,Xã
+,Xã Vĩnh Hựu,28678,Tỉnh Đồng Tháp,Xã
+,Xã Long Bình,28687,Tỉnh Đồng Tháp,Xã
+,Xã Tân Thới,28693,Tỉnh Đồng Tháp,Xã
+,Xã Tân Phú Đông,28696,Tỉnh Đồng Tháp,Xã
+,Xã Tân Hòa,28702,Tỉnh Đồng Tháp,Xã
+,Xã Gia Thuận,28720,Tỉnh Đồng Tháp,Xã
+,Xã Tân Đông,28723,Tỉnh Đồng Tháp,Xã
+,Xã Tân Điền,28738,Tỉnh Đồng Tháp,Xã
+,Xã Gò Công Đông,28747,Tỉnh Đồng Tháp,Xã
+,Xã Tân Hồng,29926,Tỉnh Đồng Tháp,Xã
+,Xã Tân Hộ Cơ,29929,Tỉnh Đồng Tháp,Xã
+,Xã Tân Thành,29938,Tỉnh Đồng Tháp,Xã
+,Xã Thường Phước,29971,Tỉnh Đồng Tháp,Xã
+,Xã Long Khánh,29983,Tỉnh Đồng Tháp,Xã
+,Xã Long Phú Thuận,29992,Tỉnh Đồng Tháp,Xã
+,Xã Tràm Chim,30001,Tỉnh Đồng Tháp,Xã
+,Xã Tam Nông,30010,Tỉnh Đồng Tháp,Xã
+,Xã An Hòa,30019,Tỉnh Đồng Tháp,Xã
+,Xã Phú Cường,30025,Tỉnh Đồng Tháp,Xã
+,Xã An Long,30028,Tỉnh Đồng Tháp,Xã
+,Xã Phú Thọ,30034,Tỉnh Đồng Tháp,Xã
+,Xã Tháp Mười,30037,Tỉnh Đồng Tháp,Xã
+,Xã Phương Thịnh,30043,Tỉnh Đồng Tháp,Xã
+,Xã Trường Xuân,30046,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Quí,30055,Tỉnh Đồng Tháp,Xã
+,Xã Đốc Binh Kiều,30061,Tỉnh Đồng Tháp,Xã
+,Xã Thanh Mỹ,30073,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Thọ,30076,Tỉnh Đồng Tháp,Xã
+,Xã Ba Sao,30085,Tỉnh Đồng Tháp,Xã
+,Xã Phong Mỹ,30088,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ Hiệp,30112,Tỉnh Đồng Tháp,Xã
+,Xã Bình Hàng Trung,30118,Tỉnh Đồng Tháp,Xã
+,Xã Thanh Bình,30130,Tỉnh Đồng Tháp,Xã
+,Xã Tân Long,30154,Tỉnh Đồng Tháp,Xã
+,Xã Tân Thạnh,30157,Tỉnh Đồng Tháp,Xã
+,Xã Bình Thành,30163,Tỉnh Đồng Tháp,Xã
+,Xã Lấp Vò,30169,Tỉnh Đồng Tháp,Xã
+,Xã Mỹ An Hưng,30178,Tỉnh Đồng Tháp,Xã
+,Xã Tân Khánh Trung,30184,Tỉnh Đồng Tháp,Xã
+,Xã Hòa Long,30208,Tỉnh Đồng Tháp,Xã
+,Xã Tân Dương,30214,Tỉnh Đồng Tháp,Xã
+,Xã Lai Vung,30226,Tỉnh Đồng Tháp,Xã
+,Xã Phong Hòa,30235,Tỉnh Đồng Tháp,Xã
+,Xã Phú Hựu,30244,Tỉnh Đồng Tháp,Xã
+,Xã Tân Nhuận Đông,30253,Tỉnh Đồng Tháp,Xã
+,Xã Tân Phú Trung,30259,Tỉnh Đồng Tháp,Xã
+,Phường Phú Khương,28756,Tỉnh Vĩnh Long,Phường
+,Phường An Hội,28777,Tỉnh Vĩnh Long,Phường
+,Phường Sơn Đông,28783,Tỉnh Vĩnh Long,Phường
+,Phường Bến Tre,28789,Tỉnh Vĩnh Long,Phường
+,Phường Phú Tân,28858,Tỉnh Vĩnh Long,Phường
+,Phường Trà Vinh,29242,Tỉnh Vĩnh Long,Phường
+,Phường Nguyệt Hóa,29254,Tỉnh Vĩnh Long,Phường
+,Phường Long Đức,29263,Tỉnh Vĩnh Long,Phường
+,Phường Hòa Thuận,29398,Tỉnh Vĩnh Long,Phường
+,Phường Duyên Hải,29512,Tỉnh Vĩnh Long,Phường
+,Phường Trường Long Hòa,29516,Tỉnh Vĩnh Long,Phường
+,Phường Long Châu,29551,Tỉnh Vĩnh Long,Phường
+,Phường Phước Hậu,29557,Tỉnh Vĩnh Long,Phường
+,Phường Tân Ngãi,29566,Tỉnh Vĩnh Long,Phường
+,Phường Thanh Đức,29590,Tỉnh Vĩnh Long,Phường
+,Phường Tân Hạnh,29593,Tỉnh Vĩnh Long,Phường
+,Phường Cái Vồn,29770,Tỉnh Vĩnh Long,Phường
+,Phường Bình Minh,29771,Tỉnh Vĩnh Long,Phường
+,Phường Đông Thành,29812,Tỉnh Vĩnh Long,Phường
+,Xã Giao Long,28807,Tỉnh Vĩnh Long,Xã
+,Xã Phú Túc,28810,Tỉnh Vĩnh Long,Xã
+,Xã Tân Phú,28840,Tỉnh Vĩnh Long,Xã
+,Xã Tiên Thủy,28861,Tỉnh Vĩnh Long,Xã
+,Xã Chợ Lách,28870,Tỉnh Vĩnh Long,Xã
+,Xã Phú Phụng,28879,Tỉnh Vĩnh Long,Xã
+,Xã Vĩnh Thành,28894,Tỉnh Vĩnh Long,Xã
+,Xã Hưng Khánh Trung,28901,Tỉnh Vĩnh Long,Xã
+,Xã Mỏ Cày,28903,Tỉnh Vĩnh Long,Xã
+,Xã Phước Mỹ Trung,28915,Tỉnh Vĩnh Long,Xã
+,Xã Tân Thành Bình,28921,Tỉnh Vĩnh Long,Xã
+,Xã Đồng Khởi,28945,Tỉnh Vĩnh Long,Xã
+,Xã Nhuận Phú Tân,28948,Tỉnh Vĩnh Long,Xã
+,Xã An Định,28957,Tỉnh Vĩnh Long,Xã
+,Xã Thành Thới,28969,Tỉnh Vĩnh Long,Xã
+,Xã Hương Mỹ,28981,Tỉnh Vĩnh Long,Xã
+,Xã Giồng Trôm,28984,Tỉnh Vĩnh Long,Xã
+,Xã Lương Hòa,28987,Tỉnh Vĩnh Long,Xã
+,Xã Lương Phú,28993,Tỉnh Vĩnh Long,Xã
+,Xã Châu Hòa,28996,Tỉnh Vĩnh Long,Xã
+,Xã Phước Long,29020,Tỉnh Vĩnh Long,Xã
+,Xã Tân Hào,29029,Tỉnh Vĩnh Long,Xã
+,Xã Hưng Nhượng,29044,Tỉnh Vĩnh Long,Xã
+,Xã Bình Đại,29050,Tỉnh Vĩnh Long,Xã
+,Xã Phú Thuận,29062,Tỉnh Vĩnh Long,Xã
+,Xã Lộc Thuận,29077,Tỉnh Vĩnh Long,Xã
+,Xã Châu Hưng,29083,Tỉnh Vĩnh Long,Xã
+,Xã Thạnh Trị,29089,Tỉnh Vĩnh Long,Xã
+,Xã Thạnh Phước,29104,Tỉnh Vĩnh Long,Xã
+,Xã Thới Thuận,29107,Tỉnh Vĩnh Long,Xã
+,Xã Ba Tri,29110,Tỉnh Vĩnh Long,Xã
+,Xã Mỹ Chánh Hòa,29122,Tỉnh Vĩnh Long,Xã
+,Xã Bảo Thạnh,29125,Tỉnh Vĩnh Long,Xã
+,Xã Tân Xuân,29137,Tỉnh Vĩnh Long,Xã
+,Xã An Ngãi Trung,29143,Tỉnh Vĩnh Long,Xã
+,Xã An Hiệp,29158,Tỉnh Vĩnh Long,Xã
+,Xã Tân Thủy,29167,Tỉnh Vĩnh Long,Xã
+,Xã Thạnh Phú,29182,Tỉnh Vĩnh Long,Xã
+,Xã Quới Điền,29191,Tỉnh Vĩnh Long,Xã
+,Xã Đại Điền,29194,Tỉnh Vĩnh Long,Xã
+,Xã Thạnh Hải,29221,Tỉnh Vĩnh Long,Xã
+,Xã An Qui,29224,Tỉnh Vĩnh Long,Xã
+,Xã Thạnh Phong,29227,Tỉnh Vĩnh Long,Xã
+,Xã Càng Long,29266,Tỉnh Vĩnh Long,Xã
+,Xã An Trường,29275,Tỉnh Vĩnh Long,Xã
+,Xã Tân An,29278,Tỉnh Vĩnh Long,Xã
+,Xã Bình Phú,29287,Tỉnh Vĩnh Long,Xã
+,Xã Nhị Long,29302,Tỉnh Vĩnh Long,Xã
+,Xã Cầu Kè,29308,Tỉnh Vĩnh Long,Xã
+,Xã An Phú Tân,29317,Tỉnh Vĩnh Long,Xã
+,Xã Phong Thạnh,29329,Tỉnh Vĩnh Long,Xã
+,Xã Tam Ngãi,29335,Tỉnh Vĩnh Long,Xã
+,Xã Tiểu Cần,29341,Tỉnh Vĩnh Long,Xã
+,Xã Hùng Hòa,29362,Tỉnh Vĩnh Long,Xã
+,Xã Tập Ngãi,29365,Tỉnh Vĩnh Long,Xã
+,Xã Tân Hòa,29371,Tỉnh Vĩnh Long,Xã
+,Xã Châu Thành,29374,Tỉnh Vĩnh Long,Xã
+,Xã Song Lộc,29386,Tỉnh Vĩnh Long,Xã
+,Xã Hưng Mỹ,29407,Tỉnh Vĩnh Long,Xã
+,Xã Hòa Minh,29410,Tỉnh Vĩnh Long,Xã
+,Xã Long Hòa,29413,Tỉnh Vĩnh Long,Xã
+,Xã Cầu Ngang,29416,Tỉnh Vĩnh Long,Xã
+,Xã Mỹ Long,29419,Tỉnh Vĩnh Long,Xã
+,Xã Vinh Kim,29431,Tỉnh Vĩnh Long,Xã
+,Xã Nhị Trường,29446,Tỉnh Vĩnh Long,Xã
+,Xã Hiệp Mỹ,29455,Tỉnh Vĩnh Long,Xã
+,Xã Trà Cú,29461,Tỉnh Vĩnh Long,Xã
+,Xã Tập Sơn,29467,Tỉnh Vĩnh Long,Xã
+,Xã Lưu Nghiệp Anh,29476,Tỉnh Vĩnh Long,Xã
+,Xã Hàm Giang,29489,Tỉnh Vĩnh Long,Xã
+,Xã Đại An,29491,Tỉnh Vĩnh Long,Xã
+,Xã Đôn Châu,29497,Tỉnh Vĩnh Long,Xã
+,Xã Long Hiệp,29506,Tỉnh Vĩnh Long,Xã
+,Xã Long Thành,29513,Tỉnh Vĩnh Long,Xã
+,Xã Long Hữu,29518,Tỉnh Vĩnh Long,Xã
+,Xã Ngũ Lạc,29530,Tỉnh Vĩnh Long,Xã
+,Xã Long Vĩnh,29533,Tỉnh Vĩnh Long,Xã
+,Xã Đông Hải,29536,Tỉnh Vĩnh Long,Xã
+,Xã An Bình,29584,Tỉnh Vĩnh Long,Xã
+,Xã Long Hồ,29602,Tỉnh Vĩnh Long,Xã
+,Xã Phú Quới,29611,Tỉnh Vĩnh Long,Xã
+,Xã Nhơn Phú,29623,Tỉnh Vĩnh Long,Xã
+,Xã Bình Phước,29638,Tỉnh Vĩnh Long,Xã
+,Xã Cái Nhum,29641,Tỉnh Vĩnh Long,Xã
+,Xã Tân Long Hội,29653,Tỉnh Vĩnh Long,Xã
+,Xã Trung Thành,29659,Tỉnh Vĩnh Long,Xã
+,Xã Quới An,29668,Tỉnh Vĩnh Long,Xã
+,Xã Quới Thiện,29677,Tỉnh Vĩnh Long,Xã
+,Xã Trung Hiệp,29683,Tỉnh Vĩnh Long,Xã
+,Xã Trung Ngãi,29698,Tỉnh Vĩnh Long,Xã
+,Xã Hiếu Phụng,29701,Tỉnh Vĩnh Long,Xã
+,Xã Hiếu Thành,29713,Tỉnh Vĩnh Long,Xã
+,Xã Tam Bình,29719,Tỉnh Vĩnh Long,Xã
+,Xã Cái Ngang,29728,Tỉnh Vĩnh Long,Xã
+,Xã Hòa Hiệp,29734,Tỉnh Vĩnh Long,Xã
+,Xã Song Phú,29740,Tỉnh Vĩnh Long,Xã
+,Xã Ngãi Tứ,29767,Tỉnh Vĩnh Long,Xã
+,Xã Tân Lược,29785,Tỉnh Vĩnh Long,Xã
+,Xã Mỹ Thuận,29788,Tỉnh Vĩnh Long,Xã
+,Xã Tân Quới,29800,Tỉnh Vĩnh Long,Xã
+,Xã Trà Ôn,29821,Tỉnh Vĩnh Long,Xã
+,Xã Hòa Bình,29830,Tỉnh Vĩnh Long,Xã
+,Xã Trà Côn,29836,Tỉnh Vĩnh Long,Xã
+,Xã Vĩnh Xuân,29845,Tỉnh Vĩnh Long,Xã
+,Xã Lục Sĩ Thành,29857,Tỉnh Vĩnh Long,Xã
+,Phường Bình Đức,30292,Tỉnh An Giang,Phường
+,Phường Mỹ Thới,30301,Tỉnh An Giang,Phường
+,Phường Long Xuyên,30307,Tỉnh An Giang,Phường
+,Phường Châu Đốc,30316,Tỉnh An Giang,Phường
+,Phường Vĩnh Tế,30325,Tỉnh An Giang,Phường
+,Phường Tân Châu,30376,Tỉnh An Giang,Phường
+,Phường Long Phú,30377,Tỉnh An Giang,Phường
+,Phường Thới Sơn,30502,Tỉnh An Giang,Phường
+,Phường Chi Lăng,30505,Tỉnh An Giang,Phường
+,Phường Tịnh Biên,30520,Tỉnh An Giang,Phường
+,Phường Rạch Giá,30742,Tỉnh An Giang,Phường
+,Phường Vĩnh Thông,30760,Tỉnh An Giang,Phường
+,Phường Tô Châu,30766,Tỉnh An Giang,Phường
+,Phường Hà Tiên,30769,Tỉnh An Giang,Phường
+,Xã Mỹ Hòa Hưng,30313,Tỉnh An Giang,Xã
+,Xã An Phú,30337,Tỉnh An Giang,Xã
+,Xã Khánh Bình,30341,Tỉnh An Giang,Xã
+,Xã Nhơn Hội,30346,Tỉnh An Giang,Xã
+,Xã Phú Hữu,30352,Tỉnh An Giang,Xã
+,Xã Vĩnh Hậu,30367,Tỉnh An Giang,Xã
+,Xã Vĩnh Xương,30385,Tỉnh An Giang,Xã
+,Xã Tân An,30388,Tỉnh An Giang,Xã
+,Xã Châu Phong,30403,Tỉnh An Giang,Xã
+,Xã Phú Tân,30406,Tỉnh An Giang,Xã
+,Xã Chợ Vàm,30409,Tỉnh An Giang,Xã
+,Xã Phú Lâm,30421,Tỉnh An Giang,Xã
+,Xã Hòa Lạc,30430,Tỉnh An Giang,Xã
+,Xã Phú An,30436,Tỉnh An Giang,Xã
+,Xã Bình Thạnh Đông,30445,Tỉnh An Giang,Xã
+,Xã Châu Phú,30463,Tỉnh An Giang,Xã
+,Xã Mỹ Đức,30469,Tỉnh An Giang,Xã
+,Xã Vĩnh Thạnh Trung,30478,Tỉnh An Giang,Xã
+,Xã Thạnh Mỹ Tây,30481,Tỉnh An Giang,Xã
+,Xã Bình Mỹ,30487,Tỉnh An Giang,Xã
+,Xã An Cư,30526,Tỉnh An Giang,Xã
+,Xã Núi Cấm,30538,Tỉnh An Giang,Xã
+,Xã Tri Tôn,30544,Tỉnh An Giang,Xã
+,Xã Ba Chúc,30547,Tỉnh An Giang,Xã
+,Xã Vĩnh Gia,30568,Tỉnh An Giang,Xã
+,Xã Ô Lâm,30577,Tỉnh An Giang,Xã
+,Xã Cô Tô,30580,Tỉnh An Giang,Xã
+,Xã An Châu,30589,Tỉnh An Giang,Xã
+,Xã Cần Đăng,30595,Tỉnh An Giang,Xã
+,Xã Vĩnh An,30604,Tỉnh An Giang,Xã
+,Xã Bình Hòa,30607,Tỉnh An Giang,Xã
+,Xã Vĩnh Hanh,30619,Tỉnh An Giang,Xã
+,Xã Chợ Mới,30628,Tỉnh An Giang,Xã
+,Xã Long Điền,30631,Tỉnh An Giang,Xã
+,Xã Cù Lao Giêng,30643,Tỉnh An Giang,Xã
+,Xã Nhơn Mỹ,30658,Tỉnh An Giang,Xã
+,Xã Long Kiến,30664,Tỉnh An Giang,Xã
+,Xã Hội An,30673,Tỉnh An Giang,Xã
+,Xã Thoại Sơn,30682,Tỉnh An Giang,Xã
+,Xã Phú Hòa,30685,Tỉnh An Giang,Xã
+,Xã Óc Eo,30688,Tỉnh An Giang,Xã
+,Xã Tây Phú,30691,Tỉnh An Giang,Xã
+,Xã Vĩnh Trạch,30697,Tỉnh An Giang,Xã
+,Xã Định Mỹ,30709,Tỉnh An Giang,Xã
+,Xã Tiên Hải,30781,Tỉnh An Giang,Xã
+,Xã Kiên Lương,30787,Tỉnh An Giang,Xã
+,Xã Hòa Điền,30790,Tỉnh An Giang,Xã
+,Xã Vĩnh Điều,30793,Tỉnh An Giang,Xã
+,Xã Giang Thành,30796,Tỉnh An Giang,Xã
+,Xã Sơn Hải,30811,Tỉnh An Giang,Xã
+,Xã Hòn Nghệ,30814,Tỉnh An Giang,Xã
+,Xã Hòn Đất,30817,Tỉnh An Giang,Xã
+,Xã Bình Sơn,30823,Tỉnh An Giang,Xã
+,Xã Bình Giang,30826,Tỉnh An Giang,Xã
+,Xã Sơn Kiên,30835,Tỉnh An Giang,Xã
+,Xã Mỹ Thuận,30838,Tỉnh An Giang,Xã
+,Xã Tân Hiệp,30850,Tỉnh An Giang,Xã
+,Xã Tân Hội,30856,Tỉnh An Giang,Xã
+,Xã Thạnh Đông,30874,Tỉnh An Giang,Xã
+,Xã Châu Thành,30880,Tỉnh An Giang,Xã
+,Xã Thạnh Lộc,30886,Tỉnh An Giang,Xã
+,Xã Bình An,30898,Tỉnh An Giang,Xã
+,Xã Giồng Riềng,30904,Tỉnh An Giang,Xã
+,Xã Thạnh Hưng,30910,Tỉnh An Giang,Xã
+,Xã Ngọc Chúc,30928,Tỉnh An Giang,Xã
+,Xã Hòa Hưng,30934,Tỉnh An Giang,Xã
+,Xã Long Thạnh,30943,Tỉnh An Giang,Xã
+,Xã Hòa Thuận,30949,Tỉnh An Giang,Xã
+,Xã Gò Quao,30952,Tỉnh An Giang,Xã
+,Xã Định Hòa,30958,Tỉnh An Giang,Xã
+,Xã Vĩnh Hòa Hưng,30970,Tỉnh An Giang,Xã
+,Xã Vĩnh Tuy,30982,Tỉnh An Giang,Xã
+,Xã An Biên,30985,Tỉnh An Giang,Xã
+,Xã Tây Yên,30988,Tỉnh An Giang,Xã
+,Xã Đông Thái,31006,Tỉnh An Giang,Xã
+,Xã Vĩnh Hòa,31012,Tỉnh An Giang,Xã
+,Xã An Minh,31018,Tỉnh An Giang,Xã
+,Xã Đông Hòa,31024,Tỉnh An Giang,Xã
+,Xã U Minh Thượng,31027,Tỉnh An Giang,Xã
+,Xã Tân Thạnh,31031,Tỉnh An Giang,Xã
+,Xã Đông Hưng,31036,Tỉnh An Giang,Xã
+,Xã Vân Khánh,31042,Tỉnh An Giang,Xã
+,Xã Vĩnh Phong,31051,Tỉnh An Giang,Xã
+,Xã Vĩnh Bình,31064,Tỉnh An Giang,Xã
+,Xã Vĩnh Thuận,31069,Tỉnh An Giang,Xã
+,Đặc khu Phú Quốc,31078,Tỉnh An Giang,Đặc khu
+,Đặc khu Thổ Châu,31105,Tỉnh An Giang,Đặc khu
+,Đặc khu Kiên Hải,31108,Tỉnh An Giang,Đặc khu
+,Phường Cái Khế,31120,Thành phố Cần Thơ,Phường
+,Phường Ninh Kiều,31135,Thành phố Cần Thơ,Phường
+,Phường Tân An,31147,Thành phố Cần Thơ,Phường
+,Phường An Bình,31150,Thành phố Cần Thơ,Phường
+,Phường Ô Môn,31153,Thành phố Cần Thơ,Phường
+,Phường Thới Long,31157,Thành phố Cần Thơ,Phường
+,Phường Phước Thới,31162,Thành phố Cần Thơ,Phường
+,Phường Bình Thủy,31168,Thành phố Cần Thơ,Phường
+,Phường Thới An Đông,31174,Thành phố Cần Thơ,Phường
+,Phường Long Tuyền,31183,Thành phố Cần Thơ,Phường
+,Phường Cái Răng,31186,Thành phố Cần Thơ,Phường
+,Phường Hưng Phú,31201,Thành phố Cần Thơ,Phường
+,Phường Thốt Nốt,31207,Thành phố Cần Thơ,Phường
+,Phường Tân Lộc,31213,Thành phố Cần Thơ,Phường
+,Phường Trung Nhứt,31217,Thành phố Cần Thơ,Phường
+,Phường Thuận Hưng,31228,Thành phố Cần Thơ,Phường
+,Phường Vị Thanh,31321,Thành phố Cần Thơ,Phường
+,Phường Vị Tân,31333,Thành phố Cần Thơ,Phường
+,Phường Ngã Bảy,31340,Thành phố Cần Thơ,Phường
+,Phường Đại Thành,31411,Thành phố Cần Thơ,Phường
+,Phường Long Mỹ,31471,Thành phố Cần Thơ,Phường
+,Phường Long Bình,31473,Thành phố Cần Thơ,Phường
+,Phường Long Phú 1,31480,Thành phố Cần Thơ,Phường
+,Phường Sóc Trăng,31507,Thành phố Cần Thơ,Phường
+,Phường Phú Lợi,31510,Thành phố Cần Thơ,Phường
+,Phường Mỹ Xuyên,31684,Thành phố Cần Thơ,Phường
+,Phường Ngã Năm,31732,Thành phố Cần Thơ,Phường
+,Phường Mỹ Quới,31753,Thành phố Cần Thơ,Phường
+,Phường Vĩnh Châu,31783,Thành phố Cần Thơ,Phường
+,Phường Khánh Hòa,31789,Thành phố Cần Thơ,Phường
+,Phường Vĩnh Phước,31804,Thành phố Cần Thơ,Phường
+,Xã Thạnh An,31231,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Thạnh,31232,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Trinh,31237,Thành phố Cần Thơ,Xã
+,Xã Thạnh Quới,31246,Thành phố Cần Thơ,Xã
+,Xã Thạnh Phú,31249,Thành phố Cần Thơ,Xã
+,Xã Trung Hưng,31255,Thành phố Cần Thơ,Xã
+,Xã Thới Lai,31258,Thành phố Cần Thơ,Xã
+,Xã Cờ Đỏ,31261,Thành phố Cần Thơ,Xã
+,Xã Thới Hưng,31264,Thành phố Cần Thơ,Xã
+,Xã Đông Hiệp,31273,Thành phố Cần Thơ,Xã
+,Xã Đông Thuận,31282,Thành phố Cần Thơ,Xã
+,Xã Trường Thành,31288,Thành phố Cần Thơ,Xã
+,Xã Trường Xuân,31294,Thành phố Cần Thơ,Xã
+,Xã Phong Điền,31299,Thành phố Cần Thơ,Xã
+,Xã Trường Long,31309,Thành phố Cần Thơ,Xã
+,Xã Nhơn Ái,31315,Thành phố Cần Thơ,Xã
+,Xã Hỏa Lựu,31338,Thành phố Cần Thơ,Xã
+,Xã Tân Hòa,31342,Thành phố Cần Thơ,Xã
+,Xã Trường Long Tây,31348,Thành phố Cần Thơ,Xã
+,Xã Thạnh Xuân,31360,Thành phố Cần Thơ,Xã
+,Xã Châu Thành,31366,Thành phố Cần Thơ,Xã
+,Xã Đông Phước,31369,Thành phố Cần Thơ,Xã
+,Xã Phú Hữu,31378,Thành phố Cần Thơ,Xã
+,Xã Hòa An,31393,Thành phố Cần Thơ,Xã
+,Xã Hiệp Hưng,31396,Thành phố Cần Thơ,Xã
+,Xã Tân Bình,31399,Thành phố Cần Thơ,Xã
+,Xã Thạnh Hòa,31408,Thành phố Cần Thơ,Xã
+,Xã Phụng Hiệp,31420,Thành phố Cần Thơ,Xã
+,Xã Phương Bình,31426,Thành phố Cần Thơ,Xã
+,Xã Tân Phước Hưng,31432,Thành phố Cần Thơ,Xã
+,Xã Vị Thủy,31441,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Thuận Đông,31453,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Tường,31459,Thành phố Cần Thơ,Xã
+,Xã Vị Thanh 1,31465,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Viễn,31489,Thành phố Cần Thơ,Xã
+,Xã Lương Tâm,31492,Thành phố Cần Thơ,Xã
+,Xã Xà Phiên,31495,Thành phố Cần Thơ,Xã
+,Xã Kế Sách,31528,Thành phố Cần Thơ,Xã
+,Xã An Lạc Thôn,31531,Thành phố Cần Thơ,Xã
+,Xã Phong Nẫm,31537,Thành phố Cần Thơ,Xã
+,Xã Thới An Hội,31540,Thành phố Cần Thơ,Xã
+,Xã Nhơn Mỹ,31552,Thành phố Cần Thơ,Xã
+,Xã Đại Hải,31561,Thành phố Cần Thơ,Xã
+,Xã Mỹ Tú,31567,Thành phố Cần Thơ,Xã
+,Xã Phú Tâm,31569,Thành phố Cần Thơ,Xã
+,Xã Hồ Đắc Kiện,31570,Thành phố Cần Thơ,Xã
+,Xã Long Hưng,31579,Thành phố Cần Thơ,Xã
+,Xã Thuận Hòa,31582,Thành phố Cần Thơ,Xã
+,Xã Mỹ Hương,31591,Thành phố Cần Thơ,Xã
+,Xã An Ninh,31594,Thành phố Cần Thơ,Xã
+,Xã Mỹ Phước,31603,Thành phố Cần Thơ,Xã
+,Xã An Thạnh,31615,Thành phố Cần Thơ,Xã
+,Xã Cù Lao Dung,31633,Thành phố Cần Thơ,Xã
+,Xã Long Phú,31639,Thành phố Cần Thơ,Xã
+,Xã Đại Ngãi,31645,Thành phố Cần Thơ,Xã
+,Xã Trường Khánh,31654,Thành phố Cần Thơ,Xã
+,Xã Tân Thạnh,31666,Thành phố Cần Thơ,Xã
+,Xã Trần Đề,31673,Thành phố Cần Thơ,Xã
+,Xã Liêu Tú,31675,Thành phố Cần Thơ,Xã
+,Xã Lịch Hội Thượng,31679,Thành phố Cần Thơ,Xã
+,Xã Tài Văn,31687,Thành phố Cần Thơ,Xã
+,Xã Thạnh Thới An,31699,Thành phố Cần Thơ,Xã
+,Xã Nhu Gia,31708,Thành phố Cần Thơ,Xã
+,Xã Hòa Tú,31717,Thành phố Cần Thơ,Xã
+,Xã Ngọc Tố,31723,Thành phố Cần Thơ,Xã
+,Xã Gia Hòa,31726,Thành phố Cần Thơ,Xã
+,Xã Tân Long,31741,Thành phố Cần Thơ,Xã
+,Xã Phú Lộc,31756,Thành phố Cần Thơ,Xã
+,Xã Lâm Tân,31759,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Lợi,31777,Thành phố Cần Thơ,Xã
+,Xã Vĩnh Hải,31795,Thành phố Cần Thơ,Xã
+,Xã Lai Hòa,31810,Thành phố Cần Thơ,Xã
+,Phường Bạc Liêu,31825,Tỉnh Cà Mau,Phường
+,Phường Vĩnh Trạch,31834,Tỉnh Cà Mau,Phường
+,Phường Hiệp Thành,31840,Tỉnh Cà Mau,Phường
+,Phường Giá Rai,31942,Tỉnh Cà Mau,Phường
+,Phường Láng Tròn,31951,Tỉnh Cà Mau,Phường
+,Phường An Xuyên,32002,Tỉnh Cà Mau,Phường
+,Phường Lý Văn Lâm,32014,Tỉnh Cà Mau,Phường
+,Phường Tân Thành,32025,Tỉnh Cà Mau,Phường
+,Phường Hòa Thành,32041,Tỉnh Cà Mau,Phường
+,Xã Hồng Dân,31843,Tỉnh Cà Mau,Xã
+,Xã Ninh Quới,31849,Tỉnh Cà Mau,Xã
+,Xã Vĩnh Lộc,31858,Tỉnh Cà Mau,Xã
+,Xã Ninh Thạnh Lợi,31864,Tỉnh Cà Mau,Xã
+,Xã Phước Long,31867,Tỉnh Cà Mau,Xã
+,Xã Vĩnh Phước,31876,Tỉnh Cà Mau,Xã
+,Xã Vĩnh Thanh,31882,Tỉnh Cà Mau,Xã
+,Xã Phong Hiệp,31885,Tỉnh Cà Mau,Xã
+,Xã Hòa Bình,31891,Tỉnh Cà Mau,Xã
+,Xã Châu Thới,31894,Tỉnh Cà Mau,Xã
+,Xã Vĩnh Lợi,31900,Tỉnh Cà Mau,Xã
+,Xã Hưng Hội,31906,Tỉnh Cà Mau,Xã
+,Xã Vĩnh Mỹ,31918,Tỉnh Cà Mau,Xã
+,Xã Vĩnh Hậu,31927,Tỉnh Cà Mau,Xã
+,Xã Phong Thạnh,31957,Tỉnh Cà Mau,Xã
+,Xã Gành Hào,31972,Tỉnh Cà Mau,Xã
+,Xã Đông Hải,31975,Tỉnh Cà Mau,Xã
+,Xã Long Điền,31985,Tỉnh Cà Mau,Xã
+,Xã An Trạch,31988,Tỉnh Cà Mau,Xã
+,Xã Định Thành,31993,Tỉnh Cà Mau,Xã
+,Xã Nguyễn Phích,32044,Tỉnh Cà Mau,Xã
+,Xã U Minh,32047,Tỉnh Cà Mau,Xã
+,Xã Khánh An,32059,Tỉnh Cà Mau,Xã
+,Xã Khánh Lâm,32062,Tỉnh Cà Mau,Xã
+,Xã Thới Bình,32065,Tỉnh Cà Mau,Xã
+,Xã Biển Bạch,32069,Tỉnh Cà Mau,Xã
+,Xã Trí Phải,32071,Tỉnh Cà Mau,Xã
+,Xã Tân Lộc,32083,Tỉnh Cà Mau,Xã
+,Xã Hồ Thị Kỷ,32092,Tỉnh Cà Mau,Xã
+,Xã Trần Văn Thời,32095,Tỉnh Cà Mau,Xã
+,Xã Sông Đốc,32098,Tỉnh Cà Mau,Xã
+,Xã Đá Bạc,32104,Tỉnh Cà Mau,Xã
+,Xã Khánh Bình,32110,Tỉnh Cà Mau,Xã
+,Xã Khánh Hưng,32119,Tỉnh Cà Mau,Xã
+,Xã Cái Nước,32128,Tỉnh Cà Mau,Xã
+,Xã Lương Thế Trân,32134,Tỉnh Cà Mau,Xã
+,Xã Tân Hưng,32137,Tỉnh Cà Mau,Xã
+,Xã Hưng Mỹ,32140,Tỉnh Cà Mau,Xã
+,Xã Đầm Dơi,32152,Tỉnh Cà Mau,Xã
+,Xã Tạ An Khương,32155,Tỉnh Cà Mau,Xã
+,Xã Trần Phán,32161,Tỉnh Cà Mau,Xã
+,Xã Tân Thuận,32167,Tỉnh Cà Mau,Xã
+,Xã Quách Phẩm,32182,Tỉnh Cà Mau,Xã
+,Xã Thanh Tùng,32185,Tỉnh Cà Mau,Xã
+,Xã Tân Tiến,32188,Tỉnh Cà Mau,Xã
+,Xã Năm Căn,32191,Tỉnh Cà Mau,Xã
+,Xã Đất Mới,32201,Tỉnh Cà Mau,Xã
+,Xã Tam Giang,32206,Tỉnh Cà Mau,Xã
+,Xã Cái Đôi Vàm,32212,Tỉnh Cà Mau,Xã
+,Xã Phú Mỹ,32214,Tỉnh Cà Mau,Xã
+,Xã Phú Tân,32218,Tỉnh Cà Mau,Xã
+,Xã Nguyễn Việt Khái,32227,Tỉnh Cà Mau,Xã
+,Xã Tân Ân,32236,Tỉnh Cà Mau,Xã
+,Xã Phan Ngọc Hiển,32244,Tỉnh Cà Mau,Xã
+,Xã Đất Mũi,32248,Tỉnh Cà Mau,Xã
