@@ -1,0 +1,1264 @@
+{
+  "environment": {
+    "GoVersion": "go1.25.5",
+    "OS": "darwin",
+    "Arch": "arm64",
+    "NumCPU": 10,
+    "Timestamp": "2026-01-11T22:13:15.97699+07:00",
+    "Hostname": "USERnoMacBook-Air.local",
+    "PostgresURL": "(not configured)",
+    "DataDir": "/var/folders/_g/lq_pglm508df70x751kkxrl80000gp/T/storebench"
+  },
+  "config": {
+    "Backends": [
+      "duckdb",
+      "sqlite"
+    ],
+    "Scenarios": [
+      "records",
+      "batch",
+      "query",
+      "fields",
+      "concurrent"
+    ],
+    "Iterations": 50,
+    "Concurrency": 25,
+    "WarmupIters": 10,
+    "OutputDir": "/Users/apple/github/go-mizu/mizu/blueprints/table/report",
+    "DataDir": "/var/folders/_g/lq_pglm508df70x751kkxrl80000gp/T/storebench",
+    "PostgresURL": "",
+    "Verbose": false
+  },
+  "results": [
+    {
+      "scenario": "record_create",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 391542,
+        "max": 660084,
+        "avg": 444601,
+        "p50": 430833,
+        "p90": 489209,
+        "p95": 535875,
+        "p99": 614708,
+        "std_dev": 52669,
+        "total_time": 22466083,
+        "ops_per_sec": 2225.577106609995
+      },
+      "timestamp": "2026-01-11T22:13:16.029946+07:00"
+    },
+    {
+      "scenario": "record_get_by_id",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 130834,
+        "max": 202167,
+        "avg": 147414,
+        "p50": 142167,
+        "p90": 159292,
+        "p95": 172167,
+        "p99": 201208,
+        "std_dev": 14904,
+        "total_time": 28788292,
+        "ops_per_sec": 1736.8171755378887
+      },
+      "timestamp": "2026-01-11T22:13:16.058764+07:00"
+    },
+    {
+      "scenario": "record_update",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 269334,
+        "max": 502292,
+        "avg": 310600,
+        "p50": 300583,
+        "p90": 340083,
+        "p95": 365208,
+        "p99": 408958,
+        "std_dev": 38619,
+        "total_time": 38946792,
+        "ops_per_sec": 1283.802784064988
+      },
+      "timestamp": "2026-01-11T22:13:16.097734+07:00"
+    },
+    {
+      "scenario": "record_update_cell",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 310625,
+        "max": 536792,
+        "avg": 350950,
+        "p50": 340875,
+        "p90": 373125,
+        "p95": 396875,
+        "p99": 432917,
+        "std_dev": 35826,
+        "total_time": 40496792,
+        "ops_per_sec": 1234.6656989521541
+      },
+      "timestamp": "2026-01-11T22:13:16.138258+07:00"
+    },
+    {
+      "scenario": "record_delete",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 451500,
+        "max": 616500,
+        "avg": 487142,
+        "p50": 482542,
+        "p90": 502542,
+        "p95": 527250,
+        "p99": 606250,
+        "std_dev": 31789,
+        "total_time": 48374750,
+        "ops_per_sec": 1033.5970728530897
+      },
+      "timestamp": "2026-01-11T22:13:16.186654+07:00"
+    },
+    {
+      "scenario": "batch_create_10",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 829833,
+        "max": 1375417,
+        "avg": 942450,
+        "p50": 919625,
+        "p90": 1001500,
+        "p95": 1033958,
+        "p99": 1258625,
+        "std_dev": 90758,
+        "total_time": 47881916,
+        "ops_per_sec": 1044.235573196361,
+        "records_ops": 500,
+        "records_per_sec": 10442.35573196361
+      },
+      "timestamp": "2026-01-11T22:13:16.234557+07:00"
+    },
+    {
+      "scenario": "batch_create_100",
+      "backend": "duckdb",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 6032334,
+        "max": 7469750,
+        "avg": 6452118,
+        "p50": 6352041,
+        "p90": 6807875,
+        "p95": 6840625,
+        "p99": 6882375,
+        "std_dev": 311848,
+        "total_time": 163735291,
+        "ops_per_sec": 152.68547084330157,
+        "records_ops": 2500,
+        "records_per_sec": 15268.547084330157
+      },
+      "timestamp": "2026-01-11T22:13:16.398313+07:00"
+    },
+    {
+      "scenario": "batch_create_500",
+      "backend": "duckdb",
+      "stats": {
+        "count": 10,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 89268459,
+        "max": 98110500,
+        "avg": 93360425,
+        "p50": 92807250,
+        "p90": 96115958,
+        "p95": 96115958,
+        "p99": 96115958,
+        "std_dev": 2625391,
+        "total_time": 938718708,
+        "ops_per_sec": 10.65281847988908,
+        "records_ops": 5000,
+        "records_per_sec": 5326.409239944539
+      },
+      "timestamp": "2026-01-11T22:13:17.337062+07:00"
+    },
+    {
+      "scenario": "batch_get_by_ids_10",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 358666,
+        "max": 754958,
+        "avg": 443095,
+        "p50": 410458,
+        "p90": 533459,
+        "p95": 704250,
+        "p99": 723875,
+        "std_dev": 90564,
+        "total_time": 73146750,
+        "ops_per_sec": 683.5573692611086,
+        "records_ops": 500,
+        "records_per_sec": 6835.573692611087
+      },
+      "timestamp": "2026-01-11T22:13:17.410233+07:00"
+    },
+    {
+      "scenario": "batch_get_by_ids_100",
+      "backend": "duckdb",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 1493459,
+        "max": 2135292,
+        "avg": 1705501,
+        "p50": 1669916,
+        "p90": 1877084,
+        "p95": 1881084,
+        "p99": 1951208,
+        "std_dev": 144275,
+        "total_time": 204972209,
+        "ops_per_sec": 121.96775417490866,
+        "records_ops": 2500,
+        "records_per_sec": 12196.775417490866
+      },
+      "timestamp": "2026-01-11T22:13:17.615225+07:00"
+    },
+    {
+      "scenario": "batch_delete_10",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 1230750,
+        "max": 1743292,
+        "avg": 1398080,
+        "p50": 1378916,
+        "p90": 1489292,
+        "p95": 1586375,
+        "p99": 1661875,
+        "std_dev": 96368,
+        "total_time": 120950333,
+        "ops_per_sec": 413.3928262934175,
+        "records_ops": 500,
+        "records_per_sec": 4133.928262934175
+      },
+      "timestamp": "2026-01-11T22:13:17.736203+07:00"
+    },
+    {
+      "scenario": "batch_delete_100",
+      "backend": "duckdb",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 4673167,
+        "max": 5634125,
+        "avg": 5059501,
+        "p50": 5077084,
+        "p90": 5259417,
+        "p95": 5300125,
+        "p99": 5302333,
+        "std_dev": 207569,
+        "total_time": 289918250,
+        "ops_per_sec": 86.23120483101702,
+        "records_ops": 2500,
+        "records_per_sec": 8623.120483101702
+      },
+      "timestamp": "2026-01-11T22:13:18.026146+07:00"
+    },
+    {
+      "scenario": "list_100_records",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 974417,
+        "max": 1865250,
+        "avg": 1259715,
+        "p50": 1220584,
+        "p90": 1478875,
+        "p95": 1527542,
+        "p99": 1651166,
+        "std_dev": 185397,
+        "total_time": 62999959,
+        "ops_per_sec": 793.6513101540273
+      },
+      "timestamp": "2026-01-11T22:13:18.161361+07:00"
+    },
+    {
+      "scenario": "list_500_records",
+      "backend": "duckdb",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 2618875,
+        "max": 3640458,
+        "avg": 3081936,
+        "p50": 3117250,
+        "p90": 3405625,
+        "p95": 3419167,
+        "p99": 3483625,
+        "std_dev": 245145,
+        "total_time": 77059250,
+        "ops_per_sec": 324.4256854303669
+      },
+      "timestamp": "2026-01-11T22:13:18.238445+07:00"
+    },
+    {
+      "scenario": "list_with_sort",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 960667,
+        "max": 1879000,
+        "avg": 1211855,
+        "p50": 1193666,
+        "p90": 1394875,
+        "p95": 1398625,
+        "p99": 1473625,
+        "std_dev": 166621,
+        "total_time": 60604584,
+        "ops_per_sec": 825.0201007897356
+      },
+      "timestamp": "2026-01-11T22:13:18.299074+07:00"
+    },
+    {
+      "scenario": "list_with_filter",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 888000,
+        "max": 1560541,
+        "avg": 1133555,
+        "p50": 1110333,
+        "p90": 1366125,
+        "p95": 1417042,
+        "p99": 1456000,
+        "std_dev": 146783,
+        "total_time": 56691292,
+        "ops_per_sec": 881.9696682869743
+      },
+      "timestamp": "2026-01-11T22:13:18.355789+07:00"
+    },
+    {
+      "scenario": "field_create",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 450125,
+        "max": 756750,
+        "avg": 564690,
+        "p50": 547750,
+        "p90": 645875,
+        "p95": 721666,
+        "p99": 738041,
+        "std_dev": 72221,
+        "total_time": 29048666,
+        "ops_per_sec": 1721.2494370653715
+      },
+      "timestamp": "2026-01-11T22:13:18.384865+07:00"
+    },
+    {
+      "scenario": "field_list_by_table",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 296459,
+        "max": 680042,
+        "avg": 380572,
+        "p50": 366500,
+        "p90": 444750,
+        "p95": 456459,
+        "p99": 471416,
+        "std_dev": 63437,
+        "total_time": 19034125,
+        "ops_per_sec": 2626.860966816179
+      },
+      "timestamp": "2026-01-11T22:13:18.403916+07:00"
+    },
+    {
+      "scenario": "field_update",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 334667,
+        "max": 541250,
+        "avg": 404741,
+        "p50": 396917,
+        "p90": 461750,
+        "p95": 468417,
+        "p99": 518000,
+        "std_dev": 46178,
+        "total_time": 50703667,
+        "ops_per_sec": 986.1219702314627
+      },
+      "timestamp": "2026-01-11T22:13:18.454647+07:00"
+    },
+    {
+      "scenario": "select_choice_add",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 322083,
+        "max": 501375,
+        "avg": 380171,
+        "p50": 359792,
+        "p90": 440667,
+        "p95": 456375,
+        "p99": 471375,
+        "std_dev": 44540,
+        "total_time": 20108041,
+        "ops_per_sec": 2486.567438369556
+      },
+      "timestamp": "2026-01-11T22:13:18.474776+07:00"
+    },
+    {
+      "scenario": "select_choice_list",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 196000,
+        "max": 418375,
+        "avg": 253445,
+        "p50": 237916,
+        "p90": 331167,
+        "p95": 336667,
+        "p99": 345250,
+        "std_dev": 47665,
+        "total_time": 21451708,
+        "ops_per_sec": 2330.8167349658124
+      },
+      "timestamp": "2026-01-11T22:13:18.49625+07:00"
+    },
+    {
+      "scenario": "concurrent_reads_10",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 139959,
+        "max": 1329708,
+        "avg": 492552,
+        "p50": 501333,
+        "p90": 675791,
+        "p95": 786792,
+        "p99": 1103042,
+        "std_dev": 223539,
+        "total_time": 9742875,
+        "ops_per_sec": 5131.955403307546
+      },
+      "timestamp": "2026-01-11T22:13:18.506017+07:00"
+    },
+    {
+      "scenario": "concurrent_writes_10",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 637375,
+        "max": 4595625,
+        "avg": 2379396,
+        "p50": 2294875,
+        "p90": 3553333,
+        "p95": 3867667,
+        "p99": 4361750,
+        "std_dev": 856287,
+        "total_time": 12400625,
+        "ops_per_sec": 4032.054835945769
+      },
+      "timestamp": "2026-01-11T22:13:18.51844+07:00"
+    },
+    {
+      "scenario": "concurrent_mixed_10",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 138666,
+        "max": 3278042,
+        "avg": 789729,
+        "p50": 447917,
+        "p90": 1668750,
+        "p95": 2499750,
+        "p99": 2621083,
+        "std_dev": 744568,
+        "total_time": 11349083,
+        "ops_per_sec": 4405.642288456257
+      },
+      "timestamp": "2026-01-11T22:13:18.529806+07:00"
+    },
+    {
+      "scenario": "concurrent_reads_25",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 166625,
+        "max": 2206791,
+        "avg": 618455,
+        "p50": 578291,
+        "p90": 849625,
+        "p95": 985917,
+        "p99": 2145083,
+        "std_dev": 407925,
+        "total_time": 9543875,
+        "ops_per_sec": 5238.962161595788
+      },
+      "timestamp": "2026-01-11T22:13:18.539365+07:00"
+    },
+    {
+      "scenario": "concurrent_writes_25",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 747958,
+        "max": 15484042,
+        "avg": 7597059,
+        "p50": 5984083,
+        "p90": 13577458,
+        "p95": 14307541,
+        "p99": 15055458,
+        "std_dev": 4613004,
+        "total_time": 16860458,
+        "ops_per_sec": 2965.518493032633
+      },
+      "timestamp": "2026-01-11T22:13:18.556244+07:00"
+    },
+    {
+      "scenario": "concurrent_mixed_25",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 183042,
+        "max": 3422625,
+        "avg": 1184598,
+        "p50": 1005333,
+        "p90": 2409334,
+        "p95": 2901667,
+        "p99": 3283917,
+        "std_dev": 848405,
+        "total_time": 10227042,
+        "ops_per_sec": 4888.999184710496
+      },
+      "timestamp": "2026-01-11T22:13:18.566489+07:00"
+    },
+    {
+      "scenario": "concurrent_reads_50",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 141084,
+        "max": 1272541,
+        "avg": 491005,
+        "p50": 448083,
+        "p90": 799667,
+        "p95": 965375,
+        "p99": 974125,
+        "std_dev": 255140,
+        "total_time": 9548584,
+        "ops_per_sec": 5236.378503870312
+      },
+      "timestamp": "2026-01-11T22:13:18.576055+07:00"
+    },
+    {
+      "scenario": "concurrent_writes_50",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 721334,
+        "max": 16024250,
+        "avg": 7867276,
+        "p50": 7781334,
+        "p90": 12542833,
+        "p95": 12958417,
+        "p99": 13268709,
+        "std_dev": 3994557,
+        "total_time": 16111541,
+        "ops_per_sec": 3103.365469510334
+      },
+      "timestamp": "2026-01-11T22:13:18.592189+07:00"
+    },
+    {
+      "scenario": "concurrent_mixed_50",
+      "backend": "duckdb",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 174875,
+        "max": 3739375,
+        "avg": 1549390,
+        "p50": 1473333,
+        "p90": 2722125,
+        "p95": 2947042,
+        "p99": 3418666,
+        "std_dev": 930206,
+        "total_time": 12005125,
+        "ops_per_sec": 4164.887912454056
+      },
+      "timestamp": "2026-01-11T22:13:18.604215+07:00"
+    },
+    {
+      "scenario": "record_create",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 40958,
+        "max": 75292,
+        "avg": 46537,
+        "p50": 43875,
+        "p90": 55166,
+        "p95": 60750,
+        "p99": 62167,
+        "std_dev": 6876,
+        "total_time": 2406542,
+        "ops_per_sec": 20776.699513243486
+      },
+      "timestamp": "2026-01-11T22:13:18.651206+07:00"
+    },
+    {
+      "scenario": "record_get_by_id",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 10834,
+        "max": 50000,
+        "avg": 12926,
+        "p50": 11875,
+        "p90": 13500,
+        "p95": 14041,
+        "p99": 16208,
+        "std_dev": 5391,
+        "total_time": 3543333,
+        "ops_per_sec": 14111.007912606578
+      },
+      "timestamp": "2026-01-11T22:13:18.654766+07:00"
+    },
+    {
+      "scenario": "record_update",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 15833,
+        "max": 27833,
+        "avg": 17010,
+        "p50": 16625,
+        "p90": 18042,
+        "p95": 18667,
+        "p99": 22291,
+        "std_dev": 1846,
+        "total_time": 5851875,
+        "ops_per_sec": 8544.269998931966
+      },
+      "timestamp": "2026-01-11T22:13:18.660633+07:00"
+    },
+    {
+      "scenario": "record_update_cell",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 23041,
+        "max": 41667,
+        "avg": 24516,
+        "p50": 24042,
+        "p90": 25042,
+        "p95": 25458,
+        "p99": 26541,
+        "std_dev": 2539,
+        "total_time": 3358459,
+        "ops_per_sec": 14887.780377845911
+      },
+      "timestamp": "2026-01-11T22:13:18.664004+07:00"
+    },
+    {
+      "scenario": "record_delete",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 36125,
+        "max": 1194000,
+        "avg": 67311,
+        "p50": 40041,
+        "p90": 57166,
+        "p95": 60416,
+        "p99": 83666,
+        "std_dev": 161235,
+        "total_time": 5658666,
+        "ops_per_sec": 8836.0048110279
+      },
+      "timestamp": "2026-01-11T22:13:18.669675+07:00"
+    },
+    {
+      "scenario": "batch_create_10",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 99625,
+        "max": 1511833,
+        "avg": 160860,
+        "p50": 121833,
+        "p90": 160500,
+        "p95": 176833,
+        "p99": 440167,
+        "std_dev": 199186,
+        "total_time": 8561125,
+        "ops_per_sec": 5840.353925447883,
+        "records_ops": 500,
+        "records_per_sec": 58403.53925447883
+      },
+      "timestamp": "2026-01-11T22:13:18.678264+07:00"
+    },
+    {
+      "scenario": "batch_create_100",
+      "backend": "sqlite",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 795416,
+        "max": 5242792,
+        "avg": 1124238,
+        "p50": 898500,
+        "p90": 1159333,
+        "p95": 1287750,
+        "p99": 1494875,
+        "std_dev": 854456,
+        "total_time": 31148666,
+        "ops_per_sec": 802.6025897866703,
+        "records_ops": 2500,
+        "records_per_sec": 80260.25897866701
+      },
+      "timestamp": "2026-01-11T22:13:18.709428+07:00"
+    },
+    {
+      "scenario": "batch_create_500",
+      "backend": "sqlite",
+      "stats": {
+        "count": 10,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 4321708,
+        "max": 8332166,
+        "avg": 5615912,
+        "p50": 4885875,
+        "p90": 8031125,
+        "p95": 8031125,
+        "p99": 8031125,
+        "std_dev": 1407105,
+        "total_time": 61001958,
+        "ops_per_sec": 163.9291643720682,
+        "records_ops": 5000,
+        "records_per_sec": 81964.5821860341
+      },
+      "timestamp": "2026-01-11T22:13:18.770447+07:00"
+    },
+    {
+      "scenario": "batch_get_by_ids_10",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 57000,
+        "max": 299375,
+        "avg": 71967,
+        "p50": 60375,
+        "p90": 74667,
+        "p95": 75250,
+        "p99": 274166,
+        "std_dev": 44593,
+        "total_time": 13561167,
+        "ops_per_sec": 3686.9983239643016,
+        "records_ops": 500,
+        "records_per_sec": 36869.983239643014
+      },
+      "timestamp": "2026-01-11T22:13:18.784025+07:00"
+    },
+    {
+      "scenario": "batch_get_by_ids_100",
+      "backend": "sqlite",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 495708,
+        "max": 1003541,
+        "avg": 625566,
+        "p50": 551166,
+        "p90": 858333,
+        "p95": 924958,
+        "p99": 983250,
+        "std_dev": 153080,
+        "total_time": 47007667,
+        "ops_per_sec": 531.8281377376162,
+        "records_ops": 2500,
+        "records_per_sec": 53182.81377376163
+      },
+      "timestamp": "2026-01-11T22:13:18.831049+07:00"
+    },
+    {
+      "scenario": "batch_delete_10",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 121375,
+        "max": 267625,
+        "avg": 142183,
+        "p50": 136625,
+        "p90": 158708,
+        "p95": 165458,
+        "p99": 177042,
+        "std_dev": 22105,
+        "total_time": 16256917,
+        "ops_per_sec": 3075.613906375975,
+        "records_ops": 500,
+        "records_per_sec": 30756.139063759754
+      },
+      "timestamp": "2026-01-11T22:13:18.847325+07:00"
+    },
+    {
+      "scenario": "batch_delete_100",
+      "backend": "sqlite",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 773625,
+        "max": 4048417,
+        "avg": 1012106,
+        "p50": 818792,
+        "p90": 924584,
+        "p95": 1561541,
+        "p99": 1601375,
+        "std_dev": 653873,
+        "total_time": 54016958,
+        "ops_per_sec": 462.8176210885478,
+        "records_ops": 2500,
+        "records_per_sec": 46281.76210885478
+      },
+      "timestamp": "2026-01-11T22:13:18.901359+07:00"
+    },
+    {
+      "scenario": "list_100_records",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 502792,
+        "max": 995334,
+        "avg": 601829,
+        "p50": 552250,
+        "p90": 818875,
+        "p95": 879292,
+        "p99": 916334,
+        "std_dev": 121408,
+        "total_time": 30099625,
+        "ops_per_sec": 1661.1502634999604
+      },
+      "timestamp": "2026-01-11T22:13:18.945681+07:00"
+    },
+    {
+      "scenario": "list_500_records",
+      "backend": "sqlite",
+      "stats": {
+        "count": 25,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 2389916,
+        "max": 9635333,
+        "avg": 3217594,
+        "p50": 2664417,
+        "p90": 3719792,
+        "p95": 4365459,
+        "p99": 6135625,
+        "std_dev": 1522502,
+        "total_time": 80450709,
+        "ops_per_sec": 310.7492812773098
+      },
+      "timestamp": "2026-01-11T22:13:19.02615+07:00"
+    },
+    {
+      "scenario": "list_with_sort",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 490459,
+        "max": 1000708,
+        "avg": 608725,
+        "p50": 546083,
+        "p90": 890959,
+        "p95": 905250,
+        "p99": 923500,
+        "std_dev": 144926,
+        "total_time": 30442458,
+        "ops_per_sec": 1642.4429328275662
+      },
+      "timestamp": "2026-01-11T22:13:19.056614+07:00"
+    },
+    {
+      "scenario": "list_with_filter",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 456167,
+        "max": 1004666,
+        "avg": 564251,
+        "p50": 492750,
+        "p90": 827083,
+        "p95": 839416,
+        "p99": 872083,
+        "std_dev": 145876,
+        "total_time": 28219042,
+        "ops_per_sec": 1771.8532046552111
+      },
+      "timestamp": "2026-01-11T22:13:19.084851+07:00"
+    },
+    {
+      "scenario": "field_create",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 28708,
+        "max": 51041,
+        "avg": 31282,
+        "p50": 29584,
+        "p90": 34500,
+        "p95": 40917,
+        "p99": 45417,
+        "std_dev": 4560,
+        "total_time": 1684708,
+        "ops_per_sec": 29678.733644049888
+      },
+      "timestamp": "2026-01-11T22:13:19.086562+07:00"
+    },
+    {
+      "scenario": "field_list_by_table",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 24292,
+        "max": 122584,
+        "avg": 31153,
+        "p50": 25542,
+        "p90": 33667,
+        "p95": 50667,
+        "p99": 89292,
+        "std_dev": 16875,
+        "total_time": 1560750,
+        "ops_per_sec": 32035.880185808102
+      },
+      "timestamp": "2026-01-11T22:13:19.088137+07:00"
+    },
+    {
+      "scenario": "field_update",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 15667,
+        "max": 27500,
+        "avg": 17093,
+        "p50": 16625,
+        "p90": 18083,
+        "p95": 18542,
+        "p99": 22625,
+        "std_dev": 1988,
+        "total_time": 2462417,
+        "ops_per_sec": 20305.25292832205
+      },
+      "timestamp": "2026-01-11T22:13:19.090615+07:00"
+    },
+    {
+      "scenario": "select_choice_add",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 22625,
+        "max": 37625,
+        "avg": 25834,
+        "p50": 25083,
+        "p90": 28416,
+        "p95": 29916,
+        "p99": 33750,
+        "std_dev": 2891,
+        "total_time": 1400958,
+        "ops_per_sec": 35689.86365044491
+      },
+      "timestamp": "2026-01-11T22:13:19.092032+07:00"
+    },
+    {
+      "scenario": "select_choice_list",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 20084,
+        "max": 34417,
+        "avg": 21692,
+        "p50": 21167,
+        "p90": 22542,
+        "p95": 23958,
+        "p99": 26459,
+        "std_dev": 2153,
+        "total_time": 1653291,
+        "ops_per_sec": 30242.709843578654
+      },
+      "timestamp": "2026-01-11T22:13:19.093703+07:00"
+    },
+    {
+      "scenario": "concurrent_reads_10",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 30667,
+        "max": 493125,
+        "avg": 154941,
+        "p50": 124334,
+        "p90": 297333,
+        "p95": 338834,
+        "p99": 373667,
+        "std_dev": 102075,
+        "total_time": 2139958,
+        "ops_per_sec": 23364.944545640617
+      },
+      "timestamp": "2026-01-11T22:13:19.095858+07:00"
+    },
+    {
+      "scenario": "concurrent_writes_10",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 108333,
+        "max": 3557292,
+        "avg": 853799,
+        "p50": 450458,
+        "p90": 2493708,
+        "p95": 2792542,
+        "p99": 2969792,
+        "std_dev": 913198,
+        "total_time": 4987250,
+        "ops_per_sec": 10025.565191237656
+      },
+      "timestamp": "2026-01-11T22:13:19.100868+07:00"
+    },
+    {
+      "scenario": "concurrent_mixed_10",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 24667,
+        "max": 843416,
+        "avg": 175956,
+        "p50": 136875,
+        "p90": 314458,
+        "p95": 403917,
+        "p99": 597375,
+        "std_dev": 151807,
+        "total_time": 2274250,
+        "ops_per_sec": 21985.269869187647
+      },
+      "timestamp": "2026-01-11T22:13:19.103157+07:00"
+    },
+    {
+      "scenario": "concurrent_reads_25",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 34958,
+        "max": 738792,
+        "avg": 293044,
+        "p50": 206959,
+        "p90": 657042,
+        "p95": 697500,
+        "p99": 727833,
+        "std_dev": 220602,
+        "total_time": 1988291,
+        "ops_per_sec": 25147.224425398494
+      },
+      "timestamp": "2026-01-11T22:13:19.105161+07:00"
+    },
+    {
+      "scenario": "concurrent_writes_25",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 35125,
+        "max": 2608834,
+        "avg": 1005612,
+        "p50": 887250,
+        "p90": 1747333,
+        "p95": 1975666,
+        "p99": 2297625,
+        "std_dev": 581972,
+        "total_time": 2859292,
+        "ops_per_sec": 17486.84639414233
+      },
+      "timestamp": "2026-01-11T22:13:19.108038+07:00"
+    },
+    {
+      "scenario": "concurrent_mixed_25",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 28959,
+        "max": 956500,
+        "avg": 341625,
+        "p50": 253708,
+        "p90": 765959,
+        "p95": 808375,
+        "p99": 930167,
+        "std_dev": 259869,
+        "total_time": 2204667,
+        "ops_per_sec": 22679.16197774993
+      },
+      "timestamp": "2026-01-11T22:13:19.110255+07:00"
+    },
+    {
+      "scenario": "concurrent_reads_50",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 306084,
+        "max": 1198209,
+        "avg": 848523,
+        "p50": 839791,
+        "p90": 1154917,
+        "p95": 1187875,
+        "p99": 1197208,
+        "std_dev": 239843,
+        "total_time": 3653750,
+        "ops_per_sec": 13684.570646595963
+      },
+      "timestamp": "2026-01-11T22:13:19.11392+07:00"
+    },
+    {
+      "scenario": "concurrent_writes_50",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 216083,
+        "max": 2648334,
+        "avg": 1555505,
+        "p50": 1570500,
+        "p90": 2438167,
+        "p95": 2499209,
+        "p99": 2600166,
+        "std_dev": 686494,
+        "total_time": 2673875,
+        "ops_per_sec": 18699.45304099855
+      },
+      "timestamp": "2026-01-11T22:13:19.116606+07:00"
+    },
+    {
+      "scenario": "concurrent_mixed_50",
+      "backend": "sqlite",
+      "stats": {
+        "count": 50,
+        "errors": 0,
+        "error_rate": 0,
+        "min": 59834,
+        "max": 1364667,
+        "avg": 669898,
+        "p50": 610750,
+        "p90": 1163958,
+        "p95": 1241292,
+        "p99": 1299292,
+        "std_dev": 384117,
+        "total_time": 2925000,
+        "ops_per_sec": 17094.017094017094
+      },
+      "timestamp": "2026-01-11T22:13:19.119548+07:00"
+    }
+  ],
+  "start_time": "2026-01-11T22:13:15.97699+07:00",
+  "end_time": "2026-01-11T22:13:19.121505+07:00"
+}
