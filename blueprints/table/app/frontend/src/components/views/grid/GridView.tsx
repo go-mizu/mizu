@@ -13,6 +13,10 @@ import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { GridToolbar } from './GridToolbar';
 import { normalizeFieldConfig } from './fieldConfig';
 import { copyToClipboard, parseClipboardData, stringToCellValue, generateFillSequence } from './clipboardUtils';
+import { VirtualizedBody } from './VirtualizedBody';
+
+// Threshold for enabling virtualization
+const VIRTUALIZATION_THRESHOLD = 100;
 
 // Row height options
 const ROW_HEIGHTS = {
@@ -73,6 +77,9 @@ export function GridView() {
   const [summaryConfig, setSummaryConfig] = useState<Record<string, SummaryFunction>>({});
   const [headerHeight, setHeaderHeight] = useState(36); // Default header height
   const [isResizingHeader, setIsResizingHeader] = useState(false);
+
+  // Use virtualization for large datasets
+  const useVirtualization = displayRecords.length > VIRTUALIZATION_THRESHOLD;
 
   const gridRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -1027,6 +1034,49 @@ export function GridView() {
             </td>
           </tr>
         </thead>
+      </table>
+
+      {/* Render virtualized or standard body based on record count */}
+      {useVirtualization ? (
+        <VirtualizedBody
+          groupedRecords={groupedRecords}
+          visibleFields={visibleFields}
+          columnWidths={columnWidths}
+          rowHeight={rowHeight}
+          frozenColumnCount={frozenColumnCount}
+          collapsedGroups={collapsedGroups}
+          selectedCell={selectedCell}
+          editingCell={editingCell}
+          selectedRows={selectedRows}
+          groupBy={groupBy}
+          showSummaryBar={showSummaryBar}
+          recordIndexMap={recordIndexMap}
+          onCellClick={handleCellClick}
+          onCellDoubleClick={handleCellDoubleClick}
+          onCellChange={handleCellChange}
+          onCancelEdit={() => setEditingCell(null)}
+          onFillEnd={handleFillEnd}
+          onToggleRowSelection={toggleRowSelection}
+          onExpandRecord={handleExpandRecord}
+          onRowContextMenu={handleRowContextMenu}
+          onToggleGroupCollapse={toggleGroupCollapse}
+          onAddRow={handleAddRow}
+          onClearCellRange={() => setCellRange(null)}
+          getRowColor={getRowColor}
+          getFrozenColumnOffset={getFrozenColumnOffset}
+          isCellInRange={isCellInRange}
+          renderSummaryBar={() => (
+            <SummaryBar
+              records={displayRecords}
+              fields={visibleFields}
+              columnWidths={columnWidths}
+              savedConfig={summaryConfig}
+              onConfigChange={handleSummaryConfigChange}
+            />
+          )}
+        />
+      ) : (
+        <table className="w-full border-collapse">
         <tbody>
           {groupedRecords.map(({ group, records: groupRecords }) => (
             <Fragment key={group || 'ungrouped'}>
@@ -1067,7 +1117,7 @@ export function GridView() {
                     onContextMenu={(e) => handleRowContextMenu(e, record.id)}
                   >
                     {/* Row number and checkbox - frozen */}
-                    <td className="border-b border-r border-slate-200 p-0 sticky left-0 bg-white z-10 relative">
+                    <td className="border-b border-r border-slate-200 p-0 sticky left-0 bg-white z-10 relative w-16">
                       {/* Row color indicator bar */}
                       {rowColor && (
                         <div
@@ -1180,7 +1230,8 @@ export function GridView() {
             </td>
           </tr>
         </tbody>
-      </table>
+        </table>
+      )}
 
       {/* Context menu */}
       {contextMenu && (

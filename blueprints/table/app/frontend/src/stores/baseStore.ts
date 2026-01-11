@@ -413,7 +413,7 @@ export const useBaseStore = create<BaseState>((set, get) => ({
     set({ isLoadingRecords: true });
     try {
       const cursor = reset ? undefined : get().nextCursor || undefined;
-      const { records, next_cursor, has_more } = await recordsApi.list(tableId, cursor);
+      const { records, next_cursor, has_more } = await recordsApi.list(tableId, { cursor });
 
       set({
         records: reset ? records : [...get().records, ...records],

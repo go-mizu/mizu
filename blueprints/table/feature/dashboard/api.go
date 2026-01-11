@@ -124,11 +124,19 @@ type WidgetData struct {
 	Data     any    `json:"data"`
 }
 
+// ChartSeries represents a data series for stacked charts.
+type ChartSeries struct {
+	Name   string    `json:"name"`
+	Values []float64 `json:"values"`
+	Color  string    `json:"color"`
+}
+
 // ChartData represents chart data.
 type ChartData struct {
-	Labels []string  `json:"labels"`
-	Values []float64 `json:"values"`
-	Colors []string  `json:"colors,omitempty"`
+	Labels []string       `json:"labels"`
+	Values []float64      `json:"values"`
+	Colors []string       `json:"colors,omitempty"`
+	Series []ChartSeries  `json:"series,omitempty"` // For stacked charts
 }
 
 // NumberData represents number widget data.

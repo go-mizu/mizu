@@ -97,7 +97,7 @@ export function NumberWidget({ widget, data, isLoading }: NumberWidgetProps) {
             </p>
           )}
         </div>
-        <div className={`${getAccentColor()} bg-opacity-10 p-2 rounded-lg`}>
+        <div className={`${getAccentColor()} p-2 rounded-lg`} style={{ backgroundColor: 'currentColor', opacity: 0.1 }}>
           {getIcon()}
         </div>
       </div>

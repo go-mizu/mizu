@@ -684,6 +684,38 @@
                   "aggregation": "sum",
                   "show_legend": false
                 }
+              },
+              {
+                "id": "widget-status-by-priority-stacked",
+                "type": "chart",
+                "title": "Status by Priority (Stacked)",
+                "position": {"row": 16, "col": 0},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-tasks",
+                  "group_by_field": "seed-field-status",
+                  "secondary_group": "seed-field-priority",
+                  "stacking": "standard",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
+              },
+              {
+                "id": "widget-status-by-priority-percent",
+                "type": "chart",
+                "title": "Status Distribution (100%)",
+                "position": {"row": 16, "col": 6},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-tasks",
+                  "group_by_field": "seed-field-status",
+                  "secondary_group": "seed-field-priority",
+                  "stacking": "percent",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
               }
             ]
           },

@@ -229,12 +229,45 @@ export const fieldsApi = {
   },
 };
 
+// Server-side filter types
+export interface ServerFilter {
+  field_id: string;
+  operator: string;
+  value?: unknown;
+}
+
+export interface ServerSort {
+  field_id: string;
+  direction: 'asc' | 'desc';
+}
+
+export interface ListRecordsOptions {
+  cursor?: string;
+  limit?: number;
+  filters?: ServerFilter[];
+  filter_logic?: 'and' | 'or';
+  sorts?: ServerSort[];
+  search?: string;
+  group_by?: string;
+}
+
 // Records API
 export const recordsApi = {
-  async list(tableId: string, cursor?: string, limit?: number): Promise<{ records: TableRecord[]; next_cursor?: string; has_more: boolean }> {
+  async list(tableId: string, options?: ListRecordsOptions): Promise<{ records: TableRecord[]; next_cursor?: string; has_more: boolean }> {
     const params = new URLSearchParams({ table_id: tableId });
-    if (cursor) params.set('cursor', cursor);
-    if (limit) params.set('limit', String(limit));
+
+    if (options?.cursor) params.set('cursor', options.cursor);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.filters && options.filters.length > 0) {
+      params.set('filters', JSON.stringify(options.filters));
+    }
+    if (options?.filter_logic) params.set('filter_logic', options.filter_logic);
+    if (options?.sorts && options.sorts.length > 0) {
+      params.set('sorts', JSON.stringify(options.sorts));
+    }
+    if (options?.search) params.set('search', options.search);
+    if (options?.group_by) params.set('group_by', options.group_by);
+
     return apiFetch(`/records?${params}`);
   },
 
