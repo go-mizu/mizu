@@ -485,6 +485,9 @@ func (s *Service) exportTableData(ctx context.Context, tm *TableMeta, dataDir st
 	writer := csv.NewWriter(f)
 	defer writer.Flush()
 
+	// Build field map for O(1) lookups
+	fieldMap := buildFieldMap(tm.Fields)
+
 	// Build header row - _id + field names
 	headers := []string{"_id"}
 	fieldIndex := make(map[string]int) // fieldID -> column index
@@ -520,7 +523,7 @@ func (s *Service) exportTableData(ctx context.Context, tm *TableMeta, dataDir st
 				continue
 			}
 			value := rec.Cells[fieldID]
-			row[colIdx] = s.formatCellValue(value, findField(tm.Fields, fieldID), choiceNames[fieldID])
+			row[colIdx] = s.formatCellValue(value, fieldMap[fieldID], choiceNames[fieldID])
 		}
 
 		if err := writer.Write(row); err != nil {
@@ -766,13 +769,12 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-// findField finds a field by ID in a slice.
-func findField(fields []*fields.Field, id string) *fields.Field {
-	for _, f := range fields {
-		if f.ID == id {
-			return f
-		}
+// buildFieldMap creates a map for O(1) field lookups by ID.
+func buildFieldMap(fieldList []*fields.Field) map[string]*fields.Field {
+	m := make(map[string]*fields.Field, len(fieldList))
+	for _, f := range fieldList {
+		m[f.ID] = f
 	}
-	return nil
+	return m
 }
 

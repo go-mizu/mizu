@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/table/feature/fields"
@@ -287,22 +288,31 @@ func compareDates(a, b any) int {
 	return 0
 }
 
-// toTime converts a value to time.Time.
+// Common date formats ordered by frequency of use for faster parsing.
+var dateFormats = []string{
+	time.RFC3339,           // Most common: "2006-01-02T15:04:05Z07:00"
+	"2006-01-02T15:04:05Z", // ISO without timezone
+	"2006-01-02",           // Date only
+	"2006/01/02",           // Alternate date
+	"01/02/2006",           // US format
+	"Jan 2, 2006",          // Verbose
+}
+
+// toTime converts a value to time.Time with optimized format detection.
 func toTime(v any) time.Time {
 	switch val := v.(type) {
 	case time.Time:
 		return val
 	case string:
-		// Try common date formats
-		formats := []string{
-			time.RFC3339,
-			"2006-01-02T15:04:05Z",
-			"2006-01-02",
-			"2006/01/02",
-			"01/02/2006",
-			"Jan 2, 2006",
+		if val == "" {
+			return time.Time{}
 		}
-		for _, format := range formats {
+		// Fast path: try RFC3339 first (most common)
+		if t, err := time.Parse(time.RFC3339, val); err == nil {
+			return t
+		}
+		// Try other formats
+		for _, format := range dateFormats[1:] {
 			if t, err := time.Parse(format, val); err == nil {
 				return t
 			}
@@ -311,20 +321,9 @@ func toTime(v any) time.Time {
 	return time.Time{}
 }
 
+// containsString checks if s contains substr using optimized standard library.
 func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		(len(s) > len(substr) && (s[:len(substr)] == substr ||
-		s[len(s)-len(substr):] == substr ||
-		findSubstring(s, substr))))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(s, substr)
 }
 
 // computeNumberData computes number widget data.

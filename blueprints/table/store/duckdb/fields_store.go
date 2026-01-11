@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/table/feature/fields"
@@ -111,15 +113,32 @@ func (s *FieldsStore) ListByTable(ctx context.Context, tableID string) ([]*field
 	return fieldList, rows.Err()
 }
 
-// Reorder reorders fields.
+// Reorder reorders fields efficiently using a single UPDATE with CASE.
 func (s *FieldsStore) Reorder(ctx context.Context, tableID string, fieldIDs []string) error {
-	for i, id := range fieldIDs {
-		_, err := s.db.ExecContext(ctx, `UPDATE fields SET position = $1 WHERE id = $2 AND table_id = $3`, i, id, tableID)
-		if err != nil {
-			return err
-		}
+	if len(fieldIDs) == 0 {
+		return nil
 	}
-	return nil
+
+	// Build CASE statement for batch update
+	// UPDATE fields SET position = CASE id WHEN 'id1' THEN 0 WHEN 'id2' THEN 1 ... END WHERE table_id = ? AND id IN (...)
+	var caseBuilder strings.Builder
+	caseBuilder.WriteString("UPDATE fields SET position = CASE id ")
+
+	args := make([]any, 0, len(fieldIDs)+1)
+	placeholders := make([]string, len(fieldIDs))
+
+	for i, id := range fieldIDs {
+		caseBuilder.WriteString(fmt.Sprintf("WHEN $%d THEN %d ", i+1, i))
+		args = append(args, id)
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+
+	caseBuilder.WriteString(fmt.Sprintf("END WHERE table_id = $%d AND id IN (%s)",
+		len(fieldIDs)+1, strings.Join(placeholders, ", ")))
+	args = append(args, tableID)
+
+	_, err := s.db.ExecContext(ctx, caseBuilder.String(), args...)
+	return err
 }
 
 // AddSelectChoice adds a choice to a select field.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/table/feature/records"
@@ -49,13 +51,65 @@ func (s *RecordsStore) Create(ctx context.Context, record *records.Record) error
 	return err
 }
 
-// CreateBatch creates multiple records.
+// CreateBatch creates multiple records efficiently using batch insert.
 func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) error {
-	for _, rec := range recs {
-		if err := s.Create(ctx, rec); err != nil {
+	if len(recs) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	tableID := recs[0].TableID
+
+	// Get max position once for all records
+	var maxPos sql.NullInt64
+	s.db.QueryRowContext(ctx, `SELECT MAX(position) FROM records WHERE table_id = $1`, tableID).Scan(&maxPos)
+	startPos := 0
+	if maxPos.Valid {
+		startPos = int(maxPos.Int64) + 1
+	}
+
+	// Process in batches of 500 to avoid query size limits
+	batchSize := 500
+	for i := 0; i < len(recs); i += batchSize {
+		end := i + batchSize
+		if end > len(recs) {
+			end = len(recs)
+		}
+		batch := recs[i:end]
+
+		// Build batch insert query
+		query := `INSERT INTO records (id, table_id, cells, position, created_by, created_at, updated_at, updated_by) VALUES `
+		args := make([]any, 0, len(batch)*8)
+		for j, rec := range batch {
+			rec.CreatedAt = now
+			rec.UpdatedAt = now
+			rec.Position = startPos + i + j
+
+			if rec.Cells == nil {
+				rec.Cells = make(map[string]any)
+			}
+
+			cellsJSON, err := json.Marshal(rec.Cells)
+			if err != nil {
+				return err
+			}
+
+			if j > 0 {
+				query += ", "
+			}
+			paramOffset := j * 8
+			query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+				paramOffset+1, paramOffset+2, paramOffset+3, paramOffset+4,
+				paramOffset+5, paramOffset+6, paramOffset+7, paramOffset+8)
+			args = append(args, rec.ID, rec.TableID, string(cellsJSON), rec.Position,
+				rec.CreatedBy, rec.CreatedAt, rec.UpdatedAt, rec.UpdatedBy)
+		}
+
+		if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -68,24 +122,41 @@ func (s *RecordsStore) GetByID(ctx context.Context, id string) (*records.Record,
 	return s.scanRecord(row)
 }
 
-// GetByIDs retrieves multiple records by IDs.
+// GetByIDs retrieves multiple records by IDs efficiently using IN clause.
 func (s *RecordsStore) GetByIDs(ctx context.Context, ids []string) (map[string]*records.Record, error) {
 	if len(ids) == 0 {
 		return make(map[string]*records.Record), nil
 	}
 
+	// Build query with placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, table_id, cells, position, created_by, created_at, updated_at, updated_by
+		FROM records WHERE id IN (%s)
+	`, strings.Join(placeholders, ", "))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
 	result := make(map[string]*records.Record)
-	for _, id := range ids {
-		rec, err := s.GetByID(ctx, id)
-		if err == records.ErrNotFound {
-			continue
-		}
+	for rows.Next() {
+		rec, err := s.scanRecordRows(rows)
 		if err != nil {
 			return nil, err
 		}
-		result[id] = rec
+		result[rec.ID] = rec
 	}
-	return result, nil
+
+	return result, rows.Err()
 }
 
 // Update updates a record.
@@ -116,14 +187,29 @@ func (s *RecordsStore) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-// DeleteBatch deletes multiple records.
+// DeleteBatch deletes multiple records efficiently using batch operations.
 func (s *RecordsStore) DeleteBatch(ctx context.Context, ids []string) error {
-	for _, id := range ids {
-		if err := s.Delete(ctx, id); err != nil {
-			return err
-		}
+	if len(ids) == 0 {
+		return nil
 	}
-	return nil
+
+	// Build placeholders for IN clause
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	inClause := strings.Join(placeholders, ", ")
+
+	// Batch delete related data
+	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM comments WHERE record_id IN (%s)`, inClause), args...)
+	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM attachments WHERE record_id IN (%s)`, inClause), args...)
+	_, _ = s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM record_links WHERE source_record_id IN (%s) OR target_record_id IN (%s)`, inClause, inClause), append(args, args...)...)
+
+	// Delete records
+	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`DELETE FROM records WHERE id IN (%s)`, inClause), args...)
+	return err
 }
 
 // List lists records in a table.
