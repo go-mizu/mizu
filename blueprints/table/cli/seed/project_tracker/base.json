@@ -505,6 +505,198 @@
           "created_by": "",
           "created_at": "2024-01-01T00:00:00Z",
           "updated_at": "2024-01-01T00:00:00Z"
+        },
+        {
+          "id": "seed-view-dashboard",
+          "table_id": "seed-table-tasks",
+          "name": "Project Dashboard",
+          "type": "dashboard",
+          "config": {
+            "grid_cols": 12,
+            "widgets": [
+              {
+                "id": "widget-total-tasks",
+                "type": "number",
+                "title": "Total Tasks",
+                "position": {"row": 0, "col": 0},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "aggregation": "count"
+                }
+              },
+              {
+                "id": "widget-completed",
+                "type": "number",
+                "title": "Completed",
+                "position": {"row": 0, "col": 3},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "aggregation": "count",
+                  "filters": [{"field_id": "seed-field-status", "operator": "equals", "value": "Done"}]
+                }
+              },
+              {
+                "id": "widget-total-budget",
+                "type": "number",
+                "title": "Total Budget",
+                "position": {"row": 0, "col": 6},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "field_id": "seed-field-budget",
+                  "aggregation": "sum",
+                  "prefix": "$"
+                }
+              },
+              {
+                "id": "widget-avg-progress",
+                "type": "number",
+                "title": "Avg Progress",
+                "position": {"row": 0, "col": 9},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "field_id": "seed-field-progress",
+                  "aggregation": "avg",
+                  "suffix": "%",
+                  "precision": 0
+                }
+              },
+              {
+                "id": "widget-status-chart",
+                "type": "chart",
+                "title": "Tasks by Status",
+                "position": {"row": 2, "col": 0},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "pie",
+                  "table_id": "seed-table-tasks",
+                  "group_by_field": "seed-field-status",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
+              },
+              {
+                "id": "widget-priority-chart",
+                "type": "chart",
+                "title": "Tasks by Priority",
+                "position": {"row": 2, "col": 6},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-tasks",
+                  "group_by_field": "seed-field-priority",
+                  "aggregation": "count",
+                  "show_legend": false
+                }
+              },
+              {
+                "id": "widget-high-priority",
+                "type": "list",
+                "title": "High Priority Tasks",
+                "position": {"row": 6, "col": 0},
+                "size": {"width": 12, "height": 4},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "filters": [{"field_id": "seed-field-priority", "operator": "in", "value": ["High", "Critical"]}],
+                  "limit": 5,
+                  "sort_field": "seed-field-due-date",
+                  "sort_direction": "asc"
+                }
+              },
+              {
+                "id": "widget-in-progress",
+                "type": "number",
+                "title": "In Progress",
+                "position": {"row": 10, "col": 0},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "aggregation": "count",
+                  "filters": [{"field_id": "seed-field-status", "operator": "equals", "value": "In Progress"}]
+                }
+              },
+              {
+                "id": "widget-total-effort",
+                "type": "number",
+                "title": "Total Effort",
+                "position": {"row": 10, "col": 3},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "field_id": "seed-field-effort",
+                  "aggregation": "sum",
+                  "suffix": " pts"
+                }
+              },
+              {
+                "id": "widget-avg-confidence",
+                "type": "number",
+                "title": "Avg Confidence",
+                "position": {"row": 10, "col": 6},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "field_id": "seed-field-rating",
+                  "aggregation": "avg",
+                  "precision": 1
+                }
+              },
+              {
+                "id": "widget-critical-count",
+                "type": "number",
+                "title": "Critical Tasks",
+                "position": {"row": 10, "col": 9},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-tasks",
+                  "aggregation": "count",
+                  "filters": [{"field_id": "seed-field-priority", "operator": "equals", "value": "Critical"}]
+                }
+              },
+              {
+                "id": "widget-tags-chart",
+                "type": "chart",
+                "title": "Tasks by Tags",
+                "position": {"row": 12, "col": 0},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "donut",
+                  "table_id": "seed-table-tasks",
+                  "group_by_field": "seed-field-tags",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
+              },
+              {
+                "id": "widget-effort-priority",
+                "type": "chart",
+                "title": "Effort by Priority",
+                "position": {"row": 12, "col": 6},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-tasks",
+                  "group_by_field": "seed-field-priority",
+                  "value_field": "seed-field-effort",
+                  "aggregation": "sum",
+                  "show_legend": false
+                }
+              }
+            ]
+          },
+          "filters": null,
+          "sorts": null,
+          "groups": null,
+          "field_config": null,
+          "position": 7,
+          "is_default": false,
+          "is_locked": false,
+          "created_by": "",
+          "created_at": "2024-01-01T00:00:00Z",
+          "updated_at": "2024-01-01T00:00:00Z"
         }
       ]
     },
@@ -695,6 +887,120 @@
           "field_config": null,
           "position": 0,
           "is_default": true,
+          "is_locked": false,
+          "created_by": "",
+          "created_at": "2024-01-01T00:00:00Z",
+          "updated_at": "2024-01-01T00:00:00Z"
+        },
+        {
+          "id": "seed-view-proj-dashboard",
+          "table_id": "seed-table-projects",
+          "name": "Project Overview",
+          "type": "dashboard",
+          "config": {
+            "grid_cols": 12,
+            "widgets": [
+              {
+                "id": "widget-proj-total",
+                "type": "number",
+                "title": "Total Projects",
+                "position": {"row": 0, "col": 0},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-projects",
+                  "aggregation": "count"
+                }
+              },
+              {
+                "id": "widget-proj-active",
+                "type": "number",
+                "title": "Active Projects",
+                "position": {"row": 0, "col": 3},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-projects",
+                  "aggregation": "count",
+                  "filters": [{"field_id": "seed-field-proj-status", "operator": "equals", "value": "Active"}]
+                }
+              },
+              {
+                "id": "widget-proj-budget-total",
+                "type": "number",
+                "title": "Total Budget",
+                "position": {"row": 0, "col": 6},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-projects",
+                  "field_id": "seed-field-proj-budget",
+                  "aggregation": "sum",
+                  "prefix": "$"
+                }
+              },
+              {
+                "id": "widget-proj-avg-progress",
+                "type": "number",
+                "title": "Avg Progress",
+                "position": {"row": 0, "col": 9},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-projects",
+                  "field_id": "seed-field-proj-progress",
+                  "aggregation": "avg",
+                  "suffix": "%",
+                  "precision": 0
+                }
+              },
+              {
+                "id": "widget-proj-status-chart",
+                "type": "chart",
+                "title": "Projects by Status",
+                "position": {"row": 2, "col": 0},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "pie",
+                  "table_id": "seed-table-projects",
+                  "group_by_field": "seed-field-proj-status",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
+              },
+              {
+                "id": "widget-proj-budget-chart",
+                "type": "chart",
+                "title": "Budget by Project",
+                "position": {"row": 2, "col": 6},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-projects",
+                  "group_by_field": "seed-field-proj-status",
+                  "value_field": "seed-field-proj-budget",
+                  "aggregation": "sum",
+                  "show_legend": false
+                }
+              },
+              {
+                "id": "widget-proj-list",
+                "type": "list",
+                "title": "Active Projects",
+                "position": {"row": 6, "col": 0},
+                "size": {"width": 12, "height": 4},
+                "config": {
+                  "table_id": "seed-table-projects",
+                  "filters": [{"field_id": "seed-field-proj-status", "operator": "equals", "value": "Active"}],
+                  "limit": 5,
+                  "sort_field": "seed-field-proj-progress",
+                  "sort_direction": "desc"
+                }
+              }
+            ]
+          },
+          "filters": null,
+          "sorts": null,
+          "groups": null,
+          "field_config": null,
+          "position": 1,
+          "is_default": false,
           "is_locked": false,
           "created_by": "",
           "created_at": "2024-01-01T00:00:00Z",
@@ -981,6 +1287,118 @@
           "created_by": "",
           "created_at": "2024-01-01T00:00:00Z",
           "updated_at": "2024-01-01T00:00:00Z"
+        },
+        {
+          "id": "seed-view-team-dashboard",
+          "table_id": "seed-table-team",
+          "name": "Team Overview",
+          "type": "dashboard",
+          "config": {
+            "grid_cols": 12,
+            "widgets": [
+              {
+                "id": "widget-team-total",
+                "type": "number",
+                "title": "Team Size",
+                "position": {"row": 0, "col": 0},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-team",
+                  "aggregation": "count"
+                }
+              },
+              {
+                "id": "widget-team-active",
+                "type": "number",
+                "title": "Active Members",
+                "position": {"row": 0, "col": 3},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-team",
+                  "aggregation": "count",
+                  "filters": [{"field_id": "seed-field-team-active", "operator": "equals", "value": true}]
+                }
+              },
+              {
+                "id": "widget-team-avg-salary",
+                "type": "number",
+                "title": "Avg Salary",
+                "position": {"row": 0, "col": 6},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-team",
+                  "field_id": "seed-field-team-salary",
+                  "aggregation": "avg",
+                  "prefix": "$",
+                  "precision": 0
+                }
+              },
+              {
+                "id": "widget-team-total-salary",
+                "type": "number",
+                "title": "Total Payroll",
+                "position": {"row": 0, "col": 9},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-team",
+                  "field_id": "seed-field-team-salary",
+                  "aggregation": "sum",
+                  "prefix": "$"
+                }
+              },
+              {
+                "id": "widget-team-role-chart",
+                "type": "chart",
+                "title": "Team by Role",
+                "position": {"row": 2, "col": 0},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "donut",
+                  "table_id": "seed-table-team",
+                  "group_by_field": "seed-field-team-role",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
+              },
+              {
+                "id": "widget-team-dept-chart",
+                "type": "chart",
+                "title": "Team by Department",
+                "position": {"row": 2, "col": 6},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-team",
+                  "group_by_field": "seed-field-team-dept",
+                  "aggregation": "count",
+                  "show_legend": false
+                }
+              },
+              {
+                "id": "widget-team-recent",
+                "type": "list",
+                "title": "Recent Hires",
+                "position": {"row": 6, "col": 0},
+                "size": {"width": 12, "height": 4},
+                "config": {
+                  "table_id": "seed-table-team",
+                  "limit": 5,
+                  "sort_field": "seed-field-team-start",
+                  "sort_direction": "desc"
+                }
+              }
+            ]
+          },
+          "filters": null,
+          "sorts": null,
+          "groups": null,
+          "field_config": null,
+          "position": 3,
+          "is_default": false,
+          "is_locked": false,
+          "created_by": "",
+          "created_at": "2024-01-01T00:00:00Z",
+          "updated_at": "2024-01-01T00:00:00Z"
         }
       ]
     },
@@ -1253,6 +1671,119 @@
           "groups": null,
           "field_config": null,
           "position": 3,
+          "is_default": false,
+          "is_locked": false,
+          "created_by": "",
+          "created_at": "2024-01-01T00:00:00Z",
+          "updated_at": "2024-01-01T00:00:00Z"
+        },
+        {
+          "id": "seed-view-client-dashboard",
+          "table_id": "seed-table-clients",
+          "name": "Client Overview",
+          "type": "dashboard",
+          "config": {
+            "grid_cols": 12,
+            "widgets": [
+              {
+                "id": "widget-client-total",
+                "type": "number",
+                "title": "Total Clients",
+                "position": {"row": 0, "col": 0},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-clients",
+                  "aggregation": "count"
+                }
+              },
+              {
+                "id": "widget-client-active",
+                "type": "number",
+                "title": "Active Clients",
+                "position": {"row": 0, "col": 3},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-clients",
+                  "aggregation": "count",
+                  "filters": [{"field_id": "seed-field-client-status", "operator": "equals", "value": "Active"}]
+                }
+              },
+              {
+                "id": "widget-client-revenue",
+                "type": "number",
+                "title": "Total Revenue",
+                "position": {"row": 0, "col": 6},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-clients",
+                  "field_id": "seed-field-client-contract",
+                  "aggregation": "sum",
+                  "prefix": "$"
+                }
+              },
+              {
+                "id": "widget-client-avg-satisfaction",
+                "type": "number",
+                "title": "Avg Satisfaction",
+                "position": {"row": 0, "col": 9},
+                "size": {"width": 3, "height": 2},
+                "config": {
+                  "table_id": "seed-table-clients",
+                  "field_id": "seed-field-client-satisfaction",
+                  "aggregation": "avg",
+                  "precision": 1
+                }
+              },
+              {
+                "id": "widget-client-status-chart",
+                "type": "chart",
+                "title": "Client Pipeline",
+                "position": {"row": 2, "col": 0},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "pie",
+                  "table_id": "seed-table-clients",
+                  "group_by_field": "seed-field-client-status",
+                  "aggregation": "count",
+                  "show_legend": true
+                }
+              },
+              {
+                "id": "widget-client-revenue-chart",
+                "type": "chart",
+                "title": "Revenue by Status",
+                "position": {"row": 2, "col": 6},
+                "size": {"width": 6, "height": 4},
+                "config": {
+                  "chart_type": "bar",
+                  "table_id": "seed-table-clients",
+                  "group_by_field": "seed-field-client-status",
+                  "value_field": "seed-field-client-contract",
+                  "aggregation": "sum",
+                  "show_legend": false
+                }
+              },
+              {
+                "id": "widget-client-renewals",
+                "type": "list",
+                "title": "Upcoming Renewals",
+                "position": {"row": 6, "col": 0},
+                "size": {"width": 12, "height": 4},
+                "config": {
+                  "table_id": "seed-table-clients",
+                  "filters": [{"field_id": "seed-field-client-status", "operator": "equals", "value": "Active"}],
+                  "limit": 5,
+                  "sort_field": "seed-field-client-renewal",
+                  "sort_direction": "asc"
+                }
+              }
+            ]
+          },
+          "filters": null,
+          "sorts": null,
+          "groups": null,
+          "field_config": null,
+          "position": 4,
           "is_default": false,
           "is_locked": false,
           "created_by": "",

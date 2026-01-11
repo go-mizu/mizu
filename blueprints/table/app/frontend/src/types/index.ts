@@ -41,7 +41,107 @@ export type ViewType =
   | 'gallery'
   | 'form'
   | 'timeline'
-  | 'list';
+  | 'list'
+  | 'dashboard';
+
+// Dashboard widget types
+export type WidgetType = 'chart' | 'number' | 'list' | 'pivot' | 'table';
+export type ChartType = 'bar' | 'line' | 'pie' | 'donut' | 'scatter' | 'area';
+export type AggregationType =
+  | 'sum' | 'avg' | 'count' | 'min' | 'max'
+  | 'count_empty' | 'count_filled'
+  | 'percent_empty' | 'percent_filled';
+
+// Dashboard widget position
+export interface WidgetPosition {
+  row: number;
+  col: number;
+}
+
+// Dashboard widget size
+export interface WidgetSize {
+  width: number;  // Grid units (1-12)
+  height: number; // Grid units
+}
+
+// Stacking type for bar charts
+export type StackingType = 'none' | 'standard' | 'percent';
+
+// Dashboard widget config
+export interface WidgetConfig {
+  // Data source
+  table_id?: string;
+  field_id?: string;
+  filters?: Filter[];
+
+  // Chart specific
+  chart_type?: ChartType;
+  group_by_field?: string;
+  value_field?: string;
+  aggregation?: AggregationType;
+  show_legend?: boolean;
+  color_scheme?: string;
+  stacking?: StackingType;
+  secondary_group?: string; // For stacked charts
+
+  // Number specific
+  prefix?: string;
+  suffix?: string;
+  precision?: number;
+
+  // List specific
+  limit?: number;
+  sort_field?: string;
+  sort_direction?: 'asc' | 'desc';
+  visible_fields?: string[];
+}
+
+// Dashboard widget
+export interface DashboardWidget {
+  id: string;
+  type: WidgetType;
+  title: string;
+  position: WidgetPosition;
+  size: WidgetSize;
+  config: WidgetConfig;
+}
+
+// Dashboard config
+export interface DashboardConfig {
+  widgets: DashboardWidget[];
+  grid_cols: number;
+}
+
+// Widget data types
+export interface ChartSeries {
+  name: string;
+  values: number[];
+  color: string;
+}
+
+export interface ChartData {
+  labels: string[];
+  values: number[];
+  colors?: string[];
+  // For stacked charts - multiple data series
+  series?: ChartSeries[];
+}
+
+export interface NumberData {
+  value: number;
+  formatted: string;
+}
+
+export interface ListData {
+  records: Record<string, unknown>[];
+  total: number;
+}
+
+export interface WidgetData {
+  widget_id: string;
+  type: string;
+  data: ChartData | NumberData | ListData;
+}
 
 // User
 export interface User {
@@ -353,6 +453,10 @@ export interface ViewSettings {
   notify_emails?: string[];
   form_field_configs?: FormFieldConfig[];
   form_sections?: FormSection[];
+
+  // Dashboard
+  dashboard_widgets?: DashboardWidget[];
+  dashboard_grid_cols?: number;
 }
 
 // Comment
