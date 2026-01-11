@@ -372,6 +372,13 @@ export function VirtualizedBody({
         }}
       >
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 64 }} />
+            {visibleFields.map((field) => (
+              <col key={field.id} style={{ width: columnWidths[field.id] || field.width || 200 }} />
+            ))}
+            <col style={{ width: 128 }} />
+          </colgroup>
           <tbody>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const row = virtualRows[virtualRow.index];

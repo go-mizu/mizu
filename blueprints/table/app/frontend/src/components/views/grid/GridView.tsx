@@ -975,13 +975,20 @@ export function GridView() {
         </div>
       )}
       <div className="flex-1 overflow-auto">
-      <table ref={tableRef} className="w-full border-collapse">
+      <table ref={tableRef} className="w-full border-collapse table-fixed">
+        <colgroup>
+          <col style={{ width: 64 }} />
+          {visibleFields.map((field) => (
+            <col key={field.id} style={{ width: columnWidths[field.id] || field.width || 200 }} />
+          ))}
+          <col style={{ width: 128 }} />
+        </colgroup>
         <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
           <tr style={{ height: headerHeight }}>
             {/* Row number and checkbox column - frozen */}
             <th
-              className="w-16 border-b border-r border-slate-200 bg-slate-50 p-0 sticky left-0 z-20 relative"
-              style={{ height: headerHeight }}
+              className="border-b border-r border-slate-200 bg-slate-50 p-0 sticky left-0 z-20 relative"
+              style={{ height: headerHeight, width: 64 }}
             >
               <div className="flex items-center justify-center h-full">
                 <input
@@ -1014,7 +1021,7 @@ export function GridView() {
             })}
 
             {/* Add field button */}
-            <th className="w-32 border-b border-slate-200 bg-slate-50 p-0" style={{ height: headerHeight }}>
+            <th className="border-b border-slate-200 bg-slate-50 p-0" style={{ height: headerHeight, width: 128 }}>
               <AddFieldButton />
             </th>
           </tr>
@@ -1076,8 +1083,15 @@ export function GridView() {
           )}
         />
       ) : (
-        <table className="w-full border-collapse">
-        <tbody>
+        <table className="w-full border-collapse table-fixed">
+          <colgroup>
+            <col style={{ width: 64 }} />
+            {visibleFields.map((field) => (
+              <col key={field.id} style={{ width: columnWidths[field.id] || field.width || 200 }} />
+            ))}
+            <col style={{ width: 128 }} />
+          </colgroup>
+          <tbody>
           {groupedRecords.map(({ group, records: groupRecords }) => (
             <Fragment key={group || 'ungrouped'}>
               {groupBy && (
@@ -1229,7 +1243,7 @@ export function GridView() {
               </button>
             </td>
           </tr>
-        </tbody>
+          </tbody>
         </table>
       )}
 

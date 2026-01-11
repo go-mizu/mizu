@@ -152,11 +152,13 @@ export function FieldHeader({ field, width, height = 36, onResize, onResizeEnd, 
 
   return (
     <th
-      className={`min-w-[150px] border-b border-r border-slate-200 bg-slate-50 p-0 relative ${
+      className={`border-b border-r border-slate-200 bg-slate-50 p-0 relative ${
         dragOver ? 'bg-primary-50' : ''
       } ${isFrozen ? 'sticky z-20' : ''}`}
       style={{
         width,
+        minWidth: 120,
+        maxWidth: 600,
         height,
         ...(isFrozen && frozenOffset !== undefined ? { left: frozenOffset } : {}),
       }}
