@@ -176,13 +176,13 @@ export function ViewToolbar() {
   };
 
   return (
-    <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-3">
+    <div className="bg-white border-b border-[var(--at-border)] px-4 py-2 flex items-center gap-2">
       {/* View selector */}
       <div className="relative">
         <button
           onClick={() => setShowViewMenu(!showViewMenu)}
           data-testid="view-selector"
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200"
+          className="toolbar-btn font-semibold"
         >
           {currentViewType && (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -190,7 +190,7 @@ export function ViewToolbar() {
             </svg>
           )}
           {viewLabel}
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={`w-4 h-4 transition-transform ${showViewMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
@@ -198,9 +198,9 @@ export function ViewToolbar() {
         {showViewMenu && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowViewMenu(false)} />
-            <div className="dropdown-menu animate-slide-in mt-1">
+            <div className="dropdown-menu animate-scale-in mt-1.5 min-w-[200px]">
               {views.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-gray-500">No views yet</div>
+                <div className="px-3 py-4 text-sm text-[var(--at-muted)] text-center">No views yet</div>
               ) : (
                 views.map((view) => {
                   const viewType = VIEW_TYPES.find(v => v.type === view.type);
@@ -211,25 +211,30 @@ export function ViewToolbar() {
                         selectView(view.id);
                         setShowViewMenu(false);
                       }}
-                      className={`dropdown-item w-full text-left ${view.id === currentView?.id ? 'bg-primary-50 text-primary' : ''}`}
+                      className={`dropdown-item w-full text-left ${view.id === currentView?.id ? 'bg-[var(--at-primary-soft)]' : ''}`}
                     >
                       {viewType && (
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={viewType.icon} />
                         </svg>
                       )}
-                      {view.name}
+                      <span className="flex-1">{view.name}</span>
+                      {view.id === currentView?.id && (
+                        <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
                     </button>
                   );
                 })
               )}
-              <hr className="my-1" />
+              <div className="dropdown-divider" />
               <button
                 onClick={() => {
                   setShowViewMenu(false);
                   setShowNewView(true);
                 }}
-                className="dropdown-item w-full text-left text-primary"
+                className="dropdown-item w-full text-left text-primary font-medium"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -247,25 +252,19 @@ export function ViewToolbar() {
       <div className="relative" ref={filterRef}>
         <button
           onClick={() => setShowFilter(!showFilter)}
-          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
-            hasFilters
-              ? 'bg-primary-50 text-primary-700 border-primary-100'
-              : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
-          }`}
+          className={hasFilters ? 'toolbar-btn toolbar-btn-active' : 'toolbar-btn'}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
           </svg>
           Filter
           {hasFilters && (
-            <span className="ml-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-              {filters.length}
-            </span>
+            <span className="badge badge-primary badge-sm">{filters.length}</span>
           )}
         </button>
 
         {showFilter && (
-          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+          <div className="popover right-0 mt-1.5 animate-scale-in" style={{ minWidth: '320px' }}>
             <FilterBuilder onClose={() => setShowFilter(false)} />
           </div>
         )}
@@ -275,25 +274,19 @@ export function ViewToolbar() {
       <div className="relative" ref={sortRef}>
         <button
           onClick={() => setShowSort(!showSort)}
-          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
-            hasSorts
-              ? 'bg-primary-50 text-primary-700 border-primary-100'
-              : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
-          }`}
+          className={hasSorts ? 'toolbar-btn toolbar-btn-active' : 'toolbar-btn'}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
           </svg>
           Sort
           {hasSorts && (
-            <span className="ml-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-              {sorts.length}
-            </span>
+            <span className="badge badge-primary badge-sm">{sorts.length}</span>
           )}
         </button>
 
         {showSort && (
-          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+          <div className="popover right-0 mt-1.5 animate-scale-in" style={{ minWidth: '320px' }}>
             <SortBuilder onClose={() => setShowSort(false)} />
           </div>
         )}
@@ -303,23 +296,19 @@ export function ViewToolbar() {
       <div className="relative" ref={groupRef}>
         <button
           onClick={() => setShowGroup(!showGroup)}
-          className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
-            hasGroup
-              ? 'bg-primary-50 text-primary-700 border-primary-100'
-              : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
-          }`}
+          className={hasGroup ? 'toolbar-btn toolbar-btn-active' : 'toolbar-btn'}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
           Group
           {hasGroup && (
-            <span className="ml-1 w-2 h-2 rounded-full bg-primary" />
+            <span className="w-2 h-2 rounded-full bg-primary" />
           )}
         </button>
 
         {showGroup && (
-          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+          <div className="popover right-0 mt-1.5 animate-scale-in" style={{ minWidth: '280px' }}>
             <GroupBuilder onClose={() => setShowGroup(false)} />
           </div>
         )}
@@ -330,23 +319,19 @@ export function ViewToolbar() {
         <div className="relative" ref={colorRef}>
           <button
             onClick={() => setShowColor(!showColor)}
-            className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
-              hasRowColor
-                ? 'bg-primary-50 text-primary-700 border-primary-100'
-                : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
-            }`}
+            className={hasRowColor ? 'toolbar-btn toolbar-btn-active' : 'toolbar-btn'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
             </svg>
             Color
             {hasRowColor && (
-              <span className="ml-1 w-2 h-2 rounded-full bg-primary" />
+              <span className="w-2 h-2 rounded-full bg-primary" />
             )}
           </button>
 
           {showColor && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in">
+            <div className="popover right-0 mt-1.5 animate-scale-in" style={{ minWidth: '280px' }}>
               <RowColorConfig onClose={() => setShowColor(false)} />
             </div>
           )}
@@ -358,48 +343,42 @@ export function ViewToolbar() {
         <div className="relative" ref={fieldsRef}>
           <button
             onClick={() => setShowFields(!showFields)}
-            className={`px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border ${
-              hiddenCount > 0
-                ? 'bg-primary-50 text-primary-700 border-primary-100'
-                : 'text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200'
-            }`}
+            className={hiddenCount > 0 ? 'toolbar-btn toolbar-btn-active' : 'toolbar-btn'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
             </svg>
             Fields
             {hiddenCount > 0 && (
-              <span className="ml-1 bg-primary text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {hiddenCount}
-              </span>
+              <span className="badge badge-primary badge-sm">{hiddenCount}</span>
             )}
           </button>
 
           {showFields && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in min-w-[240px]">
-              <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-                <span className="text-sm font-semibold text-gray-900">Visible fields</span>
+            <div className="popover right-0 mt-1.5 animate-scale-in min-w-[260px]">
+              <div className="p-3 border-b border-[var(--at-border)] flex items-center justify-between">
+                <span className="text-sm font-semibold text-[var(--at-text)]">Visible fields</span>
                 <button
                   onClick={showAllFields}
-                  className="text-xs text-primary hover:text-primary-600"
+                  className="text-xs font-medium text-primary hover:text-primary-600 transition-colors"
                 >
                   Show all
                 </button>
               </div>
-              <div className="max-h-[320px] overflow-auto p-2 space-y-1">
+              <div className="max-h-[320px] overflow-auto p-2 space-y-0.5">
                 {fieldConfig.map((config) => {
                   const field = fields.find((f) => f.id === config.field_id);
                   if (!field) return null;
                   return (
                     <label
                       key={field.id}
-                      className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-slate-50 text-sm text-gray-700"
+                      className="flex items-center gap-2.5 px-2.5 py-2 rounded-md hover:bg-[var(--at-surface-hover)] text-sm text-[var(--at-text-secondary)] cursor-pointer transition-colors"
                     >
                       <input
                         type="checkbox"
                         checked={config.visible}
                         onChange={() => toggleFieldVisibility(field.id)}
-                        className="w-4 h-4 rounded border-gray-300"
+                        className="checkbox"
                       />
                       <span className="truncate">{field.name}</span>
                     </label>
@@ -416,7 +395,7 @@ export function ViewToolbar() {
         <div className="relative" ref={rowHeightRef}>
           <button
             onClick={() => setShowRowHeight(!showRowHeight)}
-            className="px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200"
+            className="toolbar-btn"
             title="Row height"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -425,22 +404,22 @@ export function ViewToolbar() {
           </button>
 
           {showRowHeight && (
-            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in min-w-[160px]">
-              <div className="p-2 border-b border-gray-200">
-                <span className="text-xs font-semibold text-gray-500 uppercase">Row Height</span>
+            <div className="dropdown-menu animate-scale-in mt-1.5 min-w-[160px]">
+              <div className="px-3 py-2 border-b border-[var(--at-border)]">
+                <span className="text-[11px] font-semibold text-[var(--at-muted)] uppercase tracking-wider">Row Height</span>
               </div>
-              <div className="p-1">
+              <div className="p-1.5">
                 {ROW_HEIGHT_OPTIONS.map((option) => (
                   <button
                     key={option.value}
                     onClick={() => handleRowHeightChange(option.value)}
                     className={`dropdown-item w-full text-left flex items-center justify-between ${
-                      currentRowHeight === option.value ? 'bg-primary-50 text-primary-700' : ''
+                      currentRowHeight === option.value ? 'bg-[var(--at-primary-soft)]' : ''
                     }`}
                   >
                     <span>{option.label}</span>
                     {currentRowHeight === option.value && (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                     )}
@@ -456,7 +435,7 @@ export function ViewToolbar() {
       <div className="relative" ref={exportRef}>
         <button
           onClick={() => setShowExport(!showExport)}
-          className="px-3 py-1.5 text-sm rounded-md flex items-center gap-1 border text-gray-600 hover:bg-slate-50 border-transparent hover:border-slate-200"
+          className="toolbar-btn"
           title="Export"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -465,14 +444,14 @@ export function ViewToolbar() {
         </button>
 
         {showExport && (
-          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 animate-slide-in min-w-[160px]">
-            <div className="p-2 border-b border-gray-200">
-              <span className="text-xs font-semibold text-gray-500 uppercase">Export Data</span>
+          <div className="dropdown-menu animate-scale-in mt-1.5 min-w-[180px]">
+            <div className="px-3 py-2 border-b border-[var(--at-border)]">
+              <span className="text-[11px] font-semibold text-[var(--at-muted)] uppercase tracking-wider">Export Data</span>
             </div>
-            <div className="p-1">
+            <div className="p-1.5">
               <button
                 onClick={() => handleExport('csv')}
-                className="dropdown-item w-full text-left flex items-center gap-2"
+                className="dropdown-item w-full text-left"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -481,7 +460,7 @@ export function ViewToolbar() {
               </button>
               <button
                 onClick={() => handleExport('tsv')}
-                className="dropdown-item w-full text-left flex items-center gap-2"
+                className="dropdown-item w-full text-left"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -496,23 +475,34 @@ export function ViewToolbar() {
       {/* New view modal */}
       {showNewView && (
         <div className="modal-overlay" onClick={handleCloseNewViewModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="text-lg font-semibold">Create view</h3>
-              <button onClick={handleCloseNewViewModal} className="text-gray-400 hover:text-gray-600">
+              <div>
+                <h3 className="text-lg font-semibold text-[var(--at-text)]">Create view</h3>
+                <p className="text-sm text-[var(--at-muted)] mt-0.5">Choose a view type to visualize your data</p>
+              </div>
+              <button
+                onClick={handleCloseNewViewModal}
+                className="p-1.5 rounded-md text-[var(--at-muted)] hover:text-[var(--at-text)] hover:bg-[var(--at-surface-hover)] transition-colors"
+              >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="modal-body space-y-4">
+            <div className="modal-body space-y-5">
               {createViewError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-                  {createViewError}
+                <div className="flex items-start gap-3 p-3 bg-[var(--at-danger-soft)] border border-red-200 rounded-lg text-sm animate-scale-in">
+                  <div className="w-5 h-5 rounded-full bg-[var(--at-danger)] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <span className="text-red-700">{createViewError}</span>
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <label className="field-label">View name</label>
                 <input
                   type="text"
                   value={newViewName}
@@ -526,29 +516,37 @@ export function ViewToolbar() {
                     }
                   }}
                   className="input"
-                  placeholder="View name"
+                  placeholder="e.g., Active Projects, Q1 Tasks"
                   autoFocus
                   disabled={isCreatingView}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                <div className="grid grid-cols-4 gap-2">
+                <label className="field-label">View type</label>
+                <div className="grid grid-cols-4 gap-2.5">
                   {VIEW_TYPES.map((viewType) => (
                     <button
                       key={viewType.type}
                       onClick={() => !isCreatingView && setNewViewType(viewType.type)}
                       disabled={isCreatingView}
-                      className={`p-3 rounded-md border-2 text-center transition-colors ${
+                      className={`p-3.5 rounded-lg border-2 text-center transition-all group ${
                         newViewType === viewType.type
-                          ? 'border-primary bg-primary-50'
-                          : 'border-gray-200 hover:border-gray-300'
+                          ? 'border-primary bg-[var(--at-primary-soft)] shadow-sm'
+                          : 'border-[var(--at-border)] hover:border-[var(--at-border-strong)] hover:bg-[var(--at-surface-hover)]'
                       } ${isCreatingView ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                      <svg className="w-6 h-6 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={viewType.icon} />
-                      </svg>
-                      <span className="text-xs">{viewType.label}</span>
+                      <div className={`w-10 h-10 mx-auto mb-2 rounded-lg flex items-center justify-center transition-colors ${
+                        newViewType === viewType.type
+                          ? 'bg-primary text-white'
+                          : 'bg-[var(--at-surface-hover)] text-[var(--at-text-secondary)] group-hover:bg-[var(--at-border)]'
+                      }`}>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={viewType.icon} />
+                        </svg>
+                      </div>
+                      <span className={`text-xs font-medium ${
+                        newViewType === viewType.type ? 'text-primary' : 'text-[var(--at-text-secondary)]'
+                      }`}>{viewType.label}</span>
                     </button>
                   ))}
                 </div>
@@ -564,14 +562,11 @@ export function ViewToolbar() {
               </button>
               <button
                 onClick={handleCreateView}
-                className="btn btn-primary flex items-center gap-2"
+                className="btn btn-primary"
                 disabled={isCreatingView || !newViewName.trim()}
               >
                 {isCreatingView && (
-                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                  <span className="spinner spinner-sm" style={{ borderTopColor: 'white', borderColor: 'rgba(255,255,255,0.3)' }} />
                 )}
                 {isCreatingView ? 'Creating...' : 'Create view'}
               </button>

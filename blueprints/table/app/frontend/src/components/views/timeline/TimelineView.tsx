@@ -590,67 +590,79 @@ export function TimelineView() {
   // Empty state
   if (!startField) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
-        <div className="text-center">
-          <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No date field available</h3>
-          <p className="text-sm text-gray-500 mb-4">Add a Date or DateTime field to use Timeline view</p>
+      <div className="flex-1 flex items-center justify-center bg-[var(--at-bg)]">
+        <div className="empty-state animate-fade-in">
+          <div className="empty-state-icon-wrapper">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h3 className="empty-state-title">No date field available</h3>
+          <p className="empty-state-description">Add a Date or DateTime field to use Timeline view</p>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="btn btn-primary mt-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Configure Timeline
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[var(--at-bg)]">
       {/* Header controls */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-gray-900">
+      <div className="view-toolbar">
+        <div className="view-toolbar-left">
+          <h2 className="text-base font-semibold text-[var(--at-text)]">
             {viewStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </h2>
           <div className="flex gap-1">
             <button
               onClick={() => navigateTimeline('prev')}
-              className="p-1.5 hover:bg-slate-100 rounded-md transition-colors"
+              className="icon-btn"
               title="Previous"
             >
-              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <button
               onClick={() => navigateTimeline('next')}
-              className="p-1.5 hover:bg-slate-100 rounded-md transition-colors"
+              className="icon-btn"
               title="Next"
             >
-              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
           </div>
           <button
             onClick={goToToday}
-            className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+            className="btn btn-ghost text-sm"
           >
             Today
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="view-toolbar-right">
           {/* Layout mode toggle */}
-          <div className="flex items-center gap-1 border rounded-md overflow-hidden">
+          <div className="segmented-control">
             <button
               onClick={() => setLayoutMode('standard')}
-              className={`px-2 py-1 text-xs ${layoutMode === 'standard' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`segmented-control-item ${layoutMode === 'standard' ? 'segmented-control-item-active' : ''}`}
               title="Standard layout"
             >
               Standard
             </button>
             <button
               onClick={() => setLayoutMode('gantt')}
-              className={`px-2 py-1 text-xs ${layoutMode === 'gantt' ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`segmented-control-item ${layoutMode === 'gantt' ? 'segmented-control-item-active' : ''}`}
               title="Gantt layout (one record per row)"
             >
               Gantt
@@ -661,17 +673,17 @@ export function TimelineView() {
           {timeScale === 'day' && (
             <button
               onClick={() => setShowWeekends(!showWeekends)}
-              className={`px-2 py-1 text-xs border rounded-md transition-colors ${
-                !showWeekends ? 'bg-primary text-white border-primary' : 'bg-white text-slate-600 hover:bg-slate-50'
-              }`}
+              className={`btn text-xs ${!showWeekends ? 'btn-primary' : 'btn-secondary'}`}
               title={showWeekends ? 'Show weekdays only' : 'Show all days'}
             >
               {showWeekends ? 'All days' : 'Weekdays'}
             </button>
           )}
 
+          <div className="view-toolbar-divider" />
+
           <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-600">Scale:</span>
+            <span className="text-sm text-[var(--at-text-secondary)]">Scale:</span>
             <select
               value={timeScale}
               onChange={(e) => setTimeScale(e.target.value as TimeScale)}
@@ -689,7 +701,7 @@ export function TimelineView() {
           {/* Summary bar toggle */}
           <button
             onClick={() => setShowSummaryBar(!showSummaryBar)}
-            className={`p-2 rounded-md transition-colors ${showSummaryBar ? 'bg-primary/10 text-primary' : 'hover:bg-slate-100 text-slate-600'}`}
+            className={`icon-btn ${showSummaryBar ? 'bg-[var(--at-primary-soft)] text-[var(--at-primary)]' : ''}`}
             title="Toggle summary bar"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -700,7 +712,7 @@ export function TimelineView() {
           <div className="relative">
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className={`p-2 rounded-md transition-colors ${showSettings ? 'bg-primary/10 text-primary' : 'hover:bg-slate-100 text-slate-600'}`}
+              className={`icon-btn ${showSettings ? 'bg-[var(--at-primary-soft)] text-[var(--at-primary)]' : ''}`}
               title="Timeline Settings"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -722,9 +734,9 @@ export function TimelineView() {
       >
         <div className="min-w-max" ref={timelineContentRef}>
           {/* Column headers */}
-          <div className="flex border-b border-slate-200 bg-white sticky top-0 z-20">
-            <div className="w-56 flex-shrink-0 p-3 border-r border-slate-200 bg-slate-50">
-              <span className="font-medium text-sm text-slate-700">
+          <div className="flex border-b border-[var(--at-border)] bg-white sticky top-0 z-20">
+            <div className="w-56 flex-shrink-0 p-3 border-r border-[var(--at-border)] bg-[var(--at-surface-muted)]">
+              <span className="font-medium text-sm text-[var(--at-text)]">
                 {groupField ? groupField.name : 'Records'}
               </span>
             </div>
@@ -734,15 +746,15 @@ export function TimelineView() {
                 return (
                   <div
                     key={i}
-                    className={`border-r border-slate-100 p-2 text-center flex flex-col justify-center ${
-                      isToday ? 'bg-red-50' : col.isWeekend ? 'bg-slate-50' : ''
+                    className={`border-r border-[var(--at-border-light)] p-2 text-center flex flex-col justify-center ${
+                      isToday ? 'bg-red-50' : col.isWeekend ? 'bg-[var(--at-surface-muted)]' : ''
                     }`}
                     style={{ width: columnWidth }}
                   >
                     {col.subLabel && (
-                      <span className="text-xs text-slate-400 font-medium">{col.subLabel}</span>
+                      <span className="text-xs text-[var(--at-muted)] font-medium">{col.subLabel}</span>
                     )}
-                    <span className={`text-sm ${isToday ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>
+                    <span className={`text-sm ${isToday ? 'text-red-600 font-semibold' : 'text-[var(--at-text-secondary)]'}`}>
                       {col.label}
                     </span>
                   </div>
@@ -806,16 +818,16 @@ export function TimelineView() {
             )}
 
             {groups.map((group) => (
-              <div key={group.key} className="border-b border-slate-200">
+              <div key={group.key} className="border-b border-[var(--at-border)]">
                 {/* Group header */}
                 {groupField && (
                   <div
-                    className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors"
+                    className="flex items-center gap-2 px-3 py-2 bg-[var(--at-surface-muted)] border-b border-[var(--at-border-light)] cursor-pointer hover:bg-[var(--at-surface-hover)] transition-colors"
                     onClick={() => toggleGroupCollapse(group.key)}
                   >
-                    <button className="p-0.5 hover:bg-slate-200 rounded">
+                    <button className="p-0.5 hover:bg-[var(--at-surface-hover)] rounded">
                       <svg
-                        className={`w-4 h-4 text-slate-500 transition-transform ${group.isCollapsed ? '' : 'rotate-90'}`}
+                        className={`w-4 h-4 text-[var(--at-muted)] transition-transform ${group.isCollapsed ? '' : 'rotate-90'}`}
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -829,8 +841,8 @@ export function TimelineView() {
                         style={{ backgroundColor: group.color }}
                       />
                     )}
-                    <span className="font-medium text-sm text-slate-700">{group.label}</span>
-                    <span className="text-xs text-slate-500">({group.records.length})</span>
+                    <span className="font-medium text-sm text-[var(--at-text)]">{group.label}</span>
+                    <span className="text-xs text-[var(--at-muted)]">({group.records.length})</span>
                   </div>
                 )}
 
@@ -841,16 +853,16 @@ export function TimelineView() {
                     style={{ minHeight: Math.max(rowHeight, group.rowCount * rowHeight) }}
                   >
                     {/* Sidebar */}
-                    <div className="w-56 flex-shrink-0 border-r border-slate-200 bg-white">
+                    <div className="w-56 flex-shrink-0 border-r border-[var(--at-border)] bg-white">
                       {!groupField && group.records.map((bar) => (
                         <div
                           key={bar.record.id}
-                          className="px-3 flex items-center border-b border-slate-50 hover:bg-slate-50"
+                          className="px-3 flex items-center border-b border-slate-50 hover:bg-[var(--at-surface-muted)]"
                           style={{ height: rowHeight }}
                         >
                           <button
                             onClick={() => setExpandedRecord(bar.record)}
-                            className="text-sm text-slate-700 truncate hover:text-primary transition-colors"
+                            className="text-sm text-[var(--at-text)] truncate hover:text-primary transition-colors"
                           >
                             {bar.title}
                           </button>
@@ -883,8 +895,8 @@ export function TimelineView() {
                           return (
                             <div
                               key={i}
-                              className={`border-r border-slate-100 ${
-                                isToday ? 'bg-red-50/50' : col.isWeekend && timeScale === 'day' ? 'bg-slate-50' : ''
+                              className={`border-r border-[var(--at-border-light)] ${
+                                isToday ? 'bg-red-50/50' : col.isWeekend && timeScale === 'day' ? 'bg-[var(--at-surface-muted)]' : ''
                               }`}
                               style={{ width: columnWidth }}
                             />
@@ -937,11 +949,11 @@ export function TimelineView() {
             ))}
 
             {/* Add record row */}
-            <div className="flex border-b border-slate-100 hover:bg-slate-50" style={{ height: rowHeight }}>
-              <div className="w-56 flex-shrink-0 px-3 flex items-center border-r border-slate-200">
+            <div className="flex border-b border-[var(--at-border-light)] hover:bg-[var(--at-surface-muted)]" style={{ height: rowHeight }}>
+              <div className="w-56 flex-shrink-0 px-3 flex items-center border-r border-[var(--at-border)]">
                 <button
                   onClick={() => handleAddRecord()}
-                  className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1.5 transition-colors"
+                  className="text-sm text-[var(--at-muted)] hover:text-[var(--at-text)] flex items-center gap-1.5 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -987,8 +999,8 @@ export function TimelineView() {
 
       {/* Selected dependency actions */}
       {selectedDependency && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-lg shadow-lg border border-slate-200 px-4 py-2 flex items-center gap-3 z-50">
-          <span className="text-sm text-slate-600">Dependency selected</span>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-lg shadow-lg border border-[var(--at-border)] px-4 py-2 flex items-center gap-3 z-50">
+          <span className="text-sm text-[var(--at-text-secondary)]">Dependency selected</span>
           <button
             onClick={() => handleDeleteDependency(selectedDependency)}
             className="text-sm text-red-600 hover:text-red-700 font-medium"
@@ -997,7 +1009,7 @@ export function TimelineView() {
           </button>
           <button
             onClick={() => setSelectedDependency(null)}
-            className="text-sm text-slate-500 hover:text-slate-700"
+            className="text-sm text-[var(--at-muted)] hover:text-[var(--at-text)]"
           >
             Cancel
           </button>
