@@ -20,6 +20,20 @@ import { KanbanCardOverlay } from './KanbanCard';
 import { KanbanSettings } from './KanbanSettings';
 import { DEFAULT_KANBAN_CONFIG, type KanbanConfig, type KanbanColumn as KanbanColumnType } from './types';
 
+// Predefined colors for new stacks
+const STACK_COLORS = [
+  '#3b82f6', // blue
+  '#10b981', // green
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+  '#06b6d4', // cyan
+  '#84cc16', // lime
+  '#f97316', // orange
+  '#6366f1', // indigo
+];
+
 export function KanbanView() {
   const {
     currentView,
@@ -28,6 +42,7 @@ export function KanbanView() {
     updateCellValue,
     getSortedRecords,
     updateViewConfig,
+    createSelectOption,
   } = useBaseStore();
 
   // Get filtered and sorted records
@@ -38,6 +53,9 @@ export function KanbanView() {
   const [showSettings, setShowSettings] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [showAddStack, setShowAddStack] = useState(false);
+  const [newStackName, setNewStackName] = useState('');
+  const [newStackColor, setNewStackColor] = useState('#3b82f6');
 
   // Load config from view
   const config = useMemo((): KanbanConfig => {
@@ -55,6 +73,9 @@ export function KanbanView() {
       hideEmptyColumns: viewConfig.hideEmptyColumns || false,
       collapsedColumns: viewConfig.collapsedColumns || [],
       cardColorField: viewConfig.cardColorField || null,
+      keepSorted: viewConfig.keepSorted || false,
+      hideEmptyFields: viewConfig.hideEmptyFields || false,
+      cardPositions: viewConfig.cardPositions || {},
     };
   }, [currentView?.config]);
 
@@ -74,6 +95,9 @@ export function KanbanView() {
       hideEmptyColumns: newConfig.hideEmptyColumns,
       collapsedColumns: newConfig.collapsedColumns,
       cardColorField: newConfig.cardColorField,
+      keepSorted: newConfig.keepSorted,
+      hideEmptyFields: newConfig.hideEmptyFields,
+      cardPositions: newConfig.cardPositions,
     });
   }, [config, currentView?.config, updateViewConfig]);
 
@@ -180,6 +204,23 @@ export function KanbanView() {
         result.unshift(uncategorized);
       }
 
+      // Apply manual ordering if not keepSorted
+      if (!config.keepSorted && config.cardPositions) {
+        result.forEach((col) => {
+          const manualOrder = config.cardPositions[col.id];
+          if (manualOrder && manualOrder.length > 0) {
+            col.records.sort((a, b) => {
+              const aIdx = manualOrder.indexOf(a.id);
+              const bIdx = manualOrder.indexOf(b.id);
+              if (aIdx === -1 && bIdx === -1) return 0;
+              if (aIdx === -1) return 1;
+              if (bIdx === -1) return -1;
+              return aIdx - bIdx;
+            });
+          }
+        });
+      }
+
       // Filter empty columns if configured
       if (config.hideEmptyColumns) {
         return result.filter((col) => col.records.length > 0);
@@ -230,6 +271,95 @@ export function KanbanView() {
 
       const result = Array.from(columnMap.values());
 
+      // Apply manual ordering if not keepSorted
+      if (!config.keepSorted && config.cardPositions) {
+        result.forEach((col) => {
+          const manualOrder = config.cardPositions[col.id];
+          if (manualOrder && manualOrder.length > 0) {
+            col.records.sort((a, b) => {
+              const aIdx = manualOrder.indexOf(a.id);
+              const bIdx = manualOrder.indexOf(b.id);
+              if (aIdx === -1 && bIdx === -1) return 0;
+              if (aIdx === -1) return 1;
+              if (bIdx === -1) return -1;
+              return aIdx - bIdx;
+            });
+          }
+        });
+      }
+
+      if (config.hideEmptyColumns) {
+        return result.filter((col) => col.records.length > 0);
+      }
+
+      return result;
+    }
+
+    // For linked record fields (single-link only), build from unique linked records
+    if (groupByField.type === 'link') {
+      const linkedRecordValues = new Map<string, { id: string; name: string }>();
+
+      // Extract unique linked records from all records
+      records.forEach((record) => {
+        const value = record.values[groupByField.id];
+        if (Array.isArray(value) && value.length > 0) {
+          const linkedRec = value[0] as { id: string; name: string };
+          if (linkedRec.id && linkedRec.name) {
+            linkedRecordValues.set(linkedRec.id, linkedRec);
+          }
+        }
+      });
+
+      // Create uncategorized column
+      columnMap.set('__uncategorized__', {
+        id: '__uncategorized__',
+        name: 'Unlinked',
+        color: '#6b7280',
+        records: [],
+        isCollapsed: config.collapsedColumns.includes('__uncategorized__'),
+      });
+
+      // Create columns from linked records
+      linkedRecordValues.forEach((linkedRec, id) => {
+        columnMap.set(id, {
+          id,
+          name: linkedRec.name,
+          color: stringToColor(id),
+          records: [],
+          isCollapsed: config.collapsedColumns.includes(id),
+        });
+      });
+
+      // Assign records to columns
+      records.forEach((record) => {
+        const value = record.values[groupByField.id];
+        if (Array.isArray(value) && value.length > 0) {
+          const linkedRec = value[0] as { id: string; name: string };
+          columnMap.get(linkedRec.id)?.records.push(record);
+        } else {
+          columnMap.get('__uncategorized__')?.records.push(record);
+        }
+      });
+
+      const result = Array.from(columnMap.values());
+
+      // Apply manual ordering if not keepSorted
+      if (!config.keepSorted && config.cardPositions) {
+        result.forEach((col) => {
+          const manualOrder = config.cardPositions[col.id];
+          if (manualOrder && manualOrder.length > 0) {
+            col.records.sort((a, b) => {
+              const aIdx = manualOrder.indexOf(a.id);
+              const bIdx = manualOrder.indexOf(b.id);
+              if (aIdx === -1 && bIdx === -1) return 0;
+              if (aIdx === -1) return 1;
+              if (bIdx === -1) return -1;
+              return aIdx - bIdx;
+            });
+          }
+        });
+      }
+
       if (config.hideEmptyColumns) {
         return result.filter((col) => col.records.length > 0);
       }
@@ -245,7 +375,7 @@ export function KanbanView() {
       records,
       isCollapsed: false,
     }];
-  }, [groupByField, records, config.collapsedColumns, config.hideEmptyColumns]);
+  }, [groupByField, records, config.collapsedColumns, config.hideEmptyColumns, config.keepSorted, config.cardPositions]);
 
   // Get active record for drag overlay
   const activeRecord = useMemo(() => {
@@ -288,6 +418,56 @@ export function KanbanView() {
     }
   }, [groupByField]);
 
+  // Reorder card within the same column
+  const reorderWithinColumn = useCallback((
+    columnId: string,
+    recordId: string,
+    targetIndex: number
+  ) => {
+    const column = columns.find((c) => c.id === columnId);
+    if (!column) return;
+
+    // Get current order or initialize from column records
+    const currentOrder = config.cardPositions[columnId] || column.records.map((r) => r.id);
+    const fromIndex = currentOrder.indexOf(recordId);
+    if (fromIndex === -1) return;
+
+    // Reorder
+    const newOrder = [...currentOrder];
+    newOrder.splice(fromIndex, 1);
+    newOrder.splice(targetIndex, 0, recordId);
+
+    // Update config
+    handleConfigChange({
+      cardPositions: {
+        ...config.cardPositions,
+        [columnId]: newOrder,
+      },
+    });
+  }, [columns, config.cardPositions, handleConfigChange]);
+
+  // Add card to a specific position in a column
+  const addToColumnPosition = useCallback((
+    columnId: string,
+    recordId: string,
+    targetIndex?: number
+  ) => {
+    const column = columns.find((c) => c.id === columnId);
+    if (!column) return;
+
+    const currentOrder = config.cardPositions[columnId] || column.records.map((r) => r.id);
+    const newOrder = currentOrder.filter((id) => id !== recordId); // Remove if exists
+    const insertAt = targetIndex ?? newOrder.length;
+    newOrder.splice(insertAt, 0, recordId);
+
+    handleConfigChange({
+      cardPositions: {
+        ...config.cardPositions,
+        [columnId]: newOrder,
+      },
+    });
+  }, [columns, config.cardPositions, handleConfigChange]);
+
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
@@ -298,26 +478,56 @@ export function KanbanView() {
     const activeData = active.data.current;
     const overData = over.data.current;
 
-    // Determine target column
-    let targetColumnId: string | null = null;
-    if (overData?.type === 'column') {
-      targetColumnId = over.id as string;
-    } else if (overData?.type === 'card') {
-      const cardRecord = overData.record as TableRecord;
-      targetColumnId = findColumnForRecord(cardRecord, groupByField);
-    }
-
-    if (!targetColumnId || !activeData?.record) return;
+    if (!activeData?.record) return;
 
     const draggedRecord = activeData.record as TableRecord;
     const currentColumnId = findColumnForRecord(draggedRecord, groupByField);
 
-    // Only update if moved to a different column
-    if (currentColumnId !== targetColumnId) {
-      const newValue = targetColumnId === '__uncategorized__' ? null : targetColumnId;
+    // Determine target column and position
+    let targetColumnId: string;
+    let targetIndex: number | undefined;
+
+    if (overData?.type === 'column') {
+      targetColumnId = over.id as string;
+      targetIndex = undefined; // Append to end
+    } else if (overData?.type === 'card') {
+      const overRecord = overData.record as TableRecord;
+      targetColumnId = findColumnForRecord(overRecord, groupByField);
+      // Find position of the over card in its column
+      const targetColumn = columns.find((c) => c.id === targetColumnId);
+      targetIndex = targetColumn?.records.findIndex((r) => r.id === overRecord.id);
+    } else {
+      return;
+    }
+
+    // Same column: reorder within column (if manual ordering enabled)
+    if (currentColumnId === targetColumnId) {
+      if (!config.keepSorted && targetIndex !== undefined) {
+        reorderWithinColumn(currentColumnId, draggedRecord.id, targetIndex);
+      }
+      return;
+    }
+
+    // Different column: update field value
+    const newValue = targetColumnId === '__uncategorized__' ? null : targetColumnId;
+
+    // For linked records, need to set as array
+    if (groupByField.type === 'link') {
+      const linkedColumn = columns.find((c) => c.id === targetColumnId);
+      if (linkedColumn && targetColumnId !== '__uncategorized__') {
+        await updateCellValue(draggedRecord.id, groupByField.id, [{ id: targetColumnId, name: linkedColumn.name }]);
+      } else {
+        await updateCellValue(draggedRecord.id, groupByField.id, []);
+      }
+    } else {
       await updateCellValue(draggedRecord.id, groupByField.id, newValue);
     }
-  }, [groupByField, updateCellValue]);
+
+    // Update position in new column if manual ordering
+    if (!config.keepSorted) {
+      addToColumnPosition(targetColumnId, draggedRecord.id, targetIndex);
+    }
+  }, [groupByField, updateCellValue, columns, config.keepSorted, reorderWithinColumn, addToColumnPosition]);
 
   const handleDragCancel = useCallback(() => {
     setActiveId(null);
@@ -346,6 +556,16 @@ export function KanbanView() {
     handleConfigChange({ collapsedColumns: newCollapsed });
   }, [config.collapsedColumns, handleConfigChange]);
 
+  // Add new stack (creates a new select option)
+  const handleAddStack = useCallback(async () => {
+    if (!groupByField || groupByField.type !== 'single_select' || !newStackName.trim()) return;
+
+    await createSelectOption(groupByField.id, newStackName.trim(), newStackColor);
+    setNewStackName('');
+    setNewStackColor('#3b82f6');
+    setShowAddStack(false);
+  }, [groupByField, newStackName, newStackColor, createSelectOption]);
+
   // No grouping field available
   if (!groupByField) {
     return (
@@ -356,7 +576,7 @@ export function KanbanView() {
           </svg>
           <h3 className="text-xl font-semibold text-gray-900 mb-2">No stacking field</h3>
           <p className="text-sm text-gray-500 mb-4">
-            Kanban view requires a Single Select or User field to group cards into columns.
+            Kanban view requires a Single Select, User, or Link field to group cards into columns.
           </p>
           <button
             onClick={() => setShowSettings(true)}
@@ -430,6 +650,19 @@ export function KanbanView() {
                 isOver={overId === column.id}
               />
             ))}
+
+            {/* Add Stack button (only for single_select fields) */}
+            {groupByField?.type === 'single_select' && (
+              <button
+                onClick={() => setShowAddStack(true)}
+                className="flex-shrink-0 w-72 min-h-[200px] bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-500 hover:bg-slate-100 hover:border-slate-400 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="text-sm font-medium">Add Stack</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -463,6 +696,68 @@ export function KanbanView() {
           position={records.findIndex(r => r.id === expandedRecord.id) + 1}
           total={records.length}
         />
+      )}
+
+      {/* Add Stack Modal */}
+      {showAddStack && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-96 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Stack</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Stack Name</label>
+                <input
+                  type="text"
+                  value={newStackName}
+                  onChange={(e) => setNewStackName(e.target.value)}
+                  placeholder="Enter stack name..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newStackName.trim()) {
+                      handleAddStack();
+                    } else if (e.key === 'Escape') {
+                      setShowAddStack(false);
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                <div className="flex gap-2 flex-wrap">
+                  {STACK_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setNewStackColor(color)}
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${
+                        newStackColor === color ? 'border-gray-900 scale-110' : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowAddStack(false);
+                  setNewStackName('');
+                }}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddStack}
+                disabled={!newStackName.trim()}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add Stack
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

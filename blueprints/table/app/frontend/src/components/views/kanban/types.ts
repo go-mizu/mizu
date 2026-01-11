@@ -25,6 +25,10 @@ export interface KanbanConfig {
   hideEmptyColumns: boolean;
   collapsedColumns: string[];
   cardColorField: string | null;
+  // Airtable-compatible features
+  keepSorted: boolean;                       // When true, use view sorts; when false, allow manual reordering
+  hideEmptyFields: boolean;                  // Hide fields without values on cards
+  cardPositions: Record<string, string[]>;   // Manual card positions per column (columnId -> recordIds)
 }
 
 export interface DragState {
@@ -42,6 +46,9 @@ export const DEFAULT_KANBAN_CONFIG: KanbanConfig = {
   hideEmptyColumns: false,
   collapsedColumns: [],
   cardColorField: null,
+  keepSorted: false,
+  hideEmptyFields: false,
+  cardPositions: {},
 };
 
 export const CARD_SIZES = {

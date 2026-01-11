@@ -28,9 +28,9 @@ export function KanbanSettings({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  // Get fields suitable for stacking (single_select, user, linked record with single link)
+  // Get fields suitable for stacking (single_select, user, linked record)
   const stackableFields = fields.filter(
-    (f) => f.type === 'single_select' || f.type === 'user'
+    (f) => f.type === 'single_select' || f.type === 'user' || f.type === 'link'
   );
 
   // Get attachment fields for cover images
@@ -84,7 +84,7 @@ export function KanbanSettings({
           </select>
           {stackableFields.length === 0 && (
             <p className="mt-1 text-xs text-amber-600">
-              Add a Single Select or User field to use Kanban view
+              Add a Single Select, User, or Link field to use Kanban view
             </p>
           )}
         </div>
@@ -199,6 +199,42 @@ export function KanbanSettings({
               Hide empty columns
             </label>
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="hide-empty-fields"
+              checked={config.hideEmptyFields}
+              onChange={(e) => onConfigChange({ hideEmptyFields: e.target.checked })}
+              className="rounded border-slate-300 text-primary focus:ring-primary"
+            />
+            <label htmlFor="hide-empty-fields" className="text-sm text-gray-600">
+              Hide empty fields on cards
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="keep-sorted"
+              checked={config.keepSorted}
+              onChange={(e) => onConfigChange({ keepSorted: e.target.checked })}
+              className="rounded border-slate-300 text-primary focus:ring-primary"
+            />
+            <label htmlFor="keep-sorted" className="text-sm text-gray-600">
+              Keep cards sorted
+            </label>
+          </div>
+          {config.keepSorted && (
+            <p className="text-xs text-slate-500 ml-6">
+              Cards follow view sort order. Manual reordering is disabled.
+            </p>
+          )}
+          {!config.keepSorted && (
+            <p className="text-xs text-slate-500 ml-6">
+              Drag cards to reorder manually within columns.
+            </p>
+          )}
         </div>
       </div>
     </div>

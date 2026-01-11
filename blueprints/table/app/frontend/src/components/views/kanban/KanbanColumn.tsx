@@ -108,6 +108,7 @@ export function KanbanColumn({
                 coverField={coverField}
                 colorField={colorField}
                 config={config}
+                hideEmptyFields={config.hideEmptyFields}
                 onClick={() => onCardClick(record)}
               />
             ))}
