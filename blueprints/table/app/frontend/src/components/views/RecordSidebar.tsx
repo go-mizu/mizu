@@ -336,8 +336,8 @@ export function RecordSidebar({
         const hours = Math.floor(durationSeconds / 3600);
         const minutes = Math.floor((durationSeconds % 3600) / 60);
         return (
-          <div className="flex gap-3">
-            <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <input
                 type="number"
                 min="0"
@@ -346,12 +346,12 @@ export function RecordSidebar({
                   const h = parseInt(e.target.value) || 0;
                   handleFieldChange(field.id, h * 3600 + minutes * 60);
                 }}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                className="w-12 px-2 py-1.5 text-[13px] text-gray-900 bg-transparent border border-transparent rounded hover:border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors text-center"
                 placeholder="0"
               />
-              <span className="text-xs text-gray-500 mt-1 block">Hours</span>
+              <span className="text-[13px] text-gray-500">h</span>
             </div>
-            <div className="flex-1">
+            <div className="flex items-center gap-1">
               <input
                 type="number"
                 min="0"
@@ -361,32 +361,24 @@ export function RecordSidebar({
                   const m = parseInt(e.target.value) || 0;
                   handleFieldChange(field.id, hours * 3600 + m * 60);
                 }}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                className="w-12 px-2 py-1.5 text-[13px] text-gray-900 bg-transparent border border-transparent rounded hover:border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors text-center"
                 placeholder="0"
               />
-              <span className="text-xs text-gray-500 mt-1 block">Minutes</span>
+              <span className="text-[13px] text-gray-500">m</span>
             </div>
           </div>
         );
 
       case 'barcode':
         return (
-          <div className="space-y-2">
+          <div>
             <input
               type="text"
               value={(value as string) || ''}
               onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono transition-colors"
-              placeholder="Enter barcode value..."
+              className="w-full px-2 py-1.5 text-[13px] text-gray-900 bg-transparent border border-transparent rounded hover:border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 font-mono transition-colors placeholder:text-gray-400"
+              placeholder="Empty"
             />
-            {value && (
-              <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg">
-                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h2M4 12h2m10 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                </svg>
-                <span className="font-mono text-sm">{value as string}</span>
-              </div>
-            )}
           </div>
         );
 
@@ -395,41 +387,37 @@ export function RecordSidebar({
         const buttonLabel = field.options?.label || field.name || 'Click';
         const buttonColor = field.options?.color || '#2563eb';
         return (
-          <div className="py-1">
+          <div className="py-0.5">
             <button
               type="button"
               onClick={() => buttonUrl && window.open(buttonUrl, '_blank', 'noopener,noreferrer')}
-              className="px-4 py-2 rounded-lg text-white font-medium transition-opacity hover:opacity-80"
+              className="px-3 py-1.5 rounded text-[13px] text-white font-medium transition-opacity hover:opacity-80"
               style={{ backgroundColor: buttonColor }}
             >
               {buttonLabel}
             </button>
-            {buttonUrl && (
-              <p className="text-xs text-gray-500 mt-2">Opens: {buttonUrl}</p>
-            )}
           </div>
         );
 
       case 'attachment':
         const attachments = (value as { id?: string; filename?: string; url: string; mime_type?: string; size?: number }[]) || [];
         return (
-          <div className="space-y-3">
-            {attachments.length > 0 && (
-              <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-2">
+            {attachments.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
                 {attachments.map((att, idx) => (
                   <div key={att.id || idx} className="relative group">
                     {att.mime_type?.startsWith('image/') || att.url?.match(/\.(jpg|jpeg|png|gif|webp)/i) ? (
                       <img
                         src={att.url}
                         alt={att.filename || 'attachment'}
-                        className="w-full h-24 object-cover rounded-lg border border-slate-200"
+                        className="w-16 h-16 object-cover rounded border border-slate-200"
                       />
                     ) : (
-                      <div className="w-full h-24 bg-slate-100 rounded-lg border border-slate-200 flex flex-col items-center justify-center">
-                        <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-16 h-16 bg-slate-50 rounded border border-slate-200 flex flex-col items-center justify-center">
+                        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <span className="text-xs text-slate-500 mt-1 truncate max-w-full px-1">{att.filename}</span>
                       </div>
                     )}
                     <button
@@ -437,59 +425,63 @@ export function RecordSidebar({
                         const remaining = attachments.filter((_, i) => i !== idx);
                         handleFieldChange(field.id, remaining.length > 0 ? remaining as unknown as CellValue : null);
                       }}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-sm shadow-lg"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-white border border-slate-200 text-gray-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs shadow-sm hover:bg-red-50 hover:text-red-500 hover:border-red-200"
                     >
-                      ×
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                     </button>
-                    {att.filename && (
-                      <p className="text-xs text-gray-500 mt-1 truncate" title={att.filename}>{att.filename}</p>
-                    )}
                   </div>
                 ))}
+                <button className="w-16 h-16 flex items-center justify-center border border-dashed border-slate-300 rounded text-gray-400 hover:border-primary hover:text-primary transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
               </div>
+            ) : (
+              <button className="flex items-center gap-1.5 px-2 py-1.5 text-[13px] text-gray-400 hover:text-primary transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add attachment
+              </button>
             )}
-            <button className="flex items-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-gray-500 hover:border-primary hover:text-primary transition-colors w-full justify-center">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-              Attach file
-            </button>
           </div>
         );
 
       case 'link':
         const linkedRecords = (value as unknown as { id: string; primary_value: string }[]) || [];
         return (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2 min-h-[32px]">
-              {linkedRecords.map((rec) => (
-                <span
-                  key={rec.id}
-                  className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium"
-                >
-                  {rec.primary_value}
-                  <button
-                    onClick={() => {
-                      const remaining = linkedRecords.filter(r => r.id !== rec.id);
-                      handleFieldChange(field.id, remaining.length > 0 ? remaining as unknown as CellValue : null);
-                    }}
-                    className="ml-1 hover:bg-blue-100 rounded-full p-0.5"
+          <div className="space-y-1.5">
+            {linkedRecords.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {linkedRecords.map((rec) => (
+                  <span
+                    key={rec.id}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[13px] font-medium group/link"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </span>
-              ))}
-              {linkedRecords.length === 0 && (
-                <span className="text-sm text-gray-400">No linked records</span>
-              )}
-            </div>
-            <button className="flex items-center gap-2 px-3 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-gray-500 hover:border-primary hover:text-primary transition-colors">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {rec.primary_value}
+                    <button
+                      onClick={() => {
+                        const remaining = linkedRecords.filter(r => r.id !== rec.id);
+                        handleFieldChange(field.id, remaining.length > 0 ? remaining as unknown as CellValue : null);
+                      }}
+                      className="hover:bg-blue-100 rounded p-0.5 opacity-60 hover:opacity-100"
+                    >
+                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <button className="flex items-center gap-1.5 px-2 py-1 text-[13px] text-gray-400 hover:text-primary transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Link record
+              {linkedRecords.length > 0 ? 'Add another' : 'Link record'}
             </button>
           </div>
         );
@@ -498,19 +490,20 @@ export function RecordSidebar({
       case 'collaborator':
         const users = (value as { id: string; name: string }[]) || [];
         return (
-          <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              {users.map((user) => (
-                <span key={user.id} className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full text-sm">
-                  <div className="w-5 h-5 rounded-full bg-primary-100 flex items-center justify-center text-xs text-primary font-medium">
-                    {user.name.charAt(0).toUpperCase()}
-                  </div>
-                  {user.name}
-                </span>
-              ))}
-            </div>
-            {users.length === 0 && (
-              <span className="text-sm text-gray-400">No users assigned</span>
+          <div>
+            {users.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {users.map((user) => (
+                  <span key={user.id} className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 rounded text-[13px]">
+                    <div className="w-4 h-4 rounded-full bg-primary flex items-center justify-center text-[10px] text-white font-medium">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    {user.name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-[13px] text-gray-400 py-1.5 block">Empty</span>
             )}
           </div>
         );
@@ -524,7 +517,7 @@ export function RecordSidebar({
       case 'last_modified_time':
       case 'created_by':
       case 'last_modified_by':
-        let displayValue = '—';
+        let displayValue = '';
         if (value !== null && value !== undefined) {
           if (field.type === 'created_time' || field.type === 'last_modified_time') {
             displayValue = new Date(value as string).toLocaleString();
@@ -535,8 +528,8 @@ export function RecordSidebar({
           }
         }
         return (
-          <div className="px-3 py-2 bg-slate-50 rounded-lg text-sm text-gray-500 italic">
-            {displayValue}
+          <div className="px-2 py-1.5 text-[13px] text-gray-500">
+            {displayValue || <span className="text-gray-400">—</span>}
           </div>
         );
 
@@ -546,7 +539,7 @@ export function RecordSidebar({
             type="text"
             value={value !== null && value !== undefined ? String(value) : ''}
             onChange={(e) => handleFieldChange(field.id, e.target.value || null)}
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+            className="w-full px-2 py-1.5 text-[13px] text-gray-900 bg-transparent border border-transparent rounded hover:border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors placeholder:text-gray-400"
           />
         );
     }
@@ -617,13 +610,13 @@ export function RecordSidebar({
         />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 h-12 border-b border-slate-200 flex-shrink-0">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between px-3 h-11 border-b border-slate-100 flex-shrink-0 bg-slate-50/50">
+          <div className="flex items-center gap-0.5">
             {/* Navigation arrows */}
             <button
               onClick={() => onNavigate?.('prev')}
               disabled={!hasPrev}
-              className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded hover:bg-slate-200/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-500"
               title="Previous record (↑ or k)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -633,7 +626,7 @@ export function RecordSidebar({
             <button
               onClick={() => onNavigate?.('next')}
               disabled={!hasNext}
-              className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-1.5 rounded hover:bg-slate-200/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-500"
               title="Next record (↓ or j)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -641,17 +634,17 @@ export function RecordSidebar({
               </svg>
             </button>
             {position !== undefined && total !== undefined && (
-              <span className="text-xs text-gray-500 ml-2">
+              <span className="text-[11px] text-gray-400 ml-1.5 font-medium">
                 {position} of {total}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             {/* Expand to full page */}
             <button
               onClick={handleExpandFullPage}
-              className="p-1.5 rounded hover:bg-slate-100 transition-colors text-gray-500 hover:text-gray-700"
+              className="p-1.5 rounded hover:bg-slate-200/70 transition-colors text-gray-400 hover:text-gray-600"
               title="Expand to full page"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -663,7 +656,7 @@ export function RecordSidebar({
               onClick={() => {
                 navigator.clipboard.writeText(window.location.href);
               }}
-              className="p-1.5 rounded hover:bg-slate-100 transition-colors text-gray-500 hover:text-gray-700"
+              className="p-1.5 rounded hover:bg-slate-200/70 transition-colors text-gray-400 hover:text-gray-600"
               title="Copy link"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -673,7 +666,7 @@ export function RecordSidebar({
             {/* Delete */}
             <button
               onClick={handleDelete}
-              className="p-1.5 rounded hover:bg-red-50 transition-colors text-gray-500 hover:text-red-500"
+              className="p-1.5 rounded hover:bg-red-50 transition-colors text-gray-400 hover:text-red-500"
               title="Delete record"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -683,7 +676,7 @@ export function RecordSidebar({
             {/* Close */}
             <button
               onClick={handleClose}
-              className="p-1.5 rounded hover:bg-slate-100 transition-colors text-gray-500 hover:text-gray-700"
+              className="p-1.5 rounded hover:bg-slate-200/70 transition-colors text-gray-400 hover:text-gray-600"
               title="Close (Esc)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -694,22 +687,22 @@ export function RecordSidebar({
         </div>
 
         {/* Record Title */}
-        <div className="px-6 py-4 border-b border-slate-100">
+        <div className="px-4 py-3 border-b border-slate-100">
           <input
             type="text"
             value={titleValue}
             onChange={(e) => primaryField && handleFieldChange(primaryField.id, e.target.value || null)}
-            className="w-full text-xl font-semibold border-0 outline-none focus:ring-0 placeholder-gray-400"
+            className="w-full text-lg font-semibold text-gray-900 border-0 outline-none focus:ring-0 placeholder-gray-400 bg-transparent"
             placeholder="Untitled"
           />
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-slate-200 px-6 flex-shrink-0">
-          <div className="flex gap-6">
+        <div className="border-b border-slate-200 px-4 flex-shrink-0">
+          <div className="flex gap-4">
             <button
               onClick={() => setActiveTab('fields')}
-              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
                 activeTab === 'fields'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -719,17 +712,17 @@ export function RecordSidebar({
             </button>
             <button
               onClick={() => setActiveTab('comments')}
-              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
                 activeTab === 'comments'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Comments ({comments.length})
+              Comments {comments.length > 0 && <span className="ml-1 text-gray-400">({comments.length})</span>}
             </button>
             <button
               onClick={() => setActiveTab('activity')}
-              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
                 activeTab === 'activity'
                   ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -770,10 +763,10 @@ export function RecordSidebar({
           )}
 
           {activeTab === 'comments' && (
-            <div className="p-6 space-y-4">
+            <div className="p-4 space-y-4">
               {/* Add comment */}
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-sm text-primary font-medium flex-shrink-0">
+              <div className="flex gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-xs text-white font-medium flex-shrink-0">
                   U
                 </div>
                 <div className="flex-1">
@@ -781,14 +774,14 @@ export function RecordSidebar({
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
                     placeholder="Add a comment..."
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-none"
+                    className="w-full px-2.5 py-2 text-[13px] border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/20 focus:border-primary resize-none placeholder:text-gray-400"
                     rows={2}
                   />
                   <div className="flex justify-end mt-2">
                     <button
                       onClick={handleAddComment}
                       disabled={!newComment.trim()}
-                      className="px-3 py-1.5 bg-primary text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-dark transition-colors"
+                      className="px-3 py-1.5 bg-primary text-white text-[13px] font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-dark transition-colors"
                     >
                       Post
                     </button>
@@ -797,54 +790,54 @@ export function RecordSidebar({
               </div>
 
               {/* Comments list */}
-              <div className="space-y-4">
+              <div className="space-y-3 pt-2">
                 {comments.map((comment) => (
-                  <div key={comment.id} className="flex gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-sm text-primary font-medium flex-shrink-0">
+                  <div key={comment.id} className="flex gap-2.5">
+                    <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs text-gray-600 font-medium flex-shrink-0">
                       {comment.user?.name?.charAt(0).toUpperCase() || 'U'}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-medium text-gray-900">{comment.user?.name || 'Unknown'}</span>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-[13px] font-medium text-gray-900">{comment.user?.name || 'Unknown'}</span>
+                        <span className="text-[11px] text-gray-400">
                           {new Date(comment.createdAt).toLocaleString()}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{comment.content}</p>
+                      <p className="text-[13px] text-gray-600 mt-0.5 whitespace-pre-wrap">{comment.content}</p>
                     </div>
                   </div>
                 ))}
 
                 {comments.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-8">No comments yet</p>
+                  <p className="text-[13px] text-gray-400 text-center py-6">No comments yet</p>
                 )}
               </div>
             </div>
           )}
 
           {activeTab === 'activity' && (
-            <div className="p-6 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="p-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-900">Record created</p>
-                  <p className="text-xs text-gray-500">{new Date(record.createdAt).toLocaleString()}</p>
+                  <p className="text-[13px] text-gray-700">Record created</p>
+                  <p className="text-[11px] text-gray-400">{new Date(record.createdAt).toLocaleString()}</p>
                 </div>
               </div>
               {record.updatedAt !== record.createdAt && (
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-900">Last modified</p>
-                    <p className="text-xs text-gray-500">{new Date(record.updatedAt).toLocaleString()}</p>
+                    <p className="text-[13px] text-gray-700">Last modified</p>
+                    <p className="text-[11px] text-gray-400">{new Date(record.updatedAt).toLocaleString()}</p>
                   </div>
                 </div>
               )}
