@@ -96,21 +96,24 @@ func (s *Service) ListByBase(ctx context.Context, baseID string) ([]*Table, erro
 	return s.store.ListByBase(ctx, baseID)
 }
 
-// Reorder reorders tables.
+// Reorder reorders tables efficiently using O(1) map lookups instead of O(n²) nested loops.
 func (s *Service) Reorder(ctx context.Context, baseID string, tableIDs []string) error {
 	tables, err := s.store.ListByBase(ctx, baseID)
 	if err != nil {
 		return err
 	}
 
-	// Update positions
+	// Build map for O(1) lookups instead of O(n) search for each tableID
+	tableMap := make(map[string]*Table, len(tables))
+	for _, tbl := range tables {
+		tableMap[tbl.ID] = tbl
+	}
+
+	// Update positions with O(n) complexity instead of O(n²)
 	for i, tableID := range tableIDs {
-		for _, tbl := range tables {
-			if tbl.ID == tableID {
-				tbl.Position = i
-				s.store.Update(ctx, tbl)
-				break
-			}
+		if tbl := tableMap[tableID]; tbl != nil {
+			tbl.Position = i
+			s.store.Update(ctx, tbl)
 		}
 	}
 

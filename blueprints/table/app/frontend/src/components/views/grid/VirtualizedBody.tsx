@@ -1,4 +1,4 @@
-import { useRef, useMemo, Fragment } from 'react';
+import { useRef, useMemo, Fragment, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { TableRecord, Field, CellValue } from '../../../types';
 import { CellEditor } from './CellEditor';
@@ -61,7 +61,9 @@ interface VirtualizedBodyProps {
   renderSummaryBar?: () => React.ReactNode;
 }
 
-export function VirtualizedBody({
+// Wrap with React.memo to prevent unnecessary re-renders when props haven't changed.
+// This is important for performance since VirtualizedBody receives many callback props.
+export const VirtualizedBody = memo(function VirtualizedBody({
   groupedRecords,
   visibleFields,
   columnWidths,
@@ -394,4 +396,4 @@ export function VirtualizedBody({
       </div>
     </div>
   );
-}
+});

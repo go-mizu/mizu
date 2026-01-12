@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, memo } from 'react';
 import type { Field, CellValue } from '../../../types';
 
 type RowHeightKey = 'short' | 'medium' | 'tall' | 'extra_tall';
@@ -19,7 +19,10 @@ interface CellEditorProps {
   rowHeight?: RowHeightKey;
 }
 
-export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHeight: _rowHeight = 'short' }: CellEditorProps) {
+// Wrap with React.memo to prevent unnecessary re-renders.
+// Each cell in the grid has a CellEditor, so preventing re-renders is critical for performance.
+// Custom comparison function to check only relevant props (field.id, value, isEditing, rowHeight)
+export const CellEditor = memo(function CellEditor({ field, value, isEditing, onChange, onCancel, rowHeight: _rowHeight = 'short' }: CellEditorProps) {
   void _rowHeight; // Future use for taller row layouts
   void ROW_HEIGHT_CLASSES; // Future use
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -506,4 +509,13 @@ export function CellEditor({ field, value, isEditing, onChange, onCancel, rowHei
         </div>
       );
   }
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if these specific props change
+  // This avoids re-renders when callback references change but values are the same
+  return (
+    prevProps.field.id === nextProps.field.id &&
+    prevProps.value === nextProps.value &&
+    prevProps.isEditing === nextProps.isEditing &&
+    prevProps.rowHeight === nextProps.rowHeight
+  );
+});

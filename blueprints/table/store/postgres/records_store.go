@@ -79,8 +79,12 @@ func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) 
 		}
 		batch := recs[i:end]
 
-		// Build batch insert query with unnest for efficiency
-		query := `INSERT INTO records (id, table_id, cells, position, created_by, created_at, updated_at, updated_by) VALUES `
+		// Build batch insert query with strings.Builder for efficient string construction
+		// Pre-allocate: base query (~100 chars) + ~80 chars per value tuple
+		var sb strings.Builder
+		sb.Grow(100 + len(batch)*80)
+		sb.WriteString(`INSERT INTO records (id, table_id, cells, position, created_by, created_at, updated_at, updated_by) VALUES `)
+
 		args := make([]any, 0, len(batch)*8)
 		for j, rec := range batch {
 			rec.CreatedAt = now
@@ -97,17 +101,17 @@ func (s *RecordsStore) CreateBatch(ctx context.Context, recs []*records.Record) 
 			}
 
 			if j > 0 {
-				query += ", "
+				sb.WriteString(", ")
 			}
 			paramOffset := j * 8
-			query += fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			sb.WriteString(fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d, $%d, $%d)",
 				paramOffset+1, paramOffset+2, paramOffset+3, paramOffset+4,
-				paramOffset+5, paramOffset+6, paramOffset+7, paramOffset+8)
+				paramOffset+5, paramOffset+6, paramOffset+7, paramOffset+8))
 			args = append(args, rec.ID, rec.TableID, cellsJSON, rec.Position,
 				rec.CreatedBy, rec.CreatedAt, rec.UpdatedAt, nullString(rec.UpdatedBy))
 		}
 
-		if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
+		if _, err := s.db.ExecContext(ctx, sb.String(), args...); err != nil {
 			return err
 		}
 	}
@@ -235,7 +239,15 @@ func (s *RecordsStore) List(ctx context.Context, tableID string, opts records.Li
 	}
 	defer rows.Close()
 
-	var recordList []*records.Record
+	// Pre-allocate slice with expected capacity to avoid multiple allocations
+	expectedSize := opts.Limit
+	if total-opts.Offset < expectedSize {
+		expectedSize = total - opts.Offset
+	}
+	if expectedSize < 0 {
+		expectedSize = 0
+	}
+	recordList := make([]*records.Record, 0, expectedSize)
 	for rows.Next() {
 		rec, err := s.scanRecordRows(rows)
 		if err != nil {
@@ -306,6 +318,7 @@ func (s *RecordsStore) DeleteLinksBySource(ctx context.Context, recordID, fieldI
 }
 
 // ListLinksBySource lists links by source record/field.
+// Pre-allocates slice with typical capacity to avoid multiple allocations.
 func (s *RecordsStore) ListLinksBySource(ctx context.Context, recordID, fieldID string) ([]*records.RecordLink, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, source_record_id, source_field_id, target_record_id, position
@@ -317,7 +330,8 @@ func (s *RecordsStore) ListLinksBySource(ctx context.Context, recordID, fieldID 
 	}
 	defer rows.Close()
 
-	var links []*records.RecordLink
+	// Pre-allocate with typical capacity (most records have 1-10 links)
+	links := make([]*records.RecordLink, 0, 8)
 	for rows.Next() {
 		link := &records.RecordLink{}
 		if err := rows.Scan(&link.ID, &link.SourceRecordID, &link.SourceFieldID, &link.TargetRecordID, &link.Position); err != nil {
@@ -329,6 +343,7 @@ func (s *RecordsStore) ListLinksBySource(ctx context.Context, recordID, fieldID 
 }
 
 // ListLinksByTarget lists links by target record.
+// Pre-allocates slice with typical capacity to avoid multiple allocations.
 func (s *RecordsStore) ListLinksByTarget(ctx context.Context, targetRecordID string) ([]*records.RecordLink, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, source_record_id, source_field_id, target_record_id, position
@@ -339,7 +354,8 @@ func (s *RecordsStore) ListLinksByTarget(ctx context.Context, targetRecordID str
 	}
 	defer rows.Close()
 
-	var links []*records.RecordLink
+	// Pre-allocate with typical capacity (most records have 1-10 links)
+	links := make([]*records.RecordLink, 0, 8)
 	for rows.Next() {
 		link := &records.RecordLink{}
 		if err := rows.Scan(&link.ID, &link.SourceRecordID, &link.SourceFieldID, &link.TargetRecordID, &link.Position); err != nil {

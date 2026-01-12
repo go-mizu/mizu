@@ -109,7 +109,8 @@ func (s *TablesStore) ListByBase(ctx context.Context, baseID string) ([]*tables.
 	}
 	defer rows.Close()
 
-	var tableList []*tables.Table
+	// Pre-allocate with typical capacity (most bases have 3-15 tables)
+	tableList := make([]*tables.Table, 0, 8)
 	for rows.Next() {
 		tbl, err := s.scanTableRows(rows)
 		if err != nil {
