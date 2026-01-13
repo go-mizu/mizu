@@ -26,19 +26,39 @@ export default defineConfig(({ mode }) => ({
           }
           return 'assets/[name]-[hash][extname]'
         },
-        manualChunks(id) {
-          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
-            return 'react-vendor'
-          }
-          if (id.includes('node_modules/@mantine/')) {
-            return 'mantine'
-          }
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
-            return 'charts'
-          }
-          if (id.includes('node_modules/framer-motion')) {
-            return 'motion'
-          }
+manualChunks: {
+          // Group all vendor dependencies into logical chunks
+          // Order matters: chunks listed first can be imported by later chunks
+          'vendor-react': [
+            'react',
+            'react-dom',
+            'react-router-dom',
+            'scheduler',
+          ],
+          'vendor-ui': [
+            '@mantine/core',
+            '@mantine/hooks',
+            '@mantine/dates',
+            '@mantine/form',
+            '@mantine/notifications',
+            '@mantine/code-highlight',
+            '@tabler/icons-react',
+            '@floating-ui/react',
+            'framer-motion',
+            'clsx',
+          ],
+          'vendor-charts': [
+            'recharts',
+            'd3-scale',
+            'd3-shape',
+            'd3-path',
+            'd3-interpolate',
+            'd3-color',
+            'd3-format',
+            'd3-time',
+            'd3-time-format',
+            'd3-array',
+          ],
         },
       },
     },

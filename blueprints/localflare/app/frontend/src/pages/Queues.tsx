@@ -70,9 +70,9 @@ export function Queues() {
 
   const columns: Column<Queue>[] = [
     { key: 'name', label: 'Name', sortable: true },
-    { key: 'message_count', label: 'Messages', sortable: true, render: (row) => row.message_count.toLocaleString() },
-    { key: 'ready_count', label: 'Ready', sortable: true, render: (row) => row.ready_count.toLocaleString() },
-    { key: 'delayed_count', label: 'Delayed', sortable: true, render: (row) => row.delayed_count.toLocaleString() },
+    { key: 'message_count', label: 'Messages', sortable: true, render: (row) => (row.message_count ?? 0).toLocaleString() },
+    { key: 'ready_count', label: 'Ready', sortable: true, render: (row) => (row.ready_count ?? 0).toLocaleString() },
+    { key: 'delayed_count', label: 'Delayed', sortable: true, render: (row) => (row.delayed_count ?? 0).toLocaleString() },
   ]
 
   return (
