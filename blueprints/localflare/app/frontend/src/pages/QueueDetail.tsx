@@ -50,7 +50,7 @@ export function QueueDetail() {
         ready_count: 1100,
         delayed_count: 134,
         failed_count: 12,
-        settings: { max_retries: 3, batch_size: 10, max_batch_timeout: 30, message_retention_seconds: 345600, delivery_delay: 0 },
+        settings: { max_retries: 3, max_batch_size: 10, max_batch_timeout: 30, message_ttl: 345600, delivery_delay: 0 },
         consumers: [
           { id: '1', queue_id: id!, script_name: 'order-processor', consumer_type: 'worker', batch_size: 10, max_retries: 3, status: 'active' },
           { id: '2', queue_id: id!, script_name: 'http-pull', consumer_type: 'http', batch_size: 100, max_retries: 3, status: 'active' },
@@ -117,9 +117,9 @@ export function QueueDetail() {
           <Text size="sm" fw={600}>Settings</Text>
           <Group gap="xl">
             <Stack gap={2}><Text size="xs" c="dimmed">Max Retries</Text><Text fw={500}>{queue.settings.max_retries}</Text></Stack>
-            <Stack gap={2}><Text size="xs" c="dimmed">Batch Size</Text><Text fw={500}>{queue.settings.batch_size ?? queue.settings.max_batch_size ?? 10}</Text></Stack>
+            <Stack gap={2}><Text size="xs" c="dimmed">Batch Size</Text><Text fw={500}>{queue.settings.max_batch_size ?? 10}</Text></Stack>
             <Stack gap={2}><Text size="xs" c="dimmed">Timeout</Text><Text fw={500}>{queue.settings.max_batch_timeout}s</Text></Stack>
-            <Stack gap={2}><Text size="xs" c="dimmed">Message TTL</Text><Text fw={500}>{Math.round((queue.settings.message_retention_seconds ?? queue.settings.message_ttl ?? 86400) / 86400)} days</Text></Stack>
+            <Stack gap={2}><Text size="xs" c="dimmed">Message TTL</Text><Text fw={500}>{Math.round((queue.settings.message_ttl ?? 86400) / 86400)} days</Text></Stack>
             <Stack gap={2}><Text size="xs" c="dimmed">Delivery Delay</Text><Text fw={500}>{queue.settings.delivery_delay}s</Text></Stack>
           </Group>
         </Stack>

@@ -33,7 +33,7 @@ export function AIGatewayPage() {
   const loadGateways = async () => {
     try {
       const res = await api.aiGateway.list()
-      if (res.result) setGateways(res.result.gateways)
+      if (res.result) setGateways(res.result.gateways ?? [])
     } catch (error) {
       setGateways([
         {

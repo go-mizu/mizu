@@ -26,7 +26,7 @@ export function AnalyticsEngine() {
   const loadDatasets = async () => {
     try {
       const res = await api.analytics.listDatasets()
-      if (res.result) setDatasets(res.result.datasets)
+      if (res.result) setDatasets(res.result.datasets ?? [])
     } catch (error) {
       setDatasets([
         { id: '1', name: 'page_views', created_at: new Date(Date.now() - 14 * 86400000).toISOString(), data_points: 1200000, estimated_size_bytes: 245 * 1024 * 1024, last_write: new Date(Date.now() - 120000).toISOString() },

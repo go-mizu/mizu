@@ -145,7 +145,7 @@ export function StatCard({
           {sparklineData && sparklineData.length > 1 && (
             <Box w={60} h={24}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={sparklineData.map((v, i) => ({ value: v, index: i }))}>
+                <AreaChart data={(sparklineData ?? []).map((v, i) => ({ value: v, index: i }))}>
                   <defs>
                     <linearGradient id={`sparkline-${label}`} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={sparklineColorMap[color]} stopOpacity={0.3} />

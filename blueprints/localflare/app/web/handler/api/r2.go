@@ -27,7 +27,9 @@ func (h *R2) ListBuckets(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
-		"result":  buckets,
+		"result": map[string]interface{}{
+			"buckets": buckets,
+		},
 	})
 }
 

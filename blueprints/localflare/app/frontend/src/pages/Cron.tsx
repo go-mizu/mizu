@@ -41,7 +41,7 @@ export function Cron() {
   const loadTriggers = async () => {
     try {
       const res = await api.cron.list()
-      if (res.result) setTriggers(res.result.triggers)
+      if (res.result) setTriggers(res.result.triggers ?? [])
     } catch (error) {
       setTriggers([
         { id: '1', cron: '*/5 * * * *', script_name: 'cleanup-worker', enabled: true, created_at: new Date().toISOString(), last_run: new Date(Date.now() - 120000).toISOString(), next_run: new Date(Date.now() + 180000).toISOString() },

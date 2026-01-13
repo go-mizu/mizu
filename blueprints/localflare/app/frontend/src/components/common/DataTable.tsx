@@ -119,7 +119,7 @@ export function DataTable<T extends object>({
   const visibleColumns = columns.filter((col) => !col.hidden)
 
   const filteredData = useMemo(() => {
-    let result = [...data]
+    let result = [...(data ?? [])]
 
     // Filter by search
     if (search) {
@@ -193,7 +193,7 @@ export function DataTable<T extends object>({
     return <LoadingState />
   }
 
-  if (data.length === 0 && emptyState) {
+  if ((!data || data.length === 0) && emptyState) {
     return <EmptyState {...emptyState} />
   }
 
@@ -376,7 +376,7 @@ export function DataTable<T extends object>({
       </Paper>
 
       {/* No Search Results */}
-      {filteredData.length === 0 && data.length > 0 && (
+      {filteredData.length === 0 && data && data.length > 0 && (
         <Text size="sm" c="dimmed" ta="center" py="md">
           No results found for "{search}"
         </Text>

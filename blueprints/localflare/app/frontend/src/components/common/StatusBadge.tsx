@@ -1,7 +1,7 @@
 import { Badge, Group, Box } from '@mantine/core'
 
 interface StatusBadgeProps {
-  status: 'active' | 'inactive' | 'error' | 'cached' | 'pending' | 'success' | 'failed' | 'running' | 'online' | 'offline' | 'degraded' | 'connected' | 'disconnected' | 'idle' | 'enabled' | 'disabled' | 'paused'
+  status: 'active' | 'inactive' | 'error' | 'cached' | 'pending' | 'success' | 'failed' | 'running' | 'online' | 'offline' | 'degraded' | 'connected' | 'disconnected' | 'idle' | 'enabled' | 'disabled' | 'paused' | 'ok' | 'revoked' | 'ready' | 'pendingupload' | 'queued' | 'inprogress' | 'public' | 'private' | 'building'
   label?: string
   size?: 'xs' | 'sm' | 'md' | 'lg'
 }
@@ -24,6 +24,15 @@ const statusConfig: Record<StatusBadgeProps['status'], { color: string; label: s
   enabled: { color: 'green', label: 'Enabled' },
   disabled: { color: 'gray', label: 'Disabled' },
   paused: { color: 'yellow', label: 'Paused' },
+  ok: { color: 'green', label: 'OK' },
+  revoked: { color: 'red', label: 'Revoked' },
+  ready: { color: 'green', label: 'Ready' },
+  pendingupload: { color: 'yellow', label: 'Pending Upload' },
+  queued: { color: 'blue', label: 'Queued' },
+  inprogress: { color: 'blue', label: 'In Progress' },
+  public: { color: 'green', label: 'Public' },
+  private: { color: 'gray', label: 'Private' },
+  building: { color: 'blue', label: 'Building' },
 }
 
 export function StatusBadge({ status, label, size = 'sm' }: StatusBadgeProps) {

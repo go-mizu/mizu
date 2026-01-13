@@ -35,7 +35,7 @@ function AllProviders({ children, initialEntries }: WrapperProps) {
   const routerProps = initialEntries ? { initialEntries } : {}
 
   return (
-    <MantineProvider theme={testTheme} defaultColorScheme="dark">
+    <MantineProvider theme={testTheme} defaultColorScheme="light">
       <Notifications position="top-right" />
       <Router {...routerProps}>{children}</Router>
     </MantineProvider>
@@ -155,9 +155,9 @@ export const mockData = {
     failed_count: 5,
     settings: {
       max_retries: 3,
-      batch_size: 10,
+      max_batch_size: 10,
       max_batch_timeout: 5000,
-      message_retention_seconds: 86400,
+      message_ttl: 86400,
       delivery_delay: 0,
     },
     consumers: [],
@@ -301,6 +301,153 @@ export const mockData = {
     { id: 'llama-2-7b', name: '@cf/meta/llama-2-7b-chat-int8', task: 'text-generation' },
     { id: 'mistral-7b', name: '@cf/mistral/mistral-7b-instruct-v0.1', task: 'text-generation' },
     { id: 'bge-small', name: '@cf/baai/bge-small-en-v1.5', task: 'text-embeddings' },
+  ],
+
+  // KV Namespaces
+  kvNamespaces: () => [
+    { id: 'kv-1', title: 'CONFIG', created_at: new Date().toISOString() },
+    { id: 'kv-2', title: 'SESSIONS', created_at: new Date().toISOString() },
+    { id: 'kv-3', title: 'CACHE', created_at: new Date().toISOString() },
+  ],
+
+  kvKeys: () => [
+    { name: 'app:settings', expiration: 0, metadata: {} },
+    { name: 'feature:flags', expiration: 0, metadata: {} },
+    { name: 'session:user123', expiration: 3600, metadata: { user: 'user123' } },
+  ],
+
+  // R2 Buckets
+  r2Buckets: () => [
+    { id: 'bucket-1', name: 'assets', location: 'auto', created_at: new Date().toISOString() },
+    { id: 'bucket-2', name: 'uploads', location: 'auto', created_at: new Date().toISOString() },
+    { id: 'bucket-3', name: 'backups', location: 'auto', created_at: new Date().toISOString() },
+  ],
+
+  r2Objects: () => [
+    { key: 'images/logo.png', size: 10240, last_modified: new Date().toISOString() },
+    { key: 'images/hero.jpg', size: 102400, last_modified: new Date().toISOString() },
+    { key: 'assets/style.css', size: 5120, last_modified: new Date().toISOString() },
+  ],
+
+  // D1 Databases
+  d1Databases: () => [
+    { id: 'd1-1', name: 'main', version: 'v1', num_tables: 5, file_size: 1024000, created_at: new Date().toISOString() },
+    { id: 'd1-2', name: 'analytics', version: 'v1', num_tables: 3, file_size: 512000, created_at: new Date().toISOString() },
+  ],
+
+  d1Tables: () => [
+    { name: 'users', row_count: 150 },
+    { name: 'posts', row_count: 500 },
+    { name: 'comments', row_count: 1200 },
+  ],
+
+  // Workers
+  workers: () => [
+    {
+      id: 'w-1',
+      name: 'api-router',
+      script: 'export default { async fetch() {} }',
+      routes: ['api.example.com/*'],
+      bindings: [
+        { name: 'KV', type: 'kv_namespace', namespace_id: 'kv-1' },
+        { name: 'D1', type: 'd1', database_id: 'd1-1' },
+      ],
+      status: 'active' as const,
+      created_at: new Date().toISOString(),
+      modified_at: new Date().toISOString(),
+    },
+    {
+      id: 'w-2',
+      name: 'image-optimizer',
+      script: 'export default { async fetch() {} }',
+      routes: ['images.example.com/*'],
+      bindings: [
+        { name: 'R2', type: 'r2_bucket', bucket_name: 'assets' },
+      ],
+      status: 'active' as const,
+      created_at: new Date().toISOString(),
+      modified_at: new Date().toISOString(),
+    },
+  ],
+
+  // Pages Projects
+  pagesProjects: () => [
+    {
+      name: 'my-blog',
+      subdomain: 'my-blog',
+      created_at: new Date(Date.now() - 172800000).toISOString(),
+      production_branch: 'main',
+      latest_deployment: {
+        id: 'deploy-1',
+        url: 'https://my-blog.pages.dev',
+        environment: 'production',
+        deployment_trigger: { type: 'push', metadata: { branch: 'main', commit_hash: 'abc123' } },
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+        status: 'success',
+      },
+      domains: ['blog.example.com'],
+    },
+    {
+      name: 'docs-site',
+      subdomain: 'docs-site',
+      created_at: new Date(Date.now() - 604800000).toISOString(),
+      production_branch: 'main',
+      latest_deployment: {
+        id: 'deploy-2',
+        url: 'https://docs-site.pages.dev',
+        environment: 'production',
+        deployment_trigger: { type: 'push', metadata: { branch: 'main', commit_hash: 'def456' } },
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+        status: 'success',
+      },
+      domains: ['docs.example.com'],
+    },
+  ],
+
+  // Images
+  cloudflareImages: () => [
+    { id: 'img-1', filename: 'hero-banner.jpg', uploaded: new Date().toISOString(), variants: ['public', 'thumbnail'], meta: { width: 1920, height: 1080 } },
+    { id: 'img-2', filename: 'logo.png', uploaded: new Date().toISOString(), variants: ['public', 'thumbnail'], meta: { width: 512, height: 512 } },
+    { id: 'img-3', filename: 'product-1.webp', uploaded: new Date().toISOString(), variants: ['public', 'thumbnail', 'product'], meta: { width: 800, height: 800 } },
+  ],
+
+  imageVariants: () => [
+    { id: 'public', name: 'public', options: { fit: 'scale-down', width: 1920, height: 1080 }, never_require_signed_urls: true },
+    { id: 'thumbnail', name: 'thumbnail', options: { fit: 'cover', width: 150, height: 150 }, never_require_signed_urls: true },
+  ],
+
+  // Stream
+  streamVideos: () => [
+    { uid: 'vid-1', name: 'Product Demo', created: new Date().toISOString(), duration: 245, size: 45 * 1024 * 1024, status: { state: 'ready' }, playback: { hls: 'https://example.com/vid-1.m3u8' } },
+    { uid: 'vid-2', name: 'Tutorial', created: new Date().toISOString(), duration: 1234, size: 234 * 1024 * 1024, status: { state: 'ready' }, playback: { hls: 'https://example.com/vid-2.m3u8' } },
+  ],
+
+  liveInputs: () => [
+    { uid: 'live-1', name: 'Main Studio', created: new Date().toISOString(), status: 'connected', rtmps: { url: 'rtmps://live.cloudflare.com:443/live', streamKey: 'xxx' } },
+    { uid: 'live-2', name: 'Backup', created: new Date().toISOString(), status: 'disconnected', rtmps: { url: 'rtmps://live.cloudflare.com:443/live', streamKey: 'yyy' } },
+  ],
+
+  // Observability
+  logEntries: () => [
+    { id: 'log-1', timestamp: new Date().toISOString(), level: 'info', message: 'Request processed', worker: 'api-router' },
+    { id: 'log-2', timestamp: new Date().toISOString(), level: 'warn', message: 'Rate limit warning', worker: 'api-router' },
+    { id: 'log-3', timestamp: new Date().toISOString(), level: 'error', message: 'Connection failed', worker: 'db-worker' },
+  ],
+
+  traces: () => [
+    { id: 'trace-1', name: 'POST /api/users', start_time: new Date().toISOString(), duration_ms: 245, status: 'success', spans: [] },
+    { id: 'trace-2', name: 'GET /api/products', start_time: new Date().toISOString(), duration_ms: 89, status: 'success', spans: [] },
+  ],
+
+  // Settings
+  apiTokens: () => [
+    { id: 'tok-1', name: 'CI/CD Token', permissions: ['workers:read', 'workers:write'], created_at: new Date().toISOString(), last_used: new Date().toISOString() },
+    { id: 'tok-2', name: 'Monitoring', permissions: ['analytics:read'], created_at: new Date().toISOString(), last_used: new Date().toISOString() },
+  ],
+
+  accountMembers: () => [
+    { id: 'mem-1', email: 'admin@example.com', name: 'Admin User', role: 'admin', status: 'active', joined: new Date().toISOString() },
+    { id: 'mem-2', email: 'dev@example.com', name: 'Developer', role: 'developer', status: 'active', joined: new Date().toISOString() },
   ],
 }
 

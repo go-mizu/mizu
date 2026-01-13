@@ -47,8 +47,8 @@ export function Dashboard() {
       ])
 
       if (statsRes.result) setStats(statsRes.result)
-      if (statusRes.result) setStatuses(statusRes.result.services)
-      if (activityRes.result) setActivity(activityRes.result.events)
+      if (statusRes.result) setStatuses(statusRes.result.services ?? [])
+      if (activityRes.result) setActivity(activityRes.result.events ?? [])
     } catch (error) {
       console.error('Failed to load dashboard data:', error)
       // Set mock data for development
@@ -93,7 +93,7 @@ export function Dashboard() {
   const loadTimeSeries = async () => {
     try {
       const res = await api.dashboard.getTimeSeries('requests', timeRange)
-      if (res.result) setTimeSeries(res.result.data)
+      if (res.result) setTimeSeries(res.result.data ?? [])
     } catch {
       // Generate mock time series data
       const now = Date.now()

@@ -36,9 +36,9 @@ export function Queues() {
     } catch (error) {
       console.error('Failed to load queues:', error)
       setQueues([
-        { id: '1', name: 'order-events', created_at: new Date().toISOString(), message_count: 1234, ready_count: 1100, delayed_count: 134, failed_count: 12, settings: { max_retries: 3, batch_size: 10, max_batch_timeout: 30, message_retention_seconds: 345600, delivery_delay: 0 }, consumers: [] },
-        { id: '2', name: 'email-queue', created_at: new Date().toISOString(), message_count: 567, ready_count: 560, delayed_count: 7, failed_count: 0, settings: { max_retries: 3, batch_size: 10, max_batch_timeout: 30, message_retention_seconds: 345600, delivery_delay: 0 }, consumers: [] },
-        { id: '3', name: 'analytics', created_at: new Date().toISOString(), message_count: 8901, ready_count: 8500, delayed_count: 401, failed_count: 5, settings: { max_retries: 3, batch_size: 10, max_batch_timeout: 30, message_retention_seconds: 345600, delivery_delay: 0 }, consumers: [] },
+        { id: '1', name: 'order-events', created_at: new Date().toISOString(), message_count: 1234, ready_count: 1100, delayed_count: 134, failed_count: 12, settings: { max_retries: 3, max_batch_size: 10, max_batch_timeout: 30, message_ttl: 345600, delivery_delay: 0 }, consumers: [] },
+        { id: '2', name: 'email-queue', created_at: new Date().toISOString(), message_count: 567, ready_count: 560, delayed_count: 7, failed_count: 0, settings: { max_retries: 3, max_batch_size: 10, max_batch_timeout: 30, message_ttl: 345600, delivery_delay: 0 }, consumers: [] },
+        { id: '3', name: 'analytics', created_at: new Date().toISOString(), message_count: 8901, ready_count: 8500, delayed_count: 401, failed_count: 5, settings: { max_retries: 3, max_batch_size: 10, max_batch_timeout: 30, message_ttl: 345600, delivery_delay: 0 }, consumers: [] },
       ])
     } finally {
       setLoading(false)
@@ -47,7 +47,7 @@ export function Queues() {
 
   const handleCreate = async (values: typeof form.values) => {
     try {
-      await api.queues.create({ name: values.name, settings: { max_retries: values.max_retries, batch_size: values.batch_size } })
+      await api.queues.create({ name: values.name, settings: { max_retries: values.max_retries, max_batch_size: values.batch_size, max_batch_timeout: 30, message_ttl: 345600, delivery_delay: 0 } })
       notifications.show({ title: 'Success', message: 'Queue created', color: 'green' })
       setCreateModalOpen(false)
       form.reset()

@@ -43,7 +43,7 @@ export function Hyperdrive() {
   const loadConfigs = async () => {
     try {
       const res = await api.hyperdrive.list()
-      if (res.result) setConfigs(res.result.configs)
+      if (res.result) setConfigs(res.result.configs ?? [])
     } catch (error) {
       setConfigs([
         { id: '1', name: 'prod-postgres', created_at: new Date().toISOString(), origin: { scheme: 'postgres', host: 'db.example.com', port: 5432, database: 'app_db', user: 'app_user' }, caching: { enabled: true, max_age: 60, stale_while_revalidate: 15 }, status: 'connected' },

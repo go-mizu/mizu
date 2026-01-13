@@ -58,6 +58,11 @@ type Server struct {
 	hyperdriveHandler      *api.Hyperdrive
 	cronHandler            *api.Cron
 	dashboardHandler       *api.Dashboard
+	pagesHandler           *api.Pages
+	imagesHandler          *api.Images
+	streamHandler          *api.Stream
+	observabilityHandler   *api.Observability
+	settingsHandler        *api.Settings
 }
 
 // New creates a new server.
@@ -114,6 +119,11 @@ func New(cfg Config) (*Server, error) {
 	s.cronHandler = api.NewCron(cronSvc)
 	s.authHandler = api.NewAuth(authSvc)
 	s.dashboardHandler = api.NewDashboard(st)
+	s.pagesHandler = api.NewPages()
+	s.imagesHandler = api.NewImages()
+	s.streamHandler = api.NewStream()
+	s.observabilityHandler = api.NewObservability()
+	s.settingsHandler = api.NewSettings()
 
 	s.setupRoutes()
 
@@ -175,7 +185,13 @@ func (s *Server) setupRoutes() {
 	s.app.Get("/hyperdrive", s.serveUI)
 	s.app.Get("/hyperdrive/{id}", s.serveUI)
 	s.app.Get("/cron", s.serveUI)
+	s.app.Get("/cron/{id}", s.serveUI)
 	s.app.Get("/analytics", s.serveUI)
+	s.app.Get("/pages", s.serveUI)
+	s.app.Get("/pages/{name}", s.serveUI)
+	s.app.Get("/images", s.serveUI)
+	s.app.Get("/stream", s.serveUI)
+	s.app.Get("/observability", s.serveUI)
 	s.app.Get("/settings", s.serveUI)
 	s.app.Get("/login", s.serveUI)
 
@@ -296,6 +312,40 @@ func (s *Server) setupRoutes() {
 		apiGroup.Get("/dashboard/timeseries", s.dashboardHandler.GetTimeSeries)
 		apiGroup.Get("/dashboard/activity", s.dashboardHandler.GetActivity)
 		apiGroup.Get("/dashboard/status", s.dashboardHandler.GetStatus)
+
+		// Pages
+		apiGroup.Get("/pages/projects", s.pagesHandler.ListProjects)
+		apiGroup.Post("/pages/projects", s.pagesHandler.CreateProject)
+		apiGroup.Get("/pages/projects/{name}", s.pagesHandler.GetProject)
+		apiGroup.Delete("/pages/projects/{name}", s.pagesHandler.DeleteProject)
+		apiGroup.Get("/pages/projects/{name}/deployments", s.pagesHandler.GetDeployments)
+
+		// Images
+		apiGroup.Get("/images", s.imagesHandler.List)
+		apiGroup.Post("/images/upload", s.imagesHandler.Upload)
+		apiGroup.Delete("/images/{id}", s.imagesHandler.Delete)
+		apiGroup.Get("/images/variants", s.imagesHandler.ListVariants)
+
+		// Stream
+		apiGroup.Get("/stream/videos", s.streamHandler.ListVideos)
+		apiGroup.Get("/stream/videos/{id}", s.streamHandler.GetVideo)
+		apiGroup.Post("/stream/upload", s.streamHandler.Upload)
+		apiGroup.Delete("/stream/videos/{id}", s.streamHandler.DeleteVideo)
+		apiGroup.Get("/stream/live", s.streamHandler.ListLiveInputs)
+		apiGroup.Post("/stream/live", s.streamHandler.CreateLiveInput)
+
+		// Observability
+		apiGroup.Get("/observability/logs", s.observabilityHandler.GetLogs)
+		apiGroup.Get("/observability/traces", s.observabilityHandler.GetTraces)
+		apiGroup.Get("/observability/metrics", s.observabilityHandler.GetMetrics)
+
+		// Settings
+		apiGroup.Get("/settings/tokens", s.settingsHandler.ListTokens)
+		apiGroup.Post("/settings/tokens", s.settingsHandler.CreateToken)
+		apiGroup.Delete("/settings/tokens/{id}", s.settingsHandler.RevokeToken)
+		apiGroup.Get("/settings/members", s.settingsHandler.ListMembers)
+		apiGroup.Post("/settings/members", s.settingsHandler.InviteMember)
+		apiGroup.Delete("/settings/members/{id}", s.settingsHandler.RemoveMember)
 	})
 }
 
