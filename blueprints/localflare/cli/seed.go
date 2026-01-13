@@ -8,26 +8,55 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/go-mizu/blueprints/localflare/app/web"
+	"github.com/go-mizu/blueprints/localflare/pkg/seed"
 )
 
 // NewSeed creates the seed command
 func NewSeed() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "seed",
-		Short: "Seed the database with sample data",
-		Long: `Seed the Localflare database with sample data for testing.
+		Short: "Seed the database with comprehensive sample data",
+		Long: `Seed the Localflare database with comprehensive sample data for testing.
 
-This creates:
-  - Sample zones (example.com, test.local)
-  - DNS records (A, AAAA, CNAME, MX, TXT)
-  - Firewall rules
-  - Sample worker
-  - KV namespace with sample data
-  - R2 bucket
-  - D1 database
+This creates realistic data across all Localflare products:
+
+  Zones & DNS:
+    - 4 zones (example.com, api.myapp.io, store.acme.co, internal.corp)
+    - DNS records (A, AAAA, CNAME, MX, TXT) for each zone
+
+  Security:
+    - SSL certificates and settings
+    - Firewall rules, IP access rules, rate limits
+
+  Performance:
+    - Cache settings and rules
+    - Load balancers with origin pools and health checks
+
+  Compute:
+    - Workers with bindings (KV, R2, D1)
+    - Worker routes per zone
+    - Durable Objects with storage
+    - Message queues with consumers
+
+  Storage:
+    - KV namespaces with sample data
+    - R2 buckets with objects
+    - D1 databases with tables and records
+
+  AI & Search:
+    - Vector indexes with embeddings
+    - AI Gateway configurations
+
+  Analytics:
+    - 7 days of traffic analytics
+    - Analytics Engine datasets
+
+  Scheduling:
+    - Cron triggers with execution history
+    - Hyperdrive database configs
 
 Examples:
-  localflare seed                     # Seed with sample data
+  localflare seed                     # Seed with comprehensive data
   localflare seed --data /path/to/dir # Seed specific database`,
 		RunE: runSeed,
 	}
@@ -56,20 +85,20 @@ func runSeed(cmd *cobra.Command, args []string) error {
 		Error(fmt.Sprintf("Failed to create server: %v", err))
 		return err
 	}
+	defer srv.Close()
 
-	// Seed data
-	if err := srv.SeedData(context.Background()); err != nil {
+	// Use the new comprehensive seeder
+	seeder := seed.New(srv.Store())
+	if err := seeder.Run(context.Background()); err != nil {
 		stop()
-		srv.Close()
 		Error(fmt.Sprintf("Failed to seed: %v", err))
 		return err
 	}
-	srv.Close()
 
 	stop()
 	Step("", "Database seeded", time.Since(start))
 	Blank()
-	Success("Sample data created")
+	Success("Comprehensive sample data created")
 	Hint("Run 'localflare serve --dev' to start the server")
 	Blank()
 
