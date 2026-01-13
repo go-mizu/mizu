@@ -24,7 +24,9 @@ func (h *Hyperdrive) ListConfigs(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  configs,
+		"result": map[string]any{
+			"configs": configs,
+		},
 	})
 }
 

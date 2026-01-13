@@ -26,7 +26,9 @@ func (h *AIGateway) ListGateways(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  gateways,
+		"result": map[string]any{
+			"gateways": gateways,
+		},
 	})
 }
 
@@ -130,6 +132,9 @@ func (h *AIGateway) GetLogs(c *mizu.Ctx) error {
 
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  logs,
+		"result": map[string]any{
+			"logs":  logs,
+			"total": len(logs),
+		},
 	})
 }

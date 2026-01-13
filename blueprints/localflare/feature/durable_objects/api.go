@@ -15,11 +15,12 @@ var (
 
 // Namespace represents a Durable Object namespace.
 type Namespace struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Script    string    `json:"script"`
-	ClassName string    `json:"class"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Script      string    `json:"script_name"`
+	ClassName   string    `json:"class_name"`
+	CreatedAt   time.Time `json:"created_at"`
+	ObjectCount int       `json:"object_count,omitempty"`
 }
 
 // Instance represents a Durable Object instance.
@@ -28,6 +29,7 @@ type Instance struct {
 	NamespaceID string    `json:"namespace_id"`
 	Name        string    `json:"name,omitempty"`
 	HasStorage  bool      `json:"has_storage"`
+	StorageSize int64     `json:"storage_size"`
 	CreatedAt   time.Time `json:"created_at"`
 	LastAccess  time.Time `json:"last_access"`
 }
@@ -35,8 +37,8 @@ type Instance struct {
 // CreateNamespaceIn contains input for creating a namespace.
 type CreateNamespaceIn struct {
 	Name      string `json:"name"`
-	Script    string `json:"script"`
-	ClassName string `json:"class"`
+	Script    string `json:"script_name"`
+	ClassName string `json:"class_name"`
 }
 
 // API defines the Durable Objects service contract.

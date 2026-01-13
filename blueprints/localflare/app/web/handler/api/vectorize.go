@@ -25,7 +25,9 @@ func (h *Vectorize) ListIndexes(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  indexes,
+		"result": map[string]any{
+			"indexes": indexes,
+		},
 	})
 }
 

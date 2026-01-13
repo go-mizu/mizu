@@ -57,6 +57,7 @@ type Server struct {
 	aiGatewayHandler       *api.AIGateway
 	hyperdriveHandler      *api.Hyperdrive
 	cronHandler            *api.Cron
+	dashboardHandler       *api.Dashboard
 }
 
 // New creates a new server.
@@ -112,6 +113,7 @@ func New(cfg Config) (*Server, error) {
 	s.hyperdriveHandler = api.NewHyperdrive(hdSvc)
 	s.cronHandler = api.NewCron(cronSvc)
 	s.authHandler = api.NewAuth(authSvc)
+	s.dashboardHandler = api.NewDashboard(st)
 
 	s.setupRoutes()
 
@@ -288,6 +290,12 @@ func (s *Server) setupRoutes() {
 		apiGroup.Delete("/cron/triggers/{id}", s.cronHandler.DeleteTrigger)
 		apiGroup.Get("/cron/triggers/{id}/executions", s.cronHandler.GetExecutions)
 		apiGroup.Get("/cron/scripts/{script}/triggers", s.cronHandler.ListTriggersByScript)
+
+		// Dashboard
+		apiGroup.Get("/dashboard/stats", s.dashboardHandler.GetStats)
+		apiGroup.Get("/dashboard/timeseries", s.dashboardHandler.GetTimeSeries)
+		apiGroup.Get("/dashboard/activity", s.dashboardHandler.GetActivity)
+		apiGroup.Get("/dashboard/status", s.dashboardHandler.GetStatus)
 	})
 }
 

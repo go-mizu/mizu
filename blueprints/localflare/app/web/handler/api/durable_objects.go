@@ -24,7 +24,9 @@ func (h *DurableObjects) ListNamespaces(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  namespaces,
+		"result": map[string]any{
+			"namespaces": namespaces,
+		},
 	})
 }
 
@@ -80,6 +82,8 @@ func (h *DurableObjects) ListObjects(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  objects,
+		"result": map[string]any{
+			"objects": objects,
+		},
 	})
 }
