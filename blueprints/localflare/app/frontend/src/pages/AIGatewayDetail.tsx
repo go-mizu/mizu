@@ -84,11 +84,11 @@ export function AIGatewayDetail() {
       />
 
       <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="md">
-        <StatCard icon={<Text size="sm" fw={700}>R</Text>} label="Requests" value={gateway.stats.total_requests.toLocaleString()} color="orange" />
-        <StatCard icon={<Text size="sm" fw={700}>C</Text>} label="Cached" value={gateway.stats.cached_requests.toLocaleString()} color="success" />
-        <StatCard icon={<Text size="sm" fw={700}>E</Text>} label="Errors" value={gateway.stats.error_count} color="error" />
-        <StatCard icon={<Text size="sm" fw={700}>T</Text>} label="Tokens" value={`${(gateway.stats.total_tokens / 1000000).toFixed(1)}M`} />
-        <StatCard icon={<Text size="sm" fw={700}>$</Text>} label="Cost" value={`$${gateway.stats.total_cost.toFixed(2)}`} />
+        <StatCard icon={<Text size="sm" fw={700}>R</Text>} label="Requests" value={(gateway.stats?.total_requests ?? 0).toLocaleString()} color="orange" />
+        <StatCard icon={<Text size="sm" fw={700}>C</Text>} label="Cached" value={(gateway.stats?.cached_requests ?? 0).toLocaleString()} color="success" />
+        <StatCard icon={<Text size="sm" fw={700}>E</Text>} label="Errors" value={gateway.stats?.error_count ?? 0} color="error" />
+        <StatCard icon={<Text size="sm" fw={700}>T</Text>} label="Tokens" value={`${((gateway.stats?.total_tokens ?? 0) / 1000000).toFixed(1)}M`} />
+        <StatCard icon={<Text size="sm" fw={700}>$</Text>} label="Cost" value={`$${(gateway.stats?.total_cost ?? 0).toFixed(2)}`} />
       </SimpleGrid>
 
       <AreaChart
@@ -105,23 +105,23 @@ export function AIGatewayDetail() {
           <Group gap="xl">
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Caching</Text>
-              <StatusBadge status={gateway.settings.cache_enabled ? 'enabled' : 'disabled'} />
+              <StatusBadge status={(gateway.settings?.cache_enabled ?? gateway.cache_enabled) ? 'enabled' : 'disabled'} />
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">TTL</Text>
-              <Text fw={500}>{gateway.settings.cache_ttl}s</Text>
+              <Text fw={500}>{gateway.settings?.cache_ttl ?? gateway.cache_ttl ?? 0}s</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Rate Limit</Text>
-              <Text fw={500}>{gateway.settings.rate_limit_enabled ? `${gateway.settings.rate_limit}/min` : 'Disabled'}</Text>
+              <Text fw={500}>{(gateway.settings?.rate_limit_enabled ?? gateway.rate_limit_enabled) ? `${gateway.settings?.rate_limit ?? gateway.rate_limit_count ?? 0}/min` : 'Disabled'}</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Logging</Text>
-              <StatusBadge status={gateway.settings.logging_enabled ? 'enabled' : 'disabled'} />
+              <StatusBadge status={(gateway.settings?.logging_enabled ?? gateway.collect_logs) ? 'enabled' : 'disabled'} />
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Retry</Text>
-              <Text fw={500}>{gateway.settings.retry_enabled ? `${gateway.settings.retry_count} attempts` : 'Disabled'}</Text>
+              <Text fw={500}>{gateway.settings?.retry_enabled ? `${gateway.settings.retry_count} attempts` : 'Disabled'}</Text>
             </Stack>
           </Group>
         </Stack>

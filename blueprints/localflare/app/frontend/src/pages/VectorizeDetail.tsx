@@ -75,10 +75,10 @@ export function VectorizeDetail() {
       />
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
-        <StatCard icon={<Text size="sm" fw={700}>V</Text>} label="Vectors" value={index.vector_count.toLocaleString()} color="orange" />
-        <StatCard icon={<Text size="sm" fw={700}>D</Text>} label="Dimensions" value={index.dimensions} />
-        <StatCard icon={<Text size="sm" fw={700}>M</Text>} label="Metric" value={index.metric} />
-        <StatCard icon={<Text size="sm" fw={700}>N</Text>} label="Namespaces" value={index.namespace_count} />
+        <StatCard icon={<Text size="sm" fw={700}>V</Text>} label="Vectors" value={(index.vector_count ?? 0).toLocaleString()} color="orange" />
+        <StatCard icon={<Text size="sm" fw={700}>D</Text>} label="Dimensions" value={index.dimensions ?? 0} />
+        <StatCard icon={<Text size="sm" fw={700}>M</Text>} label="Metric" value={index.metric ?? 'cosine'} />
+        <StatCard icon={<Text size="sm" fw={700}>N</Text>} label="Namespaces" value={index.namespace_count ?? 0} />
       </SimpleGrid>
 
       <Paper p="md" radius="md" withBorder>

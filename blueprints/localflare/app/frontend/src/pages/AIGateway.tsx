@@ -88,10 +88,20 @@ export function AIGatewayPage() {
     }
   }
 
+  // Helper to get stats - handles both flat and nested structure
+  const getStats = (row: AIGateway) => ({
+    total_requests: row.stats?.total_requests ?? 0,
+    cached_requests: row.stats?.cached_requests ?? 0,
+  })
+
   const columns: Column<AIGateway>[] = [
     { key: 'name', label: 'Name', sortable: true },
-    { key: 'stats.total_requests', label: 'Requests', sortable: true, render: (row) => row.stats.total_requests.toLocaleString() },
-    { key: 'cache_hit', label: 'Cache Hit', render: (row) => `${Math.round((row.stats.cached_requests / row.stats.total_requests) * 100)}%` },
+    { key: 'stats.total_requests', label: 'Requests', sortable: true, render: (row) => getStats(row).total_requests.toLocaleString() },
+    { key: 'cache_hit', label: 'Cache Hit', render: (row) => {
+      const stats = getStats(row)
+      if (stats.total_requests === 0) return '0%'
+      return `${Math.round((stats.cached_requests / stats.total_requests) * 100)}%`
+    }},
     { key: 'status', label: 'Status', render: () => <StatusBadge status="active" /> },
   ]
 
