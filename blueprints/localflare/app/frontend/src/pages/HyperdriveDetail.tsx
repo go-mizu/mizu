@@ -85,23 +85,23 @@ export function HyperdriveDetail() {
           <Group gap="xl">
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Host</Text>
-              <Text fw={500}>{config.origin.host}</Text>
+              <Text fw={500}>{config.origin?.host ?? '-'}</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Port</Text>
-              <Text fw={500}>{config.origin.port}</Text>
+              <Text fw={500}>{config.origin?.port ?? '-'}</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Database</Text>
-              <Text fw={500}>{config.origin.database}</Text>
+              <Text fw={500}>{config.origin?.database ?? '-'}</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">User</Text>
-              <Text fw={500}>{config.origin.user}</Text>
+              <Text fw={500}>{config.origin?.user ?? '-'}</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Scheme</Text>
-              <Text fw={500}>{config.origin.scheme}</Text>
+              <Text fw={500}>{config.origin?.scheme ?? '-'}</Text>
             </Stack>
           </Group>
         </Stack>
@@ -113,15 +113,15 @@ export function HyperdriveDetail() {
           <Group gap="xl">
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Caching</Text>
-              <StatusBadge status={config.caching.enabled ? 'enabled' : 'disabled'} />
+              <StatusBadge status={config.caching?.enabled ? 'enabled' : 'disabled'} />
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Max Age</Text>
-              <Text fw={500}>{config.caching.max_age} seconds</Text>
+              <Text fw={500}>{config.caching?.max_age ?? 0} seconds</Text>
             </Stack>
             <Stack gap={2}>
               <Text size="xs" c="dimmed">Stale While Revalidate</Text>
-              <Text fw={500}>{config.caching.stale_while_revalidate} seconds</Text>
+              <Text fw={500}>{config.caching?.stale_while_revalidate ?? 0} seconds</Text>
             </Stack>
           </Group>
         </Stack>

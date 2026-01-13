@@ -65,12 +65,12 @@ export interface QueueMessage {
 export interface VectorIndex {
   id: string
   name: string
-  dimensions: number
-  metric: 'cosine' | 'euclidean' | 'dot-product'
+  dimensions?: number
+  metric?: 'cosine' | 'euclidean' | 'dot-product'
   description?: string
   created_at: string
-  vector_count: number
-  namespace_count: number
+  vector_count?: number
+  namespace_count?: number
 }
 
 export interface VectorMatch {
@@ -140,12 +140,21 @@ export interface AIInferenceResponse {
 }
 
 // AI Gateway
+// Note: Backend returns flat fields, frontend may use nested structure in fallback data
 export interface AIGateway {
   id: string
   name: string
   created_at: string
-  settings: AIGatewaySettings
-  stats: AIGatewayStats
+  // Nested structure (used in fallback/mock data)
+  settings?: AIGatewaySettings
+  stats?: AIGatewayStats
+  // Flat fields from backend API
+  collect_logs?: boolean
+  cache_enabled?: boolean
+  cache_ttl?: number
+  rate_limit_enabled?: boolean
+  rate_limit_count?: number
+  rate_limit_period?: number
 }
 
 export interface AIGatewaySettings {
@@ -155,8 +164,8 @@ export interface AIGatewaySettings {
   rate_limit: number
   rate_limit_period: string
   logging_enabled: boolean
-  retry_enabled: boolean
-  retry_count: number
+  retry_enabled?: boolean
+  retry_count?: number
 }
 
 export interface AIGatewayStats {
@@ -187,9 +196,9 @@ export interface HyperdriveConfig {
   id: string
   name: string
   created_at: string
-  origin: HyperdriveOrigin
-  caching: HyperdriveCaching
-  status: 'connected' | 'disconnected' | 'idle'
+  origin?: HyperdriveOrigin
+  caching?: HyperdriveCaching
+  status?: 'connected' | 'disconnected' | 'idle'
 }
 
 export interface HyperdriveOrigin {

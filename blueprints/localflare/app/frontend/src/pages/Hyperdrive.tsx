@@ -95,9 +95,9 @@ export function Hyperdrive() {
 
   const columns: Column<HyperdriveConfig>[] = [
     { key: 'name', label: 'Name', sortable: true },
-    { key: 'origin.database', label: 'Database', render: (row) => row.origin.database },
-    { key: 'origin.host', label: 'Host', render: (row) => row.origin.host },
-    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+    { key: 'origin.database', label: 'Database', render: (row) => row.origin?.database ?? '-' },
+    { key: 'origin.host', label: 'Host', render: (row) => row.origin?.host ?? '-' },
+    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status ?? 'idle'} /> },
   ]
 
   return (

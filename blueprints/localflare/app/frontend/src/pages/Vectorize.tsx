@@ -68,7 +68,7 @@ export function Vectorize() {
     { key: 'name', label: 'Name', sortable: true },
     { key: 'dimensions', label: 'Dimensions', sortable: true },
     { key: 'metric', label: 'Metric', sortable: true },
-    { key: 'vector_count', label: 'Vectors', sortable: true, render: (row) => row.vector_count.toLocaleString() },
+    { key: 'vector_count', label: 'Vectors', sortable: true, render: (row) => (row.vector_count ?? 0).toLocaleString() },
   ]
 
   return (
