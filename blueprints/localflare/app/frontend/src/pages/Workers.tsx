@@ -148,21 +148,27 @@ export function Workers() {
     {
       key: 'bindings',
       label: 'Bindings',
-      render: (row) => (
-        <Group gap={4}>
-          {row.bindings?.slice(0, 3).map((binding) => (
-            <Badge key={binding.name} size="xs" variant="dot" color={getBindingColor(binding.type)}>
-              {binding.name}
-            </Badge>
-          ))}
-          {row.bindings && row.bindings.length > 3 && (
-            <Badge size="xs" variant="outline">+{row.bindings.length - 3}</Badge>
-          )}
-        </Group>
-      ),
+      render: (row) => {
+        // Handle bindings as object (map of name -> id) or array
+        const bindingsArray = Array.isArray(row.bindings)
+          ? row.bindings
+          : Object.entries(row.bindings || {}).map(([name, id]) => ({ name, id }))
+        return (
+          <Group gap={4}>
+            {bindingsArray.slice(0, 3).map((binding) => (
+              <Badge key={typeof binding === 'object' && 'name' in binding ? binding.name : String(binding)} size="xs" variant="dot" color="blue">
+                {typeof binding === 'object' && 'name' in binding ? binding.name : String(binding)}
+              </Badge>
+            ))}
+            {bindingsArray.length > 3 && (
+              <Badge size="xs" variant="outline">+{bindingsArray.length - 3}</Badge>
+            )}
+          </Group>
+        )
+      },
     },
-    { key: 'modified_at', label: 'Last Modified', sortable: true, render: (row) => formatDate(row.modified_at) },
-    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+    { key: 'modified_at', label: 'Last Modified', sortable: true, render: (row) => formatDate(row.modified_at || row.updated_at) },
+    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.enabled ? 'active' : 'inactive'} /> },
   ]
 
   return (

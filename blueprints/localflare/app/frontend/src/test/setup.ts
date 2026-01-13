@@ -56,9 +56,6 @@ beforeAll(() => {
   })
 })
 
-// Mock fetch globally
-global.fetch = vi.fn()
-
 // Suppress console errors for expected test failures
 const originalConsoleError = console.error
 console.error = (...args: unknown[]) => {

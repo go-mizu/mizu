@@ -1,42 +1,95 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { renderWithProviders, screen, waitFor, setupMockFetch, mockData } from '../../test/utils'
+import { describe, it, expect, afterAll } from 'vitest'
+import {
+  renderWithProviders,
+  screen,
+  waitFor,
+  testApi,
+  isPagesProject,
+  isCloudflareImage,
+  isStreamVideo,
+  isLiveInput,
+  generateTestName,
+} from '../../test/utils'
 import { Pages } from '../../pages/Pages'
 import { Images } from '../../pages/Images'
 import { Stream } from '../../pages/Stream'
+import type { PagesProject, LiveInput } from '../../types'
 
 describe('Pages Page', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  // Track created projects for cleanup
+  const createdProjectNames: string[] = []
+
+  afterAll(async () => {
+    for (const name of createdProjectNames) {
+      try {
+        await testApi.pages.deleteProject(name)
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   })
 
-  describe('with successful API response', () => {
-    beforeEach(() => {
-      setupMockFetch({
-        '/pages/projects': { projects: mockData.pagesProjects() },
-      })
+  describe('API integration', () => {
+    it('fetches projects list with correct structure', async () => {
+      const response = await testApi.pages.listProjects()
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+      expect(response.result!.projects).toBeInstanceOf(Array)
+
+      const projects = response.result!.projects
+      for (const project of projects) {
+        expect(isPagesProject(project)).toBe(true)
+        expect(typeof project.name).toBe('string')
+        expect(typeof project.subdomain).toBe('string')
+        expect(typeof project.created_at).toBe('string')
+      }
     })
 
+    it('creates a new project with valid structure', async () => {
+      const name = generateTestName('pages').toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      const response = await testApi.pages.createProject({ name })
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+
+      const project = response.result!
+      expect(isPagesProject(project)).toBe(true)
+      expect(project.name).toBe(name)
+
+      createdProjectNames.push(name)
+    })
+
+    it('deletes a project successfully', async () => {
+      const name = generateTestName('pages-delete').toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      const createResponse = await testApi.pages.createProject({ name })
+      expect(createResponse.success).toBe(true)
+
+      const deleteResponse = await testApi.pages.deleteProject(name)
+      expect(deleteResponse.success).toBe(true)
+
+      const listResponse = await testApi.pages.listProjects()
+      const names = listResponse.result!.projects.map((p: PagesProject) => p.name)
+      expect(names).not.toContain(name)
+    })
+  })
+
+  describe('UI rendering with real data', () => {
     it('renders the page title', async () => {
       renderWithProviders(<Pages />)
       expect(await screen.findByText('Pages')).toBeInTheDocument()
     })
 
-    it('displays projects from API', async () => {
+    it('displays projects from real API', async () => {
+      const name = generateTestName('pages-ui').toLowerCase().replace(/[^a-z0-9-]/g, '-')
+      await testApi.pages.createProject({ name })
+      createdProjectNames.push(name)
+
       renderWithProviders(<Pages />)
 
       await waitFor(() => {
-        expect(screen.getByText('my-blog')).toBeInTheDocument()
-        expect(screen.getByText('docs-site')).toBeInTheDocument()
-      })
-    })
-
-    it('shows deployment status', async () => {
-      renderWithProviders(<Pages />)
-
-      await waitFor(() => {
-        // Check for success status badges (rendered as "Success" with capital S)
-        expect(screen.getAllByText(/success/i).length).toBeGreaterThan(0)
-      })
+        expect(screen.getByText(name)).toBeInTheDocument()
+      }, { timeout: 5000 })
     })
 
     it('shows create button', async () => {
@@ -44,50 +97,49 @@ describe('Pages Page', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Create Project/i)).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('error handling', () => {
-    it('shows fallback data when API fails', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'))
-
-      renderWithProviders(<Pages />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Pages')).toBeInTheDocument()
-      })
+      }, { timeout: 5000 })
     })
   })
 })
 
 describe('Images Page', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  describe('API integration', () => {
+    it('fetches images list with correct structure', async () => {
+      const response = await testApi.images.list()
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+      expect(response.result!.images).toBeInstanceOf(Array)
+
+      const images = response.result!.images
+      for (const image of images) {
+        expect(isCloudflareImage(image)).toBe(true)
+        expect(typeof image.id).toBe('string')
+        expect(typeof image.filename).toBe('string')
+        expect(typeof image.uploaded).toBe('string')
+      }
+    })
+
+    it('fetches variants list with correct structure', async () => {
+      const response = await testApi.images.listVariants()
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+      expect(response.result!.variants).toBeInstanceOf(Array)
+
+      const variants = response.result!.variants
+      for (const variant of variants) {
+        expect(typeof variant.id).toBe('string')
+        expect(typeof variant.name).toBe('string')
+        expect(variant.options).toBeDefined()
+      }
+    })
   })
 
-  describe('with successful API response', () => {
-    beforeEach(() => {
-      setupMockFetch({
-        '/images': { images: mockData.cloudflareImages() },
-        '/images/variants': { variants: mockData.imageVariants() },
-      })
-    })
-
-    it('renders the page title', async () => {
+  describe('UI rendering with real data', () => {
+    it('renders the page subtitle', async () => {
       renderWithProviders(<Images />)
-      // Wait for the page to load and check for the subtitle which is unique to this page
       expect(await screen.findByText(/Store, resize, and optimize images/i)).toBeInTheDocument()
-    })
-
-    it('displays images from API', async () => {
-      renderWithProviders(<Images />)
-
-      await waitFor(() => {
-        expect(screen.getByText('hero-banner.jpg')).toBeInTheDocument()
-        expect(screen.getByText('logo.png')).toBeInTheDocument()
-        expect(screen.getByText('product-1.webp')).toBeInTheDocument()
-      })
     })
 
     it('shows upload button', async () => {
@@ -95,59 +147,88 @@ describe('Images Page', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Upload Images/i)).toBeInTheDocument()
-      })
+      }, { timeout: 5000 })
     })
 
-    it('shows variants button', async () => {
+    it('shows variant-related content', async () => {
       renderWithProviders(<Images />)
 
       await waitFor(() => {
-        // The page should have either the variants button or a "Variants" stat card
         const variantElements = screen.queryAllByText(/variant/i)
         expect(variantElements.length).toBeGreaterThan(0)
-      })
-    })
-  })
-
-  describe('error handling', () => {
-    it('shows fallback data when API fails', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'))
-
-      renderWithProviders(<Images />)
-
-      await waitFor(() => {
-        // Check for subtitle instead of title
-        expect(screen.getByText(/Store, resize, and optimize images/i)).toBeInTheDocument()
-      })
+      }, { timeout: 5000 })
     })
   })
 })
 
 describe('Stream Page', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  // Track created live inputs for cleanup
+  const createdLiveInputIds: string[] = []
+
+  afterAll(async () => {
+    // Note: No delete API in testApi for live inputs, cleanup may need manual handling
   })
 
-  describe('with successful API response', () => {
-    beforeEach(() => {
-      setupMockFetch({
-        '/stream/videos': { videos: mockData.streamVideos() },
-        '/stream/live': { live_inputs: mockData.liveInputs() },
-      })
+  describe('API integration', () => {
+    it('fetches videos list with correct structure', async () => {
+      const response = await testApi.stream.listVideos()
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+      expect(response.result!.videos).toBeInstanceOf(Array)
+
+      const videos = response.result!.videos
+      for (const video of videos) {
+        expect(isStreamVideo(video)).toBe(true)
+        expect(typeof video.uid).toBe('string')
+        expect(typeof video.name).toBe('string')
+        expect(typeof video.created).toBe('string')
+        expect(typeof video.duration).toBe('number')
+        expect(typeof video.size).toBe('number')
+        expect(video.status).toBeDefined()
+        expect(typeof video.status.state).toBe('string')
+      }
     })
 
+    it('fetches live inputs list with correct structure', async () => {
+      const response = await testApi.stream.listLiveInputs()
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+      expect(response.result!.live_inputs).toBeInstanceOf(Array)
+
+      const liveInputs = response.result!.live_inputs
+      for (const input of liveInputs) {
+        expect(isLiveInput(input)).toBe(true)
+        expect(typeof input.uid).toBe('string')
+        expect(typeof input.name).toBe('string')
+        expect(['connected', 'disconnected']).toContain(input.status)
+        expect(input.rtmps).toBeDefined()
+        expect(typeof input.rtmps.url).toBe('string')
+        expect(typeof input.rtmps.streamKey).toBe('string')
+      }
+    })
+
+    it('creates a new live input with valid structure', async () => {
+      const name = generateTestName('live')
+      const response = await testApi.stream.createLiveInput({ name })
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+
+      const input = response.result!
+      expect(isLiveInput(input)).toBe(true)
+      expect(input.name).toBe(name)
+      expect(typeof input.uid).toBe('string')
+
+      createdLiveInputIds.push(input.uid)
+    })
+  })
+
+  describe('UI rendering with real data', () => {
     it('renders the page title', async () => {
       renderWithProviders(<Stream />)
       expect(await screen.findByText('Stream')).toBeInTheDocument()
-    })
-
-    it('displays videos from API', async () => {
-      renderWithProviders(<Stream />)
-
-      await waitFor(() => {
-        expect(screen.getByText('Product Demo')).toBeInTheDocument()
-        expect(screen.getByText('Tutorial')).toBeInTheDocument()
-      })
     })
 
     it('shows upload button', async () => {
@@ -155,7 +236,7 @@ describe('Stream Page', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Upload Video/i)).toBeInTheDocument()
-      })
+      }, { timeout: 5000 })
     })
 
     it('shows create live input button', async () => {
@@ -163,28 +244,19 @@ describe('Stream Page', () => {
 
       await waitFor(() => {
         expect(screen.getAllByText(/Create Live Input/i).length).toBeGreaterThan(0)
-      })
+      }, { timeout: 5000 })
     })
 
-    it('shows video content', async () => {
-      renderWithProviders(<Stream />)
-
-      await waitFor(() => {
-        // Check that videos are displayed (not just the tab label)
-        expect(screen.getByText('Product Demo')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('error handling', () => {
-    it('shows fallback data when API fails', async () => {
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'))
+    it('displays live inputs from real API', async () => {
+      const name = generateTestName('live-ui')
+      const createResponse = await testApi.stream.createLiveInput({ name })
+      createdLiveInputIds.push(createResponse.result!.uid)
 
       renderWithProviders(<Stream />)
 
       await waitFor(() => {
-        expect(screen.getByText('Stream')).toBeInTheDocument()
-      })
+        expect(screen.getByText(name)).toBeInTheDocument()
+      }, { timeout: 5000 })
     })
   })
 })

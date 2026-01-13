@@ -12,7 +12,10 @@ import type {
 } from '../types'
 
 class ApiClient {
-  private baseUrl = '/api'
+  // Use absolute URL in test environment (jsdom), relative URL in browser
+  private baseUrl = typeof process !== 'undefined' && process.env?.VITEST
+    ? (process.env.VITE_TEST_API_URL || 'http://localhost:8787/api')
+    : '/api'
 
   private async request<T>(
     method: string,
@@ -121,17 +124,17 @@ class ApiClient {
   // Analytics Engine
   analytics = {
     listDatasets: () =>
-      this.get<ApiResponse<{ datasets: import('../types').AnalyticsDataset[] }>>('/analytics/datasets'),
+      this.get<ApiResponse<{ datasets: import('../types').AnalyticsDataset[] }>>('/analytics-engine/datasets'),
     getDataset: (name: string) =>
-      this.get<ApiResponse<import('../types').AnalyticsDataset>>(`/analytics/datasets/${name}`),
+      this.get<ApiResponse<import('../types').AnalyticsDataset>>(`/analytics-engine/datasets/${name}`),
     createDataset: (data: { name: string }) =>
-      this.post<ApiResponse<import('../types').AnalyticsDataset>>('/analytics/datasets', data),
+      this.post<ApiResponse<import('../types').AnalyticsDataset>>('/analytics-engine/datasets', data),
     deleteDataset: (name: string) =>
-      this.delete<ApiResponse<void>>(`/analytics/datasets/${name}`),
+      this.delete<ApiResponse<void>>(`/analytics-engine/datasets/${name}`),
     query: (name: string, sql: string) =>
-      this.post<ApiResponse<import('../types').AnalyticsQueryResult>>(`/analytics/datasets/${name}/query`, { query: sql }),
+      this.post<ApiResponse<import('../types').AnalyticsQueryResult>>('/analytics-engine/sql', { query: sql }),
     write: (name: string, data: AnalyticsDataPoint) =>
-      this.post<ApiResponse<void>>(`/analytics/datasets/${name}/write`, data),
+      this.post<ApiResponse<void>>(`/analytics-engine/datasets/${name}/write`, data),
   }
 
   // Workers AI
@@ -170,35 +173,35 @@ class ApiClient {
   // Hyperdrive
   hyperdrive = {
     list: () =>
-      this.get<ApiResponse<{ configs: import('../types').HyperdriveConfig[] }>>('/hyperdrive'),
+      this.get<ApiResponse<{ configs: import('../types').HyperdriveConfig[] }>>('/hyperdrive/configs'),
     get: (id: string) =>
-      this.get<ApiResponse<import('../types').HyperdriveConfig>>(`/hyperdrive/${id}`),
+      this.get<ApiResponse<import('../types').HyperdriveConfig>>(`/hyperdrive/configs/${id}`),
     create: (data: { name: string; origin: HyperdriveOrigin & { password: string }; caching?: Partial<HyperdriveCaching> }) =>
-      this.post<ApiResponse<import('../types').HyperdriveConfig>>('/hyperdrive', data),
+      this.post<ApiResponse<import('../types').HyperdriveConfig>>('/hyperdrive/configs', data),
     delete: (id: string) =>
-      this.delete<ApiResponse<void>>(`/hyperdrive/${id}`),
+      this.delete<ApiResponse<void>>(`/hyperdrive/configs/${id}`),
     update: (id: string, data: { origin?: Partial<HyperdriveOrigin & { password?: string }>; caching?: Partial<HyperdriveCaching> }) =>
-      this.put<ApiResponse<import('../types').HyperdriveConfig>>(`/hyperdrive/${id}`, data),
+      this.put<ApiResponse<import('../types').HyperdriveConfig>>(`/hyperdrive/configs/${id}`, data),
     getStats: (id: string) =>
-      this.get<ApiResponse<import('../types').HyperdriveStats>>(`/hyperdrive/${id}/stats`),
+      this.get<ApiResponse<import('../types').HyperdriveStats>>(`/hyperdrive/configs/${id}/stats`),
   }
 
   // Cron Triggers
   cron = {
     list: () =>
-      this.get<ApiResponse<{ triggers: import('../types').CronTrigger[] }>>('/cron'),
+      this.get<ApiResponse<{ triggers: import('../types').CronTrigger[] }>>('/cron/triggers'),
     get: (id: string) =>
-      this.get<ApiResponse<import('../types').CronTrigger>>(`/cron/${id}`),
+      this.get<ApiResponse<import('../types').CronTrigger>>(`/cron/triggers/${id}`),
     create: (data: { cron: string; script_name: string; enabled?: boolean }) =>
-      this.post<ApiResponse<import('../types').CronTrigger>>('/cron', data),
+      this.post<ApiResponse<import('../types').CronTrigger>>('/cron/triggers', data),
     delete: (id: string) =>
-      this.delete<ApiResponse<void>>(`/cron/${id}`),
+      this.delete<ApiResponse<void>>(`/cron/triggers/${id}`),
     update: (id: string, data: { cron?: string; script_name?: string; enabled?: boolean }) =>
-      this.put<ApiResponse<import('../types').CronTrigger>>(`/cron/${id}`, data),
+      this.put<ApiResponse<import('../types').CronTrigger>>(`/cron/triggers/${id}`, data),
     getExecutions: (id: string, limit?: number) =>
-      this.get<ApiResponse<{ executions: import('../types').CronExecution[] }>>(`/cron/${id}/executions${limit ? `?limit=${limit}` : ''}`),
+      this.get<ApiResponse<{ executions: import('../types').CronExecution[] }>>(`/cron/triggers/${id}/executions${limit ? `?limit=${limit}` : ''}`),
     trigger: (id: string) =>
-      this.post<ApiResponse<import('../types').CronExecution>>(`/cron/${id}/trigger`),
+      this.post<ApiResponse<import('../types').CronExecution>>(`/cron/triggers/${id}/trigger`),
   }
 
   // Dashboard
@@ -280,7 +283,7 @@ class ApiClient {
     putObject: async (bucket: string, key: string, file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      return fetch(`/api/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`, {
+      return fetch(`${this.baseUrl}/r2/buckets/${bucket}/objects/${encodeURIComponent(key)}`, {
         method: 'PUT',
         body: formData,
       })
@@ -326,7 +329,7 @@ class ApiClient {
     upload: async (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      return fetch('/api/images/upload', {
+      return fetch(`${this.baseUrl}/images/upload`, {
         method: 'POST',
         body: formData,
       })
@@ -346,7 +349,7 @@ class ApiClient {
     upload: async (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      return fetch('/api/stream/upload', {
+      return fetch(`${this.baseUrl}/stream/upload`, {
         method: 'POST',
         body: formData,
       })
