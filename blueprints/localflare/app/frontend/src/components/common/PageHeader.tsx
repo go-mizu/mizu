@@ -1,4 +1,4 @@
-import { Group, Title, ActionIcon, Text, Stack, Breadcrumbs, Anchor } from '@mantine/core'
+import { Group, Title, ActionIcon, Text, Stack, Breadcrumbs } from '@mantine/core'
 import { IconArrowLeft } from '@tabler/icons-react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
@@ -25,9 +25,17 @@ export function PageHeader({ title, subtitle, breadcrumbs, backPath, actions }: 
         <Breadcrumbs separator="/">
           {breadcrumbs.map((crumb, idx) => (
             crumb.path ? (
-              <Anchor key={idx} component={Link} to={crumb.path} size="sm" c="dimmed">
+              <Link
+                key={idx}
+                to={crumb.path}
+                style={{
+                  fontSize: 'var(--mantine-font-size-sm)',
+                  color: 'var(--mantine-color-dimmed)',
+                  textDecoration: 'none',
+                }}
+              >
                 {crumb.label}
-              </Anchor>
+              </Link>
             ) : (
               <Text key={idx} size="sm" c="dimmed">
                 {crumb.label}
