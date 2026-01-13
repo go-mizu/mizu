@@ -1,74 +1,150 @@
-import { NavLink, Stack, Text, Group, ThemeIcon, Divider, ScrollArea } from '@mantine/core'
+import { NavLink, Stack, Text, Group, ThemeIcon, Divider, ScrollArea, Box } from '@mantine/core'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  IconWorld,
-  IconBolt,
+  IconLayoutDashboard,
   IconDatabase,
-  IconCloud,
-  IconKey,
-  IconChartBar,
+  IconClock,
+  IconMailbox,
+  IconVectorTriangle,
+  IconChartLine,
+  IconRobot,
+  IconApiApp,
+  IconBolt,
   IconSettings,
-  IconHome,
-  IconServer,
+  IconBook,
+  IconFlame,
 } from '@tabler/icons-react'
 
-const navItems = [
-  { label: 'Dashboard', icon: IconHome, path: '/' },
-  { label: 'Zones', icon: IconWorld, path: '/zones' },
-  { label: 'Workers', icon: IconBolt, path: '/workers' },
-  { label: 'KV', icon: IconKey, path: '/kv' },
-  { label: 'R2', icon: IconCloud, path: '/r2' },
-  { label: 'D1', icon: IconDatabase, path: '/d1' },
-  { label: 'Analytics', icon: IconChartBar, path: '/analytics' },
+interface NavItem {
+  label: string
+  icon: typeof IconLayoutDashboard
+  path: string
+}
+
+interface NavSection {
+  title: string
+  items: NavItem[]
+}
+
+const navSections: NavSection[] = [
+  {
+    title: '',
+    items: [
+      { label: 'Overview', icon: IconLayoutDashboard, path: '/' },
+    ],
+  },
+  {
+    title: 'COMPUTE',
+    items: [
+      { label: 'Durable Objects', icon: IconDatabase, path: '/durable-objects' },
+      { label: 'Cron Triggers', icon: IconClock, path: '/cron' },
+    ],
+  },
+  {
+    title: 'STORAGE',
+    items: [
+      { label: 'Queues', icon: IconMailbox, path: '/queues' },
+      { label: 'Vectorize', icon: IconVectorTriangle, path: '/vectorize' },
+    ],
+  },
+  {
+    title: 'ANALYTICS',
+    items: [
+      { label: 'Analytics Engine', icon: IconChartLine, path: '/analytics-engine' },
+    ],
+  },
+  {
+    title: 'AI',
+    items: [
+      { label: 'Workers AI', icon: IconRobot, path: '/ai' },
+      { label: 'AI Gateway', icon: IconApiApp, path: '/ai-gateway' },
+      { label: 'Hyperdrive', icon: IconBolt, path: '/hyperdrive' },
+    ],
+  },
 ]
 
 export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
 
+  const isActive = (path: string) => {
+    if (path === '/') {
+      return location.pathname === '/'
+    }
+    return location.pathname === path || location.pathname.startsWith(path + '/')
+  }
+
   return (
-    <Stack h="100%" p="md">
-      <Group gap="xs" mb="lg">
-        <ThemeIcon size="lg" radius="md" color="orange">
-          <IconServer size={20} />
+    <Stack h="100%" p="md" gap={0}>
+      <Group gap="xs" mb="xl" px="xs">
+        <ThemeIcon size="lg" radius="md" variant="gradient" gradient={{ from: 'orange', to: 'red' }}>
+          <IconFlame size={20} />
         </ThemeIcon>
         <Text fw={700} size="lg" c="orange">Localflare</Text>
       </Group>
 
-      <ScrollArea flex={1}>
-        <Stack gap={4}>
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              label={item.label}
-              leftSection={<item.icon size={18} />}
-              active={location.pathname === item.path ||
-                (item.path !== '/' && location.pathname.startsWith(item.path))}
-              onClick={() => navigate(item.path)}
-              variant="filled"
-              styles={{
-                root: {
-                  borderRadius: 'var(--mantine-radius-md)',
-                },
-              }}
-            />
+      <ScrollArea flex={1} scrollbarSize={6}>
+        <Stack gap="lg">
+          {navSections.map((section, idx) => (
+            <Box key={idx}>
+              {section.title && (
+                <Text size="xs" c="dimmed" fw={600} mb="xs" px="xs" tt="uppercase">
+                  {section.title}
+                </Text>
+              )}
+              <Stack gap={4}>
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    label={item.label}
+                    leftSection={<item.icon size={18} stroke={1.5} />}
+                    active={isActive(item.path)}
+                    onClick={() => navigate(item.path)}
+                    variant="filled"
+                    styles={{
+                      root: {
+                        borderRadius: 'var(--mantine-radius-md)',
+                      },
+                      label: {
+                        fontWeight: 500,
+                      },
+                    }}
+                  />
+                ))}
+              </Stack>
+            </Box>
           ))}
         </Stack>
       </ScrollArea>
 
-      <Divider />
+      <Divider my="md" />
 
-      <NavLink
-        label="Settings"
-        leftSection={<IconSettings size={18} />}
-        onClick={() => navigate('/settings')}
-        variant="subtle"
-        styles={{
-          root: {
-            borderRadius: 'var(--mantine-radius-md)',
-          },
-        }}
-      />
+      <Stack gap={4}>
+        <NavLink
+          label="Settings"
+          leftSection={<IconSettings size={18} stroke={1.5} />}
+          onClick={() => navigate('/settings')}
+          variant="subtle"
+          styles={{
+            root: {
+              borderRadius: 'var(--mantine-radius-md)',
+            },
+          }}
+        />
+        <NavLink
+          label="Documentation"
+          leftSection={<IconBook size={18} stroke={1.5} />}
+          component="a"
+          href="https://developers.cloudflare.com"
+          target="_blank"
+          variant="subtle"
+          styles={{
+            root: {
+              borderRadius: 'var(--mantine-radius-md)',
+            },
+          }}
+        />
+      </Stack>
     </Stack>
   )
 }
