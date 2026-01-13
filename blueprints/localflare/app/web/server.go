@@ -368,6 +368,11 @@ func (s *Server) serveUI(c *mizu.Ctx) error {
 	return nil
 }
 
+// Store returns the underlying store for seeding purposes.
+func (s *Server) Store() store.Store {
+	return s.store
+}
+
 // SeedData seeds sample data for development.
 func (s *Server) SeedData(ctx context.Context) error {
 	now := time.Now()
