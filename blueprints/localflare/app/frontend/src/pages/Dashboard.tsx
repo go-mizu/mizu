@@ -1,198 +1,250 @@
-import { Container, Title, Text, SimpleGrid, Card, Group, ThemeIcon, Stack, Badge, Progress } from '@mantine/core'
-import { IconWorld, IconBolt, IconKey, IconCloud, IconDatabase, IconShield, IconActivity, IconTrendingUp } from '@tabler/icons-react'
-import { useEffect, useState } from 'react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-
-interface Stats {
-  zones: number
-  workers: number
-  kvNamespaces: number
-  r2Buckets: number
-  d1Databases: number
-  requests24h: number
-  bandwidth24h: number
-  threats24h: number
-}
-
-const mockTrafficData = Array.from({ length: 24 }, (_, i) => ({
-  time: `${i}:00`,
-  requests: Math.floor(Math.random() * 1000) + 500,
-  bandwidth: Math.floor(Math.random() * 500) + 100,
-}))
+import { SimpleGrid, Paper, Stack, Text, Group, Box } from '@mantine/core'
+import { useState, useEffect } from 'react'
+import {
+  IconDatabase,
+  IconMailbox,
+  IconVectorTriangle,
+  IconChartLine,
+  IconRobot,
+  IconApiApp,
+  IconBolt,
+  IconClock,
+} from '@tabler/icons-react'
+import { StatCard, AreaChart, LoadingState, StatusBadge, PageHeader } from '../components/common'
+import { api } from '../api/client'
+import type { DashboardStats, TimeSeriesData, SystemStatus, ActivityEvent } from '../types'
 
 export function Dashboard() {
-  const [stats, setStats] = useState<Stats>({
-    zones: 0,
-    workers: 0,
-    kvNamespaces: 0,
-    r2Buckets: 0,
-    d1Databases: 0,
-    requests24h: 0,
-    bandwidth24h: 0,
-    threats24h: 0,
-  })
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesData[]>([])
+  const [statuses, setStatuses] = useState<SystemStatus[]>([])
+  const [activity, setActivity] = useState<ActivityEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [timeRange, setTimeRange] = useState<'1h' | '24h' | '7d' | '30d'>('24h')
 
   useEffect(() => {
-    // Fetch stats from API
-    Promise.all([
-      fetch('/api/zones').then(r => r.json()),
-      fetch('/api/workers').then(r => r.json()),
-      fetch('/api/kv/namespaces').then(r => r.json()),
-      fetch('/api/r2/buckets').then(r => r.json()),
-      fetch('/api/d1/databases').then(r => r.json()),
-    ]).then(([zones, workers, kv, r2, d1]) => {
-      setStats({
-        zones: zones.result?.length || 0,
-        workers: workers.result?.length || 0,
-        kvNamespaces: kv.result?.length || 0,
-        r2Buckets: r2.result?.length || 0,
-        d1Databases: d1.result?.length || 0,
-        requests24h: 12453,
-        bandwidth24h: 1.2,
-        threats24h: 23,
-      })
-    }).catch(console.error)
+    loadDashboardData()
   }, [])
 
-  const statCards = [
-    { label: 'Zones', value: stats.zones, icon: IconWorld, color: 'blue' },
-    { label: 'Workers', value: stats.workers, icon: IconBolt, color: 'yellow' },
-    { label: 'KV Namespaces', value: stats.kvNamespaces, icon: IconKey, color: 'green' },
-    { label: 'R2 Buckets', value: stats.r2Buckets, icon: IconCloud, color: 'grape' },
-    { label: 'D1 Databases', value: stats.d1Databases, icon: IconDatabase, color: 'cyan' },
-    { label: 'Threats Blocked', value: stats.threats24h, icon: IconShield, color: 'red' },
-  ]
+  useEffect(() => {
+    loadTimeSeries()
+  }, [timeRange])
+
+  const loadDashboardData = async () => {
+    try {
+      const [statsRes, statusRes, activityRes] = await Promise.all([
+        api.dashboard.getStats(),
+        api.dashboard.getStatus(),
+        api.dashboard.getActivity(10),
+      ])
+
+      if (statsRes.result) setStats(statsRes.result)
+      if (statusRes.result) setStatuses(statusRes.result.services)
+      if (activityRes.result) setActivity(activityRes.result.events)
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error)
+      // Set mock data for development
+      setStats({
+        durable_objects: { namespaces: 3, objects: 156 },
+        queues: { count: 5, total_messages: 1234 },
+        vectorize: { indexes: 3, total_vectors: 50234 },
+        analytics: { datasets: 4, data_points: 1200000 },
+        ai: { requests_today: 1245, tokens_today: 2100000 },
+        ai_gateway: { gateways: 2, requests_today: 4520 },
+        hyperdrive: { configs: 3, active_connections: 12 },
+        cron: { triggers: 5, executions_today: 288 },
+      })
+      setStatuses([
+        { service: 'Durable Objects', status: 'online' },
+        { service: 'Queues', status: 'online' },
+        { service: 'Vectorize', status: 'online' },
+        { service: 'Analytics Engine', status: 'online' },
+        { service: 'Workers AI', status: 'online' },
+        { service: 'AI Gateway', status: 'online' },
+        { service: 'Hyperdrive', status: 'online' },
+        { service: 'Cron', status: 'online' },
+      ])
+      setActivity([
+        { id: '1', type: 'queue', message: 'Queue message processed', timestamp: new Date().toISOString(), service: 'Queues' },
+        { id: '2', type: 'do', message: 'Durable Object created', timestamp: new Date(Date.now() - 60000).toISOString(), service: 'Durable Objects' },
+        { id: '3', type: 'vector', message: 'Vector index updated', timestamp: new Date(Date.now() - 120000).toISOString(), service: 'Vectorize' },
+        { id: '4', type: 'ai', message: 'AI inference completed', timestamp: new Date(Date.now() - 180000).toISOString(), service: 'Workers AI' },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadTimeSeries = async () => {
+    try {
+      const res = await api.dashboard.getTimeSeries('requests', timeRange)
+      if (res.result) setTimeSeries(res.result.data)
+    } catch {
+      // Generate mock time series data
+      const now = Date.now()
+      const points = timeRange === '1h' ? 60 : timeRange === '24h' ? 24 : timeRange === '7d' ? 7 : 30
+      const interval = timeRange === '1h' ? 60000 : timeRange === '24h' ? 3600000 : 86400000
+      setTimeSeries(
+        Array.from({ length: points }, (_, i) => ({
+          timestamp: new Date(now - (points - i) * interval).toISOString(),
+          value: Math.floor(Math.random() * 1000) + 500,
+        }))
+      )
+    }
+  }
+
+  if (loading) {
+    return <LoadingState message="Loading dashboard..." />
+  }
+
+  const formatTime = (ts: string) => {
+    const date = new Date(ts)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    if (diff < 60000) return 'Just now'
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} mins ago`
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`
+    return `${Math.floor(diff / 86400000)} days ago`
+  }
 
   return (
-    <Container size="xl" py="xl">
-      <Stack gap="xl">
-        <div>
-          <Title order={1}>Dashboard</Title>
-          <Text c="dimmed" mt="xs">Overview of your Localflare infrastructure</Text>
-        </div>
+    <Stack gap="lg">
+      <PageHeader
+        title="Dashboard Overview"
+        subtitle="Monitor all Localflare services at a glance"
+      />
 
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
-          {statCards.map((stat) => (
-            <Card key={stat.label} withBorder shadow="sm" radius="md">
-              <Group justify="space-between">
-                <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                    {stat.label}
+      {/* Stats Grid */}
+      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+        <StatCard
+          icon={<IconDatabase size={20} />}
+          label="Durable Objects"
+          value={stats?.durable_objects.namespaces ?? 0}
+          description={`${stats?.durable_objects.objects ?? 0} active objects`}
+          color="orange"
+        />
+        <StatCard
+          icon={<IconMailbox size={20} />}
+          label="Queues"
+          value={stats?.queues.count ?? 0}
+          description={`${(stats?.queues.total_messages ?? 0).toLocaleString()} messages`}
+          color="orange"
+        />
+        <StatCard
+          icon={<IconVectorTriangle size={20} />}
+          label="Vectorize"
+          value={stats?.vectorize.indexes ?? 0}
+          description={`${(stats?.vectorize.total_vectors ?? 0).toLocaleString()} vectors`}
+          color="orange"
+        />
+        <StatCard
+          icon={<IconRobot size={20} />}
+          label="AI Requests"
+          value={formatNumber(stats?.ai.requests_today ?? 0)}
+          description="Today"
+          color="orange"
+        />
+      </SimpleGrid>
+
+      {/* Requests Chart */}
+      <AreaChart
+        data={timeSeries}
+        title="Requests Over Time"
+        timeRange={timeRange}
+        onTimeRangeChange={setTimeRange}
+        height={250}
+        formatValue={(v) => formatNumber(v)}
+      />
+
+      {/* Activity and Status */}
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+        {/* Recent Activity */}
+        <Paper p="md" radius="md" withBorder>
+          <Stack gap="md">
+            <Text size="sm" fw={600}>
+              Recent Activity
+            </Text>
+            <Stack gap="xs">
+              {activity.map((event) => (
+                <Group key={event.id} justify="space-between" wrap="nowrap">
+                  <Group gap="xs" wrap="nowrap">
+                    <Box
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--mantine-color-orange-6)',
+                      }}
+                    />
+                    <Text size="sm" truncate>
+                      {event.message}
+                    </Text>
+                  </Group>
+                  <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                    {formatTime(event.timestamp)}
                   </Text>
-                  <Text size="xl" fw={700} mt="xs">
-                    {stat.value}
-                  </Text>
-                </div>
-                <ThemeIcon size="xl" radius="md" variant="light" color={stat.color}>
-                  <stat.icon size={24} />
-                </ThemeIcon>
-              </Group>
-            </Card>
-          ))}
-        </SimpleGrid>
-
-        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
-          <Card withBorder shadow="sm" radius="md" p="lg">
-            <Group justify="space-between" mb="md">
-              <div>
-                <Text fw={600}>Traffic Overview</Text>
-                <Text size="sm" c="dimmed">Requests over the last 24 hours</Text>
-              </div>
-              <Badge color="green" variant="light" leftSection={<IconTrendingUp size={12} />}>
-                +12%
-              </Badge>
-            </Group>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={mockTrafficData}>
-                <defs>
-                  <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f6821f" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#f6821f" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="time" stroke="#666" fontSize={12} />
-                <YAxis stroke="#666" fontSize={12} />
-                <Tooltip
-                  contentStyle={{ background: '#1a1a2e', border: '1px solid #333' }}
-                  labelStyle={{ color: '#fff' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="requests"
-                  stroke="#f6821f"
-                  fillOpacity={1}
-                  fill="url(#colorRequests)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card withBorder shadow="sm" radius="md" p="lg">
-            <Group justify="space-between" mb="md">
-              <div>
-                <Text fw={600}>System Status</Text>
-                <Text size="sm" c="dimmed">All systems operational</Text>
-              </div>
-              <Badge color="green">Healthy</Badge>
-            </Group>
-            <Stack gap="md">
-              <div>
-                <Group justify="space-between" mb={4}>
-                  <Text size="sm">DNS Server</Text>
-                  <Text size="sm" c="green">Online</Text>
                 </Group>
-                <Progress value={100} color="green" size="sm" />
-              </div>
-              <div>
-                <Group justify="space-between" mb={4}>
-                  <Text size="sm">HTTP Proxy</Text>
-                  <Text size="sm" c="green">Online</Text>
-                </Group>
-                <Progress value={100} color="green" size="sm" />
-              </div>
-              <div>
-                <Group justify="space-between" mb={4}>
-                  <Text size="sm">HTTPS Proxy</Text>
-                  <Text size="sm" c="green">Online</Text>
-                </Group>
-                <Progress value={100} color="green" size="sm" />
-              </div>
-              <div>
-                <Group justify="space-between" mb={4}>
-                  <Text size="sm">Workers Runtime</Text>
-                  <Text size="sm" c="green">Online</Text>
-                </Group>
-                <Progress value={100} color="green" size="sm" />
-              </div>
+              ))}
+              {activity.length === 0 && (
+                <Text size="sm" c="dimmed">
+                  No recent activity
+                </Text>
+              )}
             </Stack>
-          </Card>
-        </SimpleGrid>
+          </Stack>
+        </Paper>
 
-        <Card withBorder shadow="sm" radius="md" p="lg">
-          <Group justify="space-between" mb="md">
-            <div>
-              <Text fw={600}>Quick Stats</Text>
-              <Text size="sm" c="dimmed">Last 24 hours</Text>
-            </div>
-            <IconActivity size={20} color="var(--mantine-color-dimmed)" />
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 3 }}>
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase">Total Requests</Text>
-              <Text size="xl" fw={700}>{stats.requests24h.toLocaleString()}</Text>
-            </div>
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase">Bandwidth</Text>
-              <Text size="xl" fw={700}>{stats.bandwidth24h} GB</Text>
-            </div>
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase">Cache Hit Rate</Text>
-              <Text size="xl" fw={700}>87.3%</Text>
-            </div>
-          </SimpleGrid>
-        </Card>
-      </Stack>
-    </Container>
+        {/* System Status */}
+        <Paper p="md" radius="md" withBorder>
+          <Stack gap="md">
+            <Text size="sm" fw={600}>
+              System Status
+            </Text>
+            <Stack gap="xs">
+              {statuses.map((status) => (
+                <Group key={status.service} justify="space-between">
+                  <Text size="sm">{status.service}</Text>
+                  <StatusBadge status={status.status} />
+                </Group>
+              ))}
+            </Stack>
+          </Stack>
+        </Paper>
+      </SimpleGrid>
+
+      {/* Secondary Stats */}
+      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+        <StatCard
+          icon={<IconChartLine size={20} />}
+          label="Analytics"
+          value={stats?.analytics.datasets ?? 0}
+          description={`${formatNumber(stats?.analytics.data_points ?? 0)} data points`}
+        />
+        <StatCard
+          icon={<IconApiApp size={20} />}
+          label="AI Gateway"
+          value={stats?.ai_gateway.gateways ?? 0}
+          description={`${formatNumber(stats?.ai_gateway.requests_today ?? 0)} requests today`}
+        />
+        <StatCard
+          icon={<IconBolt size={20} />}
+          label="Hyperdrive"
+          value={stats?.hyperdrive.configs ?? 0}
+          description={`${stats?.hyperdrive.active_connections ?? 0} active connections`}
+        />
+        <StatCard
+          icon={<IconClock size={20} />}
+          label="Cron Triggers"
+          value={stats?.cron.triggers ?? 0}
+          description={`${stats?.cron.executions_today ?? 0} runs today`}
+        />
+      </SimpleGrid>
+    </Stack>
   )
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
+  if (num >= 1000) return `${(num / 1000).toFixed(1)}k`
+  return num.toString()
 }

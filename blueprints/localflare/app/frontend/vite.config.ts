@@ -17,7 +17,6 @@ export default defineConfig(({ mode }) => ({
     target: 'es2020',
     chunkSizeWarningLimit: 600,
     rollupOptions: {
-      input: { main: path.resolve(__dirname, 'src/main.tsx') },
       output: {
         entryFileNames: 'js/[name].js',
         chunkFileNames: 'js/[name]-[hash].js',
