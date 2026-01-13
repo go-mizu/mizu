@@ -97,10 +97,10 @@ export function QueueDetail() {
       />
 
       <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="md">
-        <StatCard icon={<Text size="sm" fw={700}>#</Text>} label="Total" value={queue.message_count} color="orange" />
-        <StatCard icon={<Text size="sm" fw={700}>R</Text>} label="Ready" value={queue.ready_count} color="success" />
-        <StatCard icon={<Text size="sm" fw={700}>D</Text>} label="Delayed" value={queue.delayed_count} color="warning" />
-        <StatCard icon={<Text size="sm" fw={700}>F</Text>} label="Failed" value={queue.failed_count} color="error" />
+        <StatCard icon={<Text size="sm" fw={700}>#</Text>} label="Total" value={queue.message_count ?? 0} color="orange" />
+        <StatCard icon={<Text size="sm" fw={700}>R</Text>} label="Ready" value={queue.ready_count ?? 0} color="success" />
+        <StatCard icon={<Text size="sm" fw={700}>D</Text>} label="Delayed" value={queue.delayed_count ?? 0} color="warning" />
+        <StatCard icon={<Text size="sm" fw={700}>F</Text>} label="Failed" value={queue.failed_count ?? 0} color="error" />
         <StatCard icon={<Text size="sm" fw={700}>/s</Text>} label="Rate" value="45/s" />
       </SimpleGrid>
 
@@ -117,9 +117,9 @@ export function QueueDetail() {
           <Text size="sm" fw={600}>Settings</Text>
           <Group gap="xl">
             <Stack gap={2}><Text size="xs" c="dimmed">Max Retries</Text><Text fw={500}>{queue.settings.max_retries}</Text></Stack>
-            <Stack gap={2}><Text size="xs" c="dimmed">Batch Size</Text><Text fw={500}>{queue.settings.batch_size}</Text></Stack>
+            <Stack gap={2}><Text size="xs" c="dimmed">Batch Size</Text><Text fw={500}>{queue.settings.batch_size ?? queue.settings.max_batch_size ?? 10}</Text></Stack>
             <Stack gap={2}><Text size="xs" c="dimmed">Timeout</Text><Text fw={500}>{queue.settings.max_batch_timeout}s</Text></Stack>
-            <Stack gap={2}><Text size="xs" c="dimmed">Message TTL</Text><Text fw={500}>{Math.round(queue.settings.message_retention_seconds / 86400)} days</Text></Stack>
+            <Stack gap={2}><Text size="xs" c="dimmed">Message TTL</Text><Text fw={500}>{Math.round((queue.settings.message_retention_seconds ?? queue.settings.message_ttl ?? 86400) / 86400)} days</Text></Stack>
             <Stack gap={2}><Text size="xs" c="dimmed">Delivery Delay</Text><Text fw={500}>{queue.settings.delivery_delay}s</Text></Stack>
           </Group>
         </Stack>
@@ -128,7 +128,7 @@ export function QueueDetail() {
       <Stack gap="sm">
         <Text size="sm" fw={600}>Consumers</Text>
         <DataTable
-          data={queue.consumers}
+          data={queue.consumers ?? []}
           columns={consumerColumns}
           getRowKey={(row) => row.id}
           searchable={false}

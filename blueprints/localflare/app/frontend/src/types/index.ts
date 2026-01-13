@@ -26,19 +26,21 @@ export interface Queue {
   id: string
   name: string
   created_at: string
-  message_count: number
-  ready_count: number
-  delayed_count: number
-  failed_count: number
+  message_count?: number  // Optional - fetched separately via stats endpoint
+  ready_count?: number
+  delayed_count?: number
+  failed_count?: number
   settings: QueueSettings
-  consumers: QueueConsumer[]
+  consumers?: QueueConsumer[]  // Optional - may not be included in list response
 }
 
 export interface QueueSettings {
   max_retries: number
-  batch_size: number
+  batch_size?: number        // Frontend field name
+  max_batch_size?: number    // Backend field name
   max_batch_timeout: number
-  message_retention_seconds: number
+  message_retention_seconds?: number  // Frontend field name
+  message_ttl?: number                // Backend field name
   delivery_delay: number
 }
 
