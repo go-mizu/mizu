@@ -26,7 +26,9 @@ func (h *Queues) List(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  result,
+		"result": map[string]any{
+			"queues": result,
+		},
 	})
 }
 

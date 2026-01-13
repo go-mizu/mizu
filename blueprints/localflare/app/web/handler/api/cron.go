@@ -25,7 +25,7 @@ func (h *Cron) ListTriggers(c *mizu.Ctx) error {
 	return c.JSON(200, map[string]any{
 		"success": true,
 		"result": map[string]any{
-			"schedules": triggers,
+			"triggers": triggers,
 		},
 	})
 }
@@ -111,7 +111,9 @@ func (h *Cron) GetExecutions(c *mizu.Ctx) error {
 
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  executions,
+		"result": map[string]any{
+			"executions": executions,
+		},
 	})
 }
 
@@ -125,7 +127,7 @@ func (h *Cron) ListTriggersByScript(c *mizu.Ctx) error {
 	return c.JSON(200, map[string]any{
 		"success": true,
 		"result": map[string]any{
-			"schedules": triggers,
+			"triggers": triggers,
 		},
 	})
 }

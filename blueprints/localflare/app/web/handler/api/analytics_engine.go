@@ -26,7 +26,9 @@ func (h *AnalyticsEngine) ListDatasets(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  datasets,
+		"result": map[string]any{
+			"datasets": datasets,
+		},
 	})
 }
 
