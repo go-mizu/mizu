@@ -1,3 +1,6 @@
+// Generic JSON value type for dynamic data
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
 // Durable Objects
 export interface DurableObjectNamespace {
   id: string
@@ -17,7 +20,7 @@ export interface DurableObjectInstance {
 
 export interface DurableObjectStorage {
   key: string
-  value: unknown
+  value: JsonValue
   updated_at: string
 }
 
@@ -36,11 +39,9 @@ export interface Queue {
 
 export interface QueueSettings {
   max_retries: number
-  batch_size?: number        // Frontend field name
-  max_batch_size?: number    // Backend field name
+  max_batch_size: number
   max_batch_timeout: number
-  message_retention_seconds?: number  // Frontend field name
-  message_ttl?: number                // Backend field name
+  message_ttl: number
   delivery_delay: number
 }
 
@@ -77,7 +78,7 @@ export interface VectorMatch {
   id: string
   score: number
   values?: number[]
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, JsonValue>
   namespace?: string
 }
 
@@ -88,7 +89,14 @@ export interface VectorQueryRequest {
   namespace?: string
   returnValues: boolean
   returnMetadata: boolean
-  filter?: Record<string, unknown>
+  filter?: Record<string, JsonValue>
+}
+
+export interface VectorInsertItem {
+  id: string
+  values: number[]
+  metadata?: Record<string, JsonValue>
+  namespace?: string
 }
 
 // Analytics Engine
@@ -103,9 +111,16 @@ export interface AnalyticsDataset {
 
 export interface AnalyticsQueryResult {
   columns: string[]
-  rows: unknown[][]
+  rows: JsonValue[][]
   row_count: number
   execution_time_ms: number
+}
+
+export interface AnalyticsDataPoint {
+  indexes?: string[]
+  doubles?: number[]
+  blobs?: string[]
+  timestamp?: string
 }
 
 // Workers AI
@@ -176,6 +191,21 @@ export interface AIGatewayStats {
   total_cost: number
 }
 
+export interface AIGatewayLogRequest {
+  model?: string
+  messages?: Array<{ role: string; content: string }>
+  prompt?: string
+  max_tokens?: number
+  temperature?: number
+}
+
+export interface AIGatewayLogResponse {
+  id?: string
+  choices?: Array<{ message?: { content: string }; text?: string }>
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  error?: { message: string; code: string }
+}
+
 export interface AIGatewayLog {
   id: string
   gateway_id: string
@@ -187,8 +217,8 @@ export interface AIGatewayLog {
   tokens: number
   cost: number
   cached: boolean
-  request?: unknown
-  response?: unknown
+  request?: AIGatewayLogRequest
+  response?: AIGatewayLogResponse
 }
 
 // Hyperdrive
@@ -314,4 +344,231 @@ export interface PaginatedResponse<T> {
   page: number
   per_page: number
   total_pages: number
+}
+
+// Workers
+export interface Worker {
+  id: string
+  name: string
+  created_at: string
+  modified_at: string
+  status: 'active' | 'inactive' | 'error'
+  routes?: string[]
+  bindings?: WorkerBinding[]
+  environment_variables?: Record<string, string>
+  compatibility_date?: string
+  usage_model?: string
+  code?: string
+}
+
+export interface WorkerBinding {
+  type: 'kv_namespace' | 'd1' | 'r2_bucket' | 'durable_object' | 'queue' | 'vectorize' | 'ai' | 'service' | 'secret' | 'text'
+  name: string
+  namespace_id?: string
+  database_id?: string
+  bucket_name?: string
+}
+
+export interface WorkerCreateRequest {
+  name: string
+  main_module?: string
+  compatibility_date?: string
+  code?: string
+}
+
+export interface WorkerBindingRequest {
+  type: WorkerBinding['type']
+  name: string
+  namespace_id?: string
+}
+
+export interface WorkerVersion {
+  id: string
+  version: string
+  created_at: string
+  status: 'active' | 'inactive'
+  message?: string
+}
+
+// KV
+export interface KVNamespace {
+  id: string
+  title: string
+  created_at: string
+  key_count?: number
+  storage_size?: number
+}
+
+export interface KVKey {
+  name: string
+  expiration?: number
+  metadata?: Record<string, JsonValue>
+}
+
+// R2
+export interface R2Bucket {
+  name: string
+  created_at: string
+  location?: string
+  object_count?: number
+  storage_size?: number
+  public_access?: boolean
+}
+
+export interface R2Object {
+  key: string
+  size: number
+  last_modified: string
+  etag: string
+}
+
+// D1
+export interface D1Database {
+  uuid: string
+  name: string
+  created_at: string
+  version?: string
+  num_tables?: number
+  file_size?: number
+}
+
+export interface D1Table {
+  name: string
+  sql: string
+  row_count?: number
+}
+
+export interface D1QueryResult {
+  success: boolean
+  results: Record<string, JsonValue>[]
+  meta?: {
+    duration: number
+    rows_read: number
+    rows_written: number
+    changes: number
+  }
+}
+
+// Pages
+export interface PagesProject {
+  name: string
+  subdomain: string
+  created_at: string
+  production_branch: string
+  latest_deployment?: PagesDeployment
+  domains?: string[]
+}
+
+export interface PagesDeploymentTrigger {
+  type: string
+  metadata?: {
+    branch?: string
+    commit_hash?: string
+    commit_message?: string
+  }
+}
+
+export interface PagesDeployment {
+  id: string
+  url: string
+  environment: 'production' | 'preview'
+  deployment_trigger: PagesDeploymentTrigger
+  created_at: string
+  status: 'building' | 'success' | 'failed'
+}
+
+// Images
+export interface CloudflareImage {
+  id: string
+  filename: string
+  uploaded: string
+  variants?: string[]
+  meta?: {
+    width?: number
+    height?: number
+  }
+}
+
+export interface ImageVariant {
+  id: string
+  name: string
+  options: {
+    fit: string
+    width: number
+    height: number
+  }
+  never_require_signed_urls?: boolean
+}
+
+// Stream
+export interface StreamVideo {
+  uid: string
+  name: string
+  created: string
+  duration: number
+  size: number
+  status: {
+    state: 'pendingupload' | 'queued' | 'inprogress' | 'ready' | 'error'
+  }
+  thumbnail?: string
+  playback?: {
+    hls?: string
+    dash?: string
+  }
+}
+
+export interface LiveInput {
+  uid: string
+  name: string
+  created: string
+  status: 'connected' | 'disconnected'
+  rtmps: {
+    url: string
+    streamKey: string
+  }
+}
+
+// Observability
+export interface LogEntry {
+  timestamp: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  message: string
+  worker: string
+  request_id: string
+  duration_ms: number
+}
+
+export interface Trace {
+  trace_id: string
+  root_span: string
+  worker: string
+  timestamp: string
+  duration_ms: number
+  status: 'ok' | 'error'
+  spans?: TraceSpan[]
+}
+
+export interface TraceSpan {
+  name: string
+  duration_ms: number
+  start_ms: number
+}
+
+// Settings
+export interface APIToken {
+  id: string
+  name: string
+  permissions: string[]
+  created_at: string
+  last_used?: string
+  status: 'active' | 'revoked'
+}
+
+export interface AccountMember {
+  id: string
+  email: string
+  name?: string
+  role: 'owner' | 'admin' | 'member'
+  status: 'active' | 'pending'
+  joined_at: string
 }

@@ -24,7 +24,9 @@ func (h *Workers) List(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
-		"result":  result,
+		"result": map[string]interface{}{
+			"workers": result,
+		},
 	})
 }
 

@@ -25,7 +25,7 @@ export function CronDetail() {
         api.cron.getExecutions(id!, 20),
       ])
       if (triggerRes.result) setTrigger(triggerRes.result)
-      if (execRes.result) setExecutions(execRes.result.executions)
+      if (execRes.result) setExecutions(execRes.result.executions ?? [])
     } catch (error) {
       setTrigger({
         id: id!,

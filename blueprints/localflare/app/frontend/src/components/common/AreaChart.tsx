@@ -71,7 +71,7 @@ export function AreaChart({
 
       <Box h={height}>
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsAreaChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+          <RechartsAreaChart data={data ?? []} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
             {gradient && (
               <defs>
                 <linearGradient id={`gradient-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">

@@ -27,10 +27,11 @@ describe('Sidebar', () => {
     it('renders all navigation sections', () => {
       renderWithProviders(<Sidebar />)
 
-      expect(screen.getByText('COMPUTE')).toBeInTheDocument()
+      expect(screen.getByText('WORKERS & SCRIPTS')).toBeInTheDocument()
       expect(screen.getByText('STORAGE')).toBeInTheDocument()
-      expect(screen.getByText('ANALYTICS')).toBeInTheDocument()
+      expect(screen.getByText('MEDIA')).toBeInTheDocument()
       expect(screen.getByText('AI')).toBeInTheDocument()
+      expect(screen.getByText('ANALYTICS')).toBeInTheDocument()
     })
 
     it('renders all navigation items', () => {
@@ -77,14 +78,11 @@ describe('Sidebar', () => {
       const user = userEvent.setup()
       renderWithProviders(<Sidebar />)
 
-      // Find and click the COMPUTE section header
-      const computeHeader = screen.getByText('COMPUTE')
-      await user.click(computeHeader)
+      // Find and click the WORKERS & SCRIPTS section header
+      const sectionHeader = screen.getByText('WORKERS & SCRIPTS')
+      await user.click(sectionHeader)
 
-      // Items in COMPUTE section should be hidden
-      // Note: We need to check visibility, not just presence
-      // After collapse, the element might still be in DOM but not visible
-      // Mantine Collapse handles this with CSS
+      // Items in section should still be in DOM
       expect(screen.getByText('Durable Objects')).toBeInTheDocument()
     })
 
@@ -93,9 +91,9 @@ describe('Sidebar', () => {
       renderWithProviders(<Sidebar />)
 
       // Collapse then expand
-      const computeHeader = screen.getByText('COMPUTE')
-      await user.click(computeHeader) // Collapse
-      await user.click(computeHeader) // Expand
+      const sectionHeader = screen.getByText('WORKERS & SCRIPTS')
+      await user.click(sectionHeader) // Collapse
+      await user.click(sectionHeader) // Expand
 
       // Items should be visible again
       expect(screen.getByText('Durable Objects')).toBeVisible()

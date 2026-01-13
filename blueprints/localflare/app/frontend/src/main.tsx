@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { MantineProvider, createTheme } from '@mantine/core'
+import { MantineProvider, createTheme, virtualColor } from '@mantine/core'
 import { Notifications } from '@mantine/notifications'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
@@ -9,83 +9,112 @@ import '@mantine/notifications/styles.css'
 import '@mantine/code-highlight/styles.css'
 import '@mantine/dates/styles.css'
 
-// Cloudflare cf-ui inspired theme
+// Cloudflare Dashboard theme - matching official color palette
+// Source: https://www.designpieces.com/palette/cloudflare-color-palette-hex-and-rgb/
+// Primary: #f38020 (Cloudflare Tango), #faae40 (Yellow Orange), #404041 (Ship Gray)
 const theme = createTheme({
   primaryColor: 'orange',
   colors: {
-    // Cloudflare brand orange
+    // Cloudflare brand orange palette (#f38020 as primary)
     orange: [
-      '#fff4e6',
-      '#ffe8cc',
-      '#ffd8a8',
-      '#ffc078',
-      '#ffa94d',
-      '#f6821f', // Primary brand color
-      '#e8590c',
-      '#d9480f',
-      '#c92a2a',
-      '#a61e4d',
+      '#fff8f1',  // 0: Lightest
+      '#ffedd5',  // 1
+      '#fed7aa',  // 2
+      '#fdba74',  // 3
+      '#fb923c',  // 4
+      '#f38020',  // 5: Cloudflare Tango (primary)
+      '#ea580c',  // 6
+      '#c2410c',  // 7
+      '#9a3412',  // 8
+      '#7c2d12',  // 9: Darkest
     ],
-    // cf-ui grass (success states)
-    grass: [
-      '#f0fdf4',
-      '#dcfce7',
-      '#bbf7d0',
-      '#86efac',
-      '#4ade80',
-      '#9BCA3E', // cf-ui grass
-      '#16a34a',
-      '#15803d',
-      '#166534',
-      '#14532d',
+    // Cloudflare light orange / yellow (#faae40)
+    yellow: [
+      '#fffbeb',
+      '#fef3c7',
+      '#fde68a',
+      '#fcd34d',
+      '#fbbf24',
+      '#faae40',  // 5: Cloudflare Yellow Orange
+      '#d97706',
+      '#b45309',
+      '#92400e',
+      '#78350f',
     ],
-    // cf-ui marine (links, info)
-    marine: [
+    // Gray palette based on Cloudflare Ship Gray (#404041)
+    gray: [
+      '#fafafa',  // 0: Light mode backgrounds
+      '#f5f5f5',  // 1: Light mode secondary bg
+      '#e5e5e5',  // 2: Borders light
+      '#d4d4d4',  // 3
+      '#a3a3a3',  // 4
+      '#737373',  // 5: Mid gray
+      '#525252',  // 6
+      '#404041',  // 7: Cloudflare Ship Gray
+      '#262626',  // 8
+      '#1d1d1d',  // 9: Dark mode background (from Cloudflare blog)
+    ],
+    // Blue for links and info states
+    blue: [
       '#eff6ff',
       '#dbeafe',
       '#bfdbfe',
       '#93c5fd',
       '#60a5fa',
-      '#2F7BBF', // cf-ui marine
+      '#3b82f6',  // 5: Primary blue
       '#2563eb',
       '#1d4ed8',
       '#1e40af',
       '#1e3a8a',
     ],
-    // cf-ui apple (errors, destructive)
-    apple: [
+    // Green for success states
+    green: [
+      '#f0fdf4',
+      '#dcfce7',
+      '#bbf7d0',
+      '#86efac',
+      '#4ade80',
+      '#22c55e',  // 5: Success green
+      '#16a34a',
+      '#15803d',
+      '#166534',
+      '#14532d',
+    ],
+    // Red for error states
+    red: [
       '#fef2f2',
       '#fee2e2',
       '#fecaca',
       '#fca5a5',
       '#f87171',
-      '#BD2527', // cf-ui apple
+      '#ef4444',  // 5: Error red
       '#dc2626',
       '#b91c1c',
       '#991b1b',
       '#7f1d1d',
     ],
-    // cf-ui neutral grays
-    steel: [
-      '#f9fafb',
-      '#f3f4f6',
-      '#e5e7eb',
-      '#d1d5db',
-      '#9ca3af',
-      '#6D7786', // cf-ui steel
-      '#4b5563',
-      '#374151',
-      '#1f2937',
-      '#111827',
-    ],
+    // Virtual color for primary that adapts to color scheme
+    primary: virtualColor({
+      name: 'primary',
+      dark: 'orange',
+      light: 'orange',
+    }),
   },
-  fontFamily: '"Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   headings: {
-    fontFamily: '"Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     fontWeight: '600',
   },
   defaultRadius: 'md',
-  black: '#1a1b1e',
+  white: '#ffffff',
+  black: '#1d1d1d',
+  // Light theme specific overrides
+  other: {
+    // Semantic colors for consistent usage
+    headerBg: 'var(--mantine-color-body)',
+    sidebarBg: 'var(--mantine-color-body)',
+    cardBg: 'var(--mantine-color-body)',
+  },
   components: {
     Button: {
       defaultProps: {
@@ -99,12 +128,22 @@ const theme = createTheme({
         },
       },
     },
+    Paper: {
+      defaultProps: {
+        shadow: 'xs',
+      },
+    },
+    Card: {
+      defaultProps: {
+        shadow: 'xs',
+      },
+    },
   },
 })
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="dark">
+    <MantineProvider theme={theme} defaultColorScheme="light">
       <Notifications position="top-right" />
       <BrowserRouter>
         <App />

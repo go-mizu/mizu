@@ -4,7 +4,7 @@ import { Stack, Paper, Text, Button, Textarea, Table, Group, Code, ScrollArea } 
 import { IconPlayerPlay } from '@tabler/icons-react'
 import { PageHeader, DataTable, LoadingState, type Column } from '../components/common'
 import { api } from '../api/client'
-import type { DurableObjectNamespace, DurableObjectInstance } from '../types'
+import type { DurableObjectNamespace, DurableObjectInstance, DurableObjectStorage } from '../types'
 
 export function DurableObjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -12,7 +12,7 @@ export function DurableObjectDetail() {
   const [objects, setObjects] = useState<DurableObjectInstance[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('SELECT * FROM storage LIMIT 100;')
-  const [queryResults, setQueryResults] = useState<unknown[]>([])
+  const [queryResults, setQueryResults] = useState<DurableObjectStorage[]>([])
   const [queryLoading, setQueryLoading] = useState(false)
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export function DurableObjectDetail() {
         api.durableObjects.listObjects(id!),
       ])
       if (nsRes.result) setNamespace(nsRes.result)
-      if (objRes.result) setObjects(objRes.result.objects)
+      if (objRes.result) setObjects(objRes.result.objects ?? [])
     } catch (error) {
       console.error('Failed to load data:', error)
       // Mock data
@@ -53,7 +53,7 @@ export function DurableObjectDetail() {
     setQueryLoading(true)
     try {
       const res = await api.durableObjects.queryStorage(id!, objects[0].id, query)
-      if (res.result) setQueryResults(res.result.results)
+      if (res.result) setQueryResults(res.result.results ?? [])
     } catch (error) {
       // Mock results
       setQueryResults([

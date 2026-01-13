@@ -11,6 +11,9 @@ import {
   Collapse,
   UnstyledButton,
   Tooltip,
+  ActionIcon,
+  useMantineColorScheme,
+  useComputedColorScheme,
 } from '@mantine/core'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -29,6 +32,16 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconExternalLink,
+  IconCode,
+  IconKey,
+  IconCloud,
+  IconTable,
+  IconWorld,
+  IconPhoto,
+  IconVideo,
+  IconActivity,
+  IconSun,
+  IconMoon,
 } from '@tabler/icons-react'
 import { ZoneSelector, type Zone } from './ZoneSelector'
 
@@ -51,9 +64,10 @@ const navSections: NavSection[] = [
     items: [{ label: 'Overview', icon: IconLayoutDashboard, path: '/' }],
   },
   {
-    title: 'COMPUTE',
+    title: 'WORKERS & SCRIPTS',
     collapsible: true,
     items: [
+      { label: 'Workers', icon: IconCode, path: '/workers' },
       { label: 'Durable Objects', icon: IconDatabase, path: '/durable-objects' },
       { label: 'Cron Triggers', icon: IconClock, path: '/cron' },
     ],
@@ -62,14 +76,21 @@ const navSections: NavSection[] = [
     title: 'STORAGE',
     collapsible: true,
     items: [
+      { label: 'KV', icon: IconKey, path: '/kv' },
+      { label: 'R2', icon: IconCloud, path: '/r2' },
+      { label: 'D1', icon: IconTable, path: '/d1' },
       { label: 'Queues', icon: IconMailbox, path: '/queues' },
       { label: 'Vectorize', icon: IconVectorTriangle, path: '/vectorize' },
     ],
   },
   {
-    title: 'ANALYTICS',
+    title: 'MEDIA',
     collapsible: true,
-    items: [{ label: 'Analytics Engine', icon: IconChartLine, path: '/analytics-engine' }],
+    items: [
+      { label: 'Pages', icon: IconWorld, path: '/pages' },
+      { label: 'Images', icon: IconPhoto, path: '/images' },
+      { label: 'Stream', icon: IconVideo, path: '/stream' },
+    ],
   },
   {
     title: 'AI',
@@ -78,6 +99,14 @@ const navSections: NavSection[] = [
       { label: 'Workers AI', icon: IconRobot, path: '/ai' },
       { label: 'AI Gateway', icon: IconApiApp, path: '/ai-gateway' },
       { label: 'Hyperdrive', icon: IconBolt, path: '/hyperdrive' },
+    ],
+  },
+  {
+    title: 'ANALYTICS',
+    collapsible: true,
+    items: [
+      { label: 'Analytics Engine', icon: IconChartLine, path: '/analytics-engine' },
+      { label: 'Observability', icon: IconActivity, path: '/observability' },
     ],
   },
 ]
@@ -92,13 +121,20 @@ const mockZones: Zone[] = [
 export function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { setColorScheme } = useMantineColorScheme()
+  const computedColorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
   const [expandedSections, setExpandedSections] = useState<string[]>([
-    'COMPUTE',
+    'WORKERS & SCRIPTS',
     'STORAGE',
-    'ANALYTICS',
+    'MEDIA',
     'AI',
+    'ANALYTICS',
   ])
   const [currentZone, setCurrentZone] = useState<Zone>(mockZones[0])
+
+  const toggleColorScheme = () => {
+    setColorScheme(computedColorScheme === 'light' ? 'dark' : 'light')
+  }
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -213,6 +249,19 @@ export function Sidebar() {
 
       {/* Footer Links */}
       <Stack gap={2} p="md">
+        <Group justify="space-between" px="xs" mb="xs">
+          <Text size="xs" c="dimmed" fw={500}>Theme</Text>
+          <Tooltip label={computedColorScheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'} position="right">
+            <ActionIcon
+              onClick={toggleColorScheme}
+              variant="default"
+              size="md"
+              aria-label="Toggle color scheme"
+            >
+              {computedColorScheme === 'light' ? <IconMoon size={16} stroke={1.5} /> : <IconSun size={16} stroke={1.5} />}
+            </ActionIcon>
+          </Tooltip>
+        </Group>
         <NavLink
           label="Settings"
           leftSection={<IconSettings size={20} stroke={1.5} />}

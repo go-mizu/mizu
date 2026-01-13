@@ -28,7 +28,9 @@ func (h *KV) ListNamespaces(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
-		"result":  namespaces,
+		"result": map[string]interface{}{
+			"namespaces": namespaces,
+		},
 	})
 }
 
@@ -77,7 +79,9 @@ func (h *KV) ListKeys(c *mizu.Ctx) error {
 
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
-		"result":  keys,
+		"result": map[string]interface{}{
+			"keys": keys,
+		},
 	})
 }
 

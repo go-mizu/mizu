@@ -39,7 +39,7 @@ export function AIGatewayDetail() {
         api.aiGateway.getLogs(id!, { limit: 5 }),
       ])
       if (gwRes.result) setGateway(gwRes.result)
-      if (logsRes.result) setLogs(logsRes.result.logs)
+      if (logsRes.result) setLogs(logsRes.result.logs ?? [])
     } catch (error) {
       setGateway({
         id: id!,

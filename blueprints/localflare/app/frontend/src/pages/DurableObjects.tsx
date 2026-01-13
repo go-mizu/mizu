@@ -33,7 +33,7 @@ export function DurableObjects() {
   const loadNamespaces = async () => {
     try {
       const res = await api.durableObjects.listNamespaces()
-      if (res.result) setNamespaces(res.result.namespaces)
+      if (res.result) setNamespaces(res.result.namespaces ?? [])
     } catch (error) {
       console.error('Failed to load namespaces:', error)
       // Mock data

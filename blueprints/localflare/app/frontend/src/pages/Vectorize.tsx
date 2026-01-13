@@ -29,7 +29,7 @@ export function Vectorize() {
   const loadIndexes = async () => {
     try {
       const res = await api.vectorize.listIndexes()
-      if (res.result) setIndexes(res.result.indexes)
+      if (res.result) setIndexes(res.result.indexes ?? [])
     } catch (error) {
       setIndexes([
         { id: '1', name: 'product-emb', dimensions: 768, metric: 'cosine', created_at: new Date().toISOString(), vector_count: 50234, namespace_count: 3 },

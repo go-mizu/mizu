@@ -24,7 +24,9 @@ func (h *D1) ListDatabases(c *mizu.Ctx) error {
 	}
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
-		"result":  databases,
+		"result": map[string]interface{}{
+			"databases": databases,
+		},
 	})
 }
 

@@ -51,7 +51,7 @@ export function VectorizeDetail() {
         returnValues: values.returnValues,
         returnMetadata: values.returnMetadata,
       })
-      if (res.result) setResults(res.result.matches)
+      if (res.result) setResults(res.result.matches ?? [])
     } catch (error) {
       setResults([
         { id: 'prod-12345', score: 0.95, metadata: { name: 'Sony WH-1000XM5', category: 'headphones' } },
