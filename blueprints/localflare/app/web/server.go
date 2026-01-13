@@ -356,7 +356,9 @@ async function handleRequest(request) {
 	s.store.R2().CreateBucket(ctx, r2Bucket)
 
 	// Add sample object
-	s.store.R2().PutObject(ctx, r2Bucket.ID, "welcome.txt", []byte("Welcome to Localflare R2 Storage!"), map[string]string{"content-type": "text/plain"})
+	s.store.R2().PutObject(ctx, r2Bucket.ID, "welcome.txt", []byte("Welcome to Localflare R2 Storage!"), &store.R2PutOptions{
+		HTTPMetadata: &store.R2HTTPMetadata{ContentType: "text/plain"},
+	})
 
 	// Create D1 database
 	d1DB := &store.D1Database{

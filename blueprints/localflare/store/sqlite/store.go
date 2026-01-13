@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"crypto/md5"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -268,13 +269,42 @@ func (s *Store) Ensure(ctx context.Context) error {
 	CREATE TABLE IF NOT EXISTS r2_objects (
 		bucket_id TEXT NOT NULL,
 		key TEXT NOT NULL,
+		version TEXT,
 		size INTEGER,
 		etag TEXT,
-		content_type TEXT,
-		metadata TEXT,
-		last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
+		http_metadata TEXT,
+		custom_metadata TEXT,
+		checksums TEXT,
+		storage_class TEXT DEFAULT 'Standard',
+		uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (bucket_id, key),
 		FOREIGN KEY (bucket_id) REFERENCES r2_buckets(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_r2_objects_prefix ON r2_objects (bucket_id, key);
+
+	-- R2 Multipart Uploads
+	CREATE TABLE IF NOT EXISTS r2_multipart_uploads (
+		bucket_id TEXT NOT NULL,
+		key TEXT NOT NULL,
+		upload_id TEXT NOT NULL,
+		http_metadata TEXT,
+		custom_metadata TEXT,
+		storage_class TEXT DEFAULT 'Standard',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		expires_at DATETIME,
+		PRIMARY KEY (bucket_id, upload_id),
+		FOREIGN KEY (bucket_id) REFERENCES r2_buckets(id) ON DELETE CASCADE
+	);
+
+	-- R2 Multipart Parts
+	CREATE TABLE IF NOT EXISTS r2_multipart_parts (
+		bucket_id TEXT NOT NULL,
+		upload_id TEXT NOT NULL,
+		part_number INTEGER NOT NULL,
+		etag TEXT,
+		size INTEGER,
+		uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (bucket_id, upload_id, part_number)
 	);
 
 	-- D1 Databases (metadata only)
@@ -1247,7 +1277,7 @@ func (s *KVStoreImpl) List(ctx context.Context, nsID, prefix string, limit int) 
 	return pairs, rows.Err()
 }
 
-// R2StoreImpl implementation
+// R2StoreImpl implements the full Cloudflare R2 Workers API.
 type R2StoreImpl struct {
 	db      *sql.DB
 	dataDir string
@@ -1298,44 +1328,126 @@ func (s *R2StoreImpl) DeleteBucket(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *R2StoreImpl) PutObject(ctx context.Context, bucketID, key string, data []byte, metadata map[string]string) error {
+func (s *R2StoreImpl) generateETag(data []byte) string {
+	h := md5.Sum(data)
+	return fmt.Sprintf("%x", h)
+}
+
+func (s *R2StoreImpl) generateVersion() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func (s *R2StoreImpl) PutObject(ctx context.Context, bucketID, key string, data []byte, opts *store.R2PutOptions) (*store.R2Object, error) {
 	// Ensure bucket directory exists
 	objectPath := filepath.Join(s.dataDir, bucketID, key)
 	if err := os.MkdirAll(filepath.Dir(objectPath), 0755); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Write data to file
 	if err := os.WriteFile(objectPath, data, 0644); err != nil {
-		return err
+		return nil, err
 	}
 
-	// Update metadata in database
-	meta, _ := json.Marshal(metadata)
-	contentType := "application/octet-stream"
-	if ct, ok := metadata["content-type"]; ok {
-		contentType = ct
+	// Generate metadata
+	etag := s.generateETag(data)
+	version := s.generateVersion()
+	now := time.Now()
+	storageClass := "Standard"
+
+	var httpMeta, customMeta, checksums string
+	if opts != nil {
+		if opts.HTTPMetadata != nil {
+			httpMetaBytes, _ := json.Marshal(opts.HTTPMetadata)
+			httpMeta = string(httpMetaBytes)
+		}
+		if opts.CustomMetadata != nil {
+			customMetaBytes, _ := json.Marshal(opts.CustomMetadata)
+			customMeta = string(customMetaBytes)
+		}
+		if opts.StorageClass != "" {
+			storageClass = opts.StorageClass
+		}
+		// Store checksums
+		cs := &store.R2Checksums{
+			MD5:    opts.MD5,
+			SHA1:   opts.SHA1,
+			SHA256: opts.SHA256,
+			SHA384: opts.SHA384,
+			SHA512: opts.SHA512,
+		}
+		csBytes, _ := json.Marshal(cs)
+		checksums = string(csBytes)
 	}
-	etag := fmt.Sprintf("%x", len(data)) // Simple ETag
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT OR REPLACE INTO r2_objects (bucket_id, key, size, etag, content_type, metadata, last_modified)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		bucketID, key, len(data), etag, contentType, string(meta))
-	return err
+		`INSERT OR REPLACE INTO r2_objects (bucket_id, key, version, size, etag, http_metadata, custom_metadata, checksums, storage_class, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		bucketID, key, version, len(data), etag, httpMeta, customMeta, checksums, storageClass, now)
+	if err != nil {
+		return nil, err
+	}
+
+	obj := &store.R2Object{
+		Key:          key,
+		Version:      version,
+		Size:         int64(len(data)),
+		ETag:         etag,
+		StorageClass: storageClass,
+		Uploaded:     now,
+	}
+	if opts != nil {
+		obj.HTTPMetadata = opts.HTTPMetadata
+		obj.CustomMetadata = opts.CustomMetadata
+	}
+	return obj, nil
 }
 
-func (s *R2StoreImpl) GetObject(ctx context.Context, bucketID, key string) ([]byte, *store.R2Object, error) {
+func (s *R2StoreImpl) GetObject(ctx context.Context, bucketID, key string, opts *store.R2GetOptions) ([]byte, *store.R2Object, error) {
 	// Get metadata
 	row := s.db.QueryRowContext(ctx,
-		`SELECT key, size, etag, content_type, metadata, last_modified FROM r2_objects WHERE bucket_id = ? AND key = ?`,
+		`SELECT key, version, size, etag, http_metadata, custom_metadata, checksums, storage_class, uploaded_at
+		FROM r2_objects WHERE bucket_id = ? AND key = ?`,
 		bucketID, key)
+
 	var obj store.R2Object
-	var meta string
-	if err := row.Scan(&obj.Key, &obj.Size, &obj.ETag, &obj.ContentType, &meta, &obj.LastModified); err != nil {
+	var httpMeta, customMeta, checksums sql.NullString
+	if err := row.Scan(&obj.Key, &obj.Version, &obj.Size, &obj.ETag, &httpMeta, &customMeta, &checksums, &obj.StorageClass, &obj.Uploaded); err != nil {
 		return nil, nil, err
 	}
-	json.Unmarshal([]byte(meta), &obj.Metadata)
+
+	// Parse metadata
+	if httpMeta.Valid && httpMeta.String != "" {
+		var hm store.R2HTTPMetadata
+		json.Unmarshal([]byte(httpMeta.String), &hm)
+		obj.HTTPMetadata = &hm
+	}
+	if customMeta.Valid && customMeta.String != "" {
+		json.Unmarshal([]byte(customMeta.String), &obj.CustomMetadata)
+	}
+	if checksums.Valid && checksums.String != "" {
+		var cs store.R2Checksums
+		json.Unmarshal([]byte(checksums.String), &cs)
+		obj.Checksums = &cs
+	}
+
+	// Check conditional (onlyIf)
+	if opts != nil && opts.OnlyIf != nil {
+		cond := opts.OnlyIf
+		if cond.EtagMatches != "" && cond.EtagMatches != obj.ETag && cond.EtagMatches != `"`+obj.ETag+`"` {
+			// Return metadata only (like 304)
+			return nil, &obj, nil
+		}
+		if cond.EtagDoesNotMatch != "" && (cond.EtagDoesNotMatch == obj.ETag || cond.EtagDoesNotMatch == `"`+obj.ETag+`"`) {
+			return nil, &obj, nil
+		}
+		if cond.UploadedBefore != nil && !obj.Uploaded.Before(*cond.UploadedBefore) {
+			return nil, &obj, nil
+		}
+		if cond.UploadedAfter != nil && !obj.Uploaded.After(*cond.UploadedAfter) {
+			return nil, &obj, nil
+		}
+	}
 
 	// Read data from file
 	objectPath := filepath.Join(s.dataDir, bucketID, key)
@@ -1344,7 +1456,73 @@ func (s *R2StoreImpl) GetObject(ctx context.Context, bucketID, key string) ([]by
 		return nil, nil, err
 	}
 
+	// Handle range requests
+	if opts != nil && opts.Range != nil {
+		r := opts.Range
+		dataLen := int64(len(data))
+		var start, end int64
+
+		if r.Suffix != nil {
+			// Last N bytes
+			start = dataLen - *r.Suffix
+			if start < 0 {
+				start = 0
+			}
+			end = dataLen
+		} else if r.Offset != nil {
+			start = *r.Offset
+			if r.Length != nil {
+				end = start + *r.Length
+			} else {
+				end = dataLen
+			}
+		}
+
+		if start > dataLen {
+			start = dataLen
+		}
+		if end > dataLen {
+			end = dataLen
+		}
+		if start < end {
+			data = data[start:end]
+			obj.Range = &store.R2Range{
+				Offset: &start,
+				Length: func() *int64 { l := end - start; return &l }(),
+			}
+		}
+	}
+
 	return data, &obj, nil
+}
+
+func (s *R2StoreImpl) HeadObject(ctx context.Context, bucketID, key string) (*store.R2Object, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT key, version, size, etag, http_metadata, custom_metadata, checksums, storage_class, uploaded_at
+		FROM r2_objects WHERE bucket_id = ? AND key = ?`,
+		bucketID, key)
+
+	var obj store.R2Object
+	var httpMeta, customMeta, checksums sql.NullString
+	if err := row.Scan(&obj.Key, &obj.Version, &obj.Size, &obj.ETag, &httpMeta, &customMeta, &checksums, &obj.StorageClass, &obj.Uploaded); err != nil {
+		return nil, err
+	}
+
+	if httpMeta.Valid && httpMeta.String != "" {
+		var hm store.R2HTTPMetadata
+		json.Unmarshal([]byte(httpMeta.String), &hm)
+		obj.HTTPMetadata = &hm
+	}
+	if customMeta.Valid && customMeta.String != "" {
+		json.Unmarshal([]byte(customMeta.String), &obj.CustomMetadata)
+	}
+	if checksums.Valid && checksums.String != "" {
+		var cs store.R2Checksums
+		json.Unmarshal([]byte(checksums.String), &cs)
+		obj.Checksums = &cs
+	}
+
+	return &obj, nil
 }
 
 func (s *R2StoreImpl) DeleteObject(ctx context.Context, bucketID, key string) error {
@@ -1354,18 +1532,62 @@ func (s *R2StoreImpl) DeleteObject(ctx context.Context, bucketID, key string) er
 	return err
 }
 
-func (s *R2StoreImpl) ListObjects(ctx context.Context, bucketID, prefix, delimiter string, limit int) ([]*store.R2Object, error) {
-	query := `SELECT key, size, etag, content_type, metadata, last_modified FROM r2_objects WHERE bucket_id = ?`
+func (s *R2StoreImpl) DeleteObjects(ctx context.Context, bucketID string, keys []string) ([]store.R2DeletedObject, error) {
+	deleted := make([]store.R2DeletedObject, 0, len(keys))
+	for _, key := range keys {
+		objectPath := filepath.Join(s.dataDir, bucketID, key)
+		os.Remove(objectPath)
+		_, err := s.db.ExecContext(ctx, `DELETE FROM r2_objects WHERE bucket_id = ? AND key = ?`, bucketID, key)
+		if err == nil {
+			deleted = append(deleted, store.R2DeletedObject{Key: key})
+		}
+	}
+	return deleted, nil
+}
+
+func (s *R2StoreImpl) ListObjects(ctx context.Context, bucketID string, opts *store.R2ListOptions) (*store.R2ListResult, error) {
+	limit := 1000
+	prefix := ""
+	cursor := ""
+	delimiter := ""
+	var include []string
+
+	if opts != nil {
+		if opts.Limit > 0 && opts.Limit < 1000 {
+			limit = opts.Limit
+		}
+		prefix = opts.Prefix
+		cursor = opts.Cursor
+		delimiter = opts.Delimiter
+		include = opts.Include
+	}
+
+	// Determine which metadata to include
+	includeHTTPMeta := false
+	includeCustomMeta := false
+	for _, inc := range include {
+		if inc == "httpMetadata" {
+			includeHTTPMeta = true
+		}
+		if inc == "customMetadata" {
+			includeCustomMeta = true
+		}
+	}
+
+	query := `SELECT key, version, size, etag, http_metadata, custom_metadata, storage_class, uploaded_at
+		FROM r2_objects WHERE bucket_id = ?`
 	args := []interface{}{bucketID}
+
 	if prefix != "" {
 		query += ` AND key LIKE ?`
 		args = append(args, prefix+"%")
 	}
-	query += ` ORDER BY key`
-	if limit > 0 {
-		query += ` LIMIT ?`
-		args = append(args, limit)
+	if cursor != "" {
+		query += ` AND key > ?`
+		args = append(args, cursor)
 	}
+	query += ` ORDER BY key LIMIT ?`
+	args = append(args, limit+1) // Fetch one extra to check truncation
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -1374,16 +1596,244 @@ func (s *R2StoreImpl) ListObjects(ctx context.Context, bucketID, prefix, delimit
 	defer rows.Close()
 
 	var objects []*store.R2Object
+	prefixSet := make(map[string]bool)
+
 	for rows.Next() {
 		var obj store.R2Object
-		var meta string
-		if err := rows.Scan(&obj.Key, &obj.Size, &obj.ETag, &obj.ContentType, &meta, &obj.LastModified); err != nil {
+		var httpMeta, customMeta sql.NullString
+		if err := rows.Scan(&obj.Key, &obj.Version, &obj.Size, &obj.ETag, &httpMeta, &customMeta, &obj.StorageClass, &obj.Uploaded); err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(meta), &obj.Metadata)
+
+		// Handle delimiter for prefix grouping
+		// Delimiter can be used with or without a prefix
+		if delimiter != "" {
+			// Get the part of the key after the prefix (if any)
+			suffix := obj.Key
+			if prefix != "" && len(obj.Key) > len(prefix) {
+				suffix = obj.Key[len(prefix):]
+			}
+			if idx := findIndex(suffix, delimiter); idx >= 0 {
+				delimitedPrefix := prefix + suffix[:idx+len(delimiter)]
+				if !prefixSet[delimitedPrefix] {
+					prefixSet[delimitedPrefix] = true
+				}
+				continue // Skip this object, it's grouped under a prefix
+			}
+		}
+
+		if includeHTTPMeta && httpMeta.Valid && httpMeta.String != "" {
+			var hm store.R2HTTPMetadata
+			json.Unmarshal([]byte(httpMeta.String), &hm)
+			obj.HTTPMetadata = &hm
+		}
+		if includeCustomMeta && customMeta.Valid && customMeta.String != "" {
+			json.Unmarshal([]byte(customMeta.String), &obj.CustomMetadata)
+		}
+
 		objects = append(objects, &obj)
 	}
-	return objects, rows.Err()
+
+	// Build delimited prefixes list
+	var delimitedPrefixes []string
+	for p := range prefixSet {
+		delimitedPrefixes = append(delimitedPrefixes, p)
+	}
+
+	result := &store.R2ListResult{
+		Objects:           objects,
+		Truncated:         len(objects) > limit,
+		DelimitedPrefixes: delimitedPrefixes,
+	}
+
+	if result.Truncated && len(objects) > 0 {
+		result.Objects = objects[:limit]
+		result.Cursor = objects[limit-1].Key
+	}
+
+	return result, rows.Err()
+}
+
+// Multipart upload methods
+func (s *R2StoreImpl) CreateMultipartUpload(ctx context.Context, bucketID, key string, opts *store.R2PutOptions) (*store.R2MultipartUpload, error) {
+	uploadID := s.generateVersion()
+	now := time.Now()
+	expiresAt := now.Add(7 * 24 * time.Hour) // 7 days
+
+	var httpMeta, customMeta string
+	storageClass := "Standard"
+	if opts != nil {
+		if opts.HTTPMetadata != nil {
+			httpMetaBytes, _ := json.Marshal(opts.HTTPMetadata)
+			httpMeta = string(httpMetaBytes)
+		}
+		if opts.CustomMetadata != nil {
+			customMetaBytes, _ := json.Marshal(opts.CustomMetadata)
+			customMeta = string(customMetaBytes)
+		}
+		if opts.StorageClass != "" {
+			storageClass = opts.StorageClass
+		}
+	}
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO r2_multipart_uploads (bucket_id, key, upload_id, http_metadata, custom_metadata, storage_class, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		bucketID, key, uploadID, httpMeta, customMeta, storageClass, now, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &store.R2MultipartUpload{
+		Key:       key,
+		UploadID:  uploadID,
+		CreatedAt: now,
+	}, nil
+}
+
+func (s *R2StoreImpl) UploadPart(ctx context.Context, bucketID, key, uploadID string, partNumber int, data []byte) (*store.R2UploadedPart, error) {
+	// Verify upload exists
+	var exists int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT 1 FROM r2_multipart_uploads WHERE bucket_id = ? AND upload_id = ?`,
+		bucketID, uploadID).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("upload not found: %w", err)
+	}
+
+	// Store part in temp directory
+	partDir := filepath.Join(s.dataDir, bucketID, ".mpu", uploadID)
+	if err := os.MkdirAll(partDir, 0755); err != nil {
+		return nil, err
+	}
+
+	partPath := filepath.Join(partDir, fmt.Sprintf("%d", partNumber))
+	if err := os.WriteFile(partPath, data, 0644); err != nil {
+		return nil, err
+	}
+
+	etag := s.generateETag(data)
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO r2_multipart_parts (bucket_id, upload_id, part_number, etag, size, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		bucketID, uploadID, partNumber, etag, len(data))
+	if err != nil {
+		return nil, err
+	}
+
+	return &store.R2UploadedPart{
+		PartNumber: partNumber,
+		ETag:       etag,
+		Size:       int64(len(data)),
+	}, nil
+}
+
+func (s *R2StoreImpl) CompleteMultipartUpload(ctx context.Context, bucketID, key, uploadID string, parts []*store.R2UploadedPart) (*store.R2Object, error) {
+	// Get upload metadata
+	var httpMeta, customMeta, storageClass string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT http_metadata, custom_metadata, storage_class FROM r2_multipart_uploads WHERE bucket_id = ? AND upload_id = ?`,
+		bucketID, uploadID).Scan(&httpMeta, &customMeta, &storageClass)
+	if err != nil {
+		return nil, fmt.Errorf("upload not found: %w", err)
+	}
+
+	// Concatenate all parts
+	partDir := filepath.Join(s.dataDir, bucketID, ".mpu", uploadID)
+	var allData []byte
+	for _, part := range parts {
+		partPath := filepath.Join(partDir, fmt.Sprintf("%d", part.PartNumber))
+		partData, err := os.ReadFile(partPath)
+		if err != nil {
+			return nil, fmt.Errorf("part %d not found: %w", part.PartNumber, err)
+		}
+		allData = append(allData, partData...)
+	}
+
+	// Write final object
+	objectPath := filepath.Join(s.dataDir, bucketID, key)
+	if err := os.MkdirAll(filepath.Dir(objectPath), 0755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(objectPath, allData, 0644); err != nil {
+		return nil, err
+	}
+
+	// Create object record
+	etag := s.generateETag(allData)
+	version := s.generateVersion()
+	now := time.Now()
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO r2_objects (bucket_id, key, version, size, etag, http_metadata, custom_metadata, checksums, storage_class, uploaded_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?)`,
+		bucketID, key, version, len(allData), etag, httpMeta, customMeta, storageClass, now)
+	if err != nil {
+		return nil, err
+	}
+
+	// Clean up multipart upload data
+	os.RemoveAll(partDir)
+	s.db.ExecContext(ctx, `DELETE FROM r2_multipart_uploads WHERE bucket_id = ? AND upload_id = ?`, bucketID, uploadID)
+	s.db.ExecContext(ctx, `DELETE FROM r2_multipart_parts WHERE bucket_id = ? AND upload_id = ?`, bucketID, uploadID)
+
+	obj := &store.R2Object{
+		Key:          key,
+		Version:      version,
+		Size:         int64(len(allData)),
+		ETag:         etag,
+		StorageClass: storageClass,
+		Uploaded:     now,
+	}
+	if httpMeta != "" {
+		var hm store.R2HTTPMetadata
+		json.Unmarshal([]byte(httpMeta), &hm)
+		obj.HTTPMetadata = &hm
+	}
+	if customMeta != "" {
+		json.Unmarshal([]byte(customMeta), &obj.CustomMetadata)
+	}
+
+	return obj, nil
+}
+
+func (s *R2StoreImpl) AbortMultipartUpload(ctx context.Context, bucketID, key, uploadID string) error {
+	partDir := filepath.Join(s.dataDir, bucketID, ".mpu", uploadID)
+	os.RemoveAll(partDir)
+	s.db.ExecContext(ctx, `DELETE FROM r2_multipart_uploads WHERE bucket_id = ? AND upload_id = ?`, bucketID, uploadID)
+	s.db.ExecContext(ctx, `DELETE FROM r2_multipart_parts WHERE bucket_id = ? AND upload_id = ?`, bucketID, uploadID)
+	return nil
+}
+
+func (s *R2StoreImpl) ListParts(ctx context.Context, bucketID, key, uploadID string) ([]*store.R2UploadedPart, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT part_number, etag, size FROM r2_multipart_parts WHERE bucket_id = ? AND upload_id = ? ORDER BY part_number`,
+		bucketID, uploadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var parts []*store.R2UploadedPart
+	for rows.Next() {
+		var part store.R2UploadedPart
+		if err := rows.Scan(&part.PartNumber, &part.ETag, &part.Size); err != nil {
+			return nil, err
+		}
+		parts = append(parts, &part)
+	}
+	return parts, rows.Err()
+}
+
+// Helper function to find delimiter index
+func findIndex(s, substr string) int {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
 
 // D1StoreImpl implementation

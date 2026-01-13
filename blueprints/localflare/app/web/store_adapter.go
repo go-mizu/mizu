@@ -193,16 +193,29 @@ func (a *R2StoreAdapter) DeleteBucket(ctx context.Context, id string) error {
 }
 
 func (a *R2StoreAdapter) PutObject(ctx context.Context, bucketID, key string, data []byte, metadata map[string]string) error {
-	return a.st.PutObject(ctx, bucketID, key, data, metadata)
+	// Convert legacy metadata map to R2PutOptions
+	opts := &store.R2PutOptions{
+		CustomMetadata: metadata,
+	}
+	// Extract content-type if present
+	if ct, ok := metadata["content-type"]; ok {
+		opts.HTTPMetadata = &store.R2HTTPMetadata{ContentType: ct}
+	}
+	_, err := a.st.PutObject(ctx, bucketID, key, data, opts)
+	return err
 }
 
 func (a *R2StoreAdapter) GetObject(ctx context.Context, bucketID, key string) ([]byte, *r2.Object, error) {
-	data, obj, err := a.st.GetObject(ctx, bucketID, key)
+	data, obj, err := a.st.GetObject(ctx, bucketID, key, nil)
 	if err != nil {
 		return nil, nil, err
 	}
+	contentType := "application/octet-stream"
+	if obj.HTTPMetadata != nil && obj.HTTPMetadata.ContentType != "" {
+		contentType = obj.HTTPMetadata.ContentType
+	}
 	return data, &r2.Object{
-		Key: obj.Key, Size: obj.Size, ETag: obj.ETag, ContentType: obj.ContentType, LastModified: obj.LastModified,
+		Key: obj.Key, Size: obj.Size, ETag: obj.ETag, ContentType: contentType, LastModified: obj.Uploaded,
 	}, nil
 }
 
@@ -211,13 +224,22 @@ func (a *R2StoreAdapter) DeleteObject(ctx context.Context, bucketID, key string)
 }
 
 func (a *R2StoreAdapter) ListObjects(ctx context.Context, bucketID, prefix, delimiter string, limit int) ([]*r2.Object, error) {
-	list, err := a.st.ListObjects(ctx, bucketID, prefix, delimiter, limit)
+	opts := &store.R2ListOptions{
+		Prefix:    prefix,
+		Delimiter: delimiter,
+		Limit:     limit,
+	}
+	listResult, err := a.st.ListObjects(ctx, bucketID, opts)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*r2.Object, len(list))
-	for i, obj := range list {
-		result[i] = &r2.Object{Key: obj.Key, Size: obj.Size, ETag: obj.ETag, ContentType: obj.ContentType, LastModified: obj.LastModified}
+	result := make([]*r2.Object, len(listResult.Objects))
+	for i, obj := range listResult.Objects {
+		contentType := "application/octet-stream"
+		if obj.HTTPMetadata != nil && obj.HTTPMetadata.ContentType != "" {
+			contentType = obj.HTTPMetadata.ContentType
+		}
+		result[i] = &r2.Object{Key: obj.Key, Size: obj.Size, ETag: obj.ETag, ContentType: contentType, LastModified: obj.Uploaded}
 	}
 	return result, nil
 }
