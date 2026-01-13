@@ -825,41 +825,65 @@ func (r *Runtime) createMultipartUploadObject(bucketID string, mpu *store.R2Mult
 	return mpuObj
 }
 
-// setupD1Binding creates a D1 database binding.
+// setupD1Binding creates a D1 database binding with 100% Cloudflare D1 compatibility.
 func (r *Runtime) setupD1Binding(name, databaseID string) {
 	vm := r.vm
 	d1Store := r.store.D1()
 
 	d1 := vm.NewObject()
 
-	// prepare(sql)
+	// Helper to convert D1ResultMeta to JS object
+	createMetaObject := func(meta store.D1ResultMeta) goja.Value {
+		metaObj := vm.NewObject()
+		metaObj.Set("served_by", meta.ServedBy)
+		metaObj.Set("duration", meta.Duration)
+		metaObj.Set("changes", meta.Changes)
+		metaObj.Set("last_row_id", meta.LastRowID)
+		metaObj.Set("changed_db", meta.ChangedDB)
+		metaObj.Set("size_after", meta.SizeAfter)
+		metaObj.Set("rows_read", meta.RowsRead)
+		metaObj.Set("rows_written", meta.RowsWritten)
+		return metaObj
+	}
+
+	// prepare(sql) - creates a prepared statement
 	d1.Set("prepare", func(call goja.FunctionCall) goja.Value {
 		sql := call.Argument(0).String()
 
 		stmt := vm.NewObject()
 		var bindParams []interface{}
 
-		// bind(...params)
+		// Store SQL and params for batch() to access
+		stmt.Set("_sql", sql)
+		stmt.Set("_getParams", func(c goja.FunctionCall) goja.Value {
+			return vm.ToValue(bindParams)
+		})
+
+		// bind(...params) - binds parameters to placeholders
 		stmt.Set("bind", func(c goja.FunctionCall) goja.Value {
 			for _, arg := range c.Arguments {
 				bindParams = append(bindParams, arg.Export())
 			}
+			// Update stored params
+			stmt.Set("_getParams", func(c goja.FunctionCall) goja.Value {
+				return vm.ToValue(bindParams)
+			})
 			return stmt
 		})
 
-		// first(columnName?)
+		// first(columnName?) - returns first row or specific column value
 		stmt.Set("first", func(c goja.FunctionCall) goja.Value {
-			results, err := d1Store.Query(context.Background(), databaseID, sql, bindParams)
+			result, err := d1Store.QueryWithMeta(context.Background(), databaseID, sql, bindParams)
 			if err != nil {
 				return r.createRejectedPromise(err.Error())
 			}
 
-			if len(results) == 0 {
+			if len(result.Rows) == 0 {
 				return r.createPromise(goja.Null())
 			}
 
-			row := results[0]
-			if len(c.Arguments) > 0 && !goja.IsUndefined(c.Arguments[0]) {
+			row := result.Rows[0]
+			if len(c.Arguments) > 0 && !goja.IsUndefined(c.Arguments[0]) && !goja.IsNull(c.Arguments[0]) {
 				colName := c.Argument(0).String()
 				if val, ok := row[colName]; ok {
 					return r.createPromise(vm.ToValue(val))
@@ -870,58 +894,72 @@ func (r *Runtime) setupD1Binding(name, databaseID string) {
 			return r.createPromise(vm.ToValue(row))
 		})
 
-		// all()
+		// all() - returns all results with metadata
 		stmt.Set("all", func(c goja.FunctionCall) goja.Value {
-			results, err := d1Store.Query(context.Background(), databaseID, sql, bindParams)
+			result, err := d1Store.QueryWithMeta(context.Background(), databaseID, sql, bindParams)
 			if err != nil {
 				return r.createRejectedPromise(err.Error())
 			}
 
-			result := vm.NewObject()
-			result.Set("results", results)
-			result.Set("success", true)
-			result.Set("meta", map[string]interface{}{
-				"rows_read":    len(results),
-				"rows_written": 0,
-			})
+			// Ensure results is never nil (Cloudflare returns empty array)
+			rows := result.Rows
+			if rows == nil {
+				rows = []map[string]interface{}{}
+			}
 
-			return r.createPromise(result)
+			resultObj := vm.NewObject()
+			resultObj.Set("results", rows)
+			resultObj.Set("success", true)
+			resultObj.Set("meta", createMetaObject(result.Meta))
+
+			return r.createPromise(resultObj)
 		})
 
-		// run()
+		// run() - executes statement and returns metadata
 		stmt.Set("run", func(c goja.FunctionCall) goja.Value {
-			rowsAffected, err := d1Store.Exec(context.Background(), databaseID, sql, bindParams)
+			result, err := d1Store.ExecWithMeta(context.Background(), databaseID, sql, bindParams)
 			if err != nil {
 				return r.createRejectedPromise(err.Error())
 			}
 
-			result := vm.NewObject()
-			result.Set("success", true)
-			result.Set("meta", map[string]interface{}{
-				"rows_read":    0,
-				"rows_written": rowsAffected,
-				"changes":      rowsAffected,
-			})
+			resultObj := vm.NewObject()
+			resultObj.Set("results", []interface{}{})
+			resultObj.Set("success", true)
+			resultObj.Set("meta", createMetaObject(result.Meta))
 
-			return r.createPromise(result)
+			return r.createPromise(resultObj)
 		})
 
-		// raw(options?)
+		// raw(options?) - returns results as array of arrays
 		stmt.Set("raw", func(c goja.FunctionCall) goja.Value {
-			results, err := d1Store.Query(context.Background(), databaseID, sql, bindParams)
+			result, err := d1Store.QueryWithMeta(context.Background(), databaseID, sql, bindParams)
 			if err != nil {
 				return r.createRejectedPromise(err.Error())
 			}
 
-			// Convert to array of arrays
-			var rows [][]interface{}
-			for _, row := range results {
-				var rowArr []interface{}
-				for _, v := range row {
-					rowArr = append(rowArr, v)
+			// Check if columnNames option is set
+			includeColumnNames := false
+			if len(c.Arguments) > 0 && !goja.IsUndefined(c.Arguments[0]) && !goja.IsNull(c.Arguments[0]) {
+				if opts, ok := c.Argument(0).Export().(map[string]interface{}); ok {
+					if cn, ok := opts["columnNames"].(bool); ok {
+						includeColumnNames = cn
+					}
 				}
-				rows = append(rows, rowArr)
 			}
+
+			var rows [][]interface{}
+
+			// Include column names as first row if requested
+			if includeColumnNames && len(result.Columns) > 0 {
+				colRow := make([]interface{}, len(result.Columns))
+				for i, col := range result.Columns {
+					colRow[i] = col
+				}
+				rows = append(rows, colRow)
+			}
+
+			// Add data rows (using RawRows to preserve column order)
+			rows = append(rows, result.RawRows...)
 
 			return r.createPromise(vm.ToValue(rows))
 		})
@@ -929,50 +967,117 @@ func (r *Runtime) setupD1Binding(name, databaseID string) {
 		return stmt
 	})
 
-	// exec(sql)
+	// exec(sql) - executes raw SQL (possibly multiple statements)
 	d1.Set("exec", func(call goja.FunctionCall) goja.Value {
 		sql := call.Argument(0).String()
 
-		rowsAffected, err := d1Store.Exec(context.Background(), databaseID, sql, nil)
+		result, err := d1Store.ExecMulti(context.Background(), databaseID, sql)
 		if err != nil {
 			return r.createRejectedPromise(err.Error())
 		}
 
-		result := vm.NewObject()
-		result.Set("success", true)
-		result.Set("changes", rowsAffected)
+		resultObj := vm.NewObject()
+		resultObj.Set("count", result.Count)
+		resultObj.Set("duration", result.Duration)
 
-		return r.createPromise(result)
+		return r.createPromise(resultObj)
 	})
 
-	// batch(statements)
+	// batch(statements) - executes multiple prepared statements
 	d1.Set("batch", func(call goja.FunctionCall) goja.Value {
-		// For batch, we'd need to execute multiple statements
-		// This is a simplified implementation
-		stmts := call.Argument(0).Export().([]interface{})
+		stmtsVal := call.Argument(0)
+		if goja.IsUndefined(stmtsVal) || goja.IsNull(stmtsVal) {
+			return r.createRejectedPromise("batch() requires an array of statements")
+		}
 
-		var results []map[string]interface{}
-		for _, stmt := range stmts {
-			if stmtObj, ok := stmt.(map[string]interface{}); ok {
-				if sql, ok := stmtObj["sql"].(string); ok {
-					res, err := d1Store.Query(context.Background(), databaseID, sql, nil)
-					if err != nil {
-						return r.createRejectedPromise(err.Error())
+		stmtsObj := stmtsVal.ToObject(vm)
+		length := stmtsObj.Get("length")
+		if goja.IsUndefined(length) {
+			return r.createRejectedPromise("batch() requires an array of statements")
+		}
+
+		numStmts := int(length.ToInteger())
+		var results []goja.Value
+
+		for i := 0; i < numStmts; i++ {
+			stmtVal := stmtsObj.Get(fmt.Sprintf("%d", i))
+			if goja.IsUndefined(stmtVal) || goja.IsNull(stmtVal) {
+				continue
+			}
+
+			stmtObj := stmtVal.ToObject(vm)
+
+			// Get SQL and params from the statement object
+			sqlVal := stmtObj.Get("_sql")
+			if goja.IsUndefined(sqlVal) {
+				return r.createRejectedPromise(fmt.Sprintf("statement %d is not a valid prepared statement", i))
+			}
+			sql := sqlVal.String()
+
+			// Get bound params
+			var params []interface{}
+			getParamsVal := stmtObj.Get("_getParams")
+			if !goja.IsUndefined(getParamsVal) {
+				if getParamsFunc, ok := goja.AssertFunction(getParamsVal); ok {
+					paramsResult, err := getParamsFunc(goja.Undefined())
+					if err == nil && !goja.IsUndefined(paramsResult) {
+						if p, ok := paramsResult.Export().([]interface{}); ok {
+							params = p
+						}
 					}
-					results = append(results, map[string]interface{}{
-						"results": res,
-						"success": true,
-					})
 				}
 			}
+
+			// Determine if this is a SELECT or write operation
+			sqlUpper := strings.ToUpper(strings.TrimSpace(sql))
+			isSelect := strings.HasPrefix(sqlUpper, "SELECT") ||
+				strings.HasPrefix(sqlUpper, "PRAGMA") ||
+				strings.HasPrefix(sqlUpper, "EXPLAIN")
+
+			var resultObj *goja.Object
+			if isSelect {
+				result, err := d1Store.QueryWithMeta(context.Background(), databaseID, sql, params)
+				if err != nil {
+					return r.createRejectedPromise(fmt.Sprintf("batch statement %d failed: %s", i, err.Error()))
+				}
+
+				rows := result.Rows
+				if rows == nil {
+					rows = []map[string]interface{}{}
+				}
+
+				resultObj = vm.NewObject()
+				resultObj.Set("results", rows)
+				resultObj.Set("success", true)
+				resultObj.Set("meta", createMetaObject(result.Meta))
+			} else {
+				result, err := d1Store.ExecWithMeta(context.Background(), databaseID, sql, params)
+				if err != nil {
+					return r.createRejectedPromise(fmt.Sprintf("batch statement %d failed: %s", i, err.Error()))
+				}
+
+				resultObj = vm.NewObject()
+				resultObj.Set("results", []interface{}{})
+				resultObj.Set("success", true)
+				resultObj.Set("meta", createMetaObject(result.Meta))
+			}
+
+			results = append(results, resultObj)
 		}
 
 		return r.createPromise(vm.ToValue(results))
 	})
 
-	// dump() - returns database as bytes
+	// dump() - returns database as SQLite file bytes
 	d1.Set("dump", func(call goja.FunctionCall) goja.Value {
-		return r.createPromise(vm.ToValue([]byte{}))
+		data, err := d1Store.Dump(context.Background(), databaseID)
+		if err != nil {
+			return r.createRejectedPromise(err.Error())
+		}
+
+		// Return as ArrayBuffer
+		arrayBuffer := vm.NewArrayBuffer(data)
+		return r.createPromise(vm.ToValue(arrayBuffer))
 	})
 
 	r.vm.Set(name, d1)

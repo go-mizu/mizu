@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -1950,6 +1951,212 @@ func (s *D1StoreImpl) Exec(ctx context.Context, dbID, sqlQuery string, params []
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+// QueryWithMeta executes a query and returns results with full Cloudflare D1-compatible metadata.
+func (s *D1StoreImpl) QueryWithMeta(ctx context.Context, dbID, sqlQuery string, params []interface{}) (*store.D1QueryResult, error) {
+	startTime := time.Now()
+
+	dbPath := filepath.Join(s.dataDir, dbID+".db")
+	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.QueryContext(ctx, sqlQuery, params...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []map[string]interface{}
+	var rawResults [][]interface{}
+	rowCount := int64(0)
+
+	for rows.Next() {
+		rowCount++
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		// Build map result (preserving column order in raw)
+		row := make(map[string]interface{})
+		rawRow := make([]interface{}, len(columns))
+		for i, col := range columns {
+			// Convert []byte to string for text columns
+			if b, ok := values[i].([]byte); ok {
+				values[i] = string(b)
+			}
+			row[col] = values[i]
+			rawRow[i] = values[i]
+		}
+		results = append(results, row)
+		rawResults = append(rawResults, rawRow)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	duration := time.Since(startTime).Seconds() * 1000
+
+	return &store.D1QueryResult{
+		Columns: columns,
+		Rows:    results,
+		RawRows: rawResults,
+		Meta: store.D1ResultMeta{
+			ServedBy:    "localflare",
+			Duration:    duration,
+			Changes:     0,
+			LastRowID:   0,
+			ChangedDB:   false,
+			SizeAfter:   s.getDBSize(dbPath),
+			RowsRead:    rowCount,
+			RowsWritten: 0,
+		},
+	}, nil
+}
+
+// ExecWithMeta executes a statement and returns results with full metadata.
+func (s *D1StoreImpl) ExecWithMeta(ctx context.Context, dbID, sqlQuery string, params []interface{}) (*store.D1ExecResult, error) {
+	startTime := time.Now()
+
+	dbPath := filepath.Join(s.dataDir, dbID+".db")
+	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	result, err := db.ExecContext(ctx, sqlQuery, params...)
+	if err != nil {
+		return nil, err
+	}
+
+	changes, _ := result.RowsAffected()
+	lastID, _ := result.LastInsertId()
+	duration := time.Since(startTime).Seconds() * 1000
+
+	return &store.D1ExecResult{
+		Changes:   changes,
+		LastRowID: lastID,
+		Meta: store.D1ResultMeta{
+			ServedBy:    "localflare",
+			Duration:    duration,
+			Changes:     changes,
+			LastRowID:   lastID,
+			ChangedDB:   changes > 0,
+			SizeAfter:   s.getDBSize(dbPath),
+			RowsRead:    0,
+			RowsWritten: changes,
+		},
+	}, nil
+}
+
+// ExecMulti executes multiple SQL statements separated by semicolons.
+func (s *D1StoreImpl) ExecMulti(ctx context.Context, dbID, sqlQuery string) (*store.D1MultiExecResult, error) {
+	startTime := time.Now()
+
+	dbPath := filepath.Join(s.dataDir, dbID+".db")
+	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Split and execute statements
+	statements := splitSQLStatements(sqlQuery)
+	count := 0
+
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+
+		_, err := db.ExecContext(ctx, stmt)
+		if err != nil {
+			return nil, fmt.Errorf("error executing statement %d: %w", count+1, err)
+		}
+		count++
+	}
+
+	duration := time.Since(startTime).Seconds() * 1000
+
+	return &store.D1MultiExecResult{
+		Count:    count,
+		Duration: duration,
+	}, nil
+}
+
+// Dump exports the database as a SQLite file.
+func (s *D1StoreImpl) Dump(ctx context.Context, dbID string) ([]byte, error) {
+	dbPath := filepath.Join(s.dataDir, dbID+".db")
+
+	// Ensure database exists
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("database not found: %s", dbID)
+	}
+
+	// Read entire file
+	return os.ReadFile(dbPath)
+}
+
+// getDBSize returns the size of the database file in bytes.
+func (s *D1StoreImpl) getDBSize(dbPath string) int64 {
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+// splitSQLStatements splits a SQL string into individual statements.
+func splitSQLStatements(sql string) []string {
+	var statements []string
+	var current strings.Builder
+	inString := false
+	stringChar := rune(0)
+
+	for _, ch := range sql {
+		if !inString {
+			if ch == '\'' || ch == '"' {
+				inString = true
+				stringChar = ch
+			} else if ch == ';' {
+				stmt := strings.TrimSpace(current.String())
+				if stmt != "" {
+					statements = append(statements, stmt)
+				}
+				current.Reset()
+				continue
+			}
+		} else {
+			if ch == stringChar {
+				inString = false
+			}
+		}
+		current.WriteRune(ch)
+	}
+
+	// Don't forget the last statement
+	if stmt := strings.TrimSpace(current.String()); stmt != "" {
+		statements = append(statements, stmt)
+	}
+
+	return statements
 }
 
 // LoadBalancerStoreImpl implementation

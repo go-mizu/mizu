@@ -331,6 +331,39 @@ type D1Database struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// D1ResultMeta contains metadata compatible with Cloudflare D1.
+type D1ResultMeta struct {
+	ServedBy    string  `json:"served_by"`
+	Duration    float64 `json:"duration"`
+	Changes     int64   `json:"changes"`
+	LastRowID   int64   `json:"last_row_id"`
+	ChangedDB   bool    `json:"changed_db"`
+	SizeAfter   int64   `json:"size_after"`
+	RowsRead    int64   `json:"rows_read"`
+	RowsWritten int64   `json:"rows_written"`
+}
+
+// D1QueryResult contains query results with full metadata.
+type D1QueryResult struct {
+	Columns []string                 `json:"columns"`
+	Rows    []map[string]interface{} `json:"rows"`
+	RawRows [][]interface{}          `json:"-"`
+	Meta    D1ResultMeta             `json:"meta"`
+}
+
+// D1ExecResult contains execution results with metadata.
+type D1ExecResult struct {
+	Changes   int64        `json:"changes"`
+	LastRowID int64        `json:"last_row_id"`
+	Meta      D1ResultMeta `json:"meta"`
+}
+
+// D1MultiExecResult contains results from exec() with multiple statements.
+type D1MultiExecResult struct {
+	Count    int     `json:"count"`
+	Duration float64 `json:"duration"`
+}
+
 // LoadBalancer represents a load balancer.
 type LoadBalancer struct {
 	ID             string    `json:"id"`
@@ -539,12 +572,25 @@ type R2Store interface {
 }
 
 type D1Store interface {
+	// Database management
 	CreateDatabase(ctx context.Context, db *D1Database) error
 	GetDatabase(ctx context.Context, id string) (*D1Database, error)
 	ListDatabases(ctx context.Context) ([]*D1Database, error)
 	DeleteDatabase(ctx context.Context, id string) error
+
+	// Query operations (kept for backward compatibility)
 	Query(ctx context.Context, dbID, sql string, params []interface{}) ([]map[string]interface{}, error)
 	Exec(ctx context.Context, dbID, sql string, params []interface{}) (int64, error)
+
+	// Enhanced operations with full Cloudflare D1-compatible metadata
+	QueryWithMeta(ctx context.Context, dbID, sql string, params []interface{}) (*D1QueryResult, error)
+	ExecWithMeta(ctx context.Context, dbID, sql string, params []interface{}) (*D1ExecResult, error)
+
+	// Multi-statement execution for exec()
+	ExecMulti(ctx context.Context, dbID, sql string) (*D1MultiExecResult, error)
+
+	// Database export
+	Dump(ctx context.Context, dbID string) ([]byte, error)
 }
 
 type LoadBalancerStore interface {
