@@ -1,30 +1,27 @@
 package api
 
 import (
-	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/go-mizu/mizu"
-	"github.com/oklog/ulid/v2"
 
-	"github.com/go-mizu/blueprints/localflare/store"
+	"github.com/go-mizu/blueprints/localflare/feature/r2"
 )
 
-// R2 handles R2 storage requests.
+// R2 handles R2 bucket requests.
 type R2 struct {
-	store store.R2Store
+	svc r2.API
 }
 
 // NewR2 creates a new R2 handler.
-func NewR2(store store.R2Store) *R2 {
-	return &R2{store: store}
+func NewR2(svc r2.API) *R2 {
+	return &R2{svc: svc}
 }
 
 // ListBuckets lists all R2 buckets.
 func (h *R2) ListBuckets(c *mizu.Ctx) error {
-	buckets, err := h.store.ListBuckets(c.Request().Context())
+	buckets, err := h.svc.ListBuckets(c.Request().Context())
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -34,10 +31,28 @@ func (h *R2) ListBuckets(c *mizu.Ctx) error {
 	})
 }
 
-// GetBucket retrieves a bucket by ID.
+// CreateBucket creates a new R2 bucket.
+func (h *R2) CreateBucket(c *mizu.Ctx) error {
+	var input r2.CreateBucketIn
+	if err := c.BindJSON(&input, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid input"})
+	}
+
+	bucket, err := h.svc.CreateBucket(c.Request().Context(), &input)
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(201, map[string]interface{}{
+		"success": true,
+		"result":  bucket,
+	})
+}
+
+// GetBucket retrieves a bucket.
 func (h *R2) GetBucket(c *mizu.Ctx) error {
 	id := c.Param("id")
-	bucket, err := h.store.GetBucket(c.Request().Context(), id)
+	bucket, err := h.svc.GetBucket(c.Request().Context(), id)
 	if err != nil {
 		return c.JSON(404, map[string]string{"error": "Bucket not found"})
 	}
@@ -47,48 +62,10 @@ func (h *R2) GetBucket(c *mizu.Ctx) error {
 	})
 }
 
-// CreateBucketInput is the input for creating an R2 bucket.
-type CreateBucketInput struct {
-	Name     string `json:"name"`
-	Location string `json:"location"`
-}
-
-// CreateBucket creates a new R2 bucket.
-func (h *R2) CreateBucket(c *mizu.Ctx) error {
-	var input CreateBucketInput
-	if err := c.BindJSON(&input, 1<<20); err != nil {
-		return c.JSON(400, map[string]string{"error": "Invalid input"})
-	}
-
-	if input.Name == "" {
-		return c.JSON(400, map[string]string{"error": "Name is required"})
-	}
-
-	bucket := &store.R2Bucket{
-		ID:        ulid.Make().String(),
-		Name:      input.Name,
-		Location:  input.Location,
-		CreatedAt: time.Now(),
-	}
-
-	if bucket.Location == "" {
-		bucket.Location = "auto"
-	}
-
-	if err := h.store.CreateBucket(c.Request().Context(), bucket); err != nil {
-		return c.JSON(500, map[string]string{"error": err.Error()})
-	}
-
-	return c.JSON(201, map[string]interface{}{
-		"success": true,
-		"result":  bucket,
-	})
-}
-
-// DeleteBucket deletes an R2 bucket.
+// DeleteBucket deletes a bucket.
 func (h *R2) DeleteBucket(c *mizu.Ctx) error {
 	id := c.Param("id")
-	if err := h.store.DeleteBucket(c.Request().Context(), id); err != nil {
+	if err := h.svc.DeleteBucket(c.Request().Context(), id); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(200, map[string]interface{}{
@@ -97,14 +74,16 @@ func (h *R2) DeleteBucket(c *mizu.Ctx) error {
 	})
 }
 
-// ListObjects lists objects in an R2 bucket.
+// ListObjects lists objects in a bucket.
 func (h *R2) ListObjects(c *mizu.Ctx) error {
 	bucketID := c.Param("id")
-	prefix := c.Query("prefix")
-	delimiter := c.Query("delimiter")
-	limit := 1000
+	opts := r2.ListObjectsOpts{
+		Prefix:    c.Query("prefix"),
+		Delimiter: c.Query("delimiter"),
+		Limit:     1000,
+	}
 
-	objects, err := h.store.ListObjects(c.Request().Context(), bucketID, prefix, delimiter, limit)
+	objects, err := h.svc.ListObjects(c.Request().Context(), bucketID, opts)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -112,15 +91,15 @@ func (h *R2) ListObjects(c *mizu.Ctx) error {
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
 		"result": map[string]interface{}{
-			"objects":      objects,
-			"truncated":    len(objects) >= limit,
-			"cursor":       "",
-			"delimited_prefixes": []string{},
+			"objects":             objects,
+			"truncated":           len(objects) >= opts.Limit,
+			"cursor":              "",
+			"delimited_prefixes":  []string{},
 		},
 	})
 }
 
-// PutObject uploads an object to an R2 bucket.
+// PutObject stores an object.
 func (h *R2) PutObject(c *mizu.Ctx) error {
 	bucketID := c.Param("id")
 	key := c.Param("key")
@@ -135,11 +114,13 @@ func (h *R2) PutObject(c *mizu.Ctx) error {
 		contentType = http.DetectContentType(body)
 	}
 
-	metadata := map[string]string{
-		"content-type": contentType,
+	input := &r2.PutObjectIn{
+		Key:         key,
+		Data:        body,
+		ContentType: contentType,
 	}
 
-	if err := h.store.PutObject(c.Request().Context(), bucketID, key, body, metadata); err != nil {
+	if err := h.svc.PutObject(c.Request().Context(), bucketID, input); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
@@ -152,12 +133,12 @@ func (h *R2) PutObject(c *mizu.Ctx) error {
 	})
 }
 
-// GetObject retrieves an object from an R2 bucket.
+// GetObject retrieves an object.
 func (h *R2) GetObject(c *mizu.Ctx) error {
 	bucketID := c.Param("id")
 	key := c.Param("key")
 
-	data, obj, err := h.store.GetObject(c.Request().Context(), bucketID, key)
+	data, obj, err := h.svc.GetObject(c.Request().Context(), bucketID, key)
 	if err != nil {
 		return c.JSON(404, map[string]string{"error": "Object not found"})
 	}
@@ -165,18 +146,16 @@ func (h *R2) GetObject(c *mizu.Ctx) error {
 	c.Writer().Header().Set("Content-Type", obj.ContentType)
 	c.Writer().Header().Set("ETag", obj.ETag)
 	c.Writer().Header().Set("Last-Modified", obj.LastModified.Format(http.TimeFormat))
-	c.Writer().Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
-
 	c.Writer().Write(data)
 	return nil
 }
 
-// DeleteObject deletes an object from an R2 bucket.
+// DeleteObject deletes an object.
 func (h *R2) DeleteObject(c *mizu.Ctx) error {
 	bucketID := c.Param("id")
 	key := c.Param("key")
 
-	if err := h.store.DeleteObject(c.Request().Context(), bucketID, key); err != nil {
+	if err := h.svc.DeleteObject(c.Request().Context(), bucketID, key); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
@@ -185,4 +164,3 @@ func (h *R2) DeleteObject(c *mizu.Ctx) error {
 		"result":  nil,
 	})
 }
-
