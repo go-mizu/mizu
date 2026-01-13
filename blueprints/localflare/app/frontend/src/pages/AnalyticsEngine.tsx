@@ -86,8 +86,8 @@ export function AnalyticsEngine() {
 
   const columns: Column<AnalyticsDataset>[] = [
     { key: 'name', label: 'Dataset', sortable: true },
-    { key: 'data_points', label: 'Data Points', sortable: true, render: (row) => formatDataPoints(row.data_points) },
-    { key: 'estimated_size_bytes', label: 'Size', sortable: true, render: (row) => formatSize(row.estimated_size_bytes) },
+    { key: 'data_points', label: 'Data Points', sortable: true, render: (row) => row.data_points ? formatDataPoints(row.data_points) : '-' },
+    { key: 'estimated_size_bytes', label: 'Size', sortable: true, render: (row) => row.estimated_size_bytes ? formatSize(row.estimated_size_bytes) : '-' },
     { key: 'created_at', label: 'Created', sortable: true, render: (row) => formatDate(row.created_at) },
   ]
 

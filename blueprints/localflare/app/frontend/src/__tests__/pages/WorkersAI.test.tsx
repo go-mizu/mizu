@@ -1,22 +1,30 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { renderWithProviders, screen, waitFor, setupMockFetch } from '../../test/utils'
+import { describe, it, expect } from 'vitest'
+import {
+  renderWithProviders,
+  screen,
+  waitFor,
+  testApi,
+} from '../../test/utils'
 import { WorkersAI } from '../../pages/WorkersAI'
 
 // Note: Some tests are skipped due to React 19 + Mantine Select component compatibility issues
 // The Select component in WorkersAI page causes errors during test rendering
 
 describe('WorkersAI', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  describe('API integration', () => {
+    it('fetches AI models with correct structure', async () => {
+      const response = await testApi.ai.listModels()
+
+      expect(response.success).toBe(true)
+      expect(response.result).toBeDefined()
+
+      // Result is directly an array of models
+      const models = response.result!
+      expect(Array.isArray(models)).toBe(true)
+    })
   })
 
-  describe('with stats data', () => {
-    beforeEach(() => {
-      setupMockFetch({
-        '/ai/stats': { requests_today: 12456, tokens_today: 2100000, cost_today: 0.42 },
-      })
-    })
-
+  describe('UI rendering with real data', () => {
     it.skip('renders the page title', async () => {
       // Skipped due to Select component compatibility issue
       renderWithProviders(<WorkersAI />)
@@ -33,14 +41,17 @@ describe('WorkersAI', () => {
     })
   })
 
-  describe('error handling', () => {
-    it.skip('handles API error gracefully', async () => {
+  describe('stats display', () => {
+    it.skip('displays AI usage statistics from real API', async () => {
       // Skipped due to Select component compatibility issue
-      ;(global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API Error'))
       renderWithProviders(<WorkersAI />)
+
       await waitFor(() => {
-        expect(screen.getByText('Workers AI')).toBeInTheDocument()
-      })
+        expect(screen.queryByText(/Loading/)).not.toBeInTheDocument()
+      }, { timeout: 5000 })
+
+      // Stats should be displayed
+      expect(screen.getByText(/Requests Today/i)).toBeInTheDocument()
     })
   })
 })
