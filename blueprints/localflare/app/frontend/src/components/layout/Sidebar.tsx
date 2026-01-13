@@ -237,9 +237,7 @@ export function Sidebar() {
               </Group>
             }
             leftSection={<IconBook size={20} stroke={1.5} />}
-            component="a"
-            href="https://developers.cloudflare.com"
-            target="_blank"
+            onClick={() => window.open('https://developers.cloudflare.com', '_blank', 'noopener,noreferrer')}
             variant="subtle"
             styles={{
               root: {
