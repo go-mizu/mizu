@@ -216,14 +216,109 @@ type R2Bucket struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// R2Object represents an R2 object.
+// R2Object represents an R2 object with full Cloudflare-compatible metadata.
 type R2Object struct {
-	Key          string            `json:"key"`
-	Size         int64             `json:"size"`
-	ETag         string            `json:"etag"`
-	ContentType  string            `json:"content_type"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	LastModified time.Time         `json:"last_modified"`
+	Key            string            `json:"key"`
+	Version        string            `json:"version"`         // Unique identifier per upload
+	Size           int64             `json:"size"`
+	ETag           string            `json:"etag"`
+	HTTPMetadata   *R2HTTPMetadata   `json:"http_metadata,omitempty"`
+	CustomMetadata map[string]string `json:"custom_metadata,omitempty"`
+	Range          *R2Range          `json:"range,omitempty"`
+	Checksums      *R2Checksums      `json:"checksums,omitempty"`
+	StorageClass   string            `json:"storage_class"`   // "Standard" | "InfrequentAccess"
+	Uploaded       time.Time         `json:"uploaded"`
+}
+
+// R2HTTPMetadata contains HTTP headers stored with the object.
+type R2HTTPMetadata struct {
+	ContentType        string     `json:"content_type,omitempty"`
+	ContentLanguage    string     `json:"content_language,omitempty"`
+	ContentDisposition string     `json:"content_disposition,omitempty"`
+	ContentEncoding    string     `json:"content_encoding,omitempty"`
+	CacheControl       string     `json:"cache_control,omitempty"`
+	CacheExpiry        *time.Time `json:"cache_expiry,omitempty"`
+}
+
+// R2Checksums contains computed checksums for an object.
+type R2Checksums struct {
+	MD5    []byte `json:"md5,omitempty"`
+	SHA1   []byte `json:"sha1,omitempty"`
+	SHA256 []byte `json:"sha256,omitempty"`
+	SHA384 []byte `json:"sha384,omitempty"`
+	SHA512 []byte `json:"sha512,omitempty"`
+}
+
+// R2Conditional specifies conditions for conditional operations.
+type R2Conditional struct {
+	EtagMatches      string     `json:"etag_matches,omitempty"`
+	EtagDoesNotMatch string     `json:"etag_does_not_match,omitempty"`
+	UploadedBefore   *time.Time `json:"uploaded_before,omitempty"`
+	UploadedAfter    *time.Time `json:"uploaded_after,omitempty"`
+}
+
+// R2Range specifies byte ranges for partial reads.
+type R2Range struct {
+	Offset *int64 `json:"offset,omitempty"` // Start position
+	Length *int64 `json:"length,omitempty"` // Number of bytes
+	Suffix *int64 `json:"suffix,omitempty"` // Last N bytes
+}
+
+// R2GetOptions configures get operations.
+type R2GetOptions struct {
+	OnlyIf  *R2Conditional `json:"only_if,omitempty"`
+	Range   *R2Range       `json:"range,omitempty"`
+	SSECKey []byte         `json:"-"` // 32-byte key, never stored
+}
+
+// R2PutOptions configures put operations.
+type R2PutOptions struct {
+	OnlyIf         *R2Conditional    `json:"only_if,omitempty"`
+	HTTPMetadata   *R2HTTPMetadata   `json:"http_metadata,omitempty"`
+	CustomMetadata map[string]string `json:"custom_metadata,omitempty"`
+	MD5            []byte            `json:"md5,omitempty"`
+	SHA1           []byte            `json:"sha1,omitempty"`
+	SHA256         []byte            `json:"sha256,omitempty"`
+	SHA384         []byte            `json:"sha384,omitempty"`
+	SHA512         []byte            `json:"sha512,omitempty"`
+	StorageClass   string            `json:"storage_class,omitempty"`
+	SSECKey        []byte            `json:"-"`
+}
+
+// R2ListOptions configures list operations.
+type R2ListOptions struct {
+	Limit     int      `json:"limit,omitempty"`     // Default: 1000, Max: 1000
+	Prefix    string   `json:"prefix,omitempty"`
+	Cursor    string   `json:"cursor,omitempty"`
+	Delimiter string   `json:"delimiter,omitempty"`
+	Include   []string `json:"include,omitempty"`   // "httpMetadata", "customMetadata"
+}
+
+// R2ListResult contains the result of a list operation.
+type R2ListResult struct {
+	Objects           []*R2Object `json:"objects"`
+	Truncated         bool        `json:"truncated"`
+	Cursor            string      `json:"cursor,omitempty"`
+	DelimitedPrefixes []string    `json:"delimited_prefixes,omitempty"`
+}
+
+// R2MultipartUpload represents an in-progress multipart upload.
+type R2MultipartUpload struct {
+	Key       string    `json:"key"`
+	UploadID  string    `json:"upload_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// R2UploadedPart represents a successfully uploaded part.
+type R2UploadedPart struct {
+	PartNumber int    `json:"part_number"`
+	ETag       string `json:"etag"`
+	Size       int64  `json:"size,omitempty"`
+}
+
+// R2DeletedObject indicates a successfully deleted object.
+type R2DeletedObject struct {
+	Key string `json:"key"`
 }
 
 // D1Database represents a D1 database.
@@ -421,14 +516,26 @@ type KVStore interface {
 }
 
 type R2Store interface {
+	// Bucket operations
 	CreateBucket(ctx context.Context, bucket *R2Bucket) error
 	GetBucket(ctx context.Context, id string) (*R2Bucket, error)
 	ListBuckets(ctx context.Context) ([]*R2Bucket, error)
 	DeleteBucket(ctx context.Context, id string) error
-	PutObject(ctx context.Context, bucketID, key string, data []byte, metadata map[string]string) error
-	GetObject(ctx context.Context, bucketID, key string) ([]byte, *R2Object, error)
+
+	// Object operations (full Cloudflare R2 Workers API compatibility)
+	PutObject(ctx context.Context, bucketID, key string, data []byte, opts *R2PutOptions) (*R2Object, error)
+	GetObject(ctx context.Context, bucketID, key string, opts *R2GetOptions) ([]byte, *R2Object, error)
+	HeadObject(ctx context.Context, bucketID, key string) (*R2Object, error)
 	DeleteObject(ctx context.Context, bucketID, key string) error
-	ListObjects(ctx context.Context, bucketID, prefix, delimiter string, limit int) ([]*R2Object, error)
+	DeleteObjects(ctx context.Context, bucketID string, keys []string) ([]R2DeletedObject, error)
+	ListObjects(ctx context.Context, bucketID string, opts *R2ListOptions) (*R2ListResult, error)
+
+	// Multipart upload operations
+	CreateMultipartUpload(ctx context.Context, bucketID, key string, opts *R2PutOptions) (*R2MultipartUpload, error)
+	UploadPart(ctx context.Context, bucketID, key, uploadID string, partNumber int, data []byte) (*R2UploadedPart, error)
+	CompleteMultipartUpload(ctx context.Context, bucketID, key, uploadID string, parts []*R2UploadedPart) (*R2Object, error)
+	AbortMultipartUpload(ctx context.Context, bucketID, key, uploadID string) error
+	ListParts(ctx context.Context, bucketID, key, uploadID string) ([]*R2UploadedPart, error)
 }
 
 type D1Store interface {

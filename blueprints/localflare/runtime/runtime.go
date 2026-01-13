@@ -5,7 +5,6 @@ package runtime
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +50,12 @@ func New(cfg Config) *Runtime {
 		bindings: make(map[string]interface{}),
 	}
 
-	r.loop.Run(func(vm *goja.Runtime) {
+	// Start the event loop in background
+	r.loop.Start()
+
+	// Initialize the VM on the event loop and wait for completion
+	initDone := make(chan struct{})
+	r.loop.RunOnLoop(func(vm *goja.Runtime) {
 		r.vm = vm
 
 		// Setup require
@@ -63,12 +67,23 @@ func New(cfg Config) *Runtime {
 		// Setup Web APIs
 		r.setupWebAPIs()
 
+		// Setup extended Web APIs (FormData, Blob, SubtleCrypto, Streams)
+		r.setupExtendedWebAPIs()
+
+		// Setup event handlers
+		r.setupScheduledHandlers()
+		r.setupEmailHandlers()
+		r.setupTailHandlers()
+
 		// Setup environment variables
 		r.setupEnvironment(cfg.Environment)
 
 		// Setup bindings
 		r.setupBindings(cfg.Bindings)
+
+		close(initDone)
 	})
+	<-initDone
 
 	return r
 }
@@ -81,7 +96,13 @@ func (r *Runtime) Execute(ctx context.Context, script string, req *http.Request)
 	resultCh := make(chan *WorkerResponse, 1)
 	errCh := make(chan error, 1)
 
+	// Create execution context for waitUntil and passThroughOnException
+	execCtx := NewExecutionContext(30 * time.Second)
+
 	r.loop.RunOnLoop(func(vm *goja.Runtime) {
+		// Clear previous handlers before running new script
+		vm.Set("__fetchHandlers", vm.NewArray())
+
 		// Compile and run the script
 		_, err := vm.RunString(script)
 		if err != nil {
@@ -96,10 +117,19 @@ func (r *Runtime) Execute(ctx context.Context, script string, req *http.Request)
 			return
 		}
 
-		// Create the event
+		// Create the event with full Cloudflare Workers FetchEvent API
 		event := vm.NewObject()
+		event.Set("type", "fetch")
 		event.Set("request", reqObj)
+
+		responded := false
+
 		event.Set("respondWith", func(call goja.FunctionCall) goja.Value {
+			if responded {
+				panic(vm.NewGoError(fmt.Errorf("respondWith() has already been called")))
+			}
+			responded = true
+
 			// Handle both Promise and direct Response
 			arg := call.Argument(0)
 
@@ -120,6 +150,21 @@ func (r *Runtime) Execute(ctx context.Context, script string, req *http.Request)
 
 			// Direct response
 			r.handleResponse(arg, resultCh, errCh)
+			return goja.Undefined()
+		})
+
+		// waitUntil(promise) - extends request lifetime
+		event.Set("waitUntil", func(call goja.FunctionCall) goja.Value {
+			promise := call.Argument(0)
+			execCtx.AddWaitUntil(promise)
+			return goja.Undefined()
+		})
+
+		// passThroughOnException() - pass to origin on unhandled exception
+		event.Set("passThroughOnException", func(call goja.FunctionCall) goja.Value {
+			if !responded {
+				execCtx.SetPassThroughOnException()
+			}
 			return goja.Undefined()
 		})
 
@@ -148,13 +193,43 @@ func (r *Runtime) Execute(ctx context.Context, script string, req *http.Request)
 	// Wait for result with timeout
 	select {
 	case resp := <-resultCh:
+		// Process waitUntil promises in background (non-blocking)
+		go r.processWaitUntilPromises(execCtx)
 		return resp, nil
 	case err := <-errCh:
+		if execCtx.ShouldPassThrough() {
+			// Return special response indicating pass-through
+			return &WorkerResponse{
+				Status:  0, // Indicates pass-through
+				Headers: make(http.Header),
+			}, nil
+		}
 		return nil, err
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(30 * time.Second):
 		return nil, fmt.Errorf("worker execution timeout")
+	}
+}
+
+// processWaitUntilPromises handles promises registered with waitUntil()
+func (r *Runtime) processWaitUntilPromises(execCtx *ExecutionContext) {
+	promises := execCtx.WaitUntilPromises()
+	for _, promise := range promises {
+		if promise != nil && !goja.IsUndefined(promise) {
+			// Try to resolve the promise
+			if promiseObj, ok := promise.Export().(map[string]interface{}); ok {
+				if then, exists := promiseObj["then"]; exists {
+					if thenFunc, ok := then.(func(goja.FunctionCall) goja.Value); ok {
+						thenFunc(goja.FunctionCall{
+							Arguments: []goja.Value{r.vm.ToValue(func(result goja.Value) {
+								// Promise resolved successfully
+							})},
+						})
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -178,26 +253,47 @@ func (r *Runtime) handleResponse(val goja.Value, resultCh chan *WorkerResponse, 
 	// Get headers
 	if headers := obj.Get("headers"); headers != nil && !goja.IsUndefined(headers) {
 		headersObj := headers.ToObject(r.vm)
-		if entries := headersObj.Get("entries"); entries != nil {
-			if entriesFunc, ok := entries.Export().(func(goja.FunctionCall) goja.Value); ok {
-				entriesResult := entriesFunc(goja.FunctionCall{})
-				if arr, ok := entriesResult.Export().([]interface{}); ok {
-					for _, entry := range arr {
-						if pair, ok := entry.([]interface{}); ok && len(pair) == 2 {
-							key := fmt.Sprintf("%v", pair[0])
-							value := fmt.Sprintf("%v", pair[1])
-							resp.Headers.Set(key, value)
+		if entriesVal := headersObj.Get("entries"); entriesVal != nil && !goja.IsUndefined(entriesVal) {
+			// Call the entries function using goja's function calling mechanism
+			if entriesFunc, ok := goja.AssertFunction(entriesVal); ok {
+				entriesResult, err := entriesFunc(nil)
+				if err == nil && entriesResult != nil {
+					exported := entriesResult.Export()
+					// Handle [][]string format (most common from our implementation)
+					if arr, ok := exported.([][]string); ok {
+						for _, pair := range arr {
+							if len(pair) == 2 {
+								resp.Headers.Set(pair[0], pair[1])
+							}
+						}
+					} else if arr, ok := exported.([]interface{}); ok {
+						// Handle []interface{} format
+						for _, entry := range arr {
+							switch pair := entry.(type) {
+							case []interface{}:
+								if len(pair) == 2 {
+									key := fmt.Sprintf("%v", pair[0])
+									value := fmt.Sprintf("%v", pair[1])
+									resp.Headers.Set(key, value)
+								}
+							case []string:
+								if len(pair) == 2 {
+									resp.Headers.Set(pair[0], pair[1])
+								}
+							}
 						}
 					}
 				}
 			}
-		} else {
-			// Try as plain object
-			for _, key := range headersObj.Keys() {
-				val := headersObj.Get(key)
-				if val != nil && !goja.IsUndefined(val) {
-					resp.Headers.Set(key, val.String())
-				}
+		}
+		// Also try direct keys as fallback (for plain object headers)
+		for _, key := range headersObj.Keys() {
+			if key == "get" || key == "set" || key == "has" || key == "entries" || key == "delete" || key == "append" || key == "forEach" {
+				continue // Skip method names
+			}
+			val := headersObj.Get(key)
+			if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+				resp.Headers.Set(key, val.String())
 			}
 		}
 	}
@@ -266,15 +362,26 @@ func (r *Runtime) createRequest(req *http.Request) (goja.Value, error) {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		obj.Set("_bodyBytes", bodyBytes)
 		obj.Set("text", func(call goja.FunctionCall) goja.Value {
-			return r.vm.ToValue(string(bodyBytes))
+			return r.createPromise(r.vm.ToValue(string(bodyBytes)))
 		})
 		obj.Set("json", func(call goja.FunctionCall) goja.Value {
 			var data interface{}
 			json.Unmarshal(bodyBytes, &data)
-			return r.vm.ToValue(data)
+			return r.createPromise(r.vm.ToValue(data))
 		})
 		obj.Set("arrayBuffer", func(call goja.FunctionCall) goja.Value {
-			return r.vm.ToValue(bodyBytes)
+			return r.createPromise(r.vm.ToValue(bodyBytes))
+		})
+	} else {
+		// No body - still provide methods that return promises
+		obj.Set("text", func(call goja.FunctionCall) goja.Value {
+			return r.createPromise(r.vm.ToValue(""))
+		})
+		obj.Set("json", func(call goja.FunctionCall) goja.Value {
+			return r.createPromise(goja.Null())
+		})
+		obj.Set("arrayBuffer", func(call goja.FunctionCall) goja.Value {
+			return r.createPromise(r.vm.ToValue([]byte{}))
 		})
 	}
 
@@ -298,6 +405,33 @@ func (r *Runtime) createRequest(req *http.Request) (goja.Value, error) {
 
 func (r *Runtime) setupWebAPIs() {
 	vm := r.vm
+
+	// Setup promise helper - uses native JS Promise for proper event loop integration
+	// Note: Using Promise.resolve() directly doesn't work with goja's event loop
+	// because microtasks aren't processed properly. Instead, we use setImmediate
+	// which is provided by the eventloop and properly schedules async work.
+	_, _ = vm.RunString(`
+		globalThis.__createResolvedPromise = function(value) {
+			return new Promise(function(resolve) {
+				// Use setImmediate if available (from goja_nodejs), otherwise setTimeout
+				if (typeof setImmediate === 'function') {
+					setImmediate(function() { resolve(value); });
+				} else {
+					// Use setTimeout with 1ms to ensure it's truly async
+					setTimeout(function() { resolve(value); }, 1);
+				}
+			});
+		};
+		globalThis.__createRejectedPromise = function(reason) {
+			return new Promise(function(_, reject) {
+				if (typeof setImmediate === 'function') {
+					setImmediate(function() { reject(new Error(reason)); });
+				} else {
+					setTimeout(function() { reject(new Error(reason)); }, 1);
+				}
+			});
+		};
+	`)
 
 	// Global fetch handlers storage
 	vm.Set("__fetchHandlers", []interface{}{})
@@ -347,13 +481,45 @@ func (r *Runtime) setupWebAPIs() {
 				obj.Set("statusText", statusText.String())
 			}
 
-			// Headers
+			// Headers - support both Headers object and plain object
 			if h := init.Get("headers"); h != nil && !goja.IsUndefined(h) {
 				hObj := h.ToObject(vm)
-				for _, key := range hObj.Keys() {
-					val := hObj.Get(key)
-					if val != nil && !goja.IsUndefined(val) {
-						headerData[strings.ToLower(key)] = val.String()
+
+				// Check if it's a Headers object with entries() method
+				if entriesVal := hObj.Get("entries"); entriesVal != nil && !goja.IsUndefined(entriesVal) {
+					if entriesFunc, ok := goja.AssertFunction(entriesVal); ok {
+						entriesResult, err := entriesFunc(nil)
+						if err == nil && entriesResult != nil {
+							exported := entriesResult.Export()
+							// Handle [][]string format
+							if arr, ok := exported.([][]string); ok {
+								for _, pair := range arr {
+									if len(pair) == 2 {
+										headerData[strings.ToLower(pair[0])] = pair[1]
+									}
+								}
+							} else if arr, ok := exported.([]interface{}); ok {
+								// Handle []interface{} format
+								for _, entry := range arr {
+									if pair, ok := entry.([]interface{}); ok && len(pair) == 2 {
+										key := fmt.Sprintf("%v", pair[0])
+										value := fmt.Sprintf("%v", pair[1])
+										headerData[strings.ToLower(key)] = value
+									}
+								}
+							}
+						}
+					}
+				} else {
+					// Plain object - iterate keys (skip method names)
+					for _, key := range hObj.Keys() {
+						if key == "get" || key == "set" || key == "has" || key == "entries" || key == "delete" || key == "append" || key == "forEach" || key == "keys" || key == "values" {
+							continue
+						}
+						val := hObj.Get(key)
+						if val != nil && !goja.IsUndefined(val) {
+							headerData[strings.ToLower(key)] = val.String()
+						}
 					}
 				}
 			}
@@ -574,20 +740,50 @@ func (r *Runtime) setupWebAPIs() {
 			return vm.ToValue(urlStr)
 		})
 
+		// Extract hash and search from URL string
+		hash := ""
+		search := ""
+		urlWithoutHash := urlStr
+		if hashIdx := strings.Index(urlStr, "#"); hashIdx >= 0 {
+			hash = urlStr[hashIdx:]
+			urlWithoutHash = urlStr[:hashIdx]
+		}
+		if qIdx := strings.Index(urlWithoutHash, "?"); qIdx >= 0 {
+			search = urlWithoutHash[qIdx:]
+		}
+		obj.Set("hash", hash)
+		obj.Set("search", search)
+
 		// Basic URL parsing
-		if strings.Contains(urlStr, "://") {
-			parts := strings.SplitN(urlStr, "://", 2)
+		if strings.Contains(urlWithoutHash, "://") {
+			parts := strings.SplitN(urlWithoutHash, "://", 2)
 			obj.Set("protocol", parts[0]+":")
 			if len(parts) > 1 {
 				rest := parts[1]
+				// Remove query string for host/path parsing
+				if qIdx := strings.Index(rest, "?"); qIdx >= 0 {
+					rest = rest[:qIdx]
+				}
 				pathStart := strings.Index(rest, "/")
 				if pathStart > 0 {
 					obj.Set("host", rest[:pathStart])
 					obj.Set("hostname", strings.Split(rest[:pathStart], ":")[0])
+					// Extract port if present
+					hostPart := rest[:pathStart]
+					if colonIdx := strings.Index(hostPart, ":"); colonIdx >= 0 {
+						obj.Set("port", hostPart[colonIdx+1:])
+					} else {
+						obj.Set("port", "")
+					}
 					obj.Set("pathname", rest[pathStart:])
 				} else {
 					obj.Set("host", rest)
 					obj.Set("hostname", strings.Split(rest, ":")[0])
+					if colonIdx := strings.Index(rest, ":"); colonIdx >= 0 {
+						obj.Set("port", rest[colonIdx+1:])
+					} else {
+						obj.Set("port", "")
+					}
 					obj.Set("pathname", "/")
 				}
 			}
@@ -596,8 +792,8 @@ func (r *Runtime) setupWebAPIs() {
 		// SearchParams
 		searchParams := vm.NewObject()
 		params := make(map[string]string)
-		if qIdx := strings.Index(urlStr, "?"); qIdx >= 0 {
-			queryStr := urlStr[qIdx+1:]
+		if qIdx := strings.Index(urlWithoutHash, "?"); qIdx >= 0 {
+			queryStr := urlWithoutHash[qIdx+1:]
 			for _, pair := range strings.Split(queryStr, "&") {
 				kv := strings.SplitN(pair, "=", 2)
 				if len(kv) == 2 {
@@ -793,15 +989,83 @@ func (r *Runtime) setupWebAPIs() {
 }
 
 func (r *Runtime) createPromise(value goja.Value) goja.Value {
+	// Use the JavaScript helper for proper Promise creation and event loop integration
+	createFn := r.vm.Get("__createResolvedPromise")
+	if createFn == nil || goja.IsUndefined(createFn) {
+		return r.createFallbackPromise(value)
+	}
+
+	if fn, ok := goja.AssertFunction(createFn); ok {
+		result, err := fn(nil, value)
+		if err == nil && result != nil {
+			return result
+		}
+	}
+	return r.createFallbackPromise(value)
+}
+
+func (r *Runtime) createRejectedPromise(reason string) goja.Value {
+	// Use the JavaScript helper for proper rejected Promise creation
+	createFn := r.vm.Get("__createRejectedPromise")
+	if createFn == nil || goja.IsUndefined(createFn) {
+		return r.createFallbackRejectedPromise(reason)
+	}
+
+	if fn, ok := goja.AssertFunction(createFn); ok {
+		result, err := fn(nil, r.vm.ToValue(reason))
+		if err == nil && result != nil {
+			return result
+		}
+	}
+	return r.createFallbackRejectedPromise(reason)
+}
+
+func (r *Runtime) createFallbackPromise(value goja.Value) goja.Value {
+	// Fallback to simple Promise-like object (for edge cases where JS helper isn't available)
 	promise := r.vm.NewObject()
 	promise.Set("then", func(call goja.FunctionCall) goja.Value {
 		if fn, ok := goja.AssertFunction(call.Argument(0)); ok {
-			result, _ := fn(nil, value)
-			return result
+			setTimeout := r.vm.Get("setTimeout")
+			if setTimeoutFunc, ok := goja.AssertFunction(setTimeout); ok {
+				callback := r.vm.ToValue(func(call goja.FunctionCall) goja.Value {
+					fn(nil, value)
+					return goja.Undefined()
+				})
+				setTimeoutFunc(nil, callback, r.vm.ToValue(0))
+			} else {
+				fn(nil, value)
+			}
 		}
-		return value
+		return r.createFallbackPromise(value)
 	})
 	promise.Set("catch", func(call goja.FunctionCall) goja.Value {
+		return promise
+	})
+	promise.Set("finally", func(call goja.FunctionCall) goja.Value {
+		if fn, ok := goja.AssertFunction(call.Argument(0)); ok {
+			fn(nil)
+		}
+		return promise
+	})
+	return promise
+}
+
+func (r *Runtime) createFallbackRejectedPromise(reason string) goja.Value {
+	// Fallback to simple rejected Promise-like object
+	promise := r.vm.NewObject()
+	promise.Set("then", func(call goja.FunctionCall) goja.Value {
+		// Skip onFulfilled, check for onRejected
+		if len(call.Arguments) > 1 {
+			if fn, ok := goja.AssertFunction(call.Argument(1)); ok {
+				fn(nil, r.vm.ToValue(reason))
+			}
+		}
+		return promise
+	})
+	promise.Set("catch", func(call goja.FunctionCall) goja.Value {
+		if fn, ok := goja.AssertFunction(call.Argument(0)); ok {
+			fn(nil, r.vm.ToValue(reason))
+		}
 		return promise
 	})
 	promise.Set("finally", func(call goja.FunctionCall) goja.Value {
@@ -919,36 +1183,6 @@ func (r *Runtime) fetch(call goja.FunctionCall) goja.Value {
 	return r.createPromise(respObj)
 }
 
-func (r *Runtime) createRejectedPromise(errMsg string) goja.Value {
-	vm := r.vm
-	promise := vm.NewObject()
-	err := vm.NewGoError(errors.New(errMsg))
-
-	promise.Set("then", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) > 1 {
-			if fn, ok := goja.AssertFunction(call.Argument(1)); ok {
-				result, _ := fn(nil, err)
-				return result
-			}
-		}
-		return promise
-	})
-	promise.Set("catch", func(call goja.FunctionCall) goja.Value {
-		if fn, ok := goja.AssertFunction(call.Argument(0)); ok {
-			result, _ := fn(nil, err)
-			return result
-		}
-		return promise
-	})
-	promise.Set("finally", func(call goja.FunctionCall) goja.Value {
-		if fn, ok := goja.AssertFunction(call.Argument(0)); ok {
-			fn(nil)
-		}
-		return promise
-	})
-	return promise
-}
-
 func (r *Runtime) setupEnvironment(env map[string]string) {
 	envObj := r.vm.NewObject()
 	for k, v := range env {
@@ -958,8 +1192,10 @@ func (r *Runtime) setupEnvironment(env map[string]string) {
 }
 
 func (r *Runtime) setupBindings(bindings map[string]string) {
-	// This will be extended to support actual bindings
-	// For now, create placeholder objects
+	// Setup Cache API (global, not per-binding)
+	r.setupCacheBinding()
+
+	// Setup bindings based on type
 	for name, bindingType := range bindings {
 		switch {
 		case strings.HasPrefix(bindingType, "kv:"):
@@ -974,6 +1210,14 @@ func (r *Runtime) setupBindings(bindings map[string]string) {
 			r.setupQueueBinding(name, strings.TrimPrefix(bindingType, "queue:"))
 		case strings.HasPrefix(bindingType, "ai:"):
 			r.setupAIBinding(name)
+		case strings.HasPrefix(bindingType, "vectorize:"):
+			r.setupVectorizeBinding(name, strings.TrimPrefix(bindingType, "vectorize:"))
+		case strings.HasPrefix(bindingType, "hyperdrive:"):
+			r.setupHyperdriveBinding(name, strings.TrimPrefix(bindingType, "hyperdrive:"))
+		case strings.HasPrefix(bindingType, "analytics:"):
+			r.setupAnalyticsEngineBinding(name, strings.TrimPrefix(bindingType, "analytics:"))
+		case strings.HasPrefix(bindingType, "service:"):
+			r.setupServiceBinding(name, strings.TrimPrefix(bindingType, "service:"))
 		}
 	}
 }
@@ -988,12 +1232,13 @@ func (r *Runtime) Close() {
 // Helper functions
 
 func generateUUID() string {
+	now := time.Now().UnixNano()
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		time.Now().UnixNano()&0xffffffff,
-		time.Now().UnixNano()>>32&0xffff,
-		0x4000|(time.Now().UnixNano()>>48&0x0fff),
-		0x8000|(time.Now().UnixNano()>>60&0x3fff),
-		time.Now().UnixNano())
+		now&0xffffffff,
+		(now>>32)&0xffff,
+		0x4000|((now>>48)&0x0fff),
+		0x8000|((now>>60)&0x3fff),
+		now&0xffffffffffff) // Mask to 48 bits (12 hex digits)
 }
 
 func base64Encode(data []byte) string {

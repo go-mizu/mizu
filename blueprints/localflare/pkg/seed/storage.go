@@ -196,19 +196,20 @@ func (s *Seeder) seedR2(ctx context.Context) error {
 	// Sample objects for assets bucket
 	if bucketID, ok := s.ids.R2Buckets["assets"]; ok {
 		objects := []struct {
-			key      string
-			data     []byte
-			metadata map[string]string
+			key         string
+			data        []byte
+			contentType string
 		}{
-			{"images/logo.png", []byte("PNG...logo image data..."), map[string]string{"content-type": "image/png"}},
-			{"images/hero.jpg", make([]byte, 45*1024), map[string]string{"content-type": "image/jpeg"}},
-			{"css/main.css", []byte("body { margin: 0; padding: 0; font-family: sans-serif; }"), map[string]string{"content-type": "text/css"}},
-			{"js/app.js", []byte("console.log('Localflare App');"), map[string]string{"content-type": "application/javascript"}},
-			{"fonts/inter.woff2", make([]byte, 24*1024), map[string]string{"content-type": "font/woff2"}},
-			{"favicon.ico", make([]byte, 1*1024), map[string]string{"content-type": "image/x-icon"}},
+			{"images/logo.png", []byte("PNG...logo image data..."), "image/png"},
+			{"images/hero.jpg", make([]byte, 45*1024), "image/jpeg"},
+			{"css/main.css", []byte("body { margin: 0; padding: 0; font-family: sans-serif; }"), "text/css"},
+			{"js/app.js", []byte("console.log('Localflare App');"), "application/javascript"},
+			{"fonts/inter.woff2", make([]byte, 24*1024), "font/woff2"},
+			{"favicon.ico", make([]byte, 1*1024), "image/x-icon"},
 		}
 		for _, obj := range objects {
-			if err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, obj.metadata); err == nil {
+			opts := &store.R2PutOptions{HTTPMetadata: &store.R2HTTPMetadata{ContentType: obj.contentType}}
+			if _, err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, opts); err == nil {
 				objectCount++
 			}
 		}
@@ -217,17 +218,22 @@ func (s *Seeder) seedR2(ctx context.Context) error {
 	// Sample objects for uploads bucket
 	if bucketID, ok := s.ids.R2Buckets["uploads"]; ok {
 		objects := []struct {
-			key      string
-			data     []byte
-			metadata map[string]string
+			key         string
+			data        []byte
+			contentType string
+			user        string
 		}{
-			{"user_001/avatar.jpg", make([]byte, 15*1024), map[string]string{"content-type": "image/jpeg", "user": "user_001"}},
-			{"user_001/documents/invoice.pdf", make([]byte, 85*1024), map[string]string{"content-type": "application/pdf", "user": "user_001"}},
-			{"user_002/avatar.png", make([]byte, 22*1024), map[string]string{"content-type": "image/png", "user": "user_002"}},
-			{"user_003/resume.pdf", make([]byte, 120*1024), map[string]string{"content-type": "application/pdf", "user": "user_003"}},
+			{"user_001/avatar.jpg", make([]byte, 15*1024), "image/jpeg", "user_001"},
+			{"user_001/documents/invoice.pdf", make([]byte, 85*1024), "application/pdf", "user_001"},
+			{"user_002/avatar.png", make([]byte, 22*1024), "image/png", "user_002"},
+			{"user_003/resume.pdf", make([]byte, 120*1024), "application/pdf", "user_003"},
 		}
 		for _, obj := range objects {
-			if err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, obj.metadata); err == nil {
+			opts := &store.R2PutOptions{
+				HTTPMetadata:   &store.R2HTTPMetadata{ContentType: obj.contentType},
+				CustomMetadata: map[string]string{"user": obj.user},
+			}
+			if _, err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, opts); err == nil {
 				objectCount++
 			}
 		}
@@ -236,16 +242,17 @@ func (s *Seeder) seedR2(ctx context.Context) error {
 	// Sample objects for backups bucket
 	if bucketID, ok := s.ids.R2Buckets["backups"]; ok {
 		objects := []struct {
-			key      string
-			data     []byte
-			metadata map[string]string
+			key         string
+			data        []byte
+			contentType string
 		}{
-			{fmt.Sprintf("db/%s.sql.gz", s.timeAgo(24*time.Hour).Format("2006-01-02")), make([]byte, 512*1024), map[string]string{"content-type": "application/gzip"}},
-			{fmt.Sprintf("db/%s.sql.gz", s.timeAgo(48*time.Hour).Format("2006-01-02")), make([]byte, 508*1024), map[string]string{"content-type": "application/gzip"}},
-			{fmt.Sprintf("db/%s.sql.gz", s.timeAgo(72*time.Hour).Format("2006-01-02")), make([]byte, 495*1024), map[string]string{"content-type": "application/gzip"}},
+			{fmt.Sprintf("db/%s.sql.gz", s.timeAgo(24*time.Hour).Format("2006-01-02")), make([]byte, 512*1024), "application/gzip"},
+			{fmt.Sprintf("db/%s.sql.gz", s.timeAgo(48*time.Hour).Format("2006-01-02")), make([]byte, 508*1024), "application/gzip"},
+			{fmt.Sprintf("db/%s.sql.gz", s.timeAgo(72*time.Hour).Format("2006-01-02")), make([]byte, 495*1024), "application/gzip"},
 		}
 		for _, obj := range objects {
-			if err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, obj.metadata); err == nil {
+			opts := &store.R2PutOptions{HTTPMetadata: &store.R2HTTPMetadata{ContentType: obj.contentType}}
+			if _, err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, opts); err == nil {
 				objectCount++
 			}
 		}
@@ -255,16 +262,17 @@ func (s *Seeder) seedR2(ctx context.Context) error {
 	if bucketID, ok := s.ids.R2Buckets["logs"]; ok {
 		today := s.now.Format("2006/01/02")
 		objects := []struct {
-			key      string
-			data     []byte
-			metadata map[string]string
+			key         string
+			data        []byte
+			contentType string
 		}{
-			{today + "/access.log", []byte("192.168.1.1 - - [15/Jan/2024:10:00:00] \"GET / HTTP/1.1\" 200 1234\n"), map[string]string{"content-type": "text/plain"}},
-			{today + "/error.log", []byte("[ERROR] 2024-01-15 10:05:23 Connection timeout\n"), map[string]string{"content-type": "text/plain"}},
-			{today + "/app.log", []byte("[INFO] Application started\n[DEBUG] Config loaded\n"), map[string]string{"content-type": "text/plain"}},
+			{today + "/access.log", []byte("192.168.1.1 - - [15/Jan/2024:10:00:00] \"GET / HTTP/1.1\" 200 1234\n"), "text/plain"},
+			{today + "/error.log", []byte("[ERROR] 2024-01-15 10:05:23 Connection timeout\n"), "text/plain"},
+			{today + "/app.log", []byte("[INFO] Application started\n[DEBUG] Config loaded\n"), "text/plain"},
 		}
 		for _, obj := range objects {
-			if err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, obj.metadata); err == nil {
+			opts := &store.R2PutOptions{HTTPMetadata: &store.R2HTTPMetadata{ContentType: obj.contentType}}
+			if _, err := s.store.R2().PutObject(ctx, bucketID, obj.key, obj.data, opts); err == nil {
 				objectCount++
 			}
 		}
