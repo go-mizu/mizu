@@ -4,24 +4,23 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu"
-	"github.com/oklog/ulid/v2"
 
-	"github.com/go-mizu/blueprints/localflare/store"
+	ae "github.com/go-mizu/blueprints/localflare/feature/analytics_engine"
 )
 
 // AnalyticsEngine handles Analytics Engine requests.
 type AnalyticsEngine struct {
-	store store.AnalyticsEngineStore
+	svc ae.API
 }
 
 // NewAnalyticsEngine creates a new AnalyticsEngine handler.
-func NewAnalyticsEngine(store store.AnalyticsEngineStore) *AnalyticsEngine {
-	return &AnalyticsEngine{store: store}
+func NewAnalyticsEngine(svc ae.API) *AnalyticsEngine {
+	return &AnalyticsEngine{svc: svc}
 }
 
 // ListDatasets lists all datasets.
 func (h *AnalyticsEngine) ListDatasets(c *mizu.Ctx) error {
-	datasets, err := h.store.ListDatasets(c.Request().Context())
+	datasets, err := h.svc.ListDatasets(c.Request().Context())
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -31,14 +30,9 @@ func (h *AnalyticsEngine) ListDatasets(c *mizu.Ctx) error {
 	})
 }
 
-// CreateAEDatasetInput is the input for creating a dataset.
-type CreateAEDatasetInput struct {
-	Name string `json:"name"`
-}
-
 // CreateDataset creates a new dataset.
 func (h *AnalyticsEngine) CreateDataset(c *mizu.Ctx) error {
-	var input CreateAEDatasetInput
+	var input ae.CreateDatasetIn
 	if err := c.BindJSON(&input, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid input"})
 	}
@@ -47,13 +41,8 @@ func (h *AnalyticsEngine) CreateDataset(c *mizu.Ctx) error {
 		return c.JSON(400, map[string]string{"error": "name is required"})
 	}
 
-	ds := &store.AnalyticsEngineDataset{
-		ID:        ulid.Make().String(),
-		Name:      input.Name,
-		CreatedAt: time.Now(),
-	}
-
-	if err := h.store.CreateDataset(c.Request().Context(), ds); err != nil {
+	ds, err := h.svc.CreateDataset(c.Request().Context(), &input)
+	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
@@ -66,7 +55,7 @@ func (h *AnalyticsEngine) CreateDataset(c *mizu.Ctx) error {
 // GetDataset retrieves a dataset by name.
 func (h *AnalyticsEngine) GetDataset(c *mizu.Ctx) error {
 	name := c.Param("name")
-	ds, err := h.store.GetDataset(c.Request().Context(), name)
+	ds, err := h.svc.GetDataset(c.Request().Context(), name)
 	if err != nil {
 		return c.JSON(404, map[string]string{"error": "Dataset not found"})
 	}
@@ -79,7 +68,7 @@ func (h *AnalyticsEngine) GetDataset(c *mizu.Ctx) error {
 // DeleteDataset deletes a dataset.
 func (h *AnalyticsEngine) DeleteDataset(c *mizu.Ctx) error {
 	name := c.Param("name")
-	if err := h.store.DeleteDataset(c.Request().Context(), name); err != nil {
+	if err := h.svc.DeleteDataset(c.Request().Context(), name); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(200, map[string]any{
@@ -87,32 +76,29 @@ func (h *AnalyticsEngine) DeleteDataset(c *mizu.Ctx) error {
 	})
 }
 
-// WriteDataPointsInput is the input for writing data points.
-type WriteDataPointsInput struct {
-	DataPoints []struct {
-		Timestamp time.Time  `json:"timestamp"`
-		Indexes   []string   `json:"indexes"`
-		Doubles   []float64  `json:"doubles"`
-		Blobs     [][]byte   `json:"blobs"`
-	} `json:"data_points"`
-}
-
 // WriteDataPoints writes data points to a dataset.
 func (h *AnalyticsEngine) WriteDataPoints(c *mizu.Ctx) error {
 	name := c.Param("name")
 
-	var input WriteDataPointsInput
+	var input struct {
+		DataPoints []struct {
+			Timestamp time.Time `json:"timestamp"`
+			Indexes   []string  `json:"indexes"`
+			Doubles   []float64 `json:"doubles"`
+			Blobs     [][]byte  `json:"blobs"`
+		} `json:"data_points"`
+	}
 	if err := c.BindJSON(&input, 10<<20); err != nil { // 10MB limit
 		return c.JSON(400, map[string]string{"error": "Invalid input"})
 	}
 
-	points := make([]*store.AnalyticsEngineDataPoint, len(input.DataPoints))
+	points := make([]*ae.DataPoint, len(input.DataPoints))
 	for i, dp := range input.DataPoints {
 		ts := dp.Timestamp
 		if ts.IsZero() {
 			ts = time.Now()
 		}
-		points[i] = &store.AnalyticsEngineDataPoint{
+		points[i] = &ae.DataPoint{
 			Dataset:   name,
 			Timestamp: ts,
 			Indexes:   dp.Indexes,
@@ -121,7 +107,8 @@ func (h *AnalyticsEngine) WriteDataPoints(c *mizu.Ctx) error {
 		}
 	}
 
-	if err := h.store.WriteBatch(c.Request().Context(), points); err != nil {
+	in := &ae.WriteDataPointsIn{DataPoints: points}
+	if err := h.svc.WriteDataPoints(c.Request().Context(), name, in); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
@@ -133,23 +120,18 @@ func (h *AnalyticsEngine) WriteDataPoints(c *mizu.Ctx) error {
 	})
 }
 
-// AEQueryInput is the input for querying a dataset.
-type AEQueryInput struct {
-	Query string `json:"query"`
-}
-
 // Query executes a SQL query.
 func (h *AnalyticsEngine) Query(c *mizu.Ctx) error {
-	var input AEQueryInput
+	var input ae.QueryIn
 	if err := c.BindJSON(&input, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid input"})
 	}
 
-	if input.Query == "" {
+	if input.SQL == "" {
 		return c.JSON(400, map[string]string{"error": "query is required"})
 	}
 
-	results, err := h.store.Query(c.Request().Context(), input.Query)
+	results, err := h.svc.Query(c.Request().Context(), &input)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}

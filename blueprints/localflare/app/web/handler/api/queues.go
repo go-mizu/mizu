@@ -2,76 +2,52 @@ package api
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/go-mizu/mizu"
-	"github.com/oklog/ulid/v2"
 
-	"github.com/go-mizu/blueprints/localflare/store"
+	"github.com/go-mizu/blueprints/localflare/feature/queues"
 )
 
 // Queues handles Queue requests.
 type Queues struct {
-	store store.QueueStore
+	svc queues.API
 }
 
 // NewQueues creates a new Queues handler.
-func NewQueues(store store.QueueStore) *Queues {
-	return &Queues{store: store}
+func NewQueues(svc queues.API) *Queues {
+	return &Queues{svc: svc}
 }
 
 // List lists all queues.
 func (h *Queues) List(c *mizu.Ctx) error {
-	queues, err := h.store.ListQueues(c.Request().Context())
+	result, err := h.svc.List(c.Request().Context())
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(200, map[string]any{
 		"success": true,
-		"result":  queues,
+		"result":  result,
 	})
-}
-
-// CreateQueueInput is the input for creating a queue.
-type CreateQueueInput struct {
-	Name     string              `json:"queue_name"`
-	Settings store.QueueSettings `json:"settings"`
 }
 
 // Create creates a new queue.
 func (h *Queues) Create(c *mizu.Ctx) error {
-	var input CreateQueueInput
+	var input struct {
+		Name     string                `json:"queue_name"`
+		Settings queues.QueueSettings `json:"settings"`
+	}
 	if err := c.BindJSON(&input, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid input"})
 	}
 
-	if input.Name == "" {
-		return c.JSON(400, map[string]string{"error": "queue_name is required"})
+	in := &queues.CreateQueueIn{
+		Name:     input.Name,
+		Settings: input.Settings,
 	}
 
-	// Set defaults
-	if input.Settings.MaxRetries == 0 {
-		input.Settings.MaxRetries = 3
-	}
-	if input.Settings.MaxBatchSize == 0 {
-		input.Settings.MaxBatchSize = 10
-	}
-	if input.Settings.MaxBatchTimeout == 0 {
-		input.Settings.MaxBatchTimeout = 30
-	}
-	if input.Settings.MessageTTL == 0 {
-		input.Settings.MessageTTL = 86400 * 4 // 4 days default
-	}
-
-	queue := &store.Queue{
-		ID:        ulid.Make().String(),
-		Name:      input.Name,
-		Settings:  input.Settings,
-		CreatedAt: time.Now(),
-	}
-
-	if err := h.store.CreateQueue(c.Request().Context(), queue); err != nil {
-		return c.JSON(500, map[string]string{"error": err.Error()})
+	queue, err := h.svc.Create(c.Request().Context(), in)
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": err.Error()})
 	}
 
 	return c.JSON(201, map[string]any{
@@ -83,7 +59,7 @@ func (h *Queues) Create(c *mizu.Ctx) error {
 // Get retrieves a queue by ID.
 func (h *Queues) Get(c *mizu.Ctx) error {
 	id := c.Param("id")
-	queue, err := h.store.GetQueue(c.Request().Context(), id)
+	queue, err := h.svc.Get(c.Request().Context(), id)
 	if err != nil {
 		return c.JSON(404, map[string]string{"error": "Queue not found"})
 	}
@@ -96,7 +72,7 @@ func (h *Queues) Get(c *mizu.Ctx) error {
 // Delete deletes a queue.
 func (h *Queues) Delete(c *mizu.Ctx) error {
 	id := c.Param("id")
-	if err := h.store.DeleteQueue(c.Request().Context(), id); err != nil {
+	if err := h.svc.Delete(c.Request().Context(), id); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(200, map[string]any{
@@ -105,54 +81,30 @@ func (h *Queues) Delete(c *mizu.Ctx) error {
 	})
 }
 
-// SendMessageInput is the input for sending a message.
-type SendMessageInput struct {
-	Body         any    `json:"body"`
-	ContentType  string `json:"content_type"`
-	DelaySeconds int    `json:"delay_seconds"`
-}
-
 // SendMessage sends a message to a queue.
 func (h *Queues) SendMessage(c *mizu.Ctx) error {
 	queueID := c.Param("id")
 
-	var input SendMessageInput
+	var input struct {
+		Body         any    `json:"body"`
+		ContentType  string `json:"content_type"`
+		DelaySeconds int    `json:"delay_seconds"`
+	}
 	if err := c.BindJSON(&input, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid input"})
 	}
 
-	// Get queue for settings
-	queue, err := h.store.GetQueue(c.Request().Context(), queueID)
-	if err != nil {
-		return c.JSON(404, map[string]string{"error": "Queue not found"})
-	}
-
-	now := time.Now()
-	visibleAt := now
-	if input.DelaySeconds > 0 {
-		visibleAt = now.Add(time.Duration(input.DelaySeconds) * time.Second)
-	}
-
-	contentType := input.ContentType
-	if contentType == "" {
-		contentType = "json"
-	}
-
 	// Serialize body
-	bodyBytes, _ := serializeBody(input.Body)
+	bodyBytes := serializeBody(input.Body)
 
-	msg := &store.QueueMessage{
-		ID:          ulid.Make().String(),
-		QueueID:     queueID,
-		Body:        bodyBytes,
-		ContentType: contentType,
-		Attempts:    0,
-		CreatedAt:   now,
-		VisibleAt:   visibleAt,
-		ExpiresAt:   now.Add(time.Duration(queue.Settings.MessageTTL) * time.Second),
+	in := &queues.SendMessageIn{
+		Body:         bodyBytes,
+		ContentType:  input.ContentType,
+		DelaySeconds: input.DelaySeconds,
 	}
 
-	if err := h.store.SendMessage(c.Request().Context(), queueID, msg); err != nil {
+	msg, err := h.svc.SendMessage(c.Request().Context(), queueID, in)
+	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
@@ -164,7 +116,7 @@ func (h *Queues) SendMessage(c *mizu.Ctx) error {
 	})
 }
 
-// PullMessages pulls messages from a queue (HTTP pull consumer).
+// PullMessages pulls messages from a queue.
 func (h *Queues) PullMessages(c *mizu.Ctx) error {
 	queueID := c.Param("id")
 
@@ -177,20 +129,18 @@ func (h *Queues) PullMessages(c *mizu.Ctx) error {
 		input.VisibilityTimeout = 30000
 	}
 
-	if input.BatchSize == 0 {
-		input.BatchSize = 10
-	}
-	if input.VisibilityTimeout == 0 {
-		input.VisibilityTimeout = 30000
-	}
-
 	// Convert ms to seconds
 	visTimeout := input.VisibilityTimeout / 1000
 	if visTimeout < 1 {
 		visTimeout = 30
 	}
 
-	msgs, err := h.store.PullMessages(c.Request().Context(), queueID, input.BatchSize, visTimeout)
+	in := &queues.PullMessagesIn{
+		BatchSize:         input.BatchSize,
+		VisibilityTimeout: visTimeout,
+	}
+
+	msgs, err := h.svc.PullMessages(c.Request().Context(), queueID, in)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -203,20 +153,17 @@ func (h *Queues) PullMessages(c *mizu.Ctx) error {
 	})
 }
 
-// AckMessagesInput is the input for acknowledging messages.
-type AckMessagesInput struct {
-	Acks []struct {
-		Lease struct {
-			ID string `json:"id"`
-		} `json:"lease"`
-	} `json:"acks"`
-}
-
 // AckMessages acknowledges messages.
 func (h *Queues) AckMessages(c *mizu.Ctx) error {
 	queueID := c.Param("id")
 
-	var input AckMessagesInput
+	var input struct {
+		Acks []struct {
+			Lease struct {
+				ID string `json:"id"`
+			} `json:"lease"`
+		} `json:"acks"`
+	}
 	if err := c.BindJSON(&input, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid input"})
 	}
@@ -226,12 +173,13 @@ func (h *Queues) AckMessages(c *mizu.Ctx) error {
 		msgIDs = append(msgIDs, ack.Lease.ID)
 	}
 
-	if err := h.store.AckBatch(c.Request().Context(), queueID, msgIDs); err != nil {
+	in := &queues.AckMessagesIn{MessageIDs: msgIDs}
+	if err := h.svc.AckMessages(c.Request().Context(), queueID, in); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
 	return c.JSON(200, map[string]any{
-		"success":  true,
+		"success":   true,
 		"ack_count": len(msgIDs),
 	})
 }
@@ -239,7 +187,7 @@ func (h *Queues) AckMessages(c *mizu.Ctx) error {
 // GetStats returns queue statistics.
 func (h *Queues) GetStats(c *mizu.Ctx) error {
 	queueID := c.Param("id")
-	stats, err := h.store.GetQueueStats(c.Request().Context(), queueID)
+	stats, err := h.svc.GetStats(c.Request().Context(), queueID)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -249,19 +197,14 @@ func (h *Queues) GetStats(c *mizu.Ctx) error {
 	})
 }
 
-func serializeBody(body any) ([]byte, error) {
+func serializeBody(body any) []byte {
 	switch v := body.(type) {
 	case string:
-		return []byte(v), nil
+		return []byte(v)
 	case []byte:
-		return v, nil
+		return v
 	default:
-		// JSON encode
-		return jsonMarshal(v), nil
+		b, _ := json.Marshal(v)
+		return b
 	}
-}
-
-func jsonMarshal(v any) []byte {
-	b, _ := json.Marshal(v)
-	return b
 }

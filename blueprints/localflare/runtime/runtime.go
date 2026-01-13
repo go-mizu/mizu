@@ -5,6 +5,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -921,7 +922,7 @@ func (r *Runtime) fetch(call goja.FunctionCall) goja.Value {
 func (r *Runtime) createRejectedPromise(errMsg string) goja.Value {
 	vm := r.vm
 	promise := vm.NewObject()
-	err := vm.NewGoError(fmt.Errorf(errMsg))
+	err := vm.NewGoError(errors.New(errMsg))
 
 	promise.Set("then", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 1 {

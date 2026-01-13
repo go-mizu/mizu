@@ -30,18 +30,12 @@ Examples:
 	}
 
 	cmd.Flags().StringP("addr", "a", ":8787", "Dashboard address")
-	cmd.Flags().Int("dns-port", 5353, "DNS server port")
-	cmd.Flags().Int("http-port", 8080, "HTTP proxy port")
-	cmd.Flags().Int("https-port", 8443, "HTTPS proxy port")
 
 	return cmd
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
 	addr, _ := cmd.Flags().GetString("addr")
-	dnsPort, _ := cmd.Flags().GetInt("dns-port")
-	httpPort, _ := cmd.Flags().GetInt("http-port")
-	httpsPort, _ := cmd.Flags().GetInt("https-port")
 	dev, _ := cmd.Root().PersistentFlags().GetBool("dev")
 
 	Blank()
@@ -50,9 +44,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	Summary(
 		"Dashboard", addr,
-		"DNS", fmt.Sprintf(":%d", dnsPort),
-		"HTTP Proxy", fmt.Sprintf(":%d", httpPort),
-		"HTTPS Proxy", fmt.Sprintf(":%d", httpsPort),
 		"Data", dataDir,
 		"Mode", modeString(dev),
 		"Version", Version,
@@ -61,12 +52,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Create server
 	srv, err := web.New(web.Config{
-		Addr:      addr,
-		DNSPort:   dnsPort,
-		HTTPPort:  httpPort,
-		HTTPSPort: httpsPort,
-		DataDir:   dataDir,
-		Dev:       dev,
+		Addr:    addr,
+		DataDir: dataDir,
+		Dev:     dev,
 	})
 	if err != nil {
 		Error(fmt.Sprintf("Failed to create server: %v", err))
@@ -78,9 +66,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	errCh := make(chan error, 1)
 	go func() {
 		Step("", fmt.Sprintf("Dashboard: http://localhost%s", addr))
-		Step("", fmt.Sprintf("DNS Server: localhost:%d", dnsPort))
-		Step("", fmt.Sprintf("HTTP Proxy: localhost:%d", httpPort))
-		Step("", fmt.Sprintf("HTTPS Proxy: localhost:%d", httpsPort))
 		Blank()
 		errCh <- srv.Run()
 	}()
