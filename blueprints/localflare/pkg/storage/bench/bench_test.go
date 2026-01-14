@@ -29,12 +29,13 @@ import (
 
 // DriverConfig holds configuration for a storage driver.
 type DriverConfig struct {
-	Name     string
-	DSN      string
-	Bucket   string
-	Skip     bool
-	SkipMsg  string
-	Features map[string]bool
+	Name           string
+	DSN            string
+	Bucket         string
+	Skip           bool
+	SkipMsg        string
+	Features       map[string]bool
+	MaxConcurrency int // Max concurrency for parallel benchmarks (0 = unlimited)
 }
 
 // BenchResult holds benchmark results for report generation.
@@ -98,11 +99,13 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 	}
 
 	// RustFS (port 9100)
+	// Note: RustFS has connection issues at high concurrency (C25+), limited to C10
 	if checkS3Endpoint("localhost:9100", "rustfsadmin", "rustfsadmin") {
 		configs = append(configs, DriverConfig{
-			Name:   "rustfs",
-			DSN:    "s3://rustfsadmin:rustfsadmin@localhost:9100/test-bucket?insecure=true&force_path_style=true",
-			Bucket: "test-bucket",
+			Name:           "rustfs",
+			DSN:            "s3://rustfsadmin:rustfsadmin@localhost:9100/test-bucket?insecure=true&force_path_style=true",
+			Bucket:         "test-bucket",
+			MaxConcurrency: 10, // RustFS has HTTP connection issues at C25
 		})
 	} else {
 		configs = append(configs, DriverConfig{
@@ -726,7 +729,20 @@ func BenchmarkParallelWrite(b *testing.B) {
 			}
 			defer cleanupBucket(ctx, bucket)
 
+			// Get max concurrency for this driver (some have bugs at high concurrency)
+			maxConc := cfg.MaxConcurrency
+			if maxConc <= 0 {
+				maxConc = 25 // default
+			}
+
 			for _, conc := range concurrencies {
+				if conc > maxConc {
+					b.Run(fmt.Sprintf("C%d", conc), func(b *testing.B) {
+						b.Skipf("%s has concurrency issues above C%d", cfg.Name, maxConc)
+					})
+					continue
+				}
+
 				b.Run(fmt.Sprintf("C%d", conc), func(b *testing.B) {
 					data := generateData(objectSize)
 					b.SetBytes(int64(objectSize))
