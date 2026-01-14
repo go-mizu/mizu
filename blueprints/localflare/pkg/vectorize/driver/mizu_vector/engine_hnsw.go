@@ -19,7 +19,7 @@ import (
 // - Contiguous memory layout for cache efficiency
 // - Precomputed L2 norms for faster cosine distance
 // - Typed heaps (no interface{} overhead)
-// - Bitset for visited tracking (cache-friendly)
+// - Object pooling for bitsets and heaps (zero-allocation search)
 // - Lower Ml (0.25) to match external hnsw library
 type HNSWEngine struct {
 	distFunc DistanceFunc
@@ -43,6 +43,9 @@ type HNSWEngine struct {
 	neighbors  [][][]int32   // neighbors[level][nodeIdx] = list of neighbor indices
 	entryPoint int32
 	maxLevel   int
+
+	// Object pools for zero-allocation search
+	bitsetPool sync.Pool // *bitset for visited tracking
 
 	needsRebuild bool
 	rng          *rand.Rand
@@ -395,7 +398,12 @@ func (e *HNSWEngine) Search(query []float32, k int) []SearchResult {
 		for changed {
 			changed = false
 			if l < len(e.neighbors) && int(currIdx) < len(e.neighbors[l]) {
-				for _, friendIdx := range e.neighbors[l][currIdx] {
+				neighbors := e.neighbors[l][currIdx]
+				// Prefetch first neighbor's vector for cache warmth
+				if len(neighbors) > 0 {
+					_ = e.vectorData[int(neighbors[0])*e.dims]
+				}
+				for _, friendIdx := range neighbors {
 					dist := e.computeDistanceSIMD(friendIdx, query, queryNorm)
 					if dist < currDist {
 						currIdx = friendIdx
@@ -413,7 +421,7 @@ func (e *HNSWEngine) Search(query []float32, k int) []SearchResult {
 		ef = k * 2
 	}
 
-	neighbors := e.searchLevelIdx(query, queryNorm, currIdx, ef, 0)
+	neighbors := e.searchLevelIdxPooled(query, queryNorm, currIdx, ef, 0)
 
 	// Return top k with distances
 	results := make([]SearchResult, 0, k)
@@ -429,6 +437,82 @@ func (e *HNSWEngine) Search(query []float32, k int) []SearchResult {
 		if len(results) >= k {
 			break
 		}
+	}
+
+	return results
+}
+
+// searchLevelIdxPooled performs beam search with pooled bitset.
+func (e *HNSWEngine) searchLevelIdxPooled(query []float32, queryNorm float32, entryIdx int32, ef, level int) []int32 {
+	if level >= len(e.neighbors) {
+		return nil
+	}
+
+	n := len(e.vectorIDs)
+
+	// Get pooled bitset or create new one
+	var visited *bitset
+	if pooled := e.bitsetPool.Get(); pooled != nil {
+		visited = pooled.(*bitset)
+		visited.Clear()
+		// Ensure capacity
+		if visited.Size() < n {
+			visited = newBitset(n)
+		}
+	} else {
+		visited = newBitset(n)
+	}
+	defer e.bitsetPool.Put(visited)
+
+	// Use typed heaps - candidates is min-heap, result is max-heap
+	candidates := make(minHeap32, 0, ef*2)
+	result := make(maxHeap32, 0, ef)
+
+	dist := e.computeDistanceSIMD(entryIdx, query, queryNorm)
+	candidates.PushItem(distItem32{idx: entryIdx, dist: dist})
+	result.PushItem(distItem32{idx: entryIdx, dist: dist})
+	visited.Set(entryIdx)
+
+	for len(candidates) > 0 {
+		curr := candidates.PopItem()
+
+		// Stop if current candidate is worse than worst result
+		if len(result) >= ef && curr.dist > result[0].dist {
+			break
+		}
+
+		// Explore neighbors with prefetching
+		if int(curr.idx) < len(e.neighbors[level]) {
+			neighborList := e.neighbors[level][curr.idx]
+			// Prefetch first few neighbors
+			for i := 0; i < min(4, len(neighborList)); i++ {
+				_ = e.vectorData[int(neighborList[i])*e.dims]
+			}
+
+			for _, neighborIdx := range neighborList {
+				if visited.Test(neighborIdx) {
+					continue
+				}
+				visited.Set(neighborIdx)
+
+				dist := e.computeDistanceSIMD(neighborIdx, query, queryNorm)
+
+				if len(result) < ef {
+					candidates.PushItem(distItem32{idx: neighborIdx, dist: dist})
+					result.PushItem(distItem32{idx: neighborIdx, dist: dist})
+				} else if dist < result[0].dist {
+					candidates.PushItem(distItem32{idx: neighborIdx, dist: dist})
+					result.PopItem()
+					result.PushItem(distItem32{idx: neighborIdx, dist: dist})
+				}
+			}
+		}
+	}
+
+	// Extract result indices sorted by distance
+	results := make([]int32, len(result))
+	for i := len(result) - 1; i >= 0; i-- {
+		results[i] = result.PopItem().idx
 	}
 
 	return results

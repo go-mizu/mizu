@@ -16,6 +16,7 @@ import (
 // - SIMD-accelerated distance computation using viterin/vek
 // - Contiguous memory layout for cache efficiency
 // - Precomputed L2 norms for faster cosine distance
+// - Object pooling for bitsets (zero-allocation search)
 // - Typed heaps instead of sorting
 // - Bitset for visited tracking
 type NSGEngine struct {
@@ -35,6 +36,9 @@ type NSGEngine struct {
 	// NSG parameters
 	R int // Max out-degree (default: 32)
 	L int // Search list size (default: 50)
+
+	// Object pools for zero-allocation search
+	bitsetPool sync.Pool // *bitset for visited tracking
 
 	needsRebuild bool
 	rng          *rand.Rand
@@ -332,7 +336,20 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 	}
 
 	queryNorm := vek32.Norm(query)
-	visited := newBitset(n)
+
+	// Get pooled bitset or create new one
+	var visited *bitset
+	if pooled := e.bitsetPool.Get(); pooled != nil {
+		visited = pooled.(*bitset)
+		visited.Clear()
+		if visited.Size() < n {
+			visited = newBitset(n)
+		}
+	} else {
+		visited = newBitset(n)
+	}
+	defer e.bitsetPool.Put(visited)
+
 	L := e.L
 	if L < k*2 {
 		L = k * 2
@@ -348,7 +365,7 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	visited.Set(e.navNode)
 
-	// Beam search
+	// Beam search with prefetching
 	for len(candidates) > 0 {
 		curr := candidates.PopItem()
 
@@ -357,8 +374,14 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 			break
 		}
 
+		// Get neighbors and prefetch
+		neighbors := e.graph[curr.idx]
+		if len(neighbors) > 0 {
+			_ = e.vectorData[int(neighbors[0])*e.dims]
+		}
+
 		// Explore neighbors
-		for _, neighbor := range e.graph[curr.idx] {
+		for _, neighbor := range neighbors {
 			if visited.Test(neighbor) {
 				continue
 			}
