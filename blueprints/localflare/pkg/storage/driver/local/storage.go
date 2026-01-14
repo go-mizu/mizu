@@ -25,6 +25,12 @@ const (
 	// Using 1MB buffers for optimal throughput on modern storage.
 	defaultBufferSize = 1024 * 1024
 
+	// smallFileThreshold is the size below which files are written directly
+	// without using a temp file + rename pattern. This avoids temp file
+	// creation overhead for small files at the cost of non-atomic writes.
+	// Set to 0 to disable direct writes.
+	smallFileThreshold = 64 * 1024 // 64KB
+
 	// dirPermissions is the default permission for directories.
 	dirPermissions = 0o750
 
@@ -37,6 +43,11 @@ const (
 	// maxPartNumber is the maximum valid part number for multipart uploads.
 	maxPartNumber = 10000
 )
+
+// NoFsync can be set to true to skip fsync calls for maximum write performance.
+// WARNING: This trades durability for speed. Data may be lost on crash.
+// Useful for benchmarks and temporary data.
+var NoFsync = false
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {
@@ -363,11 +374,15 @@ func (b *bucket) Features() storage.Features {
 	return b.store.Features()
 }
 
-// Write writes the object to a temp file then renames it into place atomically.
+// Write writes the object to the filesystem.
+//
+// For small files (< smallFileThreshold) with known size, data is written directly
+// to the destination for performance. For large or unknown-size files, a temp file
+// is used with atomic rename for safety.
 //
 // Keys always use "/" separators; filesystem paths use OS separators.
 // This mirrors rclone style semantics where remote paths are slash based and
-// the local backend handles platform differences. :contentReference[oaicite:2]{index=2}
+// the local backend handles platform differences.
 func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int64, contentType string, opts storage.Options) (*storage.Object, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -388,9 +403,64 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, fmt.Errorf("local: mkdir %q: %w", dir, err)
 	}
 
+	// Fast path: for small files with known size, write directly to destination.
+	// This avoids temp file creation and rename overhead.
+	if size > 0 && size <= smallFileThreshold {
+		return b.writeSmallFile(full, relKey, src, size, contentType)
+	}
+
+	// Standard path: use temp file + atomic rename for large/unknown-size files.
+	return b.writeLargeFile(full, dir, relKey, key, src, contentType)
+}
+
+// writeSmallFile writes small files directly to the destination for performance.
+// This avoids the overhead of temp file creation and rename.
+func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
+	// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+	f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, filePermissions)
+	if err != nil {
+		return nil, fmt.Errorf("local: create %q: %w", relKey, err)
+	}
+	defer f.Close()
+
+	// Read all data at once for small files
+	data := make([]byte, size)
+	n, err := io.ReadFull(src, data)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return nil, fmt.Errorf("local: read %q: %w", relKey, err)
+	}
+
+	if _, err := f.Write(data[:n]); err != nil {
+		return nil, fmt.Errorf("local: write %q: %w", relKey, err)
+	}
+
+	// Optional fsync for durability (skip for benchmarks)
+	if !NoFsync {
+		if err := f.Sync(); err != nil {
+			return nil, fmt.Errorf("local: fsync %q: %w", relKey, err)
+		}
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("local: stat written %q: %w", relKey, err)
+	}
+
+	return &storage.Object{
+		Bucket:      b.name,
+		Key:         relToKey(relKey),
+		Size:        info.Size(),
+		ContentType: contentType,
+		Created:     info.ModTime(),
+		Updated:     info.ModTime(),
+	}, nil
+}
+
+// writeLargeFile writes large or unknown-size files using temp file + atomic rename.
+func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, contentType string) (*storage.Object, error) {
 	// Safer temp file: randomly named in the target directory.
 	// This avoids predictable names and keeps rename atomic on the same volume.
-	tmp, err := os.CreateTemp(dir, ".lake-tmp-*")
+	tmp, err := os.CreateTemp(dir, tempFilePattern)
 	if err != nil {
 		return nil, fmt.Errorf("local: create temp file in %q: %w", dir, err)
 	}
@@ -410,8 +480,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, fmt.Errorf("local: write %q: %w", key, err)
 	}
 
-	if err := tmp.Sync(); err != nil {
-		return nil, fmt.Errorf("local: fsync %q: %w", key, err)
+	// Optional fsync for durability (skip for benchmarks)
+	if !NoFsync {
+		if err := tmp.Sync(); err != nil {
+			return nil, fmt.Errorf("local: fsync %q: %w", key, err)
+		}
 	}
 	if err := tmp.Close(); err != nil {
 		return nil, fmt.Errorf("local: close temp for %q: %w", key, err)
@@ -964,6 +1037,10 @@ func copyFile(src, dst string) (err error) {
 
 	if _, err = io.CopyBuffer(out, in, buf); err != nil {
 		return err
+	}
+	// Optional fsync for durability (skip for benchmarks)
+	if NoFsync {
+		return nil
 	}
 	return out.Sync()
 }
