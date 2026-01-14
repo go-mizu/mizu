@@ -23,10 +23,11 @@ import (
 
 // Runner executes benchmarks.
 type Runner struct {
-	config  *Config
-	report  *Report
-	dataset *Dataset
-	logger  func(format string, args ...any)
+	config          *Config
+	report          *Report
+	dataset         *Dataset
+	logger          func(format string, args ...any)
+	dockerCollector *DockerStatsCollector
 }
 
 // NewRunner creates a benchmark runner.
@@ -37,7 +38,13 @@ func NewRunner(cfg *Config) *Runner {
 		logger: func(format string, args ...any) {
 			fmt.Printf(format+"\n", args...)
 		},
+		dockerCollector: NewDockerStatsCollector("all-"),
 	}
+}
+
+// SetDockerPrefix sets the docker-compose project prefix for container names.
+func (r *Runner) SetDockerPrefix(prefix string) {
+	r.dockerCollector = NewDockerStatsCollector(prefix)
 }
 
 // SetLogger sets a custom logger.
@@ -79,7 +86,44 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	// Compute final stats
 	r.report.ComputeStats()
 
+	// Collect Docker container stats
+	r.logger("Collecting Docker container stats...")
+	r.collectDockerStats(ctx, driverConfigs)
+
 	return r.report, nil
+}
+
+// collectDockerStats collects memory and disk usage from Docker containers.
+func (r *Runner) collectDockerStats(ctx context.Context, driverConfigs []DriverConfig) {
+	for _, dcfg := range driverConfigs {
+		stats, ok := r.report.DriverStats[dcfg.Name]
+		if !ok {
+			continue
+		}
+
+		// Check if embedded driver
+		if dcfg.Name == "lancedb" || dcfg.Name == "duckdb" {
+			stats.IsEmbedded = true
+			r.logger("  %s: embedded driver (no container)", dcfg.Name)
+			continue
+		}
+
+		// Collect Docker stats
+		dockerStats := r.dockerCollector.CollectStats(ctx, dcfg.Name)
+		if dockerStats.Available {
+			stats.MemoryUsageMB = dockerStats.MemoryUsageMB
+			stats.MemoryLimitMB = dockerStats.MemoryLimitMB
+			stats.MemoryPercent = dockerStats.MemoryPercent
+			stats.CPUPercent = dockerStats.CPUPercent
+			stats.DiskUsageMB = dockerStats.DiskUsageMB
+			r.logger("  %s: Memory %.1f MB (%.1f%%), CPU %.2f%%, Disk %.1f MB",
+				dcfg.Name, dockerStats.MemoryUsageMB, dockerStats.MemoryPercent,
+				dockerStats.CPUPercent, dockerStats.DiskUsageMB)
+		} else {
+			r.logger("  %s: Docker stats unavailable: %s", dcfg.Name, dockerStats.Error)
+		}
+	}
+	r.logger("")
 }
 
 func (r *Runner) benchmarkDriver(ctx context.Context, dcfg DriverConfig) error {
