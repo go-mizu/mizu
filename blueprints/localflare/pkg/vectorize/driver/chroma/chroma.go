@@ -35,13 +35,47 @@ func (d *Driver) Open(dsn string) (vectorize.DB, error) {
 		Timeout: 30 * time.Second,
 	}
 
-	return &DB{client: client, baseURL: dsn}, nil
+	return &DB{
+		client:   client,
+		baseURL:  dsn,
+		tenant:   "default_tenant",
+		database: "default_database",
+	}, nil
 }
 
 // DB implements vectorize.DB for Chroma.
 type DB struct {
-	client  *http.Client
-	baseURL string
+	client   *http.Client
+	baseURL  string
+	tenant   string
+	database string
+}
+
+// collectionPath returns the API path for collections (v2 API)
+func (db *DB) collectionPath() string {
+	return fmt.Sprintf("/api/v2/tenants/%s/databases/%s/collections", db.tenant, db.database)
+}
+
+// getCollectionID retrieves the collection UUID by name
+func (db *DB) getCollectionID(ctx context.Context, name string) (string, error) {
+	res, err := db.doRequest(ctx, "GET", db.collectionPath()+"/"+name, nil)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
+		return "", vectorize.ErrIndexNotFound
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
+
+	if id, ok := result["id"].(string); ok {
+		return id, nil
+	}
+	// If no UUID returned, the name itself might work
+	return name, nil
 }
 
 func (db *DB) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
@@ -68,7 +102,7 @@ func (db *DB) doRequest(ctx context.Context, method, path string, body interface
 // CreateIndex creates a new collection in Chroma.
 func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 	// Check if collection exists
-	res, err := db.doRequest(ctx, "GET", "/api/v1/collections/"+index.Name, nil)
+	res, err := db.doRequest(ctx, "GET", db.collectionPath()+"/"+index.Name, nil)
 	if err == nil {
 		res.Body.Close()
 		if res.StatusCode == 200 {
@@ -85,18 +119,18 @@ func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 		metric = "ip"
 	}
 
-	// Create collection
+	// Create collection (v2 API)
 	createReq := map[string]interface{}{
 		"name": index.Name,
 		"metadata": map[string]interface{}{
-			"dimensions":  index.Dimensions,
-			"metric":      metric,
-			"description": index.Description,
-			"created_at":  time.Now().Format(time.RFC3339),
+			"dimensions":       index.Dimensions,
+			"hnsw:space":       metric,
+			"description":      index.Description,
+			"created_at":       time.Now().Format(time.RFC3339),
 		},
 	}
 
-	res, err = db.doRequest(ctx, "POST", "/api/v1/collections", createReq)
+	res, err = db.doRequest(ctx, "POST", db.collectionPath(), createReq)
 	if err != nil {
 		return err
 	}
@@ -112,7 +146,7 @@ func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 
 // GetIndex retrieves collection information.
 func (db *DB) GetIndex(ctx context.Context, name string) (*vectorize.Index, error) {
-	res, err := db.doRequest(ctx, "GET", "/api/v1/collections/"+name, nil)
+	res, err := db.doRequest(ctx, "GET", db.collectionPath()+"/"+name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +187,7 @@ func (db *DB) GetIndex(ctx context.Context, name string) (*vectorize.Index, erro
 	}
 
 	// Get count
-	countRes, err := db.doRequest(ctx, "GET", "/api/v1/collections/"+name+"/count", nil)
+	countRes, err := db.doRequest(ctx, "GET", db.collectionPath()+"/"+name+"/count", nil)
 	if err == nil && countRes.StatusCode == 200 {
 		defer countRes.Body.Close()
 		var countResult int64
@@ -168,7 +202,7 @@ func (db *DB) GetIndex(ctx context.Context, name string) (*vectorize.Index, erro
 
 // ListIndexes returns all collections.
 func (db *DB) ListIndexes(ctx context.Context) ([]*vectorize.Index, error) {
-	res, err := db.doRequest(ctx, "GET", "/api/v1/collections", nil)
+	res, err := db.doRequest(ctx, "GET", db.collectionPath(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +227,7 @@ func (db *DB) ListIndexes(ctx context.Context) ([]*vectorize.Index, error) {
 
 // DeleteIndex removes a collection.
 func (db *DB) DeleteIndex(ctx context.Context, name string) error {
-	res, err := db.doRequest(ctx, "DELETE", "/api/v1/collections/"+name, nil)
+	res, err := db.doRequest(ctx, "DELETE", db.collectionPath()+"/"+name, nil)
 	if err != nil {
 		return err
 	}
@@ -210,6 +244,12 @@ func (db *DB) DeleteIndex(ctx context.Context, name string) error {
 func (db *DB) Insert(ctx context.Context, indexName string, vectors []*vectorize.Vector) error {
 	if len(vectors) == 0 {
 		return nil
+	}
+
+	// Get collection ID (v2 API requires UUID)
+	collID, err := db.getCollectionID(ctx, indexName)
+	if err != nil {
+		return err
 	}
 
 	ids := make([]string, len(vectors))
@@ -236,7 +276,7 @@ func (db *DB) Insert(ctx context.Context, indexName string, vectors []*vectorize
 		"metadatas":  metadatas,
 	}
 
-	res, err := db.doRequest(ctx, "POST", "/api/v1/collections/"+indexName+"/add", addReq)
+	res, err := db.doRequest(ctx, "POST", db.collectionPath()+"/"+collID+"/add", addReq)
 	if err != nil {
 		return err
 	}
@@ -254,6 +294,12 @@ func (db *DB) Insert(ctx context.Context, indexName string, vectors []*vectorize
 func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize.Vector) error {
 	if len(vectors) == 0 {
 		return nil
+	}
+
+	// Get collection ID (v2 API requires UUID)
+	collID, err := db.getCollectionID(ctx, indexName)
+	if err != nil {
+		return err
 	}
 
 	ids := make([]string, len(vectors))
@@ -280,7 +326,7 @@ func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize
 		"metadatas":  metadatas,
 	}
 
-	res, err := db.doRequest(ctx, "POST", "/api/v1/collections/"+indexName+"/upsert", upsertReq)
+	res, err := db.doRequest(ctx, "POST", db.collectionPath()+"/"+collID+"/upsert", upsertReq)
 	if err != nil {
 		return err
 	}
@@ -310,7 +356,13 @@ func (db *DB) Search(ctx context.Context, indexName string, vector []float32, op
 		}
 	}
 
-	res, err := db.doRequest(ctx, "POST", "/api/v1/collections/"+indexName+"/query", queryReq)
+	// Get collection ID (v2 API requires UUID)
+	collID, err := db.getCollectionID(ctx, indexName)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := db.doRequest(ctx, "POST", db.collectionPath()+"/"+collID+"/query", queryReq)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +443,13 @@ func (db *DB) Get(ctx context.Context, indexName string, ids []string) ([]*vecto
 		"include": []string{"embeddings", "metadatas"},
 	}
 
-	res, err := db.doRequest(ctx, "POST", "/api/v1/collections/"+indexName+"/get", getReq)
+	// Get collection ID (v2 API requires UUID)
+	collID, err := db.getCollectionID(ctx, indexName)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := db.doRequest(ctx, "POST", db.collectionPath()+"/"+collID+"/get", getReq)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +522,13 @@ func (db *DB) Delete(ctx context.Context, indexName string, ids []string) error 
 		"ids": ids,
 	}
 
-	res, err := db.doRequest(ctx, "POST", "/api/v1/collections/"+indexName+"/delete", deleteReq)
+	// Get collection ID (v2 API requires UUID)
+	collID, err := db.getCollectionID(ctx, indexName)
+	if err != nil {
+		return err
+	}
+
+	res, err := db.doRequest(ctx, "POST", db.collectionPath()+"/"+collID+"/delete", deleteReq)
 	if err != nil {
 		return err
 	}
@@ -475,7 +539,8 @@ func (db *DB) Delete(ctx context.Context, indexName string, ids []string) error 
 
 // Ping checks the connection.
 func (db *DB) Ping(ctx context.Context) error {
-	res, err := db.doRequest(ctx, "GET", "/api/v1/heartbeat", nil)
+	// v2 API uses /api/v2/heartbeat
+	res, err := db.doRequest(ctx, "GET", "/api/v2/heartbeat", nil)
 	if err != nil {
 		return err
 	}

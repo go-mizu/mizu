@@ -45,6 +45,8 @@ func (d *Driver) Open(dsn string) (vectorize.DB, error) {
 }
 
 func initSchema(db *sql.DB) error {
+	// DuckDB doesn't support ON DELETE CASCADE with foreign keys
+	// We'll handle cascade deletes manually in DeleteIndex
 	schema := `
 		CREATE TABLE IF NOT EXISTS vector_indexes (
 			name VARCHAR PRIMARY KEY,
@@ -56,7 +58,7 @@ func initSchema(db *sql.DB) error {
 
 		CREATE TABLE IF NOT EXISTS vectors (
 			id VARCHAR NOT NULL,
-			index_name VARCHAR NOT NULL REFERENCES vector_indexes(name) ON DELETE CASCADE,
+			index_name VARCHAR NOT NULL,
 			namespace VARCHAR DEFAULT '',
 			values_json VARCHAR NOT NULL,
 			metadata_json VARCHAR DEFAULT '{}',
@@ -147,8 +149,14 @@ func (db *DB) ListIndexes(ctx context.Context) ([]*vectorize.Index, error) {
 	return indexes, rows.Err()
 }
 
-// DeleteIndex removes an index.
+// DeleteIndex removes an index and all its vectors.
 func (db *DB) DeleteIndex(ctx context.Context, name string) error {
+	// First delete all vectors (manual cascade since DuckDB doesn't support ON DELETE CASCADE)
+	_, err := db.db.ExecContext(ctx, `DELETE FROM vectors WHERE index_name = ?`, name)
+	if err != nil {
+		return err
+	}
+
 	result, err := db.db.ExecContext(ctx, `DELETE FROM vector_indexes WHERE name = ?`, name)
 	if err != nil {
 		return err
