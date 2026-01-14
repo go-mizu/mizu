@@ -658,62 +658,71 @@ func formatLatency(d time.Duration) string {
 func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	sb.WriteString("## Executive Summary\n\n")
 
-	// Collect driver statistics
+	// Collect driver statistics with detailed breakdown
 	type driverSummary struct {
-		name            string
-		totalOps        int
-		avgThroughput   float64
-		writeThroughput float64
-		readThroughput  float64
-		writeLatencyP50 time.Duration
-		writeLatencyP99 time.Duration
-		readLatencyP50  time.Duration
-		readLatencyP99  time.Duration
-		errors          int
+		name string
+		// Large file performance (1MB)
+		write1MBThroughput float64
+		read1MBThroughput  float64
+		write1MBLatencyP50 time.Duration
+		read1MBLatencyP50  time.Duration
+		// Small file performance (1KB)
+		write1KBOpsPerSec  float64
+		read1KBOpsPerSec   float64
+		write1KBLatencyP50 time.Duration
+		read1KBLatencyP50  time.Duration
+		// Parallel performance (C10)
+		parallelWriteC10 float64
+		parallelReadC10  float64
+		// Operations
+		listOpsPerSec   float64
+		deleteOpsPerSec float64
+		statOpsPerSec   float64
+		// Errors and resource
+		errors   int
+		memoryMB float64
 	}
 
 	summaries := make(map[string]*driverSummary)
-	categoryWinners := make(map[string]string) // category -> driver
 
 	for _, m := range r.Results {
 		if summaries[m.Driver] == nil {
 			summaries[m.Driver] = &driverSummary{name: m.Driver}
 		}
 		s := summaries[m.Driver]
-		s.totalOps++
-		s.avgThroughput += m.Throughput
 		s.errors += m.Errors
 
-		// Track category-specific throughput and latency
-		if strings.HasPrefix(m.Operation, "Write/") && !strings.Contains(m.Operation, "Parallel") {
-			if m.Throughput > s.writeThroughput {
-				s.writeThroughput = m.Throughput
-				s.writeLatencyP50 = m.P50Latency
-				s.writeLatencyP99 = m.P99Latency
-			}
+		// Categorize by operation type
+		switch {
+		case m.Operation == "Write/1MB":
+			s.write1MBThroughput = m.Throughput
+			s.write1MBLatencyP50 = m.P50Latency
+		case m.Operation == "Read/1MB":
+			s.read1MBThroughput = m.Throughput
+			s.read1MBLatencyP50 = m.P50Latency
+		case m.Operation == "Write/1KB":
+			s.write1KBOpsPerSec = m.OpsPerSec
+			s.write1KBLatencyP50 = m.P50Latency
+		case m.Operation == "Read/1KB":
+			s.read1KBOpsPerSec = m.OpsPerSec
+			s.read1KBLatencyP50 = m.P50Latency
+		case strings.HasPrefix(m.Operation, "ParallelWrite/") && strings.HasSuffix(m.Operation, "/C10"):
+			s.parallelWriteC10 = m.Throughput
+		case strings.HasPrefix(m.Operation, "ParallelRead/") && strings.HasSuffix(m.Operation, "/C10"):
+			s.parallelReadC10 = m.Throughput
+		case m.Operation == "List/100":
+			s.listOpsPerSec = m.OpsPerSec
+		case m.Operation == "Delete":
+			s.deleteOpsPerSec = m.OpsPerSec
+		case m.Operation == "Stat":
+			s.statOpsPerSec = m.OpsPerSec
 		}
-		if strings.HasPrefix(m.Operation, "Read/") && !strings.Contains(m.Operation, "Parallel") {
-			if m.Throughput > s.readThroughput {
-				s.readThroughput = m.Throughput
-				s.readLatencyP50 = m.P50Latency
-				s.readLatencyP99 = m.P99Latency
-			}
-		}
+	}
 
-		// Track winners by category
-		category := strings.Split(m.Operation, "/")[0]
-		if current, exists := categoryWinners[category]; exists {
-			// Check if this driver is faster for this category
-			for _, other := range r.Results {
-				if other.Driver == current && strings.HasPrefix(other.Operation, category) {
-					if m.Throughput > other.Throughput {
-						categoryWinners[category] = m.Driver
-					}
-					break
-				}
-			}
-		} else {
-			categoryWinners[category] = m.Driver
+	// Add memory info
+	for name, stats := range r.DockerStats {
+		if s, ok := summaries[name]; ok {
+			s.memoryMB = stats.MemoryUsageMB
 		}
 	}
 
@@ -724,119 +733,136 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	}
 	sort.Strings(drivers)
 
-	// Quick Throughput Comparison
-	sb.WriteString("### Throughput Summary (MB/s)\n\n")
-	sb.WriteString("| Driver | Write | Read |\n")
-	sb.WriteString("|--------|-------|------|\n")
+	// Use Case Recommendations
+	sb.WriteString("### Best Driver by Use Case\n\n")
+	sb.WriteString("| Use Case | Recommended | Performance | Notes |\n")
+	sb.WriteString("|----------|-------------|-------------|-------|\n")
 
-	for _, d := range drivers {
-		s := summaries[d]
-		sb.WriteString(fmt.Sprintf("| %s | %.2f | %.2f |\n",
-			s.name, s.writeThroughput, s.readThroughput))
+	// Find best for each use case
+	var bestLargeWrite, bestLargeRead, bestSmallOps, bestConcurrent, bestLowMem string
+	var bestLargeWriteVal, bestLargeReadVal, bestSmallOpsVal, bestConcurrentVal float64
+	var bestLowMemVal float64 = 1e12
+
+	for d, s := range summaries {
+		if s.write1MBThroughput > bestLargeWriteVal {
+			bestLargeWriteVal = s.write1MBThroughput
+			bestLargeWrite = d
+		}
+		if s.read1MBThroughput > bestLargeReadVal {
+			bestLargeReadVal = s.read1MBThroughput
+			bestLargeRead = d
+		}
+		smallOps := (s.write1KBOpsPerSec + s.read1KBOpsPerSec) / 2
+		if smallOps > bestSmallOpsVal {
+			bestSmallOpsVal = smallOps
+			bestSmallOps = d
+		}
+		concurrent := s.parallelReadC10 + s.parallelWriteC10
+		if concurrent > bestConcurrentVal {
+			bestConcurrentVal = concurrent
+			bestConcurrent = d
+		}
+		if s.memoryMB > 0 && s.memoryMB < bestLowMemVal {
+			bestLowMemVal = s.memoryMB
+			bestLowMem = d
+		}
+	}
+
+	if bestLargeWrite != "" {
+		sb.WriteString(fmt.Sprintf("| Large File Uploads (1MB+) | **%s** | %.0f MB/s | Best for media, backups |\n",
+			bestLargeWrite, bestLargeWriteVal))
+	}
+	if bestLargeRead != "" {
+		sb.WriteString(fmt.Sprintf("| Large File Downloads | **%s** | %.0f MB/s | Best for streaming, CDN |\n",
+			bestLargeRead, bestLargeReadVal))
+	}
+	if bestSmallOps != "" {
+		sb.WriteString(fmt.Sprintf("| Small File Operations | **%s** | %.0f ops/s | Best for metadata, configs |\n",
+			bestSmallOps, bestSmallOpsVal))
+	}
+	if bestConcurrent != "" {
+		sb.WriteString(fmt.Sprintf("| High Concurrency (C10) | **%s** | - | Best for multi-user apps |\n",
+			bestConcurrent))
+	}
+	if bestLowMem != "" {
+		sb.WriteString(fmt.Sprintf("| Memory Constrained | **%s** | %.0f MB RAM | Best for edge/embedded |\n",
+			bestLowMem, bestLowMemVal))
 	}
 	sb.WriteString("\n")
 
-	// Latency Comparison
-	sb.WriteString("### Latency Summary\n\n")
-	sb.WriteString("| Driver | Write P50 | Write P99 | Read P50 | Read P99 |\n")
-	sb.WriteString("|--------|-----------|-----------|----------|----------|\n")
+	// Large File Performance (1MB)
+	sb.WriteString("### Large File Performance (1MB)\n\n")
+	sb.WriteString("| Driver | Write (MB/s) | Read (MB/s) | Write Latency | Read Latency |\n")
+	sb.WriteString("|--------|-------------|-------------|---------------|---------------|\n")
 
 	for _, d := range drivers {
 		s := summaries[d]
-		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-			s.name,
-			formatLatency(s.writeLatencyP50),
-			formatLatency(s.writeLatencyP99),
-			formatLatency(s.readLatencyP50),
-			formatLatency(s.readLatencyP99)))
+		sb.WriteString(fmt.Sprintf("| %s | %.1f | %.1f | %s | %s |\n",
+			s.name, s.write1MBThroughput, s.read1MBThroughput,
+			formatLatency(s.write1MBLatencyP50), formatLatency(s.read1MBLatencyP50)))
+	}
+	sb.WriteString("\n")
+
+	// Small File Performance (1KB)
+	sb.WriteString("### Small File Performance (1KB)\n\n")
+	sb.WriteString("| Driver | Write (ops/s) | Read (ops/s) | Write Latency | Read Latency |\n")
+	sb.WriteString("|--------|--------------|--------------|---------------|---------------|\n")
+
+	for _, d := range drivers {
+		s := summaries[d]
+		sb.WriteString(fmt.Sprintf("| %s | %.0f | %.0f | %s | %s |\n",
+			s.name, s.write1KBOpsPerSec, s.read1KBOpsPerSec,
+			formatLatency(s.write1KBLatencyP50), formatLatency(s.read1KBLatencyP50)))
+	}
+	sb.WriteString("\n")
+
+	// Metadata Operations
+	sb.WriteString("### Metadata Operations (ops/s)\n\n")
+	sb.WriteString("| Driver | Stat | List (100 objects) | Delete |\n")
+	sb.WriteString("|--------|------|-------------------|--------|\n")
+
+	for _, d := range drivers {
+		s := summaries[d]
+		sb.WriteString(fmt.Sprintf("| %s | %.0f | %.0f | %.0f |\n",
+			s.name, s.statOpsPerSec, s.listOpsPerSec, s.deleteOpsPerSec))
 	}
 	sb.WriteString("\n")
 
 	// Concurrency Performance Summary (if available)
 	r.generateConcurrencySummary(sb, drivers)
 
-	// Key findings
-	sb.WriteString("### Key Findings\n\n")
-
-	// Find best performers
-	var bestWrite, bestRead string
-	var bestWriteThroughput, bestReadThroughput float64
-	var lowestWriteLatency, lowestReadLatency string
-	var lowestWriteP50, lowestReadP50 time.Duration = time.Hour, time.Hour
-
-	for d, s := range summaries {
-		if s.writeThroughput > bestWriteThroughput {
-			bestWriteThroughput = s.writeThroughput
-			bestWrite = d
-		}
-		if s.readThroughput > bestReadThroughput {
-			bestReadThroughput = s.readThroughput
-			bestRead = d
-		}
-		if s.writeLatencyP50 > 0 && s.writeLatencyP50 < lowestWriteP50 {
-			lowestWriteP50 = s.writeLatencyP50
-			lowestWriteLatency = d
-		}
-		if s.readLatencyP50 > 0 && s.readLatencyP50 < lowestReadP50 {
-			lowestReadP50 = s.readLatencyP50
-			lowestReadLatency = d
-		}
-	}
-
-	if bestWrite != "" {
-		sb.WriteString(fmt.Sprintf("- **Best Write Throughput**: %s (%.2f MB/s)\n", bestWrite, bestWriteThroughput))
-	}
-	if bestRead != "" {
-		sb.WriteString(fmt.Sprintf("- **Best Read Throughput**: %s (%.2f MB/s)\n", bestRead, bestReadThroughput))
-	}
-	if lowestWriteLatency != "" && lowestWriteLatency != bestWrite {
-		sb.WriteString(fmt.Sprintf("- **Lowest Write Latency**: %s (%s P50)\n", lowestWriteLatency, formatLatency(lowestWriteP50)))
-	}
-	if lowestReadLatency != "" && lowestReadLatency != bestRead {
-		sb.WriteString(fmt.Sprintf("- **Lowest Read Latency**: %s (%s P50)\n", lowestReadLatency, formatLatency(lowestReadP50)))
-	}
-
-	// Check for error-prone drivers
+	// Warnings
+	hasWarnings := false
 	for _, d := range drivers {
 		s := summaries[d]
 		if s.errors > 0 {
-			sb.WriteString(fmt.Sprintf("- **Warning**: %s had %d errors during benchmarks\n", s.name, s.errors))
+			if !hasWarnings {
+				sb.WriteString("### Warnings\n\n")
+				hasWarnings = true
+			}
+			sb.WriteString(fmt.Sprintf("- **%s**: %d errors during benchmarks\n", s.name, s.errors))
 		}
 	}
+	if hasWarnings {
+		sb.WriteString("\n")
+	}
 
-	// Memory insights from Docker stats
+	// Resource Usage Summary
 	if len(r.DockerStats) > 0 {
-		sb.WriteString("\n### Resource Insights\n\n")
+		sb.WriteString("### Resource Usage Summary\n\n")
+		sb.WriteString("| Driver | Memory | CPU |\n")
+		sb.WriteString("|--------|--------|-----|\n")
 
-		// Find highest and lowest memory usage
-		var highestMem, lowestMem string
-		var highestMemMB, lowestMemMB float64 = 0, 1e12
-
-		for name, stats := range r.DockerStats {
-			if stats.MemoryUsageMB > highestMemMB {
-				highestMemMB = stats.MemoryUsageMB
-				highestMem = name
-			}
-			if stats.MemoryUsageMB > 0 && stats.MemoryUsageMB < lowestMemMB {
-				lowestMemMB = stats.MemoryUsageMB
-				lowestMem = name
+		for _, d := range drivers {
+			if stats, ok := r.DockerStats[d]; ok {
+				sb.WriteString(fmt.Sprintf("| %s | %.1f MB | %.1f%% |\n",
+					d, stats.MemoryUsageMB, stats.CPUPercent))
 			}
 		}
-
-		if highestMem != "" {
-			sb.WriteString(fmt.Sprintf("- **Highest Memory**: %s (%.1f MB)", highestMem, highestMemMB))
-			// Check if it's disk-based (has cache)
-			if stats, ok := r.DockerStats[highestMem]; ok && stats.MemoryCacheMB > 10 {
-				sb.WriteString(fmt.Sprintf(" - %.1f MB is page cache from disk I/O", stats.MemoryCacheMB))
-			}
-			sb.WriteString("\n")
-		}
-		if lowestMem != "" && lowestMem != highestMem {
-			sb.WriteString(fmt.Sprintf("- **Lowest Memory**: %s (%.1f MB)\n", lowestMem, lowestMemMB))
-		}
+		sb.WriteString("\n")
 	}
 
-	sb.WriteString("\n---\n\n")
+	sb.WriteString("---\n\n")
 }
 
 // generateConcurrencySummary creates a summary of parallel benchmark results.

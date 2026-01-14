@@ -19,7 +19,8 @@ type Metrics struct {
 	P50Latency  time.Duration `json:"p50_latency"`
 	P95Latency  time.Duration `json:"p95_latency"`
 	P99Latency  time.Duration `json:"p99_latency"`
-	Throughput  float64       `json:"throughput"` // MB/s for data ops, ops/s for metadata ops
+	Throughput  float64       `json:"throughput"`    // MB/s for data ops
+	OpsPerSec   float64       `json:"ops_per_sec"`   // operations per second
 	TotalBytes  int64         `json:"total_bytes,omitempty"`
 	Errors      int           `json:"errors"`
 	LastError   string        `json:"last_error,omitempty"`
@@ -126,15 +127,20 @@ func (c *Collector) Metrics(operation, driver string, objectSize int) *Metrics {
 		LastError:  lastErr,
 	}
 
-	// Calculate throughput
-	if objectSize > 0 && total > 0 {
-		// MB/s for data operations
-		totalBytes := int64(iterations) * int64(objectSize)
-		m.TotalBytes = totalBytes
-		m.Throughput = float64(totalBytes) / (1024 * 1024) / total.Seconds()
-	} else if total > 0 {
-		// ops/s for metadata operations
-		m.Throughput = float64(iterations) / total.Seconds()
+	// Calculate throughput and ops/sec
+	if total > 0 {
+		// Always calculate ops/sec
+		m.OpsPerSec = float64(iterations) / total.Seconds()
+
+		if objectSize > 0 {
+			// MB/s for data operations
+			totalBytes := int64(iterations) * int64(objectSize)
+			m.TotalBytes = totalBytes
+			m.Throughput = float64(totalBytes) / (1024 * 1024) / total.Seconds()
+		} else {
+			// For metadata operations, throughput equals ops/sec
+			m.Throughput = m.OpsPerSec
+		}
 	}
 
 	return m
