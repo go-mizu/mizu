@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
 // MultipartSuite runs the full multipart test suite against any storage implementation

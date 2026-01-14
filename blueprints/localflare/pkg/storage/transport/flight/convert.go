@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
 // Action types for DoAction.

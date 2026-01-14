@@ -128,6 +128,55 @@ dev-all: ## Run backend and frontend in development mode
 	(cd $(FRONTEND_DIR) && pnpm run dev) & \
 	GOWORK=off $(GO) run $(CMD) serve --dev
 
+# LiteIO configuration
+LITEIO_BINARY ?= $(HOME)/bin/liteio
+LITEIO_IMAGE  ?= liteio:latest
+LITEIO_PORT   ?= 9200
+LITEIO_DATA   ?= $(HOME)/data/liteio
+
+.PHONY: liteio
+liteio: liteio-binary liteio-docker ## Build LiteIO binary and Docker image
+
+.PHONY: liteio-binary
+liteio-binary: ## Build LiteIO binary
+	@mkdir -p $(dir $(LITEIO_BINARY))
+	@CGO_ENABLED=0 GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(LITEIO_BINARY) ./cmd/liteio
+	@echo "Built: $(LITEIO_BINARY) ($(VERSION))"
+
+.PHONY: liteio-docker
+liteio-docker: ## Build LiteIO Docker image
+	@docker build -f liteio.Dockerfile \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg BUILD_TIME=$(TIME) \
+		-t $(LITEIO_IMAGE) .
+	@echo "Built: $(LITEIO_IMAGE)"
+
+.PHONY: liteio-run
+liteio-run: ## Run LiteIO server locally
+	@mkdir -p $(LITEIO_DATA)
+	@$(LITEIO_BINARY) --port $(LITEIO_PORT) --data-dir $(LITEIO_DATA)
+
+.PHONY: liteio-docker-run
+liteio-docker-run: ## Run LiteIO in Docker container
+	@docker run -d --name liteio \
+		-p $(LITEIO_PORT):9000 \
+		-v $(LITEIO_DATA):/data \
+		$(LITEIO_IMAGE)
+	@echo "LiteIO running at http://localhost:$(LITEIO_PORT)"
+
+.PHONY: liteio-docker-stop
+liteio-docker-stop: ## Stop LiteIO Docker container
+	@docker stop liteio 2>/dev/null || true
+	@docker rm liteio 2>/dev/null || true
+	@echo "LiteIO container stopped"
+
+.PHONY: liteio-bench
+liteio-bench: ## Run benchmarks against LiteIO
+	@echo "Running benchmarks against LiteIO at localhost:$(LITEIO_PORT)..."
+	@cd pkg/storage/bench && GOWORK=off $(GO) test -bench=. -benchmem -benchtime=3s ./... 2>&1 | tee ../report/liteio_raw.txt
+	@echo "Benchmark complete. Raw output in pkg/storage/report/liteio_raw.txt"
+
 .PHONY: help
 help: ## Show available commands
 	@echo ""

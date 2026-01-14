@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
 // ensure driver implements storage.Driver
