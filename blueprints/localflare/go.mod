@@ -21,6 +21,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/spf13/cobra v1.10.2
 	github.com/vdaas/vald-client-go v1.7.17
+	github.com/viterin/vek v0.4.3
 	golang.org/x/crypto v0.47.0
 	google.golang.org/grpc v1.78.0
 )
@@ -75,7 +76,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/viterin/partial v1.1.0 // indirect
-	github.com/viterin/vek v0.4.3 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect

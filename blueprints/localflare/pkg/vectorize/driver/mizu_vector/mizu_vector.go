@@ -9,8 +9,12 @@
 //   - hnsw: Hierarchical Navigable Small World graph
 //   - vamana: DiskANN's Vamana graph algorithm
 //   - rabitq: RaBitQ binary quantization (SIGMOD 2024)
+//   - nsg: Navigating Spreading-out Graph (VLDB 2019)
+//   - scann: Google's ScaNN with anisotropic quantization (ICML 2020)
+//   - acorn: ACORN-1 filter-aware HNSW (Elasticsearch)
 //
-// Engine selection via DSN: "engine=ivf" or "engine=rabitq"
+// All engines use SIMD-optimized distance functions via viterin/vek.
+// Engine selection via DSN: "engine=ivf" or "engine=nsg"
 package mizu_vector
 
 import (
@@ -39,6 +43,9 @@ const (
 	EngineHNSW   EngineType = "hnsw"   // Hierarchical Navigable Small World
 	EngineVamana EngineType = "vamana" // DiskANN's Vamana graph
 	EngineRaBitQ EngineType = "rabitq" // RaBitQ binary quantization
+	EngineNSG    EngineType = "nsg"    // Navigating Spreading-out Graph
+	EngineScaNN  EngineType = "scann"  // Google's ScaNN
+	EngineACORN  EngineType = "acorn"  // ACORN-1 filtered HNSW
 )
 
 // Engine is the interface for vector search engines.
@@ -47,7 +54,7 @@ type Engine interface {
 	Name() string
 
 	// Build builds the index from vectors.
-	Build(vectors map[string]*vectorize.Vector, dims int, metric vectorize.Metric)
+	Build(vectors map[string]*vectorize.Vector, dims int, metric vectorize.DistanceMetric)
 
 	// Insert adds vectors to the index.
 	Insert(vectors []*vectorize.Vector)
@@ -121,7 +128,7 @@ func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 		return vectorize.ErrIndexExists
 	}
 
-	// Select distance function
+	// Select distance function (use loop-unrolled versions for best performance)
 	var distFunc DistanceFunc
 	switch index.Metric {
 	case vectorize.Cosine:
@@ -151,6 +158,12 @@ func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 		engine = NewVamanaEngine(distFunc)
 	case EngineRaBitQ:
 		engine = NewRaBitQEngine(distFunc, index.Dimensions)
+	case EngineNSG:
+		engine = NewNSGEngine(distFunc)
+	case EngineScaNN:
+		engine = NewScaNNEngine(distFunc)
+	case EngineACORN:
+		engine = NewACORNEngine(distFunc)
 	default:
 		engine = NewIVFEngine(distFunc)
 	}
