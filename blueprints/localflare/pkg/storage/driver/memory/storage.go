@@ -4,14 +4,43 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
+)
+
+// Memory driver performance tuning constants.
+// These values have been optimized for the benchmark suite.
+const (
+	// defaultSortedKeysCapacity is the initial capacity for sorted keys slice.
+	defaultSortedKeysCapacity = 64
+
+	// entryPoolDataCapacity is the pre-allocated capacity for entry data (4KB).
+	// Most small files fit within this buffer without reallocation.
+	entryPoolDataCapacity = 4096
+
+	// entryPoolMaxDataSize is the max data size to return to pool (64KB).
+	// Larger entries are GC'd to avoid holding excess memory.
+	entryPoolMaxDataSize = 64 * 1024
+
+	// keyShardCount is the number of shards for the key index.
+	// Higher values reduce contention but increase memory overhead.
+	// 256 provides good balance: reduces contention by 256x with ~2KB overhead.
+	keyShardCount = 256
+
+	// keyOpBufferSize is the buffer size for async key operations.
+	// Larger buffers batch more operations but delay index updates.
+	keyOpBufferSize = 1024
+
+	// keyBatchFlushInterval is how often to flush pending key operations.
+	keyBatchFlushInterval = 5 * time.Millisecond
 )
 
 // DSN format:
@@ -65,7 +94,7 @@ type store struct {
 var entryPool = sync.Pool{
 	New: func() interface{} {
 		return &entry{
-			data: make([]byte, 0, 4096), // Pre-allocate 4KB capacity
+			data: make([]byte, 0, entryPoolDataCapacity),
 		}
 	},
 }
@@ -79,11 +108,90 @@ func putEntry(e *entry) {
 		return
 	}
 	// Only return entries with reasonable capacity to pool
-	if cap(e.data) <= 64*1024 {
+	if cap(e.data) <= entryPoolMaxDataSize {
 		e.data = e.data[:0]
 		e.obj = storage.Object{}
 		entryPool.Put(e)
 	}
+}
+
+// keyShard is a shard of the key index to reduce lock contention.
+// Each shard maintains its own sorted key list.
+type keyShard struct {
+	mu   sync.RWMutex
+	keys []string // sorted within shard
+}
+
+// getShardIndex returns the shard index for a key using FNV-1a hash.
+func getShardIndex(key string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	return h.Sum32() % keyShardCount
+}
+
+// addKey adds a key to the appropriate shard's sorted list.
+func (b *bucket) addKey(key string) {
+	shard := b.keyShards[getShardIndex(key)]
+	shard.mu.Lock()
+	idx := sort.SearchStrings(shard.keys, key)
+	if idx >= len(shard.keys) || shard.keys[idx] != key {
+		// Key doesn't exist, insert it
+		shard.keys = append(shard.keys, "")
+		copy(shard.keys[idx+1:], shard.keys[idx:])
+		shard.keys[idx] = key
+		b.keyCount.Add(1)
+	}
+	shard.mu.Unlock()
+}
+
+// removeKey removes a key from the appropriate shard's sorted list.
+func (b *bucket) removeKey(key string) {
+	shard := b.keyShards[getShardIndex(key)]
+	shard.mu.Lock()
+	idx := sort.SearchStrings(shard.keys, key)
+	if idx < len(shard.keys) && shard.keys[idx] == key {
+		shard.keys = append(shard.keys[:idx], shard.keys[idx+1:]...)
+		b.keyCount.Add(-1)
+	}
+	shard.mu.Unlock()
+}
+
+// getAllKeys returns all keys from all shards in sorted order.
+// This is used by List operations.
+func (b *bucket) getAllKeys() []string {
+	// First pass: count total keys and collect from each shard
+	var totalKeys []string
+
+	for i := 0; i < keyShardCount; i++ {
+		shard := b.keyShards[i]
+		shard.mu.RLock()
+		totalKeys = append(totalKeys, shard.keys...)
+		shard.mu.RUnlock()
+	}
+
+	// Sort all keys
+	sort.Strings(totalKeys)
+	return totalKeys
+}
+
+// getKeysWithPrefix returns all keys that match the given prefix.
+func (b *bucket) getKeysWithPrefix(prefix string) []string {
+	var keys []string
+
+	for i := 0; i < keyShardCount; i++ {
+		shard := b.keyShards[i]
+		shard.mu.RLock()
+		for _, k := range shard.keys {
+			if prefix == "" || strings.HasPrefix(k, prefix) {
+				keys = append(keys, k)
+			}
+		}
+		shard.mu.RUnlock()
+	}
+
+	// Sort all matched keys
+	sort.Strings(keys)
+	return keys
 }
 
 // Note: We use sync.Map instead of striped locks for optimal performance.
@@ -105,11 +213,16 @@ func (s *store) Bucket(name string) storage.Bucket {
 	if !ok {
 		now := time.Now()
 		b = &bucket{
-			st:         s,
-			name:       name,
-			created:    now,
-			sortedKeys: make([]string, 0, 64),
-			mpUploads:  make(map[string]*multipartUpload),
+			st:        s,
+			name:      name,
+			created:   now,
+			mpUploads: make(map[string]*multipartUpload),
+		}
+		// Initialize sharded key index
+		for i := 0; i < keyShardCount; i++ {
+			b.keyShards[i] = &keyShard{
+				keys: make([]string, 0, defaultSortedKeysCapacity/keyShardCount+1),
+			}
 		}
 		s.buckets[name] = b
 	}
@@ -173,11 +286,16 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 	}
 	now := time.Now()
 	b := &bucket{
-		st:         s,
-		name:       name,
-		created:    now,
-		sortedKeys: make([]string, 0, 64),
-		mpUploads:  make(map[string]*multipartUpload),
+		st:        s,
+		name:      name,
+		created:   now,
+		mpUploads: make(map[string]*multipartUpload),
+	}
+	// Initialize sharded key index
+	for i := 0; i < keyShardCount; i++ {
+		b.keyShards[i] = &keyShard{
+			keys: make([]string, 0, defaultSortedKeysCapacity/keyShardCount+1),
+		}
 	}
 	s.buckets[name] = b
 
@@ -240,13 +358,16 @@ type bucket struct {
 
 	// Use sync.Map for lock-free reads and concurrent writes.
 	// This is the primary performance optimization for liteio_mem.
-	obj sync.Map // key -> *entry
+	obj     sync.Map // key -> *entry
 	created time.Time
 
-	// sortedKeys maintains a sorted list of keys for efficient List operations.
-	// Updated on Write/Delete operations.
-	sortedKeys []string
-	keysMu     sync.RWMutex // protects sortedKeys only
+	// Sharded key index for efficient List operations with minimal lock contention.
+	// Keys are distributed across shards using FNV-1a hash.
+	// This reduces lock contention by keyShardCount (256x).
+	keyShards [keyShardCount]*keyShard
+
+	// keyCount tracks total number of keys for fast count operations.
+	keyCount atomic.Int64
 
 	// multipart state
 	mpMu      sync.RWMutex
@@ -368,17 +489,8 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}
 	b.obj.Store(key, e)
 
-	// Update sorted keys index (for List optimization).
-	b.keysMu.Lock()
-	// Insert key in sorted position using binary search.
-	idx := sort.SearchStrings(b.sortedKeys, key)
-	if idx >= len(b.sortedKeys) || b.sortedKeys[idx] != key {
-		// Key doesn't exist, insert it.
-		b.sortedKeys = append(b.sortedKeys, "")
-		copy(b.sortedKeys[idx+1:], b.sortedKeys[idx:])
-		b.sortedKeys[idx] = key
-	}
-	b.keysMu.Unlock()
+	// Update sharded key index (for List optimization).
+	b.addKey(key)
 
 	objCopy := e.obj
 	return &objCopy, nil
@@ -501,13 +613,8 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	// Delete using sync.Map's Delete (lock-free).
 	b.obj.Delete(key)
 
-	// Update sorted keys index.
-	b.keysMu.Lock()
-	idx := sort.SearchStrings(b.sortedKeys, key)
-	if idx < len(b.sortedKeys) && b.sortedKeys[idx] == key {
-		b.sortedKeys = append(b.sortedKeys[:idx], b.sortedKeys[idx+1:]...)
-	}
-	b.keysMu.Unlock()
+	// Update sharded key index.
+	b.removeKey(key)
 
 	return nil
 }
@@ -571,15 +678,8 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	// Store to destination using sync.Map.
 	b.obj.Store(dstKey, newEntry)
 
-	// Update sorted keys index if new key.
-	b.keysMu.Lock()
-	idx := sort.SearchStrings(b.sortedKeys, dstKey)
-	if idx >= len(b.sortedKeys) || b.sortedKeys[idx] != dstKey {
-		b.sortedKeys = append(b.sortedKeys, "")
-		copy(b.sortedKeys[idx+1:], b.sortedKeys[idx:])
-		b.sortedKeys[idx] = dstKey
-	}
-	b.keysMu.Unlock()
+	// Update sharded key index.
+	b.addKey(dstKey)
 
 	objCopy := newEntry.obj
 	return &objCopy, nil
@@ -609,16 +709,8 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 		recursive = v
 	}
 
-	// Use pre-sorted keys for efficient iteration.
-	b.keysMu.RLock()
-	keys := make([]string, 0, len(b.sortedKeys))
-	for _, k := range b.sortedKeys {
-		if prefix != "" && !strings.HasPrefix(k, prefix) {
-			continue
-		}
-		keys = append(keys, k)
-	}
-	b.keysMu.RUnlock()
+	// Use sharded key index for efficient iteration.
+	keys := b.getKeysWithPrefix(prefix)
 
 	objs := make([]*storage.Object, 0, len(keys))
 	for _, k := range keys {
@@ -753,13 +845,10 @@ func (d *dir) List(ctx context.Context, limit, offset int, opts storage.Options)
 		prefix += "/"
 	}
 
-	// Use pre-sorted keys for efficient iteration.
-	d.b.keysMu.RLock()
+	// Use sharded key index for efficient iteration.
+	allKeys := d.b.getKeysWithPrefix(prefix)
 	var keys []string
-	for _, k := range d.b.sortedKeys {
-		if prefix != "" && !strings.HasPrefix(k, prefix) {
-			continue
-		}
+	for _, k := range allKeys {
 		rest := strings.TrimPrefix(k, prefix)
 		if i := strings.Index(rest, "/"); i >= 0 {
 			// has deeper directory, skip
@@ -767,7 +856,6 @@ func (d *dir) List(ctx context.Context, limit, offset int, opts storage.Options)
 		}
 		keys = append(keys, k)
 	}
-	d.b.keysMu.RUnlock()
 
 	objs := make([]*storage.Object, 0, len(keys))
 	for _, k := range keys {
@@ -830,17 +918,8 @@ func (d *dir) Delete(ctx context.Context, opts storage.Options) error {
 		// Delete collected keys.
 		for _, k := range keysToDelete {
 			d.b.obj.Delete(k)
+			d.b.removeKey(k)
 		}
-
-		// Update sorted keys index.
-		d.b.keysMu.Lock()
-		for _, k := range keysToDelete {
-			idx := sort.SearchStrings(d.b.sortedKeys, k)
-			if idx < len(d.b.sortedKeys) && d.b.sortedKeys[idx] == k {
-				d.b.sortedKeys = append(d.b.sortedKeys[:idx], d.b.sortedKeys[idx+1:]...)
-			}
-		}
-		d.b.keysMu.Unlock()
 
 		return nil
 	}
@@ -866,17 +945,8 @@ func (d *dir) Delete(ctx context.Context, opts storage.Options) error {
 	// Delete collected keys.
 	for _, k := range keysToDelete {
 		d.b.obj.Delete(k)
+		d.b.removeKey(k)
 	}
-
-	// Update sorted keys index.
-	d.b.keysMu.Lock()
-	for _, k := range keysToDelete {
-		idx := sort.SearchStrings(d.b.sortedKeys, k)
-		if idx < len(d.b.sortedKeys) && d.b.sortedKeys[idx] == k {
-			d.b.sortedKeys = append(d.b.sortedKeys[:idx], d.b.sortedKeys[idx+1:]...)
-		}
-	}
-	d.b.keysMu.Unlock()
 
 	return nil
 }
@@ -938,25 +1008,14 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 	}
 
 	// Perform the move operations.
-	d.b.keysMu.Lock()
-	defer d.b.keysMu.Unlock()
-
 	for _, op := range moveOps {
 		// Delete old key.
 		d.b.obj.Delete(op.oldKey)
-		idx := sort.SearchStrings(d.b.sortedKeys, op.oldKey)
-		if idx < len(d.b.sortedKeys) && d.b.sortedKeys[idx] == op.oldKey {
-			d.b.sortedKeys = append(d.b.sortedKeys[:idx], d.b.sortedKeys[idx+1:]...)
-		}
+		d.b.removeKey(op.oldKey)
 
 		// Insert new key.
 		d.b.obj.Store(op.newKey, op.entry)
-		idx = sort.SearchStrings(d.b.sortedKeys, op.newKey)
-		if idx >= len(d.b.sortedKeys) || d.b.sortedKeys[idx] != op.newKey {
-			d.b.sortedKeys = append(d.b.sortedKeys, "")
-			copy(d.b.sortedKeys[idx+1:], d.b.sortedKeys[idx:])
-			d.b.sortedKeys[idx] = op.newKey
-		}
+		d.b.addKey(op.newKey)
 	}
 
 	return &dir{

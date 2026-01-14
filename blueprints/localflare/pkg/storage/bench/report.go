@@ -1678,11 +1678,11 @@ func GenerateComparisonReport(comparisons []CompareResult) string {
 	for _, c := range comparisons {
 		var status string
 		if c.Regression {
-			status = "⚠️ Regression"
+			status = "REGRESSION"
 		} else if c.Improvement {
-			status = "✅ Improved"
+			status = "IMPROVED"
 		} else {
-			status = "➖ Stable"
+			status = "STABLE"
 		}
 
 		sb.WriteString(fmt.Sprintf("| %s | %s | %.2f | %.2f | %+.1f%% | %s |\n",

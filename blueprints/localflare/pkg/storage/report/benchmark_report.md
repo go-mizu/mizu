@@ -1,6 +1,6 @@
 # Storage Benchmark Report
 
-**Generated:** 2026-01-15T02:56:59+07:00
+**Generated:** 2026-01-15T04:08:31+07:00
 
 **Go Version:** go1.25.5
 
@@ -14,21 +14,21 @@
 ┌───────────────────────────┬───────────────────────┬───────────────────────────────┐
 │         Category          │        Leader         │             Notes             │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Small File Read (1KB)     │ liteio_mem 4.8 MB/s   │ 2.1x faster than seaweedfs    │
+│ Small File Read (1KB)     │ liteio 4.7 MB/s       │ Close competition             │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Small File Write (1KB)    │ seaweedfs 1.2 MB/s    │ Close competition             │
+│ Small File Write (1KB)    │ rustfs 1.2 MB/s       │ Close competition             │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Delete Operations         │ liteio_mem 6130 ops/s │ 2.1x faster than seaweedfs    │
+│ Delete Operations         │ liteio 5592 ops/s     │ Close competition             │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Stat Operations           │ liteio_mem 4741 ops/s │ 41% faster than seaweedfs     │
+│ Stat Operations           │ liteio 6879 ops/s     │ 17% faster than liteio_mem    │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ List Operations (100 obj) │ liteio_mem 1237 ops/s │ 1.8x faster than seaweedfs    │
+│ List Operations (100 obj) │ liteio_mem 1255 ops/s │ Close competition             │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Copy Operations           │ liteio_mem 1.3 MB/s   │ Close competition             │
+│ Copy Operations           │ liteio_mem 1.4 MB/s   │ 14% faster than localstack    │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Range Reads               │ seaweedfs 187.5 MB/s  │ Close competition             │
+│ Range Reads               │ liteio 232.9 MB/s     │ Close competition             │
 ├───────────────────────────┼───────────────────────┼───────────────────────────────┤
-│ Mixed Workload            │ rustfs 12.3 MB/s      │ 37% faster than liteio_mem    │
+│ Mixed Workload            │ rustfs 9.6 MB/s       │ Close competition             │
 └───────────────────────────┴───────────────────────┴───────────────────────────────┘
 ```
 
@@ -36,37 +36,44 @@
 
 | Use Case | Recommended | Performance | Notes |
 |----------|-------------|-------------|-------|
-| Large File Uploads (10MB+) | **rustfs** | 189 MB/s | Best for media, backups |
-| Large File Downloads (10MB) | **liteio_mem** | 306 MB/s | Best for streaming, CDN |
-| Small File Operations | **liteio_mem** | 2889 ops/s | Best for metadata, configs |
-| High Concurrency (C10) | **liteio_mem** | - | Best for multi-user apps |
+| Large File Uploads (10MB+) | **liteio** | 191 MB/s | Best for media, backups |
+| Large File Downloads (10MB) | **liteio_mem** | 314 MB/s | Best for streaming, CDN |
+| Small File Operations | **liteio** | 2841 ops/s | Best for metadata, configs |
+| High Concurrency (C10) | **minio** | - | Best for multi-user apps |
+| Memory Constrained | **liteio** | 20 MB RAM | Best for edge/embedded |
 
 ### Large File Performance (10MB)
 
 | Driver | Write (MB/s) | Read (MB/s) | Write Latency | Read Latency |
 |--------|-------------|-------------|---------------|---------------|
-| liteio_mem | 187.9 | 306.0 | 53.2ms | 31.3ms |
-| localstack | 147.8 | 304.9 | 67.1ms | 32.1ms |
-| rustfs | 188.9 | 281.8 | 50.5ms | 35.6ms |
-| seaweedfs | 144.7 | 292.5 | 69.7ms | 34.0ms |
+| liteio | 191.4 | 310.4 | 51.8ms | 31.1ms |
+| liteio_mem | 180.5 | 313.5 | 50.9ms | 32.0ms |
+| localstack | 140.2 | 305.9 | 69.8ms | 32.6ms |
+| minio | 172.6 | 304.3 | 58.2ms | 32.4ms |
+| rustfs | 81.6 | 262.4 | 132.0ms | 37.7ms |
+| seaweedfs | 153.0 | 273.1 | 64.6ms | 35.0ms |
 
 ### Small File Performance (1KB)
 
 | Driver | Write (ops/s) | Read (ops/s) | Write Latency | Read Latency |
 |--------|--------------|--------------|---------------|---------------|
-| liteio_mem | 817 | 4960 | 1.1ms | 196.4us |
-| localstack | 1217 | 1457 | 807.2us | 677.2us |
-| rustfs | 1119 | 2179 | 856.0us | 456.8us |
-| seaweedfs | 1230 | 2357 | 741.5us | 410.4us |
+| liteio | 853 | 4830 | 1.0ms | 207.3us |
+| liteio_mem | 920 | 4741 | 1.0ms | 207.5us |
+| localstack | 1058 | 1409 | 921.0us | 708.6us |
+| minio | 782 | 2380 | 1.2ms | 406.1us |
+| rustfs | 1233 | 2185 | 763.3us | 453.9us |
+| seaweedfs | 1186 | 2312 | 809.6us | 422.8us |
 
 ### Metadata Operations (ops/s)
 
 | Driver | Stat | List (100 objects) | Delete |
 |--------|------|-------------------|--------|
-| liteio_mem | 4741 | 1237 | 6130 |
-| localstack | 1437 | 333 | 1809 |
-| rustfs | 3209 | 166 | 1212 |
-| seaweedfs | 3365 | 684 | 2963 |
+| liteio | 6879 | 1182 | 5592 |
+| liteio_mem | 5899 | 1255 | 5099 |
+| localstack | 1458 | 340 | 1625 |
+| minio | 3267 | 514 | 2618 |
+| rustfs | 3217 | 163 | 1230 |
+| seaweedfs | 3489 | 664 | 2981 |
 
 ### Concurrency Performance
 
@@ -74,10 +81,12 @@
 
 | Driver | C1 | C10 | C50 |
 |--------|------|------|------|
-| liteio_mem | 1.40 | 0.18 | 0.21 |
-| localstack | 1.20 | 0.18 | 0.11 |
-| rustfs | 1.26 | 0.32 | - |
-| seaweedfs | 1.34 | 0.38 | 0.24 |
+| liteio | 1.28 | 0.25 | 0.23 |
+| liteio_mem | 1.19 | 0.26 | 0.21 |
+| localstack | 1.19 | 0.16 | 0.10 |
+| minio | 1.04 | 0.28 | 0.16 |
+| rustfs | 1.23 | 0.35 | - |
+| seaweedfs | 1.35 | 0.40 | 0.25 |
 
 *\* indicates errors occurred*
 
@@ -85,10 +94,12 @@
 
 | Driver | C1 | C10 | C50 |
 |--------|------|------|------|
-| liteio_mem | 4.69 | 1.11 | 0.66 |
-| localstack | 1.30 | 0.17 | 0.07 |
-| rustfs | 1.94 | 0.81 | - |
-| seaweedfs | 2.22 | 0.77 | 0.54 |
+| liteio | 3.96 | 0.64 | 0.55 |
+| liteio_mem | 3.37 | 0.77 | 0.69 |
+| localstack | 1.25 | 0.17 | 0.08 |
+| minio | 2.65 | 0.84 | 0.62 |
+| rustfs | 1.86 | 0.76 | - |
+| seaweedfs | 2.16 | 0.69 | 0.46 |
 
 *\* indicates errors occurred*
 
@@ -100,10 +111,12 @@ Performance with varying numbers of files (1KB each).
 
 | Driver | 1 | 10 | 100 | 1000 | 10000 |
 |--------|------|------|------|------|------|
-| liteio_mem | 781.5us | 6.9ms | 62.9ms | 651.8ms | 6.58s |
-| localstack | 797.6us | 8.0ms | 76.4ms | 775.4ms | 8.00s |
-| rustfs | 828.0us | 7.8ms | 69.2ms | 683.9ms | 6.92s |
-| seaweedfs | 759.5us | 6.8ms | 70.6ms | 724.2ms | 7.10s |
+| liteio | 926.9us | 6.1ms | 60.9ms | 624.4ms | 6.45s |
+| liteio_mem | 638.5us | 5.6ms | 60.2ms | 643.7ms | 6.50s |
+| localstack | 682.9us | 7.3ms | 94.3ms | 878.1ms | 8.01s |
+| minio | 1.1ms | 9.6ms | 90.2ms | 892.4ms | 9.30s |
+| rustfs | 749.3us | 7.2ms | 69.5ms | 673.9ms | 7.13s |
+| seaweedfs | 685.2us | 7.5ms | 70.5ms | 720.1ms | 6.98s |
 
 *\* indicates errors occurred*
 
@@ -111,10 +124,12 @@ Performance with varying numbers of files (1KB each).
 
 | Driver | 1 | 10 | 100 | 1000 | 10000 |
 |--------|------|------|------|------|------|
-| liteio_mem | 261.9us | 301.6us | 1.1ms | 10.5ms | 226.9ms |
-| localstack | 1.5ms | 1.3ms | 4.0ms | 25.8ms | 247.7ms |
-| rustfs | 1.2ms | 1.6ms | 6.9ms | 61.4ms | 740.2ms |
-| seaweedfs | 690.5us | 763.6us | 2.2ms | 9.5ms | 90.8ms |
+| liteio | 279.6us | 341.0us | 940.8us | 5.8ms | 190.7ms |
+| liteio_mem | 309.0us | 277.2us | 836.0us | 5.7ms | 197.1ms |
+| localstack | 1.1ms | 1.1ms | 4.4ms | 23.9ms | 241.8ms |
+| minio | 532.5us | 714.4us | 2.0ms | 14.5ms | 163.0ms |
+| rustfs | 1.1ms | 1.4ms | 6.7ms | 53.9ms | 709.0ms |
+| seaweedfs | 722.5us | 779.0us | 1.9ms | 8.8ms | 88.2ms |
 
 *\* indicates errors occurred*
 
@@ -125,6 +140,17 @@ Some benchmarks were skipped due to driver limitations:
 - **rustfs**: 2 skipped
   - ParallelWrite/1KB/C50 (exceeds max concurrency 10)
   - ParallelRead/1KB/C50 (exceeds max concurrency 10)
+
+### Resource Usage Summary
+
+| Driver | Memory | CPU |
+|--------|--------|-----|
+| liteio | 20.2 MB | 0.0% |
+| liteio_mem | 53.0 MB | 0.8% |
+| localstack | 502.9 MB | 0.1% |
+| minio | 546.3 MB | 0.1% |
+| rustfs | 407.9 MB | 0.1% |
+| seaweedfs | 64.7 MB | 0.0% |
 
 ---
 
@@ -139,8 +165,10 @@ Some benchmarks were skipped due to driver limitations:
 
 ## Drivers Tested
 
+- liteio (43 benchmarks)
 - liteio_mem (43 benchmarks)
 - localstack (43 benchmarks)
+- minio (43 benchmarks)
 - rustfs (41 benchmarks)
 - seaweedfs (43 benchmarks)
 
@@ -150,142 +178,178 @@ Some benchmarks were skipped due to driver limitations:
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1.29 MB/s | 631.4us | 1.0ms | 1.0ms | 0 |
-| localstack | 1.19 MB/s | 816.0us | 1.0ms | 1.0ms | 0 |
-| rustfs | 0.95 MB/s | 976.6us | 1.2ms | 1.2ms | 0 |
-| seaweedfs | 0.84 MB/s | 981.5us | 1.9ms | 1.9ms | 0 |
+| liteio_mem | 1.39 MB/s | 625.8us | 956.5us | 956.5us | 0 |
+| localstack | 1.21 MB/s | 779.4us | 853.8us | 853.8us | 0 |
+| liteio | 1.05 MB/s | 866.0us | 1.2ms | 1.2ms | 0 |
+| rustfs | 0.97 MB/s | 974.2us | 1.3ms | 1.3ms | 0 |
+| minio | 0.94 MB/s | 1.0ms | 1.2ms | 1.2ms | 0 |
+| seaweedfs | 0.87 MB/s | 984.5us | 1.5ms | 1.5ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1.29 MB/s
-  localstack   ████████████████████████████████████ 1.19 MB/s
-  rustfs       █████████████████████████████ 0.95 MB/s
-  seaweedfs    █████████████████████████ 0.84 MB/s
+  liteio_mem   ████████████████████████████████████████ 1.39 MB/s
+  localstack   ██████████████████████████████████ 1.21 MB/s
+  liteio       ██████████████████████████████ 1.05 MB/s
+  rustfs       ███████████████████████████ 0.97 MB/s
+  minio        ███████████████████████████ 0.94 MB/s
+  seaweedfs    █████████████████████████ 0.87 MB/s
 ```
 
 ### Delete
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 6130 ops/s | 149.6us | 182.2us | 182.2us | 0 |
-| seaweedfs | 2963 ops/s | 321.8us | 371.7us | 371.7us | 0 |
-| localstack | 1809 ops/s | 548.3us | 593.7us | 593.7us | 0 |
-| rustfs | 1212 ops/s | 801.5us | 961.3us | 961.3us | 0 |
+| liteio | 5592 ops/s | 167.5us | 204.5us | 204.5us | 0 |
+| liteio_mem | 5099 ops/s | 173.5us | 255.1us | 255.1us | 0 |
+| seaweedfs | 2981 ops/s | 297.5us | 506.3us | 506.3us | 0 |
+| minio | 2618 ops/s | 360.5us | 557.2us | 557.2us | 0 |
+| localstack | 1625 ops/s | 581.0us | 757.7us | 757.7us | 0 |
+| rustfs | 1230 ops/s | 785.9us | 954.0us | 954.0us | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 6130 ops/s
-  seaweedfs    ███████████████████ 2963 ops/s
-  localstack   ███████████ 1809 ops/s
-  rustfs       ███████ 1212 ops/s
+  liteio       ████████████████████████████████████████ 5592 ops/s
+  liteio_mem   ████████████████████████████████████ 5099 ops/s
+  seaweedfs    █████████████████████ 2981 ops/s
+  minio        ██████████████████ 2618 ops/s
+  localstack   ███████████ 1625 ops/s
+  rustfs       ████████ 1230 ops/s
 ```
 
 ### EdgeCase/DeepNested
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 0.15 MB/s | 629.3us | 654.9us | 654.9us | 0 |
-| rustfs | 0.15 MB/s | 526.4us | 696.0us | 696.0us | 0 |
-| seaweedfs | 0.13 MB/s | 724.1us | 759.1us | 759.1us | 0 |
-| localstack | 0.13 MB/s | 721.9us | 789.6us | 789.6us | 0 |
+| liteio_mem | 0.15 MB/s | 594.0us | 652.0us | 652.0us | 0 |
+| liteio | 0.15 MB/s | 605.5us | 693.1us | 693.1us | 0 |
+| seaweedfs | 0.14 MB/s | 683.1us | 717.4us | 717.4us | 0 |
+| localstack | 0.14 MB/s | 685.3us | 762.7us | 762.7us | 0 |
+| rustfs | 0.13 MB/s | 680.0us | 778.1us | 778.1us | 0 |
+| minio | 0.06 MB/s | 1.3ms | 2.8ms | 2.8ms | 0 |
 
 ```
   liteio_mem   ████████████████████████████████████████ 0.15 MB/s
-  rustfs       ██████████████████████████████████████ 0.15 MB/s
-  seaweedfs    ██████████████████████████████████ 0.13 MB/s
-  localstack   █████████████████████████████████ 0.13 MB/s
+  liteio       ███████████████████████████████████████ 0.15 MB/s
+  seaweedfs    ████████████████████████████████████ 0.14 MB/s
+  localstack   ███████████████████████████████████ 0.14 MB/s
+  rustfs       █████████████████████████████████ 0.13 MB/s
+  minio        ███████████████ 0.06 MB/s
 ```
 
 ### EdgeCase/EmptyObject
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 2152 ops/s | 456.0us | 508.9us | 508.9us | 0 |
-| rustfs | 1297 ops/s | 736.2us | 786.7us | 786.7us | 0 |
-| localstack | 1202 ops/s | 772.0us | 902.3us | 902.3us | 0 |
-| liteio_mem | 664 ops/s | 957.0us | 2.2ms | 2.2ms | 0 |
+| seaweedfs | 1349 ops/s | 559.8us | 933.5us | 933.5us | 0 |
+| rustfs | 1208 ops/s | 774.5us | 925.5us | 925.5us | 0 |
+| localstack | 1150 ops/s | 809.2us | 1.0ms | 1.0ms | 0 |
+| liteio | 1013 ops/s | 580.2us | 866.5us | 866.5us | 0 |
+| minio | 818 ops/s | 942.0us | 2.0ms | 2.0ms | 0 |
+| liteio_mem | 177 ops/s | 796.4us | 3.7ms | 3.7ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 2152 ops/s
-  rustfs       ████████████████████████ 1297 ops/s
-  localstack   ██████████████████████ 1202 ops/s
-  liteio_mem   ████████████ 664 ops/s
+  seaweedfs    ████████████████████████████████████████ 1349 ops/s
+  rustfs       ███████████████████████████████████ 1208 ops/s
+  localstack   ██████████████████████████████████ 1150 ops/s
+  liteio       ██████████████████████████████ 1013 ops/s
+  minio        ████████████████████████ 818 ops/s
+  liteio_mem   █████ 177 ops/s
 ```
 
 ### EdgeCase/LongKey256
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 0.14 MB/s | 680.8us | 710.6us | 710.6us | 0 |
-| localstack | 0.12 MB/s | 788.5us | 932.1us | 932.1us | 0 |
-| seaweedfs | 0.12 MB/s | 824.4us | 848.9us | 848.9us | 0 |
-| liteio_mem | 0.09 MB/s | 661.6us | 1.2ms | 1.2ms | 0 |
+| liteio | 0.16 MB/s | 569.2us | 630.3us | 630.3us | 0 |
+| liteio_mem | 0.14 MB/s | 625.1us | 934.1us | 934.1us | 0 |
+| rustfs | 0.14 MB/s | 700.1us | 742.9us | 742.9us | 0 |
+| seaweedfs | 0.11 MB/s | 782.5us | 1.0ms | 1.0ms | 0 |
+| localstack | 0.10 MB/s | 795.9us | 902.4us | 902.4us | 0 |
+| minio | 0.05 MB/s | 1.5ms | 2.9ms | 2.9ms | 0 |
 
 ```
-  rustfs       ████████████████████████████████████████ 0.14 MB/s
-  localstack   █████████████████████████████████ 0.12 MB/s
-  seaweedfs    █████████████████████████████████ 0.12 MB/s
-  liteio_mem   ███████████████████████████ 0.09 MB/s
+  liteio       ████████████████████████████████████████ 0.16 MB/s
+  liteio_mem   ██████████████████████████████████ 0.14 MB/s
+  rustfs       █████████████████████████████████ 0.14 MB/s
+  seaweedfs    ███████████████████████████ 0.11 MB/s
+  localstack   █████████████████████████ 0.10 MB/s
+  minio        ████████████ 0.05 MB/s
 ```
 
 ### FileCount/Delete/1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 4628 ops/s | 216.1us | 216.1us | 216.1us | 0 |
-| seaweedfs | 2861 ops/s | 349.5us | 349.5us | 349.5us | 0 |
-| localstack | 1543 ops/s | 648.1us | 648.1us | 648.1us | 0 |
-| rustfs | 1026 ops/s | 974.7us | 974.7us | 974.7us | 0 |
+| liteio_mem | 4988 ops/s | 200.5us | 200.5us | 200.5us | 0 |
+| liteio | 4512 ops/s | 221.6us | 221.6us | 221.6us | 0 |
+| seaweedfs | 2796 ops/s | 357.7us | 357.7us | 357.7us | 0 |
+| minio | 2282 ops/s | 438.1us | 438.1us | 438.1us | 0 |
+| localstack | 1501 ops/s | 666.2us | 666.2us | 666.2us | 0 |
+| rustfs | 1005 ops/s | 994.9us | 994.9us | 994.9us | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 4628 ops/s
-  seaweedfs    ████████████████████████ 2861 ops/s
-  localstack   █████████████ 1543 ops/s
-  rustfs       ████████ 1026 ops/s
+  liteio_mem   ████████████████████████████████████████ 4988 ops/s
+  liteio       ████████████████████████████████████ 4512 ops/s
+  seaweedfs    ██████████████████████ 2796 ops/s
+  minio        ██████████████████ 2282 ops/s
+  localstack   ████████████ 1501 ops/s
+  rustfs       ████████ 1005 ops/s
 ```
 
 ### FileCount/Delete/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 494 ops/s | 2.0ms | 2.0ms | 2.0ms | 0 |
-| seaweedfs | 274 ops/s | 3.6ms | 3.6ms | 3.6ms | 0 |
-| localstack | 163 ops/s | 6.2ms | 6.2ms | 6.2ms | 0 |
-| rustfs | 115 ops/s | 8.7ms | 8.7ms | 8.7ms | 0 |
+| liteio_mem | 643 ops/s | 1.6ms | 1.6ms | 1.6ms | 0 |
+| liteio | 469 ops/s | 2.1ms | 2.1ms | 2.1ms | 0 |
+| seaweedfs | 299 ops/s | 3.3ms | 3.3ms | 3.3ms | 0 |
+| minio | 218 ops/s | 4.6ms | 4.6ms | 4.6ms | 0 |
+| localstack | 176 ops/s | 5.7ms | 5.7ms | 5.7ms | 0 |
+| rustfs | 112 ops/s | 8.9ms | 8.9ms | 8.9ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 494 ops/s
-  seaweedfs    ██████████████████████ 274 ops/s
-  localstack   █████████████ 163 ops/s
-  rustfs       █████████ 115 ops/s
+  liteio_mem   ████████████████████████████████████████ 643 ops/s
+  liteio       █████████████████████████████ 469 ops/s
+  seaweedfs    ██████████████████ 299 ops/s
+  minio        █████████████ 218 ops/s
+  localstack   ██████████ 176 ops/s
+  rustfs       ██████ 112 ops/s
 ```
 
 ### FileCount/Delete/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 46 ops/s | 22.0ms | 22.0ms | 22.0ms | 0 |
-| seaweedfs | 28 ops/s | 35.8ms | 35.8ms | 35.8ms | 0 |
-| localstack | 16 ops/s | 61.6ms | 61.6ms | 61.6ms | 0 |
-| rustfs | 12 ops/s | 80.5ms | 80.5ms | 80.5ms | 0 |
+| liteio_mem | 51 ops/s | 19.4ms | 19.4ms | 19.4ms | 0 |
+| liteio | 48 ops/s | 20.7ms | 20.7ms | 20.7ms | 0 |
+| seaweedfs | 31 ops/s | 32.5ms | 32.5ms | 32.5ms | 0 |
+| minio | 28 ops/s | 36.2ms | 36.2ms | 36.2ms | 0 |
+| localstack | 13 ops/s | 79.1ms | 79.1ms | 79.1ms | 0 |
+| rustfs | 12 ops/s | 81.6ms | 81.6ms | 81.6ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 46 ops/s
-  seaweedfs    ████████████████████████ 28 ops/s
-  localstack   ██████████████ 16 ops/s
-  rustfs       ██████████ 12 ops/s
+  liteio_mem   ████████████████████████████████████████ 51 ops/s
+  liteio       █████████████████████████████████████ 48 ops/s
+  seaweedfs    ███████████████████████ 31 ops/s
+  minio        █████████████████████ 28 ops/s
+  localstack   █████████ 13 ops/s
+  rustfs       █████████ 12 ops/s
 ```
 
 ### FileCount/Delete/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 5 ops/s | 190.1ms | 190.1ms | 190.1ms | 0 |
-| seaweedfs | 3 ops/s | 331.7ms | 331.7ms | 331.7ms | 0 |
-| localstack | 2 ops/s | 613.8ms | 613.8ms | 613.8ms | 0 |
-| rustfs | 1 ops/s | 819.1ms | 819.1ms | 819.1ms | 0 |
+| liteio | 5 ops/s | 187.4ms | 187.4ms | 187.4ms | 0 |
+| liteio_mem | 5 ops/s | 192.5ms | 192.5ms | 192.5ms | 0 |
+| seaweedfs | 3 ops/s | 329.3ms | 329.3ms | 329.3ms | 0 |
+| minio | 3 ops/s | 376.3ms | 376.3ms | 376.3ms | 0 |
+| localstack | 2 ops/s | 618.9ms | 618.9ms | 618.9ms | 0 |
+| rustfs | 1 ops/s | 821.6ms | 821.6ms | 821.6ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 5 ops/s
+  liteio       ████████████████████████████████████████ 5 ops/s
+  liteio_mem   ██████████████████████████████████████ 5 ops/s
   seaweedfs    ██████████████████████ 3 ops/s
+  minio        ███████████████████ 3 ops/s
   localstack   ████████████ 2 ops/s
   rustfs       █████████ 1 ops/s
 ```
@@ -294,14 +358,18 @@ Some benchmarks were skipped due to driver limitations:
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1 ops/s | 1.86s | 1.86s | 1.86s | 0 |
-| seaweedfs | 0 ops/s | 3.17s | 3.17s | 3.17s | 0 |
-| localstack | 0 ops/s | 6.19s | 6.19s | 6.19s | 0 |
-| rustfs | 0 ops/s | 7.63s | 7.63s | 7.63s | 0 |
+| liteio_mem | 1 ops/s | 1.87s | 1.87s | 1.87s | 0 |
+| liteio | 1 ops/s | 1.89s | 1.89s | 1.89s | 0 |
+| seaweedfs | 0 ops/s | 3.29s | 3.29s | 3.29s | 0 |
+| minio | 0 ops/s | 3.50s | 3.50s | 3.50s | 0 |
+| localstack | 0 ops/s | 6.16s | 6.16s | 6.16s | 0 |
+| rustfs | 0 ops/s | 8.10s | 8.10s | 8.10s | 0 |
 
 ```
   liteio_mem   ████████████████████████████████████████ 1 ops/s
-  seaweedfs    ███████████████████████ 0 ops/s
+  liteio       ███████████████████████████████████████ 1 ops/s
+  seaweedfs    ██████████████████████ 0 ops/s
+  minio        █████████████████████ 0 ops/s
   localstack   ████████████ 0 ops/s
   rustfs       █████████ 0 ops/s
 ```
@@ -310,78 +378,98 @@ Some benchmarks were skipped due to driver limitations:
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 3818 ops/s | 261.9us | 261.9us | 261.9us | 0 |
-| seaweedfs | 1448 ops/s | 690.5us | 690.5us | 690.5us | 0 |
-| rustfs | 841 ops/s | 1.2ms | 1.2ms | 1.2ms | 0 |
-| localstack | 658 ops/s | 1.5ms | 1.5ms | 1.5ms | 0 |
+| liteio | 3577 ops/s | 279.6us | 279.6us | 279.6us | 0 |
+| liteio_mem | 3236 ops/s | 309.0us | 309.0us | 309.0us | 0 |
+| minio | 1878 ops/s | 532.5us | 532.5us | 532.5us | 0 |
+| seaweedfs | 1384 ops/s | 722.5us | 722.5us | 722.5us | 0 |
+| localstack | 948 ops/s | 1.1ms | 1.1ms | 1.1ms | 0 |
+| rustfs | 931 ops/s | 1.1ms | 1.1ms | 1.1ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 3818 ops/s
-  seaweedfs    ███████████████ 1448 ops/s
-  rustfs       ████████ 841 ops/s
-  localstack   ██████ 658 ops/s
+  liteio       ████████████████████████████████████████ 3577 ops/s
+  liteio_mem   ████████████████████████████████████ 3236 ops/s
+  minio        █████████████████████ 1878 ops/s
+  seaweedfs    ███████████████ 1384 ops/s
+  localstack   ██████████ 948 ops/s
+  rustfs       ██████████ 931 ops/s
 ```
 
 ### FileCount/List/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 3315 ops/s | 301.6us | 301.6us | 301.6us | 0 |
-| seaweedfs | 1310 ops/s | 763.6us | 763.6us | 763.6us | 0 |
-| localstack | 746 ops/s | 1.3ms | 1.3ms | 1.3ms | 0 |
-| rustfs | 643 ops/s | 1.6ms | 1.6ms | 1.6ms | 0 |
+| liteio_mem | 3607 ops/s | 277.2us | 277.2us | 277.2us | 0 |
+| liteio | 2932 ops/s | 341.0us | 341.0us | 341.0us | 0 |
+| minio | 1400 ops/s | 714.4us | 714.4us | 714.4us | 0 |
+| seaweedfs | 1284 ops/s | 779.0us | 779.0us | 779.0us | 0 |
+| localstack | 892 ops/s | 1.1ms | 1.1ms | 1.1ms | 0 |
+| rustfs | 694 ops/s | 1.4ms | 1.4ms | 1.4ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 3315 ops/s
-  seaweedfs    ███████████████ 1310 ops/s
-  localstack   █████████ 746 ops/s
-  rustfs       ███████ 643 ops/s
+  liteio_mem   ████████████████████████████████████████ 3607 ops/s
+  liteio       ████████████████████████████████ 2932 ops/s
+  minio        ███████████████ 1400 ops/s
+  seaweedfs    ██████████████ 1284 ops/s
+  localstack   █████████ 892 ops/s
+  rustfs       ███████ 694 ops/s
 ```
 
 ### FileCount/List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 909 ops/s | 1.1ms | 1.1ms | 1.1ms | 0 |
-| seaweedfs | 448 ops/s | 2.2ms | 2.2ms | 2.2ms | 0 |
-| localstack | 251 ops/s | 4.0ms | 4.0ms | 4.0ms | 0 |
-| rustfs | 145 ops/s | 6.9ms | 6.9ms | 6.9ms | 0 |
+| liteio_mem | 1196 ops/s | 836.0us | 836.0us | 836.0us | 0 |
+| liteio | 1063 ops/s | 940.8us | 940.8us | 940.8us | 0 |
+| seaweedfs | 533 ops/s | 1.9ms | 1.9ms | 1.9ms | 0 |
+| minio | 500 ops/s | 2.0ms | 2.0ms | 2.0ms | 0 |
+| localstack | 225 ops/s | 4.4ms | 4.4ms | 4.4ms | 0 |
+| rustfs | 149 ops/s | 6.7ms | 6.7ms | 6.7ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 909 ops/s
-  seaweedfs    ███████████████████ 448 ops/s
-  localstack   ███████████ 251 ops/s
-  rustfs       ██████ 145 ops/s
+  liteio_mem   ████████████████████████████████████████ 1196 ops/s
+  liteio       ███████████████████████████████████ 1063 ops/s
+  seaweedfs    █████████████████ 533 ops/s
+  minio        ████████████████ 500 ops/s
+  localstack   ███████ 225 ops/s
+  rustfs       ████ 149 ops/s
 ```
 
 ### FileCount/List/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 106 ops/s | 9.5ms | 9.5ms | 9.5ms | 0 |
-| liteio_mem | 95 ops/s | 10.5ms | 10.5ms | 10.5ms | 0 |
-| localstack | 39 ops/s | 25.8ms | 25.8ms | 25.8ms | 0 |
-| rustfs | 16 ops/s | 61.4ms | 61.4ms | 61.4ms | 0 |
+| liteio_mem | 176 ops/s | 5.7ms | 5.7ms | 5.7ms | 0 |
+| liteio | 172 ops/s | 5.8ms | 5.8ms | 5.8ms | 0 |
+| seaweedfs | 114 ops/s | 8.8ms | 8.8ms | 8.8ms | 0 |
+| minio | 69 ops/s | 14.5ms | 14.5ms | 14.5ms | 0 |
+| localstack | 42 ops/s | 23.9ms | 23.9ms | 23.9ms | 0 |
+| rustfs | 19 ops/s | 53.9ms | 53.9ms | 53.9ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 106 ops/s
-  liteio_mem   ████████████████████████████████████ 95 ops/s
-  localstack   ██████████████ 39 ops/s
-  rustfs       ██████ 16 ops/s
+  liteio_mem   ████████████████████████████████████████ 176 ops/s
+  liteio       ███████████████████████████████████████ 172 ops/s
+  seaweedfs    █████████████████████████ 114 ops/s
+  minio        ███████████████ 69 ops/s
+  localstack   █████████ 42 ops/s
+  rustfs       ████ 19 ops/s
 ```
 
 ### FileCount/List/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 11 ops/s | 90.8ms | 90.8ms | 90.8ms | 0 |
-| liteio_mem | 4 ops/s | 226.9ms | 226.9ms | 226.9ms | 0 |
-| localstack | 4 ops/s | 247.7ms | 247.7ms | 247.7ms | 0 |
-| rustfs | 1 ops/s | 740.2ms | 740.2ms | 740.2ms | 0 |
+| seaweedfs | 11 ops/s | 88.2ms | 88.2ms | 88.2ms | 0 |
+| minio | 6 ops/s | 163.0ms | 163.0ms | 163.0ms | 0 |
+| liteio | 5 ops/s | 190.7ms | 190.7ms | 190.7ms | 0 |
+| liteio_mem | 5 ops/s | 197.1ms | 197.1ms | 197.1ms | 0 |
+| localstack | 4 ops/s | 241.8ms | 241.8ms | 241.8ms | 0 |
+| rustfs | 1 ops/s | 709.0ms | 709.0ms | 709.0ms | 0 |
 
 ```
   seaweedfs    ████████████████████████████████████████ 11 ops/s
-  liteio_mem   ████████████████ 4 ops/s
+  minio        █████████████████████ 6 ops/s
+  liteio       ██████████████████ 5 ops/s
+  liteio_mem   █████████████████ 5 ops/s
   localstack   ██████████████ 4 ops/s
   rustfs       ████ 1 ops/s
 ```
@@ -390,449 +478,580 @@ Some benchmarks were skipped due to driver limitations:
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 1.29 MB/s | 759.5us | 759.5us | 759.5us | 0 |
-| liteio_mem | 1.25 MB/s | 781.5us | 781.5us | 781.5us | 0 |
-| localstack | 1.22 MB/s | 797.6us | 797.6us | 797.6us | 0 |
-| rustfs | 1.18 MB/s | 828.0us | 828.0us | 828.0us | 0 |
+| liteio_mem | 1.53 MB/s | 638.5us | 638.5us | 638.5us | 0 |
+| localstack | 1.43 MB/s | 682.9us | 682.9us | 682.9us | 0 |
+| seaweedfs | 1.43 MB/s | 685.2us | 685.2us | 685.2us | 0 |
+| rustfs | 1.30 MB/s | 749.3us | 749.3us | 749.3us | 0 |
+| liteio | 1.05 MB/s | 926.9us | 926.9us | 926.9us | 0 |
+| minio | 0.90 MB/s | 1.1ms | 1.1ms | 1.1ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 1.29 MB/s
-  liteio_mem   ██████████████████████████████████████ 1.25 MB/s
-  localstack   ██████████████████████████████████████ 1.22 MB/s
-  rustfs       ████████████████████████████████████ 1.18 MB/s
+  liteio_mem   ████████████████████████████████████████ 1.53 MB/s
+  localstack   █████████████████████████████████████ 1.43 MB/s
+  seaweedfs    █████████████████████████████████████ 1.43 MB/s
+  rustfs       ██████████████████████████████████ 1.30 MB/s
+  liteio       ███████████████████████████ 1.05 MB/s
+  minio        ███████████████████████ 0.90 MB/s
 ```
 
 ### FileCount/Write/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 1.43 MB/s | 6.8ms | 6.8ms | 6.8ms | 0 |
-| liteio_mem | 1.42 MB/s | 6.9ms | 6.9ms | 6.9ms | 0 |
-| rustfs | 1.26 MB/s | 7.8ms | 7.8ms | 7.8ms | 0 |
-| localstack | 1.22 MB/s | 8.0ms | 8.0ms | 8.0ms | 0 |
+| liteio_mem | 1.74 MB/s | 5.6ms | 5.6ms | 5.6ms | 0 |
+| liteio | 1.59 MB/s | 6.1ms | 6.1ms | 6.1ms | 0 |
+| rustfs | 1.36 MB/s | 7.2ms | 7.2ms | 7.2ms | 0 |
+| localstack | 1.33 MB/s | 7.3ms | 7.3ms | 7.3ms | 0 |
+| seaweedfs | 1.30 MB/s | 7.5ms | 7.5ms | 7.5ms | 0 |
+| minio | 1.02 MB/s | 9.6ms | 9.6ms | 9.6ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 1.43 MB/s
-  liteio_mem   ███████████████████████████████████████ 1.42 MB/s
-  rustfs       ███████████████████████████████████ 1.26 MB/s
-  localstack   ██████████████████████████████████ 1.22 MB/s
+  liteio_mem   ████████████████████████████████████████ 1.74 MB/s
+  liteio       ████████████████████████████████████ 1.59 MB/s
+  rustfs       ███████████████████████████████ 1.36 MB/s
+  localstack   ██████████████████████████████ 1.33 MB/s
+  seaweedfs    █████████████████████████████ 1.30 MB/s
+  minio        ███████████████████████ 1.02 MB/s
 ```
 
 ### FileCount/Write/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1.55 MB/s | 62.9ms | 62.9ms | 62.9ms | 0 |
-| rustfs | 1.41 MB/s | 69.2ms | 69.2ms | 69.2ms | 0 |
-| seaweedfs | 1.38 MB/s | 70.6ms | 70.6ms | 70.6ms | 0 |
-| localstack | 1.28 MB/s | 76.4ms | 76.4ms | 76.4ms | 0 |
+| liteio_mem | 1.62 MB/s | 60.2ms | 60.2ms | 60.2ms | 0 |
+| liteio | 1.60 MB/s | 60.9ms | 60.9ms | 60.9ms | 0 |
+| rustfs | 1.41 MB/s | 69.5ms | 69.5ms | 69.5ms | 0 |
+| seaweedfs | 1.38 MB/s | 70.5ms | 70.5ms | 70.5ms | 0 |
+| minio | 1.08 MB/s | 90.2ms | 90.2ms | 90.2ms | 0 |
+| localstack | 1.04 MB/s | 94.3ms | 94.3ms | 94.3ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1.55 MB/s
-  rustfs       ████████████████████████████████████ 1.41 MB/s
-  seaweedfs    ███████████████████████████████████ 1.38 MB/s
-  localstack   ████████████████████████████████ 1.28 MB/s
+  liteio_mem   ████████████████████████████████████████ 1.62 MB/s
+  liteio       ███████████████████████████████████████ 1.60 MB/s
+  rustfs       ██████████████████████████████████ 1.41 MB/s
+  seaweedfs    ██████████████████████████████████ 1.38 MB/s
+  minio        ██████████████████████████ 1.08 MB/s
+  localstack   █████████████████████████ 1.04 MB/s
 ```
 
 ### FileCount/Write/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1.50 MB/s | 651.8ms | 651.8ms | 651.8ms | 0 |
-| rustfs | 1.43 MB/s | 683.9ms | 683.9ms | 683.9ms | 0 |
-| seaweedfs | 1.35 MB/s | 724.2ms | 724.2ms | 724.2ms | 0 |
-| localstack | 1.26 MB/s | 775.4ms | 775.4ms | 775.4ms | 0 |
+| liteio | 1.56 MB/s | 624.4ms | 624.4ms | 624.4ms | 0 |
+| liteio_mem | 1.52 MB/s | 643.7ms | 643.7ms | 643.7ms | 0 |
+| rustfs | 1.45 MB/s | 673.9ms | 673.9ms | 673.9ms | 0 |
+| seaweedfs | 1.36 MB/s | 720.1ms | 720.1ms | 720.1ms | 0 |
+| localstack | 1.11 MB/s | 878.1ms | 878.1ms | 878.1ms | 0 |
+| minio | 1.09 MB/s | 892.4ms | 892.4ms | 892.4ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1.50 MB/s
-  rustfs       ██████████████████████████████████████ 1.43 MB/s
-  seaweedfs    ████████████████████████████████████ 1.35 MB/s
-  localstack   █████████████████████████████████ 1.26 MB/s
+  liteio       ████████████████████████████████████████ 1.56 MB/s
+  liteio_mem   ██████████████████████████████████████ 1.52 MB/s
+  rustfs       █████████████████████████████████████ 1.45 MB/s
+  seaweedfs    ██████████████████████████████████ 1.36 MB/s
+  localstack   ████████████████████████████ 1.11 MB/s
+  minio        ███████████████████████████ 1.09 MB/s
 ```
 
 ### FileCount/Write/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1.48 MB/s | 6.58s | 6.58s | 6.58s | 0 |
-| rustfs | 1.41 MB/s | 6.92s | 6.92s | 6.92s | 0 |
-| seaweedfs | 1.37 MB/s | 7.10s | 7.10s | 7.10s | 0 |
-| localstack | 1.22 MB/s | 8.00s | 8.00s | 8.00s | 0 |
+| liteio | 1.51 MB/s | 6.45s | 6.45s | 6.45s | 0 |
+| liteio_mem | 1.50 MB/s | 6.50s | 6.50s | 6.50s | 0 |
+| seaweedfs | 1.40 MB/s | 6.98s | 6.98s | 6.98s | 0 |
+| rustfs | 1.37 MB/s | 7.13s | 7.13s | 7.13s | 0 |
+| localstack | 1.22 MB/s | 8.01s | 8.01s | 8.01s | 0 |
+| minio | 1.05 MB/s | 9.30s | 9.30s | 9.30s | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1.48 MB/s
-  rustfs       ██████████████████████████████████████ 1.41 MB/s
-  seaweedfs    █████████████████████████████████████ 1.37 MB/s
+  liteio       ████████████████████████████████████████ 1.51 MB/s
+  liteio_mem   ███████████████████████████████████████ 1.50 MB/s
+  seaweedfs    ████████████████████████████████████ 1.40 MB/s
+  rustfs       ████████████████████████████████████ 1.37 MB/s
   localstack   ████████████████████████████████ 1.22 MB/s
+  minio        ███████████████████████████ 1.05 MB/s
 ```
 
 ### List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1237 ops/s | 702.4us | 1.2ms | 1.2ms | 0 |
-| seaweedfs | 684 ops/s | 1.4ms | 1.6ms | 1.6ms | 0 |
-| localstack | 333 ops/s | 3.0ms | 3.4ms | 3.4ms | 0 |
-| rustfs | 166 ops/s | 6.0ms | 6.2ms | 6.2ms | 0 |
+| liteio_mem | 1255 ops/s | 697.8us | 1.0ms | 1.0ms | 0 |
+| liteio | 1182 ops/s | 732.2us | 1.5ms | 1.5ms | 0 |
+| seaweedfs | 664 ops/s | 1.5ms | 1.7ms | 1.7ms | 0 |
+| minio | 514 ops/s | 1.9ms | 2.3ms | 2.3ms | 0 |
+| localstack | 340 ops/s | 2.9ms | 3.2ms | 3.2ms | 0 |
+| rustfs | 163 ops/s | 6.1ms | 6.4ms | 6.4ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1237 ops/s
-  seaweedfs    ██████████████████████ 684 ops/s
-  localstack   ██████████ 333 ops/s
-  rustfs       █████ 166 ops/s
+  liteio_mem   ████████████████████████████████████████ 1255 ops/s
+  liteio       █████████████████████████████████████ 1182 ops/s
+  seaweedfs    █████████████████████ 664 ops/s
+  minio        ████████████████ 514 ops/s
+  localstack   ██████████ 340 ops/s
+  rustfs       █████ 163 ops/s
 ```
 
 ### MixedWorkload/Balanced_50_50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 12.27 MB/s | 1.2ms | 1.6ms | 1.6ms | 0 |
-| liteio_mem | 8.93 MB/s | 1.7ms | 2.5ms | 2.5ms | 0 |
-| seaweedfs | 7.04 MB/s | 2.2ms | 2.9ms | 2.9ms | 0 |
-| localstack | 1.44 MB/s | 11.3ms | 11.9ms | 11.9ms | 0 |
+| rustfs | 9.60 MB/s | 1.6ms | 2.1ms | 2.1ms | 0 |
+| liteio_mem | 9.55 MB/s | 1.7ms | 2.1ms | 2.1ms | 0 |
+| minio | 8.92 MB/s | 1.8ms | 2.4ms | 2.4ms | 0 |
+| liteio | 8.42 MB/s | 1.9ms | 2.4ms | 2.4ms | 0 |
+| seaweedfs | 7.05 MB/s | 2.3ms | 2.8ms | 2.8ms | 0 |
+| localstack | 1.33 MB/s | 12.1ms | 13.8ms | 13.8ms | 0 |
 
 ```
-  rustfs       ████████████████████████████████████████ 12.27 MB/s
-  liteio_mem   █████████████████████████████ 8.93 MB/s
-  seaweedfs    ██████████████████████ 7.04 MB/s
-  localstack   ████ 1.44 MB/s
+  rustfs       ████████████████████████████████████████ 9.60 MB/s
+  liteio_mem   ███████████████████████████████████████ 9.55 MB/s
+  minio        █████████████████████████████████████ 8.92 MB/s
+  liteio       ███████████████████████████████████ 8.42 MB/s
+  seaweedfs    █████████████████████████████ 7.05 MB/s
+  localstack   █████ 1.33 MB/s
 ```
 
 ### MixedWorkload/ReadHeavy_90_10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 10.61 MB/s | 1.4ms | 1.9ms | 1.9ms | 0 |
-| liteio_mem | 5.79 MB/s | 2.7ms | 2.9ms | 2.9ms | 0 |
-| seaweedfs | 5.60 MB/s | 3.1ms | 3.2ms | 3.2ms | 0 |
-| localstack | 1.55 MB/s | 10.3ms | 13.2ms | 13.2ms | 0 |
+| rustfs | 9.14 MB/s | 1.8ms | 2.5ms | 2.5ms | 0 |
+| minio | 6.87 MB/s | 2.5ms | 2.9ms | 2.9ms | 0 |
+| liteio_mem | 6.53 MB/s | 2.5ms | 2.9ms | 2.9ms | 0 |
+| seaweedfs | 6.11 MB/s | 2.6ms | 3.0ms | 3.0ms | 0 |
+| liteio | 5.37 MB/s | 3.0ms | 3.4ms | 3.4ms | 0 |
+| localstack | 1.28 MB/s | 13.6ms | 14.1ms | 14.1ms | 0 |
 
 ```
-  rustfs       ████████████████████████████████████████ 10.61 MB/s
-  liteio_mem   █████████████████████ 5.79 MB/s
-  seaweedfs    █████████████████████ 5.60 MB/s
-  localstack   █████ 1.55 MB/s
+  rustfs       ████████████████████████████████████████ 9.14 MB/s
+  minio        ██████████████████████████████ 6.87 MB/s
+  liteio_mem   ████████████████████████████ 6.53 MB/s
+  seaweedfs    ██████████████████████████ 6.11 MB/s
+  liteio       ███████████████████████ 5.37 MB/s
+  localstack   █████ 1.28 MB/s
 ```
 
 ### MixedWorkload/WriteHeavy_10_90
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 7.58 MB/s | 1.8ms | 2.8ms | 2.8ms | 0 |
-| liteio_mem | 5.09 MB/s | 3.5ms | 4.1ms | 4.1ms | 0 |
-| seaweedfs | 3.88 MB/s | 3.9ms | 5.5ms | 5.5ms | 0 |
-| localstack | 1.31 MB/s | 13.3ms | 13.7ms | 13.7ms | 0 |
+| rustfs | 6.12 MB/s | 2.5ms | 3.8ms | 3.8ms | 0 |
+| liteio | 5.61 MB/s | 3.3ms | 3.8ms | 3.8ms | 0 |
+| seaweedfs | 5.13 MB/s | 3.5ms | 3.9ms | 3.9ms | 0 |
+| liteio_mem | 4.12 MB/s | 4.3ms | 5.2ms | 5.2ms | 0 |
+| minio | 3.79 MB/s | 4.9ms | 5.8ms | 5.8ms | 0 |
+| localstack | 1.44 MB/s | 13.0ms | 13.3ms | 13.3ms | 0 |
 
 ```
-  rustfs       ████████████████████████████████████████ 7.58 MB/s
-  liteio_mem   ██████████████████████████ 5.09 MB/s
-  seaweedfs    ████████████████████ 3.88 MB/s
-  localstack   ██████ 1.31 MB/s
+  rustfs       ████████████████████████████████████████ 6.12 MB/s
+  liteio       ████████████████████████████████████ 5.61 MB/s
+  seaweedfs    █████████████████████████████████ 5.13 MB/s
+  liteio_mem   ██████████████████████████ 4.12 MB/s
+  minio        ████████████████████████ 3.79 MB/s
+  localstack   █████████ 1.44 MB/s
 ```
 
 ### Multipart/15MB_3Parts
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 176.64 MB/s | 76.8ms | 93.6ms | 93.6ms | 0 |
-| liteio_mem | 159.92 MB/s | 92.3ms | 93.0ms | 93.0ms | 0 |
-| seaweedfs | 132.14 MB/s | 108.1ms | 109.0ms | 109.0ms | 0 |
-| localstack | 126.59 MB/s | 117.3ms | 119.6ms | 119.6ms | 0 |
+| liteio | 164.84 MB/s | 91.0ms | 91.1ms | 91.1ms | 0 |
+| liteio_mem | 160.37 MB/s | 93.6ms | 93.8ms | 93.8ms | 0 |
+| minio | 157.91 MB/s | 92.4ms | 98.3ms | 98.3ms | 0 |
+| seaweedfs | 126.34 MB/s | 116.1ms | 122.0ms | 122.0ms | 0 |
+| localstack | 124.90 MB/s | 120.5ms | 121.5ms | 121.5ms | 0 |
+| rustfs | 70.27 MB/s | 207.6ms | 220.8ms | 220.8ms | 0 |
 
 ```
-  rustfs       ████████████████████████████████████████ 176.64 MB/s
-  liteio_mem   ████████████████████████████████████ 159.92 MB/s
-  seaweedfs    █████████████████████████████ 132.14 MB/s
-  localstack   ████████████████████████████ 126.59 MB/s
+  liteio       ████████████████████████████████████████ 164.84 MB/s
+  liteio_mem   ██████████████████████████████████████ 160.37 MB/s
+  minio        ██████████████████████████████████████ 157.91 MB/s
+  seaweedfs    ██████████████████████████████ 126.34 MB/s
+  localstack   ██████████████████████████████ 124.90 MB/s
+  rustfs       █████████████████ 70.27 MB/s
 ```
 
 ### ParallelRead/1KB/C1
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 4.69 MB/s | 205.4us | 292.9us | 198.0us | 293.0us | 293.0us | 0 |
-| seaweedfs | 2.22 MB/s | 439.7us | 516.5us | 427.2us | 516.6us | 516.6us | 0 |
-| rustfs | 1.94 MB/s | 504.3us | 560.2us | 487.1us | 560.6us | 560.6us | 0 |
-| localstack | 1.30 MB/s | 750.4us | 987.5us | 701.1us | 987.5us | 987.5us | 0 |
+| liteio | 3.96 MB/s | 237.9us | 375.6us | 208.5us | 375.7us | 375.7us | 0 |
+| liteio_mem | 3.37 MB/s | 288.6us | 430.5us | 202.6us | 430.6us | 430.6us | 0 |
+| minio | 2.65 MB/s | 368.4us | 500.0us | 357.0us | 500.1us | 500.1us | 0 |
+| seaweedfs | 2.16 MB/s | 451.4us | 486.1us | 432.2us | 486.4us | 486.4us | 0 |
+| rustfs | 1.86 MB/s | 525.1us | 749.7us | 481.2us | 749.9us | 749.9us | 0 |
+| localstack | 1.25 MB/s | 778.9us | 1.0ms | 715.9us | 1.0ms | 1.0ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 4.69 MB/s
-  seaweedfs    ██████████████████ 2.22 MB/s
-  rustfs       ████████████████ 1.94 MB/s
-  localstack   ███████████ 1.30 MB/s
+  liteio       ████████████████████████████████████████ 3.96 MB/s
+  liteio_mem   ██████████████████████████████████ 3.37 MB/s
+  minio        ██████████████████████████ 2.65 MB/s
+  seaweedfs    █████████████████████ 2.16 MB/s
+  rustfs       ██████████████████ 1.86 MB/s
+  localstack   ████████████ 1.25 MB/s
 ```
 
 ### ParallelRead/1KB/C10
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 1.11 MB/s | 875.0us | 1.3ms | 775.7us | 1.3ms | 1.3ms | 0 |
-| rustfs | 0.81 MB/s | 1.2ms | 1.6ms | 1.1ms | 1.6ms | 1.6ms | 0 |
-| seaweedfs | 0.77 MB/s | 1.3ms | 1.9ms | 1.2ms | 1.9ms | 1.9ms | 0 |
-| localstack | 0.17 MB/s | 5.8ms | 7.2ms | 5.9ms | 7.2ms | 7.2ms | 0 |
+| minio | 0.84 MB/s | 1.2ms | 1.8ms | 1.1ms | 1.8ms | 1.8ms | 0 |
+| liteio_mem | 0.77 MB/s | 1.3ms | 1.8ms | 1.3ms | 1.8ms | 1.8ms | 0 |
+| rustfs | 0.76 MB/s | 1.3ms | 1.7ms | 1.2ms | 1.7ms | 1.7ms | 0 |
+| seaweedfs | 0.69 MB/s | 1.4ms | 2.5ms | 1.0ms | 2.5ms | 2.5ms | 0 |
+| liteio | 0.64 MB/s | 1.5ms | 2.6ms | 1.0ms | 2.6ms | 2.6ms | 0 |
+| localstack | 0.17 MB/s | 5.7ms | 6.9ms | 5.9ms | 6.9ms | 6.9ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1.11 MB/s
-  rustfs       █████████████████████████████ 0.81 MB/s
-  seaweedfs    ███████████████████████████ 0.77 MB/s
-  localstack   ██████ 0.17 MB/s
+  minio        ████████████████████████████████████████ 0.84 MB/s
+  liteio_mem   ████████████████████████████████████ 0.77 MB/s
+  rustfs       ████████████████████████████████████ 0.76 MB/s
+  seaweedfs    ████████████████████████████████ 0.69 MB/s
+  liteio       ██████████████████████████████ 0.64 MB/s
+  localstack   ████████ 0.17 MB/s
 ```
 
 ### ParallelRead/1KB/C50
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 0.66 MB/s | 1.5ms | 1.8ms | 1.4ms | 1.8ms | 1.8ms | 0 |
-| seaweedfs | 0.54 MB/s | 1.8ms | 2.3ms | 1.7ms | 2.3ms | 2.3ms | 0 |
-| localstack | 0.07 MB/s | 13.6ms | 14.4ms | 13.6ms | 14.4ms | 14.4ms | 0 |
+| liteio_mem | 0.69 MB/s | 1.4ms | 1.8ms | 1.4ms | 1.8ms | 1.8ms | 0 |
+| minio | 0.62 MB/s | 1.6ms | 2.1ms | 1.5ms | 2.1ms | 2.1ms | 0 |
+| liteio | 0.55 MB/s | 1.8ms | 2.9ms | 1.7ms | 2.9ms | 2.9ms | 0 |
+| seaweedfs | 0.46 MB/s | 2.1ms | 2.7ms | 2.1ms | 2.7ms | 2.7ms | 0 |
+| localstack | 0.08 MB/s | 12.3ms | 13.7ms | 12.5ms | 13.7ms | 13.7ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 0.66 MB/s
-  seaweedfs    ████████████████████████████████ 0.54 MB/s
-  localstack   ████ 0.07 MB/s
+  liteio_mem   ████████████████████████████████████████ 0.69 MB/s
+  minio        ███████████████████████████████████ 0.62 MB/s
+  liteio       ███████████████████████████████ 0.55 MB/s
+  seaweedfs    ██████████████████████████ 0.46 MB/s
+  localstack   ████ 0.08 MB/s
 ```
 
 ### ParallelWrite/1KB/C1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 1.40 MB/s | 663.7us | 882.6us | 882.6us | 0 |
-| seaweedfs | 1.34 MB/s | 697.8us | 812.9us | 812.9us | 0 |
-| rustfs | 1.26 MB/s | 740.5us | 1.0ms | 1.0ms | 0 |
-| localstack | 1.20 MB/s | 772.2us | 1.0ms | 1.0ms | 0 |
+| seaweedfs | 1.35 MB/s | 702.0us | 900.2us | 900.2us | 0 |
+| liteio | 1.28 MB/s | 702.7us | 1.0ms | 1.0ms | 0 |
+| rustfs | 1.23 MB/s | 758.0us | 936.2us | 936.2us | 0 |
+| liteio_mem | 1.19 MB/s | 802.0us | 1.0ms | 1.0ms | 0 |
+| localstack | 1.19 MB/s | 757.2us | 1.1ms | 1.1ms | 0 |
+| minio | 1.04 MB/s | 901.1us | 1.0ms | 1.0ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 1.40 MB/s
-  seaweedfs    ██████████████████████████████████████ 1.34 MB/s
-  rustfs       ███████████████████████████████████ 1.26 MB/s
-  localstack   ██████████████████████████████████ 1.20 MB/s
+  seaweedfs    ████████████████████████████████████████ 1.35 MB/s
+  liteio       ██████████████████████████████████████ 1.28 MB/s
+  rustfs       ████████████████████████████████████ 1.23 MB/s
+  liteio_mem   ███████████████████████████████████ 1.19 MB/s
+  localstack   ███████████████████████████████████ 1.19 MB/s
+  minio        ██████████████████████████████ 1.04 MB/s
 ```
 
 ### ParallelWrite/1KB/C10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 0.38 MB/s | 1.8ms | 4.2ms | 4.2ms | 0 |
-| rustfs | 0.32 MB/s | 2.7ms | 4.7ms | 4.7ms | 0 |
-| liteio_mem | 0.18 MB/s | 4.7ms | 9.4ms | 9.4ms | 0 |
-| localstack | 0.18 MB/s | 4.6ms | 9.7ms | 9.7ms | 0 |
+| seaweedfs | 0.40 MB/s | 2.1ms | 3.7ms | 3.7ms | 0 |
+| rustfs | 0.35 MB/s | 2.4ms | 4.8ms | 4.8ms | 0 |
+| minio | 0.28 MB/s | 3.3ms | 4.6ms | 4.6ms | 0 |
+| liteio_mem | 0.26 MB/s | 3.1ms | 6.9ms | 6.9ms | 0 |
+| liteio | 0.25 MB/s | 3.3ms | 6.4ms | 6.4ms | 0 |
+| localstack | 0.16 MB/s | 5.4ms | 10.1ms | 10.1ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 0.38 MB/s
-  rustfs       ██████████████████████████████████ 0.32 MB/s
-  liteio_mem   ███████████████████ 0.18 MB/s
-  localstack   ██████████████████ 0.18 MB/s
+  seaweedfs    ████████████████████████████████████████ 0.40 MB/s
+  rustfs       ███████████████████████████████████ 0.35 MB/s
+  minio        ███████████████████████████ 0.28 MB/s
+  liteio_mem   █████████████████████████ 0.26 MB/s
+  liteio       ████████████████████████ 0.25 MB/s
+  localstack   ████████████████ 0.16 MB/s
 ```
 
 ### ParallelWrite/1KB/C50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 0.24 MB/s | 4.1ms | 4.7ms | 4.7ms | 0 |
-| liteio_mem | 0.21 MB/s | 4.8ms | 5.3ms | 5.3ms | 0 |
-| localstack | 0.11 MB/s | 8.4ms | 12.6ms | 12.6ms | 0 |
+| seaweedfs | 0.25 MB/s | 3.8ms | 4.5ms | 4.5ms | 0 |
+| liteio | 0.23 MB/s | 4.0ms | 5.0ms | 5.0ms | 0 |
+| liteio_mem | 0.21 MB/s | 4.6ms | 5.8ms | 5.8ms | 0 |
+| minio | 0.16 MB/s | 5.8ms | 7.7ms | 7.7ms | 0 |
+| localstack | 0.10 MB/s | 9.0ms | 13.3ms | 13.3ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 0.24 MB/s
-  liteio_mem   ██████████████████████████████████ 0.21 MB/s
-  localstack   ██████████████████ 0.11 MB/s
+  seaweedfs    ████████████████████████████████████████ 0.25 MB/s
+  liteio       █████████████████████████████████████ 0.23 MB/s
+  liteio_mem   █████████████████████████████████ 0.21 MB/s
+  minio        █████████████████████████ 0.16 MB/s
+  localstack   ████████████████ 0.10 MB/s
 ```
 
 ### RangeRead/End_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 211.51 MB/s | 1.1ms | 1.5ms | 1.5ms | 0 |
-| seaweedfs | 195.97 MB/s | 1.3ms | 1.4ms | 1.4ms | 0 |
-| rustfs | 125.89 MB/s | 1.9ms | 2.4ms | 2.4ms | 0 |
-| localstack | 44.29 MB/s | 1.6ms | 5.3ms | 5.3ms | 0 |
+| liteio | 238.94 MB/s | 1.0ms | 1.2ms | 1.2ms | 0 |
+| liteio_mem | 229.52 MB/s | 1.1ms | 1.3ms | 1.3ms | 0 |
+| seaweedfs | 194.59 MB/s | 1.3ms | 1.5ms | 1.5ms | 0 |
+| minio | 168.47 MB/s | 1.4ms | 2.3ms | 2.3ms | 0 |
+| localstack | 141.52 MB/s | 1.7ms | 2.1ms | 2.1ms | 0 |
+| rustfs | 110.41 MB/s | 2.2ms | 2.7ms | 2.7ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 211.51 MB/s
-  seaweedfs    █████████████████████████████████████ 195.97 MB/s
-  rustfs       ███████████████████████ 125.89 MB/s
-  localstack   ████████ 44.29 MB/s
+  liteio       ████████████████████████████████████████ 238.94 MB/s
+  liteio_mem   ██████████████████████████████████████ 229.52 MB/s
+  seaweedfs    ████████████████████████████████ 194.59 MB/s
+  minio        ████████████████████████████ 168.47 MB/s
+  localstack   ███████████████████████ 141.52 MB/s
+  rustfs       ██████████████████ 110.41 MB/s
 ```
 
 ### RangeRead/Middle_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 215.14 MB/s | 1.0ms | 1.6ms | 1.6ms | 0 |
-| seaweedfs | 185.77 MB/s | 1.3ms | 1.7ms | 1.7ms | 0 |
-| localstack | 158.49 MB/s | 1.6ms | 1.9ms | 1.9ms | 0 |
-| rustfs | 131.21 MB/s | 1.9ms | 2.1ms | 2.1ms | 0 |
+| liteio_mem | 227.51 MB/s | 1.1ms | 1.3ms | 1.3ms | 0 |
+| seaweedfs | 193.09 MB/s | 1.3ms | 1.4ms | 1.4ms | 0 |
+| liteio | 169.40 MB/s | 1.1ms | 2.4ms | 2.4ms | 0 |
+| minio | 127.50 MB/s | 1.8ms | 2.8ms | 2.8ms | 0 |
+| rustfs | 112.50 MB/s | 2.2ms | 2.6ms | 2.6ms | 0 |
+| localstack | 98.25 MB/s | 2.6ms | 3.6ms | 3.6ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 215.14 MB/s
-  seaweedfs    ██████████████████████████████████ 185.77 MB/s
-  localstack   █████████████████████████████ 158.49 MB/s
-  rustfs       ████████████████████████ 131.21 MB/s
+  liteio_mem   ████████████████████████████████████████ 227.51 MB/s
+  seaweedfs    █████████████████████████████████ 193.09 MB/s
+  liteio       █████████████████████████████ 169.40 MB/s
+  minio        ██████████████████████ 127.50 MB/s
+  rustfs       ███████████████████ 112.50 MB/s
+  localstack   █████████████████ 98.25 MB/s
 ```
 
 ### RangeRead/Start_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 187.51 MB/s | 1.3ms | 1.6ms | 1.6ms | 0 |
-| liteio_mem | 184.80 MB/s | 1.3ms | 1.6ms | 1.6ms | 0 |
-| localstack | 156.06 MB/s | 1.5ms | 1.8ms | 1.8ms | 0 |
-| rustfs | 128.39 MB/s | 1.9ms | 2.1ms | 2.1ms | 0 |
+| liteio | 232.89 MB/s | 1.0ms | 1.3ms | 1.3ms | 0 |
+| liteio_mem | 229.37 MB/s | 1.1ms | 1.3ms | 1.3ms | 0 |
+| seaweedfs | 184.83 MB/s | 1.3ms | 1.7ms | 1.7ms | 0 |
+| minio | 116.29 MB/s | 2.0ms | 3.1ms | 3.1ms | 0 |
+| localstack | 104.45 MB/s | 2.3ms | 3.4ms | 3.4ms | 0 |
+| rustfs | 102.94 MB/s | 2.3ms | 3.0ms | 3.0ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 187.51 MB/s
-  liteio_mem   ███████████████████████████████████████ 184.80 MB/s
-  localstack   █████████████████████████████████ 156.06 MB/s
-  rustfs       ███████████████████████████ 128.39 MB/s
+  liteio       ████████████████████████████████████████ 232.89 MB/s
+  liteio_mem   ███████████████████████████████████████ 229.37 MB/s
+  seaweedfs    ███████████████████████████████ 184.83 MB/s
+  minio        ███████████████████ 116.29 MB/s
+  localstack   █████████████████ 104.45 MB/s
+  rustfs       █████████████████ 102.94 MB/s
 ```
 
 ### Read/10MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 305.97 MB/s | 456.3us | 551.8us | 31.3ms | 37.0ms | 37.0ms | 0 |
-| localstack | 304.88 MB/s | 1.3ms | 1.4ms | 32.1ms | 33.0ms | 33.0ms | 0 |
-| seaweedfs | 292.48 MB/s | 2.1ms | 2.2ms | 34.0ms | 34.8ms | 34.8ms | 0 |
-| rustfs | 281.78 MB/s | 5.7ms | 6.8ms | 35.6ms | 35.8ms | 35.8ms | 0 |
+| liteio_mem | 313.52 MB/s | 432.8us | 435.2us | 32.0ms | 33.2ms | 33.2ms | 0 |
+| liteio | 310.44 MB/s | 616.1us | 720.6us | 31.1ms | 35.1ms | 35.1ms | 0 |
+| localstack | 305.86 MB/s | 1.4ms | 1.4ms | 32.6ms | 33.7ms | 33.7ms | 0 |
+| minio | 304.29 MB/s | 1.3ms | 1.6ms | 32.4ms | 33.9ms | 33.9ms | 0 |
+| seaweedfs | 273.14 MB/s | 2.4ms | 2.5ms | 35.0ms | 41.6ms | 41.6ms | 0 |
+| rustfs | 262.44 MB/s | 7.3ms | 9.0ms | 37.7ms | 39.6ms | 39.6ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 305.97 MB/s
-  localstack   ███████████████████████████████████████ 304.88 MB/s
-  seaweedfs    ██████████████████████████████████████ 292.48 MB/s
-  rustfs       ████████████████████████████████████ 281.78 MB/s
+  liteio_mem   ████████████████████████████████████████ 313.52 MB/s
+  liteio       ███████████████████████████████████████ 310.44 MB/s
+  localstack   ███████████████████████████████████████ 305.86 MB/s
+  minio        ██████████████████████████████████████ 304.29 MB/s
+  seaweedfs    ██████████████████████████████████ 273.14 MB/s
+  rustfs       █████████████████████████████████ 262.44 MB/s
 ```
 
 ### Read/1KB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 4.84 MB/s | 200.0us | 219.7us | 196.4us | 219.8us | 219.8us | 0 |
-| seaweedfs | 2.30 MB/s | 424.1us | 510.5us | 410.4us | 510.5us | 510.5us | 0 |
-| rustfs | 2.13 MB/s | 458.7us | 473.0us | 456.8us | 473.2us | 473.2us | 0 |
-| localstack | 1.42 MB/s | 686.1us | 754.6us | 677.2us | 754.7us | 754.7us | 0 |
+| liteio | 4.72 MB/s | 207.0us | 224.7us | 207.3us | 224.8us | 224.8us | 0 |
+| liteio_mem | 4.63 MB/s | 207.8us | 250.0us | 207.5us | 250.1us | 250.1us | 0 |
+| minio | 2.32 MB/s | 420.1us | 506.7us | 406.1us | 506.7us | 506.7us | 0 |
+| seaweedfs | 2.26 MB/s | 432.4us | 460.7us | 422.8us | 460.8us | 460.8us | 0 |
+| rustfs | 2.13 MB/s | 457.7us | 483.9us | 453.9us | 484.0us | 484.0us | 0 |
+| localstack | 1.38 MB/s | 709.8us | 777.8us | 708.6us | 777.9us | 777.9us | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 4.84 MB/s
-  seaweedfs    ███████████████████ 2.30 MB/s
-  rustfs       █████████████████ 2.13 MB/s
-  localstack   ███████████ 1.42 MB/s
+  liteio       ████████████████████████████████████████ 4.72 MB/s
+  liteio_mem   ███████████████████████████████████████ 4.63 MB/s
+  minio        ███████████████████ 2.32 MB/s
+  seaweedfs    ███████████████████ 2.26 MB/s
+  rustfs       ██████████████████ 2.13 MB/s
+  localstack   ███████████ 1.38 MB/s
 ```
 
 ### Read/1MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 285.68 MB/s | 350.9us | 493.3us | 3.4ms | 3.9ms | 3.9ms | 0 |
-| seaweedfs | 246.01 MB/s | 1.0ms | 1.4ms | 4.0ms | 4.3ms | 4.3ms | 0 |
-| localstack | 244.68 MB/s | 1.1ms | 1.3ms | 4.0ms | 4.6ms | 4.6ms | 0 |
-| rustfs | 199.31 MB/s | 1.9ms | 3.6ms | 4.6ms | 7.1ms | 7.1ms | 0 |
+| liteio | 274.67 MB/s | 346.6us | 440.1us | 3.7ms | 4.0ms | 4.0ms | 0 |
+| liteio_mem | 248.77 MB/s | 429.1us | 724.0us | 3.5ms | 5.8ms | 5.8ms | 0 |
+| seaweedfs | 248.06 MB/s | 965.6us | 1.4ms | 4.0ms | 4.4ms | 4.4ms | 0 |
+| localstack | 239.18 MB/s | 1.0ms | 1.2ms | 4.1ms | 4.5ms | 4.5ms | 0 |
+| minio | 234.76 MB/s | 1.2ms | 1.4ms | 4.2ms | 4.4ms | 4.4ms | 0 |
+| rustfs | 193.27 MB/s | 2.2ms | 3.1ms | 5.1ms | 6.3ms | 6.3ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 285.68 MB/s
-  seaweedfs    ██████████████████████████████████ 246.01 MB/s
-  localstack   ██████████████████████████████████ 244.68 MB/s
-  rustfs       ███████████████████████████ 199.31 MB/s
+  liteio       ████████████████████████████████████████ 274.67 MB/s
+  liteio_mem   ████████████████████████████████████ 248.77 MB/s
+  seaweedfs    ████████████████████████████████████ 248.06 MB/s
+  localstack   ██████████████████████████████████ 239.18 MB/s
+  minio        ██████████████████████████████████ 234.76 MB/s
+  rustfs       ████████████████████████████ 193.27 MB/s
 ```
 
 ### Read/64KB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio_mem | 148.55 MB/s | 220.0us | 316.7us | 407.5us | 477.0us | 497.9us | 0 |
-| rustfs | 86.26 MB/s | 609.6us | 678.8us | 717.2us | 783.6us | 834.0us | 0 |
-| seaweedfs | 82.05 MB/s | 593.0us | 1.1ms | 675.3us | 1.3ms | 1.5ms | 0 |
-| localstack | 65.69 MB/s | 840.3us | 964.5us | 927.0us | 1.1ms | 1.2ms | 0 |
+| liteio_mem | 148.36 MB/s | 241.7us | 402.3us | 398.3us | 541.8us | 547.0us | 0 |
+| liteio | 140.78 MB/s | 244.0us | 349.4us | 438.0us | 543.9us | 563.0us | 0 |
+| minio | 97.59 MB/s | 448.5us | 533.2us | 635.2us | 725.0us | 788.7us | 0 |
+| seaweedfs | 92.63 MB/s | 483.8us | 559.0us | 665.8us | 765.4us | 781.9us | 0 |
+| rustfs | 82.92 MB/s | 637.8us | 761.8us | 725.7us | 880.0us | 899.4us | 0 |
+| localstack | 63.48 MB/s | 870.4us | 1.0ms | 920.4us | 1.2ms | 1.3ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 148.55 MB/s
-  rustfs       ███████████████████████ 86.26 MB/s
-  seaweedfs    ██████████████████████ 82.05 MB/s
-  localstack   █████████████████ 65.69 MB/s
+  liteio_mem   ████████████████████████████████████████ 148.36 MB/s
+  liteio       █████████████████████████████████████ 140.78 MB/s
+  minio        ██████████████████████████ 97.59 MB/s
+  seaweedfs    ████████████████████████ 92.63 MB/s
+  rustfs       ██████████████████████ 82.92 MB/s
+  localstack   █████████████████ 63.48 MB/s
 ```
 
 ### Stat
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 4741 ops/s | 175.9us | 273.0us | 273.0us | 0 |
-| seaweedfs | 3365 ops/s | 288.6us | 331.4us | 331.4us | 0 |
-| rustfs | 3209 ops/s | 306.2us | 350.2us | 350.2us | 0 |
-| localstack | 1437 ops/s | 657.9us | 834.4us | 834.4us | 0 |
+| liteio | 6879 ops/s | 140.5us | 163.5us | 163.5us | 0 |
+| liteio_mem | 5899 ops/s | 164.3us | 196.3us | 196.3us | 0 |
+| seaweedfs | 3489 ops/s | 278.2us | 339.5us | 339.5us | 0 |
+| minio | 3267 ops/s | 285.0us | 451.5us | 451.5us | 0 |
+| rustfs | 3217 ops/s | 306.6us | 343.4us | 343.4us | 0 |
+| localstack | 1458 ops/s | 662.3us | 805.8us | 805.8us | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 4741 ops/s
-  seaweedfs    ████████████████████████████ 3365 ops/s
-  rustfs       ███████████████████████████ 3209 ops/s
-  localstack   ████████████ 1437 ops/s
+  liteio       ████████████████████████████████████████ 6879 ops/s
+  liteio_mem   ██████████████████████████████████ 5899 ops/s
+  seaweedfs    ████████████████████ 3489 ops/s
+  minio        ██████████████████ 3267 ops/s
+  rustfs       ██████████████████ 3217 ops/s
+  localstack   ████████ 1458 ops/s
 ```
 
 ### Write/10MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 188.91 MB/s | 50.5ms | 60.9ms | 60.9ms | 0 |
-| liteio_mem | 187.94 MB/s | 53.2ms | 54.8ms | 54.8ms | 0 |
-| localstack | 147.81 MB/s | 67.1ms | 69.4ms | 69.4ms | 0 |
-| seaweedfs | 144.66 MB/s | 69.7ms | 76.4ms | 76.4ms | 0 |
+| liteio | 191.36 MB/s | 51.8ms | 55.0ms | 55.0ms | 0 |
+| liteio_mem | 180.52 MB/s | 50.9ms | 70.4ms | 70.4ms | 0 |
+| minio | 172.57 MB/s | 58.2ms | 63.4ms | 63.4ms | 0 |
+| seaweedfs | 152.96 MB/s | 64.6ms | 69.2ms | 69.2ms | 0 |
+| localstack | 140.25 MB/s | 69.8ms | 80.5ms | 80.5ms | 0 |
+| rustfs | 81.63 MB/s | 132.0ms | 136.0ms | 136.0ms | 0 |
 
 ```
-  rustfs       ████████████████████████████████████████ 188.91 MB/s
-  liteio_mem   ███████████████████████████████████████ 187.94 MB/s
-  localstack   ███████████████████████████████ 147.81 MB/s
-  seaweedfs    ██████████████████████████████ 144.66 MB/s
+  liteio       ████████████████████████████████████████ 191.36 MB/s
+  liteio_mem   █████████████████████████████████████ 180.52 MB/s
+  minio        ████████████████████████████████████ 172.57 MB/s
+  seaweedfs    ███████████████████████████████ 152.96 MB/s
+  localstack   █████████████████████████████ 140.25 MB/s
+  rustfs       █████████████████ 81.63 MB/s
 ```
 
 ### Write/1KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| seaweedfs | 1.20 MB/s | 741.5us | 1.2ms | 1.2ms | 0 |
-| localstack | 1.19 MB/s | 807.2us | 897.0us | 897.0us | 0 |
-| rustfs | 1.09 MB/s | 856.0us | 1.0ms | 1.0ms | 0 |
-| liteio_mem | 0.80 MB/s | 1.1ms | 1.7ms | 1.7ms | 0 |
+| rustfs | 1.20 MB/s | 763.3us | 993.5us | 993.5us | 0 |
+| seaweedfs | 1.16 MB/s | 809.6us | 973.6us | 973.6us | 0 |
+| localstack | 1.03 MB/s | 921.0us | 1.3ms | 1.3ms | 0 |
+| liteio_mem | 0.90 MB/s | 1.0ms | 1.6ms | 1.6ms | 0 |
+| liteio | 0.83 MB/s | 1.0ms | 1.7ms | 1.7ms | 0 |
+| minio | 0.76 MB/s | 1.2ms | 1.5ms | 1.5ms | 0 |
 
 ```
-  seaweedfs    ████████████████████████████████████████ 1.20 MB/s
-  localstack   ███████████████████████████████████████ 1.19 MB/s
-  rustfs       ████████████████████████████████████ 1.09 MB/s
-  liteio_mem   ██████████████████████████ 0.80 MB/s
+  rustfs       ████████████████████████████████████████ 1.20 MB/s
+  seaweedfs    ██████████████████████████████████████ 1.16 MB/s
+  localstack   ██████████████████████████████████ 1.03 MB/s
+  liteio_mem   █████████████████████████████ 0.90 MB/s
+  liteio       ███████████████████████████ 0.83 MB/s
+  minio        █████████████████████████ 0.76 MB/s
 ```
 
 ### Write/1MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 162.93 MB/s | 5.8ms | 7.1ms | 7.1ms | 0 |
-| rustfs | 156.54 MB/s | 6.4ms | 7.9ms | 7.9ms | 0 |
-| localstack | 127.89 MB/s | 7.6ms | 8.4ms | 8.4ms | 0 |
-| seaweedfs | 118.01 MB/s | 8.1ms | 9.1ms | 9.1ms | 0 |
+| rustfs | 177.52 MB/s | 5.4ms | 6.2ms | 6.2ms | 0 |
+| liteio_mem | 161.75 MB/s | 6.1ms | 6.8ms | 6.8ms | 0 |
+| liteio | 161.18 MB/s | 5.9ms | 6.8ms | 6.8ms | 0 |
+| minio | 136.15 MB/s | 7.2ms | 7.8ms | 7.8ms | 0 |
+| localstack | 124.75 MB/s | 7.7ms | 8.8ms | 8.8ms | 0 |
+| seaweedfs | 122.10 MB/s | 7.8ms | 10.0ms | 10.0ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 162.93 MB/s
-  rustfs       ██████████████████████████████████████ 156.54 MB/s
-  localstack   ███████████████████████████████ 127.89 MB/s
-  seaweedfs    ████████████████████████████ 118.01 MB/s
+  rustfs       ████████████████████████████████████████ 177.52 MB/s
+  liteio_mem   ████████████████████████████████████ 161.75 MB/s
+  liteio       ████████████████████████████████████ 161.18 MB/s
+  minio        ██████████████████████████████ 136.15 MB/s
+  localstack   ████████████████████████████ 124.75 MB/s
+  seaweedfs    ███████████████████████████ 122.10 MB/s
 ```
 
 ### Write/64KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio_mem | 61.24 MB/s | 1.0ms | 1.3ms | 1.3ms | 0 |
-| rustfs | 55.82 MB/s | 1.1ms | 1.4ms | 1.4ms | 0 |
-| localstack | 54.88 MB/s | 1.1ms | 1.3ms | 1.7ms | 0 |
-| seaweedfs | 53.86 MB/s | 1.2ms | 1.3ms | 1.4ms | 0 |
+| liteio | 62.18 MB/s | 965.0us | 1.2ms | 1.5ms | 0 |
+| rustfs | 59.00 MB/s | 1.0ms | 1.2ms | 1.3ms | 0 |
+| liteio_mem | 56.36 MB/s | 1.0ms | 1.4ms | 1.7ms | 0 |
+| seaweedfs | 53.74 MB/s | 1.1ms | 1.3ms | 1.7ms | 0 |
+| localstack | 51.59 MB/s | 1.2ms | 1.4ms | 1.7ms | 0 |
+| minio | 43.85 MB/s | 1.4ms | 1.8ms | 2.0ms | 0 |
 
 ```
-  liteio_mem   ████████████████████████████████████████ 61.24 MB/s
-  rustfs       ████████████████████████████████████ 55.82 MB/s
-  localstack   ███████████████████████████████████ 54.88 MB/s
-  seaweedfs    ███████████████████████████████████ 53.86 MB/s
+  liteio       ████████████████████████████████████████ 62.18 MB/s
+  rustfs       █████████████████████████████████████ 59.00 MB/s
+  liteio_mem   ████████████████████████████████████ 56.36 MB/s
+  seaweedfs    ██████████████████████████████████ 53.74 MB/s
+  localstack   █████████████████████████████████ 51.59 MB/s
+  minio        ████████████████████████████ 43.85 MB/s
 ```
+
+## Resource Usage
+
+| Driver | Memory | RSS | Cache | CPU | Volume | Block I/O |
+|--------|--------|-----|-------|-----|--------|----------|
+| liteio | 20.47MiB / 7.653GiB | 20.5 MB | - | 0.0% | (no data) | 4.78MB / 1.37GB |
+| liteio_mem | 53.22MiB / 7.653GiB | 53.2 MB | - | 0.8% | 911.6 MB | 23.3MB / 7.67GB |
+| localstack | 502.9MiB / 7.653GiB | 502.9 MB | - | 0.1% | 0.0 MB | 24.4MB / 5.48GB |
+| minio | 546.3MiB / 7.653GiB | 546.3 MB | - | 0.1% | 3557.4 MB | 198MB / 9.1GB |
+| rustfs | 407.3MiB / 7.653GiB | 407.3 MB | - | 0.1% | 364.2 MB | 52MB / 4.9GB |
+| seaweedfs | 64.71MiB / 7.653GiB | 64.7 MB | - | 0.0% | (no data) | 9.28MB / 1.44MB |
+
+### Memory Analysis Note
+
+> **RSS (Resident Set Size)**: Actual application memory usage.
+> 
+> **Cache**: Linux page cache from filesystem I/O. Disk-based drivers show higher total memory because the OS caches file pages in RAM. This memory is reclaimable and doesn't indicate a memory leak.
+> 
+> Memory-based drivers (like `liteio_mem`) have minimal cache because data stays in application memory (RSS), not filesystem cache.
 
 ## Recommendations
 
-- **Best for write-heavy workloads:** rustfs
+- **Best for write-heavy workloads:** liteio
 - **Best for read-heavy workloads:** liteio_mem
 
 ---
