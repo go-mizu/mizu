@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package storage.v1;
 
-option go_package = "github.com/go-mizu/blueprints/drive/lib/storage/transport/grpc/storagepb";
+option go_package = "github.com/go-mizu/blueprints/localflare/pkg/storage/transport/grpc/storagepb";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";

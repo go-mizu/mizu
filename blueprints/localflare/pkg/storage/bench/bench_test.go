@@ -145,6 +145,21 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 		})
 	}
 
+	// LiteIO (port 9200)
+	if checkS3Endpoint("localhost:9200", "liteio", "liteio123") {
+		configs = append(configs, DriverConfig{
+			Name:   "liteio",
+			DSN:    "s3://liteio:liteio123@localhost:9200/test-bucket?insecure=true&force_path_style=true",
+			Bucket: "test-bucket",
+		})
+	} else {
+		configs = append(configs, DriverConfig{
+			Name:    "liteio",
+			Skip:    true,
+			SkipMsg: "LiteIO not available at localhost:9200",
+		})
+	}
+
 	return configs
 }
 

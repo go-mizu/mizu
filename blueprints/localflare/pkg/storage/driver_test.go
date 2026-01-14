@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
-	_ "github.com/go-mizu/blueprints/drive/lib/storage/driver/local" // Register local driver
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local" // Register local driver
 )
 
 // mockDriver is a simple driver for testing registration.

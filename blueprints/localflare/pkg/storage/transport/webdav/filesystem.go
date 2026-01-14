@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 	"golang.org/x/net/webdav"
 )
 

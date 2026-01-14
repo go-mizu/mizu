@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
-	"github.com/go-mizu/blueprints/drive/lib/storage/driver/local"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 )
 
 // driver implements storage.Driver for the box backend.

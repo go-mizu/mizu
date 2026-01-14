@@ -1,0 +1,10 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/go-mizu/blueprints/localflare/pkg/storage/bench
+cpu: Apple M4
+BenchmarkWrite/liteio/Tiny_1B-10 	    2793	    868919 ns/op	   0.00 MB/s	   41190 B/op	     557 allocs/op
+BenchmarkWrite/liteio/Small_1KB-10         	    2863	    847669 ns/op	   1.21 MB/s	   42549 B/op	     561 allocs/op
+BenchmarkWrite/liteio/Medium_64KB-10       	    2108	   1102120 ns/op	  59.46 MB/s	   74634 B/op	     561 allocs/op
+BenchmarkWrite/liteio/Standard_1MB-10      	     547	   3905151 ns/op	 268.51 MB/s	   75771 B/op	     562 allocs/op
+PASS
+ok  	github.com/go-mizu/blueprints/localflare/pkg/storage/bench	18.386s

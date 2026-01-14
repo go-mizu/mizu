@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
-	_ "github.com/go-mizu/blueprints/drive/lib/storage/driver/memory" // Register memory driver
-	pb "github.com/go-mizu/blueprints/drive/lib/storage/transport/grpc/storagepb"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/memory" // Register memory driver
+	pb "github.com/go-mizu/blueprints/localflare/pkg/storage/transport/grpc/storagepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

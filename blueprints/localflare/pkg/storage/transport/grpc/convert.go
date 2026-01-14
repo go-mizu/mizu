@@ -5,8 +5,8 @@ package grpc
 import (
 	"encoding/json"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
-	pb "github.com/go-mizu/blueprints/drive/lib/storage/transport/grpc/storagepb"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
+	pb "github.com/go-mizu/blueprints/localflare/pkg/storage/transport/grpc/storagepb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 

@@ -2146,7 +2146,7 @@ const file_storage_proto_rawDesc = "" +
 	"\x11CompleteMultipart\x12$.storage.v1.CompleteMultipartRequest\x1a\x16.storage.v1.ObjectInfo\x12K\n" +
 	"\x0eAbortMultipart\x12!.storage.v1.AbortMultipartRequest\x1a\x16.google.protobuf.Empty\x12H\n" +
 	"\tSignedURL\x12\x1c.storage.v1.SignedURLRequest\x1a\x1d.storage.v1.SignedURLResponse\x12C\n" +
-	"\vGetFeatures\x12\x1e.storage.v1.GetFeaturesRequest\x1a\x14.storage.v1.FeaturesBJZHgithub.com/go-mizu/blueprints/drive/lib/storage/transport/grpc/storagepbb\x06proto3"
+	"\vGetFeatures\x12\x1e.storage.v1.GetFeaturesRequest\x1a\x14.storage.v1.FeaturesBJZHgithub.com/go-mizu/blueprints/localflare/pkg/storage/transport/grpc/storagepbb\x06proto3"
 
 var (
 	file_storage_proto_rawDescOnce sync.Once

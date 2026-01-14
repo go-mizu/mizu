@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
 // simpleReader implements io.Reader for testing

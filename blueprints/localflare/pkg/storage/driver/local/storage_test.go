@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
-	"github.com/go-mizu/blueprints/drive/lib/storage/driver/local"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 )
 
 func Open(ctx context.Context, dsn string) (storage.Storage, error) {
