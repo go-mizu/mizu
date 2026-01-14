@@ -922,14 +922,15 @@ func BenchmarkMixedWorkload(b *testing.B) {
 // ============================================================================
 
 func BenchmarkMultipart(b *testing.B) {
+	// S3 requires minimum 5MB per part (except the last part)
 	uploads := []struct {
 		name      string
 		totalSize int
 		partSize  int
 		partCount int
 	}{
-		{"5MB_5Parts", 5 * 1024 * 1024, 1024 * 1024, 5},
-		{"10MB_5Parts", 10 * 1024 * 1024, 2 * 1024 * 1024, 5},
+		{"15MB_3Parts", 15 * 1024 * 1024, 5 * 1024 * 1024, 3},  // 3 x 5MB parts
+		{"25MB_5Parts", 25 * 1024 * 1024, 5 * 1024 * 1024, 5},  // 5 x 5MB parts
 	}
 
 	configs := getDriverConfigs(b)
