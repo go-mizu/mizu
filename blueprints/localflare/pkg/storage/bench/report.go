@@ -389,3 +389,222 @@ func WriteReport(benchOutput, outputPath string) error {
 
 	return nil
 }
+
+// Report holds complete benchmark results from CLI runner.
+type Report struct {
+	Timestamp   time.Time               `json:"timestamp"`
+	Config      *Config                 `json:"config"`
+	Results     []*Metrics              `json:"results"`
+	DockerStats map[string]*DockerStats `json:"docker_stats,omitempty"`
+}
+
+// SaveJSON saves the report as JSON.
+func (r *Report) SaveJSON(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	jsonPath := filepath.Join(outputDir, "raw_results.json")
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+
+	return os.WriteFile(jsonPath, data, 0644)
+}
+
+// SaveMarkdown saves the report as Markdown.
+func (r *Report) SaveMarkdown(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	markdown := r.generateMarkdown()
+	mdPath := filepath.Join(outputDir, "benchmark_report.md")
+	return os.WriteFile(mdPath, []byte(markdown), 0644)
+}
+
+func (r *Report) generateMarkdown() string {
+	var sb strings.Builder
+
+	// Header
+	sb.WriteString("# Storage Benchmark Report\n\n")
+	sb.WriteString(fmt.Sprintf("**Generated:** %s\n\n", r.Timestamp.Format(time.RFC3339)))
+	sb.WriteString(fmt.Sprintf("**Go Version:** %s\n\n", runtime.Version()))
+	sb.WriteString(fmt.Sprintf("**Platform:** %s/%s\n\n", runtime.GOOS, runtime.GOARCH))
+
+	// Configuration
+	if r.Config != nil {
+		sb.WriteString("## Configuration\n\n")
+		sb.WriteString("| Parameter | Value |\n")
+		sb.WriteString("|-----------|-------|\n")
+		sb.WriteString(fmt.Sprintf("| Iterations | %d |\n", r.Config.Iterations))
+		sb.WriteString(fmt.Sprintf("| Warmup | %d |\n", r.Config.WarmupIterations))
+		sb.WriteString(fmt.Sprintf("| Concurrency | %d |\n", r.Config.Concurrency))
+		sb.WriteString(fmt.Sprintf("| Timeout | %v |\n", r.Config.Timeout))
+		sb.WriteString("\n")
+	}
+
+	// Group results by driver
+	byDriver := make(map[string][]*Metrics)
+	byOperation := make(map[string][]*Metrics)
+	drivers := make(map[string]bool)
+
+	for _, m := range r.Results {
+		byDriver[m.Driver] = append(byDriver[m.Driver], m)
+		byOperation[m.Operation] = append(byOperation[m.Operation], m)
+		drivers[m.Driver] = true
+	}
+
+	// Driver list
+	driverList := make([]string, 0, len(drivers))
+	for d := range drivers {
+		driverList = append(driverList, d)
+	}
+	sort.Strings(driverList)
+
+	sb.WriteString("## Drivers Tested\n\n")
+	for _, d := range driverList {
+		sb.WriteString(fmt.Sprintf("- %s (%d benchmarks)\n", d, len(byDriver[d])))
+	}
+	sb.WriteString("\n")
+
+	// Operation comparison tables
+	sb.WriteString("## Performance Comparison\n\n")
+
+	// Get unique operations
+	operations := make([]string, 0, len(byOperation))
+	for op := range byOperation {
+		operations = append(operations, op)
+	}
+	sort.Strings(operations)
+
+	for _, op := range operations {
+		results := byOperation[op]
+		if len(results) < 2 {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("### %s\n\n", op))
+		sb.WriteString("| Driver | Throughput | P50 | P95 | P99 | Errors |\n")
+		sb.WriteString("|--------|------------|-----|-----|-----|--------|\n")
+
+		// Sort by throughput (descending)
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Throughput > results[j].Throughput
+		})
+
+		for _, m := range results {
+			var throughput string
+			if m.ObjectSize > 0 {
+				throughput = fmt.Sprintf("%.2f MB/s", m.Throughput)
+			} else {
+				throughput = fmt.Sprintf("%.0f ops/s", m.Throughput)
+			}
+
+			sb.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %v | %d |\n",
+				m.Driver,
+				throughput,
+				formatLatency(m.P50Latency),
+				formatLatency(m.P95Latency),
+				formatLatency(m.P99Latency),
+				m.Errors,
+			))
+		}
+		sb.WriteString("\n")
+
+		// Add bar chart
+		r.writeBarChart(&sb, results)
+	}
+
+	// Docker stats
+	if len(r.DockerStats) > 0 {
+		sb.WriteString("## Resource Usage\n\n")
+		sb.WriteString("| Driver | Memory | CPU | Disk |\n")
+		sb.WriteString("|--------|--------|-----|------|\n")
+
+		for _, d := range driverList {
+			if stats, ok := r.DockerStats[d]; ok {
+				disk := "-"
+				if stats.DiskUsage > 0 {
+					disk = fmt.Sprintf("%.1f MB", stats.DiskUsage)
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %s |\n",
+					d, stats.MemoryUsage, stats.CPUPercent, disk))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	// Recommendations
+	sb.WriteString("## Recommendations\n\n")
+
+	// Find best performers
+	writeBest := r.findBestForOperation("Write")
+	readBest := r.findBestForOperation("Read")
+
+	if writeBest != "" {
+		sb.WriteString(fmt.Sprintf("- **Best for write-heavy workloads:** %s\n", writeBest))
+	}
+	if readBest != "" {
+		sb.WriteString(fmt.Sprintf("- **Best for read-heavy workloads:** %s\n", readBest))
+	}
+
+	sb.WriteString("\n---\n\n")
+	sb.WriteString("*Report generated by storage benchmark CLI*\n")
+
+	return sb.String()
+}
+
+func (r *Report) writeBarChart(sb *strings.Builder, results []*Metrics) {
+	if len(results) == 0 {
+		return
+	}
+
+	sb.WriteString("```\n")
+	maxVal := results[0].Throughput // Already sorted by throughput descending
+	maxWidth := 40
+
+	for _, m := range results {
+		barLen := int(m.Throughput / maxVal * float64(maxWidth))
+		if barLen < 1 {
+			barLen = 1
+		}
+		bar := strings.Repeat("█", barLen)
+		var val string
+		if m.ObjectSize > 0 {
+			val = fmt.Sprintf("%.2f MB/s", m.Throughput)
+		} else {
+			val = fmt.Sprintf("%.0f ops/s", m.Throughput)
+		}
+		sb.WriteString(fmt.Sprintf("  %-12s %s %s\n", m.Driver, bar, val))
+	}
+	sb.WriteString("```\n\n")
+}
+
+func (r *Report) findBestForOperation(prefix string) string {
+	var best string
+	var bestThroughput float64
+
+	for _, m := range r.Results {
+		if strings.HasPrefix(m.Operation, prefix) && m.Throughput > bestThroughput {
+			bestThroughput = m.Throughput
+			best = m.Driver
+		}
+	}
+
+	return best
+}
+
+func formatLatency(d time.Duration) string {
+	if d < time.Microsecond {
+		return fmt.Sprintf("%dns", d.Nanoseconds())
+	}
+	if d < time.Millisecond {
+		return fmt.Sprintf("%.1fus", float64(d.Nanoseconds())/1000)
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%.1fms", float64(d.Nanoseconds())/1000000)
+	}
+	return fmt.Sprintf("%.2fs", d.Seconds())
+}
