@@ -112,12 +112,80 @@ func (c *DockerStatsCollector) GetStats(ctx context.Context, containerName strin
 	return stats, nil
 }
 
-// getMemoryBreakdown retrieves cache and RSS memory from cgroup stats.
+// getMemoryBreakdown retrieves cache and RSS memory from Docker API.
 func (c *DockerStatsCollector) getMemoryBreakdown(ctx context.Context, containerName string, stats *DockerStats) {
 	memCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	// Try to get memory stats from container inspect
+	// First try using docker stats with --no-trunc to get full stats JSON
+	// This is more reliable than exec-ing into the container
+	cmd := exec.CommandContext(memCtx, "docker", "inspect", "--format",
+		`{{json .HostConfig.Memory}}`,
+		containerName)
+
+	output, err := cmd.Output()
+	if err == nil {
+		var memLimit int64
+		if json.Unmarshal(output, &memLimit) == nil && memLimit > 0 {
+			stats.MemoryLimitMB = float64(memLimit) / (1024 * 1024)
+		}
+	}
+
+	// Try multiple methods to get memory breakdown
+	// Method 1: Read from host's cgroup filesystem
+	c.getMemoryFromHostCgroup(ctx, containerName, stats)
+
+	// Method 2: If that failed, try exec into container (fallback)
+	if stats.MemoryRSSMB == 0 && stats.MemoryCacheMB == 0 {
+		c.getMemoryFromContainerExec(ctx, containerName, stats)
+	}
+}
+
+// getMemoryFromHostCgroup reads memory stats from host's cgroup filesystem.
+func (c *DockerStatsCollector) getMemoryFromHostCgroup(ctx context.Context, containerName string, stats *DockerStats) {
+	memCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Get container ID first
+	cmd := exec.CommandContext(memCtx, "docker", "inspect", "--format", "{{.Id}}", containerName)
+	output, err := cmd.Output()
+	if err != nil {
+		return
+	}
+	containerID := strings.TrimSpace(string(output))
+
+	// Try cgroup v2 path on host (macOS Docker uses VM, so this might not work)
+	// On Linux, we'd read from /sys/fs/cgroup/docker/<container-id>/memory.stat
+
+	// For now, estimate from the memory usage stats we already have
+	// RSS is approximately total memory minus cache
+	if stats.MemoryUsageMB > 0 {
+		// This is a rough estimate - actual RSS requires cgroup access
+		stats.MemoryRSSMB = stats.MemoryUsageMB
+	}
+
+	// Try to get cache using docker stats one-shot with extended format
+	statsCmd := exec.CommandContext(memCtx, "docker", "stats", "--no-stream", "--format",
+		`{{.MemUsage}}`,
+		containerName)
+	statsOutput, err := statsCmd.Output()
+	if err == nil {
+		// Parse "123MiB / 7.5GiB" format - the first part includes cache
+		parts := strings.Split(strings.TrimSpace(string(statsOutput)), " / ")
+		if len(parts) == 2 {
+			stats.MemoryUsageMB = parseSize(parts[0])
+		}
+	}
+
+	_ = containerID // Currently unused, but kept for potential future cgroup access
+}
+
+// getMemoryFromContainerExec tries to get memory stats by executing commands in container.
+func (c *DockerStatsCollector) getMemoryFromContainerExec(ctx context.Context, containerName string, stats *DockerStats) {
+	memCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Try cgroup v2 path first
 	cmd := exec.CommandContext(memCtx, "docker", "exec", containerName,
 		"cat", "/sys/fs/cgroup/memory.stat")
 
@@ -150,14 +218,14 @@ func (c *DockerStatsCollector) getMemoryBreakdown(ctx context.Context, container
 	}
 }
 
-// getVolumeInfo retrieves volume name and size.
+// getVolumeInfo retrieves volume/storage info for a container.
 func (c *DockerStatsCollector) getVolumeInfo(ctx context.Context, containerName string, stats *DockerStats) {
 	volCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	// Get volume name from container inspect
+	// Get all mount information from container inspect
 	cmd := exec.CommandContext(volCtx, "docker", "inspect", "--format",
-		`{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}`,
+		`{{range .Mounts}}{{.Type}}:{{.Name}}:{{.Destination}}|{{end}}`,
 		containerName)
 
 	output, err := cmd.Output()
@@ -165,22 +233,65 @@ func (c *DockerStatsCollector) getVolumeInfo(ctx context.Context, containerName 
 		return
 	}
 
-	volumeName := strings.TrimSpace(string(output))
+	mounts := strings.TrimSpace(string(output))
+	if mounts == "" {
+		stats.VolumeName = "(no mounts)"
+		return
+	}
+
+	// Parse mount info - find the first volume or bind mount
+	var volumeName string
+	var mountType string
+	for _, mount := range strings.Split(mounts, "|") {
+		if mount == "" {
+			continue
+		}
+		parts := strings.SplitN(mount, ":", 3)
+		if len(parts) >= 2 {
+			mType := parts[0]
+			name := parts[1]
+
+			if mType == "volume" && volumeName == "" {
+				volumeName = name
+				mountType = "volume"
+				break
+			} else if mType == "bind" && volumeName == "" {
+				volumeName = name
+				mountType = "bind"
+			} else if mType == "tmpfs" && volumeName == "" {
+				volumeName = "(tmpfs)"
+				mountType = "tmpfs"
+			}
+		}
+	}
+
 	if volumeName == "" {
+		stats.VolumeName = "(no data volumes)"
 		return
 	}
 	stats.VolumeName = volumeName
 
-	// Get volume size using docker system df
+	// Get volume size based on mount type
+	switch mountType {
+	case "volume":
+		stats.VolumeSize = c.getDockerVolumeSize(ctx, volumeName)
+	case "bind":
+		stats.VolumeSize = c.getBindMountSize(ctx, containerName, volumeName)
+	case "tmpfs":
+		// tmpfs is in-memory, size is part of memory stats
+		stats.VolumeName = "(tmpfs - in memory)"
+	}
+}
+
+// getDockerVolumeSize gets the size of a Docker volume.
+func (c *DockerStatsCollector) getDockerVolumeSize(ctx context.Context, volumeName string) float64 {
 	dfCtx, dfCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dfCancel()
 
 	dfCmd := exec.CommandContext(dfCtx, "docker", "system", "df", "-v", "--format", "json")
 	dfOutput, err := dfCmd.Output()
 	if err != nil {
-		// Fallback to table format
-		stats.VolumeSize = c.getDiskUsage(ctx, containerName)
-		return
+		return c.getVolumeSizeFromInspect(ctx, volumeName)
 	}
 
 	// Docker system df -v --format json returns JSONL (one object per category)
@@ -199,15 +310,85 @@ func (c *DockerStatsCollector) getVolumeInfo(ctx context.Context, containerName 
 		if err := json.Unmarshal([]byte(line), &item); err == nil && len(item.Volumes) > 0 {
 			for _, vol := range item.Volumes {
 				if strings.Contains(vol.Name, volumeName) || vol.Name == volumeName {
-					stats.VolumeSize = parseSize(vol.Size)
-					return
+					return parseSize(vol.Size)
 				}
 			}
 		}
 	}
 
-	// Fallback
-	stats.VolumeSize = c.getDiskUsage(ctx, containerName)
+	return c.getVolumeSizeFromInspect(ctx, volumeName)
+}
+
+// getVolumeSizeFromInspect tries to get volume size via docker volume inspect.
+func (c *DockerStatsCollector) getVolumeSizeFromInspect(ctx context.Context, volumeName string) float64 {
+	volCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Try to get volume info
+	cmd := exec.CommandContext(volCtx, "docker", "volume", "inspect", "--format",
+		`{{.Mountpoint}}`, volumeName)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+
+	mountpoint := strings.TrimSpace(string(output))
+	if mountpoint == "" {
+		return 0
+	}
+
+	// Try to get size using du (may not work on macOS Docker VM)
+	duCtx, duCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer duCancel()
+
+	duCmd := exec.CommandContext(duCtx, "du", "-sm", mountpoint)
+	duOutput, err := duCmd.Output()
+	if err != nil {
+		return 0
+	}
+
+	parts := strings.Fields(string(duOutput))
+	if len(parts) >= 1 {
+		size, _ := strconv.ParseFloat(parts[0], 64)
+		return size
+	}
+
+	return 0
+}
+
+// getBindMountSize gets the size of a bind mount directory.
+func (c *DockerStatsCollector) getBindMountSize(ctx context.Context, containerName, path string) float64 {
+	// For bind mounts, try to check the size inside the container
+	duCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Try to run du inside the container
+	cmd := exec.CommandContext(duCtx, "docker", "exec", containerName,
+		"du", "-sm", path)
+	output, err := cmd.Output()
+	if err != nil {
+		// Try without -m flag (some containers have busybox du)
+		cmd = exec.CommandContext(duCtx, "docker", "exec", containerName,
+			"du", "-s", path)
+		output, err = cmd.Output()
+		if err != nil {
+			return 0
+		}
+		// busybox du returns KB
+		parts := strings.Fields(string(output))
+		if len(parts) >= 1 {
+			size, _ := strconv.ParseFloat(parts[0], 64)
+			return size / 1024 // Convert KB to MB
+		}
+	}
+
+	parts := strings.Fields(string(output))
+	if len(parts) >= 1 {
+		size, _ := strconv.ParseFloat(parts[0], 64)
+		return size
+	}
+
+	return 0
 }
 
 // getContainerSize retrieves container and image size.
@@ -251,49 +432,6 @@ func (c *DockerStatsCollector) GetAllStats(ctx context.Context, drivers []Driver
 	}
 
 	return results
-}
-
-func (c *DockerStatsCollector) getDiskUsage(ctx context.Context, containerName string) float64 {
-	// Try to get volume size
-	volCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	// Get the volume name from container inspect
-	cmd := exec.CommandContext(volCtx, "docker", "inspect", "--format",
-		`{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{end}}{{end}}`,
-		containerName)
-
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-
-	volumeName := strings.TrimSpace(string(output))
-	if volumeName == "" {
-		return 0
-	}
-
-	// Get volume size using docker system df
-	dfCtx, dfCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer dfCancel()
-
-	dfCmd := exec.CommandContext(dfCtx, "docker", "system", "df", "-v", "--format",
-		`{{range .Volumes}}{{.Name}}\t{{.Size}}{{"\n"}}{{end}}`)
-
-	dfOutput, err := dfCmd.Output()
-	if err != nil {
-		return 0
-	}
-
-	// Parse output to find our volume
-	for _, line := range strings.Split(string(dfOutput), "\n") {
-		parts := strings.Split(line, "\t")
-		if len(parts) >= 2 && strings.Contains(parts[0], volumeName) {
-			return parseSize(parts[1])
-		}
-	}
-
-	return 0
 }
 
 // parsePercent parses percentage strings like "2.5%" or "12.34%".

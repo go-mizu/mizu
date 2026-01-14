@@ -11,8 +11,11 @@ type Config struct {
 	Iterations int
 	// WarmupIterations is the number of warmup iterations.
 	WarmupIterations int
-	// Concurrency is the parallel operation concurrency.
+	// Concurrency is the parallel operation concurrency (default level).
 	Concurrency int
+	// ConcurrencyLevels is the list of concurrency levels to test.
+	// If empty, only Concurrency is used.
+	ConcurrencyLevels []int
 	// ObjectSizes is the list of object sizes to benchmark.
 	ObjectSizes []int
 	// OutputDir is the directory for reports.
@@ -21,6 +24,8 @@ type Config struct {
 	Drivers []string
 	// Timeout is the per-operation timeout.
 	Timeout time.Duration
+	// ParallelTimeout is the timeout for parallel operations (longer).
+	ParallelTimeout time.Duration
 	// Quick enables quick mode (fewer iterations).
 	Quick bool
 	// Large enables large file benchmarks.
@@ -34,17 +39,19 @@ type Config struct {
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		Iterations:       100,
-		WarmupIterations: 10,
-		Concurrency:      10,
-		ObjectSizes:      []int{1024, 64 * 1024, 1024 * 1024}, // 1KB, 64KB, 1MB
-		OutputDir:        "./pkg/storage/report",
-		Drivers:          nil, // nil means all
-		Timeout:          30 * time.Second,
-		Quick:            false,
-		Large:            false,
-		DockerStats:      true,
-		Verbose:          false,
+		Iterations:        100,
+		WarmupIterations:  10,
+		Concurrency:       10,
+		ConcurrencyLevels: []int{1, 5, 10, 25, 50}, // Multiple concurrency levels to test
+		ObjectSizes:       []int{1024, 64 * 1024, 1024 * 1024}, // 1KB, 64KB, 1MB
+		OutputDir:         "./pkg/storage/report",
+		Drivers:           nil, // nil means all
+		Timeout:           30 * time.Second,
+		ParallelTimeout:   60 * time.Second, // Longer timeout for parallel ops
+		Quick:             false,
+		Large:             false,
+		DockerStats:       true,
+		Verbose:           false,
 	}
 }
 
@@ -53,6 +60,7 @@ func QuickConfig() *Config {
 	cfg := DefaultConfig()
 	cfg.Iterations = 20
 	cfg.WarmupIterations = 5
+	cfg.ConcurrencyLevels = []int{1, 5, 10} // Fewer levels for quick runs
 	cfg.Quick = true
 	return cfg
 }

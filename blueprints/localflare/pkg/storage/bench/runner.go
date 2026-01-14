@@ -132,10 +132,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	st.CreateBucket(ctx, driver.Bucket, nil)
 	bucket := st.Bucket(driver.Bucket)
 
-	// Determine max concurrency for this driver
-	maxConc := r.config.Concurrency
-	if driver.MaxConcurrency > 0 && driver.MaxConcurrency < maxConc {
-		maxConc = driver.MaxConcurrency
+	// Determine max concurrency for this driver (0 means unlimited)
+	maxConc := driver.MaxConcurrency
+	if maxConc > 0 {
 		r.logger("  Note: %s limited to C%d", driver.Name, maxConc)
 	}
 
@@ -168,13 +167,26 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 		r.logger("  Delete failed: %v", err)
 	}
 
-	// Run parallel benchmarks
+	// Run parallel benchmarks at multiple concurrency levels
 	for _, size := range r.config.ObjectSizes[:1] { // Use first size only
-		if err := r.benchmarkParallelWrite(ctx, bucket, driver.Name, size, maxConc); err != nil {
-			r.logger("  ParallelWrite/C%d failed: %v", maxConc, err)
+		concLevels := r.config.ConcurrencyLevels
+		if len(concLevels) == 0 {
+			concLevels = []int{r.config.Concurrency}
 		}
-		if err := r.benchmarkParallelRead(ctx, bucket, driver.Name, size, maxConc); err != nil {
-			r.logger("  ParallelRead/C%d failed: %v", maxConc, err)
+
+		for _, conc := range concLevels {
+			// Skip if concurrency exceeds driver's max limit (if set)
+			if maxConc > 0 && conc > maxConc {
+				r.logger("  Parallel/C%d: skipped (driver %s max=%d)", conc, driver.Name, maxConc)
+				continue
+			}
+
+			if err := r.benchmarkParallelWrite(ctx, bucket, driver.Name, size, conc); err != nil {
+				r.logger("  ParallelWrite/C%d failed: %v", conc, err)
+			}
+			if err := r.benchmarkParallelRead(ctx, bucket, driver.Name, size, conc); err != nil {
+				r.logger("  ParallelRead/C%d failed: %v", conc, err)
+			}
 		}
 	}
 
@@ -413,14 +425,36 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 	operation := fmt.Sprintf("ParallelWrite/%s/C%d", SizeLabel(size), concurrency)
 	data := generateRandomData(size)
 
+	// Use parallel timeout if set, otherwise use default
+	timeout := r.config.ParallelTimeout
+	if timeout == 0 {
+		timeout = r.config.Timeout
+	}
+
+	// Create a context with overall timeout for the benchmark
+	benchCtx, benchCancel := context.WithTimeout(ctx, timeout)
+	defer benchCancel()
+
 	// Benchmark
 	collector := NewCollector()
 	progress := NewProgress(operation, r.config.Iterations, true)
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
+	var completed int64
+
+	// Per-operation timeout (e.g. 10 seconds per write)
+	opTimeout := 10 * time.Second
 
 	for i := 0; i < r.config.Iterations; i++ {
+		// Check if benchmark context is done
+		select {
+		case <-benchCtx.Done():
+			r.logger("  %s: timeout after %d/%d iterations", operation, atomic.LoadInt64(&completed), r.config.Iterations)
+			goto done
+		default:
+		}
+
 		wg.Add(1)
 		sem <- struct{}{}
 
@@ -428,18 +462,24 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			// Create per-operation context with timeout
+			opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
+			defer opCancel()
+
 			key := r.uniqueKey("parallel-write")
 			timer := NewTimer()
 
-			_, err := bucket.Write(ctx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+			_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			atomic.AddInt64(&completed, 1)
 			progress.Increment()
 		}()
 	}
 
+done:
 	wg.Wait()
-	progress.DoneWithStats(int64(r.config.Iterations) * int64(size))
+	progress.DoneWithStats(atomic.LoadInt64(&completed) * int64(size))
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -459,15 +499,37 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 		bucket.Write(ctx, keys[i], bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 	}
 
+	// Use parallel timeout if set, otherwise use default
+	timeout := r.config.ParallelTimeout
+	if timeout == 0 {
+		timeout = r.config.Timeout
+	}
+
+	// Create a context with overall timeout for the benchmark
+	benchCtx, benchCancel := context.WithTimeout(ctx, timeout)
+	defer benchCancel()
+
 	// Benchmark
 	collector := NewCollector()
 	progress := NewProgress(operation, r.config.Iterations, true)
 
 	var wg sync.WaitGroup
 	var keyIdx uint64
+	var completed int64
 	sem := make(chan struct{}, concurrency)
 
+	// Per-operation timeout
+	opTimeout := 10 * time.Second
+
 	for i := 0; i < r.config.Iterations; i++ {
+		// Check if benchmark context is done
+		select {
+		case <-benchCtx.Done():
+			r.logger("  %s: timeout after %d/%d iterations", operation, atomic.LoadInt64(&completed), r.config.Iterations)
+			goto done
+		default:
+		}
+
 		wg.Add(1)
 		sem <- struct{}{}
 
@@ -475,22 +537,28 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			// Create per-operation context with timeout
+			opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
+			defer opCancel()
+
 			idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
 			timer := NewTimer()
 
-			rc, _, err := bucket.Open(ctx, keys[idx], 0, 0, nil)
+			rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
 			if err == nil {
 				io.Copy(io.Discard, rc)
 				rc.Close()
 			}
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			atomic.AddInt64(&completed, 1)
 			progress.Increment()
 		}()
 	}
 
+done:
 	wg.Wait()
-	progress.DoneWithStats(int64(r.config.Iterations) * int64(size))
+	progress.DoneWithStats(atomic.LoadInt64(&completed) * int64(size))
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
