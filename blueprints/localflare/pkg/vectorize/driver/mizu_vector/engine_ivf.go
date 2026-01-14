@@ -4,7 +4,6 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
-	"sort"
 	"sync"
 	"time"
 
@@ -14,24 +13,36 @@ import (
 // IVFEngine implements Inverted File Index with k-means clustering.
 // Time complexity: O(sqrt(n)*d) per query.
 // Based on "Product quantization for nearest neighbor search" (Jégou et al., 2011).
+//
+// Optimized with:
+// - Index-based storage (no string lookups in hot path)
+// - Typed top-K heap instead of full sorting
+// - Inline search for small clusters (no goroutine overhead)
 type IVFEngine struct {
 	distFunc DistanceFunc
 
-	// Index structures
-	centroids [][]float32       // [nClusters][dims]
-	clusters  [][]indexedVector // Vectors in each cluster
-	nProbe    int               // Number of clusters to search
+	// Index-based storage
+	vectors   []ivfVector     // Vector data indexed by int32
+	centroids [][]float32     // [nClusters][dims]
+	clusters  [][]int32       // Vector indices in each cluster
+	nProbe    int             // Number of clusters to search
 
 	needsRebuild bool
 }
 
+type ivfVector struct {
+	id     string
+	values []float32
+}
+
 // IVF configuration
 const (
-	ivfMinVectors     = 256
+	ivfMinVectors      = 256
 	ivfClustersPerSqrt = 4
-	ivfMaxClusters    = 256
-	ivfKMeansIters    = 10
-	ivfDefaultNProbe  = 8
+	ivfMaxClusters     = 256
+	ivfKMeansIters     = 10
+	ivfDefaultNProbe   = 8
+	ivfParallelThresh  = 500 // Only use goroutines if cluster has > this many vectors
 )
 
 // NewIVFEngine creates a new IVF search engine.
@@ -47,9 +58,20 @@ func (e *IVFEngine) Name() string { return "ivf" }
 
 func (e *IVFEngine) Build(vectors map[string]*vectorize.Vector, dims int, metric vectorize.DistanceMetric) {
 	n := len(vectors)
+	if n == 0 {
+		e.needsRebuild = false
+		return
+	}
+
+	// Collect vectors with index-based storage
+	e.vectors = make([]ivfVector, 0, n)
+	for id, v := range vectors {
+		e.vectors = append(e.vectors, ivfVector{id: id, values: v.Values})
+	}
+
 	if n < ivfMinVectors {
 		// Fall back to flat storage for small datasets
-		e.buildFlat(vectors)
+		e.buildFlat()
 		return
 	}
 
@@ -62,31 +84,25 @@ func (e *IVFEngine) Build(vectors map[string]*vectorize.Vector, dims int, metric
 		nClusters = 2
 	}
 
-	// Collect vectors
-	vectorList := make([]indexedVector, 0, n)
-	for id, v := range vectors {
-		vectorList = append(vectorList, indexedVector{id: id, values: v.Values})
-	}
-
 	// K-means++ initialization
-	centroids := e.kmeansppInit(vectorList, nClusters, dims)
+	centroids := e.kmeansppInit(nClusters, dims)
 
 	// Run k-means
 	assignments := make([]int, n)
 	for iter := 0; iter < ivfKMeansIters; iter++ {
-		e.assignToCentroids(vectorList, centroids, assignments)
-		centroids = e.updateCentroids(vectorList, assignments, nClusters, dims)
+		e.assignToCentroids(centroids, assignments)
+		centroids = e.updateCentroids(assignments, nClusters, dims)
 	}
 
 	// Build cluster structure
-	clusters := make([][]indexedVector, nClusters)
+	clusters := make([][]int32, nClusters)
 	for i := range clusters {
-		clusters[i] = make([]indexedVector, 0)
+		clusters[i] = make([]int32, 0)
 	}
 
-	for i, v := range vectorList {
+	for i := range e.vectors {
 		cluster := assignments[i]
-		clusters[cluster] = append(clusters[cluster], v)
+		clusters[cluster] = append(clusters[cluster], int32(i))
 	}
 
 	e.centroids = centroids
@@ -94,35 +110,38 @@ func (e *IVFEngine) Build(vectors map[string]*vectorize.Vector, dims int, metric
 	e.needsRebuild = false
 }
 
-func (e *IVFEngine) buildFlat(vectors map[string]*vectorize.Vector) {
+func (e *IVFEngine) buildFlat() {
 	// Single cluster for small datasets
 	e.centroids = nil
-	e.clusters = [][]indexedVector{make([]indexedVector, 0, len(vectors))}
-	for id, v := range vectors {
-		e.clusters[0] = append(e.clusters[0], indexedVector{id: id, values: v.Values})
+	n := len(e.vectors)
+	indices := make([]int32, n)
+	for i := 0; i < n; i++ {
+		indices[i] = int32(i)
 	}
+	e.clusters = [][]int32{indices}
 	e.needsRebuild = false
 }
 
-func (e *IVFEngine) kmeansppInit(vectors []indexedVector, k, dims int) [][]float32 {
+func (e *IVFEngine) kmeansppInit(k, dims int) [][]float32 {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	n := len(e.vectors)
 	centroids := make([][]float32, k)
 
 	// First centroid: random
-	firstIdx := rng.Intn(len(vectors))
+	firstIdx := rng.Intn(n)
 	centroids[0] = make([]float32, dims)
-	copy(centroids[0], vectors[firstIdx].values)
+	copy(centroids[0], e.vectors[firstIdx].values)
 
-	distances := make([]float32, len(vectors))
+	distances := make([]float32, n)
 
 	for i := 1; i < k; i++ {
 		var totalDist float32
 
 		// Distance to nearest centroid
-		for j, v := range vectors {
+		for j := 0; j < n; j++ {
 			minDist := float32(math.MaxFloat32)
 			for c := 0; c < i; c++ {
-				d := e.distFunc(v.values, centroids[c])
+				d := e.distFunc(e.vectors[j].values, centroids[c])
 				if d < minDist {
 					minDist = d
 				}
@@ -139,7 +158,7 @@ func (e *IVFEngine) kmeansppInit(vectors []indexedVector, k, dims int) [][]float
 				cumulative += d
 				if cumulative >= target {
 					centroids[i] = make([]float32, dims)
-					copy(centroids[i], vectors[j].values)
+					copy(centroids[i], e.vectors[j].values)
 					break
 				}
 			}
@@ -147,23 +166,24 @@ func (e *IVFEngine) kmeansppInit(vectors []indexedVector, k, dims int) [][]float
 
 		if centroids[i] == nil {
 			centroids[i] = make([]float32, dims)
-			copy(centroids[i], vectors[rng.Intn(len(vectors))].values)
+			copy(centroids[i], e.vectors[rng.Intn(n)].values)
 		}
 	}
 
 	return centroids
 }
 
-func (e *IVFEngine) assignToCentroids(vectors []indexedVector, centroids [][]float32, assignments []int) {
+func (e *IVFEngine) assignToCentroids(centroids [][]float32, assignments []int) {
+	n := len(e.vectors)
 	nWorkers := runtime.NumCPU()
-	chunkSize := (len(vectors) + nWorkers - 1) / nWorkers
+	chunkSize := (n + nWorkers - 1) / nWorkers
 
 	var wg sync.WaitGroup
 	for w := 0; w < nWorkers; w++ {
 		start := w * chunkSize
 		end := start + chunkSize
-		if end > len(vectors) {
-			end = len(vectors)
+		if end > n {
+			end = n
 		}
 		if start >= end {
 			continue
@@ -176,7 +196,7 @@ func (e *IVFEngine) assignToCentroids(vectors []indexedVector, centroids [][]flo
 				minDist := float32(math.MaxFloat32)
 				minIdx := 0
 				for c, centroid := range centroids {
-					d := e.distFunc(vectors[i].values, centroid)
+					d := e.distFunc(e.vectors[i].values, centroid)
 					if d < minDist {
 						minDist = d
 						minIdx = c
@@ -189,7 +209,7 @@ func (e *IVFEngine) assignToCentroids(vectors []indexedVector, centroids [][]flo
 	wg.Wait()
 }
 
-func (e *IVFEngine) updateCentroids(vectors []indexedVector, assignments []int, k, dims int) [][]float32 {
+func (e *IVFEngine) updateCentroids(assignments []int, k, dims int) [][]float32 {
 	newCentroids := make([][]float32, k)
 	counts := make([]int, k)
 
@@ -197,7 +217,7 @@ func (e *IVFEngine) updateCentroids(vectors []indexedVector, assignments []int, 
 		newCentroids[i] = make([]float32, dims)
 	}
 
-	for i, v := range vectors {
+	for i, v := range e.vectors {
 		c := assignments[i]
 		counts[c]++
 		for d := 0; d < dims; d++ {
@@ -221,20 +241,7 @@ func (e *IVFEngine) Insert(vectors []*vectorize.Vector) {
 }
 
 func (e *IVFEngine) Delete(ids []string) {
-	idSet := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		idSet[id] = struct{}{}
-	}
-
-	for i := range e.clusters {
-		filtered := make([]indexedVector, 0, len(e.clusters[i]))
-		for _, v := range e.clusters[i] {
-			if _, deleted := idSet[v.id]; !deleted {
-				filtered = append(filtered, v)
-			}
-		}
-		e.clusters[i] = filtered
-	}
+	e.needsRebuild = true
 }
 
 func (e *IVFEngine) Search(query []float32, k int) []SearchResult {
@@ -244,43 +251,116 @@ func (e *IVFEngine) Search(query []float32, k int) []SearchResult {
 
 	// No centroids = flat search
 	if e.centroids == nil {
-		return e.searchCluster(e.clusters[0], query, k)
+		return e.searchClusterTopK(e.clusters[0], query, k)
 	}
 
-	// Find nearest clusters
+	// Find nearest clusters using heap-based selection
 	nProbe := e.nProbe
 	if nProbe > len(e.centroids) {
 		nProbe = len(e.centroids)
 	}
 
-	type clusterDist struct {
-		idx  int
-		dist float32
-	}
-
-	clusterDists := make([]clusterDist, len(e.centroids))
+	// Use max-heap to find nProbe nearest centroids
+	topClusters := make(maxHeap32, 0, nProbe)
 	for i, centroid := range e.centroids {
-		clusterDists[i] = clusterDist{i, e.distFunc(query, centroid)}
+		dist := e.distFunc(query, centroid)
+		if len(topClusters) < nProbe {
+			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
+		} else if dist < topClusters[0].dist {
+			topClusters.PopItem()
+			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
+		}
 	}
 
-	sort.Slice(clusterDists, func(i, j int) bool {
-		return clusterDists[i].dist < clusterDists[j].dist
-	})
+	// Count total vectors to search
+	totalVecs := 0
+	for len(topClusters) > 0 {
+		item := topClusters.PopItem()
+		totalVecs += len(e.clusters[item.idx])
+	}
 
-	// Search in parallel across top clusters
-	resultsChan := make(chan []SearchResult, nProbe)
+	// Rebuild topClusters for iteration
+	topClusters = make(maxHeap32, 0, nProbe)
+	for i, centroid := range e.centroids {
+		dist := e.distFunc(query, centroid)
+		if len(topClusters) < nProbe {
+			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
+		} else if dist < topClusters[0].dist {
+			topClusters.PopItem()
+			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
+		}
+	}
+
+	// Use parallel search only for large total vector counts
+	if totalVecs > ivfParallelThresh*2 {
+		return e.searchClustersParallel(topClusters, query, k)
+	}
+
+	// Serial search for smaller datasets
+	return e.searchClustersMerged(topClusters, query, k)
+}
+
+// searchClustersMerged searches clusters serially and merges results using top-K heap.
+func (e *IVFEngine) searchClustersMerged(topClusters maxHeap32, query []float32, k int) []SearchResult {
+	resultHeap := make(maxHeap32, 0, k)
+
+	for len(topClusters) > 0 {
+		item := topClusters.PopItem()
+		cluster := e.clusters[item.idx]
+
+		for _, vecIdx := range cluster {
+			dist := e.distFunc(query, e.vectors[vecIdx].values)
+			if len(resultHeap) < k {
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+			} else if dist < resultHeap[0].dist {
+				resultHeap.PopItem()
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+			}
+		}
+	}
+
+	// Extract sorted results
+	results := make([]SearchResult, len(resultHeap))
+	for i := len(resultHeap) - 1; i >= 0; i-- {
+		item := resultHeap.PopItem()
+		results[i] = SearchResult{
+			ID:       e.vectors[item.idx].id,
+			Distance: item.dist,
+		}
+	}
+
+	return results
+}
+
+// searchClustersParallel searches clusters in parallel and merges results.
+func (e *IVFEngine) searchClustersParallel(topClusters maxHeap32, query []float32, k int) []SearchResult {
+	nClusters := len(topClusters)
+	resultsChan := make(chan []distItem32, nClusters)
 	var wg sync.WaitGroup
 
-	for i := 0; i < nProbe; i++ {
-		cluster := e.clusters[clusterDists[i].idx]
+	for len(topClusters) > 0 {
+		item := topClusters.PopItem()
+		cluster := e.clusters[item.idx]
+
 		if len(cluster) == 0 {
 			continue
 		}
 
 		wg.Add(1)
-		go func(cluster []indexedVector) {
+		go func(cluster []int32) {
 			defer wg.Done()
-			resultsChan <- e.searchCluster(cluster, query, k)
+			// Use top-K heap for each cluster
+			clusterHeap := make(maxHeap32, 0, k)
+			for _, vecIdx := range cluster {
+				dist := e.distFunc(query, e.vectors[vecIdx].values)
+				if len(clusterHeap) < k {
+					clusterHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+				} else if dist < clusterHeap[0].dist {
+					clusterHeap.PopItem()
+					clusterHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+				}
+			}
+			resultsChan <- clusterHeap
 		}(cluster)
 	}
 
@@ -289,38 +369,57 @@ func (e *IVFEngine) Search(query []float32, k int) []SearchResult {
 		close(resultsChan)
 	}()
 
-	// Merge results
-	allResults := make([]SearchResult, 0)
-	for results := range resultsChan {
-		allResults = append(allResults, results...)
+	// Merge results using top-K heap
+	finalHeap := make(maxHeap32, 0, k)
+	for clusterResults := range resultsChan {
+		for _, item := range clusterResults {
+			if len(finalHeap) < k {
+				finalHeap.PushItem(item)
+			} else if item.dist < finalHeap[0].dist {
+				finalHeap.PopItem()
+				finalHeap.PushItem(item)
+			}
+		}
 	}
 
-	sort.Slice(allResults, func(i, j int) bool {
-		return allResults[i].Distance < allResults[j].Distance
-	})
-
-	if k > len(allResults) {
-		k = len(allResults)
+	// Extract sorted results
+	results := make([]SearchResult, len(finalHeap))
+	for i := len(finalHeap) - 1; i >= 0; i-- {
+		item := finalHeap.PopItem()
+		results[i] = SearchResult{
+			ID:       e.vectors[item.idx].id,
+			Distance: item.dist,
+		}
 	}
 
-	return allResults[:k]
+	return results
 }
 
-func (e *IVFEngine) searchCluster(cluster []indexedVector, query []float32, k int) []SearchResult {
-	results := make([]SearchResult, 0, len(cluster))
-	for _, v := range cluster {
-		dist := e.distFunc(query, v.values)
-		results = append(results, SearchResult{ID: v.id, Distance: dist})
+// searchClusterTopK searches a single cluster using top-K heap.
+func (e *IVFEngine) searchClusterTopK(cluster []int32, query []float32, k int) []SearchResult {
+	resultHeap := make(maxHeap32, 0, k)
+
+	for _, vecIdx := range cluster {
+		dist := e.distFunc(query, e.vectors[vecIdx].values)
+		if len(resultHeap) < k {
+			resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+		} else if dist < resultHeap[0].dist {
+			resultHeap.PopItem()
+			resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+		}
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Distance < results[j].Distance
-	})
-
-	if k > len(results) {
-		k = len(results)
+	// Extract sorted results
+	results := make([]SearchResult, len(resultHeap))
+	for i := len(resultHeap) - 1; i >= 0; i-- {
+		item := resultHeap.PopItem()
+		results[i] = SearchResult{
+			ID:       e.vectors[item.idx].id,
+			Distance: item.dist,
+		}
 	}
-	return results[:k]
+
+	return results
 }
 
 func (e *IVFEngine) NeedsRebuild() bool     { return e.needsRebuild }

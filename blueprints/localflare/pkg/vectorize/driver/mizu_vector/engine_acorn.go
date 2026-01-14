@@ -1,9 +1,7 @@
 package mizu_vector
 
 import (
-	"math"
 	"math/rand"
-	"sort"
 	"sync"
 	"time"
 
@@ -12,14 +10,21 @@ import (
 
 // ACORNEngine implements a simplified graph-based search.
 // Uses flat single-level graph for simplicity and speed.
+//
+// Optimized with:
+// - Index-based storage (no string lookups)
+// - Medoid-based entry point (not random)
+// - Typed heaps instead of sorting
+// - Bitset for visited tracking
 type ACORNEngine struct {
 	distFunc DistanceFunc
 
-	// Vector storage
-	vectors []indexedVector
+	// Index-based storage
+	vectors []acornVector
 
 	// Graph structure - simple k-NN graph
-	graph [][]int32
+	graph   [][]int32
+	navNode int32 // Medoid for entry point
 
 	// Parameters
 	K        int // Neighbors per node
@@ -28,6 +33,11 @@ type ACORNEngine struct {
 	needsRebuild bool
 	rng          *rand.Rand
 	mu           sync.RWMutex
+}
+
+type acornVector struct {
+	id     string
+	values []float32
 }
 
 const (
@@ -58,19 +68,52 @@ func (e *ACORNEngine) Build(vectors map[string]*vectorize.Vector, dims int, metr
 		return
 	}
 
-	// Collect vectors
-	e.vectors = make([]indexedVector, 0, n)
+	// Collect vectors with index-based storage
+	e.vectors = make([]acornVector, 0, n)
 	for id, v := range vectors {
-		e.vectors = append(e.vectors, indexedVector{id: id, values: v.Values})
+		e.vectors = append(e.vectors, acornVector{id: id, values: v.Values})
 	}
 
-	// Build simple k-NN graph
+	// Find medoid for entry point
+	e.navNode = e.findMedoid(dims)
+
+	// Build k-NN graph
 	e.buildKNNGraph()
 
 	e.needsRebuild = false
 }
 
-// buildKNNGraph builds a simple k-NN graph using sampling.
+// findMedoid finds the vector closest to centroid.
+func (e *ACORNEngine) findMedoid(dims int) int32 {
+	n := len(e.vectors)
+
+	// Compute centroid
+	centroid := make([]float32, dims)
+	for i := 0; i < n; i++ {
+		for j := 0; j < dims; j++ {
+			centroid[j] += e.vectors[i].values[j]
+		}
+	}
+	invN := 1.0 / float32(n)
+	for j := 0; j < dims; j++ {
+		centroid[j] *= invN
+	}
+
+	// Find vector closest to centroid
+	bestIdx := int32(0)
+	bestDist := e.distFunc(centroid, e.vectors[0].values)
+	for i := 1; i < n; i++ {
+		d := e.distFunc(centroid, e.vectors[i].values)
+		if d < bestDist {
+			bestDist = d
+			bestIdx = int32(i)
+		}
+	}
+
+	return bestIdx
+}
+
+// buildKNNGraph builds a k-NN graph using heap-based selection.
 func (e *ACORNEngine) buildKNNGraph() {
 	n := len(e.vectors)
 	k := e.K
@@ -80,53 +123,35 @@ func (e *ACORNEngine) buildKNNGraph() {
 
 	e.graph = make([][]int32, n)
 
-	// Sample-based k-NN construction
-	sampleSize := k * 4
-	if sampleSize > n {
-		sampleSize = n
-	}
-
+	// Build k-NN for each vector
 	for i := 0; i < n; i++ {
-		// Sample random candidates
-		candidates := make([]int, 0, sampleSize)
-		for len(candidates) < sampleSize {
-			j := e.rng.Intn(n)
-			if j != i {
-				candidates = append(candidates, j)
+		// Use heap for top-k selection
+		h := make(maxHeap32, 0, k)
+
+		for j := 0; j < n; j++ {
+			if i == j {
+				continue
+			}
+			dist := e.distFunc(e.vectors[i].values, e.vectors[j].values)
+			if len(h) < k {
+				h.PushItem(distItem32{idx: int32(j), dist: dist})
+			} else if dist < h[0].dist {
+				h.PopItem()
+				h.PushItem(distItem32{idx: int32(j), dist: dist})
 			}
 		}
 
-		// Find k nearest from sample
-		type neighbor struct {
-			idx  int32
-			dist float32
-		}
-		neighbors := make([]neighbor, len(candidates))
-		for j, c := range candidates {
-			neighbors[j] = neighbor{
-				idx:  int32(c),
-				dist: e.distFunc(e.vectors[i].values, e.vectors[c].values),
-			}
-		}
-
-		sort.Slice(neighbors, func(a, b int) bool {
-			return neighbors[a].dist < neighbors[b].dist
-		})
-
-		if k > len(neighbors) {
-			k = len(neighbors)
-		}
-
-		e.graph[i] = make([]int32, k)
-		for j := 0; j < k; j++ {
-			e.graph[i][j] = neighbors[j].idx
+		// Extract neighbors
+		e.graph[i] = make([]int32, len(h))
+		for idx := len(h) - 1; idx >= 0; idx-- {
+			e.graph[i][idx] = h.PopItem().idx
 		}
 	}
 
 	// Make graph bidirectional
 	for i := 0; i < n; i++ {
 		for _, neighbor := range e.graph[i] {
-			// Add reverse edge if not present
+			// Check if reverse edge exists
 			found := false
 			for _, existing := range e.graph[neighbor] {
 				if existing == int32(i) {
@@ -160,97 +185,72 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 		return nil
 	}
 
-	visited := make([]bool, n)
+	visited := newBitset(n)
 	ef := e.efSearch
 	if ef < k*2 {
 		ef = k * 2
 	}
 
-	// Start from random entry points
-	numStarts := 3
-	if numStarts > n {
-		numStarts = n
-	}
+	// Use heaps for efficient search
+	candidates := make(minHeap32, 0, ef*2)
+	result := make(maxHeap32, 0, ef)
 
-	type candidate struct {
-		idx  int32
-		dist float32
-	}
+	// Start from medoid
+	startDist := e.distFunc(query, e.vectors[e.navNode].values)
+	candidates.PushItem(distItem32{idx: e.navNode, dist: startDist})
+	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
+	visited.Set(e.navNode)
 
-	results := make([]candidate, 0, ef)
+	// Beam search
+	for len(candidates) > 0 {
+		curr := candidates.PopItem()
 
-	// Initialize with random starting points
-	for s := 0; s < numStarts; s++ {
-		start := int32(e.rng.Intn(n))
-		if !visited[start] {
-			visited[start] = true
-			dist := e.distFunc(query, e.vectors[start].values)
-			results = append(results, candidate{idx: start, dist: dist})
-		}
-	}
-
-	// Greedy search with limited iterations
-	maxIter := ef * 2
-	for iter := 0; iter < maxIter && len(results) > 0; iter++ {
-		// Find best unprocessed candidate
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].dist < results[j].dist
-		})
-
-		// Process first unvisited neighbors of best result
-		improved := false
-		for _, curr := range results {
-			for _, neighbor := range e.graph[curr.idx] {
-				if visited[neighbor] {
-					continue
-				}
-				visited[neighbor] = true
-				improved = true
-
-				dist := e.distFunc(query, e.vectors[neighbor].values)
-				results = append(results, candidate{idx: neighbor, dist: dist})
-			}
-			if improved {
-				break
-			}
-		}
-
-		if !improved {
+		// Stop if current candidate is worse than worst in result
+		if len(result) >= ef && curr.dist > result[0].dist {
 			break
 		}
 
-		// Keep only top ef
-		if len(results) > ef {
-			sort.Slice(results, func(i, j int) bool {
-				return results[i].dist < results[j].dist
-			})
-			results = results[:ef]
+		// Explore neighbors
+		for _, neighbor := range e.graph[curr.idx] {
+			if visited.Test(neighbor) {
+				continue
+			}
+			visited.Set(neighbor)
+
+			dist := e.distFunc(query, e.vectors[neighbor].values)
+
+			if len(result) < ef {
+				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
+				result.PushItem(distItem32{idx: neighbor, dist: dist})
+			} else if dist < result[0].dist {
+				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
+				result.PopItem()
+				result.PushItem(distItem32{idx: neighbor, dist: dist})
+			}
 		}
 	}
 
-	// Sort and return top k
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].dist < results[j].dist
-	})
-
-	if k > len(results) {
-		k = len(results)
+	// Extract top k results
+	if k > len(result) {
+		k = len(result)
 	}
 
-	output := make([]SearchResult, k)
+	// Get all results sorted
+	allResults := make([]distItem32, len(result))
+	for i := len(result) - 1; i >= 0; i-- {
+		allResults[i] = result.PopItem()
+	}
+
+	results := make([]SearchResult, k)
 	for i := 0; i < k; i++ {
-		output[i] = SearchResult{
-			ID:       e.vectors[results[i].idx].id,
-			Distance: results[i].dist,
+		results[i] = SearchResult{
+			ID:       e.vectors[allResults[i].idx].id,
+			Distance: allResults[i].dist,
 		}
 	}
-	return output
+
+	return results
 }
 
 func (e *ACORNEngine) NeedsRebuild() bool     { return e.needsRebuild }
 func (e *ACORNEngine) SetNeedsRebuild(v bool) { e.needsRebuild = v }
-
-// Helper for level generation (unused but kept for interface consistency)
-func (e *ACORNEngine) randomLevel() int {
-	return int(-math.Log(e.rng.Float64()) / 1.386294)
-}
