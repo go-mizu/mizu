@@ -178,6 +178,33 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 		}
 	}
 
+	// Run range read benchmarks
+	if err := r.benchmarkRangeRead(ctx, bucket, driver.Name); err != nil {
+		r.logger("  RangeRead failed: %v", err)
+	}
+
+	// Run copy benchmarks
+	for _, size := range r.config.ObjectSizes[:1] { // Use first size only
+		if err := r.benchmarkCopy(ctx, bucket, driver.Name, size); err != nil {
+			r.logger("  Copy/%s failed: %v", SizeLabel(size), err)
+		}
+	}
+
+	// Run mixed workload benchmarks
+	if err := r.benchmarkMixedWorkload(ctx, bucket, driver.Name, maxConc); err != nil {
+		r.logger("  MixedWorkload failed: %v", err)
+	}
+
+	// Run multipart benchmarks
+	if err := r.benchmarkMultipart(ctx, bucket, driver.Name); err != nil {
+		r.logger("  Multipart failed: %v", err)
+	}
+
+	// Run edge case benchmarks
+	if err := r.benchmarkEdgeCases(ctx, bucket, driver.Name); err != nil {
+		r.logger("  EdgeCases failed: %v", err)
+	}
+
 	// Cleanup
 	r.cleanupBucket(ctx, bucket)
 
@@ -505,6 +532,298 @@ func (r *Runner) generateReport() *Report {
 		Results:     r.results,
 		DockerStats: r.dockerStats,
 	}
+}
+
+func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, driver string) error {
+	const totalSize = 1024 * 1024 // 1MB object
+	data := generateRandomData(totalSize)
+
+	// Create test object
+	key := r.uniqueKey("range")
+	_, err := bucket.Write(ctx, key, bytes.NewReader(data), int64(totalSize), "application/octet-stream", nil)
+	if err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
+	ranges := []struct {
+		name   string
+		offset int64
+		length int64
+	}{
+		{"Start_256KB", 0, 256 * 1024},
+		{"Middle_256KB", 512 * 1024, 256 * 1024},
+		{"End_256KB", 768 * 1024, 256 * 1024},
+	}
+
+	for _, rng := range ranges {
+		operation := fmt.Sprintf("RangeRead/%s", rng.name)
+		collector := NewCollector()
+		progress := NewProgress(operation, r.config.Iterations, true)
+
+		for i := 0; i < r.config.Iterations; i++ {
+			timer := NewTimer()
+
+			rc, _, err := bucket.Open(ctx, key, rng.offset, rng.length, nil)
+			if err == nil {
+				io.Copy(io.Discard, rc)
+				rc.Close()
+			}
+
+			collector.RecordWithError(timer.Elapsed(), err)
+			progress.Increment()
+		}
+
+		progress.DoneWithStats(int64(r.config.Iterations) * rng.length)
+		metrics := collector.Metrics(operation, driver, int(rng.length))
+		r.addResult(metrics)
+	}
+
+	return nil
+}
+
+func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
+	operation := fmt.Sprintf("Copy/%s", SizeLabel(size))
+	data := generateRandomData(size)
+
+	// Create source object
+	srcKey := r.uniqueKey("copy-src")
+	_, err := bucket.Write(ctx, srcKey, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+	if err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+
+	collector := NewCollector()
+	progress := NewProgress(operation, r.config.Iterations, true)
+
+	for i := 0; i < r.config.Iterations; i++ {
+		dstKey := r.uniqueKey("copy-dst")
+		timer := NewTimer()
+
+		_, err := bucket.Copy(ctx, dstKey, bucket.Name(), srcKey, nil)
+
+		collector.RecordWithError(timer.Elapsed(), err)
+		progress.Increment()
+	}
+
+	progress.DoneWithStats(int64(r.config.Iterations) * int64(size))
+	metrics := collector.Metrics(operation, driver, size)
+	r.addResult(metrics)
+
+	return nil
+}
+
+func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Bucket, driver string, concurrency int) error {
+	objectSize := 16 * 1024 // 16KB
+	data := generateRandomData(objectSize)
+
+	// Pre-create objects for reading
+	numObjects := 50
+	keys := make([]string, numObjects)
+	for i := 0; i < numObjects; i++ {
+		keys[i] = r.uniqueKey("mixed")
+		bucket.Write(ctx, keys[i], bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
+	}
+
+	workloads := []struct {
+		name       string
+		readRatio  int
+		writeRatio int
+	}{
+		{"ReadHeavy_90_10", 90, 10},
+		{"Balanced_50_50", 50, 50},
+		{"WriteHeavy_10_90", 10, 90},
+	}
+
+	for _, wl := range workloads {
+		operation := fmt.Sprintf("MixedWorkload/%s", wl.name)
+		collector := NewCollector()
+		progress := NewProgress(operation, r.config.Iterations, true)
+
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, concurrency)
+		var opCounter uint64
+		var keyIdx uint64
+
+		for i := 0; i < r.config.Iterations; i++ {
+			wg.Add(1)
+			sem <- struct{}{}
+
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				timer := NewTimer()
+				var err error
+
+				op := atomic.AddUint64(&opCounter, 1) % 100
+				if int(op) < wl.readRatio {
+					// Read operation
+					idx := atomic.AddUint64(&keyIdx, 1) % uint64(len(keys))
+					rc, _, e := bucket.Open(ctx, keys[idx], 0, 0, nil)
+					if e == nil {
+						io.Copy(io.Discard, rc)
+						rc.Close()
+					}
+					err = e
+				} else {
+					// Write operation
+					key := r.uniqueKey("mixed-write")
+					_, err = bucket.Write(ctx, key, bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
+				}
+
+				collector.RecordWithError(timer.Elapsed(), err)
+				progress.Increment()
+			}()
+		}
+
+		wg.Wait()
+		progress.DoneWithStats(int64(r.config.Iterations) * int64(objectSize))
+		metrics := collector.Metrics(operation, driver, objectSize)
+		r.addResult(metrics)
+	}
+
+	return nil
+}
+
+func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, driver string) error {
+	// Check if multipart is supported
+	mp, ok := bucket.(storage.HasMultipart)
+	if !ok {
+		r.logger("  Multipart: not supported by %s", driver)
+		return nil
+	}
+
+	// S3 requires minimum 5MB per part (except last part)
+	partSize := 5 * 1024 * 1024  // 5MB
+	partCount := 3               // 15MB total
+	totalSize := partSize * partCount
+	partData := generateRandomData(partSize)
+
+	operation := fmt.Sprintf("Multipart/%dMB_%dParts", totalSize/(1024*1024), partCount)
+	collector := NewCollector()
+
+	// Fewer iterations for multipart (it's expensive)
+	iterations := r.config.Iterations / 5
+	if iterations < 3 {
+		iterations = 3
+	}
+
+	progress := NewProgress(operation, iterations, true)
+
+	for i := 0; i < iterations; i++ {
+		key := r.uniqueKey("multipart")
+		timer := NewTimer()
+		var err error
+
+		// Init multipart upload
+		mu, e := mp.InitMultipart(ctx, key, "application/octet-stream", nil)
+		if e != nil {
+			err = e
+		} else {
+			// Upload parts
+			parts := make([]*storage.PartInfo, partCount)
+			for p := 0; p < partCount && err == nil; p++ {
+				part, e := mp.UploadPart(ctx, mu, p+1, bytes.NewReader(partData), int64(partSize), nil)
+				if e != nil {
+					mp.AbortMultipart(ctx, mu, nil)
+					err = e
+					break
+				}
+				parts[p] = part
+			}
+
+			// Complete
+			if err == nil {
+				_, err = mp.CompleteMultipart(ctx, mu, parts, nil)
+			}
+		}
+
+		collector.RecordWithError(timer.Elapsed(), err)
+		progress.Increment()
+	}
+
+	progress.DoneWithStats(int64(iterations) * int64(totalSize))
+	metrics := collector.Metrics(operation, driver, totalSize)
+	r.addResult(metrics)
+
+	return nil
+}
+
+func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, driver string) error {
+	// Empty object write
+	{
+		operation := "EdgeCase/EmptyObject"
+		collector := NewCollector()
+		iterations := r.config.Iterations / 2
+		progress := NewProgress(operation, iterations, true)
+
+		for i := 0; i < iterations; i++ {
+			key := r.uniqueKey("empty")
+			timer := NewTimer()
+
+			_, err := bucket.Write(ctx, key, bytes.NewReader(nil), 0, "application/octet-stream", nil)
+
+			collector.RecordWithError(timer.Elapsed(), err)
+			progress.Increment()
+		}
+
+		progress.Done()
+		metrics := collector.Metrics(operation, driver, 0)
+		r.addResult(metrics)
+	}
+
+	// Long key names (256 chars)
+	{
+		operation := "EdgeCase/LongKey256"
+		data := generateRandomData(100)
+		collector := NewCollector()
+		iterations := r.config.Iterations / 2
+		progress := NewProgress(operation, iterations, true)
+
+		longPrefix := "prefix/" + string(make([]byte, 200)) // Will be replaced
+		for i := range longPrefix[7:] {
+			longPrefix = longPrefix[:7+i] + "a" + longPrefix[8+i:]
+		}
+
+		for i := 0; i < iterations; i++ {
+			key := fmt.Sprintf("prefix/%s/%d", string(bytes.Repeat([]byte("a"), 200)), i)
+			timer := NewTimer()
+
+			_, err := bucket.Write(ctx, key, bytes.NewReader(data), 100, "text/plain", nil)
+
+			collector.RecordWithError(timer.Elapsed(), err)
+			progress.Increment()
+		}
+
+		progress.Done()
+		metrics := collector.Metrics(operation, driver, 100)
+		r.addResult(metrics)
+	}
+
+	// Deep nesting
+	{
+		operation := "EdgeCase/DeepNested"
+		data := generateRandomData(100)
+		collector := NewCollector()
+		iterations := r.config.Iterations / 2
+		progress := NewProgress(operation, iterations, true)
+
+		for i := 0; i < iterations; i++ {
+			key := fmt.Sprintf("a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/%d", i)
+			timer := NewTimer()
+
+			_, err := bucket.Write(ctx, key, bytes.NewReader(data), 100, "text/plain", nil)
+
+			collector.RecordWithError(timer.Elapsed(), err)
+			progress.Increment()
+		}
+
+		progress.Done()
+		metrics := collector.Metrics(operation, driver, 100)
+		r.addResult(metrics)
+	}
+
+	return nil
 }
 
 func generateRandomData(size int) []byte {
