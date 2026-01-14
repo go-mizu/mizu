@@ -259,16 +259,8 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	// Store using sync.Map.
 	b.obj.Store(upload.mu.Key, e)
 
-	// Update sorted keys index.
-	b.keysMu.Lock()
-	key := upload.mu.Key
-	idx := sort.SearchStrings(b.sortedKeys, key)
-	if idx >= len(b.sortedKeys) || b.sortedKeys[idx] != key {
-		b.sortedKeys = append(b.sortedKeys, "")
-		copy(b.sortedKeys[idx+1:], b.sortedKeys[idx:])
-		b.sortedKeys[idx] = key
-	}
-	b.keysMu.Unlock()
+	// Update sharded key index.
+	b.addKey(upload.mu.Key)
 
 	// Clean up multipart upload.
 	delete(b.mpUploads, mu.UploadID)

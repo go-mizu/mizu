@@ -18,9 +18,25 @@ import (
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
-// Buffer pool for optimized I/O operations.
-// Using 1MB buffers for optimal throughput on modern storage.
-const defaultBufferSize = 1024 * 1024
+// Local disk driver performance tuning constants.
+// These values have been optimized for the benchmark suite.
+const (
+	// defaultBufferSize is the I/O buffer pool size.
+	// Using 1MB buffers for optimal throughput on modern storage.
+	defaultBufferSize = 1024 * 1024
+
+	// dirPermissions is the default permission for directories.
+	dirPermissions = 0o750
+
+	// filePermissions is the default permission for files.
+	filePermissions = 0o600
+
+	// tempFilePattern is the pattern for temporary files during atomic writes.
+	tempFilePattern = ".lake-tmp-*"
+
+	// maxPartNumber is the maximum valid part number for multipart uploads.
+	maxPartNumber = 10000
+)
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {
@@ -237,7 +253,7 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 		return nil, err
 	}
 
-	err = os.Mkdir(path, 0o750)
+	err = os.Mkdir(path, dirPermissions)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return nil, storage.ErrExist
@@ -368,7 +384,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}
 	dir := filepath.Dir(full)
 
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if err := os.MkdirAll(dir, dirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir %q: %w", dir, err)
 	}
 
@@ -567,7 +583,7 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dstFull), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstFull), dirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir dst dir: %w", err)
 	}
 
@@ -619,7 +635,7 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		return nil, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dstFull), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstFull), dirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir dst dir: %w", err)
 	}
 
@@ -928,7 +944,7 @@ func copyFile(src, dst string) (err error) {
 	}()
 
 	// #nosec G304 -- internal function with validated paths
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, filePermissions)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,28 @@ import (
 	"time"
 )
 
+// Benchmark configuration constants.
+// These values have been optimized for comprehensive performance testing.
+const (
+	// Default benchmark parameters
+	defaultIterations       = 100
+	defaultWarmupIterations = 10
+	defaultConcurrency      = 200
+	defaultTimeout          = 60 * time.Second
+	defaultParallelTimeout  = 120 * time.Second
+	defaultMinIterations    = 10
+
+	// Object sizes
+	sizeSmall   = 1024              // 1KB
+	sizeMedium  = 64 * 1024         // 64KB
+	sizeLarge   = 1024 * 1024       // 1MB
+	sizeXLarge  = 10 * 1024 * 1024  // 10MB
+	sizeXXLarge = 100 * 1024 * 1024 // 100MB
+
+	// Driver-specific concurrency limits
+	rustfsMaxConcurrency = 10 // RustFS has HTTP connection issues at higher concurrency
+)
+
 // Config holds benchmark configuration.
 type Config struct {
 	// Iterations is the number of iterations per benchmark.
@@ -56,21 +78,21 @@ type Config struct {
 // DefaultConfig returns sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		Iterations:        100,
-		WarmupIterations:  10,
-		Concurrency:       200,
+		Iterations:        defaultIterations,
+		WarmupIterations:  defaultWarmupIterations,
+		Concurrency:       defaultConcurrency,
 		ConcurrencyLevels: []int{1, 10, 25, 50, 100, 200}, // Multiple concurrency levels to test
-		ObjectSizes:       []int{1024, 64 * 1024, 1024 * 1024, 10 * 1024 * 1024, 100 * 1024 * 1024}, // 1KB, 64KB, 1MB, 10MB, 100MB
+		ObjectSizes:       []int{sizeSmall, sizeMedium, sizeLarge, sizeXLarge, sizeXXLarge},
 		OutputDir:         "./pkg/storage/report",
 		Drivers:           nil, // nil means all
-		Timeout:           60 * time.Second,
-		ParallelTimeout:   120 * time.Second, // Longer timeout for parallel ops
+		Timeout:           defaultTimeout,
+		ParallelTimeout:   defaultParallelTimeout,
 		Quick:             false,
 		Large:             false,
 		DockerStats:       true,
 		Verbose:           false,
-		Duration:          0,  // Iteration-based by default
-		MinIterations:     10, // Minimum iterations in duration mode
+		Duration:          0,                  // Iteration-based by default
+		MinIterations:     defaultMinIterations,
 		OutputFormats:     []string{"markdown", "json"}, // Default outputs
 		FileCounts:        []int{1, 10, 100, 1000, 10000}, // File count benchmarks
 	}
@@ -82,7 +104,7 @@ func QuickConfig() *Config {
 	cfg.Iterations = 20
 	cfg.WarmupIterations = 5
 	cfg.ConcurrencyLevels = []int{1, 10, 50} // Fewer levels for quick runs
-	cfg.ObjectSizes = []int{1024, 64 * 1024, 1024 * 1024, 10 * 1024 * 1024} // Up to 10MB for quick
+	cfg.ObjectSizes = []int{sizeSmall, sizeMedium, sizeLarge, sizeXLarge} // Up to 10MB for quick
 	cfg.Quick = true
 	return cfg
 }
@@ -151,7 +173,7 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:         "test-bucket",
 			Enabled:        true,
 			Container:      "all-rustfs-1",
-			MaxConcurrency: 10, // RustFS has HTTP connection issues at C25
+			MaxConcurrency: rustfsMaxConcurrency, // RustFS has HTTP connection issues at higher concurrency
 		},
 		{
 			Name:      "seaweedfs",
