@@ -13,9 +13,9 @@ import (
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/chromem"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/duckdb"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/elasticsearch"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/hnsw"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/lancedb"
-	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/mem"
-	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/mem_hnsw"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/mizu_vector"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/milvus"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/opensearch"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/pgvector"
@@ -109,7 +109,7 @@ func (r *Runner) collectDockerStats(ctx context.Context, driverConfigs []DriverC
 		}
 
 		// Check if embedded driver
-		if dcfg.Name == "mem" || dcfg.Name == "mem_hnsw" || dcfg.Name == "chromem" || dcfg.Name == "sqlite" || dcfg.Name == "lancedb" || dcfg.Name == "duckdb" {
+		if isEmbeddedDriver(dcfg.Name) {
 			stats.IsEmbedded = true
 			r.logger("  %s: embedded driver (no container)", dcfg.Name)
 			continue
@@ -133,6 +133,31 @@ func (r *Runner) collectDockerStats(ctx context.Context, driverConfigs []DriverC
 	r.logger("")
 }
 
+// isEmbeddedDriver checks if a driver is embedded (no Docker container).
+func isEmbeddedDriver(name string) bool {
+	embedded := []string{
+		"mizu_vector", "mizu_vector_ivf", "mizu_vector_lsh", "mizu_vector_pq",
+		"mizu_vector_hnsw", "mizu_vector_vamana", "mizu_vector_rabitq",
+		"mizu_vector_nsg", "mizu_vector_scann", "mizu_vector_acorn",
+		"hnsw", "chromem", "sqlite", "lancedb", "duckdb",
+	}
+	for _, e := range embedded {
+		if name == e {
+			return true
+		}
+	}
+	return false
+}
+
+// getDriverName returns the actual driver name for registration lookup.
+func getDriverName(name string) string {
+	// mizu_vector variants all use "mizu_vector" driver with different DSN
+	if len(name) > 11 && name[:11] == "mizu_vector" {
+		return "mizu_vector"
+	}
+	return name
+}
+
 func (r *Runner) benchmarkDriver(ctx context.Context, dcfg DriverConfig) error {
 	r.logger("--- %s ---", dcfg.Name)
 
@@ -143,12 +168,15 @@ func (r *Runner) benchmarkDriver(ctx context.Context, dcfg DriverConfig) error {
 	}
 	r.report.DriverStats[dcfg.Name] = stats
 
+	// Get actual driver name (mizu_vector variants use same driver)
+	driverName := getDriverName(dcfg.Name)
+
 	// Connect
 	r.logger("  Connecting to %s...", dcfg.DSN)
 	connectCollector := NewCollector()
 	timer := NewTimer()
 
-	db, err := driver.Open(dcfg.Name, dcfg.DSN)
+	db, err := driver.Open(driverName, dcfg.DSN)
 	connectTime := timer.Stop()
 	connectCollector.Record(connectTime)
 

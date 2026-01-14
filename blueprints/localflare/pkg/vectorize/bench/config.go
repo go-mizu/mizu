@@ -65,8 +65,17 @@ func AllDriverConfigs() []DriverConfig {
 		{Name: "vald", DSN: "localhost:8081", Enabled: false}, // Disabled: NGT library crashes on arm64
 		{Name: "vespa", DSN: "http://localhost:8082", Enabled: false}, // Disabled: Vespa config server crashes
 		// Embedded drivers
-		{Name: "mem", DSN: ":memory:", Enabled: true},
-		{Name: "mem_hnsw", DSN: ":memory:", Enabled: true},
+		{Name: "mizu_vector", DSN: "engine=flat", Enabled: true},
+		{Name: "mizu_vector_ivf", DSN: "engine=ivf", Enabled: true},
+		{Name: "mizu_vector_lsh", DSN: "engine=lsh", Enabled: true},
+		{Name: "mizu_vector_pq", DSN: "engine=pq", Enabled: true},
+		{Name: "mizu_vector_hnsw", DSN: "engine=hnsw", Enabled: true},
+		{Name: "mizu_vector_vamana", DSN: "engine=vamana", Enabled: true},
+		{Name: "mizu_vector_rabitq", DSN: "engine=rabitq", Enabled: true},
+		{Name: "mizu_vector_nsg", DSN: "engine=nsg", Enabled: true},
+		{Name: "mizu_vector_scann", DSN: "engine=scann", Enabled: true},
+		{Name: "mizu_vector_acorn", DSN: "engine=acorn", Enabled: true},
+		{Name: "hnsw", DSN: ":memory:", Enabled: true},
 		{Name: "chromem", DSN: ":memory:", Enabled: true},
 		{Name: "sqlite", DSN: "./data/bench_sqlite/vectors.db", Enabled: true},
 		{Name: "lancedb", DSN: "./data/bench_lancedb", Enabled: true},
