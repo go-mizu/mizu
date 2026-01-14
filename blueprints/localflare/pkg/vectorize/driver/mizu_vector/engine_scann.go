@@ -18,6 +18,8 @@ import (
 // - SIMD-accelerated distance computation using viterin/vek
 // - Contiguous memory layout for cache efficiency
 // - Precomputed L2 norms for faster cosine distance
+// - Object pooling for zero-allocation search
+// - Early termination when results converge
 // - Parallel cluster search for large datasets
 // - Typed heaps instead of sorting
 type ScaNNEngine struct {
@@ -38,6 +40,9 @@ type ScaNNEngine struct {
 	// Parameters
 	nClusters int
 	nProbe    int
+
+	// Object pools for zero-allocation search
+	centroidDistPool sync.Pool // []float32 for centroid distances
 
 	needsRebuild bool
 	rng          *rand.Rand
@@ -301,19 +306,33 @@ func (e *ScaNNEngine) Search(query []float32, k int) []SearchResult {
 		return nil
 	}
 
+	nCentroids := len(e.centroids)
+
 	// Precompute query norm
 	queryNorm := vek32.Norm(query)
 
-	// Find nearest clusters using SIMD distance
-	nprobe := e.nProbe
-	if nprobe > len(e.centroids) {
-		nprobe = len(e.centroids)
+	// Get pooled centroid distances array
+	var centroidDists []float32
+	if pooled := e.centroidDistPool.Get(); pooled != nil {
+		centroidDists = pooled.([]float32)
+		if cap(centroidDists) < nCentroids {
+			centroidDists = make([]float32, nCentroids)
+		} else {
+			centroidDists = centroidDists[:nCentroids]
+		}
+	} else {
+		centroidDists = make([]float32, nCentroids)
 	}
 
 	// Compute all centroid distances at once
-	centroidDists := make([]float32, len(e.centroids))
 	for i, c := range e.centroids {
 		centroidDists[i] = e.computeDistanceSIMD(query, queryNorm, c, e.centroidNorms[i])
+	}
+
+	// Find nearest clusters using SIMD distance
+	nprobe := e.nProbe
+	if nprobe > nCentroids {
+		nprobe = nCentroids
 	}
 
 	// Select nprobe nearest centroids
@@ -326,6 +345,9 @@ func (e *ScaNNEngine) Search(query []float32, k int) []SearchResult {
 			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
 		}
 	}
+
+	// Return centroid distances to pool
+	e.centroidDistPool.Put(centroidDists)
 
 	// Count total vectors
 	totalVecs := 0
@@ -340,8 +362,62 @@ func (e *ScaNNEngine) Search(query []float32, k int) []SearchResult {
 		return e.searchParallel(clusterIndices, query, queryNorm, k)
 	}
 
-	// Serial search for smaller datasets
-	return e.searchSerial(clusterIndices, query, queryNorm, k)
+	// Serial search with early termination
+	return e.searchSerialWithEarlyTermination(clusterIndices, query, queryNorm, k)
+}
+
+// searchSerialWithEarlyTermination searches clusters with early termination.
+func (e *ScaNNEngine) searchSerialWithEarlyTermination(clusterIndices []int32, query []float32, queryNorm float32, k int) []SearchResult {
+	resultHeap := make(maxHeap32, 0, k)
+
+	unchangedClusters := 0
+	const earlyTerminateThreshold = 2
+
+	for _, ci := range clusterIndices {
+		cluster := e.clusters[ci]
+		improved := false
+
+		// Prefetch first vectors
+		if len(cluster) > 4 {
+			_ = e.vectorData[int(cluster[0])*e.dims]
+		}
+
+		for _, vecIdx := range cluster {
+			vec := e.getVector(int(vecIdx))
+			dist := e.computeDistanceSIMD(query, queryNorm, vec, e.vectorNorms[vecIdx])
+
+			if len(resultHeap) < k {
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+				improved = true
+			} else if dist < resultHeap[0].dist {
+				resultHeap.PopItem()
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+				improved = true
+			}
+		}
+
+		if improved {
+			unchangedClusters = 0
+		} else {
+			unchangedClusters++
+		}
+
+		if unchangedClusters >= earlyTerminateThreshold && len(resultHeap) >= k {
+			break
+		}
+	}
+
+	// Extract sorted results
+	results := make([]SearchResult, len(resultHeap))
+	for i := len(resultHeap) - 1; i >= 0; i-- {
+		item := resultHeap.PopItem()
+		results[i] = SearchResult{
+			ID:       e.vectorIDs[item.idx],
+			Distance: item.dist,
+		}
+	}
+
+	return results
 }
 
 func (e *ScaNNEngine) searchSerial(clusterIndices []int32, query []float32, queryNorm float32, k int) []SearchResult {

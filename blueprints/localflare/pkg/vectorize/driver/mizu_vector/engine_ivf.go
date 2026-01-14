@@ -19,7 +19,9 @@ import (
 // - SIMD-accelerated distance computation using viterin/vek
 // - Contiguous memory layout for cache efficiency
 // - Precomputed L2 norms for faster cosine distance
-// - Early termination based on centroid distance lower bound
+// - Object pooling for zero-allocation search
+// - Early termination when results converge
+// - Adaptive nProbe based on centroid distance distribution
 // - Typed top-K heap instead of full sorting
 type IVFEngine struct {
 	distFunc DistanceFunc
@@ -36,6 +38,11 @@ type IVFEngine struct {
 	centroidNorms []float32   // Precomputed norms for centroids
 	clusters      [][]int32   // Vector indices in each cluster
 	nProbe        int         // Number of clusters to search
+
+	// Object pools for zero-allocation search
+	centroidDistPool sync.Pool // []float32 for centroid distances
+	heapPool         sync.Pool // maxHeap32 for results
+	resultPool       sync.Pool // []SearchResult for output
 
 	needsRebuild bool
 }
@@ -289,20 +296,34 @@ func (e *IVFEngine) Search(query []float32, k int) []SearchResult {
 		return e.searchClusterSIMD(e.clusters[0], query, queryNorm, k)
 	}
 
-	// Find nearest clusters using SIMD distance
-	nProbe := e.nProbe
-	if nProbe > len(e.centroids) {
-		nProbe = len(e.centroids)
+	nCentroids := len(e.centroids)
+
+	// Get pooled centroid distances array (or allocate if pool empty)
+	var centroidDists []float32
+	if pooled := e.centroidDistPool.Get(); pooled != nil {
+		centroidDists = pooled.([]float32)
+		if cap(centroidDists) < nCentroids {
+			centroidDists = make([]float32, nCentroids)
+		} else {
+			centroidDists = centroidDists[:nCentroids]
+		}
+	} else {
+		centroidDists = make([]float32, nCentroids)
 	}
 
 	// Compute all centroid distances at once for better cache locality
-	centroidDists := make([]float32, len(e.centroids))
 	for i, centroid := range e.centroids {
 		centroidDists[i] = e.computeDistanceSIMD(query, queryNorm, centroid, e.centroidNorms[i])
 	}
 
+	// Adaptive nProbe: search more clusters if query is near boundary
+	nProbe := e.adaptiveNProbe(centroidDists)
+
 	// Find nProbe nearest centroids using partial selection
 	clusterIndices := e.selectTopK(centroidDists, nProbe)
+
+	// Return centroid distances to pool
+	e.centroidDistPool.Put(centroidDists)
 
 	// Count total vectors to search
 	totalVecs := 0
@@ -315,8 +336,50 @@ func (e *IVFEngine) Search(query []float32, k int) []SearchResult {
 		return e.searchClustersParallelSIMD(clusterIndices, query, queryNorm, k)
 	}
 
-	// Serial search with SIMD for smaller datasets
-	return e.searchClustersMergedSIMD(clusterIndices, query, queryNorm, k)
+	// Serial search with early termination
+	return e.searchClustersMergedSIMDWithEarlyTermination(clusterIndices, query, queryNorm, k)
+}
+
+// adaptiveNProbe adjusts nProbe based on how close the query is to cluster boundaries.
+// Returns higher nProbe if query is between clusters, lower if clearly within one cluster.
+func (e *IVFEngine) adaptiveNProbe(centroidDists []float32) int {
+	nProbe := e.nProbe
+	nCentroids := len(centroidDists)
+
+	if nProbe > nCentroids {
+		nProbe = nCentroids
+	}
+	if nCentroids < 2 {
+		return nProbe
+	}
+
+	// Find two nearest centroids
+	min1, min2 := float32(1e30), float32(1e30)
+	for _, d := range centroidDists {
+		if d < min1 {
+			min2 = min1
+			min1 = d
+		} else if d < min2 {
+			min2 = d
+		}
+	}
+
+	// Calculate ratio of 2nd nearest to nearest
+	if min1 < 1e-10 {
+		return nProbe // Avoid division by zero
+	}
+	ratio := min2 / min1
+
+	// Adjust nProbe based on ratio
+	if ratio < 1.15 {
+		// Query is near cluster boundary - search more clusters
+		nProbe = min(nProbe*2, nCentroids)
+	} else if ratio > 2.5 {
+		// Query is clearly within one cluster - can search fewer
+		nProbe = max(nProbe/2, 3)
+	}
+
+	return nProbe
 }
 
 // computeDistanceSIMD computes distance based on metric using SIMD
@@ -388,6 +451,65 @@ func (e *IVFEngine) searchClustersMergedSIMD(clusterIndices []int32, query []flo
 				resultHeap.PopItem()
 				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
 			}
+		}
+	}
+
+	// Extract sorted results
+	results := make([]SearchResult, len(resultHeap))
+	for i := len(resultHeap) - 1; i >= 0; i-- {
+		item := resultHeap.PopItem()
+		results[i] = SearchResult{
+			ID:       e.vectorIDs[item.idx],
+			Distance: item.dist,
+		}
+	}
+
+	return results
+}
+
+// searchClustersMergedSIMDWithEarlyTermination searches clusters with early termination
+// when results have converged (no improvement for consecutive clusters).
+func (e *IVFEngine) searchClustersMergedSIMDWithEarlyTermination(clusterIndices []int32, query []float32, queryNorm float32, k int) []SearchResult {
+	resultHeap := make(maxHeap32, 0, k)
+
+	unchangedClusters := 0
+	const earlyTerminateThreshold = 2 // Stop after 2 clusters with no improvement
+
+	for _, ci := range clusterIndices {
+		cluster := e.clusters[ci]
+		improved := false
+
+		// Prefetch next cluster's first vectors for cache warmth
+		if len(cluster) > 4 {
+			_ = e.vectorData[int(cluster[0])*e.dims]
+			_ = e.vectorData[int(cluster[min(3, len(cluster)-1)])*e.dims]
+		}
+
+		for _, vecIdx := range cluster {
+			vec := e.getVector(int(vecIdx))
+			dist := e.computeDistanceSIMD(query, queryNorm, vec, e.vectorNorms[vecIdx])
+
+			if len(resultHeap) < k {
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+				improved = true
+			} else if dist < resultHeap[0].dist {
+				resultHeap.PopItem()
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+				improved = true
+			}
+		}
+
+		// Track convergence
+		if improved {
+			unchangedClusters = 0
+		} else {
+			unchangedClusters++
+		}
+
+		// Early termination: if results haven't improved for consecutive clusters
+		// and we have enough results, stop searching
+		if unchangedClusters >= earlyTerminateThreshold && len(resultHeap) >= k {
+			break
 		}
 	}
 

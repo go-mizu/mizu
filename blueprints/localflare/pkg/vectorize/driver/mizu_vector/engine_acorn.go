@@ -16,6 +16,7 @@ import (
 // - SIMD-accelerated distance computation using viterin/vek
 // - Contiguous memory layout for cache efficiency
 // - Precomputed L2 norms for faster cosine distance
+// - Object pooling for bitsets (zero-allocation search)
 // - Medoid-based entry point (not random)
 // - Typed heaps instead of sorting
 // - Bitset for visited tracking
@@ -36,6 +37,9 @@ type ACORNEngine struct {
 	// Parameters
 	K        int // Neighbors per node
 	efSearch int // Search beam width
+
+	// Object pools for zero-allocation search
+	bitsetPool sync.Pool // *bitset for visited tracking
 
 	needsRebuild bool
 	rng          *rand.Rand
@@ -256,7 +260,20 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 	}
 
 	queryNorm := vek32.Norm(query)
-	visited := newBitset(n)
+
+	// Get pooled bitset or create new one
+	var visited *bitset
+	if pooled := e.bitsetPool.Get(); pooled != nil {
+		visited = pooled.(*bitset)
+		visited.Clear()
+		if visited.Size() < n {
+			visited = newBitset(n)
+		}
+	} else {
+		visited = newBitset(n)
+	}
+	defer e.bitsetPool.Put(visited)
+
 	ef := e.efSearch
 	if ef < k*2 {
 		ef = k * 2
@@ -272,7 +289,7 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	visited.Set(e.navNode)
 
-	// Beam search
+	// Beam search with prefetching
 	for len(candidates) > 0 {
 		curr := candidates.PopItem()
 
@@ -281,8 +298,14 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 			break
 		}
 
+		// Get neighbors and prefetch
+		neighbors := e.graph[curr.idx]
+		if len(neighbors) > 0 {
+			_ = e.vectorData[int(neighbors[0])*e.dims]
+		}
+
 		// Explore neighbors
-		for _, neighbor := range e.graph[curr.idx] {
+		for _, neighbor := range neighbors {
 			if visited.Test(neighbor) {
 				continue
 			}
