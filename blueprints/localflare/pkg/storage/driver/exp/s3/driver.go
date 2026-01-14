@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -200,11 +201,15 @@ func buildAWSConfig(ctx context.Context, cfg *dsnConfig) (aws.Config, error) {
 		opts = append(opts, config.WithCredentialsProvider(creds))
 	}
 
-	// For insecure connections, configure custom HTTP client
+	// For insecure connections, configure custom HTTP client with proper connection pooling
 	if cfg.insecure {
 		httpClient := &http.Client{
 			Transport: &http.Transport{
-				TLSClientConfig: nil, // Allow insecure
+				TLSClientConfig:     nil, // Allow insecure
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				MaxConnsPerHost:     100,
+				IdleConnTimeout:     90 * time.Second,
 			},
 		}
 		opts = append(opts, config.WithHTTPClient(httpClient))
