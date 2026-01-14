@@ -424,6 +424,79 @@ func (r *Report) SaveMarkdown(outputDir string) error {
 	return os.WriteFile(mdPath, []byte(markdown), 0644)
 }
 
+// SaveCSV saves the report as CSV for spreadsheet analysis.
+func (r *Report) SaveCSV(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	csvPath := filepath.Join(outputDir, "benchmark_results.csv")
+	f, err := os.Create(csvPath)
+	if err != nil {
+		return fmt.Errorf("create csv file: %w", err)
+	}
+	defer f.Close()
+
+	// Write CSV header
+	header := "driver,operation,object_size,iterations,throughput_mbps,ops_per_sec,avg_latency_ms,p50_ms,p95_ms,p99_ms,ttfb_avg_ms,ttfb_p50_ms,ttfb_p95_ms,ttfb_p99_ms,errors\n"
+	f.WriteString(header)
+
+	// Write data rows
+	for _, m := range r.Results {
+		// Convert latencies to milliseconds
+		avgMs := float64(m.AvgLatency.Nanoseconds()) / 1e6
+		p50Ms := float64(m.P50Latency.Nanoseconds()) / 1e6
+		p95Ms := float64(m.P95Latency.Nanoseconds()) / 1e6
+		p99Ms := float64(m.P99Latency.Nanoseconds()) / 1e6
+		ttfbAvgMs := float64(m.TTFBAvg.Nanoseconds()) / 1e6
+		ttfbP50Ms := float64(m.TTFBP50.Nanoseconds()) / 1e6
+		ttfbP95Ms := float64(m.TTFBP95.Nanoseconds()) / 1e6
+		ttfbP99Ms := float64(m.TTFBP99.Nanoseconds()) / 1e6
+
+		row := fmt.Sprintf("%s,%s,%d,%d,%.4f,%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d\n",
+			m.Driver,
+			m.Operation,
+			m.ObjectSize,
+			m.Iterations,
+			m.Throughput,
+			m.OpsPerSec,
+			avgMs,
+			p50Ms,
+			p95Ms,
+			p99Ms,
+			ttfbAvgMs,
+			ttfbP50Ms,
+			ttfbP95Ms,
+			ttfbP99Ms,
+			m.Errors,
+		)
+		f.WriteString(row)
+	}
+
+	return nil
+}
+
+// SaveAll saves report in all configured formats.
+func (r *Report) SaveAll(outputDir string, formats []string) error {
+	for _, format := range formats {
+		switch format {
+		case "json":
+			if err := r.SaveJSON(outputDir); err != nil {
+				return fmt.Errorf("save json: %w", err)
+			}
+		case "markdown":
+			if err := r.SaveMarkdown(outputDir); err != nil {
+				return fmt.Errorf("save markdown: %w", err)
+			}
+		case "csv":
+			if err := r.SaveCSV(outputDir); err != nil {
+				return fmt.Errorf("save csv: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 func (r *Report) generateMarkdown() string {
 	var sb strings.Builder
 
@@ -489,8 +562,17 @@ func (r *Report) generateMarkdown() string {
 		}
 
 		sb.WriteString(fmt.Sprintf("### %s\n\n", op))
-		sb.WriteString("| Driver | Throughput | P50 | P95 | P99 | Errors |\n")
-		sb.WriteString("|--------|------------|-----|-----|-----|--------|\n")
+
+		// Check if this is a read operation with TTFB data
+		hasTTFB := strings.Contains(op, "Read") && results[0].TTFBAvg > 0
+
+		if hasTTFB {
+			sb.WriteString("| Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |\n")
+			sb.WriteString("|--------|------------|----------|----------|-----|-----|-----|--------|\n")
+		} else {
+			sb.WriteString("| Driver | Throughput | P50 | P95 | P99 | Errors |\n")
+			sb.WriteString("|--------|------------|-----|-----|-----|--------|\n")
+		}
 
 		// Sort by throughput (descending)
 		sort.Slice(results, func(i, j int) bool {
@@ -505,14 +587,27 @@ func (r *Report) generateMarkdown() string {
 				throughput = fmt.Sprintf("%.0f ops/s", m.Throughput)
 			}
 
-			sb.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %v | %d |\n",
-				m.Driver,
-				throughput,
-				formatLatency(m.P50Latency),
-				formatLatency(m.P95Latency),
-				formatLatency(m.P99Latency),
-				m.Errors,
-			))
+			if hasTTFB {
+				sb.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %v | %v | %v | %d |\n",
+					m.Driver,
+					throughput,
+					formatLatency(m.TTFBAvg),
+					formatLatency(m.TTFBP95),
+					formatLatency(m.P50Latency),
+					formatLatency(m.P95Latency),
+					formatLatency(m.P99Latency),
+					m.Errors,
+				))
+			} else {
+				sb.WriteString(fmt.Sprintf("| %s | %s | %v | %v | %v | %d |\n",
+					m.Driver,
+					throughput,
+					formatLatency(m.P50Latency),
+					formatLatency(m.P95Latency),
+					formatLatency(m.P99Latency),
+					m.Errors,
+				))
+			}
 		}
 		sb.WriteString("\n")
 
@@ -1024,4 +1119,177 @@ func (r *Report) generateConcurrencySummary(sb *strings.Builder, drivers []strin
 		}
 		sb.WriteString("\n*\\* indicates errors occurred*\n\n")
 	}
+}
+
+// CompareResult holds comparison data between baseline and current benchmark.
+type CompareResult struct {
+	Driver    string
+	Operation string
+	ObjectSize int
+
+	BaselineThroughput float64
+	BaselineP50        time.Duration
+	BaselineP99        time.Duration
+
+	CurrentThroughput float64
+	CurrentP50        time.Duration
+	CurrentP99        time.Duration
+
+	ThroughputDelta float64 // percentage change
+	P50Delta        float64 // percentage change
+	P99Delta        float64 // percentage change
+
+	Regression  bool
+	Improvement bool
+}
+
+// LoadBaseline loads a baseline report from a JSON file.
+func LoadBaseline(path string) (*Report, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read baseline: %w", err)
+	}
+
+	var report Report
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, fmt.Errorf("parse baseline: %w", err)
+	}
+
+	return &report, nil
+}
+
+// CompareReports compares current results against a baseline.
+func CompareReports(baseline, current *Report) []CompareResult {
+	// Index baseline results by driver+operation
+	baselineMap := make(map[string]*Metrics)
+	for _, m := range baseline.Results {
+		key := m.Driver + "|" + m.Operation
+		baselineMap[key] = m
+	}
+
+	var results []CompareResult
+
+	for _, curr := range current.Results {
+		key := curr.Driver + "|" + curr.Operation
+		base, ok := baselineMap[key]
+		if !ok {
+			continue // No baseline comparison available
+		}
+
+		result := CompareResult{
+			Driver:     curr.Driver,
+			Operation:  curr.Operation,
+			ObjectSize: curr.ObjectSize,
+
+			BaselineThroughput: base.Throughput,
+			BaselineP50:        base.P50Latency,
+			BaselineP99:        base.P99Latency,
+
+			CurrentThroughput: curr.Throughput,
+			CurrentP50:        curr.P50Latency,
+			CurrentP99:        curr.P99Latency,
+		}
+
+		// Calculate deltas as percentages
+		if base.Throughput > 0 {
+			result.ThroughputDelta = ((curr.Throughput - base.Throughput) / base.Throughput) * 100
+		}
+		if base.P50Latency > 0 {
+			result.P50Delta = ((float64(curr.P50Latency) - float64(base.P50Latency)) / float64(base.P50Latency)) * 100
+		}
+		if base.P99Latency > 0 {
+			result.P99Delta = ((float64(curr.P99Latency) - float64(base.P99Latency)) / float64(base.P99Latency)) * 100
+		}
+
+		// Determine if regression or improvement (>10% change threshold)
+		if result.ThroughputDelta < -10 || result.P99Delta > 10 {
+			result.Regression = true
+		}
+		if result.ThroughputDelta > 10 || result.P99Delta < -10 {
+			result.Improvement = true
+		}
+
+		results = append(results, result)
+	}
+
+	return results
+}
+
+// GenerateComparisonReport creates a markdown comparison report.
+func GenerateComparisonReport(comparisons []CompareResult) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Performance Comparison vs Baseline\n\n")
+
+	// Collect regressions and improvements
+	var regressions, improvements []CompareResult
+	for _, c := range comparisons {
+		if c.Regression {
+			regressions = append(regressions, c)
+		}
+		if c.Improvement {
+			improvements = append(improvements, c)
+		}
+	}
+
+	// Summary
+	sb.WriteString("### Summary\n\n")
+	sb.WriteString(fmt.Sprintf("- **Total comparisons:** %d\n", len(comparisons)))
+	sb.WriteString(fmt.Sprintf("- **Regressions detected:** %d\n", len(regressions)))
+	sb.WriteString(fmt.Sprintf("- **Improvements detected:** %d\n", len(improvements)))
+	sb.WriteString("\n")
+
+	// Regressions
+	if len(regressions) > 0 {
+		sb.WriteString("### Regressions (>10% slower)\n\n")
+		sb.WriteString("| Driver | Operation | Baseline | Current | Throughput Δ | P99 Δ |\n")
+		sb.WriteString("|--------|-----------|----------|---------|--------------|-------|\n")
+
+		for _, r := range regressions {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.2f MB/s | %.2f MB/s | %.1f%% | %.1f%% |\n",
+				r.Driver, r.Operation,
+				r.BaselineThroughput, r.CurrentThroughput,
+				r.ThroughputDelta, r.P99Delta))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Improvements
+	if len(improvements) > 0 {
+		sb.WriteString("### Improvements (>10% faster)\n\n")
+		sb.WriteString("| Driver | Operation | Baseline | Current | Throughput Δ | P99 Δ |\n")
+		sb.WriteString("|--------|-----------|----------|---------|--------------|-------|\n")
+
+		for _, r := range improvements {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.2f MB/s | %.2f MB/s | +%.1f%% | %.1f%% |\n",
+				r.Driver, r.Operation,
+				r.BaselineThroughput, r.CurrentThroughput,
+				r.ThroughputDelta, r.P99Delta))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Full comparison table
+	sb.WriteString("### Full Comparison\n\n")
+	sb.WriteString("| Driver | Operation | Baseline | Current | Throughput Δ | Status |\n")
+	sb.WriteString("|--------|-----------|----------|---------|--------------|--------|\n")
+
+	for _, c := range comparisons {
+		var status string
+		if c.Regression {
+			status = "⚠️ Regression"
+		} else if c.Improvement {
+			status = "✅ Improved"
+		} else {
+			status = "➖ Stable"
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %s | %.2f | %.2f | %+.1f%% | %s |\n",
+			c.Driver, c.Operation,
+			c.BaselineThroughput, c.CurrentThroughput,
+			c.ThroughputDelta, status))
+	}
+	sb.WriteString("\n")
+
+	return sb.String()
 }

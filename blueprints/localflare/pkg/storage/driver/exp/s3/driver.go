@@ -14,6 +14,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -203,13 +204,20 @@ func buildAWSConfig(ctx context.Context, cfg *dsnConfig) (aws.Config, error) {
 
 	// For insecure connections, configure custom HTTP client with proper connection pooling
 	if cfg.insecure {
+		dialer := &net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
 		httpClient := &http.Client{
+			// No global timeout - let context control timeouts for large file transfers
 			Transport: &http.Transport{
-				TLSClientConfig:     nil, // Allow insecure
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
-				MaxConnsPerHost:     100,
-				IdleConnTimeout:     90 * time.Second,
+				DialContext:           dialer.DialContext,
+				TLSClientConfig:       nil, // Allow insecure
+				MaxIdleConns:          200,
+				MaxIdleConnsPerHost:   200,
+				MaxConnsPerHost:       200,
+				IdleConnTimeout:       90 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second, // Timeout for headers only
 			},
 		}
 		opts = append(opts, config.WithHTTPClient(httpClient))
