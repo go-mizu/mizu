@@ -31,10 +31,13 @@ var DriverContainerMap = map[string]string{
 	"weaviate":      "weaviate",
 	"chroma":        "chroma",
 	"pgvector":      "pgvector",
+	"pgvectorscale": "pgvectorscale",
 	"redis":         "redis",
 	"opensearch":    "opensearch",
 	"elasticsearch": "elasticsearch",
 	// Embedded drivers (no Docker container)
+	"mem":     "",
+	"sqlite":  "",
 	"lancedb": "",
 	"duckdb":  "",
 }
@@ -252,6 +255,7 @@ func (c *DockerStatsCollector) getVolumeName(driverName string) string {
 		"weaviate":      "weaviate_data",
 		"chroma":        "chroma_data",
 		"pgvector":      "pgvector_data",
+		"pgvectorscale": "pgvectorscale_data",
 		"redis":         "redis_data",
 		"opensearch":    "opensearch_data",
 		"elasticsearch": "elasticsearch_data",
