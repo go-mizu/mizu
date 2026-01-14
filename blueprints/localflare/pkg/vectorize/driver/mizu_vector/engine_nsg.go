@@ -2,7 +2,6 @@ package mizu_vector
 
 import (
 	"math/rand"
-	"sort"
 	"sync"
 	"time"
 
@@ -11,12 +10,16 @@ import (
 
 // NSGEngine implements Navigating Spreading-out Graph.
 // Based on "Fast Approximate Nearest Neighbor Search With The Navigating Spreading-out Graph" (VLDB 2019).
-// Uses simplified construction for better build performance.
+//
+// Optimized with:
+// - Index-based storage (no string lookups)
+// - Typed heaps instead of sorting
+// - Bitset for visited tracking
 type NSGEngine struct {
 	distFunc DistanceFunc
 
-	// Vector storage
-	vectors []indexedVector
+	// Index-based storage
+	vectors []nsgVector
 
 	// Graph structure
 	graph   [][]int32 // Adjacency list using indices
@@ -29,6 +32,11 @@ type NSGEngine struct {
 	needsRebuild bool
 	rng          *rand.Rand
 	mu           sync.RWMutex
+}
+
+type nsgVector struct {
+	id     string
+	values []float32
 }
 
 // NSG configuration
@@ -60,10 +68,10 @@ func (e *NSGEngine) Build(vectors map[string]*vectorize.Vector, dims int, metric
 		return
 	}
 
-	// Collect vectors
-	e.vectors = make([]indexedVector, 0, n)
+	// Collect vectors with index-based storage
+	e.vectors = make([]nsgVector, 0, n)
 	for id, v := range vectors {
-		e.vectors = append(e.vectors, indexedVector{id: id, values: v.Values})
+		e.vectors = append(e.vectors, nsgVector{id: id, values: v.Values})
 	}
 
 	// Find navigating node (closest to centroid)
@@ -110,8 +118,10 @@ func (e *NSGEngine) buildGraph() {
 	n := len(e.vectors)
 	e.graph = make([][]int32, n)
 
-	// Initialize with navigating node having no neighbors
-	e.graph[e.navNode] = make([]int32, 0, e.R)
+	// Initialize all nodes with empty neighbor lists
+	for i := 0; i < n; i++ {
+		e.graph[i] = make([]int32, 0, e.R)
+	}
 
 	// Insert each vector incrementally
 	for i := 0; i < n; i++ {
@@ -137,50 +147,60 @@ func (e *NSGEngine) buildGraph() {
 	}
 }
 
-// searchForNeighbors finds candidate neighbors for a node.
+// searchForNeighbors finds candidate neighbors for a node using heap-based search.
 func (e *NSGEngine) searchForNeighbors(queryIdx int) []int32 {
 	query := e.vectors[queryIdx].values
 	n := len(e.vectors)
 
-	visited := make([]bool, n)
-	visited[queryIdx] = true
+	visited := newBitset(n)
+	visited.Set(int32(queryIdx))
+
+	// Use heaps for efficient search
+	candidates := make(minHeap32, 0, e.L*2)
+	result := make(maxHeap32, 0, e.L*2)
 
 	// Start from navigating node
-	candidates := make([]int32, 0, e.L*2)
-	candidates = append(candidates, e.navNode)
-	visited[e.navNode] = true
+	startDist := e.distFunc(query, e.vectors[e.navNode].values)
+	candidates.PushItem(distItem32{idx: e.navNode, dist: startDist})
+	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
+	visited.Set(e.navNode)
 
-	// Greedy expansion
-	for len(candidates) < e.L*2 {
-		improved := false
+	// Beam search
+	for len(candidates) > 0 {
+		curr := candidates.PopItem()
 
-		// Try to expand from best unvisited candidates
-		for _, candIdx := range candidates {
-			for _, neighbor := range e.graph[candIdx] {
-				if visited[neighbor] {
-					continue
-				}
-				visited[neighbor] = true
-				candidates = append(candidates, neighbor)
-				improved = true
-			}
-		}
-
-		if !improved {
+		// Stop if current candidate is worse than worst in result
+		if len(result) >= e.L*2 && curr.dist > result[0].dist {
 			break
 		}
 
-		// Sort by distance and keep top L*2
-		sort.Slice(candidates, func(i, j int) bool {
-			return e.distFunc(query, e.vectors[candidates[i]].values) <
-				e.distFunc(query, e.vectors[candidates[j]].values)
-		})
-		if len(candidates) > e.L*2 {
-			candidates = candidates[:e.L*2]
+		// Explore neighbors
+		for _, neighbor := range e.graph[curr.idx] {
+			if visited.Test(neighbor) {
+				continue
+			}
+			visited.Set(neighbor)
+
+			dist := e.distFunc(query, e.vectors[neighbor].values)
+
+			if len(result) < e.L*2 {
+				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
+				result.PushItem(distItem32{idx: neighbor, dist: dist})
+			} else if dist < result[0].dist {
+				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
+				result.PopItem()
+				result.PushItem(distItem32{idx: neighbor, dist: dist})
+			}
 		}
 	}
 
-	return candidates
+	// Extract result indices
+	results := make([]int32, len(result))
+	for i := len(result) - 1; i >= 0; i-- {
+		results[i] = result.PopItem().idx
+	}
+
+	return results
 }
 
 // selectNeighbors selects R neighbors using MRNG-style pruning.
@@ -191,27 +211,18 @@ func (e *NSGEngine) selectNeighbors(queryIdx int, candidates []int32) []int32 {
 
 	query := e.vectors[queryIdx].values
 
-	// Sort candidates by distance
-	type candDist struct {
-		idx  int32
-		dist float32
-	}
-	sorted := make([]candDist, 0, len(candidates))
+	// Build sorted candidate list using heap
+	h := make(minHeap32, 0, len(candidates))
 	for _, c := range candidates {
 		if c != int32(queryIdx) {
-			sorted = append(sorted, candDist{idx: c, dist: e.distFunc(query, e.vectors[c].values)})
+			h.PushItem(distItem32{idx: c, dist: e.distFunc(query, e.vectors[c].values)})
 		}
 	}
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].dist < sorted[j].dist
-	})
 
 	// Select using MRNG criteria (simplified)
 	selected := make([]int32, 0, e.R)
-	for _, cand := range sorted {
-		if len(selected) >= e.R {
-			break
-		}
+	for len(h) > 0 && len(selected) < e.R {
+		cand := h.PopItem()
 
 		// Check if candidate is occluded by any selected neighbor
 		occluded := false
@@ -254,64 +265,67 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 		return nil
 	}
 
-	visited := make([]bool, n)
+	visited := newBitset(n)
 	L := e.L
 	if L < k*2 {
 		L = k * 2
 	}
 
-	// Start from navigating node
-	type candidate struct {
-		idx  int32
-		dist float32
-	}
-	candidates := make([]candidate, 0, L*2)
-	startDist := e.distFunc(query, e.vectors[e.navNode].values)
-	candidates = append(candidates, candidate{idx: e.navNode, dist: startDist})
-	visited[e.navNode] = true
+	// Use heaps for efficient search
+	candidates := make(minHeap32, 0, L*2)
+	result := make(maxHeap32, 0, L)
 
-	// Greedy search
-	processed := 0
-	for processed < len(candidates) && processed < L {
-		// Get best unprocessed candidate
-		bestIdx := processed
-		for i := processed + 1; i < len(candidates); i++ {
-			if candidates[i].dist < candidates[bestIdx].dist {
-				bestIdx = i
-			}
+	// Start from navigating node
+	startDist := e.distFunc(query, e.vectors[e.navNode].values)
+	candidates.PushItem(distItem32{idx: e.navNode, dist: startDist})
+	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
+	visited.Set(e.navNode)
+
+	// Beam search
+	for len(candidates) > 0 {
+		curr := candidates.PopItem()
+
+		// Stop if current candidate is worse than worst in result
+		if len(result) >= L && curr.dist > result[0].dist {
+			break
 		}
-		// Swap to front of unprocessed
-		candidates[processed], candidates[bestIdx] = candidates[bestIdx], candidates[processed]
-		curr := candidates[processed]
-		processed++
 
 		// Explore neighbors
 		for _, neighbor := range e.graph[curr.idx] {
-			if visited[neighbor] {
+			if visited.Test(neighbor) {
 				continue
 			}
-			visited[neighbor] = true
+			visited.Set(neighbor)
 
 			dist := e.distFunc(query, e.vectors[neighbor].values)
-			candidates = append(candidates, candidate{idx: neighbor, dist: dist})
+
+			if len(result) < L {
+				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
+				result.PushItem(distItem32{idx: neighbor, dist: dist})
+			} else if dist < result[0].dist {
+				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
+				result.PopItem()
+				result.PushItem(distItem32{idx: neighbor, dist: dist})
+			}
 		}
 	}
 
-	// Sort by distance
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].dist < candidates[j].dist
-	})
+	// Extract top k results
+	if k > len(result) {
+		k = len(result)
+	}
 
-	// Return top k
-	if k > len(candidates) {
-		k = len(candidates)
+	// Get all results sorted
+	allResults := make([]distItem32, len(result))
+	for i := len(result) - 1; i >= 0; i-- {
+		allResults[i] = result.PopItem()
 	}
 
 	results := make([]SearchResult, k)
 	for i := 0; i < k; i++ {
 		results[i] = SearchResult{
-			ID:       e.vectors[candidates[i].idx].id,
-			Distance: candidates[i].dist,
+			ID:       e.vectors[allResults[i].idx].id,
+			Distance: allResults[i].dist,
 		}
 	}
 

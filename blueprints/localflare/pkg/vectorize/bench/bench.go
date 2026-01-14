@@ -328,17 +328,20 @@ func (r *Runner) benchmarkSearch(ctx context.Context, db vectorize.DB, driverNam
 		ReturnMetadata: true,
 	}
 
-	// Warmup
-	r.logger("  Search warmup (%d queries)...", r.config.WarmupIterations)
+	// Warmup with progress
+	warmupProgress := NewProgress("Warmup", r.config.WarmupIterations, true)
 	for i := 0; i < r.config.WarmupIterations && i < len(r.dataset.QueryVectors); i++ {
 		opCtx, cancel := context.WithTimeout(ctx, r.config.Timeout)
 		db.Search(opCtx, indexName, r.dataset.QueryVectors[i], opts)
 		cancel()
+		warmupProgress.Increment()
 	}
+	warmupProgress.Done()
 
-	// Timed search
+	// Timed search with progress
 	collector := NewCollector()
-	r.logger("  Running %d search queries...", r.config.SearchIterations)
+	searchProgress := NewProgress("Search", r.config.SearchIterations, true)
+	startTime := time.Now()
 
 	for i := 0; i < r.config.SearchIterations && i < len(r.dataset.QueryVectors); i++ {
 		timer := NewTimer()
@@ -350,7 +353,10 @@ func (r *Runner) benchmarkSearch(ctx context.Context, db vectorize.DB, driverNam
 		if err != nil {
 			collector.RecordError(err)
 		}
+		searchProgress.Increment()
 	}
+	elapsed := time.Since(startTime)
+	searchProgress.Done()
 
 	result := collector.Result(driverName, "search", fmt.Sprintf("top_%d", r.config.TopK), r.config.SearchIterations)
 	r.report.AddResult(result)
@@ -360,8 +366,8 @@ func (r *Runner) benchmarkSearch(ctx context.Context, db vectorize.DB, driverNam
 		qps = float64(result.Iterations) / result.TotalTime.Seconds()
 	}
 
-	r.logger("  Search: p50=%v, p95=%v, p99=%v, QPS=%.1f, errors=%d",
-		result.P50Latency, result.P95Latency, result.P99Latency, qps, result.Errors)
+	r.logger("  Search: p50=%v, p95=%v, p99=%v, QPS=%.1f, errors=%d, total=%v",
+		result.P50Latency, result.P95Latency, result.P99Latency, qps, result.Errors, elapsed.Round(time.Millisecond))
 
 	return nil
 }

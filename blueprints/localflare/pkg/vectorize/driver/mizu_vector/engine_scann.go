@@ -3,7 +3,6 @@ package mizu_vector
 import (
 	"math"
 	"math/rand"
-	"sort"
 	"sync"
 	"time"
 
@@ -12,11 +11,15 @@ import (
 
 // ScaNNEngine implements a simplified ScaNN-style search.
 // Uses partitioning + asymmetric distance computation.
+//
+// Optimized with:
+// - Index-based storage (no string lookups)
+// - Typed heaps instead of sorting
 type ScaNNEngine struct {
 	distFunc DistanceFunc
 
-	// Vector storage
-	vectors []indexedVector
+	// Index-based storage
+	vectors []scannVector
 
 	// Partitioner (K-means clustering)
 	centroids [][]float32
@@ -25,18 +28,21 @@ type ScaNNEngine struct {
 	// Parameters
 	nClusters int
 	nProbe    int
-	reorderK  int
 
 	needsRebuild bool
 	rng          *rand.Rand
 	mu           sync.RWMutex
 }
 
+type scannVector struct {
+	id     string
+	values []float32
+}
+
 // ScaNN configuration
 const (
 	scannDefaultClusters = 64
 	scannDefaultNprobe   = 8
-	scannDefaultReorder  = 50
 )
 
 // NewScaNNEngine creates a new ScaNN search engine.
@@ -45,7 +51,6 @@ func NewScaNNEngine(distFunc DistanceFunc) *ScaNNEngine {
 		distFunc:     distFunc,
 		nClusters:    scannDefaultClusters,
 		nProbe:       scannDefaultNprobe,
-		reorderK:     scannDefaultReorder,
 		needsRebuild: true,
 		rng:          rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -63,10 +68,10 @@ func (e *ScaNNEngine) Build(vectors map[string]*vectorize.Vector, dims int, metr
 		return
 	}
 
-	// Collect vectors
-	e.vectors = make([]indexedVector, 0, n)
+	// Collect vectors with index-based storage
+	e.vectors = make([]scannVector, 0, n)
 	for id, v := range vectors {
-		e.vectors = append(e.vectors, indexedVector{id: id, values: v.Values})
+		e.vectors = append(e.vectors, scannVector{id: id, values: v.Values})
 	}
 
 	// Build partitioner
@@ -219,53 +224,49 @@ func (e *ScaNNEngine) Search(query []float32, k int) []SearchResult {
 		return nil
 	}
 
-	// Find nearest clusters
-	type clusterDist struct {
-		idx  int
-		dist float32
-	}
-	clusterDists := make([]clusterDist, len(e.centroids))
-	for i, c := range e.centroids {
-		clusterDists[i] = clusterDist{idx: i, dist: e.distFunc(query, c)}
-	}
-	sort.Slice(clusterDists, func(i, j int) bool {
-		return clusterDists[i].dist < clusterDists[j].dist
-	})
-
-	// Collect candidates from top clusters
+	// Find nearest clusters using heap-based selection
 	nprobe := e.nProbe
-	if nprobe > len(clusterDists) {
-		nprobe = len(clusterDists)
+	if nprobe > len(e.centroids) {
+		nprobe = len(e.centroids)
 	}
 
-	type candidate struct {
-		idx  int32
-		dist float32
-	}
-	candidates := make([]candidate, 0)
-
-	for p := 0; p < nprobe; p++ {
-		clusterIdx := clusterDists[p].idx
-		for _, vecIdx := range e.clusters[clusterIdx] {
-			dist := e.distFunc(query, e.vectors[vecIdx].values)
-			candidates = append(candidates, candidate{idx: vecIdx, dist: dist})
+	// Use max-heap to find nprobe nearest centroids
+	topClusters := make(maxHeap32, 0, nprobe)
+	for i, c := range e.centroids {
+		dist := e.distFunc(query, c)
+		if len(topClusters) < nprobe {
+			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
+		} else if dist < topClusters[0].dist {
+			topClusters.PopItem()
+			topClusters.PushItem(distItem32{idx: int32(i), dist: dist})
 		}
 	}
 
-	// Sort and return top k
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].dist < candidates[j].dist
-	})
+	// Search clusters and collect candidates using top-K heap
+	resultHeap := make(maxHeap32, 0, k)
 
-	if k > len(candidates) {
-		k = len(candidates)
+	for len(topClusters) > 0 {
+		item := topClusters.PopItem()
+		cluster := e.clusters[item.idx]
+
+		for _, vecIdx := range cluster {
+			dist := e.distFunc(query, e.vectors[vecIdx].values)
+			if len(resultHeap) < k {
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+			} else if dist < resultHeap[0].dist {
+				resultHeap.PopItem()
+				resultHeap.PushItem(distItem32{idx: vecIdx, dist: dist})
+			}
+		}
 	}
 
-	results := make([]SearchResult, k)
-	for i := 0; i < k; i++ {
+	// Extract sorted results
+	results := make([]SearchResult, len(resultHeap))
+	for i := len(resultHeap) - 1; i >= 0; i-- {
+		item := resultHeap.PopItem()
 		results[i] = SearchResult{
-			ID:       e.vectors[candidates[i].idx].id,
-			Distance: candidates[i].dist,
+			ID:       e.vectors[item.idx].id,
+			Distance: item.dist,
 		}
 	}
 
