@@ -3,6 +3,7 @@ package bench
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
@@ -133,6 +134,49 @@ func (r *Runner) collectDockerStats(ctx context.Context, driverConfigs []DriverC
 	r.logger("")
 }
 
+// MemorySnapshot captures memory usage at a point in time.
+type MemorySnapshot struct {
+	HeapAlloc   uint64
+	HeapInuse   uint64
+	HeapObjects uint64
+}
+
+// captureMemory takes a memory snapshot after forcing GC.
+func captureMemory() MemorySnapshot {
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return MemorySnapshot{
+		HeapAlloc:   m.HeapAlloc,
+		HeapInuse:   m.HeapInuse,
+		HeapObjects: m.HeapObjects,
+	}
+}
+
+// collectEmbeddedMemory collects memory stats for embedded drivers.
+func (r *Runner) collectEmbeddedMemory(driverName string, beforeInsert, afterInsert MemorySnapshot, vectorCount int) {
+	stats, ok := r.report.DriverStats[driverName]
+	if !ok {
+		return
+	}
+
+	// Calculate memory delta
+	heapDelta := float64(afterInsert.HeapAlloc) - float64(beforeInsert.HeapAlloc)
+	heapInuseDelta := float64(afterInsert.HeapInuse) - float64(beforeInsert.HeapInuse)
+	objectsDelta := float64(afterInsert.HeapObjects) - float64(beforeInsert.HeapObjects)
+
+	stats.HeapAllocMB = heapDelta / (1024 * 1024)
+	stats.HeapInUseMB = heapInuseDelta / (1024 * 1024)
+	stats.HeapObjectsK = objectsDelta / 1000
+
+	if vectorCount > 0 {
+		stats.MemPerVectorB = heapDelta / float64(vectorCount)
+	}
+
+	r.logger("  Memory usage: %.2f MB allocated, %.0f bytes/vector",
+		stats.HeapAllocMB, stats.MemPerVectorB)
+}
+
 // isEmbeddedDriver checks if a driver is embedded (no Docker container).
 func isEmbeddedDriver(name string) bool {
 	embedded := []string{
@@ -212,8 +256,20 @@ func (r *Runner) benchmarkDriver(ctx context.Context, dcfg DriverConfig) error {
 		r.logger("  Index operations failed: %v", err)
 	}
 
+	// Capture memory before insert for embedded drivers
+	var beforeInsert MemorySnapshot
+	if isEmbeddedDriver(dcfg.Name) {
+		beforeInsert = captureMemory()
+	}
+
 	if err := r.benchmarkInsert(ctx, db, dcfg.Name, indexName); err != nil {
 		r.logger("  Insert operations failed: %v", err)
+	}
+
+	// Capture memory after insert for embedded drivers
+	if isEmbeddedDriver(dcfg.Name) {
+		afterInsert := captureMemory()
+		r.collectEmbeddedMemory(dcfg.Name, beforeInsert, afterInsert, len(r.dataset.Vectors))
 	}
 
 	if err := r.benchmarkSearch(ctx, db, dcfg.Name, indexName); err != nil {

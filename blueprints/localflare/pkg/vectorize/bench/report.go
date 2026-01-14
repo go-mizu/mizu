@@ -35,6 +35,11 @@ type DriverStats struct {
 	CPUPercent       float64 `json:"cpu_percent"`
 	DiskUsageMB      float64 `json:"disk_usage_mb"`
 	IsEmbedded       bool    `json:"is_embedded"`
+	// Embedded driver memory stats (from runtime.MemStats)
+	HeapAllocMB      float64 `json:"heap_alloc_mb,omitempty"`
+	HeapInUseMB      float64 `json:"heap_inuse_mb,omitempty"`
+	HeapObjectsK     float64 `json:"heap_objects_k,omitempty"`
+	MemPerVectorB    float64 `json:"mem_per_vector_bytes,omitempty"`
 }
 
 // NewReport creates a new report.
@@ -158,7 +163,7 @@ func (r *Report) GenerateMarkdown() string {
 	}
 	sb.WriteString("\n")
 
-	// Resource usage table
+	// Resource usage table - Server drivers
 	sb.WriteString("## Resource Usage (Docker Containers)\n\n")
 	sb.WriteString("| Driver | Type | Memory (MB) | Memory Limit (MB) | Memory % | CPU % | Disk (MB) |\n")
 	sb.WriteString("|--------|------|-------------|-------------------|----------|-------|----------|\n")
@@ -177,11 +182,11 @@ func (r *Report) GenerateMarkdown() string {
 		diskStr := fmt.Sprintf("%.1f", stats.DiskUsageMB)
 
 		if stats.IsEmbedded {
-			memStr = "N/A"
-			limitStr = "N/A"
-			memPctStr = "N/A"
-			cpuStr = "N/A"
-			diskStr = "local"
+			memStr = "-"
+			limitStr = "-"
+			memPctStr = "-"
+			cpuStr = "-"
+			diskStr = "-"
 		} else if stats.MemoryUsageMB == 0 {
 			memStr = "-"
 			limitStr = "-"
@@ -198,6 +203,26 @@ func (r *Report) GenerateMarkdown() string {
 			memPctStr,
 			cpuStr,
 			diskStr,
+		))
+	}
+	sb.WriteString("\n")
+
+	// Memory usage table - Embedded drivers
+	sb.WriteString("## Memory Usage (Embedded Drivers)\n\n")
+	sb.WriteString("| Driver | Heap Alloc (MB) | Heap InUse (MB) | Heap Objects (K) | Bytes/Vector |\n")
+	sb.WriteString("|--------|-----------------|-----------------|------------------|-------------|\n")
+
+	for _, d := range drivers {
+		stats := r.DriverStats[d]
+		if !stats.IsEmbedded || stats.HeapAllocMB == 0 {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("| %s | %.2f | %.2f | %.1f | %.0f |\n",
+			stats.Driver,
+			stats.HeapAllocMB,
+			stats.HeapInUseMB,
+			stats.HeapObjectsK,
+			stats.MemPerVectorB,
 		))
 	}
 	sb.WriteString("\n")
