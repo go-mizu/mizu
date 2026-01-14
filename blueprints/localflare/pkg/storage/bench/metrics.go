@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"io"
 	"sort"
 	"sync"
 	"time"
@@ -24,14 +25,23 @@ type Metrics struct {
 	TotalBytes  int64         `json:"total_bytes,omitempty"`
 	Errors      int           `json:"errors"`
 	LastError   string        `json:"last_error,omitempty"`
+
+	// TTFB (Time To First Byte) metrics for read operations
+	TTFBMin time.Duration `json:"ttfb_min,omitempty"`
+	TTFBMax time.Duration `json:"ttfb_max,omitempty"`
+	TTFBAvg time.Duration `json:"ttfb_avg,omitempty"`
+	TTFBP50 time.Duration `json:"ttfb_p50,omitempty"`
+	TTFBP95 time.Duration `json:"ttfb_p95,omitempty"`
+	TTFBP99 time.Duration `json:"ttfb_p99,omitempty"`
 }
 
 // Collector collects timing samples for a benchmark.
 type Collector struct {
-	mu      sync.Mutex
-	samples []time.Duration
-	errors  int
-	lastErr string
+	mu          sync.Mutex
+	samples     []time.Duration
+	ttfbSamples []time.Duration // Time To First Byte samples
+	errors      int
+	lastErr     string
 }
 
 // NewCollector creates a new metrics collector.
@@ -70,6 +80,28 @@ func (c *Collector) RecordWithError(d time.Duration, err error) {
 	c.mu.Unlock()
 }
 
+// RecordTTFB records a TTFB (Time To First Byte) sample.
+func (c *Collector) RecordTTFB(d time.Duration) {
+	c.mu.Lock()
+	c.ttfbSamples = append(c.ttfbSamples, d)
+	c.mu.Unlock()
+}
+
+// RecordWithTTFB records latency, TTFB, and possible error.
+func (c *Collector) RecordWithTTFB(latency, ttfb time.Duration, err error) {
+	c.mu.Lock()
+	if err != nil {
+		c.errors++
+		c.lastErr = err.Error()
+	} else {
+		c.samples = append(c.samples, latency)
+		if ttfb > 0 {
+			c.ttfbSamples = append(c.ttfbSamples, ttfb)
+		}
+	}
+	c.mu.Unlock()
+}
+
 // Stats computes statistics from collected samples.
 func (c *Collector) Stats() (min, max, avg, p50, p95, p99 time.Duration, total time.Duration) {
 	c.mu.Lock()
@@ -101,9 +133,40 @@ func (c *Collector) Stats() (min, max, avg, p50, p95, p99 time.Duration, total t
 	return
 }
 
+// TTFBStats computes TTFB statistics from collected samples.
+func (c *Collector) TTFBStats() (min, max, avg, p50, p95, p99 time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.ttfbSamples) == 0 {
+		return
+	}
+
+	// Copy and sort for percentile calculations
+	sorted := make([]time.Duration, len(c.ttfbSamples))
+	copy(sorted, c.ttfbSamples)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	min = sorted[0]
+	max = sorted[len(sorted)-1]
+
+	var sum time.Duration
+	for _, s := range sorted {
+		sum += s
+	}
+	avg = sum / time.Duration(len(sorted))
+
+	p50 = percentile(sorted, 50)
+	p95 = percentile(sorted, 95)
+	p99 = percentile(sorted, 99)
+
+	return
+}
+
 // Metrics returns a Metrics struct from collected data.
 func (c *Collector) Metrics(operation, driver string, objectSize int) *Metrics {
 	min, max, avg, p50, p95, p99, total := c.Stats()
+	ttfbMin, ttfbMax, ttfbAvg, ttfbP50, ttfbP95, ttfbP99 := c.TTFBStats()
 
 	c.mu.Lock()
 	errors := c.errors
@@ -125,6 +188,13 @@ func (c *Collector) Metrics(operation, driver string, objectSize int) *Metrics {
 		P99Latency: p99,
 		Errors:     errors,
 		LastError:  lastErr,
+		// TTFB metrics
+		TTFBMin: ttfbMin,
+		TTFBMax: ttfbMax,
+		TTFBAvg: ttfbAvg,
+		TTFBP50: ttfbP50,
+		TTFBP95: ttfbP95,
+		TTFBP99: ttfbP99,
 	}
 
 	// Calculate throughput and ops/sec
@@ -150,6 +220,7 @@ func (c *Collector) Metrics(operation, driver string, objectSize int) *Metrics {
 func (c *Collector) Reset() {
 	c.mu.Lock()
 	c.samples = c.samples[:0]
+	c.ttfbSamples = c.ttfbSamples[:0]
 	c.errors = 0
 	c.lastErr = ""
 	c.mu.Unlock()
@@ -191,4 +262,35 @@ func (t *Timer) Elapsed() time.Duration {
 // Reset restarts the timer.
 func (t *Timer) Reset() {
 	t.start = time.Now()
+}
+
+// TTFBReader wraps a reader to capture Time To First Byte.
+type TTFBReader struct {
+	reader   io.Reader
+	start    time.Time
+	ttfb     time.Duration
+	gotFirst bool
+}
+
+// NewTTFBReader creates a reader that tracks TTFB.
+func NewTTFBReader(r io.Reader, start time.Time) *TTFBReader {
+	return &TTFBReader{
+		reader: r,
+		start:  start,
+	}
+}
+
+// Read implements io.Reader and captures TTFB on first byte read.
+func (t *TTFBReader) Read(p []byte) (n int, err error) {
+	n, err = t.reader.Read(p)
+	if !t.gotFirst && n > 0 {
+		t.ttfb = time.Since(t.start)
+		t.gotFirst = true
+	}
+	return
+}
+
+// TTFB returns the time to first byte (0 if no bytes read yet).
+func (t *TTFBReader) TTFB() time.Duration {
+	return t.ttfb
 }

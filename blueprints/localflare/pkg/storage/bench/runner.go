@@ -202,9 +202,17 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 		}
 	}
 
+	if r.config.Verbose {
+		r.logger("  [debug] Copy benchmarks done, starting MixedWorkload...")
+	}
+
 	// Run mixed workload benchmarks
 	if err := r.benchmarkMixedWorkload(ctx, bucket, driver.Name, maxConc); err != nil {
 		r.logger("  MixedWorkload failed: %v", err)
+	}
+
+	if r.config.Verbose {
+		r.logger("  [debug] MixedWorkload done, starting Multipart...")
 	}
 
 	// Run multipart benchmarks
@@ -212,9 +220,17 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 		r.logger("  Multipart failed: %v", err)
 	}
 
+	if r.config.Verbose {
+		r.logger("  [debug] Multipart done, starting EdgeCases...")
+	}
+
 	// Run edge case benchmarks
 	if err := r.benchmarkEdgeCases(ctx, bucket, driver.Name); err != nil {
 		r.logger("  EdgeCases failed: %v", err)
+	}
+
+	if r.config.Verbose {
+		r.logger("  [debug] EdgeCases done, driver %s complete", driver.Name)
 	}
 
 	// Cleanup
@@ -227,17 +243,21 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 	operation := fmt.Sprintf("Write/%s", SizeLabel(size))
 	data := generateRandomData(size)
 
+	// Use adaptive iterations based on file size
+	iterations := r.config.IterationsForSize(size)
+	warmup := r.config.WarmupForSize(size)
+
 	// Warmup
-	for i := 0; i < r.config.WarmupIterations; i++ {
+	for i := 0; i < warmup; i++ {
 		key := r.uniqueKey("warmup")
 		bucket.Write(ctx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 	}
 
 	// Benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	progress := NewProgress(operation, iterations, true)
 
-	for i := 0; i < r.config.Iterations; i++ {
+	for i := 0; i < iterations; i++ {
 		key := r.uniqueKey("write")
 		timer := NewTimer()
 
@@ -247,7 +267,7 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 		progress.Increment()
 	}
 
-	progress.DoneWithStats(int64(r.config.Iterations) * int64(size))
+	progress.DoneWithStats(int64(iterations) * int64(size))
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -259,15 +279,19 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	operation := fmt.Sprintf("Read/%s", SizeLabel(size))
 	data := generateRandomData(size)
 
+	// Use adaptive iterations based on file size
+	iterations := r.config.IterationsForSize(size)
+	warmup := r.config.WarmupForSize(size)
+
 	// Pre-create objects
-	keys := make([]string, r.config.Iterations)
+	keys := make([]string, iterations)
 	for i := range keys {
 		keys[i] = r.uniqueKey("read")
 		bucket.Write(ctx, keys[i], bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 	}
 
 	// Warmup
-	for i := 0; i < r.config.WarmupIterations && i < len(keys); i++ {
+	for i := 0; i < warmup && i < len(keys); i++ {
 		rc, _, _ := bucket.Open(ctx, keys[i], 0, 0, nil)
 		if rc != nil {
 			io.Copy(io.Discard, rc)
@@ -275,24 +299,29 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 		}
 	}
 
-	// Benchmark
+	// Benchmark with TTFB tracking
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	progress := NewProgress(operation, iterations, true)
 
-	for i := 0; i < r.config.Iterations; i++ {
-		timer := NewTimer()
+	for i := 0; i < iterations; i++ {
+		start := time.Now()
 
 		rc, _, err := bucket.Open(ctx, keys[i%len(keys)], 0, 0, nil)
 		if err == nil {
-			io.Copy(io.Discard, rc)
+			// Wrap reader to capture TTFB
+			ttfbReader := NewTTFBReader(rc, start)
+			io.Copy(io.Discard, ttfbReader)
 			rc.Close()
-		}
 
-		collector.RecordWithError(timer.Elapsed(), err)
+			latency := time.Since(start)
+			collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+		} else {
+			collector.RecordWithError(time.Since(start), err)
+		}
 		progress.Increment()
 	}
 
-	progress.DoneWithStats(int64(r.config.Iterations) * int64(size))
+	progress.DoneWithStats(int64(iterations) * int64(size))
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -542,15 +571,21 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 			defer opCancel()
 
 			idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
-			timer := NewTimer()
+			start := time.Now()
 
 			rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
 			if err == nil {
-				io.Copy(io.Discard, rc)
+				// Wrap reader to capture TTFB
+				ttfbReader := NewTTFBReader(rc, start)
+				io.Copy(io.Discard, ttfbReader)
 				rc.Close()
+
+				latency := time.Since(start)
+				collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+			} else {
+				collector.RecordWithError(time.Since(start), err)
 			}
 
-			collector.RecordWithError(timer.Elapsed(), err)
 			atomic.AddInt64(&completed, 1)
 			progress.Increment()
 		}()
@@ -680,9 +715,15 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 	return nil
 }
 
-func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Bucket, driver string, concurrency int) error {
+func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Bucket, driver string, maxConcurrency int) error {
 	objectSize := 16 * 1024 // 16KB
 	data := generateRandomData(objectSize)
+
+	// Use config concurrency if maxConcurrency is 0 (unlimited)
+	concurrency := maxConcurrency
+	if concurrency <= 0 {
+		concurrency = r.config.Concurrency
+	}
 
 	// Pre-create objects for reading
 	numObjects := 50
@@ -906,4 +947,50 @@ func formatSizes(sizes []int) string {
 		labels[i] = SizeLabel(s)
 	}
 	return fmt.Sprintf("%v", labels)
+}
+
+// benchmarkIterator handles both iteration-based and duration-based benchmarking.
+type benchmarkIterator struct {
+	duration      time.Duration
+	iterations    int
+	minIterations int
+	current       int
+	startTime     time.Time
+}
+
+func (r *Runner) newBenchmarkIterator() *benchmarkIterator {
+	return &benchmarkIterator{
+		duration:      r.config.Duration,
+		iterations:    r.config.Iterations,
+		minIterations: r.config.MinIterations,
+		startTime:     time.Now(),
+	}
+}
+
+// Next returns true if another iteration should be performed.
+func (bi *benchmarkIterator) Next() bool {
+	bi.current++
+
+	// Duration-based mode
+	if bi.duration > 0 {
+		elapsed := time.Since(bi.startTime)
+		// Continue if under duration OR haven't hit minimum iterations
+		if elapsed < bi.duration || bi.current <= bi.minIterations {
+			return true
+		}
+		return false
+	}
+
+	// Iteration-based mode
+	return bi.current <= bi.iterations
+}
+
+// Count returns the current iteration count.
+func (bi *benchmarkIterator) Count() int {
+	return bi.current
+}
+
+// IsDurationMode returns true if running in duration mode.
+func (bi *benchmarkIterator) IsDurationMode() bool {
+	return bi.duration > 0
 }
