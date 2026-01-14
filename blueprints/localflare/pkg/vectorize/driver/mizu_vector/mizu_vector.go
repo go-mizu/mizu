@@ -1,50 +1,118 @@
-// Package mem_hnsw provides a high-performance in-memory driver for the vectorize package.
-// Import this package to register the "mem_hnsw" driver.
-// This driver uses HNSW (Hierarchical Navigable Small World) for O(log n) approximate nearest neighbor search.
-package mem_hnsw
+// Package mizu_vector provides a pure Go in-memory vector database driver.
+// Import this package to register the "mizu_vector" driver.
+//
+// This driver implements multiple state-of-the-art vector search algorithms:
+//   - flat: Brute-force exact search (baseline)
+//   - ivf: Inverted File Index with k-means clustering
+//   - lsh: Locality Sensitive Hashing with random projections
+//   - pq: Product Quantization for memory efficiency
+//   - hnsw: Hierarchical Navigable Small World graph
+//   - vamana: DiskANN's Vamana graph algorithm
+//   - rabitq: RaBitQ binary quantization (SIGMOD 2024)
+//
+// Engine selection via DSN: "engine=ivf" or "engine=rabitq"
+package mizu_vector
 
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
-	"github.com/coder/hnsw"
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver"
 )
 
 func init() {
-	driver.Register("mem_hnsw", &Driver{})
+	driver.Register("mizu_vector", &Driver{})
 }
 
-// Driver implements vectorize.Driver for in-memory storage with HNSW indexing.
+// EngineType represents the search algorithm engine.
+type EngineType string
+
+const (
+	EngineFlat   EngineType = "flat"   // Brute-force exact search
+	EngineIVF    EngineType = "ivf"    // Inverted File Index
+	EngineLSH    EngineType = "lsh"    // Locality Sensitive Hashing
+	EnginePQ     EngineType = "pq"     // Product Quantization
+	EngineHNSW   EngineType = "hnsw"   // Hierarchical Navigable Small World
+	EngineVamana EngineType = "vamana" // DiskANN's Vamana graph
+	EngineRaBitQ EngineType = "rabitq" // RaBitQ binary quantization
+)
+
+// Engine is the interface for vector search engines.
+type Engine interface {
+	// Name returns the engine name.
+	Name() string
+
+	// Build builds the index from vectors.
+	Build(vectors map[string]*vectorize.Vector, dims int, metric vectorize.Metric)
+
+	// Insert adds vectors to the index.
+	Insert(vectors []*vectorize.Vector)
+
+	// Delete removes vectors from the index.
+	Delete(ids []string)
+
+	// Search finds the k nearest neighbors.
+	Search(query []float32, k int) []SearchResult
+
+	// NeedsRebuild returns true if the index needs rebuilding.
+	NeedsRebuild() bool
+
+	// SetNeedsRebuild marks the index for rebuilding.
+	SetNeedsRebuild(v bool)
+}
+
+// SearchResult holds a search result with ID and distance.
+type SearchResult struct {
+	ID       string
+	Distance float32
+}
+
+// Driver implements vectorize.Driver for mizu_vector.
 type Driver struct{}
 
-// Open creates a new in-memory database.
-// DSN is ignored for this driver.
+// Open creates a new mizu_vector database.
+// DSN format: "engine=ivf" or "engine=rabitq&nprobe=16"
 func (d *Driver) Open(dsn string) (vectorize.DB, error) {
+	engine := EngineIVF // Default engine
+
+	// Parse DSN for engine selection
+	if dsn != "" && dsn != ":memory:" {
+		params, err := url.ParseQuery(dsn)
+		if err == nil {
+			if e := params.Get("engine"); e != "" {
+				engine = EngineType(e)
+			}
+		}
+	}
+
 	return &DB{
-		indexes: make(map[string]*memIndex),
+		indexes:    make(map[string]*Index),
+		engineType: engine,
 	}, nil
 }
 
-// memIndex represents an in-memory HNSW vector index.
-type memIndex struct {
+// DB implements vectorize.DB for mizu_vector.
+type DB struct {
+	mu         sync.RWMutex
+	indexes    map[string]*Index
+	engineType EngineType
+}
+
+// Index represents a vector index with a specific engine.
+type Index struct {
 	mu         sync.RWMutex
 	info       *vectorize.Index
-	graph      *hnsw.Graph[string]
-	vectors    map[string]*vectorize.Vector // Store full vector data
+	vectors    map[string]*vectorize.Vector
 	namespaces map[string]map[string]struct{}
+	engine     Engine
+	distFunc   DistanceFunc
 }
 
-// DB implements vectorize.DB for in-memory storage.
-type DB struct {
-	mu      sync.RWMutex
-	indexes map[string]*memIndex
-}
-
-// CreateIndex creates a new in-memory HNSW index.
+// CreateIndex creates a new index with the configured engine.
 func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -53,25 +121,41 @@ func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 		return vectorize.ErrIndexExists
 	}
 
-	// Create HNSW graph and configure it
-	g := hnsw.NewGraph[string]()
-	g.M = 16       // Connections per node
-	g.Ml = 0.25    // Level generation factor
-	g.EfSearch = 64 // Search breadth (higher = more accurate but slower)
-
-	// Set distance function based on metric
+	// Select distance function
+	var distFunc DistanceFunc
 	switch index.Metric {
 	case vectorize.Cosine:
-		g.Distance = hnsw.CosineDistance
+		distFunc = CosineDistance
 	case vectorize.Euclidean:
-		g.Distance = hnsw.EuclideanDistance
+		distFunc = EuclideanDistance
 	case vectorize.DotProduct:
-		g.Distance = negDotProduct
+		distFunc = NegDotProduct
 	default:
-		g.Distance = hnsw.CosineDistance
+		distFunc = CosineDistance
 	}
 
-	db.indexes[index.Name] = &memIndex{
+	// Create engine based on type
+	var engine Engine
+	switch db.engineType {
+	case EngineFlat:
+		engine = NewFlatEngine(distFunc)
+	case EngineIVF:
+		engine = NewIVFEngine(distFunc)
+	case EngineLSH:
+		engine = NewLSHEngine(distFunc, index.Dimensions)
+	case EnginePQ:
+		engine = NewPQEngine(distFunc, index.Dimensions)
+	case EngineHNSW:
+		engine = NewHNSWEngine(distFunc)
+	case EngineVamana:
+		engine = NewVamanaEngine(distFunc)
+	case EngineRaBitQ:
+		engine = NewRaBitQEngine(distFunc, index.Dimensions)
+	default:
+		engine = NewIVFEngine(distFunc)
+	}
+
+	db.indexes[index.Name] = &Index{
 		info: &vectorize.Index{
 			Name:        index.Name,
 			Dimensions:  index.Dimensions,
@@ -79,21 +163,13 @@ func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 			Description: index.Description,
 			CreatedAt:   time.Now(),
 		},
-		graph:      g,
 		vectors:    make(map[string]*vectorize.Vector),
 		namespaces: make(map[string]map[string]struct{}),
+		engine:     engine,
+		distFunc:   distFunc,
 	}
 
 	return nil
-}
-
-// negDotProduct returns negative dot product as distance (for similarity search).
-func negDotProduct(a, b []float32) float32 {
-	var sum float32
-	for i := range a {
-		sum += a[i] * b[i]
-	}
-	return -sum // Negative so higher dot product = lower distance
 }
 
 // GetIndex retrieves index information.
@@ -154,7 +230,7 @@ func (db *DB) DeleteIndex(ctx context.Context, name string) error {
 	return nil
 }
 
-// Insert adds vectors to an index using HNSW.
+// Insert adds vectors to an index.
 func (db *DB) Insert(ctx context.Context, indexName string, vectors []*vectorize.Vector) error {
 	if len(vectors) == 0 {
 		return nil
@@ -171,77 +247,9 @@ func (db *DB) Insert(ctx context.Context, indexName string, vectors []*vectorize
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	// Build nodes for batch insert
-	nodes := make([]hnsw.Node[string], 0, len(vectors))
-
 	for _, v := range vectors {
 		if len(v.Values) != idx.info.Dimensions {
 			return vectorize.ErrDimensionMismatch
-		}
-
-		// Create a copy of the vector
-		vec := &vectorize.Vector{
-			ID:        v.ID,
-			Values:    make([]float32, len(v.Values)),
-			Namespace: v.Namespace,
-		}
-		copy(vec.Values, v.Values)
-
-		if v.Metadata != nil {
-			vec.Metadata = make(map[string]any, len(v.Metadata))
-			for k, val := range v.Metadata {
-				vec.Metadata[k] = val
-			}
-		}
-
-		// Store full vector data
-		idx.vectors[v.ID] = vec
-
-		// Create HNSW node
-		nodes = append(nodes, hnsw.MakeNode(v.ID, v.Values))
-
-		// Track namespace
-		if v.Namespace != "" {
-			if idx.namespaces[v.Namespace] == nil {
-				idx.namespaces[v.Namespace] = make(map[string]struct{})
-			}
-			idx.namespaces[v.Namespace][v.ID] = struct{}{}
-		}
-	}
-
-	// Batch add to HNSW graph
-	idx.graph.Add(nodes...)
-
-	return nil
-}
-
-// Upsert adds or updates vectors.
-func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize.Vector) error {
-	if len(vectors) == 0 {
-		return nil
-	}
-
-	db.mu.RLock()
-	idx, ok := db.indexes[indexName]
-	db.mu.RUnlock()
-
-	if !ok {
-		return vectorize.ErrIndexNotFound
-	}
-
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
-
-	nodes := make([]hnsw.Node[string], 0, len(vectors))
-
-	for _, v := range vectors {
-		if len(v.Values) != idx.info.Dimensions {
-			return vectorize.ErrDimensionMismatch
-		}
-
-		// Delete existing if present
-		if _, exists := idx.vectors[v.ID]; exists {
-			idx.graph.Delete(v.ID)
 		}
 
 		// Create a copy
@@ -260,7 +268,6 @@ func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize
 		}
 
 		idx.vectors[v.ID] = vec
-		nodes = append(nodes, hnsw.MakeNode(v.ID, v.Values))
 
 		if v.Namespace != "" {
 			if idx.namespaces[v.Namespace] == nil {
@@ -270,11 +277,18 @@ func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize
 		}
 	}
 
-	idx.graph.Add(nodes...)
+	// Mark engine for rebuild
+	idx.engine.SetNeedsRebuild(true)
+
 	return nil
 }
 
-// Search finds similar vectors using HNSW approximate nearest neighbor search.
+// Upsert adds or updates vectors.
+func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize.Vector) error {
+	return db.Insert(ctx, indexName, vectors)
+}
+
+// Search finds similar vectors.
 func (db *DB) Search(ctx context.Context, indexName string, vector []float32, opts *vectorize.SearchOptions) ([]*vectorize.Match, error) {
 	if opts == nil {
 		opts = &vectorize.SearchOptions{TopK: 10}
@@ -295,31 +309,30 @@ func (db *DB) Search(ctx context.Context, indexName string, vector []float32, op
 		return nil, vectorize.ErrDimensionMismatch
 	}
 
+	// Rebuild index if needed (lazy build)
+	idx.mu.Lock()
+	if idx.engine.NeedsRebuild() && len(idx.vectors) > 0 {
+		idx.engine.Build(idx.vectors, idx.info.Dimensions, idx.info.Metric)
+		idx.engine.SetNeedsRebuild(false)
+	}
+	idx.mu.Unlock()
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	// Check if graph is empty
 	if len(idx.vectors) == 0 {
 		return []*vectorize.Match{}, nil
 	}
 
-	// Determine search count - if filtering by namespace, we need more candidates
-	searchK := opts.TopK
-	if opts.Namespace != "" || len(opts.Filter) > 0 {
-		searchK = opts.TopK * 10 // Get more candidates for filtering
-		if searchK > len(idx.vectors) {
-			searchK = len(idx.vectors)
-		}
-	}
-
-	// HNSW search - returns results sorted by distance (closest first)
-	results := idx.graph.SearchWithDistance(vector, searchK)
+	// Search using engine
+	k := opts.TopK * 2 // Get extra for filtering
+	results := idx.engine.Search(vector, k)
 
 	// Convert to matches with filtering
 	matches := make([]*vectorize.Match, 0, opts.TopK)
-	for _, result := range results {
-		v, ok := idx.vectors[result.Key]
-		if !ok {
+	for _, r := range results {
+		v := idx.vectors[r.ID]
+		if v == nil {
 			continue
 		}
 
@@ -333,20 +346,17 @@ func (db *DB) Search(ctx context.Context, indexName string, vector []float32, op
 			continue
 		}
 
-		// Convert distance to similarity score
-		// For cosine distance: similarity = 1 - distance
-		// For euclidean: similarity = 1 / (1 + distance)
-		// For dot product: similarity = -distance (since we negated it)
+		// Convert distance to score
 		var score float32
 		switch idx.info.Metric {
 		case vectorize.Cosine:
-			score = 1.0 - result.Distance
+			score = 1.0 - r.Distance
 		case vectorize.Euclidean:
-			score = 1.0 / (1.0 + result.Distance)
+			score = 1.0 / (1.0 + r.Distance)
 		case vectorize.DotProduct:
-			score = -result.Distance // Undo the negation
+			score = -r.Distance
 		default:
-			score = 1.0 - result.Distance
+			score = 1.0 - r.Distance
 		}
 
 		if opts.ScoreThreshold > 0 && score < opts.ScoreThreshold {
@@ -354,7 +364,7 @@ func (db *DB) Search(ctx context.Context, indexName string, vector []float32, op
 		}
 
 		match := &vectorize.Match{
-			ID:    result.Key,
+			ID:    r.ID,
 			Score: score,
 		}
 
@@ -437,18 +447,16 @@ func (db *DB) Delete(ctx context.Context, indexName string, ids []string) error 
 
 	for _, id := range ids {
 		if v, ok := idx.vectors[id]; ok {
-			// Remove from namespace tracking
 			if v.Namespace != "" {
 				if nsIDs, ok := idx.namespaces[v.Namespace]; ok {
 					delete(nsIDs, id)
 				}
 			}
-			// Delete from HNSW graph
-			idx.graph.Delete(id)
 			delete(idx.vectors, id)
 		}
 	}
 
+	idx.engine.Delete(ids)
 	return nil
 }
 
@@ -461,7 +469,7 @@ func (db *DB) Ping(ctx context.Context) error {
 func (db *DB) Close() error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	db.indexes = make(map[string]*memIndex)
+	db.indexes = make(map[string]*Index)
 	return nil
 }
 

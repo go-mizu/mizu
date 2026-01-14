@@ -66,6 +66,7 @@ func AllDriverConfigs() []DriverConfig {
 		{Name: "vespa", DSN: "http://localhost:8082", Enabled: false}, // Disabled: Vespa config server crashes
 		// Embedded drivers
 		{Name: "mem", DSN: ":memory:", Enabled: true},
+		{Name: "mem_hnsw", DSN: ":memory:", Enabled: true},
 		{Name: "chromem", DSN: ":memory:", Enabled: true},
 		{Name: "sqlite", DSN: "./data/bench_sqlite/vectors.db", Enabled: true},
 		{Name: "lancedb", DSN: "./data/bench_lancedb", Enabled: true},
