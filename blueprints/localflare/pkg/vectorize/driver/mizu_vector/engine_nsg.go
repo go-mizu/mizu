@@ -6,20 +6,27 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
+	"github.com/viterin/vek/vek32"
 )
 
 // NSGEngine implements Navigating Spreading-out Graph.
 // Based on "Fast Approximate Nearest Neighbor Search With The Navigating Spreading-out Graph" (VLDB 2019).
 //
 // Optimized with:
-// - Index-based storage (no string lookups)
+// - SIMD-accelerated distance computation using viterin/vek
+// - Contiguous memory layout for cache efficiency
+// - Precomputed L2 norms for faster cosine distance
 // - Typed heaps instead of sorting
 // - Bitset for visited tracking
 type NSGEngine struct {
 	distFunc DistanceFunc
+	metric   vectorize.DistanceMetric
 
-	// Index-based storage
-	vectors []nsgVector
+	// Contiguous memory layout for cache efficiency
+	vectorData  []float32 // All vector values: [v0d0, v0d1, ..., v1d0, ...]
+	vectorIDs   []string  // Vector IDs indexed by int32
+	vectorNorms []float32 // Precomputed L2 norms for cosine distance
+	dims        int
 
 	// Graph structure
 	graph   [][]int32 // Adjacency list using indices
@@ -34,15 +41,10 @@ type NSGEngine struct {
 	mu           sync.RWMutex
 }
 
-type nsgVector struct {
-	id     string
-	values []float32
-}
-
 // NSG configuration
 const (
 	nsgDefaultR = 32
-	nsgDefaultL = 50
+	nsgDefaultL = 64 // Increased for better recall
 )
 
 // NewNSGEngine creates a new NSG search engine.
@@ -68,10 +70,18 @@ func (e *NSGEngine) Build(vectors map[string]*vectorize.Vector, dims int, metric
 		return
 	}
 
-	// Collect vectors with index-based storage
-	e.vectors = make([]nsgVector, 0, n)
+	e.dims = dims
+	e.metric = metric
+
+	// Build contiguous storage for cache efficiency
+	e.vectorData = make([]float32, 0, n*dims)
+	e.vectorIDs = make([]string, 0, n)
+	e.vectorNorms = make([]float32, 0, n)
+
 	for id, v := range vectors {
-		e.vectors = append(e.vectors, nsgVector{id: id, values: v.Values})
+		e.vectorIDs = append(e.vectorIDs, id)
+		e.vectorData = append(e.vectorData, v.Values...)
+		e.vectorNorms = append(e.vectorNorms, vek32.Norm(v.Values))
 	}
 
 	// Find navigating node (closest to centroid)
@@ -83,27 +93,87 @@ func (e *NSGEngine) Build(vectors map[string]*vectorize.Vector, dims int, metric
 	e.needsRebuild = false
 }
 
+// getVector returns vector data at index using contiguous storage
+func (e *NSGEngine) getVector(idx int32) []float32 {
+	start := int(idx) * e.dims
+	return e.vectorData[start : start+e.dims]
+}
+
+// computeDistanceSIMD computes distance based on metric using SIMD
+func (e *NSGEngine) computeDistanceSIMD(aIdx int32, b []float32, bNorm float32) float32 {
+	a := e.getVector(aIdx)
+	aNorm := e.vectorNorms[aIdx]
+
+	switch e.metric {
+	case vectorize.Cosine:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	case vectorize.Euclidean:
+		return vek32.Distance(a, b)
+	case vectorize.DotProduct:
+		return -vek32.Dot(a, b)
+	default:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	}
+}
+
+// computeDistanceBetween computes distance between two indexed vectors
+func (e *NSGEngine) computeDistanceBetween(aIdx, bIdx int32) float32 {
+	a := e.getVector(aIdx)
+	b := e.getVector(bIdx)
+	aNorm := e.vectorNorms[aIdx]
+	bNorm := e.vectorNorms[bIdx]
+
+	switch e.metric {
+	case vectorize.Cosine:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	case vectorize.Euclidean:
+		return vek32.Distance(a, b)
+	case vectorize.DotProduct:
+		return -vek32.Dot(a, b)
+	default:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	}
+}
+
 // findNavigatingNode finds the medoid (vector closest to centroid).
 func (e *NSGEngine) findNavigatingNode(dims int) int32 {
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 
 	// Compute centroid
 	centroid := make([]float32, dims)
 	for i := 0; i < n; i++ {
+		vec := e.getVector(int32(i))
 		for j := 0; j < dims; j++ {
-			centroid[j] += e.vectors[i].values[j]
+			centroid[j] += vec[j]
 		}
 	}
 	invN := 1.0 / float32(n)
 	for j := 0; j < dims; j++ {
 		centroid[j] *= invN
 	}
+	centroidNorm := vek32.Norm(centroid)
 
 	// Find vector closest to centroid
 	bestIdx := int32(0)
-	bestDist := e.distFunc(centroid, e.vectors[0].values)
+	bestDist := e.computeDistanceSIMD(0, centroid, centroidNorm)
 	for i := 1; i < n; i++ {
-		d := e.distFunc(centroid, e.vectors[i].values)
+		d := e.computeDistanceSIMD(int32(i), centroid, centroidNorm)
 		if d < bestDist {
 			bestDist = d
 			bestIdx = int32(i)
@@ -115,7 +185,7 @@ func (e *NSGEngine) findNavigatingNode(dims int) int32 {
 
 // buildGraph builds the NSG graph using incremental insertion.
 func (e *NSGEngine) buildGraph() {
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 	e.graph = make([][]int32, n)
 
 	// Initialize all nodes with empty neighbor lists
@@ -130,10 +200,10 @@ func (e *NSGEngine) buildGraph() {
 		}
 
 		// Search for nearest neighbors starting from navNode
-		neighbors := e.searchForNeighbors(i)
+		neighbors := e.searchForNeighbors(int32(i))
 
 		// Select neighbors using MRNG-like pruning
-		selected := e.selectNeighbors(i, neighbors)
+		selected := e.selectNeighbors(int32(i), neighbors)
 		e.graph[i] = selected
 
 		// Add reverse edges
@@ -141,26 +211,27 @@ func (e *NSGEngine) buildGraph() {
 			e.graph[neighbor] = append(e.graph[neighbor], int32(i))
 			// Prune if too many
 			if len(e.graph[neighbor]) > e.R*2 {
-				e.graph[neighbor] = e.selectNeighbors(int(neighbor), e.graph[neighbor])
+				e.graph[neighbor] = e.selectNeighbors(neighbor, e.graph[neighbor])
 			}
 		}
 	}
 }
 
 // searchForNeighbors finds candidate neighbors for a node using heap-based search.
-func (e *NSGEngine) searchForNeighbors(queryIdx int) []int32 {
-	query := e.vectors[queryIdx].values
-	n := len(e.vectors)
+func (e *NSGEngine) searchForNeighbors(queryIdx int32) []int32 {
+	query := e.getVector(queryIdx)
+	queryNorm := e.vectorNorms[queryIdx]
+	n := len(e.vectorIDs)
 
 	visited := newBitset(n)
-	visited.Set(int32(queryIdx))
+	visited.Set(queryIdx)
 
 	// Use heaps for efficient search
 	candidates := make(minHeap32, 0, e.L*2)
 	result := make(maxHeap32, 0, e.L*2)
 
 	// Start from navigating node
-	startDist := e.distFunc(query, e.vectors[e.navNode].values)
+	startDist := e.computeDistanceSIMD(e.navNode, query, queryNorm)
 	candidates.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	visited.Set(e.navNode)
@@ -181,7 +252,7 @@ func (e *NSGEngine) searchForNeighbors(queryIdx int) []int32 {
 			}
 			visited.Set(neighbor)
 
-			dist := e.distFunc(query, e.vectors[neighbor].values)
+			dist := e.computeDistanceSIMD(neighbor, query, queryNorm)
 
 			if len(result) < e.L*2 {
 				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
@@ -204,18 +275,16 @@ func (e *NSGEngine) searchForNeighbors(queryIdx int) []int32 {
 }
 
 // selectNeighbors selects R neighbors using MRNG-style pruning.
-func (e *NSGEngine) selectNeighbors(queryIdx int, candidates []int32) []int32 {
+func (e *NSGEngine) selectNeighbors(queryIdx int32, candidates []int32) []int32 {
 	if len(candidates) == 0 {
 		return nil
 	}
 
-	query := e.vectors[queryIdx].values
-
 	// Build sorted candidate list using heap
 	h := make(minHeap32, 0, len(candidates))
 	for _, c := range candidates {
-		if c != int32(queryIdx) {
-			h.PushItem(distItem32{idx: c, dist: e.distFunc(query, e.vectors[c].values)})
+		if c != queryIdx {
+			h.PushItem(distItem32{idx: c, dist: e.computeDistanceBetween(queryIdx, c)})
 		}
 	}
 
@@ -226,12 +295,9 @@ func (e *NSGEngine) selectNeighbors(queryIdx int, candidates []int32) []int32 {
 
 		// Check if candidate is occluded by any selected neighbor
 		occluded := false
-		candVec := e.vectors[cand.idx].values
 
 		for _, s := range selected {
-			selVec := e.vectors[s].values
-			distCandSel := e.distFunc(candVec, selVec)
-
+			distCandSel := e.computeDistanceBetween(cand.idx, s)
 			if distCandSel < cand.dist {
 				occluded = true
 				break
@@ -260,11 +326,12 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 	if n == 0 {
 		return nil
 	}
 
+	queryNorm := vek32.Norm(query)
 	visited := newBitset(n)
 	L := e.L
 	if L < k*2 {
@@ -276,7 +343,7 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 	result := make(maxHeap32, 0, L)
 
 	// Start from navigating node
-	startDist := e.distFunc(query, e.vectors[e.navNode].values)
+	startDist := e.computeDistanceSIMD(e.navNode, query, queryNorm)
 	candidates.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	visited.Set(e.navNode)
@@ -297,7 +364,7 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 			}
 			visited.Set(neighbor)
 
-			dist := e.distFunc(query, e.vectors[neighbor].values)
+			dist := e.computeDistanceSIMD(neighbor, query, queryNorm)
 
 			if len(result) < L {
 				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
@@ -324,7 +391,7 @@ func (e *NSGEngine) Search(query []float32, k int) []SearchResult {
 	results := make([]SearchResult, k)
 	for i := 0; i < k; i++ {
 		results[i] = SearchResult{
-			ID:       e.vectors[allResults[i].idx].id,
+			ID:       e.vectorIDs[allResults[i].idx],
 			Distance: allResults[i].dist,
 		}
 	}

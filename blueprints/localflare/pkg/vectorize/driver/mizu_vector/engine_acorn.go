@@ -6,21 +6,28 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
+	"github.com/viterin/vek/vek32"
 )
 
 // ACORNEngine implements a simplified graph-based search.
 // Uses flat single-level graph for simplicity and speed.
 //
 // Optimized with:
-// - Index-based storage (no string lookups)
+// - SIMD-accelerated distance computation using viterin/vek
+// - Contiguous memory layout for cache efficiency
+// - Precomputed L2 norms for faster cosine distance
 // - Medoid-based entry point (not random)
 // - Typed heaps instead of sorting
 // - Bitset for visited tracking
 type ACORNEngine struct {
 	distFunc DistanceFunc
+	metric   vectorize.DistanceMetric
 
-	// Index-based storage
-	vectors []acornVector
+	// Contiguous memory layout for cache efficiency
+	vectorData  []float32 // All vector values: [v0d0, v0d1, ..., v1d0, ...]
+	vectorIDs   []string  // Vector IDs indexed by int32
+	vectorNorms []float32 // Precomputed L2 norms for cosine distance
+	dims        int
 
 	// Graph structure - simple k-NN graph
 	graph   [][]int32
@@ -33,11 +40,6 @@ type ACORNEngine struct {
 	needsRebuild bool
 	rng          *rand.Rand
 	mu           sync.RWMutex
-}
-
-type acornVector struct {
-	id     string
-	values []float32
 }
 
 const (
@@ -68,10 +70,18 @@ func (e *ACORNEngine) Build(vectors map[string]*vectorize.Vector, dims int, metr
 		return
 	}
 
-	// Collect vectors with index-based storage
-	e.vectors = make([]acornVector, 0, n)
+	e.dims = dims
+	e.metric = metric
+
+	// Build contiguous storage for cache efficiency
+	e.vectorData = make([]float32, 0, n*dims)
+	e.vectorIDs = make([]string, 0, n)
+	e.vectorNorms = make([]float32, 0, n)
+
 	for id, v := range vectors {
-		e.vectors = append(e.vectors, acornVector{id: id, values: v.Values})
+		e.vectorIDs = append(e.vectorIDs, id)
+		e.vectorData = append(e.vectorData, v.Values...)
+		e.vectorNorms = append(e.vectorNorms, vek32.Norm(v.Values))
 	}
 
 	// Find medoid for entry point
@@ -83,27 +93,87 @@ func (e *ACORNEngine) Build(vectors map[string]*vectorize.Vector, dims int, metr
 	e.needsRebuild = false
 }
 
+// getVector returns vector data at index using contiguous storage
+func (e *ACORNEngine) getVector(idx int32) []float32 {
+	start := int(idx) * e.dims
+	return e.vectorData[start : start+e.dims]
+}
+
+// computeDistanceSIMD computes distance based on metric using SIMD
+func (e *ACORNEngine) computeDistanceSIMD(aIdx int32, b []float32, bNorm float32) float32 {
+	a := e.getVector(aIdx)
+	aNorm := e.vectorNorms[aIdx]
+
+	switch e.metric {
+	case vectorize.Cosine:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	case vectorize.Euclidean:
+		return vek32.Distance(a, b)
+	case vectorize.DotProduct:
+		return -vek32.Dot(a, b)
+	default:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	}
+}
+
+// computeDistanceBetween computes distance between two indexed vectors
+func (e *ACORNEngine) computeDistanceBetween(aIdx, bIdx int32) float32 {
+	a := e.getVector(aIdx)
+	b := e.getVector(bIdx)
+	aNorm := e.vectorNorms[aIdx]
+	bNorm := e.vectorNorms[bIdx]
+
+	switch e.metric {
+	case vectorize.Cosine:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	case vectorize.Euclidean:
+		return vek32.Distance(a, b)
+	case vectorize.DotProduct:
+		return -vek32.Dot(a, b)
+	default:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	}
+}
+
 // findMedoid finds the vector closest to centroid.
 func (e *ACORNEngine) findMedoid(dims int) int32 {
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 
 	// Compute centroid
 	centroid := make([]float32, dims)
 	for i := 0; i < n; i++ {
+		vec := e.getVector(int32(i))
 		for j := 0; j < dims; j++ {
-			centroid[j] += e.vectors[i].values[j]
+			centroid[j] += vec[j]
 		}
 	}
 	invN := 1.0 / float32(n)
 	for j := 0; j < dims; j++ {
 		centroid[j] *= invN
 	}
+	centroidNorm := vek32.Norm(centroid)
 
 	// Find vector closest to centroid
 	bestIdx := int32(0)
-	bestDist := e.distFunc(centroid, e.vectors[0].values)
+	bestDist := e.computeDistanceSIMD(0, centroid, centroidNorm)
 	for i := 1; i < n; i++ {
-		d := e.distFunc(centroid, e.vectors[i].values)
+		d := e.computeDistanceSIMD(int32(i), centroid, centroidNorm)
 		if d < bestDist {
 			bestDist = d
 			bestIdx = int32(i)
@@ -115,7 +185,7 @@ func (e *ACORNEngine) findMedoid(dims int) int32 {
 
 // buildKNNGraph builds a k-NN graph using heap-based selection.
 func (e *ACORNEngine) buildKNNGraph() {
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 	k := e.K
 	if k > n-1 {
 		k = n - 1
@@ -132,7 +202,7 @@ func (e *ACORNEngine) buildKNNGraph() {
 			if i == j {
 				continue
 			}
-			dist := e.distFunc(e.vectors[i].values, e.vectors[j].values)
+			dist := e.computeDistanceBetween(int32(i), int32(j))
 			if len(h) < k {
 				h.PushItem(distItem32{idx: int32(j), dist: dist})
 			} else if dist < h[0].dist {
@@ -180,11 +250,12 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 	if n == 0 {
 		return nil
 	}
 
+	queryNorm := vek32.Norm(query)
 	visited := newBitset(n)
 	ef := e.efSearch
 	if ef < k*2 {
@@ -196,7 +267,7 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 	result := make(maxHeap32, 0, ef)
 
 	// Start from medoid
-	startDist := e.distFunc(query, e.vectors[e.navNode].values)
+	startDist := e.computeDistanceSIMD(e.navNode, query, queryNorm)
 	candidates.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	result.PushItem(distItem32{idx: e.navNode, dist: startDist})
 	visited.Set(e.navNode)
@@ -217,7 +288,7 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 			}
 			visited.Set(neighbor)
 
-			dist := e.distFunc(query, e.vectors[neighbor].values)
+			dist := e.computeDistanceSIMD(neighbor, query, queryNorm)
 
 			if len(result) < ef {
 				candidates.PushItem(distItem32{idx: neighbor, dist: dist})
@@ -244,7 +315,7 @@ func (e *ACORNEngine) Search(query []float32, k int) []SearchResult {
 	results := make([]SearchResult, k)
 	for i := 0; i < k; i++ {
 		results[i] = SearchResult{
-			ID:       e.vectors[allResults[i].idx].id,
+			ID:       e.vectorIDs[allResults[i].idx],
 			Distance: allResults[i].dist,
 		}
 	}

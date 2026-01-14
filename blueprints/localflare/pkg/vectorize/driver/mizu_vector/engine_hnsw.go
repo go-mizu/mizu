@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
+	"github.com/viterin/vek/vek32"
 )
 
 // HNSWEngine implements Hierarchical Navigable Small World graph.
@@ -14,25 +15,32 @@ import (
 // Based on "Efficient and robust approximate nearest neighbor search using HNSW" (Malkov & Yashunin, 2018).
 //
 // Optimized with:
-// - Index-based storage (no string lookups in hot path)
+// - SIMD-accelerated distance computation using viterin/vek
+// - Contiguous memory layout for cache efficiency
+// - Precomputed L2 norms for faster cosine distance
 // - Typed heaps (no interface{} overhead)
 // - Bitset for visited tracking (cache-friendly)
-// - Lower Ml (0.36) for fewer levels like external hnsw
+// - Lower Ml (0.25) to match external hnsw library
 type HNSWEngine struct {
 	distFunc DistanceFunc
+	metric   vectorize.DistanceMetric
 
 	// HNSW parameters
-	M            int     // Max connections per node at layer 0
-	Mmax         int     // Max connections per node at layers > 0
-	Ml           float64 // Level generation factor (lower = fewer levels)
-	efSearch     int     // Search beam width
-	efConstruct  int     // Construction beam width
+	M           int     // Max connections per node at layer 0
+	Mmax        int     // Max connections per node at layers > 0
+	Ml          float64 // Level generation factor (lower = fewer levels)
+	efSearch    int     // Search beam width
+	efConstruct int     // Construction beam width
 
-	// Index-based storage (contiguous memory)
-	vectors    []hnswVector   // Vector data indexed by int32
-	levels     []int          // Level for each vector
-	neighbors  [][][]int32    // neighbors[level][nodeIdx] = list of neighbor indices
-	idToIdx    map[string]int32
+	// Contiguous memory layout for cache efficiency
+	vectorData  []float32 // All vector values: [v0d0, v0d1, ..., v1d0, ...]
+	vectorIDs   []string  // Vector IDs indexed by int32
+	vectorNorms []float32 // Precomputed L2 norms for cosine distance
+	dims        int
+
+	// Graph structure
+	levels     []int         // Level for each vector
+	neighbors  [][][]int32   // neighbors[level][nodeIdx] = list of neighbor indices
 	entryPoint int32
 	maxLevel   int
 
@@ -41,18 +49,13 @@ type HNSWEngine struct {
 	mu           sync.RWMutex
 }
 
-type hnswVector struct {
-	id     string
-	values []float32
-}
-
 // HNSW configuration - tuned to match external hnsw library
 const (
-	hnswDefaultM         = 16
-	hnswDefaultMmax      = 16     // Same as M for simplicity
-	hnswDefaultMl        = 0.36   // Lower = fewer levels, faster search (external uses 0.25)
-	hnswDefaultEfSearch  = 64
-	hnswDefaultEfConstr  = 200
+	hnswDefaultM        = 16
+	hnswDefaultMmax     = 16    // Same as M for simplicity
+	hnswDefaultMl       = 0.25  // Match external hnsw library
+	hnswDefaultEfSearch = 64
+	hnswDefaultEfConstr = 200
 )
 
 // NewHNSWEngine creates a new HNSW search engine.
@@ -64,7 +67,6 @@ func NewHNSWEngine(distFunc DistanceFunc) *HNSWEngine {
 		Ml:           hnswDefaultMl,
 		efSearch:     hnswDefaultEfSearch,
 		efConstruct:  hnswDefaultEfConstr,
-		idToIdx:      make(map[string]int32),
 		entryPoint:   -1,
 		needsRebuild: true,
 		rng:          rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -83,20 +85,91 @@ func (e *HNSWEngine) Build(vectors map[string]*vectorize.Vector, dims int, metri
 		return
 	}
 
+	e.dims = dims
+	e.metric = metric
+
+	// Build contiguous storage for cache efficiency
+	e.vectorData = make([]float32, 0, n*dims)
+	e.vectorIDs = make([]string, 0, n)
+	e.vectorNorms = make([]float32, 0, n)
+
 	// Reset state
-	e.vectors = make([]hnswVector, 0, n)
 	e.levels = make([]int, 0, n)
 	e.neighbors = make([][][]int32, 0)
-	e.idToIdx = make(map[string]int32, n)
 	e.entryPoint = -1
 	e.maxLevel = 0
 
-	// Insert all vectors
+	// Collect and insert all vectors
 	for id, v := range vectors {
-		e.insertNode(id, v.Values)
+		e.vectorIDs = append(e.vectorIDs, id)
+		e.vectorData = append(e.vectorData, v.Values...)
+		e.vectorNorms = append(e.vectorNorms, vek32.Norm(v.Values))
+	}
+
+	// Insert all vectors into the graph
+	for i := range e.vectorIDs {
+		e.insertNode(int32(i))
 	}
 
 	e.needsRebuild = false
+}
+
+// getVector returns vector data at index using contiguous storage
+func (e *HNSWEngine) getVector(idx int32) []float32 {
+	start := int(idx) * e.dims
+	return e.vectorData[start : start+e.dims]
+}
+
+// computeDistanceSIMD computes distance based on metric using SIMD
+func (e *HNSWEngine) computeDistanceSIMD(aIdx int32, b []float32, bNorm float32) float32 {
+	a := e.getVector(aIdx)
+	aNorm := e.vectorNorms[aIdx]
+
+	switch e.metric {
+	case vectorize.Cosine:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	case vectorize.Euclidean:
+		return vek32.Distance(a, b)
+	case vectorize.DotProduct:
+		return -vek32.Dot(a, b)
+	default:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	}
+}
+
+// computeDistanceBetween computes distance between two indexed vectors
+func (e *HNSWEngine) computeDistanceBetween(aIdx, bIdx int32) float32 {
+	a := e.getVector(aIdx)
+	b := e.getVector(bIdx)
+	aNorm := e.vectorNorms[aIdx]
+	bNorm := e.vectorNorms[bIdx]
+
+	switch e.metric {
+	case vectorize.Cosine:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	case vectorize.Euclidean:
+		return vek32.Distance(a, b)
+	case vectorize.DotProduct:
+		return -vek32.Dot(a, b)
+	default:
+		if aNorm == 0 || bNorm == 0 {
+			return 1.0
+		}
+		dot := vek32.Dot(a, b)
+		return 1.0 - dot/(aNorm*bNorm)
+	}
 }
 
 // randomLevel generates a random level for a new node.
@@ -108,18 +181,17 @@ func (e *HNSWEngine) randomLevel() int {
 }
 
 // insertNode inserts a node into the HNSW graph.
-func (e *HNSWEngine) insertNode(id string, values []float32) {
+func (e *HNSWEngine) insertNode(idx int32) {
 	level := e.randomLevel()
-	idx := int32(len(e.vectors))
+	values := e.getVector(idx)
+	valuesNorm := e.vectorNorms[idx]
 
-	// Add vector
-	e.vectors = append(e.vectors, hnswVector{id: id, values: values})
+	// Track level for this node
 	e.levels = append(e.levels, level)
-	e.idToIdx[id] = idx
 
 	// Ensure neighbors structure has enough levels
 	for len(e.neighbors) <= level {
-		e.neighbors = append(e.neighbors, make([][]int32, len(e.vectors)))
+		e.neighbors = append(e.neighbors, make([][]int32, len(e.vectorIDs)))
 	}
 	// Extend each level's slice if needed
 	for l := 0; l <= level; l++ {
@@ -137,7 +209,7 @@ func (e *HNSWEngine) insertNode(id string, values []float32) {
 
 	// Search for entry point at each level
 	currIdx := e.entryPoint
-	currDist := e.distFunc(values, e.vectors[currIdx].values)
+	currDist := e.computeDistanceSIMD(currIdx, values, valuesNorm)
 
 	// Greedy search from top level to level+1
 	for l := e.maxLevel; l > level; l-- {
@@ -146,7 +218,7 @@ func (e *HNSWEngine) insertNode(id string, values []float32) {
 			changed = false
 			if l < len(e.neighbors) && int(currIdx) < len(e.neighbors[l]) {
 				for _, friendIdx := range e.neighbors[l][currIdx] {
-					dist := e.distFunc(values, e.vectors[friendIdx].values)
+					dist := e.computeDistanceSIMD(friendIdx, values, valuesNorm)
 					if dist < currDist {
 						currIdx = friendIdx
 						currDist = dist
@@ -160,14 +232,14 @@ func (e *HNSWEngine) insertNode(id string, values []float32) {
 	// Insert at each level from level down to 0
 	for l := min(level, e.maxLevel); l >= 0; l-- {
 		// Search for neighbors at this level
-		neighbors := e.searchLevelIdx(values, currIdx, e.efConstruct, l)
+		neighbors := e.searchLevelIdx(values, valuesNorm, currIdx, e.efConstruct, l)
 
 		// Select M best neighbors
 		M := e.M
 		if l > 0 {
 			M = e.Mmax
 		}
-		selected := e.selectNeighborsIdx(values, neighbors, M)
+		selected := e.selectNeighborsIdx(idx, neighbors, M)
 
 		// Add bidirectional connections
 		if l < len(e.neighbors) && int(idx) < len(e.neighbors[l]) {
@@ -185,7 +257,7 @@ func (e *HNSWEngine) insertNode(id string, values []float32) {
 				}
 				if len(e.neighbors[l][neighborIdx]) > Mmax {
 					e.neighbors[l][neighborIdx] = e.selectNeighborsIdx(
-						e.vectors[neighborIdx].values,
+						neighborIdx,
 						e.neighbors[l][neighborIdx],
 						M,
 					)
@@ -206,19 +278,19 @@ func (e *HNSWEngine) insertNode(id string, values []float32) {
 }
 
 // searchLevelIdx performs beam search at a specific level using indices.
-func (e *HNSWEngine) searchLevelIdx(query []float32, entryIdx int32, ef, level int) []int32 {
+func (e *HNSWEngine) searchLevelIdx(query []float32, queryNorm float32, entryIdx int32, ef, level int) []int32 {
 	if level >= len(e.neighbors) {
 		return nil
 	}
 
-	n := len(e.vectors)
+	n := len(e.vectorIDs)
 	visited := newBitset(n)
 
 	// Use typed heaps - candidates is min-heap, result is max-heap
 	candidates := make(minHeap32, 0, ef*2)
 	result := make(maxHeap32, 0, ef)
 
-	dist := e.distFunc(query, e.vectors[entryIdx].values)
+	dist := e.computeDistanceSIMD(entryIdx, query, queryNorm)
 	candidates.PushItem(distItem32{idx: entryIdx, dist: dist})
 	result.PushItem(distItem32{idx: entryIdx, dist: dist})
 	visited.Set(entryIdx)
@@ -239,7 +311,7 @@ func (e *HNSWEngine) searchLevelIdx(query []float32, entryIdx int32, ef, level i
 				}
 				visited.Set(neighborIdx)
 
-				dist := e.distFunc(query, e.vectors[neighborIdx].values)
+				dist := e.computeDistanceSIMD(neighborIdx, query, queryNorm)
 
 				if len(result) < ef {
 					candidates.PushItem(distItem32{idx: neighborIdx, dist: dist})
@@ -263,7 +335,7 @@ func (e *HNSWEngine) searchLevelIdx(query []float32, entryIdx int32, ef, level i
 }
 
 // selectNeighborsIdx selects the M best neighbors using simple heuristic.
-func (e *HNSWEngine) selectNeighborsIdx(query []float32, candidates []int32, M int) []int32 {
+func (e *HNSWEngine) selectNeighborsIdx(queryIdx int32, candidates []int32, M int) []int32 {
 	if len(candidates) <= M {
 		return candidates
 	}
@@ -272,7 +344,7 @@ func (e *HNSWEngine) selectNeighborsIdx(query []float32, candidates []int32, M i
 	h := make(maxHeap32, 0, M)
 
 	for _, idx := range candidates {
-		dist := e.distFunc(query, e.vectors[idx].values)
+		dist := e.computeDistanceBetween(queryIdx, idx)
 		if len(h) < M {
 			h.PushItem(distItem32{idx: idx, dist: dist})
 		} else if dist < h[0].dist {
@@ -306,13 +378,16 @@ func (e *HNSWEngine) Search(query []float32, k int) []SearchResult {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	if len(e.vectors) == 0 || e.entryPoint < 0 {
+	if len(e.vectorIDs) == 0 || e.entryPoint < 0 {
 		return nil
 	}
 
+	// Precompute query norm for cosine distance
+	queryNorm := vek32.Norm(query)
+
 	// Start from entry point
 	currIdx := e.entryPoint
-	currDist := e.distFunc(query, e.vectors[currIdx].values)
+	currDist := e.computeDistanceSIMD(currIdx, query, queryNorm)
 
 	// Greedy descent from top level to level 1
 	for l := e.maxLevel; l > 0; l-- {
@@ -321,7 +396,7 @@ func (e *HNSWEngine) Search(query []float32, k int) []SearchResult {
 			changed = false
 			if l < len(e.neighbors) && int(currIdx) < len(e.neighbors[l]) {
 				for _, friendIdx := range e.neighbors[l][currIdx] {
-					dist := e.distFunc(query, e.vectors[friendIdx].values)
+					dist := e.computeDistanceSIMD(friendIdx, query, queryNorm)
 					if dist < currDist {
 						currIdx = friendIdx
 						currDist = dist
@@ -338,17 +413,17 @@ func (e *HNSWEngine) Search(query []float32, k int) []SearchResult {
 		ef = k * 2
 	}
 
-	neighbors := e.searchLevelIdx(query, currIdx, ef, 0)
+	neighbors := e.searchLevelIdx(query, queryNorm, currIdx, ef, 0)
 
 	// Return top k with distances
 	results := make([]SearchResult, 0, k)
 	for _, idx := range neighbors {
-		if int(idx) >= len(e.vectors) {
+		if int(idx) >= len(e.vectorIDs) {
 			continue
 		}
-		dist := e.distFunc(query, e.vectors[idx].values)
+		dist := e.computeDistanceSIMD(idx, query, queryNorm)
 		results = append(results, SearchResult{
-			ID:       e.vectors[idx].id,
+			ID:       e.vectorIDs[idx],
 			Distance: dist,
 		})
 		if len(results) >= k {
