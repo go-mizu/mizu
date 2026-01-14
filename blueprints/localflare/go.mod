@@ -3,8 +3,10 @@ module github.com/go-mizu/blueprints/localflare
 go 1.25
 
 require (
+	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	github.com/coder/hnsw v0.6.2-0.20250730165321-c271e58cdc9a
 	github.com/dop251/goja v0.0.0-20260106131823-651366fbe6e3
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
@@ -14,16 +16,19 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pgvector/pgvector-go v0.3.0
+	github.com/philippgille/chromem-go v0.7.0
 	github.com/qdrant/go-client v1.16.2
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/spf13/cobra v1.10.2
+	github.com/vdaas/vald-client-go v1.7.17
 	golang.org/x/crypto v0.47.0
+	google.golang.org/grpc v1.78.0
 )
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20251209175733-2a1774d88802.1 // indirect
 	charm.land/lipgloss/v2 v2.0.0-beta.3.0.20251106193318-19329a3e8410 // indirect
 	github.com/apache/arrow-go/v18 v18.5.0 // indirect
-	github.com/asg017/sqlite-vec-go-bindings v0.1.6 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
@@ -34,6 +39,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
+	github.com/chewxy/math32 v1.11.1 // indirect
 	github.com/clipperhouse/displaywidth v0.7.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
@@ -47,6 +53,7 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/pprof v0.0.0-20260111202518-71be6bfdd440 // indirect
+	github.com/google/renameio v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -64,8 +71,11 @@ require (
 	github.com/muesli/roff v0.1.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.23 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/viterin/partial v1.1.0 // indirect
+	github.com/viterin/vek v0.4.3 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
@@ -82,7 +92,7 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260112192933-99fd39fd28a9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260112192933-99fd39fd28a9 // indirect
-	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

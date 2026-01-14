@@ -160,6 +160,60 @@ services:
       timeout: 5s
       retries: 5
 
+  # Vald - Distributed vector search engine (standalone agent)
+  vald:
+    image: vdaas/vald-agent-ngt:latest
+    ports:
+      - "8081:8081"  # gRPC
+    volumes:
+      - vald_data:/etc/server/backup
+      - ./vald-config.yaml:/etc/server/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -an | grep 8081 | grep LISTEN"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Vespa - Production-ready search engine
+  vespa:
+    image: vespaengine/vespa:latest
+    ports:
+      - "8082:8080"  # Query/Feed API (different port to avoid weaviate conflict)
+      - "19071:19071"  # Config server
+    volumes:
+      - vespa_data:/opt/vespa/var
+      - ../vespa/app:/opt/vespa-app:ro
+    environment:
+      VESPA_CONFIGSERVERS: localhost
+      VESPA_IGNORE_NOT_ENOUGH_MEMORY: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/state/v1/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # Vespa deployer - deploy application after Vespa starts
+  vespa-deployer:
+    image: curlimages/curl:latest
+    depends_on:
+      vespa:
+        condition: service_healthy
+    volumes:
+      - ../vespa/app:/app:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Deploying Vespa application..."
+        cd /app
+        # Create zip and deploy
+        zip -r /tmp/app.zip . 2>/dev/null || apk add --no-cache zip && zip -r /tmp/app.zip .
+        curl -s -X POST -H "Content-Type: application/zip" --data-binary @/tmp/app.zip http://vespa:19071/application/v2/tenant/default/prepareandactivate
+        echo "Application deployed, waiting for convergence..."
+        sleep 30
+        echo "Vespa application ready"
+
 volumes:
   qdrant_data:
   milvus_data:
@@ -170,3 +224,5 @@ volumes:
   redis_data:
   opensearch_data:
   elasticsearch_data:
+  vald_data:
+  vespa_data:
