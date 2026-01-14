@@ -390,12 +390,20 @@ func WriteReport(benchOutput, outputPath string) error {
 	return nil
 }
 
+// SkippedBenchmark records a benchmark that was skipped.
+type SkippedBenchmark struct {
+	Driver    string `json:"driver"`
+	Operation string `json:"operation"`
+	Reason    string `json:"reason"`
+}
+
 // Report holds complete benchmark results from CLI runner.
 type Report struct {
-	Timestamp   time.Time               `json:"timestamp"`
-	Config      *Config                 `json:"config"`
-	Results     []*Metrics              `json:"results"`
-	DockerStats map[string]*DockerStats `json:"docker_stats,omitempty"`
+	Timestamp         time.Time               `json:"timestamp"`
+	Config            *Config                 `json:"config"`
+	Results           []*Metrics              `json:"results"`
+	DockerStats       map[string]*DockerStats `json:"docker_stats,omitempty"`
+	SkippedBenchmarks []SkippedBenchmark      `json:"skipped_benchmarks,omitempty"`
 }
 
 // SaveJSON saves the report as JSON.
@@ -753,14 +761,26 @@ func formatLatency(d time.Duration) string {
 func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	sb.WriteString("## Executive Summary\n\n")
 
+	// Find the largest file size tested
+	largestSize := 0
+	largestSizeLabel := "1MB"
+	for _, m := range r.Results {
+		if strings.HasPrefix(m.Operation, "Write/") || strings.HasPrefix(m.Operation, "Read/") {
+			if m.ObjectSize > largestSize {
+				largestSize = m.ObjectSize
+				largestSizeLabel = SizeLabel(m.ObjectSize)
+			}
+		}
+	}
+
 	// Collect driver statistics with detailed breakdown
 	type driverSummary struct {
 		name string
-		// Large file performance (1MB)
-		write1MBThroughput float64
-		read1MBThroughput  float64
-		write1MBLatencyP50 time.Duration
-		read1MBLatencyP50  time.Duration
+		// Large file performance (dynamic - largest size tested)
+		writeLargeThroughput float64
+		readLargeThroughput  float64
+		writeLargeLatencyP50 time.Duration
+		readLargeLatencyP50  time.Duration
 		// Small file performance (1KB)
 		write1KBOpsPerSec  float64
 		read1KBOpsPerSec   float64
@@ -773,12 +793,16 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 		listOpsPerSec   float64
 		deleteOpsPerSec float64
 		statOpsPerSec   float64
-		// Errors and resource
-		errors   int
-		memoryMB float64
+		// Errors, skipped, and resource
+		errors      int
+		skipped     int
+		skippedInfo []string
+		memoryMB    float64
 	}
 
 	summaries := make(map[string]*driverSummary)
+	largeWriteOp := "Write/" + largestSizeLabel
+	largeReadOp := "Read/" + largestSizeLabel
 
 	for _, m := range r.Results {
 		if summaries[m.Driver] == nil {
@@ -789,12 +813,12 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 
 		// Categorize by operation type
 		switch {
-		case m.Operation == "Write/1MB":
-			s.write1MBThroughput = m.Throughput
-			s.write1MBLatencyP50 = m.P50Latency
-		case m.Operation == "Read/1MB":
-			s.read1MBThroughput = m.Throughput
-			s.read1MBLatencyP50 = m.P50Latency
+		case m.Operation == largeWriteOp:
+			s.writeLargeThroughput = m.Throughput
+			s.writeLargeLatencyP50 = m.P50Latency
+		case m.Operation == largeReadOp:
+			s.readLargeThroughput = m.Throughput
+			s.readLargeLatencyP50 = m.P50Latency
 		case m.Operation == "Write/1KB":
 			s.write1KBOpsPerSec = m.OpsPerSec
 			s.write1KBLatencyP50 = m.P50Latency
@@ -811,6 +835,14 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 			s.deleteOpsPerSec = m.OpsPerSec
 		case m.Operation == "Stat":
 			s.statOpsPerSec = m.OpsPerSec
+		}
+	}
+
+	// Track skipped benchmarks from SkippedBenchmarks field
+	for _, skip := range r.SkippedBenchmarks {
+		if summaries[skip.Driver] != nil {
+			summaries[skip.Driver].skipped++
+			summaries[skip.Driver].skippedInfo = append(summaries[skip.Driver].skippedInfo, skip.Reason)
 		}
 	}
 
@@ -839,12 +871,12 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	var bestLowMemVal float64 = 1e12
 
 	for d, s := range summaries {
-		if s.write1MBThroughput > bestLargeWriteVal {
-			bestLargeWriteVal = s.write1MBThroughput
+		if s.writeLargeThroughput > bestLargeWriteVal {
+			bestLargeWriteVal = s.writeLargeThroughput
 			bestLargeWrite = d
 		}
-		if s.read1MBThroughput > bestLargeReadVal {
-			bestLargeReadVal = s.read1MBThroughput
+		if s.readLargeThroughput > bestLargeReadVal {
+			bestLargeReadVal = s.readLargeThroughput
 			bestLargeRead = d
 		}
 		smallOps := (s.write1KBOpsPerSec + s.read1KBOpsPerSec) / 2
@@ -864,12 +896,12 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	}
 
 	if bestLargeWrite != "" {
-		sb.WriteString(fmt.Sprintf("| Large File Uploads (1MB+) | **%s** | %.0f MB/s | Best for media, backups |\n",
-			bestLargeWrite, bestLargeWriteVal))
+		sb.WriteString(fmt.Sprintf("| Large File Uploads (%s+) | **%s** | %.0f MB/s | Best for media, backups |\n",
+			largestSizeLabel, bestLargeWrite, bestLargeWriteVal))
 	}
 	if bestLargeRead != "" {
-		sb.WriteString(fmt.Sprintf("| Large File Downloads | **%s** | %.0f MB/s | Best for streaming, CDN |\n",
-			bestLargeRead, bestLargeReadVal))
+		sb.WriteString(fmt.Sprintf("| Large File Downloads (%s) | **%s** | %.0f MB/s | Best for streaming, CDN |\n",
+			largestSizeLabel, bestLargeRead, bestLargeReadVal))
 	}
 	if bestSmallOps != "" {
 		sb.WriteString(fmt.Sprintf("| Small File Operations | **%s** | %.0f ops/s | Best for metadata, configs |\n",
@@ -885,16 +917,16 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	}
 	sb.WriteString("\n")
 
-	// Large File Performance (1MB)
-	sb.WriteString("### Large File Performance (1MB)\n\n")
+	// Large File Performance (dynamic - largest size tested)
+	sb.WriteString(fmt.Sprintf("### Large File Performance (%s)\n\n", largestSizeLabel))
 	sb.WriteString("| Driver | Write (MB/s) | Read (MB/s) | Write Latency | Read Latency |\n")
 	sb.WriteString("|--------|-------------|-------------|---------------|---------------|\n")
 
 	for _, d := range drivers {
 		s := summaries[d]
 		sb.WriteString(fmt.Sprintf("| %s | %.1f | %.1f | %s | %s |\n",
-			s.name, s.write1MBThroughput, s.read1MBThroughput,
-			formatLatency(s.write1MBLatencyP50), formatLatency(s.read1MBLatencyP50)))
+			s.name, s.writeLargeThroughput, s.readLargeThroughput,
+			formatLatency(s.writeLargeLatencyP50), formatLatency(s.readLargeLatencyP50)))
 	}
 	sb.WriteString("\n")
 
@@ -926,6 +958,9 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	// Concurrency Performance Summary (if available)
 	r.generateConcurrencySummary(sb, drivers)
 
+	// File Count Performance Summary (if available)
+	r.generateFileCountSummary(sb, drivers)
+
 	// Warnings
 	hasWarnings := false
 	for _, d := range drivers {
@@ -939,6 +974,28 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 		}
 	}
 	if hasWarnings {
+		sb.WriteString("\n")
+	}
+
+	// Skipped Benchmarks (show drivers with reduced coverage)
+	if len(r.SkippedBenchmarks) > 0 {
+		sb.WriteString("### Skipped Benchmarks\n\n")
+		sb.WriteString("Some benchmarks were skipped due to driver limitations:\n\n")
+
+		// Group by driver
+		skippedByDriver := make(map[string][]string)
+		for _, skip := range r.SkippedBenchmarks {
+			skippedByDriver[skip.Driver] = append(skippedByDriver[skip.Driver], skip.Operation+" ("+skip.Reason+")")
+		}
+
+		for _, d := range drivers {
+			if skips, ok := skippedByDriver[d]; ok {
+				sb.WriteString(fmt.Sprintf("- **%s**: %d skipped\n", d, len(skips)))
+				for _, s := range skips {
+					sb.WriteString(fmt.Sprintf("  - %s\n", s))
+				}
+			}
+		}
 		sb.WriteString("\n")
 	}
 
@@ -1110,6 +1167,179 @@ func (r *Report) generateConcurrencySummary(sb *strings.Builder, drivers []strin
 						sb.WriteString(fmt.Sprintf(" %.2f* |", r.throughput))
 					} else {
 						sb.WriteString(fmt.Sprintf(" %.2f |", r.throughput))
+					}
+				} else {
+					sb.WriteString(" - |")
+				}
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n*\\* indicates errors occurred*\n\n")
+	}
+}
+
+// generateFileCountSummary creates a summary of file count benchmark results.
+func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string) {
+	// Collect file count results by operation type
+	type fileCountResult struct {
+		driver    string
+		count     int
+		duration  time.Duration
+		opsPerSec float64
+		errors    int
+	}
+
+	writeResults := make(map[string][]fileCountResult)
+	listResults := make(map[string][]fileCountResult)
+	deleteResults := make(map[string][]fileCountResult)
+
+	// Extract file count from operation name (e.g., "FileCount/Write/1000" -> 1000)
+	extractCount := func(op string) int {
+		parts := strings.Split(op, "/")
+		if len(parts) >= 3 {
+			var c int
+			fmt.Sscanf(parts[2], "%d", &c)
+			return c
+		}
+		return 0
+	}
+
+	for _, m := range r.Results {
+		if strings.HasPrefix(m.Operation, "FileCount/Write/") {
+			count := extractCount(m.Operation)
+			if count > 0 {
+				writeResults[m.Driver] = append(writeResults[m.Driver], fileCountResult{
+					driver:    m.Driver,
+					count:     count,
+					duration:  m.TotalTime,
+					opsPerSec: m.OpsPerSec,
+					errors:    m.Errors,
+				})
+			}
+		}
+		if strings.HasPrefix(m.Operation, "FileCount/List/") {
+			count := extractCount(m.Operation)
+			if count > 0 {
+				listResults[m.Driver] = append(listResults[m.Driver], fileCountResult{
+					driver:    m.Driver,
+					count:     count,
+					duration:  m.TotalTime,
+					opsPerSec: m.OpsPerSec,
+					errors:    m.Errors,
+				})
+			}
+		}
+		if strings.HasPrefix(m.Operation, "FileCount/Delete/") {
+			count := extractCount(m.Operation)
+			if count > 0 {
+				deleteResults[m.Driver] = append(deleteResults[m.Driver], fileCountResult{
+					driver:    m.Driver,
+					count:     count,
+					duration:  m.TotalTime,
+					opsPerSec: m.OpsPerSec,
+					errors:    m.Errors,
+				})
+			}
+		}
+	}
+
+	// Only show if we have results
+	if len(writeResults) == 0 && len(listResults) == 0 && len(deleteResults) == 0 {
+		return
+	}
+
+	sb.WriteString("### File Count Performance\n\n")
+	sb.WriteString("Performance with varying numbers of files (1KB each).\n\n")
+
+	if len(writeResults) > 0 {
+		sb.WriteString("**Write N Files (total time)**\n\n")
+		sb.WriteString("| Driver |")
+
+		// Get all file counts
+		countSet := make(map[int]bool)
+		for _, results := range writeResults {
+			for _, r := range results {
+				countSet[r.count] = true
+			}
+		}
+		var counts []int
+		for c := range countSet {
+			counts = append(counts, c)
+		}
+		sort.Ints(counts)
+
+		for _, c := range counts {
+			sb.WriteString(fmt.Sprintf(" %d |", c))
+		}
+		sb.WriteString("\n|--------|")
+		for range counts {
+			sb.WriteString("------|")
+		}
+		sb.WriteString("\n")
+
+		for _, d := range drivers {
+			results := writeResults[d]
+			resultByCount := make(map[int]fileCountResult)
+			for _, r := range results {
+				resultByCount[r.count] = r
+			}
+
+			sb.WriteString(fmt.Sprintf("| %s |", d))
+			for _, c := range counts {
+				if r, ok := resultByCount[c]; ok {
+					if r.errors > 0 {
+						sb.WriteString(fmt.Sprintf(" %s* |", formatLatency(r.duration)))
+					} else {
+						sb.WriteString(fmt.Sprintf(" %s |", formatLatency(r.duration)))
+					}
+				} else {
+					sb.WriteString(" - |")
+				}
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n*\\* indicates errors occurred*\n\n")
+	}
+
+	if len(listResults) > 0 {
+		sb.WriteString("**List N Files (total time)**\n\n")
+		sb.WriteString("| Driver |")
+
+		countSet := make(map[int]bool)
+		for _, results := range listResults {
+			for _, r := range results {
+				countSet[r.count] = true
+			}
+		}
+		var counts []int
+		for c := range countSet {
+			counts = append(counts, c)
+		}
+		sort.Ints(counts)
+
+		for _, c := range counts {
+			sb.WriteString(fmt.Sprintf(" %d |", c))
+		}
+		sb.WriteString("\n|--------|")
+		for range counts {
+			sb.WriteString("------|")
+		}
+		sb.WriteString("\n")
+
+		for _, d := range drivers {
+			results := listResults[d]
+			resultByCount := make(map[int]fileCountResult)
+			for _, r := range results {
+				resultByCount[r.count] = r
+			}
+
+			sb.WriteString(fmt.Sprintf("| %s |", d))
+			for _, c := range counts {
+				if r, ok := resultByCount[c]; ok {
+					if r.errors > 0 {
+						sb.WriteString(fmt.Sprintf(" %s* |", formatLatency(r.duration)))
+					} else {
+						sb.WriteString(fmt.Sprintf(" %s |", formatLatency(r.duration)))
 					}
 				} else {
 					sb.WriteString(" - |")

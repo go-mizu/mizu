@@ -128,6 +128,27 @@ dev-all: ## Run backend and frontend in development mode
 	(cd $(FRONTEND_DIR) && pnpm run dev) & \
 	GOWORK=off $(GO) run $(CMD) serve --dev
 
+# Bench configuration
+BENCH_BINARY ?= $(HOME)/bin/bench
+BENCH_OUTPUT ?= ./pkg/storage/report
+
+.PHONY: bench-binary
+bench-binary: ## Build bench binary to $$HOME/bin/bench
+	@mkdir -p $(dir $(BENCH_BINARY))
+	@CGO_ENABLED=0 GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BENCH_BINARY) ./cmd/bench
+	@echo "Built: $(BENCH_BINARY) ($(VERSION))"
+
+.PHONY: bench-run
+bench-run: ## Run benchmarks directly (without building binary)
+	@GOWORK=off $(GO) run ./cmd/bench --docker-stats --output $(BENCH_OUTPUT)
+
+.PHONY: bench-quick
+bench-quick: ## Run quick benchmarks (fewer iterations)
+	@GOWORK=off $(GO) run ./cmd/bench --quick --docker-stats --output $(BENCH_OUTPUT)
+
+.PHONY: bench
+bench: bench-binary ## Build bench binary (alias for bench-binary)
+
 # LiteIO configuration
 LITEIO_BINARY ?= $(HOME)/bin/liteio
 LITEIO_IMAGE  ?= liteio:latest

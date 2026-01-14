@@ -16,14 +16,15 @@ import (
 
 // Runner orchestrates benchmark execution.
 type Runner struct {
-	config       *Config
-	drivers      []DriverConfig
-	results      []*Metrics
-	dockerStats  map[string]*DockerStats
-	logger       func(format string, args ...any)
-	resultsMu    sync.Mutex
-	keyCounter   uint64
-	dockerCollector *DockerStatsCollector
+	config            *Config
+	drivers           []DriverConfig
+	results           []*Metrics
+	skippedBenchmarks []SkippedBenchmark
+	dockerStats       map[string]*DockerStats
+	logger            func(format string, args ...any)
+	resultsMu         sync.Mutex
+	keyCounter        uint64
+	dockerCollector   *DockerStatsCollector
 }
 
 // NewRunner creates a new benchmark runner.
@@ -178,6 +179,11 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 			// Skip if concurrency exceeds driver's max limit (if set)
 			if maxConc > 0 && conc > maxConc {
 				r.logger("  Parallel/C%d: skipped (driver %s max=%d)", conc, driver.Name, maxConc)
+				// Track skipped benchmarks for reporting
+				r.addSkippedBenchmark(driver.Name, fmt.Sprintf("ParallelWrite/%s/C%d", SizeLabel(size), conc),
+					fmt.Sprintf("exceeds max concurrency %d", maxConc))
+				r.addSkippedBenchmark(driver.Name, fmt.Sprintf("ParallelRead/%s/C%d", SizeLabel(size), conc),
+					fmt.Sprintf("exceeds max concurrency %d", maxConc))
 				continue
 			}
 
@@ -230,7 +236,18 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	if r.config.Verbose {
-		r.logger("  [debug] EdgeCases done, driver %s complete", driver.Name)
+		r.logger("  [debug] EdgeCases done, starting FileCount...")
+	}
+
+	// Run file count benchmarks
+	if len(r.config.FileCounts) > 0 {
+		if err := r.benchmarkFileCount(ctx, bucket, driver.Name); err != nil {
+			r.logger("  FileCount failed: %v", err)
+		}
+	}
+
+	if r.config.Verbose {
+		r.logger("  [debug] FileCount done, driver %s complete", driver.Name)
 	}
 
 	// Cleanup
@@ -607,6 +624,16 @@ func (r *Runner) addResult(m *Metrics) {
 	r.resultsMu.Unlock()
 }
 
+func (r *Runner) addSkippedBenchmark(driver, operation, reason string) {
+	r.resultsMu.Lock()
+	r.skippedBenchmarks = append(r.skippedBenchmarks, SkippedBenchmark{
+		Driver:    driver,
+		Operation: operation,
+		Reason:    reason,
+	})
+	r.resultsMu.Unlock()
+}
+
 func (r *Runner) uniqueKey(prefix string) string {
 	n := atomic.AddUint64(&r.keyCounter, 1)
 	return fmt.Sprintf("%s/%d/%d", prefix, time.Now().UnixNano(), n)
@@ -630,10 +657,11 @@ func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
 
 func (r *Runner) generateReport() *Report {
 	return &Report{
-		Timestamp:   time.Now(),
-		Config:      r.config,
-		Results:     r.results,
-		DockerStats: r.dockerStats,
+		Timestamp:         time.Now(),
+		Config:            r.config,
+		Results:           r.results,
+		DockerStats:       r.dockerStats,
+		SkippedBenchmarks: r.skippedBenchmarks,
 	}
 }
 
@@ -930,6 +958,142 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		progress.Done()
 		metrics := collector.Metrics(operation, driver, 100)
 		r.addResult(metrics)
+	}
+
+	return nil
+}
+
+func (r *Runner) benchmarkFileCount(ctx context.Context, bucket storage.Bucket, driver string) error {
+	// Test performance with varying numbers of files
+	// File counts to test: 1, 10, 100, 1000, 10000, 100000
+	fileCounts := r.config.FileCounts
+	if len(fileCounts) == 0 {
+		fileCounts = []int{1, 10, 100, 1000, 10000} // Default, skip 100k unless explicitly enabled
+	}
+
+	objectSize := 1024 // 1KB files for file count tests
+	data := generateRandomData(objectSize)
+
+	for _, count := range fileCounts {
+		// Skip very large counts if timeout is short
+		if count > 10000 && r.config.Timeout < 5*time.Minute {
+			r.logger("  FileCount/%d: skipped (requires longer timeout)", count)
+			r.addSkippedBenchmark(driver, fmt.Sprintf("FileCount/%d", count), "requires longer timeout")
+			continue
+		}
+
+		prefix := r.uniqueKey(fmt.Sprintf("filecount-%d", count))
+
+		// Benchmark: Write N files
+		{
+			operation := fmt.Sprintf("FileCount/Write/%d", count)
+			collector := NewCollector()
+			progress := NewProgress(operation, count, true)
+			timer := NewTimer()
+
+			for i := 0; i < count; i++ {
+				key := fmt.Sprintf("%s/%05d", prefix, i)
+				_, err := bucket.Write(ctx, key, bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
+				if err != nil {
+					collector.RecordError(err)
+				}
+				progress.Increment()
+
+				// Check for context cancellation periodically
+				if i%1000 == 0 {
+					select {
+					case <-ctx.Done():
+						r.logger("  %s: cancelled at %d/%d files", operation, i, count)
+						goto writeCleanup
+					default:
+					}
+				}
+			}
+
+		writeCleanup:
+			elapsed := timer.Elapsed()
+			if elapsed > 0 {
+				// Record total time as a single sample
+				collector.Record(elapsed)
+			}
+			progress.Done()
+			metrics := collector.Metrics(operation, driver, objectSize*count)
+			metrics.Iterations = count
+			r.addResult(metrics)
+		}
+
+		// Benchmark: List N files
+		{
+			operation := fmt.Sprintf("FileCount/List/%d", count)
+			collector := NewCollector()
+			progress := NewProgress(operation, 1, true)
+			timer := NewTimer()
+
+			iter, err := bucket.List(ctx, prefix, count+100, 0, nil)
+			if err == nil {
+				listed := 0
+				for {
+					obj, err := iter.Next()
+					if err != nil || obj == nil {
+						break
+					}
+					listed++
+				}
+				iter.Close()
+
+				elapsed := timer.Elapsed()
+				if listed >= count {
+					collector.Record(elapsed)
+				} else {
+					collector.RecordError(fmt.Errorf("listed %d, expected %d", listed, count))
+				}
+			} else {
+				collector.RecordError(err)
+			}
+
+			progress.Increment()
+			progress.Done()
+			metrics := collector.Metrics(operation, driver, 0)
+			metrics.Iterations = 1
+			r.addResult(metrics)
+		}
+
+		// Benchmark: Delete N files (batch)
+		{
+			operation := fmt.Sprintf("FileCount/Delete/%d", count)
+			collector := NewCollector()
+			progress := NewProgress(operation, count, true)
+			timer := NewTimer()
+
+			for i := 0; i < count; i++ {
+				key := fmt.Sprintf("%s/%05d", prefix, i)
+				err := bucket.Delete(ctx, key, nil)
+				if err != nil {
+					collector.RecordError(err)
+				}
+				progress.Increment()
+
+				// Check for context cancellation periodically
+				if i%1000 == 0 {
+					select {
+					case <-ctx.Done():
+						r.logger("  %s: cancelled at %d/%d files", operation, i, count)
+						goto deleteCleanup
+					default:
+					}
+				}
+			}
+
+		deleteCleanup:
+			elapsed := timer.Elapsed()
+			if elapsed > 0 {
+				collector.Record(elapsed)
+			}
+			progress.Done()
+			metrics := collector.Metrics(operation, driver, 0)
+			metrics.Iterations = count
+			r.addResult(metrics)
+		}
 	}
 
 	return nil
