@@ -757,9 +757,180 @@ func formatLatency(d time.Duration) string {
 	return fmt.Sprintf("%.2fs", d.Seconds())
 }
 
+// generateLeaderASCIITable creates a visually appealing ASCII table showing leaders per category.
+func (r *Report) generateLeaderASCIITable(sb *strings.Builder) {
+	// Collect leader data
+	type leaderInfo struct {
+		category string
+		leader   string
+		perf     string
+		notes    string
+	}
+
+	var leaders []leaderInfo
+
+	// Group results by operation category
+	categoryBest := make(map[string]struct {
+		driver     string
+		throughput float64
+		second     string
+		secondVal  float64
+	})
+
+	for _, m := range r.Results {
+		cat := m.Operation
+		curr := categoryBest[cat]
+		if m.Throughput > curr.throughput {
+			// Current best becomes second
+			if curr.driver != "" {
+				curr.second = curr.driver
+				curr.secondVal = curr.throughput
+			}
+			curr.driver = m.Driver
+			curr.throughput = m.Throughput
+			categoryBest[cat] = curr
+		} else if m.Throughput > curr.secondVal {
+			curr.second = m.Driver
+			curr.secondVal = m.Throughput
+			categoryBest[cat] = curr
+		}
+	}
+
+	// Define key categories to highlight
+	keyCategories := []struct {
+		operation string
+		display   string
+	}{
+		{"Read/1KB", "Small File Read (1KB)"},
+		{"Write/1KB", "Small File Write (1KB)"},
+		{"Read/100MB", "Large File Read (100MB)"},
+		{"Write/100MB", "Large File Write (100MB)"},
+		{"Delete", "Delete Operations"},
+		{"Stat", "Stat Operations"},
+		{"List/100", "List Operations (100 obj)"},
+		{"Copy/1KB", "Copy Operations"},
+		{"RangeRead/Start_256KB", "Range Reads"},
+		{"MixedWorkload/Balanced_50_50", "Mixed Workload"},
+		{"ParallelRead/1KB/C200", "High Concurrency Read"},
+		{"ParallelWrite/1KB/C200", "High Concurrency Write"},
+	}
+
+	for _, kc := range keyCategories {
+		if best, ok := categoryBest[kc.operation]; ok && best.driver != "" {
+			var perfStr string
+			// Check if it's ops/s or MB/s based on operation
+			for _, m := range r.Results {
+				if m.Operation == kc.operation && m.Driver == best.driver {
+					if m.ObjectSize > 0 {
+						perfStr = fmt.Sprintf("%.1f MB/s", best.throughput)
+					} else {
+						perfStr = fmt.Sprintf("%.0f ops/s", best.throughput)
+					}
+					break
+				}
+			}
+
+			// Calculate lead factor
+			var notes string
+			if best.second != "" && best.secondVal > 0 {
+				factor := best.throughput / best.secondVal
+				if factor >= 1.5 {
+					notes = fmt.Sprintf("%.1fx faster than %s", factor, best.second)
+				} else if factor >= 1.1 {
+					notes = fmt.Sprintf("%.0f%% faster than %s", (factor-1)*100, best.second)
+				} else {
+					notes = "Close competition"
+				}
+			}
+
+			leaders = append(leaders, leaderInfo{
+				category: kc.display,
+				leader:   best.driver + " " + perfStr,
+				notes:    notes,
+			})
+		}
+	}
+
+	if len(leaders) == 0 {
+		return
+	}
+
+	// Calculate column widths
+	catWidth := 27
+	leaderWidth := 23
+	notesWidth := 31
+
+	// Build ASCII table
+	sb.WriteString("### Performance Leaders\n\n")
+	sb.WriteString("```\n")
+
+	// Top border
+	sb.WriteString(fmt.Sprintf("┌%s┬%s┬%s┐\n",
+		strings.Repeat("─", catWidth),
+		strings.Repeat("─", leaderWidth),
+		strings.Repeat("─", notesWidth)))
+
+	// Header
+	sb.WriteString(fmt.Sprintf("│%s│%s│%s│\n",
+		centerString("Category", catWidth),
+		centerString("Leader", leaderWidth),
+		centerString("Notes", notesWidth)))
+
+	// Header separator
+	sb.WriteString(fmt.Sprintf("├%s┼%s┼%s┤\n",
+		strings.Repeat("─", catWidth),
+		strings.Repeat("─", leaderWidth),
+		strings.Repeat("─", notesWidth)))
+
+	// Data rows
+	for i, l := range leaders {
+		sb.WriteString(fmt.Sprintf("│%s│%s│%s│\n",
+			padRight(l.category, catWidth),
+			padRight(l.leader, leaderWidth),
+			padRight(l.notes, notesWidth)))
+
+		// Add separator between rows (except last)
+		if i < len(leaders)-1 {
+			sb.WriteString(fmt.Sprintf("├%s┼%s┼%s┤\n",
+				strings.Repeat("─", catWidth),
+				strings.Repeat("─", leaderWidth),
+				strings.Repeat("─", notesWidth)))
+		}
+	}
+
+	// Bottom border
+	sb.WriteString(fmt.Sprintf("└%s┴%s┴%s┘\n",
+		strings.Repeat("─", catWidth),
+		strings.Repeat("─", leaderWidth),
+		strings.Repeat("─", notesWidth)))
+
+	sb.WriteString("```\n\n")
+}
+
+// centerString centers a string within a given width.
+func centerString(s string, width int) string {
+	if len(s) >= width {
+		return s[:width]
+	}
+	left := (width - len(s)) / 2
+	right := width - len(s) - left
+	return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
+}
+
+// padRight pads a string to the right with spaces.
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s[:width]
+	}
+	return " " + s + strings.Repeat(" ", width-len(s)-1)
+}
+
 // generateExecutiveSummary creates a quick overview section at the top of the report.
 func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	sb.WriteString("## Executive Summary\n\n")
+
+	// Add ASCII leader table first
+	r.generateLeaderASCIITable(sb)
 
 	// Find the largest file size tested
 	largestSize := 0

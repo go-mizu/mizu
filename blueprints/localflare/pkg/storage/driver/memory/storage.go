@@ -61,6 +61,40 @@ type store struct {
 	features      storage.Features
 }
 
+// keyLock provides per-key locking to reduce contention.
+// Uses striped locks for better performance than sync.Map.
+// 1024 stripes for optimal concurrency at 200+ goroutines.
+const numStripes = 1024
+
+type stripedLocks struct {
+	locks [numStripes]sync.RWMutex
+}
+
+func (s *stripedLocks) hash(key string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(key); i++ {
+		h ^= uint32(key[i])
+		h *= 16777619
+	}
+	return h
+}
+
+func (s *stripedLocks) Lock(key string) {
+	s.locks[s.hash(key)%numStripes].Lock()
+}
+
+func (s *stripedLocks) Unlock(key string) {
+	s.locks[s.hash(key)%numStripes].Unlock()
+}
+
+func (s *stripedLocks) RLock(key string) {
+	s.locks[s.hash(key)%numStripes].RLock()
+}
+
+func (s *stripedLocks) RUnlock(key string) {
+	s.locks[s.hash(key)%numStripes].RUnlock()
+}
+
 var _ storage.Storage = (*store)(nil)
 
 func (s *store) Bucket(name string) storage.Bucket {
@@ -203,6 +237,7 @@ type bucket struct {
 	name string
 
 	mu      sync.RWMutex
+	keyLock stripedLocks // per-key locking for reduced contention
 	obj     map[string]*entry
 	created time.Time
 
@@ -259,25 +294,42 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, fmt.Errorf("mem: key is empty")
 	}
 
-	var buf bytes.Buffer
+	// Read data outside the lock - pre-allocate buffer when size is known.
+	var data []byte
 	if size >= 0 {
-		if _, err := io.CopyN(&buf, src, size); err != nil && err != io.EOF {
+		// Pre-allocate exact capacity for known size.
+		data = make([]byte, size)
+		n, err := io.ReadFull(src, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return nil, err
 		}
+		data = data[:n]
 	} else {
+		// Unknown size - read into buffer.
+		var buf bytes.Buffer
 		if _, err := io.Copy(&buf, src); err != nil {
 			return nil, err
 		}
+		data = buf.Bytes()
 	}
-	data := buf.Bytes()
 	now := time.Now()
 
 	meta := extractMetadata(opts)
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	// Use per-key lock for reduced contention on different keys.
+	b.keyLock.Lock(key)
+	defer b.keyLock.Unlock(key)
 
+	// Short bucket lock just for map access.
+	b.mu.Lock()
 	e, ok := b.obj[key]
+	if !ok {
+		e = &entry{}
+		b.obj[key] = e
+	}
+	b.mu.Unlock()
+
+	// Update entry data (under per-key lock only).
 	if ok {
 		// Preserve Created, update Updated.
 		e.data = data
@@ -286,21 +338,18 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		e.obj.Updated = now
 		e.obj.Metadata = cloneStringMap(meta)
 	} else {
-		e = &entry{
-			obj: storage.Object{
-				Bucket:      b.name,
-				Key:         key,
-				Size:        int64(len(data)),
-				ContentType: contentType,
-				Created:     now,
-				Updated:     now,
-				Hash:        nil,
-				Metadata:    cloneStringMap(meta),
-				IsDir:       false,
-			},
-			data: data,
+		e.obj = storage.Object{
+			Bucket:      b.name,
+			Key:         key,
+			Size:        int64(len(data)),
+			ContentType: contentType,
+			Created:     now,
+			Updated:     now,
+			Hash:        nil,
+			Metadata:    cloneStringMap(meta),
+			IsDir:       false,
 		}
-		b.obj[key] = e
+		e.data = data
 	}
 
 	objCopy := e.obj
