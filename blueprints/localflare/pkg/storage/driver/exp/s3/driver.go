@@ -47,6 +47,9 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 			o.BaseEndpoint = aws.String(cfg.endpoint)
 		}
 		o.UsePathStyle = cfg.forcePathStyle
+		// Disable response checksum validation for S3-compatible storage
+		// (MinIO, SeaweedFS, RustFS, etc. may not return checksums)
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 
 	return &store{

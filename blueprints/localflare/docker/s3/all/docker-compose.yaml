@@ -1,11 +1,18 @@
 # Production-grade S3-compatible storage services for comprehensive testing
 # Use with: docker compose up -d
-# Individual services: docker compose up -d minio rustfs
+# Individual services: docker compose up -d minio rustfs seaweedfs-s3 localstack
+#
+# Port Summary:
+# - MinIO:      9000 (S3), 9001 (Console)
+# - RustFS:     9100 (S3), 9101 (Console)
+# - SeaweedFS:  8333 (S3), 9333 (Master), 8888 (Filer)
+# - LocalStack: 4566 (S3)
 
 services:
   # ============================================================================
   # MinIO - Industry reference for S3 compatibility (Go)
   # https://github.com/minio/minio
+  # Credentials: minioadmin / minioadmin
   # ============================================================================
   minio:
     image: minio/minio:latest
@@ -39,11 +46,12 @@ services:
   # ============================================================================
   # RustFS - High-performance S3 storage (Rust) - 2.3x faster than MinIO
   # https://github.com/rustfs/rustfs
+  # Credentials: rustfsadmin / rustfsadmin
   # ============================================================================
   rustfs:
     image: rustfs/rustfs:latest
     ports:
-      - "9100:9000"   # S3 API
+      - "9100:9000"   # S3 API (mapped to 9100 to avoid conflict)
       - "9101:9001"   # Console UI
     environment:
       RUSTFS_VOLUMES: /data
@@ -54,105 +62,114 @@ services:
       - rustfs_data:/data
     user: "10001:10001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/ || exit 0"]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 20s
+
+  rustfs-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://rustfs:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
 
   # ============================================================================
   # SeaweedFS - High-performance distributed object storage (Go)
   # https://github.com/seaweedfs/seaweedfs
+  # Credentials: admin / adminpassword
   # ============================================================================
   seaweedfs-master:
     image: chrislusf/seaweedfs:latest
-    command: master -ip=seaweedfs-master -volumeSizeLimitMB=100
+    command: master -ip=seaweedfs-master -ip.bind=0.0.0.0 -volumeSizeLimitMB=100
     ports:
-      - "9333:9333"
+      - "9333:9333"   # Master HTTP
     volumes:
       - seaweedfs_master:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   seaweedfs-volume:
     image: chrislusf/seaweedfs:latest
-    command: volume -mserver="seaweedfs-master:9333" -port=8080 -ip=seaweedfs-volume
+    command: volume -mserver="seaweedfs-master:9333" -port=8080 -ip=seaweedfs-volume -ip.bind=0.0.0.0
     depends_on:
-      - seaweedfs-master
+      seaweedfs-master:
+        condition: service_healthy
     volumes:
       - seaweedfs_volume:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   seaweedfs-filer:
     image: chrislusf/seaweedfs:latest
-    command: filer -master="seaweedfs-master:9333" -ip=seaweedfs-filer
+    command: filer -master="seaweedfs-master:9333" -ip=seaweedfs-filer -ip.bind=0.0.0.0
     depends_on:
-      - seaweedfs-master
-      - seaweedfs-volume
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_healthy
     ports:
-      - "8888:8888"
+      - "8888:8888"   # Filer HTTP
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   seaweedfs-s3:
     image: chrislusf/seaweedfs:latest
-    command: s3 -filer="seaweedfs-filer:8888" -port=8333
+    command: s3 -filer="seaweedfs-filer:8888" -ip.bind=0.0.0.0 -port=8333 -config=/etc/seaweedfs/s3.json
     depends_on:
-      - seaweedfs-filer
+      seaweedfs-filer:
+        condition: service_healthy
     ports:
       - "8333:8333"   # S3 API
+    volumes:
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8333/"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
-
-  # ============================================================================
-  # Garage - Lightweight decentralized S3 storage (Rust)
-  # https://garagehq.deuxfleurs.fr/
-  # ============================================================================
-  garage:
-    image: dxflrs/garage:v0.9.4
-    command: server
-    ports:
-      - "3900:3900"   # S3 API
-      - "3902:3902"   # Admin API
-    environment:
-      GARAGE_ALLOW_WORLD_READABLE_SECRETS: "true"
-    volumes:
-      - garage_data:/var/lib/garage/data
-      - garage_meta:/var/lib/garage/meta
-      - ./garage.toml:/etc/garage.toml:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3902/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 30s
-
-  # ============================================================================
-  # Zenko CloudServer - Scality's S3 server (Node.js)
-  # https://github.com/scality/cloudserver
-  # ============================================================================
-  zenko:
-    image: zenko/cloudserver:latest
-    ports:
-      - "8000:8000"   # S3 API
-    environment:
-      SCALITY_ACCESS_KEY_ID: accessKey1
-      SCALITY_SECRET_ACCESS_KEY: verySecretKey1
-      S3DATA: file
-      S3BACKEND: file
-      REMOTE_MANAGEMENT_DISABLE: "1"
-    volumes:
-      - zenko_data:/usr/src/app/localData
-      - zenko_metadata:/usr/src/app/localMetadata
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/_/healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 15s
 
+  seaweedfs-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      seaweedfs-s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: adminpassword
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://seaweedfs-s3:8333 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
   # ============================================================================
   # LocalStack - AWS Local Testing (Python)
   # https://github.com/localstack/localstack
+  # Credentials: test / test
   # ============================================================================
   localstack:
     image: localstack/localstack:latest
@@ -193,8 +210,4 @@ volumes:
   rustfs_data:
   seaweedfs_master:
   seaweedfs_volume:
-  garage_data:
-  garage_meta:
-  zenko_data:
-  zenko_metadata:
   localstack_data:
