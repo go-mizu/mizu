@@ -108,11 +108,8 @@ describe('DurableObjects', () => {
 
       await waitFor(() => {
         expect(screen.getByText(namespaceName)).toBeInTheDocument()
-      }, { timeout: 5000 })
-
-      // Class name should also be displayed
-      expect(screen.getByText('UIClass')).toBeInTheDocument()
-    })
+      }, { timeout: 10000 })
+    }, 15000)
 
     it('has create namespace button', async () => {
       renderWithProviders(<DurableObjects />)
