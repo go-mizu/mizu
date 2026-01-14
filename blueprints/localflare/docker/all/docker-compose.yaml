@@ -143,12 +143,30 @@ services:
       retries: 10
       start_period: 30s
 
+  # PostgreSQL with pgvectorscale (TimescaleDB + DiskANN)
+  pgvectorscale:
+    image: timescale/timescaledb-ha:pg17
+    ports:
+      - "5433:5432"  # Different port to avoid conflict with pgvector
+    volumes:
+      - pgvectorscale_data:/home/postgres/pgdata/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: vectors
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vectors"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   qdrant_data:
   milvus_data:
   weaviate_data:
   chroma_data:
   pgvector_data:
+  pgvectorscale_data:
   redis_data:
   opensearch_data:
   elasticsearch_data:

@@ -52,14 +52,19 @@ type DriverConfig struct {
 // AllDriverConfigs returns configurations for all supported drivers.
 func AllDriverConfigs() []DriverConfig {
 	return []DriverConfig{
+		// Server-based drivers
 		{Name: "qdrant", DSN: "localhost:6334", Enabled: true},
 		{Name: "milvus", DSN: "localhost:19530", Enabled: true},
 		{Name: "weaviate", DSN: "http://localhost:8080", Enabled: true},
 		{Name: "chroma", DSN: "http://localhost:8000", Enabled: true},
 		{Name: "pgvector", DSN: "postgres://postgres:password@localhost:5432/vectors?sslmode=disable", Enabled: true},
+		{Name: "pgvectorscale", DSN: "postgres://postgres:password@localhost:5433/vectors?sslmode=disable", Enabled: true},
 		{Name: "redis", DSN: "redis://localhost:6379", Enabled: true},
 		{Name: "opensearch", DSN: "http://localhost:9200", Enabled: true},
 		{Name: "elasticsearch", DSN: "http://localhost:9201", Enabled: true},
+		// Embedded drivers
+		{Name: "mem", DSN: ":memory:", Enabled: true},
+		{Name: "sqlite", DSN: "./data/bench_sqlite/vectors.db", Enabled: true},
 		{Name: "lancedb", DSN: "./data/bench_lancedb", Enabled: true},
 		{Name: "duckdb", DSN: "./data/bench_duckdb/vectors.db", Enabled: true},
 	}
