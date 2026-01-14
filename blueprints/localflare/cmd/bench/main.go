@@ -1,0 +1,120 @@
+// Command bench runs storage benchmarks for all configured drivers.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/go-mizu/blueprints/localflare/pkg/storage/bench"
+)
+
+func main() {
+	var (
+		iterations    = flag.Int("iterations", 100, "Number of iterations per benchmark")
+		warmup        = flag.Int("warmup", 10, "Number of warmup iterations")
+		timeout       = flag.Duration("timeout", 30*time.Second, "Per-operation timeout")
+		outputDir     = flag.String("output", "./pkg/storage/report", "Output directory for reports")
+		quick         = flag.Bool("quick", false, "Quick mode (fewer iterations)")
+		drivers       = flag.String("drivers", "", "Comma-separated list of drivers to benchmark (empty = all)")
+		outputFormats = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
+		duration      = flag.Duration("duration", 0, "Duration-based mode (run each benchmark for this duration)")
+		dockerStats   = flag.Bool("docker-stats", false, "Collect Docker container statistics")
+		verbose       = flag.Bool("verbose", false, "Verbose output")
+	)
+	flag.Parse()
+
+	cfg := bench.DefaultConfig()
+	cfg.Iterations = *iterations
+	cfg.WarmupIterations = *warmup
+	cfg.Timeout = *timeout
+	cfg.OutputDir = *outputDir
+	cfg.Duration = *duration
+	cfg.DockerStats = *dockerStats
+	cfg.Verbose = *verbose
+
+	if *quick {
+		cfg = bench.QuickConfig()
+		cfg.OutputDir = *outputDir
+		cfg.DockerStats = *dockerStats
+		cfg.Verbose = *verbose
+	}
+
+	if *drivers != "" {
+		cfg.Drivers = strings.Split(*drivers, ",")
+	}
+
+	cfg.OutputFormats = strings.Split(*outputFormats, ",")
+
+	// Setup context with cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle signals for graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\nInterrupted, cleaning up...")
+		cancel()
+	}()
+
+	runner := bench.NewRunner(cfg)
+	runner.SetLogger(func(format string, args ...any) {
+		fmt.Printf(format+"\n", args...)
+	})
+
+	fmt.Println("=== Storage Benchmark Suite v2 ===")
+	fmt.Printf("Iterations: %d, Warmup: %d\n", cfg.Iterations, cfg.WarmupIterations)
+	if cfg.Duration > 0 {
+		fmt.Printf("Mode: Duration-based (%v per operation)\n", cfg.Duration)
+	} else {
+		fmt.Printf("Mode: Iteration-based\n")
+	}
+	fmt.Printf("Output: %s\n", cfg.OutputDir)
+	fmt.Printf("Formats: %v\n", cfg.OutputFormats)
+	fmt.Println()
+
+	report, err := runner.Run(ctx)
+	if err != nil {
+		log.Fatalf("Benchmark failed: %v", err)
+	}
+
+	// Save reports in all configured formats
+	if err := report.SaveAll(cfg.OutputDir, cfg.OutputFormats); err != nil {
+		log.Fatalf("Save reports failed: %v", err)
+	}
+
+	fmt.Println()
+	fmt.Printf("Reports saved to %s\n", cfg.OutputDir)
+
+	// Print summary
+	fmt.Println()
+	fmt.Println("=== Summary ===")
+	driverResults := make(map[string]int)
+	driverErrors := make(map[string]int)
+	for _, m := range report.Results {
+		driverResults[m.Driver]++
+		driverErrors[m.Driver] += m.Errors
+	}
+	for driver, count := range driverResults {
+		fmt.Printf("  %s: %d benchmarks, %d errors\n", driver, count, driverErrors[driver])
+	}
+
+	// Exit with error if any driver had errors
+	totalErrors := 0
+	for _, errs := range driverErrors {
+		totalErrors += errs
+	}
+	if totalErrors > 0 {
+		fmt.Printf("\nWarning: %d total errors occurred during benchmarks\n", totalErrors)
+	}
+
+	os.Exit(0)
+}
