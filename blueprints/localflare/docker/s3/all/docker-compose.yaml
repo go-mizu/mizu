@@ -223,7 +223,7 @@ services:
     volumes:
       - liteio_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/ || exit 0"]
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -260,7 +260,7 @@ services:
       LITEIO_SECRET_KEY: liteio123
       LITEIO_DRIVER: "memory://"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/ || exit 0"]
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 10

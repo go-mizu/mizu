@@ -35,6 +35,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -129,6 +130,39 @@ Environment variables:
 	if v := os.Getenv("LITEIO_REGION"); v != "" {
 		cfg.Region = v
 	}
+
+	// Add healthcheck subcommand
+	cmd.AddCommand(healthCheckCmd())
+
+	return cmd
+}
+
+func healthCheckCmd() *cobra.Command {
+	var port int
+	var host string
+
+	cmd := &cobra.Command{
+		Use:   "healthcheck",
+		Short: "Check if the server is healthy",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			url := fmt.Sprintf("http://%s:%d/health", host, port)
+			client := &http.Client{Timeout: 5 * time.Second}
+			resp, err := client.Get(url)
+			if err != nil {
+				return fmt.Errorf("health check failed: %w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("unhealthy: status %d", resp.StatusCode)
+			}
+			return nil
+		},
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+
+	cmd.Flags().IntVarP(&port, "port", "p", 9000, "Server port")
+	cmd.Flags().StringVar(&host, "host", "localhost", "Server host")
 
 	return cmd
 }
