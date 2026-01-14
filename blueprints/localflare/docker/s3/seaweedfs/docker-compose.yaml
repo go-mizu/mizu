@@ -1,0 +1,49 @@
+services:
+  master:
+    image: chrislusf/seaweedfs:latest
+    command: master -ip=master -volumeSizeLimitMB=100
+    ports:
+      - "9333:9333"   # Master HTTP
+      - "19333:19333" # Master gRPC
+    volumes:
+      - master_data:/data
+
+  volume:
+    image: chrislusf/seaweedfs:latest
+    command: volume -mserver="master:9333" -port=8080 -ip=volume
+    depends_on:
+      - master
+    ports:
+      - "8080:8080"
+    volumes:
+      - volume_data:/data
+
+  filer:
+    image: chrislusf/seaweedfs:latest
+    command: filer -master="master:9333" -ip=filer
+    depends_on:
+      - master
+      - volume
+    ports:
+      - "8888:8888"   # Filer HTTP
+      - "18888:18888" # Filer gRPC
+
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: s3 -filer="filer:8888" -port=8333 -config=/etc/seaweedfs/s3.json
+    depends_on:
+      - filer
+    ports:
+      - "8333:8333"   # S3 API
+    volumes:
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8333/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  master_data:
+  volume_data:
