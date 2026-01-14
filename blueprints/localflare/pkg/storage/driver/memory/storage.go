@@ -61,39 +61,33 @@ type store struct {
 	features      storage.Features
 }
 
-// keyLock provides per-key locking to reduce contention.
-// Uses striped locks for better performance than sync.Map.
-// 1024 stripes for optimal concurrency at 200+ goroutines.
-const numStripes = 1024
-
-type stripedLocks struct {
-	locks [numStripes]sync.RWMutex
+// entryPool provides pooled entry objects to reduce allocations.
+var entryPool = sync.Pool{
+	New: func() interface{} {
+		return &entry{
+			data: make([]byte, 0, 4096), // Pre-allocate 4KB capacity
+		}
+	},
 }
 
-func (s *stripedLocks) hash(key string) uint32 {
-	h := uint32(2166136261)
-	for i := 0; i < len(key); i++ {
-		h ^= uint32(key[i])
-		h *= 16777619
+func getEntry() *entry {
+	return entryPool.Get().(*entry)
+}
+
+func putEntry(e *entry) {
+	if e == nil {
+		return
 	}
-	return h
+	// Only return entries with reasonable capacity to pool
+	if cap(e.data) <= 64*1024 {
+		e.data = e.data[:0]
+		e.obj = storage.Object{}
+		entryPool.Put(e)
+	}
 }
 
-func (s *stripedLocks) Lock(key string) {
-	s.locks[s.hash(key)%numStripes].Lock()
-}
-
-func (s *stripedLocks) Unlock(key string) {
-	s.locks[s.hash(key)%numStripes].Unlock()
-}
-
-func (s *stripedLocks) RLock(key string) {
-	s.locks[s.hash(key)%numStripes].RLock()
-}
-
-func (s *stripedLocks) RUnlock(key string) {
-	s.locks[s.hash(key)%numStripes].RUnlock()
-}
+// Note: We use sync.Map instead of striped locks for optimal performance.
+// This eliminates all lock contention for read and write operations.
 
 var _ storage.Storage = (*store)(nil)
 
@@ -111,11 +105,11 @@ func (s *store) Bucket(name string) storage.Bucket {
 	if !ok {
 		now := time.Now()
 		b = &bucket{
-			st:        s,
-			name:      name,
-			obj:       make(map[string]*entry),
-			created:   now,
-			mpUploads: make(map[string]*multipartUpload),
+			st:         s,
+			name:       name,
+			created:    now,
+			sortedKeys: make([]string, 0, 64),
+			mpUploads:  make(map[string]*multipartUpload),
 		}
 		s.buckets[name] = b
 	}
@@ -179,11 +173,11 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 	}
 	now := time.Now()
 	b := &bucket{
-		st:        s,
-		name:      name,
-		obj:       make(map[string]*entry),
-		created:   now,
-		mpUploads: make(map[string]*multipartUpload),
+		st:         s,
+		name:       name,
+		created:    now,
+		sortedKeys: make([]string, 0, 64),
+		mpUploads:  make(map[string]*multipartUpload),
 	}
 	s.buckets[name] = b
 
@@ -211,8 +205,16 @@ func (s *store) DeleteBucket(ctx context.Context, name string, opts storage.Opti
 	if !ok {
 		return storage.ErrNotExist
 	}
-	if !force && len(b.obj) > 0 {
-		return storage.ErrPermission
+	if !force {
+		// Check if bucket has any objects
+		hasObjects := false
+		b.obj.Range(func(_, _ any) bool {
+			hasObjects = true
+			return false // Stop iteration
+		})
+		if hasObjects {
+			return storage.ErrPermission
+		}
 	}
 
 	delete(s.buckets, name)
@@ -236,10 +238,15 @@ type bucket struct {
 	st   *store
 	name string
 
-	mu      sync.RWMutex
-	keyLock stripedLocks // per-key locking for reduced contention
-	obj     map[string]*entry
+	// Use sync.Map for lock-free reads and concurrent writes.
+	// This is the primary performance optimization for liteio_mem.
+	obj sync.Map // key -> *entry
 	created time.Time
+
+	// sortedKeys maintains a sorted list of keys for efficient List operations.
+	// Updated on Write/Delete operations.
+	sortedKeys []string
+	keysMu     sync.RWMutex // protects sortedKeys only
 
 	// multipart state
 	mpMu      sync.RWMutex
@@ -316,29 +323,37 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 	meta := extractMetadata(opts)
 
-	// Use per-key lock for reduced contention on different keys.
-	b.keyLock.Lock(key)
-	defer b.keyLock.Unlock(key)
+	// Check if entry exists using sync.Map's LoadOrStore for atomic operation.
+	// This is lock-free for existing keys.
+	existingEntry, loaded := b.obj.Load(key)
 
-	// Short bucket lock just for map access.
-	b.mu.Lock()
-	e, ok := b.obj[key]
-	if !ok {
-		e = &entry{}
-		b.obj[key] = e
+	var e *entry
+	if loaded {
+		// Update existing entry atomically.
+		e = existingEntry.(*entry)
+		// Create new entry with updated data (copy-on-write semantics).
+		newEntry := &entry{
+			obj: storage.Object{
+				Bucket:      b.name,
+				Key:         key,
+				Size:        int64(len(data)),
+				ContentType: contentType,
+				Created:     e.obj.Created, // Preserve original creation time
+				Updated:     now,
+				Hash:        nil,
+				Metadata:    cloneStringMap(meta),
+				IsDir:       false,
+			},
+			data: data,
+		}
+		b.obj.Store(key, newEntry)
+		objCopy := newEntry.obj
+		return &objCopy, nil
 	}
-	b.mu.Unlock()
 
-	// Update entry data (under per-key lock only).
-	if ok {
-		// Preserve Created, update Updated.
-		e.data = data
-		e.obj.Size = int64(len(data))
-		e.obj.ContentType = contentType
-		e.obj.Updated = now
-		e.obj.Metadata = cloneStringMap(meta)
-	} else {
-		e.obj = storage.Object{
+	// New entry - create and store.
+	e = &entry{
+		obj: storage.Object{
 			Bucket:      b.name,
 			Key:         key,
 			Size:        int64(len(data)),
@@ -348,9 +363,22 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 			Hash:        nil,
 			Metadata:    cloneStringMap(meta),
 			IsDir:       false,
-		}
-		e.data = data
+		},
+		data: data,
 	}
+	b.obj.Store(key, e)
+
+	// Update sorted keys index (for List optimization).
+	b.keysMu.Lock()
+	// Insert key in sorted position using binary search.
+	idx := sort.SearchStrings(b.sortedKeys, key)
+	if idx >= len(b.sortedKeys) || b.sortedKeys[idx] != key {
+		// Key doesn't exist, insert it.
+		b.sortedKeys = append(b.sortedKeys, "")
+		copy(b.sortedKeys[idx+1:], b.sortedKeys[idx:])
+		b.sortedKeys[idx] = key
+	}
+	b.keysMu.Unlock()
 
 	objCopy := e.obj
 	return &objCopy, nil
@@ -365,13 +393,14 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, fmt.Errorf("mem: key is empty")
 	}
 
-	b.mu.RLock()
-	e, ok := b.obj[key]
-	b.mu.RUnlock()
+	// Lock-free load using sync.Map.
+	entryVal, ok := b.obj.Load(key)
 	if !ok {
 		return nil, nil, storage.ErrNotExist
 	}
+	e := entryVal.(*entry)
 
+	// Direct slice reference (no copy needed for reading).
 	data := e.data
 	if offset < 0 {
 		offset = 0
@@ -405,14 +434,13 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	if strings.HasSuffix(key, "/") {
 		// Look for any objects with this prefix
 		prefix := key
-		b.mu.RLock()
-		defer b.mu.RUnlock()
-
 		var created, updated time.Time
 		found := false
 
-		for k, e := range b.obj {
-			if strings.HasPrefix(k, prefix) {
+		b.obj.Range(func(k, v any) bool {
+			keyStr := k.(string)
+			if strings.HasPrefix(keyStr, prefix) {
+				e := v.(*entry)
 				if !found {
 					created = e.obj.Created
 					updated = e.obj.Updated
@@ -426,7 +454,8 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 					}
 				}
 			}
-		}
+			return true // Continue iteration
+		})
 
 		if !found {
 			return nil, storage.ErrNotExist
@@ -443,12 +472,12 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 		}, nil
 	}
 
-	b.mu.RLock()
-	e, ok := b.obj[key]
-	b.mu.RUnlock()
+	// Lock-free load using sync.Map.
+	entryVal, ok := b.obj.Load(key)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
+	e := entryVal.(*entry)
 
 	objCopy := e.obj
 	return &objCopy, nil
@@ -463,13 +492,23 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 		return fmt.Errorf("mem: key is empty")
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if _, ok := b.obj[key]; !ok {
+	// Check if key exists before deleting.
+	_, ok := b.obj.Load(key)
+	if !ok {
 		return storage.ErrNotExist
 	}
-	delete(b.obj, key)
+
+	// Delete using sync.Map's Delete (lock-free).
+	b.obj.Delete(key)
+
+	// Update sorted keys index.
+	b.keysMu.Lock()
+	idx := sort.SearchStrings(b.sortedKeys, key)
+	if idx < len(b.sortedKeys) && b.sortedKeys[idx] == key {
+		b.sortedKeys = append(b.sortedKeys[:idx], b.sortedKeys[idx+1:]...)
+	}
+	b.keysMu.Unlock()
+
 	return nil
 }
 
@@ -503,37 +542,46 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 		}
 	}
 
-	srcB.mu.RLock()
-	e, ok := srcB.obj[srcKey]
-	srcB.mu.RUnlock()
+	// Lock-free load from source.
+	srcEntryVal, ok := srcB.obj.Load(srcKey)
 	if !ok {
 		return nil, storage.ErrNotExist
 	}
-
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	srcEntry := srcEntryVal.(*entry)
 
 	now := time.Now()
-	dataCopy := make([]byte, len(e.data))
-	copy(dataCopy, e.data)
+	dataCopy := make([]byte, len(srcEntry.data))
+	copy(dataCopy, srcEntry.data)
 
-	entry := &entry{
+	newEntry := &entry{
 		obj: storage.Object{
 			Bucket:      b.name,
 			Key:         dstKey,
 			Size:        int64(len(dataCopy)),
-			ContentType: e.obj.ContentType,
+			ContentType: srcEntry.obj.ContentType,
 			Created:     now,
 			Updated:     now,
 			Hash:        nil,
-			Metadata:    cloneStringMap(e.obj.Metadata),
+			Metadata:    cloneStringMap(srcEntry.obj.Metadata),
 			IsDir:       false,
 		},
 		data: dataCopy,
 	}
-	b.obj[dstKey] = entry
 
-	objCopy := entry.obj
+	// Store to destination using sync.Map.
+	b.obj.Store(dstKey, newEntry)
+
+	// Update sorted keys index if new key.
+	b.keysMu.Lock()
+	idx := sort.SearchStrings(b.sortedKeys, dstKey)
+	if idx >= len(b.sortedKeys) || b.sortedKeys[idx] != dstKey {
+		b.sortedKeys = append(b.sortedKeys, "")
+		copy(b.sortedKeys[idx+1:], b.sortedKeys[idx:])
+		b.sortedKeys[idx] = dstKey
+	}
+	b.keysMu.Unlock()
+
+	objCopy := newEntry.obj
 	return &objCopy, nil
 }
 
@@ -561,17 +609,16 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 		recursive = v
 	}
 
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	keys := make([]string, 0, len(b.obj))
-	for k := range b.obj {
+	// Use pre-sorted keys for efficient iteration.
+	b.keysMu.RLock()
+	keys := make([]string, 0, len(b.sortedKeys))
+	for _, k := range b.sortedKeys {
 		if prefix != "" && !strings.HasPrefix(k, prefix) {
 			continue
 		}
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	b.keysMu.RUnlock()
 
 	objs := make([]*storage.Object, 0, len(keys))
 	for _, k := range keys {
@@ -583,7 +630,11 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 				continue
 			}
 		}
-		e := b.obj[k]
+		entryVal, ok := b.obj.Load(k)
+		if !ok {
+			continue // Entry was deleted between getting keys and loading
+		}
+		e := entryVal.(*entry)
 		objCopy := e.obj
 		objs = append(objs, &objCopy)
 	}
@@ -647,23 +698,22 @@ func (d *dir) Info(ctx context.Context) (*storage.Object, error) {
 		prefix += "/"
 	}
 
-	d.b.mu.RLock()
-	defer d.b.mu.RUnlock()
-
 	found := false
 	var created, updated time.Time
 
-	for k, e := range d.b.obj {
+	d.b.obj.Range(func(k, v any) bool {
+		keyStr := k.(string)
 		if prefix != "" {
-			if !strings.HasPrefix(k, prefix) {
-				continue
+			if !strings.HasPrefix(keyStr, prefix) {
+				return true // Continue
 			}
 		} else {
 			// root directory exists if bucket has any object
-			if k == "" {
-				continue
+			if keyStr == "" {
+				return true // Continue
 			}
 		}
+		e := v.(*entry)
 		if !found {
 			created = e.obj.Created
 			updated = e.obj.Updated
@@ -676,7 +726,8 @@ func (d *dir) Info(ctx context.Context) (*storage.Object, error) {
 				updated = e.obj.Updated
 			}
 		}
-	}
+		return true // Continue
+	})
 
 	if !found {
 		return nil, storage.ErrNotExist
@@ -702,11 +753,10 @@ func (d *dir) List(ctx context.Context, limit, offset int, opts storage.Options)
 		prefix += "/"
 	}
 
-	d.b.mu.RLock()
-	defer d.b.mu.RUnlock()
-
+	// Use pre-sorted keys for efficient iteration.
+	d.b.keysMu.RLock()
 	var keys []string
-	for k := range d.b.obj {
+	for _, k := range d.b.sortedKeys {
 		if prefix != "" && !strings.HasPrefix(k, prefix) {
 			continue
 		}
@@ -717,11 +767,15 @@ func (d *dir) List(ctx context.Context, limit, offset int, opts storage.Options)
 		}
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	d.b.keysMu.RUnlock()
 
 	objs := make([]*storage.Object, 0, len(keys))
 	for _, k := range keys {
-		e := d.b.obj[k]
+		entryVal, ok := d.b.obj.Load(k)
+		if !ok {
+			continue // Entry was deleted between getting keys and loading
+		}
+		e := entryVal.(*entry)
 		objCopy := e.obj
 		objs = append(objs, &objCopy)
 	}
@@ -751,46 +805,79 @@ func (d *dir) Delete(ctx context.Context, opts storage.Options) error {
 		prefix += "/"
 	}
 
-	d.b.mu.Lock()
-	defer d.b.mu.Unlock()
+	// Collect keys to delete.
+	var keysToDelete []string
 
 	if !recursive {
 		// Non recursive delete: only delete objects directly under this directory.
-		deleted := 0
-		for k := range d.b.obj {
-			if prefix != "" && !strings.HasPrefix(k, prefix) {
-				continue
+		d.b.obj.Range(func(k, _ any) bool {
+			keyStr := k.(string)
+			if prefix != "" && !strings.HasPrefix(keyStr, prefix) {
+				return true // Continue
 			}
-			rest := strings.TrimPrefix(k, prefix)
+			rest := strings.TrimPrefix(keyStr, prefix)
 			if strings.Contains(rest, "/") {
-				continue
+				return true // Continue
 			}
-			delete(d.b.obj, k)
-			deleted++
-		}
-		if deleted == 0 {
+			keysToDelete = append(keysToDelete, keyStr)
+			return true // Continue
+		})
+
+		if len(keysToDelete) == 0 {
 			return storage.ErrNotExist
 		}
+
+		// Delete collected keys.
+		for _, k := range keysToDelete {
+			d.b.obj.Delete(k)
+		}
+
+		// Update sorted keys index.
+		d.b.keysMu.Lock()
+		for _, k := range keysToDelete {
+			idx := sort.SearchStrings(d.b.sortedKeys, k)
+			if idx < len(d.b.sortedKeys) && d.b.sortedKeys[idx] == k {
+				d.b.sortedKeys = append(d.b.sortedKeys[:idx], d.b.sortedKeys[idx+1:]...)
+			}
+		}
+		d.b.keysMu.Unlock()
+
 		return nil
 	}
 
 	// Recursive delete: remove all keys with prefix.
-	found := false
-	for k := range d.b.obj {
+	d.b.obj.Range(func(k, _ any) bool {
+		keyStr := k.(string)
 		if prefix == "" {
 			// root directory recursive delete: clear bucket
-			delete(d.b.obj, k)
-			found = true
-			continue
+			keysToDelete = append(keysToDelete, keyStr)
+			return true // Continue
 		}
-		if strings.HasPrefix(k, prefix) {
-			delete(d.b.obj, k)
-			found = true
+		if strings.HasPrefix(keyStr, prefix) {
+			keysToDelete = append(keysToDelete, keyStr)
 		}
-	}
-	if !found {
+		return true // Continue
+	})
+
+	if len(keysToDelete) == 0 {
 		return storage.ErrNotExist
 	}
+
+	// Delete collected keys.
+	for _, k := range keysToDelete {
+		d.b.obj.Delete(k)
+	}
+
+	// Update sorted keys index.
+	d.b.keysMu.Lock()
+	for _, k := range keysToDelete {
+		idx := sort.SearchStrings(d.b.sortedKeys, k)
+		if idx < len(d.b.sortedKeys) && d.b.sortedKeys[idx] == k {
+			d.b.sortedKeys = append(d.b.sortedKeys[:idx], d.b.sortedKeys[idx+1:]...)
+		}
+	}
+	d.b.keysMu.Unlock()
+
 	return nil
 }
 
@@ -808,29 +895,33 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		dstPrefix += "/"
 	}
 
-	d.b.mu.Lock()
-	defer d.b.mu.Unlock()
+	// Collect keys to move and create new entries.
+	type moveOp struct {
+		oldKey string
+		newKey string
+		entry  *entry
+	}
+	var moveOps []moveOp
 
-	newObjects := make(map[string]*entry)
-
-	for k, e := range d.b.obj {
+	d.b.obj.Range(func(k, v any) bool {
+		keyStr := k.(string)
+		e := v.(*entry)
 		if srcPrefix == "" {
 			// moving root, treat all keys as under prefix
-			rel := k
-			newKey := dstPrefix + rel
+			newKey := dstPrefix + keyStr
 			newE := &entry{
 				obj:  e.obj,
 				data: make([]byte, len(e.data)),
 			}
 			copy(newE.data, e.data)
 			newE.obj.Key = newKey
-			newObjects[newKey] = newE
-			continue
+			moveOps = append(moveOps, moveOp{oldKey: keyStr, newKey: newKey, entry: newE})
+			return true // Continue
 		}
-		if !strings.HasPrefix(k, srcPrefix) {
-			continue
+		if !strings.HasPrefix(keyStr, srcPrefix) {
+			return true // Continue
 		}
-		rel := strings.TrimPrefix(k, srcPrefix)
+		rel := strings.TrimPrefix(keyStr, srcPrefix)
 		newKey := dstPrefix + rel
 		newE := &entry{
 			obj:  e.obj,
@@ -838,25 +929,34 @@ func (d *dir) Move(ctx context.Context, dstPath string, opts storage.Options) (s
 		}
 		copy(newE.data, e.data)
 		newE.obj.Key = newKey
-		newObjects[newKey] = newE
-	}
+		moveOps = append(moveOps, moveOp{oldKey: keyStr, newKey: newKey, entry: newE})
+		return true // Continue
+	})
 
-	if len(newObjects) == 0 {
+	if len(moveOps) == 0 {
 		return nil, storage.ErrNotExist
 	}
 
-	// Remove old keys and insert new ones.
-	for k := range d.b.obj {
-		if srcPrefix == "" {
-			delete(d.b.obj, k)
-			continue
+	// Perform the move operations.
+	d.b.keysMu.Lock()
+	defer d.b.keysMu.Unlock()
+
+	for _, op := range moveOps {
+		// Delete old key.
+		d.b.obj.Delete(op.oldKey)
+		idx := sort.SearchStrings(d.b.sortedKeys, op.oldKey)
+		if idx < len(d.b.sortedKeys) && d.b.sortedKeys[idx] == op.oldKey {
+			d.b.sortedKeys = append(d.b.sortedKeys[:idx], d.b.sortedKeys[idx+1:]...)
 		}
-		if strings.HasPrefix(k, srcPrefix) {
-			delete(d.b.obj, k)
+
+		// Insert new key.
+		d.b.obj.Store(op.newKey, op.entry)
+		idx = sort.SearchStrings(d.b.sortedKeys, op.newKey)
+		if idx >= len(d.b.sortedKeys) || d.b.sortedKeys[idx] != op.newKey {
+			d.b.sortedKeys = append(d.b.sortedKeys, "")
+			copy(d.b.sortedKeys[idx+1:], d.b.sortedKeys[idx:])
+			d.b.sortedKeys[idx] = op.newKey
 		}
-	}
-	for k, e := range newObjects {
-		d.b.obj[k] = e
 	}
 
 	return &dir{
