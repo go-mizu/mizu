@@ -660,12 +660,16 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 
 	// Collect driver statistics
 	type driverSummary struct {
-		name           string
-		totalOps       int
-		avgThroughput  float64
+		name            string
+		totalOps        int
+		avgThroughput   float64
 		writeThroughput float64
 		readThroughput  float64
-		errors         int
+		writeLatencyP50 time.Duration
+		writeLatencyP99 time.Duration
+		readLatencyP50  time.Duration
+		readLatencyP99  time.Duration
+		errors          int
 	}
 
 	summaries := make(map[string]*driverSummary)
@@ -680,15 +684,19 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 		s.avgThroughput += m.Throughput
 		s.errors += m.Errors
 
-		// Track category-specific throughput
+		// Track category-specific throughput and latency
 		if strings.HasPrefix(m.Operation, "Write/") && !strings.Contains(m.Operation, "Parallel") {
 			if m.Throughput > s.writeThroughput {
 				s.writeThroughput = m.Throughput
+				s.writeLatencyP50 = m.P50Latency
+				s.writeLatencyP99 = m.P99Latency
 			}
 		}
 		if strings.HasPrefix(m.Operation, "Read/") && !strings.Contains(m.Operation, "Parallel") {
 			if m.Throughput > s.readThroughput {
 				s.readThroughput = m.Throughput
+				s.readLatencyP50 = m.P50Latency
+				s.readLatencyP99 = m.P99Latency
 			}
 		}
 
@@ -709,11 +717,6 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 		}
 	}
 
-	// Quick comparison table
-	sb.WriteString("### Quick Comparison\n\n")
-	sb.WriteString("| Driver | Write (MB/s) | Read (MB/s) | Errors |\n")
-	sb.WriteString("|--------|-------------|-------------|--------|\n")
-
 	// Sort drivers for consistent output
 	var drivers []string
 	for d := range summaries {
@@ -721,12 +724,36 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	}
 	sort.Strings(drivers)
 
+	// Quick Throughput Comparison
+	sb.WriteString("### Throughput Summary (MB/s)\n\n")
+	sb.WriteString("| Driver | Write | Read |\n")
+	sb.WriteString("|--------|-------|------|\n")
+
 	for _, d := range drivers {
 		s := summaries[d]
-		sb.WriteString(fmt.Sprintf("| %s | %.2f | %.2f | %d |\n",
-			s.name, s.writeThroughput, s.readThroughput, s.errors))
+		sb.WriteString(fmt.Sprintf("| %s | %.2f | %.2f |\n",
+			s.name, s.writeThroughput, s.readThroughput))
 	}
 	sb.WriteString("\n")
+
+	// Latency Comparison
+	sb.WriteString("### Latency Summary\n\n")
+	sb.WriteString("| Driver | Write P50 | Write P99 | Read P50 | Read P99 |\n")
+	sb.WriteString("|--------|-----------|-----------|----------|----------|\n")
+
+	for _, d := range drivers {
+		s := summaries[d]
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+			s.name,
+			formatLatency(s.writeLatencyP50),
+			formatLatency(s.writeLatencyP99),
+			formatLatency(s.readLatencyP50),
+			formatLatency(s.readLatencyP99)))
+	}
+	sb.WriteString("\n")
+
+	// Concurrency Performance Summary (if available)
+	r.generateConcurrencySummary(sb, drivers)
 
 	// Key findings
 	sb.WriteString("### Key Findings\n\n")
@@ -734,6 +761,9 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	// Find best performers
 	var bestWrite, bestRead string
 	var bestWriteThroughput, bestReadThroughput float64
+	var lowestWriteLatency, lowestReadLatency string
+	var lowestWriteP50, lowestReadP50 time.Duration = time.Hour, time.Hour
+
 	for d, s := range summaries {
 		if s.writeThroughput > bestWriteThroughput {
 			bestWriteThroughput = s.writeThroughput
@@ -743,13 +773,27 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 			bestReadThroughput = s.readThroughput
 			bestRead = d
 		}
+		if s.writeLatencyP50 > 0 && s.writeLatencyP50 < lowestWriteP50 {
+			lowestWriteP50 = s.writeLatencyP50
+			lowestWriteLatency = d
+		}
+		if s.readLatencyP50 > 0 && s.readLatencyP50 < lowestReadP50 {
+			lowestReadP50 = s.readLatencyP50
+			lowestReadLatency = d
+		}
 	}
 
 	if bestWrite != "" {
-		sb.WriteString(fmt.Sprintf("- **Best Write Performance**: %s (%.2f MB/s)\n", bestWrite, bestWriteThroughput))
+		sb.WriteString(fmt.Sprintf("- **Best Write Throughput**: %s (%.2f MB/s)\n", bestWrite, bestWriteThroughput))
 	}
 	if bestRead != "" {
-		sb.WriteString(fmt.Sprintf("- **Best Read Performance**: %s (%.2f MB/s)\n", bestRead, bestReadThroughput))
+		sb.WriteString(fmt.Sprintf("- **Best Read Throughput**: %s (%.2f MB/s)\n", bestRead, bestReadThroughput))
+	}
+	if lowestWriteLatency != "" && lowestWriteLatency != bestWrite {
+		sb.WriteString(fmt.Sprintf("- **Lowest Write Latency**: %s (%s P50)\n", lowestWriteLatency, formatLatency(lowestWriteP50)))
+	}
+	if lowestReadLatency != "" && lowestReadLatency != bestRead {
+		sb.WriteString(fmt.Sprintf("- **Lowest Read Latency**: %s (%s P50)\n", lowestReadLatency, formatLatency(lowestReadP50)))
 	}
 
 	// Check for error-prone drivers
@@ -793,4 +837,165 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	}
 
 	sb.WriteString("\n---\n\n")
+}
+
+// generateConcurrencySummary creates a summary of parallel benchmark results.
+func (r *Report) generateConcurrencySummary(sb *strings.Builder, drivers []string) {
+	// Collect parallel results by concurrency level
+	type concResult struct {
+		driver      string
+		concurrency int
+		throughput  float64
+		p50         time.Duration
+		p99         time.Duration
+		errors      int
+	}
+
+	writeResults := make(map[string][]concResult)
+	readResults := make(map[string][]concResult)
+
+	// Extract concurrency level from operation name
+	extractConc := func(op string) int {
+		if idx := strings.Index(op, "/C"); idx > 0 {
+			var c int
+			fmt.Sscanf(op[idx+2:], "%d", &c)
+			return c
+		}
+		return 0
+	}
+
+	for _, m := range r.Results {
+		if strings.HasPrefix(m.Operation, "ParallelWrite/") {
+			conc := extractConc(m.Operation)
+			if conc > 0 {
+				writeResults[m.Driver] = append(writeResults[m.Driver], concResult{
+					driver:      m.Driver,
+					concurrency: conc,
+					throughput:  m.Throughput,
+					p50:         m.P50Latency,
+					p99:         m.P99Latency,
+					errors:      m.Errors,
+				})
+			}
+		}
+		if strings.HasPrefix(m.Operation, "ParallelRead/") {
+			conc := extractConc(m.Operation)
+			if conc > 0 {
+				readResults[m.Driver] = append(readResults[m.Driver], concResult{
+					driver:      m.Driver,
+					concurrency: conc,
+					throughput:  m.Throughput,
+					p50:         m.P50Latency,
+					p99:         m.P99Latency,
+					errors:      m.Errors,
+				})
+			}
+		}
+	}
+
+	// Only show if we have results
+	if len(writeResults) == 0 && len(readResults) == 0 {
+		return
+	}
+
+	sb.WriteString("### Concurrency Performance\n\n")
+
+	if len(writeResults) > 0 {
+		sb.WriteString("**Parallel Write (MB/s by concurrency)**\n\n")
+		sb.WriteString("| Driver |")
+
+		// Get all concurrency levels
+		concLevels := make(map[int]bool)
+		for _, results := range writeResults {
+			for _, r := range results {
+				concLevels[r.concurrency] = true
+			}
+		}
+		var levels []int
+		for l := range concLevels {
+			levels = append(levels, l)
+		}
+		sort.Ints(levels)
+
+		for _, l := range levels {
+			sb.WriteString(fmt.Sprintf(" C%d |", l))
+		}
+		sb.WriteString("\n|--------|")
+		for range levels {
+			sb.WriteString("------|")
+		}
+		sb.WriteString("\n")
+
+		for _, d := range drivers {
+			results := writeResults[d]
+			resultByConc := make(map[int]concResult)
+			for _, r := range results {
+				resultByConc[r.concurrency] = r
+			}
+
+			sb.WriteString(fmt.Sprintf("| %s |", d))
+			for _, l := range levels {
+				if r, ok := resultByConc[l]; ok {
+					if r.errors > 0 {
+						sb.WriteString(fmt.Sprintf(" %.2f* |", r.throughput))
+					} else {
+						sb.WriteString(fmt.Sprintf(" %.2f |", r.throughput))
+					}
+				} else {
+					sb.WriteString(" - |")
+				}
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n*\\* indicates errors occurred*\n\n")
+	}
+
+	if len(readResults) > 0 {
+		sb.WriteString("**Parallel Read (MB/s by concurrency)**\n\n")
+		sb.WriteString("| Driver |")
+
+		concLevels := make(map[int]bool)
+		for _, results := range readResults {
+			for _, r := range results {
+				concLevels[r.concurrency] = true
+			}
+		}
+		var levels []int
+		for l := range concLevels {
+			levels = append(levels, l)
+		}
+		sort.Ints(levels)
+
+		for _, l := range levels {
+			sb.WriteString(fmt.Sprintf(" C%d |", l))
+		}
+		sb.WriteString("\n|--------|")
+		for range levels {
+			sb.WriteString("------|")
+		}
+		sb.WriteString("\n")
+
+		for _, d := range drivers {
+			results := readResults[d]
+			resultByConc := make(map[int]concResult)
+			for _, r := range results {
+				resultByConc[r.concurrency] = r
+			}
+
+			sb.WriteString(fmt.Sprintf("| %s |", d))
+			for _, l := range levels {
+				if r, ok := resultByConc[l]; ok {
+					if r.errors > 0 {
+						sb.WriteString(fmt.Sprintf(" %.2f* |", r.throughput))
+					} else {
+						sb.WriteString(fmt.Sprintf(" %.2f |", r.throughput))
+					}
+				} else {
+					sb.WriteString(" - |")
+				}
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n*\\* indicates errors occurred*\n\n")
+	}
 }
