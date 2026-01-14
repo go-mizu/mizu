@@ -1,0 +1,22 @@
+services:
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    ports:
+      - "9200:9200"   # REST API
+      - "9600:9600"   # Performance Analyzer
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: Admin123!
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  opensearch_data:
