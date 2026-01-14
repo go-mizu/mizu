@@ -234,11 +234,8 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	sum := hash.Sum(nil)
 	objETag := hex.EncodeToString(sum)
 
-	// Create final object.
+	// Create final object using sync.Map.
 	now := time.Now().UTC()
-
-	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	e := &entry{
 		obj: storage.Object{
@@ -259,7 +256,19 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 		data: data,
 	}
 
-	b.obj[upload.mu.Key] = e
+	// Store using sync.Map.
+	b.obj.Store(upload.mu.Key, e)
+
+	// Update sorted keys index.
+	b.keysMu.Lock()
+	key := upload.mu.Key
+	idx := sort.SearchStrings(b.sortedKeys, key)
+	if idx >= len(b.sortedKeys) || b.sortedKeys[idx] != key {
+		b.sortedKeys = append(b.sortedKeys, "")
+		copy(b.sortedKeys[idx+1:], b.sortedKeys[idx:])
+		b.sortedKeys[idx] = key
+	}
+	b.keysMu.Unlock()
 
 	// Clean up multipart upload.
 	delete(b.mpUploads, mu.UploadID)
