@@ -1,18 +1,20 @@
 // Package milvus provides a Milvus driver for the vectorize package.
 // Import this package to register the "milvus" driver.
+// Note: This implementation uses HTTP requests directly for better compatibility.
 package milvus
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
 func init() {
@@ -24,127 +26,166 @@ type Driver struct{}
 
 // Open creates a new Milvus connection.
 // DSN format: host:port (e.g., "localhost:19530")
+// The driver will use the HTTP API on the same port (v2.4.0+)
 func (d *Driver) Open(dsn string) (vectorize.DB, error) {
 	if dsn == "" {
 		return nil, vectorize.ErrInvalidDSN
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	c, err := client.NewGrpcClient(ctx, dsn)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", vectorize.ErrConnectionFailed, err)
+	// Milvus v2.4.0+ uses the same port for gRPC and HTTP API
+	baseURL := "http://" + dsn
+	if !strings.Contains(dsn, ":") {
+		baseURL = "http://" + dsn + ":19530"
 	}
 
-	return &DB{client: c}, nil
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	return &DB{client: client, baseURL: baseURL}, nil
 }
 
 // DB implements vectorize.DB for Milvus.
 type DB struct {
-	client client.Client
+	client  *http.Client
+	baseURL string
+}
+
+func (db *DB) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+	url := db.baseURL + path
+
+	var reqBody io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reqBody = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return db.client.Do(req)
 }
 
 // CreateIndex creates a new collection in Milvus.
 func (db *DB) CreateIndex(ctx context.Context, index *vectorize.Index) error {
 	// Check if collection exists
-	has, err := db.client.HasCollection(ctx, index.Name)
+	checkReq := map[string]interface{}{
+		"collectionName": index.Name,
+	}
+
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/collections/has", checkReq)
 	if err != nil {
 		return err
 	}
-	if has {
-		return vectorize.ErrIndexExists
+	defer res.Body.Close()
+
+	var checkResult map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&checkResult)
+	if data, ok := checkResult["data"].(map[string]interface{}); ok {
+		if has, ok := data["has"].(bool); ok && has {
+			return vectorize.ErrIndexExists
+		}
 	}
 
-	metricType := entity.L2
+	// Map metric type
+	metricType := "COSINE"
 	switch index.Metric {
-	case vectorize.Cosine:
-		metricType = entity.COSINE
+	case vectorize.Euclidean:
+		metricType = "L2"
 	case vectorize.DotProduct:
-		metricType = entity.IP
+		metricType = "IP"
 	}
 
-	// Create schema
-	schema := &entity.Schema{
-		CollectionName: index.Name,
-		Description:    index.Description,
-		Fields: []*entity.Field{
-			{
-				Name:       "id",
-				DataType:   entity.FieldTypeVarChar,
-				PrimaryKey: true,
-				AutoID:     false,
-				TypeParams: map[string]string{"max_length": "256"},
-			},
-			{
-				Name:       "namespace",
-				DataType:   entity.FieldTypeVarChar,
-				TypeParams: map[string]string{"max_length": "256"},
-			},
-			{
-				Name:       "metadata",
-				DataType:   entity.FieldTypeVarChar,
-				TypeParams: map[string]string{"max_length": "65535"},
-			},
-			{
-				Name:     "embedding",
-				DataType: entity.FieldTypeFloatVector,
-				TypeParams: map[string]string{
-					"dim": fmt.Sprintf("%d", index.Dimensions),
-				},
-			},
-		},
+	// Create collection with schema
+	createReq := map[string]interface{}{
+		"collectionName": index.Name,
+		"description":    index.Description,
+		"dimension":      index.Dimensions,
+		"metricType":     metricType,
+		"primaryField":   "id",
+		"vectorField":    "embedding",
 	}
 
-	if err := db.client.CreateCollection(ctx, schema, 1); err != nil {
-		return err
-	}
-
-	// Create vector index
-	idx, err := entity.NewIndexIvfFlat(metricType, 128)
+	res, err = db.doRequest(ctx, "POST", "/v2/vectordb/collections/create", createReq)
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
 
-	return db.client.CreateIndex(ctx, index.Name, "embedding", idx, false)
+	if res.StatusCode >= 400 {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to create collection: %s", string(body))
+	}
+
+	return nil
 }
 
 // GetIndex retrieves collection information.
 func (db *DB) GetIndex(ctx context.Context, name string) (*vectorize.Index, error) {
-	has, err := db.client.HasCollection(ctx, name)
+	descReq := map[string]interface{}{
+		"collectionName": name,
+	}
+
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/collections/describe", descReq)
 	if err != nil {
 		return nil, err
 	}
-	if !has {
+	defer res.Body.Close()
+
+	if res.StatusCode == 404 {
 		return nil, vectorize.ErrIndexNotFound
 	}
 
-	col, err := db.client.DescribeCollection(ctx, name)
-	if err != nil {
-		return nil, err
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
+
+	// Check for error in response
+	if code, ok := result["code"].(float64); ok && code != 0 {
+		return nil, vectorize.ErrIndexNotFound
 	}
 
 	idx := &vectorize.Index{
-		Name:        name,
-		Description: col.Schema.Description,
-		Metric:      vectorize.Euclidean, // Default
+		Name:   name,
+		Metric: vectorize.Cosine,
 	}
 
-	// Get dimensions from schema
-	for _, field := range col.Schema.Fields {
-		if field.Name == "embedding" {
-			if dimStr, ok := field.TypeParams["dim"]; ok {
-				fmt.Sscanf(dimStr, "%d", &idx.Dimensions)
+	if data, ok := result["data"].(map[string]interface{}); ok {
+		if desc, ok := data["description"].(string); ok {
+			idx.Description = desc
+		}
+		if fields, ok := data["fields"].([]interface{}); ok {
+			for _, f := range fields {
+				field := f.(map[string]interface{})
+				if fieldName, ok := field["name"].(string); ok && fieldName == "embedding" {
+					if params, ok := field["params"].(map[string]interface{}); ok {
+						if dim, ok := params["dim"].(float64); ok {
+							idx.Dimensions = int(dim)
+						}
+					}
+				}
 			}
 		}
 	}
 
 	// Get stats
-	stats, err := db.client.GetCollectionStatistics(ctx, name)
+	statsReq := map[string]interface{}{
+		"collectionName": name,
+	}
+	statsRes, err := db.doRequest(ctx, "POST", "/v2/vectordb/collections/get_stats", statsReq)
 	if err == nil {
-		for k, v := range stats {
-			if k == "row_count" {
-				fmt.Sscanf(v, "%d", &idx.VectorCount)
+		defer statsRes.Body.Close()
+		var statsResult map[string]interface{}
+		json.NewDecoder(statsRes.Body).Decode(&statsResult)
+		if data, ok := statsResult["data"].(map[string]interface{}); ok {
+			if count, ok := data["rowCount"].(float64); ok {
+				idx.VectorCount = int64(count)
 			}
 		}
 	}
@@ -154,18 +195,26 @@ func (db *DB) GetIndex(ctx context.Context, name string) (*vectorize.Index, erro
 
 // ListIndexes returns all collections.
 func (db *DB) ListIndexes(ctx context.Context) ([]*vectorize.Index, error) {
-	collections, err := db.client.ListCollections(ctx)
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/collections/list", map[string]interface{}{})
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 
-	indexes := make([]*vectorize.Index, 0, len(collections))
-	for _, col := range collections {
-		idx, err := db.GetIndex(ctx, col.Name)
-		if err != nil {
-			continue
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
+
+	indexes := make([]*vectorize.Index, 0)
+	if data, ok := result["data"].([]interface{}); ok {
+		for _, name := range data {
+			if nameStr, ok := name.(string); ok {
+				idx, err := db.GetIndex(ctx, nameStr)
+				if err != nil {
+					continue
+				}
+				indexes = append(indexes, idx)
+			}
 		}
-		indexes = append(indexes, idx)
 	}
 
 	return indexes, nil
@@ -173,15 +222,24 @@ func (db *DB) ListIndexes(ctx context.Context) ([]*vectorize.Index, error) {
 
 // DeleteIndex removes a collection.
 func (db *DB) DeleteIndex(ctx context.Context, name string) error {
-	has, err := db.client.HasCollection(ctx, name)
+	dropReq := map[string]interface{}{
+		"collectionName": name,
+	}
+
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/collections/drop", dropReq)
 	if err != nil {
 		return err
 	}
-	if !has {
+	defer res.Body.Close()
+
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
+
+	if code, ok := result["code"].(float64); ok && code != 0 {
 		return vectorize.ErrIndexNotFound
 	}
 
-	return db.client.DropCollection(ctx, name)
+	return nil
 }
 
 // Insert adds vectors to a collection.
@@ -190,28 +248,38 @@ func (db *DB) Insert(ctx context.Context, indexName string, vectors []*vectorize
 		return nil
 	}
 
-	ids := make([]string, len(vectors))
-	namespaces := make([]string, len(vectors))
-	metadatas := make([]string, len(vectors))
-	embeddings := make([][]float32, len(vectors))
-
+	data := make([]map[string]interface{}, len(vectors))
 	for i, v := range vectors {
-		ids[i] = v.ID
-		namespaces[i] = v.Namespace
+		data[i] = map[string]interface{}{
+			"id":        v.ID,
+			"embedding": v.Values,
+		}
+		if v.Namespace != "" {
+			data[i]["namespace"] = v.Namespace
+		}
 		if v.Metadata != nil {
 			metaJSON, _ := json.Marshal(v.Metadata)
-			metadatas[i] = string(metaJSON)
+			data[i]["metadata"] = string(metaJSON)
 		}
-		embeddings[i] = v.Values
 	}
 
-	idCol := entity.NewColumnVarChar("id", ids)
-	nsCol := entity.NewColumnVarChar("namespace", namespaces)
-	metaCol := entity.NewColumnVarChar("metadata", metadatas)
-	embCol := entity.NewColumnFloatVector("embedding", len(vectors[0].Values), embeddings)
+	insertReq := map[string]interface{}{
+		"collectionName": indexName,
+		"data":           data,
+	}
 
-	_, err := db.client.Insert(ctx, indexName, "", idCol, nsCol, metaCol, embCol)
-	return err
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/entities/insert", insertReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 400 {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to insert vectors: %s", string(body))
+	}
+
+	return nil
 }
 
 // Upsert adds or updates vectors.
@@ -220,28 +288,33 @@ func (db *DB) Upsert(ctx context.Context, indexName string, vectors []*vectorize
 		return nil
 	}
 
-	ids := make([]string, len(vectors))
-	namespaces := make([]string, len(vectors))
-	metadatas := make([]string, len(vectors))
-	embeddings := make([][]float32, len(vectors))
-
+	data := make([]map[string]interface{}, len(vectors))
 	for i, v := range vectors {
-		ids[i] = v.ID
-		namespaces[i] = v.Namespace
+		data[i] = map[string]interface{}{
+			"id":        v.ID,
+			"embedding": v.Values,
+		}
+		if v.Namespace != "" {
+			data[i]["namespace"] = v.Namespace
+		}
 		if v.Metadata != nil {
 			metaJSON, _ := json.Marshal(v.Metadata)
-			metadatas[i] = string(metaJSON)
+			data[i]["metadata"] = string(metaJSON)
 		}
-		embeddings[i] = v.Values
 	}
 
-	idCol := entity.NewColumnVarChar("id", ids)
-	nsCol := entity.NewColumnVarChar("namespace", namespaces)
-	metaCol := entity.NewColumnVarChar("metadata", metadatas)
-	embCol := entity.NewColumnFloatVector("embedding", len(vectors[0].Values), embeddings)
+	upsertReq := map[string]interface{}{
+		"collectionName": indexName,
+		"data":           data,
+	}
 
-	_, err := db.client.Upsert(ctx, indexName, "", idCol, nsCol, metaCol, embCol)
-	return err
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/entities/upsert", upsertReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	return nil
 }
 
 // Search finds similar vectors.
@@ -253,76 +326,65 @@ func (db *DB) Search(ctx context.Context, indexName string, vector []float32, op
 		opts.TopK = 10
 	}
 
-	// Load collection for search
-	if err := db.client.LoadCollection(ctx, indexName, false); err != nil {
-		if !strings.Contains(err.Error(), "already loaded") {
-			return nil, err
-		}
+	searchReq := map[string]interface{}{
+		"collectionName": indexName,
+		"data":           [][]float32{vector},
+		"annsField":      "embedding",
+		"limit":          opts.TopK,
 	}
 
-	// Build search parameters
-	sp, err := entity.NewIndexIvfFlatSearchParam(16)
+	if opts.Namespace != "" {
+		searchReq["filter"] = fmt.Sprintf("namespace == \"%s\"", opts.Namespace)
+	}
+
+	outputFields := []string{"id"}
+	if opts.ReturnMetadata {
+		outputFields = append(outputFields, "namespace", "metadata")
+	}
+	searchReq["outputFields"] = outputFields
+
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/entities/search", searchReq)
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 
-	// Prepare query vector
-	vectors := []entity.Vector{entity.FloatVector(vector)}
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
 
-	// Execute search
-	outputFields := []string{"id", "namespace", "metadata"}
-	results, err := db.client.Search(
-		ctx,
-		indexName,
-		nil, // partitions
-		"",  // expression
-		outputFields,
-		vectors,
-		"embedding",
-		entity.L2,
-		opts.TopK,
-		sp,
-	)
-	if err != nil {
-		return nil, err
-	}
+	matches := make([]*vectorize.Match, 0)
+	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
+		// First result set (for single query vector)
+		if resultSet, ok := data[0].([]interface{}); ok {
+			for _, item := range resultSet {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					match := &vectorize.Match{}
 
-	if len(results) == 0 {
-		return []*vectorize.Match{}, nil
-	}
+					if id, ok := itemMap["id"].(string); ok {
+						match.ID = id
+					}
+					if distance, ok := itemMap["distance"].(float64); ok {
+						// Convert distance to similarity score
+						match.Score = float32(1.0 / (1.0 + distance))
+					}
+					if score, ok := itemMap["score"].(float64); ok {
+						match.Score = float32(score)
+					}
 
-	matches := make([]*vectorize.Match, 0, results[0].ResultCount)
-	for i := 0; i < results[0].ResultCount; i++ {
-		match := &vectorize.Match{
-			Score: results[0].Scores[i],
-		}
-
-		// Extract fields
-		for _, field := range results[0].Fields {
-			switch field.Name() {
-			case "id":
-				if col, ok := field.(*entity.ColumnVarChar); ok {
-					val, _ := col.ValueByIdx(i)
-					match.ID = val
-				}
-			case "metadata":
-				if opts.ReturnMetadata {
-					if col, ok := field.(*entity.ColumnVarChar); ok {
-						val, _ := col.ValueByIdx(i)
-						if val != "" {
-							json.Unmarshal([]byte(val), &match.Metadata)
+					if opts.ReturnMetadata {
+						if metaStr, ok := itemMap["metadata"].(string); ok && metaStr != "" {
+							json.Unmarshal([]byte(metaStr), &match.Metadata)
 						}
 					}
+
+					if opts.ScoreThreshold > 0 && match.Score < opts.ScoreThreshold {
+						continue
+					}
+
+					matches = append(matches, match)
 				}
 			}
 		}
-
-		// Apply score threshold
-		if opts.ScoreThreshold > 0 && match.Score < opts.ScoreThreshold {
-			continue
-		}
-
-		matches = append(matches, match)
 	}
 
 	return matches, nil
@@ -334,67 +396,48 @@ func (db *DB) Get(ctx context.Context, indexName string, ids []string) ([]*vecto
 		return nil, nil
 	}
 
-	// Load collection
-	if err := db.client.LoadCollection(ctx, indexName, false); err != nil {
-		if !strings.Contains(err.Error(), "already loaded") {
-			return nil, err
-		}
+	getReq := map[string]interface{}{
+		"collectionName": indexName,
+		"id":             ids,
+		"outputFields":   []string{"id", "namespace", "metadata", "embedding"},
 	}
 
-	// Build expression
-	expr := fmt.Sprintf("id in [\"%s\"]", strings.Join(ids, "\",\""))
-
-	results, err := db.client.Query(
-		ctx,
-		indexName,
-		nil, // partitions
-		expr,
-		[]string{"id", "namespace", "metadata", "embedding"},
-	)
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/entities/get", getReq)
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
+
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
 
 	vectors := make([]*vectorize.Vector, 0)
-	if len(results) == 0 {
-		return vectors, nil
-	}
+	if data, ok := result["data"].([]interface{}); ok {
+		for _, item := range data {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				vec := &vectorize.Vector{}
 
-	// Find number of results
-	numResults := 0
-	for _, col := range results {
-		numResults = col.Len()
-		break
-	}
-
-	for i := 0; i < numResults; i++ {
-		vec := &vectorize.Vector{}
-
-		for _, col := range results {
-			switch col.Name() {
-			case "id":
-				if c, ok := col.(*entity.ColumnVarChar); ok {
-					vec.ID, _ = c.ValueByIdx(i)
+				if id, ok := itemMap["id"].(string); ok {
+					vec.ID = id
 				}
-			case "namespace":
-				if c, ok := col.(*entity.ColumnVarChar); ok {
-					vec.Namespace, _ = c.ValueByIdx(i)
+				if ns, ok := itemMap["namespace"].(string); ok {
+					vec.Namespace = ns
 				}
-			case "metadata":
-				if c, ok := col.(*entity.ColumnVarChar); ok {
-					val, _ := c.ValueByIdx(i)
-					if val != "" {
-						json.Unmarshal([]byte(val), &vec.Metadata)
+				if metaStr, ok := itemMap["metadata"].(string); ok && metaStr != "" {
+					json.Unmarshal([]byte(metaStr), &vec.Metadata)
+				}
+				if emb, ok := itemMap["embedding"].([]interface{}); ok {
+					vec.Values = make([]float32, len(emb))
+					for i, v := range emb {
+						if f, ok := v.(float64); ok {
+							vec.Values[i] = float32(f)
+						}
 					}
 				}
-			case "embedding":
-				if c, ok := col.(*entity.ColumnFloatVector); ok {
-					vec.Values = c.Data()[i]
-				}
+
+				vectors = append(vectors, vec)
 			}
 		}
-
-		vectors = append(vectors, vec)
 	}
 
 	return vectors, nil
@@ -406,17 +449,36 @@ func (db *DB) Delete(ctx context.Context, indexName string, ids []string) error 
 		return nil
 	}
 
-	expr := fmt.Sprintf("id in [\"%s\"]", strings.Join(ids, "\",\""))
-	return db.client.Delete(ctx, indexName, "", expr)
+	deleteReq := map[string]interface{}{
+		"collectionName": indexName,
+		"id":             ids,
+	}
+
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/entities/delete", deleteReq)
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+
+	return nil
 }
 
 // Ping checks the connection.
 func (db *DB) Ping(ctx context.Context) error {
-	_, err := db.client.ListCollections(ctx)
-	return err
+	// Milvus v2.4.0+ requires POST for most endpoints
+	res, err := db.doRequest(ctx, "POST", "/v2/vectordb/collections/list", map[string]interface{}{})
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+	if res.StatusCode >= 400 {
+		return fmt.Errorf("ping failed: status %d", res.StatusCode)
+	}
+	return nil
 }
 
 // Close releases resources.
 func (db *DB) Close() error {
-	return db.client.Close()
+	// HTTP client doesn't require explicit close
+	return nil
 }

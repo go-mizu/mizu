@@ -19,7 +19,7 @@ services:
 
   # Milvus - Scalable vector database
   milvus:
-    image: milvusdb/milvus:latest
+    image: milvusdb/milvus:v2.4.0
     ports:
       - "19530:19530"
       - "9091:9091"

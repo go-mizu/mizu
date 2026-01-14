@@ -1,0 +1,86 @@
+// Package bench provides benchmarking utilities for vectorize drivers.
+package bench
+
+import (
+	"time"
+)
+
+// Config holds benchmark configuration.
+type Config struct {
+	// Dimensions is the vector dimension size.
+	Dimensions int
+	// DatasetSize is the number of vectors to generate.
+	DatasetSize int
+	// BatchSize is the batch size for insert operations.
+	BatchSize int
+	// SearchIterations is the number of search queries to run.
+	SearchIterations int
+	// WarmupIterations is the number of warmup iterations.
+	WarmupIterations int
+	// TopK is the number of results to return from search.
+	TopK int
+	// OutputDir is the directory for reports.
+	OutputDir string
+	// Drivers is the list of drivers to benchmark.
+	Drivers []string
+	// Timeout is the timeout for operations.
+	Timeout time.Duration
+}
+
+// DefaultConfig returns sensible defaults.
+func DefaultConfig() *Config {
+	return &Config{
+		Dimensions:       384,
+		DatasetSize:      10000,
+		BatchSize:        100,
+		SearchIterations: 1000,
+		WarmupIterations: 100,
+		TopK:             10,
+		OutputDir:        "./pkg/vectorize/report",
+		Drivers:          nil, // nil means all
+		Timeout:          30 * time.Second,
+	}
+}
+
+// DriverConfig holds connection info for a driver.
+type DriverConfig struct {
+	Name    string
+	DSN     string
+	Enabled bool
+}
+
+// AllDriverConfigs returns configurations for all supported drivers.
+func AllDriverConfigs() []DriverConfig {
+	return []DriverConfig{
+		{Name: "qdrant", DSN: "localhost:6334", Enabled: true},
+		{Name: "milvus", DSN: "localhost:19530", Enabled: true},
+		{Name: "weaviate", DSN: "http://localhost:8080", Enabled: true},
+		{Name: "chroma", DSN: "http://localhost:8000", Enabled: true},
+		{Name: "pgvector", DSN: "postgres://postgres:password@localhost:5432/vectors?sslmode=disable", Enabled: true},
+		{Name: "redis", DSN: "redis://localhost:6379", Enabled: true},
+		{Name: "opensearch", DSN: "http://localhost:9200", Enabled: true},
+		{Name: "elasticsearch", DSN: "http://localhost:9201", Enabled: true},
+		{Name: "lancedb", DSN: "./data/bench_lancedb", Enabled: true},
+		{Name: "duckdb", DSN: "./data/bench_duckdb/vectors.db", Enabled: true},
+	}
+}
+
+// FilterDrivers filters driver configs by name.
+func FilterDrivers(configs []DriverConfig, names []string) []DriverConfig {
+	if len(names) == 0 {
+		return configs
+	}
+
+	nameSet := make(map[string]bool)
+	for _, n := range names {
+		nameSet[n] = true
+	}
+
+	var filtered []DriverConfig
+	for _, c := range configs {
+		if nameSet[c.Name] {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
