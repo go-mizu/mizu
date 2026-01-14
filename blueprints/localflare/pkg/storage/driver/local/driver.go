@@ -3,7 +3,7 @@ package local
 import (
 	"context"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
 // driver implements storage.Driver for the local backend.

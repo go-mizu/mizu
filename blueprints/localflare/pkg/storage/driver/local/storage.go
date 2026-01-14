@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/blueprints/drive/lib/storage"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
 // Open creates a Storage backed by the local filesystem.

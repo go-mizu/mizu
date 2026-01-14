@@ -1,38 +1,66 @@
+# SeaweedFS S3-compatible storage
+# Based on official docs: https://github.com/seaweedfs/seaweedfs
+# Start with: docker compose up -d
+# S3 endpoint: http://localhost:8333
+# Credentials: admin / adminpassword
+
 services:
   master:
     image: chrislusf/seaweedfs:latest
-    command: master -ip=master -volumeSizeLimitMB=100
+    command: master -ip=master -ip.bind=0.0.0.0 -volumeSizeLimitMB=100
     ports:
       - "9333:9333"   # Master HTTP
       - "19333:19333" # Master gRPC
     volumes:
       - master_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9333/cluster/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   volume:
     image: chrislusf/seaweedfs:latest
-    command: volume -mserver="master:9333" -port=8080 -ip=volume
+    command: volume -mserver="master:9333" -port=8080 -ip=volume -ip.bind=0.0.0.0
     depends_on:
-      - master
+      master:
+        condition: service_healthy
     ports:
       - "8080:8080"
     volumes:
       - volume_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   filer:
     image: chrislusf/seaweedfs:latest
-    command: filer -master="master:9333" -ip=filer
+    command: filer -master="master:9333" -ip=filer -ip.bind=0.0.0.0
     depends_on:
-      - master
-      - volume
+      master:
+        condition: service_healthy
+      volume:
+        condition: service_healthy
     ports:
       - "8888:8888"   # Filer HTTP
       - "18888:18888" # Filer gRPC
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   s3:
     image: chrislusf/seaweedfs:latest
-    command: s3 -filer="filer:8888" -port=8333 -config=/etc/seaweedfs/s3.json
+    command: s3 -filer="filer:8888" -ip.bind=0.0.0.0 -port=8333 -config=/etc/seaweedfs/s3.json
     depends_on:
-      - filer
+      filer:
+        condition: service_healthy
     ports:
       - "8333:8333"   # S3 API
     volumes:
@@ -42,7 +70,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 15s
+
+  # Create test bucket on startup
+  s3-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: adminpassword
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://s3:8333 s3 mb s3://test-bucket || true;
+      echo 'Bucket created successfully';
+      exit 0;
+      "
 
 volumes:
   master_data:
