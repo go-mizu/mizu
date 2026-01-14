@@ -203,6 +203,13 @@ func AllDriverConfigs() []DriverConfig {
 			Enabled:   true,
 			Container: "all-liteio_mem-1",
 		},
+		{
+			Name:      "devnull",
+			DSN:       "devnull://test-bucket",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "", // No container - pure in-process baseline
+		},
 	}
 }
 

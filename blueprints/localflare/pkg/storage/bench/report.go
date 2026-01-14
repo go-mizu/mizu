@@ -925,9 +925,93 @@ func padRight(s string, width int) string {
 	return " " + s + strings.Repeat(" ", width-len(s)-1)
 }
 
+// generateQuickResults creates a TL;DR section showing overall winners and rankings.
+func (r *Report) generateQuickResults(sb *strings.Builder) {
+	// Count wins per driver across all benchmarks
+	wins := make(map[string]int)
+	totalBenchmarks := 0
+
+	// Group by operation to find winners
+	byOperation := make(map[string][]*Metrics)
+	for _, m := range r.Results {
+		byOperation[m.Operation] = append(byOperation[m.Operation], m)
+	}
+
+	// Find winner for each operation
+	for _, results := range byOperation {
+		if len(results) < 2 {
+			continue
+		}
+		totalBenchmarks++
+
+		// Find best throughput
+		var bestDriver string
+		var bestThroughput float64
+		for _, m := range results {
+			if m.Throughput > bestThroughput {
+				bestThroughput = m.Throughput
+				bestDriver = m.Driver
+			}
+		}
+		if bestDriver != "" {
+			wins[bestDriver]++
+		}
+	}
+
+	if totalBenchmarks == 0 {
+		return
+	}
+
+	// Sort drivers by wins
+	type driverWins struct {
+		name string
+		wins int
+	}
+	var rankings []driverWins
+	for d, w := range wins {
+		rankings = append(rankings, driverWins{d, w})
+	}
+	sort.Slice(rankings, func(i, j int) bool {
+		return rankings[i].wins > rankings[j].wins
+	})
+
+	sb.WriteString("### Quick Results\n\n")
+
+	// Show overall winner
+	if len(rankings) > 0 {
+		winner := rankings[0]
+		winPct := float64(winner.wins) / float64(totalBenchmarks) * 100
+		sb.WriteString(fmt.Sprintf("**Overall Winner:** %s (won %d/%d benchmarks, %.0f%%)\n\n",
+			winner.name, winner.wins, totalBenchmarks, winPct))
+	}
+
+	// Show ranking table
+	sb.WriteString("| Rank | Driver | Wins | Win Rate |\n")
+	sb.WriteString("|------|--------|------|----------|\n")
+
+	for i, r := range rankings {
+		winPct := float64(r.wins) / float64(totalBenchmarks) * 100
+		medal := ""
+		switch i {
+		case 0:
+			medal = " 🥇"
+		case 1:
+			medal = " 🥈"
+		case 2:
+			medal = " 🥉"
+		}
+		sb.WriteString(fmt.Sprintf("| %d%s | %s | %d | %.0f%% |\n",
+			i+1, medal, r.name, r.wins, winPct))
+	}
+	sb.WriteString("\n")
+}
+
 // generateExecutiveSummary creates a quick overview section at the top of the report.
 func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	sb.WriteString("## Executive Summary\n\n")
+
+	// Quick Results TL;DR
+	r.generateQuickResults(sb)
 
 	// Add ASCII leader table first
 	r.generateLeaderASCIITable(sb)

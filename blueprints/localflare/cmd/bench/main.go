@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage/bench"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 )
 
 func main() {
@@ -29,8 +30,12 @@ func main() {
 		dockerStats   = flag.Bool("docker-stats", false, "Collect Docker container statistics")
 		verbose       = flag.Bool("verbose", false, "Verbose output")
 		fileCounts    = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
+		noFsync       = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")
 	)
 	flag.Parse()
+
+	// Set NoFsync for local driver (major performance improvement)
+	local.NoFsync = *noFsync
 
 	cfg := bench.DefaultConfig()
 	cfg.Iterations = *iterations
