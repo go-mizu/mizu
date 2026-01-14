@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +28,7 @@ func main() {
 		duration      = flag.Duration("duration", 0, "Duration-based mode (run each benchmark for this duration)")
 		dockerStats   = flag.Bool("docker-stats", false, "Collect Docker container statistics")
 		verbose       = flag.Bool("verbose", false, "Verbose output")
+		fileCounts    = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
 	)
 	flag.Parse()
 
@@ -51,6 +53,21 @@ func main() {
 	}
 
 	cfg.OutputFormats = strings.Split(*outputFormats, ",")
+
+	// Parse file counts
+	if *fileCounts != "" {
+		parts := strings.Split(*fileCounts, ",")
+		counts := make([]int, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if n, err := strconv.Atoi(p); err == nil && n > 0 {
+				counts = append(counts, n)
+			}
+		}
+		if len(counts) > 0 {
+			cfg.FileCounts = counts
+		}
+	}
 
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -99,12 +116,21 @@ func main() {
 	fmt.Println("=== Summary ===")
 	driverResults := make(map[string]int)
 	driverErrors := make(map[string]int)
+	driverSkipped := make(map[string]int)
 	for _, m := range report.Results {
 		driverResults[m.Driver]++
 		driverErrors[m.Driver] += m.Errors
 	}
+	for _, skip := range report.SkippedBenchmarks {
+		driverSkipped[skip.Driver]++
+	}
 	for driver, count := range driverResults {
-		fmt.Printf("  %s: %d benchmarks, %d errors\n", driver, count, driverErrors[driver])
+		skipped := driverSkipped[driver]
+		if skipped > 0 {
+			fmt.Printf("  %s: %d benchmarks, %d errors, %d skipped\n", driver, count, driverErrors[driver], skipped)
+		} else {
+			fmt.Printf("  %s: %d benchmarks, %d errors\n", driver, count, driverErrors[driver])
+		}
 	}
 
 	// Exit with error if any driver had errors

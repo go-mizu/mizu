@@ -48,6 +48,9 @@ type Config struct {
 	CompareBaseline string
 	// SaveBaseline saves results as baseline for future comparisons.
 	SaveBaseline string
+
+	// FileCounts is the list of file counts to benchmark (e.g., 1, 10, 100, 1000, 10000, 100000).
+	FileCounts []int
 }
 
 // DefaultConfig returns sensible defaults.
@@ -69,6 +72,7 @@ func DefaultConfig() *Config {
 		Duration:          0,  // Iteration-based by default
 		MinIterations:     10, // Minimum iterations in duration mode
 		OutputFormats:     []string{"markdown", "json"}, // Default outputs
+		FileCounts:        []int{1, 10, 100, 1000, 10000}, // File count benchmarks
 	}
 }
 
