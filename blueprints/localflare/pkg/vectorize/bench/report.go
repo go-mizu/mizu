@@ -20,14 +20,21 @@ type Report struct {
 
 // DriverStats holds aggregated stats for a driver.
 type DriverStats struct {
-	Driver         string  `json:"driver"`
-	Available      bool    `json:"available"`
-	ConnectionTime int64   `json:"connection_time_ms"`
+	Driver           string  `json:"driver"`
+	Available        bool    `json:"available"`
+	ConnectionTime   int64   `json:"connection_time_ms"`
 	InsertThroughput float64 `json:"insert_throughput"`
-	SearchP50      int64   `json:"search_p50_us"`
-	SearchP99      int64   `json:"search_p99_us"`
-	SearchQPS      float64 `json:"search_qps"`
-	TotalErrors    int     `json:"total_errors"`
+	SearchP50        int64   `json:"search_p50_us"`
+	SearchP99        int64   `json:"search_p99_us"`
+	SearchQPS        float64 `json:"search_qps"`
+	TotalErrors      int     `json:"total_errors"`
+	// Docker container stats (for server-based drivers)
+	MemoryUsageMB    float64 `json:"memory_usage_mb"`
+	MemoryLimitMB    float64 `json:"memory_limit_mb"`
+	MemoryPercent    float64 `json:"memory_percent"`
+	CPUPercent       float64 `json:"cpu_percent"`
+	DiskUsageMB      float64 `json:"disk_usage_mb"`
+	IsEmbedded       bool    `json:"is_embedded"`
 }
 
 // NewReport creates a new report.
@@ -147,6 +154,50 @@ func (r *Report) GenerateMarkdown() string {
 			stats.SearchP99,
 			stats.SearchQPS,
 			stats.TotalErrors,
+		))
+	}
+	sb.WriteString("\n")
+
+	// Resource usage table
+	sb.WriteString("## Resource Usage (Docker Containers)\n\n")
+	sb.WriteString("| Driver | Type | Memory (MB) | Memory Limit (MB) | Memory % | CPU % | Disk (MB) |\n")
+	sb.WriteString("|--------|------|-------------|-------------------|----------|-------|----------|\n")
+
+	for _, d := range drivers {
+		stats := r.DriverStats[d]
+		driverType := "Server"
+		if stats.IsEmbedded {
+			driverType = "Embedded"
+		}
+
+		memStr := fmt.Sprintf("%.1f", stats.MemoryUsageMB)
+		limitStr := fmt.Sprintf("%.1f", stats.MemoryLimitMB)
+		memPctStr := fmt.Sprintf("%.1f%%", stats.MemoryPercent)
+		cpuStr := fmt.Sprintf("%.2f%%", stats.CPUPercent)
+		diskStr := fmt.Sprintf("%.1f", stats.DiskUsageMB)
+
+		if stats.IsEmbedded {
+			memStr = "N/A"
+			limitStr = "N/A"
+			memPctStr = "N/A"
+			cpuStr = "N/A"
+			diskStr = "local"
+		} else if stats.MemoryUsageMB == 0 {
+			memStr = "-"
+			limitStr = "-"
+			memPctStr = "-"
+			cpuStr = "-"
+			diskStr = "-"
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+			stats.Driver,
+			driverType,
+			memStr,
+			limitStr,
+			memPctStr,
+			cpuStr,
+			diskStr,
 		))
 	}
 	sb.WriteString("\n")
