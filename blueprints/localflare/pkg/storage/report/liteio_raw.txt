@@ -8,3 +8,36 @@ BenchmarkWrite/liteio/Medium_64KB-10       	    2108	   1102120 ns/op	  59.46 MB
 BenchmarkWrite/liteio/Standard_1MB-10      	     547	   3905151 ns/op	 268.51 MB/s	   75771 B/op	     562 allocs/op
 PASS
 ok  	github.com/go-mizu/blueprints/localflare/pkg/storage/bench	18.386s
+goos: darwin
+goarch: arm64
+pkg: github.com/go-mizu/blueprints/localflare/pkg/storage/bench
+cpu: Apple M4
+BenchmarkRead/liteio/Small_1KB-10         	    8649	    273376 ns/op	   3.75 MB/s	   35652 B/op	     508 allocs/op
+BenchmarkRead/liteio/Medium_64KB-10       	    6840	    326117 ns/op	 200.96 MB/s	   35621 B/op	     508 allocs/op
+BenchmarkRead/liteio/Standard_1MB-10      	    2190	   1081535 ns/op	 969.53 MB/s	   35603 B/op	     508 allocs/op
+BenchmarkStat/liteio/Exists-10            	   13003	    186399 ns/op	   33736 B/op	     475 allocs/op
+BenchmarkStat/liteio/NotExists-10         	   10000	    240614 ns/op	   39013 B/op	     496 allocs/op
+BenchmarkDelete/liteio/Single-10          	    7543	    336105 ns/op	   33103 B/op	     457 allocs/op
+BenchmarkDelete/liteio/NonExistent-10     	    8054	    275580 ns/op	   33008 B/op	     459 allocs/op
+BenchmarkCopy/liteio/SameBucket_Small_1KB-10         	    3487	    658600 ns/op	   1.55 MB/s	   81039 B/op	     544 allocs/op
+BenchmarkCopy/liteio/SameBucket_Standard_1MB-10      	     897	   2427596 ns/op	 431.94 MB/s	   81209 B/op	     544 allocs/op
+BenchmarkList/liteio/10_Objects-10                   	    5216	    455609 ns/op	   68108 B/op	    1089 allocs/op
+BenchmarkList/liteio/50_Objects-10                   	    3036	    812742 ns/op	  169184 B/op	    3292 allocs/op
+BenchmarkList/liteio/100_Objects-10                  	    2244	   1069869 ns/op	  296512 B/op	    6044 allocs/op
+BenchmarkList/liteio/Prefix_50_of_200-10             	    2890	    808981 ns/op	  171174 B/op	    3293 allocs/op
+PASS
+ok  	github.com/go-mizu/blueprints/localflare/pkg/storage/bench	72.645s
+goos: darwin
+goarch: arm64
+pkg: github.com/go-mizu/blueprints/localflare/pkg/storage/bench
+cpu: Apple M4
+BenchmarkParallelWrite/liteio/C1-10      	    3675	    599204 ns/op	 109.37 MB/s	   76535 B/op	     562 allocs/op
+BenchmarkParallelWrite/liteio/C10-10     	    4015	    606344 ns/op	 108.08 MB/s	   74816 B/op	     561 allocs/op
+BenchmarkParallelWrite/liteio/C25-10     	    3980	    729460 ns/op	  89.84 MB/s	   74543 B/op	     559 allocs/op
+BenchmarkParallelRead/liteio/C1-10       	   13033	    191367 ns/op	 342.46 MB/s	   36038 B/op	     508 allocs/op
+BenchmarkParallelRead/liteio/C10-10      	   14862	    161515 ns/op	 405.76 MB/s	   35782 B/op	     508 allocs/op
+BenchmarkParallelRead/liteio/C25-10      	   17288	    160828 ns/op	 407.49 MB/s	   35646 B/op	     506 allocs/op
+BenchmarkMultipart/liteio/15MB_3Parts-10 	      28	  79069786 ns/op	 198.92 MB/s	  355780 B/op	    2882 allocs/op
+BenchmarkMultipart/liteio/25MB_5Parts-10 	      18	 135055150 ns/op	 194.10 MB/s	  500339 B/op	    4036 allocs/op
+PASS
+ok  	github.com/go-mizu/blueprints/localflare/pkg/storage/bench	56.445s
