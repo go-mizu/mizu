@@ -8,11 +8,34 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 	"github.com/go-mizu/mizu"
 )
+
+// s3ResponseBufferSize is the buffer size for HTTP response streaming.
+// Using 512KB for optimal balance between memory and throughput.
+const s3ResponseBufferSize = 512 * 1024
+
+// s3BufferPool provides pooled buffers for HTTP response streaming.
+var s3BufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, s3ResponseBufferSize)
+		return &buf
+	},
+}
+
+func getS3Buffer() []byte {
+	return *s3BufferPool.Get().(*[]byte)
+}
+
+func putS3Buffer(buf []byte) {
+	if cap(buf) >= s3ResponseBufferSize {
+		s3BufferPool.Put(&buf)
+	}
+}
 
 // handleObject handles object level operations mounted at:
 //
@@ -194,7 +217,10 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 	// For GET we stream the body; for HEAD the router dispatches to handleHeadObject
 	// so we do not send a body here when Method == HEAD.
 	if r.Method != http.MethodHead {
-		_, _ = io.Copy(w, rc)
+		// Use pooled buffer for optimal streaming performance.
+		buf := getS3Buffer()
+		defer putS3Buffer(buf)
+		_, _ = io.CopyBuffer(w, rc, buf)
 	}
 	return nil
 }

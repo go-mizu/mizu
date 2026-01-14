@@ -83,28 +83,24 @@ func (b *bucket) UploadPart(ctx context.Context, mu *storage.MultipartUpload, nu
 		return nil, fmt.Errorf("mem: part number %d out of range (1-10000)", number)
 	}
 
-	b.mpMu.Lock()
-	defer b.mpMu.Unlock()
-
-	upload, ok := b.mpUploads[mu.UploadID]
-	if !ok {
-		return nil, storage.ErrNotExist
-	}
-
-	// Read part data.
-	var buf bytes.Buffer
-
+	// Read part data outside lock with pre-allocation.
+	var data []byte
 	if size >= 0 {
-		if _, err := io.CopyN(&buf, src, size); err != nil && err != io.EOF {
+		// Pre-allocate exact capacity for known size.
+		data = make([]byte, size)
+		n, err := io.ReadFull(src, data)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 			return nil, err
 		}
+		data = data[:n]
 	} else {
+		var buf bytes.Buffer
 		if _, err := io.Copy(&buf, src); err != nil {
 			return nil, err
 		}
+		data = buf.Bytes()
 	}
 
-	data := buf.Bytes()
 	now := time.Now().UTC()
 
 	// Compute ETag for this part as MD5 hex.
@@ -118,7 +114,15 @@ func (b *bucket) UploadPart(ctx context.Context, mu *storage.MultipartUpload, nu
 		lastModified: now,
 	}
 
+	// Short lock to update upload state.
+	b.mpMu.Lock()
+	upload, ok := b.mpUploads[mu.UploadID]
+	if !ok {
+		b.mpMu.Unlock()
+		return nil, storage.ErrNotExist
+	}
 	upload.parts[number] = pd
+	b.mpMu.Unlock()
 
 	return &storage.PartInfo{
 		Number:       number,
@@ -206,21 +210,25 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 		return sortedParts[i].Number < sortedParts[j].Number
 	})
 
-	// Concatenate part data in order and compute MD5 of the full object.
-	var finalData bytes.Buffer
-	hash := md5.New()
-
+	// Pre-calculate total size for single allocation.
+	totalSize := 0
 	for _, part := range sortedParts {
 		pd, ok := upload.parts[part.Number]
 		if !ok {
 			return nil, fmt.Errorf("mem: part %d not found", part.Number)
 		}
-		if _, err := finalData.Write(pd.data); err != nil {
-			return nil, fmt.Errorf("mem: concatenate part %d: %w", part.Number, err)
-		}
-		if _, err := hash.Write(pd.data); err != nil {
-			return nil, fmt.Errorf("mem: hash part %d: %w", part.Number, err)
-		}
+		totalSize += len(pd.data)
+	}
+
+	// Single allocation for final data.
+	data := make([]byte, 0, totalSize)
+	hash := md5.New()
+
+	// Concatenate part data in order and compute MD5.
+	for _, part := range sortedParts {
+		pd := upload.parts[part.Number]
+		data = append(data, pd.data...)
+		hash.Write(pd.data)
 	}
 
 	sum := hash.Sum(nil)
@@ -228,7 +236,6 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 
 	// Create final object.
 	now := time.Now().UTC()
-	data := finalData.Bytes()
 
 	b.mu.Lock()
 	defer b.mu.Unlock()

@@ -12,10 +12,32 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
+
+// Buffer pool for optimized I/O operations.
+// Using 1MB buffers for optimal throughput on modern storage.
+const defaultBufferSize = 1024 * 1024
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, defaultBufferSize)
+		return &buf
+	},
+}
+
+func getBuffer() []byte {
+	return *bufferPool.Get().(*[]byte)
+}
+
+func putBuffer(buf []byte) {
+	if cap(buf) >= defaultBufferSize {
+		bufferPool.Put(&buf)
+	}
+}
 
 // Open creates a Storage backed by the local filesystem.
 //
@@ -363,7 +385,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		_ = os.Remove(tmpName)
 	}()
 
-	_, err = io.Copy(tmp, src)
+	// Use pooled buffer for optimized I/O
+	buf := getBuffer()
+	defer putBuffer(buf)
+
+	_, err = io.CopyBuffer(tmp, src, buf)
 	if err != nil {
 		return nil, fmt.Errorf("local: write %q: %w", key, err)
 	}
@@ -916,7 +942,11 @@ func copyFile(src, dst string) (err error) {
 		}
 	}()
 
-	if _, err = io.Copy(out, in); err != nil {
+	// Use pooled buffer for optimized I/O
+	buf := getBuffer()
+	defer putBuffer(buf)
+
+	if _, err = io.CopyBuffer(out, in, buf); err != nil {
 		return err
 	}
 	return out.Sync()
