@@ -433,6 +433,9 @@ func (r *Report) generateMarkdown() string {
 	sb.WriteString(fmt.Sprintf("**Go Version:** %s\n\n", runtime.Version()))
 	sb.WriteString(fmt.Sprintf("**Platform:** %s/%s\n\n", runtime.GOOS, runtime.GOARCH))
 
+	// Executive Summary - generate first for quick insights
+	r.generateExecutiveSummary(&sb)
+
 	// Configuration
 	if r.Config != nil {
 		sb.WriteString("## Configuration\n\n")
@@ -517,23 +520,65 @@ func (r *Report) generateMarkdown() string {
 		r.writeBarChart(&sb, results)
 	}
 
-	// Docker stats
+	// Docker stats - enhanced with more details
 	if len(r.DockerStats) > 0 {
 		sb.WriteString("## Resource Usage\n\n")
-		sb.WriteString("| Driver | Memory | CPU | Disk |\n")
-		sb.WriteString("|--------|--------|-----|------|\n")
+		sb.WriteString("| Driver | Memory | RSS | Cache | CPU | Volume | Block I/O |\n")
+		sb.WriteString("|--------|--------|-----|-------|-----|--------|----------|\n")
 
 		for _, d := range driverList {
 			if stats, ok := r.DockerStats[d]; ok {
-				disk := "-"
-				if stats.DiskUsage > 0 {
-					disk = fmt.Sprintf("%.1f MB", stats.DiskUsage)
+				// Format memory
+				mem := stats.MemoryUsage
+				if mem == "" {
+					mem = "-"
 				}
-				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %s |\n",
-					d, stats.MemoryUsage, stats.CPUPercent, disk))
+
+				// Format RSS (actual application memory)
+				rss := "-"
+				if stats.MemoryRSSMB > 0 {
+					rss = fmt.Sprintf("%.1f MB", stats.MemoryRSSMB)
+				}
+
+				// Format cache (page cache for disk drivers)
+				cache := "-"
+				if stats.MemoryCacheMB > 0 {
+					cache = fmt.Sprintf("%.1f MB", stats.MemoryCacheMB)
+				}
+
+				// Format CPU
+				cpu := fmt.Sprintf("%.1f%%", stats.CPUPercent)
+
+				// Format volume size
+				vol := "-"
+				if stats.VolumeSize > 0 {
+					vol = fmt.Sprintf("%.1f MB", stats.VolumeSize)
+				} else if stats.VolumeName != "" {
+					vol = "(no data)"
+				}
+
+				// Format block I/O
+				blockIO := "-"
+				if stats.BlockRead != "" || stats.BlockWrite != "" {
+					blockIO = fmt.Sprintf("%s / %s", stats.BlockRead, stats.BlockWrite)
+				}
+
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n",
+					d, mem, rss, cache, cpu, vol, blockIO))
 			}
 		}
 		sb.WriteString("\n")
+
+		// Memory analysis note
+		sb.WriteString("### Memory Analysis Note\n\n")
+		sb.WriteString("> **RSS (Resident Set Size)**: Actual application memory usage.\n")
+		sb.WriteString("> \n")
+		sb.WriteString("> **Cache**: Linux page cache from filesystem I/O. Disk-based drivers show higher ")
+		sb.WriteString("total memory because the OS caches file pages in RAM. This memory is reclaimable ")
+		sb.WriteString("and doesn't indicate a memory leak.\n")
+		sb.WriteString("> \n")
+		sb.WriteString("> Memory-based drivers (like `liteio_mem`) have minimal cache because data ")
+		sb.WriteString("stays in application memory (RSS), not filesystem cache.\n\n")
 	}
 
 	// Recommendations
@@ -607,4 +652,145 @@ func formatLatency(d time.Duration) string {
 		return fmt.Sprintf("%.1fms", float64(d.Nanoseconds())/1000000)
 	}
 	return fmt.Sprintf("%.2fs", d.Seconds())
+}
+
+// generateExecutiveSummary creates a quick overview section at the top of the report.
+func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
+	sb.WriteString("## Executive Summary\n\n")
+
+	// Collect driver statistics
+	type driverSummary struct {
+		name           string
+		totalOps       int
+		avgThroughput  float64
+		writeThroughput float64
+		readThroughput  float64
+		errors         int
+	}
+
+	summaries := make(map[string]*driverSummary)
+	categoryWinners := make(map[string]string) // category -> driver
+
+	for _, m := range r.Results {
+		if summaries[m.Driver] == nil {
+			summaries[m.Driver] = &driverSummary{name: m.Driver}
+		}
+		s := summaries[m.Driver]
+		s.totalOps++
+		s.avgThroughput += m.Throughput
+		s.errors += m.Errors
+
+		// Track category-specific throughput
+		if strings.HasPrefix(m.Operation, "Write/") && !strings.Contains(m.Operation, "Parallel") {
+			if m.Throughput > s.writeThroughput {
+				s.writeThroughput = m.Throughput
+			}
+		}
+		if strings.HasPrefix(m.Operation, "Read/") && !strings.Contains(m.Operation, "Parallel") {
+			if m.Throughput > s.readThroughput {
+				s.readThroughput = m.Throughput
+			}
+		}
+
+		// Track winners by category
+		category := strings.Split(m.Operation, "/")[0]
+		if current, exists := categoryWinners[category]; exists {
+			// Check if this driver is faster for this category
+			for _, other := range r.Results {
+				if other.Driver == current && strings.HasPrefix(other.Operation, category) {
+					if m.Throughput > other.Throughput {
+						categoryWinners[category] = m.Driver
+					}
+					break
+				}
+			}
+		} else {
+			categoryWinners[category] = m.Driver
+		}
+	}
+
+	// Quick comparison table
+	sb.WriteString("### Quick Comparison\n\n")
+	sb.WriteString("| Driver | Write (MB/s) | Read (MB/s) | Errors |\n")
+	sb.WriteString("|--------|-------------|-------------|--------|\n")
+
+	// Sort drivers for consistent output
+	var drivers []string
+	for d := range summaries {
+		drivers = append(drivers, d)
+	}
+	sort.Strings(drivers)
+
+	for _, d := range drivers {
+		s := summaries[d]
+		sb.WriteString(fmt.Sprintf("| %s | %.2f | %.2f | %d |\n",
+			s.name, s.writeThroughput, s.readThroughput, s.errors))
+	}
+	sb.WriteString("\n")
+
+	// Key findings
+	sb.WriteString("### Key Findings\n\n")
+
+	// Find best performers
+	var bestWrite, bestRead string
+	var bestWriteThroughput, bestReadThroughput float64
+	for d, s := range summaries {
+		if s.writeThroughput > bestWriteThroughput {
+			bestWriteThroughput = s.writeThroughput
+			bestWrite = d
+		}
+		if s.readThroughput > bestReadThroughput {
+			bestReadThroughput = s.readThroughput
+			bestRead = d
+		}
+	}
+
+	if bestWrite != "" {
+		sb.WriteString(fmt.Sprintf("- **Best Write Performance**: %s (%.2f MB/s)\n", bestWrite, bestWriteThroughput))
+	}
+	if bestRead != "" {
+		sb.WriteString(fmt.Sprintf("- **Best Read Performance**: %s (%.2f MB/s)\n", bestRead, bestReadThroughput))
+	}
+
+	// Check for error-prone drivers
+	for _, d := range drivers {
+		s := summaries[d]
+		if s.errors > 0 {
+			sb.WriteString(fmt.Sprintf("- **Warning**: %s had %d errors during benchmarks\n", s.name, s.errors))
+		}
+	}
+
+	// Memory insights from Docker stats
+	if len(r.DockerStats) > 0 {
+		sb.WriteString("\n### Resource Insights\n\n")
+
+		// Find highest and lowest memory usage
+		var highestMem, lowestMem string
+		var highestMemMB, lowestMemMB float64 = 0, 1e12
+
+		for name, stats := range r.DockerStats {
+			if stats.MemoryUsageMB > highestMemMB {
+				highestMemMB = stats.MemoryUsageMB
+				highestMem = name
+			}
+			if stats.MemoryUsageMB > 0 && stats.MemoryUsageMB < lowestMemMB {
+				lowestMemMB = stats.MemoryUsageMB
+				lowestMem = name
+			}
+		}
+
+		if highestMem != "" {
+			sb.WriteString(fmt.Sprintf("- **Highest Memory**: %s (%.1f MB)", highestMem, highestMemMB))
+			// Check if it's disk-based (has cache)
+			if stats, ok := r.DockerStats[highestMem]; ok && stats.MemoryCacheMB > 10 {
+				sb.WriteString(fmt.Sprintf(" - %.1f MB is page cache from disk I/O", stats.MemoryCacheMB))
+			}
+			sb.WriteString("\n")
+		}
+		if lowestMem != "" && lowestMem != highestMem {
+			sb.WriteString(fmt.Sprintf("- **Lowest Memory**: %s (%.1f MB)\n", lowestMem, lowestMemMB))
+		}
+	}
+
+	sb.WriteString("\n---\n\n")
 }
