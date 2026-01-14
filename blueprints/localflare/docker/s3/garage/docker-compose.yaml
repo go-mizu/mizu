@@ -1,0 +1,25 @@
+services:
+  garage:
+    image: dxflrs/garage:latest
+    command: server
+    ports:
+      - "3900:3900"   # S3 API
+      - "3901:3901"   # K2V API (optional)
+      - "3902:3902"   # Admin API
+      - "3903:3903"   # RPC
+    environment:
+      GARAGE_ADMIN_TOKEN: admintoken
+    volumes:
+      - garage_data:/var/lib/garage/data
+      - garage_meta:/var/lib/garage/meta
+      - ./garage.toml:/etc/garage.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3902/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  garage_data:
+  garage_meta:
