@@ -244,6 +244,43 @@ services:
       exit 0;
       "
 
+  # ============================================================================
+  # LiteIO Memory - In-memory S3-compatible storage (Go)
+  # Built from this project's cmd/liteio with memory driver
+  # Credentials: liteio / liteio123
+  # ============================================================================
+  liteio_mem:
+    build:
+      context: ../../..
+      dockerfile: docker/s3/liteio/Dockerfile
+    ports:
+      - "9201:9000"   # S3 API (mapped to 9201 to avoid conflict)
+    environment:
+      LITEIO_ACCESS_KEY: liteio
+      LITEIO_SECRET_KEY: liteio123
+      LITEIO_DRIVER: "memory://"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/ || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  liteio_mem-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      liteio_mem:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: liteio
+      AWS_SECRET_ACCESS_KEY: liteio123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://liteio_mem:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
 volumes:
   minio_data:
   rustfs_data:

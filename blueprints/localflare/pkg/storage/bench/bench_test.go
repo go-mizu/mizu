@@ -27,29 +27,6 @@ import (
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/memory"
 )
 
-// DriverConfig holds configuration for a storage driver.
-type DriverConfig struct {
-	Name           string
-	DSN            string
-	Bucket         string
-	Skip           bool
-	SkipMsg        string
-	Features       map[string]bool
-	MaxConcurrency int // Max concurrency for parallel benchmarks (0 = unlimited)
-}
-
-// BenchResult holds benchmark results for report generation.
-type BenchResult struct {
-	Driver     string        `json:"driver"`
-	Benchmark  string        `json:"benchmark"`
-	Iterations int           `json:"iterations"`
-	NsPerOp    float64       `json:"ns_per_op"`
-	MBPerSec   float64       `json:"mb_per_sec,omitempty"`
-	BytesPerOp int64         `json:"bytes_per_op"`
-	AllocsOp   int64         `json:"allocs_per_op"`
-	Extra      map[string]any `json:"extra,omitempty"`
-}
-
 // benchResults collects results for report generation.
 var (
 	benchResults   []BenchResult
