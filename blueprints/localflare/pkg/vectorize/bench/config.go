@@ -62,27 +62,40 @@ func AllDriverConfigs() []DriverConfig {
 		{Name: "redis", DSN: "redis://localhost:6379", Enabled: true},
 		{Name: "opensearch", DSN: "http://localhost:9200", Enabled: true},
 		{Name: "elasticsearch", DSN: "http://localhost:9201", Enabled: true},
+		{Name: "vald", DSN: "localhost:8081", Enabled: false}, // Disabled: NGT library crashes on arm64
+		{Name: "vespa", DSN: "http://localhost:8082", Enabled: false}, // Disabled: Vespa config server crashes
 		// Embedded drivers
 		{Name: "mem", DSN: ":memory:", Enabled: true},
+		{Name: "chromem", DSN: ":memory:", Enabled: true},
 		{Name: "sqlite", DSN: "./data/bench_sqlite/vectors.db", Enabled: true},
 		{Name: "lancedb", DSN: "./data/bench_lancedb", Enabled: true},
 		{Name: "duckdb", DSN: "./data/bench_duckdb/vectors.db", Enabled: true},
 	}
 }
 
-// FilterDrivers filters driver configs by name.
+// FilterDrivers filters driver configs by name and enabled status.
 func FilterDrivers(configs []DriverConfig, names []string) []DriverConfig {
-	if len(names) == 0 {
-		return configs
+	// First filter out disabled drivers
+	var enabled []DriverConfig
+	for _, c := range configs {
+		if c.Enabled {
+			enabled = append(enabled, c)
+		}
 	}
 
+	// If no names specified, return all enabled drivers
+	if len(names) == 0 {
+		return enabled
+	}
+
+	// Filter by name
 	nameSet := make(map[string]bool)
 	for _, n := range names {
 		nameSet[n] = true
 	}
 
 	var filtered []DriverConfig
-	for _, c := range configs {
+	for _, c := range enabled {
 		if nameSet[c.Name] {
 			filtered = append(filtered, c)
 		}

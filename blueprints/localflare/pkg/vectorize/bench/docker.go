@@ -35,8 +35,11 @@ var DriverContainerMap = map[string]string{
 	"redis":         "redis",
 	"opensearch":    "opensearch",
 	"elasticsearch": "elasticsearch",
+	"vald":          "vald",
+	"vespa":         "vespa",
 	// Embedded drivers (no Docker container)
 	"mem":     "",
+	"chromem": "",
 	"sqlite":  "",
 	"lancedb": "",
 	"duckdb":  "",
@@ -259,6 +262,8 @@ func (c *DockerStatsCollector) getVolumeName(driverName string) string {
 		"redis":         "redis_data",
 		"opensearch":    "opensearch_data",
 		"elasticsearch": "elasticsearch_data",
+		"vald":          "vald_data",
+		"vespa":         "vespa_data",
 	}
 	return volumeMap[driverName]
 }

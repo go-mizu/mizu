@@ -10,6 +10,7 @@ import (
 
 	// Import all drivers
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/chroma"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/chromem"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/duckdb"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/elasticsearch"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/lancedb"
@@ -21,6 +22,8 @@ import (
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/qdrant"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/redis"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/sqlite"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/vald"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/vespa"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver/weaviate"
 )
 
@@ -105,7 +108,7 @@ func (r *Runner) collectDockerStats(ctx context.Context, driverConfigs []DriverC
 		}
 
 		// Check if embedded driver
-		if dcfg.Name == "mem" || dcfg.Name == "sqlite" || dcfg.Name == "lancedb" || dcfg.Name == "duckdb" {
+		if dcfg.Name == "mem" || dcfg.Name == "chromem" || dcfg.Name == "sqlite" || dcfg.Name == "lancedb" || dcfg.Name == "duckdb" {
 			stats.IsEmbedded = true
 			r.logger("  %s: embedded driver (no container)", dcfg.Name)
 			continue
