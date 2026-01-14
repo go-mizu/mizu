@@ -1,12 +1,13 @@
 # Production-grade S3-compatible storage services for comprehensive testing
 # Use with: docker compose up -d
-# Individual services: docker compose up -d minio rustfs seaweedfs-s3 localstack
+# Individual services: docker compose up -d minio rustfs seaweedfs-s3 localstack liteio
 #
 # Port Summary:
 # - MinIO:      9000 (S3), 9001 (Console)
 # - RustFS:     9100 (S3), 9101 (Console)
 # - SeaweedFS:  8333 (S3), 9333 (Master), 8888 (Filer)
 # - LocalStack: 4566 (S3)
+# - LiteIO:     9200 (S3)
 
 services:
   # ============================================================================
@@ -205,9 +206,48 @@ services:
       exit 0;
       "
 
+  # ============================================================================
+  # LiteIO - Lightweight S3-compatible local storage (Go)
+  # Built from this project's cmd/liteio
+  # Credentials: liteio / liteio123
+  # ============================================================================
+  liteio:
+    build:
+      context: ../../..
+      dockerfile: docker/s3/liteio/Dockerfile
+    ports:
+      - "9200:9000"   # S3 API (mapped to 9200 to avoid conflict)
+    environment:
+      LITEIO_ACCESS_KEY: liteio
+      LITEIO_SECRET_KEY: liteio123
+    volumes:
+      - liteio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/ || exit 0"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  liteio-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      liteio:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: liteio
+      AWS_SECRET_ACCESS_KEY: liteio123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://liteio:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
 volumes:
   minio_data:
   rustfs_data:
   seaweedfs_master:
   seaweedfs_volume:
   localstack_data:
+  liteio_data:
