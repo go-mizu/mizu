@@ -23,8 +23,6 @@ const (
 	sizeXLarge  = 10 * 1024 * 1024  // 10MB
 	sizeXXLarge = 100 * 1024 * 1024 // 100MB
 
-	// Driver-specific concurrency limits
-	rustfsMaxConcurrency = 10 // RustFS has HTTP connection issues at higher concurrency
 )
 
 // Config holds benchmark configuration.
@@ -168,12 +166,11 @@ func AllDriverConfigs() []DriverConfig {
 			Container: "all-minio-1",
 		},
 		{
-			Name:           "rustfs",
-			DSN:            "s3://rustfsadmin:rustfsadmin@localhost:9100/test-bucket?insecure=true&force_path_style=true",
-			Bucket:         "test-bucket",
-			Enabled:        true,
-			Container:      "all-rustfs-1",
-			MaxConcurrency: rustfsMaxConcurrency, // RustFS has HTTP connection issues at higher concurrency
+			Name:      "rustfs",
+			DSN:       "s3://rustfsadmin:rustfsadmin@localhost:9100/test-bucket?insecure=true&force_path_style=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "all-rustfs-1",
 		},
 		{
 			Name:      "seaweedfs",
