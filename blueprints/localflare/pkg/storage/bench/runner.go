@@ -282,8 +282,6 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 	operation := fmt.Sprintf("Write/%s", SizeLabel(size))
 	data := generateRandomData(size)
 
-	// Use adaptive iterations based on file size
-	iterations := r.config.IterationsForSize(size)
 	warmup := r.config.WarmupForSize(size)
 
 	// Warmup
@@ -294,23 +292,33 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 		cancel()
 	}
 
-	// Benchmark
+	// Adaptive benchmark (Go-style)
 	collector := NewCollector()
-	progress := NewProgress(operation, iterations, true)
+	benchTime := r.config.BenchTimeForSize(size)
+	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	for i := 0; i < iterations; i++ {
-		key := r.uniqueKey("write")
-		timer := NewTimer()
+	// Adaptive scaling loop - runs until target duration is reached
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		start := time.Now()
 
-		opCtx, cancel := r.opContextForSize(ctx, size)
-		_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
-		cancel()
+		// Run N iterations
+		for i := 0; i < n; i++ {
+			key := r.uniqueKey("write")
+			timer := NewTimer()
 
-		collector.RecordWithError(timer.Elapsed(), err)
-		progress.Increment()
+			opCtx, cancel := r.opContextForSize(ctx, size)
+			_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+			cancel()
+
+			collector.RecordWithError(timer.Elapsed(), err)
+		}
+
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.DoneWithStats(int64(iterations) * int64(size))
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -322,12 +330,11 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	operation := fmt.Sprintf("Read/%s", SizeLabel(size))
 	data := generateRandomData(size)
 
-	// Use adaptive iterations based on file size
-	iterations := r.config.IterationsForSize(size)
 	warmup := r.config.WarmupForSize(size)
 
-	// Pre-create objects
-	keys := make([]string, iterations)
+	// Pre-create objects (enough for adaptive benchmark)
+	numObjects := 100 // Pool of objects to read from
+	keys := make([]string, numObjects)
 	for i := range keys {
 		keys[i] = r.uniqueKey("read")
 		opCtx, cancel := r.opContextForSize(ctx, size)
@@ -346,31 +353,42 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 		cancel()
 	}
 
-	// Benchmark with TTFB tracking
+	// Adaptive benchmark with TTFB tracking
 	collector := NewCollector()
-	progress := NewProgress(operation, iterations, true)
+	benchTime := r.config.BenchTimeForSize(size)
+	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	var keyIdx uint64
 
-	for i := 0; i < iterations; i++ {
-		start := time.Now()
+	// Adaptive scaling loop
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		runStart := time.Now()
 
-		opCtx, cancel := r.opContextForSize(ctx, size)
-		rc, _, err := bucket.Open(opCtx, keys[i%len(keys)], 0, 0, nil)
-		if err == nil {
-			// Wrap reader to capture TTFB
-			ttfbReader := NewTTFBReader(rc, start)
-			io.Copy(io.Discard, ttfbReader)
-			rc.Close()
+		for i := 0; i < n; i++ {
+			idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
+			start := time.Now()
 
-			latency := time.Since(start)
-			collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
-		} else {
-			collector.RecordWithError(time.Since(start), err)
+			opCtx, cancel := r.opContextForSize(ctx, size)
+			rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
+			if err == nil {
+				// Wrap reader to capture TTFB
+				ttfbReader := NewTTFBReader(rc, start)
+				io.Copy(io.Discard, ttfbReader)
+				rc.Close()
+
+				latency := time.Since(start)
+				collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+			} else {
+				collector.RecordWithError(time.Since(start), err)
+			}
+			cancel()
 		}
-		cancel()
-		progress.Increment()
+
+		elapsed := time.Since(runStart)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.DoneWithStats(int64(iterations) * int64(size))
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -395,22 +413,29 @@ func (r *Runner) benchmarkStat(ctx context.Context, bucket storage.Bucket, drive
 		cancel()
 	}
 
-	// Benchmark
+	// Adaptive benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	for i := 0; i < r.config.Iterations; i++ {
-		timer := NewTimer()
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		start := time.Now()
 
-		opCtx, cancel := r.opContext(ctx)
-		_, err := bucket.Stat(opCtx, key, nil)
-		cancel()
+		for i := 0; i < n; i++ {
+			timer := NewTimer()
 
-		collector.RecordWithError(timer.Elapsed(), err)
-		progress.Increment()
+			opCtx, cancel := r.opContext(ctx)
+			_, err := bucket.Stat(opCtx, key, nil)
+			cancel()
+
+			collector.RecordWithError(timer.Elapsed(), err)
+		}
+
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.Done()
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 
 	metrics := collector.Metrics(operation, driver, 0)
 	r.addResult(metrics)
@@ -447,31 +472,38 @@ func (r *Runner) benchmarkList(ctx context.Context, bucket storage.Bucket, drive
 		cancel()
 	}
 
-	// Benchmark
+	// Adaptive benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	for i := 0; i < r.config.Iterations; i++ {
-		timer := NewTimer()
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		start := time.Now()
 
-		opCtx, cancel := r.opContext(ctx)
-		iter, err := bucket.List(opCtx, prefix, 0, 0, nil)
-		if err == nil {
-			for {
-				obj, err := iter.Next()
-				if err != nil || obj == nil {
-					break
+		for i := 0; i < n; i++ {
+			timer := NewTimer()
+
+			opCtx, cancel := r.opContext(ctx)
+			iter, err := bucket.List(opCtx, prefix, 0, 0, nil)
+			if err == nil {
+				for {
+					obj, err := iter.Next()
+					if err != nil || obj == nil {
+						break
+					}
 				}
+				iter.Close()
 			}
-			iter.Close()
+
+			collector.RecordWithError(timer.Elapsed(), err)
+			cancel()
 		}
 
-		collector.RecordWithError(timer.Elapsed(), err)
-		cancel()
-		progress.Increment()
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.Done()
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 
 	metrics := collector.Metrics(operation, driver, 0)
 	r.addResult(metrics)
@@ -483,31 +515,38 @@ func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, dri
 	operation := "Delete"
 	data := generateRandomData(1024)
 
-	// Pre-create objects for deletion
-	keys := make([]string, r.config.Iterations)
-	for i := range keys {
-		keys[i] = r.uniqueKey("delete")
-		opCtx, cancel := r.opContext(ctx)
-		bucket.Write(opCtx, keys[i], bytes.NewReader(data), 1024, "application/octet-stream", nil)
-		cancel()
-	}
-
-	// Benchmark
+	// Adaptive benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	for i := 0; i < r.config.Iterations; i++ {
-		timer := NewTimer()
+	for ab.ShouldContinue() {
+		n := ab.NextN()
 
-		opCtx, cancel := r.opContext(ctx)
-		err := bucket.Delete(opCtx, keys[i], nil)
-		cancel()
+		// Pre-create objects for this batch
+		keys := make([]string, n)
+		for i := range keys {
+			keys[i] = r.uniqueKey("delete")
+			opCtx, cancel := r.opContext(ctx)
+			bucket.Write(opCtx, keys[i], bytes.NewReader(data), 1024, "application/octet-stream", nil)
+			cancel()
+		}
 
-		collector.RecordWithError(timer.Elapsed(), err)
-		progress.Increment()
+		// Time only the delete operations
+		start := time.Now()
+		for i := 0; i < n; i++ {
+			timer := NewTimer()
+
+			opCtx, cancel := r.opContext(ctx)
+			err := bucket.Delete(opCtx, keys[i], nil)
+			cancel()
+
+			collector.RecordWithError(timer.Elapsed(), err)
+		}
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.Done()
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 
 	metrics := collector.Metrics(operation, driver, 0)
 	r.addResult(metrics)
@@ -529,51 +568,54 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 	benchCtx, benchCancel := context.WithTimeout(ctx, timeout)
 	defer benchCancel()
 
-	// Benchmark
+	// Adaptive benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	benchTime := r.config.BenchTimeForSize(size)
+	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
-	var completed int64
-
-	// Per-operation timeout (e.g. 10 seconds per write)
 	opTimeout := 10 * time.Second
 
-	for i := 0; i < r.config.Iterations; i++ {
-		// Check if benchmark context is done
-		select {
-		case <-benchCtx.Done():
-			r.logger("  %s: timeout after %d/%d iterations", operation, atomic.LoadInt64(&completed), r.config.Iterations)
-			goto done
-		default:
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		var wg sync.WaitGroup
+
+		start := time.Now()
+
+		for i := 0; i < n; i++ {
+			// Check if benchmark context is done
+			select {
+			case <-benchCtx.Done():
+				wg.Wait()
+				goto done
+			default:
+			}
+
+			wg.Add(1)
+			sem <- struct{}{}
+
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
+				defer opCancel()
+
+				key := r.uniqueKey("parallel-write")
+				timer := NewTimer()
+
+				_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
+				collector.RecordWithError(timer.Elapsed(), err)
+			}()
 		}
 
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			// Create per-operation context with timeout
-			opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
-			defer opCancel()
-
-			key := r.uniqueKey("parallel-write")
-			timer := NewTimer()
-
-			_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
-
-			collector.RecordWithError(timer.Elapsed(), err)
-			atomic.AddInt64(&completed, 1)
-			progress.Increment()
-		}()
+		wg.Wait()
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
 done:
-	wg.Wait()
-	progress.DoneWithStats(atomic.LoadInt64(&completed) * int64(size))
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -586,7 +628,7 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	data := generateRandomData(size)
 
 	// Pre-create objects
-	numObjects := 20
+	numObjects := 50 // Larger pool for adaptive benchmark
 	keys := make([]string, numObjects)
 	for i := range keys {
 		keys[i] = r.uniqueKey("parallel-read")
@@ -605,62 +647,64 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	benchCtx, benchCancel := context.WithTimeout(ctx, timeout)
 	defer benchCancel()
 
-	// Benchmark
+	// Adaptive benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	benchTime := r.config.BenchTimeForSize(size)
+	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	var wg sync.WaitGroup
 	var keyIdx uint64
-	var completed int64
 	sem := make(chan struct{}, concurrency)
-
-	// Per-operation timeout
 	opTimeout := 10 * time.Second
 
-	for i := 0; i < r.config.Iterations; i++ {
-		// Check if benchmark context is done
-		select {
-		case <-benchCtx.Done():
-			r.logger("  %s: timeout after %d/%d iterations", operation, atomic.LoadInt64(&completed), r.config.Iterations)
-			goto done
-		default:
-		}
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		var wg sync.WaitGroup
 
-		wg.Add(1)
-		sem <- struct{}{}
+		start := time.Now()
 
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			// Create per-operation context with timeout
-			opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
-			defer opCancel()
-
-			idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
-			start := time.Now()
-
-			rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
-			if err == nil {
-				// Wrap reader to capture TTFB
-				ttfbReader := NewTTFBReader(rc, start)
-				io.Copy(io.Discard, ttfbReader)
-				rc.Close()
-
-				latency := time.Since(start)
-				collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
-			} else {
-				collector.RecordWithError(time.Since(start), err)
+		for i := 0; i < n; i++ {
+			// Check if benchmark context is done
+			select {
+			case <-benchCtx.Done():
+				wg.Wait()
+				goto done
+			default:
 			}
 
-			atomic.AddInt64(&completed, 1)
-			progress.Increment()
-		}()
+			wg.Add(1)
+			sem <- struct{}{}
+
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
+				defer opCancel()
+
+				idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
+				opStart := time.Now()
+
+				rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
+				if err == nil {
+					ttfbReader := NewTTFBReader(rc, opStart)
+					io.Copy(io.Discard, ttfbReader)
+					rc.Close()
+
+					latency := time.Since(opStart)
+					collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+				} else {
+					collector.RecordWithError(time.Since(opStart), err)
+				}
+			}()
+		}
+
+		wg.Wait()
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
 done:
-	wg.Wait()
-	progress.DoneWithStats(atomic.LoadInt64(&completed) * int64(size))
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -816,24 +860,31 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 	for _, rng := range ranges {
 		operation := fmt.Sprintf("RangeRead/%s", rng.name)
 		collector := NewCollector()
-		progress := NewProgress(operation, r.config.Iterations, true)
+		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-		for i := 0; i < r.config.Iterations; i++ {
-			timer := NewTimer()
+		for ab.ShouldContinue() {
+			n := ab.NextN()
+			start := time.Now()
 
-			opCtx, cancel := r.opContextForSize(ctx, int(rng.length))
-			rc, _, err := bucket.Open(opCtx, key, rng.offset, rng.length, nil)
-			if err == nil {
-				io.Copy(io.Discard, rc)
-				rc.Close()
+			for i := 0; i < n; i++ {
+				timer := NewTimer()
+
+				opCtx, cancel := r.opContextForSize(ctx, int(rng.length))
+				rc, _, err := bucket.Open(opCtx, key, rng.offset, rng.length, nil)
+				if err == nil {
+					io.Copy(io.Discard, rc)
+					rc.Close()
+				}
+
+				collector.RecordWithError(timer.Elapsed(), err)
+				cancel()
 			}
 
-			collector.RecordWithError(timer.Elapsed(), err)
-			cancel()
-			progress.Increment()
+			elapsed := time.Since(start)
+			ab.RecordRun(n, elapsed)
 		}
 
-		progress.DoneWithStats(int64(r.config.Iterations) * rng.length)
+		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, int(rng.length))
 		r.addResult(metrics)
 	}
@@ -854,22 +905,31 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 		return fmt.Errorf("setup: %w", err)
 	}
 
+	// Adaptive benchmark
 	collector := NewCollector()
-	progress := NewProgress(operation, r.config.Iterations, true)
+	benchTime := r.config.BenchTimeForSize(size)
+	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	for i := 0; i < r.config.Iterations; i++ {
-		dstKey := r.uniqueKey("copy-dst")
-		timer := NewTimer()
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		start := time.Now()
 
-		opCtx, cancel := r.opContextForSize(ctx, size)
-		_, err := bucket.Copy(opCtx, dstKey, bucket.Name(), srcKey, nil)
-		cancel()
+		for i := 0; i < n; i++ {
+			dstKey := r.uniqueKey("copy-dst")
+			timer := NewTimer()
 
-		collector.RecordWithError(timer.Elapsed(), err)
-		progress.Increment()
+			opCtx, cancel := r.opContextForSize(ctx, size)
+			_, err := bucket.Copy(opCtx, dstKey, bucket.Name(), srcKey, nil)
+			cancel()
+
+			collector.RecordWithError(timer.Elapsed(), err)
+		}
+
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.DoneWithStats(int64(r.config.Iterations) * int64(size))
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
 
@@ -909,51 +969,59 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 	for _, wl := range workloads {
 		operation := fmt.Sprintf("MixedWorkload/%s", wl.name)
 		collector := NewCollector()
-		progress := NewProgress(operation, r.config.Iterations, true)
+		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-		var wg sync.WaitGroup
 		sem := make(chan struct{}, concurrency)
 		var opCounter uint64
 		var keyIdx uint64
 
-		for i := 0; i < r.config.Iterations; i++ {
-			wg.Add(1)
-			sem <- struct{}{}
+		for ab.ShouldContinue() {
+			n := ab.NextN()
+			var wg sync.WaitGroup
 
-			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
+			start := time.Now()
 
-				timer := NewTimer()
-				var err error
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				sem <- struct{}{}
 
-				op := atomic.AddUint64(&opCounter, 1) % 100
-				if int(op) < wl.readRatio {
-					// Read operation
-					idx := atomic.AddUint64(&keyIdx, 1) % uint64(len(keys))
-					opCtx, cancel := r.opContext(ctx)
-					rc, _, e := bucket.Open(opCtx, keys[idx], 0, 0, nil)
-					if e == nil {
-						io.Copy(io.Discard, rc)
-						rc.Close()
+				go func() {
+					defer wg.Done()
+					defer func() { <-sem }()
+
+					timer := NewTimer()
+					var err error
+
+					op := atomic.AddUint64(&opCounter, 1) % 100
+					if int(op) < wl.readRatio {
+						// Read operation
+						idx := atomic.AddUint64(&keyIdx, 1) % uint64(len(keys))
+						opCtx, cancel := r.opContext(ctx)
+						rc, _, e := bucket.Open(opCtx, keys[idx], 0, 0, nil)
+						if e == nil {
+							io.Copy(io.Discard, rc)
+							rc.Close()
+						}
+						cancel()
+						err = e
+					} else {
+						// Write operation
+						key := r.uniqueKey("mixed-write")
+						opCtx, cancel := r.opContext(ctx)
+						_, err = bucket.Write(opCtx, key, bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
+						cancel()
 					}
-					cancel()
-					err = e
-				} else {
-					// Write operation
-					key := r.uniqueKey("mixed-write")
-					opCtx, cancel := r.opContext(ctx)
-					_, err = bucket.Write(opCtx, key, bytes.NewReader(data), int64(objectSize), "application/octet-stream", nil)
-					cancel()
-				}
 
-				collector.RecordWithError(timer.Elapsed(), err)
-				progress.Increment()
-			}()
+					collector.RecordWithError(timer.Elapsed(), err)
+				}()
+			}
+
+			wg.Wait()
+			elapsed := time.Since(start)
+			ab.RecordRun(n, elapsed)
 		}
 
-		wg.Wait()
-		progress.DoneWithStats(int64(r.config.Iterations) * int64(objectSize))
+		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, objectSize)
 		r.addResult(metrics)
 	}
@@ -978,55 +1046,58 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 	operation := fmt.Sprintf("Multipart/%dMB_%dParts", totalSize/(1024*1024), partCount)
 	collector := NewCollector()
 
-	// Fewer iterations for multipart (it's expensive)
-	iterations := r.config.Iterations / 5
-	if iterations < 3 {
-		iterations = 3
-	}
+	// Use shorter BenchTime for multipart (expensive operation)
+	benchTime := r.config.BenchTimeForSize(totalSize)
+	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-	progress := NewProgress(operation, iterations, true)
+	for ab.ShouldContinue() {
+		n := ab.NextN()
+		start := time.Now()
 
-	for i := 0; i < iterations; i++ {
-		key := r.uniqueKey("multipart")
-		timer := NewTimer()
-		var err error
+		for i := 0; i < n; i++ {
+			key := r.uniqueKey("multipart")
+			timer := NewTimer()
+			var err error
 
-		// Init multipart upload
-		opCtx, cancel := r.opContextForSize(ctx, totalSize)
-		mu, e := mp.InitMultipart(opCtx, key, "application/octet-stream", nil)
-		cancel()
-		if e != nil {
-			err = e
-		} else {
-			// Upload parts
-			parts := make([]*storage.PartInfo, partCount)
-			for p := 0; p < partCount && err == nil; p++ {
-				opCtx, cancel := r.opContextForSize(ctx, partSize)
-				part, e := mp.UploadPart(opCtx, mu, p+1, bytes.NewReader(partData), int64(partSize), nil)
-				cancel()
-				if e != nil {
+			// Init multipart upload
+			opCtx, cancel := r.opContextForSize(ctx, totalSize)
+			mu, e := mp.InitMultipart(opCtx, key, "application/octet-stream", nil)
+			cancel()
+			if e != nil {
+				err = e
+			} else {
+				// Upload parts
+				parts := make([]*storage.PartInfo, partCount)
+				for p := 0; p < partCount && err == nil; p++ {
 					opCtx, cancel := r.opContextForSize(ctx, partSize)
-					mp.AbortMultipart(opCtx, mu, nil)
+					part, e := mp.UploadPart(opCtx, mu, p+1, bytes.NewReader(partData), int64(partSize), nil)
 					cancel()
-					err = e
-					break
+					if e != nil {
+						opCtx, cancel := r.opContextForSize(ctx, partSize)
+						mp.AbortMultipart(opCtx, mu, nil)
+						cancel()
+						err = e
+						break
+					}
+					parts[p] = part
 				}
-				parts[p] = part
+
+				// Complete
+				if err == nil {
+					opCtx, cancel := r.opContextForSize(ctx, totalSize)
+					_, err = mp.CompleteMultipart(opCtx, mu, parts, nil)
+					cancel()
+				}
 			}
 
-			// Complete
-			if err == nil {
-				opCtx, cancel := r.opContextForSize(ctx, totalSize)
-				_, err = mp.CompleteMultipart(opCtx, mu, parts, nil)
-				cancel()
-			}
+			collector.RecordWithError(timer.Elapsed(), err)
 		}
 
-		collector.RecordWithError(timer.Elapsed(), err)
-		progress.Increment()
+		elapsed := time.Since(start)
+		ab.RecordRun(n, elapsed)
 	}
 
-	progress.DoneWithStats(int64(iterations) * int64(totalSize))
+	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 	metrics := collector.Metrics(operation, driver, totalSize)
 	r.addResult(metrics)
 
@@ -1038,22 +1109,28 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 	{
 		operation := "EdgeCase/EmptyObject"
 		collector := NewCollector()
-		iterations := r.config.Iterations / 2
-		progress := NewProgress(operation, iterations, true)
+		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
-		for i := 0; i < iterations; i++ {
-			key := r.uniqueKey("empty")
-			timer := NewTimer()
+		for ab.ShouldContinue() {
+			n := ab.NextN()
+			start := time.Now()
 
-			opCtx, cancel := r.opContext(ctx)
-			_, err := bucket.Write(opCtx, key, bytes.NewReader(nil), 0, "application/octet-stream", nil)
-			cancel()
+			for i := 0; i < n; i++ {
+				key := r.uniqueKey("empty")
+				timer := NewTimer()
 
-			collector.RecordWithError(timer.Elapsed(), err)
-			progress.Increment()
+				opCtx, cancel := r.opContext(ctx)
+				_, err := bucket.Write(opCtx, key, bytes.NewReader(nil), 0, "application/octet-stream", nil)
+				cancel()
+
+				collector.RecordWithError(timer.Elapsed(), err)
+			}
+
+			elapsed := time.Since(start)
+			ab.RecordRun(n, elapsed)
 		}
 
-		progress.Done()
+		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, 0)
 		r.addResult(metrics)
 	}
@@ -1063,27 +1140,30 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		operation := "EdgeCase/LongKey256"
 		data := generateRandomData(100)
 		collector := NewCollector()
-		iterations := r.config.Iterations / 2
-		progress := NewProgress(operation, iterations, true)
+		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		var keyCounter uint64
 
-		longPrefix := "prefix/" + string(make([]byte, 200)) // Will be replaced
-		for i := range longPrefix[7:] {
-			longPrefix = longPrefix[:7+i] + "a" + longPrefix[8+i:]
+		for ab.ShouldContinue() {
+			n := ab.NextN()
+			start := time.Now()
+
+			for i := 0; i < n; i++ {
+				idx := atomic.AddUint64(&keyCounter, 1)
+				key := fmt.Sprintf("prefix/%s/%d", string(bytes.Repeat([]byte("a"), 200)), idx)
+				timer := NewTimer()
+
+				opCtx, cancel := r.opContext(ctx)
+				_, err := bucket.Write(opCtx, key, bytes.NewReader(data), 100, "text/plain", nil)
+				cancel()
+
+				collector.RecordWithError(timer.Elapsed(), err)
+			}
+
+			elapsed := time.Since(start)
+			ab.RecordRun(n, elapsed)
 		}
 
-		for i := 0; i < iterations; i++ {
-			key := fmt.Sprintf("prefix/%s/%d", string(bytes.Repeat([]byte("a"), 200)), i)
-			timer := NewTimer()
-
-			opCtx, cancel := r.opContext(ctx)
-			_, err := bucket.Write(opCtx, key, bytes.NewReader(data), 100, "text/plain", nil)
-			cancel()
-
-			collector.RecordWithError(timer.Elapsed(), err)
-			progress.Increment()
-		}
-
-		progress.Done()
+		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, 100)
 		r.addResult(metrics)
 	}
@@ -1093,22 +1173,30 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		operation := "EdgeCase/DeepNested"
 		data := generateRandomData(100)
 		collector := NewCollector()
-		iterations := r.config.Iterations / 2
-		progress := NewProgress(operation, iterations, true)
+		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		var keyCounter uint64
 
-		for i := 0; i < iterations; i++ {
-			key := fmt.Sprintf("a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/%d", i)
-			timer := NewTimer()
+		for ab.ShouldContinue() {
+			n := ab.NextN()
+			start := time.Now()
 
-			opCtx, cancel := r.opContext(ctx)
-			_, err := bucket.Write(opCtx, key, bytes.NewReader(data), 100, "text/plain", nil)
-			cancel()
+			for i := 0; i < n; i++ {
+				idx := atomic.AddUint64(&keyCounter, 1)
+				key := fmt.Sprintf("a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/%d", idx)
+				timer := NewTimer()
 
-			collector.RecordWithError(timer.Elapsed(), err)
-			progress.Increment()
+				opCtx, cancel := r.opContext(ctx)
+				_, err := bucket.Write(opCtx, key, bytes.NewReader(data), 100, "text/plain", nil)
+				cancel()
+
+				collector.RecordWithError(timer.Elapsed(), err)
+			}
+
+			elapsed := time.Since(start)
+			ab.RecordRun(n, elapsed)
 		}
 
-		progress.Done()
+		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, 100)
 		r.addResult(metrics)
 	}
@@ -1272,48 +1360,110 @@ func formatSizes(sizes []int) string {
 	return fmt.Sprintf("%v", labels)
 }
 
-// benchmarkIterator handles both iteration-based and duration-based benchmarking.
-type benchmarkIterator struct {
-	duration      time.Duration
-	iterations    int
+// AdaptiveBenchmark implements Go-style adaptive iteration scaling.
+// It automatically scales the number of iterations to achieve a target duration,
+// following the exact algorithm used by Go's testing.B framework.
+type AdaptiveBenchmark struct {
+	// Target duration for the benchmark
+	benchTime time.Duration
+	// Minimum iterations regardless of duration
 	minIterations int
-	current       int
-	startTime     time.Time
+	// Maximum iterations (safety limit)
+	maxIterations int64
+
+	// Current state
+	totalN        int64         // Total iterations executed
+	totalDuration time.Duration // Total benchmark duration
+	lastN         int64         // Last run's iteration count
+	lastDuration  time.Duration // Last run's duration
+	nextN         int64         // Next iteration count to run
+	started       bool          // Whether benchmark has started
 }
 
-func (r *Runner) newBenchmarkIterator() *benchmarkIterator {
-	return &benchmarkIterator{
-		duration:      r.config.Duration,
-		iterations:    r.config.Iterations,
-		minIterations: r.config.MinIterations,
-		startTime:     time.Now(),
+// NewAdaptiveBenchmark creates a new adaptive benchmark controller.
+func NewAdaptiveBenchmark(benchTime time.Duration, minIter, maxIter int) *AdaptiveBenchmark {
+	return &AdaptiveBenchmark{
+		benchTime:     benchTime,
+		minIterations: minIter,
+		maxIterations: int64(maxIter),
+		nextN:         1, // Start with 1 iteration like Go
 	}
 }
 
-// Next returns true if another iteration should be performed.
-func (bi *benchmarkIterator) Next() bool {
-	bi.current++
-
-	// Duration-based mode
-	if bi.duration > 0 {
-		elapsed := time.Since(bi.startTime)
-		// Continue if under duration OR haven't hit minimum iterations
-		if elapsed < bi.duration || bi.current <= bi.minIterations {
-			return true
-		}
-		return false
+// predictN calculates the next iteration count using Go's exact algorithm.
+// This is the core of Go's benchmark auto-scaling: it extrapolates from
+// previous runs to estimate how many iterations are needed to reach the
+// target duration.
+func (ab *AdaptiveBenchmark) predictN(goalns, prevIters, prevns, last int64) int64 {
+	if prevns == 0 {
+		prevns = 1 // Avoid divide by zero
 	}
 
-	// Iteration-based mode
-	return bi.current <= bi.iterations
+	// Extrapolate: n = goalns * prevIters / prevns
+	// Order matters: multiply first to avoid precision loss
+	n := goalns * prevIters / prevns
+
+	// Add 20% buffer for timing variability
+	n += n / 5
+
+	// Cap growth at 100x previous (protects against timing errors)
+	if n > 100*last {
+		n = 100 * last
+	}
+
+	// Ensure at least one more iteration than last (guarantee progress)
+	if n < last+1 {
+		n = last + 1
+	}
+
+	// Safety limit
+	if n > ab.maxIterations {
+		n = ab.maxIterations
+	}
+
+	return n
 }
 
-// Count returns the current iteration count.
-func (bi *benchmarkIterator) Count() int {
-	return bi.current
+// ShouldContinue returns true if more benchmark runs are needed.
+func (ab *AdaptiveBenchmark) ShouldContinue() bool {
+	// Always run at least minIterations
+	if ab.totalN < int64(ab.minIterations) {
+		return true
+	}
+	// Continue until we reach the target duration or max iterations
+	return ab.totalDuration < ab.benchTime && ab.totalN < ab.maxIterations
 }
 
-// IsDurationMode returns true if running in duration mode.
-func (bi *benchmarkIterator) IsDurationMode() bool {
-	return bi.duration > 0
+// NextN returns the number of iterations for the next run.
+func (ab *AdaptiveBenchmark) NextN() int {
+	if !ab.started {
+		ab.started = true
+		return 1 // First run: start with 1 iteration
+	}
+	return int(ab.nextN)
+}
+
+// RecordRun records the results of a benchmark run and calculates the next N.
+func (ab *AdaptiveBenchmark) RecordRun(n int, elapsed time.Duration) {
+	ab.lastN = int64(n)
+	ab.lastDuration = elapsed
+	ab.totalDuration += elapsed
+	ab.totalN += int64(n)
+
+	// Calculate next N using Go's prediction algorithm
+	if ab.ShouldContinue() {
+		goalns := ab.benchTime.Nanoseconds()
+		prevns := elapsed.Nanoseconds()
+		ab.nextN = ab.predictN(goalns, ab.lastN, prevns, ab.lastN)
+	}
+}
+
+// TotalIterations returns the total iterations executed.
+func (ab *AdaptiveBenchmark) TotalIterations() int {
+	return int(ab.totalN)
+}
+
+// TotalDuration returns the total benchmark duration.
+func (ab *AdaptiveBenchmark) TotalDuration() time.Duration {
+	return ab.totalDuration
 }

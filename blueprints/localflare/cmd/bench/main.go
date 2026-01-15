@@ -20,20 +20,23 @@ import (
 
 func main() {
 	var (
-		iterations      = flag.Int("iterations", 100, "Number of iterations per benchmark")
+		iterations      = flag.Int("iterations", 100, "Number of iterations per benchmark (legacy, use -benchtime instead)")
 		warmup          = flag.Int("warmup", 10, "Number of warmup iterations")
 		timeout         = flag.Duration("timeout", 30*time.Second, "Per-operation timeout")
 		outputDir       = flag.String("output", "./pkg/storage/report", "Output directory for reports")
-		quick           = flag.Bool("quick", false, "Quick mode (fewer iterations)")
+		quick           = flag.Bool("quick", false, "Quick mode (shorter benchmark time)")
 		drivers         = flag.String("drivers", "", "Comma-separated list of drivers to benchmark (empty = all)")
 		outputFormats   = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
-		duration        = flag.Duration("duration", 0, "Duration-based mode (run each benchmark for this duration)")
+		duration        = flag.Duration("duration", 0, "Duration-based mode (legacy, use -benchtime instead)")
 		dockerStats     = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
 		verbose         = flag.Bool("verbose", false, "Verbose output")
 		fileCounts      = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
 		noFsync         = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")
 		filter          = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
 		inMemory        = flag.Bool("in-memory", false, "Use in-memory storage mode for liteio (maximum performance, no persistence)")
+		// Adaptive benchmark settings (Go-style)
+		benchTime       = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (Go-style adaptive, e.g., 1s, 500ms)")
+		minIterations   = flag.Int("min-iterations", 3, "Minimum iterations for statistical significance in adaptive mode")
 	)
 	flag.Parse()
 
@@ -54,12 +57,16 @@ func main() {
 	cfg.Duration = *duration
 	cfg.DockerStats = *dockerStats
 	cfg.Verbose = *verbose
+	// Adaptive benchmark settings
+	cfg.BenchTime = *benchTime
+	cfg.MinBenchIterations = *minIterations
 
 	if *quick {
 		cfg = bench.QuickConfig()
 		cfg.OutputDir = *outputDir
 		cfg.DockerStats = *dockerStats
 		cfg.Verbose = *verbose
+		cfg.BenchTime = 500 * time.Millisecond // Shorter for quick mode
 	}
 
 	if *drivers != "" {
@@ -103,12 +110,8 @@ func main() {
 	})
 
 	fmt.Println("=== Storage Benchmark Suite v2 ===")
-	fmt.Printf("Iterations: %d, Warmup: %d\n", cfg.Iterations, cfg.WarmupIterations)
-	if cfg.Duration > 0 {
-		fmt.Printf("Mode: Duration-based (%v per operation)\n", cfg.Duration)
-	} else {
-		fmt.Printf("Mode: Iteration-based\n")
-	}
+	fmt.Printf("Mode: Adaptive (Go-style, target: %v per benchmark)\n", cfg.BenchTime)
+	fmt.Printf("Min iterations: %d, Warmup: %d\n", cfg.MinBenchIterations, cfg.WarmupIterations)
 	fmt.Printf("Output: %s\n", cfg.OutputDir)
 	fmt.Printf("Formats: %v\n", cfg.OutputFormats)
 	if cfg.Filter != "" {
