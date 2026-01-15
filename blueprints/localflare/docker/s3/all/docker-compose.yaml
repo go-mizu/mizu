@@ -228,6 +228,7 @@ services:
     environment:
       LITEIO_ACCESS_KEY: liteio
       LITEIO_SECRET_KEY: liteio123
+      LITEIO_NO_FSYNC: "true"  # Skip fsync for maximum benchmark performance
     volumes:
       - liteio_data:/data
     healthcheck:

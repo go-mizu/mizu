@@ -133,14 +133,55 @@ func (c *lockFreeDirCache) ensureDir(path string) error {
 		return nil
 	}
 	shard.mu.RUnlock()
+
+	// OPTIMIZATION: Check parent directory first (hierarchical caching)
+	// For paths like /data/bucket/write/1234/1, if /data/bucket/write is cached,
+	// we only need to create the last segment
+	parent := filepath.Dir(path)
+	if parent != path && parent != "." && parent != "/" {
+		parentShard := &c.shards[c.shardIndex(parent)]
+		parentShard.mu.RLock()
+		parentCached := false
+		if t, ok := parentShard.entries[parent]; ok && time.Since(t) < DirCacheTTL {
+			parentCached = true
+		}
+		parentShard.mu.RUnlock()
+
+		if parentCached {
+			// Parent exists, only create the last directory
+			c.hits.Add(1)
+			if err := os.Mkdir(path, DirPermissions); err != nil && !os.IsExist(err) {
+				// Fall back to MkdirAll if Mkdir fails
+				if err := os.MkdirAll(path, DirPermissions); err != nil {
+					return err
+				}
+			}
+			// Cache this directory too
+			c.cacheDir(path)
+			return nil
+		}
+	}
+
 	c.misses.Add(1)
 
-	// Slow path: create directory
+	// Slow path: create directory hierarchy
 	if err := os.MkdirAll(path, DirPermissions); err != nil {
 		return err
 	}
 
-	// Update cache
+	// Cache both this directory and its ancestors
+	c.cacheDir(path)
+	// Also cache parent directories for future writes
+	for p := parent; p != "." && p != "/" && len(p) > 5; p = filepath.Dir(p) {
+		c.cacheDir(p)
+	}
+
+	return nil
+}
+
+// cacheDir adds a directory to the cache (internal helper)
+func (c *lockFreeDirCache) cacheDir(path string) {
+	shard := &c.shards[c.shardIndex(path)]
 	shard.mu.Lock()
 	// Evict if too full (simple random eviction)
 	if len(shard.entries) >= c.maxItems {
@@ -153,8 +194,6 @@ func (c *lockFreeDirCache) ensureDir(path string) error {
 	}
 	shard.entries[path] = time.Now()
 	shard.mu.Unlock()
-
-	return nil
 }
 
 func (c *lockFreeDirCache) invalidate(path string) {

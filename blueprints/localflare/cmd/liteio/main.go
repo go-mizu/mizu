@@ -182,6 +182,13 @@ func runServer(cfg *server.Config) error {
 		fmt.Println("In-memory mode: ENABLED (data will not persist)")
 	}
 
+	// Enable NoFsync mode for maximum write performance (skip fsync calls)
+	// WARNING: Data may be lost on crash. Use only for benchmarks/testing.
+	if os.Getenv("LITEIO_NO_FSYNC") == "true" || os.Getenv("LITEIO_NO_FSYNC") == "1" {
+		local.NoFsync = true
+		fmt.Println("NoFsync mode: ENABLED (maximum performance, data may be lost on crash)")
+	}
+
 	// Handle data-dir flag (convert to local:// DSN)
 	if cfg.DSN != "" && len(cfg.DSN) > 0 && cfg.DSN[0] == '/' {
 		cfg.DSN = "local://" + cfg.DSN
