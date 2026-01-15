@@ -1,63 +1,63 @@
 # Storage Benchmark Summary
 
-**Generated:** 2026-01-15T23:15:04+07:00
+**Generated:** 2026-01-15T23:34:12+07:00
 
 ## Overall Winner
 
-**liteio** won 7/12 categories (58%)
+**liteio** won 12/14 categories (86%)
 
 ### Win Counts
 
 | Driver | Wins | Percentage |
 |--------|------|------------|
-| liteio | 7 | 58% |
-| rustfs | 4 | 33% |
-| minio | 1 | 8% |
+| liteio | 12 | 86% |
+| minio | 2 | 14% |
 
 ## Best Driver by Category
 
 | Category | Winner | Performance | Runner-up | Runner-up Perf | Margin |
 |----------|--------|-------------|-----------|----------------|--------|
-| ParallelRead/1KB/C1 | **liteio** | 3.2 MB/s | minio | 2.5 MB/s | +29% |
-| ParallelRead/1KB/C10 | **minio** | 0.9 MB/s | liteio | 0.8 MB/s | +14% |
-| ParallelRead/1KB/C100 | **liteio** | 0.5 MB/s | minio | 0.3 MB/s | +65% |
-| ParallelRead/1KB/C200 | **liteio** | 0.4 MB/s | rustfs | 0.3 MB/s | +14% |
-| ParallelRead/1KB/C25 | **liteio** | 0.9 MB/s | rustfs | 0.5 MB/s | +68% |
-| ParallelRead/1KB/C50 | **rustfs** | 0.7 MB/s | liteio | 0.4 MB/s | +65% |
-| ParallelWrite/1KB/C1 | **liteio** | 0.7 MB/s | minio | 0.6 MB/s | +23% |
-| ParallelWrite/1KB/C10 | **liteio** | 0.4 MB/s | rustfs | 0.3 MB/s | +20% |
-| ParallelWrite/1KB/C100 | **rustfs** | 0.2 MB/s | liteio | 0.2 MB/s | +31% |
-| ParallelWrite/1KB/C200 | **rustfs** | 0.2 MB/s | liteio | 0.1 MB/s | +26% |
-| ParallelWrite/1KB/C25 | **liteio** | 0.2 MB/s | rustfs | 0.2 MB/s | ~equal |
-| ParallelWrite/1KB/C50 | **rustfs** | 0.1 MB/s | liteio | 0.1 MB/s | ~equal |
+| ParallelRead/1KB/C1 | **liteio** | 4.7 MB/s | minio | 2.7 MB/s | +75% |
+| ParallelRead/1KB/C10 | **liteio** | 1.1 MB/s | minio | 0.7 MB/s | +49% |
+| ParallelRead/1KB/C100 | **liteio** | 0.2 MB/s | minio | 0.1 MB/s | +40% |
+| ParallelRead/1KB/C200 | **liteio** | 0.3 MB/s | minio | 0.2 MB/s | +70% |
+| ParallelRead/1KB/C25 | **liteio** | 0.6 MB/s | minio | 0.4 MB/s | +26% |
+| ParallelRead/1KB/C50 | **liteio** | 0.3 MB/s | minio | 0.2 MB/s | +48% |
+| RangeRead/End_256KB | **liteio** | 221.6 MB/s | minio | 168.9 MB/s | +31% |
+| RangeRead/Middle_256KB | **liteio** | 233.6 MB/s | minio | 150.0 MB/s | +56% |
+| RangeRead/Start_256KB | **liteio** | 207.6 MB/s | minio | 131.9 MB/s | +57% |
+| Read/100MB | **minio** | 294.1 MB/s | liteio | 258.6 MB/s | +14% |
+| Read/10MB | **minio** | 284.5 MB/s | liteio | 261.8 MB/s | ~equal |
+| Read/1KB | **liteio** | 4.3 MB/s | minio | 2.6 MB/s | +65% |
+| Read/1MB | **liteio** | 292.7 MB/s | minio | 242.2 MB/s | +21% |
+| Read/64KB | **liteio** | 120.8 MB/s | minio | 98.1 MB/s | +23% |
 
 ## Category Summaries
 
-### ParallelWrite Operations
+### Read Operations
 
-**Best for ParallelWrite:** liteio (won 3/6)
+**Best for Read:** liteio (won 3/5)
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| ParallelWrite/1KB/C1 | liteio | 0.7 MB/s | +23% |
-| ParallelWrite/1KB/C10 | liteio | 0.4 MB/s | +20% |
-| ParallelWrite/1KB/C100 | rustfs | 0.2 MB/s | +31% |
-| ParallelWrite/1KB/C200 | rustfs | 0.2 MB/s | +26% |
-| ParallelWrite/1KB/C25 | liteio | 0.2 MB/s | ~equal |
-| ParallelWrite/1KB/C50 | rustfs | 0.1 MB/s | ~equal |
+| Read/100MB | minio | 294.1 MB/s | +14% |
+| Read/10MB | minio | 284.5 MB/s | ~equal |
+| Read/1KB | liteio | 4.3 MB/s | +65% |
+| Read/1MB | liteio | 292.7 MB/s | +21% |
+| Read/64KB | liteio | 120.8 MB/s | +23% |
 
 ### ParallelRead Operations
 
-**Best for ParallelRead:** liteio (won 4/6)
+**Best for ParallelRead:** liteio (won 6/6)
 
 | Operation | Winner | Performance | vs Runner-up |
 |-----------|--------|-------------|-------------|
-| ParallelRead/1KB/C1 | liteio | 3.2 MB/s | +29% |
-| ParallelRead/1KB/C10 | minio | 0.9 MB/s | +14% |
-| ParallelRead/1KB/C100 | liteio | 0.5 MB/s | +65% |
-| ParallelRead/1KB/C200 | liteio | 0.4 MB/s | +14% |
-| ParallelRead/1KB/C25 | liteio | 0.9 MB/s | +68% |
-| ParallelRead/1KB/C50 | rustfs | 0.7 MB/s | +65% |
+| ParallelRead/1KB/C1 | liteio | 4.7 MB/s | +75% |
+| ParallelRead/1KB/C10 | liteio | 1.1 MB/s | +49% |
+| ParallelRead/1KB/C100 | liteio | 0.2 MB/s | +40% |
+| ParallelRead/1KB/C200 | liteio | 0.3 MB/s | +70% |
+| ParallelRead/1KB/C25 | liteio | 0.6 MB/s | +26% |
+| ParallelRead/1KB/C50 | liteio | 0.3 MB/s | +48% |
 
 ---
 
