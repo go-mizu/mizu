@@ -57,6 +57,7 @@ const (
 
 func init() {
 	storage.Register("mem", &driver{})
+	storage.Register("memory", &driver{})
 }
 
 type driver struct{}
@@ -68,7 +69,7 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 	if err != nil {
 		return nil, fmt.Errorf("mem: parse dsn: %w", err)
 	}
-	if u.Scheme != "mem" && u.Scheme != "" {
+	if u.Scheme != "mem" && u.Scheme != "memory" && u.Scheme != "" {
 		return nil, fmt.Errorf("mem: unexpected scheme %q", u.Scheme)
 	}
 
@@ -97,6 +98,49 @@ var entryPool = sync.Pool{
 			data: make([]byte, 0, entryPoolDataCapacity),
 		}
 	},
+}
+
+// writeBufferPool provides pooled buffers for write operations.
+// Tiered sizes: 4KB, 64KB, 256KB, 1MB
+var writeBufferPools = [4]sync.Pool{
+	{New: func() interface{} { b := make([]byte, 0, 4*1024); return &b }},
+	{New: func() interface{} { b := make([]byte, 0, 64*1024); return &b }},
+	{New: func() interface{} { b := make([]byte, 0, 256*1024); return &b }},
+	{New: func() interface{} { b := make([]byte, 0, 1024*1024); return &b }},
+}
+
+func getWriteBuffer(size int64) []byte {
+	idx := 0
+	switch {
+	case size <= 4*1024:
+		idx = 0
+	case size <= 64*1024:
+		idx = 1
+	case size <= 256*1024:
+		idx = 2
+	default:
+		idx = 3
+	}
+	return *writeBufferPools[idx].Get().(*[]byte)
+}
+
+func putWriteBuffer(buf []byte) {
+	cap := cap(buf)
+	var idx int
+	switch {
+	case cap <= 4*1024:
+		idx = 0
+	case cap <= 64*1024:
+		idx = 1
+	case cap <= 256*1024:
+		idx = 2
+	case cap <= 1024*1024:
+		idx = 3
+	default:
+		return // Too large, let GC handle it
+	}
+	buf = buf[:0]
+	writeBufferPools[idx].Put(&buf)
 }
 
 func getEntry() *entry {

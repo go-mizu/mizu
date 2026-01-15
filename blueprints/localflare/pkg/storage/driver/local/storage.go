@@ -637,8 +637,12 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 		return nil, fmt.Errorf("local: close %q: %w", relKey, err)
 	}
 
-	// Return object without extra stat call - we know the size
+	// Cache the written data for future reads
 	now := time.Now()
+	ck := cacheKey(b.name, relKey)
+	globalObjectCache.Put(ck, buf[:n], now)
+
+	// Return object without extra stat call - we know the size
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
@@ -686,8 +690,14 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 		return nil, fmt.Errorf("local: close %q: %w", relKey, err)
 	}
 
-	// Return object without extra stat call - we know the size
+	// Cache the written data for future reads (if within threshold)
 	now := time.Now()
+	if int64(n) <= CacheableThreshold {
+		ck := cacheKey(b.name, relKey)
+		globalObjectCache.Put(ck, buf[:n], now)
+	}
+
+	// Return object without extra stat call - we know the size
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
@@ -810,6 +820,22 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// OPTIMIZATION: Check hot object cache for full reads of small objects
+	if offset == 0 && length <= 0 {
+		ck := cacheKey(b.name, relKey)
+		if data, modTime, ok := globalObjectCache.Get(ck); ok {
+			obj := &storage.Object{
+				Bucket:  b.name,
+				Key:     relToKey(relKey),
+				Size:    int64(len(data)),
+				Created: modTime,
+				Updated: modTime,
+			}
+			return &cachedReader{data: data}, obj, nil
+		}
+	}
+
 	full, err := joinUnderRoot(b.root, relKey)
 	if err != nil {
 		return nil, nil, err
@@ -863,7 +889,34 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		// Fall through to regular file I/O on mmap failure
 	}
 
-	// Regular file I/O for small files or mmap fallback
+	// OPTIMIZATION: For small files (full read), read into cache and return cached reader
+	if offset == 0 && length <= 0 && fileSize <= CacheableThreshold {
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.Open(full)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, nil, storage.ErrNotExist
+			}
+			return nil, nil, fmt.Errorf("local: open %q: %w", key, err)
+		}
+
+		// Read entire file into buffer
+		data := make([]byte, fileSize)
+		n, err := io.ReadFull(f, data)
+		f.Close()
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, nil, fmt.Errorf("local: read %q: %w", key, err)
+		}
+		data = data[:n]
+
+		// Cache the data for future reads
+		ck := cacheKey(b.name, relKey)
+		globalObjectCache.Put(ck, data, modTime)
+
+		return &cachedReader{data: data}, obj, nil
+	}
+
+	// Regular file I/O for larger files or partial reads
 	// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
 	f, err := os.Open(full)
 	if err != nil {
@@ -902,6 +955,20 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	if err != nil {
 		return nil, err
 	}
+
+	// OPTIMIZATION: Check hot object cache first to avoid disk I/O
+	ck := cacheKey(b.name, relKey)
+	if data, modTime, ok := globalObjectCache.Get(ck); ok {
+		return &storage.Object{
+			Bucket:  b.name,
+			Key:     relToKey(relKey),
+			Size:    int64(len(data)),
+			IsDir:   false,
+			Created: modTime,
+			Updated: modTime,
+		}, nil
+	}
+
 	full, err := joinUnderRoot(b.root, relKey)
 	if err != nil {
 		return nil, err
@@ -940,8 +1007,12 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	var delErr error
 	if recursive {
 		delErr = os.RemoveAll(full)
+		// Invalidate all cached objects under this prefix
+		globalObjectCache.InvalidatePrefix(cacheKey(b.name, relKey))
 	} else {
 		delErr = os.Remove(full)
+		// Invalidate this specific object from cache
+		globalObjectCache.Invalidate(cacheKey(b.name, relKey))
 	}
 	if delErr != nil {
 		if errors.Is(delErr, os.ErrNotExist) {

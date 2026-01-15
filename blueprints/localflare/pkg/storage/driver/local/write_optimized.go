@@ -394,18 +394,38 @@ func (w *parallelWriter) writeParallel(src io.Reader) (int64, error) {
 	}
 
 	chunks := make(chan chunk, numWorkers*2)
-	results := make(chan error, numWorkers)
+	var wg sync.WaitGroup
+	var writeErr error
+	var writeErrOnce sync.Once
+	var writeFailed atomic.Bool
+
+	setWriteErr := func(err error) {
+		if err == nil {
+			return
+		}
+		writeErrOnce.Do(func() {
+			writeErr = err
+			writeFailed.Store(true)
+		})
+	}
 
 	// Start writer goroutines
 	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for c := range chunks {
+				if writeFailed.Load() {
+					continue
+				}
 				if c.err != nil {
-					results <- c.err
+					setWriteErr(c.err)
 					continue
 				}
 				_, err := w.file.WriteAt(c.data, c.offset)
-				results <- err
+				if err != nil {
+					setWriteErr(err)
+				}
 			}
 		}()
 	}
@@ -414,9 +434,10 @@ func (w *parallelWriter) writeParallel(src io.Reader) (int64, error) {
 	var offset int64
 	var totalRead int64
 	var readErr error
-	pendingChunks := 0
-
 	for totalRead < w.size {
+		if writeFailed.Load() {
+			break
+		}
 		chunkSize := int64(ParallelWriteChunkSize)
 		if totalRead+chunkSize > w.size {
 			chunkSize = w.size - totalRead
@@ -432,7 +453,6 @@ func (w *parallelWriter) writeParallel(src io.Reader) (int64, error) {
 
 		if n > 0 {
 			chunks <- chunk{offset: offset, data: buf[:n]}
-			pendingChunks++
 			offset += int64(n)
 			totalRead += int64(n)
 		}
@@ -443,14 +463,7 @@ func (w *parallelWriter) writeParallel(src io.Reader) (int64, error) {
 	}
 
 	close(chunks)
-
-	// Wait for all writes to complete
-	var writeErr error
-	for i := 0; i < pendingChunks; i++ {
-		if err := <-results; err != nil && writeErr == nil {
-			writeErr = err
-		}
-	}
+	wg.Wait()
 
 	if readErr != nil {
 		return totalRead, readErr

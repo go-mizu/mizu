@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
@@ -23,6 +24,11 @@ import (
 const (
 	s3XMLNS = "http://s3.amazonaws.com/doc/2006-03-01/"
 )
+
+// OriginalPathContextKey is a context key used to store the original request path
+// before any path normalization (e.g., stripping trailing slashes).
+// This is used by signature verification to validate against the original signed path.
+type OriginalPathContextKey struct{}
 
 // Config controls S3 transport behavior.
 type Config struct {
@@ -148,7 +154,12 @@ func (s *SignerV4) Verify(r *http.Request, cfg *Config) error {
 		return err
 	}
 
+	// Use original path if available (before normalization)
+	// The original path may be stored in context by path-normalizing middleware
 	path := r.URL.EscapedPath()
+	if origPath, ok := r.Context().Value(OriginalPathContextKey{}).(string); ok && origPath != "" {
+		path = origPath
+	}
 	candidates := canonicalPathCandidates(path)
 
 	signingKey := deriveSigningKey(cred.SecretAccessKey, inputs.requestTime, inputs.region, inputs.service)
@@ -414,7 +425,48 @@ func buildStringToSign(in *signatureInputs, canonicalReq string) string {
 	}, "\n")
 }
 
+// signingKeyCache caches derived signing keys to avoid repeated HMAC computations.
+// Keys are scoped by access key + date + region + service, so they're valid for an entire day.
+type signingKeyCache struct {
+	mu    sync.RWMutex
+	cache map[string][]byte
+}
+
+var globalSigningKeyCache = &signingKeyCache{
+	cache: make(map[string][]byte),
+}
+
+func (c *signingKeyCache) getOrDerive(secret string, t time.Time, region, service string) []byte {
+	shortDate := t.UTC().Format("20060102")
+	cacheKey := secret[:min(8, len(secret))] + ":" + shortDate + ":" + region + ":" + service
+
+	// Fast path: check cache with read lock
+	c.mu.RLock()
+	if cached, ok := c.cache[cacheKey]; ok {
+		c.mu.RUnlock()
+		return cached
+	}
+	c.mu.RUnlock()
+
+	// Slow path: derive and cache
+	derived := deriveSigningKeyDirect(secret, t, region, service)
+
+	c.mu.Lock()
+	// Cleanup old entries if cache grows too large (keep last 100)
+	if len(c.cache) > 100 {
+		c.cache = make(map[string][]byte)
+	}
+	c.cache[cacheKey] = derived
+	c.mu.Unlock()
+
+	return derived
+}
+
 func deriveSigningKey(secret string, t time.Time, region, service string) []byte {
+	return globalSigningKeyCache.getOrDerive(secret, t, region, service)
+}
+
+func deriveSigningKeyDirect(secret string, t time.Time, region, service string) []byte {
 	shortDate := t.UTC().Format("20060102")
 	kDate := hmacSHA256([]byte("AWS4"+secret), []byte(shortDate))
 	kRegion := hmacSHA256(kDate, []byte(region))
@@ -938,9 +990,7 @@ func registerAllMethods(app *mizu.App, path string, h func(*mizu.Ctx) error) {
 	app.Put(path, h)
 	app.Post(path, h)
 	app.Delete(path, h)
-	// No app.Head:
-	// HEAD will still be routed to GET handler by net/http ServeMux
-	// Our handler still sees Method == "HEAD" and can dispatch accordingly.
+	// HEAD is handled via headMethodWrapper middleware
 }
 
 // authAndParse is used from handleService, handleBucket, handleObject.

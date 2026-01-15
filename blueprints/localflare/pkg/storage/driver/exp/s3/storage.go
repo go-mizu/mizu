@@ -622,6 +622,7 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 	}
 
 	return &objectIter{
+		ctx:       ctx,
 		client:    b.store.client,
 		bucket:    b.name,
 		input:     input,

@@ -1,0 +1,321 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Report contains all benchmark results.
+type Report struct {
+	Generated  time.Time
+	Config     *Config
+	Results    []*Result
+	ByDriver   map[string][]*Result
+	ByOp       map[string][]*Result
+	BySize     map[string][]*Result
+}
+
+// NewReport creates a report from results.
+func NewReport(cfg *Config, results []*Result) *Report {
+	r := &Report{
+		Generated: time.Now(),
+		Config:    cfg,
+		Results:   results,
+		ByDriver:  make(map[string][]*Result),
+		ByOp:      make(map[string][]*Result),
+		BySize:    make(map[string][]*Result),
+	}
+
+	for _, res := range results {
+		if res.Skipped && res.Operation == "" {
+			continue // Skip driver-level skip markers
+		}
+		r.ByDriver[res.Driver] = append(r.ByDriver[res.Driver], res)
+		r.ByOp[res.Operation] = append(r.ByOp[res.Operation], res)
+		if res.ObjectSize != "" {
+			r.BySize[res.ObjectSize] = append(r.BySize[res.ObjectSize], res)
+		}
+	}
+
+	return r
+}
+
+// SaveMarkdown writes the report to a markdown file.
+func (r *Report) SaveMarkdown(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(outputDir, "warp_report.md")
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Header
+	fmt.Fprintf(f, "# Warp S3 Benchmark Report\n\n")
+	fmt.Fprintf(f, "**Generated**: %s\n\n", r.Generated.Format(time.RFC3339))
+	fmt.Fprintf(f, "## Configuration\n\n")
+	fmt.Fprintf(f, "| Parameter | Value |\n")
+	fmt.Fprintf(f, "|-----------|-------|\n")
+	fmt.Fprintf(f, "| Duration per test | %v |\n", r.Config.Duration)
+	fmt.Fprintf(f, "| Concurrent clients | %d |\n", r.Config.Concurrent)
+	fmt.Fprintf(f, "| Objects | %d |\n", r.Config.Objects)
+	fmt.Fprintf(f, "| Object sizes | %s |\n", strings.Join(r.Config.ObjectSizes, ", "))
+	fmt.Fprintf(f, "| Operations | %s |\n", strings.Join(r.Config.Operations, ", "))
+	fmt.Fprintf(f, "\n")
+
+	// Summary table
+	fmt.Fprintf(f, "## Summary\n\n")
+	r.writeSummaryTable(f)
+
+	// Detailed results by operation
+	fmt.Fprintf(f, "## Detailed Results\n\n")
+	for _, op := range r.Config.Operations {
+		results := r.ByOp[op]
+		if len(results) == 0 {
+			continue
+		}
+		fmt.Fprintf(f, "### %s Operations\n\n", strings.ToUpper(op))
+		r.writeOperationTable(f, op, results)
+		fmt.Fprintf(f, "\n")
+	}
+
+	// Skipped drivers
+	r.writeSkippedSection(f)
+
+	// Raw output (collapsed)
+	fmt.Fprintf(f, "## Raw Warp Output\n\n")
+	for _, res := range r.Results {
+		if res.RawOutput == "" || res.Skipped {
+			continue
+		}
+		sizeStr := res.ObjectSize
+		if sizeStr == "" {
+			sizeStr = "N/A"
+		}
+		fmt.Fprintf(f, "<details>\n")
+		fmt.Fprintf(f, "<summary>%s - %s %s</summary>\n\n", res.Driver, res.Operation, sizeStr)
+		fmt.Fprintf(f, "```\n%s\n```\n\n", res.RawOutput)
+		fmt.Fprintf(f, "</details>\n\n")
+	}
+
+	return nil
+}
+
+// writeSummaryTable writes a summary comparison table.
+func (r *Report) writeSummaryTable(f *os.File) {
+	// Get unique drivers (sorted)
+	driverSet := make(map[string]bool)
+	for _, res := range r.Results {
+		if !res.Skipped || res.Operation != "" {
+			driverSet[res.Driver] = true
+		}
+	}
+	var drivers []string
+	for d := range driverSet {
+		drivers = append(drivers, d)
+	}
+	sort.Strings(drivers)
+
+	if len(drivers) == 0 {
+		fmt.Fprintf(f, "No results available.\n\n")
+		return
+	}
+
+	// Calculate averages per driver per operation
+	type opResult struct {
+		throughput float64
+		ops        float64
+		count      int
+	}
+
+	driverOps := make(map[string]map[string]*opResult)
+	for _, d := range drivers {
+		driverOps[d] = make(map[string]*opResult)
+	}
+
+	for _, res := range r.Results {
+		if res.Skipped {
+			continue
+		}
+		if driverOps[res.Driver][res.Operation] == nil {
+			driverOps[res.Driver][res.Operation] = &opResult{}
+		}
+		or := driverOps[res.Driver][res.Operation]
+		or.throughput += res.ThroughputMBps
+		or.ops += res.OpsPerSec
+		or.count++
+	}
+
+	// Build summary table
+	fmt.Fprintf(f, "| Driver |")
+	for _, op := range r.Config.Operations {
+		fmt.Fprintf(f, " %s (MB/s) |", strings.ToUpper(op))
+	}
+	fmt.Fprintf(f, "\n")
+
+	fmt.Fprintf(f, "|--------|")
+	for range r.Config.Operations {
+		fmt.Fprintf(f, "------------|")
+	}
+	fmt.Fprintf(f, "\n")
+
+	for _, driver := range drivers {
+		fmt.Fprintf(f, "| %s |", driver)
+		for _, op := range r.Config.Operations {
+			or := driverOps[driver][op]
+			if or != nil && or.count > 0 {
+				avg := or.throughput / float64(or.count)
+				fmt.Fprintf(f, " %.2f |", avg)
+			} else {
+				fmt.Fprintf(f, " - |")
+			}
+		}
+		fmt.Fprintf(f, "\n")
+	}
+	fmt.Fprintf(f, "\n")
+}
+
+// writeOperationTable writes detailed results for an operation.
+func (r *Report) writeOperationTable(f *os.File, op string, results []*Result) {
+	// Group by size
+	bySize := make(map[string][]*Result)
+	for _, res := range results {
+		size := res.ObjectSize
+		if size == "" {
+			size = "N/A"
+		}
+		bySize[size] = append(bySize[size], res)
+	}
+
+	// Get unique sizes (sorted)
+	var sizes []string
+	for s := range bySize {
+		sizes = append(sizes, s)
+	}
+	sort.Slice(sizes, func(i, j int) bool {
+		return parseSizeOrder(sizes[i]) < parseSizeOrder(sizes[j])
+	})
+
+	for _, size := range sizes {
+		sizeResults := bySize[size]
+		if size != "N/A" {
+			fmt.Fprintf(f, "#### Object Size: %s\n\n", size)
+		}
+
+		fmt.Fprintf(f, "| Driver | Throughput (MB/s) | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |\n")
+		fmt.Fprintf(f, "|--------|-------------------|-------|----------|----------|----------|--------|\n")
+
+		// Sort by throughput descending
+		sort.Slice(sizeResults, func(i, j int) bool {
+			return sizeResults[i].ThroughputMBps > sizeResults[j].ThroughputMBps
+		})
+
+		for _, res := range sizeResults {
+			if res.Skipped {
+				fmt.Fprintf(f, "| %s | - | - | - | - | - | skipped |\n", res.Driver)
+				continue
+			}
+			fmt.Fprintf(f, "| %s | %.2f | %.2f | %.2f | %.2f | %.2f | %d |\n",
+				res.Driver,
+				res.ThroughputMBps,
+				res.OpsPerSec,
+				res.LatencyAvgMs,
+				res.LatencyP50Ms,
+				res.LatencyP99Ms,
+				res.Errors,
+			)
+		}
+		fmt.Fprintf(f, "\n")
+	}
+}
+
+// writeSkippedSection writes information about skipped benchmarks.
+func (r *Report) writeSkippedSection(f *os.File) {
+	var skipped []*Result
+	for _, res := range r.Results {
+		if res.Skipped {
+			skipped = append(skipped, res)
+		}
+	}
+
+	if len(skipped) == 0 {
+		return
+	}
+
+	fmt.Fprintf(f, "## Skipped Benchmarks\n\n")
+	fmt.Fprintf(f, "| Driver | Operation | Size | Reason |\n")
+	fmt.Fprintf(f, "|--------|-----------|------|--------|\n")
+
+	for _, res := range skipped {
+		op := res.Operation
+		if op == "" {
+			op = "(all)"
+		}
+		size := res.ObjectSize
+		if size == "" {
+			size = "N/A"
+		}
+		fmt.Fprintf(f, "| %s | %s | %s | %s |\n", res.Driver, op, size, res.SkipReason)
+	}
+	fmt.Fprintf(f, "\n")
+}
+
+// SaveJSON writes results to a JSON file.
+func (r *Report) SaveJSON(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(outputDir, "warp_results.json")
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	data := struct {
+		Generated string    `json:"generated"`
+		Config    *Config   `json:"config"`
+		Results   []*Result `json:"results"`
+	}{
+		Generated: r.Generated.Format(time.RFC3339),
+		Config:    r.Config,
+		Results:   r.Results,
+	}
+
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(data)
+}
+
+// parseSizeOrder returns a numeric order for size strings.
+func parseSizeOrder(size string) int {
+	if size == "N/A" {
+		return 0
+	}
+	size = strings.ToLower(size)
+	var multiplier int
+	switch {
+	case strings.HasSuffix(size, "kib") || strings.HasSuffix(size, "kb"):
+		multiplier = 1
+	case strings.HasSuffix(size, "mib") || strings.HasSuffix(size, "mb"):
+		multiplier = 1024
+	case strings.HasSuffix(size, "gib") || strings.HasSuffix(size, "gb"):
+		multiplier = 1024 * 1024
+	default:
+		return 0
+	}
+
+	numStr := strings.TrimRight(size, "kibmgabKIBMGAB")
+	num, _ := strconv.Atoi(numStr)
+	return num * multiplier
+}

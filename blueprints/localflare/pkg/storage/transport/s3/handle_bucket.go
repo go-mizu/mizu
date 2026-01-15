@@ -51,11 +51,9 @@ func (s *Server) handleBucket(c *mizu.Ctx) error {
 		return writeError(c, err)
 	}
 
-	// Extra debug so we can see which branch is taken.
-	c.Logger().Info("s3 handleBucket dispatch",
-		"op", req.Op,
-		"bucket", req.Bucket,
-	)
+	// Debug logging disabled for performance
+	// Enable with build tag: -tags=s3debug
+	debugLogRequest(c, req)
 
 	switch req.Op {
 	case OpCreateBucket:

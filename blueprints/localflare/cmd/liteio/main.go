@@ -107,6 +107,7 @@ Environment variables:
 	flags.StringVar(&cfg.AccessKeyID, "access-key", cfg.AccessKeyID, "Access key ID")
 	flags.StringVar(&cfg.SecretAccessKey, "secret-key", cfg.SecretAccessKey, "Secret access key")
 	flags.StringVar(&cfg.Region, "region", cfg.Region, "S3 region")
+	flags.BoolVar(&cfg.EnablePprof, "pprof", cfg.EnablePprof, "Enable pprof profiling endpoints at /debug/pprof/")
 
 	// Environment variable bindings
 	if v := os.Getenv("LITEIO_PORT"); v != "" {
@@ -145,7 +146,7 @@ func healthCheckCmd() *cobra.Command {
 		Use:   "healthcheck",
 		Short: "Check if the server is healthy",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			url := fmt.Sprintf("http://%s:%d/health", host, port)
+			url := fmt.Sprintf("http://%s:%d/healthz/ready", host, port)
 			client := &http.Client{Timeout: 5 * time.Second}
 			resp, err := client.Get(url)
 			if err != nil {

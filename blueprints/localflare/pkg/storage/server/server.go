@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"sync"
 	"time"
@@ -76,6 +77,19 @@ type Config struct {
 
 	// Logger for server logs. If nil, uses slog.Default().
 	Logger *slog.Logger
+
+	// EnablePprof enables pprof profiling endpoints. Default true.
+	// When enabled, the following endpoints are available:
+	//   /debug/pprof/
+	//   /debug/pprof/cmdline
+	//   /debug/pprof/profile
+	//   /debug/pprof/symbol
+	//   /debug/pprof/trace
+	//   /debug/pprof/heap
+	//   /debug/pprof/goroutine
+	//   /debug/pprof/block
+	//   /debug/pprof/mutex
+	EnablePprof bool
 }
 
 // DefaultConfig returns a Config with default values.
@@ -93,6 +107,7 @@ func DefaultConfig() *Config {
 		MaxObjectSize:   5 * 1024 * 1024 * 1024, // 5GB
 		ReadTimeout:     60 * time.Second,
 		WriteTimeout:    60 * time.Second,
+		EnablePprof:     true, // Enable pprof by default
 	}
 }
 
@@ -204,14 +219,6 @@ func New(cfg *Config) (*Server, error) {
 	// Register S3 API routes at root
 	s3.Register(app, "/", stor, s3Config)
 
-	// Add health check endpoint
-	app.Get("/health", func(c *mizu.Ctx) error {
-		return c.JSON(http.StatusOK, map[string]string{
-			"status": "ok",
-			"server": "liteio",
-		})
-	})
-
 	return &Server{
 		config:  cfg,
 		storage: stor,
@@ -261,7 +268,7 @@ func (s *Server) Start() error {
 	s.running = true
 
 	s.server = &http.Server{
-		Handler:      s.app,
+		Handler:      s.handler(),
 		ReadTimeout:  s.config.ReadTimeout,
 		WriteTimeout: s.config.WriteTimeout,
 	}
@@ -303,7 +310,7 @@ func (s *Server) StartBackground() error {
 	s.running = true
 
 	s.server = &http.Server{
-		Handler:      s.app,
+		Handler:      s.handler(),
 		ReadTimeout:  s.config.ReadTimeout,
 		WriteTimeout: s.config.WriteTimeout,
 	}
@@ -322,6 +329,53 @@ func (s *Server) StartBackground() error {
 	}()
 
 	return nil
+}
+
+func (s *Server) handler() http.Handler {
+	// Build pprof mux if enabled
+	var pprofMux *http.ServeMux
+	if s.config.EnablePprof {
+		pprofMux = http.NewServeMux()
+		pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
+		pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		pprofMux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		pprofMux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		pprofMux.Handle("/debug/pprof/block", pprof.Handler("block"))
+		pprofMux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+		pprofMux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		pprofMux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle pprof endpoints if enabled
+		if pprofMux != nil && len(r.URL.Path) >= 12 && r.URL.Path[:12] == "/debug/pprof" {
+			pprofMux.ServeHTTP(w, r)
+			return
+		}
+
+		if r.URL.Path == "/healthz/ready" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"status":"ok","server":"liteio"}`))
+			}
+			return
+		}
+
+		// Normalize path by stripping trailing slash (except root)
+		// S3 clients like warp often add trailing slashes to bucket paths
+		// Store original path in context for signature verification
+		if len(r.URL.Path) > 1 && r.URL.Path[len(r.URL.Path)-1] == '/' {
+			ctx := context.WithValue(r.Context(), s3.OriginalPathContextKey{}, r.URL.Path)
+			r = r.WithContext(ctx)
+			r.URL.Path = r.URL.Path[:len(r.URL.Path)-1]
+		}
+
+		s.app.ServeHTTP(w, r)
+	})
 }
 
 // Stop stops the server immediately.
