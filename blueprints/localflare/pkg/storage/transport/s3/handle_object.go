@@ -16,8 +16,8 @@ import (
 )
 
 // s3ResponseBufferSize is the buffer size for HTTP response streaming.
-// Using 2MB for optimal throughput on large files.
-const s3ResponseBufferSize = 2 * 1024 * 1024
+// Using 8MB for optimal throughput on large files (increased from 2MB).
+const s3ResponseBufferSize = 8 * 1024 * 1024
 
 // s3BufferPool provides pooled buffers for HTTP response streaming.
 var s3BufferPool = sync.Pool{

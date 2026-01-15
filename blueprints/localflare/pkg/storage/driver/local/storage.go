@@ -918,18 +918,29 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		Updated: modTime,
 	}
 
-	// OPTIMIZATION: For very large files, use parallel reader
+	// OPTIMIZATION: For very large files (>=32MB), use streaming reader with large buffers
 	if fileSize >= ParallelReadThreshold {
 		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
 		f, err := os.Open(full)
 		if err == nil {
-			return newParallelReader(f, fileSize, offset, length), obj, nil
+			// Use streaming reader for maximum throughput
+			return newStreamingReader(f, fileSize, offset, length), obj, nil
 		}
 		// Fall through on error
 	}
 
-	// OPTIMIZATION: Use mmap for medium-large files (eliminates duplicate stat)
-	if mmapSupported() && fileSize >= MmapThreshold {
+	// OPTIMIZATION: For large files (>=1MB), use optimized large file reader
+	if fileSize >= LargeSendfileThreshold {
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.Open(full)
+		if err == nil {
+			return newLargeFileReader(f, fileSize, offset, length), obj, nil
+		}
+		// Fall through on error
+	}
+
+	// OPTIMIZATION: Use mmap for medium files (64KB-1MB) - eliminates duplicate stat
+	if mmapSupported() && fileSize >= MmapThreshold && fileSize < LargeSendfileThreshold {
 		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
 		f, err := os.Open(full)
 		if err == nil {
