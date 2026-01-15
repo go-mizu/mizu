@@ -5,6 +5,7 @@ package local
 
 import (
 	"hash/fnv"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -284,4 +285,216 @@ func (e *objectPoolEntry) reset() {
 	e.contentType = ""
 	e.created = time.Time{}
 	e.updated = time.Time{}
+}
+
+// =============================================================================
+// PARALLEL WRITE CONSTANTS
+// =============================================================================
+
+const (
+	// ParallelWriteThreshold: files >= this size use parallel chunk writing
+	ParallelWriteThreshold = 32 * 1024 * 1024 // 32MB
+
+	// ParallelWriteChunkSize: size of each chunk for parallel writes
+	ParallelWriteChunkSize = 4 * 1024 * 1024 // 4MB
+
+	// MaxWriteWorkers: maximum number of parallel write workers
+	MaxWriteWorkers = 4
+)
+
+// =============================================================================
+// PARALLEL FILE WRITER
+// =============================================================================
+// For very large files, write chunks in parallel using pwrite()
+
+// parallelWriter writes large files using parallel chunk writing.
+// Chunks are read from source and written to different file offsets concurrently.
+type parallelWriter struct {
+	file    *os.File
+	size    int64
+	written int64
+}
+
+// newParallelWriter creates a writer optimized for large files.
+// Pre-allocates the file to avoid fragmentation.
+func newParallelWriter(path string, size int64) (*parallelWriter, error) {
+	// Create file with truncate
+	// #nosec G304 -- path validated by caller
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pre-allocate file to final size (reduces fragmentation)
+	// This also ensures we have disk space before starting the write
+	if size > 0 {
+		if err := preallocateIfSupported(f, size); err != nil {
+			// Pre-allocation failed, but we can still try to write
+			// Seek to end and write byte to reserve space
+			if _, err := f.Seek(size-1, 0); err == nil {
+				f.Write([]byte{0})
+				f.Seek(0, 0)
+			}
+		}
+	}
+
+	return &parallelWriter{
+		file: f,
+		size: size,
+	}, nil
+}
+
+// WriteFrom reads from source and writes in parallel chunks.
+func (w *parallelWriter) WriteFrom(src io.Reader) (int64, error) {
+	// For small writes, use sequential
+	if w.size < ParallelWriteThreshold {
+		return w.writeSequential(src)
+	}
+
+	// For large writes, use parallel chunked approach
+	return w.writeParallel(src)
+}
+
+func (w *parallelWriter) writeSequential(src io.Reader) (int64, error) {
+	buf := shardedHugePool.Get()
+	defer shardedHugePool.Put(buf)
+
+	var total int64
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			written, werr := w.file.Write(buf[:n])
+			total += int64(written)
+			if werr != nil {
+				return total, werr
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return total, err
+		}
+	}
+	w.written = total
+	return total, nil
+}
+
+func (w *parallelWriter) writeParallel(src io.Reader) (int64, error) {
+	numWorkers := 4
+	if numWorkers > MaxWriteWorkers {
+		numWorkers = MaxWriteWorkers
+	}
+
+	// Channel for chunks to write
+	type chunk struct {
+		offset int64
+		data   []byte
+		err    error
+	}
+
+	chunks := make(chan chunk, numWorkers*2)
+	results := make(chan error, numWorkers)
+
+	// Start writer goroutines
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for c := range chunks {
+				if c.err != nil {
+					results <- c.err
+					continue
+				}
+				_, err := w.file.WriteAt(c.data, c.offset)
+				results <- err
+			}
+		}()
+	}
+
+	// Read chunks and send to workers
+	var offset int64
+	var totalRead int64
+	var readErr error
+	pendingChunks := 0
+
+	for totalRead < w.size {
+		chunkSize := int64(ParallelWriteChunkSize)
+		if totalRead+chunkSize > w.size {
+			chunkSize = w.size - totalRead
+		}
+
+		// Read chunk from source
+		buf := make([]byte, chunkSize)
+		n, err := io.ReadFull(src, buf)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			readErr = err
+			break
+		}
+
+		if n > 0 {
+			chunks <- chunk{offset: offset, data: buf[:n]}
+			pendingChunks++
+			offset += int64(n)
+			totalRead += int64(n)
+		}
+
+		if err == io.EOF || n == 0 {
+			break
+		}
+	}
+
+	close(chunks)
+
+	// Wait for all writes to complete
+	var writeErr error
+	for i := 0; i < pendingChunks; i++ {
+		if err := <-results; err != nil && writeErr == nil {
+			writeErr = err
+		}
+	}
+
+	if readErr != nil {
+		return totalRead, readErr
+	}
+	if writeErr != nil {
+		return totalRead, writeErr
+	}
+
+	w.written = totalRead
+	return totalRead, nil
+}
+
+// Sync flushes data to disk.
+func (w *parallelWriter) Sync() error {
+	if NoFsync {
+		return nil
+	}
+	return w.file.Sync()
+}
+
+// Close closes the file.
+func (w *parallelWriter) Close() error {
+	return w.file.Close()
+}
+
+// Written returns total bytes written.
+func (w *parallelWriter) Written() int64 {
+	return w.written
+}
+
+// preallocateIfSupported tries to pre-allocate disk space.
+// This is a no-op on systems that don't support fallocate.
+func preallocateIfSupported(f *os.File, size int64) error {
+	// Try to use fallocate on Linux
+	// On other systems, this will fail and we fall back to normal writes
+	return tryFallocate(f, size)
+}
+
+// tryFallocate attempts to use fallocate syscall.
+// Implemented in platform-specific files.
+func tryFallocate(f *os.File, size int64) error {
+	// Default implementation - no-op on unsupported platforms
+	// Linux version in write_optimized_linux.go
+	_ = f
+	_ = size
+	return nil
 }

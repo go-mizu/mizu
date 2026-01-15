@@ -591,6 +591,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	case size > 0 && size <= SmallFileThreshold:
 		// Small files: single-buffer direct write
 		return b.writeSmallFile(full, relKey, src, size, contentType)
+	case size >= ParallelWriteThreshold:
+		// Very large files (>32MB): parallel chunked write for maximum throughput
+		return b.writeVeryLargeFile(full, dir, relKey, key, src, size, contentType)
 	default:
 		// Large/unknown files: temp file + atomic rename
 		return b.writeLargeFile(full, dir, relKey, key, src, contentType)
@@ -697,6 +700,7 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 
 // writeLargeFile writes large or unknown-size files using temp file + atomic rename.
 // Optimized: uses sharded buffer pool and tracks bytes to avoid post-write stat.
+// For very large files (>32MB), uses parallel write for higher throughput.
 func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, contentType string) (*storage.Object, error) {
 	// Safer temp file: randomly named in the target directory.
 	// This avoids predictable names and keeps rename atomic on the same volume.
@@ -711,9 +715,9 @@ func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, co
 		_ = os.Remove(tmpName)
 	}()
 
-	// Use sharded large buffer pool for optimized I/O under concurrency
-	buf := shardedLargePool.Get()
-	defer shardedLargePool.Put(buf)
+	// Use sharded huge buffer pool for optimized I/O under concurrency
+	buf := shardedHugePool.Get()
+	defer shardedHugePool.Put(buf)
 
 	// Track bytes written to avoid post-write stat syscall
 	var written int64
@@ -763,6 +767,41 @@ func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, co
 	}, nil
 }
 
+// writeVeryLargeFile writes very large files (>32MB) using parallel chunked writes.
+// This provides significantly higher throughput on modern SSDs.
+func (b *bucket) writeVeryLargeFile(full, _, relKey, key string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
+	// Create parallel writer with pre-allocation
+	pw, err := newParallelWriter(full, size)
+	if err != nil {
+		return nil, fmt.Errorf("local: create %q: %w", key, err)
+	}
+	defer pw.Close()
+
+	// Write data in parallel chunks
+	written, err := pw.WriteFrom(src)
+	if err != nil {
+		os.Remove(full) // Cleanup on error
+		return nil, fmt.Errorf("local: write %q: %w", key, err)
+	}
+
+	// Sync to disk
+	if err := pw.Sync(); err != nil {
+		os.Remove(full)
+		return nil, fmt.Errorf("local: fsync %q: %w", key, err)
+	}
+
+	// Return object without stat call - we tracked the bytes written
+	now := time.Now()
+	return &storage.Object{
+		Bucket:      b.name,
+		Key:         relToKey(relKey),
+		Size:        written,
+		ContentType: contentType,
+		Created:     now,
+		Updated:     now,
+	}, nil
+}
+
 func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opts storage.Options) (io.ReadCloser, *storage.Object, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -789,19 +828,37 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	}
 
 	fileSize := info.Size()
+	modTime := info.ModTime()
 
-	// Try memory-mapped I/O for large files (10-25x faster reads)
-	if mmapSupported() && fileSize >= MmapThreshold {
-		rc, _, err := openWithMmap(full, offset, length)
+	// Build object metadata once (avoid duplicate work)
+	obj := &storage.Object{
+		Bucket:  b.name,
+		Key:     relToKey(relKey),
+		Size:    fileSize,
+		Created: modTime,
+		Updated: modTime,
+	}
+
+	// OPTIMIZATION: For very large files, use parallel reader
+	if fileSize >= ParallelReadThreshold {
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.Open(full)
 		if err == nil {
-			obj := &storage.Object{
-				Bucket:  b.name,
-				Key:     relToKey(relKey),
-				Size:    fileSize,
-				Created: info.ModTime(),
-				Updated: info.ModTime(),
+			return newParallelReader(f, fileSize, offset, length), obj, nil
+		}
+		// Fall through on error
+	}
+
+	// OPTIMIZATION: Use mmap for medium-large files (eliminates duplicate stat)
+	if mmapSupported() && fileSize >= MmapThreshold {
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.Open(full)
+		if err == nil {
+			rc, err := openWithMmapPrestatted(f, fileSize, offset, length)
+			if err == nil {
+				return rc, obj, nil
 			}
-			return rc, obj, nil
+			f.Close()
 		}
 		// Fall through to regular file I/O on mmap failure
 	}
@@ -834,13 +891,6 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		}
 	}
 
-	obj := &storage.Object{
-		Bucket:  b.name,
-		Key:     relToKey(relKey),
-		Size:    fileSize,
-		Created: info.ModTime(),
-		Updated: info.ModTime(),
-	}
 	return rc, obj, nil
 }
 
