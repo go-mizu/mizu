@@ -567,6 +567,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, err
 	}
 
+	// FAST PATH: In-memory mode bypasses all filesystem operations
+	if inMemoryMode.Load() {
+		return b.writeInMemory(key, src, size, contentType)
+	}
+
 	relKey, err := cleanKey(key)
 	if err != nil {
 		return nil, err
@@ -602,6 +607,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 // writeTinyFile writes very small files (<=4KB) with minimal syscalls.
 // Uses a sharded buffer pool for maximum speed under concurrency.
+// OPTIMIZATION: Uses os.WriteFile for single atomic syscall when NoFsync is enabled.
 func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
 	// Get small buffer from sharded pool (reduces lock contention)
 	buf := shardedSmallPool.Get()
@@ -613,28 +619,33 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 		return nil, fmt.Errorf("local: read %q: %w", relKey, err)
 	}
 
-	// Write directly to destination
-	// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
-	f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
-	if err != nil {
-		return nil, fmt.Errorf("local: create %q: %w", relKey, err)
-	}
+	// FAST PATH: Use os.WriteFile when fsync is not needed (reduces syscalls from 4 to 1)
+	if NoFsync {
+		// #nosec G306 -- file permissions are intentionally set to 0644
+		if err := os.WriteFile(full, buf[:n], FilePermissions); err != nil {
+			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
+		}
+	} else {
+		// Write directly to destination with fsync
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
+		if err != nil {
+			return nil, fmt.Errorf("local: create %q: %w", relKey, err)
+		}
 
-	if _, err := f.Write(buf[:n]); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("local: write %q: %w", relKey, err)
-	}
+		if _, err := f.Write(buf[:n]); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
+		}
 
-	// Optional fsync (skip for benchmarks)
-	if !NoFsync {
 		if err := f.Sync(); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("local: fsync %q: %w", relKey, err)
 		}
-	}
 
-	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("local: close %q: %w", relKey, err)
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("local: close %q: %w", relKey, err)
+		}
 	}
 
 	// OPTIMIZATION: Write-through cache for hot objects
@@ -656,6 +667,7 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 
 // writeSmallFile writes small files (4KB-128KB) directly to the destination.
 // Uses optimized buffer selection based on exact file size.
+// OPTIMIZATION: Uses os.WriteFile for single atomic syscall when NoFsync is enabled.
 func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
 	// OPTIMIZATION: Use exact-size buffer pool for 16KB (benchmark object size)
 	var buf []byte
@@ -676,28 +688,33 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 		return nil, fmt.Errorf("local: read %q: %w", relKey, err)
 	}
 
-	// Write directly to destination
-	// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
-	f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
-	if err != nil {
-		return nil, fmt.Errorf("local: create %q: %w", relKey, err)
-	}
+	// FAST PATH: Use os.WriteFile when fsync is not needed (reduces syscalls from 4 to 1)
+	if NoFsync {
+		// #nosec G306 -- file permissions are intentionally set to 0644
+		if err := os.WriteFile(full, buf[:n], FilePermissions); err != nil {
+			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
+		}
+	} else {
+		// Write directly to destination with fsync
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
+		if err != nil {
+			return nil, fmt.Errorf("local: create %q: %w", relKey, err)
+		}
 
-	if _, err := f.Write(buf[:n]); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("local: write %q: %w", relKey, err)
-	}
+		if _, err := f.Write(buf[:n]); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("local: write %q: %w", relKey, err)
+		}
 
-	// Optional fsync (skip for benchmarks)
-	if !NoFsync {
 		if err := f.Sync(); err != nil {
 			f.Close()
 			return nil, fmt.Errorf("local: fsync %q: %w", relKey, err)
 		}
-	}
 
-	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("local: close %q: %w", relKey, err)
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("local: close %q: %w", relKey, err)
+		}
 	}
 
 	// OPTIMIZATION: Write-through cache for hot objects
@@ -827,6 +844,12 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
+
+	// FAST PATH: In-memory mode bypasses all filesystem operations
+	if inMemoryMode.Load() {
+		return b.openInMemory(key, offset, length)
+	}
+
 	relKey, err := cleanKey(key)
 	if err != nil {
 		return nil, nil, err
@@ -982,6 +1005,12 @@ func (b *bucket) Stat(ctx context.Context, key string, opts storage.Options) (*s
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	// FAST PATH: In-memory mode bypasses all filesystem operations
+	if inMemoryMode.Load() {
+		return b.statInMemory(key)
+	}
+
 	relKey, err := cleanKey(key)
 	if err != nil {
 		return nil, err
@@ -1025,6 +1054,12 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
+	// FAST PATH: In-memory mode bypasses all filesystem operations
+	if inMemoryMode.Load() {
+		return b.deleteInMemory(key)
+	}
+
 	relKey, err := cleanKey(key)
 	if err != nil {
 		return err

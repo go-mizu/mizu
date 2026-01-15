@@ -41,6 +41,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 	"github.com/go-mizu/blueprints/localflare/pkg/storage/server"
 	"github.com/spf13/cobra"
 )
@@ -174,6 +175,12 @@ func runServer(cfg *server.Config) error {
 		Level: slog.LevelInfo,
 	})
 	cfg.Logger = slog.New(handler)
+
+	// Enable in-memory mode for local driver if LITEIO_IN_MEMORY is set
+	if os.Getenv("LITEIO_IN_MEMORY") == "true" || os.Getenv("LITEIO_IN_MEMORY") == "1" {
+		local.EnableInMemoryMode()
+		fmt.Println("In-memory mode: ENABLED (data will not persist)")
+	}
 
 	// Handle data-dir flag (convert to local:// DSN)
 	if cfg.DSN != "" && len(cfg.DSN) > 0 && cfg.DSN[0] == '/' {

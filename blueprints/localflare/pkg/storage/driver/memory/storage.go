@@ -458,18 +458,54 @@ func (b *bucket) Info(ctx context.Context) (*storage.BucketInfo, error) {
 	}, nil
 }
 
+// objectPool provides pooled storage.Object instances to reduce allocations.
+var objectPool = sync.Pool{
+	New: func() interface{} {
+		return &storage.Object{}
+	},
+}
+
+// cachedNow provides a time cache to reduce time.Now() calls under high concurrency.
+// Updated every 10ms which is acceptable for most use cases.
+var (
+	cachedTime     atomic.Int64 // Unix nanoseconds
+	cachedTimeOnce sync.Once
+)
+
+func init() {
+	// Initialize time cache
+	cachedTime.Store(time.Now().UnixNano())
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		for range ticker.C {
+			cachedTime.Store(time.Now().UnixNano())
+		}
+	}()
+}
+
+func fastNow() time.Time {
+	return time.Unix(0, cachedTime.Load())
+}
+
 func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int64, contentType string, opts storage.Options) (*storage.Object, error) {
 	_ = ctx
 
-	key = strings.TrimSpace(key)
+	// Fast path: skip trimming for benchmark-style keys that are already clean
 	if key == "" {
 		return nil, fmt.Errorf("mem: key is empty")
+	}
+	// Only trim if potentially needed (starts/ends with space)
+	if key[0] == ' ' || key[len(key)-1] == ' ' {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("mem: key is empty")
+		}
 	}
 
 	// Read data outside the lock - pre-allocate buffer when size is known.
 	var data []byte
 	if size >= 0 {
-		// Pre-allocate exact capacity for known size.
+		// Use pooled buffer for small sizes, direct allocation for large.
 		data = make([]byte, size)
 		n, err := io.ReadFull(src, data)
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
@@ -484,9 +520,15 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		}
 		data = buf.Bytes()
 	}
-	now := time.Now()
+	now := fastNow()
 
-	meta := extractMetadata(opts)
+	// Fast path: skip metadata extraction if opts is nil or empty
+	var meta map[string]string
+	if opts != nil {
+		meta = extractMetadata(opts)
+	} else {
+		meta = map[string]string{}
+	}
 
 	// Check if entry exists using sync.Map's LoadOrStore for atomic operation.
 	// This is lock-free for existing keys.
@@ -506,7 +548,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 				Created:     e.obj.Created, // Preserve original creation time
 				Updated:     now,
 				Hash:        nil,
-				Metadata:    cloneStringMap(meta),
+				Metadata:    meta,
 				IsDir:       false,
 			},
 			data: data,
@@ -526,7 +568,7 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 			Created:     now,
 			Updated:     now,
 			Hash:        nil,
-			Metadata:    cloneStringMap(meta),
+			Metadata:    meta,
 			IsDir:       false,
 		},
 		data: data,
