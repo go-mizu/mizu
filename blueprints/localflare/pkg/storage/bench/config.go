@@ -16,6 +16,11 @@ const (
 	defaultParallelTimeout  = 120 * time.Second
 	defaultMinIterations    = 10
 
+	// Adaptive benchmark defaults (Go-style)
+	defaultBenchTime          = 1 * time.Second // Same as Go's default
+	defaultMinBenchIterations = 3               // Minimum for statistics
+	defaultMaxBenchIterations = 1_000_000_000   // 1e9 safety limit
+
 	// Object sizes
 	sizeSmall   = 1024              // 1KB
 	sizeMedium  = 64 * 1024         // 64KB
@@ -55,11 +60,23 @@ type Config struct {
 	// Verbose enables verbose output.
 	Verbose bool
 
-	// Duration-based benchmark mode
+	// Duration-based benchmark mode (legacy)
 	// Duration is the target duration for each benchmark (0 = iteration-based).
+	// DEPRECATED: Use BenchTime instead for Go-style adaptive benchmarking.
 	Duration time.Duration
 	// MinIterations is the minimum iterations even in duration mode.
+	// DEPRECATED: Use MinBenchIterations instead.
 	MinIterations int
+
+	// Adaptive benchmark settings (Go-style)
+	// BenchTime is the target duration for each benchmark operation.
+	// The benchmark will auto-scale iterations to meet this duration.
+	// Default: 1s (same as Go's testing.B)
+	BenchTime time.Duration
+	// MinBenchIterations is the minimum iterations for statistical significance.
+	MinBenchIterations int
+	// MaxBenchIterations is the safety limit for iterations (default: 1e9).
+	MaxBenchIterations int
 
 	// OutputFormats specifies output formats (markdown, json, csv).
 	OutputFormats []string
@@ -93,10 +110,14 @@ func DefaultConfig() *Config {
 		Large:             false,
 		DockerStats:       true,
 		Verbose:           false,
-		Duration:          0,                  // Iteration-based by default
+		Duration:          0, // Legacy, not used with adaptive
 		MinIterations:     defaultMinIterations,
-		OutputFormats:     []string{"markdown", "json"}, // Default outputs
-		FileCounts:        []int{1, 10, 100, 1000, 10000}, // File count benchmarks
+		// Adaptive benchmark settings (Go-style)
+		BenchTime:          defaultBenchTime,
+		MinBenchIterations: defaultMinBenchIterations,
+		MaxBenchIterations: defaultMaxBenchIterations,
+		OutputFormats:      []string{"markdown", "json"}, // Default outputs
+		FileCounts:         []int{1, 10, 100, 1000, 10000}, // File count benchmarks
 	}
 }
 
@@ -108,6 +129,7 @@ func QuickConfig() *Config {
 	cfg.ConcurrencyLevels = []int{1, 10, 50} // Fewer levels for quick runs
 	cfg.ObjectSizes = []int{sizeSmall, sizeMedium, sizeLarge, sizeXLarge} // Up to 10MB for quick
 	cfg.Quick = true
+	cfg.BenchTime = 500 * time.Millisecond // Shorter target for quick runs
 	return cfg
 }
 
@@ -143,6 +165,29 @@ func (c *Config) WarmupForSize(size int) int {
 		return max(3, base/3) // 3+ warmup for 1MB
 	default:
 		return base // Full warmup for small files
+	}
+}
+
+// BenchTimeForSize returns adaptive benchmark duration based on object size.
+// Larger files need shorter bench time to avoid excessive benchmark duration.
+func (c *Config) BenchTimeForSize(size int) time.Duration {
+	base := c.BenchTime
+
+	switch {
+	case size >= 100*1024*1024: // 100MB+
+		// 100MB+ files: cap at 5s since each op is slow
+		if base > 5*time.Second {
+			return 5 * time.Second
+		}
+		return base
+	case size >= 10*1024*1024: // 10MB+
+		// 10MB files: cap at 10s
+		if base > 10*time.Second {
+			return 10 * time.Second
+		}
+		return base
+	default:
+		return base // Full bench time for smaller files
 	}
 }
 
