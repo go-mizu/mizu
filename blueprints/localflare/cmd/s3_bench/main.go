@@ -190,6 +190,31 @@ func runInteractive(ctx context.Context, runner *BenchmarkRunner, cfg *Config) e
 		},
 	)
 
+	// Set dashboard-specific callbacks
+	runner.SetDashboardCallbacks(
+		func(driver string, throughput float64, timestamp time.Time) {
+			p.Send(ui.ThroughputSampleMsg{
+				Driver:     driver,
+				Throughput: throughput,
+				Timestamp:  timestamp,
+			})
+		},
+		func(driver string, completed, total int, throughput float64) {
+			p.Send(ui.DriverProgressMsg{
+				Driver:     driver,
+				Completed:  completed,
+				Total:      total,
+				Throughput: throughput,
+			})
+		},
+		func(objectSize, threads int) {
+			p.Send(ui.ConfigChangeMsg{
+				ObjectSize: objectSize,
+				Threads:    threads,
+			})
+		},
+	)
+
 	// Run benchmark in background
 	go func() {
 		_, err := runner.Run(ctx)

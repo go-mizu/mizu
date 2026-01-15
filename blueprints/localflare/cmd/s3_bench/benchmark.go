@@ -24,12 +24,15 @@ type BenchmarkRunner struct {
 	results []*BenchmarkResult
 
 	// Callbacks for UI updates
-	onPhaseChange    func(phase string, driver string)
-	onProgress       func(current, total int, message string)
-	onResult         func(result *BenchmarkResult)
-	onLog            func(message string)
-	onTableRow       func(result *BenchmarkResult)
-	onSectionHeader  func(objectSize int, driver string)
+	onPhaseChange      func(phase string, driver string)
+	onProgress         func(current, total int, message string)
+	onResult           func(result *BenchmarkResult)
+	onLog              func(message string)
+	onTableRow         func(result *BenchmarkResult)
+	onSectionHeader    func(objectSize int, driver string)
+	onThroughputSample func(driver string, throughput float64, timestamp time.Time)
+	onDriverProgress   func(driver string, completed, total int, throughput float64)
+	onConfigChange     func(objectSize, threads int)
 
 	mu sync.Mutex
 }
@@ -60,6 +63,17 @@ func (r *BenchmarkRunner) SetCallbacks(
 	r.onSectionHeader = onSectionHeader
 }
 
+// SetDashboardCallbacks sets additional callbacks for the dashboard.
+func (r *BenchmarkRunner) SetDashboardCallbacks(
+	onThroughputSample func(driver string, throughput float64, timestamp time.Time),
+	onDriverProgress func(driver string, completed, total int, throughput float64),
+	onConfigChange func(objectSize, threads int),
+) {
+	r.onThroughputSample = onThroughputSample
+	r.onDriverProgress = onDriverProgress
+	r.onConfigChange = onConfigChange
+}
+
 func (r *BenchmarkRunner) log(msg string) {
 	if r.onLog != nil {
 		r.onLog(msg)
@@ -69,6 +83,24 @@ func (r *BenchmarkRunner) log(msg string) {
 func (r *BenchmarkRunner) progress(current, total int, msg string) {
 	if r.onProgress != nil {
 		r.onProgress(current, total, msg)
+	}
+}
+
+func (r *BenchmarkRunner) throughputSample(driver string, throughput float64) {
+	if r.onThroughputSample != nil {
+		r.onThroughputSample(driver, throughput, time.Now())
+	}
+}
+
+func (r *BenchmarkRunner) driverProgress(driver string, completed, total int, throughput float64) {
+	if r.onDriverProgress != nil {
+		r.onDriverProgress(driver, completed, total, throughput)
+	}
+}
+
+func (r *BenchmarkRunner) configChange(objectSize, threads int) {
+	if r.onConfigChange != nil {
+		r.onConfigChange(objectSize, threads)
 	}
 }
 
@@ -121,6 +153,9 @@ func (r *BenchmarkRunner) Run(ctx context.Context) ([]*BenchmarkResult, error) {
 					return r.results, ctx.Err()
 				default:
 				}
+
+				// Notify config change
+				r.configChange(size, threads)
 
 				result, err := r.runBenchmark(ctx, driver, size, threads)
 				if err != nil {
@@ -195,6 +230,7 @@ func (r *BenchmarkRunner) setupDriver(ctx context.Context, driver *DriverConfig,
 			}
 
 			r.progress(i+1, r.config.Samples, fmt.Sprintf("Uploading %s objects", FormatSize(size)))
+			r.driverProgress(driver.Name, i+1, r.config.Samples, 0)
 		}
 	}
 
@@ -215,10 +251,41 @@ func (r *BenchmarkRunner) runBenchmark(ctx context.Context, driver *DriverConfig
 	var wg sync.WaitGroup
 	var completed int64
 
+	// Throughput tracking for real-time updates
+	var totalBytesDownloaded int64
+	lastReportTime := time.Now()
+	reportInterval := 250 * time.Millisecond
+
+	// Goroutine to report throughput samples
+	stopReporter := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(reportInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stopReporter:
+				return
+			case <-ticker.C:
+				bytes := atomic.LoadInt64(&totalBytesDownloaded)
+				elapsed := time.Since(lastReportTime).Seconds()
+				if elapsed > 0 && bytes > 0 {
+					throughput := float64(bytes) / elapsed / 1024 / 1024
+					r.throughputSample(driver.Name, throughput)
+
+					// Update driver progress
+					comp := atomic.LoadInt64(&completed)
+					r.driverProgress(driver.Name, int(comp), r.config.Samples, throughput)
+				}
+			}
+		}
+	}()
+
 	// Run downloads
 	for i := 0; i < r.config.Samples; i++ {
 		select {
 		case <-ctx.Done():
+			close(stopReporter)
 			return nil, ctx.Err()
 		default:
 		}
@@ -252,15 +319,26 @@ func (r *BenchmarkRunner) runBenchmark(ctx context.Context, driver *DriverConfig
 			ttlb := time.Since(opStart)
 			collector.AddSample(ttfbReader.TTFB(), ttlb, n, err)
 
+			// Update counters
+			atomic.AddInt64(&totalBytesDownloaded, n)
 			atomic.AddInt64(&completed, 1)
+
+			// Update progress
+			comp := atomic.LoadInt64(&completed)
+			r.progress(int(comp), r.config.Samples, fmt.Sprintf("[%s] %s @ %d threads", driver.Name, FormatSize(objectSize), threads))
 		}(i)
 	}
 
 	wg.Wait()
+	close(stopReporter)
 	duration := time.Since(startTime)
 
 	// Calculate statistics
 	ttfb, ttlb, throughput, errors := collector.Calculate()
+
+	// Send final throughput sample
+	r.throughputSample(driver.Name, throughput)
+	r.driverProgress(driver.Name, r.config.Samples, r.config.Samples, throughput)
 
 	return &BenchmarkResult{
 		Driver:     driver.Name,
@@ -307,6 +385,7 @@ func (r *BenchmarkRunner) cleanupDriver(ctx context.Context, driver *DriverConfi
 			}
 			deleted++
 			r.progress(deleted, deleted+1, "Deleting objects")
+			r.driverProgress(driver.Name, deleted, deleted+1, 0)
 		}
 	}
 

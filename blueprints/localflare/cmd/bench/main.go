@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +37,9 @@ func main() {
 		// Go-style adaptive benchmark settings (same defaults as 'go test -bench')
 		benchTime     = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (e.g., 1s, 500ms, 2s)")
 		minIters      = flag.Int("min-iters", 3, "Minimum iterations for statistical significance")
+		// Docker compose settings
+		composeDir    = flag.String("compose-dir", "./docker/s3/all", "Docker compose directory for S3 services")
+		restartDocker = flag.Bool("restart-docker", true, "Restart docker-compose services before running benchmarks")
 	)
 	flag.Parse()
 
@@ -89,14 +94,79 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Track if we were interrupted
+	interrupted := false
+
 	// Handle signals for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigCh
-		fmt.Println("\nInterrupted, cleaning up...")
+		sig := <-sigCh
+		fmt.Printf("\nReceived %v, stopping benchmark...\n", sig)
+		interrupted = true
 		cancel()
+		// Give a moment for cleanup, then force exit on second signal
+		select {
+		case <-sigCh:
+			fmt.Println("\nForce exit")
+			os.Exit(1)
+		case <-time.After(30 * time.Second):
+			fmt.Println("\nCleanup timeout, force exit")
+			os.Exit(1)
+		}
 	}()
+
+	// Restart docker-compose services if requested
+	if *restartDocker {
+		fmt.Println("=== Restarting Docker Services ===")
+		absComposeDir, err := filepath.Abs(*composeDir)
+		if err != nil {
+			log.Fatalf("Invalid compose directory: %v", err)
+		}
+
+		// Check if docker-compose file exists
+		composeFile := filepath.Join(absComposeDir, "docker-compose.yaml")
+		if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+			log.Fatalf("docker-compose.yaml not found at %s", composeFile)
+		}
+
+		fmt.Printf("Compose directory: %s\n", absComposeDir)
+
+		// Stop and remove containers, volumes
+		fmt.Println("Stopping existing containers...")
+		stopCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composeFile, "down", "-v", "--remove-orphans")
+		stopCmd.Dir = absComposeDir
+		stopCmd.Stdout = os.Stdout
+		stopCmd.Stderr = os.Stderr
+		if err := stopCmd.Run(); err != nil {
+			fmt.Printf("Warning: docker compose down failed: %v\n", err)
+		}
+
+		// Check if interrupted
+		if interrupted {
+			fmt.Println("Benchmark cancelled during docker restart")
+			os.Exit(1)
+		}
+
+		// Start services fresh
+		fmt.Println("Starting fresh containers...")
+		startCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composeFile, "up", "-d", "--wait", "--build")
+		startCmd.Dir = absComposeDir
+		startCmd.Stdout = os.Stdout
+		startCmd.Stderr = os.Stderr
+		if err := startCmd.Run(); err != nil {
+			log.Fatalf("docker compose up failed: %v", err)
+		}
+
+		// Check if interrupted
+		if interrupted {
+			fmt.Println("Benchmark cancelled during docker startup")
+			os.Exit(1)
+		}
+
+		fmt.Println("Docker services ready")
+		fmt.Println()
+	}
 
 	runner := bench.NewRunner(cfg)
 	runner.SetLogger(func(format string, args ...any) {
@@ -115,7 +185,17 @@ func main() {
 
 	report, err := runner.Run(ctx)
 	if err != nil {
+		if interrupted || ctx.Err() != nil {
+			fmt.Println("\nBenchmark interrupted by user")
+			os.Exit(1)
+		}
 		log.Fatalf("Benchmark failed: %v", err)
+	}
+
+	// Check if interrupted during benchmark
+	if interrupted {
+		fmt.Println("\nBenchmark interrupted by user")
+		os.Exit(1)
 	}
 
 	// Save reports in all configured formats
