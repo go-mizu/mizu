@@ -30,6 +30,10 @@ const (
 
 	// CacheShards is the number of cache shards for concurrency.
 	CacheShards = 64
+
+	// LazyLRUThreshold is the number of accesses before updating LRU position.
+	// Higher values reduce lock contention but may cause slightly suboptimal eviction.
+	LazyLRUThreshold = 8
 )
 
 // ObjectCache is a sharded LRU cache for object data.
@@ -53,11 +57,12 @@ type cacheShard struct {
 }
 
 type cacheEntry struct {
-	key     string
-	data    []byte
-	size    int64
-	modTime time.Time
-	element *list.Element
+	key         string
+	data        []byte
+	size        int64
+	modTime     time.Time
+	element     *list.Element
+	accessCount int32 // For lazy LRU updates
 }
 
 // globalObjectCache is the shared cache instance.
@@ -115,14 +120,22 @@ func (c *ObjectCache) Get(bucketKey string) ([]byte, time.Time, bool) {
 	data := make([]byte, len(entry.data))
 	copy(data, entry.data)
 	modTime := entry.modTime
+
+	// OPTIMIZATION: Lazy LRU updates - only update position periodically
+	// This reduces lock contention significantly under high concurrency
+	entry.accessCount++
+	shouldUpdateLRU := entry.accessCount >= LazyLRUThreshold
+	if shouldUpdateLRU {
+		entry.accessCount = 0
+	}
 	shard.mu.RUnlock()
 
-	// Update LRU position (upgrade to write lock)
-	shard.mu.Lock()
-	if entry.element != nil {
+	// Only acquire write lock periodically for LRU update
+	if shouldUpdateLRU && entry.element != nil {
+		shard.mu.Lock()
 		shard.lru.MoveToFront(entry.element)
+		shard.mu.Unlock()
 	}
-	shard.mu.Unlock()
 
 	c.hits.Add(1)
 	return data, modTime, true
