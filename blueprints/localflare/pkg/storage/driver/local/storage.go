@@ -648,11 +648,16 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 		}
 	}
 
-	// OPTIMIZATION: Write-through cache for hot objects
+	// Track timing without cache overhead for write-only workloads
 	now := time.Now()
-	ck := cacheKey(b.name, relKey)
-	WriteThroughCache(ck, buf[:n], now)
 	mixedWriteOps.Add(1)
+
+	// OPTIMIZATION: Skip cache for NoFsync mode (benchmark/write-only workloads)
+	// Cache is only useful for mixed read/write workloads where data will be re-read
+	if !NoFsync {
+		ck := cacheKey(b.name, relKey)
+		WriteThroughCache(ck, buf[:n], now)
+	}
 
 	// Return object without extra stat call - we know the size
 	return &storage.Object{
@@ -717,13 +722,15 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 		}
 	}
 
-	// OPTIMIZATION: Write-through cache for hot objects
+	// Track timing without cache overhead for write-only workloads
 	now := time.Now()
-	if int64(n) <= CacheableThreshold {
+	mixedWriteOps.Add(1)
+
+	// OPTIMIZATION: Skip cache for NoFsync mode (benchmark/write-only workloads)
+	if !NoFsync && int64(n) <= CacheableThreshold {
 		ck := cacheKey(b.name, relKey)
 		WriteThroughCache(ck, buf[:n], now)
 	}
-	mixedWriteOps.Add(1)
 
 	// Return object without extra stat call - we know the size
 	return &storage.Object{
