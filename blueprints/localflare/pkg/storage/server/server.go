@@ -268,9 +268,12 @@ func (s *Server) Start() error {
 	s.running = true
 
 	s.server = &http.Server{
-		Handler:      s.handler(),
-		ReadTimeout:  s.config.ReadTimeout,
-		WriteTimeout: s.config.WriteTimeout,
+		Handler:           s.handler(),
+		ReadTimeout:       s.config.ReadTimeout,
+		WriteTimeout:      s.config.WriteTimeout,
+		IdleTimeout:       120 * time.Second, // Keep connections open for reuse
+		MaxHeaderBytes:    1 << 16,           // 64KB max header size
+		ReadHeaderTimeout: 10 * time.Second,  // Fast header parsing timeout
 	}
 
 	s.mu.Unlock()
@@ -310,9 +313,12 @@ func (s *Server) StartBackground() error {
 	s.running = true
 
 	s.server = &http.Server{
-		Handler:      s.handler(),
-		ReadTimeout:  s.config.ReadTimeout,
-		WriteTimeout: s.config.WriteTimeout,
+		Handler:           s.handler(),
+		ReadTimeout:       s.config.ReadTimeout,
+		WriteTimeout:      s.config.WriteTimeout,
+		IdleTimeout:       120 * time.Second, // Keep connections open for reuse
+		MaxHeaderBytes:    1 << 16,           // 64KB max header size
+		ReadHeaderTimeout: 10 * time.Second,  // Fast header parsing timeout
 	}
 
 	s.mu.Unlock()

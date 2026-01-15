@@ -224,7 +224,7 @@ services:
       context: ../../..
       dockerfile: docker/s3/liteio/Dockerfile
     ports:
-      - "9200:9000"   # S3 API (mapped to 9200 to avoid conflict)
+      - "9200:9000"   # S3 API (mapped to 9200, pprof at /debug/pprof/)
     environment:
       LITEIO_ACCESS_KEY: liteio
       LITEIO_SECRET_KEY: liteio123

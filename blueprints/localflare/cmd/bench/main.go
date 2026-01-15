@@ -33,8 +33,15 @@ func main() {
 		fileCounts      = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
 		noFsync         = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")
 		filter          = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
+		inMemory        = flag.Bool("in-memory", false, "Use in-memory storage mode for liteio (maximum performance, no persistence)")
 	)
 	flag.Parse()
+
+	// Enable in-memory mode for liteio if requested
+	if *inMemory {
+		local.EnableInMemoryMode()
+		fmt.Println("In-memory mode: ENABLED for liteio")
+	}
 
 	// Set NoFsync for local driver (major performance improvement)
 	local.NoFsync = *noFsync
