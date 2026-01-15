@@ -23,9 +23,17 @@ import (
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/exp/s3"
-	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
+	"github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/memory"
 )
+
+// TestMain sets up benchmark optimizations.
+func TestMain(m *testing.M) {
+	// Disable fsync for maximum write performance during benchmarks.
+	// This trades durability for speed - acceptable for benchmarks.
+	local.NoFsync = true
+	os.Exit(m.Run())
+}
 
 // benchResults collects results for report generation.
 var (
@@ -52,12 +60,17 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 		SkipMsg: "Memory driver temporarily disabled for S3-only benchmarks",
 	})
 
-	// Local filesystem driver
-	// TEMPORARILY DISABLED for S3-only benchmarks
+	// Local filesystem driver - ENABLED for optimization testing
+	localRoot := os.TempDir()
+	if dir := os.Getenv("BENCH_LOCAL_ROOT"); dir != "" {
+		localRoot = dir
+	}
+	localRoot = filepath.Join(localRoot, "storage-bench-local")
+	os.MkdirAll(localRoot, 0o755)
 	configs = append(configs, DriverConfig{
-		Name:    "local",
-		Skip:    true,
-		SkipMsg: "Local driver temporarily disabled for S3-only benchmarks",
+		Name:   "local",
+		DSN:    "local:" + localRoot,
+		Bucket: "test-bucket",
 	})
 
 	// MinIO (port 9000)
