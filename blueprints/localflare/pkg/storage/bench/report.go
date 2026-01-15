@@ -1762,6 +1762,108 @@ func CompareReports(baseline, current *Report) []CompareResult {
 	return results
 }
 
+// GenerateDetailedBenchmarkTable creates a markdown table showing all drivers
+// with winner highlighted and percentages compared to winner.
+func GenerateDetailedBenchmarkTable(results []*Metrics) string {
+	var sb strings.Builder
+
+	// Group results by operation
+	byOperation := make(map[string][]*Metrics)
+	for _, m := range results {
+		if !isReferenceDriver(m.Driver) {
+			byOperation[m.Operation] = append(byOperation[m.Operation], m)
+		}
+	}
+
+	// Sort operations
+	operations := make([]string, 0, len(byOperation))
+	for op := range byOperation {
+		operations = append(operations, op)
+	}
+	sort.Strings(operations)
+
+	sb.WriteString("## Detailed Benchmark Results\n\n")
+	sb.WriteString("**Legend:** 🥇 = Winner, % = relative to winner (higher is better for throughput, lower is better for latency)\n\n")
+
+	for _, op := range operations {
+		metrics := byOperation[op]
+		if len(metrics) < 2 {
+			continue
+		}
+
+		// Sort by throughput (descending) to find winner
+		sort.Slice(metrics, func(i, j int) bool {
+			return metrics[i].Throughput > metrics[j].Throughput
+		})
+
+		winner := metrics[0]
+
+		sb.WriteString(fmt.Sprintf("### %s\n\n", op))
+
+		// Determine if this is a throughput or ops/s benchmark
+		hasThroughput := winner.ObjectSize > 0
+
+		if hasThroughput {
+			sb.WriteString("| Driver | Throughput | vs Winner | Latency P50 | Latency P99 | Errors |\n")
+			sb.WriteString("|--------|------------|-----------|-------------|-------------|--------|\n")
+		} else {
+			sb.WriteString("| Driver | ops/sec | vs Winner | Latency P50 | Latency P99 | Errors |\n")
+			sb.WriteString("|--------|---------|-----------|-------------|-------------|--------|\n")
+		}
+
+		for i, m := range metrics {
+			driverName := m.Driver
+			isWinner := i == 0
+
+			if isWinner {
+				driverName = "🥇 **" + driverName + "**"
+			}
+
+			// Calculate percentage vs winner
+			var vsWinner string
+			if isWinner {
+				vsWinner = "100%"
+			} else if winner.Throughput > 0 {
+				pct := (m.Throughput / winner.Throughput) * 100
+				vsWinner = fmt.Sprintf("%.1f%%", pct)
+			}
+
+			var throughputStr string
+			if hasThroughput {
+				if m.Throughput >= 1000 {
+					throughputStr = fmt.Sprintf("%.2f GB/s", m.Throughput/1000)
+				} else {
+					throughputStr = fmt.Sprintf("%.2f MB/s", m.Throughput)
+				}
+			} else {
+				if m.Throughput >= 1000000 {
+					throughputStr = fmt.Sprintf("%.2fM", m.Throughput/1000000)
+				} else if m.Throughput >= 1000 {
+					throughputStr = fmt.Sprintf("%.2fK", m.Throughput/1000)
+				} else {
+					throughputStr = fmt.Sprintf("%.0f", m.Throughput)
+				}
+			}
+
+			if isWinner {
+				throughputStr = "**" + throughputStr + "**"
+			}
+
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %d |\n",
+				driverName,
+				throughputStr,
+				vsWinner,
+				formatLatency(m.P50Latency),
+				formatLatency(m.P99Latency),
+				m.Errors,
+			))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
 // GenerateComparisonReport creates a markdown comparison report.
 func GenerateComparisonReport(comparisons []CompareResult) string {
 	var sb strings.Builder

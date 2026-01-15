@@ -89,13 +89,12 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 	}
 
 	// RustFS (port 9100)
-	// Note: RustFS has connection issues at high concurrency (C25+), limited to C10
 	if checkS3Endpoint("localhost:9100", "rustfsadmin", "rustfsadmin") {
 		configs = append(configs, DriverConfig{
-			Name:           "rustfs",
-			DSN:            "s3://rustfsadmin:rustfsadmin@localhost:9100/test-bucket?insecure=true&force_path_style=true",
-			Bucket:         "test-bucket",
-			MaxConcurrency: 10, // RustFS has HTTP connection issues at C25
+			Name:   "rustfs",
+			DSN:    "s3://rustfsadmin:rustfsadmin@localhost:9100/test-bucket?insecure=true&force_path_style=true",
+			Bucket: "test-bucket",
+			// No MaxConcurrency limit - rely on timeout handling
 		})
 	} else {
 		configs = append(configs, DriverConfig{
@@ -304,6 +303,14 @@ func BenchmarkRead(b *testing.B) {
 		{"Small_1KB", 1024},
 		{"Medium_64KB", 64 * 1024},
 		{"Standard_1MB", 1024 * 1024},
+	}
+
+	// Include larger sizes only if explicitly requested
+	if os.Getenv("BENCH_LARGE") == "1" {
+		sizes = append(sizes,
+			struct{ name string; size int }{"Large_10MB", 10 * 1024 * 1024},
+			struct{ name string; size int }{"XLarge_100MB", 100 * 1024 * 1024},
+		)
 	}
 
 	configs := getDriverConfigs(b)
