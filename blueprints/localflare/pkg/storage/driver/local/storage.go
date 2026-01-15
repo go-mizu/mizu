@@ -578,8 +578,8 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}
 	dir := filepath.Dir(full)
 
-	// Use directory cache for fast path
-	if err := globalDirCache.ensureDir(dir); err != nil {
+	// Use optimized lock-free directory cache for fast path
+	if err := optimizedDirCache.ensureDir(dir); err != nil {
 		return nil, fmt.Errorf("local: mkdir %q: %w", dir, err)
 	}
 
@@ -598,11 +598,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 }
 
 // writeTinyFile writes very small files (<=4KB) with minimal syscalls.
-// Uses a small pre-allocated buffer for maximum speed.
+// Uses a sharded buffer pool for maximum speed under concurrency.
 func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
-	// Get small buffer from pool
-	buf := *smallBufferPool.Get().(*[]byte)
-	defer smallBufferPool.Put(&buf)
+	// Get small buffer from sharded pool (reduces lock contention)
+	buf := shardedSmallPool.Get()
+	defer shardedSmallPool.Put(buf)
 
 	// Read all data into buffer
 	n, err := io.ReadFull(src, buf[:size])
@@ -647,11 +647,11 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 }
 
 // writeSmallFile writes small files (4KB-64KB) directly to the destination.
-// Uses medium buffer pool for efficient memory usage.
+// Uses sharded medium buffer pool for efficient memory usage under concurrency.
 func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
-	// Get medium buffer from pool
-	buf := *mediumBufferPool.Get().(*[]byte)
-	defer mediumBufferPool.Put(&buf)
+	// Get medium buffer from sharded pool (reduces lock contention)
+	buf := shardedMediumPool.Get()
+	defer shardedMediumPool.Put(buf)
 
 	// Read all data into buffer
 	n, err := io.ReadFull(src, buf[:size])
@@ -696,6 +696,7 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 }
 
 // writeLargeFile writes large or unknown-size files using temp file + atomic rename.
+// Optimized: uses sharded buffer pool and tracks bytes to avoid post-write stat.
 func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, contentType string) (*storage.Object, error) {
 	// Safer temp file: randomly named in the target directory.
 	// This avoids predictable names and keeps rename atomic on the same volume.
@@ -710,13 +711,30 @@ func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, co
 		_ = os.Remove(tmpName)
 	}()
 
-	// Use pooled buffer for optimized I/O
-	buf := getBuffer()
-	defer putBuffer(buf)
+	// Use sharded large buffer pool for optimized I/O under concurrency
+	buf := shardedLargePool.Get()
+	defer shardedLargePool.Put(buf)
 
-	_, err = io.CopyBuffer(tmp, src, buf)
-	if err != nil {
-		return nil, fmt.Errorf("local: write %q: %w", key, err)
+	// Track bytes written to avoid post-write stat syscall
+	var written int64
+	for {
+		nr, readErr := src.Read(buf)
+		if nr > 0 {
+			nw, writeErr := tmp.Write(buf[:nr])
+			written += int64(nw)
+			if writeErr != nil {
+				return nil, fmt.Errorf("local: write %q: %w", key, writeErr)
+			}
+			if nr != nw {
+				return nil, fmt.Errorf("local: short write %q", key)
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("local: read for %q: %w", key, readErr)
+		}
 	}
 
 	// Optional fsync for durability (skip for benchmarks)
@@ -733,18 +751,15 @@ func (b *bucket) writeLargeFile(full, dir, relKey, key string, src io.Reader, co
 		return nil, fmt.Errorf("local: rename temp to %q: %w", full, err)
 	}
 
-	info, err := os.Stat(full)
-	if err != nil {
-		return nil, fmt.Errorf("local: stat written %q: %w", key, err)
-	}
-
+	// Return object without stat call - we tracked the bytes written
+	now := time.Now()
 	return &storage.Object{
 		Bucket:      b.name,
 		Key:         relToKey(relKey),
-		Size:        info.Size(),
+		Size:        written,
 		ContentType: contentType,
-		Created:     info.ModTime(),
-		Updated:     info.ModTime(),
+		Created:     now,
+		Updated:     now,
 	}, nil
 }
 
@@ -1291,9 +1306,9 @@ func copyFile(src, dst string) (err error) {
 		}
 	}()
 
-	// Use pooled buffer for optimized I/O
-	buf := getBuffer()
-	defer putBuffer(buf)
+	// Use sharded large buffer pool for optimized I/O under concurrency
+	buf := shardedLargePool.Get()
+	defer shardedLargePool.Put(buf)
 
 	if _, err = io.CopyBuffer(out, in, buf); err != nil {
 		return err
