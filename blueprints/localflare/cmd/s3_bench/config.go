@@ -1,7 +1,11 @@
 // Package main provides configuration for S3 benchmarks.
 package main
 
-import "time"
+import (
+	"os"
+	"path/filepath"
+	"time"
+)
 
 // Config holds the benchmark configuration.
 type Config struct {
@@ -41,9 +45,18 @@ func DefaultConfig() *Config {
 		PayloadsMin: 12, // 4MB (2^12 KB = 4096 KB)
 		PayloadsMax: 14, // 16MB (2^14 KB = 16384 KB)
 		Samples:     100,
-		OutputDir:   "./s3_bench_results",
+		OutputDir:   DefaultOutputDir(),
 		ComposeDir:  "./docker/s3/all",
 	}
+}
+
+// DefaultOutputDir returns the default output directory.
+func DefaultOutputDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./pkg/storage/report/s3_bench"
+	}
+	return filepath.Join(home, "github", "go-mizu", "mizu", "blueprints", "localflare", "pkg", "storage", "report", "s3_bench")
 }
 
 // QuickConfig returns a quick test configuration.
@@ -55,7 +68,7 @@ func QuickConfig() *Config {
 		PayloadsMax: 13, // 8MB
 		Samples:     20,
 		Quick:       true,
-		OutputDir:   "./s3_bench_results",
+		OutputDir:   DefaultOutputDir(),
 		ComposeDir:  "./docker/s3/all",
 	}
 }
@@ -69,7 +82,7 @@ func FullConfig() *Config {
 		PayloadsMax: 15, // 32MB
 		Samples:     200,
 		Full:        true,
-		OutputDir:   "./s3_bench_results",
+		OutputDir:   DefaultOutputDir(),
 		ComposeDir:  "./docker/s3/all",
 	}
 }

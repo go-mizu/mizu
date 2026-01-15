@@ -154,6 +154,8 @@ func NewS3Client(ctx context.Context, driver *DriverConfig) (*S3Client, error) {
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(driver.Endpoint)
 		o.UsePathStyle = true // Required for most S3-compatible services
+		// Disable checksum validation logging (suppresses warnings for S3-compatible services)
+		o.DisableLogOutputChecksumValidationSkipped = true
 	})
 
 	return &S3Client{
