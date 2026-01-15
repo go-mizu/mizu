@@ -90,6 +90,15 @@ func (s *Server) handleObject(c *mizu.Ctx) error {
 //   - Range: bytes=-suffix
 func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 	ctx := contextFromCtx(c)
+	r := c.Request()
+	rangeHeader := r.Header.Get("Range")
+
+	// OPTIMIZATION: Check response cache for non-range requests
+	if rangeHeader == "" {
+		if cached, ok := responseCache.Get(req.Bucket, req.Key); ok {
+			return s.serveCachedResponse(c, cached)
+		}
+	}
 
 	b := s.stor.Bucket(req.Bucket)
 	if b == nil {
@@ -108,13 +117,11 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 		size = 0
 	}
 
-	r := c.Request()
 	w := c.Writer()
 
 	// Always advertise byte range support.
 	w.Header().Set("Accept-Ranges", "bytes")
 
-	rangeHeader := r.Header.Get("Range")
 	var (
 		start      int64
 		end        int64
@@ -217,10 +224,56 @@ func (s *Server) handleGetObject(c *mizu.Ctx, req *Request) error {
 	// For GET we stream the body; for HEAD the router dispatches to handleHeadObject
 	// so we do not send a body here when Method == HEAD.
 	if r.Method != http.MethodHead {
-		// Use pooled buffer for optimal streaming performance.
-		buf := getS3Buffer()
-		defer putS3Buffer(buf)
-		_, _ = io.CopyBuffer(w, rc, buf)
+		// OPTIMIZATION: For small non-partial objects, cache the response for future requests
+		if !isPartial && length > 0 && length <= ResponseCacheMaxItemSize {
+			// Read entire object into memory for caching
+			data := make([]byte, length)
+			n, _ := io.ReadFull(rc, data)
+			data = data[:n]
+
+			// Write to response
+			w.Write(data)
+
+			// Cache the response
+			responseCache.Put(req.Bucket, req.Key, &ResponseCacheEntry{
+				ContentType:  contentType,
+				ETag:         obj.ETag,
+				LastModified: obj.Updated,
+				Data:         data,
+				Size:         int64(n),
+			})
+		} else {
+			// Use pooled buffer for optimal streaming performance.
+			buf := getS3Buffer()
+			defer putS3Buffer(buf)
+			_, _ = io.CopyBuffer(w, rc, buf)
+		}
+	}
+	return nil
+}
+
+// serveCachedResponse writes a cached response directly.
+func (s *Server) serveCachedResponse(c *mizu.Ctx, cached *ResponseCacheEntry) error {
+	w := c.Writer()
+
+	// Set headers
+	if cached.ContentType != "" {
+		w.Header().Set("Content-Type", cached.ContentType)
+	}
+	if cached.ETag != "" {
+		w.Header().Set("ETag", quoteRawETag(cached.ETag))
+	}
+	if !cached.LastModified.IsZero() {
+		w.Header().Set("Last-Modified", cached.LastModified.UTC().Format(http.TimeFormat))
+	}
+	w.Header().Set("Content-Length", strconv.FormatInt(cached.Size, 10))
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	w.WriteHeader(http.StatusOK)
+
+	// Write body directly from cache
+	if c.Request().Method != http.MethodHead {
+		w.Write(cached.Data)
 	}
 	return nil
 }
@@ -273,6 +326,9 @@ func (s *Server) handlePutObject(c *mizu.Ctx, req *Request) error {
 		return writeError(c, mapError(err))
 	}
 
+	// OPTIMIZATION: Invalidate response cache on write
+	responseCache.Invalidate(req.Bucket, req.Key)
+
 	etag := obj.ETag
 	if etag == "" && obj.Hash != nil {
 		if v := obj.Hash["etag"]; v != "" {
@@ -323,6 +379,9 @@ func (s *Server) handleCopyObject(c *mizu.Ctx, req *Request) error {
 		return writeError(c, mapError(err))
 	}
 
+	// OPTIMIZATION: Invalidate response cache on copy
+	responseCache.Invalidate(dstBucket, dstKey)
+
 	etag := obj.ETag
 	if etag == "" && obj.Hash != nil {
 		if v := obj.Hash["etag"]; v != "" {
@@ -367,6 +426,10 @@ func (s *Server) handleDeleteObject(c *mizu.Ctx, req *Request) error {
 	if err != nil && !errors.Is(err, storage.ErrNotExist) {
 		return writeError(c, mapError(err))
 	}
+
+	// OPTIMIZATION: Invalidate response cache on delete
+	responseCache.Invalidate(req.Bucket, req.Key)
+
 	c.Writer().WriteHeader(http.StatusNoContent)
 	return nil
 }

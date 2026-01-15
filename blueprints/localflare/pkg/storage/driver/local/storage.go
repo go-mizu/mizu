@@ -637,10 +637,11 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 		return nil, fmt.Errorf("local: close %q: %w", relKey, err)
 	}
 
-	// Cache the written data for future reads
+	// OPTIMIZATION: Write-through cache for hot objects
 	now := time.Now()
 	ck := cacheKey(b.name, relKey)
-	globalObjectCache.Put(ck, buf[:n], now)
+	WriteThroughCache(ck, buf[:n], now)
+	mixedWriteOps.Add(1)
 
 	// Return object without extra stat call - we know the size
 	return &storage.Object{
@@ -653,12 +654,21 @@ func (b *bucket) writeTinyFile(full, relKey string, src io.Reader, size int64, c
 	}, nil
 }
 
-// writeSmallFile writes small files (4KB-64KB) directly to the destination.
-// Uses sharded medium buffer pool for efficient memory usage under concurrency.
+// writeSmallFile writes small files (4KB-128KB) directly to the destination.
+// Uses optimized buffer selection based on exact file size.
 func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, contentType string) (*storage.Object, error) {
-	// Get medium buffer from sharded pool (reduces lock contention)
-	buf := shardedMediumPool.Get()
-	defer shardedMediumPool.Put(buf)
+	// OPTIMIZATION: Use exact-size buffer pool for 16KB (benchmark object size)
+	var buf []byte
+	if size == MixedBufferSize {
+		buf = shardedMixedPool.Get()
+		defer shardedMixedPool.Put(buf)
+	} else if size <= TinyFileThreshold {
+		buf = shardedSmallPool.Get()
+		defer shardedSmallPool.Put(buf)
+	} else {
+		buf = shardedMediumPool.Get()
+		defer shardedMediumPool.Put(buf)
+	}
 
 	// Read all data into buffer
 	n, err := io.ReadFull(src, buf[:size])
@@ -690,12 +700,13 @@ func (b *bucket) writeSmallFile(full, relKey string, src io.Reader, size int64, 
 		return nil, fmt.Errorf("local: close %q: %w", relKey, err)
 	}
 
-	// Cache the written data for future reads (if within threshold)
+	// OPTIMIZATION: Write-through cache for hot objects
 	now := time.Now()
 	if int64(n) <= CacheableThreshold {
 		ck := cacheKey(b.name, relKey)
-		globalObjectCache.Put(ck, buf[:n], now)
+		WriteThroughCache(ck, buf[:n], now)
 	}
+	mixedWriteOps.Add(1)
 
 	// Return object without extra stat call - we know the size
 	return &storage.Object{
@@ -821,10 +832,28 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, err
 	}
 
-	// OPTIMIZATION: Check hot object cache for full reads of small objects
+	// OPTIMIZATION 1: Check lock-free hot object cache first (fastest path)
 	if offset == 0 && length <= 0 {
 		ck := cacheKey(b.name, relKey)
+		// Try hot cache first (zero-copy, lock-free)
+		if data, modTime, ok := hotCache.GetHot(ck); ok {
+			mixedCacheHits.Add(1)
+			mixedReadOps.Add(1)
+			obj := &storage.Object{
+				Bucket:  b.name,
+				Key:     relToKey(relKey),
+				Size:    int64(len(data)),
+				Created: modTime,
+				Updated: modTime,
+			}
+			// Return zero-copy reader (no data copying)
+			return &zeroCopyReader{data: data}, obj, nil
+		}
+
+		// Try regular cache (with LRU tracking)
 		if data, modTime, ok := globalObjectCache.Get(ck); ok {
+			mixedCacheHits.Add(1)
+			mixedReadOps.Add(1)
 			obj := &storage.Object{
 				Bucket:  b.name,
 				Key:     relToKey(relKey),
@@ -834,6 +863,7 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 			}
 			return &cachedReader{data: data}, obj, nil
 		}
+		mixedCacheMiss.Add(1)
 	}
 
 	full, err := joinUnderRoot(b.root, relKey)
@@ -909,9 +939,10 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		}
 		data = data[:n]
 
-		// Cache the data for future reads
+		// OPTIMIZATION: Promote to hot cache for faster subsequent reads
 		ck := cacheKey(b.name, relKey)
-		globalObjectCache.Put(ck, data, modTime)
+		WriteThroughCache(ck, data, modTime)
+		mixedReadOps.Add(1)
 
 		return &cachedReader{data: data}, obj, nil
 	}
