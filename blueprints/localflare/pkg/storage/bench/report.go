@@ -492,7 +492,7 @@ func (r *Report) SaveMarkdown(outputDir string) error {
 	}
 
 	markdown := r.generateMarkdown()
-	mdPath := filepath.Join(outputDir, "benchmark_report.md")
+	mdPath := filepath.Join(outputDir, "report.md")
 	return os.WriteFile(mdPath, []byte(markdown), 0644)
 }
 
@@ -548,6 +548,231 @@ func (r *Report) SaveCSV(outputDir string) error {
 	return nil
 }
 
+// SaveSummary saves a summary report showing best driver for each category.
+func (r *Report) SaveSummary(outputDir string) error {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+
+	summary := r.generateSummary()
+	summaryPath := filepath.Join(outputDir, "summary.md")
+	return os.WriteFile(summaryPath, []byte(summary), 0644)
+}
+
+// generateSummary creates a concise summary showing the best driver for each category.
+func (r *Report) generateSummary() string {
+	var sb strings.Builder
+
+	sb.WriteString("# Storage Benchmark Summary\n\n")
+	sb.WriteString(fmt.Sprintf("**Generated:** %s\n\n", r.Timestamp.Format(time.RFC3339)))
+
+	// Group results by operation (excluding reference driver)
+	byOperation := make(map[string][]*Metrics)
+	for _, m := range r.Results {
+		if !isReferenceDriver(m.Driver) {
+			byOperation[m.Operation] = append(byOperation[m.Operation], m)
+		}
+	}
+
+	// Get sorted list of operations
+	operations := make([]string, 0, len(byOperation))
+	for op := range byOperation {
+		operations = append(operations, op)
+	}
+	sort.Strings(operations)
+
+	// Categorize operations
+	type categoryResult struct {
+		operation  string
+		winner     string
+		winnerVal  float64
+		runnerUp   string
+		runnerVal  float64
+		unit       string
+		margin     string
+	}
+
+	var results []categoryResult
+
+	for _, op := range operations {
+		metrics := byOperation[op]
+		if len(metrics) < 2 {
+			continue
+		}
+
+		// Sort by throughput (descending)
+		sort.Slice(metrics, func(i, j int) bool {
+			return metrics[i].Throughput > metrics[j].Throughput
+		})
+
+		winner := metrics[0]
+		runnerUp := metrics[1]
+
+		// Determine unit
+		unit := "ops/s"
+		if winner.ObjectSize > 0 {
+			unit = "MB/s"
+		}
+
+		// Calculate margin
+		var margin string
+		if runnerUp.Throughput > 0 {
+			factor := winner.Throughput / runnerUp.Throughput
+			if factor >= 2.0 {
+				margin = fmt.Sprintf("%.1fx faster", factor)
+			} else if factor >= 1.1 {
+				margin = fmt.Sprintf("+%.0f%%", (factor-1)*100)
+			} else {
+				margin = "~equal"
+			}
+		}
+
+		results = append(results, categoryResult{
+			operation:  op,
+			winner:     winner.Driver,
+			winnerVal:  winner.Throughput,
+			runnerUp:   runnerUp.Driver,
+			runnerVal:  runnerUp.Throughput,
+			unit:       unit,
+			margin:     margin,
+		})
+	}
+
+	// Overall wins tally
+	wins := make(map[string]int)
+	for _, res := range results {
+		wins[res.winner]++
+	}
+
+	// Sort drivers by wins
+	type driverWins struct {
+		name string
+		wins int
+	}
+	var rankings []driverWins
+	for d, w := range wins {
+		rankings = append(rankings, driverWins{d, w})
+	}
+	sort.Slice(rankings, func(i, j int) bool {
+		return rankings[i].wins > rankings[j].wins
+	})
+
+	// Overall Winner Section
+	sb.WriteString("## Overall Winner\n\n")
+	if len(rankings) > 0 {
+		winner := rankings[0]
+		pct := float64(winner.wins) / float64(len(results)) * 100
+		sb.WriteString(fmt.Sprintf("**%s** won %d/%d categories (%.0f%%)\n\n", winner.name, winner.wins, len(results), pct))
+
+		if len(rankings) > 1 {
+			sb.WriteString("### Win Counts\n\n")
+			sb.WriteString("| Driver | Wins | Percentage |\n")
+			sb.WriteString("|--------|------|------------|\n")
+			for _, r := range rankings {
+				pct := float64(r.wins) / float64(len(results)) * 100
+				sb.WriteString(fmt.Sprintf("| %s | %d | %.0f%% |\n", r.name, r.wins, pct))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
+	// Best Driver by Category Table
+	sb.WriteString("## Best Driver by Category\n\n")
+	sb.WriteString("| Category | Winner | Performance | Runner-up | Runner-up Perf | Margin |\n")
+	sb.WriteString("|----------|--------|-------------|-----------|----------------|--------|\n")
+
+	for _, res := range results {
+		winnerPerf := formatPerformance(res.winnerVal, res.unit)
+		runnerPerf := formatPerformance(res.runnerVal, res.unit)
+		sb.WriteString(fmt.Sprintf("| %s | **%s** | %s | %s | %s | %s |\n",
+			res.operation, res.winner, winnerPerf, res.runnerUp, runnerPerf, res.margin))
+	}
+	sb.WriteString("\n")
+
+	// Category Summaries by Operation Type
+	sb.WriteString("## Category Summaries\n\n")
+
+	// Group by operation type prefix
+	opGroups := map[string][]categoryResult{
+		"Write":         {},
+		"Read":          {},
+		"ParallelWrite": {},
+		"ParallelRead":  {},
+		"Delete":        {},
+		"Stat":          {},
+		"List":          {},
+		"Copy":          {},
+		"FileCount":     {},
+	}
+
+	for _, res := range results {
+		for prefix := range opGroups {
+			if strings.HasPrefix(res.operation, prefix) {
+				opGroups[prefix] = append(opGroups[prefix], res)
+				break
+			}
+		}
+	}
+
+	// Print summaries for each group
+	groupOrder := []string{"Write", "Read", "ParallelWrite", "ParallelRead", "Delete", "Stat", "List", "Copy", "FileCount"}
+	for _, group := range groupOrder {
+		groupResults := opGroups[group]
+		if len(groupResults) == 0 {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("### %s Operations\n\n", group))
+
+		// Find most common winner in this group
+		groupWins := make(map[string]int)
+		for _, res := range groupResults {
+			groupWins[res.winner]++
+		}
+
+		var bestDriver string
+		var bestWins int
+		for d, w := range groupWins {
+			if w > bestWins {
+				bestWins = w
+				bestDriver = d
+			}
+		}
+
+		sb.WriteString(fmt.Sprintf("**Best for %s:** %s (won %d/%d)\n\n", group, bestDriver, bestWins, len(groupResults)))
+
+		sb.WriteString("| Operation | Winner | Performance | vs Runner-up |\n")
+		sb.WriteString("|-----------|--------|-------------|-------------|\n")
+		for _, res := range groupResults {
+			perf := formatPerformance(res.winnerVal, res.unit)
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", res.operation, res.winner, perf, res.margin))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("---\n\n")
+	sb.WriteString("*Generated by storage benchmark CLI*\n")
+
+	return sb.String()
+}
+
+// formatPerformance formats a performance value with appropriate unit.
+func formatPerformance(val float64, unit string) string {
+	if unit == "MB/s" {
+		if val >= 1000 {
+			return fmt.Sprintf("%.1f GB/s", val/1000)
+		}
+		return fmt.Sprintf("%.1f MB/s", val)
+	}
+	if val >= 1000000 {
+		return fmt.Sprintf("%.1fM %s", val/1000000, unit)
+	}
+	if val >= 1000 {
+		return fmt.Sprintf("%.1fK %s", val/1000, unit)
+	}
+	return fmt.Sprintf("%.0f %s", val, unit)
+}
+
 // SaveAll saves report in all configured formats.
 func (r *Report) SaveAll(outputDir string, formats []string) error {
 	for _, format := range formats {
@@ -559,6 +784,10 @@ func (r *Report) SaveAll(outputDir string, formats []string) error {
 		case "markdown":
 			if err := r.SaveMarkdown(outputDir); err != nil {
 				return fmt.Errorf("save markdown: %w", err)
+			}
+			// Also generate summary.md alongside the full report
+			if err := r.SaveSummary(outputDir); err != nil {
+				return fmt.Errorf("save summary: %w", err)
 			}
 		case "csv":
 			if err := r.SaveCSV(outputDir); err != nil {

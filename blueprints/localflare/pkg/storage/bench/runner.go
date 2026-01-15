@@ -70,6 +70,15 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	for i, driver := range available {
 		r.logger("=== [%d/%d] Benchmarking %s ===", i+1, len(available), driver.Name)
 
+		// Collect Docker stats before benchmarks (to show growth)
+		if r.config.DockerStats && driver.Container != "" {
+			r.logger("  Collecting initial Docker stats...")
+			stats, err := r.dockerCollector.GetStats(ctx, driver.Container)
+			if err == nil {
+				r.logger("  Initial: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
+			}
+		}
+
 		if err := r.benchmarkDriver(ctx, driver); err != nil {
 			r.logger("Driver %s failed: %v", driver.Name, err)
 			continue
@@ -77,9 +86,19 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 		// Collect Docker stats after benchmarks
 		if r.config.DockerStats && driver.Container != "" {
+			r.logger("  Collecting final Docker stats...")
 			stats, err := r.dockerCollector.GetStats(ctx, driver.Container)
 			if err == nil {
 				r.dockerStats[driver.Name] = stats
+				r.logger("  Final: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
+			}
+
+			// Cleanup container to reset state for next benchmark
+			r.logger("  Cleaning up %s container...", driver.Name)
+			if err := r.dockerCollector.CleanupContainer(ctx, driver.Container); err != nil {
+				r.logger("  Warning: cleanup failed: %v", err)
+			} else {
+				r.logger("  Container restarted and healthy")
 			}
 		}
 

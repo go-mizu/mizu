@@ -487,3 +487,64 @@ func IsDockerAvailable(ctx context.Context) bool {
 	cmd := exec.CommandContext(checkCtx, "docker", "info")
 	return cmd.Run() == nil
 }
+
+// RestartContainer restarts a container to clear its state.
+func (c *DockerStatsCollector) RestartContainer(ctx context.Context, containerName string) error {
+	restartCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(restartCtx, "docker", "restart", containerName)
+	return cmd.Run()
+}
+
+// WaitForHealthy waits for a container to become healthy.
+func (c *DockerStatsCollector) WaitForHealthy(ctx context.Context, containerName string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		healthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		cmd := exec.CommandContext(healthCtx, "docker", "inspect", "--format", "{{.State.Health.Status}}", containerName)
+		output, err := cmd.Output()
+		cancel()
+
+		if err == nil {
+			status := strings.TrimSpace(string(output))
+			if status == "healthy" {
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	return fmt.Errorf("timeout waiting for container %s to become healthy", containerName)
+}
+
+// CleanupContainer restarts a container and waits for it to be healthy.
+// This effectively clears all in-memory and cached data.
+func (c *DockerStatsCollector) CleanupContainer(ctx context.Context, containerName string) error {
+	if err := c.RestartContainer(ctx, containerName); err != nil {
+		return fmt.Errorf("restart container %s: %w", containerName, err)
+	}
+
+	// Wait for container to be healthy
+	if err := c.WaitForHealthy(ctx, containerName, 60*time.Second); err != nil {
+		return fmt.Errorf("wait for healthy %s: %w", containerName, err)
+	}
+
+	return nil
+}
+
+// ClearVolumeData clears data inside a container's data directory.
+// This is useful for persistent volumes that survive restarts.
+func (c *DockerStatsCollector) ClearVolumeData(ctx context.Context, containerName, dataPath string) error {
+	clearCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Execute rm -rf inside the container
+	cmd := exec.CommandContext(clearCtx, "docker", "exec", containerName, "sh", "-c",
+		fmt.Sprintf("rm -rf %s/* 2>/dev/null || true", dataPath))
+	return cmd.Run()
+}
