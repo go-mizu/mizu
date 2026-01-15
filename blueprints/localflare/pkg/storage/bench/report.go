@@ -14,6 +14,70 @@ import (
 	"time"
 )
 
+// =============================================================================
+// REPORT FORMAT CONSTANTS
+// =============================================================================
+// All display-related magic numbers consolidated here for easy tuning.
+
+const (
+	// ---------------------------------------------------------------------------
+	// Performance Target Thresholds
+	// ---------------------------------------------------------------------------
+
+	// TargetRatio is the target performance multiplier for liteio vs competitors.
+	// liteio should be this many times faster than other drivers.
+	TargetRatio = 5.0
+
+	// PassThreshold: ratios >= this value show as PASS (green).
+	PassThreshold = 4.5
+
+	// WarnThreshold: ratios >= this value but < PassThreshold show as WARN (yellow).
+	WarnThreshold = 3.0
+
+	// FailThreshold: ratios < WarnThreshold show as FAIL (red).
+	// Anything below WarnThreshold is considered failing the 5x target.
+	FailThreshold = 0.0
+
+	// ---------------------------------------------------------------------------
+	// Display Formatting
+	// ---------------------------------------------------------------------------
+
+	// DriverColumnWidth is the width for driver name columns.
+	DriverColumnWidth = 12
+
+	// MetricColumnWidth is the width for metric value columns.
+	MetricColumnWidth = 12
+
+	// ---------------------------------------------------------------------------
+	// Comparison Thresholds
+	// ---------------------------------------------------------------------------
+
+	// SignificantDifferenceRatio is the minimum ratio to show in comparisons.
+	// Ratios below this are considered "close competition".
+	SignificantDifferenceRatio = 1.1
+
+	// MajorDifferenceRatio indicates a significant performance gap.
+	MajorDifferenceRatio = 2.0
+
+	// ---------------------------------------------------------------------------
+	// Report Section Limits
+	// ---------------------------------------------------------------------------
+
+	// MaxLeaderCategories is the maximum categories shown in leader table.
+	MaxLeaderCategories = 12
+
+	// MaxComparisonRows is the maximum rows in comparison tables.
+	MaxComparisonRows = 50
+
+	// ---------------------------------------------------------------------------
+	// Reference Driver
+	// ---------------------------------------------------------------------------
+
+	// ReferenceDriver is the driver used as a theoretical baseline reference.
+	// It is excluded from main comparisons but shown separately for context.
+	ReferenceDriver = "devnull"
+)
+
 // BenchmarkEntry represents a parsed benchmark result.
 type BenchmarkEntry struct {
 	Name       string  `json:"name"`
@@ -505,6 +569,22 @@ func (r *Report) SaveAll(outputDir string, formats []string) error {
 	return nil
 }
 
+// isReferenceDriver returns true if the driver is the reference/baseline driver.
+func isReferenceDriver(driver string) bool {
+	return driver == ReferenceDriver
+}
+
+// filterNonReferenceResults filters out the reference driver from results.
+func filterNonReferenceResults(results []*Metrics) []*Metrics {
+	var filtered []*Metrics
+	for _, m := range results {
+		if !isReferenceDriver(m.Driver) {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered
+}
+
 func (r *Report) generateMarkdown() string {
 	var sb strings.Builder
 
@@ -514,7 +594,7 @@ func (r *Report) generateMarkdown() string {
 	sb.WriteString(fmt.Sprintf("**Go Version:** %s\n\n", runtime.Version()))
 	sb.WriteString(fmt.Sprintf("**Platform:** %s/%s\n\n", runtime.GOOS, runtime.GOARCH))
 
-	// Executive Summary - generate first for quick insights
+	// Executive Summary
 	r.generateExecutiveSummary(&sb)
 
 	// Configuration
@@ -529,18 +609,23 @@ func (r *Report) generateMarkdown() string {
 		sb.WriteString("\n")
 	}
 
-	// Group results by driver
+	// Group results by driver (excluding reference driver for main display)
 	byDriver := make(map[string][]*Metrics)
 	byOperation := make(map[string][]*Metrics)
 	drivers := make(map[string]bool)
+	hasReferenceDriver := false
 
 	for _, m := range r.Results {
 		byDriver[m.Driver] = append(byDriver[m.Driver], m)
 		byOperation[m.Operation] = append(byOperation[m.Operation], m)
-		drivers[m.Driver] = true
+		if isReferenceDriver(m.Driver) {
+			hasReferenceDriver = true
+		} else {
+			drivers[m.Driver] = true
+		}
 	}
 
-	// Driver list
+	// Driver list (excluding reference driver)
 	driverList := make([]string, 0, len(drivers))
 	for d := range drivers {
 		driverList = append(driverList, d)
@@ -549,12 +634,15 @@ func (r *Report) generateMarkdown() string {
 
 	sb.WriteString("## Drivers Tested\n\n")
 	for _, d := range driverList {
-		sb.WriteString(fmt.Sprintf("- %s (%d benchmarks)\n", d, len(byDriver[d])))
+		sb.WriteString(fmt.Sprintf("- **%s** (%d benchmarks)\n", d, len(byDriver[d])))
+	}
+	if hasReferenceDriver {
+		sb.WriteString(fmt.Sprintf("\n*Reference baseline: %s (excluded from comparisons)*\n", ReferenceDriver))
 	}
 	sb.WriteString("\n")
 
 	// Operation comparison tables
-	sb.WriteString("## Performance Comparison\n\n")
+	sb.WriteString("## Detailed Results\n\n")
 
 	// Get unique operations
 	operations := make([]string, 0, len(byOperation))
@@ -564,15 +652,17 @@ func (r *Report) generateMarkdown() string {
 	sort.Strings(operations)
 
 	for _, op := range operations {
-		results := byOperation[op]
-		if len(results) < 2 {
+		allResults := byOperation[op]
+		// Filter out reference driver for main comparison
+		results := filterNonReferenceResults(allResults)
+		if len(results) < 1 {
 			continue
 		}
 
 		sb.WriteString(fmt.Sprintf("### %s\n\n", op))
 
 		// Check if this is a read operation with TTFB data
-		hasTTFB := strings.Contains(op, "Read") && results[0].TTFBAvg > 0
+		hasTTFB := strings.Contains(op, "Read") && len(results) > 0 && results[0].TTFBAvg > 0
 
 		if hasTTFB {
 			sb.WriteString("| Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |\n")
@@ -619,11 +709,11 @@ func (r *Report) generateMarkdown() string {
 		}
 		sb.WriteString("\n")
 
-		// Add bar chart
-		r.writeBarChart(&sb, results)
+		// Add bar charts
+		writeBarCharts(&sb, results)
 	}
 
-	// Docker stats - enhanced with more details
+	// Docker stats
 	if len(r.DockerStats) > 0 {
 		sb.WriteString("## Resource Usage\n\n")
 		sb.WriteString("| Driver | Memory | RSS | Cache | CPU | Volume | Block I/O |\n")
@@ -631,28 +721,23 @@ func (r *Report) generateMarkdown() string {
 
 		for _, d := range driverList {
 			if stats, ok := r.DockerStats[d]; ok {
-				// Format memory
 				mem := stats.MemoryUsage
 				if mem == "" {
 					mem = "-"
 				}
 
-				// Format RSS (actual application memory)
 				rss := "-"
 				if stats.MemoryRSSMB > 0 {
 					rss = fmt.Sprintf("%.1f MB", stats.MemoryRSSMB)
 				}
 
-				// Format cache (page cache for disk drivers)
 				cache := "-"
 				if stats.MemoryCacheMB > 0 {
 					cache = fmt.Sprintf("%.1f MB", stats.MemoryCacheMB)
 				}
 
-				// Format CPU
 				cpu := fmt.Sprintf("%.1f%%", stats.CPUPercent)
 
-				// Format volume size
 				vol := "-"
 				if stats.VolumeSize > 0 {
 					vol = fmt.Sprintf("%.1f MB", stats.VolumeSize)
@@ -660,7 +745,6 @@ func (r *Report) generateMarkdown() string {
 					vol = "(no data)"
 				}
 
-				// Format block I/O
 				blockIO := "-"
 				if stats.BlockRead != "" || stats.BlockWrite != "" {
 					blockIO = fmt.Sprintf("%s / %s", stats.BlockRead, stats.BlockWrite)
@@ -672,50 +756,65 @@ func (r *Report) generateMarkdown() string {
 		}
 		sb.WriteString("\n")
 
-		// Memory analysis note
-		sb.WriteString("### Memory Analysis Note\n\n")
-		sb.WriteString("> **RSS (Resident Set Size)**: Actual application memory usage.\n")
-		sb.WriteString("> \n")
-		sb.WriteString("> **Cache**: Linux page cache from filesystem I/O. Disk-based drivers show higher ")
-		sb.WriteString("total memory because the OS caches file pages in RAM. This memory is reclaimable ")
-		sb.WriteString("and doesn't indicate a memory leak.\n")
-		sb.WriteString("> \n")
-		sb.WriteString("> Memory-based drivers (like `liteio_mem`) have minimal cache because data ")
-		sb.WriteString("stays in application memory (RSS), not filesystem cache.\n\n")
+		sb.WriteString("> **Note:** RSS = actual application memory. Cache = OS page cache (reclaimable).\n\n")
 	}
 
 	// Recommendations
 	sb.WriteString("## Recommendations\n\n")
 
-	// Find best performers
-	writeBest := r.findBestForOperation("Write")
-	readBest := r.findBestForOperation("Read")
+	// Find best performers (excluding reference driver)
+	writeBest := r.findBestForOperationExcludeRef("Write")
+	readBest := r.findBestForOperationExcludeRef("Read")
 
 	if writeBest != "" {
-		sb.WriteString(fmt.Sprintf("- **Best for write-heavy workloads:** %s\n", writeBest))
+		sb.WriteString(fmt.Sprintf("- **Write-heavy workloads:** %s\n", writeBest))
 	}
 	if readBest != "" {
-		sb.WriteString(fmt.Sprintf("- **Best for read-heavy workloads:** %s\n", readBest))
+		sb.WriteString(fmt.Sprintf("- **Read-heavy workloads:** %s\n", readBest))
 	}
 
 	sb.WriteString("\n---\n\n")
-	sb.WriteString("*Report generated by storage benchmark CLI*\n")
+	sb.WriteString("*Generated by storage benchmark CLI*\n")
 
 	return sb.String()
 }
 
-func (r *Report) writeBarChart(sb *strings.Builder, results []*Metrics) {
+// findBestForOperationExcludeRef finds best driver excluding reference driver.
+func (r *Report) findBestForOperationExcludeRef(prefix string) string {
+	var best string
+	var bestThroughput float64
+
+	for _, m := range r.Results {
+		if isReferenceDriver(m.Driver) {
+			continue
+		}
+		if strings.HasPrefix(m.Operation, prefix) && m.Throughput > bestThroughput {
+			bestThroughput = m.Throughput
+			best = m.Driver
+		}
+	}
+
+	return best
+}
+
+// writeBarCharts generates throughput and latency bar charts.
+func writeBarCharts(sb *strings.Builder, results []*Metrics) {
 	if len(results) == 0 {
 		return
 	}
 
-	sb.WriteString("```\n")
-	maxVal := results[0].Throughput // Already sorted by throughput descending
-	maxWidth := 40
+	// Throughput bar chart
+	sb.WriteString("**Throughput**\n```\n")
+	maxThroughput := results[0].Throughput
+	for _, m := range results {
+		if m.Throughput > maxThroughput {
+			maxThroughput = m.Throughput
+		}
+	}
 
 	for _, m := range results {
-		barLen := int(m.Throughput / maxVal * float64(maxWidth))
-		if barLen < 1 {
+		barLen := int(m.Throughput / maxThroughput * 30)
+		if barLen < 1 && m.Throughput > 0 {
 			barLen = 1
 		}
 		bar := strings.Repeat("█", barLen)
@@ -725,24 +824,32 @@ func (r *Report) writeBarChart(sb *strings.Builder, results []*Metrics) {
 		} else {
 			val = fmt.Sprintf("%.0f ops/s", m.Throughput)
 		}
-		sb.WriteString(fmt.Sprintf("  %-12s %s %s\n", m.Driver, bar, val))
+		sb.WriteString(fmt.Sprintf("%-12s %s %s\n", m.Driver, bar, val))
+	}
+	sb.WriteString("```\n\n")
+
+	// Latency bar chart (P50)
+	sb.WriteString("**Latency (P50)**\n```\n")
+	var maxLatency time.Duration
+	for _, m := range results {
+		if m.P50Latency > maxLatency {
+			maxLatency = m.P50Latency
+		}
+	}
+
+	if maxLatency > 0 {
+		for _, m := range results {
+			barLen := int(float64(m.P50Latency) / float64(maxLatency) * 30)
+			if barLen < 1 && m.P50Latency > 0 {
+				barLen = 1
+			}
+			bar := strings.Repeat("█", barLen)
+			sb.WriteString(fmt.Sprintf("%-12s %s %s\n", m.Driver, bar, formatLatency(m.P50Latency)))
+		}
 	}
 	sb.WriteString("```\n\n")
 }
 
-func (r *Report) findBestForOperation(prefix string) string {
-	var best string
-	var bestThroughput float64
-
-	for _, m := range r.Results {
-		if strings.HasPrefix(m.Operation, prefix) && m.Throughput > bestThroughput {
-			bestThroughput = m.Throughput
-			best = m.Driver
-		}
-	}
-
-	return best
-}
 
 func formatLatency(d time.Duration) string {
 	if d < time.Microsecond {
@@ -757,19 +864,31 @@ func formatLatency(d time.Duration) string {
 	return fmt.Sprintf("%.2fs", d.Seconds())
 }
 
-// generateLeaderASCIITable creates a visually appealing ASCII table showing leaders per category.
-func (r *Report) generateLeaderASCIITable(sb *strings.Builder) {
-	// Collect leader data
-	type leaderInfo struct {
-		category string
-		leader   string
-		perf     string
-		notes    string
+// =============================================================================
+// FORMATTING HELPERS
+// =============================================================================
+
+// formatThroughput formats throughput with appropriate unit.
+func formatThroughput(throughput float64, hasSize bool) string {
+	if hasSize {
+		if throughput >= 1000 {
+			return fmt.Sprintf("%.1f GB/s", throughput/1000)
+		}
+		return fmt.Sprintf("%.1f MB/s", throughput)
 	}
+	if throughput >= 1000000 {
+		return fmt.Sprintf("%.1fM ops/s", throughput/1000000)
+	}
+	if throughput >= 1000 {
+		return fmt.Sprintf("%.1fK ops/s", throughput/1000)
+	}
+	return fmt.Sprintf("%.0f ops/s", throughput)
+}
 
-	var leaders []leaderInfo
-
-	// Group results by operation category
+// generateLeaderTable creates a markdown table showing leaders per category.
+// Reference driver (devnull) is excluded from comparisons.
+func (r *Report) generateLeaderTable(sb *strings.Builder) {
+	// Group results by operation category (excluding reference driver)
 	categoryBest := make(map[string]struct {
 		driver     string
 		throughput float64
@@ -778,10 +897,12 @@ func (r *Report) generateLeaderASCIITable(sb *strings.Builder) {
 	})
 
 	for _, m := range r.Results {
+		if isReferenceDriver(m.Driver) {
+			continue
+		}
 		cat := m.Operation
 		curr := categoryBest[cat]
 		if m.Throughput > curr.throughput {
-			// Current best becomes second
 			if curr.driver != "" {
 				curr.second = curr.driver
 				curr.secondVal = curr.throughput
@@ -801,52 +922,55 @@ func (r *Report) generateLeaderASCIITable(sb *strings.Builder) {
 		operation string
 		display   string
 	}{
-		{"Read/1KB", "Small File Read (1KB)"},
-		{"Write/1KB", "Small File Write (1KB)"},
-		{"Read/100MB", "Large File Read (100MB)"},
-		{"Write/100MB", "Large File Write (100MB)"},
-		{"Delete", "Delete Operations"},
-		{"Stat", "Stat Operations"},
-		{"List/100", "List Operations (100 obj)"},
-		{"Copy/1KB", "Copy Operations"},
-		{"RangeRead/Start_256KB", "Range Reads"},
-		{"MixedWorkload/Balanced_50_50", "Mixed Workload"},
-		{"ParallelRead/1KB/C200", "High Concurrency Read"},
-		{"ParallelWrite/1KB/C200", "High Concurrency Write"},
+		{"Read/1KB", "Small Read (1KB)"},
+		{"Write/1KB", "Small Write (1KB)"},
+		{"Read/10MB", "Large Read (10MB)"},
+		{"Write/10MB", "Large Write (10MB)"},
+		{"Delete", "Delete"},
+		{"Stat", "Stat"},
+		{"List/100", "List (100 objects)"},
+		{"Copy/1KB", "Copy"},
 	}
 
+	type leaderInfo struct {
+		category string
+		leader   string
+		perf     string
+		margin   string
+	}
+
+	var leaders []leaderInfo
 	for _, kc := range keyCategories {
 		if best, ok := categoryBest[kc.operation]; ok && best.driver != "" {
 			var perfStr string
-			// Check if it's ops/s or MB/s based on operation
 			for _, m := range r.Results {
 				if m.Operation == kc.operation && m.Driver == best.driver {
 					if m.ObjectSize > 0 {
-						perfStr = fmt.Sprintf("%.1f MB/s", best.throughput)
+						perfStr = formatThroughput(best.throughput, true)
 					} else {
-						perfStr = fmt.Sprintf("%.0f ops/s", best.throughput)
+						perfStr = formatThroughput(best.throughput, false)
 					}
 					break
 				}
 			}
 
-			// Calculate lead factor
-			var notes string
+			var margin string
 			if best.second != "" && best.secondVal > 0 {
 				factor := best.throughput / best.secondVal
-				if factor >= 1.5 {
-					notes = fmt.Sprintf("%.1fx faster than %s", factor, best.second)
+				if factor >= 2.0 {
+					margin = fmt.Sprintf("%.1fx vs %s", factor, best.second)
 				} else if factor >= 1.1 {
-					notes = fmt.Sprintf("%.0f%% faster than %s", (factor-1)*100, best.second)
+					margin = fmt.Sprintf("+%.0f%% vs %s", (factor-1)*100, best.second)
 				} else {
-					notes = "Close competition"
+					margin = "close"
 				}
 			}
 
 			leaders = append(leaders, leaderInfo{
 				category: kc.display,
-				leader:   best.driver + " " + perfStr,
-				notes:    notes,
+				leader:   best.driver,
+				perf:     perfStr,
+				margin:   margin,
 			})
 		}
 	}
@@ -855,86 +979,30 @@ func (r *Report) generateLeaderASCIITable(sb *strings.Builder) {
 		return
 	}
 
-	// Calculate column widths
-	catWidth := 27
-	leaderWidth := 23
-	notesWidth := 31
-
-	// Build ASCII table
 	sb.WriteString("### Performance Leaders\n\n")
-	sb.WriteString("```\n")
+	sb.WriteString("| Operation | Leader | Performance | Margin |\n")
+	sb.WriteString("|-----------|--------|-------------|--------|\n")
 
-	// Top border
-	sb.WriteString(fmt.Sprintf("┌%s┬%s┬%s┐\n",
-		strings.Repeat("─", catWidth),
-		strings.Repeat("─", leaderWidth),
-		strings.Repeat("─", notesWidth)))
-
-	// Header
-	sb.WriteString(fmt.Sprintf("│%s│%s│%s│\n",
-		centerString("Category", catWidth),
-		centerString("Leader", leaderWidth),
-		centerString("Notes", notesWidth)))
-
-	// Header separator
-	sb.WriteString(fmt.Sprintf("├%s┼%s┼%s┤\n",
-		strings.Repeat("─", catWidth),
-		strings.Repeat("─", leaderWidth),
-		strings.Repeat("─", notesWidth)))
-
-	// Data rows
-	for i, l := range leaders {
-		sb.WriteString(fmt.Sprintf("│%s│%s│%s│\n",
-			padRight(l.category, catWidth),
-			padRight(l.leader, leaderWidth),
-			padRight(l.notes, notesWidth)))
-
-		// Add separator between rows (except last)
-		if i < len(leaders)-1 {
-			sb.WriteString(fmt.Sprintf("├%s┼%s┼%s┤\n",
-				strings.Repeat("─", catWidth),
-				strings.Repeat("─", leaderWidth),
-				strings.Repeat("─", notesWidth)))
-		}
+	for _, l := range leaders {
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+			l.category, l.leader, l.perf, l.margin))
 	}
-
-	// Bottom border
-	sb.WriteString(fmt.Sprintf("└%s┴%s┴%s┘\n",
-		strings.Repeat("─", catWidth),
-		strings.Repeat("─", leaderWidth),
-		strings.Repeat("─", notesWidth)))
-
-	sb.WriteString("```\n\n")
+	sb.WriteString("\n")
 }
 
-// centerString centers a string within a given width.
-func centerString(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
-	}
-	left := (width - len(s)) / 2
-	right := width - len(s) - left
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
-}
-
-// padRight pads a string to the right with spaces.
-func padRight(s string, width int) string {
-	if len(s) >= width {
-		return s[:width]
-	}
-	return " " + s + strings.Repeat(" ", width-len(s)-1)
-}
-
-// generateQuickResults creates a TL;DR section showing overall winners and rankings.
+// generateQuickResults creates a summary showing overall winners and rankings.
+// Reference driver (devnull) is excluded from rankings.
 func (r *Report) generateQuickResults(sb *strings.Builder) {
-	// Count wins per driver across all benchmarks
+	// Count wins per driver across all benchmarks (excluding reference driver)
 	wins := make(map[string]int)
 	totalBenchmarks := 0
 
 	// Group by operation to find winners
 	byOperation := make(map[string][]*Metrics)
 	for _, m := range r.Results {
-		byOperation[m.Operation] = append(byOperation[m.Operation], m)
+		if !isReferenceDriver(m.Driver) {
+			byOperation[m.Operation] = append(byOperation[m.Operation], m)
+		}
 	}
 
 	// Find winner for each operation
@@ -944,7 +1012,6 @@ func (r *Report) generateQuickResults(sb *strings.Builder) {
 		}
 		totalBenchmarks++
 
-		// Find best throughput
 		var bestDriver string
 		var bestThroughput float64
 		for _, m := range results {
@@ -975,7 +1042,7 @@ func (r *Report) generateQuickResults(sb *strings.Builder) {
 		return rankings[i].wins > rankings[j].wins
 	})
 
-	sb.WriteString("### Quick Results\n\n")
+	sb.WriteString("### Summary\n\n")
 
 	// Show overall winner
 	if len(rankings) > 0 {
@@ -991,17 +1058,8 @@ func (r *Report) generateQuickResults(sb *strings.Builder) {
 
 	for i, r := range rankings {
 		winPct := float64(r.wins) / float64(totalBenchmarks) * 100
-		medal := ""
-		switch i {
-		case 0:
-			medal = " 🥇"
-		case 1:
-			medal = " 🥈"
-		case 2:
-			medal = " 🥉"
-		}
-		sb.WriteString(fmt.Sprintf("| %d%s | %s | %d | %.0f%% |\n",
-			i+1, medal, r.name, r.wins, winPct))
+		sb.WriteString(fmt.Sprintf("| %d | %s | %d | %.0f%% |\n",
+			i+1, r.name, r.wins, winPct))
 	}
 	sb.WriteString("\n")
 }
@@ -1010,16 +1068,26 @@ func (r *Report) generateQuickResults(sb *strings.Builder) {
 func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	sb.WriteString("## Executive Summary\n\n")
 
-	// Quick Results TL;DR
+	// Summary with rankings
 	r.generateQuickResults(sb)
 
-	// Add ASCII leader table first
-	r.generateLeaderASCIITable(sb)
+	// Performance leaders table
+	r.generateLeaderTable(sb)
 
-	// Find the largest file size tested
+	// Driver-specific summaries
+	r.continueExecutiveSummary(sb)
+}
+
+// continueExecutiveSummary generates detailed performance breakdown tables.
+// Reference driver (devnull) is excluded from all comparisons.
+func (r *Report) continueExecutiveSummary(sb *strings.Builder) {
+	// Find the largest file size tested (excluding reference driver)
 	largestSize := 0
 	largestSizeLabel := "1MB"
 	for _, m := range r.Results {
+		if isReferenceDriver(m.Driver) {
+			continue
+		}
 		if strings.HasPrefix(m.Operation, "Write/") || strings.HasPrefix(m.Operation, "Read/") {
 			if m.ObjectSize > largestSize {
 				largestSize = m.ObjectSize
@@ -1031,7 +1099,7 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	// Collect driver statistics with detailed breakdown
 	type driverSummary struct {
 		name string
-		// Large file performance (dynamic - largest size tested)
+		// Large file performance
 		writeLargeThroughput float64
 		readLargeThroughput  float64
 		writeLargeLatencyP50 time.Duration
@@ -1048,11 +1116,9 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 		listOpsPerSec   float64
 		deleteOpsPerSec float64
 		statOpsPerSec   float64
-		// Errors, skipped, and resource
-		errors      int
-		skipped     int
-		skippedInfo []string
-		memoryMB    float64
+		// Errors and resource usage
+		errors   int
+		memoryMB float64
 	}
 
 	summaries := make(map[string]*driverSummary)
@@ -1060,6 +1126,10 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 	largeReadOp := "Read/" + largestSizeLabel
 
 	for _, m := range r.Results {
+		// Skip reference driver
+		if isReferenceDriver(m.Driver) {
+			continue
+		}
 		if summaries[m.Driver] == nil {
 			summaries[m.Driver] = &driverSummary{name: m.Driver}
 		}
@@ -1090,14 +1160,6 @@ func (r *Report) generateExecutiveSummary(sb *strings.Builder) {
 			s.deleteOpsPerSec = m.OpsPerSec
 		case m.Operation == "Stat":
 			s.statOpsPerSec = m.OpsPerSec
-		}
-	}
-
-	// Track skipped benchmarks from SkippedBenchmarks field
-	for _, skip := range r.SkippedBenchmarks {
-		if summaries[skip.Driver] != nil {
-			summaries[skip.Driver].skipped++
-			summaries[skip.Driver].skippedInfo = append(summaries[skip.Driver].skippedInfo, skip.Reason)
 		}
 	}
 

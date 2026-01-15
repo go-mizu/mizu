@@ -74,11 +74,11 @@ func (b *bucket) InitMultipart(ctx context.Context, key string, contentType stri
 	}
 
 	dir := filepath.Dir(metaPath)
-	if err := os.MkdirAll(dir, dirPermissions); err != nil {
+	if err := os.MkdirAll(dir, DirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir multipart meta dir: %w", err)
 	}
 
-	if err := os.WriteFile(metaPath, data, filePermissions); err != nil {
+	if err := os.WriteFile(metaPath, data, FilePermissions); err != nil {
 		return nil, fmt.Errorf("local: write multipart meta: %w", err)
 	}
 
@@ -96,8 +96,8 @@ func (b *bucket) UploadPart(ctx context.Context, mu *storage.MultipartUpload, nu
 		return nil, err
 	}
 
-	if number <= 0 || number > maxPartNumber {
-		return nil, fmt.Errorf("local: part number %d out of range (1-%d)", number, maxPartNumber)
+	if number <= 0 || number > MaxPartNumber {
+		return nil, fmt.Errorf("local: part number %d out of range (1-%d)", number, MaxPartNumber)
 	}
 
 	// Verify metadata exists
@@ -111,7 +111,7 @@ func (b *bucket) UploadPart(ctx context.Context, mu *storage.MultipartUpload, nu
 	}
 
 	dir := filepath.Dir(partPath)
-	if err := os.MkdirAll(dir, dirPermissions); err != nil {
+	if err := os.MkdirAll(dir, DirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir part dir: %w", err)
 	}
 
@@ -265,7 +265,7 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	}
 	dir := filepath.Dir(full)
 
-	if err := os.MkdirAll(dir, dirPermissions); err != nil {
+	if err := os.MkdirAll(dir, DirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir final object dir: %w", err)
 	}
 
