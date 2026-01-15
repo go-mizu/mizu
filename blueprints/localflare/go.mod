@@ -58,9 +58,9 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260113215839-fa031ff101a1 // indirect
-	github.com/charmbracelet/x/ansi v0.11.3 // indirect
+	github.com/charmbracelet/x/ansi v0.11.4 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.14 // indirect
-	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260114172249-f5a4d7d87cd4 // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260115165445-03f2dd3d42f8 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
