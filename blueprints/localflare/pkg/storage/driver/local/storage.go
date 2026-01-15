@@ -590,6 +590,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 
 	// Select write strategy based on file size
 	switch {
+	case size == 0:
+		// Empty files: single syscall, no buffering needed
+		return b.writeEmptyFile(full, relKey, contentType)
 	case size > 0 && size <= TinyFileThreshold:
 		// Tiny files: direct memory write with minimal overhead
 		return b.writeTinyFile(full, relKey, src, size, contentType)
@@ -603,6 +606,44 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		// Large/unknown files: temp file + atomic rename
 		return b.writeLargeFile(full, dir, relKey, key, src, contentType)
 	}
+}
+
+// writeEmptyFile creates an empty file with minimal syscalls.
+// OPTIMIZATION: Single syscall instead of temp file + rename for 0-byte files.
+// This fixes the EdgeCase/EmptyObject benchmark where liteio was 3x slower.
+func (b *bucket) writeEmptyFile(full, relKey, contentType string) (*storage.Object, error) {
+	// FAST PATH: Use os.WriteFile with empty slice (single syscall)
+	if NoFsync {
+		// #nosec G306 -- file permissions are intentionally set to 0600
+		if err := os.WriteFile(full, nil, FilePermissions); err != nil {
+			return nil, fmt.Errorf("local: create empty %q: %w", relKey, err)
+		}
+	} else {
+		// Create empty file with fsync for durability
+		// #nosec G304 -- path is validated by cleanKey and joinUnderRoot
+		f, err := os.OpenFile(full, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, FilePermissions)
+		if err != nil {
+			return nil, fmt.Errorf("local: create empty %q: %w", relKey, err)
+		}
+		// No need to write anything - file is already empty
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("local: fsync empty %q: %w", relKey, err)
+		}
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("local: close empty %q: %w", relKey, err)
+		}
+	}
+
+	now := time.Now()
+	return &storage.Object{
+		Bucket:      b.name,
+		Key:         relToKey(relKey),
+		Size:        0,
+		ContentType: contentType,
+		Created:     now,
+		Updated:     now,
+	}, nil
 }
 
 // writeTinyFile writes very small files (<=4KB) with minimal syscalls.
@@ -1226,8 +1267,8 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 	recursive := true
 	if opts != nil {
 		if v, ok := opts["recursive"]; ok {
-			if b, ok := v.(bool); ok {
-				recursive = b
+			if bv, ok := v.(bool); ok {
+				recursive = bv
 			}
 		}
 	}
@@ -1241,78 +1282,24 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 	if err != nil {
 		return nil, err
 	}
-	base, err := joinUnderRoot(b.root, relPrefix)
-	if err != nil {
-		return nil, err
-	}
 
 	var objects []*storage.Object
 
+	// OPTIMIZATION: Use optimized list functions from list_optimized.go
 	if recursive {
-		err = filepath.WalkDir(base, func(p string, d os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return nil
-			}
-			if p == base {
-				return nil
-			}
-			relPath, err := filepath.Rel(b.root, p)
-			if err != nil {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			obj := &storage.Object{
-				Bucket:  b.name,
-				Key:     relToKey(filepath.ToSlash(relPath)),
-				Size:    info.Size(),
-				IsDir:   info.IsDir(),
-				Created: info.ModTime(),
-				Updated: info.ModTime(),
-			}
-			if dirsOnly && !obj.IsDir {
-				return nil
-			}
-			if filesOnly && obj.IsDir {
-				return nil
-			}
-			objects = append(objects, obj)
-			return nil
-		})
+		// Use optimized recursive walk with pre-allocation
+		objects, err = walkDirOptimized(b.root, relPrefix, b.name, dirsOnly, filesOnly)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return nil, fmt.Errorf("local: walk %q: %w", prefix, err)
 		}
 	} else {
-		entries, err := os.ReadDir(base)
+		// Use optimized single-level list
+		objects, err = listDirFast(b.root, relPrefix, b.name, dirsOnly, filesOnly)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return &objectIter{}, nil
 			}
 			return nil, fmt.Errorf("local: list %q: %w", prefix, err)
-		}
-		for _, e := range entries {
-			info, err := e.Info()
-			if err != nil {
-				continue
-			}
-			relPath := filepath.Join(relPrefix, e.Name())
-			obj := &storage.Object{
-				Bucket:  b.name,
-				Key:     relToKey(filepath.ToSlash(relPath)),
-				Size:    info.Size(),
-				IsDir:   info.IsDir(),
-				Created: info.ModTime(),
-				Updated: info.ModTime(),
-			}
-			if dirsOnly && !obj.IsDir {
-				continue
-			}
-			if filesOnly && obj.IsDir {
-				continue
-			}
-			objects = append(objects, obj)
 		}
 	}
 
