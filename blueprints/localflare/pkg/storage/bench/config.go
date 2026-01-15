@@ -164,6 +164,7 @@ type DriverConfig struct {
 	Skip           bool   // Skip this driver
 	SkipMsg        string // Reason for skipping
 	Container      string // Docker container name for stats
+	DataPath       string // Data path inside container for volume size calculation
 	MaxConcurrency int    // Max concurrency (0 = unlimited)
 	Features       map[string]bool
 }
@@ -177,6 +178,7 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-minio-1",
+			DataPath:  "/data",
 		},
 		{
 			Name:      "rustfs",
@@ -184,13 +186,15 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-rustfs-1",
+			DataPath:  "/data",
 		},
 		{
 			Name:      "seaweedfs",
 			DSN:       "s3://admin:adminpassword@localhost:8333/test-bucket?insecure=true&force_path_style=true",
 			Bucket:    "test-bucket",
 			Enabled:   true,
-			Container: "all-seaweedfs-s3-1",
+			Container: "all-seaweedfs-volume-1", // Use volume container for data size
+			DataPath:  "/data",
 		},
 		{
 			Name:      "localstack",
@@ -198,6 +202,7 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-localstack-1",
+			DataPath:  "/var/lib/localstack",
 		},
 		{
 			Name:      "liteio",
@@ -205,13 +210,7 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-liteio-1",
-		},
-		{
-			Name:      "liteio_mem",
-			DSN:       "s3://liteio:liteio123@localhost:9201/test-bucket?insecure=true&force_path_style=true",
-			Bucket:    "test-bucket",
-			Enabled:   true,
-			Container: "all-liteio_mem-1",
+			DataPath:  "/data",
 		},
 		{
 			Name:      "devnull",

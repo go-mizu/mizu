@@ -83,7 +83,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		// Collect Docker stats before benchmarks (to show growth)
 		if r.config.DockerStats && driver.Container != "" {
 			r.logger("  Collecting initial Docker stats...")
-			stats, err := r.dockerCollector.GetStats(ctx, driver.Container)
+			stats, err := r.dockerCollector.GetStatsWithDataPath(ctx, driver.Container, driver.DataPath)
 			if err == nil {
 				r.logger("  Initial: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
 			}
@@ -110,7 +110,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		// Collect Docker stats after benchmarks
 		if r.config.DockerStats && driver.Container != "" {
 			r.logger("  Collecting final Docker stats...")
-			stats, err := r.dockerCollector.GetStats(ctx, driver.Container)
+			stats, err := r.dockerCollector.GetStatsWithDataPath(ctx, driver.Container, driver.DataPath)
 			if err == nil {
 				r.dockerStats[driver.Name] = stats
 				r.logger("  Final: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
@@ -291,6 +291,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	// Run mixed workload benchmarks
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "MixedWorkload", func() error {
 		return r.benchmarkMixedWorkload(ctx, bucket, driver.Name, maxConc)
 	})
@@ -300,6 +303,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	// Run multipart benchmarks
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "Multipart", func() error {
 		return r.benchmarkMultipart(ctx, bucket, driver.Name)
 	})
@@ -309,6 +315,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	// Run edge case benchmarks
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "EdgeCases", func() error {
 		return r.benchmarkEdgeCases(ctx, bucket, driver.Name)
 	})
@@ -318,6 +327,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	// Run file count benchmarks
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if len(r.config.FileCounts) > 0 {
 		r.runBenchmark(ctx, bucket, "FileCount", func() error {
 			return r.benchmarkFileCount(ctx, bucket, driver.Name)

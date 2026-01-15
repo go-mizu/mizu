@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-mizu/blueprints/localflare/pkg/storage/bench"
-	"github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 )
 
 func main() {
@@ -31,26 +30,16 @@ func main() {
 		dockerStats   = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
 		verbose       = flag.Bool("verbose", false, "Verbose output")
 		fileCounts    = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
-		noFsync       = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")
 		filter        = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
-		inMemory      = flag.Bool("in-memory", false, "Use in-memory storage mode for liteio (maximum performance, no persistence)")
 		// Go-style adaptive benchmark settings (same defaults as 'go test -bench')
 		benchTime     = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (e.g., 1s, 500ms, 2s)")
 		minIters      = flag.Int("min-iters", 3, "Minimum iterations for statistical significance")
 		// Docker compose settings
-		composeDir    = flag.String("compose-dir", "./docker/s3/all", "Docker compose directory for S3 services")
-		restartDocker = flag.Bool("restart-docker", true, "Restart docker-compose services before running benchmarks")
+		composeDir = flag.String("compose-dir", "./docker/s3/all", "Docker compose directory for S3 services")
+		dockerUp   = flag.Bool("docker-up", false, "Start docker-compose services before benchmark")
+		dockerDown = flag.Bool("docker-down", false, "Stop docker-compose services after benchmark")
 	)
 	flag.Parse()
-
-	// Enable in-memory mode for liteio if requested
-	if *inMemory {
-		local.EnableInMemoryMode()
-		fmt.Println("In-memory mode: ENABLED for liteio")
-	}
-
-	// Set NoFsync for local driver (major performance improvement)
-	local.NoFsync = *noFsync
 
 	cfg := bench.DefaultConfig()
 	cfg.WarmupIterations = *warmup
@@ -116,56 +105,31 @@ func main() {
 		}
 	}()
 
-	// Restart docker-compose services if requested
-	if *restartDocker {
-		fmt.Println("=== Restarting Docker Services ===")
-		absComposeDir, err := filepath.Abs(*composeDir)
-		if err != nil {
-			log.Fatalf("Invalid compose directory: %v", err)
-		}
-
-		// Check if docker-compose file exists
-		composeFile := filepath.Join(absComposeDir, "docker-compose.yaml")
-		if _, err := os.Stat(composeFile); os.IsNotExist(err) {
-			log.Fatalf("docker-compose.yaml not found at %s", composeFile)
-		}
-
-		fmt.Printf("Compose directory: %s\n", absComposeDir)
-
-		// Stop and remove containers, volumes
-		fmt.Println("Stopping existing containers...")
-		stopCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composeFile, "down", "-v", "--remove-orphans")
-		stopCmd.Dir = absComposeDir
-		stopCmd.Stdout = os.Stdout
-		stopCmd.Stderr = os.Stderr
-		if err := stopCmd.Run(); err != nil {
-			fmt.Printf("Warning: docker compose down failed: %v\n", err)
-		}
-
-		// Check if interrupted
-		if interrupted {
-			fmt.Println("Benchmark cancelled during docker restart")
-			os.Exit(1)
-		}
-
-		// Start services fresh
-		fmt.Println("Starting fresh containers...")
-		startCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composeFile, "up", "-d", "--wait", "--build")
-		startCmd.Dir = absComposeDir
-		startCmd.Stdout = os.Stdout
-		startCmd.Stderr = os.Stderr
-		if err := startCmd.Run(); err != nil {
+	// Start docker-compose services if requested
+	if *dockerUp {
+		fmt.Println("=== Starting Docker Services ===")
+		if err := dockerCompose(*composeDir, "up", "-d", "--wait"); err != nil {
 			log.Fatalf("docker compose up failed: %v", err)
 		}
+		fmt.Println("Docker services started, waiting for healthy status...")
+		time.Sleep(5 * time.Second)
 
 		// Check if interrupted
 		if interrupted {
 			fmt.Println("Benchmark cancelled during docker startup")
 			os.Exit(1)
 		}
-
-		fmt.Println("Docker services ready")
 		fmt.Println()
+	}
+
+	// Handle docker-compose down on exit
+	if *dockerDown {
+		defer func() {
+			fmt.Println("\nStopping docker services...")
+			if err := dockerCompose(*composeDir, "down"); err != nil {
+				fmt.Printf("Warning: docker compose down failed: %v\n", err)
+			}
+		}()
 	}
 
 	runner := bench.NewRunner(cfg)
@@ -266,4 +230,25 @@ func main() {
 	}
 
 	os.Exit(0)
+}
+
+// dockerCompose runs docker-compose with the given arguments.
+func dockerCompose(composeDir string, args ...string) error {
+	absDir, err := filepath.Abs(composeDir)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+
+	composeFile := filepath.Join(absDir, "docker-compose.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yaml not found at %s", absDir)
+	}
+
+	cmdArgs := append([]string{"-f", composeFile}, args...)
+	cmd := exec.Command("docker", append([]string{"compose"}, cmdArgs...)...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = absDir
+
+	return cmd.Run()
 }

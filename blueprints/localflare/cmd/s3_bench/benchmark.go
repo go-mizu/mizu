@@ -118,7 +118,23 @@ func (r *BenchmarkRunner) Run(ctx context.Context) ([]*BenchmarkResult, error) {
 	}
 
 	if len(availableDrivers) == 0 {
-		return nil, fmt.Errorf("no drivers available")
+		return nil, fmt.Errorf(`no drivers available
+
+None of the S3 storage backends are running. To start them:
+
+  1. Start docker services:
+     docker compose -f ./docker/s3/all/docker-compose.yaml up -d --wait
+
+  2. Or use the --docker-up flag:
+     go run ./cmd/s3_bench --docker-up --quick
+
+Available drivers and ports:
+  - liteio:     localhost:9200  (credentials: liteio / liteio123)
+  - minio:      localhost:9000  (credentials: minioadmin / minioadmin)
+  - rustfs:     localhost:9100  (credentials: rustfsadmin / rustfsadmin)
+  - seaweedfs:  localhost:8333  (credentials: admin / adminpassword)
+  - localstack: localhost:4566  (credentials: test / test)
+  - liteio_mem: localhost:9201  (credentials: liteio / liteio123)`)
 	}
 
 	payloadSizes := r.config.PayloadSizes()

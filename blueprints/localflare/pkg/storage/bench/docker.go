@@ -51,6 +51,11 @@ func NewDockerStatsCollector(projectPrefix string) *DockerStatsCollector {
 
 // GetStats retrieves stats for a container.
 func (c *DockerStatsCollector) GetStats(ctx context.Context, containerName string) (*DockerStats, error) {
+	return c.GetStatsWithDataPath(ctx, containerName, "")
+}
+
+// GetStatsWithDataPath retrieves stats for a container with a specific data path for volume size.
+func (c *DockerStatsCollector) GetStatsWithDataPath(ctx context.Context, containerName, dataPath string) (*DockerStats, error) {
 	stats := &DockerStats{ContainerName: containerName}
 
 	// Try to get stats via docker stats command with more fields
@@ -100,8 +105,15 @@ func (c *DockerStatsCollector) GetStats(ctx context.Context, containerName strin
 	// Get detailed memory breakdown (cache vs RSS)
 	c.getMemoryBreakdown(ctx, containerName, stats)
 
-	// Get volume information
-	c.getVolumeInfo(ctx, containerName, stats)
+	// Get volume information - use specific data path if provided
+	if dataPath != "" {
+		stats.VolumeSize = c.getDataPathSize(ctx, containerName, dataPath)
+		stats.VolumeName = dataPath
+	}
+	// Fallback to automatic volume detection if no size found
+	if stats.VolumeSize == 0 {
+		c.getVolumeInfo(ctx, containerName, stats)
+	}
 
 	// Get container size info
 	c.getContainerSize(ctx, containerName, stats)
@@ -242,25 +254,30 @@ func (c *DockerStatsCollector) getVolumeInfo(ctx context.Context, containerName 
 	// Parse mount info - find the first volume or bind mount
 	var volumeName string
 	var mountType string
+	var mountDest string
 	for _, mount := range strings.Split(mounts, "|") {
 		if mount == "" {
 			continue
 		}
 		parts := strings.SplitN(mount, ":", 3)
-		if len(parts) >= 2 {
+		if len(parts) >= 3 {
 			mType := parts[0]
 			name := parts[1]
+			dest := parts[2]
 
 			if mType == "volume" && volumeName == "" {
 				volumeName = name
 				mountType = "volume"
+				mountDest = dest
 				break
 			} else if mType == "bind" && volumeName == "" {
 				volumeName = name
 				mountType = "bind"
+				mountDest = dest
 			} else if mType == "tmpfs" && volumeName == "" {
 				volumeName = "(tmpfs)"
 				mountType = "tmpfs"
+				mountDest = dest
 			}
 		}
 	}
@@ -274,13 +291,68 @@ func (c *DockerStatsCollector) getVolumeInfo(ctx context.Context, containerName 
 	// Get volume size based on mount type
 	switch mountType {
 	case "volume":
-		stats.VolumeSize = c.getDockerVolumeSize(ctx, volumeName)
+		// First try to get size from inside the container (more accurate)
+		if mountDest != "" {
+			stats.VolumeSize = c.getDataPathSize(ctx, containerName, mountDest)
+		}
+		// Fallback to docker volume inspection if container method fails
+		if stats.VolumeSize == 0 {
+			stats.VolumeSize = c.getDockerVolumeSize(ctx, volumeName)
+		}
 	case "bind":
 		stats.VolumeSize = c.getBindMountSize(ctx, containerName, volumeName)
 	case "tmpfs":
 		// tmpfs is in-memory, size is part of memory stats
 		stats.VolumeName = "(tmpfs - in memory)"
 	}
+}
+
+// getDataPathSize gets the size of a data path inside a container using du.
+func (c *DockerStatsCollector) getDataPathSize(ctx context.Context, containerName, dataPath string) float64 {
+	if dataPath == "" {
+		return 0
+	}
+
+	duCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	// Try du -sm first (GNU coreutils)
+	cmd := exec.CommandContext(duCtx, "docker", "exec", containerName,
+		"du", "-sm", dataPath)
+	output, err := cmd.Output()
+	if err == nil {
+		parts := strings.Fields(string(output))
+		if len(parts) >= 1 {
+			size, _ := strconv.ParseFloat(parts[0], 64)
+			return size
+		}
+	}
+
+	// Try du -s (busybox style, returns KB)
+	cmd = exec.CommandContext(duCtx, "docker", "exec", containerName,
+		"du", "-s", dataPath)
+	output, err = cmd.Output()
+	if err == nil {
+		parts := strings.Fields(string(output))
+		if len(parts) >= 1 {
+			size, _ := strconv.ParseFloat(parts[0], 64)
+			return size / 1024 // Convert KB to MB
+		}
+	}
+
+	// Try using find + stat for containers without du
+	cmd = exec.CommandContext(duCtx, "docker", "exec", containerName,
+		"sh", "-c", fmt.Sprintf("find %s -type f -exec stat -c '%%s' {} + 2>/dev/null | awk '{s+=$1} END {print s}'", dataPath))
+	output, err = cmd.Output()
+	if err == nil {
+		sizeStr := strings.TrimSpace(string(output))
+		if sizeStr != "" {
+			size, _ := strconv.ParseFloat(sizeStr, 64)
+			return size / (1024 * 1024) // Convert bytes to MB
+		}
+	}
+
+	return 0
 }
 
 // getDockerVolumeSize gets the size of a Docker volume.
