@@ -1146,18 +1146,61 @@ func (r *Report) generateLeaderTable(sb *strings.Builder) {
 		}
 	}
 
-	// Define key categories to highlight
+	// Find the largest file size, highest concurrency, and highest list count from actual results
+	largestReadSize := 0
+	largestReadLabel := "10MB"
+	largestWriteSize := 0
+	largestWriteLabel := "10MB"
+	highestConcurrency := 10
+	highestListCount := 100
+
+	for _, m := range r.Results {
+		if isReferenceDriver(m.Driver) {
+			continue
+		}
+		if strings.HasPrefix(m.Operation, "Read/") && !strings.Contains(m.Operation, "Parallel") {
+			if m.ObjectSize > largestReadSize {
+				largestReadSize = m.ObjectSize
+				largestReadLabel = SizeLabel(m.ObjectSize)
+			}
+		}
+		if strings.HasPrefix(m.Operation, "Write/") && !strings.Contains(m.Operation, "Parallel") {
+			if m.ObjectSize > largestWriteSize {
+				largestWriteSize = m.ObjectSize
+				largestWriteLabel = SizeLabel(m.ObjectSize)
+			}
+		}
+		if strings.HasPrefix(m.Operation, "ParallelRead/") || strings.HasPrefix(m.Operation, "ParallelWrite/") {
+			if idx := strings.Index(m.Operation, "/C"); idx > 0 {
+				var c int
+				fmt.Sscanf(m.Operation[idx+2:], "%d", &c)
+				if c > highestConcurrency {
+					highestConcurrency = c
+				}
+			}
+		}
+		if strings.HasPrefix(m.Operation, "List/") {
+			var c int
+			fmt.Sscanf(strings.TrimPrefix(m.Operation, "List/"), "%d", &c)
+			if c > highestListCount {
+				highestListCount = c
+			}
+		}
+	}
+
+	// Define key categories to highlight with dynamic values
 	keyCategories := []struct {
 		operation string
 		display   string
 	}{
 		{"Read/1KB", "Small Read (1KB)"},
 		{"Write/1KB", "Small Write (1KB)"},
-		{"Read/10MB", "Large Read (10MB)"},
-		{"Write/10MB", "Large Write (10MB)"},
+		{fmt.Sprintf("Read/%s", largestReadLabel), fmt.Sprintf("Large Read (%s)", largestReadLabel)},
+		{fmt.Sprintf("Write/%s", largestWriteLabel), fmt.Sprintf("Large Write (%s)", largestWriteLabel)},
 		{"Delete", "Delete"},
 		{"Stat", "Stat"},
-		{"List/100", "List (100 objects)"},
+		{fmt.Sprintf("List/%d", highestListCount), fmt.Sprintf("List (%d objects)", highestListCount)},
+		{fmt.Sprintf("ParallelRead/1MB/C%d", highestConcurrency), fmt.Sprintf("High Concurrency (C%d)", highestConcurrency)},
 		{"Copy/1KB", "Copy"},
 	}
 
