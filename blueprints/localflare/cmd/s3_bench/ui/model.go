@@ -39,9 +39,12 @@ func (p Phase) String() string {
 
 // Model is the Bubbletea model for the benchmark UI.
 type Model struct {
-	// Configuration
+	// Dimensions
 	Width  int
 	Height int
+
+	// Dashboard (new)
+	Dashboard *Dashboard
 
 	// State
 	Phase         Phase
@@ -52,10 +55,10 @@ type Model struct {
 	ProgressTotal int
 	ProgressMsg   string
 
-	// Output buffer
+	// Output buffer (for legacy/simple mode)
 	Output strings.Builder
 
-	// Progress bar
+	// Progress bar (legacy)
 	progressBar *ProgressBar
 
 	// Current table
@@ -72,6 +75,12 @@ type Model struct {
 
 	// Quit flag
 	Quitting bool
+
+	// View mode
+	ViewMode ViewMode
+
+	// Use dashboard mode
+	UseDashboard bool
 }
 
 // BenchmarkResultMsg is sent when a benchmark completes.
@@ -132,35 +141,68 @@ type QuitMsg struct{}
 // NewModel creates a new UI model.
 func NewModel() Model {
 	return Model{
-		Width:     120,
-		Height:    40,
-		Phase:     PhaseInit,
-		StartTime: time.Now(),
+		Width:        120,
+		Height:       40,
+		Phase:        PhaseInit,
+		StartTime:    time.Now(),
+		Dashboard:    NewDashboard(),
+		UseDashboard: true,
+		ViewMode:     ViewDashboard,
+	}
+}
+
+// NewLegacyModel creates a model without the dashboard (for simple mode).
+func NewLegacyModel() Model {
+	return Model{
+		Width:        120,
+		Height:       40,
+		Phase:        PhaseInit,
+		StartTime:    time.Now(),
+		UseDashboard: false,
 	}
 }
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return nil
+	return tea.Batch(
+		tea.EnterAltScreen,
+		tickCmd(),
+	)
+}
+
+// tickCmd returns a command that sends tick messages.
+func tickCmd() tea.Cmd {
+	return tea.Tick(ChartUpdateRate, func(t time.Time) tea.Msg {
+		return TickMsg{Time: t}
+	})
 }
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.Quitting = true
-			return m, tea.Quit
-		}
+		return m.handleKeyPress(msg)
 
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
+		if m.Dashboard != nil {
+			m.Dashboard.SetSize(msg.Width, msg.Height)
+		}
+
+	case TickMsg:
+		// Continue ticking for animations
+		if !m.Quitting && m.Phase != PhaseDone {
+			return m, tickCmd()
+		}
 
 	case PhaseChangeMsg:
 		m.Phase = msg.Phase
 		m.CurrentDriver = msg.Driver
+		if m.Dashboard != nil {
+			m.Dashboard.SetPhase(msg.Phase)
+			m.Dashboard.AddLog(fmt.Sprintf("Phase: %s", msg.Phase))
+		}
 		m.Output.WriteString("\n")
 		m.Output.WriteString(RenderDivider(msg.Phase.String(), m.Width))
 		m.Output.WriteString("\n\n")
@@ -175,53 +217,137 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progressBar.Update(msg.Current)
 		m.progressBar.SetMessage(msg.Message)
 
+	case DriverProgressMsg:
+		if m.Dashboard != nil {
+			m.Dashboard.UpdateDriverProgress(msg.Driver, msg.Completed, msg.Total, msg.Throughput)
+		}
+
+	case ThroughputSampleMsg:
+		if m.Dashboard != nil {
+			m.Dashboard.UpdateThroughput(msg.Driver, msg.Throughput)
+		}
+
+	case ConfigChangeMsg:
+		m.ObjectSize = msg.ObjectSize
+		m.Threads = msg.Threads
+		if m.Dashboard != nil {
+			m.Dashboard.SetConfig(msg.ObjectSize, msg.Threads)
+		}
+
 	case LogMsg:
 		m.Output.WriteString(msg.Message)
 		m.Output.WriteString("\n")
+		if m.Dashboard != nil {
+			m.Dashboard.AddLog(msg.Message)
+		}
 
 	case SectionHeaderMsg:
 		m.ObjectSize = msg.ObjectSize
 		m.currentTable = NewResultsTable(msg.ObjectSize)
+		if m.Dashboard != nil {
+			m.Dashboard.SetResultsTable(m.currentTable)
+			m.Dashboard.SetConfig(msg.ObjectSize, m.Threads)
+		}
 		m.Output.WriteString("\n")
 		m.Output.WriteString(m.currentTable.RenderHeader())
 
 	case BenchmarkResultMsg:
 		m.Results = append(m.Results, msg)
+		row := TableRow{
+			Driver:     msg.Driver,
+			Threads:    msg.Threads,
+			Throughput: msg.Throughput,
+			TTFBAvg:    msg.TTFBAvg.Milliseconds(),
+			TTFBMin:    msg.TTFBMin.Milliseconds(),
+			TTFBP25:    msg.TTFBP25.Milliseconds(),
+			TTFBP50:    msg.TTFBP50.Milliseconds(),
+			TTFBP75:    msg.TTFBP75.Milliseconds(),
+			TTFBP90:    msg.TTFBP90.Milliseconds(),
+			TTFBP99:    msg.TTFBP99.Milliseconds(),
+			TTFBMax:    msg.TTFBMax.Milliseconds(),
+			TTLBAvg:    msg.TTLBAvg.Milliseconds(),
+			TTLBMin:    msg.TTLBMin.Milliseconds(),
+			TTLBP25:    msg.TTLBP25.Milliseconds(),
+			TTLBP50:    msg.TTLBP50.Milliseconds(),
+			TTLBP75:    msg.TTLBP75.Milliseconds(),
+			TTLBP90:    msg.TTLBP90.Milliseconds(),
+			TTLBP99:    msg.TTLBP99.Milliseconds(),
+			TTLBMax:    msg.TTLBMax.Milliseconds(),
+		}
 		if m.currentTable != nil {
-			row := TableRow{
-				Driver:     msg.Driver,
-				Threads:    msg.Threads,
-				Throughput: msg.Throughput,
-				TTFBAvg:    msg.TTFBAvg.Milliseconds(),
-				TTFBMin:    msg.TTFBMin.Milliseconds(),
-				TTFBP25:    msg.TTFBP25.Milliseconds(),
-				TTFBP50:    msg.TTFBP50.Milliseconds(),
-				TTFBP75:    msg.TTFBP75.Milliseconds(),
-				TTFBP90:    msg.TTFBP90.Milliseconds(),
-				TTFBP99:    msg.TTFBP99.Milliseconds(),
-				TTFBMax:    msg.TTFBMax.Milliseconds(),
-				TTLBAvg:    msg.TTLBAvg.Milliseconds(),
-				TTLBMin:    msg.TTLBMin.Milliseconds(),
-				TTLBP25:    msg.TTLBP25.Milliseconds(),
-				TTLBP50:    msg.TTLBP50.Milliseconds(),
-				TTLBP75:    msg.TTLBP75.Milliseconds(),
-				TTLBP90:    msg.TTLBP90.Milliseconds(),
-				TTLBP99:    msg.TTLBP99.Milliseconds(),
-				TTLBMax:    msg.TTLBMax.Milliseconds(),
-			}
 			m.currentTable.AddRow(row)
 			m.Output.WriteString(m.currentTable.RenderRow(row))
 			m.Output.WriteString("\n")
+		}
+		// Update dashboard with throughput
+		if m.Dashboard != nil {
+			m.Dashboard.UpdateThroughput(msg.Driver, msg.Throughput)
 		}
 
 	case ErrorMsg:
 		m.Err = msg.Err
 		m.Output.WriteString(ErrorStyle.Render(fmt.Sprintf("[ERROR] %v", msg.Err)))
 		m.Output.WriteString("\n")
+		if m.Dashboard != nil {
+			m.Dashboard.AddLog(fmt.Sprintf("ERROR: %v", msg.Err))
+		}
+
+	case ViewChangeMsg:
+		m.ViewMode = msg.View
+		if m.Dashboard != nil {
+			m.Dashboard.SetViewMode(msg.View)
+		}
 
 	case QuitMsg:
 		m.Quitting = true
 		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+// handleKeyPress handles keyboard input.
+func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		m.Quitting = true
+		return m, tea.Quit
+
+	case "d":
+		// Toggle between dashboard and details
+		if m.ViewMode == ViewDashboard {
+			m.ViewMode = ViewDetails
+		} else {
+			m.ViewMode = ViewDashboard
+		}
+		if m.Dashboard != nil {
+			m.Dashboard.SetViewMode(m.ViewMode)
+		}
+
+	case "l":
+		// Switch to logs view
+		m.ViewMode = ViewLogs
+		if m.Dashboard != nil {
+			m.Dashboard.SetViewMode(ViewLogs)
+		}
+
+	case "?":
+		// Toggle help
+		if m.ViewMode == ViewHelp {
+			m.ViewMode = ViewDashboard
+		} else {
+			m.ViewMode = ViewHelp
+		}
+		if m.Dashboard != nil {
+			m.Dashboard.SetViewMode(m.ViewMode)
+		}
+
+	case "esc":
+		// Return to dashboard
+		m.ViewMode = ViewDashboard
+		if m.Dashboard != nil {
+			m.Dashboard.SetViewMode(ViewDashboard)
+		}
 	}
 
 	return m, nil
@@ -233,6 +359,17 @@ func (m Model) View() string {
 		return m.Output.String() + "\n"
 	}
 
+	// Use dashboard if enabled
+	if m.UseDashboard && m.Dashboard != nil {
+		return m.Dashboard.Render()
+	}
+
+	// Legacy view
+	return m.legacyView()
+}
+
+// legacyView renders the original simple view.
+func (m Model) legacyView() string {
 	var sb strings.Builder
 
 	// Header

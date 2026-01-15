@@ -70,6 +70,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 
 	// Run benchmarks for each driver
 	for i, driver := range available {
+		// Check for context cancellation before starting next driver
+		select {
+		case <-ctx.Done():
+			r.logger("Benchmark cancelled")
+			return r.generateReport(), ctx.Err()
+		default:
+		}
+
 		r.logger("=== [%d/%d] Benchmarking %s ===", i+1, len(available), driver.Name)
 
 		// Collect Docker stats before benchmarks (to show growth)
@@ -82,8 +90,21 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}
 
 		if err := r.benchmarkDriver(ctx, driver); err != nil {
+			// Check if error is due to context cancellation
+			if ctx.Err() != nil {
+				r.logger("Driver %s cancelled", driver.Name)
+				return r.generateReport(), ctx.Err()
+			}
 			r.logger("Driver %s failed: %v", driver.Name, err)
 			continue
+		}
+
+		// Check for context cancellation after benchmark
+		select {
+		case <-ctx.Done():
+			r.logger("Benchmark cancelled after %s", driver.Name)
+			return r.generateReport(), ctx.Err()
+		default:
 		}
 
 		// Collect Docker stats after benchmarks
@@ -145,6 +166,11 @@ func (r *Runner) detectDrivers(ctx context.Context) []DriverConfig {
 }
 
 func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	st, err := storage.Open(ctx, driver.DSN)
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
@@ -163,6 +189,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 
 	// Run write benchmarks
 	for _, size := range r.config.ObjectSizes {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		label := fmt.Sprintf("Write/%s", SizeLabel(size))
 		r.runBenchmark(ctx, bucket, label, func() error {
 			return r.benchmarkWrite(ctx, bucket, driver.Name, size)
@@ -171,6 +200,9 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 
 	// Run read benchmarks
 	for _, size := range r.config.ObjectSizes {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		label := fmt.Sprintf("Read/%s", SizeLabel(size))
 		r.runBenchmark(ctx, bucket, label, func() error {
 			return r.benchmarkRead(ctx, bucket, driver.Name, size)
@@ -178,28 +210,43 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	// Run stat benchmark
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "Stat", func() error {
 		return r.benchmarkStat(ctx, bucket, driver.Name)
 	})
 
 	// Run list benchmark
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "List", func() error {
 		return r.benchmarkList(ctx, bucket, driver.Name)
 	})
 
 	// Run delete benchmark
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "Delete", func() error {
 		return r.benchmarkDelete(ctx, bucket, driver.Name)
 	})
 
 	// Run parallel benchmarks at multiple concurrency levels
 	for _, size := range r.config.ObjectSizes[:1] { // Use first size only
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		concLevels := r.config.ConcurrencyLevels
 		if len(concLevels) == 0 {
 			concLevels = []int{r.config.Concurrency}
 		}
 
 		for _, conc := range concLevels {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			// Skip if concurrency exceeds driver's max limit (if set)
 			if maxConc > 0 && conc > maxConc {
 				r.logger("  Parallel/C%d: skipped (driver %s max=%d)", conc, driver.Name, maxConc)
@@ -221,12 +268,18 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	}
 
 	// Run range read benchmarks
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	r.runBenchmark(ctx, bucket, "RangeRead", func() error {
 		return r.benchmarkRangeRead(ctx, bucket, driver.Name)
 	})
 
 	// Run copy benchmarks
 	for _, size := range r.config.ObjectSizes[:1] { // Use first size only
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		label := fmt.Sprintf("Copy/%s", SizeLabel(size))
 		r.runBenchmark(ctx, bucket, label, func() error {
 			return r.benchmarkCopy(ctx, bucket, driver.Name, size)
@@ -295,7 +348,7 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 	// Adaptive benchmark (Go-style)
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	// Adaptive scaling loop - runs until target duration is reached
 	for ab.ShouldContinue() {
@@ -356,7 +409,7 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	// Adaptive benchmark with TTFB tracking
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 	var keyIdx uint64
 
 	// Adaptive scaling loop
@@ -415,7 +468,7 @@ func (r *Runner) benchmarkStat(ctx context.Context, bucket storage.Bucket, drive
 
 	// Adaptive benchmark
 	collector := NewCollector()
-	ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	for ab.ShouldContinue() {
 		n := ab.NextN()
@@ -474,7 +527,7 @@ func (r *Runner) benchmarkList(ctx context.Context, bucket storage.Bucket, drive
 
 	// Adaptive benchmark
 	collector := NewCollector()
-	ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	for ab.ShouldContinue() {
 		n := ab.NextN()
@@ -517,7 +570,7 @@ func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, dri
 
 	// Adaptive benchmark
 	collector := NewCollector()
-	ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	for ab.ShouldContinue() {
 		n := ab.NextN()
@@ -571,7 +624,7 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 	// Adaptive benchmark
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	sem := make(chan struct{}, concurrency)
 	opTimeout := 10 * time.Second
@@ -650,7 +703,7 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	// Adaptive benchmark
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	var keyIdx uint64
 	sem := make(chan struct{}, concurrency)
@@ -860,7 +913,7 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 	for _, rng := range ranges {
 		operation := fmt.Sprintf("RangeRead/%s", rng.name)
 		collector := NewCollector()
-		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 		for ab.ShouldContinue() {
 			n := ab.NextN()
@@ -908,7 +961,7 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 	// Adaptive benchmark
 	collector := NewCollector()
 	benchTime := r.config.BenchTimeForSize(size)
-	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	for ab.ShouldContinue() {
 		n := ab.NextN()
@@ -969,7 +1022,7 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 	for _, wl := range workloads {
 		operation := fmt.Sprintf("MixedWorkload/%s", wl.name)
 		collector := NewCollector()
-		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 		sem := make(chan struct{}, concurrency)
 		var opCounter uint64
@@ -1048,7 +1101,7 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 
 	// Use shorter BenchTime for multipart (expensive operation)
 	benchTime := r.config.BenchTimeForSize(totalSize)
-	ab := NewAdaptiveBenchmark(benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 	for ab.ShouldContinue() {
 		n := ab.NextN()
@@ -1109,7 +1162,7 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 	{
 		operation := "EdgeCase/EmptyObject"
 		collector := NewCollector()
-		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
 		for ab.ShouldContinue() {
 			n := ab.NextN()
@@ -1140,7 +1193,7 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		operation := "EdgeCase/LongKey256"
 		data := generateRandomData(100)
 		collector := NewCollector()
-		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 		var keyCounter uint64
 
 		for ab.ShouldContinue() {
@@ -1173,7 +1226,7 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		operation := "EdgeCase/DeepNested"
 		data := generateRandomData(100)
 		collector := NewCollector()
-		ab := NewAdaptiveBenchmark(r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
+		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 		var keyCounter uint64
 
 		for ab.ShouldContinue() {
@@ -1378,6 +1431,7 @@ type AdaptiveBenchmark struct {
 	lastDuration  time.Duration // Last run's duration
 	nextN         int64         // Next iteration count to run
 	started       bool          // Whether benchmark has started
+	ctx           context.Context // Context for cancellation
 }
 
 // NewAdaptiveBenchmark creates a new adaptive benchmark controller.
@@ -1387,6 +1441,18 @@ func NewAdaptiveBenchmark(benchTime time.Duration, minIter, maxIter int) *Adapti
 		minIterations: minIter,
 		maxIterations: int64(maxIter),
 		nextN:         1, // Start with 1 iteration like Go
+		ctx:           context.Background(),
+	}
+}
+
+// NewAdaptiveBenchmarkWithContext creates a new adaptive benchmark controller with context.
+func NewAdaptiveBenchmarkWithContext(ctx context.Context, benchTime time.Duration, minIter, maxIter int) *AdaptiveBenchmark {
+	return &AdaptiveBenchmark{
+		benchTime:     benchTime,
+		minIterations: minIter,
+		maxIterations: int64(maxIter),
+		nextN:         1, // Start with 1 iteration like Go
+		ctx:           ctx,
 	}
 }
 
@@ -1426,12 +1492,34 @@ func (ab *AdaptiveBenchmark) predictN(goalns, prevIters, prevns, last int64) int
 
 // ShouldContinue returns true if more benchmark runs are needed.
 func (ab *AdaptiveBenchmark) ShouldContinue() bool {
+	// Check for context cancellation first
+	if ab.ctx != nil {
+		select {
+		case <-ab.ctx.Done():
+			return false
+		default:
+		}
+	}
+
 	// Always run at least minIterations
 	if ab.totalN < int64(ab.minIterations) {
 		return true
 	}
 	// Continue until we reach the target duration or max iterations
 	return ab.totalDuration < ab.benchTime && ab.totalN < ab.maxIterations
+}
+
+// IsCancelled returns true if the benchmark was cancelled via context.
+func (ab *AdaptiveBenchmark) IsCancelled() bool {
+	if ab.ctx == nil {
+		return false
+	}
+	select {
+	case <-ab.ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 // NextN returns the number of iterations for the next run.
