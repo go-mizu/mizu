@@ -35,6 +35,8 @@ type Config struct {
 
 	// Docker
 	ComposeDir string // Docker compose directory
+	DockerUp   bool   // Start docker-compose services before benchmark
+	DockerDown bool   // Stop docker-compose services after benchmark
 }
 
 // DefaultConfig returns the default benchmark configuration.

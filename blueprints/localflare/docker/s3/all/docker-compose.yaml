@@ -228,7 +228,6 @@ services:
     environment:
       LITEIO_ACCESS_KEY: liteio
       LITEIO_SECRET_KEY: liteio123
-      LITEIO_NO_FSYNC: "true"  # Skip fsync for maximum benchmark performance
     volumes:
       - liteio_data:/data
     healthcheck:
@@ -251,44 +250,6 @@ services:
     entrypoint: >
       /bin/sh -c "
       aws --endpoint-url=http://liteio:9000 s3 mb s3://test-bucket || true;
-      exit 0;
-      "
-
-  # ============================================================================
-  # LiteIO Memory - In-memory S3-compatible storage (Go)
-  # Built from this project's cmd/liteio with memory driver
-  # Credentials: liteio / liteio123
-  # ============================================================================
-  liteio_mem:
-    build:
-      context: ../../..
-      dockerfile: docker/s3/liteio/Dockerfile
-    ports:
-      - "9201:9000"   # S3 API (mapped to 9201 to avoid conflict)
-    environment:
-      LITEIO_ACCESS_KEY: liteio
-      LITEIO_SECRET_KEY: liteio123
-      LITEIO_DRIVER: "memory://"
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
-  liteio_mem-init:
-    image: public.ecr.aws/aws-cli/aws-cli:latest
-    pull_policy: if_not_present
-    depends_on:
-      liteio_mem:
-        condition: service_healthy
-    environment:
-      AWS_ACCESS_KEY_ID: liteio
-      AWS_SECRET_ACCESS_KEY: liteio123
-      AWS_DEFAULT_REGION: us-east-1
-    entrypoint: >
-      /bin/sh -c "
-      aws --endpoint-url=http://liteio_mem:9000 s3 mb s3://test-bucket || true;
       exit 0;
       "
 

@@ -11,7 +11,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -54,7 +56,17 @@ Examples:
   s3_bench --threads-min 4 --threads-max 16
 
   # Full comprehensive test
-  s3_bench --full`,
+  s3_bench --full
+
+Docker Integration:
+  # Start docker services, run benchmark, then stop
+  s3_bench --docker-up --docker-down --quick
+
+  # Start services from custom compose directory
+  s3_bench --docker-up --compose-dir ./docker/s3/all
+
+  # Manually start docker services
+  docker compose -f ./docker/s3/all/docker-compose.yaml up -d --wait`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,11 +88,33 @@ Examples:
 	flags.BoolVar(&cfg.Verbose, "verbose", false, "Verbose output")
 	flags.BoolVar(&cfg.CleanupOnly, "cleanup-only", false, "Only run cleanup")
 	flags.StringVar(&cfg.ComposeDir, "compose-dir", "./docker/s3/all", "Docker compose directory")
+	flags.BoolVar(&cfg.DockerUp, "docker-up", false, "Start docker-compose services before benchmark")
+	flags.BoolVar(&cfg.DockerDown, "docker-down", false, "Stop docker-compose services after benchmark")
 
 	return root.Execute()
 }
 
 func runBenchmark(cfg *Config) error {
+	// Handle docker-compose up
+	if cfg.DockerUp {
+		if err := dockerCompose(cfg.ComposeDir, "up", "-d", "--wait"); err != nil {
+			return fmt.Errorf("docker-compose up: %w", err)
+		}
+		fmt.Println("Docker services started, waiting for healthy status...")
+		// Give services time to fully initialize
+		time.Sleep(5 * time.Second)
+	}
+
+	// Handle docker-compose down on exit
+	if cfg.DockerDown {
+		defer func() {
+			fmt.Println("\nStopping docker services...")
+			if err := dockerCompose(cfg.ComposeDir, "down"); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: docker-compose down failed: %v\n", err)
+			}
+		}()
+	}
+
 	// Apply mode presets
 	if cfg.Quick {
 		quickCfg := QuickConfig()
@@ -341,4 +375,28 @@ func isTerminal() bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// dockerCompose runs docker-compose with the given arguments.
+func dockerCompose(composeDir string, args ...string) error {
+	// Resolve compose directory to absolute path
+	absDir, err := filepath.Abs(composeDir)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+
+	// Check if compose file exists
+	composeFile := filepath.Join(absDir, "docker-compose.yaml")
+	if _, err := os.Stat(composeFile); os.IsNotExist(err) {
+		return fmt.Errorf("docker-compose.yaml not found at %s", absDir)
+	}
+
+	// Build command arguments
+	cmdArgs := append([]string{"-f", composeFile}, args...)
+	cmd := exec.Command("docker", append([]string{"compose"}, cmdArgs...)...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = absDir
+
+	return cmd.Run()
 }
