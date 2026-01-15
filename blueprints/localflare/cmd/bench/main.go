@@ -27,7 +27,7 @@ func main() {
 		drivers       = flag.String("drivers", "", "Comma-separated list of drivers to benchmark (empty = all)")
 		outputFormats = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
 		duration      = flag.Duration("duration", 0, "Duration-based mode (run each benchmark for this duration)")
-		dockerStats   = flag.Bool("docker-stats", false, "Collect Docker container statistics")
+		dockerStats   = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
 		verbose       = flag.Bool("verbose", false, "Verbose output")
 		fileCounts    = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
 		noFsync       = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")

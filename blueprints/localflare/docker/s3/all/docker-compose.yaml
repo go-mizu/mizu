@@ -146,7 +146,8 @@ services:
     volumes:
       - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8333/"]
+      # S3 root path returns 403 without auth, so accept any response (exit 8 = server error response)
+      test: ["CMD-SHELL", "wget --timeout=3 -q http://localhost:8333/ -O /dev/null 2>&1 || test $? -eq 8"]
       interval: 5s
       timeout: 5s
       retries: 10
