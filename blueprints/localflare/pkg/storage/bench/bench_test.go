@@ -209,18 +209,30 @@ func setupBucket(ctx context.Context, st storage.Storage, name string) (storage.
 
 // cleanupBucket removes all objects from a bucket.
 func cleanupBucket(ctx context.Context, bucket storage.Bucket) {
-	iter, err := bucket.List(ctx, "", 1000, 0, nil)
+	iter, err := bucket.List(ctx, "", 0, 0, nil)
 	if err != nil {
 		return
 	}
 	defer iter.Close()
 
+	var dirs []string
 	for {
 		obj, err := iter.Next()
 		if err != nil || obj == nil {
 			break
 		}
+		if obj.IsDir {
+			dirs = append(dirs, obj.Key)
+			continue
+		}
 		bucket.Delete(ctx, obj.Key, nil)
+	}
+
+	sort.Slice(dirs, func(i, j int) bool {
+		return len(dirs[i]) > len(dirs[j])
+	})
+	for _, key := range dirs {
+		bucket.Delete(ctx, key, storage.Options{"recursive": true})
 	}
 }
 
@@ -242,8 +254,14 @@ func BenchmarkWrite(b *testing.B) {
 	// Include larger sizes only if explicitly requested
 	if os.Getenv("BENCH_LARGE") == "1" {
 		sizes = append(sizes,
-			struct{ name string; size int }{"Large_10MB", 10 * 1024 * 1024},
-			struct{ name string; size int }{"XLarge_100MB", 100 * 1024 * 1024},
+			struct {
+				name string
+				size int
+			}{"Large_10MB", 10 * 1024 * 1024},
+			struct {
+				name string
+				size int
+			}{"XLarge_100MB", 100 * 1024 * 1024},
 		)
 	}
 
@@ -308,8 +326,14 @@ func BenchmarkRead(b *testing.B) {
 	// Include larger sizes only if explicitly requested
 	if os.Getenv("BENCH_LARGE") == "1" {
 		sizes = append(sizes,
-			struct{ name string; size int }{"Large_10MB", 10 * 1024 * 1024},
-			struct{ name string; size int }{"XLarge_100MB", 100 * 1024 * 1024},
+			struct {
+				name string
+				size int
+			}{"Large_10MB", 10 * 1024 * 1024},
+			struct {
+				name string
+				size int
+			}{"XLarge_100MB", 100 * 1024 * 1024},
 		)
 	}
 
@@ -941,8 +965,8 @@ func BenchmarkMultipart(b *testing.B) {
 		partSize  int
 		partCount int
 	}{
-		{"15MB_3Parts", 15 * 1024 * 1024, 5 * 1024 * 1024, 3},  // 3 x 5MB parts
-		{"25MB_5Parts", 25 * 1024 * 1024, 5 * 1024 * 1024, 5},  // 5 x 5MB parts
+		{"15MB_3Parts", 15 * 1024 * 1024, 5 * 1024 * 1024, 3}, // 3 x 5MB parts
+		{"25MB_5Parts", 25 * 1024 * 1024, 5 * 1024 * 1024, 5}, // 5 x 5MB parts
 	}
 
 	configs := getDriverConfigs(b)

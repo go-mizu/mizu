@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,18 +20,19 @@ import (
 
 func main() {
 	var (
-		iterations    = flag.Int("iterations", 100, "Number of iterations per benchmark")
-		warmup        = flag.Int("warmup", 10, "Number of warmup iterations")
-		timeout       = flag.Duration("timeout", 30*time.Second, "Per-operation timeout")
-		outputDir     = flag.String("output", "./pkg/storage/report", "Output directory for reports")
-		quick         = flag.Bool("quick", false, "Quick mode (fewer iterations)")
-		drivers       = flag.String("drivers", "", "Comma-separated list of drivers to benchmark (empty = all)")
-		outputFormats = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
-		duration      = flag.Duration("duration", 0, "Duration-based mode (run each benchmark for this duration)")
-		dockerStats   = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
-		verbose       = flag.Bool("verbose", false, "Verbose output")
-		fileCounts    = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
-		noFsync       = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")
+		iterations      = flag.Int("iterations", 100, "Number of iterations per benchmark")
+		warmup          = flag.Int("warmup", 10, "Number of warmup iterations")
+		timeout         = flag.Duration("timeout", 30*time.Second, "Per-operation timeout")
+		outputDir       = flag.String("output", "./pkg/storage/report", "Output directory for reports")
+		quick           = flag.Bool("quick", false, "Quick mode (fewer iterations)")
+		drivers         = flag.String("drivers", "", "Comma-separated list of drivers to benchmark (empty = all)")
+		outputFormats   = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
+		duration        = flag.Duration("duration", 0, "Duration-based mode (run each benchmark for this duration)")
+		dockerStats     = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
+		verbose         = flag.Bool("verbose", false, "Verbose output")
+		fileCounts      = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
+		noFsync         = flag.Bool("no-fsync", true, "Skip fsync for maximum write performance (default: enabled for benchmarks)")
+		filter          = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
 	)
 	flag.Parse()
 
@@ -58,6 +60,7 @@ func main() {
 	}
 
 	cfg.OutputFormats = strings.Split(*outputFormats, ",")
+	cfg.Filter = *filter
 
 	// Parse file counts
 	if *fileCounts != "" {
@@ -101,6 +104,9 @@ func main() {
 	}
 	fmt.Printf("Output: %s\n", cfg.OutputDir)
 	fmt.Printf("Formats: %v\n", cfg.OutputFormats)
+	if cfg.Filter != "" {
+		fmt.Printf("Filter: %s\n", cfg.Filter)
+	}
 	fmt.Println()
 
 	report, err := runner.Run(ctx)
@@ -122,9 +128,13 @@ func main() {
 	driverResults := make(map[string]int)
 	driverErrors := make(map[string]int)
 	driverSkipped := make(map[string]int)
+	errorDetails := make(map[string][]*bench.Metrics)
 	for _, m := range report.Results {
 		driverResults[m.Driver]++
 		driverErrors[m.Driver] += m.Errors
+		if m.Errors > 0 {
+			errorDetails[m.Driver] = append(errorDetails[m.Driver], m)
+		}
 	}
 	for _, skip := range report.SkippedBenchmarks {
 		driverSkipped[skip.Driver]++
@@ -145,6 +155,30 @@ func main() {
 	}
 	if totalErrors > 0 {
 		fmt.Printf("\nWarning: %d total errors occurred during benchmarks\n", totalErrors)
+	}
+
+	if len(errorDetails) > 0 {
+		fmt.Println()
+		fmt.Println("=== Error Details ===")
+		drivers := make([]string, 0, len(errorDetails))
+		for driver := range errorDetails {
+			drivers = append(drivers, driver)
+		}
+		sort.Strings(drivers)
+		for _, driver := range drivers {
+			details := errorDetails[driver]
+			sort.Slice(details, func(i, j int) bool {
+				return details[i].Operation < details[j].Operation
+			})
+			fmt.Printf("  %s:\n", driver)
+			for _, m := range details {
+				msg := m.LastError
+				if msg == "" {
+					msg = "unknown error"
+				}
+				fmt.Printf("    - %s: %d errors (last: %s)\n", m.Operation, m.Errors, msg)
+			}
+		}
 	}
 
 	os.Exit(0)

@@ -32,6 +32,7 @@ func (it *bucketIter) Close() error {
 
 // objectIter implements storage.ObjectIter for S3 with pagination.
 type objectIter struct {
+	ctx       context.Context
 	client    *s3.Client
 	bucket    string
 	input     *s3.ListObjectsV2Input
@@ -93,11 +94,15 @@ func (it *objectIter) Next() (*storage.Object, error) {
 }
 
 func (it *objectIter) fetchNextPage() error {
+	ctx := it.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if it.continuationToken != nil {
 		it.input.ContinuationToken = it.continuationToken
 	}
 
-	resp, err := it.client.ListObjectsV2(context.Background(), it.input)
+	resp, err := it.client.ListObjectsV2(ctx, it.input)
 	if err != nil {
 		return mapS3Error(err)
 	}
@@ -238,6 +243,7 @@ func (d *directory) List(ctx context.Context, limit, offset int, opts storage.Op
 	}
 
 	return &objectIter{
+		ctx:    ctx,
 		client: d.bucket.store.client,
 		bucket: d.bucket.name,
 		input:  input,

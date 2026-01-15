@@ -71,6 +71,10 @@ type Config struct {
 
 	// FileCounts is the list of file counts to benchmark (e.g., 1, 10, 100, 1000, 10000, 100000).
 	FileCounts []int
+
+	// Filter is a substring filter for benchmark names (e.g., "MixedWorkload").
+	// Only benchmarks containing this string will run. Empty means all.
+	Filter string
 }
 
 // DefaultConfig returns sensible defaults.
