@@ -1,0 +1,557 @@
+{
+  "timestamp": "2026-01-16T01:52:22+07:00",
+  "config": {
+    "threads_min": 8,
+    "threads_max": 10,
+    "payloads_min": 12,
+    "payloads_max": 13,
+    "samples": 20
+  },
+  "results": [
+    {
+      "driver": "liteio",
+      "object_size_bytes": 4194304,
+      "threads": 8,
+      "throughput_mbps": 38.89626339083179,
+      "ttfb": {
+        "avg_ms": 11,
+        "min_ms": 6,
+        "p25_ms": 7,
+        "p50_ms": 10,
+        "p75_ms": 13,
+        "p90_ms": 16,
+        "p99_ms": 17,
+        "max_ms": 19
+      },
+      "ttlb": {
+        "avg_ms": 102,
+        "min_ms": 57,
+        "p25_ms": 72,
+        "p50_ms": 84,
+        "p75_ms": 114,
+        "p90_ms": 146,
+        "p99_ms": 168,
+        "max_ms": 272
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 272
+    },
+    {
+      "driver": "liteio",
+      "object_size_bytes": 4194304,
+      "threads": 9,
+      "throughput_mbps": 34.26478946897634,
+      "ttfb": {
+        "avg_ms": 11,
+        "min_ms": 5,
+        "p25_ms": 8,
+        "p50_ms": 11,
+        "p75_ms": 13,
+        "p90_ms": 14,
+        "p99_ms": 15,
+        "max_ms": 16
+      },
+      "ttlb": {
+        "avg_ms": 116,
+        "min_ms": 54,
+        "p25_ms": 59,
+        "p50_ms": 106,
+        "p75_ms": 149,
+        "p90_ms": 165,
+        "p99_ms": 239,
+        "max_ms": 278
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 279
+    },
+    {
+      "driver": "liteio",
+      "object_size_bytes": 4194304,
+      "threads": 10,
+      "throughput_mbps": 28.777425264430356,
+      "ttfb": {
+        "avg_ms": 11,
+        "min_ms": 2,
+        "p25_ms": 6,
+        "p50_ms": 12,
+        "p75_ms": 13,
+        "p90_ms": 16,
+        "p99_ms": 18,
+        "max_ms": 18
+      },
+      "ttlb": {
+        "avg_ms": 138,
+        "min_ms": 58,
+        "p25_ms": 76,
+        "p50_ms": 108,
+        "p75_ms": 168,
+        "p90_ms": 276,
+        "p99_ms": 280,
+        "max_ms": 289
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 292
+    },
+    {
+      "driver": "minio",
+      "object_size_bytes": 4194304,
+      "threads": 8,
+      "throughput_mbps": 33.83383983536095,
+      "ttfb": {
+        "avg_ms": 9,
+        "min_ms": 4,
+        "p25_ms": 5,
+        "p50_ms": 9,
+        "p75_ms": 11,
+        "p90_ms": 13,
+        "p99_ms": 13,
+        "max_ms": 14
+      },
+      "ttlb": {
+        "avg_ms": 118,
+        "min_ms": 81,
+        "p25_ms": 100,
+        "p50_ms": 106,
+        "p75_ms": 127,
+        "p90_ms": 158,
+        "p99_ms": 183,
+        "max_ms": 185
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 313
+    },
+    {
+      "driver": "minio",
+      "object_size_bytes": 4194304,
+      "threads": 9,
+      "throughput_mbps": 31.53917066851072,
+      "ttfb": {
+        "avg_ms": 7,
+        "min_ms": 2,
+        "p25_ms": 5,
+        "p50_ms": 8,
+        "p75_ms": 9,
+        "p90_ms": 10,
+        "p99_ms": 12,
+        "max_ms": 12
+      },
+      "ttlb": {
+        "avg_ms": 126,
+        "min_ms": 93,
+        "p25_ms": 96,
+        "p50_ms": 118,
+        "p75_ms": 137,
+        "p90_ms": 166,
+        "p99_ms": 174,
+        "max_ms": 275
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 293
+    },
+    {
+      "driver": "minio",
+      "object_size_bytes": 4194304,
+      "threads": 10,
+      "throughput_mbps": 27.993354111796993,
+      "ttfb": {
+        "avg_ms": 7,
+        "min_ms": 2,
+        "p25_ms": 4,
+        "p50_ms": 5,
+        "p75_ms": 10,
+        "p90_ms": 12,
+        "p99_ms": 12,
+        "max_ms": 14
+      },
+      "ttlb": {
+        "avg_ms": 142,
+        "min_ms": 80,
+        "p25_ms": 110,
+        "p50_ms": 120,
+        "p75_ms": 181,
+        "p90_ms": 194,
+        "p99_ms": 233,
+        "max_ms": 284
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 310
+    },
+    {
+      "driver": "rustfs",
+      "object_size_bytes": 4194304,
+      "threads": 8,
+      "throughput_mbps": 34.488875371395714,
+      "ttfb": {
+        "avg_ms": 13,
+        "min_ms": 9,
+        "p25_ms": 12,
+        "p50_ms": 13,
+        "p75_ms": 14,
+        "p90_ms": 15,
+        "p99_ms": 17,
+        "max_ms": 20
+      },
+      "ttlb": {
+        "avg_ms": 115,
+        "min_ms": 74,
+        "p25_ms": 95,
+        "p50_ms": 101,
+        "p75_ms": 134,
+        "p90_ms": 165,
+        "p99_ms": 171,
+        "max_ms": 180
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 301
+    },
+    {
+      "driver": "rustfs",
+      "object_size_bytes": 4194304,
+      "threads": 9,
+      "throughput_mbps": 31.904824704661593,
+      "ttfb": {
+        "avg_ms": 12,
+        "min_ms": 9,
+        "p25_ms": 11,
+        "p50_ms": 12,
+        "p75_ms": 13,
+        "p90_ms": 14,
+        "p99_ms": 14,
+        "max_ms": 15
+      },
+      "ttlb": {
+        "avg_ms": 125,
+        "min_ms": 78,
+        "p25_ms": 104,
+        "p50_ms": 115,
+        "p75_ms": 139,
+        "p90_ms": 176,
+        "p99_ms": 186,
+        "max_ms": 189
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 299
+    },
+    {
+      "driver": "rustfs",
+      "object_size_bytes": 4194304,
+      "threads": 10,
+      "throughput_mbps": 27.19091775762789,
+      "ttfb": {
+        "avg_ms": 13,
+        "min_ms": 7,
+        "p25_ms": 9,
+        "p50_ms": 13,
+        "p75_ms": 16,
+        "p90_ms": 18,
+        "p99_ms": 19,
+        "max_ms": 21
+      },
+      "ttlb": {
+        "avg_ms": 147,
+        "min_ms": 91,
+        "p25_ms": 124,
+        "p50_ms": 141,
+        "p75_ms": 156,
+        "p90_ms": 178,
+        "p99_ms": 220,
+        "max_ms": 230
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 322
+    },
+    {
+      "driver": "liteio",
+      "object_size_bytes": 8388608,
+      "threads": 8,
+      "throughput_mbps": 36.92904023869814,
+      "ttfb": {
+        "avg_ms": 18,
+        "min_ms": 10,
+        "p25_ms": 13,
+        "p50_ms": 16,
+        "p75_ms": 20,
+        "p90_ms": 25,
+        "p99_ms": 27,
+        "max_ms": 28
+      },
+      "ttlb": {
+        "avg_ms": 216,
+        "min_ms": 95,
+        "p25_ms": 111,
+        "p50_ms": 175,
+        "p75_ms": 250,
+        "p90_ms": 406,
+        "p99_ms": 420,
+        "max_ms": 480
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 590
+    },
+    {
+      "driver": "liteio",
+      "object_size_bytes": 8388608,
+      "threads": 9,
+      "throughput_mbps": 30.88256135390162,
+      "ttfb": {
+        "avg_ms": 16,
+        "min_ms": 5,
+        "p25_ms": 8,
+        "p50_ms": 15,
+        "p75_ms": 20,
+        "p90_ms": 26,
+        "p99_ms": 27,
+        "max_ms": 28
+      },
+      "ttlb": {
+        "avg_ms": 259,
+        "min_ms": 128,
+        "p25_ms": 161,
+        "p50_ms": 229,
+        "p75_ms": 273,
+        "p90_ms": 333,
+        "p99_ms": 540,
+        "max_ms": 611
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 619
+    },
+    {
+      "driver": "liteio",
+      "object_size_bytes": 8388608,
+      "threads": 10,
+      "throughput_mbps": 30.04977347003624,
+      "ttfb": {
+        "avg_ms": 16,
+        "min_ms": 5,
+        "p25_ms": 6,
+        "p50_ms": 12,
+        "p75_ms": 23,
+        "p90_ms": 24,
+        "p99_ms": 28,
+        "max_ms": 31
+      },
+      "ttlb": {
+        "avg_ms": 266,
+        "min_ms": 94,
+        "p25_ms": 136,
+        "p50_ms": 212,
+        "p75_ms": 335,
+        "p90_ms": 540,
+        "p99_ms": 543,
+        "max_ms": 583
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 583
+    },
+    {
+      "driver": "minio",
+      "object_size_bytes": 8388608,
+      "threads": 8,
+      "throughput_mbps": 33.359842822782035,
+      "ttfb": {
+        "avg_ms": 9,
+        "min_ms": 4,
+        "p25_ms": 6,
+        "p50_ms": 9,
+        "p75_ms": 10,
+        "p90_ms": 12,
+        "p99_ms": 14,
+        "max_ms": 14
+      },
+      "ttlb": {
+        "avg_ms": 239,
+        "min_ms": 106,
+        "p25_ms": 165,
+        "p50_ms": 200,
+        "p75_ms": 277,
+        "p90_ms": 364,
+        "p99_ms": 389,
+        "max_ms": 477
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 642
+    },
+    {
+      "driver": "minio",
+      "object_size_bytes": 8388608,
+      "threads": 9,
+      "throughput_mbps": 29.911686452412845,
+      "ttfb": {
+        "avg_ms": 8,
+        "min_ms": 2,
+        "p25_ms": 4,
+        "p50_ms": 9,
+        "p75_ms": 10,
+        "p90_ms": 12,
+        "p99_ms": 14,
+        "max_ms": 14
+      },
+      "ttlb": {
+        "avg_ms": 267,
+        "min_ms": 165,
+        "p25_ms": 201,
+        "p50_ms": 250,
+        "p75_ms": 328,
+        "p90_ms": 366,
+        "p99_ms": 381,
+        "max_ms": 456
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 631
+    },
+    {
+      "driver": "minio",
+      "object_size_bytes": 8388608,
+      "threads": 10,
+      "throughput_mbps": 22.354918191191864,
+      "ttfb": {
+        "avg_ms": 9,
+        "min_ms": 4,
+        "p25_ms": 4,
+        "p50_ms": 5,
+        "p75_ms": 14,
+        "p90_ms": 16,
+        "p99_ms": 17,
+        "max_ms": 20
+      },
+      "ttlb": {
+        "avg_ms": 357,
+        "min_ms": 140,
+        "p25_ms": 272,
+        "p50_ms": 296,
+        "p75_ms": 420,
+        "p90_ms": 511,
+        "p99_ms": 554,
+        "max_ms": 645
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 770
+    },
+    {
+      "driver": "rustfs",
+      "object_size_bytes": 8388608,
+      "threads": 8,
+      "throughput_mbps": 33.010584107245336,
+      "ttfb": {
+        "avg_ms": 17,
+        "min_ms": 15,
+        "p25_ms": 15,
+        "p50_ms": 17,
+        "p75_ms": 19,
+        "p90_ms": 20,
+        "p99_ms": 20,
+        "max_ms": 20
+      },
+      "ttlb": {
+        "avg_ms": 242,
+        "min_ms": 146,
+        "p25_ms": 201,
+        "p50_ms": 226,
+        "p75_ms": 264,
+        "p90_ms": 340,
+        "p99_ms": 359,
+        "max_ms": 370
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 639
+    },
+    {
+      "driver": "rustfs",
+      "object_size_bytes": 8388608,
+      "threads": 9,
+      "throughput_mbps": 30.95791479482134,
+      "ttfb": {
+        "avg_ms": 21,
+        "min_ms": 16,
+        "p25_ms": 19,
+        "p50_ms": 20,
+        "p75_ms": 22,
+        "p90_ms": 25,
+        "p99_ms": 31,
+        "max_ms": 31
+      },
+      "ttlb": {
+        "avg_ms": 258,
+        "min_ms": 175,
+        "p25_ms": 200,
+        "p50_ms": 225,
+        "p75_ms": 283,
+        "p90_ms": 406,
+        "p99_ms": 428,
+        "max_ms": 486
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 632
+    },
+    {
+      "driver": "rustfs",
+      "object_size_bytes": 8388608,
+      "threads": 10,
+      "throughput_mbps": 27.25139124807495,
+      "ttfb": {
+        "avg_ms": 20,
+        "min_ms": 14,
+        "p25_ms": 19,
+        "p50_ms": 20,
+        "p75_ms": 20,
+        "p90_ms": 22,
+        "p99_ms": 24,
+        "max_ms": 25
+      },
+      "ttlb": {
+        "avg_ms": 293,
+        "min_ms": 172,
+        "p25_ms": 240,
+        "p50_ms": 270,
+        "p75_ms": 315,
+        "p90_ms": 423,
+        "p99_ms": 426,
+        "max_ms": 531
+      },
+      "samples": 20,
+      "errors": 0,
+      "duration_ms": 639
+    }
+  ],
+  "summary": {
+    "best_throughput": {
+      "driver": "liteio",
+      "object_size_bytes": 4194304,
+      "threads": 8,
+      "value": 38.89626339083179,
+      "unit": "MB/s"
+    },
+    "best_ttfb": {
+      "driver": "minio",
+      "object_size_bytes": 4194304,
+      "threads": 9,
+      "value": 7,
+      "unit": "ms"
+    },
+    "best_ttlb": {
+      "driver": "liteio",
+      "object_size_bytes": 4194304,
+      "threads": 8,
+      "value": 102,
+      "unit": "ms"
+    }
+  }
+}

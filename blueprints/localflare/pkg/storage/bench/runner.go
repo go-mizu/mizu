@@ -51,7 +51,7 @@ func (r *Runner) SetLogger(fn func(format string, args ...any)) {
 func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	r.logger("=== Storage Benchmark Suite ===")
 	r.logger("Drivers: %d configured", len(r.drivers))
-	r.logger("Iterations: %d (warmup: %d)", r.config.Iterations, r.config.WarmupIterations)
+	r.logger("BenchTime: %v (warmup: %d, min iters: %d)", r.config.BenchTime, r.config.WarmupIterations, r.config.MinBenchIterations)
 	r.logger("Concurrency: %d", r.config.Concurrency)
 	r.logger("Object sizes: %v", formatSizes(r.config.ObjectSizes))
 	r.logger("")
