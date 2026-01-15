@@ -1,6 +1,6 @@
 # Storage Benchmark Report
 
-**Generated:** 2026-01-16T00:20:15+07:00
+**Generated:** 2026-01-16T01:05:58+07:00
 
 **Go Version:** go1.25.5
 
@@ -22,47 +22,47 @@
 
 | Operation | Leader | Performance | Margin |
 |-----------|--------|-------------|--------|
-| Small Read (1KB) | liteio | 4.7 MB/s | +73% vs minio |
-| Small Write (1KB) | liteio | 1.5 MB/s | +16% vs rustfs |
-| Large Read (100MB) | minio | 271.3 MB/s | +15% vs liteio |
-| Large Write (100MB) | liteio | 200.0 MB/s | +34% vs minio |
-| Delete | liteio | 5.0K ops/s | +68% vs minio |
-| Stat | liteio | 5.7K ops/s | +54% vs rustfs |
-| List (100 objects) | liteio | 1.3K ops/s | 2.5x vs minio |
-| Copy | liteio | 2.7 MB/s | 3.0x vs rustfs |
+| Small Read (1KB) | liteio | 5.8 MB/s | 2.2x vs minio |
+| Small Write (1KB) | liteio | 1.0 MB/s | +11% vs rustfs |
+| Large Read (100MB) | minio | 312.1 MB/s | close |
+| Large Write (100MB) | liteio | 207.2 MB/s | +24% vs minio |
+| Delete | liteio | 4.9K ops/s | +64% vs minio |
+| Stat | liteio | 5.1K ops/s | +22% vs minio |
+| List (100 objects) | liteio | 1.3K ops/s | 3.2x vs minio |
+| Copy | liteio | 1.9 MB/s | 2.0x vs minio |
 
 ### Best Driver by Use Case
 
 | Use Case | Recommended | Performance | Notes |
 |----------|-------------|-------------|-------|
-| Large File Uploads (100MB+) | **liteio** | 200 MB/s | Best for media, backups |
-| Large File Downloads (100MB) | **minio** | 271 MB/s | Best for streaming, CDN |
-| Small File Operations | **liteio** | 3171 ops/s | Best for metadata, configs |
+| Large File Uploads (100MB+) | **liteio** | 207 MB/s | Best for media, backups |
+| Large File Downloads (100MB) | **minio** | 312 MB/s | Best for streaming, CDN |
+| Small File Operations | **liteio** | 3514 ops/s | Best for metadata, configs |
 | High Concurrency (C10) | **liteio** | - | Best for multi-user apps |
 
 ### Large File Performance (100MB)
 
 | Driver | Write (MB/s) | Read (MB/s) | Write Latency | Read Latency |
 |--------|-------------|-------------|---------------|---------------|
-| liteio | 200.0 | 235.2 | 493.9ms | 424.8ms |
-| minio | 149.0 | 271.3 | 673.1ms | 368.8ms |
-| rustfs | 108.8 | 156.6 | 929.9ms | 392.9ms |
+| liteio | 207.2 | 287.1 | 485.0ms | 344.1ms |
+| minio | 167.2 | 312.1 | 606.3ms | 317.2ms |
+| rustfs | 54.7 | 302.5 | 1.36s | 322.4ms |
 
 ### Small File Performance (1KB)
 
 | Driver | Write (ops/s) | Read (ops/s) | Write Latency | Read Latency |
 |--------|--------------|--------------|---------------|---------------|
-| liteio | 1525 | 4817 | 514.6us | 204.1us |
-| minio | 734 | 2789 | 1.2ms | 345.5us |
-| rustfs | 1309 | 2142 | 742.4us | 456.0us |
+| liteio | 1040 | 5988 | 790.3us | 156.1us |
+| minio | 699 | 2711 | 1.3ms | 342.0us |
+| rustfs | 936 | 1767 | 893.0us | 513.8us |
 
 ### Metadata Operations (ops/s)
 
 | Driver | Stat | List (100 objects) | Delete |
 |--------|------|-------------------|--------|
-| liteio | 5656 | 1320 | 4991 |
-| minio | 3103 | 529 | 2968 |
-| rustfs | 3670 | 185 | 1428 |
+| liteio | 5104 | 1331 | 4882 |
+| minio | 4178 | 414 | 2983 |
+| rustfs | 4126 | 165 | 1204 |
 
 ### Concurrency Performance
 
@@ -70,9 +70,9 @@
 
 | Driver | C1 | C10 | C25 | C50 | C100 | C200 |
 |--------|------|------|------|------|------|------|
-| liteio | 2.91 | 0.54 | 0.45 | 0.24 | 0.20 | 0.23 |
-| minio | 0.63 | 0.18 | 0.11 | 0.07 | 0.08 | 0.09 |
-| rustfs | 1.37 | 0.35 | 0.18 | 0.10 | 0.12 | 0.11 |
+| liteio | 1.99 | 0.73 | 0.99 | 0.82 | 0.88 | 1.03 |
+| minio | 0.99 | 0.22 | 0.19 | 0.22 | 0.26 | 0.22 |
+| rustfs | 1.18 | 0.26 | 0.25 | 0.24 | 0.22 | 0.24 |
 
 *\* indicates errors occurred*
 
@@ -80,9 +80,9 @@
 
 | Driver | C1 | C10 | C25 | C50 | C100 | C200 |
 |--------|------|------|------|------|------|------|
-| liteio | 3.83 | 1.28 | 0.91 | 0.52 | 0.64 | 0.54 |
-| minio | 2.76 | 1.12 | 0.41 | 0.37 | 0.34 | 0.34 |
-| rustfs | 1.99 | 0.77 | 0.41 | 0.24 | 0.27 | 0.30 |
+| liteio | 3.81 | 1.84 | 1.47 | 0.98 | 0.87 | 1.75 |
+| minio | 2.44 | 1.06 | 0.65 | 0.61 | 0.66 | 0.78 |
+| rustfs | 1.52 | 0.71 | 0.50 | 0.54 | 0.77 | 0.59 |
 
 *\* indicates errors occurred*
 
@@ -94,9 +94,9 @@ Performance with varying numbers of files (1KB each).
 
 | Driver | 1 | 10 | 100 | 1000 | 10000 |
 |--------|------|------|------|------|------|
-| liteio | 444.1us | 2.5ms | 23.7ms | 216.2ms | 2.17s |
-| minio | 1.6ms | 11.9ms | 102.1ms | 1.03s | 10.69s |
-| rustfs | 818.4us | 5.8ms | 68.3ms | 709.8ms | 7.49s |
+| liteio | 406.6us | 2.4ms | 23.5ms | 209.6ms | 2.11s |
+| minio | 1.5ms | 9.9ms | 87.8ms | 922.9ms | 9.29s |
+| rustfs | 840.5us | 7.9ms | 74.7ms | 763.3ms | 7.33s |
 
 *\* indicates errors occurred*
 
@@ -104,9 +104,9 @@ Performance with varying numbers of files (1KB each).
 
 | Driver | 1 | 10 | 100 | 1000 | 10000 |
 |--------|------|------|------|------|------|
-| liteio | 304.2us | 321.5us | 821.2us | 4.9ms | 172.1ms |
-| minio | 531.5us | 562.2us | 1.7ms | 13.6ms | 159.0ms |
-| rustfs | 839.6us | 1.1ms | 7.4ms | 58.5ms | 719.7ms |
+| liteio | 249.3us | 333.8us | 822.9us | 5.4ms | 184.5ms |
+| minio | 454.3us | 600.2us | 1.8ms | 14.0ms | 172.3ms |
+| rustfs | 819.2us | 1.5ms | 6.9ms | 58.7ms | 760.3ms |
 
 *\* indicates errors occurred*
 
@@ -116,8 +116,8 @@ Performance with varying numbers of files (1KB each).
 
 | Parameter | Value |
 |-----------|-------|
-| Iterations | 50 |
-| Warmup | 5 |
+| Iterations | 20 |
+| Warmup | 10 |
 | Concurrency | 200 |
 | Timeout | 30s |
 
@@ -133,1128 +133,1128 @@ Performance with varying numbers of files (1KB each).
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 2.73 MB/s | 292.8us | 714.5us | 833.4us | 0 |
-| rustfs | 0.91 MB/s | 968.2us | 1.3ms | 1.4ms | 0 |
-| minio | 0.87 MB/s | 942.2us | 1.8ms | 2.5ms | 0 |
+| liteio | 1.91 MB/s | 475.7us | 728.8us | 728.8us | 0 |
+| minio | 0.94 MB/s | 985.7us | 1.3ms | 1.3ms | 0 |
+| rustfs | 0.93 MB/s | 1.1ms | 1.2ms | 1.2ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 2.73 MB/s
-rustfs       █████████ 0.91 MB/s
-minio        █████████ 0.87 MB/s
+liteio       ██████████████████████████████ 1.91 MB/s
+minio        ██████████████ 0.94 MB/s
+rustfs       ██████████████ 0.93 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████ 292.8us
-rustfs       ██████████████████████████████ 968.2us
-minio        █████████████████████████████ 942.2us
+liteio       █████████████ 475.7us
+minio        ███████████████████████████ 985.7us
+rustfs       ██████████████████████████████ 1.1ms
 ```
 
 ### Delete
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 4991 ops/s | 195.2us | 226.2us | 245.1us | 0 |
-| minio | 2968 ops/s | 324.5us | 416.1us | 447.2us | 0 |
-| rustfs | 1428 ops/s | 698.2us | 949.6us | 1.1ms | 0 |
+| liteio | 4882 ops/s | 207.5us | 235.7us | 235.7us | 0 |
+| minio | 2983 ops/s | 326.4us | 378.0us | 378.0us | 0 |
+| rustfs | 1204 ops/s | 822.6us | 1.1ms | 1.1ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 4991 ops/s
-minio        █████████████████ 2968 ops/s
-rustfs       ████████ 1428 ops/s
+liteio       ██████████████████████████████ 4882 ops/s
+minio        ██████████████████ 2983 ops/s
+rustfs       ███████ 1204 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 195.2us
-minio        █████████████ 324.5us
-rustfs       ██████████████████████████████ 698.2us
+liteio       ███████ 207.5us
+minio        ███████████ 326.4us
+rustfs       ██████████████████████████████ 822.6us
 ```
 
 ### EdgeCase/DeepNested
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.42 MB/s | 221.4us | 243.2us | 250.6us | 0 |
-| rustfs | 0.13 MB/s | 698.4us | 751.0us | 775.8us | 0 |
-| minio | 0.08 MB/s | 973.5us | 1.7ms | 2.1ms | 0 |
+| liteio | 0.42 MB/s | 216.6us | 252.2us | 252.2us | 0 |
+| minio | 0.10 MB/s | 904.5us | 999.8us | 999.8us | 0 |
+| rustfs | 0.08 MB/s | 1.1ms | 1.6ms | 1.6ms | 0 |
 
 **Throughput**
 ```
 liteio       ██████████████████████████████ 0.42 MB/s
-rustfs       █████████ 0.13 MB/s
-minio        █████ 0.08 MB/s
+minio        ██████ 0.10 MB/s
+rustfs       █████ 0.08 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 221.4us
-rustfs       █████████████████████ 698.4us
-minio        ██████████████████████████████ 973.5us
+liteio       █████ 216.6us
+minio        ████████████████████████ 904.5us
+rustfs       ██████████████████████████████ 1.1ms
 ```
 
 ### EdgeCase/EmptyObject
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 1403 ops/s | 706.0us | 796.5us | 798.4us | 0 |
-| minio | 918 ops/s | 869.2us | 1.7ms | 1.7ms | 0 |
-| liteio | 717 ops/s | 1.5ms | 2.8ms | 3.0ms | 0 |
+| liteio | 3317 ops/s | 284.2us | 337.5us | 337.5us | 0 |
+| minio | 1015 ops/s | 931.3us | 1.2ms | 1.2ms | 0 |
+| rustfs | 290 ops/s | 2.8ms | 6.0ms | 6.0ms | 0 |
 
 **Throughput**
 ```
-rustfs       ██████████████████████████████ 1403 ops/s
-minio        ███████████████████ 918 ops/s
-liteio       ███████████████ 717 ops/s
+liteio       ██████████████████████████████ 3317 ops/s
+minio        █████████ 1015 ops/s
+rustfs       ██ 290 ops/s
 ```
 
 **Latency (P50)**
 ```
-rustfs       ██████████████ 706.0us
-minio        █████████████████ 869.2us
-liteio       ██████████████████████████████ 1.5ms
+liteio       ███ 284.2us
+minio        ██████████ 931.3us
+rustfs       ██████████████████████████████ 2.8ms
 ```
 
 ### EdgeCase/LongKey256
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.33 MB/s | 264.0us | 398.9us | 405.6us | 0 |
-| rustfs | 0.14 MB/s | 678.2us | 729.6us | 757.9us | 0 |
-| minio | 0.09 MB/s | 945.4us | 1.7ms | 1.7ms | 0 |
+| liteio | 0.39 MB/s | 228.6us | 268.1us | 268.1us | 0 |
+| rustfs | 0.11 MB/s | 798.3us | 1.1ms | 1.1ms | 0 |
+| minio | 0.09 MB/s | 986.8us | 1.1ms | 1.1ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.33 MB/s
-rustfs       ████████████ 0.14 MB/s
+liteio       ██████████████████████████████ 0.39 MB/s
+rustfs       ████████ 0.11 MB/s
 minio        ███████ 0.09 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 264.0us
-rustfs       █████████████████████ 678.2us
-minio        ██████████████████████████████ 945.4us
+liteio       ██████ 228.6us
+rustfs       ████████████████████████ 798.3us
+minio        ██████████████████████████████ 986.8us
 ```
 
 ### FileCount/Delete/1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 5092 ops/s | 196.4us | 196.4us | 196.4us | 0 |
-| minio | 2493 ops/s | 401.1us | 401.1us | 401.1us | 0 |
-| rustfs | 852 ops/s | 1.2ms | 1.2ms | 1.2ms | 0 |
+| liteio | 4155 ops/s | 240.7us | 240.7us | 240.7us | 0 |
+| minio | 2200 ops/s | 454.6us | 454.6us | 454.6us | 0 |
+| rustfs | 1524 ops/s | 656.1us | 656.1us | 656.1us | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 5092 ops/s
-minio        ██████████████ 2493 ops/s
-rustfs       █████ 852 ops/s
+liteio       ██████████████████████████████ 4155 ops/s
+minio        ███████████████ 2200 ops/s
+rustfs       ███████████ 1524 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████ 196.4us
-minio        ██████████ 401.1us
-rustfs       ██████████████████████████████ 1.2ms
+liteio       ███████████ 240.7us
+minio        ████████████████████ 454.6us
+rustfs       ██████████████████████████████ 656.1us
 ```
 
 ### FileCount/Delete/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 510 ops/s | 2.0ms | 2.0ms | 2.0ms | 0 |
-| minio | 282 ops/s | 3.5ms | 3.5ms | 3.5ms | 0 |
-| rustfs | 112 ops/s | 8.9ms | 8.9ms | 8.9ms | 0 |
+| liteio | 430 ops/s | 2.3ms | 2.3ms | 2.3ms | 0 |
+| minio | 269 ops/s | 3.7ms | 3.7ms | 3.7ms | 0 |
+| rustfs | 123 ops/s | 8.1ms | 8.1ms | 8.1ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 510 ops/s
-minio        ████████████████ 282 ops/s
-rustfs       ██████ 112 ops/s
+liteio       ██████████████████████████████ 430 ops/s
+minio        ██████████████████ 269 ops/s
+rustfs       ████████ 123 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 2.0ms
-minio        ███████████ 3.5ms
-rustfs       ██████████████████████████████ 8.9ms
+liteio       ████████ 2.3ms
+minio        █████████████ 3.7ms
+rustfs       ██████████████████████████████ 8.1ms
 ```
 
 ### FileCount/Delete/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 53 ops/s | 18.9ms | 18.9ms | 18.9ms | 0 |
-| minio | 29 ops/s | 34.9ms | 34.9ms | 34.9ms | 0 |
-| rustfs | 14 ops/s | 69.4ms | 69.4ms | 69.4ms | 0 |
+| liteio | 51 ops/s | 19.8ms | 19.8ms | 19.8ms | 0 |
+| minio | 27 ops/s | 36.8ms | 36.8ms | 36.8ms | 0 |
+| rustfs | 13 ops/s | 75.1ms | 75.1ms | 75.1ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 53 ops/s
-minio        ████████████████ 29 ops/s
-rustfs       ████████ 14 ops/s
+liteio       ██████████████████████████████ 51 ops/s
+minio        ████████████████ 27 ops/s
+rustfs       ███████ 13 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 18.9ms
-minio        ███████████████ 34.9ms
-rustfs       ██████████████████████████████ 69.4ms
+liteio       ███████ 19.8ms
+minio        ██████████████ 36.8ms
+rustfs       ██████████████████████████████ 75.1ms
 ```
 
 ### FileCount/Delete/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 6 ops/s | 179.4ms | 179.4ms | 179.4ms | 0 |
-| minio | 3 ops/s | 374.9ms | 374.9ms | 374.9ms | 0 |
-| rustfs | 1 ops/s | 730.7ms | 730.7ms | 730.7ms | 0 |
+| liteio | 6 ops/s | 176.1ms | 176.1ms | 176.1ms | 0 |
+| minio | 3 ops/s | 347.9ms | 347.9ms | 347.9ms | 0 |
+| rustfs | 1 ops/s | 667.6ms | 667.6ms | 667.6ms | 0 |
 
 **Throughput**
 ```
 liteio       ██████████████████████████████ 6 ops/s
-minio        ██████████████ 3 ops/s
+minio        ███████████████ 3 ops/s
 rustfs       ███████ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ███████ 179.4ms
-minio        ███████████████ 374.9ms
-rustfs       ██████████████████████████████ 730.7ms
+liteio       ███████ 176.1ms
+minio        ███████████████ 347.9ms
+rustfs       ██████████████████████████████ 667.6ms
 ```
 
 ### FileCount/Delete/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 1 ops/s | 1.81s | 1.81s | 1.81s | 0 |
-| minio | 0 ops/s | 3.53s | 3.53s | 3.53s | 0 |
-| rustfs | 0 ops/s | 8.25s | 8.25s | 8.25s | 0 |
+| liteio | 1 ops/s | 1.78s | 1.78s | 1.78s | 0 |
+| minio | 0 ops/s | 3.92s | 3.92s | 3.92s | 0 |
+| rustfs | 0 ops/s | 8.22s | 8.22s | 8.22s | 0 |
 
 **Throughput**
 ```
 liteio       ██████████████████████████████ 1 ops/s
-minio        ███████████████ 0 ops/s
+minio        █████████████ 0 ops/s
 rustfs       ██████ 0 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 1.81s
-minio        ████████████ 3.53s
-rustfs       ██████████████████████████████ 8.25s
+liteio       ██████ 1.78s
+minio        ██████████████ 3.92s
+rustfs       ██████████████████████████████ 8.22s
 ```
 
 ### FileCount/List/1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 3288 ops/s | 304.2us | 304.2us | 304.2us | 0 |
-| minio | 1882 ops/s | 531.5us | 531.5us | 531.5us | 0 |
-| rustfs | 1191 ops/s | 839.6us | 839.6us | 839.6us | 0 |
+| liteio | 4011 ops/s | 249.3us | 249.3us | 249.3us | 0 |
+| minio | 2201 ops/s | 454.3us | 454.3us | 454.3us | 0 |
+| rustfs | 1221 ops/s | 819.2us | 819.2us | 819.2us | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 3288 ops/s
-minio        █████████████████ 1882 ops/s
-rustfs       ██████████ 1191 ops/s
+liteio       ██████████████████████████████ 4011 ops/s
+minio        ████████████████ 2201 ops/s
+rustfs       █████████ 1221 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████████ 304.2us
-minio        ██████████████████ 531.5us
-rustfs       ██████████████████████████████ 839.6us
+liteio       █████████ 249.3us
+minio        ████████████████ 454.3us
+rustfs       ██████████████████████████████ 819.2us
 ```
 
 ### FileCount/List/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 3110 ops/s | 321.5us | 321.5us | 321.5us | 0 |
-| minio | 1779 ops/s | 562.2us | 562.2us | 562.2us | 0 |
-| rustfs | 882 ops/s | 1.1ms | 1.1ms | 1.1ms | 0 |
+| liteio | 2996 ops/s | 333.8us | 333.8us | 333.8us | 0 |
+| minio | 1666 ops/s | 600.2us | 600.2us | 600.2us | 0 |
+| rustfs | 662 ops/s | 1.5ms | 1.5ms | 1.5ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 3110 ops/s
-minio        █████████████████ 1779 ops/s
-rustfs       ████████ 882 ops/s
+liteio       ██████████████████████████████ 2996 ops/s
+minio        ████████████████ 1666 ops/s
+rustfs       ██████ 662 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 321.5us
-minio        ██████████████ 562.2us
-rustfs       ██████████████████████████████ 1.1ms
+liteio       ██████ 333.8us
+minio        ███████████ 600.2us
+rustfs       ██████████████████████████████ 1.5ms
 ```
 
 ### FileCount/List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 1218 ops/s | 821.2us | 821.2us | 821.2us | 0 |
-| minio | 572 ops/s | 1.7ms | 1.7ms | 1.7ms | 0 |
-| rustfs | 135 ops/s | 7.4ms | 7.4ms | 7.4ms | 0 |
+| liteio | 1215 ops/s | 822.9us | 822.9us | 822.9us | 0 |
+| minio | 558 ops/s | 1.8ms | 1.8ms | 1.8ms | 0 |
+| rustfs | 145 ops/s | 6.9ms | 6.9ms | 6.9ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 1218 ops/s
-minio        ██████████████ 572 ops/s
-rustfs       ███ 135 ops/s
+liteio       ██████████████████████████████ 1215 ops/s
+minio        █████████████ 558 ops/s
+rustfs       ███ 145 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ███ 821.2us
-minio        ███████ 1.7ms
-rustfs       ██████████████████████████████ 7.4ms
+liteio       ███ 822.9us
+minio        ███████ 1.8ms
+rustfs       ██████████████████████████████ 6.9ms
 ```
 
 ### FileCount/List/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 204 ops/s | 4.9ms | 4.9ms | 4.9ms | 0 |
-| minio | 74 ops/s | 13.6ms | 13.6ms | 13.6ms | 0 |
-| rustfs | 17 ops/s | 58.5ms | 58.5ms | 58.5ms | 0 |
+| liteio | 185 ops/s | 5.4ms | 5.4ms | 5.4ms | 0 |
+| minio | 72 ops/s | 14.0ms | 14.0ms | 14.0ms | 0 |
+| rustfs | 17 ops/s | 58.7ms | 58.7ms | 58.7ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 204 ops/s
-minio        ██████████ 74 ops/s
+liteio       ██████████████████████████████ 185 ops/s
+minio        ███████████ 72 ops/s
 rustfs       ██ 17 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██ 4.9ms
-minio        ██████ 13.6ms
-rustfs       ██████████████████████████████ 58.5ms
+liteio       ██ 5.4ms
+minio        ███████ 14.0ms
+rustfs       ██████████████████████████████ 58.7ms
 ```
 
 ### FileCount/List/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 6 ops/s | 159.0ms | 159.0ms | 159.0ms | 0 |
-| liteio | 6 ops/s | 172.1ms | 172.1ms | 172.1ms | 0 |
-| rustfs | 1 ops/s | 719.7ms | 719.7ms | 719.7ms | 0 |
+| minio | 6 ops/s | 172.3ms | 172.3ms | 172.3ms | 0 |
+| liteio | 5 ops/s | 184.5ms | 184.5ms | 184.5ms | 0 |
+| rustfs | 1 ops/s | 760.3ms | 760.3ms | 760.3ms | 0 |
 
 **Throughput**
 ```
 minio        ██████████████████████████████ 6 ops/s
-liteio       ███████████████████████████ 6 ops/s
+liteio       ████████████████████████████ 5 ops/s
 rustfs       ██████ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████ 159.0ms
-liteio       ███████ 172.1ms
-rustfs       ██████████████████████████████ 719.7ms
+minio        ██████ 172.3ms
+liteio       ███████ 184.5ms
+rustfs       ██████████████████████████████ 760.3ms
 ```
 
 ### FileCount/Write/1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 2.20 MB/s | 444.1us | 444.1us | 444.1us | 0 |
-| rustfs | 1.19 MB/s | 818.4us | 818.4us | 818.4us | 0 |
-| minio | 0.61 MB/s | 1.6ms | 1.6ms | 1.6ms | 0 |
+| liteio | 2.40 MB/s | 406.6us | 406.6us | 406.6us | 0 |
+| rustfs | 1.16 MB/s | 840.5us | 840.5us | 840.5us | 0 |
+| minio | 0.64 MB/s | 1.5ms | 1.5ms | 1.5ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 2.20 MB/s
-rustfs       ████████████████ 1.19 MB/s
-minio        ████████ 0.61 MB/s
+liteio       ██████████████████████████████ 2.40 MB/s
+rustfs       ██████████████ 1.16 MB/s
+minio        ████████ 0.64 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 444.1us
-rustfs       ███████████████ 818.4us
-minio        ██████████████████████████████ 1.6ms
+liteio       ████████ 406.6us
+rustfs       ████████████████ 840.5us
+minio        ██████████████████████████████ 1.5ms
 ```
 
 ### FileCount/Write/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 3.94 MB/s | 2.5ms | 2.5ms | 2.5ms | 0 |
-| rustfs | 1.67 MB/s | 5.8ms | 5.8ms | 5.8ms | 0 |
-| minio | 0.82 MB/s | 11.9ms | 11.9ms | 11.9ms | 0 |
+| liteio | 3.99 MB/s | 2.4ms | 2.4ms | 2.4ms | 0 |
+| rustfs | 1.23 MB/s | 7.9ms | 7.9ms | 7.9ms | 0 |
+| minio | 0.98 MB/s | 9.9ms | 9.9ms | 9.9ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 3.94 MB/s
-rustfs       ████████████ 1.67 MB/s
-minio        ██████ 0.82 MB/s
+liteio       ██████████████████████████████ 3.99 MB/s
+rustfs       █████████ 1.23 MB/s
+minio        ███████ 0.98 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 2.5ms
-rustfs       ██████████████ 5.8ms
-minio        ██████████████████████████████ 11.9ms
+liteio       ███████ 2.4ms
+rustfs       ████████████████████████ 7.9ms
+minio        ██████████████████████████████ 9.9ms
 ```
 
 ### FileCount/Write/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 4.11 MB/s | 23.7ms | 23.7ms | 23.7ms | 0 |
-| rustfs | 1.43 MB/s | 68.3ms | 68.3ms | 68.3ms | 0 |
-| minio | 0.96 MB/s | 102.1ms | 102.1ms | 102.1ms | 0 |
+| liteio | 4.16 MB/s | 23.5ms | 23.5ms | 23.5ms | 0 |
+| rustfs | 1.31 MB/s | 74.7ms | 74.7ms | 74.7ms | 0 |
+| minio | 1.11 MB/s | 87.8ms | 87.8ms | 87.8ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 4.11 MB/s
-rustfs       ██████████ 1.43 MB/s
-minio        ██████ 0.96 MB/s
+liteio       ██████████████████████████████ 4.16 MB/s
+rustfs       █████████ 1.31 MB/s
+minio        ████████ 1.11 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 23.7ms
-rustfs       ████████████████████ 68.3ms
-minio        ██████████████████████████████ 102.1ms
+liteio       ████████ 23.5ms
+rustfs       █████████████████████████ 74.7ms
+minio        ██████████████████████████████ 87.8ms
 ```
 
 ### FileCount/Write/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 4.52 MB/s | 216.2ms | 216.2ms | 216.2ms | 0 |
-| rustfs | 1.38 MB/s | 709.8ms | 709.8ms | 709.8ms | 0 |
-| minio | 0.95 MB/s | 1.03s | 1.03s | 1.03s | 0 |
+| liteio | 4.66 MB/s | 209.6ms | 209.6ms | 209.6ms | 0 |
+| rustfs | 1.28 MB/s | 763.3ms | 763.3ms | 763.3ms | 0 |
+| minio | 1.06 MB/s | 922.9ms | 922.9ms | 922.9ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 4.52 MB/s
-rustfs       █████████ 1.38 MB/s
-minio        ██████ 0.95 MB/s
+liteio       ██████████████████████████████ 4.66 MB/s
+rustfs       ████████ 1.28 MB/s
+minio        ██████ 1.06 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 216.2ms
-rustfs       ████████████████████ 709.8ms
-minio        ██████████████████████████████ 1.03s
+liteio       ██████ 209.6ms
+rustfs       ████████████████████████ 763.3ms
+minio        ██████████████████████████████ 922.9ms
 ```
 
 ### FileCount/Write/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 4.51 MB/s | 2.17s | 2.17s | 2.17s | 0 |
-| rustfs | 1.30 MB/s | 7.49s | 7.49s | 7.49s | 0 |
-| minio | 0.91 MB/s | 10.69s | 10.69s | 10.69s | 0 |
+| liteio | 4.63 MB/s | 2.11s | 2.11s | 2.11s | 0 |
+| rustfs | 1.33 MB/s | 7.33s | 7.33s | 7.33s | 0 |
+| minio | 1.05 MB/s | 9.29s | 9.29s | 9.29s | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 4.51 MB/s
-rustfs       ████████ 1.30 MB/s
-minio        ██████ 0.91 MB/s
+liteio       ██████████████████████████████ 4.63 MB/s
+rustfs       ████████ 1.33 MB/s
+minio        ██████ 1.05 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 2.17s
-rustfs       █████████████████████ 7.49s
-minio        ██████████████████████████████ 10.69s
+liteio       ██████ 2.11s
+rustfs       ███████████████████████ 7.33s
+minio        ██████████████████████████████ 9.29s
 ```
 
 ### List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 1320 ops/s | 741.9us | 869.7us | 897.0us | 0 |
-| minio | 529 ops/s | 1.7ms | 2.6ms | 3.8ms | 0 |
-| rustfs | 185 ops/s | 5.1ms | 6.5ms | 6.6ms | 0 |
+| liteio | 1331 ops/s | 743.1us | 836.5us | 836.5us | 0 |
+| minio | 414 ops/s | 1.9ms | 4.1ms | 4.1ms | 0 |
+| rustfs | 165 ops/s | 6.2ms | 6.5ms | 6.5ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 1320 ops/s
-minio        ████████████ 529 ops/s
-rustfs       ████ 185 ops/s
+liteio       ██████████████████████████████ 1331 ops/s
+minio        █████████ 414 ops/s
+rustfs       ███ 165 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████ 741.9us
-minio        ██████████ 1.7ms
-rustfs       ██████████████████████████████ 5.1ms
+liteio       ███ 743.1us
+minio        █████████ 1.9ms
+rustfs       ██████████████████████████████ 6.2ms
 ```
 
 ### MixedWorkload/Balanced_50_50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 5.87 MB/s | 2.6ms | 3.7ms | 3.7ms | 0 |
-| minio | 3.59 MB/s | 4.2ms | 5.6ms | 5.9ms | 0 |
-| rustfs | 2.53 MB/s | 6.1ms | 8.6ms | 9.0ms | 0 |
+| liteio | 10.22 MB/s | 1.4ms | 2.1ms | 2.1ms | 0 |
+| rustfs | 8.84 MB/s | 1.7ms | 2.2ms | 2.2ms | 0 |
+| minio | 8.28 MB/s | 1.9ms | 2.4ms | 2.4ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 5.87 MB/s
-minio        ██████████████████ 3.59 MB/s
-rustfs       ████████████ 2.53 MB/s
+liteio       ██████████████████████████████ 10.22 MB/s
+rustfs       █████████████████████████ 8.84 MB/s
+minio        ████████████████████████ 8.28 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████ 2.6ms
-minio        ████████████████████ 4.2ms
-rustfs       ██████████████████████████████ 6.1ms
+liteio       ██████████████████████ 1.4ms
+rustfs       ███████████████████████████ 1.7ms
+minio        ██████████████████████████████ 1.9ms
 ```
 
 ### MixedWorkload/ReadHeavy_90_10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 3.72 MB/s | 4.2ms | 4.7ms | 4.8ms | 0 |
-| minio | 2.59 MB/s | 6.1ms | 6.5ms | 6.6ms | 0 |
-| rustfs | 2.28 MB/s | 7.4ms | 8.9ms | 8.9ms | 0 |
+| rustfs | 7.89 MB/s | 1.9ms | 2.7ms | 2.7ms | 0 |
+| liteio | 7.34 MB/s | 2.2ms | 2.4ms | 2.4ms | 0 |
+| minio | 5.77 MB/s | 2.7ms | 3.0ms | 3.0ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 3.72 MB/s
-minio        ████████████████████ 2.59 MB/s
-rustfs       ██████████████████ 2.28 MB/s
+rustfs       ██████████████████████████████ 7.89 MB/s
+liteio       ███████████████████████████ 7.34 MB/s
+minio        █████████████████████ 5.77 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████████ 4.2ms
-minio        ████████████████████████ 6.1ms
-rustfs       ██████████████████████████████ 7.4ms
+rustfs       █████████████████████ 1.9ms
+liteio       ████████████████████████ 2.2ms
+minio        ██████████████████████████████ 2.7ms
 ```
 
 ### MixedWorkload/WriteHeavy_10_90
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 2.97 MB/s | 5.5ms | 6.1ms | 6.4ms | 0 |
-| minio | 1.30 MB/s | 12.5ms | 16.5ms | 16.8ms | 0 |
-| rustfs | 1.16 MB/s | 12.3ms | 17.7ms | 18.1ms | 0 |
+| liteio | 6.59 MB/s | 2.4ms | 2.8ms | 2.8ms | 0 |
+| minio | 4.76 MB/s | 3.4ms | 4.9ms | 4.9ms | 0 |
+| rustfs | 4.68 MB/s | 3.9ms | 4.6ms | 4.6ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 2.97 MB/s
-minio        █████████████ 1.30 MB/s
-rustfs       ███████████ 1.16 MB/s
+liteio       ██████████████████████████████ 6.59 MB/s
+minio        █████████████████████ 4.76 MB/s
+rustfs       █████████████████████ 4.68 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████ 5.5ms
-minio        ██████████████████████████████ 12.5ms
-rustfs       █████████████████████████████ 12.3ms
+liteio       ██████████████████ 2.4ms
+minio        ██████████████████████████ 3.4ms
+rustfs       ██████████████████████████████ 3.9ms
 ```
 
 ### Multipart/15MB_3Parts
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| rustfs | 173.50 MB/s | 83.8ms | 95.9ms | 95.9ms | 0 |
-| minio | 144.16 MB/s | 102.4ms | 108.5ms | 108.5ms | 0 |
-| liteio | 109.83 MB/s | 122.3ms | 164.5ms | 164.5ms | 0 |
+| rustfs | 163.74 MB/s | 88.8ms | 94.6ms | 94.6ms | 0 |
+| minio | 162.26 MB/s | 90.7ms | 93.8ms | 93.8ms | 0 |
+| liteio | 146.83 MB/s | 96.5ms | 98.8ms | 98.8ms | 0 |
 
 **Throughput**
 ```
-rustfs       ██████████████████████████████ 173.50 MB/s
-minio        ████████████████████████ 144.16 MB/s
-liteio       ██████████████████ 109.83 MB/s
+rustfs       ██████████████████████████████ 163.74 MB/s
+minio        █████████████████████████████ 162.26 MB/s
+liteio       ██████████████████████████ 146.83 MB/s
 ```
 
 **Latency (P50)**
 ```
-rustfs       ████████████████████ 83.8ms
-minio        █████████████████████████ 102.4ms
-liteio       ██████████████████████████████ 122.3ms
+rustfs       ███████████████████████████ 88.8ms
+minio        ████████████████████████████ 90.7ms
+liteio       ██████████████████████████████ 96.5ms
 ```
 
 ### ParallelRead/1KB/C1
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 3.83 MB/s | 255.1us | 316.3us | 252.4us | 316.5us | 335.0us | 0 |
-| minio | 2.76 MB/s | 354.3us | 400.8us | 346.4us | 400.9us | 432.4us | 0 |
-| rustfs | 1.99 MB/s | 491.2us | 530.5us | 487.4us | 530.6us | 545.0us | 0 |
+| liteio | 3.81 MB/s | 256.3us | 289.6us | 251.0us | 289.8us | 289.8us | 0 |
+| minio | 2.44 MB/s | 399.5us | 517.9us | 371.1us | 518.1us | 518.1us | 0 |
+| rustfs | 1.52 MB/s | 642.9us | 735.6us | 646.9us | 736.1us | 736.1us | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 3.83 MB/s
-minio        █████████████████████ 2.76 MB/s
-rustfs       ███████████████ 1.99 MB/s
+liteio       ██████████████████████████████ 3.81 MB/s
+minio        ███████████████████ 2.44 MB/s
+rustfs       ███████████ 1.52 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ███████████████ 252.4us
-minio        █████████████████████ 346.4us
-rustfs       ██████████████████████████████ 487.4us
+liteio       ███████████ 251.0us
+minio        █████████████████ 371.1us
+rustfs       ██████████████████████████████ 646.9us
 ```
 
 ### ParallelRead/1KB/C10
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 1.28 MB/s | 760.3us | 1.3ms | 665.4us | 1.3ms | 1.7ms | 0 |
-| minio | 1.12 MB/s | 870.1us | 1.3ms | 831.5us | 1.3ms | 1.4ms | 0 |
-| rustfs | 0.77 MB/s | 1.3ms | 1.8ms | 1.2ms | 1.8ms | 2.2ms | 0 |
+| liteio | 1.84 MB/s | 530.3us | 707.9us | 528.6us | 708.0us | 708.0us | 0 |
+| minio | 1.06 MB/s | 920.6us | 1.4ms | 828.9us | 1.4ms | 1.4ms | 0 |
+| rustfs | 0.71 MB/s | 1.4ms | 2.1ms | 1.3ms | 2.1ms | 2.1ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 1.28 MB/s
-minio        ██████████████████████████ 1.12 MB/s
-rustfs       █████████████████ 0.77 MB/s
+liteio       ██████████████████████████████ 1.84 MB/s
+minio        █████████████████ 1.06 MB/s
+rustfs       ███████████ 0.71 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████████ 665.4us
-minio        ████████████████████ 831.5us
-rustfs       ██████████████████████████████ 1.2ms
+liteio       ████████████ 528.6us
+minio        ███████████████████ 828.9us
+rustfs       ██████████████████████████████ 1.3ms
 ```
 
 ### ParallelRead/1KB/C100
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 0.64 MB/s | 1.5ms | 2.0ms | 1.6ms | 2.0ms | 2.0ms | 0 |
-| minio | 0.34 MB/s | 2.9ms | 3.6ms | 3.2ms | 3.6ms | 3.7ms | 0 |
-| rustfs | 0.27 MB/s | 3.6ms | 4.8ms | 3.8ms | 4.8ms | 4.9ms | 0 |
+| liteio | 0.87 MB/s | 1.1ms | 1.4ms | 1.1ms | 1.4ms | 1.4ms | 0 |
+| rustfs | 0.77 MB/s | 1.3ms | 1.5ms | 1.3ms | 1.5ms | 1.5ms | 0 |
+| minio | 0.66 MB/s | 1.5ms | 1.7ms | 1.4ms | 1.7ms | 1.7ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.64 MB/s
-minio        ███████████████ 0.34 MB/s
-rustfs       ████████████ 0.27 MB/s
+liteio       ██████████████████████████████ 0.87 MB/s
+rustfs       ██████████████████████████ 0.77 MB/s
+minio        ██████████████████████ 0.66 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████ 1.6ms
-minio        █████████████████████████ 3.2ms
-rustfs       ██████████████████████████████ 3.8ms
+liteio       ██████████████████████ 1.1ms
+rustfs       ██████████████████████████ 1.3ms
+minio        ██████████████████████████████ 1.4ms
 ```
 
 ### ParallelRead/1KB/C200
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 0.54 MB/s | 1.8ms | 2.4ms | 1.8ms | 2.4ms | 2.6ms | 0 |
-| minio | 0.34 MB/s | 2.9ms | 3.3ms | 2.8ms | 3.3ms | 3.3ms | 0 |
-| rustfs | 0.30 MB/s | 3.3ms | 4.4ms | 3.5ms | 4.4ms | 4.6ms | 0 |
+| liteio | 1.75 MB/s | 556.4us | 730.3us | 533.3us | 730.5us | 730.5us | 0 |
+| minio | 0.78 MB/s | 1.2ms | 1.6ms | 1.2ms | 1.6ms | 1.6ms | 0 |
+| rustfs | 0.59 MB/s | 1.7ms | 2.0ms | 1.7ms | 2.0ms | 2.0ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.54 MB/s
-minio        ███████████████████ 0.34 MB/s
-rustfs       ████████████████ 0.30 MB/s
+liteio       ██████████████████████████████ 1.75 MB/s
+minio        █████████████ 0.78 MB/s
+rustfs       ██████████ 0.59 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ███████████████ 1.8ms
-minio        ████████████████████████ 2.8ms
-rustfs       ██████████████████████████████ 3.5ms
+liteio       █████████ 533.3us
+minio        ██████████████████████ 1.2ms
+rustfs       ██████████████████████████████ 1.7ms
 ```
 
 ### ParallelRead/1KB/C25
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 0.91 MB/s | 1.1ms | 1.4ms | 1.1ms | 1.4ms | 1.5ms | 0 |
-| minio | 0.41 MB/s | 2.4ms | 3.2ms | 2.3ms | 3.2ms | 3.4ms | 0 |
-| rustfs | 0.41 MB/s | 2.4ms | 3.4ms | 2.2ms | 3.4ms | 5.4ms | 0 |
+| liteio | 1.47 MB/s | 662.9us | 965.8us | 616.7us | 966.0us | 966.0us | 0 |
+| minio | 0.65 MB/s | 1.5ms | 1.6ms | 1.5ms | 1.6ms | 1.6ms | 0 |
+| rustfs | 0.50 MB/s | 2.0ms | 2.4ms | 2.0ms | 2.4ms | 2.4ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.91 MB/s
-minio        █████████████ 0.41 MB/s
-rustfs       █████████████ 0.41 MB/s
+liteio       ██████████████████████████████ 1.47 MB/s
+minio        █████████████ 0.65 MB/s
+rustfs       ██████████ 0.50 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████ 1.1ms
-minio        ██████████████████████████████ 2.3ms
-rustfs       ███████████████████████████ 2.2ms
+liteio       █████████ 616.7us
+minio        ██████████████████████ 1.5ms
+rustfs       ██████████████████████████████ 2.0ms
 ```
 
 ### ParallelRead/1KB/C50
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 0.52 MB/s | 1.9ms | 2.3ms | 1.9ms | 2.3ms | 2.3ms | 0 |
-| minio | 0.37 MB/s | 2.6ms | 3.4ms | 2.8ms | 3.4ms | 3.5ms | 0 |
-| rustfs | 0.24 MB/s | 4.0ms | 5.2ms | 3.9ms | 5.2ms | 5.3ms | 0 |
+| liteio | 0.98 MB/s | 999.3us | 1.2ms | 1.0ms | 1.2ms | 1.2ms | 0 |
+| minio | 0.61 MB/s | 1.6ms | 1.9ms | 1.6ms | 1.9ms | 1.9ms | 0 |
+| rustfs | 0.54 MB/s | 1.8ms | 2.1ms | 1.9ms | 2.1ms | 2.1ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.52 MB/s
-minio        █████████████████████ 0.37 MB/s
-rustfs       ██████████████ 0.24 MB/s
+liteio       ██████████████████████████████ 0.98 MB/s
+minio        ██████████████████ 0.61 MB/s
+rustfs       ████████████████ 0.54 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████████████ 1.9ms
-minio        █████████████████████ 2.8ms
-rustfs       ██████████████████████████████ 3.9ms
+liteio       ████████████████ 1.0ms
+minio        █████████████████████████ 1.6ms
+rustfs       ██████████████████████████████ 1.9ms
 ```
 
 ### ParallelWrite/1KB/C1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 2.91 MB/s | 307.2us | 421.0us | 609.5us | 0 |
-| rustfs | 1.37 MB/s | 723.5us | 808.0us | 853.1us | 0 |
-| minio | 0.63 MB/s | 1.5ms | 3.0ms | 3.4ms | 0 |
+| liteio | 1.99 MB/s | 439.5us | 716.2us | 716.2us | 0 |
+| rustfs | 1.18 MB/s | 790.5us | 1.0ms | 1.0ms | 0 |
+| minio | 0.99 MB/s | 904.9us | 1.4ms | 1.4ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 2.91 MB/s
-rustfs       ██████████████ 1.37 MB/s
-minio        ██████ 0.63 MB/s
+liteio       ██████████████████████████████ 1.99 MB/s
+rustfs       █████████████████ 1.18 MB/s
+minio        ██████████████ 0.99 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 307.2us
-rustfs       ██████████████ 723.5us
-minio        ██████████████████████████████ 1.5ms
+liteio       ██████████████ 439.5us
+rustfs       ██████████████████████████ 790.5us
+minio        ██████████████████████████████ 904.9us
 ```
 
 ### ParallelWrite/1KB/C10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.54 MB/s | 1.9ms | 2.8ms | 3.4ms | 0 |
-| rustfs | 0.35 MB/s | 2.5ms | 4.6ms | 5.8ms | 0 |
-| minio | 0.18 MB/s | 4.6ms | 12.6ms | 12.7ms | 0 |
+| liteio | 0.73 MB/s | 1.0ms | 2.5ms | 2.5ms | 0 |
+| rustfs | 0.26 MB/s | 3.9ms | 5.6ms | 5.6ms | 0 |
+| minio | 0.22 MB/s | 4.1ms | 6.6ms | 6.6ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.54 MB/s
-rustfs       ███████████████████ 0.35 MB/s
-minio        █████████ 0.18 MB/s
+liteio       ██████████████████████████████ 0.73 MB/s
+rustfs       ██████████ 0.26 MB/s
+minio        █████████ 0.22 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████ 1.9ms
-rustfs       ████████████████ 2.5ms
-minio        ██████████████████████████████ 4.6ms
+liteio       ███████ 1.0ms
+rustfs       ████████████████████████████ 3.9ms
+minio        ██████████████████████████████ 4.1ms
 ```
 
 ### ParallelWrite/1KB/C100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.20 MB/s | 4.3ms | 6.8ms | 7.2ms | 0 |
-| rustfs | 0.12 MB/s | 8.9ms | 10.5ms | 10.5ms | 0 |
-| minio | 0.08 MB/s | 13.3ms | 16.6ms | 17.6ms | 0 |
+| liteio | 0.88 MB/s | 906.2us | 1.6ms | 1.6ms | 0 |
+| minio | 0.26 MB/s | 3.9ms | 4.7ms | 4.7ms | 0 |
+| rustfs | 0.22 MB/s | 4.5ms | 5.3ms | 5.3ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.20 MB/s
-rustfs       █████████████████ 0.12 MB/s
-minio        ████████████ 0.08 MB/s
+liteio       ██████████████████████████████ 0.88 MB/s
+minio        ████████ 0.26 MB/s
+rustfs       ███████ 0.22 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████ 4.3ms
-rustfs       ████████████████████ 8.9ms
-minio        ██████████████████████████████ 13.3ms
+liteio       █████ 906.2us
+minio        ██████████████████████████ 3.9ms
+rustfs       ██████████████████████████████ 4.5ms
 ```
 
 ### ParallelWrite/1KB/C200
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.23 MB/s | 4.0ms | 6.1ms | 6.6ms | 0 |
-| rustfs | 0.11 MB/s | 9.2ms | 10.4ms | 10.7ms | 0 |
-| minio | 0.09 MB/s | 11.2ms | 14.8ms | 15.1ms | 0 |
+| liteio | 1.03 MB/s | 909.0us | 1.1ms | 1.1ms | 0 |
+| rustfs | 0.24 MB/s | 3.9ms | 4.6ms | 4.6ms | 0 |
+| minio | 0.22 MB/s | 3.9ms | 5.7ms | 5.7ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.23 MB/s
-rustfs       ██████████████ 0.11 MB/s
-minio        ███████████ 0.09 MB/s
+liteio       ██████████████████████████████ 1.03 MB/s
+rustfs       ███████ 0.24 MB/s
+minio        ██████ 0.22 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████████ 4.0ms
-rustfs       ████████████████████████ 9.2ms
-minio        ██████████████████████████████ 11.2ms
+liteio       ██████ 909.0us
+rustfs       █████████████████████████████ 3.9ms
+minio        ██████████████████████████████ 3.9ms
 ```
 
 ### ParallelWrite/1KB/C25
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.45 MB/s | 1.8ms | 4.5ms | 4.6ms | 0 |
-| rustfs | 0.18 MB/s | 4.7ms | 8.8ms | 10.2ms | 0 |
-| minio | 0.11 MB/s | 7.8ms | 11.8ms | 12.2ms | 0 |
+| liteio | 0.99 MB/s | 970.8us | 1.2ms | 1.2ms | 0 |
+| rustfs | 0.25 MB/s | 3.6ms | 5.4ms | 5.4ms | 0 |
+| minio | 0.19 MB/s | 5.5ms | 6.4ms | 6.4ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.45 MB/s
-rustfs       ███████████ 0.18 MB/s
-minio        ███████ 0.11 MB/s
+liteio       ██████████████████████████████ 0.99 MB/s
+rustfs       ███████ 0.25 MB/s
+minio        █████ 0.19 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████ 1.8ms
-rustfs       █████████████████ 4.7ms
-minio        ██████████████████████████████ 7.8ms
+liteio       █████ 970.8us
+rustfs       ███████████████████ 3.6ms
+minio        ██████████████████████████████ 5.5ms
 ```
 
 ### ParallelWrite/1KB/C50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 0.24 MB/s | 3.8ms | 5.9ms | 6.0ms | 0 |
-| rustfs | 0.10 MB/s | 10.4ms | 11.3ms | 11.4ms | 0 |
-| minio | 0.07 MB/s | 13.1ms | 17.3ms | 17.7ms | 0 |
+| liteio | 0.82 MB/s | 1.1ms | 1.6ms | 1.6ms | 0 |
+| rustfs | 0.24 MB/s | 3.9ms | 5.1ms | 5.1ms | 0 |
+| minio | 0.22 MB/s | 4.1ms | 6.2ms | 6.2ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 0.24 MB/s
-rustfs       ████████████ 0.10 MB/s
-minio        █████████ 0.07 MB/s
+liteio       ██████████████████████████████ 0.82 MB/s
+rustfs       ████████ 0.24 MB/s
+minio        ████████ 0.22 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 3.8ms
-rustfs       ███████████████████████ 10.4ms
-minio        ██████████████████████████████ 13.1ms
+liteio       ████████ 1.1ms
+rustfs       ████████████████████████████ 3.9ms
+minio        ██████████████████████████████ 4.1ms
 ```
 
 ### RangeRead/End_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 235.55 MB/s | 1.1ms | 1.3ms | 1.3ms | 0 |
-| minio | 156.77 MB/s | 1.5ms | 2.0ms | 2.8ms | 0 |
-| rustfs | 82.95 MB/s | 2.4ms | 4.7ms | 5.4ms | 0 |
+| liteio | 230.53 MB/s | 1.0ms | 1.5ms | 1.5ms | 0 |
+| minio | 166.15 MB/s | 1.5ms | 1.6ms | 1.6ms | 0 |
+| rustfs | 109.10 MB/s | 2.1ms | 2.6ms | 2.6ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 235.55 MB/s
-minio        ███████████████████ 156.77 MB/s
-rustfs       ██████████ 82.95 MB/s
+liteio       ██████████████████████████████ 230.53 MB/s
+minio        █████████████████████ 166.15 MB/s
+rustfs       ██████████████ 109.10 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████ 1.1ms
-minio        ██████████████████ 1.5ms
-rustfs       ██████████████████████████████ 2.4ms
+liteio       ██████████████ 1.0ms
+minio        ████████████████████ 1.5ms
+rustfs       ██████████████████████████████ 2.1ms
 ```
 
 ### RangeRead/Middle_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 235.29 MB/s | 1.0ms | 1.2ms | 1.3ms | 0 |
-| minio | 151.07 MB/s | 1.5ms | 2.0ms | 3.1ms | 0 |
-| rustfs | 85.15 MB/s | 2.4ms | 3.4ms | 6.5ms | 0 |
+| liteio | 241.52 MB/s | 1.0ms | 1.1ms | 1.1ms | 0 |
+| minio | 164.85 MB/s | 1.4ms | 1.8ms | 1.8ms | 0 |
+| rustfs | 107.98 MB/s | 2.3ms | 2.8ms | 2.8ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 235.29 MB/s
-minio        ███████████████████ 151.07 MB/s
-rustfs       ██████████ 85.15 MB/s
+liteio       ██████████████████████████████ 241.52 MB/s
+minio        ████████████████████ 164.85 MB/s
+rustfs       █████████████ 107.98 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████ 1.0ms
-minio        ███████████████████ 1.5ms
-rustfs       ██████████████████████████████ 2.4ms
+liteio       █████████████ 1.0ms
+minio        ██████████████████ 1.4ms
+rustfs       ██████████████████████████████ 2.3ms
 ```
 
 ### RangeRead/Start_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 206.67 MB/s | 1.0ms | 2.4ms | 2.7ms | 0 |
-| minio | 162.59 MB/s | 1.5ms | 2.0ms | 2.2ms | 0 |
-| rustfs | 81.80 MB/s | 2.2ms | 5.1ms | 14.1ms | 0 |
+| liteio | 165.94 MB/s | 1.1ms | 3.0ms | 3.0ms | 0 |
+| minio | 162.74 MB/s | 1.5ms | 1.8ms | 1.8ms | 0 |
+| rustfs | 101.26 MB/s | 2.4ms | 3.2ms | 3.2ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 206.67 MB/s
-minio        ███████████████████████ 162.59 MB/s
-rustfs       ███████████ 81.80 MB/s
+liteio       ██████████████████████████████ 165.94 MB/s
+minio        █████████████████████████████ 162.74 MB/s
+rustfs       ██████████████████ 101.26 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████ 1.0ms
+liteio       ██████████████ 1.1ms
 minio        ███████████████████ 1.5ms
-rustfs       ██████████████████████████████ 2.2ms
+rustfs       ██████████████████████████████ 2.4ms
 ```
 
 ### Read/100MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 271.30 MB/s | 1.7ms | 1.7ms | 368.8ms | 369.0ms | 369.0ms | 0 |
-| liteio | 235.18 MB/s | 3.7ms | 4.1ms | 424.8ms | 426.2ms | 426.2ms | 0 |
-| rustfs | 156.58 MB/s | 244.9ms | 4.1ms | 392.9ms | 490.6ms | 490.6ms | 0 |
+| minio | 312.06 MB/s | 1.6ms | 1.9ms | 317.2ms | 322.4ms | 322.4ms | 0 |
+| rustfs | 302.49 MB/s | 2.1ms | 2.3ms | 322.4ms | 345.7ms | 345.7ms | 0 |
+| liteio | 287.10 MB/s | 4.7ms | 5.5ms | 344.1ms | 349.0ms | 349.0ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 271.30 MB/s
-liteio       ██████████████████████████ 235.18 MB/s
-rustfs       █████████████████ 156.58 MB/s
+minio        ██████████████████████████████ 312.06 MB/s
+rustfs       █████████████████████████████ 302.49 MB/s
+liteio       ███████████████████████████ 287.10 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████████████ 368.8ms
-liteio       ██████████████████████████████ 424.8ms
-rustfs       ███████████████████████████ 392.9ms
+minio        ███████████████████████████ 317.2ms
+rustfs       ████████████████████████████ 322.4ms
+liteio       ██████████████████████████████ 344.1ms
 ```
 
 ### Read/10MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 262.17 MB/s | 1.4ms | 1.7ms | 34.0ms | 41.7ms | 41.7ms | 0 |
-| liteio | 229.65 MB/s | 2.8ms | 4.4ms | 40.9ms | 50.3ms | 50.3ms | 0 |
-| rustfs | 224.54 MB/s | 8.2ms | 15.3ms | 42.1ms | 51.1ms | 51.1ms | 0 |
+| minio | 303.92 MB/s | 1.5ms | 1.6ms | 32.9ms | 33.4ms | 33.4ms | 0 |
+| rustfs | 256.72 MB/s | 7.1ms | 8.3ms | 36.9ms | 40.6ms | 40.6ms | 0 |
+| liteio | 164.96 MB/s | 4.6ms | 5.8ms | 57.6ms | 69.1ms | 69.1ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 262.17 MB/s
-liteio       ██████████████████████████ 229.65 MB/s
-rustfs       █████████████████████████ 224.54 MB/s
+minio        ██████████████████████████████ 303.92 MB/s
+rustfs       █████████████████████████ 256.72 MB/s
+liteio       ████████████████ 164.96 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ████████████████████████ 34.0ms
-liteio       █████████████████████████████ 40.9ms
-rustfs       ██████████████████████████████ 42.1ms
+minio        █████████████████ 32.9ms
+rustfs       ███████████████████ 36.9ms
+liteio       ██████████████████████████████ 57.6ms
 ```
 
 ### Read/1KB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 4.70 MB/s | 207.5us | 228.2us | 204.1us | 228.2us | 252.4us | 0 |
-| minio | 2.72 MB/s | 358.5us | 423.3us | 345.5us | 423.4us | 442.5us | 0 |
-| rustfs | 2.09 MB/s | 466.8us | 526.5us | 456.0us | 526.6us | 540.4us | 0 |
+| liteio | 5.85 MB/s | 166.9us | 198.1us | 156.1us | 198.2us | 198.2us | 0 |
+| minio | 2.65 MB/s | 368.8us | 452.3us | 342.0us | 452.4us | 452.4us | 0 |
+| rustfs | 1.73 MB/s | 565.7us | 793.0us | 513.8us | 794.0us | 794.0us | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 4.70 MB/s
-minio        █████████████████ 2.72 MB/s
-rustfs       █████████████ 2.09 MB/s
+liteio       ██████████████████████████████ 5.85 MB/s
+minio        █████████████ 2.65 MB/s
+rustfs       ████████ 1.73 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████ 204.1us
-minio        ██████████████████████ 345.5us
-rustfs       ██████████████████████████████ 456.0us
+liteio       █████████ 156.1us
+minio        ███████████████████ 342.0us
+rustfs       ██████████████████████████████ 513.8us
 ```
 
 ### Read/1MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 272.35 MB/s | 387.8us | 590.3us | 3.6ms | 4.2ms | 4.2ms | 0 |
-| minio | 221.30 MB/s | 1.3ms | 1.6ms | 4.4ms | 5.2ms | 5.2ms | 0 |
-| rustfs | 173.16 MB/s | 2.8ms | 8.4ms | 4.8ms | 11.2ms | 11.2ms | 0 |
+| liteio | 285.77 MB/s | 405.8us | 408.3us | 3.3ms | 4.0ms | 4.0ms | 0 |
+| minio | 227.05 MB/s | 1.3ms | 1.9ms | 4.2ms | 5.2ms | 5.2ms | 0 |
+| rustfs | 192.23 MB/s | 2.2ms | 2.4ms | 5.2ms | 5.5ms | 5.5ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 272.35 MB/s
-minio        ████████████████████████ 221.30 MB/s
-rustfs       ███████████████████ 173.16 MB/s
+liteio       ██████████████████████████████ 285.77 MB/s
+minio        ███████████████████████ 227.05 MB/s
+rustfs       ████████████████████ 192.23 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ██████████████████████ 3.6ms
-minio        ███████████████████████████ 4.4ms
-rustfs       ██████████████████████████████ 4.8ms
+liteio       ███████████████████ 3.3ms
+minio        ████████████████████████ 4.2ms
+rustfs       ██████████████████████████████ 5.2ms
 ```
 
 ### Read/64KB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| liteio | 146.99 MB/s | 247.9us | 304.0us | 416.5us | 508.5us | 587.6us | 0 |
-| minio | 88.03 MB/s | 521.8us | 788.5us | 653.8us | 965.2us | 1.1ms | 0 |
-| rustfs | 74.04 MB/s | 713.2us | 1.3ms | 712.3us | 1.4ms | 2.4ms | 0 |
+| liteio | 153.66 MB/s | 218.6us | 262.9us | 381.9us | 454.5us | 533.8us | 0 |
+| minio | 94.59 MB/s | 454.4us | 594.9us | 643.7us | 793.2us | 851.7us | 0 |
+| rustfs | 76.24 MB/s | 706.4us | 820.6us | 803.1us | 929.6us | 948.2us | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 146.99 MB/s
-minio        █████████████████ 88.03 MB/s
-rustfs       ███████████████ 74.04 MB/s
+liteio       ██████████████████████████████ 153.66 MB/s
+minio        ██████████████████ 94.59 MB/s
+rustfs       ██████████████ 76.24 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████████ 416.5us
-minio        ███████████████████████████ 653.8us
-rustfs       ██████████████████████████████ 712.3us
+liteio       ██████████████ 381.9us
+minio        ████████████████████████ 643.7us
+rustfs       ██████████████████████████████ 803.1us
 ```
 
 ### Stat
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 5656 ops/s | 168.4us | 224.3us | 240.5us | 0 |
-| rustfs | 3670 ops/s | 251.1us | 396.3us | 429.7us | 0 |
-| minio | 3103 ops/s | 317.3us | 380.4us | 392.5us | 0 |
+| liteio | 5104 ops/s | 201.5us | 219.3us | 219.3us | 0 |
+| minio | 4178 ops/s | 238.9us | 307.1us | 307.1us | 0 |
+| rustfs | 4126 ops/s | 234.1us | 275.2us | 275.2us | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 5656 ops/s
-rustfs       ███████████████████ 3670 ops/s
-minio        ████████████████ 3103 ops/s
+liteio       ██████████████████████████████ 5104 ops/s
+minio        ████████████████████████ 4178 ops/s
+rustfs       ████████████████████████ 4126 ops/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ███████████████ 168.4us
-rustfs       ███████████████████████ 251.1us
-minio        ██████████████████████████████ 317.3us
+liteio       █████████████████████████ 201.5us
+minio        ██████████████████████████████ 238.9us
+rustfs       █████████████████████████████ 234.1us
 ```
 
 ### Write/100MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 200.03 MB/s | 493.9ms | 516.6ms | 516.6ms | 0 |
-| minio | 149.05 MB/s | 673.1ms | 679.3ms | 679.3ms | 0 |
-| rustfs | 108.76 MB/s | 929.9ms | 1.08s | 1.08s | 0 |
+| liteio | 207.21 MB/s | 485.0ms | 490.1ms | 490.1ms | 0 |
+| minio | 167.23 MB/s | 606.3ms | 614.7ms | 614.7ms | 0 |
+| rustfs | 54.74 MB/s | 1.36s | 1.41s | 1.41s | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 200.03 MB/s
-minio        ██████████████████████ 149.05 MB/s
-rustfs       ████████████████ 108.76 MB/s
+liteio       ██████████████████████████████ 207.21 MB/s
+minio        ████████████████████████ 167.23 MB/s
+rustfs       ███████ 54.74 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ███████████████ 493.9ms
-minio        █████████████████████ 673.1ms
-rustfs       ██████████████████████████████ 929.9ms
+liteio       ██████████ 485.0ms
+minio        █████████████ 606.3ms
+rustfs       ██████████████████████████████ 1.36s
 ```
 
 ### Write/10MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 205.86 MB/s | 48.1ms | 50.6ms | 50.6ms | 0 |
-| rustfs | 173.86 MB/s | 57.7ms | 61.2ms | 61.2ms | 0 |
-| minio | 148.74 MB/s | 66.1ms | 70.0ms | 70.0ms | 0 |
+| liteio | 198.41 MB/s | 48.8ms | 53.6ms | 53.6ms | 0 |
+| rustfs | 162.87 MB/s | 60.1ms | 66.4ms | 66.4ms | 0 |
+| minio | 159.22 MB/s | 59.7ms | 69.9ms | 69.9ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 205.86 MB/s
-rustfs       █████████████████████████ 173.86 MB/s
-minio        █████████████████████ 148.74 MB/s
+liteio       ██████████████████████████████ 198.41 MB/s
+rustfs       ████████████████████████ 162.87 MB/s
+minio        ████████████████████████ 159.22 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       █████████████████████ 48.1ms
-rustfs       ██████████████████████████ 57.7ms
-minio        ██████████████████████████████ 66.1ms
+liteio       ████████████████████████ 48.8ms
+rustfs       ██████████████████████████████ 60.1ms
+minio        █████████████████████████████ 59.7ms
 ```
 
 ### Write/1KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 1.49 MB/s | 514.6us | 925.6us | 2.0ms | 0 |
-| rustfs | 1.28 MB/s | 742.4us | 875.1us | 971.0us | 0 |
-| minio | 0.72 MB/s | 1.2ms | 1.9ms | 2.4ms | 0 |
+| liteio | 1.02 MB/s | 790.3us | 1.5ms | 1.5ms | 0 |
+| rustfs | 0.91 MB/s | 893.0us | 1.6ms | 1.6ms | 0 |
+| minio | 0.68 MB/s | 1.3ms | 1.8ms | 1.8ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 1.49 MB/s
-rustfs       █████████████████████████ 1.28 MB/s
-minio        ██████████████ 0.72 MB/s
+liteio       ██████████████████████████████ 1.02 MB/s
+rustfs       ███████████████████████████ 0.91 MB/s
+minio        ████████████████████ 0.68 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████ 514.6us
-rustfs       ██████████████████ 742.4us
-minio        ██████████████████████████████ 1.2ms
+liteio       ██████████████████ 790.3us
+rustfs       ████████████████████ 893.0us
+minio        ██████████████████████████████ 1.3ms
 ```
 
 ### Write/1MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 188.82 MB/s | 5.1ms | 6.6ms | 6.6ms | 0 |
-| rustfs | 156.09 MB/s | 6.0ms | 7.8ms | 7.8ms | 0 |
-| minio | 106.42 MB/s | 9.1ms | 11.4ms | 11.4ms | 0 |
+| liteio | 190.93 MB/s | 4.9ms | 6.8ms | 6.8ms | 0 |
+| rustfs | 144.28 MB/s | 6.7ms | 8.2ms | 8.2ms | 0 |
+| minio | 133.70 MB/s | 7.3ms | 8.5ms | 8.5ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 188.82 MB/s
-rustfs       ████████████████████████ 156.09 MB/s
-minio        ████████████████ 106.42 MB/s
+liteio       ██████████████████████████████ 190.93 MB/s
+rustfs       ██████████████████████ 144.28 MB/s
+minio        █████████████████████ 133.70 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████████████ 5.1ms
-rustfs       ███████████████████ 6.0ms
-minio        ██████████████████████████████ 9.1ms
+liteio       ████████████████████ 4.9ms
+rustfs       ███████████████████████████ 6.7ms
+minio        ██████████████████████████████ 7.3ms
 ```
 
 ### Write/64KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| liteio | 126.93 MB/s | 474.6us | 570.6us | 635.5us | 0 |
-| rustfs | 45.04 MB/s | 1.2ms | 2.4ms | 3.0ms | 0 |
-| minio | 36.81 MB/s | 1.6ms | 2.2ms | 2.9ms | 0 |
+| liteio | 115.67 MB/s | 520.5us | 732.6us | 750.2us | 0 |
+| rustfs | 54.93 MB/s | 1.1ms | 1.4ms | 1.5ms | 0 |
+| minio | 36.42 MB/s | 1.6ms | 2.3ms | 2.4ms | 0 |
 
 **Throughput**
 ```
-liteio       ██████████████████████████████ 126.93 MB/s
-rustfs       ██████████ 45.04 MB/s
-minio        ████████ 36.81 MB/s
+liteio       ██████████████████████████████ 115.67 MB/s
+rustfs       ██████████████ 54.93 MB/s
+minio        █████████ 36.42 MB/s
 ```
 
 **Latency (P50)**
 ```
-liteio       ████████ 474.6us
-rustfs       █████████████████████ 1.2ms
+liteio       █████████ 520.5us
+rustfs       ████████████████████ 1.1ms
 minio        ██████████████████████████████ 1.6ms
 ```
 
 ## Recommendations
 
 - **Write-heavy workloads:** liteio
-- **Read-heavy workloads:** liteio
+- **Read-heavy workloads:** minio
 
 ---
 
