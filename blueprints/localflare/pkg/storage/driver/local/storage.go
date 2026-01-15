@@ -1131,11 +1131,13 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 
 	var delErr error
 	if recursive {
-		delErr = os.RemoveAll(full)
+		// OPTIMIZATION: Use optimized recursive delete with unlinkat
+		delErr = deleteRecursiveFast(full)
 		// Invalidate all cached objects under this prefix
 		globalObjectCache.InvalidatePrefix(cacheKey(b.name, relKey))
 	} else {
-		delErr = os.Remove(full)
+		// OPTIMIZATION: Use optimized single file delete with unlinkat
+		delErr = deleteWithUnlink(full)
 		// Invalidate this specific object from cache
 		globalObjectCache.Invalidate(cacheKey(b.name, relKey))
 	}
