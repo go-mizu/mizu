@@ -44,20 +44,129 @@ func storageError(c *mizu.Ctx, status int, errorType, message string) error {
 	})
 }
 
-// ListBuckets lists all buckets.
-// Note: service_role has access to all buckets, while anon only sees public buckets
-// (unless RLS policies are configured differently).
-func (h *StorageHandler) ListBuckets(c *mizu.Ctx) error {
-	// Get role from middleware (service_role bypasses RLS)
+// StorageAccessLevel defines the type of access being requested
+type StorageAccessLevel int
+
+const (
+	StorageAccessRead StorageAccessLevel = iota
+	StorageAccessWrite
+	StorageAccessDelete
+)
+
+// checkStorageAccess verifies if the current user has access to perform the operation.
+// Service role bypasses all checks.
+// For anon users, only public buckets allow read access.
+// For authenticated users, access depends on bucket visibility and path ownership.
+func (h *StorageHandler) checkStorageAccess(c *mizu.Ctx, bucket *store.Bucket, path string, level StorageAccessLevel) error {
 	role := middleware.GetRole(c)
-	_ = role // Available for RLS enforcement if needed
+	userID := middleware.GetUserID(c)
+
+	// Service role bypasses all RLS
+	if role == "service_role" {
+		return nil
+	}
+
+	// For public buckets, anyone can read
+	if bucket.Public && level == StorageAccessRead {
+		return nil
+	}
+
+	// For private buckets or write operations, more checks are needed
+	if role == "anon" {
+		// Anon users cannot access private buckets
+		if !bucket.Public {
+			return fmt.Errorf("access denied: private bucket")
+		}
+		// Anon users cannot write
+		if level != StorageAccessRead {
+			return fmt.Errorf("access denied: authentication required for write access")
+		}
+		return nil
+	}
+
+	// Authenticated users (role == "authenticated")
+	// Check if the path is in a user-specific folder
+	// Supabase storage folder patterns:
+	// - path starts with user ID (e.g., "abc123/file.txt")
+	// - path starts with "user/" + user ID (e.g., "user/abc123/file.txt")
+	// - path contains user ID anywhere (legacy support)
+	if userID != "" {
+		pathParts := strings.Split(path, "/")
+		// Check if first path segment is user ID
+		if len(pathParts) > 0 && pathParts[0] == userID {
+			return nil
+		}
+		// Check if path follows "user/{uid}/*" pattern
+		if len(pathParts) > 1 && pathParts[0] == "user" && pathParts[1] == userID {
+			return nil
+		}
+		// Check if path contains user ID (broader match)
+		if strings.Contains(path, userID) {
+			return nil
+		}
+	}
+
+	// For public buckets, authenticated users can read anything
+	if bucket.Public && level == StorageAccessRead {
+		return nil
+	}
+
+	// For private buckets without user-specific path, deny by default
+	// (Real Supabase would check storage.policies here)
+	if !bucket.Public {
+		return fmt.Errorf("access denied: no policy allows this operation")
+	}
+
+	// Public bucket write requires more specific policies
+	// For now, allow authenticated users to write to public buckets
+	// (Real Supabase would check policies)
+	return nil
+}
+
+// checkObjectOwnership verifies if the current user owns the object.
+// Returns true if the user has ownership access.
+func (h *StorageHandler) checkObjectOwnership(c *mizu.Ctx, obj *store.Object) bool {
+	role := middleware.GetRole(c)
+
+	// Service role always has access
+	if role == "service_role" {
+		return true
+	}
+
+	// If object has an owner, check it matches the current user
+	userID := middleware.GetUserID(c)
+	if obj.Owner != "" && userID != "" {
+		return obj.Owner == userID
+	}
+
+	// No owner set or no user ID, rely on other checks
+	return false
+}
+
+// ListBuckets lists all buckets.
+// Service role sees all buckets, while anon only sees public buckets.
+func (h *StorageHandler) ListBuckets(c *mizu.Ctx) error {
+	role := middleware.GetRole(c)
 
 	buckets, err := h.store.Storage().ListBuckets(c.Context())
 	if err != nil {
 		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to list buckets")
 	}
 
-	return c.JSON(http.StatusOK, buckets)
+	// Service role sees all buckets
+	if role == "service_role" {
+		return c.JSON(http.StatusOK, buckets)
+	}
+
+	// Non-service roles only see public buckets
+	var publicBuckets []*store.Bucket
+	for _, b := range buckets {
+		if b.Public {
+			publicBuckets = append(publicBuckets, b)
+		}
+	}
+
+	return c.JSON(http.StatusOK, publicBuckets)
 }
 
 // CreateBucket creates a new bucket.
@@ -209,6 +318,11 @@ func (h *StorageHandler) UploadObject(c *mizu.Ctx) error {
 		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
 	}
 
+	// Check storage access (RLS enforcement)
+	if err := h.checkStorageAccess(c, bucket, path, StorageAccessWrite); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
+	}
+
 	// Check for upsert header
 	upsert := strings.EqualFold(c.Request().Header.Get("x-upsert"), "true")
 
@@ -251,11 +365,15 @@ func (h *StorageHandler) UploadObject(c *mizu.Ctx) error {
 		}
 	}
 
-	// Create object metadata
+	// Get owner from JWT claims (for RLS-style ownership tracking)
+	owner := middleware.GetUserID(c)
+
+	// Create object metadata with ownership tracking (Supabase-compatible)
 	obj := &store.Object{
 		ID:          uuid.New().String(),
 		BucketID:    bucketID,
 		Name:        path,
+		Owner:       owner, // Track who uploaded this object
 		ContentType: contentType,
 		Size:        int64(len(content)),
 		Version:     uuid.New().String(),
@@ -339,6 +457,17 @@ func (h *StorageHandler) UpdateObject(c *mizu.Ctx) error {
 func (h *StorageHandler) DownloadObject(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
+
+	// Get bucket for RLS check
+	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
+	if err != nil {
+		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+	}
+
+	// Check storage access (RLS enforcement)
+	if err := h.checkStorageAccess(c, bucket, path, StorageAccessRead); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
+	}
 
 	obj, err := h.store.Storage().GetObject(c.Context(), bucketID, path)
 	if err != nil {
@@ -424,6 +553,17 @@ func (h *StorageHandler) GetAuthenticatedObjectInfo(c *mizu.Ctx) error {
 func (h *StorageHandler) DeleteObject(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
+
+	// Get bucket for RLS check
+	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
+	if err != nil {
+		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+	}
+
+	// Check storage access (RLS enforcement)
+	if err := h.checkStorageAccess(c, bucket, path, StorageAccessDelete); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
+	}
 
 	// Check object exists
 	if _, err := h.store.Storage().GetObject(c.Context(), bucketID, path); err != nil {

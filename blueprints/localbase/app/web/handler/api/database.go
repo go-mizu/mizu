@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/localbase/app/web/middleware"
 	"github.com/go-mizu/mizu/blueprints/localbase/pkg/postgrest"
 	"github.com/go-mizu/mizu/blueprints/localbase/store"
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
@@ -14,8 +15,8 @@ import (
 
 // DatabaseHandler handles database endpoints.
 type DatabaseHandler struct {
-	store      *postgres.Store
-	pgHandler  *postgrest.Handler
+	store     *postgres.Store
+	pgHandler *postgrest.Handler
 }
 
 // NewDatabaseHandler creates a new database handler.
@@ -27,10 +28,30 @@ func NewDatabaseHandler(store *postgres.Store) *DatabaseHandler {
 }
 
 // dbQuerier adapts the store to the postgrest.Querier interface.
+// It supports RLS context propagation for Supabase-compatible row-level security.
 type dbQuerier struct {
 	store *postgres.Store
 }
 
+// QueryWithRLS executes a query with RLS context from JWT claims.
+func (q *dbQuerier) QueryWithRLS(ctx context.Context, rlsCtx *postgres.RLSContext, sql string, args ...any) (*postgrest.QueryResult, error) {
+	result, err := q.store.DatabaseRLS().QueryWithRLS(ctx, rlsCtx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return &postgrest.QueryResult{
+		Columns: result.Columns,
+		Rows:    result.Rows,
+	}, nil
+}
+
+// ExecWithRLS executes a statement with RLS context from JWT claims.
+func (q *dbQuerier) ExecWithRLS(ctx context.Context, rlsCtx *postgres.RLSContext, sql string, args ...any) (int64, error) {
+	return q.store.DatabaseRLS().ExecWithRLS(ctx, rlsCtx, sql, args...)
+}
+
+// Query implements the postgrest.Querier interface (without RLS context).
+// This is used for backward compatibility and internal queries.
 func (q *dbQuerier) Query(ctx context.Context, sql string, args ...any) (*postgrest.QueryResult, error) {
 	result, err := q.store.Database().Query(ctx, sql, args...)
 	if err != nil {
@@ -42,6 +63,7 @@ func (q *dbQuerier) Query(ctx context.Context, sql string, args ...any) (*postgr
 	}, nil
 }
 
+// Exec implements the postgrest.Querier interface (without RLS context).
 func (q *dbQuerier) Exec(ctx context.Context, sql string, args ...any) (int64, error) {
 	return q.store.Database().Exec(ctx, sql, args...)
 }
@@ -66,6 +88,17 @@ func (q *dbQuerier) GetForeignKeys(ctx context.Context, schema, table string) ([
 		})
 	}
 	return result, nil
+}
+
+// getRLSContext extracts RLS context from the mizu.Ctx request headers.
+// This is populated by the API key middleware from JWT claims.
+func getRLSContext(c *mizu.Ctx) *postgres.RLSContext {
+	return &postgres.RLSContext{
+		Role:       middleware.GetRole(c),
+		UserID:     middleware.GetUserID(c),
+		Email:      middleware.GetUserEmail(c),
+		ClaimsJSON: middleware.GetJWTClaimsJSON(c),
+	}
 }
 
 // ListTables lists all tables.
@@ -508,7 +541,23 @@ func (h *DatabaseHandler) parseRequest(c *mizu.Ctx) (*postgrest.Request, error) 
 	req.EmbeddedFilters = embeddedFilters
 	req.LogicalOp = logicalOp
 
+	// Set RLS context from JWT claims (extracted by API key middleware)
+	req.RLSContext = convertRLSContext(getRLSContext(c))
+
 	return req, nil
+}
+
+// convertRLSContext converts postgres.RLSContext to postgrest.RLSContext
+func convertRLSContext(ctx *postgres.RLSContext) *postgrest.RLSContext {
+	if ctx == nil {
+		return nil
+	}
+	return &postgrest.RLSContext{
+		Role:       ctx.Role,
+		UserID:     ctx.UserID,
+		Email:      ctx.Email,
+		ClaimsJSON: ctx.ClaimsJSON,
+	}
 }
 
 // parseFilters parses filter parameters from the query string.

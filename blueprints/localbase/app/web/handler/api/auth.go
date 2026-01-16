@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,18 +17,37 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// DefaultJWTSecret is the Supabase local development default JWT secret.
+// In production, always use LOCALBASE_JWT_SECRET environment variable.
+const DefaultJWTSecret = "super-secret-jwt-token-with-at-least-32-characters-long"
+
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
 	store *postgres.Store
-	// JWT secret - in production, this should come from config
+	// JWT secret - loaded from LOCALBASE_JWT_SECRET env var or uses default
 	jwtSecret []byte
+	// Issuer URL for JWT tokens
+	issuer string
 }
 
 // NewAuthHandler creates a new auth handler.
 func NewAuthHandler(store *postgres.Store) *AuthHandler {
+	// Load JWT secret from environment (same as API key middleware)
+	secret := os.Getenv("LOCALBASE_JWT_SECRET")
+	if secret == "" {
+		secret = DefaultJWTSecret
+	}
+
+	// Load issuer from environment or use default
+	issuer := os.Getenv("LOCALBASE_AUTH_ISSUER")
+	if issuer == "" {
+		issuer = "http://localhost:54321/auth/v1"
+	}
+
 	return &AuthHandler{
 		store:     store,
-		jwtSecret: []byte("your-super-secret-jwt-key-min-32-chars"),
+		jwtSecret: []byte(secret),
+		issuer:    issuer,
 	}
 }
 
@@ -742,9 +762,6 @@ func (h *AuthHandler) generateAuthResponseWithRefresh(c *mizu.Ctx, user *store.U
 	}
 	_ = h.store.Auth().CreateSession(c.Context(), session)
 
-	// Build issuer URL
-	issuer := "http://localhost:54321/auth/v1"
-
 	// Determine AMR (authentication methods reference)
 	amr := []map[string]any{
 		{"method": "password", "timestamp": now.Unix()},
@@ -755,7 +772,7 @@ func (h *AuthHandler) generateAuthResponseWithRefresh(c *mizu.Ctx, user *store.U
 		"aud":           "authenticated",
 		"exp":           expiresAt.Unix(),
 		"iat":           now.Unix(),
-		"iss":           issuer,
+		"iss":           h.issuer,
 		"sub":           user.ID,
 		"email":         user.Email,
 		"phone":         user.Phone,

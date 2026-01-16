@@ -17,6 +17,22 @@ type Querier interface {
 	GetForeignKeys(ctx context.Context, schema, table string) ([]ForeignKey, error)
 }
 
+// RLSContext holds JWT claims for RLS enforcement.
+// This is passed to queries to set database-level context.
+type RLSContext struct {
+	Role       string // anon, authenticated, service_role
+	UserID     string // auth.uid() - the sub claim
+	Email      string // auth.email() - the email claim
+	ClaimsJSON string // Full JWT claims as JSON
+}
+
+// RLSQuerier extends Querier with RLS-aware query methods.
+type RLSQuerier interface {
+	Querier
+	QueryWithRLS(ctx context.Context, rlsCtx *RLSContext, sql string, args ...any) (*QueryResult, error)
+	ExecWithRLS(ctx context.Context, rlsCtx *RLSContext, sql string, args ...any) (int64, error)
+}
+
 // QueryResult represents the result of a query.
 type QueryResult struct {
 	Columns []string
@@ -39,17 +55,23 @@ type ForeignKey struct {
 // Handler provides PostgREST-compatible REST API handling.
 type Handler struct {
 	querier       Querier
+	rlsQuerier    RLSQuerier // Optional: querier with RLS support
 	defaultSchema string
 	maxRows       int
 }
 
 // NewHandler creates a new PostgREST handler.
 func NewHandler(querier Querier) *Handler {
-	return &Handler{
+	h := &Handler{
 		querier:       querier,
 		defaultSchema: "public",
 		maxRows:       1000,
 	}
+	// If the querier supports RLS, store it for RLS-aware operations
+	if rls, ok := querier.(RLSQuerier); ok {
+		h.rlsQuerier = rls
+	}
+	return h
 }
 
 // Request represents a parsed PostgREST request.
@@ -66,7 +88,8 @@ type Request struct {
 	Prefs           *Preferences
 	Body            any
 	OnConflict      string
-	HasRange        bool // True if Range header was specified
+	HasRange        bool        // True if Range header was specified
+	RLSContext      *RLSContext // JWT claims for RLS enforcement (optional)
 }
 
 // Response represents a PostgREST response.
@@ -76,6 +99,22 @@ type Response struct {
 	Headers      map[string]string
 	ContentRange string
 	Count        *int
+}
+
+// query executes a query with RLS context if available.
+func (h *Handler) query(ctx context.Context, rlsCtx *RLSContext, sql string, params ...any) (*QueryResult, error) {
+	if h.rlsQuerier != nil && rlsCtx != nil {
+		return h.rlsQuerier.QueryWithRLS(ctx, rlsCtx, sql, params...)
+	}
+	return h.querier.Query(ctx, sql, params...)
+}
+
+// exec executes a statement with RLS context if available.
+func (h *Handler) exec(ctx context.Context, rlsCtx *RLSContext, sql string, params ...any) (int64, error) {
+	if h.rlsQuerier != nil && rlsCtx != nil {
+		return h.rlsQuerier.ExecWithRLS(ctx, rlsCtx, sql, params...)
+	}
+	return h.querier.Exec(ctx, sql, params...)
 }
 
 // Select handles GET requests to a table.
@@ -95,8 +134,8 @@ func (h *Handler) Select(ctx context.Context, req *Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Execute query
-	result, err := h.querier.Query(ctx, sql, params...)
+	// Execute query with RLS context
+	result, err := h.query(ctx, req.RLSContext, sql, params...)
 	if err != nil {
 		return nil, ParsePGError(err)
 	}
@@ -719,8 +758,8 @@ func (h *Handler) Insert(ctx context.Context, req *Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Execute query
-	result, err := h.querier.Query(ctx, sql, params...)
+	// Execute query with RLS context
+	result, err := h.query(ctx, req.RLSContext, sql, params...)
 	if err != nil {
 		return nil, ParsePGError(err)
 	}
@@ -889,8 +928,8 @@ func (h *Handler) Update(ctx context.Context, req *Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Execute query
-	result, err := h.querier.Query(ctx, sql, params...)
+	// Execute query with RLS context
+	result, err := h.query(ctx, req.RLSContext, sql, params...)
 	if err != nil {
 		return nil, ParsePGError(err)
 	}
@@ -981,8 +1020,8 @@ func (h *Handler) Delete(ctx context.Context, req *Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Execute query
-	result, err := h.querier.Query(ctx, sql, params...)
+	// Execute query with RLS context
+	result, err := h.query(ctx, req.RLSContext, sql, params...)
 	if err != nil {
 		return nil, ParsePGError(err)
 	}
@@ -1092,8 +1131,8 @@ func (h *Handler) RPC(ctx context.Context, fnName string, req *Request) (*Respon
 		sql += fmt.Sprintf(" OFFSET %d", req.Offset)
 	}
 
-	// Execute
-	result, err := h.querier.Query(ctx, sql, params...)
+	// Execute with RLS context
+	result, err := h.query(ctx, req.RLSContext, sql, params...)
 	if err != nil {
 		pgErr := ParsePGError(err)
 		// Check if function doesn't exist

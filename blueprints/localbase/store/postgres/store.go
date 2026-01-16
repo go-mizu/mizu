@@ -438,6 +438,12 @@ func (s *Store) Database() store.DatabaseStore {
 	return s.database
 }
 
+// DatabaseRLS returns the database store with RLS support.
+// This returns the concrete type to access RLS-aware query methods.
+func (s *Store) DatabaseRLS() *DatabaseStore {
+	return s.database
+}
+
 // Functions returns the functions store.
 func (s *Store) Functions() store.FunctionsStore {
 	return s.functions
