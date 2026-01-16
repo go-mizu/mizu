@@ -310,6 +310,19 @@ type DatabaseStore interface {
 	ListSchemas(ctx context.Context) ([]string, error)
 	CreateSchema(ctx context.Context, name string) error
 	DropSchema(ctx context.Context, name string) error
+
+	// PostgREST helpers
+	TableExists(ctx context.Context, schema, table string) (bool, error)
+	GetForeignKeysForEmbedding(ctx context.Context, schema, table string) ([]ForeignKeyInfo, error)
+}
+
+// ForeignKeyInfo holds basic FK info for embedding.
+type ForeignKeyInfo struct {
+	ConstraintName string
+	ColumnName     string
+	ForeignSchema  string
+	ForeignTable   string
+	ForeignColumn  string
 }
 
 // ========== Functions Types ==========

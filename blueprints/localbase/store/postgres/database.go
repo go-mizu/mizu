@@ -710,6 +710,79 @@ func (s *DatabaseStore) DropSchema(ctx context.Context, name string) error {
 	return err
 }
 
+// TableExists checks if a table exists in the given schema.
+func (s *DatabaseStore) TableExists(ctx context.Context, schema, table string) (bool, error) {
+	if schema == "" {
+		schema = "public"
+	}
+
+	sql := `
+	SELECT EXISTS (
+		SELECT 1
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1
+			AND c.relname = $2
+			AND c.relkind IN ('r', 'v', 'm')
+	)
+	`
+
+	var exists bool
+	err := s.pool.QueryRow(ctx, sql, schema, table).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+// GetForeignKeysForEmbedding returns foreign key relationships for resource embedding.
+func (s *DatabaseStore) GetForeignKeysForEmbedding(ctx context.Context, schema, table string) ([]store.ForeignKeyInfo, error) {
+	sql := `
+	SELECT
+		c.conname AS constraint_name,
+		a1.attname AS column_name,
+		n2.nspname AS foreign_schema,
+		t2.relname AS foreign_table,
+		a2.attname AS foreign_column
+	FROM pg_constraint c
+	JOIN pg_class t1 ON t1.oid = c.conrelid
+	JOIN pg_namespace n1 ON n1.oid = t1.relnamespace
+	JOIN pg_class t2 ON t2.oid = c.confrelid
+	JOIN pg_namespace n2 ON n2.oid = t2.relnamespace
+	JOIN pg_attribute a1 ON a1.attrelid = c.conrelid AND a1.attnum = ANY(c.conkey)
+	JOIN pg_attribute a2 ON a2.attrelid = c.confrelid AND a2.attnum = ANY(c.confkey)
+	WHERE c.contype = 'f'
+		AND n1.nspname = $1
+		AND t1.relname = $2
+	ORDER BY c.conname
+	`
+
+	rows, err := s.pool.Query(ctx, sql, schema, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var fks []store.ForeignKeyInfo
+	for rows.Next() {
+		var fk store.ForeignKeyInfo
+		err := rows.Scan(
+			&fk.ConstraintName,
+			&fk.ColumnName,
+			&fk.ForeignSchema,
+			&fk.ForeignTable,
+			&fk.ForeignColumn,
+		)
+		if err != nil {
+			return nil, err
+		}
+		fks = append(fks, fk)
+	}
+
+	return fks, nil
+}
+
 // quoteIdent safely quotes an identifier.
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`

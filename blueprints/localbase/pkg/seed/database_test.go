@@ -22,8 +22,9 @@ var (
 	supabaseDBURL   = getEnv("SUPABASE_DB_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
 
 	// Localbase endpoints (runs on port 54321 for main API)
+	// Use the same Supabase API key format for compatibility testing
 	localbaseRESTURL = getEnv("LOCALBASE_REST_URL", "http://localhost:54321/rest/v1")
-	localbaseAPIKey  = getEnv("LOCALBASE_API_KEY", "test-api-key")
+	localbaseAPIKey  = getEnv("LOCALBASE_API_KEY", "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH")
 	localbaseDBURL   = getEnv("LOCALBASE_DB_URL", "postgresql://localbase:localbase@localhost:5432/localbase")
 )
 

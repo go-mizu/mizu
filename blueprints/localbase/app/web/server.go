@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/localbase/app/web/handler/api"
+	"github.com/go-mizu/mizu/blueprints/localbase/app/web/middleware"
 	"github.com/go-mizu/mizu/blueprints/localbase/assets"
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
 )
@@ -68,12 +69,17 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	})
 
 	// REST API (PostgREST compatible)
+	// Apply API key middleware for REST endpoints
+	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
 	app.Group("/rest/v1", func(rest *mizu.Router) {
+		rest.Use(apiKeyMw)
 		rest.Get("/{table}", databaseHandler.SelectTable)
+		rest.Head("/{table}", databaseHandler.SelectTable) // Support HEAD for count
 		rest.Post("/{table}", databaseHandler.InsertTable)
 		rest.Patch("/{table}", databaseHandler.UpdateTable)
 		rest.Delete("/{table}", databaseHandler.DeleteTable)
 		rest.Post("/rpc/{function}", databaseHandler.CallFunction)
+		rest.Get("/rpc/{function}", databaseHandler.CallFunction) // Support GET for RPC
 	})
 
 	// Database API (Dashboard)
