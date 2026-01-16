@@ -1,9 +1,14 @@
 package api
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1"
+	"encoding/base32"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -19,7 +24,11 @@ import (
 
 // DefaultJWTSecret is the Supabase local development default JWT secret.
 // In production, always use LOCALBASE_JWT_SECRET environment variable.
+// WARNING: This is INSECURE and should only be used for local development.
 const DefaultJWTSecret = "super-secret-jwt-token-with-at-least-32-characters-long"
+
+// MinPasswordLength is the minimum required password length for security.
+const MinPasswordLength = 8
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
@@ -107,6 +116,11 @@ func (h *AuthHandler) Signup(c *mizu.Ctx) error {
 
 	if req.Password == "" {
 		return authError(c, 422, "validation_failed", "Password is required")
+	}
+
+	// Validate password length for security
+	if len(req.Password) < MinPasswordLength {
+		return authError(c, 422, "weak_password", fmt.Sprintf("Password must be at least %d characters", MinPasswordLength))
 	}
 
 	// Hash password
@@ -528,9 +542,13 @@ func (h *AuthHandler) VerifyMFA(c *mizu.Ctx) error {
 		return authError(c, 404, "mfa_factor_not_found", "MFA factor not found")
 	}
 
-	// In production, verify TOTP code
-	// For now, accept any 6-digit code
+	// Validate code format
 	if len(req.Code) != 6 {
+		return authError(c, 400, "mfa_verification_failed", "Invalid verification code format")
+	}
+
+	// Verify TOTP code using the factor's secret
+	if !verifyTOTP(factor.Secret, req.Code) {
 		return authError(c, 400, "mfa_verification_failed", "Invalid verification code")
 	}
 
@@ -854,4 +872,53 @@ func queryInt(c *mizu.Ctx, key string, defaultVal int) int {
 		return defaultVal
 	}
 	return i
+}
+
+// verifyTOTP verifies a TOTP code against a secret.
+// It checks the current time period and allows for one period of clock drift.
+func verifyTOTP(secret, code string) bool {
+	// Decode the secret (hex-encoded in our implementation)
+	secretBytes, err := hex.DecodeString(secret)
+	if err != nil {
+		// Try base32 decoding as fallback (standard TOTP format)
+		secretBytes, err = base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
+		if err != nil {
+			return false
+		}
+	}
+
+	// Get current time period (30-second intervals)
+	now := time.Now().Unix()
+	period := int64(30)
+
+	// Check current period and allow for clock drift (±1 period)
+	for _, offset := range []int64{0, -1, 1} {
+		counter := (now / period) + offset
+		expectedCode := generateTOTPCode(secretBytes, counter)
+		if expectedCode == code {
+			return true
+		}
+	}
+
+	return false
+}
+
+// generateTOTPCode generates a 6-digit TOTP code for the given counter.
+func generateTOTPCode(secret []byte, counter int64) string {
+	// Convert counter to big-endian bytes
+	counterBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(counterBytes, uint64(counter))
+
+	// Calculate HMAC-SHA1
+	h := hmac.New(sha1.New, secret)
+	h.Write(counterBytes)
+	hash := h.Sum(nil)
+
+	// Dynamic truncation
+	offset := hash[len(hash)-1] & 0x0f
+	truncatedHash := binary.BigEndian.Uint32(hash[offset:offset+4]) & 0x7fffffff
+
+	// Generate 6-digit code
+	code := truncatedHash % uint32(math.Pow10(6))
+	return fmt.Sprintf("%06d", code)
 }

@@ -123,6 +123,39 @@ func (h *StorageHandler) checkStorageAccess(c *mizu.Ctx, bucket *store.Bucket, p
 	return nil
 }
 
+// sanitizeStoragePath removes path traversal sequences and normalizes the path.
+// This prevents access to files outside the bucket directory.
+func sanitizeStoragePath(path string) string {
+	// Remove any path traversal sequences
+	path = strings.ReplaceAll(path, "..", "")
+	// Remove null bytes
+	path = strings.ReplaceAll(path, "\x00", "")
+	// Clean the path to normalize it
+	path = filepath.Clean(path)
+	// Remove leading slashes
+	path = strings.TrimPrefix(path, "/")
+	// Ensure no leading dots remain
+	for strings.HasPrefix(path, ".") {
+		path = strings.TrimPrefix(path, ".")
+		path = strings.TrimPrefix(path, "/")
+	}
+	return path
+}
+
+// sanitizeFilename removes dangerous characters from filenames to prevent header injection.
+func sanitizeFilename(filename string) string {
+	// Remove characters that could cause header injection or path traversal
+	replacer := strings.NewReplacer(
+		"\n", "",
+		"\r", "",
+		"\"", "",
+		"\\", "",
+		"/", "",
+		"\x00", "",
+	)
+	return replacer.Replace(filename)
+}
+
 // checkObjectOwnership verifies if the current user owns the object.
 // Returns true if the user has ownership access.
 func (h *StorageHandler) checkObjectOwnership(c *mizu.Ctx, obj *store.Object) bool {
@@ -312,6 +345,9 @@ func (h *StorageHandler) UploadObject(c *mizu.Ctx) error {
 		return storageError(c, http.StatusBadRequest, "Bad Request", "object path is required")
 	}
 
+	// Sanitize path to prevent path traversal attacks
+	path = sanitizeStoragePath(path)
+
 	// Get bucket to verify it exists
 	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
 	if err != nil {
@@ -410,10 +446,18 @@ func (h *StorageHandler) UpdateObject(c *mizu.Ctx) error {
 		return storageError(c, http.StatusBadRequest, "Bad Request", "object path is required")
 	}
 
-	// Check bucket exists
-	_, err := h.store.Storage().GetBucket(c.Context(), bucketID)
+	// Sanitize path to prevent path traversal attacks
+	path = sanitizeStoragePath(path)
+
+	// Check bucket exists and get bucket for RLS check
+	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
 	if err != nil {
 		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+	}
+
+	// Check storage access (RLS enforcement) - SEC-008 fix
+	if err := h.checkStorageAccess(c, bucket, path, StorageAccessWrite); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
 	}
 
 	// Check object exists
@@ -477,7 +521,9 @@ func (h *StorageHandler) DownloadObject(c *mizu.Ctx) error {
 	// Set headers
 	c.Header().Set("Content-Type", obj.ContentType)
 	if c.Query("download") != "" {
-		c.Header().Set("Content-Disposition", "attachment; filename="+filepath.Base(obj.Name))
+		// Sanitize filename to prevent header injection attacks
+		filename := sanitizeFilename(filepath.Base(obj.Name))
+		c.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	}
 
 	// In production, stream actual file content

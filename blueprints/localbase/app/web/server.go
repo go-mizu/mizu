@@ -31,11 +31,14 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	// API key middleware for Supabase compatibility (defined early for reuse)
 	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
 	serviceRoleMw := middleware.RequireServiceRole()
+	authRateLimitMw := middleware.RateLimit(middleware.AuthRateLimitConfig())
 
 	// Auth API (GoTrue compatible)
 	app.Group("/auth/v1", func(auth *mizu.Router) {
 		// Apply API key middleware to all auth endpoints
 		auth.Use(apiKeyMw)
+		// Apply rate limiting to auth endpoints for brute force protection
+		auth.Use(authRateLimitMw)
 
 		// Public auth endpoints
 		auth.Post("/signup", authHandler.Signup)
@@ -115,8 +118,10 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		rest.Get("/rpc/{function}", databaseHandler.CallFunction) // Support GET for RPC
 	})
 
-	// Database API (Dashboard)
+	// Database API (Dashboard) - Requires service_role for all operations
 	app.Group("/api/database", func(database *mizu.Router) {
+		database.Use(apiKeyMw)
+		database.Use(serviceRoleMw)
 		database.Get("/tables", databaseHandler.ListTables)
 		database.Post("/tables", databaseHandler.CreateTable)
 		database.Get("/tables/{schema}/{name}", databaseHandler.GetTable)
@@ -140,8 +145,10 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		database.Post("/query", databaseHandler.ExecuteQuery)
 	})
 
-	// Functions API
+	// Functions API - Requires service_role for management operations
 	app.Group("/api/functions", func(functions *mizu.Router) {
+		functions.Use(apiKeyMw)
+		functions.Use(serviceRoleMw)
 		functions.Get("", functionsHandler.ListFunctions)
 		functions.Post("", functionsHandler.CreateFunction)
 		functions.Get("/{id}", functionsHandler.GetFunction)
@@ -158,8 +165,10 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	// Public function invocation
 	app.Post("/functions/v1/{name}", functionsHandler.InvokeFunction)
 
-	// Realtime API
+	// Realtime API - Requires authentication
 	app.Group("/api/realtime", func(realtime *mizu.Router) {
+		realtime.Use(apiKeyMw)
+		realtime.Use(serviceRoleMw)
 		realtime.Get("/channels", realtimeHandler.ListChannels)
 		realtime.Get("/stats", realtimeHandler.GetStats)
 	})
@@ -167,8 +176,10 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	// WebSocket endpoint for realtime
 	app.Get("/realtime/v1/websocket", realtimeHandler.WebSocket)
 
-	// Dashboard API
+	// Dashboard API - Requires authentication (SEC-018 fix)
 	app.Group("/api", func(dashboard *mizu.Router) {
+		dashboard.Use(apiKeyMw)
+		dashboard.Use(serviceRoleMw)
 		dashboard.Get("/dashboard/stats", dashboardHandler.GetStats)
 		dashboard.Get("/dashboard/health", dashboardHandler.GetHealth)
 	})
