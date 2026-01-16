@@ -16,15 +16,15 @@ import (
 
 // Test configuration
 var (
-	// Supabase Local endpoints
+	// Supabase Local endpoints (runs on port 54421 to avoid conflict with Localbase)
 	supabaseRESTURL = getEnv("SUPABASE_REST_URL", "http://127.0.0.1:54421/rest/v1")
 	supabaseAPIKey  = getEnv("SUPABASE_API_KEY", "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH")
 	supabaseDBURL   = getEnv("SUPABASE_DB_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
 
-	// Localbase endpoints
-	localbaseRESTURL = getEnv("LOCALBASE_REST_URL", "http://localhost:8080/rest/v1")
+	// Localbase endpoints (runs on port 54321 for main API)
+	localbaseRESTURL = getEnv("LOCALBASE_REST_URL", "http://localhost:54321/rest/v1")
 	localbaseAPIKey  = getEnv("LOCALBASE_API_KEY", "test-api-key")
-	localbaseDBURL   = getEnv("LOCALBASE_DB_URL", "postgresql://postgres:postgres@localhost:5432/localbase")
+	localbaseDBURL   = getEnv("LOCALBASE_DB_URL", "postgresql://localbase:localbase@localhost:5432/localbase")
 )
 
 func getEnv(key, defaultValue string) string {
