@@ -650,6 +650,12 @@ func (s *DatabaseStore) Query(ctx context.Context, sql string, params ...interfa
 		results = append(results, row)
 	}
 
+	// Check for errors that occurred during iteration
+	// This is important for catching constraint violations in INSERT/UPDATE statements
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	duration := time.Since(start).Seconds() * 1000
 
 	return &store.QueryResult{

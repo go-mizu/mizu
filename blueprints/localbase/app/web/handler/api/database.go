@@ -553,7 +553,10 @@ func (h *DatabaseHandler) parseFilters(c *mizu.Ctx) ([]postgrest.Filter, map[str
 				if err != nil {
 					return nil, nil, "", postgrest.ErrPGRST100(err.Error())
 				}
-				embeddedFilters[embeddedResource] = append(embeddedFilters[embeddedResource], *filter)
+				// Skip nil filters (invalid/ignored params - Supabase compatibility)
+				if filter != nil {
+					embeddedFilters[embeddedResource] = append(embeddedFilters[embeddedResource], *filter)
+				}
 			}
 			continue
 		}
@@ -564,7 +567,10 @@ func (h *DatabaseHandler) parseFilters(c *mizu.Ctx) ([]postgrest.Filter, map[str
 			if err != nil {
 				return nil, nil, "", postgrest.ErrPGRST100(err.Error())
 			}
-			filters = append(filters, *filter)
+			// Skip nil filters (invalid/ignored params - Supabase compatibility)
+			if filter != nil {
+				filters = append(filters, *filter)
+			}
 		}
 	}
 

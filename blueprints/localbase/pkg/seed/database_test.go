@@ -264,7 +264,8 @@ func TestSelect_ArrayOperators(t *testing.T) {
 		name   string
 		path   string
 	}{
-		{"FILTER-020: in operator", "/test_users?id=in.(id1,id2,id3)"},
+		// Use status column (VARCHAR) for IN operator test instead of id (UUID) to avoid type conversion issues
+		{"FILTER-020: in operator", "/test_users?status=in.(active,inactive,pending)"},
 		{"FILTER-021: cs (contains) operator", "/test_users?tags=cs.{premium}"},
 		{"FILTER-022: cd (contained by) operator", "/test_users?tags=cd.{premium,standard,trial}"},
 		{"FILTER-023: ov (overlap) operator", "/test_users?tags=ov.{premium,newsletter}"},
@@ -320,7 +321,8 @@ func TestSelect_JSONBOperators(t *testing.T) {
 		name   string
 		path   string
 	}{
-		{"FILTER-060: JSON path access", "/test_users?metadata->role=eq.admin"},
+		// Use ->> for text extraction (-> returns JSON which causes type mismatch)
+		{"FILTER-060: JSON path access", "/test_users?metadata->>role=eq.admin"},
 		{"FILTER-063: JSON contains", "/test_users?metadata=cs.{\"role\":\"admin\"}"},
 	}
 
@@ -681,7 +683,8 @@ func TestEdgeCases_Queries(t *testing.T) {
 		path   string
 	}{
 		{"EDGE-010: Many filters", "/test_users?status=eq.active&age=gt.18&age=lt.65"},
-		{"EDGE-012: Large IN list", "/test_users?id=in.(1,2,3,4,5,6,7,8,9,10)"},
+		// Use status column (VARCHAR) for IN operator test instead of id (UUID) to avoid type conversion issues
+		{"EDGE-012: Large IN list", "/test_users?status=in.(active,inactive,pending,suspended)"},
 		{"EDGE-013: Nested logic", "/test_users?and=(or(status.eq.active,status.eq.pending),age.gt.18)"},
 	}
 

@@ -15,6 +15,10 @@ type Filter struct {
 	Negated  bool
 	IsJSON   bool
 	JSONPath string
+	// For nested logical expressions (or/and groups)
+	IsLogical     bool     // True if this is a logical group (or/and)
+	LogicalOp     string   // "OR" or "AND"
+	NestedFilters []Filter // Nested filters for logical groups
 }
 
 // OrderClause represents a parsed ORDER BY clause.
@@ -178,9 +182,25 @@ func parseSelectColumn(part string) (SelectColumn, error) {
 	return col, nil
 }
 
+// validFilterOperators is the set of valid PostgREST filter operators.
+var validFilterOperators = map[string]bool{
+	"eq": true, "neq": true, "gt": true, "gte": true, "lt": true, "lte": true,
+	"like": true, "ilike": true, "match": true, "imatch": true,
+	"is": true, "isdistinct": true, "in": true,
+	"cs": true, "cd": true, "ov": true,
+	"sl": true, "sr": true, "nxl": true, "nxr": true, "adj": true,
+	"fts": true, "plfts": true, "phfts": true, "wfts": true,
+}
+
 // ParseFilter parses a PostgREST filter value.
 // Format: operator.value or not.operator.value
+// Returns nil if the value doesn't contain a valid filter operator (Supabase ignores such params).
 func ParseFilter(column, value string) (*Filter, error) {
+	// Empty value without operator - ignore (Supabase compatibility)
+	if value == "" {
+		return nil, nil
+	}
+
 	filter := &Filter{Column: column}
 
 	// Check for JSON path in column
@@ -194,19 +214,31 @@ func ParseFilter(column, value string) (*Filter, error) {
 		filter.IsJSON = true
 	}
 
+	workValue := value
+
 	// Check for 'not.' prefix
-	if strings.HasPrefix(value, "not.") {
+	if strings.HasPrefix(workValue, "not.") {
 		filter.Negated = true
-		value = value[4:]
+		workValue = workValue[4:]
 	}
 
 	// Parse operator and value
-	parts := strings.SplitN(value, ".", 2)
+	parts := strings.SplitN(workValue, ".", 2)
 	if len(parts) < 2 {
-		// No operator, treat as equality
-		filter.Operator = "eq"
-		filter.Value = value
-		return filter, nil
+		// No operator found - check if the entire value is a valid operator (like "is.null")
+		// Otherwise ignore (Supabase compatibility - treats unknown params as ignored)
+		return nil, nil
+	}
+
+	// Extract the operator - handle FTS operators with config like fts(english)
+	op := parts[0]
+	if parenIdx := strings.Index(op, "("); parenIdx > 0 {
+		op = op[:parenIdx]
+	}
+
+	// Validate operator - if not valid, ignore the filter (Supabase compatibility)
+	if !validFilterOperators[op] {
+		return nil, nil
 	}
 
 	filter.Operator = parts[0]
@@ -218,6 +250,22 @@ func ParseFilter(column, value string) (*Filter, error) {
 // FilterToSQL converts a filter to SQL.
 func FilterToSQL(f *Filter, paramIdx *int) (string, []interface{}, error) {
 	var params []interface{}
+
+	// Handle nested logical filters (or/and groups)
+	if f.IsLogical {
+		var parts []string
+		for i := range f.NestedFilters {
+			part, partParams, err := FilterToSQL(&f.NestedFilters[i], paramIdx)
+			if err != nil {
+				return "", nil, err
+			}
+			parts = append(parts, part)
+			params = append(params, partParams...)
+		}
+		sql := "(" + strings.Join(parts, " "+f.LogicalOp+" ") + ")"
+		return sql, params, nil
+	}
+
 	col := QuoteIdent(f.Column)
 
 	// Handle JSON path
@@ -637,6 +685,33 @@ func parseLogicalInner(inner string) ([]Filter, error) {
 
 func parseLogicalPart(part string) (*Filter, error) {
 	part = strings.TrimSpace(part)
+
+	// Check for nested logical operators (or(...) or and(...))
+	if strings.HasPrefix(part, "or(") && strings.HasSuffix(part, ")") {
+		inner := part[3 : len(part)-1]
+		nestedFilters, err := parseLogicalInner(inner)
+		if err != nil {
+			return nil, err
+		}
+		return &Filter{
+			IsLogical:     true,
+			LogicalOp:     "OR",
+			NestedFilters: nestedFilters,
+		}, nil
+	}
+
+	if strings.HasPrefix(part, "and(") && strings.HasSuffix(part, ")") {
+		inner := part[4 : len(part)-1]
+		nestedFilters, err := parseLogicalInner(inner)
+		if err != nil {
+			return nil, err
+		}
+		return &Filter{
+			IsLogical:     true,
+			LogicalOp:     "AND",
+			NestedFilters: nestedFilters,
+		}, nil
+	}
 
 	// Format: column.operator.value
 	dotIdx := strings.Index(part, ".")
