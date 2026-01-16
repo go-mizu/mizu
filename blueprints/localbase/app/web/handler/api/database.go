@@ -1,22 +1,71 @@
 package api
 
 import (
-	"fmt"
+	"context"
+	"io"
+	"strconv"
 	"strings"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/postgrest"
 	"github.com/go-mizu/mizu/blueprints/localbase/store"
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
 )
 
 // DatabaseHandler handles database endpoints.
 type DatabaseHandler struct {
-	store *postgres.Store
+	store      *postgres.Store
+	pgHandler  *postgrest.Handler
 }
 
 // NewDatabaseHandler creates a new database handler.
 func NewDatabaseHandler(store *postgres.Store) *DatabaseHandler {
-	return &DatabaseHandler{store: store}
+	return &DatabaseHandler{
+		store:     store,
+		pgHandler: postgrest.NewHandler(&dbQuerier{store: store}),
+	}
+}
+
+// dbQuerier adapts the store to the postgrest.Querier interface.
+type dbQuerier struct {
+	store *postgres.Store
+}
+
+func (q *dbQuerier) Query(ctx context.Context, sql string, args ...any) (*postgrest.QueryResult, error) {
+	result, err := q.store.Database().Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return &postgrest.QueryResult{
+		Columns: result.Columns,
+		Rows:    result.Rows,
+	}, nil
+}
+
+func (q *dbQuerier) Exec(ctx context.Context, sql string, args ...any) (int64, error) {
+	return q.store.Database().Exec(ctx, sql, args...)
+}
+
+func (q *dbQuerier) TableExists(ctx context.Context, schema, table string) (bool, error) {
+	return q.store.Database().TableExists(ctx, schema, table)
+}
+
+func (q *dbQuerier) GetForeignKeys(ctx context.Context, schema, table string) ([]postgrest.ForeignKey, error) {
+	fks, err := q.store.Database().GetForeignKeysForEmbedding(ctx, schema, table)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]postgrest.ForeignKey, 0, len(fks))
+	for _, fk := range fks {
+		result = append(result, postgrest.ForeignKey{
+			ConstraintName: fk.ConstraintName,
+			ColumnName:     fk.ColumnName,
+			ForeignSchema:  fk.ForeignSchema,
+			ForeignTable:   fk.ForeignTable,
+			ForeignColumn:  fk.ForeignColumn,
+		})
+	}
+	return result, nil
 }
 
 // ListTables lists all tables.
@@ -248,8 +297,8 @@ func (h *DatabaseHandler) DropPolicy(c *mizu.Ctx) error {
 // ExecuteQuery executes a SQL query.
 func (h *DatabaseHandler) ExecuteQuery(c *mizu.Ctx) error {
 	var req struct {
-		Query  string        `json:"query"`
-		Params []interface{} `json:"params"`
+		Query  string `json:"query"`
+		Params []any  `json:"params"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
 		return c.JSON(400, map[string]string{"error": "invalid request body"})
@@ -280,292 +329,298 @@ func (h *DatabaseHandler) ExecuteQuery(c *mizu.Ctx) error {
 	})
 }
 
+// ========================================
 // REST API handlers (PostgREST compatible)
+// ========================================
 
 // SelectTable handles GET requests for PostgREST.
 func (h *DatabaseHandler) SelectTable(c *mizu.Ctx) error {
-	table := c.Param("table")
-	schema := c.Query("schema")
-	if schema == "" {
-		schema = "public"
-	}
-
-	// Build SELECT query from query params
-	selectCols := c.Query("select")
-	if selectCols == "" {
-		selectCols = "*"
-	}
-	orderBy := c.Query("order")
-	limit := queryInt(c, "limit", 100)
-	offset := queryInt(c, "offset", 0)
-
-	sql := fmt.Sprintf("SELECT %s FROM %s.%s", selectCols, quoteIdent(schema), quoteIdent(table))
-
-	// Handle filters
-	where := []string{}
-	for key, values := range c.QueryValues() {
-		if key == "select" || key == "order" || key == "limit" || key == "offset" || key == "schema" {
-			continue
-		}
-		for _, value := range values {
-			// Parse filter operator
-			op, val := parseFilter(value)
-			where = append(where, fmt.Sprintf("%s %s '%s'", quoteIdent(key), op, val))
-		}
-	}
-
-	if len(where) > 0 {
-		sql += " WHERE " + strings.Join(where, " AND ")
-	}
-
-	if orderBy != "" {
-		sql += " ORDER BY " + orderBy
-	}
-
-	sql += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
-
-	result, err := h.store.Database().Query(c.Context(), sql)
+	req, err := h.parseRequest(c)
 	if err != nil {
-		return c.JSON(400, map[string]string{"error": err.Error()})
+		return h.sendError(c, err)
 	}
 
-	return c.JSON(200, result.Rows)
+	resp, err := h.pgHandler.Select(c.Context(), req)
+	if err != nil {
+		return h.sendError(c, err)
+	}
+
+	return h.sendResponse(c, resp)
 }
 
 // InsertTable handles POST requests for PostgREST.
 func (h *DatabaseHandler) InsertTable(c *mizu.Ctx) error {
-	table := c.Param("table")
-	schema := c.Query("schema")
-	if schema == "" {
-		schema = "public"
-	}
-
-	// Parse body as generic interface to handle both array and single object
-	var body interface{}
-	if err := c.BindJSON(&body, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
-	}
-
-	var rows []map[string]interface{}
-	switch v := body.(type) {
-	case []interface{}:
-		for _, item := range v {
-			if m, ok := item.(map[string]interface{}); ok {
-				rows = append(rows, m)
-			}
-		}
-	case map[string]interface{}:
-		rows = []map[string]interface{}{v}
-	default:
-		return c.JSON(400, map[string]string{"error": "invalid request body format"})
-	}
-
-	if len(rows) == 0 {
-		return c.JSON(400, map[string]string{"error": "no data to insert"})
-	}
-
-	// Build INSERT query
-	columns := []string{}
-	for col := range rows[0] {
-		columns = append(columns, quoteIdent(col))
-	}
-
-	var valueRows []string
-	var params []interface{}
-	paramIdx := 1
-
-	for _, row := range rows {
-		var placeholders []string
-		for _, col := range columns {
-			colName := strings.Trim(col, `"`)
-			params = append(params, row[colName])
-			placeholders = append(placeholders, fmt.Sprintf("$%d", paramIdx))
-			paramIdx++
-		}
-		valueRows = append(valueRows, "("+strings.Join(placeholders, ", ")+")")
-	}
-
-	sql := fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES %s RETURNING *",
-		quoteIdent(schema),
-		quoteIdent(table),
-		strings.Join(columns, ", "),
-		strings.Join(valueRows, ", "),
-	)
-
-	result, err := h.store.Database().Query(c.Context(), sql, params...)
+	req, err := h.parseRequest(c)
 	if err != nil {
-		return c.JSON(400, map[string]string{"error": err.Error()})
+		return h.sendError(c, err)
 	}
 
-	if len(result.Rows) == 1 {
-		return c.JSON(201, result.Rows[0])
+	// Parse body
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return h.sendError(c, postgrest.ErrPGRST102("failed to read body"))
 	}
-	return c.JSON(201, result.Rows)
+
+	req.Body, err = postgrest.ParseRequestBody(body)
+	if err != nil {
+		return h.sendError(c, postgrest.ErrPGRST102(err.Error()))
+	}
+
+	// Check for upsert
+	req.OnConflict = c.Query("on_conflict")
+
+	resp, err := h.pgHandler.Insert(c.Context(), req)
+	if err != nil {
+		return h.sendError(c, err)
+	}
+
+	return h.sendResponse(c, resp)
 }
 
 // UpdateTable handles PATCH requests for PostgREST.
 func (h *DatabaseHandler) UpdateTable(c *mizu.Ctx) error {
-	table := c.Param("table")
-	schema := c.Query("schema")
-	if schema == "" {
-		schema = "public"
-	}
-
-	var data map[string]interface{}
-	if err := c.BindJSON(&data, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
-	}
-
-	if len(data) == 0 {
-		return c.JSON(400, map[string]string{"error": "no data to update"})
-	}
-
-	// Build UPDATE query
-	var setClauses []string
-	var params []interface{}
-	paramIdx := 1
-
-	for col, val := range data {
-		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", quoteIdent(col), paramIdx))
-		params = append(params, val)
-		paramIdx++
-	}
-
-	sql := fmt.Sprintf("UPDATE %s.%s SET %s",
-		quoteIdent(schema),
-		quoteIdent(table),
-		strings.Join(setClauses, ", "),
-	)
-
-	// Handle filters from query params
-	where := []string{}
-	for key, values := range c.QueryValues() {
-		if key == "schema" {
-			continue
-		}
-		for _, value := range values {
-			op, val := parseFilter(value)
-			where = append(where, fmt.Sprintf("%s %s '%s'", quoteIdent(key), op, val))
-		}
-	}
-
-	if len(where) > 0 {
-		sql += " WHERE " + strings.Join(where, " AND ")
-	}
-
-	sql += " RETURNING *"
-
-	result, err := h.store.Database().Query(c.Context(), sql, params...)
+	req, err := h.parseRequest(c)
 	if err != nil {
-		return c.JSON(400, map[string]string{"error": err.Error()})
+		return h.sendError(c, err)
 	}
 
-	return c.JSON(200, result.Rows)
+	// Parse body
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return h.sendError(c, postgrest.ErrPGRST102("failed to read body"))
+	}
+
+	req.Body, err = postgrest.ParseRequestBody(body)
+	if err != nil {
+		return h.sendError(c, postgrest.ErrPGRST102(err.Error()))
+	}
+
+	resp, err := h.pgHandler.Update(c.Context(), req)
+	if err != nil {
+		return h.sendError(c, err)
+	}
+
+	return h.sendResponse(c, resp)
 }
 
 // DeleteTable handles DELETE requests for PostgREST.
 func (h *DatabaseHandler) DeleteTable(c *mizu.Ctx) error {
-	table := c.Param("table")
-	schema := c.Query("schema")
-	if schema == "" {
-		schema = "public"
-	}
-
-	sql := fmt.Sprintf("DELETE FROM %s.%s", quoteIdent(schema), quoteIdent(table))
-
-	// Handle filters from query params
-	where := []string{}
-	for key, values := range c.QueryValues() {
-		if key == "schema" {
-			continue
-		}
-		for _, value := range values {
-			op, val := parseFilter(value)
-			where = append(where, fmt.Sprintf("%s %s '%s'", quoteIdent(key), op, val))
-		}
-	}
-
-	if len(where) > 0 {
-		sql += " WHERE " + strings.Join(where, " AND ")
-	}
-
-	sql += " RETURNING *"
-
-	result, err := h.store.Database().Query(c.Context(), sql)
+	req, err := h.parseRequest(c)
 	if err != nil {
-		return c.JSON(400, map[string]string{"error": err.Error()})
+		return h.sendError(c, err)
 	}
 
-	return c.JSON(200, result.Rows)
+	resp, err := h.pgHandler.Delete(c.Context(), req)
+	if err != nil {
+		return h.sendError(c, err)
+	}
+
+	return h.sendResponse(c, resp)
 }
 
 // CallFunction calls a database function (RPC).
 func (h *DatabaseHandler) CallFunction(c *mizu.Ctx) error {
 	fnName := c.Param("function")
-	schema := c.Query("schema")
-	if schema == "" {
-		schema = "public"
-	}
 
-	var params map[string]interface{}
-	if err := c.BindJSON(&params, 0); err != nil {
-		params = make(map[string]interface{})
-	}
-
-	// Build function call
-	var args []string
-	var values []interface{}
-	paramIdx := 1
-
-	for name, val := range params {
-		args = append(args, fmt.Sprintf("%s := $%d", name, paramIdx))
-		values = append(values, val)
-		paramIdx++
-	}
-
-	sql := fmt.Sprintf("SELECT * FROM %s.%s(%s)", quoteIdent(schema), quoteIdent(fnName), strings.Join(args, ", "))
-
-	result, err := h.store.Database().Query(c.Context(), sql, values...)
+	req, err := h.parseRequest(c)
 	if err != nil {
-		return c.JSON(400, map[string]string{"error": err.Error()})
+		return h.sendError(c, err)
 	}
 
-	return c.JSON(200, result.Rows)
+	// Parse body for function parameters
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return h.sendError(c, postgrest.ErrPGRST102("failed to read body"))
+	}
+
+	if len(body) > 0 {
+		req.Body, err = postgrest.ParseRequestBody(body)
+		if err != nil {
+			return h.sendError(c, postgrest.ErrPGRST102(err.Error()))
+		}
+	} else {
+		req.Body = make(map[string]any)
+	}
+
+	resp, err := h.pgHandler.RPC(c.Context(), fnName, req)
+	if err != nil {
+		return h.sendError(c, err)
+	}
+
+	return h.sendResponse(c, resp)
 }
 
-// Helper functions
+// parseRequest parses an HTTP request into a PostgREST request.
+func (h *DatabaseHandler) parseRequest(c *mizu.Ctx) (*postgrest.Request, error) {
+	req := &postgrest.Request{
+		Table:  c.Param("table"),
+		Schema: c.Query("schema"),
+		Prefs:  postgrest.ParsePrefer(c.Request().Header.Get("Prefer")),
+	}
 
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	if req.Schema == "" {
+		req.Schema = "public"
+	}
+
+	// Parse select
+	selectStr := c.Query("select")
+	if selectStr != "" {
+		cols, err := postgrest.ParseSelect(selectStr)
+		if err != nil {
+			return nil, postgrest.ErrPGRST100("invalid select: " + err.Error())
+		}
+		req.Select = cols
+	}
+
+	// Parse order
+	orderStr := c.Query("order")
+	if orderStr != "" {
+		order, err := postgrest.ParseOrder(orderStr)
+		if err != nil {
+			return nil, postgrest.ErrPGRST100("invalid order: " + err.Error())
+		}
+		req.Order = order
+	}
+
+	// Parse limit/offset
+	req.Limit = parseIntQueryDB(c, "limit", 100)
+	req.Offset = parseIntQueryDB(c, "offset", 0)
+
+	// Parse Range header
+	rangeHeader := c.Request().Header.Get("Range")
+	if rangeHeader != "" {
+		start, end, hasRange := postgrest.ParseRange(rangeHeader)
+		if hasRange {
+			req.Offset = start
+			req.HasRange = true
+			if end > 0 {
+				req.Limit = end - start + 1
+			}
+		}
+	}
+
+	// Parse filters from query parameters
+	filters, embeddedFilters, logicalOp, err := h.parseFilters(c)
+	if err != nil {
+		return nil, err
+	}
+	req.Filters = filters
+	req.EmbeddedFilters = embeddedFilters
+	req.LogicalOp = logicalOp
+
+	return req, nil
 }
 
-func parseFilter(value string) (string, string) {
-	// PostgREST filter format: eq.value, gt.value, etc.
-	parts := strings.SplitN(value, ".", 2)
-	if len(parts) != 2 {
-		return "=", value
+// parseFilters parses filter parameters from the query string.
+// Returns main filters, embedded filters (keyed by resource name), and logical operator.
+func (h *DatabaseHandler) parseFilters(c *mizu.Ctx) ([]postgrest.Filter, map[string][]postgrest.Filter, string, error) {
+	var filters []postgrest.Filter
+	embeddedFilters := make(map[string][]postgrest.Filter)
+	logicalOp := "AND"
+
+	reservedParams := map[string]bool{
+		"select": true, "order": true, "limit": true, "offset": true, "schema": true,
+		"on_conflict": true, "columns": true,
 	}
 
-	switch parts[0] {
-	case "eq":
-		return "=", parts[1]
-	case "neq":
-		return "!=", parts[1]
-	case "gt":
-		return ">", parts[1]
-	case "gte":
-		return ">=", parts[1]
-	case "lt":
-		return "<", parts[1]
-	case "lte":
-		return "<=", parts[1]
-	case "like":
-		return "LIKE", parts[1]
-	case "ilike":
-		return "ILIKE", parts[1]
-	case "is":
-		return "IS", parts[1]
-	default:
-		return "=", value
+	for key, values := range c.QueryValues() {
+		if reservedParams[key] {
+			continue
+		}
+
+		// Check for logical operators
+		if key == "and" || key == "or" {
+			for _, value := range values {
+				// ParseLogicalFilter expects "and(...)" or "or(...)" format
+				// The URL gives us key="and" value="(...)" so we need to prepend the key
+				fullValue := key + value
+				op, logicalFilters, err := postgrest.ParseLogicalFilter(fullValue)
+				if err == nil {
+					logicalOp = op
+					filters = append(filters, logicalFilters...)
+				}
+			}
+			continue
+		}
+
+		// Check for embedded resource filter (e.g., posts.published)
+		if dotIdx := strings.Index(key, "."); dotIdx > 0 {
+			embeddedResource := key[:dotIdx]
+			embeddedColumn := key[dotIdx+1:]
+
+			for _, value := range values {
+				filter, err := postgrest.ParseFilter(embeddedColumn, value)
+				if err != nil {
+					return nil, nil, "", postgrest.ErrPGRST100(err.Error())
+				}
+				embeddedFilters[embeddedResource] = append(embeddedFilters[embeddedResource], *filter)
+			}
+			continue
+		}
+
+		// Regular filters
+		for _, value := range values {
+			filter, err := postgrest.ParseFilter(key, value)
+			if err != nil {
+				return nil, nil, "", postgrest.ErrPGRST100(err.Error())
+			}
+			filters = append(filters, *filter)
+		}
 	}
+
+	return filters, embeddedFilters, logicalOp, nil
+}
+
+// sendResponse sends a PostgREST response.
+func (h *DatabaseHandler) sendResponse(c *mizu.Ctx, resp *postgrest.Response) error {
+	// Set headers
+	for key, value := range resp.Headers {
+		c.Header().Set(key, value)
+	}
+
+	// Set content type
+	c.Header().Set("Content-Type", "application/json")
+
+	// Handle no content response (204)
+	if resp.Status == 204 {
+		return c.NoContent()
+	}
+
+	// Handle empty body - return status with empty JSON for consistency
+	if resp.Body == nil {
+		// For 201 with no body (return=minimal), Supabase returns 201 with empty body
+		c.Writer().WriteHeader(resp.Status)
+		return nil
+	}
+
+	return c.JSON(resp.Status, resp.Body)
+}
+
+// sendError sends a PostgREST error response.
+func (h *DatabaseHandler) sendError(c *mizu.Ctx, err error) error {
+	if pgErr, ok := err.(*postgrest.Error); ok {
+		return c.JSON(pgErr.Status, map[string]any{
+			"code":    pgErr.Code,
+			"message": pgErr.Message,
+			"details": pgErr.Details,
+			"hint":    pgErr.Hint,
+		})
+	}
+
+	return c.JSON(500, map[string]string{
+		"error": err.Error(),
+	})
+}
+
+// parseIntQueryDB parses an integer query parameter with a default value.
+func parseIntQueryDB(c *mizu.Ctx, key string, def int) int {
+	val := c.Query(key)
+	if val == "" {
+		return def
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return def
+	}
+	return n
 }

@@ -222,7 +222,18 @@ func FilterToSQL(f *Filter, paramIdx *int) (string, []interface{}, error) {
 
 	// Handle JSON path
 	if f.IsJSON && f.JSONPath != "" {
-		col = col + f.JSONPath
+		// JSON path needs key to be quoted: metadata->'role' not metadata->role
+		jsonPath := f.JSONPath
+		// Extract the operator and key
+		if strings.HasPrefix(jsonPath, "->>") {
+			key := jsonPath[3:]
+			col = col + "->>'" + key + "'"
+		} else if strings.HasPrefix(jsonPath, "->") {
+			key := jsonPath[2:]
+			col = col + "->'" + key + "'"
+		} else {
+			col = col + jsonPath
+		}
 	}
 
 	var sql string
