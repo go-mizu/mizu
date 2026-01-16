@@ -1147,6 +1147,12 @@ func (r *Runtime) setupDOBinding(name, namespaceID string) {
 			objectID = i.String()
 		}
 
+		// For named objects (idFromName), use the stringified ID as the objectID
+		// This ensures deterministic and unique IDs for each named object
+		if objectID == "" && objectName != "" {
+			objectID = "do:" + namespaceID + ":" + objectName
+		}
+
 		// Get or create the instance
 		instance, err := doStore.GetOrCreateInstance(context.Background(), namespaceID, objectID, objectName)
 		if err != nil {
@@ -1179,8 +1185,81 @@ func (r *Runtime) setupDOBinding(name, namespaceID string) {
 		// Storage
 		storage := vm.NewObject()
 
+		// get(key) or get([keys]) - single key or batch get
 		storage.Set("get", func(c goja.FunctionCall) goja.Value {
-			key := c.Argument(0).String()
+			arg := c.Argument(0)
+
+			// Check if it's an array (batch get)
+			if arr, ok := arg.Export().([]interface{}); ok {
+				keys := make([]string, len(arr))
+				for i, k := range arr {
+					keys[i] = fmt.Sprintf("%v", k)
+				}
+
+				data, err := doStore.GetMultiple(context.Background(), instance.ID, keys)
+				if err != nil {
+					return r.createRejectedPromise(err.Error())
+				}
+
+				// Return as Map
+				result := vm.NewObject()
+				result.Set("size", len(data))
+				entries := make(map[string]interface{})
+				for k, v := range data {
+					var value interface{}
+					json.Unmarshal(v, &value)
+					entries[k] = value
+				}
+				// Create a Map-like object
+				result.Set("get", func(fc goja.FunctionCall) goja.Value {
+					key := fc.Argument(0).String()
+					if val, ok := entries[key]; ok {
+						return vm.ToValue(val)
+					}
+					return goja.Undefined()
+				})
+				result.Set("has", func(fc goja.FunctionCall) goja.Value {
+					key := fc.Argument(0).String()
+					_, ok := entries[key]
+					return vm.ToValue(ok)
+				})
+				result.Set("keys", func(fc goja.FunctionCall) goja.Value {
+					keys := make([]string, 0, len(entries))
+					for k := range entries {
+						keys = append(keys, k)
+					}
+					return vm.ToValue(keys)
+				})
+				result.Set("values", func(fc goja.FunctionCall) goja.Value {
+					vals := make([]interface{}, 0, len(entries))
+					for _, v := range entries {
+						vals = append(vals, v)
+					}
+					return vm.ToValue(vals)
+				})
+				result.Set("entries", func(fc goja.FunctionCall) goja.Value {
+					ents := make([][]interface{}, 0, len(entries))
+					for k, v := range entries {
+						ents = append(ents, []interface{}{k, v})
+					}
+					return vm.ToValue(ents)
+				})
+				result.Set("forEach", func(fc goja.FunctionCall) goja.Value {
+					callback, ok := goja.AssertFunction(fc.Argument(0))
+					if !ok {
+						return goja.Undefined()
+					}
+					for k, v := range entries {
+						callback(nil, vm.ToValue(v), vm.ToValue(k), result)
+					}
+					return goja.Undefined()
+				})
+
+				return r.createPromise(result)
+			}
+
+			// Single key get
+			key := arg.String()
 			data, err := doStore.Get(context.Background(), instance.ID, key)
 			if err != nil || data == nil {
 				return r.createPromise(goja.Undefined())
@@ -1191,8 +1270,28 @@ func (r *Runtime) setupDOBinding(name, namespaceID string) {
 			return r.createPromise(vm.ToValue(value))
 		})
 
+		// put(key, value) or put({entries}) - single or batch put
 		storage.Set("put", func(c goja.FunctionCall) goja.Value {
-			key := c.Argument(0).String()
+			arg := c.Argument(0)
+
+			// Check if first arg is an object (batch put) with single argument
+			if len(c.Arguments) == 1 {
+				if obj, ok := arg.Export().(map[string]interface{}); ok {
+					entries := make(map[string][]byte)
+					for k, v := range obj {
+						data, _ := json.Marshal(v)
+						entries[k] = data
+					}
+					err := doStore.PutMultiple(context.Background(), instance.ID, entries)
+					if err != nil {
+						return r.createRejectedPromise(err.Error())
+					}
+					return r.createPromise(goja.Undefined())
+				}
+			}
+
+			// Single key-value put
+			key := arg.String()
 			value := c.Argument(1).Export()
 
 			data, _ := json.Marshal(value)
@@ -1204,8 +1303,26 @@ func (r *Runtime) setupDOBinding(name, namespaceID string) {
 			return r.createPromise(goja.Undefined())
 		})
 
+		// delete(key) or delete([keys]) - single or batch delete
 		storage.Set("delete", func(c goja.FunctionCall) goja.Value {
-			key := c.Argument(0).String()
+			arg := c.Argument(0)
+
+			// Check if it's an array (batch delete)
+			if arr, ok := arg.Export().([]interface{}); ok {
+				keys := make([]string, len(arr))
+				for i, k := range arr {
+					keys[i] = fmt.Sprintf("%v", k)
+				}
+
+				err := doStore.DeleteMultiple(context.Background(), instance.ID, keys)
+				if err != nil {
+					return r.createRejectedPromise(err.Error())
+				}
+				return r.createPromise(vm.ToValue(len(keys)))
+			}
+
+			// Single key delete
+			key := arg.String()
 			err := doStore.Delete(context.Background(), instance.ID, key)
 			if err != nil {
 				return r.createRejectedPromise(err.Error())
@@ -1221,20 +1338,149 @@ func (r *Runtime) setupDOBinding(name, namespaceID string) {
 			return r.createPromise(goja.Undefined())
 		})
 
+		// list(options?) - list with optional filtering/pagination
 		storage.Set("list", func(c goja.FunctionCall) goja.Value {
-			entries, err := doStore.List(context.Background(), instance.ID, nil)
+			var opts *store.DOListOptions
+
+			if len(c.Arguments) > 0 && !goja.IsUndefined(c.Arguments[0]) {
+				optsObj := c.Arguments[0].ToObject(vm)
+				opts = &store.DOListOptions{}
+
+				if v := optsObj.Get("start"); v != nil && !goja.IsUndefined(v) {
+					opts.Start = v.String()
+				}
+				if v := optsObj.Get("startAfter"); v != nil && !goja.IsUndefined(v) {
+					// startAfter is exclusive, so we append a character
+					opts.Start = v.String() + "\x00"
+				}
+				if v := optsObj.Get("end"); v != nil && !goja.IsUndefined(v) {
+					opts.End = v.String()
+				}
+				if v := optsObj.Get("prefix"); v != nil && !goja.IsUndefined(v) {
+					opts.Prefix = v.String()
+				}
+				if v := optsObj.Get("reverse"); v != nil && !goja.IsUndefined(v) {
+					opts.Reverse = v.ToBoolean()
+				}
+				if v := optsObj.Get("limit"); v != nil && !goja.IsUndefined(v) {
+					opts.Limit = int(v.ToInteger())
+				}
+				if v := optsObj.Get("allowConcurrency"); v != nil && !goja.IsUndefined(v) {
+					opts.AllowConcurrency = v.ToBoolean()
+				}
+				if v := optsObj.Get("noCache"); v != nil && !goja.IsUndefined(v) {
+					opts.NoCache = v.ToBoolean()
+				}
+			}
+
+			entries, err := doStore.List(context.Background(), instance.ID, opts)
 			if err != nil {
 				return r.createRejectedPromise(err.Error())
 			}
 
+			// Return as Map-like object with direct property access for compatibility
 			result := vm.NewObject()
+			result.Set("size", len(entries))
+			entryMap := make(map[string]interface{})
 			for k, v := range entries {
 				var value interface{}
 				json.Unmarshal(v, &value)
+				entryMap[k] = value
+				// Also set as direct property for backwards compatibility
 				result.Set(k, value)
 			}
+			result.Set("get", func(fc goja.FunctionCall) goja.Value {
+				key := fc.Argument(0).String()
+				if val, ok := entryMap[key]; ok {
+					return vm.ToValue(val)
+				}
+				return goja.Undefined()
+			})
+			result.Set("has", func(fc goja.FunctionCall) goja.Value {
+				key := fc.Argument(0).String()
+				_, ok := entryMap[key]
+				return vm.ToValue(ok)
+			})
+			result.Set("keys", func(fc goja.FunctionCall) goja.Value {
+				keys := make([]string, 0, len(entryMap))
+				for k := range entryMap {
+					keys = append(keys, k)
+				}
+				return vm.ToValue(keys)
+			})
+			result.Set("values", func(fc goja.FunctionCall) goja.Value {
+				vals := make([]interface{}, 0, len(entryMap))
+				for _, v := range entryMap {
+					vals = append(vals, v)
+				}
+				return vm.ToValue(vals)
+			})
+			result.Set("entries", func(fc goja.FunctionCall) goja.Value {
+				ents := make([][]interface{}, 0, len(entryMap))
+				for k, v := range entryMap {
+					ents = append(ents, []interface{}{k, v})
+				}
+				return vm.ToValue(ents)
+			})
+			result.Set("forEach", func(fc goja.FunctionCall) goja.Value {
+				callback, ok := goja.AssertFunction(fc.Argument(0))
+				if !ok {
+					return goja.Undefined()
+				}
+				for k, v := range entryMap {
+					callback(nil, vm.ToValue(v), vm.ToValue(k), result)
+				}
+				return goja.Undefined()
+			})
 
 			return r.createPromise(result)
+		})
+
+		// sync() - ensures all writes are durable
+		storage.Set("sync", func(c goja.FunctionCall) goja.Value {
+			// In our SQLite implementation, writes are immediately durable
+			return r.createPromise(goja.Undefined())
+		})
+
+		// Alarm API
+		storage.Set("getAlarm", func(c goja.FunctionCall) goja.Value {
+			alarm, err := doStore.GetAlarm(context.Background(), instance.ID)
+			if err != nil {
+				return r.createRejectedPromise(err.Error())
+			}
+			if alarm == nil {
+				return r.createPromise(goja.Null())
+			}
+			// Return as milliseconds since epoch (JavaScript Date format)
+			return r.createPromise(vm.ToValue(alarm.UnixMilli()))
+		})
+
+		storage.Set("setAlarm", func(c goja.FunctionCall) goja.Value {
+			arg := c.Argument(0)
+			var scheduledTime time.Time
+
+			// Handle both Date object and number (milliseconds since epoch)
+			if dateObj, ok := arg.Export().(time.Time); ok {
+				scheduledTime = dateObj
+			} else {
+				// Assume it's milliseconds since epoch
+				ms := arg.ToInteger()
+				scheduledTime = time.UnixMilli(ms)
+			}
+
+			err := doStore.SetAlarm(context.Background(), instance.ID, scheduledTime)
+			if err != nil {
+				return r.createRejectedPromise(err.Error())
+			}
+			return r.createPromise(goja.Undefined())
+		})
+
+		storage.Set("deleteAlarm", func(c goja.FunctionCall) goja.Value {
+			err := doStore.DeleteAlarm(context.Background(), instance.ID)
+			if err != nil {
+				return r.createRejectedPromise(err.Error())
+			}
+			return r.createPromise(goja.Undefined())
 		})
 
 		stub.Set("storage", storage)
