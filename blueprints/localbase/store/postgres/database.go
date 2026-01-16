@@ -793,3 +793,153 @@ func (s *DatabaseStore) GetForeignKeysForEmbedding(ctx context.Context, schema, 
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
+
+// RLSContext holds the JWT claims and role for RLS enforcement.
+type RLSContext struct {
+	Role       string // anon, authenticated, service_role
+	UserID     string // auth.uid() - the sub claim
+	Email      string // auth.email() - the email claim
+	ClaimsJSON string // Full JWT claims as JSON for request.jwt.claims
+}
+
+// QueryWithRLS executes a query with RLS context set from JWT claims.
+// For service_role, RLS is bypassed.
+func (s *DatabaseStore) QueryWithRLS(ctx context.Context, rlsCtx *RLSContext, sql string, params ...interface{}) (*store.QueryResult, error) {
+	// service_role bypasses RLS - execute directly
+	if rlsCtx == nil || rlsCtx.Role == "service_role" {
+		return s.Query(ctx, sql, params...)
+	}
+
+	start := time.Now()
+
+	// Use a transaction to set GUC variables that affect RLS
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Set JWT claims for RLS policies
+	if err := s.setRLSContext(ctx, tx, rlsCtx); err != nil {
+		return nil, fmt.Errorf("failed to set RLS context: %w", err)
+	}
+
+	// Execute the query within the transaction
+	rows, err := tx.Query(ctx, sql, params...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Get column names
+	fieldDescriptions := rows.FieldDescriptions()
+	columns := make([]string, len(fieldDescriptions))
+	for i, fd := range fieldDescriptions {
+		columns[i] = string(fd.Name)
+	}
+
+	// Collect rows
+	var results []map[string]interface{}
+	for rows.Next() {
+		values, err := rows.Values()
+		if err != nil {
+			return nil, err
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range columns {
+			row[col] = values[i]
+		}
+		results = append(results, row)
+	}
+
+	// Check for errors that occurred during iteration
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Commit the transaction (read-only, but completes the transaction)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	duration := time.Since(start).Seconds() * 1000
+
+	return &store.QueryResult{
+		Columns:  columns,
+		Rows:     results,
+		RowCount: len(results),
+		Duration: duration,
+	}, nil
+}
+
+// ExecWithRLS executes a statement with RLS context set from JWT claims.
+// For service_role, RLS is bypassed.
+func (s *DatabaseStore) ExecWithRLS(ctx context.Context, rlsCtx *RLSContext, sql string, params ...interface{}) (int64, error) {
+	// service_role bypasses RLS - execute directly
+	if rlsCtx == nil || rlsCtx.Role == "service_role" {
+		return s.Exec(ctx, sql, params...)
+	}
+
+	// Use a transaction to set GUC variables that affect RLS
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Set JWT claims for RLS policies
+	if err := s.setRLSContext(ctx, tx, rlsCtx); err != nil {
+		return 0, fmt.Errorf("failed to set RLS context: %w", err)
+	}
+
+	// Execute the statement
+	result, err := tx.Exec(ctx, sql, params...)
+	if err != nil {
+		return 0, err
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return result.RowsAffected(), nil
+}
+
+// setRLSContext sets the PostgreSQL GUC variables for RLS enforcement.
+// This enables auth.uid(), auth.role(), auth.jwt() functions in RLS policies.
+func (s *DatabaseStore) setRLSContext(ctx context.Context, tx pgx.Tx, rlsCtx *RLSContext) error {
+	// Set the full JWT claims for request.jwt.claims
+	// This is used by auth.jwt() and can be used in custom RLS policies
+	if rlsCtx.ClaimsJSON != "" {
+		_, err := tx.Exec(ctx, "SELECT set_config('request.jwt.claims', $1, TRUE)", rlsCtx.ClaimsJSON)
+		if err != nil {
+			return fmt.Errorf("failed to set request.jwt.claims: %w", err)
+		}
+	}
+
+	// Set individual claims for convenience functions
+	if rlsCtx.UserID != "" {
+		_, err := tx.Exec(ctx, "SELECT set_config('request.jwt.claim.sub', $1, TRUE)", rlsCtx.UserID)
+		if err != nil {
+			return fmt.Errorf("failed to set request.jwt.claim.sub: %w", err)
+		}
+	}
+
+	if rlsCtx.Role != "" {
+		_, err := tx.Exec(ctx, "SELECT set_config('request.jwt.claim.role', $1, TRUE)", rlsCtx.Role)
+		if err != nil {
+			return fmt.Errorf("failed to set request.jwt.claim.role: %w", err)
+		}
+	}
+
+	if rlsCtx.Email != "" {
+		_, err := tx.Exec(ctx, "SELECT set_config('request.jwt.claim.email', $1, TRUE)", rlsCtx.Email)
+		if err != nil {
+			return fmt.Errorf("failed to set request.jwt.claim.email: %w", err)
+		}
+	}
+
+	return nil
+}

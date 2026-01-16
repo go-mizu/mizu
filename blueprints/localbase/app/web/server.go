@@ -28,8 +28,16 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		return c.JSON(200, map[string]string{"status": "healthy"})
 	})
 
+	// API key middleware for Supabase compatibility (defined early for reuse)
+	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
+	serviceRoleMw := middleware.RequireServiceRole()
+
 	// Auth API (GoTrue compatible)
 	app.Group("/auth/v1", func(auth *mizu.Router) {
+		// Apply API key middleware to all auth endpoints
+		auth.Use(apiKeyMw)
+
+		// Public auth endpoints
 		auth.Post("/signup", authHandler.Signup)
 		auth.Post("/token", authHandler.Token)
 		auth.Post("/logout", authHandler.Logout)
@@ -43,16 +51,16 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		auth.Post("/factors/{id}/challenge", authHandler.ChallengeMFA)
 		auth.Post("/factors/{id}/verify", authHandler.VerifyMFA)
 
-		// Admin endpoints
-		auth.Get("/admin/users", authHandler.ListUsers)
-		auth.Post("/admin/users", authHandler.CreateUser)
-		auth.Get("/admin/users/{id}", authHandler.GetUserByID)
-		auth.Put("/admin/users/{id}", authHandler.UpdateUserByID)
-		auth.Delete("/admin/users/{id}", authHandler.DeleteUser)
+		// Admin endpoints (require service_role)
+		auth.Group("/admin", func(admin *mizu.Router) {
+			admin.Use(serviceRoleMw)
+			admin.Get("/users", authHandler.ListUsers)
+			admin.Post("/users", authHandler.CreateUser)
+			admin.Get("/users/{id}", authHandler.GetUserByID)
+			admin.Put("/users/{id}", authHandler.UpdateUserByID)
+			admin.Delete("/users/{id}", authHandler.DeleteUser)
+		})
 	})
-
-	// API key middleware for Supabase compatibility
-	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
 
 	// Storage API (Supabase Storage compatible)
 	// Apply API key middleware for Storage endpoints
