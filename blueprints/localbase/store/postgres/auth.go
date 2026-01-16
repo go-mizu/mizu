@@ -529,11 +529,17 @@ func (s *AuthStore) CreateIdentity(ctx context.Context, identity *store.Identity
 	VALUES ($1, $2, $3, $4, $5, $6)
 	`
 
+	// provider_id is the email for email provider
+	providerID := identity.Email
+	if providerID == "" {
+		providerID = identity.UserID
+	}
+
 	_, err := s.pool.Exec(ctx, sql,
-		identity.ID,
+		identity.IdentityID,
 		identity.UserID,
 		identity.Provider,
-		identity.ProviderID,
+		providerID,
 		identity.IdentityData,
 		identity.LastSignInAt,
 	)
@@ -542,7 +548,7 @@ func (s *AuthStore) CreateIdentity(ctx context.Context, identity *store.Identity
 }
 
 // GetIdentity retrieves an identity by provider and provider ID.
-func (s *AuthStore) GetIdentity(ctx context.Context, provider, providerID string) (*store.Identity, error) {
+func (s *AuthStore) GetIdentity(ctx context.Context, provider, providerIDValue string) (*store.Identity, error) {
 	sql := `
 	SELECT id, user_id, provider, provider_id, identity_data, last_sign_in_at, created_at, updated_at
 	FROM auth.identities
@@ -550,12 +556,13 @@ func (s *AuthStore) GetIdentity(ctx context.Context, provider, providerID string
 	`
 
 	identity := &store.Identity{}
+	var providerID string
 
-	err := s.pool.QueryRow(ctx, sql, provider, providerID).Scan(
-		&identity.ID,
+	err := s.pool.QueryRow(ctx, sql, provider, providerIDValue).Scan(
+		&identity.IdentityID,
 		&identity.UserID,
 		&identity.Provider,
-		&identity.ProviderID,
+		&providerID,
 		&identity.IdentityData,
 		&identity.LastSignInAt,
 		&identity.CreatedAt,
@@ -567,6 +574,13 @@ func (s *AuthStore) GetIdentity(ctx context.Context, provider, providerID string
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	// Set ID to match user_id (Supabase compatibility)
+	identity.ID = identity.UserID
+	// Set email from provider_id for email provider
+	if identity.Provider == "email" {
+		identity.Email = providerID
 	}
 
 	return identity, nil
@@ -590,12 +604,13 @@ func (s *AuthStore) GetUserIdentities(ctx context.Context, userID string) ([]*st
 	var identities []*store.Identity
 	for rows.Next() {
 		identity := &store.Identity{}
+		var providerID string
 
 		err := rows.Scan(
-			&identity.ID,
+			&identity.IdentityID,
 			&identity.UserID,
 			&identity.Provider,
-			&identity.ProviderID,
+			&providerID,
 			&identity.IdentityData,
 			&identity.LastSignInAt,
 			&identity.CreatedAt,
@@ -603,6 +618,13 @@ func (s *AuthStore) GetUserIdentities(ctx context.Context, userID string) ([]*st
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		// Set ID to match user_id (Supabase compatibility)
+		identity.ID = identity.UserID
+		// Set email from provider_id for email provider
+		if identity.Provider == "email" {
+			identity.Email = providerID
 		}
 
 		identities = append(identities, identity)
