@@ -30,22 +30,24 @@ type Store interface {
 // User represents an auth user.
 type User struct {
 	ID                 string            `json:"id"`
+	Aud                string            `json:"aud,omitempty"`
+	Role               string            `json:"role"`
 	Email              string            `json:"email,omitempty"`
-	Phone              string            `json:"phone,omitempty"`
-	EncryptedPassword  string            `json:"-"`
 	EmailConfirmedAt   *time.Time        `json:"email_confirmed_at,omitempty"`
+	Phone              string            `json:"phone"`
 	PhoneConfirmedAt   *time.Time        `json:"phone_confirmed_at,omitempty"`
+	LastSignInAt       *time.Time        `json:"last_sign_in_at,omitempty"`
 	AppMetadata        map[string]any    `json:"app_metadata"`
 	UserMetadata       map[string]any    `json:"user_metadata"`
-	IsSuperAdmin       bool              `json:"is_super_admin"`
-	Role               string            `json:"role"`
+	Identities         []*Identity       `json:"identities,omitempty"`
 	CreatedAt          time.Time         `json:"created_at"`
 	UpdatedAt          time.Time         `json:"updated_at"`
-	LastSignInAt       *time.Time        `json:"last_sign_in_at,omitempty"`
-	BannedUntil        *time.Time        `json:"banned_until,omitempty"`
+	IsAnonymous        bool              `json:"is_anonymous"`
+	EncryptedPassword  string            `json:"-"`
+	IsSuperAdmin       bool              `json:"-"`
+	BannedUntil        *time.Time        `json:"-"`
 	ConfirmationToken  string            `json:"-"`
 	RecoveryToken      string            `json:"-"`
-	Identities         []*Identity       `json:"identities,omitempty"`
 }
 
 // Session represents a user session.
@@ -90,14 +92,15 @@ type MFAFactor struct {
 
 // Identity represents an OAuth identity.
 type Identity struct {
+	IdentityID   string         `json:"identity_id"`
 	ID           string         `json:"id"`
 	UserID       string         `json:"user_id"`
-	Provider     string         `json:"provider"`
-	ProviderID   string         `json:"provider_id"`
 	IdentityData map[string]any `json:"identity_data"`
+	Provider     string         `json:"provider"`
 	LastSignInAt *time.Time     `json:"last_sign_in_at,omitempty"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+	Email        string         `json:"email,omitempty"`
 }
 
 // AuthStore defines auth storage operations.

@@ -12,7 +12,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/localbase/store"
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/oklog/ulid/v2"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -58,53 +58,105 @@ type AuthResponse struct {
 	User         *store.User `json:"user"`
 }
 
+// AuthError represents a Supabase-compatible auth error.
+type AuthError struct {
+	Code      int    `json:"code"`
+	ErrorCode string `json:"error_code"`
+	Msg       string `json:"msg"`
+}
+
+// authError returns a Supabase-compatible error response.
+func authError(c *mizu.Ctx, httpCode int, errorCode, msg string) error {
+	return c.JSON(httpCode, AuthError{
+		Code:      httpCode,
+		ErrorCode: errorCode,
+		Msg:       msg,
+	})
+}
+
 // Signup handles user registration.
 func (h *AuthHandler) Signup(c *mizu.Ctx) error {
 	var req SignupRequest
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	if req.Email == "" && req.Phone == "" {
-		return c.JSON(400, map[string]string{"error": "email or phone required"})
+		return authError(c, 422, "validation_failed", "Email or phone is required")
 	}
 
 	if req.Password == "" {
-		return c.JSON(400, map[string]string{"error": "password required"})
+		return authError(c, 422, "validation_failed", "Password is required")
 	}
 
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to hash password"})
+		return authError(c, 500, "unexpected_failure", "Failed to process signup")
 	}
 
 	// Create user
 	now := time.Now()
+	userID := uuid.New().String()
+
+	// Build user_metadata matching Supabase format
+	userMetadata := map[string]any{
+		"email":          req.Email,
+		"email_verified": true,
+		"phone_verified": false,
+		"sub":            userID,
+	}
+	if req.Data != nil {
+		for k, v := range req.Data {
+			userMetadata[k] = v
+		}
+	}
+
 	user := &store.User{
-		ID:                ulid.Make().String(),
+		ID:                userID,
+		Aud:               "authenticated",
+		Role:              "authenticated",
 		Email:             req.Email,
 		Phone:             req.Phone,
 		EncryptedPassword: string(hash),
 		EmailConfirmedAt:  &now, // Auto-confirm for development
-		AppMetadata:       map[string]any{"provider": "email"},
-		UserMetadata:      req.Data,
-		Role:              "authenticated",
+		LastSignInAt:      &now,
+		AppMetadata:       map[string]any{"provider": "email", "providers": []string{"email"}},
+		UserMetadata:      userMetadata,
+		IsAnonymous:       false,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
 
 	if err := h.store.Auth().CreateUser(c.Context(), user); err != nil {
 		if strings.Contains(err.Error(), "duplicate") {
-			return c.JSON(400, map[string]string{"error": "user already exists"})
+			return authError(c, 422, "user_already_exists", "User already registered")
 		}
-		return c.JSON(500, map[string]string{"error": "failed to create user"})
+		return authError(c, 500, "unexpected_failure", "Failed to create user")
+	}
+
+	// Create email identity for the user
+	if req.Email != "" {
+		identityID := uuid.New().String()
+		identity := &store.Identity{
+			IdentityID:   identityID,
+			ID:           userID,
+			UserID:       userID,
+			IdentityData: map[string]any{"email": req.Email, "email_verified": true, "phone_verified": false, "sub": userID},
+			Provider:     "email",
+			LastSignInAt: &now,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+			Email:        req.Email,
+		}
+		_ = h.store.Auth().CreateIdentity(c.Context(), identity)
+		user.Identities = []*store.Identity{identity}
 	}
 
 	// Generate tokens
 	resp, err := h.generateAuthResponse(c, user)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to generate tokens"})
+		return authError(c, 500, "unexpected_failure", "Failed to generate tokens")
 	}
 
 	return c.JSON(201, resp)
@@ -119,7 +171,7 @@ func (h *AuthHandler) Token(c *mizu.Ctx) error {
 
 	var req TokenRequest
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	if grantType == "" {
@@ -132,7 +184,7 @@ func (h *AuthHandler) Token(c *mizu.Ctx) error {
 
 	// Password grant
 	if req.Email == "" && req.Phone == "" {
-		return c.JSON(400, map[string]string{"error": "email or phone required"})
+		return authError(c, 400, "validation_failed", "Email or phone is required")
 	}
 
 	var user *store.User
@@ -145,28 +197,34 @@ func (h *AuthHandler) Token(c *mizu.Ctx) error {
 	}
 
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "invalid credentials"})
+		return authError(c, 400, "invalid_credentials", "Invalid login credentials")
 	}
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.EncryptedPassword), []byte(req.Password)); err != nil {
-		return c.JSON(401, map[string]string{"error": "invalid credentials"})
+		return authError(c, 400, "invalid_credentials", "Invalid login credentials")
 	}
 
 	// Check if banned
 	if user.BannedUntil != nil && user.BannedUntil.After(time.Now()) {
-		return c.JSON(403, map[string]string{"error": "user is banned"})
+		return authError(c, 403, "user_banned", "User is banned")
 	}
 
 	// Update last sign in
 	now := time.Now()
 	user.LastSignInAt = &now
+	user.Aud = "authenticated"
 	_ = h.store.Auth().UpdateUser(c.Context(), user)
+
+	// Load user identities
+	if identities, err := h.store.Auth().GetUserIdentities(c.Context(), user.ID); err == nil {
+		user.Identities = identities
+	}
 
 	// Generate tokens
 	resp, err := h.generateAuthResponse(c, user)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to generate tokens"})
+		return authError(c, 500, "unexpected_failure", "Failed to generate tokens")
 	}
 
 	return c.JSON(200, resp)
@@ -174,33 +232,39 @@ func (h *AuthHandler) Token(c *mizu.Ctx) error {
 
 func (h *AuthHandler) refreshToken(c *mizu.Ctx, token string) error {
 	if token == "" {
-		return c.JSON(400, map[string]string{"error": "refresh_token required"})
+		return authError(c, 400, "validation_failed", "Refresh token is required")
 	}
 
 	rt, err := h.store.Auth().GetRefreshToken(c.Context(), token)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "invalid refresh token"})
+		return authError(c, 400, "invalid_grant", "Invalid refresh token")
 	}
 
 	if rt.Revoked {
-		return c.JSON(401, map[string]string{"error": "refresh token revoked"})
+		return authError(c, 400, "invalid_grant", "Refresh token has been revoked")
 	}
 
 	user, err := h.store.Auth().GetUserByID(c.Context(), rt.UserID)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "user not found"})
+		return authError(c, 400, "invalid_grant", "User not found")
+	}
+
+	// Set aud and load identities
+	user.Aud = "authenticated"
+	if identities, err := h.store.Auth().GetUserIdentities(c.Context(), user.ID); err == nil {
+		user.Identities = identities
 	}
 
 	// Rotate refresh token
 	newToken := generateToken(32)
 	if err := h.store.Auth().RotateRefreshToken(c.Context(), token, newToken); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to rotate token"})
+		return authError(c, 500, "unexpected_failure", "Failed to rotate token")
 	}
 
 	// Generate new tokens
 	resp, err := h.generateAuthResponseWithRefresh(c, user, newToken)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to generate tokens"})
+		return authError(c, 500, "unexpected_failure", "Failed to generate tokens")
 	}
 
 	return c.JSON(200, resp)
@@ -211,12 +275,12 @@ func (h *AuthHandler) Logout(c *mizu.Ctx) error {
 	// Get user from token
 	user, err := h.getUserFromToken(c)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "unauthorized"})
+		return authError(c, 401, "not_authenticated", "Not authenticated")
 	}
 
 	// Delete all sessions
 	if err := h.store.Auth().DeleteUserSessions(c.Context(), user.ID); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to logout"})
+		return authError(c, 500, "unexpected_failure", "Failed to logout")
 	}
 
 	return c.NoContent()
@@ -228,11 +292,11 @@ func (h *AuthHandler) Recover(c *mizu.Ctx) error {
 		Email string `json:"email"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	if req.Email == "" {
-		return c.JSON(400, map[string]string{"error": "email required"})
+		return authError(c, 400, "validation_failed", "Email is required")
 	}
 
 	user, err := h.store.Auth().GetUserByEmail(c.Context(), req.Email)
@@ -254,7 +318,13 @@ func (h *AuthHandler) Recover(c *mizu.Ctx) error {
 func (h *AuthHandler) GetUser(c *mizu.Ctx) error {
 	user, err := h.getUserFromToken(c)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "unauthorized"})
+		return authError(c, 401, "not_authenticated", "Not authenticated")
+	}
+
+	// Set aud and load identities
+	user.Aud = "authenticated"
+	if identities, err := h.store.Auth().GetUserIdentities(c.Context(), user.ID); err == nil {
+		user.Identities = identities
 	}
 
 	return c.JSON(200, user)
@@ -264,7 +334,7 @@ func (h *AuthHandler) GetUser(c *mizu.Ctx) error {
 func (h *AuthHandler) UpdateUser(c *mizu.Ctx) error {
 	user, err := h.getUserFromToken(c)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "unauthorized"})
+		return authError(c, 401, "not_authenticated", "Not authenticated")
 	}
 
 	var req struct {
@@ -274,7 +344,7 @@ func (h *AuthHandler) UpdateUser(c *mizu.Ctx) error {
 		Data     map[string]any `json:"data"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	if req.Email != "" {
@@ -286,7 +356,7 @@ func (h *AuthHandler) UpdateUser(c *mizu.Ctx) error {
 	if req.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return c.JSON(500, map[string]string{"error": "failed to hash password"})
+			return authError(c, 500, "unexpected_failure", "Failed to process password")
 		}
 		user.EncryptedPassword = string(hash)
 	}
@@ -297,7 +367,7 @@ func (h *AuthHandler) UpdateUser(c *mizu.Ctx) error {
 	user.UpdatedAt = time.Now()
 
 	if err := h.store.Auth().UpdateUser(c.Context(), user); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to update user"})
+		return authError(c, 500, "unexpected_failure", "Failed to update user")
 	}
 
 	return c.JSON(200, user)
@@ -310,7 +380,7 @@ func (h *AuthHandler) SendOTP(c *mizu.Ctx) error {
 		Phone string `json:"phone"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	// In production, generate and send OTP
@@ -326,7 +396,7 @@ func (h *AuthHandler) Verify(c *mizu.Ctx) error {
 		Type  string `json:"type"` // signup, recovery, magiclink
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	// In production, verify the token
@@ -337,7 +407,7 @@ func (h *AuthHandler) Verify(c *mizu.Ctx) error {
 func (h *AuthHandler) EnrollMFA(c *mizu.Ctx) error {
 	user, err := h.getUserFromToken(c)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "unauthorized"})
+		return authError(c, 401, "not_authenticated", "Not authenticated")
 	}
 
 	var req struct {
@@ -345,18 +415,18 @@ func (h *AuthHandler) EnrollMFA(c *mizu.Ctx) error {
 		FriendlyName string `json:"friendly_name"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	if req.FactorType != "totp" {
-		return c.JSON(400, map[string]string{"error": "only totp is supported"})
+		return authError(c, 400, "invalid_factor_type", "Only TOTP is supported")
 	}
 
 	// Generate TOTP secret
 	secret := generateToken(20)
 
 	factor := &store.MFAFactor{
-		ID:           ulid.Make().String(),
+		ID:           uuid.New().String(),
 		UserID:       user.ID,
 		FriendlyName: req.FriendlyName,
 		FactorType:   req.FactorType,
@@ -367,7 +437,7 @@ func (h *AuthHandler) EnrollMFA(c *mizu.Ctx) error {
 	}
 
 	if err := h.store.Auth().CreateMFAFactor(c.Context(), factor); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to create factor"})
+		return authError(c, 500, "unexpected_failure", "Failed to create MFA factor")
 	}
 
 	return c.JSON(201, map[string]any{
@@ -382,22 +452,22 @@ func (h *AuthHandler) EnrollMFA(c *mizu.Ctx) error {
 func (h *AuthHandler) UnenrollMFA(c *mizu.Ctx) error {
 	user, err := h.getUserFromToken(c)
 	if err != nil {
-		return c.JSON(401, map[string]string{"error": "unauthorized"})
+		return authError(c, 401, "not_authenticated", "Not authenticated")
 	}
 
 	factorID := c.Param("id")
 
 	factor, err := h.store.Auth().GetMFAFactor(c.Context(), factorID)
 	if err != nil {
-		return c.JSON(404, map[string]string{"error": "factor not found"})
+		return authError(c, 404, "mfa_factor_not_found", "MFA factor not found")
 	}
 
 	if factor.UserID != user.ID {
-		return c.JSON(403, map[string]string{"error": "forbidden"})
+		return authError(c, 403, "forbidden", "Access denied")
 	}
 
 	if err := h.store.Auth().DeleteMFAFactor(c.Context(), factorID); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to delete factor"})
+		return authError(c, 500, "unexpected_failure", "Failed to delete MFA factor")
 	}
 
 	return c.NoContent()
@@ -409,11 +479,11 @@ func (h *AuthHandler) ChallengeMFA(c *mizu.Ctx) error {
 
 	_, err := h.store.Auth().GetMFAFactor(c.Context(), factorID)
 	if err != nil {
-		return c.JSON(404, map[string]string{"error": "factor not found"})
+		return authError(c, 404, "mfa_factor_not_found", "MFA factor not found")
 	}
 
 	// Create challenge
-	challengeID := ulid.Make().String()
+	challengeID := uuid.New().String()
 
 	return c.JSON(200, map[string]string{
 		"id":         challengeID,
@@ -430,18 +500,18 @@ func (h *AuthHandler) VerifyMFA(c *mizu.Ctx) error {
 		Code        string `json:"code"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	factor, err := h.store.Auth().GetMFAFactor(c.Context(), factorID)
 	if err != nil {
-		return c.JSON(404, map[string]string{"error": "factor not found"})
+		return authError(c, 404, "mfa_factor_not_found", "MFA factor not found")
 	}
 
 	// In production, verify TOTP code
 	// For now, accept any 6-digit code
 	if len(req.Code) != 6 {
-		return c.JSON(400, map[string]string{"error": "invalid code"})
+		return authError(c, 400, "mfa_verification_failed", "Invalid verification code")
 	}
 
 	// Mark as verified if unverified
@@ -461,7 +531,7 @@ func (h *AuthHandler) ListUsers(c *mizu.Ctx) error {
 
 	users, total, err := h.store.Auth().ListUsers(c.Context(), page, perPage)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to list users"})
+		return authError(c, 500, "unexpected_failure", "Failed to list users")
 	}
 
 	return c.JSON(200, map[string]any{
@@ -481,12 +551,12 @@ func (h *AuthHandler) CreateUser(c *mizu.Ctx) error {
 		Role     string         `json:"role"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to hash password"})
+		return authError(c, 500, "unexpected_failure", "Failed to process password")
 	}
 
 	role := req.Role
@@ -495,21 +565,57 @@ func (h *AuthHandler) CreateUser(c *mizu.Ctx) error {
 	}
 
 	now := time.Now()
+	userID := uuid.New().String()
+
+	// Build user_metadata matching Supabase format
+	userMetadata := map[string]any{
+		"email":          req.Email,
+		"email_verified": true,
+		"phone_verified": false,
+		"sub":            userID,
+	}
+	if req.Data != nil {
+		for k, v := range req.Data {
+			userMetadata[k] = v
+		}
+	}
+
 	user := &store.User{
-		ID:                ulid.Make().String(),
+		ID:                userID,
+		Aud:               "authenticated",
+		Role:              role,
 		Email:             req.Email,
 		Phone:             req.Phone,
 		EncryptedPassword: string(hash),
 		EmailConfirmedAt:  &now,
-		AppMetadata:       map[string]any{"provider": "email"},
-		UserMetadata:      req.Data,
-		Role:              role,
+		LastSignInAt:      &now,
+		AppMetadata:       map[string]any{"provider": "email", "providers": []string{"email"}},
+		UserMetadata:      userMetadata,
+		IsAnonymous:       false,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
 
 	if err := h.store.Auth().CreateUser(c.Context(), user); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to create user"})
+		return authError(c, 500, "unexpected_failure", "Failed to create user")
+	}
+
+	// Create email identity for the user
+	if req.Email != "" {
+		identityID := uuid.New().String()
+		identity := &store.Identity{
+			IdentityID:   identityID,
+			ID:           userID,
+			UserID:       userID,
+			IdentityData: map[string]any{"email": req.Email, "email_verified": true, "phone_verified": false, "sub": userID},
+			Provider:     "email",
+			LastSignInAt: &now,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+			Email:        req.Email,
+		}
+		_ = h.store.Auth().CreateIdentity(c.Context(), identity)
+		user.Identities = []*store.Identity{identity}
 	}
 
 	return c.JSON(201, user)
@@ -521,7 +627,13 @@ func (h *AuthHandler) GetUserByID(c *mizu.Ctx) error {
 
 	user, err := h.store.Auth().GetUserByID(c.Context(), id)
 	if err != nil {
-		return c.JSON(404, map[string]string{"error": "user not found"})
+		return authError(c, 404, "user_not_found", "User not found")
+	}
+
+	// Set aud and load identities
+	user.Aud = "authenticated"
+	if identities, err := h.store.Auth().GetUserIdentities(c.Context(), user.ID); err == nil {
+		user.Identities = identities
 	}
 
 	return c.JSON(200, user)
@@ -533,7 +645,7 @@ func (h *AuthHandler) UpdateUserByID(c *mizu.Ctx) error {
 
 	user, err := h.store.Auth().GetUserByID(c.Context(), id)
 	if err != nil {
-		return c.JSON(404, map[string]string{"error": "user not found"})
+		return authError(c, 404, "user_not_found", "User not found")
 	}
 
 	var req struct {
@@ -545,7 +657,7 @@ func (h *AuthHandler) UpdateUserByID(c *mizu.Ctx) error {
 		Banned   bool           `json:"banned"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid request body"})
+		return authError(c, 400, "validation_failed", "Unable to validate request body")
 	}
 
 	if req.Email != "" {
@@ -557,7 +669,7 @@ func (h *AuthHandler) UpdateUserByID(c *mizu.Ctx) error {
 	if req.Password != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
-			return c.JSON(500, map[string]string{"error": "failed to hash password"})
+			return authError(c, 500, "unexpected_failure", "Failed to process password")
 		}
 		user.EncryptedPassword = string(hash)
 	}
@@ -577,7 +689,7 @@ func (h *AuthHandler) UpdateUserByID(c *mizu.Ctx) error {
 	user.UpdatedAt = time.Now()
 
 	if err := h.store.Auth().UpdateUser(c.Context(), user); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to update user"})
+		return authError(c, 500, "unexpected_failure", "Failed to update user")
 	}
 
 	return c.JSON(200, user)
@@ -588,7 +700,7 @@ func (h *AuthHandler) DeleteUser(c *mizu.Ctx) error {
 	id := c.Param("id")
 
 	if err := h.store.Auth().DeleteUser(c.Context(), id); err != nil {
-		return c.JSON(500, map[string]string{"error": "failed to delete user"})
+		return authError(c, 500, "unexpected_failure", "Failed to delete user")
 	}
 
 	return c.NoContent()
@@ -611,18 +723,49 @@ func (h *AuthHandler) generateAuthResponse(c *mizu.Ctx, user *store.User) (*Auth
 	return h.generateAuthResponseWithRefresh(c, user, refreshToken)
 }
 
-func (h *AuthHandler) generateAuthResponseWithRefresh(_ *mizu.Ctx, user *store.User, refreshToken string) (*AuthResponse, error) {
+func (h *AuthHandler) generateAuthResponseWithRefresh(c *mizu.Ctx, user *store.User, refreshToken string) (*AuthResponse, error) {
 	expiresIn := 3600 // 1 hour
-	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
+	now := time.Now()
+	expiresAt := now.Add(time.Duration(expiresIn) * time.Second)
 
-	// Create JWT
+	// Generate session ID
+	sessionID := uuid.New().String()
+
+	// Create session in database
+	session := &store.Session{
+		ID:        sessionID,
+		UserID:    user.ID,
+		CreatedAt: now,
+		UpdatedAt: now,
+		AAL:       "aal1",
+		NotAfter:  expiresAt,
+	}
+	_ = h.store.Auth().CreateSession(c.Context(), session)
+
+	// Build issuer URL
+	issuer := "http://localhost:54321/auth/v1"
+
+	// Determine AMR (authentication methods reference)
+	amr := []map[string]any{
+		{"method": "password", "timestamp": now.Unix()},
+	}
+
+	// Create JWT with Supabase-compatible claims
 	claims := jwt.MapClaims{
-		"sub":   user.ID,
-		"email": user.Email,
-		"phone": user.Phone,
-		"role":  user.Role,
-		"iat":   time.Now().Unix(),
-		"exp":   expiresAt.Unix(),
+		"aud":           "authenticated",
+		"exp":           expiresAt.Unix(),
+		"iat":           now.Unix(),
+		"iss":           issuer,
+		"sub":           user.ID,
+		"email":         user.Email,
+		"phone":         user.Phone,
+		"app_metadata":  user.AppMetadata,
+		"user_metadata": user.UserMetadata,
+		"role":          user.Role,
+		"aal":           "aal1",
+		"amr":           amr,
+		"session_id":    sessionID,
+		"is_anonymous":  user.IsAnonymous,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
