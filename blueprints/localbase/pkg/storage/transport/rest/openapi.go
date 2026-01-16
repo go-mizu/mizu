@@ -4,7 +4,7 @@ package rest
 import (
 	"net/http"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/openapi"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/openapi"
 	"github.com/go-mizu/mizu"
 )
 

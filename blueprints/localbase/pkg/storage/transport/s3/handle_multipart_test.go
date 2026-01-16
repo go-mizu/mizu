@@ -17,7 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/go-mizu/mizu"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
 )
 
 // setupS3ServerWithClient creates a test S3 server and AWS SDK client for testing.

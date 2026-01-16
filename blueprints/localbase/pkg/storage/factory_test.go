@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/memory" // Register memory driver
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/memory" // Register memory driver
 )
 
 // Factory is an alias for StorageFactory that matches the user's requested signature.

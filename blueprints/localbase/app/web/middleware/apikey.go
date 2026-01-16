@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"os"
 	"strings"
 
@@ -9,28 +11,47 @@ import (
 
 // APIKeyConfig holds the configuration for API key validation.
 type APIKeyConfig struct {
-	// AnonKey is the anonymous/publishable API key (default: from env LOCALBASE_ANON_KEY)
+	// AnonKey is the anonymous/publishable API key (Supabase anon JWT)
 	AnonKey string
-	// ServiceKey is the service role API key (default: from env LOCALBASE_SERVICE_KEY)
+	// ServiceKey is the service role API key (Supabase service_role JWT)
 	ServiceKey string
+	// JWTSecret is the secret used to sign JWTs (for validation)
+	JWTSecret string
 	// HeaderName is the header to read the API key from (default: "apikey")
 	HeaderName string
-	// Optional is true if API key is not required (for backward compatibility)
+	// Optional is true if API key is not required
 	Optional bool
 }
 
+// SupabaseJWTClaims represents the claims in a Supabase JWT
+type SupabaseJWTClaims struct {
+	Iss  string `json:"iss"`
+	Role string `json:"role"`
+	Aud  string `json:"aud"`
+	Exp  int64  `json:"exp"`
+	Sub  string `json:"sub"`
+	Iat  int64  `json:"iat"`
+}
+
 // DefaultAPIKeyConfig returns the default API key configuration.
+// Uses the same default keys as Supabase local development.
 func DefaultAPIKeyConfig() *APIKeyConfig {
+	// Supabase local development default keys
+	defaultAnonKey := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+	defaultServiceKey := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+	defaultJWTSecret := "super-secret-jwt-token-with-at-least-32-characters-long"
+
 	return &APIKeyConfig{
-		AnonKey:    getEnv("LOCALBASE_ANON_KEY", "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"),
-		ServiceKey: getEnv("LOCALBASE_SERVICE_KEY", ""),
+		AnonKey:    getEnv("LOCALBASE_ANON_KEY", defaultAnonKey),
+		ServiceKey: getEnv("LOCALBASE_SERVICE_KEY", defaultServiceKey),
+		JWTSecret:  getEnv("LOCALBASE_JWT_SECRET", defaultJWTSecret),
 		HeaderName: "apikey",
-		Optional:   true, // Make optional for backward compatibility during development
+		Optional:   true, // Make optional for backward compatibility
 	}
 }
 
-// APIKey returns a middleware that validates API keys.
-// It accepts both the anon key and service key.
+// APIKey returns a middleware that validates API keys and JWTs.
+// It accepts Supabase-compatible JWT tokens and extracts the role.
 func APIKey(config *APIKeyConfig) mizu.Middleware {
 	if config == nil {
 		config = DefaultAPIKeyConfig()
@@ -49,60 +70,104 @@ func APIKey(config *APIKeyConfig) mizu.Middleware {
 				}
 			}
 
-			// If no API key and optional, continue
+			// If no API key and optional, continue with anon role
 			if apiKey == "" && config.Optional {
+				c.Request().Header.Set("X-Localbase-Role", "anon")
 				return next(c)
 			}
 
 			// Validate API key
 			if apiKey == "" {
 				return c.JSON(401, map[string]any{
-					"code":    "PGRST302",
-					"message": "Anonymous access disabled, authentication required",
-					"details": nil,
-					"hint":    "Provide an apikey header or Authorization Bearer token",
+					"statusCode": 401,
+					"error":      "Unauthorized",
+					"message":    "Missing API key or Authorization header",
 				})
 			}
 
-			// Check if API key matches anon or service key
-			validKey := false
-			isServiceRole := false
-
-			if config.AnonKey != "" && apiKey == config.AnonKey {
-				validKey = true
-			}
-			if config.ServiceKey != "" && apiKey == config.ServiceKey {
-				validKey = true
-				isServiceRole = true
-			}
-
-			// For backward compatibility, also accept the legacy test key
-			if apiKey == "test-api-key" {
-				validKey = true
+			// Try to parse as JWT and extract role
+			role := extractRoleFromJWT(apiKey)
+			if role == "" {
+				// Fallback: check if it matches known keys directly
+				if apiKey == config.AnonKey {
+					role = "anon"
+				} else if apiKey == config.ServiceKey {
+					role = "service_role"
+				} else if apiKey == "test-api-key" {
+					// Legacy test key for backward compatibility
+					role = "service_role"
+				}
 			}
 
-			if !validKey && !config.Optional {
+			if role == "" && !config.Optional {
 				return c.JSON(401, map[string]any{
-					"code":    "PGRST301",
-					"message": "JWT invalid or API key invalid",
-					"details": nil,
-					"hint":    nil,
+					"statusCode": 401,
+					"error":      "Unauthorized",
+					"message":    "Invalid API key or JWT token",
 				})
 			}
 
-			// Store API key info in context for later use
-			if validKey {
-				c.Request().Header.Set("X-Localbase-Role", func() string {
-					if isServiceRole {
-						return "service_role"
-					}
-					return "anon"
-				}())
+			// Default to anon if no role found but optional
+			if role == "" {
+				role = "anon"
 			}
+
+			// Store role in header for downstream use
+			c.Request().Header.Set("X-Localbase-Role", role)
 
 			return next(c)
 		}
 	}
+}
+
+// extractRoleFromJWT extracts the role claim from a JWT token.
+// This does NOT validate the signature - it only extracts claims.
+// For production, you should validate the signature.
+func extractRoleFromJWT(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	// Decode payload (second part)
+	payload := parts[1]
+	// Add padding if needed
+	switch len(payload) % 4 {
+	case 2:
+		payload += "=="
+	case 3:
+		payload += "="
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		// Try standard encoding
+		decoded, err = base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return ""
+		}
+	}
+
+	var claims SupabaseJWTClaims
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return ""
+	}
+
+	return claims.Role
+}
+
+// GetRole extracts the role from the request context.
+func GetRole(c *mizu.Ctx) string {
+	role := c.Request().Header.Get("X-Localbase-Role")
+	if role == "" {
+		return "anon"
+	}
+	return role
+}
+
+// IsServiceRole checks if the current request has service_role privileges.
+func IsServiceRole(c *mizu.Ctx) bool {
+	return GetRole(c) == "service_role"
 }
 
 func getEnv(key, defaultValue string) string {

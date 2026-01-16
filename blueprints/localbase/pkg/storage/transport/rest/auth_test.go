@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
 	"github.com/go-mizu/mizu"
 )
 

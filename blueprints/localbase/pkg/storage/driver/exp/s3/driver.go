@@ -24,7 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 )
 
 func init() {

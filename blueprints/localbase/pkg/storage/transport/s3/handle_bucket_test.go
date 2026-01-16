@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-mizu/mizu"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
 )
 
 // setupTestServer creates a test S3 server with optional authentication.

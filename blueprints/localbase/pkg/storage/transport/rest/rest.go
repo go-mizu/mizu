@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 	"github.com/go-mizu/mizu"
 )
 
@@ -35,6 +35,7 @@ import (
 //	POST   /object/sign/:bucketName/*path      - create signed URL
 //	POST   /object/sign/:bucketName            - create multiple signed URLs
 //	POST   /object/upload/sign/:bucketName/*path - create signed upload URL
+//	GET    /object/render/:bucketName/*path    - serve signed URL (token required)
 //
 // TUS resumable upload endpoints (TUS protocol 1.0.0):
 //
@@ -47,6 +48,7 @@ import (
 type Server struct {
 	store      storage.Storage
 	authConfig *AuthConfig
+	basePath   string // Base path for URL generation
 }
 
 // New creates a new Server.
@@ -97,6 +99,9 @@ func RegisterWithAuth(app *mizu.App, basePath string, store storage.Storage, aut
 
 // registerRoutes registers all storage routes with optional authentication.
 func registerRoutes(app *mizu.App, basePath string, s *Server) {
+	// Store basePath for URL generation
+	s.basePath = basePath
+
 	// Helper to optionally apply auth middleware
 	withAuth := func(handler mizu.Handler) mizu.Handler {
 		if s.authConfig != nil {
@@ -128,6 +133,9 @@ func registerRoutes(app *mizu.App, basePath string, s *Server) {
 	app.Post(basePath+"/object/sign/{bucketName}/{path...}", withAuth(s.handleCreateSignedURL))
 	app.Post(basePath+"/object/sign/{bucketName}", withAuth(s.handleCreateSignedURLs))
 	app.Post(basePath+"/object/upload/sign/{bucketName}/{path...}", withAuth(s.handleCreateUploadSignedURL))
+
+	// Signed URL render endpoint - validates token without auth middleware
+	app.Get(basePath+"/object/render/{bucketName}/{path...}", s.handleRenderSignedURL)
 
 	// Object CRUD with wildcard path
 	app.Post(basePath+"/object/{bucketName}/{path...}", withAuth(s.handleUploadObject))

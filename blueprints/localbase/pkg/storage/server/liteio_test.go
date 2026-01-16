@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/exp/s3"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/exp/s3"
 )
 
 // TestLiteIOConnection tests connecting to a running liteio instance.

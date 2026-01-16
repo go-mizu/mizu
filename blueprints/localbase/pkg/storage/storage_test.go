@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 )
 
 // StorageFactory creates a new Storage instance for testing.

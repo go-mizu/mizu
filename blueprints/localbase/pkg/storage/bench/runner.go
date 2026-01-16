@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/devnull"
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/exp/s3"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/devnull"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/exp/s3"
 )
 
 // Runner orchestrates benchmark execution.

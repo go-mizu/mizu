@@ -51,26 +51,51 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		auth.Delete("/admin/users/{id}", authHandler.DeleteUser)
 	})
 
-	// Storage API (S3 compatible)
+	// API key middleware for Supabase compatibility
+	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
+
+	// Storage API (Supabase Storage compatible)
+	// Apply API key middleware for Storage endpoints
 	app.Group("/storage/v1", func(storage *mizu.Router) {
+		storage.Use(apiKeyMw)
+		// Bucket endpoints
 		storage.Get("/bucket", storageHandler.ListBuckets)
 		storage.Post("/bucket", storageHandler.CreateBucket)
 		storage.Get("/bucket/{id}", storageHandler.GetBucket)
 		storage.Put("/bucket/{id}", storageHandler.UpdateBucket)
 		storage.Delete("/bucket/{id}", storageHandler.DeleteBucket)
+		storage.Post("/bucket/{id}/empty", storageHandler.EmptyBucket)
 
-		storage.Post("/object/{bucket}", storageHandler.UploadObject)
-		storage.Get("/object/{bucket}/{path...}", storageHandler.DownloadObject)
-		storage.Delete("/object/{bucket}/{path...}", storageHandler.DeleteObject)
+		// Object operations
 		storage.Post("/object/list/{bucket}", storageHandler.ListObjects)
 		storage.Post("/object/move", storageHandler.MoveObject)
 		storage.Post("/object/copy", storageHandler.CopyObject)
+
+		// Signed URLs
 		storage.Post("/object/sign/{bucket}/{path...}", storageHandler.CreateSignedURL)
+		storage.Post("/object/sign/{bucket}", storageHandler.CreateSignedURLs)
+		storage.Post("/object/upload/sign/{bucket}/{path...}", storageHandler.CreateUploadSignedURL)
+
+		// Object CRUD with path
+		storage.Post("/object/{bucket}/{path...}", storageHandler.UploadObject)
+		storage.Get("/object/{bucket}/{path...}", storageHandler.DownloadObject)
+		storage.Put("/object/{bucket}/{path...}", storageHandler.UpdateObject)
+		storage.Delete("/object/{bucket}/{path...}", storageHandler.DeleteObject)
+		storage.Delete("/object/{bucket}", storageHandler.DeleteObjects)
+
+		// Public access
+		storage.Get("/object/public/{bucket}/{path...}", storageHandler.DownloadPublicObject)
+		storage.Get("/object/info/public/{bucket}/{path...}", storageHandler.GetPublicObjectInfo)
+
+		// Authenticated access
+		storage.Get("/object/authenticated/{bucket}/{path...}", storageHandler.DownloadAuthenticatedObject)
+		storage.Get("/object/info/authenticated/{bucket}/{path...}", storageHandler.GetAuthenticatedObjectInfo)
+
+		// Object info
+		storage.Get("/object/info/{bucket}/{path...}", storageHandler.GetObjectInfo)
 	})
 
 	// REST API (PostgREST compatible)
-	// Apply API key middleware for REST endpoints
-	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
 	app.Group("/rest/v1", func(rest *mizu.Router) {
 		rest.Use(apiKeyMw)
 		rest.Get("/{table}", databaseHandler.SelectTable)
