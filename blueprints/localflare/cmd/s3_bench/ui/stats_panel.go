@@ -12,8 +12,10 @@ import (
 // DriverLiveStats holds live statistics for a driver.
 type DriverLiveStats struct {
 	Driver         string
-	Throughput     float64 // Current MB/s
-	PrevThroughput float64 // Previous for trend
+	Throughput     float64       // Current MB/s
+	PrevThroughput float64       // Previous for trend
+	TTFB           time.Duration // Time to first byte
+	TTLB           time.Duration // Time to last byte
 	Samples        int
 	Errors         int
 	LastUpdate     time.Time
@@ -21,13 +23,18 @@ type DriverLiveStats struct {
 
 // StatsPanel displays live benchmark statistics.
 type StatsPanel struct {
-	stats       map[string]*DriverLiveStats
-	objectSize  int
-	threads     int
-	totalTarget int
-	completed   int
-	startTime   time.Time
-	width       int
+	stats          map[string]*DriverLiveStats
+	currentDriver  string
+	objectSize     int
+	threads        int
+	totalTarget    int
+	completed      int
+	startTime      time.Time
+	width          int
+	statusMessage  string
+	operation      string // "upload", "download", "cleanup"
+	currentTTFB    time.Duration
+	currentTTLB    time.Duration
 }
 
 // NewStatsPanel creates a new stats panel.
@@ -46,6 +53,27 @@ func (s *StatsPanel) SetConfig(objectSize, threads, totalTarget int) {
 	s.totalTarget = totalTarget
 }
 
+// SetCurrentDriver sets the current driver being tested.
+func (s *StatsPanel) SetCurrentDriver(driver string) {
+	s.currentDriver = driver
+}
+
+// SetStatus sets the current status message.
+func (s *StatsPanel) SetStatus(message string) {
+	s.statusMessage = message
+}
+
+// SetOperation sets the current operation (upload, download, cleanup).
+func (s *StatsPanel) SetOperation(operation string) {
+	s.operation = operation
+}
+
+// SetLatency sets the current latency values.
+func (s *StatsPanel) SetLatency(ttfb, ttlb time.Duration) {
+	s.currentTTFB = ttfb
+	s.currentTTLB = ttlb
+}
+
 // UpdateDriver updates statistics for a driver.
 func (s *StatsPanel) UpdateDriver(driver string, throughput float64, samples, errors int) {
 	stat, ok := s.stats[driver]
@@ -61,6 +89,19 @@ func (s *StatsPanel) UpdateDriver(driver string, throughput float64, samples, er
 	stat.Samples = samples
 	stat.Errors = errors
 	stat.LastUpdate = time.Now()
+}
+
+// UpdateDriverLatency updates latency for a driver.
+func (s *StatsPanel) UpdateDriverLatency(driver string, ttfb, ttlb time.Duration) {
+	stat, ok := s.stats[driver]
+	if !ok {
+		s.stats[driver] = &DriverLiveStats{
+			Driver: driver,
+		}
+		stat = s.stats[driver]
+	}
+	stat.TTFB = ttfb
+	stat.TTLB = ttlb
 }
 
 // AddCompleted adds to the completed count.
@@ -82,45 +123,155 @@ func (s *StatsPanel) SetWidth(width int) {
 func (s *StatsPanel) Render() string {
 	var sb strings.Builder
 
-	// Title
+	// Title with current driver
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ColorCyan)
-	sb.WriteString(titleStyle.Render("Live Stats"))
+	sb.WriteString(titleStyle.Render("Current Test"))
 	sb.WriteString("\n\n")
 
-	// Current config
-	if s.objectSize > 0 && s.threads > 0 {
-		sb.WriteString(MutedStyle.Render("Current: "))
-		sb.WriteString(fmt.Sprintf("%s x %d threads\n\n", formatSizeCompact(s.objectSize), s.threads))
+	// Status message (prominent if set)
+	if s.statusMessage != "" {
+		// Check if it's an error message
+		isError := len(s.statusMessage) > 6 && (s.statusMessage[:6] == "[ERROR" || strings.Contains(s.statusMessage, "FAILED"))
+		if isError {
+			sb.WriteString(ErrorStyle.Render("  " + s.statusMessage))
+		} else {
+			sb.WriteString(lipgloss.NewStyle().Foreground(ColorYellow).Render("  " + s.statusMessage))
+		}
+		sb.WriteString("\n\n")
 	}
 
-	// Driver stats sorted by throughput
-	var driverStats []*DriverLiveStats
-	for _, stat := range s.stats {
-		driverStats = append(driverStats, stat)
-	}
-	sort.Slice(driverStats, func(i, j int) bool {
-		return driverStats[i].Throughput > driverStats[j].Throughput
-	})
-
-	for _, stat := range driverStats {
-		sb.WriteString(s.renderDriverStat(stat))
+	// Current driver being tested (big and clear)
+	if s.currentDriver != "" {
+		color := getDriverColor(s.currentDriver)
+		driverStyle := lipgloss.NewStyle().Bold(true).Foreground(color)
+		sb.WriteString("  Driver: ")
+		sb.WriteString(driverStyle.Render(s.currentDriver))
 		sb.WriteString("\n")
 	}
 
-	// Total progress
-	sb.WriteString("\n")
-	if s.totalTarget > 0 {
-		sb.WriteString(MutedStyle.Render(fmt.Sprintf("Samples: %d/%d", s.completed, s.totalTarget)))
+	// Current operation
+	if s.operation != "" {
+		opStyle := lipgloss.NewStyle().Foreground(ColorYellow)
+		sb.WriteString("  ")
+		sb.WriteString(opStyle.Render(s.operation))
+		sb.WriteString("\n")
 	}
 
-	// Total errors
+	// Current config
+	if s.objectSize > 0 || s.threads > 0 {
+		sb.WriteString("  Config: ")
+		if s.objectSize > 0 {
+			sb.WriteString(fmt.Sprintf("%s", formatSizeCompact(s.objectSize)))
+		}
+		if s.threads > 0 {
+			sb.WriteString(fmt.Sprintf(" × %d threads", s.threads))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+
+	// Live metrics for current driver
+	if s.currentDriver != "" {
+		stat := s.stats[s.currentDriver]
+		if stat != nil && stat.Throughput > 0 {
+			// Throughput
+			throughputStyle := lipgloss.NewStyle().Bold(true).Foreground(ColorGreen)
+			sb.WriteString("  Throughput: ")
+			sb.WriteString(throughputStyle.Render(fmt.Sprintf("%.0f MB/s", stat.Throughput)))
+			sb.WriteString(s.getTrend(stat))
+			sb.WriteString("\n")
+
+			// Latency (TTFB)
+			if stat.TTFB > 0 {
+				ttfbStyle := lipgloss.NewStyle().Foreground(ColorCyan)
+				sb.WriteString("  TTFB:       ")
+				sb.WriteString(ttfbStyle.Render(formatLatency(stat.TTFB)))
+				sb.WriteString("\n")
+			}
+
+			// Latency (TTLB)
+			if stat.TTLB > 0 {
+				ttlbStyle := lipgloss.NewStyle().Foreground(ColorBlue)
+				sb.WriteString("  TTLB:       ")
+				sb.WriteString(ttlbStyle.Render(formatLatency(stat.TTLB)))
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString(MutedStyle.Render("  Measuring...\n"))
+		}
+	}
+
+	sb.WriteString("\n")
+
+	// Progress
+	if s.totalTarget > 0 {
+		percent := float64(s.completed) / float64(s.totalTarget) * 100
+		sb.WriteString(fmt.Sprintf("  Progress: %d/%d (%.0f%%)\n", s.completed, s.totalTarget, percent))
+	}
+
+	// Elapsed time
+	elapsed := time.Since(s.startTime)
+	sb.WriteString(MutedStyle.Render(fmt.Sprintf("  Elapsed: %s\n", elapsed.Round(time.Second))))
+
+	// Errors
 	totalErrors := 0
 	for _, stat := range s.stats {
 		totalErrors += stat.Errors
 	}
 	if totalErrors > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(ErrorStyle.Render(fmt.Sprintf("Errors: %d", totalErrors)))
+		sb.WriteString(ErrorStyle.Render(fmt.Sprintf("  Errors: %d\n", totalErrors)))
+	}
+
+	return sb.String()
+}
+
+// RenderLeaderboard returns a comparison of all drivers tested.
+func (s *StatsPanel) RenderLeaderboard() string {
+	var sb strings.Builder
+
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(ColorCyan)
+	sb.WriteString(titleStyle.Render("Results"))
+	sb.WriteString("\n\n")
+
+	// Sort by throughput
+	var driverStats []*DriverLiveStats
+	for _, stat := range s.stats {
+		if stat.Throughput > 0 {
+			driverStats = append(driverStats, stat)
+		}
+	}
+
+	if len(driverStats) == 0 {
+		sb.WriteString(MutedStyle.Render("  No results yet\n"))
+		return sb.String()
+	}
+
+	sort.Slice(driverStats, func(i, j int) bool {
+		return driverStats[i].Throughput > driverStats[j].Throughput
+	})
+
+	for i, stat := range driverStats {
+		color := getDriverColor(stat.Driver)
+		driverStyle := lipgloss.NewStyle().Foreground(color)
+
+		// Rank
+		rank := ""
+		switch i {
+		case 0:
+			rank = SuccessStyle.Render("1st")
+		case 1:
+			rank = lipgloss.NewStyle().Foreground(ColorCyan).Render("2nd")
+		case 2:
+			rank = WarnStyle.Render("3rd")
+		default:
+			rank = MutedStyle.Render(fmt.Sprintf("%dth", i+1))
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s %s %s\n",
+			rank,
+			driverStyle.Render(fmt.Sprintf("%-10s", stat.Driver)),
+			fmt.Sprintf("%.0f MB/s", stat.Throughput)))
 	}
 
 	return sb.String()
@@ -174,6 +325,7 @@ func (s *StatsPanel) Reset() {
 	s.stats = make(map[string]*DriverLiveStats)
 	s.completed = 0
 	s.startTime = time.Now()
+	s.currentDriver = ""
 }
 
 // formatSizeCompact returns a compact size string.
@@ -194,6 +346,17 @@ func formatSizeCompact(bytes int) string {
 	default:
 		return fmt.Sprintf("%dB", bytes)
 	}
+}
+
+// formatLatency formats a duration as latency.
+func formatLatency(d time.Duration) string {
+	if d < time.Millisecond {
+		return fmt.Sprintf("%dµs", d.Microseconds())
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
 // CompactStatsLine returns a single-line summary of stats.

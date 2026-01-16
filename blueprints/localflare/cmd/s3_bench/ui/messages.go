@@ -64,8 +64,21 @@ type TickMsg struct {
 	Time time.Time
 }
 
+// LatencySampleMsg is sent for real-time latency updates.
+type LatencySampleMsg struct {
+	Driver string
+	TTFB   time.Duration // Time to first byte
+	TTLB   time.Duration // Time to last byte
+}
+
 // ChartDataPoint represents a single data point for the chart.
 type ChartDataPoint struct {
 	Timestamp  time.Time
 	Throughput float64
+}
+
+// DriverErrorMsg signals a driver error.
+type DriverErrorMsg struct {
+	Driver string
+	Error  string
 }

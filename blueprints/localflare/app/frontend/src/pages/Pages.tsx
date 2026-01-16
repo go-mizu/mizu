@@ -34,53 +34,8 @@ export function Pages() {
       if (res.result) setProjects(res.result.projects ?? [])
     } catch (error) {
       console.error('Failed to load Pages projects:', error)
-      setProjects([
-        {
-          name: 'my-blog',
-          subdomain: 'my-blog',
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-          production_branch: 'main',
-          latest_deployment: {
-            id: 'deploy-1',
-            url: 'https://my-blog.pages.dev',
-            environment: 'production',
-            deployment_trigger: { type: 'push', metadata: { branch: 'main', commit_hash: 'abc123' } },
-            created_at: new Date(Date.now() - 3600000).toISOString(),
-            status: 'success',
-          },
-          domains: ['blog.example.com'],
-        },
-        {
-          name: 'docs-site',
-          subdomain: 'docs-site',
-          created_at: new Date(Date.now() - 604800000).toISOString(),
-          production_branch: 'main',
-          latest_deployment: {
-            id: 'deploy-2',
-            url: 'https://docs-site.pages.dev',
-            environment: 'production',
-            deployment_trigger: { type: 'push', metadata: { branch: 'main', commit_hash: 'def456' } },
-            created_at: new Date(Date.now() - 86400000).toISOString(),
-            status: 'success',
-          },
-          domains: ['docs.example.com'],
-        },
-        {
-          name: 'marketing-site',
-          subdomain: 'marketing-site',
-          created_at: new Date(Date.now() - 259200000).toISOString(),
-          production_branch: 'main',
-          latest_deployment: {
-            id: 'deploy-3',
-            url: 'https://marketing-site.pages.dev',
-            environment: 'production',
-            deployment_trigger: { type: 'push', metadata: { branch: 'feature/hero', commit_hash: 'ghi789' } },
-            created_at: new Date(Date.now() - 7200000).toISOString(),
-            status: 'building',
-          },
-          domains: [],
-        },
-      ])
+      notifications.show({ title: 'Error', message: 'Failed to load projects', color: 'red' })
+      setProjects([])
     } finally {
       setLoading(false)
     }

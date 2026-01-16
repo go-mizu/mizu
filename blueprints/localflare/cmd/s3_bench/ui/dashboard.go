@@ -15,6 +15,7 @@ type Dashboard struct {
 	driverProgress *MultiDriverProgress
 	statsPanel     *StatsPanel
 	resultsTable   *ResultsTable
+	leaderboard    *Leaderboard
 
 	// State
 	phase      Phase
@@ -36,6 +37,7 @@ func NewDashboard() *Dashboard {
 		chart:          NewThroughputChart(),
 		driverProgress: NewMultiDriverProgress(),
 		statsPanel:     NewStatsPanel(),
+		leaderboard:    NewLeaderboard(),
 		viewMode:       ViewDashboard,
 		startTime:      time.Now(),
 		width:          120,
@@ -57,11 +59,25 @@ func (d *Dashboard) SetSize(width, height int) {
 	d.chart.SetSize(chartWidth, 10)
 	d.driverProgress.SetBarWidth(width - 50)
 	d.statsPanel.SetWidth(width/2 - 4)
+	d.leaderboard.SetWidth(width/2 - 4)
 }
 
 // SetPhase updates the current phase.
 func (d *Dashboard) SetPhase(phase Phase) {
 	d.phase = phase
+	// Update the operation based on phase
+	switch phase {
+	case PhaseSetup:
+		d.statsPanel.SetOperation("Uploading test objects")
+	case PhaseBenchmark:
+		d.statsPanel.SetOperation("Running download benchmark")
+	case PhaseCleanup:
+		d.statsPanel.SetOperation("Cleaning up test objects")
+	case PhaseDone:
+		d.statsPanel.SetOperation("Completed")
+	default:
+		d.statsPanel.SetOperation("Initializing")
+	}
 }
 
 // SetConfig updates the current configuration.
@@ -69,6 +85,7 @@ func (d *Dashboard) SetConfig(objectSize, threads int) {
 	d.objectSize = objectSize
 	d.threads = threads
 	d.statsPanel.SetConfig(objectSize, threads, 0)
+	d.leaderboard.SetConfig(objectSize, threads)
 }
 
 // SetViewMode changes the view mode.
@@ -91,8 +108,16 @@ func (d *Dashboard) AddLog(msg string) {
 
 // UpdateThroughput updates throughput chart.
 func (d *Dashboard) UpdateThroughput(driver string, throughput float64) {
+	// Set current driver on chart (will clear if different)
+	d.chart.SetCurrentDriver(driver)
 	d.chart.AddSample(driver, throughput, time.Now())
+	d.statsPanel.SetCurrentDriver(driver)
 	d.statsPanel.UpdateDriver(driver, throughput, 0, 0)
+}
+
+// UpdateLatency updates latency stats.
+func (d *Dashboard) UpdateLatency(driver string, ttfb, ttlb time.Duration) {
+	d.statsPanel.UpdateDriverLatency(driver, ttfb, ttlb)
 }
 
 // UpdateDriverProgress updates a driver's progress.
@@ -126,6 +151,28 @@ func (d *Dashboard) GetStatsPanel() *StatsPanel {
 	return d.statsPanel
 }
 
+// SetStatusMessage updates the status message in the stats panel.
+func (d *Dashboard) SetStatusMessage(message string) {
+	d.statsPanel.SetStatus(message)
+}
+
+// SetProgress updates the progress in the stats panel.
+func (d *Dashboard) SetProgress(completed, total int) {
+	d.statsPanel.SetCompleted(completed)
+	d.statsPanel.SetConfig(d.objectSize, d.threads, total)
+}
+
+// SetDriverFailed marks a driver as failed.
+func (d *Dashboard) SetDriverFailed(driver string, errMsg string) {
+	d.driverProgress.SetFailed(driver, errMsg)
+	d.AddLog(fmt.Sprintf("ERROR: %s failed: %s", driver, errMsg))
+}
+
+// AddBenchmarkResult adds a benchmark result to the leaderboard.
+func (d *Dashboard) AddBenchmarkResult(driver string, objectSize, threads int, throughput float64, ttfbP50, ttfbP99 time.Duration) {
+	d.leaderboard.AddResult(driver, objectSize, threads, throughput, ttfbP50, ttfbP99)
+}
+
 // Render returns the complete dashboard view.
 func (d *Dashboard) Render() string {
 	switch d.viewMode {
@@ -154,17 +201,8 @@ func (d *Dashboard) renderDashboard() string {
 	chartContent := d.chart.Render()
 	statsContent := d.statsPanel.Render()
 
-	// Create side-by-side layout
-	chartLines := strings.Split(chartContent, "\n")
-	statsLines := strings.Split(statsContent, "\n")
-
 	chartWidth := d.width/2 - 2
 	statsWidth := d.width/2 - 2
-
-	maxLines := len(chartLines)
-	if len(statsLines) > maxLines {
-		maxLines = len(statsLines)
-	}
 
 	// Box styles
 	chartBox := lipgloss.NewStyle().
@@ -185,18 +223,47 @@ func (d *Dashboard) renderDashboard() string {
 	))
 	sb.WriteString("\n")
 
-	// Progress section
-	sb.WriteString(d.renderProgressSection())
-	sb.WriteString("\n")
+	// Progress section and Leaderboard side by side
+	progressContent := d.renderProgressContent()
+	leaderboardContent := d.leaderboard.Render()
 
-	// Results table (compact)
-	if d.resultsTable != nil && len(d.resultsTable.Rows) > 0 {
-		sb.WriteString(d.renderCompactResults())
-		sb.WriteString("\n")
-	}
+	progressWidth := d.width/2 - 2
+	leaderboardWidth := d.width/2 - 2
+
+	progressBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorMuted).
+		Width(progressWidth).
+		Padding(0, 1)
+
+	leaderboardBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorMuted).
+		Width(leaderboardWidth).
+		Padding(0, 1)
+
+	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
+		progressBox.Render(progressContent),
+		leaderboardBox.Render(leaderboardContent),
+	))
+	sb.WriteString("\n")
 
 	// Footer
 	sb.WriteString(d.renderFooter())
+
+	return sb.String()
+}
+
+// renderProgressContent renders just the progress content without the box.
+func (d *Dashboard) renderProgressContent() string {
+	var sb strings.Builder
+
+	// Section title
+	sb.WriteString(TableHeaderStyle.Render("Driver Progress"))
+	sb.WriteString("\n\n")
+
+	// Progress bars
+	sb.WriteString(d.driverProgress.Render())
 
 	return sb.String()
 }
@@ -505,6 +572,7 @@ func (d *Dashboard) Reset() {
 	d.chart.Clear()
 	d.driverProgress.Reset()
 	d.statsPanel.Reset()
+	d.leaderboard.Reset()
 	d.resultsTable = nil
 	d.logs = d.logs[:0]
 	d.startTime = time.Now()

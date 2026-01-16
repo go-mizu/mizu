@@ -55,8 +55,8 @@ type Model struct {
 	ProgressTotal int
 	ProgressMsg   string
 
-	// Output buffer (for legacy/simple mode)
-	Output strings.Builder
+	// Output buffer (for legacy/simple mode) - must be a pointer to avoid copy issues
+	Output *strings.Builder
 
 	// Progress bar (legacy)
 	progressBar *ProgressBar
@@ -148,6 +148,7 @@ func NewModel() Model {
 		Dashboard:    NewDashboard(),
 		UseDashboard: true,
 		ViewMode:     ViewDashboard,
+		Output:       &strings.Builder{},
 	}
 }
 
@@ -159,6 +160,7 @@ func NewLegacyModel() Model {
 		Phase:        PhaseInit,
 		StartTime:    time.Now(),
 		UseDashboard: false,
+		Output:       &strings.Builder{},
 	}
 }
 
@@ -216,6 +218,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.progressBar.Update(msg.Current)
 		m.progressBar.SetMessage(msg.Message)
+		// Update stats panel with status message
+		if m.Dashboard != nil {
+			m.Dashboard.SetStatusMessage(msg.Message)
+			m.Dashboard.SetProgress(msg.Current, msg.Total)
+		}
 
 	case DriverProgressMsg:
 		if m.Dashboard != nil {
@@ -225,6 +232,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ThroughputSampleMsg:
 		if m.Dashboard != nil {
 			m.Dashboard.UpdateThroughput(msg.Driver, msg.Throughput)
+		}
+
+	case LatencySampleMsg:
+		if m.Dashboard != nil {
+			m.Dashboard.UpdateLatency(msg.Driver, msg.TTFB, msg.TTLB)
 		}
 
 	case ConfigChangeMsg:
@@ -279,9 +291,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Output.WriteString(m.currentTable.RenderRow(row))
 			m.Output.WriteString("\n")
 		}
-		// Update dashboard with throughput
+		// Update dashboard with throughput and leaderboard
 		if m.Dashboard != nil {
 			m.Dashboard.UpdateThroughput(msg.Driver, msg.Throughput)
+			m.Dashboard.AddBenchmarkResult(msg.Driver, msg.ObjectSize, msg.Threads, msg.Throughput, msg.TTFBP50, msg.TTFBP99)
 		}
 
 	case ErrorMsg:
@@ -290,6 +303,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Output.WriteString("\n")
 		if m.Dashboard != nil {
 			m.Dashboard.AddLog(fmt.Sprintf("ERROR: %v", msg.Err))
+		}
+
+	case DriverErrorMsg:
+		m.Output.WriteString(ErrorStyle.Render(fmt.Sprintf("[ERROR] %s: %s", msg.Driver, msg.Error)))
+		m.Output.WriteString("\n")
+		if m.Dashboard != nil {
+			m.Dashboard.SetDriverFailed(msg.Driver, msg.Error)
 		}
 
 	case ViewChangeMsg:

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Stack, SimpleGrid, Paper, Text, Group, Button, Select, Textarea, Code, Badge, ActionIcon, Tabs, SegmentedControl } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
 import { IconRefresh, IconPlayerPlay, IconDownload } from '@tabler/icons-react'
 import { PageHeader, StatCard, AreaChart, LoadingState, StatusBadge, DataTable, type Column } from '../components/common'
 import { api } from '../api/client'
@@ -42,58 +43,9 @@ export function Observability() {
       if (logsRes.result) setLogs(logsRes.result.logs ?? [])
       if (tracesRes.result) setTraces(tracesRes.result.traces ?? [])
     } catch (error) {
-      // Mock data
-      setLogs([
-        { timestamp: new Date(Date.now() - 1000).toISOString(), level: 'info', message: 'Request completed successfully', worker: 'api-gateway', request_id: 'req-123', duration_ms: 45 },
-        { timestamp: new Date(Date.now() - 2000).toISOString(), level: 'info', message: 'Cache hit for /api/users', worker: 'api-gateway', request_id: 'req-124', duration_ms: 12 },
-        { timestamp: new Date(Date.now() - 3000).toISOString(), level: 'warn', message: 'Rate limit approaching threshold', worker: 'auth-worker', request_id: 'req-125', duration_ms: 34 },
-        { timestamp: new Date(Date.now() - 4000).toISOString(), level: 'error', message: 'Database connection timeout', worker: 'api-gateway', request_id: 'req-126', duration_ms: 5000 },
-        { timestamp: new Date(Date.now() - 5000).toISOString(), level: 'info', message: 'User session created', worker: 'auth-worker', request_id: 'req-127', duration_ms: 89 },
-        { timestamp: new Date(Date.now() - 6000).toISOString(), level: 'debug', message: 'Processing webhook payload', worker: 'webhook-handler', request_id: 'req-128', duration_ms: 156 },
-        { timestamp: new Date(Date.now() - 7000).toISOString(), level: 'info', message: 'Image resized successfully', worker: 'image-processor', request_id: 'req-129', duration_ms: 234 },
-        { timestamp: new Date(Date.now() - 8000).toISOString(), level: 'error', message: 'Invalid API key', worker: 'api-gateway', request_id: 'req-130', duration_ms: 5 },
-      ])
-      setTraces([
-        {
-          trace_id: 'trace-1',
-          root_span: 'fetch',
-          worker: 'api-gateway',
-          timestamp: new Date(Date.now() - 1000).toISOString(),
-          duration_ms: 245,
-          status: 'ok',
-          spans: [
-            { name: 'fetch', duration_ms: 245, start_ms: 0 },
-            { name: 'KV.get', duration_ms: 12, start_ms: 5 },
-            { name: 'D1.query', duration_ms: 45, start_ms: 20 },
-            { name: 'Response', duration_ms: 2, start_ms: 243 },
-          ],
-        },
-        {
-          trace_id: 'trace-2',
-          root_span: 'fetch',
-          worker: 'auth-worker',
-          timestamp: new Date(Date.now() - 5000).toISOString(),
-          duration_ms: 89,
-          status: 'ok',
-          spans: [
-            { name: 'fetch', duration_ms: 89, start_ms: 0 },
-            { name: 'Durable Object', duration_ms: 34, start_ms: 10 },
-            { name: 'Response', duration_ms: 1, start_ms: 88 },
-          ],
-        },
-        {
-          trace_id: 'trace-3',
-          root_span: 'fetch',
-          worker: 'api-gateway',
-          timestamp: new Date(Date.now() - 4000).toISOString(),
-          duration_ms: 5000,
-          status: 'error',
-          spans: [
-            { name: 'fetch', duration_ms: 5000, start_ms: 0 },
-            { name: 'D1.query (timeout)', duration_ms: 5000, start_ms: 0 },
-          ],
-        },
-      ])
+      console.error('Failed to load observability data:', error)
+      setLogs([])
+      setTraces([])
     } finally {
       setLoading(false)
     }
@@ -313,12 +265,6 @@ LIMIT 100`}
   )
 }
 
-const notifications = {
-  show: (opts: { title: string; message: string; color: string }) => {
-    // Mock notification
-    console.log(`[${opts.color}] ${opts.title}: ${opts.message}`)
-  },
-}
 
 const IconClock = ({ size }: { size: number }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
