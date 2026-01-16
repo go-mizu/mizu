@@ -29,20 +29,10 @@ export function Images() {
       if (imagesRes.result) setImages(imagesRes.result.images ?? [])
       if (variantsRes.result) setVariants(variantsRes.result.variants ?? [])
     } catch (error) {
-      // Mock data
-      setImages([
-        { id: 'img-1', filename: 'hero-banner.jpg', uploaded: new Date(Date.now() - 3600000).toISOString(), variants: ['public', 'thumbnail'], meta: { width: 1920, height: 1080 } },
-        { id: 'img-2', filename: 'logo.png', uploaded: new Date(Date.now() - 86400000).toISOString(), variants: ['public', 'thumbnail'], meta: { width: 512, height: 512 } },
-        { id: 'img-3', filename: 'product-1.webp', uploaded: new Date(Date.now() - 172800000).toISOString(), variants: ['public', 'thumbnail', 'product'], meta: { width: 800, height: 800 } },
-        { id: 'img-4', filename: 'team-photo.jpg', uploaded: new Date(Date.now() - 259200000).toISOString(), variants: ['public', 'thumbnail'], meta: { width: 2400, height: 1600 } },
-        { id: 'img-5', filename: 'banner-mobile.png', uploaded: new Date(Date.now() - 345600000).toISOString(), variants: ['public', 'thumbnail'], meta: { width: 750, height: 1334 } },
-        { id: 'img-6', filename: 'icon-set.svg', uploaded: new Date(Date.now() - 432000000).toISOString(), variants: ['public'], meta: { width: 100, height: 100 } },
-      ])
-      setVariants([
-        { id: 'public', name: 'public', options: { fit: 'scale-down', width: 1920, height: 1080 }, never_require_signed_urls: true },
-        { id: 'thumbnail', name: 'thumbnail', options: { fit: 'cover', width: 150, height: 150 }, never_require_signed_urls: true },
-        { id: 'product', name: 'product', options: { fit: 'contain', width: 600, height: 600 }, never_require_signed_urls: false },
-      ])
+      console.error('Failed to load images:', error)
+      notifications.show({ title: 'Error', message: 'Failed to load images', color: 'red' })
+      setImages([])
+      setVariants([])
     } finally {
       setLoading(false)
     }

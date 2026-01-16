@@ -49,18 +49,10 @@ export function Settings() {
       if (tokensRes.result) setTokens(tokensRes.result.tokens ?? [])
       if (membersRes.result) setMembers(membersRes.result.members ?? [])
     } catch (error) {
-      // Mock data
-      setTokens([
-        { id: 'token-1', name: 'CI/CD Pipeline', permissions: ['Workers:Edit', 'KV:Edit'], created_at: new Date(Date.now() - 172800000).toISOString(), last_used: new Date(Date.now() - 3600000).toISOString(), status: 'active' },
-        { id: 'token-2', name: 'Read-only Access', permissions: ['Workers:Read', 'KV:Read', 'R2:Read'], created_at: new Date(Date.now() - 604800000).toISOString(), last_used: new Date(Date.now() - 86400000).toISOString(), status: 'active' },
-        { id: 'token-3', name: 'Admin Token', permissions: ['*'], created_at: new Date(Date.now() - 259200000).toISOString(), status: 'active' },
-      ])
-      setMembers([
-        { id: 'member-1', email: 'admin@example.com', name: 'Admin User', role: 'owner', status: 'active', joined_at: new Date(Date.now() - 2592000000).toISOString() },
-        { id: 'member-2', email: 'dev@example.com', name: 'Developer', role: 'admin', status: 'active', joined_at: new Date(Date.now() - 1296000000).toISOString() },
-        { id: 'member-3', email: 'viewer@example.com', name: 'Viewer', role: 'member', status: 'active', joined_at: new Date(Date.now() - 604800000).toISOString() },
-        { id: 'member-4', email: 'pending@example.com', role: 'member', status: 'pending', joined_at: new Date(Date.now() - 86400000).toISOString() },
-      ])
+      console.error('Failed to load settings:', error)
+      notifications.show({ title: 'Error', message: 'Failed to load settings', color: 'red' })
+      setTokens([])
+      setMembers([])
     } finally {
       setLoading(false)
     }
@@ -69,19 +61,16 @@ export function Settings() {
   const handleCreateToken = async (values: typeof tokenForm.values) => {
     try {
       const res = await api.settings.createToken(values)
-      if (res.result) {
+      if (res.result?.token) {
         setNewToken(res.result.token)
+        notifications.show({ title: 'Success', message: 'Token created', color: 'green' })
+        loadData()
       } else {
-        // Mock token
-        setNewToken('cf_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15))
+        notifications.show({ title: 'Error', message: 'Failed to create token', color: 'red' })
       }
-      notifications.show({ title: 'Success', message: 'Token created', color: 'green' })
-      loadData()
     } catch (error) {
-      // Mock token
-      setNewToken('cf_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15))
-      notifications.show({ title: 'Success', message: 'Token created', color: 'green' })
-      loadData()
+      console.error('Failed to create token:', error)
+      notifications.show({ title: 'Error', message: 'Failed to create token', color: 'red' })
     }
   }
 

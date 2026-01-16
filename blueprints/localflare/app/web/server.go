@@ -119,11 +119,11 @@ func New(cfg Config) (*Server, error) {
 	s.cronHandler = api.NewCron(cronSvc)
 	s.authHandler = api.NewAuth(authSvc)
 	s.dashboardHandler = api.NewDashboard(st)
-	s.pagesHandler = api.NewPages()
-	s.imagesHandler = api.NewImages()
-	s.streamHandler = api.NewStream()
-	s.observabilityHandler = api.NewObservability()
-	s.settingsHandler = api.NewSettings()
+	s.pagesHandler = api.NewPages(st)
+	s.imagesHandler = api.NewImages(st, cfg.DataDir)
+	s.streamHandler = api.NewStream(st, cfg.DataDir)
+	s.observabilityHandler = api.NewObservability(st)
+	s.settingsHandler = api.NewSettings(st)
 
 	s.setupRoutes()
 
@@ -319,12 +319,15 @@ func (s *Server) setupRoutes() {
 		apiGroup.Get("/pages/projects/{name}", s.pagesHandler.GetProject)
 		apiGroup.Delete("/pages/projects/{name}", s.pagesHandler.DeleteProject)
 		apiGroup.Get("/pages/projects/{name}/deployments", s.pagesHandler.GetDeployments)
+		apiGroup.Post("/pages/projects/{name}/deployments", s.pagesHandler.CreateDeployment)
 
 		// Images
 		apiGroup.Get("/images", s.imagesHandler.List)
 		apiGroup.Post("/images/upload", s.imagesHandler.Upload)
 		apiGroup.Delete("/images/{id}", s.imagesHandler.Delete)
 		apiGroup.Get("/images/variants", s.imagesHandler.ListVariants)
+		apiGroup.Post("/images/variants", s.imagesHandler.CreateVariant)
+		apiGroup.Delete("/images/variants/{id}", s.imagesHandler.DeleteVariant)
 
 		// Stream
 		apiGroup.Get("/stream/videos", s.streamHandler.ListVideos)
@@ -333,6 +336,7 @@ func (s *Server) setupRoutes() {
 		apiGroup.Delete("/stream/videos/{id}", s.streamHandler.DeleteVideo)
 		apiGroup.Get("/stream/live", s.streamHandler.ListLiveInputs)
 		apiGroup.Post("/stream/live", s.streamHandler.CreateLiveInput)
+		apiGroup.Delete("/stream/live/{id}", s.streamHandler.DeleteLiveInput)
 
 		// Observability
 		apiGroup.Get("/observability/logs", s.observabilityHandler.GetLogs)

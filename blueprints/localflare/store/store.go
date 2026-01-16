@@ -53,6 +53,16 @@ type Store interface {
 	Hyperdrive() HyperdriveStore
 	// Cron Triggers
 	Cron() CronStore
+	// Pages
+	Pages() PagesStore
+	// Stream
+	Stream() StreamStore
+	// Images
+	Images() ImagesStore
+	// Observability
+	Observability() ObservabilityStore
+	// Settings
+	Settings() SettingsStore
 }
 
 // Zone represents a DNS zone/domain.
@@ -1022,6 +1032,291 @@ type HyperdriveStats struct {
 	TotalConnections  int     `json:"total_connections"`
 	QueriesPerSecond  float64 `json:"queries_per_second"`
 	CacheHitRate      float64 `json:"cache_hit_rate"`
+}
+
+// ========== Pages ==========
+
+// PagesProject represents a Cloudflare Pages project.
+type PagesProject struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Subdomain        string    `json:"subdomain"`
+	ProductionBranch string    `json:"production_branch"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// PagesDeployment represents a Pages deployment.
+type PagesDeployment struct {
+	ID            string     `json:"id"`
+	ProjectID     string     `json:"project_id"`
+	Environment   string     `json:"environment"` // production, preview
+	Branch        string     `json:"branch"`
+	CommitHash    string     `json:"commit_hash"`
+	CommitMessage string     `json:"commit_message"`
+	URL           string     `json:"url"`
+	Status        string     `json:"status"` // queued, building, success, failed
+	CreatedAt     time.Time  `json:"created_at"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+}
+
+// PagesDomain represents a custom domain for a Pages project.
+type PagesDomain struct {
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Domain    string    `json:"domain"`
+	Status    string    `json:"status"` // pending, active, failed
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type PagesStore interface {
+	// Projects
+	CreateProject(ctx context.Context, project *PagesProject) error
+	GetProject(ctx context.Context, id string) (*PagesProject, error)
+	GetProjectByName(ctx context.Context, name string) (*PagesProject, error)
+	ListProjects(ctx context.Context) ([]*PagesProject, error)
+	UpdateProject(ctx context.Context, project *PagesProject) error
+	DeleteProject(ctx context.Context, id string) error
+
+	// Deployments
+	CreateDeployment(ctx context.Context, deployment *PagesDeployment) error
+	GetDeployment(ctx context.Context, id string) (*PagesDeployment, error)
+	ListDeployments(ctx context.Context, projectID string, limit int) ([]*PagesDeployment, error)
+	UpdateDeployment(ctx context.Context, deployment *PagesDeployment) error
+	GetLatestDeployment(ctx context.Context, projectID string) (*PagesDeployment, error)
+
+	// Domains
+	AddDomain(ctx context.Context, domain *PagesDomain) error
+	ListDomains(ctx context.Context, projectID string) ([]*PagesDomain, error)
+	DeleteDomain(ctx context.Context, id string) error
+}
+
+// ========== Stream ==========
+
+// StreamVideo represents a Cloudflare Stream video.
+type StreamVideo struct {
+	ID           string    `json:"id"`
+	UID          string    `json:"uid"`
+	Name         string    `json:"name"`
+	Size         int64     `json:"size"`
+	Duration     float64   `json:"duration"`
+	Width        int       `json:"width"`
+	Height       int       `json:"height"`
+	Status       string    `json:"status"` // pendingupload, uploading, processing, ready, error
+	ThumbnailURL string    `json:"thumbnail_url"`
+	PlaybackHLS  string    `json:"playback_hls"`
+	PlaybackDASH string    `json:"playback_dash"`
+	StorageKey   string    `json:"storage_key"` // R2 storage key
+	CreatedAt    time.Time `json:"created_at"`
+	ReadyAt      *time.Time `json:"ready_at,omitempty"`
+}
+
+// StreamLiveInput represents a live streaming input.
+type StreamLiveInput struct {
+	ID         string    `json:"id"`
+	UID        string    `json:"uid"`
+	Name       string    `json:"name"`
+	RTMPSUrl   string    `json:"rtmps_url"`
+	RTMPSKey   string    `json:"rtmps_key"`
+	SRTUrl     string    `json:"srt_url"`
+	WebRTCUrl  string    `json:"webrtc_url"`
+	Status     string    `json:"status"` // disconnected, connected, reconnecting
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type StreamStore interface {
+	// Videos
+	CreateVideo(ctx context.Context, video *StreamVideo) error
+	GetVideo(ctx context.Context, uid string) (*StreamVideo, error)
+	ListVideos(ctx context.Context, limit, offset int) ([]*StreamVideo, error)
+	UpdateVideo(ctx context.Context, video *StreamVideo) error
+	DeleteVideo(ctx context.Context, uid string) error
+
+	// Live Inputs
+	CreateLiveInput(ctx context.Context, input *StreamLiveInput) error
+	GetLiveInput(ctx context.Context, uid string) (*StreamLiveInput, error)
+	ListLiveInputs(ctx context.Context) ([]*StreamLiveInput, error)
+	UpdateLiveInput(ctx context.Context, input *StreamLiveInput) error
+	DeleteLiveInput(ctx context.Context, uid string) error
+}
+
+// ========== Images ==========
+
+// Image represents a Cloudflare Image.
+type Image struct {
+	ID         string            `json:"id"`
+	Filename   string            `json:"filename"`
+	StorageKey string            `json:"storage_key"` // R2 storage key
+	Size       int64             `json:"size"`
+	Width      int               `json:"width"`
+	Height     int               `json:"height"`
+	Format     string            `json:"format"` // jpeg, png, webp, gif, svg
+	Meta       map[string]string `json:"meta,omitempty"`
+	UploadedAt time.Time         `json:"uploaded_at"`
+}
+
+// ImageVariant represents an image transformation variant.
+type ImageVariant struct {
+	ID                     string `json:"id"`
+	Name                   string `json:"name"`
+	Width                  int    `json:"width,omitempty"`
+	Height                 int    `json:"height,omitempty"`
+	Fit                    string `json:"fit"` // scale-down, contain, cover, crop, pad
+	Quality                int    `json:"quality"`
+	Format                 string `json:"format,omitempty"` // auto, webp, avif, jpeg, png
+	NeverRequireSignedURLs bool   `json:"never_require_signed_urls"`
+}
+
+type ImagesStore interface {
+	// Images
+	CreateImage(ctx context.Context, image *Image) error
+	GetImage(ctx context.Context, id string) (*Image, error)
+	ListImages(ctx context.Context, limit, offset int) ([]*Image, error)
+	DeleteImage(ctx context.Context, id string) error
+
+	// Variants
+	CreateVariant(ctx context.Context, variant *ImageVariant) error
+	GetVariant(ctx context.Context, id string) (*ImageVariant, error)
+	ListVariants(ctx context.Context) ([]*ImageVariant, error)
+	UpdateVariant(ctx context.Context, variant *ImageVariant) error
+	DeleteVariant(ctx context.Context, id string) error
+}
+
+// ========== Observability ==========
+
+// Log represents a log entry.
+type Log struct {
+	ID         string            `json:"id"`
+	WorkerID   string            `json:"worker_id"`
+	WorkerName string            `json:"worker_name"`
+	Level      string            `json:"level"` // debug, info, warn, error
+	Message    string            `json:"message"`
+	RequestID  string            `json:"request_id,omitempty"`
+	TraceID    string            `json:"trace_id,omitempty"`
+	Timestamp  time.Time         `json:"timestamp"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+// Trace represents a distributed trace.
+type Trace struct {
+	ID          string     `json:"id"`
+	TraceID     string     `json:"trace_id"`
+	RootService string     `json:"root_service"`
+	Status      string     `json:"status"` // success, error
+	DurationMs  int        `json:"duration_ms"`
+	StartedAt   time.Time  `json:"started_at"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+}
+
+// TraceSpan represents a span within a trace.
+type TraceSpan struct {
+	ID           string            `json:"id"`
+	TraceID      string            `json:"trace_id"`
+	SpanID       string            `json:"span_id"`
+	ParentSpanID string            `json:"parent_span_id,omitempty"`
+	Name         string            `json:"name"`
+	Service      string            `json:"service"`
+	StartTime    time.Time         `json:"start_time"`
+	DurationMs   int               `json:"duration_ms"`
+	Status       string            `json:"status"`
+	Attributes   map[string]string `json:"attributes,omitempty"`
+}
+
+// Metric represents a metric data point.
+type Metric struct {
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Value     float64           `json:"value"`
+	Tags      map[string]string `json:"tags,omitempty"`
+	Timestamp time.Time         `json:"timestamp"`
+}
+
+type ObservabilityStore interface {
+	// Logs
+	WriteLog(ctx context.Context, log *Log) error
+	WriteLogs(ctx context.Context, logs []*Log) error
+	QueryLogs(ctx context.Context, workerID string, level string, limit, offset int) ([]*Log, error)
+	GetLogsByTraceID(ctx context.Context, traceID string) ([]*Log, error)
+
+	// Traces
+	CreateTrace(ctx context.Context, trace *Trace) error
+	GetTrace(ctx context.Context, traceID string) (*Trace, error)
+	ListTraces(ctx context.Context, limit, offset int) ([]*Trace, error)
+	UpdateTrace(ctx context.Context, trace *Trace) error
+
+	// Spans
+	CreateSpan(ctx context.Context, span *TraceSpan) error
+	GetSpansByTraceID(ctx context.Context, traceID string) ([]*TraceSpan, error)
+
+	// Metrics
+	WriteMetric(ctx context.Context, metric *Metric) error
+	WriteMetrics(ctx context.Context, metrics []*Metric) error
+	QueryMetrics(ctx context.Context, name string, start, end time.Time, limit int) ([]*Metric, error)
+	AggregateMetrics(ctx context.Context, name string, start, end time.Time, aggregation string) (float64, error)
+}
+
+// ========== Settings ==========
+
+// APIToken represents an API token.
+type APIToken struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	TokenHash    string    `json:"-"` // bcrypt hash
+	TokenPreview string    `json:"token_preview"` // last 4 chars
+	Permissions  []string  `json:"permissions"`
+	NotBefore    *time.Time `json:"not_before,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// TeamMember represents a team member.
+type TeamMember struct {
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id,omitempty"`
+	Email      string     `json:"email"`
+	Name       string     `json:"name,omitempty"`
+	Role       string     `json:"role"` // admin, developer, viewer
+	Status     string     `json:"status"` // pending, active
+	InvitedBy  string     `json:"invited_by,omitempty"`
+	InvitedAt  time.Time  `json:"invited_at"`
+	AcceptedAt *time.Time `json:"accepted_at,omitempty"`
+}
+
+// AuditLog represents an audit log entry.
+type AuditLog struct {
+	ID           string    `json:"id"`
+	ActorID      string    `json:"actor_id,omitempty"`
+	ActorEmail   string    `json:"actor_email,omitempty"`
+	Action       string    `json:"action"`
+	ResourceType string    `json:"resource_type"`
+	ResourceID   string    `json:"resource_id,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
+	IPAddress    string    `json:"ip_address,omitempty"`
+	UserAgent    string    `json:"user_agent,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+type SettingsStore interface {
+	// API Tokens
+	CreateToken(ctx context.Context, token *APIToken) error
+	GetToken(ctx context.Context, id string) (*APIToken, error)
+	GetTokenByHash(ctx context.Context, tokenHash string) (*APIToken, error)
+	ListTokens(ctx context.Context) ([]*APIToken, error)
+	UpdateTokenLastUsed(ctx context.Context, id string) error
+	DeleteToken(ctx context.Context, id string) error
+
+	// Team Members
+	CreateMember(ctx context.Context, member *TeamMember) error
+	GetMember(ctx context.Context, id string) (*TeamMember, error)
+	GetMemberByEmail(ctx context.Context, email string) (*TeamMember, error)
+	ListMembers(ctx context.Context) ([]*TeamMember, error)
+	UpdateMember(ctx context.Context, member *TeamMember) error
+	DeleteMember(ctx context.Context, id string) error
+
+	// Audit Logs
+	WriteAuditLog(ctx context.Context, log *AuditLog) error
+	QueryAuditLogs(ctx context.Context, actorID string, resourceType string, limit, offset int) ([]*AuditLog, error)
 }
 
 // ========== Cron Triggers ==========

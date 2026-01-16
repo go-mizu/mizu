@@ -11,14 +11,16 @@ import (
 
 // DriverProgressState holds the progress state for a single driver.
 type DriverProgressState struct {
-	Driver       string
-	Completed    int
-	Total        int
-	Throughput   float64 // Current throughput MB/s
+	Driver         string
+	Completed      int
+	Total          int
+	Throughput     float64 // Current throughput MB/s
 	PrevThroughput float64 // Previous throughput for trend
-	StartTime    time.Time
-	Rank         int  // Current rank (1 = best)
-	Active       bool // Whether driver is actively running
+	StartTime      time.Time
+	Rank           int    // Current rank (1 = best)
+	Active         bool   // Whether driver is actively running
+	Failed         bool   // Whether driver failed with error
+	Error          string // Error message if failed
 }
 
 // MultiDriverProgress manages progress bars for multiple drivers.
@@ -89,6 +91,21 @@ func (m *MultiDriverProgress) Complete(driver string) {
 	}
 }
 
+// SetFailed marks a driver as failed with an error.
+func (m *MultiDriverProgress) SetFailed(driver string, errMsg string) {
+	state, ok := m.drivers[driver]
+	if !ok {
+		m.drivers[driver] = &DriverProgressState{
+			Driver:    driver,
+			StartTime: time.Now(),
+		}
+		state = m.drivers[driver]
+	}
+	state.Failed = true
+	state.Active = false
+	state.Error = errMsg
+}
+
 // updateRanks recalculates the ranking based on throughput.
 func (m *MultiDriverProgress) updateRanks() {
 	// Collect active drivers with throughput > 0
@@ -145,13 +162,36 @@ func (m *MultiDriverProgress) Render() string {
 func (m *MultiDriverProgress) renderDriverProgress(state *DriverProgressState) string {
 	var sb strings.Builder
 
-	// Driver name with color
+	// Driver name with color (red if failed)
 	color := getDriverColor(state.Driver)
+	if state.Failed {
+		color = ColorRed
+	}
 	driverStyle := lipgloss.NewStyle().Foreground(color).Bold(true)
 	sb.WriteString(driverStyle.Render(fmt.Sprintf("%-12s", state.Driver)))
 	sb.WriteString(" ")
 
-	// Progress bar
+	// If failed, show error message instead of progress bar
+	if state.Failed {
+		errStyle := lipgloss.NewStyle().Foreground(ColorRed)
+		errMsg := state.Error
+		if len(errMsg) > 60 {
+			errMsg = errMsg[:57] + "..."
+		}
+		sb.WriteString(errStyle.Render("[FAILED] " + errMsg))
+		return sb.String()
+	}
+
+	// Progress bar - ensure reasonable width
+	barWidth := m.barWidth
+	if barWidth < 10 {
+		barWidth = 10
+	}
+	if barWidth > 60 {
+		barWidth = 60
+	}
+
+	// Calculate progress
 	percent := 0.0
 	if state.Total > 0 {
 		percent = float64(state.Completed) / float64(state.Total)
@@ -159,21 +199,32 @@ func (m *MultiDriverProgress) renderDriverProgress(state *DriverProgressState) s
 	if percent > 1 {
 		percent = 1
 	}
-
-	filled := int(float64(m.barWidth) * percent)
-	if filled > m.barWidth {
-		filled = m.barWidth
+	if percent < 0 {
+		percent = 0
 	}
+
+	filled := int(float64(barWidth) * percent)
+	if filled > barWidth {
+		filled = barWidth
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	empty := barWidth - filled
 
 	// Color bar based on rank
 	barColor := m.getRankColor(state.Rank)
 	barStyle := lipgloss.NewStyle().Foreground(barColor)
 	emptyStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", m.barWidth-filled)
+	// Build bar string safely
 	sb.WriteString("[")
-	sb.WriteString(barStyle.Render(bar[:filled]))
-	sb.WriteString(emptyStyle.Render(bar[filled:]))
+	if filled > 0 {
+		sb.WriteString(barStyle.Render(strings.Repeat("█", filled)))
+	}
+	if empty > 0 {
+		sb.WriteString(emptyStyle.Render(strings.Repeat("░", empty)))
+	}
 	sb.WriteString("] ")
 
 	// Percentage
@@ -187,12 +238,11 @@ func (m *MultiDriverProgress) renderDriverProgress(state *DriverProgressState) s
 		sb.WriteString(" ")
 		sb.WriteString(trend)
 	} else {
-		sb.WriteString(MutedStyle.Render("       -    "))
-		sb.WriteString("  ")
+		sb.WriteString(MutedStyle.Render("     -     "))
 	}
 
 	// ETA
-	if state.Active && state.Completed > 0 && state.Completed < state.Total {
+	if state.Active && state.Completed > 0 && state.Completed < state.Total && percent > 0 {
 		elapsed := time.Since(state.StartTime)
 		remaining := time.Duration(float64(elapsed) / percent * (1 - percent))
 		sb.WriteString(MutedStyle.Render(fmt.Sprintf(" ETA %s", formatETA(remaining))))

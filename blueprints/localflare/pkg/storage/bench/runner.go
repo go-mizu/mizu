@@ -28,6 +28,11 @@ type Runner struct {
 	resultsMu         sync.Mutex
 	keyCounter        uint64
 	dockerCollector   *DockerStatsCollector
+	// Progress tracking
+	progressMu      sync.Mutex
+	currentOp       string
+	currentIter     int64
+	currentDuration time.Duration
 }
 
 // NewRunner creates a new benchmark runner.
@@ -45,6 +50,85 @@ func NewRunner(cfg *Config) *Runner {
 // SetLogger sets a custom logger.
 func (r *Runner) SetLogger(fn func(format string, args ...any)) {
 	r.logger = fn
+}
+
+// showLiveProgress prints live progress during benchmark execution.
+// Returns a cleanup function that must be called when the benchmark completes.
+// The cleanup function is safe to call multiple times.
+func (r *Runner) showLiveProgress(operation string, targetDuration time.Duration) func() {
+	stopCh := make(chan struct{})
+	startTime := time.Now()
+	var once sync.Once
+	spinnerChars := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+	spinnerIdx := 0
+
+	// Print initial status immediately
+	fmt.Printf("\r    %c %s: running...  ", spinnerChars[0], operation)
+
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond) // Faster updates for smoother spinner
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				r.progressMu.Lock()
+				iters := r.currentIter
+				elapsed := time.Since(startTime)
+				r.progressMu.Unlock()
+
+				// Calculate progress percentage based on elapsed time vs target
+				progress := float64(elapsed) / float64(targetDuration)
+				if progress > 1.0 {
+					progress = 1.0
+				}
+
+				// Calculate iterations per second
+				var ipsStr string
+				if elapsed.Seconds() > 0 {
+					ips := float64(iters) / elapsed.Seconds()
+					if ips >= 1000 {
+						ipsStr = fmt.Sprintf("%.1fk/s", ips/1000)
+					} else {
+						ipsStr = fmt.Sprintf("%.0f/s", ips)
+					}
+				} else {
+					ipsStr = "-/s"
+				}
+
+				// Spinner
+				spinnerIdx = (spinnerIdx + 1) % len(spinnerChars)
+				spinner := spinnerChars[spinnerIdx]
+
+				// Build progress bar (20 chars to fit better)
+				barWidth := 20
+				filled := int(progress * float64(barWidth))
+				bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+				// Print progress on same line
+				fmt.Printf("\r    %c %s [%s] %3.0f%% | %d iters | %s | %v  ",
+					spinner, operation, bar, progress*100, iters, ipsStr,
+					elapsed.Round(100*time.Millisecond))
+			}
+		}
+	}()
+
+	return func() {
+		once.Do(func() {
+			close(stopCh)
+			// Clear the progress line
+			fmt.Print("\r" + strings.Repeat(" ", 100) + "\r")
+		})
+	}
+}
+
+// updateProgress updates the live progress counters.
+func (r *Runner) updateProgress(iters int64) {
+	r.progressMu.Lock()
+	r.currentIter = iters
+	r.progressMu.Unlock()
 }
 
 // Run executes all benchmarks.
@@ -362,7 +446,13 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 	benchTime := r.config.BenchTimeForSize(size)
 	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, benchTime)
+	defer cleanup()
+
 	// Adaptive scaling loop - runs until target duration is reached
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		start := time.Now()
@@ -377,12 +467,15 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 			cancel()
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(start)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup() // Stop progress display before logging result
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
@@ -424,7 +517,13 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 	var keyIdx uint64
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, benchTime)
+	defer cleanup()
+
 	// Adaptive scaling loop
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		runStart := time.Now()
@@ -447,12 +546,15 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 				collector.RecordWithError(time.Since(start), err)
 			}
 			cancel()
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(runStart)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup() // Stop progress display before logging result
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
@@ -482,6 +584,12 @@ func (r *Runner) benchmarkStat(ctx context.Context, bucket storage.Bucket, drive
 	collector := NewCollector()
 	ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		start := time.Now()
@@ -494,12 +602,15 @@ func (r *Runner) benchmarkStat(ctx context.Context, bucket storage.Bucket, drive
 			cancel()
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(start)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup()
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 
 	metrics := collector.Metrics(operation, driver, 0)
@@ -541,6 +652,12 @@ func (r *Runner) benchmarkList(ctx context.Context, bucket storage.Bucket, drive
 	collector := NewCollector()
 	ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		start := time.Now()
@@ -562,12 +679,15 @@ func (r *Runner) benchmarkList(ctx context.Context, bucket storage.Bucket, drive
 
 			collector.RecordWithError(timer.Elapsed(), err)
 			cancel()
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(start)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup()
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 
 	metrics := collector.Metrics(operation, driver, 0)
@@ -584,6 +704,12 @@ func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, dri
 	collector := NewCollector()
 	ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 
@@ -606,11 +732,14 @@ func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, dri
 			cancel()
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 		elapsed := time.Since(start)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup()
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 
 	metrics := collector.Metrics(operation, driver, 0)
@@ -641,6 +770,12 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 	sem := make(chan struct{}, concurrency)
 	opTimeout := 10 * time.Second
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, benchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		var wg sync.WaitGroup
@@ -671,6 +806,8 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 
 				_, err := bucket.Write(opCtx, key, bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 				collector.RecordWithError(timer.Elapsed(), err)
+				atomic.AddInt64(&totalIters, 1)
+				r.updateProgress(atomic.LoadInt64(&totalIters))
 			}()
 		}
 
@@ -680,6 +817,7 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 	}
 
 done:
+	cleanup() // Stop progress display before logging result
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
@@ -721,6 +859,12 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	sem := make(chan struct{}, concurrency)
 	opTimeout := 10 * time.Second
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, benchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		var wg sync.WaitGroup
@@ -760,6 +904,8 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 				} else {
 					collector.RecordWithError(time.Since(opStart), err)
 				}
+				atomic.AddInt64(&totalIters, 1)
+				r.updateProgress(atomic.LoadInt64(&totalIters))
 			}()
 		}
 
@@ -769,6 +915,7 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	}
 
 done:
+	cleanup() // Stop progress display before logging result
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 
 	metrics := collector.Metrics(operation, driver, size)
@@ -816,6 +963,8 @@ func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
 	}
 	defer iter.Close()
 
+	// Collect all objects and dirs first
+	var objects []string
 	var dirs []string
 	for {
 		obj, err := iter.Next()
@@ -824,13 +973,42 @@ func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
 		}
 		if obj.IsDir {
 			dirs = append(dirs, obj.Key)
-			continue
+		} else {
+			objects = append(objects, obj.Key)
 		}
-		opCtx, opCancel := r.opContext(cleanupCtx)
-		bucket.Delete(opCtx, obj.Key, nil)
-		opCancel()
 	}
 
+	// Skip if nothing to clean
+	if len(objects) == 0 && len(dirs) == 0 {
+		return
+	}
+
+	// Show cleanup progress
+	total := len(objects) + len(dirs)
+	var deleted int64
+	spinnerChars := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+	spinnerIdx := 0
+	startTime := time.Now()
+
+	showCleanupProgress := func() {
+		spinnerIdx = (spinnerIdx + 1) % len(spinnerChars)
+		elapsed := time.Since(startTime)
+		fmt.Printf("\r    %c Cleanup [%d/%d] %v  ",
+			spinnerChars[spinnerIdx], deleted, total, elapsed.Round(100*time.Millisecond))
+	}
+
+	// Delete objects with progress
+	for _, key := range objects {
+		opCtx, opCancel := r.opContext(cleanupCtx)
+		bucket.Delete(opCtx, key, nil)
+		opCancel()
+		deleted++
+		if deleted%10 == 0 || deleted == int64(len(objects)) {
+			showCleanupProgress()
+		}
+	}
+
+	// Delete dirs (deepest first)
 	sort.Slice(dirs, func(i, j int) bool {
 		return len(dirs[i]) > len(dirs[j])
 	})
@@ -838,7 +1016,12 @@ func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
 		opCtx, opCancel := r.opContext(cleanupCtx)
 		bucket.Delete(opCtx, key, storage.Options{"recursive": true})
 		opCancel()
+		deleted++
+		showCleanupProgress()
 	}
+
+	// Clear progress line
+	fmt.Print("\r" + strings.Repeat(" ", 60) + "\r")
 }
 
 func (r *Runner) runBenchmark(ctx context.Context, bucket storage.Bucket, label string, fn func() error) {
@@ -853,7 +1036,7 @@ func (r *Runner) runBenchmark(ctx context.Context, bucket storage.Bucket, label 
 	if err := fn(); err != nil {
 		r.logger("  %s failed: %v", label, err)
 	}
-	r.cleanupBucket(ctx, bucket)
+	// Note: cleanup is done once per driver via Docker container restart, not after each operation
 }
 
 func (r *Runner) opContext(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -927,6 +1110,11 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 		collector := NewCollector()
 		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+		// Start live progress display
+		r.currentIter = 0
+		cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+
+		var totalIters int64
 		for ab.ShouldContinue() {
 			n := ab.NextN()
 			start := time.Now()
@@ -943,12 +1131,15 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 
 				collector.RecordWithError(timer.Elapsed(), err)
 				cancel()
+				totalIters++
+				r.updateProgress(totalIters)
 			}
 
 			elapsed := time.Since(start)
 			ab.RecordRun(n, elapsed)
 		}
 
+		cleanup() // Stop progress display before logging result
 		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, int(rng.length))
 		r.addResult(metrics)
@@ -975,6 +1166,12 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 	benchTime := r.config.BenchTimeForSize(size)
 	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, benchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		start := time.Now()
@@ -988,12 +1185,15 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 			cancel()
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(start)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup() // Stop progress display before logging result
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 	metrics := collector.Metrics(operation, driver, size)
 	r.addResult(metrics)
@@ -1040,6 +1240,11 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 		var opCounter uint64
 		var keyIdx uint64
 
+		// Start live progress display
+		r.currentIter = 0
+		cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+
+		var totalIters int64
 		for ab.ShouldContinue() {
 			n := ab.NextN()
 			var wg sync.WaitGroup
@@ -1078,6 +1283,8 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 					}
 
 					collector.RecordWithError(timer.Elapsed(), err)
+					atomic.AddInt64(&totalIters, 1)
+					r.updateProgress(atomic.LoadInt64(&totalIters))
 				}()
 			}
 
@@ -1086,6 +1293,7 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 			ab.RecordRun(n, elapsed)
 		}
 
+		cleanup() // Stop progress display before logging result
 		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, objectSize)
 		r.addResult(metrics)
@@ -1115,6 +1323,12 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 	benchTime := r.config.BenchTimeForSize(totalSize)
 	ab := NewAdaptiveBenchmarkWithContext(ctx, benchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+	// Start live progress display
+	r.currentIter = 0
+	cleanup := r.showLiveProgress(operation, benchTime)
+	defer cleanup()
+
+	var totalIters int64
 	for ab.ShouldContinue() {
 		n := ab.NextN()
 		start := time.Now()
@@ -1156,12 +1370,15 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 			}
 
 			collector.RecordWithError(timer.Elapsed(), err)
+			totalIters++
+			r.updateProgress(totalIters)
 		}
 
 		elapsed := time.Since(start)
 		ab.RecordRun(n, elapsed)
 	}
 
+	cleanup() // Stop progress display before logging result
 	r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), benchTime)
 	metrics := collector.Metrics(operation, driver, totalSize)
 	r.addResult(metrics)
@@ -1176,6 +1393,11 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		collector := NewCollector()
 		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 
+		// Start live progress display
+		r.currentIter = 0
+		cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+
+		var totalIters int64
 		for ab.ShouldContinue() {
 			n := ab.NextN()
 			start := time.Now()
@@ -1189,12 +1411,15 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 				cancel()
 
 				collector.RecordWithError(timer.Elapsed(), err)
+				totalIters++
+				r.updateProgress(totalIters)
 			}
 
 			elapsed := time.Since(start)
 			ab.RecordRun(n, elapsed)
 		}
 
+		cleanup() // Stop progress display before logging result
 		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, 0)
 		r.addResult(metrics)
@@ -1208,6 +1433,11 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 		var keyCounter uint64
 
+		// Start live progress display
+		r.currentIter = 0
+		cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+
+		var totalIters int64
 		for ab.ShouldContinue() {
 			n := ab.NextN()
 			start := time.Now()
@@ -1222,12 +1452,15 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 				cancel()
 
 				collector.RecordWithError(timer.Elapsed(), err)
+				totalIters++
+				r.updateProgress(totalIters)
 			}
 
 			elapsed := time.Since(start)
 			ab.RecordRun(n, elapsed)
 		}
 
+		cleanup() // Stop progress display before logging result
 		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, 100)
 		r.addResult(metrics)
@@ -1241,6 +1474,11 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 		var keyCounter uint64
 
+		// Start live progress display
+		r.currentIter = 0
+		cleanup := r.showLiveProgress(operation, r.config.BenchTime)
+
+		var totalIters int64
 		for ab.ShouldContinue() {
 			n := ab.NextN()
 			start := time.Now()
@@ -1255,12 +1493,15 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 				cancel()
 
 				collector.RecordWithError(timer.Elapsed(), err)
+				totalIters++
+				r.updateProgress(totalIters)
 			}
 
 			elapsed := time.Since(start)
 			ab.RecordRun(n, elapsed)
 		}
 
+		cleanup() // Stop progress display before logging result
 		r.logger("  %s: %d iterations in %v (target: %v)", operation, ab.TotalIterations(), ab.TotalDuration().Round(time.Millisecond), r.config.BenchTime)
 		metrics := collector.Metrics(operation, driver, 100)
 		r.addResult(metrics)
@@ -1444,6 +1685,9 @@ type AdaptiveBenchmark struct {
 	nextN         int64         // Next iteration count to run
 	started       bool          // Whether benchmark has started
 	ctx           context.Context // Context for cancellation
+
+	// Progress callback (called periodically during benchmark)
+	onProgress func(iters int64, elapsed time.Duration)
 }
 
 // NewAdaptiveBenchmark creates a new adaptive benchmark controller.
@@ -1465,6 +1709,18 @@ func NewAdaptiveBenchmarkWithContext(ctx context.Context, benchTime time.Duratio
 		maxIterations: int64(maxIter),
 		nextN:         1, // Start with 1 iteration like Go
 		ctx:           ctx,
+	}
+}
+
+// SetProgressCallback sets a callback to be called periodically during the benchmark.
+func (ab *AdaptiveBenchmark) SetProgressCallback(fn func(iters int64, elapsed time.Duration)) {
+	ab.onProgress = fn
+}
+
+// NotifyProgress calls the progress callback if set.
+func (ab *AdaptiveBenchmark) NotifyProgress() {
+	if ab.onProgress != nil {
+		ab.onProgress(ab.totalN, ab.totalDuration)
 	}
 }
 

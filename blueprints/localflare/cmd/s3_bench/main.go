@@ -249,6 +249,23 @@ func runInteractive(ctx context.Context, runner *BenchmarkRunner, cfg *Config) e
 		},
 	)
 
+	// Set latency callback
+	runner.SetLatencyCallback(func(driver string, ttfb, ttlb time.Duration) {
+		p.Send(ui.LatencySampleMsg{
+			Driver: driver,
+			TTFB:   ttfb,
+			TTLB:   ttlb,
+		})
+	})
+
+	// Set driver error callback
+	runner.SetDriverErrorCallback(func(driver string, err error) {
+		p.Send(ui.DriverErrorMsg{
+			Driver: driver,
+			Error:  err.Error(),
+		})
+	})
+
 	// Run benchmark in background
 	go func() {
 		_, err := runner.Run(ctx)

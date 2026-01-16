@@ -42,6 +42,11 @@ type Store struct {
 	aiGateway       *AIGatewayStoreImpl
 	hyperdrive      *HyperdriveStoreImpl
 	cron            *CronStoreImpl
+	pages           *PagesStoreImpl
+	stream          *StreamStoreImpl
+	images          *ImagesStoreImpl
+	observability   *ObservabilityStoreImpl
+	settings        *SettingsStoreImpl
 }
 
 // New creates a new SQLite store.
@@ -83,6 +88,11 @@ func New(dataDir string) (*Store, error) {
 	s.aiGateway = &AIGatewayStoreImpl{db: db}
 	s.hyperdrive = &HyperdriveStoreImpl{db: db}
 	s.cron = &CronStoreImpl{db: db}
+	s.pages = &PagesStoreImpl{db: db}
+	s.stream = &StreamStoreImpl{db: db, dataDir: filepath.Join(dataDir, "stream")}
+	s.images = &ImagesStoreImpl{db: db, dataDir: filepath.Join(dataDir, "images")}
+	s.observability = &ObservabilityStoreImpl{db: db}
+	s.settings = &SettingsStoreImpl{db: db}
 
 	return s, nil
 }
@@ -624,6 +634,193 @@ func (s *Store) Ensure(ctx context.Context) error {
 		FOREIGN KEY (trigger_id) REFERENCES cron_triggers(id) ON DELETE CASCADE
 	);
 	CREATE INDEX IF NOT EXISTS idx_cron_executions_trigger ON cron_executions(trigger_id);
+
+	-- Pages Projects
+	CREATE TABLE IF NOT EXISTS pages_projects (
+		id TEXT PRIMARY KEY,
+		name TEXT UNIQUE NOT NULL,
+		subdomain TEXT UNIQUE NOT NULL,
+		production_branch TEXT DEFAULT 'main',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Pages Deployments
+	CREATE TABLE IF NOT EXISTS pages_deployments (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		environment TEXT NOT NULL DEFAULT 'production',
+		branch TEXT NOT NULL,
+		commit_hash TEXT,
+		commit_message TEXT,
+		url TEXT,
+		status TEXT NOT NULL DEFAULT 'queued',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		finished_at DATETIME,
+		FOREIGN KEY (project_id) REFERENCES pages_projects(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_pages_deployments_project ON pages_deployments(project_id, created_at DESC);
+
+	-- Pages Domains
+	CREATE TABLE IF NOT EXISTS pages_domains (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		domain TEXT UNIQUE NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (project_id) REFERENCES pages_projects(id) ON DELETE CASCADE
+	);
+
+	-- Stream Videos
+	CREATE TABLE IF NOT EXISTS stream_videos (
+		id TEXT PRIMARY KEY,
+		uid TEXT UNIQUE NOT NULL,
+		name TEXT NOT NULL,
+		size INTEGER DEFAULT 0,
+		duration REAL DEFAULT 0,
+		width INTEGER DEFAULT 0,
+		height INTEGER DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'pendingupload',
+		thumbnail_url TEXT,
+		playback_hls TEXT,
+		playback_dash TEXT,
+		storage_key TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		ready_at DATETIME
+	);
+
+	-- Stream Live Inputs
+	CREATE TABLE IF NOT EXISTS stream_live_inputs (
+		id TEXT PRIMARY KEY,
+		uid TEXT UNIQUE NOT NULL,
+		name TEXT NOT NULL,
+		rtmps_url TEXT,
+		rtmps_key TEXT,
+		srt_url TEXT,
+		webrtc_url TEXT,
+		status TEXT NOT NULL DEFAULT 'disconnected',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Images
+	CREATE TABLE IF NOT EXISTS images (
+		id TEXT PRIMARY KEY,
+		filename TEXT NOT NULL,
+		storage_key TEXT NOT NULL,
+		size INTEGER DEFAULT 0,
+		width INTEGER DEFAULT 0,
+		height INTEGER DEFAULT 0,
+		format TEXT,
+		meta TEXT DEFAULT '{}',
+		uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Image Variants
+	CREATE TABLE IF NOT EXISTS image_variants (
+		id TEXT PRIMARY KEY,
+		name TEXT UNIQUE NOT NULL,
+		width INTEGER,
+		height INTEGER,
+		fit TEXT DEFAULT 'scale-down',
+		quality INTEGER DEFAULT 85,
+		format TEXT,
+		never_require_signed_urls INTEGER DEFAULT 0
+	);
+
+	-- Observability Logs
+	CREATE TABLE IF NOT EXISTS observability_logs (
+		id TEXT PRIMARY KEY,
+		worker_id TEXT NOT NULL,
+		worker_name TEXT NOT NULL,
+		level TEXT NOT NULL DEFAULT 'info',
+		message TEXT NOT NULL,
+		request_id TEXT,
+		trace_id TEXT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		metadata TEXT DEFAULT '{}'
+	);
+	CREATE INDEX IF NOT EXISTS idx_logs_worker ON observability_logs(worker_id, timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_logs_trace ON observability_logs(trace_id);
+	CREATE INDEX IF NOT EXISTS idx_logs_level ON observability_logs(level, timestamp DESC);
+
+	-- Observability Traces
+	CREATE TABLE IF NOT EXISTS observability_traces (
+		id TEXT PRIMARY KEY,
+		trace_id TEXT UNIQUE NOT NULL,
+		root_service TEXT NOT NULL,
+		status TEXT NOT NULL,
+		duration_ms INTEGER DEFAULT 0,
+		started_at DATETIME NOT NULL,
+		finished_at DATETIME
+	);
+	CREATE INDEX IF NOT EXISTS idx_traces_started ON observability_traces(started_at DESC);
+
+	-- Observability Trace Spans
+	CREATE TABLE IF NOT EXISTS observability_trace_spans (
+		id TEXT PRIMARY KEY,
+		trace_id TEXT NOT NULL,
+		span_id TEXT NOT NULL,
+		parent_span_id TEXT,
+		name TEXT NOT NULL,
+		service TEXT NOT NULL,
+		start_time DATETIME NOT NULL,
+		duration_ms INTEGER DEFAULT 0,
+		status TEXT,
+		attributes TEXT DEFAULT '{}'
+	);
+	CREATE INDEX IF NOT EXISTS idx_spans_trace ON observability_trace_spans(trace_id);
+
+	-- Observability Metrics
+	CREATE TABLE IF NOT EXISTS observability_metrics (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		value REAL NOT NULL,
+		tags TEXT DEFAULT '{}',
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_metrics_name ON observability_metrics(name, timestamp DESC);
+
+	-- API Tokens
+	CREATE TABLE IF NOT EXISTS api_tokens (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		token_hash TEXT UNIQUE NOT NULL,
+		token_preview TEXT NOT NULL,
+		permissions TEXT NOT NULL DEFAULT '[]',
+		not_before DATETIME,
+		expires_at DATETIME,
+		last_used_at DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Team Members
+	CREATE TABLE IF NOT EXISTS team_members (
+		id TEXT PRIMARY KEY,
+		user_id TEXT,
+		email TEXT UNIQUE NOT NULL,
+		name TEXT,
+		role TEXT NOT NULL DEFAULT 'member',
+		status TEXT NOT NULL DEFAULT 'pending',
+		invited_by TEXT,
+		invited_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		accepted_at DATETIME
+	);
+
+	-- Audit Logs
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id TEXT PRIMARY KEY,
+		actor_id TEXT,
+		actor_email TEXT,
+		action TEXT NOT NULL,
+		resource_type TEXT NOT NULL,
+		resource_id TEXT,
+		metadata TEXT DEFAULT '{}',
+		ip_address TEXT,
+		user_agent TEXT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id, timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_logs(resource_type, resource_id);
 	`
 
 	_, err := s.db.ExecContext(ctx, schema)
@@ -657,6 +854,11 @@ func (s *Store) AI() store.AIStore                          { return s.ai }
 func (s *Store) AIGateway() store.AIGatewayStore            { return s.aiGateway }
 func (s *Store) Hyperdrive() store.HyperdriveStore          { return s.hyperdrive }
 func (s *Store) Cron() store.CronStore                      { return s.cron }
+func (s *Store) Pages() store.PagesStore                    { return s.pages }
+func (s *Store) Stream() store.StreamStore                  { return s.stream }
+func (s *Store) Images() store.ImagesStore                  { return s.images }
+func (s *Store) Observability() store.ObservabilityStore    { return s.observability }
+func (s *Store) Settings() store.SettingsStore              { return s.settings }
 
 // ZoneStore implementation
 type ZoneStore struct {

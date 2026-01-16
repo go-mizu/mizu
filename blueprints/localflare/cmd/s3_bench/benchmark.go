@@ -33,6 +33,11 @@ type BenchmarkRunner struct {
 	onThroughputSample func(driver string, throughput float64, timestamp time.Time)
 	onDriverProgress   func(driver string, completed, total int, throughput float64)
 	onConfigChange     func(objectSize, threads int)
+	onLatencySample    func(driver string, ttfb, ttlb time.Duration)
+	onDriverError      func(driver string, err error)
+
+	// Track failed drivers
+	failedDrivers map[string]bool
 
 	mu sync.Mutex
 }
@@ -40,9 +45,10 @@ type BenchmarkRunner struct {
 // NewBenchmarkRunner creates a new benchmark runner.
 func NewBenchmarkRunner(cfg *Config) *BenchmarkRunner {
 	return &BenchmarkRunner{
-		config:  cfg,
-		drivers: FilterDrivers(DefaultDrivers(), cfg.Drivers),
-		results: make([]*BenchmarkResult, 0),
+		config:        cfg,
+		drivers:       FilterDrivers(DefaultDrivers(), cfg.Drivers),
+		results:       make([]*BenchmarkResult, 0),
+		failedDrivers: make(map[string]bool),
 	}
 }
 
@@ -72,6 +78,22 @@ func (r *BenchmarkRunner) SetDashboardCallbacks(
 	r.onThroughputSample = onThroughputSample
 	r.onDriverProgress = onDriverProgress
 	r.onConfigChange = onConfigChange
+}
+
+// SetLatencyCallback sets the callback for latency samples.
+func (r *BenchmarkRunner) SetLatencyCallback(fn func(driver string, ttfb, ttlb time.Duration)) {
+	r.onLatencySample = fn
+}
+
+// SetDriverErrorCallback sets the callback for driver errors.
+func (r *BenchmarkRunner) SetDriverErrorCallback(fn func(driver string, err error)) {
+	r.onDriverError = fn
+}
+
+func (r *BenchmarkRunner) latencySample(driver string, ttfb, ttlb time.Duration) {
+	if r.onLatencySample != nil {
+		r.onLatencySample(driver, ttfb, ttlb)
+	}
 }
 
 func (r *BenchmarkRunner) log(msg string) {
@@ -104,7 +126,18 @@ func (r *BenchmarkRunner) configChange(objectSize, threads int) {
 	}
 }
 
+func (r *BenchmarkRunner) driverError(driver string, err error) {
+	r.mu.Lock()
+	r.failedDrivers[driver] = true
+	r.mu.Unlock()
+	if r.onDriverError != nil {
+		r.onDriverError(driver, err)
+	}
+}
+
 // Run executes the full benchmark suite.
+// Uses per-category cleanup: for each object size, we setup, benchmark, then cleanup
+// before moving to the next size. This prevents storage bloat during long runs.
 func (r *BenchmarkRunner) Run(ctx context.Context) ([]*BenchmarkResult, error) {
 	// Check available drivers
 	var availableDrivers []*DriverConfig
@@ -140,42 +173,72 @@ Available drivers and ports:
 	payloadSizes := r.config.PayloadSizes()
 	threadCounts := r.config.ThreadCounts()
 
-	// Phase 1: Setup - Upload objects for each driver
-	if r.onPhaseChange != nil {
-		r.onPhaseChange("SETUP", "")
-	}
-
-	for _, driver := range availableDrivers {
-		if err := r.setupDriver(ctx, driver, payloadSizes); err != nil {
-			r.log(fmt.Sprintf("[ERROR] Setup failed for %s: %v", driver.Name, err))
-			continue
+	// Per-category benchmark: for each size, setup -> benchmark -> cleanup
+	for sizeIdx, size := range payloadSizes {
+		select {
+		case <-ctx.Done():
+			return r.results, ctx.Err()
+		default:
 		}
-	}
 
-	// Phase 2: Benchmark
-	if r.onPhaseChange != nil {
-		r.onPhaseChange("BENCHMARK", "")
-	}
-
-	for _, size := range payloadSizes {
+		// === SETUP for this size ===
+		if r.onPhaseChange != nil {
+			r.onPhaseChange("SETUP", "")
+		}
 		if r.onSectionHeader != nil {
 			r.onSectionHeader(size, "")
 		}
 
+		r.log(fmt.Sprintf("=== Category %d/%d: %s objects ===", sizeIdx+1, len(payloadSizes), FormatSize(size)))
+
+		// Setup: Upload objects for this size across all drivers
+		for i, driver := range availableDrivers {
+			// Skip already failed drivers
+			if r.failedDrivers[driver.Name] {
+				continue
+			}
+
+			r.progress(0, r.config.Samples, fmt.Sprintf("[%s] Uploading %s objects (%d/%d drivers)...", driver.Name, FormatSize(size), i+1, len(availableDrivers)))
+			r.driverProgress(driver.Name, 0, r.config.Samples, 0)
+
+			if err := r.setupDriverForSize(ctx, driver, size); err != nil {
+				errMsg := fmt.Sprintf("[ERROR] Setup failed for %s: %v", driver.Name, err)
+				r.log(errMsg)
+				r.driverError(driver.Name, err)
+				r.progress(0, r.config.Samples, fmt.Sprintf("[%s] FAILED - moving to next driver...", driver.Name))
+				continue
+			}
+		}
+
+		// === BENCHMARK for this size ===
+		if r.onPhaseChange != nil {
+			r.onPhaseChange("BENCHMARK", "")
+		}
+
 		for _, driver := range availableDrivers {
+			// Skip drivers that failed setup
+			if r.failedDrivers[driver.Name] {
+				continue
+			}
+
 			for _, threads := range threadCounts {
 				select {
 				case <-ctx.Done():
+					// Cleanup before returning on cancellation
+					r.cleanupSizeForAllDrivers(ctx, availableDrivers, size)
 					return r.results, ctx.Err()
 				default:
 				}
 
-				// Notify config change
+				// Notify config change and starting benchmark
 				r.configChange(size, threads)
+				r.progress(0, r.config.Samples, fmt.Sprintf("[%s] Benchmarking %s @ %d threads...", driver.Name, FormatSize(size), threads))
 
 				result, err := r.runBenchmark(ctx, driver, size, threads)
 				if err != nil {
-					r.log(fmt.Sprintf("[ERROR] Benchmark failed: %v", err))
+					errMsg := fmt.Sprintf("[ERROR] Benchmark failed for %s: %v", driver.Name, err)
+					r.log(errMsg)
+					r.progress(0, r.config.Samples, fmt.Sprintf("[%s] FAILED - continuing...", driver.Name))
 					continue
 				}
 
@@ -191,17 +254,14 @@ Available drivers and ports:
 				}
 			}
 		}
-	}
 
-	// Phase 3: Cleanup
-	if r.onPhaseChange != nil {
-		r.onPhaseChange("CLEANUP", "")
-	}
-
-	for _, driver := range availableDrivers {
-		if err := r.cleanupDriver(ctx, driver); err != nil {
-			r.log(fmt.Sprintf("[WARN] Cleanup failed for %s: %v", driver.Name, err))
+		// === CLEANUP for this size ===
+		if r.onPhaseChange != nil {
+			r.onPhaseChange("CLEANUP", "")
 		}
+
+		r.cleanupSizeForAllDrivers(ctx, availableDrivers, size)
+		r.log(fmt.Sprintf("=== Completed category: %s objects ===", FormatSize(size)))
 	}
 
 	if r.onPhaseChange != nil {
@@ -211,7 +271,19 @@ Available drivers and ports:
 	return r.results, nil
 }
 
-func (r *BenchmarkRunner) setupDriver(ctx context.Context, driver *DriverConfig, sizes []int) error {
+// cleanupSizeForAllDrivers cleans up objects for a specific size across all drivers.
+func (r *BenchmarkRunner) cleanupSizeForAllDrivers(ctx context.Context, drivers []*DriverConfig, size int) {
+	for i, driver := range drivers {
+		r.progress(i, len(drivers), fmt.Sprintf("[%s] Cleaning up %s objects...", driver.Name, FormatSize(size)))
+		if err := r.cleanupDriverForSize(ctx, driver, size); err != nil {
+			r.log(fmt.Sprintf("[WARN] Cleanup failed for %s: %v", driver.Name, err))
+		}
+	}
+	r.progress(len(drivers), len(drivers), fmt.Sprintf("Cleanup complete for %s objects", FormatSize(size)))
+}
+
+// setupDriverForSize uploads test objects for a single size to a driver.
+func (r *BenchmarkRunner) setupDriverForSize(ctx context.Context, driver *DriverConfig, size int) error {
 	client, err := NewS3Client(ctx, driver)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
@@ -222,33 +294,60 @@ func (r *BenchmarkRunner) setupDriver(ctx context.Context, driver *DriverConfig,
 		return fmt.Errorf("bucket not available: %w", err)
 	}
 
-	// Upload objects for each size
-	for _, size := range sizes {
-		r.log(fmt.Sprintf("[%s] Uploading %s objects", driver.Name, FormatSize(size)))
+	r.log(fmt.Sprintf("[%s] Uploading %d x %s objects", driver.Name, r.config.Samples, FormatSize(size)))
 
-		// Generate random data
-		data := make([]byte, size)
-		rand.Read(data)
+	// Generate random data
+	data := make([]byte, size)
+	rand.Read(data)
 
-		// Upload samples objects
-		for i := 0; i < r.config.Samples; i++ {
-			key := objectKey(driver.Name, size, i)
+	// Track upload throughput
+	sizeStart := time.Now()
+	var bytesUploaded int64
 
-			_, err := client.Client.PutObject(ctx, &s3.PutObjectInput{
-				Bucket:        aws.String(driver.Bucket),
-				Key:           aws.String(key),
-				Body:          bytes.NewReader(data),
-				ContentLength: aws.Int64(int64(size)),
-				ContentType:   aws.String("application/octet-stream"),
-			})
-			if err != nil {
-				return fmt.Errorf("upload object: %w", err)
-			}
-
-			r.progress(i+1, r.config.Samples, fmt.Sprintf("Uploading %s objects", FormatSize(size)))
-			r.driverProgress(driver.Name, i+1, r.config.Samples, 0)
+	// Upload samples objects
+	for i := 0; i < r.config.Samples; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
+
+		key := objectKey(driver.Name, size, i)
+		opStart := time.Now()
+
+		_, err := client.Client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:        aws.String(driver.Bucket),
+			Key:           aws.String(key),
+			Body:          bytes.NewReader(data),
+			ContentLength: aws.Int64(int64(size)),
+			ContentType:   aws.String("application/octet-stream"),
+		})
+		if err != nil {
+			return fmt.Errorf("upload object: %w", err)
+		}
+
+		bytesUploaded += int64(size)
+
+		// Calculate upload throughput
+		elapsed := time.Since(sizeStart).Seconds()
+		var throughput float64
+		if elapsed > 0 {
+			throughput = float64(bytesUploaded) / elapsed / 1024 / 1024 // MB/s
+		}
+
+		// Report progress with throughput
+		opDuration := time.Since(opStart)
+		r.progress(i+1, r.config.Samples, fmt.Sprintf("[%s] Uploading %s (%d/%d) - %.1f MB/s - %v/obj",
+			driver.Name, FormatSize(size), i+1, r.config.Samples, throughput, opDuration.Round(time.Millisecond)))
+		r.driverProgress(driver.Name, i+1, r.config.Samples, throughput)
+		r.throughputSample(driver.Name, throughput)
 	}
+
+	// Log size completion
+	totalElapsed := time.Since(sizeStart)
+	avgThroughput := float64(bytesUploaded) / totalElapsed.Seconds() / 1024 / 1024
+	r.log(fmt.Sprintf("[%s] Uploaded %d x %s in %v (%.1f MB/s avg)",
+		driver.Name, r.config.Samples, FormatSize(size), totalElapsed.Round(time.Millisecond), avgThroughput))
 
 	return nil
 }
@@ -333,7 +432,11 @@ func (r *BenchmarkRunner) runBenchmark(ctx context.Context, driver *DriverConfig
 			n, err := io.Copy(io.Discard, ttfbReader)
 
 			ttlb := time.Since(opStart)
-			collector.AddSample(ttfbReader.TTFB(), ttlb, n, err)
+			ttfb := ttfbReader.TTFB()
+			collector.AddSample(ttfb, ttlb, n, err)
+
+			// Send latency sample to dashboard
+			r.latencySample(driver.Name, ttfb, ttlb)
 
 			// Update counters
 			atomic.AddInt64(&totalBytesDownloaded, n)
@@ -370,13 +473,55 @@ func (r *BenchmarkRunner) runBenchmark(ctx context.Context, driver *DriverConfig
 	}, nil
 }
 
+// cleanupDriverForSize deletes test objects for a specific size from a driver.
+func (r *BenchmarkRunner) cleanupDriverForSize(ctx context.Context, driver *DriverConfig, size int) error {
+	client, err := NewS3Client(ctx, driver)
+	if err != nil {
+		return err
+	}
+
+	// Use size-specific prefix for targeted cleanup
+	prefix := fmt.Sprintf("s3bench-%s-%s/", driver.Name, FormatSize(size))
+
+	// List and delete objects with this prefix
+	paginator := s3.NewListObjectsV2Paginator(client.Client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(driver.Bucket),
+		Prefix: aws.String(prefix),
+	})
+
+	var deleted int
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list objects: %w", err)
+		}
+
+		for _, obj := range page.Contents {
+			_, err := client.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(driver.Bucket),
+				Key:    obj.Key,
+			})
+			if err != nil {
+				r.log(fmt.Sprintf("[WARN] Failed to delete %s: %v", *obj.Key, err))
+			}
+			deleted++
+		}
+	}
+
+	if deleted > 0 {
+		r.log(fmt.Sprintf("[%s] Deleted %d x %s objects", driver.Name, deleted, FormatSize(size)))
+	}
+	return nil
+}
+
+// cleanupDriver deletes all test objects for a driver (used for full cleanup).
 func (r *BenchmarkRunner) cleanupDriver(ctx context.Context, driver *DriverConfig) error {
 	client, err := NewS3Client(ctx, driver)
 	if err != nil {
 		return err
 	}
 
-	r.log(fmt.Sprintf("[%s] Deleting test objects", driver.Name))
+	r.log(fmt.Sprintf("[%s] Deleting all test objects", driver.Name))
 
 	// List and delete all test objects
 	paginator := s3.NewListObjectsV2Paginator(client.Client, &s3.ListObjectsV2Input{

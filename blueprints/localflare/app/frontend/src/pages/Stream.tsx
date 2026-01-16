@@ -35,64 +35,10 @@ export function Stream() {
       if (videosRes.result) setVideos(videosRes.result.videos ?? [])
       if (liveRes.result) setLiveInputs(liveRes.result.live_inputs ?? [])
     } catch (error) {
-      // Mock data
-      setVideos([
-        {
-          uid: 'vid-1',
-          name: 'Product Demo',
-          created: new Date(Date.now() - 3600000).toISOString(),
-          duration: 245,
-          size: 45 * 1024 * 1024,
-          status: { state: 'ready' },
-          thumbnail: 'https://example.com/thumb1.jpg',
-          playback: { hls: 'https://customer-xxx.cloudflarestream.com/vid-1/manifest/video.m3u8' },
-        },
-        {
-          uid: 'vid-2',
-          name: 'Getting Started Tutorial',
-          created: new Date(Date.now() - 86400000).toISOString(),
-          duration: 1234,
-          size: 234 * 1024 * 1024,
-          status: { state: 'ready' },
-          thumbnail: 'https://example.com/thumb2.jpg',
-          playback: { hls: 'https://customer-xxx.cloudflarestream.com/vid-2/manifest/video.m3u8' },
-        },
-        {
-          uid: 'vid-3',
-          name: 'Conference Recording',
-          created: new Date(Date.now() - 172800000).toISOString(),
-          duration: 5678,
-          size: 1.2 * 1024 * 1024 * 1024,
-          status: { state: 'ready' },
-          thumbnail: 'https://example.com/thumb3.jpg',
-          playback: { hls: 'https://customer-xxx.cloudflarestream.com/vid-3/manifest/video.m3u8' },
-        },
-        {
-          uid: 'vid-4',
-          name: 'Marketing Video',
-          created: new Date(Date.now() - 7200000).toISOString(),
-          duration: 0,
-          size: 0,
-          status: { state: 'pendingupload' },
-          playback: {},
-        },
-      ])
-      setLiveInputs([
-        {
-          uid: 'live-1',
-          name: 'Main Studio',
-          created: new Date(Date.now() - 604800000).toISOString(),
-          status: 'connected',
-          rtmps: { url: 'rtmps://live.cloudflare.com:443/live', streamKey: 'xxx-yyy-zzz' },
-        },
-        {
-          uid: 'live-2',
-          name: 'Backup Stream',
-          created: new Date(Date.now() - 259200000).toISOString(),
-          status: 'disconnected',
-          rtmps: { url: 'rtmps://live.cloudflare.com:443/live', streamKey: 'aaa-bbb-ccc' },
-        },
-      ])
+      console.error('Failed to load stream data:', error)
+      notifications.show({ title: 'Error', message: 'Failed to load stream data', color: 'red' })
+      setVideos([])
+      setLiveInputs([])
     } finally {
       setLoading(false)
     }
