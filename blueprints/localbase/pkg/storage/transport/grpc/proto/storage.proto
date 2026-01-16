@@ -1,0 +1,252 @@
+// File: lib/storage/transport/grpc/proto/storage.proto
+
+syntax = "proto3";
+
+package storage.v1;
+
+option go_package = "github.com/go-mizu/blueprints/localbase/pkg/storage/transport/grpc/storagepb";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// StorageService exposes storage.Storage operations over gRPC.
+service StorageService {
+  // Bucket Operations
+  rpc CreateBucket(CreateBucketRequest) returns (BucketInfo);
+  rpc DeleteBucket(DeleteBucketRequest) returns (google.protobuf.Empty);
+  rpc GetBucket(GetBucketRequest) returns (BucketInfo);
+  rpc ListBuckets(ListBucketsRequest) returns (stream BucketInfo);
+
+  // Object Operations
+  rpc StatObject(StatObjectRequest) returns (ObjectInfo);
+  rpc DeleteObject(DeleteObjectRequest) returns (google.protobuf.Empty);
+  rpc CopyObject(CopyObjectRequest) returns (ObjectInfo);
+  rpc MoveObject(MoveObjectRequest) returns (ObjectInfo);
+  rpc ListObjects(ListObjectsRequest) returns (stream ObjectInfo);
+
+  // Streaming Data Operations
+  rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse);
+  rpc WriteObject(stream WriteObjectRequest) returns (ObjectInfo);
+
+  // Multipart Upload Operations
+  rpc InitMultipart(InitMultipartRequest) returns (MultipartUpload);
+  rpc UploadPart(stream UploadPartRequest) returns (PartInfo);
+  rpc ListParts(ListPartsRequest) returns (stream PartInfo);
+  rpc CompleteMultipart(CompleteMultipartRequest) returns (ObjectInfo);
+  rpc AbortMultipart(AbortMultipartRequest) returns (google.protobuf.Empty);
+
+  // Signed URL
+  rpc SignedURL(SignedURLRequest) returns (SignedURLResponse);
+
+  // Features
+  rpc GetFeatures(GetFeaturesRequest) returns (Features);
+}
+
+// BucketInfo describes a bucket.
+message BucketInfo {
+  string name = 1;
+  google.protobuf.Timestamp created_at = 2;
+  bool public = 3;
+  map<string, string> metadata = 4;
+}
+
+// ObjectInfo describes stored data or a logical directory entry.
+message ObjectInfo {
+  string bucket = 1;
+  string key = 2;
+  int64 size = 3;
+  string content_type = 4;
+  string etag = 5;
+  string version = 6;
+  google.protobuf.Timestamp created = 7;
+  google.protobuf.Timestamp updated = 8;
+  map<string, string> hash = 9;
+  map<string, string> metadata = 10;
+  bool is_dir = 11;
+}
+
+// MultipartUpload describes an in-progress multipart upload.
+message MultipartUpload {
+  string bucket = 1;
+  string key = 2;
+  string upload_id = 3;
+  map<string, string> metadata = 4;
+}
+
+// PartInfo describes a single uploaded part.
+message PartInfo {
+  int32 number = 1;
+  int64 size = 2;
+  string etag = 3;
+  map<string, string> hash = 4;
+  google.protobuf.Timestamp last_modified = 5;
+}
+
+// Features describes supported capabilities.
+message Features {
+  map<string, bool> features = 1;
+}
+
+// Bucket Operations
+
+message CreateBucketRequest {
+  string name = 1;
+  map<string, bytes> options = 2;
+}
+
+message DeleteBucketRequest {
+  string name = 1;
+  map<string, bytes> options = 2;
+}
+
+message GetBucketRequest {
+  string name = 1;
+}
+
+message ListBucketsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  map<string, bytes> options = 3;
+}
+
+// Object Operations
+
+message StatObjectRequest {
+  string bucket = 1;
+  string key = 2;
+  map<string, bytes> options = 3;
+}
+
+message DeleteObjectRequest {
+  string bucket = 1;
+  string key = 2;
+  map<string, bytes> options = 3;
+}
+
+message CopyObjectRequest {
+  string src_bucket = 1;
+  string src_key = 2;
+  string dst_bucket = 3;
+  string dst_key = 4;
+  map<string, bytes> options = 5;
+}
+
+message MoveObjectRequest {
+  string src_bucket = 1;
+  string src_key = 2;
+  string dst_bucket = 3;
+  string dst_key = 4;
+  map<string, bytes> options = 5;
+}
+
+message ListObjectsRequest {
+  string bucket = 1;
+  string prefix = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+  map<string, bytes> options = 5;
+}
+
+// Streaming Read
+
+message ReadObjectRequest {
+  string bucket = 1;
+  string key = 2;
+  int64 offset = 3;
+  int64 length = 4; // 0 or negative means full object
+  map<string, bytes> options = 5;
+}
+
+message ReadObjectResponse {
+  oneof payload {
+    ObjectInfo metadata = 1; // First message contains metadata
+    bytes data = 2;          // Subsequent messages contain data chunks
+  }
+}
+
+// Streaming Write
+
+message WriteObjectRequest {
+  oneof payload {
+    WriteObjectMetadata metadata = 1; // First message must be metadata
+    bytes data = 2;                   // Subsequent messages are data chunks
+  }
+}
+
+message WriteObjectMetadata {
+  string bucket = 1;
+  string key = 2;
+  int64 size = 3; // -1 for unknown/streaming
+  string content_type = 4;
+  map<string, bytes> options = 5;
+}
+
+// Multipart Operations
+
+message InitMultipartRequest {
+  string bucket = 1;
+  string key = 2;
+  string content_type = 3;
+  map<string, bytes> options = 4;
+}
+
+message UploadPartRequest {
+  oneof payload {
+    UploadPartMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+
+message UploadPartMetadata {
+  string bucket = 1;
+  string key = 2;
+  string upload_id = 3;
+  int32 part_number = 4;
+  int64 size = 5;
+  map<string, bytes> options = 6;
+}
+
+message ListPartsRequest {
+  string bucket = 1;
+  string key = 2;
+  string upload_id = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+  map<string, bytes> options = 6;
+}
+
+message CompleteMultipartRequest {
+  string bucket = 1;
+  string key = 2;
+  string upload_id = 3;
+  repeated PartInfo parts = 4;
+  map<string, bytes> options = 5;
+}
+
+message AbortMultipartRequest {
+  string bucket = 1;
+  string key = 2;
+  string upload_id = 3;
+  map<string, bytes> options = 4;
+}
+
+// Signed URL
+
+message SignedURLRequest {
+  string bucket = 1;
+  string key = 2;
+  string method = 3;
+  google.protobuf.Duration expires = 4;
+  map<string, bytes> options = 5;
+}
+
+message SignedURLResponse {
+  string url = 1;
+}
+
+// Features
+
+message GetFeaturesRequest {
+  string bucket = 1; // Empty for storage-level features
+}
