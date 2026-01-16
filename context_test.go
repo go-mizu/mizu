@@ -108,8 +108,14 @@ func TestCtx_AccessorsAndNilURL(t *testing.T) {
 	if c.Request() != r {
 		t.Fatalf("Request mismatch")
 	}
-	if c.Writer() != w {
-		t.Fatalf("Writer mismatch")
+	// Writer may be wrapped for status capture, so verify it works correctly
+	if c.Writer() == nil {
+		t.Fatalf("Writer is nil")
+	}
+	// Verify writes go to the underlying recorder
+	c.Writer().Write([]byte("test"))
+	if !strings.Contains(w.buf.String(), "test") {
+		t.Fatalf("Writer does not delegate to underlying writer")
 	}
 	if c.Header() == nil {
 		t.Fatalf("Header is nil")
@@ -284,6 +290,55 @@ func TestCtx_StatusHeadersAndWrites(t *testing.T) {
 	if w.code != 201 {
 		t.Fatalf("expected status unchanged, got %d", w.code)
 	}
+}
+
+// TestCtx_DirectWriteHeaderCapture verifies that status codes are captured
+// when WriteHeader is called directly on the writer (bypassing Ctx helpers).
+// This is important for handlers that use http.ServeContent or similar functions
+// that write status codes like 206 Partial Content directly.
+func TestCtx_DirectWriteHeaderCapture(t *testing.T) {
+	t.Run("captures 206 Partial Content", func(t *testing.T) {
+		w := newFlusherRecorder()
+		c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+
+		// Simulate what http.ServeContent does for Range requests
+		c.Writer().WriteHeader(206) // Direct call, bypasses Ctx helpers
+		c.Writer().Write([]byte("partial"))
+
+		// Verify the status was captured in the context
+		if c.StatusCode() != 206 {
+			t.Fatalf("expected StatusCode() = 206, got %d", c.StatusCode())
+		}
+
+		// Verify the underlying writer also received 206
+		if w.code != 206 {
+			t.Fatalf("expected writer code = 206, got %d", w.code)
+		}
+	})
+
+	t.Run("captures 201 Created", func(t *testing.T) {
+		w := newFlusherRecorder()
+		c := newTestCtx(w, newReq(http.MethodPost, "http://example.com/", nil))
+
+		c.Writer().WriteHeader(201)
+		c.Writer().Write([]byte("created"))
+
+		if c.StatusCode() != 201 {
+			t.Fatalf("expected StatusCode() = 201, got %d", c.StatusCode())
+		}
+	})
+
+	t.Run("defaults to 200 when Write called without WriteHeader", func(t *testing.T) {
+		w := newFlusherRecorder()
+		c := newTestCtx(w, newReq(http.MethodGet, "http://example.com/", nil))
+
+		c.Writer().Write([]byte("content"))
+
+		// Per HTTP spec, Write without WriteHeader implies 200
+		if c.StatusCode() != 200 {
+			t.Fatalf("expected StatusCode() = 200, got %d", c.StatusCode())
+		}
+	})
 }
 
 func TestCtx_JSON_SetsContentType(t *testing.T) {

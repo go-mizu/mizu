@@ -101,8 +101,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Attach *Ctx to the request context and keep Ctx synchronized.
 	req2 := req.WithContext(context.WithValue(req.Context(), ctxKey{}, c))
 	c.request = req2
-	c.writer = w
-	c.rc = http.NewResponseController(w)
+	// Note: c.writer and c.rc are already set by newCtx with status-capturing wrapper
 
 	entry := r.cachedEntry()
 
@@ -362,9 +361,11 @@ func (r *Router) syncCtx(c *Ctx, w http.ResponseWriter, req *http.Request) *Ctx 
 	if c == nil {
 		return newCtx(w, req, r.log)
 	}
-	c.writer = w
+	// Wrap the new writer with status-capturing wrapper
+	wrapped := &statusCapturingWriter{ResponseWriter: w, ctx: c}
+	c.writer = wrapped
 	c.request = req
-	c.rc = http.NewResponseController(w)
+	c.rc = http.NewResponseController(wrapped)
 	return c
 }
 

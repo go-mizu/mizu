@@ -46,13 +46,16 @@ func newCtx(w http.ResponseWriter, r *http.Request, lg *slog.Logger) *Ctx {
 	if lg == nil {
 		lg = slog.Default()
 	}
-	return &Ctx{
+	ctx := &Ctx{
 		request: r,
-		writer:  w,
-		rc:      http.NewResponseController(w),
 		status:  http.StatusOK,
 		log:     lg,
 	}
+	// Wrap the writer to capture status codes when WriteHeader is called directly
+	wrapped := &statusCapturingWriter{ResponseWriter: w, ctx: ctx}
+	ctx.writer = wrapped
+	ctx.rc = http.NewResponseController(wrapped)
+	return ctx
 }
 
 // CtxFromRequest creates a Ctx from an http.Request.
@@ -71,6 +74,37 @@ type noopWriter struct{}
 func (noopWriter) Header() http.Header         { return http.Header{} }
 func (noopWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (noopWriter) WriteHeader(int)             {}
+
+// statusCapturingWriter wraps an http.ResponseWriter to capture the status code
+// when WriteHeader is called directly on the writer (bypassing Ctx helpers).
+type statusCapturingWriter struct {
+	http.ResponseWriter
+	ctx *Ctx
+}
+
+func (w *statusCapturingWriter) WriteHeader(code int) {
+	// Update the context's status before delegating
+	if w.ctx != nil && !w.ctx.wroteHeader {
+		w.ctx.status = code
+		w.ctx.wroteHeader = true
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusCapturingWriter) Write(b []byte) (int, error) {
+	// If Write is called without WriteHeader, status defaults to 200 per HTTP spec
+	if w.ctx != nil && !w.ctx.wroteHeader {
+		w.ctx.wroteHeader = true
+		// status is already initialized to 200 in newCtx
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap returns the underlying ResponseWriter for http.ResponseController compatibility.
+// This enables http.ResponseController to find underlying Flusher/Hijacker implementations.
+func (w *statusCapturingWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
 
 // --- Accessors ---
 
@@ -275,7 +309,8 @@ func (c *Ctx) Stream(fn func(io.Writer) error) error {
 
 // SSE writes Server-Sent Events from ch.
 func (c *Ctx) SSE(ch <-chan any) error {
-	if _, ok := c.writer.(http.Flusher); !ok {
+	// Use ResponseController to check for Flusher support (handles wrapped writers)
+	if err := c.rc.Flush(); err != nil {
 		return errors.New("SSE requires http.Flusher")
 	}
 	if !c.wroteHeader {
@@ -449,10 +484,8 @@ func (c *Ctx) Flush() error {
 		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	if f, ok := c.writer.(http.Flusher); ok {
-		f.Flush()
-	}
-	return nil
+	// Use ResponseController which properly unwraps to find Flusher
+	return c.rc.Flush()
 }
 
 func (c *Ctx) SetWriter(w http.ResponseWriter) {
@@ -461,10 +494,8 @@ func (c *Ctx) SetWriter(w http.ResponseWriter) {
 }
 
 func (c *Ctx) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := c.writer.(http.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, errors.New("hijack not supported")
+	// Use ResponseController which properly unwraps to find Hijacker
+	return c.rc.Hijack()
 }
 
 func (c *Ctx) SetWriteDeadline(t time.Time) error { return c.rc.SetWriteDeadline(t) }
