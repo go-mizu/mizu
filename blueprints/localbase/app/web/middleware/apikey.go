@@ -58,13 +58,23 @@ const (
 	HeaderUserEmail = "X-Localbase-User-Email"
 )
 
+// insecureDefaultJWTSecret is the Supabase demo secret - INSECURE, only for development.
+const insecureDefaultJWTSecret = "super-secret-jwt-token-with-at-least-32-characters-long"
+
 // DefaultAPIKeyConfig returns the default API key configuration.
 // Uses the same default keys as Supabase local development.
+// WARNING: Default keys are INSECURE and should only be used for local development.
 func DefaultAPIKeyConfig() *APIKeyConfig {
 	// Supabase local development default keys
 	defaultAnonKey := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
 	defaultServiceKey := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
-	defaultJWTSecret := "super-secret-jwt-token-with-at-least-32-characters-long"
+
+	// Check if custom JWT secret is provided
+	jwtSecret := os.Getenv("LOCALBASE_JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = insecureDefaultJWTSecret
+		// Log warning about insecure default (only log once, handled by caller)
+	}
 
 	// Enable signature validation by default unless explicitly disabled
 	validateSig := getEnv("LOCALBASE_VALIDATE_JWT", "true") == "true"
@@ -72,11 +82,16 @@ func DefaultAPIKeyConfig() *APIKeyConfig {
 	return &APIKeyConfig{
 		AnonKey:           getEnv("LOCALBASE_ANON_KEY", defaultAnonKey),
 		ServiceKey:        getEnv("LOCALBASE_SERVICE_KEY", defaultServiceKey),
-		JWTSecret:         getEnv("LOCALBASE_JWT_SECRET", defaultJWTSecret),
+		JWTSecret:         jwtSecret,
 		HeaderName:        "apikey",
 		Optional:          true, // Make optional for backward compatibility
 		ValidateSignature: validateSig,
 	}
+}
+
+// IsUsingInsecureDefaults returns true if the configuration is using insecure default secrets.
+func (c *APIKeyConfig) IsUsingInsecureDefaults() bool {
+	return c.JWTSecret == insecureDefaultJWTSecret
 }
 
 // APIKey returns a middleware that validates API keys and JWTs.
@@ -123,7 +138,7 @@ func APIKey(config *APIKeyConfig) mizu.Middleware {
 				claims, err = validateAndParseJWT(apiKey, config.JWTSecret)
 				if err != nil {
 					// Check if it's a known key (for backward compatibility)
-					if apiKey == config.AnonKey || apiKey == config.ServiceKey || apiKey == "test-api-key" {
+					if apiKey == config.AnonKey || apiKey == config.ServiceKey {
 						// Try parsing without validation for known keys
 						claims, _ = parseJWTClaims(apiKey)
 					} else if !config.Optional {
@@ -150,10 +165,8 @@ func APIKey(config *APIKeyConfig) mizu.Middleware {
 					role = "anon"
 				} else if apiKey == config.ServiceKey {
 					role = "service_role"
-				} else if apiKey == "test-api-key" {
-					// Legacy test key for backward compatibility
-					role = "service_role"
 				}
+				// NOTE: Removed "test-api-key" backdoor for security
 			}
 
 			if role == "" && !config.Optional {
@@ -227,13 +240,14 @@ func validateAndParseJWT(tokenString, secret string) (*JWTClaims, error) {
 
 // parseJWTClaims parses JWT claims without validating the signature.
 // Used for backward compatibility and known keys.
+// NOTE: Still validates expiration time for security.
 func parseJWTClaims(tokenString string) (*JWTClaims, error) {
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
 		return nil, jwt.ErrTokenMalformed
 	}
 
-	// Parse without validation
+	// Parse without signature validation
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	token, _, err := parser.ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
@@ -243,6 +257,13 @@ func parseJWTClaims(tokenString string) (*JWTClaims, error) {
 	mapClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, jwt.ErrTokenInvalidClaims
+	}
+
+	// Still check expiration even when not validating signature
+	if exp, ok := mapClaims["exp"].(float64); ok {
+		if time.Now().Unix() > int64(exp) {
+			return nil, jwt.ErrTokenExpired
+		}
 	}
 
 	return mapClaimsToJWTClaims(mapClaims), nil

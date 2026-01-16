@@ -1,10 +1,14 @@
 package api
 
 import (
+	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/localbase/app/web/middleware"
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
 	"github.com/gorilla/websocket"
 )
@@ -24,6 +28,33 @@ func NewRealtimeHandler(store *postgres.Store) *RealtimeHandler {
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
+			// SEC-016: Configure CheckOrigin to validate WebSocket origins
+			CheckOrigin: func(r *http.Request) bool {
+				origin := r.Header.Get("Origin")
+				// Allow connections without origin header (e.g., CLI tools)
+				if origin == "" {
+					return true
+				}
+				// Allow localhost for development
+				if strings.HasPrefix(origin, "http://localhost") ||
+					strings.HasPrefix(origin, "https://localhost") ||
+					strings.HasPrefix(origin, "http://127.0.0.1") ||
+					strings.HasPrefix(origin, "https://127.0.0.1") {
+					return true
+				}
+				// Check allowed origins from environment
+				allowedOrigins := os.Getenv("LOCALBASE_ALLOWED_ORIGINS")
+				if allowedOrigins == "" {
+					// Default: allow same origin only in production
+					return false
+				}
+				for _, allowed := range strings.Split(allowedOrigins, ",") {
+					if strings.TrimSpace(allowed) == origin {
+						return true
+					}
+				}
+				return false
+			},
 		},
 		clients: make(map[*websocket.Conn]bool),
 	}
@@ -55,7 +86,39 @@ func (h *RealtimeHandler) GetStats(c *mizu.Ctx) error {
 }
 
 // WebSocket handles WebSocket connections.
+// SEC-017: WebSocket authentication via token query parameter or API key
 func (h *RealtimeHandler) WebSocket(c *mizu.Ctx) error {
+	// Check authentication before upgrading
+	// WebSocket can't use standard headers easily, so we check query params
+	token := c.Query("apikey")
+	if token == "" {
+		token = c.Query("token")
+	}
+	if token == "" {
+		// Also check standard header (set before upgrade)
+		token = c.Request().Header.Get("apikey")
+	}
+
+	// Validate token
+	role := middleware.GetRole(c)
+	if role == "" && token != "" {
+		// Try to validate the token manually
+		config := middleware.DefaultAPIKeyConfig()
+		if token == config.AnonKey {
+			role = "anon"
+		} else if token == config.ServiceKey {
+			role = "service_role"
+		}
+	}
+
+	// Require at least anon role for WebSocket connections
+	if role == "" {
+		return c.JSON(401, map[string]any{
+			"error":   "Unauthorized",
+			"message": "WebSocket connection requires authentication. Pass apikey or token query parameter.",
+		})
+	}
+
 	// Upgrade HTTP connection to WebSocket
 	conn, err := h.upgrader.Upgrade(c.Writer(), c.Request(), nil)
 	if err != nil {
