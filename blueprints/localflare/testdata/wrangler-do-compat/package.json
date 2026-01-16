@@ -1,0 +1,14 @@
+{
+  "name": "do-compat-tests",
+  "version": "1.0.0",
+  "description": "Durable Objects compatibility tests for LocalFlare",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "wrangler dev --local",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
