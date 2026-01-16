@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 )
 
 // Ensure bucket implements storage.HasMultipart.

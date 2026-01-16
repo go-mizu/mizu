@@ -3,7 +3,7 @@ package local
 import (
 	"context"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 )
 
 // driver implements storage.Driver for the local backend.

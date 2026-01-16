@@ -32,13 +32,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/transport/s3"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/transport/s3"
 	"github.com/go-mizu/mizu"
 
 	// Register storage drivers
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/memory"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/memory"
 )
 
 // Config configures the S3-compatible server.

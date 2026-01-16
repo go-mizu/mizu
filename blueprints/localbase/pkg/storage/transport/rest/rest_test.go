@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
 	"github.com/go-mizu/mizu"
 )
 
@@ -221,4 +221,266 @@ func doRequestWithResponse(t *testing.T, method, url string, body io.Reader, hea
 		t.Fatalf("read body: %v", err)
 	}
 	return resp.StatusCode, data, resp
+}
+
+// Test secret for signed URLs
+const testSigningSecret = "test-signing-secret-at-least-32-characters"
+
+// newTestServerWithAuth creates a test server with JWT authentication enabled.
+func newTestServerWithAuth(t *testing.T) (*httptest.Server, string, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+	store, err := local.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("open local storage: %v", err)
+	}
+
+	app := mizu.New()
+	authConfig := AuthConfig{
+		JWTSecret:            testSigningSecret,
+		AllowAnonymousPublic: true,
+	}
+	RegisterWithAuth(app, "/storage/v1", store, authConfig)
+
+	srv := httptest.NewServer(app)
+
+	// Create a valid token for testing
+	token, err := createToken(&Claims{
+		Sub:  "test-user",
+		Role: "service_role",
+		Exp:  9999999999,
+	}, testSigningSecret)
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+
+	cleanup := func() {
+		srv.Close()
+		_ = store.Close()
+	}
+
+	return srv, token, cleanup
+}
+
+// TestSignedURLsWithAuth tests signed URL creation and access with authentication.
+func TestSignedURLsWithAuth(t *testing.T) {
+	srv, token, cleanup := newTestServerWithAuth(t)
+	defer cleanup()
+
+	base := srv.URL + "/storage/v1"
+
+	// Helper to make authenticated requests
+	authHeaders := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "application/json",
+	}
+	authUploadHeaders := map[string]string{
+		"Authorization": "Bearer " + token,
+		"Content-Type":  "text/plain",
+	}
+
+	// Create bucket and object
+	bucketReq, _ := json.Marshal(map[string]any{"name": "signed-test"})
+	req, _ := http.NewRequest(http.MethodPost, base+"/bucket", bytes.NewReader(bucketReq))
+	for k, v := range authHeaders {
+		req.Header.Set(k, v)
+	}
+	resp, _ := http.DefaultClient.Do(req)
+	_ = resp.Body.Close()
+
+	// Upload test file
+	uploadReq, _ := http.NewRequest(http.MethodPost, base+"/object/signed-test/hello.txt", strings.NewReader("Hello, World!"))
+	for k, v := range authUploadHeaders {
+		uploadReq.Header.Set(k, v)
+	}
+	uploadResp, _ := http.DefaultClient.Do(uploadReq)
+	_ = uploadResp.Body.Close()
+
+	t.Run("create signed URL for existing object", func(t *testing.T) {
+		signReq := SignURLRequest{ExpiresIn: 3600}
+		signBody, _ := json.Marshal(signReq)
+		req, _ := http.NewRequest(http.MethodPost, base+"/object/sign/signed-test/hello.txt", bytes.NewReader(signBody))
+		for k, v := range authHeaders {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
+		}
+
+		var signResp SignURLResponse
+		if err := json.NewDecoder(resp.Body).Decode(&signResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+
+		if signResp.SignedURL == "" {
+			t.Fatal("signedURL is empty")
+		}
+
+		// Verify URL contains render endpoint and token
+		if !strings.Contains(signResp.SignedURL, "/object/render/") {
+			t.Errorf("signed URL should contain /object/render/, got %s", signResp.SignedURL)
+		}
+		if !strings.Contains(signResp.SignedURL, "token=") {
+			t.Errorf("signed URL should contain token parameter, got %s", signResp.SignedURL)
+		}
+	})
+
+	t.Run("access object via signed URL", func(t *testing.T) {
+		// First, get a signed URL
+		signReq := SignURLRequest{ExpiresIn: 3600}
+		signBody, _ := json.Marshal(signReq)
+		req, _ := http.NewRequest(http.MethodPost, base+"/object/sign/signed-test/hello.txt", bytes.NewReader(signBody))
+		for k, v := range authHeaders {
+			req.Header.Set(k, v)
+		}
+
+		resp, _ := http.DefaultClient.Do(req)
+		var signResp SignURLResponse
+		_ = json.NewDecoder(resp.Body).Decode(&signResp)
+		_ = resp.Body.Close()
+
+		// Access the object via signed URL (no auth required)
+		getReq, _ := http.NewRequest(http.MethodGet, signResp.SignedURL, nil)
+		getResp, err := http.DefaultClient.Do(getReq)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			_ = getResp.Body.Close()
+		}()
+
+		if getResp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(getResp.Body)
+			t.Fatalf("status = %d, body = %s", getResp.StatusCode, string(body))
+		}
+
+		body, _ := io.ReadAll(getResp.Body)
+		if string(body) != "Hello, World!" {
+			t.Errorf("body = %q, want %q", string(body), "Hello, World!")
+		}
+	})
+
+	t.Run("signed URL for multiple objects", func(t *testing.T) {
+		// Upload another file
+		uploadReq, _ := http.NewRequest(http.MethodPost, base+"/object/signed-test/world.txt", strings.NewReader("World!"))
+		for k, v := range authUploadHeaders {
+			uploadReq.Header.Set(k, v)
+		}
+		uploadResp, _ := http.DefaultClient.Do(uploadReq)
+		_ = uploadResp.Body.Close()
+
+		signReq := SignURLsRequest{
+			ExpiresIn: 3600,
+			Paths:     []string{"hello.txt", "world.txt"},
+		}
+		signBody, _ := json.Marshal(signReq)
+		req, _ := http.NewRequest(http.MethodPost, base+"/object/sign/signed-test", bytes.NewReader(signBody))
+		for k, v := range authHeaders {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
+		}
+
+		var results []SignURLsResponseItem
+		if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Fatalf("got %d results, want 2", len(results))
+		}
+
+		for _, r := range results {
+			if r.SignedURL == "" {
+				t.Errorf("result for %s has empty signedURL", r.Path)
+			}
+		}
+	})
+
+	t.Run("create upload signed URL", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, base+"/object/upload/sign/signed-test/upload-target.txt", nil)
+		for k, v := range authHeaders {
+			req.Header.Set(k, v)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d, body = %s", resp.StatusCode, string(body))
+		}
+
+		var uploadSignResp UploadSignedURLResponse
+		if err := json.NewDecoder(resp.Body).Decode(&uploadSignResp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+
+		if uploadSignResp.URL == "" {
+			t.Fatal("upload URL is empty")
+		}
+		if uploadSignResp.Token == "" {
+			t.Fatal("upload token is empty")
+		}
+	})
+
+	t.Run("invalid token rejected", func(t *testing.T) {
+		// Try to access render endpoint with invalid token
+		req, _ := http.NewRequest(http.MethodGet, base+"/object/render/signed-test/hello.txt?token=invalid-token", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d, want 401, body = %s", resp.StatusCode, string(body))
+		}
+	})
+
+	t.Run("missing token rejected", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, base+"/object/render/signed-test/hello.txt", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d, want 401, body = %s", resp.StatusCode, string(body))
+		}
+	})
 }

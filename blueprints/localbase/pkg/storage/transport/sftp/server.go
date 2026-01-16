@@ -43,7 +43,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )

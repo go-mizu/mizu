@@ -9,8 +9,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
-	pb "github.com/go-mizu/blueprints/localbase/pkg/storage/transport/grpc/storagepb"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
+	pb "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/transport/grpc/storagepb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"

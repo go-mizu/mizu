@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
-	_ "github.com/go-mizu/blueprints/localbase/pkg/storage/driver/memory" // Register memory driver
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
+	_ "github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/memory" // Register memory driver
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )

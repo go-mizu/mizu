@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage/driver/local"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage/driver/local"
 )
 
 func newTestFS(t *testing.T) (*StorageFileSystem, func()) {

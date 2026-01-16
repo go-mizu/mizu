@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 )
 
 // =============================================================================
@@ -515,7 +515,13 @@ func (s *store) Features() storage.Features {
 	}
 }
 
-func (s *store) Close() error { return nil }
+func (s *store) Close() error {
+	// Clear global caches to prevent stale data across different storage instances
+	// This is important for testing where multiple storage instances may use the same bucket names
+	globalObjectCache.Clear()
+	hotCache.ClearHot()
+	return nil
+}
 
 // bucket implements storage.Bucket on top of a directory.
 type bucket struct {
@@ -576,6 +582,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	if err != nil {
 		return nil, err
 	}
+
+	// Invalidate caches before write to ensure fresh reads after overwrite
+	ck := cacheKey(b.name, relKey)
+	globalObjectCache.Invalidate(ck)
+	hotCache.InvalidateHot(ck)
 
 	full, err := joinUnderRoot(b.root, relKey)
 	if err != nil {
@@ -1129,17 +1140,23 @@ func (b *bucket) Delete(ctx context.Context, key string, opts storage.Options) e
 	}
 	recursive := boolOpt(opts, "recursive")
 
+	// Invalidate caches before delete
+	ck := cacheKey(b.name, relKey)
+
 	var delErr error
 	if recursive {
 		// OPTIMIZATION: Use optimized recursive delete with unlinkat
 		delErr = deleteRecursiveFast(full)
 		// Invalidate all cached objects under this prefix
-		globalObjectCache.InvalidatePrefix(cacheKey(b.name, relKey))
+		globalObjectCache.InvalidatePrefix(ck)
+		// Hot cache doesn't support prefix invalidation, just clear the exact key
+		hotCache.InvalidateHot(ck)
 	} else {
 		// OPTIMIZATION: Use optimized single file delete with unlinkat
 		delErr = deleteWithUnlink(full)
-		// Invalidate this specific object from cache
-		globalObjectCache.Invalidate(cacheKey(b.name, relKey))
+		// Invalidate this specific object from caches
+		globalObjectCache.Invalidate(ck)
+		hotCache.InvalidateHot(ck)
 	}
 	if delErr != nil {
 		if errors.Is(delErr, os.ErrNotExist) {
@@ -1182,6 +1199,11 @@ func (b *bucket) Copy(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	if err := os.MkdirAll(filepath.Dir(dstFull), DirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir dst dir: %w", err)
 	}
+
+	// Invalidate cache for destination (in case overwriting)
+	dstCK := cacheKey(b.name, dstRel)
+	globalObjectCache.Invalidate(dstCK)
+	hotCache.InvalidateHot(dstCK)
 
 	if err := copyFile(srcFull, dstFull); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -1234,6 +1256,14 @@ func (b *bucket) Move(ctx context.Context, dstKey string, srcBucket, srcKey stri
 	if err := os.MkdirAll(filepath.Dir(dstFull), DirPermissions); err != nil {
 		return nil, fmt.Errorf("local: mkdir dst dir: %w", err)
 	}
+
+	// Invalidate caches for both source and destination
+	srcCK := cacheKey(srcBucketName, srcRel)
+	dstCK := cacheKey(b.name, dstRel)
+	globalObjectCache.Invalidate(srcCK)
+	globalObjectCache.Invalidate(dstCK)
+	hotCache.InvalidateHot(srcCK)
+	hotCache.InvalidateHot(dstCK)
 
 	// Try atomic server side rename first.
 	if err := os.Rename(srcFull, dstFull); err != nil {

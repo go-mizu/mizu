@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-mizu/blueprints/localbase/pkg/storage"
+	"github.com/go-mizu/mizu/blueprints/localbase/pkg/storage"
 	"github.com/go-mizu/mizu"
 )
 
@@ -136,21 +136,28 @@ func (s *Server) handleCreateUploadSignedURL(c *mizu.Ctx) error {
 
 	objectPath = cleanObjectPath(objectPath)
 
-	ctx := c.Context()
-	bucket := s.store.Bucket(bucketName)
+	// Get signing secret from auth config
+	signingSecret := s.getSigningSecret()
+	if signingSecret == "" {
+		return writeError(c, http.StatusNotImplemented, fmt.Errorf("signed URLs not configured"))
+	}
 
-	// Generate a signed URL for uploading
 	// Default expiry of 1 hour (3600 seconds)
 	expires := 3600 * time.Second
 
-	signedURL, err := bucket.SignedURL(ctx, objectPath, "PUT", expires, nil)
+	// Generate signed URL token
+	token, err := generateSignedURLToken(signingSecret, bucketName, objectPath, "PUT", expires)
 	if err != nil {
-		return writeError(c, mapStorageError(err), err)
+		return writeError(c, http.StatusInternalServerError, err)
 	}
+
+	// Build the full upload URL
+	baseURL := getRequestBaseURL(c.Request().Host, getScheme(c), s.basePath)
+	signedURL := buildUploadSignedURL(baseURL, bucketName, objectPath, token)
 
 	return c.JSON(http.StatusOK, UploadSignedURLResponse{
 		URL:   signedURL,
-		Token: "", // Token is optional and driver-specific
+		Token: token,
 	})
 }
 
@@ -231,9 +238,30 @@ func (s *Server) handleDownloadObject(c *mizu.Ctx) error {
 	var offset, length int64 = 0, -1
 	rangeHeader := c.Request().Header.Get("Range")
 	partial := false
+	suffixRange := false
 	if rangeHeader != "" {
 		offset, length = parseRangeHeader(rangeHeader)
-		partial = length >= 0 || offset > 0
+		// Check for suffix range (bytes=-N): offset=-1 is the marker
+		if offset == -1 && length > 0 {
+			suffixRange = true
+			partial = true
+		} else {
+			partial = length >= 0 || offset > 0
+		}
+	}
+
+	// For suffix ranges, we need to get file size first to compute actual offset
+	if suffixRange {
+		info, err := bucket.Stat(ctx, objectPath, nil)
+		if err != nil {
+			return writeError(c, mapStorageError(err), err)
+		}
+		// Compute actual offset for suffix range: last N bytes
+		offset = info.Size - length
+		if offset < 0 {
+			offset = 0
+			length = info.Size
+		}
 	}
 
 	rc, obj, err := bucket.Open(ctx, objectPath, offset, length, nil)
@@ -582,15 +610,24 @@ func (s *Server) handleCreateSignedURL(c *mizu.Ctx) error {
 	}
 
 	objectPath = cleanObjectPath(objectPath)
+
+	// Get signing secret from auth config
+	signingSecret := s.getSigningSecret()
+	if signingSecret == "" {
+		return writeError(c, http.StatusNotImplemented, fmt.Errorf("signed URLs not configured"))
+	}
+
 	expires := time.Duration(req.ExpiresIn) * time.Second
 
-	ctx := c.Context()
-	bucket := s.store.Bucket(bucketName)
-
-	signedURL, err := bucket.SignedURL(ctx, objectPath, "GET", expires, nil)
+	// Generate signed URL token
+	token, err := generateSignedURLToken(signingSecret, bucketName, objectPath, "GET", expires)
 	if err != nil {
-		return writeError(c, mapStorageError(err), err)
+		return writeError(c, http.StatusInternalServerError, err)
 	}
+
+	// Build the full signed URL
+	baseURL := getRequestBaseURL(c.Request().Host, getScheme(c), s.basePath)
+	signedURL := buildSignedURL(baseURL, bucketName, objectPath, token)
 
 	return c.JSON(http.StatusOK, SignURLResponse{
 		SignedURL: signedURL,
@@ -620,21 +657,26 @@ func (s *Server) handleCreateSignedURLs(c *mizu.Ctx) error {
 		return writeError(c, http.StatusBadRequest, fmt.Errorf("paths is required"))
 	}
 
-	expires := time.Duration(req.ExpiresIn) * time.Second
+	// Get signing secret from auth config
+	signingSecret := s.getSigningSecret()
+	if signingSecret == "" {
+		return writeError(c, http.StatusNotImplemented, fmt.Errorf("signed URLs not configured"))
+	}
 
-	ctx := c.Context()
-	bucket := s.store.Bucket(bucketName)
+	expires := time.Duration(req.ExpiresIn) * time.Second
+	baseURL := getRequestBaseURL(c.Request().Host, getScheme(c), s.basePath)
 
 	var results []SignURLsResponseItem
 	for _, p := range req.Paths {
 		objectPath := cleanObjectPath(p)
-		signedURL, err := bucket.SignedURL(ctx, objectPath, "GET", expires, nil)
+		token, err := generateSignedURLToken(signingSecret, bucketName, objectPath, "GET", expires)
 		if err != nil {
 			results = append(results, SignURLsResponseItem{
 				Path:  p,
 				Error: err.Error(),
 			})
 		} else {
+			signedURL := buildSignedURL(baseURL, bucketName, objectPath, token)
 			results = append(results, SignURLsResponseItem{
 				Path:      p,
 				SignedURL: signedURL,
@@ -711,7 +753,8 @@ func cleanObjectPath(p string) string {
 }
 
 // parseRangeHeader parses HTTP Range header and returns offset and length.
-// Format: bytes=start-end or bytes=start-
+// Format: bytes=start-end, bytes=start-, or bytes=-suffix
+// For suffix ranges (bytes=-N), returns offset=-1 and length=N (caller must compute actual offset).
 func parseRangeHeader(h string) (offset, length int64) {
 	h = strings.TrimSpace(h)
 	if !strings.HasPrefix(h, "bytes=") {
@@ -722,13 +765,27 @@ func parseRangeHeader(h string) (offset, length int64) {
 	if len(parts) != 2 {
 		return 0, -1
 	}
-	start, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+
+	startStr := strings.TrimSpace(parts[0])
+	endStr := strings.TrimSpace(parts[1])
+
+	// Handle suffix range: bytes=-N (last N bytes)
+	if startStr == "" && endStr != "" {
+		suffixLen, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil {
+			return 0, -1
+		}
+		// Return special marker: offset=-1 indicates suffix range
+		return -1, suffixLen
+	}
+
+	start, err := strconv.ParseInt(startStr, 10, 64)
 	if err != nil {
 		return 0, -1
 	}
 	offset = start
-	if parts[1] != "" {
-		end, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	if endStr != "" {
+		end, err := strconv.ParseInt(endStr, 10, 64)
 		if err != nil {
 			return start, -1
 		}
@@ -748,4 +805,101 @@ func boolOpt(opts storage.Options, key string) bool {
 	}
 	b, ok := v.(bool)
 	return ok && b
+}
+
+// getSigningSecret returns the JWT secret used for signing URLs.
+// Falls back to a default secret if auth is not configured.
+func (s *Server) getSigningSecret() string {
+	if s.authConfig != nil && s.authConfig.JWTSecret != "" {
+		return s.authConfig.JWTSecret
+	}
+	// Return empty string to indicate signed URLs are not configured
+	return ""
+}
+
+// getScheme extracts the request scheme (http or https).
+func getScheme(c *mizu.Ctx) string {
+	// Check X-Forwarded-Proto header (common for reverse proxies)
+	if proto := c.Request().Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	// Check if TLS is used
+	if c.Request().TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+// handleRenderSignedURL implements GET /object/render/:bucketName/*path.
+// This endpoint serves objects using a signed URL token for authentication.
+func (s *Server) handleRenderSignedURL(c *mizu.Ctx) error {
+	bucketName := c.Param("bucketName")
+	objectPath := c.Param("path")
+	token := c.Query("token")
+
+	if bucketName == "" {
+		return writeError(c, http.StatusBadRequest, fmt.Errorf("bucket name is required"))
+	}
+	if objectPath == "" {
+		return writeError(c, http.StatusBadRequest, fmt.Errorf("object path is required"))
+	}
+	if token == "" {
+		return writeError(c, http.StatusUnauthorized, fmt.Errorf("token is required"))
+	}
+
+	objectPath = cleanObjectPath(objectPath)
+
+	// Get signing secret
+	signingSecret := s.getSigningSecret()
+	if signingSecret == "" {
+		return writeError(c, http.StatusNotImplemented, fmt.Errorf("signed URLs not configured"))
+	}
+
+	// Validate the token
+	payload, err := validateSignedURLToken(signingSecret, token)
+	if err != nil {
+		return writeError(c, http.StatusUnauthorized, fmt.Errorf("invalid or expired token: %w", err))
+	}
+
+	// Verify the token matches the requested resource
+	if payload.Bucket != bucketName || payload.Path != objectPath {
+		return writeError(c, http.StatusForbidden, fmt.Errorf("token does not match requested resource"))
+	}
+
+	// Verify the method (GET for download)
+	if payload.Method != "GET" {
+		return writeError(c, http.StatusMethodNotAllowed, fmt.Errorf("token is not valid for GET requests"))
+	}
+
+	// Serve the file using the existing download logic
+	ctx := c.Context()
+	bucket := s.store.Bucket(bucketName)
+
+	rc, obj, err := bucket.Open(ctx, objectPath, 0, -1, nil)
+	if err != nil {
+		return writeError(c, mapStorageError(err), err)
+	}
+	defer func() {
+		_ = rc.Close()
+	}()
+
+	// Set headers
+	w := c.Writer()
+	if obj.ContentType != "" {
+		w.Header().Set("Content-Type", obj.ContentType)
+	}
+	if obj.ETag != "" {
+		w.Header().Set("ETag", obj.ETag)
+	}
+	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
+
+	// Handle download query param
+	if c.Query("download") != "" {
+		filename := path.Base(objectPath)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, rc)
+	return nil
 }
