@@ -23,6 +23,7 @@ type Store interface {
 	Database() DatabaseStore
 	Functions() FunctionsStore
 	Realtime() RealtimeStore
+	Logs() LogsStore
 }
 
 // ========== Auth Types ==========
@@ -418,4 +419,94 @@ type RealtimeStore interface {
 	GetSubscription(ctx context.Context, id string) (*Subscription, error)
 	ListSubscriptions(ctx context.Context, channelID string) ([]*Subscription, error)
 	DeleteSubscription(ctx context.Context, id string) error
+}
+
+// ========== Logs Types ==========
+
+// LogEntry represents a single log entry.
+type LogEntry struct {
+	ID              string            `json:"id"`
+	Timestamp       time.Time         `json:"timestamp"`
+	EventMessage    string            `json:"event_message"`
+	RequestID       *string           `json:"request_id,omitempty"`
+	Method          string            `json:"method,omitempty"`
+	Path            string            `json:"path,omitempty"`
+	StatusCode      int               `json:"status_code,omitempty"`
+	Source          string            `json:"source"`
+	UserID          *string           `json:"user_id,omitempty"`
+	UserAgent       string            `json:"user_agent,omitempty"`
+	APIKey          string            `json:"apikey,omitempty"`
+	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
+	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
+	DurationMs      int               `json:"duration_ms,omitempty"`
+	Metadata        map[string]any    `json:"metadata,omitempty"`
+	Search          string            `json:"search,omitempty"`
+}
+
+// LogFilter represents query parameters for log filtering.
+type LogFilter struct {
+	Source      string     `json:"source,omitempty"`
+	StatusMin   int        `json:"status_min,omitempty"`
+	StatusMax   int        `json:"status_max,omitempty"`
+	Methods     []string   `json:"methods,omitempty"`
+	PathPattern string     `json:"path_pattern,omitempty"`
+	Query       string     `json:"query,omitempty"`
+	From        *time.Time `json:"from,omitempty"`
+	To          *time.Time `json:"to,omitempty"`
+	TimeRange   string     `json:"time_range,omitempty"` // 1h, 24h, 7d, 30d
+	Limit       int        `json:"limit,omitempty"`
+	Offset      int        `json:"offset,omitempty"`
+}
+
+// LogHistogramBucket represents a single histogram bucket.
+type LogHistogramBucket struct {
+	Timestamp time.Time `json:"timestamp"`
+	Count     int       `json:"count"`
+}
+
+// SavedQuery represents a user's saved log query.
+type SavedQuery struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	QueryParams map[string]any `json:"query_params"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+// QueryTemplate represents a predefined query template.
+type QueryTemplate struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	QueryParams map[string]any `json:"query_params"`
+	Category    string         `json:"category,omitempty"`
+}
+
+// LogSource represents a log collection type.
+type LogSource struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// LogsStore defines the interface for log storage operations.
+type LogsStore interface {
+	// Log entries
+	CreateLog(ctx context.Context, entry *LogEntry) error
+	GetLog(ctx context.Context, id string) (*LogEntry, error)
+	ListLogs(ctx context.Context, filter *LogFilter) ([]*LogEntry, int, error)
+
+	// Histogram
+	GetHistogram(ctx context.Context, filter *LogFilter, interval string) ([]LogHistogramBucket, error)
+
+	// Saved queries
+	CreateSavedQuery(ctx context.Context, query *SavedQuery) error
+	GetSavedQuery(ctx context.Context, id string) (*SavedQuery, error)
+	ListSavedQueries(ctx context.Context) ([]*SavedQuery, error)
+	UpdateSavedQuery(ctx context.Context, query *SavedQuery) error
+	DeleteSavedQuery(ctx context.Context, id string) error
+
+	// Templates
+	ListQueryTemplates(ctx context.Context) ([]*QueryTemplate, error)
 }
