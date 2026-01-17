@@ -69,6 +69,23 @@ const getStatusColor = (status: number | undefined) => {
   return 'gray';
 };
 
+// Severity color mapping (for Postgres logs)
+const getSeverityColor = (severity: string | undefined) => {
+  switch (severity) {
+    case 'DEBUG': return 'gray';
+    case 'INFO': return 'blue';
+    case 'NOTICE': return 'cyan';
+    case 'WARNING': return 'yellow';
+    case 'ERROR': return 'orange';
+    case 'FATAL': return 'red';
+    case 'PANIC': return 'red';
+    default: return 'gray';
+  }
+};
+
+// Severity levels for filtering
+const SEVERITY_LEVELS = ['DEBUG', 'INFO', 'NOTICE', 'WARNING', 'ERROR', 'FATAL', 'PANIC'];
+
 // Format timestamp like Supabase: "17 Jan 26 21:16:26"
 const formatTimestamp = (timestamp: string) => {
   const date = new Date(timestamp);
@@ -124,6 +141,7 @@ export function LogsExplorerPage() {
   const [timeRange, setTimeRange] = useState('1h');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [methodFilter, setMethodFilter] = useState<string | null>(null);
+  const [severityFilter, setSeverityFilter] = useState<string | null>(null);
 
   // UI state
   const [collectionsOpen, { toggle: toggleCollections }] = useDisclosure(true);
@@ -162,8 +180,9 @@ export function LogsExplorerPage() {
       }
     }
     if (methodFilter) filter.method = methodFilter;
+    if (severityFilter) filter.severity = severityFilter as any;
     return filter;
-  }, [selectedSource, searchQuery, timeRange, statusFilter, methodFilter, offset]);
+  }, [selectedSource, searchQuery, timeRange, statusFilter, methodFilter, severityFilter, offset]);
 
   // Fetch functions
   const fetchSources = useCallback(async () => {
@@ -254,6 +273,7 @@ export function LogsExplorerPage() {
     setSearchQuery('');
     setStatusFilter(null);
     setMethodFilter(null);
+    setSeverityFilter(null);
     setOffset(0);
   };
 
@@ -266,7 +286,7 @@ export function LogsExplorerPage() {
   const histogramMax = Math.max(...histogram.map((b) => b.count), 1);
 
   // Check if filters are active
-  const hasFilters = selectedSource || searchQuery || statusFilter || methodFilter;
+  const hasFilters = selectedSource || searchQuery || statusFilter || methodFilter || severityFilter;
 
   return (
     <Box style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
@@ -449,6 +469,18 @@ export function LogsExplorerPage() {
                 w={100}
                 clearable
               />
+              <Select
+                placeholder="Severity"
+                value={severityFilter}
+                onChange={(val) => {
+                  setSeverityFilter(val);
+                  setOffset(0);
+                }}
+                data={SEVERITY_LEVELS.map(s => ({ value: s, label: s }))}
+                size="sm"
+                w={110}
+                clearable
+              />
               <ActionIcon variant="subtle">
                 <IconChartBar size={18} />
               </ActionIcon>
@@ -516,9 +548,10 @@ export function LogsExplorerPage() {
                     <Table.Thead>
                       <Table.Tr>
                         <Table.Th w={160}>Timestamp</Table.Th>
+                        <Table.Th w={80}>Severity</Table.Th>
                         <Table.Th w={60}>Status</Table.Th>
                         <Table.Th w={70}>Method</Table.Th>
-                        <Table.Th>Path</Table.Th>
+                        <Table.Th>Path / Message</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -537,6 +570,15 @@ export function LogsExplorerPage() {
                             </Text>
                           </Table.Td>
                           <Table.Td>
+                            {log.severity ? (
+                              <Badge size="xs" color={getSeverityColor(log.severity)} variant="light">
+                                {log.severity}
+                              </Badge>
+                            ) : (
+                              <Text size="sm" c="dimmed">-</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
                             <Text size="sm" c={getStatusColor(log.status_code)} fw={500}>
                               {log.status_code || '-'}
                             </Text>
@@ -545,7 +587,7 @@ export function LogsExplorerPage() {
                             <Text size="sm">{log.method || '-'}</Text>
                           </Table.Td>
                           <Table.Td>
-                            <Text size="sm" truncate style={{ maxWidth: 400 }}>
+                            <Text size="sm" truncate style={{ maxWidth: 350 }}>
                               {log.path || log.event_message || '-'}
                             </Text>
                           </Table.Td>
@@ -602,6 +644,18 @@ export function LogsExplorerPage() {
                       <Code style={{ wordBreak: 'break-all' }}>{selectedLog.id}</Code>
                     </Box>
                     <Box>
+                      <Text size="xs" c="dimmed" mb={4}>source</Text>
+                      <Badge size="sm" variant="light">{selectedLog.source}</Badge>
+                    </Box>
+                    {selectedLog.severity && (
+                      <Box>
+                        <Text size="xs" c="dimmed" mb={4}>severity</Text>
+                        <Badge size="sm" color={getSeverityColor(selectedLog.severity)} variant="light">
+                          {selectedLog.severity}
+                        </Badge>
+                      </Box>
+                    )}
+                    <Box>
                       <Text size="xs" c="dimmed" mb={4}>status</Text>
                       <Text c={getStatusColor(selectedLog.status_code)} fw={500}>
                         {selectedLog.status_code || '-'}
@@ -619,10 +673,18 @@ export function LogsExplorerPage() {
                       <Text size="xs" c="dimmed" mb={4}>path</Text>
                       <Code style={{ wordBreak: 'break-all' }}>{selectedLog.path || '-'}</Code>
                     </Box>
-                    <Box>
-                      <Text size="xs" c="dimmed" mb={4}>search</Text>
-                      <Text>{selectedLog.search || '-'}</Text>
-                    </Box>
+                    {selectedLog.request_id && (
+                      <Box>
+                        <Text size="xs" c="dimmed" mb={4}>request_id</Text>
+                        <Code style={{ wordBreak: 'break-all' }}>{selectedLog.request_id}</Code>
+                      </Box>
+                    )}
+                    {selectedLog.duration_ms !== undefined && selectedLog.duration_ms > 0 && (
+                      <Box>
+                        <Text size="xs" c="dimmed" mb={4}>duration_ms</Text>
+                        <Text>{selectedLog.duration_ms}ms</Text>
+                      </Box>
+                    )}
                     <Box>
                       <Text size="xs" c="dimmed" mb={4}>user_agent</Text>
                       <Code style={{ wordBreak: 'break-all' }}>{selectedLog.user_agent || '-'}</Code>
@@ -645,6 +707,16 @@ export function LogsExplorerPage() {
                         <Paper withBorder p="sm" style={{ backgroundColor: theme.colors.gray[0] }}>
                           <Code style={{ whiteSpace: 'pre-wrap' }}>
                             {JSON.stringify(selectedLog.metadata, null, 2)}
+                          </Code>
+                        </Paper>
+                      </Box>
+                    )}
+                    {selectedLog.request_headers && Object.keys(selectedLog.request_headers).length > 0 && (
+                      <Box>
+                        <Text size="xs" c="dimmed" mb={4}>request_headers</Text>
+                        <Paper withBorder p="sm" style={{ backgroundColor: theme.colors.gray[0] }}>
+                          <Code style={{ whiteSpace: 'pre-wrap' }}>
+                            {JSON.stringify(selectedLog.request_headers, null, 2)}
                           </Code>
                         </Paper>
                       </Box>

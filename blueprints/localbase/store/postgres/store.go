@@ -942,6 +942,7 @@ func (s *Store) createLogsTables(ctx context.Context) error {
 		path TEXT,
 		status_code SMALLINT,
 		source VARCHAR(50) NOT NULL,
+		severity VARCHAR(10) DEFAULT 'INFO',
 		user_id UUID,
 		user_agent TEXT,
 		apikey TEXT,
@@ -956,9 +957,15 @@ func (s *Store) createLogsTables(ctx context.Context) error {
 		))
 	);
 
+	-- Add severity column if not exists (migration for existing tables)
+	DO $$ BEGIN
+		ALTER TABLE analytics.logs ADD COLUMN IF NOT EXISTS severity VARCHAR(10) DEFAULT 'INFO';
+	EXCEPTION WHEN duplicate_column THEN END $$;
+
 	-- Create indexes for common queries
 	CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON analytics.logs (timestamp DESC);
 	CREATE INDEX IF NOT EXISTS idx_logs_source ON analytics.logs (source);
+	CREATE INDEX IF NOT EXISTS idx_logs_severity ON analytics.logs (severity);
 	CREATE INDEX IF NOT EXISTS idx_logs_status_code ON analytics.logs (status_code) WHERE status_code IS NOT NULL;
 	CREATE INDEX IF NOT EXISTS idx_logs_method ON analytics.logs (method) WHERE method IS NOT NULL;
 	CREATE INDEX IF NOT EXISTS idx_logs_request_id ON analytics.logs (request_id) WHERE request_id IS NOT NULL;
@@ -994,6 +1001,8 @@ func (s *Store) createLogsTables(ctx context.Context) error {
 	 '{"time_range": "24h", "source": "auth", "status_min": 400}', 'security'),
 	('storage_uploads', 'Storage uploads', 'Recent file upload operations',
 	 '{"time_range": "1h", "source": "storage", "method": "POST"}', 'storage'),
+	('postgres_errors', 'Postgres errors', 'ERROR and FATAL severity from Postgres',
+	 '{"source": "postgres", "severities": ["ERROR", "FATAL"], "time_range": "24h"}', 'database'),
 	('recent_errors', 'Recent 5xx errors', 'Server errors in the past hour',
 	 '{"time_range": "1h", "status_min": 500}', 'debugging'),
 	('api_activity', 'API Gateway activity', 'Recent API Gateway logs',

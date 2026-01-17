@@ -102,11 +102,16 @@ func (h *LogsHandler) ListLogSources(c *mizu.Ctx) error {
 func (h *LogsHandler) SearchLogs(c *mizu.Ctx) error {
 	var req struct {
 		Source      string   `json:"source"`
+		Severity    string   `json:"severity"`
+		Severities  []string `json:"severities"`
 		StatusMin   int      `json:"status_min"`
 		StatusMax   int      `json:"status_max"`
 		Methods     []string `json:"methods"`
 		PathPattern string   `json:"path_pattern"`
 		Query       string   `json:"query"`
+		Regex       string   `json:"regex"`
+		UserID      string   `json:"user_id"`
+		RequestID   string   `json:"request_id"`
 		From        string   `json:"from"`
 		To          string   `json:"to"`
 		TimeRange   string   `json:"time_range"`
@@ -120,11 +125,16 @@ func (h *LogsHandler) SearchLogs(c *mizu.Ctx) error {
 
 	filter := &store.LogFilter{
 		Source:      req.Source,
+		Severity:    req.Severity,
+		Severities:  req.Severities,
 		StatusMin:   req.StatusMin,
 		StatusMax:   req.StatusMax,
 		Methods:     req.Methods,
 		PathPattern: req.PathPattern,
 		Query:       req.Query,
+		Regex:       req.Regex,
+		UserID:      req.UserID,
+		RequestID:   req.RequestID,
 		TimeRange:   req.TimeRange,
 		Limit:       req.Limit,
 		Offset:      req.Offset,
@@ -284,11 +294,12 @@ func (h *LogsHandler) ExportLogs(c *mizu.Ctx) error {
 		c.Writer().Header().Set("Content-Type", "text/csv")
 		c.Writer().Header().Set("Content-Disposition", "attachment; filename=logs.csv")
 
-		csv := "id,timestamp,source,method,status_code,path,event_message,user_agent,duration_ms\n"
+		csv := "id,timestamp,source,severity,method,status_code,path,event_message,user_agent,duration_ms\n"
 		for _, log := range logs {
 			csv += log.ID + "," +
 				log.Timestamp.Format(time.RFC3339) + "," +
 				log.Source + "," +
+				log.Severity + "," +
 				log.Method + "," +
 				strconv.Itoa(log.StatusCode) + "," +
 				escapeCSV(log.Path) + "," +
@@ -311,9 +322,18 @@ func (h *LogsHandler) AddLog(entry *store.LogEntry) error {
 func parseLogFilter(c *mizu.Ctx) *store.LogFilter {
 	filter := &store.LogFilter{
 		Source:      c.Query("source"),
+		Severity:    c.Query("severity"),
 		PathPattern: c.Query("path"),
 		Query:       c.Query("query"),
+		Regex:       c.Query("regex"),
+		UserID:      c.Query("user_id"),
+		RequestID:   c.Query("request_id"),
 		TimeRange:   c.Query("time_range"),
+	}
+
+	// Parse comma-separated severities
+	if severities := c.Query("severities"); severities != "" {
+		filter.Severities = strings.Split(severities, ",")
 	}
 
 	if statusMin := c.Query("status_min"); statusMin != "" {
@@ -354,7 +374,7 @@ func parseLogFilter(c *mizu.Ctx) *store.LogFilter {
 		}
 	}
 	if filter.Limit <= 0 {
-		filter.Limit = 25
+		filter.Limit = 50
 	}
 
 	if offset := c.Query("offset"); offset != "" {
