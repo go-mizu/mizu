@@ -20,6 +20,7 @@ type Store struct {
 	database  *DatabaseStore
 	functions *FunctionsStore
 	realtime  *RealtimeStore
+	pgmeta    *PGMetaStore
 }
 
 // New creates a new PostgreSQL store.
@@ -52,6 +53,7 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	s.database = &DatabaseStore{pool: pool}
 	s.functions = &FunctionsStore{pool: pool}
 	s.realtime = &RealtimeStore{pool: pool}
+	s.pgmeta = &PGMetaStore{pool: pool}
 
 	return s, nil
 }
@@ -452,6 +454,11 @@ func (s *Store) Functions() store.FunctionsStore {
 // Realtime returns the realtime store.
 func (s *Store) Realtime() store.RealtimeStore {
 	return s.realtime
+}
+
+// PGMeta returns the postgres-meta store for dashboard compatibility.
+func (s *Store) PGMeta() *PGMetaStore {
+	return s.pgmeta
 }
 
 // newULID generates a new ULID string.

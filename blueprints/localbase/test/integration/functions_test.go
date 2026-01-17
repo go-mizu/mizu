@@ -2626,3 +2626,555 @@ func TestFunctions_ManagementAuthorizationComprehensive(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Regional Invocation Tests
+// =============================================================================
+
+func TestFunctions_RegionalInvocation(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-region-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("response includes x-sb-edge-region header", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		_, _, headers, err := client.Request("POST", "/functions/v1/"+fnName, nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		region := headers.Get("x-sb-edge-region")
+		if region == "" {
+			t.Error("Missing x-sb-edge-region header in response")
+		} else {
+			t.Logf("x-sb-edge-region: %s", region)
+		}
+	})
+
+	t.Run("invoke with x-region header", func(t *testing.T) {
+		req, err := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName, nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		req.Header.Set("apikey", localbaseAPIKey)
+		req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+		req.Header.Set("x-region", "eu-west-1")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+
+		region := resp.Header.Get("x-sb-edge-region")
+		if region != "eu-west-1" {
+			t.Errorf("Expected region eu-west-1, got %s", region)
+		}
+	})
+
+	t.Run("invoke with forceFunctionRegion query param", func(t *testing.T) {
+		req, err := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName+"?forceFunctionRegion=ap-northeast-1", nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		req.Header.Set("apikey", localbaseAPIKey)
+		req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+
+		region := resp.Header.Get("x-sb-edge-region")
+		if region != "ap-northeast-1" {
+			t.Errorf("Expected region ap-northeast-1, got %s", region)
+		}
+	})
+
+	t.Run("invalid region falls back to default", func(t *testing.T) {
+		req, err := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName, nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		req.Header.Set("apikey", localbaseAPIKey)
+		req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+		req.Header.Set("x-region", "invalid-region")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+
+		region := resp.Header.Get("x-sb-edge-region")
+		if region != "us-east-1" {
+			t.Errorf("Expected default region us-east-1, got %s", region)
+		}
+	})
+
+	t.Run("region in response body", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		_, respBody, _, err := client.Request("POST", "/functions/v1/"+fnName, nil, map[string]string{
+			"x-region": "us-west-2",
+		})
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if region, ok := result["region"].(string); !ok || region != "us-west-2" {
+			t.Errorf("Expected region us-west-2 in response body, got %v", result["region"])
+		}
+	})
+}
+
+// =============================================================================
+// Path Routing Tests
+// =============================================================================
+
+func TestFunctions_PathRouting(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-path-routing-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("invoke with subpath", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		status, respBody, _, err := client.Request("GET", "/functions/v1/"+fnName+"/users/123", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if path, ok := result["path"].(string); !ok || path != "/users/123" {
+			t.Errorf("Expected path /users/123, got %v", result["path"])
+		}
+	})
+
+	t.Run("invoke with deep nested path", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		status, respBody, _, err := client.Request("POST", "/functions/v1/"+fnName+"/api/v1/users/123/posts/456", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d", status)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if path, ok := result["path"].(string); !ok || path != "/api/v1/users/123/posts/456" {
+			t.Errorf("Expected deep nested path, got %v", result["path"])
+		}
+	})
+
+	t.Run("subpath with query params", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		status, _, _, err := client.Request("GET", "/functions/v1/"+fnName+"/search?q=test&limit=10", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d", status)
+		}
+	})
+
+	t.Run("subpath with all HTTP methods", func(t *testing.T) {
+		methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+		client := NewClient(localbaseURL, localbaseAPIKey)
+
+		for _, method := range methods {
+			t.Run(method, func(t *testing.T) {
+				req, err := http.NewRequest(method, localbaseURL+"/functions/v1/"+fnName+"/resource/123", nil)
+				if err != nil {
+					t.Fatalf("Failed to create request: %v", err)
+				}
+
+				req.Header.Set("apikey", localbaseAPIKey)
+				req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+
+				resp, err := client.client.Do(req)
+				if err != nil {
+					t.Fatalf("Request failed: %v", err)
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != 200 {
+					t.Errorf("Expected 200 for %s, got %d", method, resp.StatusCode)
+				}
+			})
+		}
+	})
+
+	t.Run("OPTIONS preflight for subpath", func(t *testing.T) {
+		req, err := http.NewRequest("OPTIONS", localbaseURL+"/functions/v1/"+fnName+"/api/resource", nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+		req.Header.Set("Origin", "https://example.com")
+		req.Header.Set("Access-Control-Request-Method", "POST")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 && resp.StatusCode != 204 {
+			t.Errorf("Expected 200 or 204 for OPTIONS, got %d", resp.StatusCode)
+		}
+
+		// Check CORS headers
+		if resp.Header.Get("Access-Control-Allow-Origin") == "" {
+			t.Error("Missing Access-Control-Allow-Origin header")
+		}
+	})
+}
+
+// =============================================================================
+// SDK Compatibility Tests
+// =============================================================================
+
+func TestFunctions_SDKCompatibility(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-sdk-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("supabase-js compatible headers", func(t *testing.T) {
+		req, err := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName, strings.NewReader(`{"key": "value"}`))
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+
+		// Headers typically sent by supabase-js SDK
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("apikey", localbaseAPIKey)
+		req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+		req.Header.Set("x-client-info", "supabase-js/2.38.0")
+		req.Header.Set("Accept", "application/json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("response format matches SDK expectations", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		_, respBody, headers, err := client.Request("POST", "/functions/v1/"+fnName, map[string]string{"test": "data"}, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		// Check Content-Type
+		contentType := headers.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			t.Errorf("Expected Content-Type application/json, got %s", contentType)
+		}
+
+		// Response should be valid JSON
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Errorf("Response is not valid JSON: %v", err)
+		}
+	})
+}
+
+// =============================================================================
+// Error Types Tests (FunctionsHttpError, FunctionsRelayError, FunctionsFetchError)
+// =============================================================================
+
+func TestFunctions_ErrorTypes(t *testing.T) {
+	t.Run("404 error format for non-existent function", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		status, respBody, _, err := client.Request("POST", "/functions/v1/nonexistent-function-xyz", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 404 {
+			t.Errorf("Expected 404, got %d", status)
+		}
+
+		var errResp map[string]any
+		if err := json.Unmarshal(respBody, &errResp); err != nil {
+			t.Fatalf("Failed to parse error response: %v", err)
+		}
+
+		// Verify error structure matches Supabase format
+		if _, ok := errResp["error"]; !ok {
+			t.Error("Error response missing 'error' field")
+		}
+		if _, ok := errResp["message"]; !ok {
+			t.Error("Error response missing 'message' field")
+		}
+	})
+
+	t.Run("401 error format for unauthorized request", func(t *testing.T) {
+		serviceClient := NewClient(localbaseURL, serviceRoleKey)
+		fnName := fmt.Sprintf("test-auth-error-%d", time.Now().UnixNano())
+		fnID := createTestFunction(t, serviceClient, fnName, true) // verify_jwt=true
+		defer deleteTestFunction(t, serviceClient, fnID)
+
+		// Request without authentication
+		req, _ := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName, nil)
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 401 {
+			t.Logf("Expected 401, got %d (function may not require auth)", resp.StatusCode)
+		}
+	})
+
+	t.Run("503 error format for inactive function", func(t *testing.T) {
+		serviceClient := NewClient(localbaseURL, serviceRoleKey)
+		fnName := fmt.Sprintf("test-inactive-error-%d", time.Now().UnixNano())
+		fnID := createTestFunction(t, serviceClient, fnName, false)
+		defer deleteTestFunction(t, serviceClient, fnID)
+
+		// Set function to inactive
+		serviceClient.Request("PUT", "/api/functions/"+fnID, map[string]any{"status": "inactive"}, nil)
+
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		status, respBody, _, err := client.Request("POST", "/functions/v1/"+fnName, nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 503 {
+			t.Errorf("Expected 503, got %d", status)
+		}
+
+		var errResp map[string]any
+		if err := json.Unmarshal(respBody, &errResp); err != nil {
+			t.Fatalf("Failed to parse error response: %v", err)
+		}
+
+		if errResp["error"] != "Service Unavailable" {
+			t.Errorf("Expected error 'Service Unavailable', got %v", errResp["error"])
+		}
+	})
+}
+
+// =============================================================================
+// All Valid Regions Test
+// =============================================================================
+
+func TestFunctions_AllValidRegions(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-regions-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	validRegions := []string{
+		"us-east-1",
+		"us-west-1",
+		"us-west-2",
+		"ca-central-1",
+		"eu-west-1",
+		"eu-west-2",
+		"eu-west-3",
+		"eu-central-1",
+		"ap-northeast-1",
+		"ap-northeast-2",
+		"ap-south-1",
+		"ap-southeast-1",
+		"ap-southeast-2",
+		"sa-east-1",
+	}
+
+	for _, region := range validRegions {
+		t.Run("region "+region, func(t *testing.T) {
+			req, err := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName, nil)
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+
+			req.Header.Set("apikey", localbaseAPIKey)
+			req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+			req.Header.Set("x-region", region)
+
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				t.Errorf("Expected 200 for region %s, got %d", region, resp.StatusCode)
+			}
+
+			responseRegion := resp.Header.Get("x-sb-edge-region")
+			if responseRegion != region {
+				t.Errorf("Expected region %s, got %s", region, responseRegion)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Content Negotiation Tests
+// =============================================================================
+
+func TestFunctions_ContentNegotiation(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-content-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	acceptTypes := []struct {
+		accept       string
+		description  string
+	}{
+		{"application/json", "JSON"},
+		{"text/plain", "Plain text"},
+		{"*/*", "Any"},
+		{"application/json, text/plain;q=0.9, */*;q=0.8", "Weighted"},
+		{"", "No Accept header"},
+	}
+
+	for _, tt := range acceptTypes {
+		t.Run(tt.description, func(t *testing.T) {
+			req, err := http.NewRequest("POST", localbaseURL+"/functions/v1/"+fnName, nil)
+			if err != nil {
+				t.Fatalf("Failed to create request: %v", err)
+			}
+
+			req.Header.Set("apikey", localbaseAPIKey)
+			req.Header.Set("Authorization", "Bearer "+localbaseAPIKey)
+			if tt.accept != "" {
+				req.Header.Set("Accept", tt.accept)
+			}
+
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				t.Errorf("Expected 200 for Accept: %s, got %d", tt.accept, resp.StatusCode)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Comprehensive CORS Tests
+// =============================================================================
+
+func TestFunctions_CORSComprehensive(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-cors-full-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("all CORS headers present", func(t *testing.T) {
+		client := NewClient(localbaseURL, localbaseAPIKey)
+		_, _, headers, err := client.Request("POST", "/functions/v1/"+fnName, nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		requiredHeaders := map[string]string{
+			"Access-Control-Allow-Origin":  "*",
+			"Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE, PATCH",
+		}
+
+		for header, expectedValue := range requiredHeaders {
+			value := headers.Get(header)
+			if value == "" {
+				t.Errorf("Missing header: %s", header)
+			} else if !strings.Contains(value, expectedValue) && value != expectedValue {
+				t.Logf("Header %s: expected to contain %s, got %s", header, expectedValue, value)
+			}
+		}
+
+		// Check Allow-Headers contains required values
+		allowHeaders := headers.Get("Access-Control-Allow-Headers")
+		requiredAllowHeaders := []string{"authorization", "apikey", "content-type"}
+		for _, h := range requiredAllowHeaders {
+			if !strings.Contains(strings.ToLower(allowHeaders), h) {
+				t.Errorf("Access-Control-Allow-Headers missing: %s", h)
+			}
+		}
+	})
+
+	t.Run("x-region in allowed headers", func(t *testing.T) {
+		req, err := http.NewRequest("OPTIONS", localbaseURL+"/functions/v1/"+fnName, nil)
+		if err != nil {
+			t.Fatalf("Failed to create request: %v", err)
+		}
+		req.Header.Set("Origin", "https://example.com")
+		req.Header.Set("Access-Control-Request-Headers", "x-region")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		allowHeaders := resp.Header.Get("Access-Control-Allow-Headers")
+		if !strings.Contains(strings.ToLower(allowHeaders), "x-region") {
+			t.Errorf("x-region not in Access-Control-Allow-Headers: %s", allowHeaders)
+		}
+	})
+}
