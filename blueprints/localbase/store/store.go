@@ -162,7 +162,7 @@ type Object struct {
 	Owner          string            `json:"owner,omitempty"`
 	PathTokens     []string          `json:"path_tokens,omitempty"`
 	Version        string            `json:"version,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 	ContentType    string            `json:"content_type,omitempty"`
 	Size           int64             `json:"size"`
 	CreatedAt      time.Time         `json:"created_at"`
