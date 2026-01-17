@@ -1,12 +1,20 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { MantineProvider, createTheme } from '@mantine/core'
-import { Notifications } from '@mantine/notifications'
-import { BrowserRouter } from 'react-router-dom'
-import App from './App'
-import '@mantine/core/styles.css'
-import '@mantine/notifications/styles.css'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { MantineProvider, createTheme } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
+import { BrowserRouter } from 'react-router-dom';
+import App from './App';
 
+// Mantine styles
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
+import '@mantine/dropzone/styles.css';
+
+// Global styles and Supabase theme overrides
+import './styles/index.css';
+import './styles/supabase-theme.css';
+
+// Supabase-inspired theme configuration
 const theme = createTheme({
   primaryColor: 'green',
   colors: {
@@ -23,19 +31,42 @@ const theme = createTheme({
       '#0a211a',
     ],
   },
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+  fontFamilyMonospace: '"Source Code Pro", Menlo, Monaco, monospace',
   defaultRadius: 'md',
-  black: '#1a1a2e',
+  black: '#1C1C1C',
   white: '#ffffff',
-})
+  components: {
+    Button: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+    TextInput: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+    Select: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+    PasswordInput: {
+      defaultProps: {
+        size: 'sm',
+      },
+    },
+  },
+});
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="dark">
+    <MantineProvider theme={theme} defaultColorScheme="light">
       <Notifications position="top-right" />
       <BrowserRouter>
         <App />
       </BrowserRouter>
     </MantineProvider>
   </React.StrictMode>
-)
+);
