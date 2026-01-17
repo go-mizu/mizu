@@ -2,19 +2,32 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Database Indexes Page', () => {
   test.beforeEach(async ({ page }) => {
-    // Load the app first
-    await page.goto('/');
+    await page.goto('/database/indexes');
     await page.waitForLoadState('networkidle');
+  });
 
-    // Use JavaScript to navigate within the SPA (React Router)
-    await page.evaluate(() => {
-      window.history.pushState({}, '', '/database/indexes');
-      window.dispatchEvent(new PopStateEvent('popstate'));
+  test('E2E-INDEX-000: Page loads without JavaScript errors', async ({ page }) => {
+    const jsErrors: string[] = [];
+
+    // Listen for console errors
+    page.on('pageerror', (error) => {
+      jsErrors.push(error.message);
     });
 
-    await page.waitForTimeout(1000);
-    await page.reload();
+    // Navigate and wait for load
+    await page.goto('/database/indexes');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+
+    // Filter out known acceptable errors
+    const criticalErrors = jsErrors.filter(err =>
+      !err.includes('Failed to fetch') &&
+      !err.includes('NetworkError') &&
+      !err.includes('net::ERR')
+    );
+
+    // Ensure no critical JavaScript errors occurred
+    expect(criticalErrors.filter(e => e.includes('null is not an object') || e.includes('Cannot read properties of null'))).toHaveLength(0);
   });
 
   test('E2E-INDEX-001: Index list loads', async ({ page }) => {

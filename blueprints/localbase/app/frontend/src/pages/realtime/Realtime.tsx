@@ -51,7 +51,7 @@ export function RealtimePage() {
         realtimeApi.listChannels(),
       ]);
       setStats(statsData);
-      setChannels(channelsData);
+      setChannels(channelsData || []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -186,7 +186,7 @@ export function RealtimePage() {
             <Center py="xl">
               <Loader size="sm" />
             </Center>
-          ) : channels.length === 0 ? (
+          ) : !channels || channels.length === 0 ? (
             <EmptyState
               icon={<IconBroadcast size={32} />}
               title="No active channels"

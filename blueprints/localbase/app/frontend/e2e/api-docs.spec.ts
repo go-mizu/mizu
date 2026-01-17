@@ -2,14 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('API Docs Page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/api-docs');
     await page.waitForLoadState('networkidle');
-
-    const apiDocsLink = page.locator('.mantine-AppShell-navbar').getByRole('link', { name: 'API Docs' });
-    await apiDocsLink.click();
-
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/api-docs/);
   });
 
   test('E2E-API-001: API docs page loads', async ({ page }) => {

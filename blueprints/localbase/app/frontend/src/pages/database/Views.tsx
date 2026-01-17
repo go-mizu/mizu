@@ -60,7 +60,7 @@ export function ViewsPage() {
   const fetchSchemas = useCallback(async () => {
     try {
       const data = await databaseApi.listSchemas();
-      setSchemas(data);
+      setSchemas(data || []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -77,8 +77,8 @@ export function ViewsPage() {
         pgmetaApi.listViews(schema),
         pgmetaApi.listMaterializedViews(schema),
       ]);
-      setViews(viewsData);
-      setMaterializedViews(mvData);
+      setViews(viewsData || []);
+      setMaterializedViews(mvData || []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -237,7 +237,7 @@ export function ViewsPage() {
                 </Badge>
               )}
               <Badge size="sm" variant="outline">
-                {view.columns?.length || 0} columns
+                {view.columns?.length ?? 0} columns
               </Badge>
             </Group>
             <Group gap="sm" onClick={(e) => e.stopPropagation()}>
@@ -268,7 +268,7 @@ export function ViewsPage() {
             <Text size="sm" fw={500} mb="xs">
               Columns
             </Text>
-            {view.columns && view.columns.length > 0 ? (
+            {view.columns && Array.isArray(view.columns) && view.columns.length > 0 ? (
               <Group gap="xs" mb="md">
                 {view.columns.map((col) => (
                   <Badge key={col.name} variant="outline">
@@ -311,10 +311,10 @@ export function ViewsPage() {
             w={150}
           />
           <Badge variant="light" color="blue" size="lg">
-            {views.length} views
+            {views?.length ?? 0} views
           </Badge>
           <Badge variant="light" color="orange" size="lg">
-            {materializedViews.length} materialized
+            {materializedViews?.length ?? 0} materialized
           </Badge>
         </Group>
         <Group gap="sm">
@@ -332,7 +332,7 @@ export function ViewsPage() {
         <Center py="xl">
           <Loader size="lg" />
         </Center>
-      ) : views.length === 0 && materializedViews.length === 0 ? (
+      ) : (!views || views.length === 0) && (!materializedViews || materializedViews.length === 0) ? (
         <EmptyState
           icon={<IconEye size={48} />}
           title="No views found"
@@ -346,15 +346,15 @@ export function ViewsPage() {
         <Tabs defaultValue="regular">
           <Tabs.List mb="md">
             <Tabs.Tab value="regular" leftSection={<IconEye size={16} />}>
-              Views ({views.length})
+              Views ({views?.length ?? 0})
             </Tabs.Tab>
             <Tabs.Tab value="materialized" leftSection={<IconDatabase size={16} />}>
-              Materialized Views ({materializedViews.length})
+              Materialized Views ({materializedViews?.length ?? 0})
             </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="regular">
-            {views.length === 0 ? (
+            {!views || views.length === 0 ? (
               <Text c="dimmed" ta="center" py="xl">
                 No regular views found
               </Text>
@@ -366,7 +366,7 @@ export function ViewsPage() {
           </Tabs.Panel>
 
           <Tabs.Panel value="materialized">
-            {materializedViews.length === 0 ? (
+            {!materializedViews || materializedViews.length === 0 ? (
               <Text c="dimmed" ta="center" py="xl">
                 No materialized views found
               </Text>

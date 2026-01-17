@@ -63,7 +63,7 @@ export function RolesPage() {
     setLoading(true);
     try {
       const rolesData = await pgmetaApi.listRoles();
-      setRoles(rolesData);
+      setRoles(rolesData ?? []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -170,8 +170,8 @@ export function RolesPage() {
   };
 
   // Separate system and custom roles
-  const systemRoles = roles.filter((r) => isSystemRole(r.name));
-  const customRoles = roles.filter((r) => !isSystemRole(r.name));
+  const systemRoles = (roles ?? []).filter((r) => isSystemRole(r.name));
+  const customRoles = (roles ?? []).filter((r) => !isSystemRole(r.name));
 
   const renderRoleRow = (role: PGRole, canDelete: boolean) => (
     <Table.Tr key={role.name}>
@@ -281,10 +281,10 @@ export function RolesPage() {
       <Group justify="space-between" mb="lg">
         <Group gap="md">
           <Badge variant="light" color="blue" size="lg">
-            {roles.length} roles
+            {roles?.length ?? 0} roles
           </Badge>
           <Badge variant="light" color="green" size="lg">
-            {customRoles.length} custom
+            {customRoles?.length ?? 0} custom
           </Badge>
         </Group>
         <Group gap="sm">
@@ -302,7 +302,7 @@ export function RolesPage() {
         <Center py="xl">
           <Loader size="lg" />
         </Center>
-      ) : roles.length === 0 ? (
+      ) : !roles || roles.length === 0 ? (
         <EmptyState
           icon={<IconUserShield size={48} />}
           title="No roles found"
@@ -320,10 +320,10 @@ export function RolesPage() {
               <IconUserShield size={20} />
               <Text fw={500}>Custom Roles</Text>
               <Badge size="sm" variant="light">
-                {customRoles.length}
+                {customRoles?.length ?? 0}
               </Badge>
             </Group>
-            {customRoles.length === 0 ? (
+            {!customRoles || customRoles.length === 0 ? (
               <Text c="dimmed" size="sm" ta="center" py="md">
                 No custom roles. Create one to manage access.
               </Text>
@@ -352,7 +352,7 @@ export function RolesPage() {
               <IconDatabase size={20} />
               <Text fw={500}>System Roles</Text>
               <Badge size="sm" variant="light" color="gray">
-                {systemRoles.length}
+                {systemRoles?.length ?? 0}
               </Badge>
             </Group>
             <Text size="sm" c="dimmed" mb="md">
