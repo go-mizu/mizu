@@ -9,59 +9,16 @@ import {
   Group,
   Text,
   ActionIcon,
-  Menu,
-  Breadcrumbs,
-  Anchor,
   Paper,
   Loader,
   Center,
-  Tooltip,
-  CloseButton,
   Divider,
-  Image,
-  Code,
-  ScrollArea,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { Dropzone } from '@mantine/dropzone';
 import {
   IconPlus,
-  IconDotsVertical,
-  IconTrash,
   IconFolder,
-  IconFile,
-  IconUpload,
-  IconDownload,
-  IconLink,
-  IconArrowLeft,
-  IconPhoto,
-  IconVideo,
-  IconMusic,
-  IconFileTypePdf,
-  IconBrandJavascript,
-  IconBrandPython,
-  IconBrandHtml5,
-  IconBrandCss3,
-  IconFileZip,
-  IconMarkdown,
-  IconBraces,
-  IconFileCode,
-  IconFileText,
-  IconRefresh,
-  IconEye,
-  IconFolderPlus,
-  IconChevronDown,
-  IconExternalLink,
-  IconFileSpreadsheet,
-  IconPresentation,
-  IconFileTypeDocx,
-  IconFileTypeCsv,
-  IconFileTypeXml,
-  IconFileTypeSql,
-  IconBrandRust,
-  IconBrandDocker,
-  IconTerminal2,
-  IconSettingsCode,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';
@@ -72,468 +29,17 @@ import { storageApi } from '../../api';
 import { useAppStore } from '../../stores/appStore';
 import type { Bucket, StorageObject } from '../../types';
 
-// File type detection utilities
-function getFileIcon(file: StorageObject) {
-  const contentType = file.content_type || '';
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  const fileName = file.name.split('/').pop()?.toLowerCase() || '';
-
-  // By content type
-  if (contentType.startsWith('image/')) return IconPhoto;
-  if (contentType.startsWith('video/')) return IconVideo;
-  if (contentType.startsWith('audio/')) return IconMusic;
-  if (contentType === 'application/pdf') return IconFileTypePdf;
-  if (contentType === 'application/json') return IconBraces;
-  if (contentType === 'text/csv' || contentType === 'application/csv') return IconFileTypeCsv;
-  if (contentType === 'application/xml' || contentType === 'text/xml') return IconFileTypeXml;
-  if (contentType === 'application/sql' || contentType === 'text/x-sql') return IconFileTypeSql;
-  if (contentType.includes('spreadsheet') || contentType.includes('excel')) return IconFileSpreadsheet;
-  if (contentType.includes('presentation') || contentType.includes('powerpoint')) return IconPresentation;
-  if (contentType.includes('wordprocessing') || contentType.includes('msword')) return IconFileTypeDocx;
-
-  // Special filenames (case-insensitive)
-  if (fileName === 'dockerfile') return IconBrandDocker;
-  if (fileName === 'makefile') return IconTerminal2;
-
-  // By extension
-  switch (ext) {
-    case 'js':
-    case 'jsx':
-    case 'ts':
-    case 'tsx':
-      return IconBrandJavascript;
-    case 'py':
-      return IconBrandPython;
-    case 'rs':
-      return IconBrandRust;
-    case 'go':
-    case 'java':
-    case 'c':
-    case 'cpp':
-    case 'h':
-    case 'hpp':
-    case 'swift':
-    case 'kt':
-    case 'rb':
-    case 'php':
-      return IconFileCode;
-    case 'md':
-    case 'mdx':
-      return IconMarkdown;
-    case 'json':
-      return IconBraces;
-    case 'html':
-    case 'htm':
-      return IconBrandHtml5;
-    case 'css':
-    case 'scss':
-    case 'less':
-      return IconBrandCss3;
-    case 'zip':
-    case 'tar':
-    case 'gz':
-    case 'rar':
-    case '7z':
-    case 'tgz':
-      return IconFileZip;
-    case 'txt':
-    case 'log':
-      return IconFileText;
-    case 'pdf':
-      return IconFileTypePdf;
-    case 'csv':
-      return IconFileTypeCsv;
-    case 'xml':
-      return IconFileTypeXml;
-    case 'sql':
-      return IconFileTypeSql;
-    case 'xlsx':
-    case 'xls':
-      return IconFileSpreadsheet;
-    case 'pptx':
-    case 'ppt':
-      return IconPresentation;
-    case 'docx':
-    case 'doc':
-      return IconFileTypeDocx;
-    case 'yaml':
-    case 'yml':
-    case 'toml':
-    case 'ini':
-    case 'conf':
-    case 'cfg':
-      return IconSettingsCode;
-    case 'sh':
-    case 'bash':
-    case 'zsh':
-      return IconTerminal2;
-    default:
-      return IconFile;
-  }
-}
-
-function isPreviewableImage(contentType: string | undefined): boolean {
-  if (!contentType) return false;
-  return contentType.startsWith('image/');
-}
-
-function isPreviewableVideo(contentType: string | undefined): boolean {
-  if (!contentType) return false;
-  return contentType.startsWith('video/');
-}
-
-function isPreviewableAudio(contentType: string | undefined): boolean {
-  if (!contentType) return false;
-  return contentType.startsWith('audio/');
-}
-
-function isPreviewableText(contentType: string | undefined, name: string): boolean {
-  if (!contentType && !name) return false;
-
-  const textTypes = [
-    'text/plain',
-    'text/html',
-    'text/css',
-    'text/javascript',
-    'text/csv',
-    'text/markdown',
-    'text/typescript',
-    'text/x-python',
-    'text/x-go',
-    'text/x-rust',
-    'text/x-java',
-    'application/json',
-    'application/javascript',
-    'application/xml',
-    'application/sql',
-    'application/x-yaml',
-    'application/toml',
-  ];
-
-  if (contentType && textTypes.some(t => contentType.includes(t))) return true;
-
-  const ext = name.split('.').pop()?.toLowerCase();
-  const fileName = name.split('/').pop()?.toLowerCase() || '';
-
-  // Special filenames without extensions
-  const specialFiles = ['dockerfile', 'makefile', 'gemfile', 'rakefile', 'procfile'];
-  if (specialFiles.includes(fileName)) return true;
-
-  const textExtensions = [
-    'txt', 'md', 'mdx', 'json', 'js', 'jsx', 'ts', 'tsx', 'py', 'go', 'rs',
-    'java', 'c', 'cpp', 'h', 'hpp', 'css', 'scss', 'less', 'html', 'htm',
-    'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'sh', 'bash', 'zsh',
-    'sql', 'graphql', 'vue', 'svelte', 'astro', 'rb', 'php', 'swift', 'kt',
-    'gradle', 'env', 'gitignore', 'log', 'csv', 'tsv', 'properties',
-  ];
-
-  return ext ? textExtensions.includes(ext) : false;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    month: 'numeric',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
-
-// File Preview Panel Component
-interface FilePreviewPanelProps {
-  file: StorageObject;
-  bucket: Bucket;
-  onClose: () => void;
-  onDownload: () => void;
-  onDelete: () => void;
-  onCopyUrl: () => void;
-}
-
-function FilePreviewPanel({ file, bucket, onClose, onDownload, onDelete, onCopyUrl }: FilePreviewPanelProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [textContent, setTextContent] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-
-  const FileIcon = getFileIcon(file);
-  const fileName = file.name.split('/').pop() || file.name;
-  const contentType = file.content_type || 'Unknown';
-
-  useEffect(() => {
-    // Generate preview URL for the file
-    if (bucket) {
-      const url = storageApi.downloadObjectUrl(bucket.id, file.name);
-      setPreviewUrl(url);
-
-      // Fetch text content for text files
-      if (isPreviewableText(file.content_type, file.name)) {
-        setLoadingPreview(true);
-        fetch(url)
-          .then((res) => res.text())
-          .then((text) => {
-            setTextContent(text.slice(0, 10000)); // Limit preview size
-          })
-          .catch(() => setTextContent(null))
-          .finally(() => setLoadingPreview(false));
-      }
-    }
-  }, [file, bucket]);
-
-  const renderPreview = () => {
-    if (isPreviewableImage(file.content_type) && previewUrl) {
-      return (
-        <Box
-          style={{
-            backgroundColor: 'var(--supabase-bg-surface)',
-            borderRadius: 'var(--supabase-radius-lg)',
-            padding: 16,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: 200,
-          }}
-        >
-          <Image
-            src={previewUrl}
-            alt={fileName}
-            fit="contain"
-            style={{ maxHeight: 300 }}
-            radius="md"
-          />
-        </Box>
-      );
-    }
-
-    if (isPreviewableVideo(file.content_type) && previewUrl) {
-      return (
-        <Box
-          style={{
-            backgroundColor: 'var(--supabase-bg-surface)',
-            borderRadius: 'var(--supabase-radius-lg)',
-            overflow: 'hidden',
-          }}
-        >
-          <video
-            src={previewUrl}
-            controls
-            style={{ width: '100%', maxHeight: 300 }}
-          />
-        </Box>
-      );
-    }
-
-    if (isPreviewableAudio(file.content_type) && previewUrl) {
-      return (
-        <Box
-          style={{
-            backgroundColor: 'var(--supabase-bg-surface)',
-            borderRadius: 'var(--supabase-radius-lg)',
-            padding: 24,
-          }}
-        >
-          <Center mb="md">
-            <IconMusic size={48} color="var(--supabase-text-muted)" />
-          </Center>
-          <audio src={previewUrl} controls style={{ width: '100%' }} />
-        </Box>
-      );
-    }
-
-    if (isPreviewableText(file.content_type, file.name)) {
-      if (loadingPreview) {
-        return (
-          <Center py="xl">
-            <Loader size="sm" />
-          </Center>
-        );
-      }
-
-      if (textContent) {
-        return (
-          <ScrollArea h={300}>
-            <Code
-              block
-              style={{
-                backgroundColor: 'var(--supabase-bg-surface)',
-                fontSize: '0.75rem',
-                lineHeight: 1.5,
-              }}
-            >
-              {textContent}
-            </Code>
-          </ScrollArea>
-        );
-      }
-    }
-
-    // Default: Show file icon
-    return (
-      <Box
-        style={{
-          backgroundColor: 'var(--supabase-bg-surface)',
-          borderRadius: 'var(--supabase-radius-lg)',
-          padding: 48,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <FileIcon size={64} color="var(--supabase-text-muted)" stroke={1} />
-        <Text size="sm" c="dimmed" mt="md">
-          Preview not available
-        </Text>
-      </Box>
-    );
-  };
-
-  return (
-    <Box
-      style={{
-        width: 320,
-        borderLeft: '1px solid var(--supabase-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: 'var(--supabase-bg)',
-      }}
-    >
-      {/* Header */}
-      <Box
-        p="md"
-        style={{ borderBottom: '1px solid var(--supabase-border)' }}
-      >
-        <Group justify="flex-end">
-          <CloseButton onClick={onClose} />
-        </Group>
-      </Box>
-
-      {/* Preview Area */}
-      <Box p="md" style={{ flex: 1, overflow: 'auto' }}>
-        {renderPreview()}
-
-        {/* File Info */}
-        <Box mt="lg">
-          <Text fw={600} size="sm" style={{ wordBreak: 'break-word' }}>
-            {fileName}
-          </Text>
-          <Text size="xs" c="dimmed" mt={4}>
-            {contentType} - {formatFileSize(file.size)}
-          </Text>
-        </Box>
-
-        {/* Metadata */}
-        <Stack gap="sm" mt="lg">
-          <Box>
-            <Text size="xs" c="dimmed">
-              Added on
-            </Text>
-            <Text size="sm">
-              {file.created_at ? formatDate(file.created_at) : 'Unknown'}
-            </Text>
-          </Box>
-
-          <Box>
-            <Text size="xs" c="dimmed">
-              Last modified
-            </Text>
-            <Text size="sm">
-              {file.updated_at ? formatDate(file.updated_at) : 'Unknown'}
-            </Text>
-          </Box>
-
-          {file.owner && (
-            <Box>
-              <Text size="xs" c="dimmed">
-                Owner
-              </Text>
-              <Text size="sm" truncate>
-                {file.owner}
-              </Text>
-            </Box>
-          )}
-        </Stack>
-
-        <Divider my="lg" />
-
-        {/* Actions */}
-        <Stack gap="xs">
-          <Button
-            variant="outline"
-            leftSection={<IconDownload size={16} />}
-            onClick={onDownload}
-            fullWidth
-          >
-            Download
-          </Button>
-
-          <Menu position="bottom-end" width={200}>
-            <Menu.Target>
-              <Button
-                variant="outline"
-                leftSection={<IconLink size={16} />}
-                rightSection={<IconChevronDown size={14} />}
-                fullWidth
-              >
-                Get URL
-              </Button>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconLink size={14} />}
-                onClick={onCopyUrl}
-              >
-                Copy URL
-              </Menu.Item>
-              {bucket.public && (
-                <Menu.Item
-                  leftSection={<IconExternalLink size={14} />}
-                  onClick={() => {
-                    const url = `${window.location.origin}${storageApi.getPublicUrl(bucket.id, file.name)}`;
-                    window.open(url, '_blank');
-                  }}
-                >
-                  Open in new tab
-                </Menu.Item>
-              )}
-            </Menu.Dropdown>
-          </Menu>
-
-          <Divider my="xs" />
-
-          <Button
-            variant="subtle"
-            color="red"
-            leftSection={<IconTrash size={16} />}
-            onClick={onDelete}
-            fullWidth
-          >
-            Delete file
-          </Button>
-        </Stack>
-      </Box>
-    </Box>
-  );
-}
+import { MillerColumnBrowser, FilePreviewPanel, StorageToolbar } from './components';
+import type { ViewMode } from './components';
+import { useMillerNavigation } from './hooks/useMillerNavigation';
 
 export function StoragePage() {
-  const { selectedBucket, setSelectedBucket, currentPath, setCurrentPath } = useAppStore();
+  const { selectedBucket, setSelectedBucket } = useAppStore();
 
   const [buckets, setBuckets] = useState<Bucket[]>([]);
-  const [objects, setObjects] = useState<StorageObject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [objectsLoading, setObjectsLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<StorageObject | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('columns');
 
   const [createBucketOpened, { open: openCreateBucket, close: closeCreateBucket }] =
     useDisclosure(false);
@@ -549,6 +55,20 @@ export function StoragePage() {
   const [formLoading, setFormLoading] = useState(false);
 
   const dropzoneRef = useRef<() => void>(null);
+
+  // Miller column navigation
+  const {
+    columns,
+    selectedFile,
+    navigateToFolder,
+    selectItem,
+    navigateBack,
+    refreshAll,
+    clearSelection,
+    currentPath,
+  } = useMillerNavigation({
+    bucketId: selectedBucket,
+  });
 
   const fetchBuckets = useCallback(async () => {
     setLoading(true);
@@ -569,38 +89,9 @@ export function StoragePage() {
     }
   }, [selectedBucket, setSelectedBucket]);
 
-  const fetchObjects = useCallback(async () => {
-    if (!selectedBucket) return;
-
-    setObjectsLoading(true);
-    try {
-      const data = await storageApi.listObjects(selectedBucket, {
-        prefix: currentPath,
-        limit: 100,
-      });
-      setObjects(data);
-    } catch (error: any) {
-      notifications.show({
-        title: 'Error',
-        message: error.message || 'Failed to load objects',
-        color: 'red',
-      });
-      setObjects([]);
-    } finally {
-      setObjectsLoading(false);
-    }
-  }, [selectedBucket, currentPath]);
-
   useEffect(() => {
     fetchBuckets();
   }, [fetchBuckets]);
-
-  useEffect(() => {
-    if (selectedBucket) {
-      fetchObjects();
-      setSelectedFile(null);
-    }
-  }, [selectedBucket, currentPath, fetchObjects]);
 
   const handleCreateBucket = async () => {
     if (!bucketForm.name) {
@@ -676,7 +167,7 @@ export function StoragePage() {
         message: `${files.length} file(s) uploaded successfully`,
         color: 'green',
       });
-      fetchObjects();
+      refreshAll();
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -700,8 +191,8 @@ export function StoragePage() {
         color: 'green',
       });
       closeDeleteObject();
-      setSelectedFile(null);
-      fetchObjects();
+      clearSelection();
+      refreshAll();
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -729,7 +220,6 @@ export function StoragePage() {
         ? `${currentPath}/${folderName.trim()}/.keep`
         : `${folderName.trim()}/.keep`;
 
-      // Create a placeholder file to create the folder
       const emptyFile = new File([''], '.keep', { type: 'text/plain' });
       await storageApi.uploadObject(selectedBucket, path, emptyFile);
 
@@ -740,7 +230,7 @@ export function StoragePage() {
       });
       closeCreateFolder();
       setFolderName('');
-      fetchObjects();
+      refreshAll();
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -758,12 +248,12 @@ export function StoragePage() {
     window.open(url, '_blank');
   };
 
-  const handleCopyUrl = async (obj: StorageObject) => {
+  const handleCopyUrl = async (obj: StorageObject, type: 'public' | 'signed') => {
     if (!selectedBucket) return;
     const bucket = buckets.find((b) => b.id === selectedBucket);
     let url: string;
 
-    if (bucket?.public) {
+    if (type === 'public' && bucket?.public) {
       url = `${window.location.origin}${storageApi.getPublicUrl(selectedBucket, obj.name)}`;
     } else {
       try {
@@ -782,34 +272,55 @@ export function StoragePage() {
     });
   };
 
-  const navigateToFolder = (folderPath: string) => {
-    setCurrentPath(folderPath);
-    setSelectedFile(null);
-  };
+  const handleSearch = async (query: string) => {
+    if (!selectedBucket) return;
 
-  const navigateUp = () => {
-    if (!currentPath) return;
-    const parts = currentPath.split('/');
-    parts.pop();
-    setCurrentPath(parts.join('/'));
-    setSelectedFile(null);
-  };
+    try {
+      const results = await storageApi.listObjects(selectedBucket, {
+        prefix: '',
+        search: query,
+        limit: 100,
+      });
 
-  const breadcrumbParts = currentPath ? currentPath.split('/') : [];
-
-  const currentBucket = buckets.find((b) => b.id === selectedBucket);
-
-  const isFolder = (obj: StorageObject) => {
-    return obj.name.endsWith('/') || !obj.content_type;
-  };
-
-  const handleFileClick = (obj: StorageObject) => {
-    if (isFolder(obj)) {
-      navigateToFolder(obj.name.replace(/\/$/, ''));
-    } else {
-      setSelectedFile(obj);
+      // Show results in notification for now (can be enhanced later)
+      notifications.show({
+        title: 'Search Results',
+        message: `Found ${results.length} matching files`,
+        color: 'blue',
+      });
+    } catch (error: any) {
+      notifications.show({
+        title: 'Search Error',
+        message: error.message || 'Failed to search files',
+        color: 'red',
+      });
     }
   };
+
+  const handleNavigateToPath = (path: string) => {
+    if (path === '') {
+      // Reset to root - handled by refreshAll
+      refreshAll();
+    } else {
+      // Navigate to specific path
+      const parts = path.split('/');
+      // Find the column index for this path
+      const columnIndex = columns.findIndex(col => col.path === path);
+      if (columnIndex >= 0) {
+        // Already have this column, just clear selection
+        clearSelection();
+      } else {
+        // Need to navigate to this path - find parent column
+        const parentPath = parts.slice(0, -1).join('/');
+        const parentIndex = columns.findIndex(col => col.path === parentPath);
+        if (parentIndex >= 0) {
+          navigateToFolder(path, parentIndex);
+        }
+      }
+    }
+  };
+
+  const currentBucket = buckets.find((b) => b.id === selectedBucket);
 
   return (
     <PageContainer
@@ -827,6 +338,7 @@ export function StoragePage() {
             display: 'flex',
             flexDirection: 'column',
             backgroundColor: 'var(--supabase-bg)',
+            flexShrink: 0,
           }}
         >
           {/* MANAGE Section */}
@@ -901,8 +413,7 @@ export function StoragePage() {
                     }}
                     onClick={() => {
                       setSelectedBucket(bucket.id);
-                      setCurrentPath('');
-                      setSelectedFile(null);
+                      clearSelection();
                     }}
                   >
                     <Group justify="space-between" wrap="nowrap">
@@ -921,116 +432,43 @@ export function StoragePage() {
           </Box>
         </Box>
 
-        {/* File Browser */}
-        <Box style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {selectedBucket ? (
+        {/* Main Content Area */}
+        <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {selectedBucket && currentBucket ? (
             <>
               {/* Toolbar */}
-              <Box
-                p="md"
-                style={{ borderBottom: '1px solid var(--supabase-border)' }}
-              >
-                <Group justify="space-between">
-                  <Group gap="xs">
-                    {currentPath && (
-                      <ActionIcon variant="subtle" onClick={navigateUp}>
-                        <IconArrowLeft size={18} />
-                      </ActionIcon>
-                    )}
-                    <Breadcrumbs>
-                      <Anchor
-                        size="sm"
-                        onClick={() => {
-                          setCurrentPath('');
-                          setSelectedFile(null);
-                        }}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {currentBucket?.name || selectedBucket}
-                      </Anchor>
-                      {breadcrumbParts.map((part, index) => (
-                        <Anchor
-                          key={index}
-                          size="sm"
-                          onClick={() => {
-                            navigateToFolder(breadcrumbParts.slice(0, index + 1).join('/'));
-                          }}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          {part}
-                        </Anchor>
-                      ))}
-                    </Breadcrumbs>
-                  </Group>
+              <StorageToolbar
+                bucketName={currentBucket.name}
+                currentPath={currentPath}
+                viewMode={viewMode}
+                onRefresh={refreshAll}
+                onUpload={() => dropzoneRef.current?.()}
+                onCreateFolder={openCreateFolder}
+                onDeleteBucket={openDeleteBucket}
+                onViewModeChange={setViewMode}
+                onSearch={handleSearch}
+                onNavigateToPath={handleNavigateToPath}
+                uploadLoading={uploadLoading}
+              />
 
-                  <Group gap="sm">
-                    <Tooltip label="Reload">
-                      <ActionIcon variant="subtle" onClick={fetchObjects}>
-                        <IconRefresh size={18} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="View">
-                      <ActionIcon variant="subtle">
-                        <IconEye size={18} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Button
-                      variant="outline"
-                      leftSection={<IconUpload size={16} />}
-                      onClick={() => dropzoneRef.current?.()}
-                      loading={uploadLoading}
-                      size="sm"
-                    >
-                      Upload files
-                    </Button>
-                    <Button
-                      variant="outline"
-                      leftSection={<IconFolderPlus size={16} />}
-                      onClick={openCreateFolder}
-                      size="sm"
-                    >
-                      Create folder
-                    </Button>
-                    <Menu position="bottom-end">
-                      <Menu.Target>
-                        <ActionIcon variant="subtle">
-                          <IconDotsVertical size={18} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        <Menu.Item
-                          color="red"
-                          leftSection={<IconTrash size={14} />}
-                          onClick={openDeleteBucket}
-                        >
-                          Delete bucket
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
-                  </Group>
-                </Group>
-              </Box>
-
-              {/* File List */}
-              <Box style={{ flex: 1, display: 'flex' }}>
-                <Box style={{ flex: 1, overflow: 'auto' }} p="md">
-                  <Dropzone
-                    onDrop={handleUpload}
-                    openRef={dropzoneRef}
-                    activateOnClick={false}
-                    styles={{
-                      root: {
-                        border: 'none',
-                        backgroundColor: 'transparent',
-                        minHeight: '100%',
-                      },
-                    }}
-                  >
-                    {objectsLoading ? (
-                      <Center py="xl">
-                        <Loader size="sm" />
-                      </Center>
-                    ) : objects.length === 0 ? (
+              {/* File Browser */}
+              <Box style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                <Dropzone
+                  onDrop={handleUpload}
+                  openRef={dropzoneRef}
+                  activateOnClick={false}
+                  styles={{
+                    root: {
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      flex: 1,
+                      display: 'flex',
+                      minWidth: 0,
+                    },
+                  }}
+                >
+                  {columns.length === 0 || (columns.length === 1 && columns[0].items.length === 0 && !columns[0].loading) ? (
+                    <Center style={{ flex: 1 }}>
                       <EmptyState
                         icon={<IconFolder size={32} />}
                         title="No files"
@@ -1040,118 +478,25 @@ export function StoragePage() {
                           onClick: () => dropzoneRef.current?.(),
                         }}
                       />
-                    ) : (
-                      <Stack gap={4}>
-                        {objects.map((obj) => {
-                          const FileTypeIcon = isFolder(obj) ? IconFolder : getFileIcon(obj);
-                          const isSelected = selectedFile?.id === obj.id;
-
-                          return (
-                            <Paper
-                              key={obj.id}
-                              p="sm"
-                              style={{
-                                cursor: 'pointer',
-                                border: isSelected
-                                  ? '1px solid var(--supabase-brand)'
-                                  : '1px solid var(--supabase-border)',
-                                backgroundColor: isSelected
-                                  ? 'var(--supabase-brand-light)'
-                                  : 'transparent',
-                                borderRadius: 6,
-                              }}
-                              onClick={() => handleFileClick(obj)}
-                            >
-                              <Group justify="space-between" wrap="nowrap">
-                                <Group gap="sm" wrap="nowrap">
-                                  <FileTypeIcon
-                                    size={20}
-                                    color={
-                                      isFolder(obj)
-                                        ? 'var(--supabase-brand)'
-                                        : 'var(--supabase-text-muted)'
-                                    }
-                                    stroke={1.5}
-                                  />
-                                  <Box>
-                                    <Text size="sm" fw={500} truncate style={{ maxWidth: 400 }}>
-                                      {obj.name.split('/').pop() || obj.name}
-                                    </Text>
-                                    {!isFolder(obj) && (
-                                      <Text size="xs" c="dimmed">
-                                        {formatFileSize(obj.size)} {obj.content_type && `- ${obj.content_type}`}
-                                      </Text>
-                                    )}
-                                  </Box>
-                                </Group>
-
-                                {!isFolder(obj) && (
-                                  <Group gap="xs">
-                                    <Tooltip label="Download">
-                                      <ActionIcon
-                                        variant="subtle"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDownload(obj);
-                                        }}
-                                      >
-                                        <IconDownload size={16} />
-                                      </ActionIcon>
-                                    </Tooltip>
-                                    <Tooltip label="Copy URL">
-                                      <ActionIcon
-                                        variant="subtle"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleCopyUrl(obj);
-                                        }}
-                                      >
-                                        <IconLink size={16} />
-                                      </ActionIcon>
-                                    </Tooltip>
-                                    <Menu position="bottom-end">
-                                      <Menu.Target>
-                                        <ActionIcon
-                                          variant="subtle"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          <IconDotsVertical size={16} />
-                                        </ActionIcon>
-                                      </Menu.Target>
-                                      <Menu.Dropdown>
-                                        <Menu.Item
-                                          color="red"
-                                          leftSection={<IconTrash size={14} />}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedFile(obj);
-                                            openDeleteObject();
-                                          }}
-                                        >
-                                          Delete
-                                        </Menu.Item>
-                                      </Menu.Dropdown>
-                                    </Menu>
-                                  </Group>
-                                )}
-                              </Group>
-                            </Paper>
-                          );
-                        })}
-                      </Stack>
-                    )}
-                  </Dropzone>
-                </Box>
+                    </Center>
+                  ) : (
+                    <MillerColumnBrowser
+                      columns={columns}
+                      onItemSelect={selectItem}
+                      onBack={navigateBack}
+                    />
+                  )}
+                </Dropzone>
 
                 {/* File Preview Panel */}
                 {selectedFile && currentBucket && (
                   <FilePreviewPanel
                     file={selectedFile}
                     bucket={currentBucket}
-                    onClose={() => setSelectedFile(null)}
+                    onClose={clearSelection}
                     onDownload={() => handleDownload(selectedFile)}
-                    onDelete={() => openDeleteObject()}
-                    onCopyUrl={() => handleCopyUrl(selectedFile)}
+                    onDelete={openDeleteObject}
+                    onCopyUrl={(type) => handleCopyUrl(selectedFile, type)}
                   />
                 )}
               </Box>

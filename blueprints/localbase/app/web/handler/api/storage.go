@@ -674,6 +674,7 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 		Prefix string `json:"prefix"`
 		Limit  int    `json:"limit"`
 		Offset int    `json:"offset"`
+		Search string `json:"search"`
 	}
 
 	// Use standard JSON decoder without DisallowUnknownFields
@@ -688,7 +689,37 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 		req.Limit = 100
 	}
 
-	objects, err := h.store.Storage().ListObjects(c.Context(), bucketID, req.Prefix, req.Limit, req.Offset)
+	// If search is provided, we need to get all objects and filter
+	// Otherwise use the standard list with prefix
+	var objects []*store.Object
+	var err error
+
+	if req.Search != "" {
+		// Get all objects from root and filter by search term
+		allObjects, listErr := h.store.Storage().ListObjects(c.Context(), bucketID, "", 1000, 0)
+		if listErr != nil {
+			err = listErr
+		} else {
+			// Filter by search term (case-insensitive)
+			searchLower := strings.ToLower(req.Search)
+			for _, obj := range allObjects {
+				if strings.Contains(strings.ToLower(obj.Name), searchLower) {
+					objects = append(objects, obj)
+				}
+			}
+			// Apply offset and limit
+			if req.Offset < len(objects) {
+				objects = objects[req.Offset:]
+			} else {
+				objects = []*store.Object{}
+			}
+			if req.Limit < len(objects) {
+				objects = objects[:req.Limit]
+			}
+		}
+	} else {
+		objects, err = h.store.Storage().ListObjects(c.Context(), bucketID, req.Prefix, req.Limit, req.Offset)
+	}
 	if err != nil {
 		// Log the actual error for debugging
 		fmt.Printf("ListObjects error for bucket %s: %v\n", bucketID, err)
