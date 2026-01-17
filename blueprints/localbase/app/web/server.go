@@ -22,6 +22,9 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	functionsHandler := api.NewFunctionsHandler(store)
 	realtimeHandler := api.NewRealtimeHandler(store)
 	dashboardHandler := api.NewDashboardHandler(store)
+	pgmetaHandler := api.NewPGMetaHandler(store)
+	logsHandler := api.NewLogsHandler()
+	settingsHandler := api.NewSettingsHandler(store)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
@@ -182,6 +185,14 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		functions.Delete("/{name}", functionsHandler.InvokeFunction)
 		// OPTIONS for CORS preflight
 		functions.Handle("OPTIONS", "/{name}", functionsHandler.InvokeFunctionOptions)
+
+		// Support subpath routing: /functions/v1/{name}/{subpath...}
+		functions.Get("/{name}/{subpath...}", functionsHandler.InvokeFunctionWithPath)
+		functions.Post("/{name}/{subpath...}", functionsHandler.InvokeFunctionWithPath)
+		functions.Put("/{name}/{subpath...}", functionsHandler.InvokeFunctionWithPath)
+		functions.Patch("/{name}/{subpath...}", functionsHandler.InvokeFunctionWithPath)
+		functions.Delete("/{name}/{subpath...}", functionsHandler.InvokeFunctionWithPath)
+		functions.Handle("OPTIONS", "/{name}/{subpath...}", functionsHandler.InvokeFunctionOptions)
 	})
 
 	// Realtime API - Requires authentication
@@ -201,6 +212,107 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		dashboard.Use(serviceRoleMw)
 		dashboard.Get("/dashboard/stats", dashboardHandler.GetStats)
 		dashboard.Get("/dashboard/health", dashboardHandler.GetHealth)
+	})
+
+	// Logs Explorer API - Supabase Dashboard compatibility
+	app.Group("/api/logs", func(logs *mizu.Router) {
+		logs.Use(apiKeyMw)
+		logs.Use(serviceRoleMw)
+		logs.Get("", logsHandler.ListLogs)
+		logs.Get("/types", logsHandler.ListLogTypes)
+		logs.Post("/search", logsHandler.SearchLogs)
+		logs.Get("/export", logsHandler.ExportLogs)
+	})
+
+	// Settings API - Supabase Dashboard compatibility
+	app.Group("/api/settings", func(settings *mizu.Router) {
+		settings.Use(apiKeyMw)
+		settings.Use(serviceRoleMw)
+		settings.Get("", settingsHandler.GetAllSettings)
+		settings.Get("/project", settingsHandler.GetProjectSettings)
+		settings.Patch("/project", settingsHandler.UpdateProjectSettings)
+		settings.Get("/api", settingsHandler.GetAPISettings)
+		settings.Patch("/api", settingsHandler.UpdateAPISettings)
+		settings.Get("/auth", settingsHandler.GetAuthSettings)
+		settings.Patch("/auth", settingsHandler.UpdateAuthSettings)
+		settings.Get("/database", settingsHandler.GetDatabaseSettings)
+		settings.Patch("/database", settingsHandler.UpdateDatabaseSettings)
+		settings.Get("/storage", settingsHandler.GetStorageSettings)
+		settings.Patch("/storage", settingsHandler.UpdateStorageSettings)
+	})
+
+	// postgres-meta API - Supabase Dashboard compatibility
+	app.Group("/api/pg", func(pg *mizu.Router) {
+		pg.Use(apiKeyMw)
+		pg.Use(serviceRoleMw)
+
+		// Config
+		pg.Get("/config/version", pgmetaHandler.GetVersion)
+
+		// Indexes
+		pg.Get("/indexes", pgmetaHandler.ListIndexes)
+		pg.Post("/indexes", pgmetaHandler.CreateIndex)
+		pg.Delete("/indexes/{id}", pgmetaHandler.DropIndex)
+
+		// Views
+		pg.Get("/views", pgmetaHandler.ListViews)
+		pg.Post("/views", pgmetaHandler.CreateView)
+		pg.Patch("/views/{id}", pgmetaHandler.UpdateView)
+		pg.Delete("/views/{id}", pgmetaHandler.DropView)
+
+		// Materialized Views
+		pg.Get("/materialized-views", pgmetaHandler.ListMaterializedViews)
+		pg.Post("/materialized-views", pgmetaHandler.CreateMaterializedView)
+		pg.Post("/materialized-views/{id}/refresh", pgmetaHandler.RefreshMaterializedView)
+		pg.Delete("/materialized-views/{id}", pgmetaHandler.DropMaterializedView)
+
+		// Foreign Tables
+		pg.Get("/foreign-tables", pgmetaHandler.ListForeignTables)
+
+		// Triggers
+		pg.Get("/triggers", pgmetaHandler.ListTriggers)
+		pg.Post("/triggers", pgmetaHandler.CreateTrigger)
+		pg.Delete("/triggers/{id}", pgmetaHandler.DropTrigger)
+
+		// Types
+		pg.Get("/types", pgmetaHandler.ListTypes)
+		pg.Post("/types", pgmetaHandler.CreateType)
+		pg.Delete("/types/{id}", pgmetaHandler.DropType)
+
+		// Roles
+		pg.Get("/roles", pgmetaHandler.ListRoles)
+		pg.Post("/roles", pgmetaHandler.CreateRole)
+		pg.Patch("/roles/{id}", pgmetaHandler.UpdateRole)
+		pg.Delete("/roles/{id}", pgmetaHandler.DropRole)
+
+		// Publications
+		pg.Get("/publications", pgmetaHandler.ListPublications)
+		pg.Post("/publications", pgmetaHandler.CreatePublication)
+		pg.Delete("/publications/{id}", pgmetaHandler.DropPublication)
+
+		// Privileges
+		pg.Get("/table-privileges", pgmetaHandler.ListTablePrivileges)
+		pg.Get("/column-privileges", pgmetaHandler.ListColumnPrivileges)
+
+		// Constraints
+		pg.Get("/constraints", pgmetaHandler.ListConstraints)
+		pg.Get("/primary-keys", pgmetaHandler.ListPrimaryKeys)
+		pg.Get("/foreign-keys", pgmetaHandler.ListForeignKeysAll)
+		pg.Get("/relationships", pgmetaHandler.ListRelationships)
+
+		// SQL Utilities
+		pg.Post("/format", pgmetaHandler.FormatSQL)
+		pg.Post("/explain", pgmetaHandler.ExplainQuery)
+
+		// Generators
+		pg.Get("/generators/typescript", pgmetaHandler.GenerateTypescript)
+		pg.Get("/generators/openapi", pgmetaHandler.GenerateOpenAPI)
+		pg.Get("/generators/go", pgmetaHandler.GenerateGo)
+		pg.Get("/generators/swift", pgmetaHandler.GenerateSwift)
+		pg.Get("/generators/python", pgmetaHandler.GeneratePython)
+
+		// Functions (database functions)
+		pg.Get("/functions", pgmetaHandler.ListDatabaseFunctions)
 	})
 
 	// Static files for dashboard

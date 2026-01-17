@@ -15,8 +15,29 @@ import (
 // Supabase-compatible CORS headers for Edge Functions
 var functionsCORSHeaders = map[string]string{
 	"Access-Control-Allow-Origin":  "*",
-	"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, accept, accept-language, x-authorization",
+	"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, accept, accept-language, x-authorization, x-region",
 	"Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE, PATCH",
+}
+
+// Default region for edge functions
+const defaultRegion = "us-east-1"
+
+// Valid regions for edge functions
+var validRegions = map[string]bool{
+	"us-east-1":      true,
+	"us-west-1":      true,
+	"us-west-2":      true,
+	"ca-central-1":   true,
+	"eu-west-1":      true,
+	"eu-west-2":      true,
+	"eu-west-3":      true,
+	"eu-central-1":   true,
+	"ap-northeast-1": true,
+	"ap-northeast-2": true,
+	"ap-south-1":     true,
+	"ap-southeast-1": true,
+	"ap-southeast-2": true,
+	"sa-east-1":      true,
 }
 
 // FunctionsHandler handles edge functions endpoints.
@@ -255,6 +276,10 @@ func (h *FunctionsHandler) InvokeFunction(c *mizu.Ctx) error {
 		return c.NoContent()
 	}
 
+	// Determine region from request
+	region := h.getRequestRegion(c)
+	c.Header().Set("x-sb-edge-region", region)
+
 	// Look up function by slug or name
 	fn, err := h.store.Functions().GetFunctionByName(c.Context(), name)
 	if err != nil {
@@ -297,15 +322,49 @@ func (h *FunctionsHandler) InvokeFunction(c *mizu.Ctx) error {
 		})
 	}
 
-	// In production, we'd execute the function using Deno runtime
+	// Extract subpath for routing (path after function name)
+	subpath := c.Param("subpath")
+
+	// In production, we'd execute the function using Deno/Bun runtime
 	// For now, return a placeholder response that mimics function execution
-	return c.JSON(http.StatusOK, map[string]any{
+	response := map[string]any{
 		"message":     "Function executed",
 		"function":    fn.Name,
 		"version":     deployment.Version,
 		"method":      c.Request().Method,
+		"region":      region,
 		"executed_at": time.Now().Format(time.RFC3339),
-	})
+	}
+
+	// Include subpath if present
+	if subpath != "" {
+		response["path"] = "/" + subpath
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// InvokeFunctionWithPath invokes a function with a subpath (supports all HTTP methods).
+func (h *FunctionsHandler) InvokeFunctionWithPath(c *mizu.Ctx) error {
+	return h.InvokeFunction(c)
+}
+
+// getRequestRegion determines the region from the request.
+func (h *FunctionsHandler) getRequestRegion(c *mizu.Ctx) string {
+	// Check x-region header first
+	region := c.Request().Header.Get("x-region")
+	if region != "" && validRegions[region] {
+		return region
+	}
+
+	// Check forceFunctionRegion query parameter
+	region = c.Query("forceFunctionRegion")
+	if region != "" && validRegions[region] {
+		return region
+	}
+
+	// Default region
+	return defaultRegion
 }
 
 // ListSecrets lists all secrets (names only).
