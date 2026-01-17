@@ -1,14 +1,23 @@
 package api
 
 import (
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/localbase/app/web/middleware"
 	"github.com/go-mizu/mizu/blueprints/localbase/store"
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
 	"github.com/oklog/ulid/v2"
 )
+
+// Supabase-compatible CORS headers for Edge Functions
+var functionsCORSHeaders = map[string]string{
+	"Access-Control-Allow-Origin":  "*",
+	"Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, accept, accept-language, x-authorization",
+	"Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE, PATCH",
+}
 
 // FunctionsHandler handles edge functions endpoints.
 type FunctionsHandler struct {
@@ -25,6 +34,11 @@ func (h *FunctionsHandler) ListFunctions(c *mizu.Ctx) error {
 	functions, err := h.store.Functions().ListFunctions(c.Context())
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": "failed to list functions"})
+	}
+
+	// Ensure we return an empty array instead of null
+	if functions == nil {
+		functions = []*store.Function{}
 	}
 
 	return c.JSON(200, functions)
@@ -210,34 +224,86 @@ func (h *FunctionsHandler) ListDeployments(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": "failed to list deployments"})
 	}
 
+	// Ensure we return an empty array instead of null
+	if deployments == nil {
+		deployments = []*store.Deployment{}
+	}
+
 	return c.JSON(200, deployments)
 }
 
-// InvokeFunction invokes a function.
+// InvokeFunctionOptions handles OPTIONS preflight for function invocation.
+func (h *FunctionsHandler) InvokeFunctionOptions(c *mizu.Ctx) error {
+	// Set CORS headers for preflight
+	for k, v := range functionsCORSHeaders {
+		c.Header().Set(k, v)
+	}
+	return c.NoContent()
+}
+
+// InvokeFunction invokes a function (supports all HTTP methods).
 func (h *FunctionsHandler) InvokeFunction(c *mizu.Ctx) error {
 	name := c.Param("name")
 
-	fn, err := h.store.Functions().GetFunctionByName(c.Context(), name)
-	if err != nil {
-		return c.JSON(404, map[string]string{"error": "function not found"})
+	// Set CORS headers on all responses
+	for k, v := range functionsCORSHeaders {
+		c.Header().Set(k, v)
 	}
 
+	// Handle OPTIONS preflight
+	if c.Request().Method == http.MethodOptions {
+		return c.NoContent()
+	}
+
+	// Look up function by slug or name
+	fn, err := h.store.Functions().GetFunctionByName(c.Context(), name)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{
+			"error":   "Not Found",
+			"message": "function not found",
+		})
+	}
+
+	// Check if function is active
 	if fn.Status != "active" {
-		return c.JSON(503, map[string]string{"error": "function is not active"})
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error":   "Service Unavailable",
+			"message": "function is not active",
+		})
+	}
+
+	// JWT verification if required
+	if fn.VerifyJWT {
+		role := middleware.GetRole(c)
+		// Service role always allowed
+		if role != "service_role" && role != "authenticated" {
+			// Check if there's a valid JWT
+			authHeader := c.Request().Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error":   "Unauthorized",
+					"message": "authorization required",
+				})
+			}
+		}
 	}
 
 	// Get latest deployment
 	deployment, err := h.store.Functions().GetLatestDeployment(c.Context(), fn.ID)
 	if err != nil {
-		return c.JSON(500, map[string]string{"error": "no deployment found"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error":   "Internal Server Error",
+			"message": "no deployment found",
+		})
 	}
 
 	// In production, we'd execute the function using Deno runtime
-	// For now, return a placeholder response
-	return c.JSON(200, map[string]any{
+	// For now, return a placeholder response that mimics function execution
+	return c.JSON(http.StatusOK, map[string]any{
 		"message":     "Function executed",
 		"function":    fn.Name,
 		"version":     deployment.Version,
+		"method":      c.Request().Method,
 		"executed_at": time.Now().Format(time.RFC3339),
 	})
 }
@@ -247,6 +313,11 @@ func (h *FunctionsHandler) ListSecrets(c *mizu.Ctx) error {
 	secrets, err := h.store.Functions().ListSecrets(c.Context())
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": "failed to list secrets"})
+	}
+
+	// Ensure we return an empty array instead of null
+	if secrets == nil {
+		secrets = []*store.Secret{}
 	}
 
 	return c.JSON(200, secrets)

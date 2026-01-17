@@ -73,9 +73,11 @@ func (s *FunctionsStore) GetFunction(ctx context.Context, id string) (*store.Fun
 	return fn, nil
 }
 
-// GetFunctionByName retrieves a function by name.
+// GetFunctionByName retrieves a function by name or slug.
+// This supports both the display name and the URL-friendly slug.
 func (s *FunctionsStore) GetFunctionByName(ctx context.Context, name string) (*store.Function, error) {
-	sql := `SELECT id FROM functions.functions WHERE name = $1`
+	// Try to find by name first, then by slug
+	sql := `SELECT id FROM functions.functions WHERE name = $1 OR slug = $1`
 
 	var id string
 	err := s.pool.QueryRow(ctx, sql, name).Scan(&id)
@@ -103,7 +105,8 @@ func (s *FunctionsStore) ListFunctions(ctx context.Context) ([]*store.Function, 
 	}
 	defer rows.Close()
 
-	var functions []*store.Function
+	// Initialize with empty slice instead of nil to return [] instead of null in JSON
+	functions := make([]*store.Function, 0)
 	for rows.Next() {
 		fn := &store.Function{}
 		var importMap *string
@@ -270,7 +273,8 @@ func (s *FunctionsStore) ListDeployments(ctx context.Context, functionID string,
 	}
 	defer rows.Close()
 
-	var deployments []*store.Deployment
+	// Initialize with empty slice instead of nil to return [] instead of null in JSON
+	deployments := make([]*store.Deployment, 0)
 	for rows.Next() {
 		deployment := &store.Deployment{}
 		var bundlePath *string
@@ -373,7 +377,8 @@ func (s *FunctionsStore) ListSecrets(ctx context.Context) ([]*store.Secret, erro
 	}
 	defer rows.Close()
 
-	var secrets []*store.Secret
+	// Initialize with empty slice instead of nil to return [] instead of null in JSON
+	secrets := make([]*store.Secret, 0)
 	for rows.Next() {
 		secret := &store.Secret{}
 
