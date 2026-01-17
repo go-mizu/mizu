@@ -72,13 +72,14 @@ func (s *LogsStore) GetLog(ctx context.Context, id string) (*store.LogEntry, err
 
 	var entry store.LogEntry
 	var requestHeaders, responseHeaders, metadata []byte
-	var severity *string
+	var severity, method, path, userAgent, apikey, search *string
+	var statusCode, durationMs *int
 
 	err := s.pool.QueryRow(ctx, sql, id).Scan(
 		&entry.ID, &entry.Timestamp, &entry.EventMessage, &entry.RequestID,
-		&entry.Method, &entry.Path, &entry.StatusCode, &entry.Source,
-		&severity, &entry.UserID, &entry.UserAgent, &entry.APIKey, &requestHeaders,
-		&responseHeaders, &entry.DurationMs, &metadata, &entry.Search,
+		&method, &path, &statusCode, &entry.Source,
+		&severity, &entry.UserID, &userAgent, &apikey, &requestHeaders,
+		&responseHeaders, &durationMs, &metadata, &search,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -89,6 +90,27 @@ func (s *LogsStore) GetLog(ctx context.Context, id string) (*store.LogEntry, err
 
 	if severity != nil {
 		entry.Severity = *severity
+	}
+	if method != nil {
+		entry.Method = *method
+	}
+	if path != nil {
+		entry.Path = *path
+	}
+	if statusCode != nil {
+		entry.StatusCode = *statusCode
+	}
+	if userAgent != nil {
+		entry.UserAgent = *userAgent
+	}
+	if apikey != nil {
+		entry.APIKey = *apikey
+	}
+	if durationMs != nil {
+		entry.DurationMs = *durationMs
+	}
+	if search != nil {
+		entry.Search = *search
 	}
 	if len(requestHeaders) > 0 {
 		json.Unmarshal(requestHeaders, &entry.RequestHeaders)
@@ -246,13 +268,14 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 	for rows.Next() {
 		var entry store.LogEntry
 		var requestHeaders, responseHeaders, metadata []byte
-		var severity *string
+		var severity, method, path, userAgent, apikey, search *string
+		var statusCode, durationMs *int
 
 		err := rows.Scan(
 			&entry.ID, &entry.Timestamp, &entry.EventMessage, &entry.RequestID,
-			&entry.Method, &entry.Path, &entry.StatusCode, &entry.Source,
-			&severity, &entry.UserID, &entry.UserAgent, &entry.APIKey, &requestHeaders,
-			&responseHeaders, &entry.DurationMs, &metadata, &entry.Search,
+			&method, &path, &statusCode, &entry.Source,
+			&severity, &entry.UserID, &userAgent, &apikey, &requestHeaders,
+			&responseHeaders, &durationMs, &metadata, &search,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan log: %w", err)
@@ -260,6 +283,27 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 
 		if severity != nil {
 			entry.Severity = *severity
+		}
+		if method != nil {
+			entry.Method = *method
+		}
+		if path != nil {
+			entry.Path = *path
+		}
+		if statusCode != nil {
+			entry.StatusCode = *statusCode
+		}
+		if userAgent != nil {
+			entry.UserAgent = *userAgent
+		}
+		if apikey != nil {
+			entry.APIKey = *apikey
+		}
+		if durationMs != nil {
+			entry.DurationMs = *durationMs
+		}
+		if search != nil {
+			entry.Search = *search
 		}
 		if len(requestHeaders) > 0 {
 			json.Unmarshal(requestHeaders, &entry.RequestHeaders)

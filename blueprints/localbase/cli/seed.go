@@ -17,9 +17,9 @@ func NewSeed() *cobra.Command {
 
 This creates:
   - Sample users
-  - Sample storage buckets
-  - Sample tables
-  - Sample edge functions`,
+  - Sample storage buckets and files
+  - Sample tables with data
+  - Sample logs across all sources (edge, auth, storage, postgres, etc.)`,
 		RunE: runSeed,
 	}
 
@@ -55,6 +55,13 @@ func seedDatabase(ctx context.Context) error {
 
 	fmt.Println(successStyle.Render("  Connected"))
 
+	// Ensure all schemas and tables exist before seeding
+	fmt.Println(infoStyle.Render("Ensuring schemas exist..."))
+	if err := store.Ensure(ctx); err != nil {
+		return fmt.Errorf("failed to ensure schemas: %w", err)
+	}
+	fmt.Println(successStyle.Render("  Schemas ready"))
+
 	fmt.Println(infoStyle.Render("Creating sample users..."))
 	if err := store.SeedUsers(ctx); err != nil {
 		return fmt.Errorf("failed to seed users: %w", err)
@@ -72,6 +79,12 @@ func seedDatabase(ctx context.Context) error {
 		return fmt.Errorf("failed to seed tables: %w", err)
 	}
 	fmt.Println(successStyle.Render("  Tables created"))
+
+	fmt.Println(infoStyle.Render("Generating sample logs..."))
+	if err := store.SeedLogs(ctx); err != nil {
+		return fmt.Errorf("failed to seed logs: %w", err)
+	}
+	fmt.Println(successStyle.Render("  Logs generated"))
 
 	return nil
 }

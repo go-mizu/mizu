@@ -581,6 +581,18 @@ func (s *Store) seedStorageFiles(ctx context.Context) error {
 // SeedTables creates sample public schema tables.
 func (s *Store) SeedTables(ctx context.Context) error {
 	sql := `
+	-- Drop existing tables to ensure clean schema (order matters for foreign keys)
+	DROP TABLE IF EXISTS public.order_items CASCADE;
+	DROP TABLE IF EXISTS public.orders CASCADE;
+	DROP TABLE IF EXISTS public.products CASCADE;
+	DROP TABLE IF EXISTS public.post_tags CASCADE;
+	DROP TABLE IF EXISTS public.comments CASCADE;
+	DROP TABLE IF EXISTS public.posts CASCADE;
+	DROP TABLE IF EXISTS public.tags CASCADE;
+	DROP TABLE IF EXISTS public.profiles CASCADE;
+	DROP TABLE IF EXISTS public.todos CASCADE;
+	DROP TABLE IF EXISTS public.test_users CASCADE;
+
 	-- Create a sample todos table
 	CREATE TABLE IF NOT EXISTS public.todos (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1008,6 +1020,265 @@ func (s *Store) createLogsTables(ctx context.Context) error {
 	('api_activity', 'API Gateway activity', 'Recent API Gateway logs',
 	 '{"time_range": "1h", "source": "edge"}', 'monitoring')
 	ON CONFLICT (id) DO NOTHING;
+	`
+
+	_, err := s.pool.Exec(ctx, sql)
+	return err
+}
+
+// SeedLogs creates realistic sample log entries for development.
+func (s *Store) SeedLogs(ctx context.Context) error {
+	sql := `
+	-- Clear existing logs for fresh seed
+	DELETE FROM analytics.logs;
+
+	-- Generate realistic logs covering multiple sources
+	WITH time_series AS (
+		-- Generate timestamps over the last 24 hours
+		SELECT generate_series(
+			NOW() - INTERVAL '24 hours',
+			NOW(),
+			INTERVAL '1 minute'
+		) AS ts
+	),
+	user_agents AS (
+		SELECT unnest(ARRAY[
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1',
+			'PostmanRuntime/7.35.0',
+			'curl/8.4.0',
+			'supabase-js/2.39.0'
+		]) AS agent
+	)
+	INSERT INTO analytics.logs (
+		timestamp, event_message, request_id, method, path, status_code,
+		source, severity, user_agent, duration_ms, metadata, search
+	)
+	SELECT
+		ts.ts + (random() * INTERVAL '59 seconds'),
+		CASE
+			WHEN random() < 0.3 THEN 'Request completed successfully'
+			WHEN random() < 0.5 THEN 'Authentication token validated'
+			WHEN random() < 0.7 THEN 'Query executed'
+			WHEN random() < 0.85 THEN 'File uploaded'
+			WHEN random() < 0.95 THEN 'Cache miss - fetching from database'
+			ELSE 'Rate limit warning: approaching threshold'
+		END,
+		gen_random_uuid(),
+		(ARRAY['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])[floor(random() * 5 + 1)],
+		(ARRAY[
+			'/rest/v1/todos',
+			'/rest/v1/profiles',
+			'/rest/v1/posts',
+			'/rest/v1/products',
+			'/auth/v1/token',
+			'/auth/v1/user',
+			'/storage/v1/object/avatars',
+			'/storage/v1/object/documents',
+			'/functions/v1/hello-world',
+			'/realtime/v1/websocket'
+		])[floor(random() * 10 + 1)],
+		CASE
+			WHEN random() < 0.85 THEN (ARRAY[200, 201, 204])[floor(random() * 3 + 1)]
+			WHEN random() < 0.92 THEN (ARRAY[400, 401, 403, 404])[floor(random() * 4 + 1)]
+			ELSE (ARRAY[500, 502, 503])[floor(random() * 3 + 1)]
+		END,
+		(ARRAY['edge', 'postgrest', 'auth', 'storage', 'functions', 'realtime'])[floor(random() * 6 + 1)],
+		'INFO',
+		(SELECT agent FROM user_agents ORDER BY random() LIMIT 1),
+		floor(random() * 500 + 10)::int,
+		jsonb_build_object('region', (ARRAY['us-east-1', 'us-west-2', 'eu-west-1'])[floor(random() * 3 + 1)]),
+		''
+	FROM time_series ts
+	WHERE random() < 0.15;
+
+	-- Add postgres database logs with proper severities
+	INSERT INTO analytics.logs (
+		timestamp, event_message, source, severity, metadata, search
+	)
+	SELECT
+		NOW() - (random() * INTERVAL '24 hours'),
+		msg,
+		'postgres',
+		sev,
+		jsonb_build_object('database', 'postgres', 'pid', floor(random() * 10000 + 1000)::int),
+		''
+	FROM (
+		SELECT 'checkpoint starting: time' AS msg, 'INFO' AS sev
+		UNION ALL SELECT 'checkpoint complete: wrote 128 buffers (0.8%)', 'INFO'
+		UNION ALL SELECT 'automatic vacuum of table "public.posts"', 'INFO'
+		UNION ALL SELECT 'automatic analyze of table "public.todos"', 'INFO'
+		UNION ALL SELECT 'connection received: host=172.17.0.1 port=52431', 'DEBUG'
+		UNION ALL SELECT 'connection authorized: user=postgres database=postgres', 'INFO'
+		UNION ALL SELECT 'statement: SELECT * FROM auth.users WHERE id = $1', 'DEBUG'
+		UNION ALL SELECT 'duration: 2.531 ms  plan: SELECT', 'DEBUG'
+		UNION ALL SELECT 'temporary file: path "base/pgsql_tmp/pgsql_tmp1234.0", size 1048576', 'NOTICE'
+		UNION ALL SELECT 'could not serialize access due to concurrent update', 'WARNING'
+		UNION ALL SELECT 'canceling statement due to statement timeout', 'ERROR'
+		UNION ALL SELECT 'deadlock detected', 'ERROR'
+	) AS messages
+	CROSS JOIN generate_series(1, 5);
+
+	-- Add auth-specific logs
+	INSERT INTO analytics.logs (
+		timestamp, event_message, request_id, method, path, status_code,
+		source, severity, user_id, user_agent, duration_ms, metadata, search
+	)
+	SELECT
+		NOW() - (random() * INTERVAL '24 hours'),
+		CASE
+			WHEN status = 200 THEN 'User signed in successfully'
+			WHEN status = 201 THEN 'New user registered'
+			WHEN status = 401 THEN 'Invalid credentials provided'
+			WHEN status = 403 THEN 'Account locked due to too many failed attempts'
+			ELSE 'Token refresh successful'
+		END,
+		gen_random_uuid(),
+		(ARRAY['POST', 'GET'])[floor(random() * 2 + 1)],
+		(ARRAY['/auth/v1/token', '/auth/v1/signup', '/auth/v1/user', '/auth/v1/logout'])[floor(random() * 4 + 1)],
+		status,
+		'auth',
+		CASE WHEN status >= 400 THEN 'WARNING' ELSE 'INFO' END,
+		(SELECT id FROM auth.users ORDER BY random() LIMIT 1),
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+		floor(random() * 200 + 50)::int,
+		jsonb_build_object('provider', (ARRAY['email', 'google', 'github'])[floor(random() * 3 + 1)]),
+		''
+	FROM unnest(ARRAY[200, 200, 200, 200, 201, 201, 401, 403]) AS status
+	CROSS JOIN generate_series(1, 10);
+
+	-- Add storage-specific logs
+	INSERT INTO analytics.logs (
+		timestamp, event_message, request_id, method, path, status_code,
+		source, severity, user_id, duration_ms, metadata, search
+	)
+	SELECT
+		NOW() - (random() * INTERVAL '24 hours'),
+		CASE
+			WHEN method = 'POST' THEN 'File uploaded: ' || filename
+			WHEN method = 'GET' THEN 'File downloaded: ' || filename
+			WHEN method = 'DELETE' THEN 'File deleted: ' || filename
+			ELSE 'File operation completed'
+		END,
+		gen_random_uuid(),
+		method,
+		'/storage/v1/object/' || bucket || '/' || filename,
+		(ARRAY[200, 201, 200, 404])[floor(random() * 4 + 1)],
+		'storage',
+		'INFO',
+		(SELECT id FROM auth.users ORDER BY random() LIMIT 1),
+		floor(random() * 1000 + 100)::int,
+		jsonb_build_object(
+			'bucket', bucket,
+			'size_bytes', floor(random() * 5000000 + 1000)::int,
+			'content_type', 'image/jpeg'
+		),
+		''
+	FROM (
+		SELECT 'POST' AS method, 'avatars' AS bucket, 'profile.jpg' AS filename
+		UNION ALL SELECT 'POST', 'documents', 'report.pdf'
+		UNION ALL SELECT 'GET', 'avatars', 'user-1.jpg'
+		UNION ALL SELECT 'GET', 'public', 'logo.svg'
+		UNION ALL SELECT 'DELETE', 'documents', 'old-file.doc'
+		UNION ALL SELECT 'POST', 'media', 'video.mp4'
+	) AS operations
+	CROSS JOIN generate_series(1, 8);
+
+	-- Add edge function logs
+	INSERT INTO analytics.logs (
+		timestamp, event_message, request_id, method, path, status_code,
+		source, severity, duration_ms, metadata, search
+	)
+	SELECT
+		NOW() - (random() * INTERVAL '24 hours'),
+		CASE
+			WHEN status < 400 THEN 'Function executed successfully'
+			WHEN status = 408 THEN 'Function execution timed out'
+			ELSE 'Function execution failed'
+		END,
+		gen_random_uuid(),
+		'POST',
+		'/functions/v1/' || func_name,
+		status,
+		'functions',
+		CASE WHEN status >= 400 THEN 'ERROR' ELSE 'INFO' END,
+		floor(random() * 2000 + 50)::int,
+		jsonb_build_object(
+			'function_name', func_name,
+			'memory_used_mb', floor(random() * 128 + 16)::int,
+			'cold_start', random() < 0.2
+		),
+		''
+	FROM (
+		SELECT 'hello-world' AS func_name, 200 AS status
+		UNION ALL SELECT 'send-email', 200
+		UNION ALL SELECT 'process-image', 200
+		UNION ALL SELECT 'webhook-handler', 200
+		UNION ALL SELECT 'send-email', 500
+		UNION ALL SELECT 'process-image', 408
+	) AS functions
+	CROSS JOIN generate_series(1, 6);
+
+	-- Add realtime subscription logs
+	INSERT INTO analytics.logs (
+		timestamp, event_message, source, severity, metadata, search
+	)
+	SELECT
+		NOW() - (random() * INTERVAL '24 hours'),
+		msg,
+		'realtime',
+		sev,
+		jsonb_build_object('channel', (ARRAY['public:todos', 'public:posts', 'presence:lobby'])[floor(random() * 3 + 1)]),
+		''
+	FROM (
+		SELECT 'Client connected to realtime server' AS msg, 'INFO' AS sev
+		UNION ALL SELECT 'Channel subscription: public:todos', 'INFO'
+		UNION ALL SELECT 'Broadcast message sent', 'DEBUG'
+		UNION ALL SELECT 'Presence state updated', 'DEBUG'
+		UNION ALL SELECT 'Client disconnected: timeout', 'WARNING'
+		UNION ALL SELECT 'Rate limit exceeded for channel', 'WARNING'
+	) AS messages
+	CROSS JOIN generate_series(1, 10);
+
+	-- Add cron job logs
+	INSERT INTO analytics.logs (
+		timestamp, event_message, source, severity, duration_ms, metadata, search
+	)
+	SELECT
+		NOW() - (n * INTERVAL '1 hour'),
+		CASE
+			WHEN random() < 0.9 THEN 'Scheduled job completed: ' || job_name
+			ELSE 'Scheduled job failed: ' || job_name
+		END,
+		'cron',
+		CASE WHEN random() < 0.9 THEN 'INFO' ELSE 'ERROR' END,
+		floor(random() * 5000 + 100)::int,
+		jsonb_build_object(
+			'job_name', job_name,
+			'schedule', schedule,
+			'next_run', NOW() + INTERVAL '1 hour'
+		),
+		''
+	FROM (
+		SELECT 'cleanup_old_sessions' AS job_name, '0 * * * *' AS schedule
+		UNION ALL SELECT 'send_digest_emails', '0 8 * * *'
+		UNION ALL SELECT 'refresh_materialized_views', '*/15 * * * *'
+		UNION ALL SELECT 'expire_tokens', '*/5 * * * *'
+	) AS jobs
+	CROSS JOIN generate_series(1, 24) AS n;
+
+	-- Add some recent error logs for debugging visibility
+	INSERT INTO analytics.logs (
+		timestamp, event_message, request_id, method, path, status_code,
+		source, severity, user_agent, duration_ms, metadata, search
+	)
+	VALUES
+		(NOW() - INTERVAL '5 minutes', 'Internal server error: database connection pool exhausted', gen_random_uuid(), 'GET', '/rest/v1/todos', 500, 'postgrest', 'ERROR', 'supabase-js/2.39.0', 30001, '{"error_code": "PGRST301"}', ''),
+		(NOW() - INTERVAL '12 minutes', 'Request timeout: upstream service unavailable', gen_random_uuid(), 'POST', '/functions/v1/send-email', 504, 'edge', 'ERROR', 'curl/8.4.0', 60000, '{"timeout_ms": 60000}', ''),
+		(NOW() - INTERVAL '23 minutes', 'Authentication failed: JWT expired', gen_random_uuid(), 'GET', '/rest/v1/profiles', 401, 'auth', 'WARNING', 'PostmanRuntime/7.35.0', 45, '{"reason": "token_expired"}', ''),
+		(NOW() - INTERVAL '45 minutes', 'Rate limit exceeded: too many requests', gen_random_uuid(), 'POST', '/auth/v1/token', 429, 'edge', 'WARNING', 'Mozilla/5.0', 12, '{"limit": 100, "window": "1m"}', ''),
+		(NOW() - INTERVAL '1 hour', 'File upload failed: bucket quota exceeded', gen_random_uuid(), 'POST', '/storage/v1/object/backups/large-file.zip', 507, 'storage', 'ERROR', 'supabase-js/2.39.0', 5234, '{"bucket": "backups", "quota_mb": 1024}', '');
 	`
 
 	_, err := s.pool.Exec(ctx, sql)
