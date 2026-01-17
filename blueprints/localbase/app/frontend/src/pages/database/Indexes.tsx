@@ -69,7 +69,7 @@ export function IndexesPage() {
   const fetchSchemas = useCallback(async () => {
     try {
       const data = await databaseApi.listSchemas();
-      setSchemas(data);
+      setSchemas(data ?? []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -86,8 +86,8 @@ export function IndexesPage() {
         pgmetaApi.listIndexes(schema),
         databaseApi.listTables(schema),
       ]);
-      setIndexes(indexesData);
-      setTables(tablesData);
+      setIndexes(indexesData ?? []);
+      setTables(tablesData ?? []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -202,7 +202,7 @@ export function IndexesPage() {
   };
 
   // Group indexes by table
-  const indexesByTable = indexes.reduce((acc, index) => {
+  const indexesByTable = (indexes ?? []).reduce((acc, index) => {
     const key = index.table;
     if (!acc[key]) {
       acc[key] = [];
@@ -228,7 +228,7 @@ export function IndexesPage() {
             w={150}
           />
           <Badge variant="light" color="blue" size="lg">
-            {indexes.length} indexes
+            {indexes?.length ?? 0} indexes
           </Badge>
         </Group>
         <Group gap="sm">
@@ -246,7 +246,7 @@ export function IndexesPage() {
         <Center py="xl">
           <Loader size="lg" />
         </Center>
-      ) : indexes.length === 0 ? (
+      ) : !indexes || indexes.length === 0 ? (
         <EmptyState
           icon={<IconList size={48} />}
           title="No indexes found"

@@ -329,6 +329,12 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 			return nil, err
 		}
 
+		// Read index.html content for SPA fallback
+		indexHTML, err := fs.ReadFile(staticContent, "index.html")
+		if err != nil {
+			return nil, err
+		}
+
 		fileServer := http.FileServer(http.FS(staticContent))
 		app.Get("/{path...}", func(c *mizu.Ctx) error {
 			// Try to serve static file
@@ -337,16 +343,15 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 				path = "/index.html"
 			}
 
-			// Check if file exists
-			if _, err := fs.Stat(staticContent, path[1:]); err == nil {
+			// Check if file exists (must be a file, not directory)
+			if info, err := fs.Stat(staticContent, path[1:]); err == nil && !info.IsDir() {
 				fileServer.ServeHTTP(c.Writer(), c.Request())
 				return nil
 			}
 
-			// SPA fallback - serve index.html
-			c.Request().URL.Path = "/index.html"
-			fileServer.ServeHTTP(c.Writer(), c.Request())
-			return nil
+			// SPA fallback - serve index.html content directly
+			c.Header().Set("Content-Type", "text/html; charset=utf-8")
+			return c.HTML(200, string(indexHTML))
 		})
 	}
 

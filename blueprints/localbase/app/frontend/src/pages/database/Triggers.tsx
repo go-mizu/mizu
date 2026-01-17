@@ -72,7 +72,7 @@ export function TriggersPage() {
   const fetchSchemas = useCallback(async () => {
     try {
       const data = await databaseApi.listSchemas();
-      setSchemas(data);
+      setSchemas(data || []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -90,10 +90,10 @@ export function TriggersPage() {
         databaseApi.listTables(schema),
         pgmetaApi.listDatabaseFunctions(`${schema},public`),
       ]);
-      setTriggers(triggersData);
-      setTables(tablesData);
+      setTriggers(triggersData || []);
+      setTables(tablesData || []);
       // Filter to only trigger functions (those returning trigger)
-      const triggerFunctions = functionsData.filter(
+      const triggerFunctions = (functionsData || []).filter(
         (fn) => fn.return_type === 'trigger' || fn.return_type === 'event_trigger'
       );
       setFunctions(triggerFunctions);
@@ -218,7 +218,7 @@ export function TriggersPage() {
   };
 
   // Group triggers by table
-  const triggersByTable = triggers.reduce((acc, trigger) => {
+  const triggersByTable = (triggers ?? []).reduce((acc, trigger) => {
     const key = trigger.table;
     if (!acc[key]) {
       acc[key] = [];
@@ -244,7 +244,7 @@ export function TriggersPage() {
             w={150}
           />
           <Badge variant="light" color="blue" size="lg">
-            {triggers.length} triggers
+            {triggers?.length ?? 0} triggers
           </Badge>
         </Group>
         <Group gap="sm">
@@ -262,7 +262,7 @@ export function TriggersPage() {
         <Center py="xl">
           <Loader size="lg" />
         </Center>
-      ) : triggers.length === 0 ? (
+      ) : !triggers || triggers.length === 0 ? (
         <EmptyState
           icon={<IconBolt size={48} />}
           title="No triggers found"
@@ -395,7 +395,7 @@ export function TriggersPage() {
             searchable
             required
             nothingFoundMessage={
-              functions.length === 0
+              !functions || functions.length === 0
                 ? 'No trigger functions found. Create a function that returns TRIGGER first.'
                 : 'No matching functions'
             }

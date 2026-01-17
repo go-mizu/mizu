@@ -2,17 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Authentication/Users Page', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate via sidebar to avoid potential redirect loops
-    await page.goto('/');
+    await page.goto('/auth/users');
     await page.waitForLoadState('networkidle');
-
-    // Click Authentication link in sidebar
-    const authLink = page.locator('.mantine-AppShell-navbar').getByRole('link', { name: 'Authentication' });
-    await authLink.click();
-
-    // Wait for page to load
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/auth\/users/);
   });
 
   test('E2E-AUTH-001: User list loads', async ({ page }) => {

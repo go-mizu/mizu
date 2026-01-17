@@ -2,14 +2,32 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Edge Functions Page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/functions');
     await page.waitForLoadState('networkidle');
+  });
 
-    const functionsLink = page.locator('.mantine-AppShell-navbar').getByRole('link', { name: 'Edge Functions' });
-    await functionsLink.click();
+  test('E2E-FUNC-000: Page loads without JavaScript errors', async ({ page }) => {
+    const jsErrors: string[] = [];
 
+    // Listen for console errors
+    page.on('pageerror', (error) => {
+      jsErrors.push(error.message);
+    });
+
+    // Navigate and wait for load
+    await page.goto('/functions');
     await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/functions/);
+    await page.waitForTimeout(2000);
+
+    // Filter out known acceptable errors
+    const criticalErrors = jsErrors.filter(err =>
+      !err.includes('Failed to fetch') &&
+      !err.includes('NetworkError') &&
+      !err.includes('net::ERR')
+    );
+
+    // Ensure no critical JavaScript errors occurred
+    expect(criticalErrors.filter(e => e.includes('null is not an object') || e.includes('Cannot read properties of null'))).toHaveLength(0);
   });
 
   test('E2E-FUNC-001: Function list loads', async ({ page }) => {

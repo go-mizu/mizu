@@ -2,14 +2,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Logs Explorer Page', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/logs');
     await page.waitForLoadState('networkidle');
-
-    const logsLink = page.locator('.mantine-AppShell-navbar').getByRole('link', { name: 'Logs' });
-    await logsLink.click();
-
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveURL(/logs/);
+    await page.waitForTimeout(1000);
   });
 
   test('E2E-LOG-001: Logs page loads', async ({ page }) => {
@@ -61,8 +56,11 @@ test.describe('Logs Explorer Page', () => {
     const exportButton = page.getByRole('button', { name: /Export/i });
     await exportButton.click();
 
-    const jsonOption = page.getByText(/JSON/i);
-    const csvOption = page.getByText(/CSV/i);
+    await page.waitForTimeout(300);
+
+    // Menu items show "Export as JSON" and "Export as CSV"
+    const jsonOption = page.getByRole('menuitem').filter({ hasText: /JSON/i });
+    const csvOption = page.getByRole('menuitem').filter({ hasText: /CSV/i });
 
     const jsonVisible = await jsonOption.isVisible().catch(() => false);
     const csvVisible = await csvOption.isVisible().catch(() => false);
@@ -73,8 +71,13 @@ test.describe('Logs Explorer Page', () => {
   test('E2E-LOG-008: Auto-refresh toggle', async ({ page }) => {
     await page.waitForLoadState('networkidle');
 
-    const autoRefresh = page.getByText(/Auto-refresh/i).or(page.getByRole('switch')).first();
-    await expect(autoRefresh).toBeVisible();
+    // Wait for page title first
+    const title = page.getByRole('heading', { name: /Logs Explorer/i });
+    await expect(title).toBeVisible({ timeout: 15000 });
+
+    // Auto-refresh is a Switch with label
+    const autoRefresh = page.getByText('Auto-refresh');
+    await expect(autoRefresh).toBeVisible({ timeout: 10000 });
   });
 
   test('E2E-LOG-009: Log count displayed', async ({ page }) => {

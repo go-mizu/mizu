@@ -104,7 +104,7 @@ export function PoliciesPage() {
   const fetchSchemas = useCallback(async () => {
     try {
       const data = await databaseApi.listSchemas();
-      setSchemas(data);
+      setSchemas(data || []);
     } catch (error: any) {
       notifications.show({
         title: 'Error',
@@ -117,13 +117,13 @@ export function PoliciesPage() {
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
     try {
-      const tables = await databaseApi.listTables(schema);
+      const tables = await databaseApi.listTables(schema) || [];
 
       // Fetch policies for each table
       const policiesPromises = tables.map(async (table) => {
         try {
           const policies = await databaseApi.listPolicies(schema, table.name);
-          return { table, policies, expanded: false };
+          return { table, policies: policies || [], expanded: false };
         } catch {
           return { table, policies: [], expanded: false };
         }
@@ -294,8 +294,8 @@ export function PoliciesPage() {
     }
   };
 
-  const totalPolicies = tablePolicies.reduce((acc, tp) => acc + tp.policies.length, 0);
-  const tablesWithRLS = tablePolicies.filter((tp) => tp.table.rls_enabled).length;
+  const totalPolicies = tablePolicies.reduce((acc, tp) => acc + (tp.policies?.length ?? 0), 0);
+  const tablesWithRLS = tablePolicies.filter((tp) => tp.table?.rls_enabled).length;
 
   return (
     <PageContainer
@@ -357,7 +357,7 @@ export function PoliciesPage() {
                       {table.rls_enabled ? 'RLS Enabled' : 'RLS Disabled'}
                     </Badge>
                     <Badge size="sm" variant="outline">
-                      {policies.length} {policies.length === 1 ? 'policy' : 'policies'}
+                      {policies?.length ?? 0} {(policies?.length ?? 0) === 1 ? 'policy' : 'policies'}
                     </Badge>
                   </Group>
                   <Group gap="sm" onClick={(e) => e.stopPropagation()}>
@@ -385,7 +385,7 @@ export function PoliciesPage() {
               {/* Policies List */}
               <Collapse in={expanded}>
                 <Box px="md" pb="md">
-                  {policies.length === 0 ? (
+                  {!policies || policies.length === 0 ? (
                     <Text size="sm" c="dimmed" ta="center" py="md">
                       No policies defined. Add a policy to control access.
                     </Text>
