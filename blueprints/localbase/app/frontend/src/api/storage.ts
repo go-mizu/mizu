@@ -57,12 +57,16 @@ export const storageApi = {
 
   // Object operations
   listObjects: (bucket: string, options: ListObjectsRequest = {}): Promise<StorageObject[]> => {
-    return api.post<StorageObject[]>(`/storage/v1/object/list/${bucket}`, {
+    const body: Record<string, unknown> = {
       prefix: options.prefix || '',
       limit: options.limit || 100,
       offset: options.offset || 0,
-      sortBy: options.sortBy,
-    });
+    };
+    // Only include sortBy if explicitly provided
+    if (options.sortBy) {
+      body.sortBy = options.sortBy;
+    }
+    return api.post<StorageObject[]>(`/storage/v1/object/list/${bucket}`, body);
   },
 
   uploadObject: async (bucket: string, path: string, file: File): Promise<any> => {

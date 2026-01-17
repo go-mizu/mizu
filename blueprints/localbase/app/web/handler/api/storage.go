@@ -658,18 +658,27 @@ func (h *StorageHandler) DeleteObjects(c *mizu.Ctx) error {
 func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 
+	// First check if bucket exists (by ID or name for Supabase compatibility)
+	if _, err := h.store.Storage().GetBucket(c.Context(), bucketID); err != nil {
+		// Try by name as fallback
+		bucket, err := h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
+	}
+
+	// Read and parse request body manually to avoid DisallowUnknownFields issues
 	var req struct {
 		Prefix string `json:"prefix"`
 		Limit  int    `json:"limit"`
 		Offset int    `json:"offset"`
-		SortBy *struct {
-			Column string `json:"column"`
-			Order  string `json:"order"`
-		} `json:"sortBy"`
-		Search string `json:"search"` // Accept but ignore for Supabase compatibility
 	}
-	if err := c.BindJSON(&req, 0); err != nil {
-		return storageError(c, http.StatusBadRequest, "Bad Request", "invalid request body")
+
+	// Use standard JSON decoder without DisallowUnknownFields
+	dec := json.NewDecoder(c.Request().Body)
+	if err := dec.Decode(&req); err != nil && err.Error() != "EOF" {
+		return storageError(c, http.StatusBadRequest, "Bad Request", "invalid request body: "+err.Error())
 	}
 
 	if req.Limit == 0 {
