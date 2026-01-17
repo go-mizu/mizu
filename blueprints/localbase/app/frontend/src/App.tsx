@@ -18,6 +18,7 @@ import { SchemaVisualizerPage } from './pages/database/SchemaVisualizer';
 import { RealtimePage } from './pages/realtime/Realtime';
 import { FunctionsPage } from './pages/functions/Functions';
 import { LogsExplorerPage } from './pages/logs/LogsExplorer';
+import { ReportsPage } from './pages/reports/Reports';
 import { ApiDocsPage } from './pages/ApiDocs';
 import { SettingsPage } from './pages/settings/Settings';
 import { AdvisorsPage } from './pages/advisors/Advisors';
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/storage" element={<StoragePage />} />
             <Route path="/realtime" element={<RealtimePage />} />
             <Route path="/functions" element={<FunctionsPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/logs" element={<LogsExplorerPage />} />
             <Route path="/api-docs" element={<ApiDocsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
