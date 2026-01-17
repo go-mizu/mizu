@@ -162,8 +162,27 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		functions.Delete("/secrets/{name}", functionsHandler.DeleteSecret)
 	})
 
-	// Public function invocation
-	app.Post("/functions/v1/{name}", functionsHandler.InvokeFunction)
+	// Public function invocation (Supabase-compatible: supports all HTTP methods)
+	app.Group("/functions/v1", func(functions *mizu.Router) {
+		// Apply API key middleware (optional mode for functions that don't require JWT)
+		optionalAPIKeyMw := middleware.APIKey(&middleware.APIKeyConfig{
+			JWTSecret:         middleware.DefaultAPIKeyConfig().JWTSecret,
+			ValidateSignature: middleware.DefaultAPIKeyConfig().ValidateSignature,
+			Optional:          true, // Allow requests without auth for functions with verify_jwt=false
+			AnonKey:           middleware.DefaultAPIKeyConfig().AnonKey,
+			ServiceKey:        middleware.DefaultAPIKeyConfig().ServiceKey,
+		})
+		functions.Use(optionalAPIKeyMw)
+
+		// Support all HTTP methods for function invocation
+		functions.Get("/{name}", functionsHandler.InvokeFunction)
+		functions.Post("/{name}", functionsHandler.InvokeFunction)
+		functions.Put("/{name}", functionsHandler.InvokeFunction)
+		functions.Patch("/{name}", functionsHandler.InvokeFunction)
+		functions.Delete("/{name}", functionsHandler.InvokeFunction)
+		// OPTIONS for CORS preflight
+		functions.Handle("OPTIONS", "/{name}", functionsHandler.InvokeFunctionOptions)
+	})
 
 	// Realtime API - Requires authentication
 	app.Group("/api/realtime", func(realtime *mizu.Router) {
