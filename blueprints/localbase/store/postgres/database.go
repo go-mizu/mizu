@@ -2,12 +2,15 @@ package postgres
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/localbase/store"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -620,6 +623,110 @@ func (s *DatabaseStore) DisableExtension(ctx context.Context, name string) error
 	return err
 }
 
+// formatUUID formats a 16-byte UUID as a standard UUID string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+func formatUUID(b [16]byte) string {
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		binary.BigEndian.Uint32(b[0:4]),
+		binary.BigEndian.Uint16(b[4:6]),
+		binary.BigEndian.Uint16(b[6:8]),
+		binary.BigEndian.Uint16(b[8:10]),
+		b[10:16])
+}
+
+// convertValue converts PostgreSQL-specific types to JSON-serializable types.
+// This ensures UUIDs, timestamps, and other pg types are properly formatted for JSON.
+func convertValue(v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+
+	switch val := v.(type) {
+	case [16]byte:
+		// UUID - convert to string format
+		return formatUUID(val)
+	case []byte:
+		// Check if it's a UUID (16 bytes)
+		if len(val) == 16 {
+			var arr [16]byte
+			copy(arr[:], val)
+			return formatUUID(arr)
+		}
+		// Otherwise return as string
+		return string(val)
+	case pgtype.UUID:
+		if val.Valid {
+			return formatUUID(val.Bytes)
+		}
+		return nil
+	case time.Time:
+		return val.Format(time.RFC3339Nano)
+	case pgtype.Timestamp:
+		if val.Valid {
+			return val.Time.Format(time.RFC3339Nano)
+		}
+		return nil
+	case pgtype.Timestamptz:
+		if val.Valid {
+			return val.Time.Format(time.RFC3339Nano)
+		}
+		return nil
+	case pgtype.Date:
+		if val.Valid {
+			return val.Time.Format("2006-01-02")
+		}
+		return nil
+	case pgtype.Numeric:
+		if val.Valid {
+			f, _ := val.Float64Value()
+			if f.Valid {
+				return f.Float64
+			}
+		}
+		return nil
+	case pgtype.Int8:
+		if val.Valid {
+			return val.Int64
+		}
+		return nil
+	case pgtype.Int4:
+		if val.Valid {
+			return val.Int32
+		}
+		return nil
+	case pgtype.Int2:
+		if val.Valid {
+			return val.Int16
+		}
+		return nil
+	case pgtype.Float8:
+		if val.Valid {
+			return val.Float64
+		}
+		return nil
+	case pgtype.Float4:
+		if val.Valid {
+			return val.Float32
+		}
+		return nil
+	case pgtype.Bool:
+		if val.Valid {
+			return val.Bool
+		}
+		return nil
+	case pgtype.Text:
+		if val.Valid {
+			return val.String
+		}
+		return nil
+	case netip.Addr:
+		return val.String()
+	case netip.Prefix:
+		return val.String()
+	default:
+		return v
+	}
+}
+
 // Query executes a SQL query and returns results.
 func (s *DatabaseStore) Query(ctx context.Context, sql string, params ...interface{}) (*store.QueryResult, error) {
 	start := time.Now()
@@ -647,7 +754,7 @@ func (s *DatabaseStore) Query(ctx context.Context, sql string, params ...interfa
 
 		row := make(map[string]interface{})
 		for i, col := range columns {
-			row[col] = values[i]
+			row[col] = convertValue(values[i])
 		}
 		results = append(results, row)
 	}
@@ -850,7 +957,7 @@ func (s *DatabaseStore) QueryWithRLS(ctx context.Context, rlsCtx *RLSContext, sq
 
 		row := make(map[string]interface{})
 		for i, col := range columns {
-			row[col] = values[i]
+			row[col] = convertValue(values[i])
 		}
 		results = append(results, row)
 	}
