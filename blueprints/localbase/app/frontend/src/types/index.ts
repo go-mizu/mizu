@@ -82,6 +82,7 @@ export interface Column {
   is_nullable: boolean;
   is_primary_key: boolean;
   is_unique: boolean;
+  is_identity?: boolean;
   comment?: string;
 }
 
@@ -150,6 +151,7 @@ export interface Channel {
 export interface RealtimeStats {
   connections: number;
   channels: number;
+  messagesPerSecond: number;
   server_time: string;
 }
 
@@ -197,4 +199,39 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   per_page: number;
+}
+
+// Schema Visualization types
+export interface SchemaVisualizationTable {
+  id: number;
+  schema: string;
+  name: string;
+  comment?: string;
+  columns: SchemaVisualizationColumn[];
+}
+
+export interface SchemaVisualizationColumn {
+  name: string;
+  type: string;
+  is_nullable: boolean;
+  is_primary_key: boolean;
+  is_unique: boolean;
+  is_identity: boolean;
+  default_value?: string;
+}
+
+export interface SchemaVisualizationRelationship {
+  id: number;
+  source_schema: string;
+  source_table: string;
+  source_columns: string[];
+  target_schema: string;
+  target_table: string;
+  target_columns: string[];
+  constraint_name: string;
+}
+
+export interface SchemaVisualizationData {
+  tables: SchemaVisualizationTable[];
+  relationships: SchemaVisualizationRelationship[];
 }

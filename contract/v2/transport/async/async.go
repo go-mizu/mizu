@@ -161,10 +161,8 @@ func handleStream(c *mizu.Ctx, h *hub, o *options) error {
 
 	w := c.Writer()
 
-	// Flush headers
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
+	// Flush headers using Ctx.Flush() which properly handles wrapped writers
+	_ = c.Flush()
 
 	ctx := c.Request().Context()
 	ping := time.NewTicker(30 * time.Second)
@@ -181,16 +179,12 @@ func handleStream(c *mizu.Ctx, h *hub, o *options) error {
 			if _, err := w.Write(event); err != nil {
 				return nil
 			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
+			_ = c.Flush()
 		case <-ping.C:
 			if _, err := w.Write([]byte(": ping\n\n")); err != nil {
 				return nil
 			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
+			_ = c.Flush()
 		}
 	}
 }

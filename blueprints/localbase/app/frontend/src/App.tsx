@@ -12,6 +12,7 @@ import { IndexesPage } from './pages/database/Indexes';
 import { ViewsPage } from './pages/database/Views';
 import { TriggersPage } from './pages/database/Triggers';
 import { RolesPage } from './pages/database/Roles';
+import { SchemaVisualizerPage } from './pages/database/SchemaVisualizer';
 import { RealtimePage } from './pages/realtime/Realtime';
 import { FunctionsPage } from './pages/functions/Functions';
 import { LogsExplorerPage } from './pages/logs/LogsExplorer';
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/" element={<ProjectOverviewPage />} />
             <Route path="/table-editor" element={<TableEditorPage />} />
             <Route path="/sql-editor" element={<SQLEditorPage />} />
+            <Route path="/database/schema-visualizer" element={<SchemaVisualizerPage />} />
             <Route path="/database/policies" element={<PoliciesPage />} />
             <Route path="/database/indexes" element={<IndexesPage />} />
             <Route path="/database/views" element={<ViewsPage />} />

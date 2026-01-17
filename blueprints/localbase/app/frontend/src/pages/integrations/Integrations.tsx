@@ -13,7 +13,6 @@ import {
   SimpleGrid,
   Modal,
   TextInput,
-  Select,
   Textarea,
   Switch,
   Table,
@@ -31,11 +30,9 @@ import {
   IconTrash,
   IconPlayerPlay,
   IconPlayerPause,
-  IconEdit,
   IconRefresh,
   IconInfoCircle,
   IconExternalLink,
-  IconDatabase,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';

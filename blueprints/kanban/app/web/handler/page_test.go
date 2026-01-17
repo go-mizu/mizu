@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-mizu/blueprints/kanban/assets"
 	"github.com/go-mizu/blueprints/kanban/feature/columns"
-	"github.com/go-mizu/blueprints/kanban/feature/comments"
 	"github.com/go-mizu/blueprints/kanban/feature/cycles"
 	"github.com/go-mizu/blueprints/kanban/feature/fields"
 	"github.com/go-mizu/blueprints/kanban/feature/issues"
@@ -316,7 +315,7 @@ func TestIssueDetailTemplate(t *testing.T) {
 		Issue:           issue,
 		Project:         project,
 		Columns:         []*columns.Column{col},
-		Comments:        []*comments.Comment{},
+		Comments:        []*CommentView{},
 		Cycles:          []*cycles.Cycle{},
 		Fields:          []*fields.Field{},
 		TeamMembers:     []*users.User{},

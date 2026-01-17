@@ -313,6 +313,10 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 
 		// Functions (database functions)
 		pg.Get("/functions", pgmetaHandler.ListDatabaseFunctions)
+
+		// Schema Visualization
+		pg.Get("/schema-visualization", pgmetaHandler.GetSchemaVisualization)
+		pg.Get("/schema-sql", pgmetaHandler.GenerateSchemaSQL)
 	})
 
 	// Static files for dashboard

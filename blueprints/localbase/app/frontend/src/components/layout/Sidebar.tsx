@@ -10,6 +10,7 @@ import {
   ActionIcon,
   Tooltip,
   Collapse,
+  TextInput,
 } from '@mantine/core';
 import {
   IconDatabase,
@@ -32,8 +33,9 @@ import {
   IconTerminal2,
   IconBroadcast,
   IconAlertCircle,
-  IconChartBar,
   IconPlugConnected,
+  IconSchema,
+  IconSearch,
 } from '@tabler/icons-react';
 import { useAppStore } from '../../stores/appStore';
 import { useState } from 'react';
@@ -56,6 +58,7 @@ const navItems: NavItem[] = [
     label: 'Database',
     path: '/database',
     children: [
+      { icon: IconSchema, label: 'Schema Visualizer', path: '/database/schema-visualizer' },
       { icon: IconTable, label: 'Tables', path: '/table-editor' },
       { icon: IconEye, label: 'Views', path: '/database/views' },
       { icon: IconTerminal2, label: 'Functions', path: '/database/functions' },
@@ -86,6 +89,7 @@ export function Sidebar() {
   const location = useLocation();
   const { sidebarCollapsed, toggleSidebar, projectName } = useAppStore();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['Database']));
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isActive = (path: string) => {
     if (path === '/') {
@@ -204,17 +208,24 @@ export function Sidebar() {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
+        backgroundColor: 'var(--supabase-sidebar-bg)',
       }}
     >
       {/* Logo / Project Name */}
-      <Box p="md" pb="sm">
+      <Box
+        p="md"
+        pb="sm"
+        style={{
+          borderBottom: '1px solid var(--supabase-sidebar-divider)',
+        }}
+      >
         <Group gap="xs" wrap="nowrap">
           <Box
             style={{
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: 'linear-gradient(135deg, #3ECF8E 0%, #24B47E 100%)',
+              background: 'linear-gradient(135deg, #3ECF8E 0%, #1C9B5E 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -224,11 +235,25 @@ export function Sidebar() {
             <IconDatabase size={18} color="white" />
           </Box>
           {!sidebarCollapsed && (
-            <Box>
-              <Text fw={600} size="sm" truncate>
+            <Box style={{ minWidth: 0, flex: 1 }}>
+              <Text
+                fw={600}
+                size="sm"
+                truncate
+                style={{ color: 'var(--supabase-sidebar-text-active)' }}
+              >
                 {projectName}
               </Text>
-              <Badge size="xs" variant="light" color="green">
+              <Badge
+                size="xs"
+                variant="light"
+                color="green"
+                style={{
+                  backgroundColor: 'rgba(62, 207, 142, 0.2)',
+                  color: 'var(--supabase-brand)',
+                  marginTop: 2,
+                }}
+              >
                 Local
               </Badge>
             </Box>
@@ -236,24 +261,67 @@ export function Sidebar() {
         </Group>
       </Box>
 
-      <Divider />
+      {/* Search (visible when expanded) */}
+      {!sidebarCollapsed && (
+        <Box px="sm" pt="sm">
+          <TextInput
+            size="xs"
+            placeholder="Search..."
+            leftSection={<IconSearch size={14} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            styles={{
+              input: {
+                backgroundColor: 'var(--supabase-sidebar-bg-hover)',
+                borderColor: 'var(--supabase-sidebar-border)',
+                color: 'var(--supabase-sidebar-text-active)',
+                '&::placeholder': {
+                  color: 'var(--supabase-sidebar-text)',
+                },
+              },
+            }}
+          />
+        </Box>
+      )}
 
       {/* Main Navigation */}
       <Box p="xs" style={{ flex: 1, overflow: 'auto' }}>
         <Stack gap={2}>
-          {navItems.map((item) => renderNavItem(item))}
+          {navItems
+            .filter((item) =>
+              searchQuery === '' ||
+              item.label.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+            .map((item) => renderNavItem(item))}
         </Stack>
 
         {/* Divider before tools */}
-        <Divider my="sm" />
+        <Divider my="sm" style={{ borderColor: 'var(--supabase-sidebar-divider)' }} />
 
         {/* Tools Section */}
+        {!sidebarCollapsed && (
+          <Text
+            size="xs"
+            fw={600}
+            tt="uppercase"
+            c="dimmed"
+            px="sm"
+            mb="xs"
+            style={{
+              color: 'var(--supabase-sidebar-text)',
+              letterSpacing: '0.05em',
+              fontSize: '0.6875rem',
+            }}
+          >
+            Tools
+          </Text>
+        )}
         <Stack gap={2}>
           {toolsItems.map((item) => renderNavItem(item))}
         </Stack>
       </Box>
 
-      <Divider />
+      <Divider style={{ borderColor: 'var(--supabase-sidebar-divider)' }} />
 
       {/* Bottom Navigation */}
       <Box p="xs">
@@ -287,9 +355,13 @@ export function Sidebar() {
           >
             <ActionIcon
               variant="subtle"
-              color="gray"
               onClick={toggleSidebar}
-              style={{ width: '100%', justifyContent: 'flex-start', padding: '8px 12px' }}
+              style={{
+                width: '100%',
+                justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                padding: '8px 12px',
+                color: 'var(--supabase-sidebar-text)',
+              }}
               h={36}
             >
               {sidebarCollapsed ? (
@@ -297,11 +369,12 @@ export function Sidebar() {
               ) : (
                 <Group gap="xs">
                   <IconChevronLeft size={18} />
-                  {!sidebarCollapsed && (
-                    <Text size="sm" c="dimmed">
-                      Collapse
-                    </Text>
-                  )}
+                  <Text
+                    size="sm"
+                    style={{ color: 'var(--supabase-sidebar-text)' }}
+                  >
+                    Collapse
+                  </Text>
                 </Group>
               )}
             </ActionIcon>

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Box,
   Button,
@@ -11,7 +11,6 @@ import {
   Badge,
   ActionIcon,
   Tooltip,
-  Tabs,
   TextInput,
   Collapse,
   Menu,
@@ -23,12 +22,9 @@ import {
   UnstyledButton,
   Center,
   Loader,
-  rem,
 } from '@mantine/core';
 import {
-  IconPlayerPlay,
   IconTrash,
-  IconCode,
   IconDownload,
   IconPlus,
   IconX,
@@ -37,15 +33,11 @@ import {
   IconSearch,
   IconStar,
   IconStarFilled,
-  IconUsers,
-  IconLock,
-  IconWorld,
   IconTemplate,
   IconBook,
   IconClock,
   IconChartBar,
   IconFileAnalytics,
-  IconTable,
   IconDotsVertical,
   IconCopy,
   IconFolder,
@@ -68,14 +60,6 @@ interface QueryTab {
   loading: boolean;
 }
 
-interface SavedQuery {
-  id: string;
-  name: string;
-  query: string;
-  isFavorite: boolean;
-  isShared: boolean;
-  createdAt: Date;
-}
 
 // Query templates
 const QUERY_TEMPLATES = [

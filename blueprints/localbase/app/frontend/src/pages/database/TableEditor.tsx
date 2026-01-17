@@ -5,7 +5,6 @@ import {
   Group,
   Text,
   Stack,
-  Paper,
   ScrollArea,
   Select,
   ActionIcon,
@@ -35,6 +34,14 @@ import {
   IconX,
   IconChevronDown,
   IconChevronUp,
+  IconFilter,
+  IconSortAscending,
+  IconChevronLeft,
+  IconChevronRight,
+  IconShield,
+  IconBolt,
+  IconBroadcast,
+  IconSearch,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';
@@ -618,29 +625,53 @@ export function TableEditorPage() {
     return String(value);
   };
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(100);
+  const totalPages = Math.ceil((tableData?.length ?? 0) / rowsPerPage);
+
+  // Search state for table list
+  const [tableSearchQuery, setTableSearchQuery] = useState('');
+
+  // Filter tables by search query
+  const filteredTables = tables.filter((table) =>
+    tableSearchQuery === '' || table.name.toLowerCase().includes(tableSearchQuery.toLowerCase())
+  );
+
   return (
-    <PageContainer title="Table Editor" description="View and edit your database tables" fullWidth noPadding>
-      <Box style={{ display: 'flex', height: 'calc(100vh - 140px)' }}>
+    <PageContainer title="Table Editor" description="View and edit your database tables" fullWidth noPadding noHeader>
+      <Box style={{ display: 'flex', height: 'calc(100vh - 96px)' }}>
         {/* Table Sidebar */}
         <Box
           style={{
-            width: 260,
-            minWidth: 260,
+            width: 280,
+            minWidth: 280,
             borderRight: '1px solid var(--supabase-border)',
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: 'var(--supabase-bg-surface)',
+            backgroundColor: 'var(--supabase-bg)',
           }}
         >
-          <Box p="md" pb="sm">
-            <Group justify="space-between" mb="sm">
-              <Text fw={600} size="sm">
-                Tables
-              </Text>
-              <ActionIcon variant="subtle" onClick={openCreateTable} size="sm">
-                <IconPlus size={16} />
-              </ActionIcon>
-            </Group>
+          {/* Sidebar Header */}
+          <Box
+            p="sm"
+            style={{
+              borderBottom: '1px solid var(--supabase-border)',
+            }}
+          >
+            <Text
+              size="xs"
+              fw={600}
+              tt="uppercase"
+              mb="xs"
+              style={{
+                color: 'var(--supabase-text-muted)',
+                letterSpacing: '0.05em',
+                fontSize: '0.6875rem',
+              }}
+            >
+              Table Editor
+            </Text>
             <Select
               size="xs"
               value={selectedSchema}
@@ -650,48 +681,150 @@ export function TableEditorPage() {
                   setSelectedTable(null);
                 }
               }}
-              data={(schemas ?? []).map((s) => ({ value: s, label: s }))}
+              data={(schemas ?? []).map((s) => ({ value: s, label: `schema ${s}` }))}
               placeholder="Select schema"
+              leftSection={<Text size="xs" c="dimmed">schema</Text>}
+              styles={{
+                input: {
+                  backgroundColor: 'var(--supabase-bg-surface)',
+                },
+              }}
             />
           </Box>
 
+          {/* New Table Button */}
+          <Box px="sm" py="xs">
+            <Button
+              size="xs"
+              variant="outline"
+              fullWidth
+              leftSection={<IconPlus size={14} />}
+              onClick={openCreateTable}
+              styles={{
+                root: {
+                  borderColor: 'var(--supabase-border)',
+                  color: 'var(--supabase-text)',
+                  justifyContent: 'flex-start',
+                  fontWeight: 400,
+                  '&:hover': {
+                    backgroundColor: 'var(--supabase-bg-surface)',
+                  },
+                },
+              }}
+            >
+              New table
+            </Button>
+          </Box>
+
+          {/* Search Tables */}
+          <Box px="sm" pb="xs">
+            <TextInput
+              size="xs"
+              placeholder="Search tables..."
+              leftSection={<IconSearch size={14} />}
+              value={tableSearchQuery}
+              onChange={(e) => setTableSearchQuery(e.target.value)}
+              styles={{
+                input: {
+                  backgroundColor: 'var(--supabase-bg-surface)',
+                },
+              }}
+            />
+          </Box>
+
+          {/* Table List */}
           <ScrollArea style={{ flex: 1 }} px="sm" pb="sm">
             {loading ? (
               <Center py="xl">
                 <Loader size="sm" />
               </Center>
-            ) : !tables || tables.length === 0 ? (
+            ) : !filteredTables || filteredTables.length === 0 ? (
               <Text size="sm" c="dimmed" ta="center" py="xl">
-                No tables in {selectedSchema}
+                {tableSearchQuery ? 'No tables match your search' : `No tables in ${selectedSchema}`}
               </Text>
             ) : (
-              <Stack gap={4}>
-                {tables.map((table) => (
-                  <Paper
+              <Stack gap={2}>
+                {filteredTables.map((table) => (
+                  <Box
                     key={table.name}
-                    p="xs"
+                    py={6}
+                    px={8}
                     style={{
                       cursor: 'pointer',
                       backgroundColor:
                         selectedTable === table.name
                           ? 'var(--supabase-brand-light)'
                           : 'transparent',
-                      borderRadius: 6,
+                      borderRadius: 4,
+                      transition: 'background-color 0.1s ease',
                     }}
                     onClick={() => setSelectedTable(table.name)}
+                    onMouseEnter={(e) => {
+                      if (selectedTable !== table.name) {
+                        e.currentTarget.style.backgroundColor = 'var(--supabase-bg-surface-hover)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedTable !== table.name) {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }
+                    }}
                   >
-                    <Group justify="space-between" wrap="nowrap">
-                      <Group gap="xs" wrap="nowrap">
-                        <IconTable size={16} />
-                        <Text size="sm" truncate style={{ maxWidth: 140 }}>
+                    <Group justify="space-between" wrap="nowrap" gap={8}>
+                      <Group gap={8} wrap="nowrap" style={{ minWidth: 0, flex: 1 }}>
+                        <IconTable
+                          size={16}
+                          style={{
+                            flexShrink: 0,
+                            color: selectedTable === table.name
+                              ? 'var(--supabase-brand)'
+                              : 'var(--supabase-text-muted)',
+                          }}
+                        />
+                        <Text
+                          size="sm"
+                          truncate
+                          style={{
+                            color: selectedTable === table.name
+                              ? 'var(--supabase-brand)'
+                              : 'var(--supabase-text)',
+                          }}
+                        >
                           {table.name}
                         </Text>
                       </Group>
-                      <Badge size="xs" variant="light" color="gray">
-                        {table.row_count ?? 0}
-                      </Badge>
+                      <Menu position="right-start" shadow="md" withinPortal>
+                        <Menu.Target>
+                          <ActionIcon
+                            size="xs"
+                            variant="subtle"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ opacity: 0.5 }}
+                          >
+                            <IconDotsVertical size={14} />
+                          </ActionIcon>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          <Menu.Item
+                            leftSection={<IconEdit size={14} />}
+                          >
+                            Edit table
+                          </Menu.Item>
+                          <Menu.Item
+                            color="red"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTable(table.name);
+                              openDeleteTable();
+                            }}
+                          >
+                            Delete table
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
                     </Group>
-                  </Paper>
+                  </Box>
                 ))}
               </Stack>
             )}
@@ -702,46 +835,124 @@ export function TableEditorPage() {
         <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {selectedTable ? (
             <>
+              {/* Table Tab Bar */}
+              <Box
+                style={{
+                  borderBottom: '1px solid var(--supabase-border)',
+                  backgroundColor: 'var(--supabase-bg)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  paddingLeft: 12,
+                  minHeight: 40,
+                }}
+              >
+                <Group gap={0}>
+                  <Box
+                    px="sm"
+                    py={8}
+                    style={{
+                      borderBottom: '2px solid var(--supabase-brand)',
+                      marginBottom: -1,
+                    }}
+                  >
+                    <Group gap={6}>
+                      <IconTable size={14} color="var(--supabase-brand)" />
+                      <Text size="sm" fw={500} style={{ color: 'var(--supabase-brand)' }}>
+                        {selectedTable}
+                      </Text>
+                    </Group>
+                  </Box>
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    ml={4}
+                    style={{ opacity: 0.5 }}
+                  >
+                    <IconPlus size={14} />
+                  </ActionIcon>
+                </Group>
+              </Box>
+
               {/* Toolbar */}
               <Box
-                p="sm"
-                style={{ borderBottom: '1px solid var(--supabase-border)', backgroundColor: 'var(--supabase-bg-surface)' }}
+                px="sm"
+                py={8}
+                style={{
+                  borderBottom: '1px solid var(--supabase-border)',
+                  backgroundColor: 'var(--supabase-bg)',
+                }}
               >
                 <Group justify="space-between">
-                  <Group gap="sm">
-                    <Text fw={500}>{selectedTable}</Text>
-                    {currentTable?.rls_enabled && (
-                      <Badge size="sm" variant="light" color="green">
-                        RLS
-                      </Badge>
-                    )}
-                  </Group>
-                  <Group gap="xs">
-                    {/* Insert Row Button */}
+                  {/* Left side - Filter, Sort, Insert */}
+                  <Group gap={8}>
                     <Button
                       size="xs"
-                      leftSection={<IconRowInsertBottom size={14} />}
+                      variant="outline"
+                      leftSection={<IconFilter size={14} />}
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          color: 'var(--supabase-text)',
+                          fontWeight: 400,
+                          '&:hover': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      Filter
+                    </Button>
+
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      leftSection={<IconSortAscending size={14} />}
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          color: 'var(--supabase-text)',
+                          fontWeight: 400,
+                          '&:hover': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      Sort
+                    </Button>
+
+                    <Button
+                      size="xs"
+                      leftSection={
+                        <Box
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 16,
+                            height: 16,
+                            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                            borderRadius: 3,
+                          }}
+                        >
+                          <IconCheck size={10} />
+                        </Box>
+                      }
                       onClick={() => {
                         setRowFormData({});
                         openInsertRow();
                       }}
+                      styles={{
+                        root: {
+                          backgroundColor: 'var(--supabase-brand)',
+                          '&:hover': {
+                            backgroundColor: 'var(--supabase-brand-hover)',
+                          },
+                        },
+                      }}
                     >
-                      Insert row
+                      Insert
                     </Button>
-
-                    {/* Add Column */}
-                    <Tooltip label="Add column">
-                      <ActionIcon variant="subtle" onClick={openAddColumn}>
-                        <IconColumns size={18} />
-                      </ActionIcon>
-                    </Tooltip>
-
-                    {/* Refresh */}
-                    <Tooltip label="Refresh">
-                      <ActionIcon variant="subtle" onClick={fetchTableData}>
-                        <IconRefresh size={18} />
-                      </ActionIcon>
-                    </Tooltip>
 
                     {/* Delete selected rows */}
                     {selectedRows.size > 0 && (
@@ -756,6 +967,95 @@ export function TableEditorPage() {
                         Delete ({selectedRows.size})
                       </Button>
                     )}
+                  </Group>
+
+                  {/* Right side - RLS, Index Advisor, Realtime, Role */}
+                  <Group gap={8}>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      leftSection={<IconShield size={14} />}
+                      rightSection={
+                        currentTable?.rls_enabled ? (
+                          <Badge size="xs" variant="light" color="green" style={{ marginLeft: 4 }}>
+                            Enabled
+                          </Badge>
+                        ) : undefined
+                      }
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          color: 'var(--supabase-text)',
+                          fontWeight: 400,
+                          '&:hover': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      RLS policies
+                    </Button>
+
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      leftSection={<IconBolt size={14} />}
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          color: 'var(--supabase-text)',
+                          fontWeight: 400,
+                          '&:hover': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      Index Advisor
+                    </Button>
+
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      leftSection={<IconBroadcast size={14} />}
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          color: 'var(--supabase-text)',
+                          fontWeight: 400,
+                          '&:hover': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      Enable Realtime
+                    </Button>
+
+                    <Select
+                      size="xs"
+                      value="postgres"
+                      data={[
+                        { value: 'postgres', label: 'postgres' },
+                        { value: 'anon', label: 'anon' },
+                        { value: 'authenticated', label: 'authenticated' },
+                      ]}
+                      leftSection={<Text size="xs" c="dimmed">Role</Text>}
+                      w={150}
+                      styles={{
+                        input: {
+                          backgroundColor: 'var(--supabase-bg)',
+                          borderColor: 'var(--supabase-border)',
+                        },
+                      }}
+                    />
+
+                    {/* Refresh */}
+                    <Tooltip label="Refresh">
+                      <ActionIcon variant="subtle" onClick={fetchTableData}>
+                        <IconRefresh size={18} />
+                      </ActionIcon>
+                    </Tooltip>
 
                     {/* More actions */}
                     <Menu position="bottom-end">
@@ -784,30 +1084,6 @@ export function TableEditorPage() {
                   </Group>
                 </Group>
               </Box>
-
-              {/* Column/Row count info */}
-              {columns && columns.length > 0 && (
-                <Box
-                  px="sm"
-                  py="xs"
-                  style={{
-                    borderBottom: '1px solid var(--supabase-border)',
-                    backgroundColor: 'var(--supabase-bg)',
-                  }}
-                >
-                  <Group gap="xs">
-                    <Text size="xs" c="dimmed">
-                      {columns.length} columns
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      •
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {tableData?.length ?? 0} rows (max 100)
-                    </Text>
-                  </Group>
-                </Box>
-              )}
 
               {/* Data Table with horizontal scroll */}
               <Box style={{ flex: 1, overflow: 'hidden' }}>
@@ -1037,6 +1313,134 @@ export function TableEditorPage() {
                   </ScrollArea>
                 )}
               </Box>
+
+              {/* Pagination Footer */}
+              {tableData && tableData.length > 0 && (
+                <Box
+                  px="sm"
+                  py={8}
+                  style={{
+                    borderTop: '1px solid var(--supabase-border)',
+                    backgroundColor: 'var(--supabase-bg)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  {/* Left side - Page navigation */}
+                  <Group gap={8}>
+                    <ActionIcon
+                      size="sm"
+                      variant="outline"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          '&:hover:not(:disabled)': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      <IconChevronLeft size={14} />
+                    </ActionIcon>
+
+                    <Group gap={4}>
+                      <Text size="xs" c="dimmed">Page</Text>
+                      <TextInput
+                        size="xs"
+                        value={currentPage}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val >= 1 && val <= totalPages) {
+                            setCurrentPage(val);
+                          }
+                        }}
+                        w={40}
+                        styles={{
+                          input: {
+                            textAlign: 'center',
+                            padding: '4px',
+                          },
+                        }}
+                      />
+                      <Text size="xs" c="dimmed">of {totalPages || 1}</Text>
+                    </Group>
+
+                    <ActionIcon
+                      size="sm"
+                      variant="outline"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      styles={{
+                        root: {
+                          borderColor: 'var(--supabase-border)',
+                          '&:hover:not(:disabled)': {
+                            backgroundColor: 'var(--supabase-bg-surface)',
+                          },
+                        },
+                      }}
+                    >
+                      <IconChevronRight size={14} />
+                    </ActionIcon>
+                  </Group>
+
+                  {/* Right side - Row count and tabs */}
+                  <Group gap={16}>
+                    <Group gap={4}>
+                      <Select
+                        size="xs"
+                        value={String(rowsPerPage)}
+                        onChange={(val) => val && setRowsPerPage(parseInt(val, 10))}
+                        data={[
+                          { value: '50', label: '50 rows' },
+                          { value: '100', label: '100 rows' },
+                          { value: '200', label: '200 rows' },
+                        ]}
+                        w={100}
+                        styles={{
+                          input: {
+                            backgroundColor: 'var(--supabase-bg)',
+                            borderColor: 'var(--supabase-border)',
+                          },
+                        }}
+                      />
+                    </Group>
+
+                    <Text size="xs" c="dimmed">
+                      {tableData.length} records
+                    </Text>
+
+                    {/* Data / Definition tabs */}
+                    <Group gap={0}>
+                      <Button
+                        size="xs"
+                        variant="default"
+                        style={{
+                          borderTopRightRadius: 0,
+                          borderBottomRightRadius: 0,
+                          backgroundColor: 'var(--supabase-bg-surface)',
+                          borderColor: 'var(--supabase-border)',
+                        }}
+                      >
+                        Data
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="default"
+                        style={{
+                          borderTopLeftRadius: 0,
+                          borderBottomLeftRadius: 0,
+                          borderColor: 'var(--supabase-border)',
+                        }}
+                      >
+                        Definition
+                      </Button>
+                    </Group>
+                  </Group>
+                </Box>
+              )}
             </>
           ) : (
             <Center style={{ flex: 1 }}>

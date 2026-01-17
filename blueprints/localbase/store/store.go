@@ -211,6 +211,7 @@ type Column struct {
 	IsNullable   bool   `json:"is_nullable"`
 	IsPrimaryKey bool   `json:"is_primary_key"`
 	IsUnique     bool   `json:"is_unique"`
+	IsIdentity   bool   `json:"is_identity"`
 	Comment      string `json:"comment,omitempty"`
 }
 

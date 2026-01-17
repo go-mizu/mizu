@@ -8,14 +8,11 @@ import {
   Stack,
   Badge,
   Button,
-  Progress,
   Card,
   ThemeIcon,
   Skeleton,
-  Divider,
   List,
-  ActionIcon,
-  Tooltip,
+  Anchor,
 } from '@mantine/core';
 import {
   IconUsers,
@@ -24,16 +21,12 @@ import {
   IconBolt,
   IconDatabase,
   IconShield,
-  IconCloud,
-  IconBroadcast,
   IconChevronRight,
   IconExternalLink,
-  IconCopy,
   IconCheck,
   IconAlertTriangle,
   IconCircleCheck,
   IconActivity,
-  IconClock,
   IconArrowUpRight,
 } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
@@ -67,17 +60,25 @@ export function ProjectOverviewPage() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const [healthData, users, tables, buckets, functions] = await Promise.all([
+        const [healthData, usersData, tables, buckets, functions] = await Promise.all([
           dashboardApi.getHealth(),
-          authApi.listUsers().catch(() => []),
+          authApi.listUsers().catch(() => ({ users: [], total: 0 })),
           databaseApi.listTables('public').catch(() => []),
           storageApi.listBuckets().catch(() => []),
           functionsApi.listFunctions().catch(() => []),
         ]);
 
-        setHealth(healthData);
+        // Convert HealthStatus to ServiceHealth[]
+        const healthServices: ServiceHealth[] = [
+          { name: 'Database', status: healthData.services.database ? 'healthy' : 'unhealthy' },
+          { name: 'Auth', status: healthData.services.auth ? 'healthy' : 'unhealthy' },
+          { name: 'Storage', status: healthData.services.storage ? 'healthy' : 'unhealthy' },
+          { name: 'Realtime', status: healthData.services.realtime ? 'healthy' : 'unhealthy' },
+        ];
+        setHealth(healthServices);
+
         setStats({
-          users: users?.length || 0,
+          users: usersData?.total || usersData?.users?.length || 0,
           tables: tables?.length || 0,
           buckets: buckets?.length || 0,
           functions: functions?.length || 0,
@@ -337,8 +338,7 @@ export function ProjectOverviewPage() {
                   <Text size="sm">Create your first table</Text>
                   <Button
                     variant="subtle"
-                    size="xs"
-                    compact
+                    size="compact-xs"
                     component={Link}
                     to="/table-editor"
                   >
@@ -357,8 +357,7 @@ export function ProjectOverviewPage() {
                   <Text size="sm">Set up Row Level Security</Text>
                   <Button
                     variant="subtle"
-                    size="xs"
-                    compact
+                    size="compact-xs"
                     component={Link}
                     to="/database/policies"
                   >
@@ -377,8 +376,7 @@ export function ProjectOverviewPage() {
                   <Text size="sm">Add authentication to your app</Text>
                   <Button
                     variant="subtle"
-                    size="xs"
-                    compact
+                    size="compact-xs"
                     component={Link}
                     to="/auth/users"
                   >
@@ -394,57 +392,60 @@ export function ProjectOverviewPage() {
               Resources
             </Text>
             <Stack gap="sm">
-              <Group
-                component="a"
+              <Anchor
                 href="https://supabase.com/docs"
                 target="_blank"
-                gap="sm"
-                style={{ textDecoration: 'none', color: 'inherit' }}
+                underline="never"
+                c="inherit"
               >
-                <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
-                  <IconExternalLink size={14} />
-                </ThemeIcon>
-                <Box style={{ flex: 1 }}>
-                  <Text size="sm">Documentation</Text>
-                  <Text size="xs" c="dimmed">
-                    Learn how to use Supabase features
-                  </Text>
-                </Box>
-              </Group>
-              <Group
-                component="a"
+                <Group gap="sm">
+                  <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                    <IconExternalLink size={14} />
+                  </ThemeIcon>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="sm">Documentation</Text>
+                    <Text size="xs" c="dimmed">
+                      Learn how to use Supabase features
+                    </Text>
+                  </Box>
+                </Group>
+              </Anchor>
+              <Anchor
                 href="https://supabase.com/docs/reference"
                 target="_blank"
-                gap="sm"
-                style={{ textDecoration: 'none', color: 'inherit' }}
+                underline="never"
+                c="inherit"
               >
-                <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
-                  <IconExternalLink size={14} />
-                </ThemeIcon>
-                <Box style={{ flex: 1 }}>
-                  <Text size="sm">API Reference</Text>
-                  <Text size="xs" c="dimmed">
-                    Complete API documentation
-                  </Text>
-                </Box>
-              </Group>
-              <Group
-                component="a"
+                <Group gap="sm">
+                  <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                    <IconExternalLink size={14} />
+                  </ThemeIcon>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="sm">API Reference</Text>
+                    <Text size="xs" c="dimmed">
+                      Complete API documentation
+                    </Text>
+                  </Box>
+                </Group>
+              </Anchor>
+              <Anchor
                 href="https://github.com/supabase/supabase"
                 target="_blank"
-                gap="sm"
-                style={{ textDecoration: 'none', color: 'inherit' }}
+                underline="never"
+                c="inherit"
               >
-                <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
-                  <IconExternalLink size={14} />
-                </ThemeIcon>
-                <Box style={{ flex: 1 }}>
-                  <Text size="sm">GitHub</Text>
-                  <Text size="xs" c="dimmed">
-                    View source code and contribute
-                  </Text>
-                </Box>
-              </Group>
+                <Group gap="sm">
+                  <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                    <IconExternalLink size={14} />
+                  </ThemeIcon>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="sm">GitHub</Text>
+                    <Text size="xs" c="dimmed">
+                      View source code and contribute
+                    </Text>
+                  </Box>
+                </Group>
+              </Anchor>
             </Stack>
           </Paper>
         </SimpleGrid>
