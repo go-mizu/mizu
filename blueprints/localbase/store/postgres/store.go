@@ -22,6 +22,7 @@ type Store struct {
 	realtime  *RealtimeStore
 	pgmeta    *PGMetaStore
 	logs      *LogsStore
+	reports   *ReportsStore
 }
 
 // New creates a new PostgreSQL store.
@@ -56,6 +57,7 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	s.realtime = &RealtimeStore{pool: pool}
 	s.pgmeta = &PGMetaStore{pool: pool}
 	s.logs = &LogsStore{pool: pool}
+	s.reports = &ReportsStore{pool: pool}
 
 	return s, nil
 }
@@ -940,6 +942,11 @@ func (s *Store) PGMeta() *PGMetaStore {
 // Logs returns the logs store.
 func (s *Store) Logs() store.LogsStore {
 	return s.logs
+}
+
+// Reports returns the reports store.
+func (s *Store) Reports() store.ReportsStore {
+	return s.reports
 }
 
 func (s *Store) createLogsTables(ctx context.Context) error {

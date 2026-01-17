@@ -25,6 +25,7 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	pgmetaHandler := api.NewPGMetaHandler(store)
 	logsHandler := api.NewLogsHandler(store)
 	settingsHandler := api.NewSettingsHandler(store)
+	reportsHandler := api.NewReportsHandler(store)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
@@ -242,6 +243,28 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 
 		// Single log by ID (must be last to avoid conflicts)
 		logs.Get("/{id}", logsHandler.GetLog)
+	})
+
+	// Reports API - Supabase Dashboard charts and metrics
+	app.Group("/api/reports", func(reports *mizu.Router) {
+		reports.Use(apiKeyMw)
+		reports.Use(serviceRoleMw)
+
+		// Report types and configs
+		reports.Get("", reportsHandler.ListReportTypes)
+		reports.Get("/configs", reportsHandler.ListReportConfigs)
+		reports.Get("/configs/{type}", reportsHandler.GetReportConfig)
+
+		// Report data
+		reports.Get("/{type}", reportsHandler.GetReport)
+		reports.Get("/{type}/chart/{chartId}", reportsHandler.GetReportChart)
+	})
+
+	// Prometheus-compatible metrics endpoint
+	app.Group("/customer/v1/privileged", func(metrics *mizu.Router) {
+		metrics.Use(apiKeyMw)
+		metrics.Use(serviceRoleMw)
+		metrics.Get("/metrics", reportsHandler.GetMetrics)
 	})
 
 	// Settings API - Supabase Dashboard compatibility

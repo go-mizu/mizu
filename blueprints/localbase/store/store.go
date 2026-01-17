@@ -516,3 +516,85 @@ type LogsStore interface {
 	// Templates
 	ListQueryTemplates(ctx context.Context) ([]*QueryTemplate, error)
 }
+
+// ========== Reports Types ==========
+
+// ChartType represents the type of chart visualization.
+type ChartType string
+
+const (
+	ChartTypeLine       ChartType = "line"
+	ChartTypeArea       ChartType = "area"
+	ChartTypeStackedArea ChartType = "stacked_area"
+	ChartTypeBar        ChartType = "bar"
+	ChartTypeStackedBar ChartType = "stacked_bar"
+	ChartTypeTable      ChartType = "table"
+)
+
+// MetricDataPoint represents a single data point in a time series.
+type MetricDataPoint struct {
+	Timestamp time.Time          `json:"timestamp"`
+	Value     float64            `json:"value"`
+	Values    map[string]float64 `json:"values,omitempty"`
+}
+
+// ChartConfig represents configuration for a single chart.
+type ChartConfig struct {
+	ID      string    `json:"id"`
+	Title   string    `json:"title"`
+	Type    ChartType `json:"type"`
+	Metric  string    `json:"metric,omitempty"`
+	Metrics []string  `json:"metrics,omitempty"`
+	Unit    string    `json:"unit"`
+}
+
+// ChartData represents a chart with its data.
+type ChartData struct {
+	ChartConfig
+	Data []MetricDataPoint `json:"data"`
+}
+
+// ReportConfig represents a saved report configuration.
+type ReportConfig struct {
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description,omitempty"`
+	ReportType  string        `json:"report_type"`
+	Charts      []ChartConfig `json:"charts"`
+	IsDefault   bool          `json:"is_default"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+}
+
+// Report represents a complete report with data.
+type Report struct {
+	ReportType string      `json:"report_type"`
+	From       time.Time   `json:"from"`
+	To         time.Time   `json:"to"`
+	Interval   string      `json:"interval"`
+	Charts     []ChartData `json:"charts"`
+}
+
+// ReportType represents a type of report.
+type ReportType struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ReportsStore defines the interface for reports operations.
+type ReportsStore interface {
+	// Report configs
+	GetDefaultReportConfig(ctx context.Context, reportType string) (*ReportConfig, error)
+	ListReportConfigs(ctx context.Context) ([]*ReportConfig, error)
+
+	// Metrics aggregation
+	GetMetricTimeSeries(ctx context.Context, metric string, from, to time.Time, interval string) ([]MetricDataPoint, error)
+	GetMultiMetricTimeSeries(ctx context.Context, metrics []string, from, to time.Time, interval string) (map[string][]MetricDataPoint, error)
+
+	// Prometheus export
+	GetPrometheusMetrics(ctx context.Context) (string, error)
+
+	// Report generation
+	GenerateReport(ctx context.Context, reportType string, from, to time.Time, interval string) (*Report, error)
+}

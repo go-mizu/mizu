@@ -7,3 +7,4 @@ export { dashboardApi } from './dashboard';
 export { functionsApi } from './functions';
 export { pgmetaApi } from './pgmeta';
 export { logsApi } from './logs';
+export { reportsApi } from './reports';
