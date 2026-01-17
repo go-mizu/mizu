@@ -14,6 +14,7 @@ import {
   Kbd,
   Divider,
   UnstyledButton,
+  useMantineColorScheme,
 } from '@mantine/core';
 import {
   IconSearch,
@@ -29,6 +30,8 @@ import {
   IconDatabase,
   IconExternalLink,
   IconBuilding,
+  IconSun,
+  IconMoon,
 } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
@@ -36,6 +39,8 @@ import { useAppStore } from '../../stores/appStore';
 export function Header() {
   const { projectName } = useAppStore();
   const [connectModalOpened, setConnectModalOpened] = useState(false);
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const isDark = colorScheme === 'dark';
 
   // Mock connection details
   const connectionDetails = {
@@ -214,6 +219,19 @@ export function Header() {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+
+            {/* Theme Toggle */}
+            <Tooltip label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              <ActionIcon
+                variant="subtle"
+                size="lg"
+                color="gray"
+                onClick={() => toggleColorScheme()}
+                aria-label="Toggle color scheme"
+              >
+                {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
+              </ActionIcon>
+            </Tooltip>
 
             {/* Notifications */}
             <ActionIcon variant="subtle" size="lg" color="gray">

@@ -85,7 +85,11 @@ const bottomNavItems: NavItem[] = [
   { icon: IconSettings, label: 'Project Settings', path: '/settings' },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ onNavigate }: SidebarProps) {
   const location = useLocation();
   const { sidebarCollapsed, toggleSidebar, projectName } = useAppStore();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['Database']));
@@ -151,6 +155,7 @@ export function Sidebar() {
                     leftSection={<child.icon size={16} stroke={1.5} />}
                     active={isActive(child.path)}
                     style={{ borderRadius: 6 }}
+                    onClick={onNavigate}
                   />
                 </Tooltip>
               ))}
@@ -170,6 +175,7 @@ export function Sidebar() {
             leftSection={<item.icon size={18} stroke={1.5} />}
             active={isChildActive}
             style={{ borderRadius: 6 }}
+            onClick={onNavigate}
           />
         </Tooltip>
       );
@@ -197,6 +203,7 @@ export function Sidebar() {
           }
           active={isActive(item.path)}
           style={{ borderRadius: 6 }}
+          onClick={onNavigate}
         />
       </Tooltip>
     );
@@ -340,6 +347,7 @@ export function Sidebar() {
                 label={sidebarCollapsed ? undefined : item.label}
                 leftSection={<item.icon size={18} stroke={1.5} />}
                 active={isActive(item.path)}
+                onClick={onNavigate}
                 style={{
                   borderRadius: 6,
                 }}

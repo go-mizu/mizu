@@ -130,6 +130,172 @@
 }
 
 /* ============================================
+ * Dark Theme Variables
+ * ============================================ */
+[data-mantine-color-scheme="dark"] {
+  /* Brand Colors (Same as light) */
+  --supabase-brand: #3ECF8E;
+  --supabase-brand-hover: #4AE19A;
+  --supabase-brand-light: rgba(62, 207, 142, 0.15);
+  --supabase-brand-muted: rgba(62, 207, 142, 0.2);
+  --supabase-brand-darker: #2DB77A;
+
+  /* Dark Sidebar Theme */
+  --supabase-sidebar-bg: #171717;
+  --supabase-sidebar-bg-hover: #262626;
+  --supabase-sidebar-bg-active: rgba(62, 207, 142, 0.15);
+  --supabase-sidebar-text: #A3A3A3;
+  --supabase-sidebar-text-hover: #E5E5E5;
+  --supabase-sidebar-text-active: #FFFFFF;
+  --supabase-sidebar-border: #262626;
+  --supabase-sidebar-divider: #262626;
+  --supabase-sidebar-icon: #737373;
+  --supabase-sidebar-icon-active: #3ECF8E;
+
+  /* Background Colors */
+  --supabase-bg: #171717;
+  --supabase-bg-surface: #1F1F1F;
+  --supabase-bg-surface-alt: #262626;
+  --supabase-bg-surface-hover: #2A2A2A;
+  --supabase-bg-sidebar: #171717;
+  --supabase-bg-muted: #262626;
+  --supabase-bg-overlay: rgba(0, 0, 0, 0.7);
+  --supabase-bg-panel: #1F1F1F;
+
+  /* Text Colors */
+  --supabase-text-1200: #FAFAFA;
+  --supabase-text-1100: #F5F5F5;
+  --supabase-text-1000: #E5E5E5;
+  --supabase-text-900: #D4D4D4;
+  --supabase-text: #EDEDED;
+  --supabase-text-secondary: #A3A3A3;
+  --supabase-text-muted: #737373;
+  --supabase-text-light: #525252;
+  --supabase-text-placeholder: #525252;
+
+  /* Border Colors */
+  --supabase-border: #2E2E2E;
+  --supabase-border-muted: #262626;
+  --supabase-border-strong: #404040;
+  --supabase-border-focus: #3ECF8E;
+
+  /* Semantic Colors */
+  --supabase-success: #3ECF8E;
+  --supabase-success-bg: rgba(62, 207, 142, 0.15);
+  --supabase-success-text: #4AE19A;
+
+  --supabase-warning: #F59E0B;
+  --supabase-warning-bg: rgba(245, 158, 11, 0.15);
+  --supabase-warning-text: #FBB943;
+
+  --supabase-error: #EF4444;
+  --supabase-error-bg: rgba(239, 68, 68, 0.15);
+  --supabase-error-text: #F87171;
+
+  --supabase-info: #3B82F6;
+  --supabase-info-bg: rgba(59, 130, 246, 0.15);
+  --supabase-info-text: #60A5FA;
+
+  /* Badge Colors */
+  --supabase-badge-production: #F59E0B;
+  --supabase-badge-production-bg: rgba(245, 158, 11, 0.2);
+  --supabase-badge-free: #818CF8;
+  --supabase-badge-free-bg: rgba(99, 102, 241, 0.2);
+  --supabase-badge-local: #3ECF8E;
+  --supabase-badge-local-bg: rgba(62, 207, 142, 0.2);
+
+  /* Table Editor Specific */
+  --supabase-table-header-bg: #1F1F1F;
+  --supabase-table-row-hover: #262626;
+  --supabase-table-row-selected: rgba(62, 207, 142, 0.12);
+  --supabase-table-row-stripe: #1A1A1A;
+  --supabase-table-border: #2E2E2E;
+  --supabase-table-cell-null: #525252;
+
+  /* Toolbar */
+  --supabase-toolbar-bg: #171717;
+  --supabase-toolbar-border: #2E2E2E;
+
+  /* Shadows */
+  --supabase-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --supabase-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --supabase-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --supabase-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
+  --supabase-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.6);
+  --supabase-shadow-dropdown: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Dark mode specific component overrides */
+[data-mantine-color-scheme="dark"] body {
+  background-color: var(--supabase-bg);
+  color: var(--supabase-text);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-AppShell-root,
+[data-mantine-color-scheme="dark"] .mantine-AppShell-main {
+  background-color: var(--supabase-bg);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-AppShell-navbar {
+  background-color: var(--supabase-sidebar-bg) !important;
+  border-right-color: var(--supabase-sidebar-border) !important;
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Modal-content {
+  background-color: var(--supabase-bg-surface);
+  border: 1px solid var(--supabase-border);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Modal-header {
+  background-color: var(--supabase-bg-surface);
+  border-bottom-color: var(--supabase-border);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-TextInput-input,
+[data-mantine-color-scheme="dark"] .mantine-Select-input,
+[data-mantine-color-scheme="dark"] .mantine-Textarea-input,
+[data-mantine-color-scheme="dark"] .mantine-PasswordInput-input,
+[data-mantine-color-scheme="dark"] .mantine-NumberInput-input {
+  background-color: var(--supabase-bg);
+  border-color: var(--supabase-border);
+  color: var(--supabase-text);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Menu-dropdown,
+[data-mantine-color-scheme="dark"] .mantine-Combobox-dropdown {
+  background-color: var(--supabase-bg-surface);
+  border-color: var(--supabase-border);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Menu-item:hover,
+[data-mantine-color-scheme="dark"] .mantine-Combobox-option:hover {
+  background-color: var(--supabase-bg-surface-hover);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Card-root,
+[data-mantine-color-scheme="dark"] .mantine-Paper-root {
+  background-color: var(--supabase-bg-surface);
+  border-color: var(--supabase-border);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-Tooltip-tooltip {
+  background-color: var(--supabase-bg-surface-alt);
+  color: var(--supabase-text);
+}
+
+[data-mantine-color-scheme="dark"] ::-webkit-scrollbar-track {
+  background: var(--supabase-bg);
+}
+
+[data-mantine-color-scheme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--supabase-border-strong);
+}
+
+[data-mantine-color-scheme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--supabase-text-muted);
+}
+
+/* ============================================
  * Global Styles
  * ============================================ */
 body {
@@ -1520,4 +1686,113 @@ body {
 .sidebar-collapse-btn:hover {
   background-color: var(--supabase-sidebar-bg-hover);
   color: var(--supabase-sidebar-text-hover);
+}
+
+/* ============================================
+ * Responsive Design Utilities
+ * ============================================ */
+
+/* Mobile-first responsive breakpoints */
+@media (max-width: 768px) {
+  /* Hide elements on mobile */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* Adjust header spacing */
+  .mantine-AppShell-header {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  /* Compact buttons on mobile */
+  .mantine-Button-root {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  /* Adjust modal widths */
+  .mantine-Modal-content {
+    margin: 8px;
+    max-height: calc(100vh - 16px);
+  }
+
+  /* Adjust drawer */
+  .mantine-Drawer-content {
+    max-width: 85vw;
+  }
+
+  /* Compact table cells on mobile */
+  .data-grid td,
+  .data-grid th {
+    padding: 6px 8px;
+  }
+
+  /* Smaller font sizes */
+  .supabase-page-title {
+    font-size: 1.25rem;
+  }
+}
+
+/* Tablet breakpoint */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .hide-on-tablet {
+    display: none !important;
+  }
+
+  /* Adjust sidebar width */
+  .supabase-split-sidebar {
+    width: 220px;
+  }
+}
+
+/* Large screens */
+@media (min-width: 1025px) {
+  .show-only-mobile,
+  .show-only-tablet {
+    display: none !important;
+  }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  /* Larger touch targets */
+  .mantine-ActionIcon-root {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Better tap feedback */
+  .mantine-Button-root,
+  .mantine-ActionIcon-root,
+  .mantine-NavLink-root {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Disable hover states on touch devices */
+  .mantine-Button-root:hover,
+  .mantine-ActionIcon-root:hover {
+    transform: none;
+  }
+}
+
+/* Smooth transitions for responsive changes */
+.mantine-AppShell-navbar,
+.mantine-AppShell-main {
+  transition: width 0.2s ease, margin 0.2s ease;
+}
+
+/* Ensure modals are accessible on all screen sizes */
+.mantine-Modal-inner {
+  padding: 16px;
+}
+
+@media (max-width: 576px) {
+  .mantine-Modal-inner {
+    padding: 8px;
+  }
+
+  .mantine-Modal-content {
+    border-radius: var(--supabase-radius-lg);
+  }
 }

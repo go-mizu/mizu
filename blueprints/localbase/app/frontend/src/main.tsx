@@ -61,9 +61,22 @@ const theme = createTheme({
   },
 });
 
+// Get initial color scheme from localStorage or default to light
+const getInitialColorScheme = (): 'light' | 'dark' => {
+  const stored = localStorage.getItem('mantine-color-scheme');
+  if (stored === 'dark' || stored === 'light') {
+    return stored;
+  }
+  // Check system preference
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark';
+  }
+  return 'light';
+};
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="light">
+    <MantineProvider theme={theme} defaultColorScheme={getInitialColorScheme()}>
       <Notifications position="top-right" />
       <BrowserRouter>
         <App />

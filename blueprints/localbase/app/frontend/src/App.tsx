@@ -1,5 +1,7 @@
-import { Routes, Route } from 'react-router-dom';
-import { AppShell, Box } from '@mantine/core';
+import { Routes, Route, useLocation } from 'react-router-dom';
+import { AppShell, Box, Burger, Group } from '@mantine/core';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
+import { useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { ProjectOverviewPage } from './pages/project-overview/ProjectOverview';
@@ -24,22 +26,51 @@ import { useAppStore } from './stores/appStore';
 
 export default function App() {
   const { sidebarCollapsed } = useAppStore();
+  const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure();
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  const isTablet = useMediaQuery('(max-width: 1024px)');
+  const location = useLocation();
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    closeMobile();
+  }, [location.pathname, closeMobile]);
+
+  // Calculate navbar width based on screen size
+  const getNavbarWidth = () => {
+    if (isMobile) return 280;
+    if (isTablet) return sidebarCollapsed ? 70 : 200;
+    return sidebarCollapsed ? 70 : 250;
+  };
 
   return (
     <AppShell
       header={{ height: 48 }}
       navbar={{
-        width: sidebarCollapsed ? 70 : 250,
+        width: getNavbarWidth(),
         breakpoint: 'sm',
+        collapsed: { mobile: !mobileOpened },
       }}
       padding={0}
     >
       <AppShell.Header>
-        <Header />
+        <Group h="100%" px="md" style={{ width: '100%' }}>
+          {/* Mobile hamburger */}
+          <Burger
+            opened={mobileOpened}
+            onClick={toggleMobile}
+            hiddenFrom="sm"
+            size="sm"
+            color="var(--supabase-text)"
+          />
+          <Box style={{ flex: 1 }}>
+            <Header />
+          </Box>
+        </Group>
       </AppShell.Header>
 
       <AppShell.Navbar>
-        <Sidebar />
+        <Sidebar onNavigate={closeMobile} />
       </AppShell.Navbar>
 
       <AppShell.Main style={{ backgroundColor: 'var(--supabase-bg-surface)' }}>
