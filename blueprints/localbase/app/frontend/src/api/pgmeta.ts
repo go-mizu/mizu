@@ -347,4 +347,39 @@ export const pgmetaApi = {
   listForeignTables: (schemas = 'public'): Promise<any[]> => {
     return api.get(`/api/pg/foreign-tables?included_schemas=${schemas}`);
   },
+
+  // Schema Visualization
+  getSchemaVisualization: (schema = 'public'): Promise<{
+    tables: Array<{
+      id: number;
+      schema: string;
+      name: string;
+      comment?: string;
+      columns: Array<{
+        name: string;
+        type: string;
+        is_nullable: boolean;
+        is_primary_key: boolean;
+        is_unique: boolean;
+        is_identity: boolean;
+        default_value?: string;
+      }>;
+    }>;
+    relationships: Array<{
+      id: number;
+      source_schema: string;
+      source_table: string;
+      source_columns: string[];
+      target_schema: string;
+      target_table: string;
+      target_columns: string[];
+      constraint_name: string;
+    }>;
+  }> => {
+    return api.get(`/api/pg/schema-visualization?schema=${schema}`);
+  },
+
+  getSchemaSQL: (schema = 'public'): Promise<string> => {
+    return api.get(`/api/pg/schema-sql?schema=${schema}`, { responseType: 'text' } as any);
+  },
 };

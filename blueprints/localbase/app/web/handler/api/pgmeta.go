@@ -736,6 +736,181 @@ func (h *PGMetaHandler) ListDatabaseFunctions(c *mizu.Ctx) error {
 }
 
 // =============================================================================
+// Schema Visualization
+// =============================================================================
+
+// SchemaVisualizationTable represents a table with columns for visualization.
+type SchemaVisualizationTable struct {
+	ID      int                           `json:"id"`
+	Schema  string                        `json:"schema"`
+	Name    string                        `json:"name"`
+	Comment string                        `json:"comment,omitempty"`
+	Columns []SchemaVisualizationColumn   `json:"columns"`
+}
+
+// SchemaVisualizationColumn represents a column for visualization.
+type SchemaVisualizationColumn struct {
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	IsNullable   bool   `json:"is_nullable"`
+	IsPrimaryKey bool   `json:"is_primary_key"`
+	IsUnique     bool   `json:"is_unique"`
+	IsIdentity   bool   `json:"is_identity"`
+	DefaultValue string `json:"default_value,omitempty"`
+}
+
+// SchemaVisualizationRelationship represents a foreign key relationship.
+type SchemaVisualizationRelationship struct {
+	ID             int      `json:"id"`
+	SourceSchema   string   `json:"source_schema"`
+	SourceTable    string   `json:"source_table"`
+	SourceColumns  []string `json:"source_columns"`
+	TargetSchema   string   `json:"target_schema"`
+	TargetTable    string   `json:"target_table"`
+	TargetColumns  []string `json:"target_columns"`
+	ConstraintName string   `json:"constraint_name"`
+}
+
+// GetSchemaVisualization returns data for the schema visualizer.
+func (h *PGMetaHandler) GetSchemaVisualization(c *mizu.Ctx) error {
+	schema := c.Query("schema")
+	if schema == "" {
+		schema = "public"
+	}
+	schemaList := []string{schema}
+
+	// Get tables with columns using our existing database store
+	ctx := c.Context()
+
+	// Get tables
+	tablesRaw, err := h.store.Database().ListTables(ctx, schema)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to list tables: " + err.Error()})
+	}
+
+	// Get columns for each table
+	tables := make([]SchemaVisualizationTable, 0, len(tablesRaw))
+	for i, t := range tablesRaw {
+		columns, err := h.store.Database().ListColumns(ctx, schema, t.Name)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": "failed to list columns: " + err.Error()})
+		}
+
+		vizColumns := make([]SchemaVisualizationColumn, len(columns))
+		for j, col := range columns {
+			vizColumns[j] = SchemaVisualizationColumn{
+				Name:         col.Name,
+				Type:         col.Type,
+				IsNullable:   col.IsNullable,
+				IsPrimaryKey: col.IsPrimaryKey,
+				IsUnique:     col.IsUnique,
+				IsIdentity:   col.IsIdentity,
+				DefaultValue: col.DefaultValue,
+			}
+		}
+
+		tables = append(tables, SchemaVisualizationTable{
+			ID:      i + 1,
+			Schema:  schema,
+			Name:    t.Name,
+			Comment: t.Comment,
+			Columns: vizColumns,
+		})
+	}
+
+	// Get relationships (foreign keys)
+	fks, err := h.store.PGMeta().ListForeignKeysAll(ctx, schemaList)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to list relationships: " + err.Error()})
+	}
+
+	relationships := make([]SchemaVisualizationRelationship, len(fks))
+	for i, fk := range fks {
+		relationships[i] = SchemaVisualizationRelationship{
+			ID:             fk.ID,
+			SourceSchema:   fk.Schema,
+			SourceTable:    fk.Table,
+			SourceColumns:  fk.Columns,
+			TargetSchema:   fk.TargetSchema,
+			TargetTable:    fk.TargetTable,
+			TargetColumns:  fk.TargetColumns,
+			ConstraintName: fk.Name,
+		}
+	}
+
+	return c.JSON(200, map[string]any{
+		"tables":        tables,
+		"relationships": relationships,
+	})
+}
+
+// GenerateSchemaSQL generates CREATE TABLE SQL for the schema.
+func (h *PGMetaHandler) GenerateSchemaSQL(c *mizu.Ctx) error {
+	schema := c.Query("schema")
+	if schema == "" {
+		schema = "public"
+	}
+
+	ctx := c.Context()
+
+	// Get tables
+	tablesRaw, err := h.store.Database().ListTables(ctx, schema)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to list tables: " + err.Error()})
+	}
+
+	var sql strings.Builder
+	sql.WriteString(fmt.Sprintf("-- Schema: %s\n\n", schema))
+
+	for _, t := range tablesRaw {
+		columns, err := h.store.Database().ListColumns(ctx, schema, t.Name)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": "failed to list columns: " + err.Error()})
+		}
+
+		sql.WriteString(fmt.Sprintf("CREATE TABLE %s.%s (\n", quoteIdent(schema), quoteIdent(t.Name)))
+
+		for i, col := range columns {
+			colSQL := fmt.Sprintf("  %s %s", quoteIdent(col.Name), col.Type)
+			if !col.IsNullable {
+				colSQL += " NOT NULL"
+			}
+			if col.DefaultValue != "" {
+				colSQL += fmt.Sprintf(" DEFAULT %s", col.DefaultValue)
+			}
+			if col.IsPrimaryKey {
+				colSQL += " PRIMARY KEY"
+			}
+			if col.IsUnique && !col.IsPrimaryKey {
+				colSQL += " UNIQUE"
+			}
+			if i < len(columns)-1 {
+				colSQL += ","
+			}
+			sql.WriteString(colSQL + "\n")
+		}
+
+		sql.WriteString(");\n\n")
+	}
+
+	// Add foreign key constraints
+	fks, err := h.store.PGMeta().ListForeignKeysAll(ctx, []string{schema})
+	if err == nil {
+		for _, fk := range fks {
+			sql.WriteString(fmt.Sprintf("ALTER TABLE %s.%s ADD CONSTRAINT %s\n",
+				quoteIdent(fk.Schema), quoteIdent(fk.Table), quoteIdent(fk.Name)))
+			sql.WriteString(fmt.Sprintf("  FOREIGN KEY (%s) REFERENCES %s.%s (%s);\n\n",
+				strings.Join(fk.Columns, ", "),
+				quoteIdent(fk.TargetSchema), quoteIdent(fk.TargetTable),
+				strings.Join(fk.TargetColumns, ", ")))
+		}
+	}
+
+	c.Writer().Header().Set("Content-Type", "text/plain; charset=utf-8")
+	return c.Text(200, sql.String())
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
@@ -755,6 +930,11 @@ func parseSchemas(schemas string) []string {
 		return []string{"public"}
 	}
 	return result
+}
+
+// quoteIdent quotes a SQL identifier to prevent SQL injection and handle special characters.
+func quoteIdent(name string) string {
+	return fmt.Sprintf(`"%s"`, strings.ReplaceAll(name, `"`, `""`))
 }
 
 func formatSQL(sql string) string {

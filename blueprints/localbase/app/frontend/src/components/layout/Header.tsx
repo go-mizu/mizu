@@ -28,6 +28,7 @@ import {
   IconUser,
   IconDatabase,
   IconExternalLink,
+  IconBuilding,
 } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useAppStore } from '../../stores/appStore';
@@ -65,50 +66,80 @@ export function Header() {
       >
         <Group justify="space-between" style={{ width: '100%' }}>
           {/* Left side - Breadcrumb */}
-          <Group gap="xs">
-            <Menu position="bottom-start">
+          <Group gap={8}>
+            {/* Organization Dropdown */}
+            <Menu position="bottom-start" shadow="md">
               <Menu.Target>
-                <UnstyledButton>
-                  <Group gap={4}>
-                    <IconUser size={14} />
-                    <Text size="sm" c="dimmed">
-                      local
-                    </Text>
-                    <IconChevronDown size={12} />
-                  </Group>
+                <UnstyledButton
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 8px',
+                    borderRadius: 'var(--supabase-radius-sm)',
+                    transition: 'background-color var(--supabase-transition)',
+                  }}
+                  className="breadcrumb-item"
+                >
+                  <IconBuilding size={14} color="var(--supabase-text-muted)" />
+                  <Text size="sm" c="dimmed">
+                    local
+                  </Text>
+                  <IconChevronDown size={12} color="var(--supabase-text-muted)" />
                 </UnstyledButton>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label>Organization</Menu.Label>
-                <Menu.Item>Local Development</Menu.Item>
+                <Menu.Item leftSection={<IconBuilding size={14} />}>
+                  Local Development
+                </Menu.Item>
               </Menu.Dropdown>
             </Menu>
 
-            <Text c="dimmed">/</Text>
+            <Text c="dimmed" size="sm">/</Text>
 
-            <Menu position="bottom-start">
+            {/* Project Dropdown */}
+            <Menu position="bottom-start" shadow="md">
               <Menu.Target>
-                <UnstyledButton>
-                  <Group gap={4}>
-                    <IconDatabase size={14} />
-                    <Text size="sm" fw={500}>
-                      {projectName}
-                    </Text>
-                    <IconChevronDown size={12} />
-                  </Group>
+                <UnstyledButton
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 8px',
+                    borderRadius: 'var(--supabase-radius-sm)',
+                    transition: 'background-color var(--supabase-transition)',
+                  }}
+                  className="breadcrumb-item"
+                >
+                  <IconDatabase size={14} color="var(--supabase-text-secondary)" />
+                  <Text size="sm" fw={500}>
+                    {projectName}
+                  </Text>
+                  <IconChevronDown size={12} color="var(--supabase-text-muted)" />
                 </UnstyledButton>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label>Project</Menu.Label>
-                <Menu.Item>{projectName}</Menu.Item>
+                <Menu.Item leftSection={<IconDatabase size={14} />}>
+                  {projectName}
+                </Menu.Item>
               </Menu.Dropdown>
             </Menu>
 
+            {/* Status Badge */}
             <Badge
               size="xs"
               variant="light"
               color="green"
-              style={{ textTransform: 'uppercase', fontWeight: 600, letterSpacing: 0.5 }}
+              style={{
+                textTransform: 'uppercase',
+                fontWeight: 600,
+                letterSpacing: '0.05em',
+                fontSize: '0.625rem',
+                backgroundColor: 'var(--supabase-badge-local-bg)',
+                color: 'var(--supabase-brand)',
+              }}
             >
               Local
             </Badge>
@@ -122,6 +153,17 @@ export function Header() {
               variant="outline"
               leftSection={<IconPlug size={14} />}
               onClick={() => setConnectModalOpened(true)}
+              styles={{
+                root: {
+                  borderColor: 'var(--supabase-border)',
+                  color: 'var(--supabase-text)',
+                  fontWeight: 500,
+                  '&:hover': {
+                    backgroundColor: 'var(--supabase-bg-surface)',
+                    borderColor: 'var(--supabase-border-strong)',
+                  },
+                },
+              }}
             >
               Connect
             </Button>
@@ -135,22 +177,22 @@ export function Header() {
                 </Group>
               }
             >
-              <ActionIcon variant="subtle" size="lg">
+              <ActionIcon variant="subtle" size="lg" color="gray">
                 <IconSearch size={18} />
               </ActionIcon>
             </Tooltip>
 
             {/* Feedback */}
             <Tooltip label="Feedback">
-              <ActionIcon variant="subtle" size="lg">
+              <ActionIcon variant="subtle" size="lg" color="gray">
                 <IconMessageCircle size={18} />
               </ActionIcon>
             </Tooltip>
 
             {/* Help */}
-            <Menu position="bottom-end">
+            <Menu position="bottom-end" shadow="md">
               <Menu.Target>
-                <ActionIcon variant="subtle" size="lg">
+                <ActionIcon variant="subtle" size="lg" color="gray">
                   <IconHelp size={18} />
                 </ActionIcon>
               </Menu.Target>
@@ -174,17 +216,25 @@ export function Header() {
             </Menu>
 
             {/* Notifications */}
-            <ActionIcon variant="subtle" size="lg">
+            <ActionIcon variant="subtle" size="lg" color="gray">
               <IconBell size={18} />
             </ActionIcon>
 
             {/* Settings */}
-            <ActionIcon variant="subtle" size="lg">
+            <ActionIcon variant="subtle" size="lg" color="gray">
               <IconSettings size={18} />
             </ActionIcon>
 
             {/* User */}
-            <ActionIcon variant="subtle" size="lg" radius="xl">
+            <ActionIcon
+              variant="subtle"
+              size="lg"
+              radius="xl"
+              color="gray"
+              style={{
+                backgroundColor: 'var(--supabase-bg-surface)',
+              }}
+            >
               <IconUser size={18} />
             </ActionIcon>
           </Group>
@@ -320,6 +370,7 @@ function ConnectionField({
             fontSize: 11,
             borderTopRightRadius: 0,
             borderBottomRightRadius: 0,
+            backgroundColor: 'var(--supabase-bg-surface)',
           },
         }}
       />

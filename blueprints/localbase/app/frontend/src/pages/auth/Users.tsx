@@ -40,7 +40,6 @@ import {
   IconShield,
   IconSettings,
   IconInfoCircle,
-  IconExternalLink,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';

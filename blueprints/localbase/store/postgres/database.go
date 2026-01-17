@@ -163,6 +163,7 @@ func (s *DatabaseStore) ListColumns(ctx context.Context, schema, table string) (
 		NOT a.attnotnull AS is_nullable,
 		COALESCE(pk.is_pk, false) AS is_primary_key,
 		COALESCE(uq.is_unique, false) AS is_unique,
+		a.attidentity != '' AS is_identity,
 		COALESCE(col_description(c.oid, a.attnum), '') AS comment
 	FROM pg_class c
 	JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -200,6 +201,7 @@ func (s *DatabaseStore) ListColumns(ctx context.Context, schema, table string) (
 			&col.IsNullable,
 			&col.IsPrimaryKey,
 			&col.IsUnique,
+			&col.IsIdentity,
 			&col.Comment,
 		)
 		if err != nil {
