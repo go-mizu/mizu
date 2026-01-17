@@ -662,6 +662,11 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 		Prefix string `json:"prefix"`
 		Limit  int    `json:"limit"`
 		Offset int    `json:"offset"`
+		SortBy *struct {
+			Column string `json:"column"`
+			Order  string `json:"order"`
+		} `json:"sortBy"`
+		Search string `json:"search"` // Accept but ignore for Supabase compatibility
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
 		return storageError(c, http.StatusBadRequest, "Bad Request", "invalid request body")
