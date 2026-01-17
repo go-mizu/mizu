@@ -433,6 +433,7 @@ type LogEntry struct {
 	Path            string            `json:"path,omitempty"`
 	StatusCode      int               `json:"status_code,omitempty"`
 	Source          string            `json:"source"`
+	Severity        string            `json:"severity,omitempty"` // DEBUG, INFO, NOTICE, WARNING, ERROR, FATAL, PANIC
 	UserID          *string           `json:"user_id,omitempty"`
 	UserAgent       string            `json:"user_agent,omitempty"`
 	APIKey          string            `json:"apikey,omitempty"`
@@ -446,14 +447,19 @@ type LogEntry struct {
 // LogFilter represents query parameters for log filtering.
 type LogFilter struct {
 	Source      string     `json:"source,omitempty"`
+	Severity    string     `json:"severity,omitempty"`   // Single severity filter
+	Severities  []string   `json:"severities,omitempty"` // Multiple severities filter
 	StatusMin   int        `json:"status_min,omitempty"`
 	StatusMax   int        `json:"status_max,omitempty"`
 	Methods     []string   `json:"methods,omitempty"`
 	PathPattern string     `json:"path_pattern,omitempty"`
 	Query       string     `json:"query,omitempty"`
+	Regex       string     `json:"regex,omitempty"` // Regex pattern for event_message
+	UserID      string     `json:"user_id,omitempty"`
+	RequestID   string     `json:"request_id,omitempty"`
 	From        *time.Time `json:"from,omitempty"`
 	To          *time.Time `json:"to,omitempty"`
-	TimeRange   string     `json:"time_range,omitempty"` // 1h, 24h, 7d, 30d
+	TimeRange   string     `json:"time_range,omitempty"` // 5m, 15m, 1h, 3h, 24h, 7d, 30d
 	Limit       int        `json:"limit,omitempty"`
 	Offset      int        `json:"offset,omitempty"`
 }

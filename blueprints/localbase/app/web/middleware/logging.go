@@ -154,6 +154,9 @@ func Logging(config *LoggingConfig) mizu.Middleware {
 			// Determine source based on path
 			source := determineSource(path)
 
+			// Determine severity based on status code
+			severity := determineSeverity(statusCode, err)
+
 			// Mask API key for display
 			maskedAPIKey := maskAPIKey(apiKey)
 
@@ -171,6 +174,7 @@ func Logging(config *LoggingConfig) mizu.Middleware {
 					Path:           path,
 					StatusCode:     statusCode,
 					Source:         source,
+					Severity:       severity,
 					UserID:         userID,
 					UserAgent:      userAgent,
 					APIKey:         maskedAPIKey,
@@ -201,6 +205,29 @@ func determineSource(path string) string {
 		return "realtime"
 	default:
 		return "edge"
+	}
+}
+
+// determineSeverity determines the log severity based on status code and error.
+func determineSeverity(statusCode int, err error) string {
+	// If there's an error, it's at least WARNING
+	if err != nil {
+		if statusCode >= 500 {
+			return "ERROR"
+		}
+		return "WARNING"
+	}
+
+	// Determine by status code
+	switch {
+	case statusCode >= 500:
+		return "ERROR"
+	case statusCode >= 400:
+		return "WARNING"
+	case statusCode >= 300:
+		return "NOTICE"
+	default:
+		return "INFO"
 	}
 }
 

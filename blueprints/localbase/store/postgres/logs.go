@@ -32,19 +32,25 @@ func (s *LogsStore) CreateLog(ctx context.Context, entry *store.LogEntry) error 
 		metadata = []byte("{}")
 	}
 
+	// Default severity to INFO if not set
+	severity := entry.Severity
+	if severity == "" {
+		severity = "INFO"
+	}
+
 	sql := `
 		INSERT INTO analytics.logs (
 			timestamp, event_message, request_id, method, path, status_code,
-			source, user_id, user_agent, apikey, request_headers, response_headers,
+			source, severity, user_id, user_agent, apikey, request_headers, response_headers,
 			duration_ms, metadata, search
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 		) RETURNING id`
 
 	var id string
 	err = s.pool.QueryRow(ctx, sql,
 		entry.Timestamp, entry.EventMessage, entry.RequestID, entry.Method, entry.Path,
-		entry.StatusCode, entry.Source, entry.UserID, entry.UserAgent, entry.APIKey,
+		entry.StatusCode, entry.Source, severity, entry.UserID, entry.UserAgent, entry.APIKey,
 		requestHeaders, responseHeaders, entry.DurationMs, metadata, entry.Search,
 	).Scan(&id)
 	if err != nil {
@@ -59,18 +65,19 @@ func (s *LogsStore) CreateLog(ctx context.Context, entry *store.LogEntry) error 
 func (s *LogsStore) GetLog(ctx context.Context, id string) (*store.LogEntry, error) {
 	sql := `
 		SELECT id, timestamp, event_message, request_id, method, path, status_code,
-			   source, user_id, user_agent, apikey, request_headers, response_headers,
+			   source, severity, user_id, user_agent, apikey, request_headers, response_headers,
 			   duration_ms, metadata, search
 		FROM analytics.logs
 		WHERE id = $1`
 
 	var entry store.LogEntry
 	var requestHeaders, responseHeaders, metadata []byte
+	var severity *string
 
 	err := s.pool.QueryRow(ctx, sql, id).Scan(
 		&entry.ID, &entry.Timestamp, &entry.EventMessage, &entry.RequestID,
 		&entry.Method, &entry.Path, &entry.StatusCode, &entry.Source,
-		&entry.UserID, &entry.UserAgent, &entry.APIKey, &requestHeaders,
+		&severity, &entry.UserID, &entry.UserAgent, &entry.APIKey, &requestHeaders,
 		&responseHeaders, &entry.DurationMs, &metadata, &entry.Search,
 	)
 	if err == pgx.ErrNoRows {
@@ -80,6 +87,9 @@ func (s *LogsStore) GetLog(ctx context.Context, id string) (*store.LogEntry, err
 		return nil, fmt.Errorf("failed to get log: %w", err)
 	}
 
+	if severity != nil {
+		entry.Severity = *severity
+	}
 	if len(requestHeaders) > 0 {
 		json.Unmarshal(requestHeaders, &entry.RequestHeaders)
 	}
@@ -109,6 +119,19 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 	if filter.Source != "" {
 		conditions = append(conditions, fmt.Sprintf("source = $%d", argNum))
 		args = append(args, filter.Source)
+		argNum++
+	}
+
+	// Severity filtering
+	if filter.Severity != "" {
+		conditions = append(conditions, fmt.Sprintf("severity = $%d", argNum))
+		args = append(args, filter.Severity)
+		argNum++
+	}
+
+	if len(filter.Severities) > 0 {
+		conditions = append(conditions, fmt.Sprintf("severity = ANY($%d)", argNum))
+		args = append(args, filter.Severities)
 		argNum++
 	}
 
@@ -142,6 +165,27 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 		argNum++
 	}
 
+	// Regex filtering for event_message
+	if filter.Regex != "" {
+		conditions = append(conditions, fmt.Sprintf("event_message ~ $%d", argNum))
+		args = append(args, filter.Regex)
+		argNum++
+	}
+
+	// User ID filtering
+	if filter.UserID != "" {
+		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argNum))
+		args = append(args, filter.UserID)
+		argNum++
+	}
+
+	// Request ID filtering for tracing
+	if filter.RequestID != "" {
+		conditions = append(conditions, fmt.Sprintf("request_id = $%d", argNum))
+		args = append(args, filter.RequestID)
+		argNum++
+	}
+
 	if filter.From != nil {
 		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argNum))
 		args = append(args, *filter.From)
@@ -170,7 +214,7 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 	// Set defaults
 	limit := filter.Limit
 	if limit <= 0 {
-		limit = 25
+		limit = 50
 	}
 	if limit > 1000 {
 		limit = 1000
@@ -183,7 +227,7 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 	// Get logs
 	sql := fmt.Sprintf(`
 		SELECT id, timestamp, event_message, request_id, method, path, status_code,
-			   source, user_id, user_agent, apikey, request_headers, response_headers,
+			   source, severity, user_id, user_agent, apikey, request_headers, response_headers,
 			   duration_ms, metadata, search
 		FROM analytics.logs
 		%s
@@ -202,17 +246,21 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 	for rows.Next() {
 		var entry store.LogEntry
 		var requestHeaders, responseHeaders, metadata []byte
+		var severity *string
 
 		err := rows.Scan(
 			&entry.ID, &entry.Timestamp, &entry.EventMessage, &entry.RequestID,
 			&entry.Method, &entry.Path, &entry.StatusCode, &entry.Source,
-			&entry.UserID, &entry.UserAgent, &entry.APIKey, &requestHeaders,
+			&severity, &entry.UserID, &entry.UserAgent, &entry.APIKey, &requestHeaders,
 			&responseHeaders, &entry.DurationMs, &metadata, &entry.Search,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan log: %w", err)
 		}
 
+		if severity != nil {
+			entry.Severity = *severity
+		}
 		if len(requestHeaders) > 0 {
 			json.Unmarshal(requestHeaders, &entry.RequestHeaders)
 		}
@@ -231,7 +279,7 @@ func (s *LogsStore) ListLogs(ctx context.Context, filter *store.LogFilter) ([]*s
 
 // GetHistogram retrieves log counts grouped by time interval.
 func (s *LogsStore) GetHistogram(ctx context.Context, filter *store.LogFilter, interval string) ([]store.LogHistogramBucket, error) {
-	// Parse interval (1m, 5m, 1h, 1d)
+	// Parse interval (1m, 5m, 15m, 1h, 6h, 1d)
 	var truncUnit string
 	switch interval {
 	case "1m":
@@ -242,6 +290,8 @@ func (s *LogsStore) GetHistogram(ctx context.Context, filter *store.LogFilter, i
 		truncUnit = "15 minute"
 	case "1h":
 		truncUnit = "hour"
+	case "6h":
+		truncUnit = "6 hour"
 	case "1d":
 		truncUnit = "day"
 	default:
@@ -265,6 +315,19 @@ func (s *LogsStore) GetHistogram(ctx context.Context, filter *store.LogFilter, i
 		argNum++
 	}
 
+	// Severity filtering for histogram
+	if filter.Severity != "" {
+		conditions = append(conditions, fmt.Sprintf("severity = $%d", argNum))
+		args = append(args, filter.Severity)
+		argNum++
+	}
+
+	if len(filter.Severities) > 0 {
+		conditions = append(conditions, fmt.Sprintf("severity = ANY($%d)", argNum))
+		args = append(args, filter.Severities)
+		argNum++
+	}
+
 	if filter.StatusMin > 0 {
 		conditions = append(conditions, fmt.Sprintf("status_code >= $%d", argNum))
 		args = append(args, filter.StatusMin)
@@ -280,6 +343,12 @@ func (s *LogsStore) GetHistogram(ctx context.Context, filter *store.LogFilter, i
 	if len(filter.Methods) > 0 {
 		conditions = append(conditions, fmt.Sprintf("method = ANY($%d)", argNum))
 		args = append(args, filter.Methods)
+		argNum++
+	}
+
+	if filter.Query != "" {
+		conditions = append(conditions, fmt.Sprintf("(event_message ILIKE $%d OR path ILIKE $%d)", argNum, argNum))
+		args = append(args, "%"+filter.Query+"%")
 		argNum++
 	}
 
@@ -302,9 +371,10 @@ func (s *LogsStore) GetHistogram(ctx context.Context, filter *store.LogFilter, i
 
 	// Use date_trunc for standard intervals, date_bin for custom intervals
 	var sql string
-	if truncUnit == "5 minute" || truncUnit == "15 minute" {
+	if truncUnit == "5 minute" || truncUnit == "15 minute" || truncUnit == "6 hour" {
 		// Use date_bin for non-standard intervals
 		intervalStr := strings.Replace(truncUnit, " minute", " minutes", 1)
+		intervalStr = strings.Replace(intervalStr, " hour", " hours", 1)
 		sql = fmt.Sprintf(`
 			SELECT date_bin('%s', timestamp, '2000-01-01') as bucket, COUNT(*) as count
 			FROM analytics.logs
@@ -493,8 +563,14 @@ func (s *LogsStore) ListQueryTemplates(ctx context.Context) ([]*store.QueryTempl
 func parseTimeRange(tr string) time.Time {
 	now := time.Now()
 	switch tr {
+	case "5m":
+		return now.Add(-5 * time.Minute)
+	case "15m":
+		return now.Add(-15 * time.Minute)
 	case "1h":
 		return now.Add(-1 * time.Hour)
+	case "3h":
+		return now.Add(-3 * time.Hour)
 	case "24h":
 		return now.Add(-24 * time.Hour)
 	case "7d":

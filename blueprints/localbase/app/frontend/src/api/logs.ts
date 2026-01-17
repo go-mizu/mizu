@@ -1,5 +1,8 @@
 import { api } from './client';
 
+// Severity levels for Postgres logs
+export type LogSeverity = 'DEBUG' | 'INFO' | 'NOTICE' | 'WARNING' | 'ERROR' | 'FATAL' | 'PANIC';
+
 // Log entry from the API
 export interface LogEntry {
   id: string;
@@ -10,6 +13,7 @@ export interface LogEntry {
   path?: string;
   status_code?: number;
   source: string;
+  severity?: LogSeverity;
   user_id?: string;
   user_agent?: string;
   apikey?: string;
@@ -68,12 +72,17 @@ export interface HistogramResponse {
 // Filter parameters
 export interface LogFilter {
   source?: string;
+  severity?: LogSeverity;
+  severities?: LogSeverity[];
   status_min?: number;
   status_max?: number;
   methods?: string[];
   method?: string;
   path_pattern?: string;
   query?: string;
+  regex?: string;
+  user_id?: string;
+  request_id?: string;
   from?: string;
   to?: string;
   time_range?: string;
@@ -84,11 +93,16 @@ export interface LogFilter {
 // Search request body
 export interface LogSearchRequest {
   source?: string;
+  severity?: LogSeverity;
+  severities?: LogSeverity[];
   status_min?: number;
   status_max?: number;
   methods?: string[];
   path_pattern?: string;
   query?: string;
+  regex?: string;
+  user_id?: string;
+  request_id?: string;
   from?: string;
   to?: string;
   time_range?: string;
@@ -116,12 +130,17 @@ export interface SavedQueryRequest {
 function buildSearchParams(filter: LogFilter): URLSearchParams {
   const params = new URLSearchParams();
   if (filter.source) params.set('source', filter.source);
+  if (filter.severity) params.set('severity', filter.severity);
+  if (filter.severities && filter.severities.length > 0) params.set('severities', filter.severities.join(','));
   if (filter.status_min) params.set('status_min', filter.status_min.toString());
   if (filter.status_max) params.set('status_max', filter.status_max.toString());
   if (filter.method) params.set('method', filter.method);
   if (filter.methods && filter.methods.length > 0) params.set('methods', filter.methods.join(','));
   if (filter.path_pattern) params.set('path', filter.path_pattern);
   if (filter.query) params.set('query', filter.query);
+  if (filter.regex) params.set('regex', filter.regex);
+  if (filter.user_id) params.set('user_id', filter.user_id);
+  if (filter.request_id) params.set('request_id', filter.request_id);
   if (filter.from) params.set('from', filter.from);
   if (filter.to) params.set('to', filter.to);
   if (filter.time_range) params.set('time_range', filter.time_range);
