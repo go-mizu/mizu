@@ -564,13 +564,19 @@ func (h *StorageHandler) GetObjectInfo(c *mizu.Ctx) error {
 		return storageError(c, http.StatusNotFound, "Not Found", "object not found")
 	}
 
+	// Return comprehensive metadata (Supabase-compatible)
 	return c.JSON(http.StatusOK, map[string]any{
-		"id":         obj.ID,
-		"name":       filepath.Base(obj.Name),
-		"bucket_id":  obj.BucketID,
-		"created_at": obj.CreatedAt,
-		"updated_at": obj.UpdatedAt,
-		"metadata":   obj.Metadata,
+		"id":               obj.ID,
+		"name":             filepath.Base(obj.Name),
+		"bucket_id":        obj.BucketID,
+		"owner":            obj.Owner,
+		"content_type":     obj.ContentType,
+		"size":             obj.Size,
+		"version":          obj.Version,
+		"created_at":       obj.CreatedAt,
+		"updated_at":       obj.UpdatedAt,
+		"last_accessed_at": obj.LastAccessedAt,
+		"metadata":         obj.Metadata,
 	})
 }
 
@@ -670,7 +676,7 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to list objects")
 	}
 
-	// Format response to match Supabase
+	// Format response to match Supabase (include content_type and size for UI)
 	var result []map[string]any
 	for _, obj := range objects {
 		// Extract just the name part (without prefix)
@@ -681,12 +687,16 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 		}
 
 		result = append(result, map[string]any{
-			"id":         obj.ID,
-			"name":       name,
-			"bucket_id":  obj.BucketID,
-			"created_at": obj.CreatedAt,
-			"updated_at": obj.UpdatedAt,
-			"metadata":   obj.Metadata,
+			"id":           obj.ID,
+			"name":         name,
+			"bucket_id":    obj.BucketID,
+			"owner":        obj.Owner,
+			"content_type": obj.ContentType,
+			"size":         obj.Size,
+			"version":      obj.Version,
+			"created_at":   obj.CreatedAt,
+			"updated_at":   obj.UpdatedAt,
+			"metadata":     obj.Metadata,
 		})
 	}
 

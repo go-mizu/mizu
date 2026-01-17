@@ -11,17 +11,18 @@
   --supabase-brand-darker: #1C9B5E;
 
   /* ============================================
-   * Dark Sidebar Theme (2025/2026 Update)
+   * Light Sidebar Theme (2025/2026 Update)
+   * Matching Supabase Studio January 2026
    * ============================================ */
-  --supabase-sidebar-bg: #1C1C1C;
-  --supabase-sidebar-bg-hover: #2A2A2A;
-  --supabase-sidebar-bg-active: rgba(62, 207, 142, 0.15);
-  --supabase-sidebar-text: #8B8B8B;
-  --supabase-sidebar-text-hover: #BBBBBB;
-  --supabase-sidebar-text-active: #FFFFFF;
-  --supabase-sidebar-border: #2E2E2E;
-  --supabase-sidebar-divider: #333333;
-  --supabase-sidebar-icon: #6B6B6B;
+  --supabase-sidebar-bg: #FFFFFF;
+  --supabase-sidebar-bg-hover: #F5F5F5;
+  --supabase-sidebar-bg-active: rgba(62, 207, 142, 0.1);
+  --supabase-sidebar-text: #6B6B6B;
+  --supabase-sidebar-text-hover: #3F3F46;
+  --supabase-sidebar-text-active: #1C1C1C;
+  --supabase-sidebar-border: #E6E8EB;
+  --supabase-sidebar-divider: #E6E8EB;
+  --supabase-sidebar-icon: #9CA3AF;
   --supabase-sidebar-icon-active: #3ECF8E;
 
   /* ============================================
@@ -31,7 +32,7 @@
   --supabase-bg-surface: #F8F9FA;
   --supabase-bg-surface-alt: #F4F4F5;
   --supabase-bg-surface-hover: #F1F3F5;
-  --supabase-bg-sidebar: #1C1C1C;
+  --supabase-bg-sidebar: #FFFFFF;
   --supabase-bg-muted: #F4F4F5;
   --supabase-bg-overlay: rgba(0, 0, 0, 0.5);
   --supabase-bg-panel: #FAFAFA;
@@ -1470,7 +1471,7 @@ body {
 .sidebar-logo-name {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--supabase-sidebar-text-active);
+  color: var(--supabase-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1485,8 +1486,8 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-radius: var(--supabase-radius-xs);
-  background-color: rgba(62, 207, 142, 0.2);
-  color: var(--supabase-brand);
+  background-color: rgba(62, 207, 142, 0.15);
+  color: #059669;
   margin-top: 2px;
 }
 
