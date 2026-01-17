@@ -1,29 +1,31 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { AppShell, Box, Burger, Group } from '@mantine/core';
+import { AppShell, Box, Burger, Group, LoadingOverlay } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
-import { ProjectOverviewPage } from './pages/project-overview/ProjectOverview';
-import { UsersPage } from './pages/auth/Users';
-import { StoragePage } from './pages/storage/Storage';
-import { TableEditorPage } from './pages/database/TableEditor';
-import { SQLEditorPage } from './pages/database/SQLEditor';
-import { PoliciesPage } from './pages/database/Policies';
-import { IndexesPage } from './pages/database/Indexes';
-import { ViewsPage } from './pages/database/Views';
-import { TriggersPage } from './pages/database/Triggers';
-import { RolesPage } from './pages/database/Roles';
-import { SchemaVisualizerPage } from './pages/database/SchemaVisualizer';
-import { RealtimePage } from './pages/realtime/Realtime';
-import { FunctionsPage } from './pages/functions/Functions';
-import { LogsExplorerPage } from './pages/logs/LogsExplorer';
-import { ReportsPage } from './pages/reports/Reports';
-import { ApiDocsPage } from './pages/ApiDocs';
-import { SettingsPage } from './pages/settings/Settings';
-import { AdvisorsPage } from './pages/advisors/Advisors';
-import { IntegrationsPage } from './pages/integrations/Integrations';
 import { useAppStore } from './stores/appStore';
+
+// Lazy load all pages for code splitting
+const ProjectOverviewPage = lazy(() => import('./pages/project-overview/ProjectOverview').then(m => ({ default: m.ProjectOverviewPage })));
+const UsersPage = lazy(() => import('./pages/auth/Users').then(m => ({ default: m.UsersPage })));
+const StoragePage = lazy(() => import('./pages/storage/Storage').then(m => ({ default: m.StoragePage })));
+const TableEditorPage = lazy(() => import('./pages/database/TableEditor').then(m => ({ default: m.TableEditorPage })));
+const SQLEditorPage = lazy(() => import('./pages/database/SQLEditor').then(m => ({ default: m.SQLEditorPage })));
+const PoliciesPage = lazy(() => import('./pages/database/Policies').then(m => ({ default: m.PoliciesPage })));
+const IndexesPage = lazy(() => import('./pages/database/Indexes').then(m => ({ default: m.IndexesPage })));
+const ViewsPage = lazy(() => import('./pages/database/Views').then(m => ({ default: m.ViewsPage })));
+const TriggersPage = lazy(() => import('./pages/database/Triggers').then(m => ({ default: m.TriggersPage })));
+const RolesPage = lazy(() => import('./pages/database/Roles').then(m => ({ default: m.RolesPage })));
+const SchemaVisualizerPage = lazy(() => import('./pages/database/SchemaVisualizer').then(m => ({ default: m.SchemaVisualizerPage })));
+const RealtimePage = lazy(() => import('./pages/realtime/Realtime').then(m => ({ default: m.RealtimePage })));
+const FunctionsPage = lazy(() => import('./pages/functions/Functions').then(m => ({ default: m.FunctionsPage })));
+const LogsExplorerPage = lazy(() => import('./pages/logs/LogsExplorer').then(m => ({ default: m.LogsExplorerPage })));
+const ReportsPage = lazy(() => import('./pages/reports/Reports').then(m => ({ default: m.ReportsPage })));
+const ApiDocsPage = lazy(() => import('./pages/ApiDocs').then(m => ({ default: m.ApiDocsPage })));
+const SettingsPage = lazy(() => import('./pages/settings/Settings').then(m => ({ default: m.SettingsPage })));
+const AdvisorsPage = lazy(() => import('./pages/advisors/Advisors').then(m => ({ default: m.AdvisorsPage })));
+const IntegrationsPage = lazy(() => import('./pages/integrations/Integrations').then(m => ({ default: m.IntegrationsPage })));
 
 export default function App() {
   const { sidebarCollapsed } = useAppStore();
@@ -76,27 +78,29 @@ export default function App() {
 
       <AppShell.Main style={{ backgroundColor: 'var(--supabase-bg-surface)' }}>
         <Box style={{ height: 'calc(100vh - 48px)', overflow: 'auto' }}>
-          <Routes>
-            <Route path="/" element={<ProjectOverviewPage />} />
-            <Route path="/table-editor" element={<TableEditorPage />} />
-            <Route path="/sql-editor" element={<SQLEditorPage />} />
-            <Route path="/database/schema-visualizer" element={<SchemaVisualizerPage />} />
-            <Route path="/database/policies" element={<PoliciesPage />} />
-            <Route path="/database/indexes" element={<IndexesPage />} />
-            <Route path="/database/views" element={<ViewsPage />} />
-            <Route path="/database/triggers" element={<TriggersPage />} />
-            <Route path="/database/roles" element={<RolesPage />} />
-            <Route path="/auth/users" element={<UsersPage />} />
-            <Route path="/storage" element={<StoragePage />} />
-            <Route path="/realtime" element={<RealtimePage />} />
-            <Route path="/functions" element={<FunctionsPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/logs" element={<LogsExplorerPage />} />
-            <Route path="/api-docs" element={<ApiDocsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/advisors" element={<AdvisorsPage />} />
-            <Route path="/integrations" element={<IntegrationsPage />} />
-          </Routes>
+          <Suspense fallback={<LoadingOverlay visible loaderProps={{ type: 'dots' }} />}>
+            <Routes>
+              <Route path="/" element={<ProjectOverviewPage />} />
+              <Route path="/table-editor" element={<TableEditorPage />} />
+              <Route path="/sql-editor" element={<SQLEditorPage />} />
+              <Route path="/database/schema-visualizer" element={<SchemaVisualizerPage />} />
+              <Route path="/database/policies" element={<PoliciesPage />} />
+              <Route path="/database/indexes" element={<IndexesPage />} />
+              <Route path="/database/views" element={<ViewsPage />} />
+              <Route path="/database/triggers" element={<TriggersPage />} />
+              <Route path="/database/roles" element={<RolesPage />} />
+              <Route path="/auth/users" element={<UsersPage />} />
+              <Route path="/storage" element={<StoragePage />} />
+              <Route path="/realtime" element={<RealtimePage />} />
+              <Route path="/functions" element={<FunctionsPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/logs" element={<LogsExplorerPage />} />
+              <Route path="/api-docs" element={<ApiDocsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/advisors" element={<AdvisorsPage />} />
+              <Route path="/integrations" element={<IntegrationsPage />} />
+            </Routes>
+          </Suspense>
         </Box>
       </AppShell.Main>
     </AppShell>
