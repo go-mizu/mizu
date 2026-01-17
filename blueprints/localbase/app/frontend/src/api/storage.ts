@@ -19,6 +19,7 @@ export interface ListObjectsRequest {
   prefix?: string;
   limit?: number;
   offset?: number;
+  search?: string;
   sortBy?: {
     column: string;
     order: 'asc' | 'desc';
@@ -65,6 +66,10 @@ export const storageApi = {
     // Only include sortBy if explicitly provided
     if (options.sortBy) {
       body.sortBy = options.sortBy;
+    }
+    // Only include search if explicitly provided
+    if (options.search) {
+      body.search = options.search;
     }
     return api.post<StorageObject[]>(`/storage/v1/object/list/${bucket}`, body);
   },
