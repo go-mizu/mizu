@@ -21,9 +21,31 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-mantine': ['@mantine/core', '@mantine/hooks', '@mantine/notifications', '@mantine/dropzone'],
+          // Core React runtime
+          'vendor-react': ['react', 'react-dom', 'react-router-dom', 'scheduler'],
+          // Mantine UI framework
+          'vendor-mantine': [
+            '@mantine/core',
+            '@mantine/hooks',
+            '@mantine/notifications',
+            '@mantine/dropzone',
+            '@mantine/dates',
+            '@floating-ui/react',
+            '@floating-ui/dom',
+            '@floating-ui/core',
+          ],
+          // Monaco editor loader
           'vendor-monaco': ['@monaco-editor/react'],
+          // Icons
+          'vendor-icons': ['@tabler/icons-react'],
+          // Charts library
+          'vendor-charts': ['recharts'],
+          // Flow diagrams
+          'vendor-xyflow': ['@xyflow/react', 'dagre'],
+          // Animation
+          'vendor-motion': ['framer-motion'],
+          // State management
+          'vendor-state': ['zustand'],
         },
       },
     },
