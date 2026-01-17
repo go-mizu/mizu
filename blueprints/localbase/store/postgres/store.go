@@ -21,6 +21,7 @@ type Store struct {
 	functions *FunctionsStore
 	realtime  *RealtimeStore
 	pgmeta    *PGMetaStore
+	logs      *LogsStore
 }
 
 // New creates a new PostgreSQL store.
@@ -54,6 +55,7 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	s.functions = &FunctionsStore{pool: pool}
 	s.realtime = &RealtimeStore{pool: pool}
 	s.pgmeta = &PGMetaStore{pool: pool}
+	s.logs = &LogsStore{pool: pool}
 
 	return s, nil
 }
@@ -91,6 +93,7 @@ func (s *Store) Ensure(ctx context.Context) error {
 		"CREATE SCHEMA IF NOT EXISTS storage",
 		"CREATE SCHEMA IF NOT EXISTS functions",
 		"CREATE SCHEMA IF NOT EXISTS realtime",
+		"CREATE SCHEMA IF NOT EXISTS analytics",
 	}
 
 	for _, schema := range schemas {
@@ -117,6 +120,11 @@ func (s *Store) Ensure(ctx context.Context) error {
 	// Create realtime tables
 	if err := s.createRealtimeTables(ctx); err != nil {
 		return fmt.Errorf("failed to create realtime tables: %w", err)
+	}
+
+	// Create analytics/logs tables
+	if err := s.createLogsTables(ctx); err != nil {
+		return fmt.Errorf("failed to create logs tables: %w", err)
 	}
 
 	return nil
@@ -367,164 +375,203 @@ func (s *Store) seedStorageFiles(ctx context.Context) error {
 	sql := `
 	-- Insert sample objects into avatars bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'avatars', 'default.svg', 'image/svg+xml', 1024, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'default.svg');
+	SELECT gen_random_uuid(), b.id, 'default.svg', 'image/svg+xml', 1024, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'avatars'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'default.svg');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'avatars', 'user-1.jpg', 'image/jpeg', 45056, NULL, '{"width": 200, "height": 200}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'user-1.jpg');
+	SELECT gen_random_uuid(), b.id, 'user-1.jpg', 'image/jpeg', 45056, NULL, '{"width": 200, "height": 200}'
+	FROM storage.buckets b WHERE b.name = 'avatars'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'user-1.jpg');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'avatars', 'user-2.png', 'image/png', 32768, NULL, '{"width": 200, "height": 200}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'user-2.png');
+	SELECT gen_random_uuid(), b.id, 'user-2.png', 'image/png', 32768, NULL, '{"width": 200, "height": 200}'
+	FROM storage.buckets b WHERE b.name = 'avatars'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'user-2.png');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'avatars', 'team/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'team/.keep');
+	SELECT gen_random_uuid(), b.id, 'team/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'avatars'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'team/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'avatars', 'team/alice.jpg', 'image/jpeg', 28672, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'team/alice.jpg');
+	SELECT gen_random_uuid(), b.id, 'team/alice.jpg', 'image/jpeg', 28672, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'avatars'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'team/alice.jpg');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'avatars', 'team/bob.png', 'image/png', 35840, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'team/bob.png');
+	SELECT gen_random_uuid(), b.id, 'team/bob.png', 'image/png', 35840, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'avatars'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'team/bob.png');
 
 	-- Insert sample objects into documents bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'README.md', 'text/markdown', 2048, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'README.md');
+	SELECT gen_random_uuid(), b.id, 'README.md', 'text/markdown', 2048, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'README.md');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'reports/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/.keep');
+	SELECT gen_random_uuid(), b.id, 'reports/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'reports/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'reports/2024/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2024/.keep');
+	SELECT gen_random_uuid(), b.id, 'reports/2024/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'reports/2024/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'reports/2024/annual-report.pdf', 'application/pdf', 1048576, NULL, '{"pages": 24}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2024/annual-report.pdf');
+	SELECT gen_random_uuid(), b.id, 'reports/2024/annual-report.pdf', 'application/pdf', 1048576, NULL, '{"pages": 24}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'reports/2024/annual-report.pdf');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'reports/2025/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2025/.keep');
+	SELECT gen_random_uuid(), b.id, 'reports/2025/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'reports/2025/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'reports/2025/q1-summary.pdf', 'application/pdf', 524288, NULL, '{"pages": 12}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2025/q1-summary.pdf');
+	SELECT gen_random_uuid(), b.id, 'reports/2025/q1-summary.pdf', 'application/pdf', 524288, NULL, '{"pages": 12}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'reports/2025/q1-summary.pdf');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'contracts/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'contracts/.keep');
+	SELECT gen_random_uuid(), b.id, 'contracts/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'contracts/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'documents', 'contracts/nda-template.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 32768, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'contracts/nda-template.docx');
+	SELECT gen_random_uuid(), b.id, 'contracts/nda-template.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 32768, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'documents'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'contracts/nda-template.docx');
 
 	-- Insert sample objects into public bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'assets/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'assets/.keep');
+	SELECT gen_random_uuid(), b.id, 'assets/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'assets/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'assets/logo.svg', 'image/svg+xml', 4096, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'assets/logo.svg');
+	SELECT gen_random_uuid(), b.id, 'assets/logo.svg', 'image/svg+xml', 4096, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'assets/logo.svg');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'assets/favicon.ico', 'image/x-icon', 16384, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'assets/favicon.ico');
+	SELECT gen_random_uuid(), b.id, 'assets/favicon.ico', 'image/x-icon', 16384, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'assets/favicon.ico');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'examples/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/.keep');
+	SELECT gen_random_uuid(), b.id, 'examples/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'examples/sample.json', 'application/json', 512, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/sample.json');
+	SELECT gen_random_uuid(), b.id, 'examples/sample.json', 'application/json', 512, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/sample.json');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'examples/config.yaml', 'application/x-yaml', 1024, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/config.yaml');
+	SELECT gen_random_uuid(), b.id, 'examples/config.yaml', 'application/x-yaml', 1024, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/config.yaml');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'examples/script.py', 'text/x-python', 2048, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/script.py');
+	SELECT gen_random_uuid(), b.id, 'examples/script.py', 'text/x-python', 2048, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/script.py');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'examples/main.go', 'text/x-go', 1536, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/main.go');
+	SELECT gen_random_uuid(), b.id, 'examples/main.go', 'text/x-go', 1536, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/main.go');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'downloads/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'downloads/.keep');
+	SELECT gen_random_uuid(), b.id, 'downloads/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'public', 'downloads/user-guide.pdf', 'application/pdf', 2097152, NULL, '{"pages": 48}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'downloads/user-guide.pdf');
+	SELECT gen_random_uuid(), b.id, 'downloads/user-guide.pdf', 'application/pdf', 2097152, NULL, '{"pages": 48}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/user-guide.pdf');
 
 	-- Insert sample objects into media bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'images/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/.keep');
+	SELECT gen_random_uuid(), b.id, 'images/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'images/hero.jpg', 'image/jpeg', 204800, NULL, '{"width": 1920, "height": 1080}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/hero.jpg');
+	SELECT gen_random_uuid(), b.id, 'images/hero.jpg', 'image/jpeg', 204800, NULL, '{"width": 1920, "height": 1080}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/hero.jpg');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'images/gallery/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/gallery/.keep');
+	SELECT gen_random_uuid(), b.id, 'images/gallery/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/gallery/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'images/gallery/photo-001.jpg', 'image/jpeg', 153600, NULL, '{"width": 1200, "height": 800}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/gallery/photo-001.jpg');
+	SELECT gen_random_uuid(), b.id, 'images/gallery/photo-001.jpg', 'image/jpeg', 153600, NULL, '{"width": 1200, "height": 800}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/gallery/photo-001.jpg');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'images/gallery/photo-002.png', 'image/png', 184320, NULL, '{"width": 1200, "height": 800}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/gallery/photo-002.png');
+	SELECT gen_random_uuid(), b.id, 'images/gallery/photo-002.png', 'image/png', 184320, NULL, '{"width": 1200, "height": 800}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/gallery/photo-002.png');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'videos/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'videos/.keep');
+	SELECT gen_random_uuid(), b.id, 'videos/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'videos/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'videos/intro.mp4', 'video/mp4', 10485760, NULL, '{"duration": 60, "resolution": "1080p"}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'videos/intro.mp4');
+	SELECT gen_random_uuid(), b.id, 'videos/intro.mp4', 'video/mp4', 10485760, NULL, '{"duration": 60, "resolution": "1080p"}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'videos/intro.mp4');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'audio/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'audio/.keep');
+	SELECT gen_random_uuid(), b.id, 'audio/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'audio/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'media', 'audio/notification.mp3', 'audio/mpeg', 51200, NULL, '{"duration": 2}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'audio/notification.mp3');
+	SELECT gen_random_uuid(), b.id, 'audio/notification.mp3', 'audio/mpeg', 51200, NULL, '{"duration": 2}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'audio/notification.mp3');
 
 	-- Insert sample objects into backups bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'backups', 'database/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'database/.keep');
+	SELECT gen_random_uuid(), b.id, 'database/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'backups'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'database/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'backups', 'database/2025-01-15.sql.gz', 'application/gzip', 5242880, NULL, '{"tables": 12}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'database/2025-01-15.sql.gz');
+	SELECT gen_random_uuid(), b.id, 'database/2025-01-15.sql.gz', 'application/gzip', 5242880, NULL, '{"tables": 12}'
+	FROM storage.buckets b WHERE b.name = 'backups'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'database/2025-01-15.sql.gz');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'backups', 'database/2025-01-16.sql.gz', 'application/gzip', 5373952, NULL, '{"tables": 12}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'database/2025-01-16.sql.gz');
+	SELECT gen_random_uuid(), b.id, 'database/2025-01-16.sql.gz', 'application/gzip', 5373952, NULL, '{"tables": 12}'
+	FROM storage.buckets b WHERE b.name = 'backups'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'database/2025-01-16.sql.gz');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'backups', 'configs/.keep', 'application/octet-stream', 0, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'configs/.keep');
+	SELECT gen_random_uuid(), b.id, 'configs/.keep', 'application/octet-stream', 0, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'backups'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'configs/.keep');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'backups', 'configs/nginx.conf', 'text/plain', 4096, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'configs/nginx.conf');
+	SELECT gen_random_uuid(), b.id, 'configs/nginx.conf', 'text/plain', 4096, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'backups'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'configs/nginx.conf');
 
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
-	SELECT gen_random_uuid(), 'backups', 'configs/docker-compose.yml', 'application/x-yaml', 2048, NULL, '{}'
-	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'configs/docker-compose.yml');
+	SELECT gen_random_uuid(), b.id, 'configs/docker-compose.yml', 'application/x-yaml', 2048, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'backups'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'configs/docker-compose.yml');
 	`
 
 	_, err := s.pool.Exec(ctx, sql)
@@ -876,6 +923,86 @@ func (s *Store) Realtime() store.RealtimeStore {
 // PGMeta returns the postgres-meta store for dashboard compatibility.
 func (s *Store) PGMeta() *PGMetaStore {
 	return s.pgmeta
+}
+
+// Logs returns the logs store.
+func (s *Store) Logs() store.LogsStore {
+	return s.logs
+}
+
+func (s *Store) createLogsTables(ctx context.Context) error {
+	sql := `
+	-- Main logs table
+	CREATE TABLE IF NOT EXISTS analytics.logs (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		event_message TEXT,
+		request_id UUID,
+		method VARCHAR(10),
+		path TEXT,
+		status_code SMALLINT,
+		source VARCHAR(50) NOT NULL,
+		user_id UUID,
+		user_agent TEXT,
+		apikey TEXT,
+		request_headers JSONB DEFAULT '{}',
+		response_headers JSONB DEFAULT '{}',
+		duration_ms INTEGER,
+		metadata JSONB DEFAULT '{}',
+		search TEXT,
+		CONSTRAINT logs_source_check CHECK (source IN (
+			'edge', 'postgres', 'postgrest', 'pooler',
+			'auth', 'storage', 'realtime', 'functions', 'cron'
+		))
+	);
+
+	-- Create indexes for common queries
+	CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON analytics.logs (timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_logs_source ON analytics.logs (source);
+	CREATE INDEX IF NOT EXISTS idx_logs_status_code ON analytics.logs (status_code) WHERE status_code IS NOT NULL;
+	CREATE INDEX IF NOT EXISTS idx_logs_method ON analytics.logs (method) WHERE method IS NOT NULL;
+	CREATE INDEX IF NOT EXISTS idx_logs_request_id ON analytics.logs (request_id) WHERE request_id IS NOT NULL;
+	CREATE INDEX IF NOT EXISTS idx_logs_user_id ON analytics.logs (user_id) WHERE user_id IS NOT NULL;
+	CREATE INDEX IF NOT EXISTS idx_logs_metadata ON analytics.logs USING GIN (metadata);
+
+	-- Saved queries table
+	CREATE TABLE IF NOT EXISTS analytics.saved_queries (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		name VARCHAR(255) NOT NULL,
+		description TEXT,
+		query_params JSONB NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	-- Query templates table
+	CREATE TABLE IF NOT EXISTS analytics.query_templates (
+		id VARCHAR(50) PRIMARY KEY,
+		name VARCHAR(255) NOT NULL,
+		description TEXT,
+		query_params JSONB NOT NULL,
+		category VARCHAR(50)
+	);
+
+	-- Insert default templates
+	INSERT INTO analytics.query_templates (id, name, description, query_params, category) VALUES
+	('errors_last_hour', 'Errors in last hour', 'All requests with status >= 400 in the past hour',
+	 '{"time_range": "1h", "status_min": 400}', 'debugging'),
+	('slow_requests', 'Slow requests', 'Requests taking longer than 1 second',
+	 '{"time_range": "24h", "duration_min_ms": 1000}', 'performance'),
+	('auth_failures', 'Authentication failures', 'Failed authentication attempts',
+	 '{"time_range": "24h", "source": "auth", "status_min": 400}', 'security'),
+	('storage_uploads', 'Storage uploads', 'Recent file upload operations',
+	 '{"time_range": "1h", "source": "storage", "method": "POST"}', 'storage'),
+	('recent_errors', 'Recent 5xx errors', 'Server errors in the past hour',
+	 '{"time_range": "1h", "status_min": 500}', 'debugging'),
+	('api_activity', 'API Gateway activity', 'Recent API Gateway logs',
+	 '{"time_range": "1h", "source": "edge"}', 'monitoring')
+	ON CONFLICT (id) DO NOTHING;
+	`
+
+	_, err := s.pool.Exec(ctx, sql)
+	return err
 }
 
 // newULID generates a new ULID string.

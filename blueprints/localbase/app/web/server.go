@@ -23,13 +23,17 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	realtimeHandler := api.NewRealtimeHandler(store)
 	dashboardHandler := api.NewDashboardHandler(store)
 	pgmetaHandler := api.NewPGMetaHandler(store)
-	logsHandler := api.NewLogsHandler()
+	logsHandler := api.NewLogsHandler(store)
 	settingsHandler := api.NewSettingsHandler(store)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
 		return c.JSON(200, map[string]string{"status": "healthy"})
 	})
+
+	// Add logging middleware to capture all requests
+	loggingMw := middleware.Logging(middleware.DefaultLoggingConfig(store.Logs()))
+	app.Use(loggingMw)
 
 	// API key middleware for Supabase compatibility (defined early for reuse)
 	apiKeyMw := middleware.APIKey(middleware.DefaultAPIKeyConfig())
@@ -218,10 +222,26 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	app.Group("/api/logs", func(logs *mizu.Router) {
 		logs.Use(apiKeyMw)
 		logs.Use(serviceRoleMw)
+
+		// Core log endpoints
 		logs.Get("", logsHandler.ListLogs)
-		logs.Get("/types", logsHandler.ListLogTypes)
+		logs.Get("/histogram", logsHandler.GetHistogram)
+		logs.Get("/sources", logsHandler.ListLogSources)
 		logs.Post("/search", logsHandler.SearchLogs)
 		logs.Get("/export", logsHandler.ExportLogs)
+
+		// Saved queries
+		logs.Get("/queries", logsHandler.ListSavedQueries)
+		logs.Post("/queries", logsHandler.CreateSavedQuery)
+		logs.Get("/queries/{id}", logsHandler.GetSavedQuery)
+		logs.Put("/queries/{id}", logsHandler.UpdateSavedQuery)
+		logs.Delete("/queries/{id}", logsHandler.DeleteSavedQuery)
+
+		// Query templates
+		logs.Get("/templates", logsHandler.ListQueryTemplates)
+
+		// Single log by ID (must be last to avoid conflicts)
+		logs.Get("/{id}", logsHandler.GetLog)
 	})
 
 	// Settings API - Supabase Dashboard compatibility
