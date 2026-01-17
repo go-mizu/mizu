@@ -498,6 +498,95 @@ func (s *Store) seedStorageFiles(ctx context.Context) error {
 	FROM storage.buckets b WHERE b.name = 'public'
 	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/user-guide.pdf');
 
+	-- Additional code file types
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/app.tsx', 'text/typescript', 3072, NULL, '{"lines": 120}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/app.tsx');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/utils.ts', 'text/typescript', 1536, NULL, '{"lines": 60}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/utils.ts');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/index.html', 'text/html', 2048, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/index.html');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/styles.css', 'text/css', 4096, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/styles.css');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/server.rs', 'text/x-rust', 2560, NULL, '{"lines": 85}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/server.rs');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/Main.java', 'text/x-java', 1792, NULL, '{"lines": 55}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/Main.java');
+
+	-- Additional document types
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'downloads/data.csv', 'text/csv', 10240, NULL, '{"rows": 500, "columns": 8}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/data.csv');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'downloads/report.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 32768, NULL, '{"sheets": 3}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/report.xlsx');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'downloads/presentation.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 65536, NULL, '{"slides": 12}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/presentation.pptx');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'downloads/notes.txt', 'text/plain', 1024, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/notes.txt');
+
+	-- Archive types
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'downloads/source-code.zip', 'application/zip', 1048576, NULL, '{"files": 45}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/source-code.zip');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'downloads/archive.tar.gz', 'application/gzip', 2097152, NULL, '{"files": 120}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'downloads/archive.tar.gz');
+
+	-- Data formats
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/data.xml', 'application/xml', 4096, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/data.xml');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/settings.toml', 'application/toml', 512, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/settings.toml');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/Makefile', 'text/x-makefile', 1024, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/Makefile');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/Dockerfile', 'text/x-dockerfile', 768, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/Dockerfile');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'examples/query.sql', 'application/sql', 2048, NULL, '{}'
+	FROM storage.buckets b WHERE b.name = 'public'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'examples/query.sql');
+
 	-- Insert sample objects into media bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
 	SELECT gen_random_uuid(), b.id, 'images/.keep', 'application/octet-stream', 0, NULL, '{}'
@@ -543,6 +632,34 @@ func (s *Store) seedStorageFiles(ctx context.Context) error {
 	SELECT gen_random_uuid(), b.id, 'audio/notification.mp3', 'audio/mpeg', 51200, NULL, '{"duration": 2}'
 	FROM storage.buckets b WHERE b.name = 'media'
 	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'audio/notification.mp3');
+
+	-- Additional image formats
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'images/gallery/photo-003.webp', 'image/webp', 98304, NULL, '{"width": 1200, "height": 800}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/gallery/photo-003.webp');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'images/gallery/animation.gif', 'image/gif', 524288, NULL, '{"width": 480, "height": 320, "animated": true}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'images/gallery/animation.gif');
+
+	-- Additional video formats
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'videos/demo.webm', 'video/webm', 5242880, NULL, '{"duration": 30, "resolution": "720p"}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'videos/demo.webm');
+
+	-- Additional audio formats
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'audio/background.wav', 'audio/wav', 2097152, NULL, '{"duration": 10, "sampleRate": 44100}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'audio/background.wav');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), b.id, 'audio/podcast.ogg', 'audio/ogg', 3145728, NULL, '{"duration": 120}'
+	FROM storage.buckets b WHERE b.name = 'media'
+	AND NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = b.id AND o.name = 'audio/podcast.ogg');
 
 	-- Insert sample objects into backups bucket
 	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)

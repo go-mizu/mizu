@@ -52,6 +52,16 @@ import {
   IconFolderPlus,
   IconChevronDown,
   IconExternalLink,
+  IconFileSpreadsheet,
+  IconPresentation,
+  IconFileTypeDocx,
+  IconFileTypeCsv,
+  IconFileTypeXml,
+  IconFileTypeSql,
+  IconBrandRust,
+  IconBrandDocker,
+  IconTerminal2,
+  IconSettingsCode,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';
@@ -66,6 +76,7 @@ import type { Bucket, StorageObject } from '../../types';
 function getFileIcon(file: StorageObject) {
   const contentType = file.content_type || '';
   const ext = file.name.split('.').pop()?.toLowerCase();
+  const fileName = file.name.split('/').pop()?.toLowerCase() || '';
 
   // By content type
   if (contentType.startsWith('image/')) return IconPhoto;
@@ -73,6 +84,16 @@ function getFileIcon(file: StorageObject) {
   if (contentType.startsWith('audio/')) return IconMusic;
   if (contentType === 'application/pdf') return IconFileTypePdf;
   if (contentType === 'application/json') return IconBraces;
+  if (contentType === 'text/csv' || contentType === 'application/csv') return IconFileTypeCsv;
+  if (contentType === 'application/xml' || contentType === 'text/xml') return IconFileTypeXml;
+  if (contentType === 'application/sql' || contentType === 'text/x-sql') return IconFileTypeSql;
+  if (contentType.includes('spreadsheet') || contentType.includes('excel')) return IconFileSpreadsheet;
+  if (contentType.includes('presentation') || contentType.includes('powerpoint')) return IconPresentation;
+  if (contentType.includes('wordprocessing') || contentType.includes('msword')) return IconFileTypeDocx;
+
+  // Special filenames (case-insensitive)
+  if (fileName === 'dockerfile') return IconBrandDocker;
+  if (fileName === 'makefile') return IconTerminal2;
 
   // By extension
   switch (ext) {
@@ -83,12 +104,18 @@ function getFileIcon(file: StorageObject) {
       return IconBrandJavascript;
     case 'py':
       return IconBrandPython;
-    case 'go':
     case 'rs':
+      return IconBrandRust;
+    case 'go':
     case 'java':
     case 'c':
     case 'cpp':
     case 'h':
+    case 'hpp':
+    case 'swift':
+    case 'kt':
+    case 'rb':
+    case 'php':
       return IconFileCode;
     case 'md':
     case 'mdx':
@@ -107,12 +134,39 @@ function getFileIcon(file: StorageObject) {
     case 'gz':
     case 'rar':
     case '7z':
+    case 'tgz':
       return IconFileZip;
     case 'txt':
     case 'log':
       return IconFileText;
     case 'pdf':
       return IconFileTypePdf;
+    case 'csv':
+      return IconFileTypeCsv;
+    case 'xml':
+      return IconFileTypeXml;
+    case 'sql':
+      return IconFileTypeSql;
+    case 'xlsx':
+    case 'xls':
+      return IconFileSpreadsheet;
+    case 'pptx':
+    case 'ppt':
+      return IconPresentation;
+    case 'docx':
+    case 'doc':
+      return IconFileTypeDocx;
+    case 'yaml':
+    case 'yml':
+    case 'toml':
+    case 'ini':
+    case 'conf':
+    case 'cfg':
+      return IconSettingsCode;
+    case 'sh':
+    case 'bash':
+    case 'zsh':
+      return IconTerminal2;
     default:
       return IconFile;
   }
@@ -141,20 +195,36 @@ function isPreviewableText(contentType: string | undefined, name: string): boole
     'text/html',
     'text/css',
     'text/javascript',
+    'text/csv',
+    'text/markdown',
+    'text/typescript',
+    'text/x-python',
+    'text/x-go',
+    'text/x-rust',
+    'text/x-java',
     'application/json',
     'application/javascript',
     'application/xml',
+    'application/sql',
+    'application/x-yaml',
+    'application/toml',
   ];
 
   if (contentType && textTypes.some(t => contentType.includes(t))) return true;
 
   const ext = name.split('.').pop()?.toLowerCase();
+  const fileName = name.split('/').pop()?.toLowerCase() || '';
+
+  // Special filenames without extensions
+  const specialFiles = ['dockerfile', 'makefile', 'gemfile', 'rakefile', 'procfile'];
+  if (specialFiles.includes(fileName)) return true;
+
   const textExtensions = [
     'txt', 'md', 'mdx', 'json', 'js', 'jsx', 'ts', 'tsx', 'py', 'go', 'rs',
     'java', 'c', 'cpp', 'h', 'hpp', 'css', 'scss', 'less', 'html', 'htm',
     'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'sh', 'bash', 'zsh',
     'sql', 'graphql', 'vue', 'svelte', 'astro', 'rb', 'php', 'swift', 'kt',
-    'gradle', 'env', 'gitignore', 'dockerfile', 'makefile', 'log',
+    'gradle', 'env', 'gitignore', 'log', 'csv', 'tsv', 'properties',
   ];
 
   return ext ? textExtensions.includes(ext) : false;
