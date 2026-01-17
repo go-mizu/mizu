@@ -333,22 +333,201 @@ func (s *Store) SeedUsers(ctx context.Context) error {
 	return err
 }
 
-// SeedStorage creates sample storage buckets.
+// SeedStorage creates sample storage buckets and files.
 func (s *Store) SeedStorage(ctx context.Context) error {
-	sql := `
-	INSERT INTO storage.buckets (id, name, public, file_size_limit)
+	// Create buckets
+	bucketSQL := `
+	INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 	VALUES
-		($1, 'avatars', true, 5242880),
-		($2, 'documents', false, 52428800),
-		($3, 'public', true, NULL)
+		($1, 'avatars', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml']),
+		($2, 'documents', false, 52428800, NULL),
+		($3, 'public', true, NULL, NULL),
+		($4, 'media', true, 104857600, ARRAY['image/*', 'video/*', 'audio/*']),
+		($5, 'backups', false, NULL, NULL)
 	ON CONFLICT (name) DO NOTHING
 	`
 
-	_, err := s.pool.Exec(ctx, sql,
+	_, err := s.pool.Exec(ctx, bucketSQL,
+		newULID(),
+		newULID(),
 		newULID(),
 		newULID(),
 		newULID(),
 	)
+	if err != nil {
+		return err
+	}
+
+	// Create sample files in storage
+	return s.seedStorageFiles(ctx)
+}
+
+// seedStorageFiles creates sample files in storage buckets.
+func (s *Store) seedStorageFiles(ctx context.Context) error {
+	sql := `
+	-- Insert sample objects into avatars bucket
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'avatars', 'default.svg', 'image/svg+xml', 1024, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'default.svg');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'avatars', 'user-1.jpg', 'image/jpeg', 45056, NULL, '{"width": 200, "height": 200}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'user-1.jpg');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'avatars', 'user-2.png', 'image/png', 32768, NULL, '{"width": 200, "height": 200}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'user-2.png');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'avatars', 'team/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'team/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'avatars', 'team/alice.jpg', 'image/jpeg', 28672, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'team/alice.jpg');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'avatars', 'team/bob.png', 'image/png', 35840, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'avatars' AND name = 'team/bob.png');
+
+	-- Insert sample objects into documents bucket
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'README.md', 'text/markdown', 2048, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'README.md');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'reports/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'reports/2024/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2024/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'reports/2024/annual-report.pdf', 'application/pdf', 1048576, NULL, '{"pages": 24}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2024/annual-report.pdf');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'reports/2025/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2025/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'reports/2025/q1-summary.pdf', 'application/pdf', 524288, NULL, '{"pages": 12}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'reports/2025/q1-summary.pdf');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'contracts/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'contracts/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'documents', 'contracts/nda-template.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 32768, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'documents' AND name = 'contracts/nda-template.docx');
+
+	-- Insert sample objects into public bucket
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'assets/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'assets/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'assets/logo.svg', 'image/svg+xml', 4096, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'assets/logo.svg');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'assets/favicon.ico', 'image/x-icon', 16384, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'assets/favicon.ico');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'examples/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'examples/sample.json', 'application/json', 512, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/sample.json');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'examples/config.yaml', 'application/x-yaml', 1024, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/config.yaml');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'examples/script.py', 'text/x-python', 2048, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/script.py');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'examples/main.go', 'text/x-go', 1536, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'examples/main.go');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'downloads/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'downloads/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'public', 'downloads/user-guide.pdf', 'application/pdf', 2097152, NULL, '{"pages": 48}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'public' AND name = 'downloads/user-guide.pdf');
+
+	-- Insert sample objects into media bucket
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'images/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'images/hero.jpg', 'image/jpeg', 204800, NULL, '{"width": 1920, "height": 1080}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/hero.jpg');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'images/gallery/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/gallery/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'images/gallery/photo-001.jpg', 'image/jpeg', 153600, NULL, '{"width": 1200, "height": 800}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/gallery/photo-001.jpg');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'images/gallery/photo-002.png', 'image/png', 184320, NULL, '{"width": 1200, "height": 800}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'images/gallery/photo-002.png');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'videos/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'videos/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'videos/intro.mp4', 'video/mp4', 10485760, NULL, '{"duration": 60, "resolution": "1080p"}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'videos/intro.mp4');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'audio/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'audio/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'media', 'audio/notification.mp3', 'audio/mpeg', 51200, NULL, '{"duration": 2}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'media' AND name = 'audio/notification.mp3');
+
+	-- Insert sample objects into backups bucket
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'backups', 'database/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'database/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'backups', 'database/2025-01-15.sql.gz', 'application/gzip', 5242880, NULL, '{"tables": 12}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'database/2025-01-15.sql.gz');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'backups', 'database/2025-01-16.sql.gz', 'application/gzip', 5373952, NULL, '{"tables": 12}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'database/2025-01-16.sql.gz');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'backups', 'configs/.keep', 'application/octet-stream', 0, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'configs/.keep');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'backups', 'configs/nginx.conf', 'text/plain', 4096, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'configs/nginx.conf');
+
+	INSERT INTO storage.objects (id, bucket_id, name, content_type, size, owner, metadata)
+	SELECT gen_random_uuid(), 'backups', 'configs/docker-compose.yml', 'application/x-yaml', 2048, NULL, '{}'
+	WHERE NOT EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'backups' AND name = 'configs/docker-compose.yml');
+	`
+
+	_, err := s.pool.Exec(ctx, sql)
 	return err
 }
 
@@ -389,6 +568,84 @@ func (s *Store) SeedTables(ctx context.Context) error {
 		updated_at TIMESTAMPTZ DEFAULT NOW()
 	);
 
+	-- Create comments table with nested structure
+	CREATE TABLE IF NOT EXISTS public.comments (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		post_id UUID REFERENCES public.posts(id) ON DELETE CASCADE,
+		author_id UUID REFERENCES auth.users(id),
+		parent_id UUID REFERENCES public.comments(id),
+		content TEXT NOT NULL,
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	-- Create tags table
+	CREATE TABLE IF NOT EXISTS public.tags (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		name VARCHAR(100) UNIQUE NOT NULL,
+		slug VARCHAR(100) UNIQUE NOT NULL,
+		color VARCHAR(7),
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	-- Create post_tags junction table
+	CREATE TABLE IF NOT EXISTS public.post_tags (
+		post_id UUID REFERENCES public.posts(id) ON DELETE CASCADE,
+		tag_id UUID REFERENCES public.tags(id) ON DELETE CASCADE,
+		PRIMARY KEY (post_id, tag_id)
+	);
+
+	-- Create products table with various data types
+	CREATE TABLE IF NOT EXISTS public.products (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		name VARCHAR(255) NOT NULL,
+		description TEXT,
+		price DECIMAL(10,2) NOT NULL,
+		stock INTEGER DEFAULT 0,
+		category VARCHAR(100),
+		tags TEXT[],
+		metadata JSONB DEFAULT '{}',
+		is_active BOOLEAN DEFAULT true,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	-- Create orders table
+	CREATE TABLE IF NOT EXISTS public.orders (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		user_id UUID REFERENCES auth.users(id),
+		status VARCHAR(50) DEFAULT 'pending',
+		total DECIMAL(10,2),
+		items JSONB NOT NULL DEFAULT '[]',
+		shipping_address JSONB,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	-- Create order_items junction table
+	CREATE TABLE IF NOT EXISTS public.order_items (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE,
+		product_id UUID REFERENCES public.products(id),
+		quantity INTEGER NOT NULL,
+		unit_price DECIMAL(10,2) NOT NULL,
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	);
+
+	-- Create test_users table (public, separate from auth.users)
+	CREATE TABLE IF NOT EXISTS public.test_users (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		email VARCHAR(255) UNIQUE NOT NULL,
+		username VARCHAR(100) UNIQUE,
+		display_name VARCHAR(255),
+		avatar_url TEXT,
+		bio TEXT,
+		website VARCHAR(255),
+		social_links JSONB DEFAULT '{}',
+		preferences JSONB DEFAULT '{}',
+		is_verified BOOLEAN DEFAULT false,
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	);
+
 	-- Create auth helper functions first (needed by policies)
 	CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID AS $$
 		SELECT NULLIF(current_setting('request.jwt.claims', TRUE)::json->>'sub', '')::UUID
@@ -419,6 +676,166 @@ func (s *Store) SeedTables(ctx context.Context) error {
 			CREATE POLICY "Users can delete own todos" ON public.todos FOR DELETE USING (auth.uid() = user_id);
 		END IF;
 	END $$;
+	`
+
+	_, err := s.pool.Exec(ctx, sql)
+	if err != nil {
+		return err
+	}
+
+	// Seed sample data
+	return s.seedSampleData(ctx)
+}
+
+// seedSampleData inserts realistic sample data into tables.
+func (s *Store) seedSampleData(ctx context.Context) error {
+	sql := `
+	-- Insert tags
+	INSERT INTO public.tags (name, slug, color) VALUES
+		('Technology', 'technology', '#3B82F6'),
+		('Design', 'design', '#EC4899'),
+		('Business', 'business', '#10B981'),
+		('Tutorial', 'tutorial', '#F59E0B'),
+		('News', 'news', '#6366F1'),
+		('Open Source', 'open-source', '#8B5CF6'),
+		('Database', 'database', '#EF4444'),
+		('Frontend', 'frontend', '#06B6D4'),
+		('Backend', 'backend', '#84CC16'),
+		('DevOps', 'devops', '#F97316')
+	ON CONFLICT (slug) DO NOTHING;
+
+	-- Insert products
+	INSERT INTO public.products (name, description, price, stock, category, tags, metadata) VALUES
+		('Wireless Headphones Pro', 'Premium noise-canceling wireless headphones with 40hr battery', 299.99, 50, 'Electronics',
+		 ARRAY['audio', 'wireless', 'premium'], '{"brand": "AudioMax", "warranty": "2 years", "weight": "250g"}'),
+		('Ergonomic Keyboard', 'Split mechanical keyboard with Cherry MX switches', 179.99, 30, 'Electronics',
+		 ARRAY['keyboard', 'ergonomic', 'mechanical'], '{"switches": "Cherry MX Brown", "layout": "ANSI"}'),
+		('Standing Desk Pro', 'Electric height-adjustable desk with memory presets', 599.99, 15, 'Furniture',
+		 ARRAY['desk', 'standing', 'electric'], '{"max_height": "48 inches", "weight_capacity": "300 lbs"}'),
+		('4K Monitor 27"', 'Professional 4K IPS monitor with USB-C', 449.99, 25, 'Electronics',
+		 ARRAY['monitor', '4k', 'usb-c'], '{"resolution": "3840x2160", "refresh_rate": "60Hz"}'),
+		('Webcam HD', '1080p webcam with auto-focus and noise reduction', 79.99, 100, 'Electronics',
+		 ARRAY['webcam', 'streaming', 'video'], '{"resolution": "1080p", "fps": 30}')
+	ON CONFLICT DO NOTHING;
+
+	-- Insert test_users
+	INSERT INTO public.test_users (email, username, display_name, bio, website, is_verified, social_links) VALUES
+		('alice@example.com', 'alice', 'Alice Johnson', 'Full-stack developer passionate about open source', 'https://alice.dev', true,
+		 '{"twitter": "@alice_dev", "github": "alicejohnson"}'),
+		('bob@example.com', 'bob', 'Bob Smith', 'UX designer and product enthusiast', 'https://bobsmith.design', true,
+		 '{"twitter": "@bobsmith", "dribbble": "bobsmith"}'),
+		('charlie@example.com', 'charlie', 'Charlie Brown', 'DevOps engineer | K8s | Terraform', NULL, false,
+		 '{"github": "charliebrown"}'),
+		('diana@example.com', 'diana', 'Diana Prince', 'Tech lead at StartupCo', 'https://diana.io', true,
+		 '{"linkedin": "dianaprince", "twitter": "@diana_tech"}'),
+		('eve@example.com', 'eve', 'Eve Wilson', 'Backend developer | Go | Rust', NULL, false,
+		 '{"github": "evewilson"}')
+	ON CONFLICT (email) DO NOTHING;
+
+	-- Insert posts using existing auth.users
+	INSERT INTO public.posts (author_id, title, content, published)
+	SELECT u.id, 'Getting Started with Supabase',
+		'Supabase is an open source Firebase alternative. This guide will help you get started with authentication, database, and storage.
+
+## Key Features
+
+1. **Authentication** - Built-in auth with social providers
+2. **Database** - PostgreSQL with real-time subscriptions
+3. **Storage** - S3-compatible object storage
+4. **Edge Functions** - Serverless functions at the edge
+
+Let''s dive in!', true
+	FROM auth.users u WHERE u.email = 'admin@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	INSERT INTO public.posts (author_id, title, content, published)
+	SELECT u.id, 'Building Real-time Applications',
+		'Learn how to build real-time collaborative features using Supabase Realtime and PostgreSQL LISTEN/NOTIFY.
+
+## Prerequisites
+
+- Node.js 18+
+- Supabase account
+- Basic PostgreSQL knowledge
+
+## Getting Started
+
+First, enable realtime on your table...', true
+	FROM auth.users u WHERE u.email = 'admin@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	INSERT INTO public.posts (author_id, title, content, published)
+	SELECT u.id, 'Draft: Advanced RLS Patterns',
+		'This post covers advanced row-level security patterns including multi-tenancy, hierarchical permissions, and time-based access control.
+
+TODO: Add code examples', false
+	FROM auth.users u WHERE u.email = 'user@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	-- Insert comments
+	INSERT INTO public.comments (post_id, author_id, content)
+	SELECT p.id, u.id, 'Great introduction! This helped me get started quickly.'
+	FROM public.posts p, auth.users u
+	WHERE p.title LIKE '%Getting Started%' AND u.email = 'user@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	INSERT INTO public.comments (post_id, author_id, content)
+	SELECT p.id, u.id, 'Can you add more examples about storage policies?'
+	FROM public.posts p, auth.users u
+	WHERE p.title LIKE '%Getting Started%' AND u.email = 'admin@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	-- Insert orders
+	INSERT INTO public.orders (user_id, status, total, items, shipping_address)
+	SELECT u.id, 'completed', 479.98,
+		'[{"product": "Wireless Headphones Pro", "quantity": 1, "price": 299.99}, {"product": "Ergonomic Keyboard", "quantity": 1, "price": 179.99}]'::jsonb,
+		'{"street": "123 Main St", "city": "San Francisco", "state": "CA", "zip": "94102", "country": "USA"}'::jsonb
+	FROM auth.users u WHERE u.email = 'admin@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	INSERT INTO public.orders (user_id, status, total, items, shipping_address)
+	SELECT u.id, 'pending', 599.99,
+		'[{"product": "Standing Desk Pro", "quantity": 1, "price": 599.99}]'::jsonb,
+		'{"street": "456 Oak Ave", "city": "New York", "state": "NY", "zip": "10001", "country": "USA"}'::jsonb
+	FROM auth.users u WHERE u.email = 'user@localbase.dev'
+	ON CONFLICT DO NOTHING;
+
+	-- Link posts to tags
+	INSERT INTO public.post_tags (post_id, tag_id)
+	SELECT p.id, t.id
+	FROM public.posts p, public.tags t
+	WHERE p.title LIKE '%Supabase%' AND t.slug IN ('technology', 'tutorial', 'database')
+	ON CONFLICT DO NOTHING;
+
+	INSERT INTO public.post_tags (post_id, tag_id)
+	SELECT p.id, t.id
+	FROM public.posts p, public.tags t
+	WHERE p.title LIKE '%Real-time%' AND t.slug IN ('technology', 'backend', 'database')
+	ON CONFLICT DO NOTHING;
+
+	-- Insert sample todos
+	INSERT INTO public.todos (user_id, title, description, completed)
+	SELECT u.id, 'Review pull requests', 'Check and approve pending PRs for the main project', true
+	FROM auth.users u WHERE u.email = 'admin@localbase.dev';
+
+	INSERT INTO public.todos (user_id, title, description, completed)
+	SELECT u.id, 'Write documentation', 'Update README and API docs for v2.0 release', false
+	FROM auth.users u WHERE u.email = 'admin@localbase.dev';
+
+	INSERT INTO public.todos (user_id, title, description, completed)
+	SELECT u.id, 'Setup CI/CD pipeline', 'Configure GitHub Actions for automated testing', false
+	FROM auth.users u WHERE u.email = 'user@localbase.dev';
+
+	-- Insert profiles
+	INSERT INTO public.profiles (id, username, full_name, bio, website)
+	SELECT u.id, 'admin', 'Admin User', 'System administrator', 'https://localbase.dev'
+	FROM auth.users u WHERE u.email = 'admin@localbase.dev'
+	ON CONFLICT (id) DO NOTHING;
+
+	INSERT INTO public.profiles (id, username, full_name, bio, website)
+	SELECT u.id, 'testuser', 'Test User', 'Regular test user account', NULL
+	FROM auth.users u WHERE u.email = 'user@localbase.dev'
+	ON CONFLICT (id) DO NOTHING;
 	`
 
 	_, err := s.pool.Exec(ctx, sql)

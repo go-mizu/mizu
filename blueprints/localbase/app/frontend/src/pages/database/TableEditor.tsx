@@ -613,16 +613,92 @@ export function TableEditorPage() {
     if (col.type.includes('text') || col.type.includes('varchar')) return 200;
     if (col.type.includes('json')) return 250;
     if (col.type.includes('timestamp') || col.type.includes('date')) return 200;
-    if (col.type.includes('uuid')) return 280;
+    if (col.type.includes('uuid')) return 300;
     return MIN_COL_WIDTH;
   };
 
-  // Format cell value for display
-  const formatCellValue = (value: any): string => {
+  // Format UUID from byte array (fallback for unformatted UUIDs)
+  const formatUUIDFromBytes = (bytes: number[]): string => {
+    const hex = bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
+
+  // Check if value looks like a UUID byte array
+  const isUUIDByteArray = (value: unknown): value is number[] => {
+    return Array.isArray(value) &&
+      value.length === 16 &&
+      value.every(v => typeof v === 'number' && v >= 0 && v <= 255);
+  };
+
+  // Format cell value for display with type awareness
+  const formatCellValue = (value: any, columnType?: string): string => {
     if (value === null) return 'NULL';
     if (typeof value === 'boolean') return value ? 'true' : 'false';
-    if (typeof value === 'object') return JSON.stringify(value);
+
+    // Handle UUID byte arrays (fallback in case backend doesn't convert)
+    if (isUUIDByteArray(value)) {
+      return formatUUIDFromBytes(value);
+    }
+
+    // Format timestamps nicely
+    if (columnType?.includes('timestamp') && typeof value === 'string') {
+      try {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+        }
+      } catch {
+        // Fall through to default
+      }
+    }
+
+    // Format dates nicely
+    if (columnType?.includes('date') && !columnType?.includes('timestamp') && typeof value === 'string') {
+      try {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          });
+        }
+      } catch {
+        // Fall through to default
+      }
+    }
+
+    // Format JSON with indentation for readability
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return String(value);
+      }
+    }
+
     return String(value);
+  };
+
+  // Get display style for cell based on column type
+  const getCellStyle = (columnType?: string): React.CSSProperties => {
+    if (columnType?.includes('json')) {
+      return { fontFamily: 'monospace', fontSize: '0.75rem', whiteSpace: 'pre-wrap' };
+    }
+    if (columnType?.includes('uuid')) {
+      return { fontFamily: 'monospace', fontSize: '0.75rem' };
+    }
+    if (columnType?.includes('numeric') || columnType?.includes('integer') || columnType?.includes('decimal') || columnType?.includes('bigint')) {
+      return { fontFamily: 'monospace', textAlign: 'right' };
+    }
+    return {};
   };
 
   // Pagination state
@@ -1298,9 +1374,10 @@ export function TableEditorPage() {
                                       c={row[col.name] === null ? 'dimmed' : undefined}
                                       style={{
                                         fontStyle: row[col.name] === null ? 'italic' : 'normal',
+                                        ...getCellStyle(col.type),
                                       }}
                                     >
-                                      {formatCellValue(row[col.name])}
+                                      {formatCellValue(row[col.name], col.type)}
                                     </Text>
                                   )}
                                 </td>
