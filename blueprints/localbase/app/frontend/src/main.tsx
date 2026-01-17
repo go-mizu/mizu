@@ -9,6 +9,7 @@ import App from './App';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import '@mantine/dropzone/styles.css';
+import '@mantine/dates/styles.css';
 
 // Global styles and Supabase theme overrides
 import './styles/index.css';

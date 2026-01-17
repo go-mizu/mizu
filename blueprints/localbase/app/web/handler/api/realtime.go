@@ -223,8 +223,12 @@ func (h *RealtimeHandler) WebSocket(c *mizu.Ctx) error {
 		})
 	}
 
+	// Unwrap the response writer to get to the underlying http.ResponseWriter
+	// that implements http.Hijacker (required for WebSocket upgrade)
+	writer := unwrapResponseWriter(c.Writer())
+
 	// Upgrade HTTP connection to WebSocket
-	conn, err := h.upgrader.Upgrade(c.Writer(), c.Request(), nil)
+	conn, err := h.upgrader.Upgrade(writer, c.Request(), nil)
 	if err != nil {
 		return err
 	}
@@ -675,4 +679,23 @@ func generateUUID() string {
 // generateRef generates a unique reference string
 func generateRef() string {
 	return time.Now().Format("150405.000000000")
+}
+
+// unwrapResponseWriter unwraps a ResponseWriter to get the underlying writer
+// that implements http.Hijacker (needed for WebSocket upgrades).
+// This handles middleware wrappers that implement the Unwrap() interface.
+func unwrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		// Check if this writer implements http.Hijacker directly
+		if _, ok := w.(http.Hijacker); ok {
+			return w
+		}
+		// Try to unwrap using the standard Unwrap interface
+		if unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter }); ok {
+			w = unwrapper.Unwrap()
+		} else {
+			// Can't unwrap further, return what we have
+			return w
+		}
+	}
 }

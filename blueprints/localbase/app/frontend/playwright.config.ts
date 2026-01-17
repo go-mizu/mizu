@@ -55,10 +55,14 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'cd ../.. && make run',
+    // Use the built binary (make sure to run 'pnpm build && make build-quick' first)
+    command: 'localbase serve',
     url: 'http://localhost:54321',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
+    // Don't kill the server after tests (allows reuse)
+    stdout: 'pipe',
+    stderr: 'pipe',
   },
 
   /* Test timeout */
