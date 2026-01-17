@@ -1,0 +1,884 @@
+/* Supabase Light Theme for Localbase Dashboard - 100% Match */
+
+:root {
+  /* ============================================
+   * Brand Colors (Official Supabase Palette)
+   * ============================================ */
+  --supabase-brand: #3ECF8E;
+  --supabase-brand-hover: #24B47E;
+  --supabase-brand-light: rgba(62, 207, 142, 0.1);
+  --supabase-brand-muted: rgba(62, 207, 142, 0.15);
+
+  /* ============================================
+   * Background Colors
+   * ============================================ */
+  --supabase-bg: #FFFFFF;
+  --supabase-bg-surface: #F8F9FA;
+  --supabase-bg-surface-alt: #F4F4F5;
+  --supabase-bg-surface-hover: #F1F3F5;
+  --supabase-bg-sidebar: #FAFAFA;
+  --supabase-bg-muted: #F4F4F5;
+  --supabase-bg-overlay: rgba(0, 0, 0, 0.4);
+
+  /* ============================================
+   * Text Colors (12-step scale)
+   * ============================================ */
+  --supabase-text-1200: #11181C;
+  --supabase-text-1100: #1C1C1C;
+  --supabase-text-1000: #3F3F46;
+  --supabase-text-900: #52525B;
+  --supabase-text: #1C1C1C;
+  --supabase-text-secondary: #666666;
+  --supabase-text-muted: #888888;
+  --supabase-text-light: #AAAAAA;
+  --supabase-text-placeholder: #A1A1AA;
+
+  /* ============================================
+   * Border Colors
+   * ============================================ */
+  --supabase-border: #E6E8EB;
+  --supabase-border-muted: #EAEAEA;
+  --supabase-border-strong: #C9CDD3;
+  --supabase-border-focus: #3ECF8E;
+
+  /* ============================================
+   * Semantic Colors
+   * ============================================ */
+  --supabase-success: #3ECF8E;
+  --supabase-success-bg: rgba(62, 207, 142, 0.15);
+  --supabase-success-text: #059669;
+
+  --supabase-warning: #F5A623;
+  --supabase-warning-bg: rgba(245, 166, 35, 0.15);
+  --supabase-warning-text: #D97706;
+
+  --supabase-error: #EF4444;
+  --supabase-error-bg: rgba(239, 68, 68, 0.15);
+  --supabase-error-text: #DC2626;
+
+  --supabase-info: #3B82F6;
+  --supabase-info-bg: rgba(59, 130, 246, 0.15);
+  --supabase-info-text: #2563EB;
+
+  /* ============================================
+   * Shadows
+   * ============================================ */
+  --supabase-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --supabase-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --supabase-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --supabase-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.04);
+  --supabase-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.04);
+  --supabase-shadow-dropdown: 0 4px 20px rgba(0, 0, 0, 0.08);
+
+  /* ============================================
+   * Radius
+   * ============================================ */
+  --supabase-radius-sm: 4px;
+  --supabase-radius: 6px;
+  --supabase-radius-lg: 8px;
+  --supabase-radius-xl: 12px;
+
+  /* ============================================
+   * Transitions
+   * ============================================ */
+  --supabase-transition: 0.15s ease;
+}
+
+/* ============================================
+ * Global Styles
+ * ============================================ */
+body {
+  background-color: var(--supabase-bg);
+  color: var(--supabase-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* ============================================
+ * App Shell
+ * ============================================ */
+.mantine-AppShell-root {
+  background-color: var(--supabase-bg-surface);
+}
+
+.mantine-AppShell-main {
+  background-color: var(--supabase-bg-surface);
+}
+
+/* ============================================
+ * Navbar / Sidebar
+ * ============================================ */
+.mantine-AppShell-navbar {
+  background-color: var(--supabase-bg-sidebar);
+  border-right: 1px solid var(--supabase-border);
+}
+
+/* ============================================
+ * NavLink - Supabase Style
+ * ============================================ */
+.mantine-NavLink-root {
+  border-radius: var(--supabase-radius);
+  margin: 2px 0;
+  color: var(--supabase-text-secondary);
+  font-weight: 400;
+  transition: background-color var(--supabase-transition);
+}
+
+.mantine-NavLink-root:hover {
+  background-color: var(--supabase-bg-surface-hover);
+}
+
+.mantine-NavLink-root[data-active] {
+  background-color: var(--supabase-brand-light);
+  border-left: 3px solid var(--supabase-brand);
+  margin-left: -3px;
+  padding-left: calc(var(--mantine-spacing-md) + 3px);
+}
+
+.mantine-NavLink-root[data-active] .mantine-NavLink-label {
+  color: var(--supabase-brand);
+  font-weight: 500;
+}
+
+.mantine-NavLink-root[data-active] svg {
+  color: var(--supabase-brand);
+}
+
+/* ============================================
+ * Cards
+ * ============================================ */
+.mantine-Card-root {
+  background-color: var(--supabase-bg);
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  box-shadow: var(--supabase-shadow);
+  transition: border-color var(--supabase-transition), box-shadow var(--supabase-transition);
+}
+
+.mantine-Card-root:hover {
+  border-color: var(--supabase-border-strong);
+}
+
+/* ============================================
+ * Paper
+ * ============================================ */
+.mantine-Paper-root {
+  background-color: var(--supabase-bg);
+  border-radius: var(--supabase-radius-lg);
+}
+
+/* ============================================
+ * Buttons
+ * ============================================ */
+.mantine-Button-root {
+  font-weight: 500;
+  transition: all var(--supabase-transition);
+}
+
+.mantine-Button-root[data-variant="filled"] {
+  background-color: var(--supabase-brand);
+  border-radius: var(--supabase-radius);
+}
+
+.mantine-Button-root[data-variant="filled"]:hover {
+  background-color: var(--supabase-brand-hover);
+}
+
+.mantine-Button-root[data-variant="light"] {
+  background-color: var(--supabase-brand-light);
+  color: var(--supabase-brand);
+}
+
+.mantine-Button-root[data-variant="light"]:hover {
+  background-color: var(--supabase-brand-muted);
+}
+
+.mantine-Button-root[data-variant="outline"] {
+  border-color: var(--supabase-border);
+  color: var(--supabase-text);
+  border-radius: var(--supabase-radius);
+}
+
+.mantine-Button-root[data-variant="outline"]:hover {
+  background-color: var(--supabase-bg-surface);
+  border-color: var(--supabase-border-strong);
+}
+
+.mantine-Button-root[data-variant="subtle"] {
+  color: var(--supabase-text-secondary);
+}
+
+.mantine-Button-root[data-variant="subtle"]:hover {
+  background-color: var(--supabase-bg-surface);
+}
+
+/* Danger Button */
+.mantine-Button-root[data-color="red"][data-variant="filled"] {
+  background-color: var(--supabase-error);
+}
+
+.mantine-Button-root[data-color="red"][data-variant="filled"]:hover {
+  background-color: #DC2626;
+}
+
+/* ============================================
+ * Tables - Supabase Style
+ * ============================================ */
+.mantine-Table-root {
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  overflow: hidden;
+}
+
+.mantine-Table-thead {
+  background-color: var(--supabase-bg-surface);
+}
+
+.mantine-Table-th {
+  color: var(--supabase-text-secondary);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--supabase-border);
+  padding: 12px 16px;
+}
+
+.mantine-Table-td {
+  border-bottom: 1px solid var(--supabase-border-muted);
+  padding: 12px 16px;
+  font-size: 0.875rem;
+}
+
+.mantine-Table-tr:hover {
+  background-color: var(--supabase-bg-surface-hover);
+}
+
+.mantine-Table-tr:last-child .mantine-Table-td {
+  border-bottom: none;
+}
+
+/* ============================================
+ * Inputs - Supabase Style
+ * ============================================ */
+.mantine-TextInput-input,
+.mantine-Select-input,
+.mantine-Textarea-input,
+.mantine-PasswordInput-input,
+.mantine-NumberInput-input {
+  border-color: var(--supabase-border);
+  border-radius: var(--supabase-radius);
+  background-color: var(--supabase-bg);
+  transition: all var(--supabase-transition);
+  font-size: 0.875rem;
+}
+
+.mantine-TextInput-input:focus,
+.mantine-Select-input:focus,
+.mantine-Textarea-input:focus,
+.mantine-PasswordInput-input:focus,
+.mantine-NumberInput-input:focus {
+  border-color: var(--supabase-brand);
+  box-shadow: 0 0 0 1px var(--supabase-brand);
+}
+
+.mantine-TextInput-input::placeholder,
+.mantine-Select-input::placeholder,
+.mantine-Textarea-input::placeholder,
+.mantine-PasswordInput-input::placeholder {
+  color: var(--supabase-text-placeholder);
+}
+
+.mantine-TextInput-label,
+.mantine-Select-label,
+.mantine-Textarea-label,
+.mantine-PasswordInput-label {
+  color: var(--supabase-text);
+  font-weight: 500;
+  font-size: 0.875rem;
+  margin-bottom: 6px;
+}
+
+.mantine-TextInput-description,
+.mantine-Select-description {
+  color: var(--supabase-text-muted);
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+/* ============================================
+ * Modal - Supabase Style
+ * ============================================ */
+.mantine-Modal-content {
+  border-radius: var(--supabase-radius-lg);
+  box-shadow: var(--supabase-shadow-lg);
+}
+
+.mantine-Modal-header {
+  border-bottom: 1px solid var(--supabase-border);
+  padding: 16px 20px;
+}
+
+.mantine-Modal-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--supabase-text);
+}
+
+.mantine-Modal-body {
+  padding: 20px;
+}
+
+/* ============================================
+ * Badges - Supabase Style
+ * ============================================ */
+.mantine-Badge-root {
+  border-radius: var(--supabase-radius);
+  font-weight: 500;
+  text-transform: none;
+  font-size: 0.75rem;
+}
+
+.mantine-Badge-root[data-variant="light"][data-color="green"] {
+  background-color: var(--supabase-success-bg);
+  color: var(--supabase-success-text);
+}
+
+.mantine-Badge-root[data-variant="light"][data-color="red"] {
+  background-color: var(--supabase-error-bg);
+  color: var(--supabase-error-text);
+}
+
+.mantine-Badge-root[data-variant="light"][data-color="blue"] {
+  background-color: var(--supabase-info-bg);
+  color: var(--supabase-info-text);
+}
+
+.mantine-Badge-root[data-variant="light"][data-color="yellow"],
+.mantine-Badge-root[data-variant="light"][data-color="orange"] {
+  background-color: var(--supabase-warning-bg);
+  color: var(--supabase-warning-text);
+}
+
+.mantine-Badge-root[data-variant="light"][data-color="gray"] {
+  background-color: var(--supabase-bg-surface);
+  color: var(--supabase-text-secondary);
+}
+
+/* ============================================
+ * Tabs - Supabase Style
+ * ============================================ */
+.mantine-Tabs-list {
+  border-bottom: 1px solid var(--supabase-border);
+}
+
+.mantine-Tabs-tab {
+  color: var(--supabase-text-secondary);
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 12px 16px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all var(--supabase-transition);
+}
+
+.mantine-Tabs-tab:hover {
+  color: var(--supabase-text);
+  background-color: transparent;
+}
+
+.mantine-Tabs-tab[data-active] {
+  color: var(--supabase-brand);
+  border-bottom-color: var(--supabase-brand);
+}
+
+/* ============================================
+ * Menu / Dropdown - Supabase Style
+ * ============================================ */
+.mantine-Menu-dropdown {
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  box-shadow: var(--supabase-shadow-dropdown);
+  padding: 4px;
+}
+
+.mantine-Menu-item {
+  border-radius: var(--supabase-radius);
+  font-size: 0.875rem;
+  padding: 8px 12px;
+}
+
+.mantine-Menu-item:hover {
+  background-color: var(--supabase-bg-surface);
+}
+
+.mantine-Menu-item[data-color="red"] {
+  color: var(--supabase-error);
+}
+
+.mantine-Menu-item[data-color="red"]:hover {
+  background-color: var(--supabase-error-bg);
+}
+
+.mantine-Menu-divider {
+  border-color: var(--supabase-border-muted);
+  margin: 4px 0;
+}
+
+/* ============================================
+ * Pagination - Supabase Style
+ * ============================================ */
+.mantine-Pagination-control {
+  border-color: var(--supabase-border);
+  border-radius: var(--supabase-radius);
+  font-size: 0.875rem;
+}
+
+.mantine-Pagination-control[data-active] {
+  background-color: var(--supabase-brand);
+  border-color: var(--supabase-brand);
+}
+
+.mantine-Pagination-control:hover:not([data-active]) {
+  background-color: var(--supabase-bg-surface);
+}
+
+/* ============================================
+ * Loader
+ * ============================================ */
+.mantine-Loader-root {
+  --loader-color: var(--supabase-brand);
+}
+
+/* ============================================
+ * Skeleton
+ * ============================================ */
+.mantine-Skeleton-root {
+  background-color: var(--supabase-bg-muted);
+}
+
+.mantine-Skeleton-root::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.5),
+    transparent
+  );
+}
+
+/* ============================================
+ * ActionIcon
+ * ============================================ */
+.mantine-ActionIcon-root {
+  border-radius: var(--supabase-radius);
+  transition: background-color var(--supabase-transition);
+}
+
+.mantine-ActionIcon-root:hover {
+  background-color: var(--supabase-bg-surface);
+}
+
+.mantine-ActionIcon-root[data-variant="subtle"] {
+  color: var(--supabase-text-secondary);
+}
+
+/* ============================================
+ * Tooltip
+ * ============================================ */
+.mantine-Tooltip-tooltip {
+  background-color: var(--supabase-text-1200);
+  color: white;
+  border-radius: var(--supabase-radius);
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  font-weight: 500;
+}
+
+/* ============================================
+ * Alert
+ * ============================================ */
+.mantine-Alert-root {
+  border-radius: var(--supabase-radius-lg);
+}
+
+.mantine-Alert-root[data-color="green"] {
+  background-color: var(--supabase-success-bg);
+  border: 1px solid rgba(62, 207, 142, 0.3);
+}
+
+.mantine-Alert-root[data-color="red"] {
+  background-color: var(--supabase-error-bg);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.mantine-Alert-root[data-color="yellow"] {
+  background-color: var(--supabase-warning-bg);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+}
+
+.mantine-Alert-root[data-color="blue"] {
+  background-color: var(--supabase-info-bg);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* ============================================
+ * Notification
+ * ============================================ */
+.mantine-Notification-root {
+  border-radius: var(--supabase-radius-lg);
+  box-shadow: var(--supabase-shadow-lg);
+  border: 1px solid var(--supabase-border);
+}
+
+.mantine-Notification-root[data-color="green"] {
+  border-left: 4px solid var(--supabase-success);
+}
+
+.mantine-Notification-root[data-color="red"] {
+  border-left: 4px solid var(--supabase-error);
+}
+
+.mantine-Notification-root[data-color="yellow"] {
+  border-left: 4px solid var(--supabase-warning);
+}
+
+.mantine-Notification-root[data-color="blue"] {
+  border-left: 4px solid var(--supabase-info);
+}
+
+/* ============================================
+ * Switch
+ * ============================================ */
+.mantine-Switch-track {
+  border-color: var(--supabase-border);
+  background-color: var(--supabase-bg-muted);
+}
+
+.mantine-Switch-track[data-checked] {
+  background-color: var(--supabase-brand);
+  border-color: var(--supabase-brand);
+}
+
+/* ============================================
+ * Checkbox
+ * ============================================ */
+.mantine-Checkbox-input {
+  border-color: var(--supabase-border);
+  border-radius: var(--supabase-radius-sm);
+}
+
+.mantine-Checkbox-input:checked {
+  background-color: var(--supabase-brand);
+  border-color: var(--supabase-brand);
+}
+
+/* ============================================
+ * Select / Combobox
+ * ============================================ */
+.mantine-Combobox-dropdown {
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  box-shadow: var(--supabase-shadow-dropdown);
+}
+
+.mantine-Combobox-option {
+  border-radius: var(--supabase-radius);
+  font-size: 0.875rem;
+}
+
+.mantine-Combobox-option:hover,
+.mantine-Combobox-option[data-combobox-selected] {
+  background-color: var(--supabase-bg-surface);
+}
+
+.mantine-Combobox-option[data-combobox-active] {
+  background-color: var(--supabase-brand-light);
+}
+
+/* ============================================
+ * Breadcrumbs
+ * ============================================ */
+.mantine-Breadcrumbs-separator {
+  color: var(--supabase-text-light);
+}
+
+.mantine-Breadcrumbs-breadcrumb {
+  color: var(--supabase-text-secondary);
+  font-size: 0.875rem;
+}
+
+.mantine-Breadcrumbs-breadcrumb:hover {
+  color: var(--supabase-text);
+}
+
+/* ============================================
+ * Divider
+ * ============================================ */
+.mantine-Divider-root {
+  border-color: var(--supabase-border);
+}
+
+/* ============================================
+ * Anchor
+ * ============================================ */
+.mantine-Anchor-root {
+  color: var(--supabase-brand);
+  text-decoration: none;
+}
+
+.mantine-Anchor-root:hover {
+  color: var(--supabase-brand-hover);
+  text-decoration: underline;
+}
+
+/* ============================================
+ * Scrollbar - Custom Webkit Styles
+ * ============================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--supabase-bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--supabase-border-strong);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--supabase-text-light);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--supabase-border-strong) var(--supabase-bg-surface);
+}
+
+/* ============================================
+ * Custom Utility Classes - Supabase Style
+ * ============================================ */
+
+/* Page Header */
+.supabase-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.supabase-page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--supabase-text);
+  margin: 0;
+  line-height: 1.25;
+}
+
+.supabase-page-description {
+  color: var(--supabase-text-secondary);
+  font-size: 0.875rem;
+  margin-top: 4px;
+}
+
+/* Section Container */
+.supabase-section {
+  background-color: var(--supabase-bg);
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  padding: 20px;
+}
+
+/* Stat Card */
+.supabase-stat-card {
+  background-color: var(--supabase-bg);
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  padding: 20px;
+  transition: border-color var(--supabase-transition), box-shadow var(--supabase-transition);
+}
+
+.supabase-stat-card:hover {
+  border-color: var(--supabase-border-strong);
+  box-shadow: var(--supabase-shadow-md);
+}
+
+.supabase-stat-value {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--supabase-text);
+  line-height: 1;
+}
+
+.supabase-stat-label {
+  font-size: 0.875rem;
+  color: var(--supabase-text-secondary);
+  margin-top: 8px;
+}
+
+/* Empty State */
+.supabase-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.supabase-empty-state-icon {
+  color: var(--supabase-text-light);
+  margin-bottom: 16px;
+}
+
+.supabase-empty-state-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--supabase-text);
+  margin-bottom: 8px;
+}
+
+.supabase-empty-state-description {
+  font-size: 0.875rem;
+  color: var(--supabase-text-secondary);
+  margin-bottom: 24px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Code/Mono Text */
+.supabase-code {
+  font-family: 'Source Code Pro', 'Menlo', 'Monaco', monospace;
+  font-size: 0.8125rem;
+  background-color: var(--supabase-bg-surface);
+  padding: 2px 6px;
+  border-radius: var(--supabase-radius-sm);
+  color: var(--supabase-text);
+}
+
+/* Sidebar Selected Item */
+.supabase-sidebar-item-selected {
+  background-color: var(--supabase-brand-light);
+  border-radius: var(--supabase-radius);
+}
+
+/* Table Header Cell with Sort */
+.supabase-th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.supabase-th-sortable:hover {
+  background-color: var(--supabase-bg-surface-hover);
+}
+
+/* Status Dot */
+.supabase-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.supabase-status-dot-success {
+  background-color: var(--supabase-success);
+}
+
+.supabase-status-dot-error {
+  background-color: var(--supabase-error);
+}
+
+.supabase-status-dot-warning {
+  background-color: var(--supabase-warning);
+}
+
+.supabase-status-dot-info {
+  background-color: var(--supabase-info);
+}
+
+/* Quick Link Card */
+.supabase-quick-link {
+  display: block;
+  padding: 12px 16px;
+  border-radius: var(--supabase-radius);
+  border: 1px solid var(--supabase-border);
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--supabase-transition);
+}
+
+.supabase-quick-link:hover {
+  background-color: var(--supabase-bg-surface);
+  border-color: var(--supabase-border-strong);
+}
+
+/* Toolbar */
+.supabase-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--supabase-border);
+  background-color: var(--supabase-bg);
+}
+
+/* Panel Header */
+.supabase-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--supabase-border);
+}
+
+/* Monaco Editor Container */
+.supabase-monaco-container {
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  overflow: hidden;
+}
+
+/* Results Table */
+.supabase-results-container {
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius-lg);
+  overflow: hidden;
+  background-color: var(--supabase-bg);
+}
+
+/* File Browser Item */
+.supabase-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid var(--supabase-border);
+  border-radius: var(--supabase-radius);
+  transition: all var(--supabase-transition);
+  cursor: pointer;
+}
+
+.supabase-file-item:hover {
+  background-color: var(--supabase-bg-surface);
+  border-color: var(--supabase-border-strong);
+}
+
+/* Split Panel Layout */
+.supabase-split-layout {
+  display: flex;
+  height: 100%;
+}
+
+.supabase-split-sidebar {
+  width: 280px;
+  border-right: 1px solid var(--supabase-border);
+  background-color: var(--supabase-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.supabase-split-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
