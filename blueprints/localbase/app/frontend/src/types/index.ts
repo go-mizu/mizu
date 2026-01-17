@@ -61,6 +61,9 @@ export interface StorageObject {
   created_at: string;
   updated_at: string;
   last_accessed_at?: string;
+  // Additional fields from enhanced API
+  etag?: string;
+  cache_control?: string;
 }
 
 // Database types

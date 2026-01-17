@@ -240,7 +240,7 @@ export function Sidebar() {
                 fw={600}
                 size="sm"
                 truncate
-                style={{ color: 'var(--supabase-sidebar-text-active)' }}
+                style={{ color: 'var(--supabase-text)' }}
               >
                 {projectName}
               </Text>
@@ -249,8 +249,8 @@ export function Sidebar() {
                 variant="light"
                 color="green"
                 style={{
-                  backgroundColor: 'rgba(62, 207, 142, 0.2)',
-                  color: 'var(--supabase-brand)',
+                  backgroundColor: 'rgba(62, 207, 142, 0.15)',
+                  color: '#059669',
                   marginTop: 2,
                 }}
               >
