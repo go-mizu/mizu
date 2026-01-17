@@ -67,14 +67,17 @@ export function StorageToolbar({
 
   return (
     <Box
-      px="md"
-      py="sm"
+      px="sm"
+      py="xs"
       style={{
         borderBottom: '1px solid var(--supabase-border)',
         backgroundColor: 'var(--supabase-bg)',
+        minHeight: 48,
+        display: 'flex',
+        alignItems: 'center',
       }}
     >
-      <Group justify="space-between">
+      <Group justify="space-between" style={{ flex: 1 }}>
         {/* Breadcrumb Navigation */}
         <Breadcrumbs>
           <Anchor

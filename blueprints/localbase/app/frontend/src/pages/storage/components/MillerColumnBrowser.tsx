@@ -23,10 +23,10 @@ export function MillerColumnBrowser({
       style={{
         flex: 1,
         backgroundColor: 'var(--supabase-bg)',
+        pointerEvents: 'auto',
       }}
-      scrollbarSize={8}
-      type="auto"
-      offsetScrollbars
+      scrollbarSize={6}
+      type="hover"
     >
       <Box
         style={{

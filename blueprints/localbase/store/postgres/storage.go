@@ -329,3 +329,10 @@ func (s *StorageStore) CopyObject(ctx context.Context, srcBucketID, srcName, dst
 	_, err := s.pool.Exec(ctx, sql, srcBucketID, srcName, dstBucketID, dstName)
 	return err
 }
+
+// UpdateObjectSize updates only the size of an object.
+func (s *StorageStore) UpdateObjectSize(ctx context.Context, objectID string, size int64) error {
+	sql := `UPDATE storage.objects SET size = $2, updated_at = NOW() WHERE id = $1`
+	_, err := s.pool.Exec(ctx, sql, objectID, size)
+	return err
+}

@@ -684,18 +684,25 @@ func generateRef() string {
 // unwrapResponseWriter unwraps a ResponseWriter to get the underlying writer
 // that implements http.Hijacker (needed for WebSocket upgrades).
 // This handles middleware wrappers that implement the Unwrap() interface.
+// The function unwraps fully first, then returns the deepest writer that
+// actually supports hijacking.
 func unwrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	// First, unwrap to the deepest level
+	deepest := w
 	for {
-		// Check if this writer implements http.Hijacker directly
-		if _, ok := w.(http.Hijacker); ok {
-			return w
-		}
-		// Try to unwrap using the standard Unwrap interface
-		if unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter }); ok {
-			w = unwrapper.Unwrap()
+		if unwrapper, ok := deepest.(interface{ Unwrap() http.ResponseWriter }); ok {
+			deepest = unwrapper.Unwrap()
 		} else {
-			// Can't unwrap further, return what we have
-			return w
+			break
 		}
 	}
+
+	// The deepest writer should be the original net/http ResponseWriter
+	// which supports hijacking for HTTP/1.1 connections
+	if _, ok := deepest.(http.Hijacker); ok {
+		return deepest
+	}
+
+	// Fallback: return the original writer (will likely fail on hijack)
+	return w
 }

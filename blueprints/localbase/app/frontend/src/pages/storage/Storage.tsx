@@ -464,11 +464,20 @@ export function StoragePage() {
                       flex: 1,
                       display: 'flex',
                       minWidth: 0,
+                      padding: 0,
+                      pointerEvents: 'auto',
+                    },
+                    inner: {
+                      pointerEvents: 'none',
+                      display: 'flex',
+                      flex: 1,
+                      padding: 0,
+                      minWidth: 0,
                     },
                   }}
                 >
                   {columns.length === 0 || (columns.length === 1 && columns[0].items.length === 0 && !columns[0].loading) ? (
-                    <Center style={{ flex: 1 }}>
+                    <Center style={{ flex: 1, pointerEvents: 'auto' }}>
                       <EmptyState
                         icon={<IconFolder size={32} />}
                         title="No files"

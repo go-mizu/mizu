@@ -178,14 +178,14 @@ export function MillerColumn({
     >
       {/* Column Header */}
       <Box
-        px="sm"
-        py="xs"
+        px="xs"
+        py={6}
         style={{
           borderBottom: '1px solid var(--supabase-border)',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          minHeight: 40,
+          gap: 6,
+          minHeight: 36,
         }}
       >
         {showBackButton && (
@@ -204,7 +204,7 @@ export function MillerColumn({
       </Box>
 
       {/* Column Content */}
-      <ScrollArea style={{ flex: 1 }} offsetScrollbars>
+      <ScrollArea style={{ flex: 1 }} scrollbarSize={6}>
         {loading ? (
           <Center py="xl">
             <Loader size="sm" />
@@ -218,7 +218,7 @@ export function MillerColumn({
             <Text size="sm" c="dimmed">Empty folder</Text>
           </Center>
         ) : (
-          <Stack gap={0} py="xs">
+          <Stack gap={0}>
             {items.map((item) => {
               const isFolderItem = isFolder(item);
               const ItemIcon = isFolderItem ? IconFolder : getFileIcon(item);
@@ -228,8 +228,8 @@ export function MillerColumn({
               return (
                 <Box
                   key={item.id || item.name}
-                  px="sm"
-                  py="xs"
+                  px="xs"
+                  py={6}
                   style={{
                     cursor: 'pointer',
                     borderLeft: isSelected ? '2px solid var(--supabase-brand)' : '2px solid transparent',

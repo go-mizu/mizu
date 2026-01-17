@@ -387,7 +387,7 @@ export function FilePreviewPanel({
     >
       {/* Header */}
       <Box
-        px="md"
+        px="sm"
         py="xs"
         style={{
           borderBottom: '1px solid var(--supabase-border)',
@@ -402,7 +402,7 @@ export function FilePreviewPanel({
       </Box>
 
       {/* Preview Area */}
-      <ScrollArea style={{ flex: 1 }} offsetScrollbars>
+      <ScrollArea style={{ flex: 1 }} scrollbarSize={6}>
         <Box p="md">
           {renderPreview()}
 
