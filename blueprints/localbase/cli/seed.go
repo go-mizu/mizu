@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/go-mizu/mizu/blueprints/localbase/store/postgres"
 	"github.com/spf13/cobra"
@@ -73,6 +74,17 @@ func seedDatabase(ctx context.Context) error {
 		return fmt.Errorf("failed to seed storage: %w", err)
 	}
 	fmt.Println(successStyle.Render("  Buckets created"))
+
+	// Seed storage files to filesystem
+	fmt.Println(infoStyle.Render("Creating sample storage files..."))
+	dataDir := os.Getenv("LOCALBASE_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "./data/storage"
+	}
+	if err := SeedStorageFiles(ctx, store, dataDir); err != nil {
+		return fmt.Errorf("failed to seed storage files: %w", err)
+	}
+	fmt.Println(successStyle.Render("  Files created"))
 
 	fmt.Println(infoStyle.Render("Creating sample tables..."))
 	if err := store.SeedTables(ctx); err != nil {

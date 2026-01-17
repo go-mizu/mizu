@@ -185,6 +185,7 @@ type StorageStore interface {
 	GetObject(ctx context.Context, bucketID, name string) (*Object, error)
 	ListObjects(ctx context.Context, bucketID, prefix string, limit, offset int) ([]*Object, error)
 	UpdateObject(ctx context.Context, obj *Object) error
+	UpdateObjectSize(ctx context.Context, objectID string, size int64) error
 	DeleteObject(ctx context.Context, bucketID, name string) error
 	MoveObject(ctx context.Context, bucketID, srcName, dstName string) error
 	CopyObject(ctx context.Context, srcBucketID, srcName, dstBucketID, dstName string) error

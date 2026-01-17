@@ -55,6 +55,11 @@ func (w *responseWriterWrapper) Flush() {
 	}
 }
 
+// Unwrap returns the underlying http.ResponseWriter for middleware unwrapping.
+func (w *responseWriterWrapper) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 // LoggingConfig configures the logging middleware.
 type LoggingConfig struct {
 	// LogsStore is the store for writing logs.

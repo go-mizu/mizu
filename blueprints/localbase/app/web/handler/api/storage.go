@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,12 +19,29 @@ import (
 
 // StorageHandler handles storage endpoints.
 type StorageHandler struct {
-	store *postgres.Store
+	store   *postgres.Store
+	dataDir string // Directory for storing file content
 }
 
 // NewStorageHandler creates a new storage handler.
 func NewStorageHandler(store *postgres.Store) *StorageHandler {
-	return &StorageHandler{store: store}
+	// Default data directory
+	dataDir := os.Getenv("LOCALBASE_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "./data/storage"
+	}
+	// Ensure directory exists
+	os.MkdirAll(dataDir, 0755)
+
+	return &StorageHandler{
+		store:   store,
+		dataDir: dataDir,
+	}
+}
+
+// getFilePath returns the filesystem path for a storage object
+func (h *StorageHandler) getFilePath(bucketID, objectPath string) string {
+	return filepath.Join(h.dataDir, bucketID, objectPath)
 }
 
 // Supabase Storage error response format
@@ -349,10 +367,15 @@ func (h *StorageHandler) UploadObject(c *mizu.Ctx) error {
 	// Sanitize path to prevent path traversal attacks
 	path = sanitizeStoragePath(path)
 
-	// Get bucket to verify it exists
+	// Get bucket to verify it exists (try by ID first, then by name for Supabase compatibility)
 	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
 	if err != nil {
-		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		// Try by name as fallback
+		bucket, err = h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
 	}
 
 	// Check storage access (RLS enforcement)
@@ -419,15 +442,30 @@ func (h *StorageHandler) UploadObject(c *mizu.Ctx) error {
 		UpdatedAt:   time.Now(),
 	}
 
+	// Save file content to filesystem
+	filePath := h.getFilePath(bucketID, path)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to create directory")
+	}
+	if err := os.WriteFile(filePath, content, 0644); err != nil {
+		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to save file")
+	}
+
 	if err := h.store.Storage().CreateObject(c.Context(), obj); err != nil {
 		if strings.Contains(err.Error(), "duplicate") && upsert {
 			// Update existing object
 			if err := h.store.Storage().UpdateObject(c.Context(), obj); err != nil {
+				// Clean up file on failure
+				os.Remove(filePath)
 				return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to update object")
 			}
 		} else if strings.Contains(err.Error(), "duplicate") {
+			// Clean up file on conflict
+			os.Remove(filePath)
 			return storageError(c, http.StatusConflict, "Conflict", "object already exists")
 		} else {
+			// Clean up file on failure
+			os.Remove(filePath)
 			return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to create object")
 		}
 	}
@@ -450,10 +488,15 @@ func (h *StorageHandler) UpdateObject(c *mizu.Ctx) error {
 	// Sanitize path to prevent path traversal attacks
 	path = sanitizeStoragePath(path)
 
-	// Check bucket exists and get bucket for RLS check
+	// Check bucket exists and get bucket for RLS check (try by ID first, then by name)
 	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
 	if err != nil {
-		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		// Try by name as fallback
+		bucket, err = h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
 	}
 
 	// Check storage access (RLS enforcement) - SEC-008 fix
@@ -503,10 +546,15 @@ func (h *StorageHandler) DownloadObject(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
 
-	// Get bucket for RLS check
+	// Get bucket for RLS check (try by ID first, then by name for Supabase compatibility)
 	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
 	if err != nil {
-		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		// Try by name as fallback
+		bucket, err = h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
 	}
 
 	// Check storage access (RLS enforcement)
@@ -527,9 +575,198 @@ func (h *StorageHandler) DownloadObject(c *mizu.Ctx) error {
 		c.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	}
 
-	// In production, stream actual file content
-	// For now, return placeholder
-	return c.Text(http.StatusOK, "file content placeholder")
+	// Try to read actual file content from filesystem
+	filePath := h.getFilePath(bucketID, path)
+	content, err := os.ReadFile(filePath)
+	if err == nil {
+		// Serve actual file content
+		c.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
+		return c.Bytes(http.StatusOK, content, obj.ContentType)
+	}
+
+	// File doesn't exist on filesystem (seeded files) - generate placeholder content
+	placeholder, placeholderContentType := h.generatePlaceholderContent(obj.ContentType, obj.Name, obj.Size)
+	c.Header().Set("Content-Length", fmt.Sprintf("%d", len(placeholder)))
+	return c.Bytes(http.StatusOK, placeholder, placeholderContentType)
+}
+
+// generatePlaceholderContent generates appropriate placeholder content based on content type
+// Returns the content and the actual content type to use (may differ for placeholders)
+func (h *StorageHandler) generatePlaceholderContent(contentType, name string, size int64) ([]byte, string) {
+	// For images, generate an SVG placeholder (returns SVG content type)
+	if strings.HasPrefix(contentType, "image/") {
+		return h.generateImagePlaceholder(name, contentType), "image/svg+xml"
+	}
+
+	// For text files, generate sample text
+	if strings.HasPrefix(contentType, "text/") || contentType == "application/json" ||
+		contentType == "application/xml" || contentType == "application/x-yaml" ||
+		contentType == "application/sql" || contentType == "application/toml" {
+		return h.generateTextPlaceholder(name, contentType), contentType
+	}
+
+	// For other types, return a generic placeholder as plain text
+	return []byte(fmt.Sprintf("Placeholder content for: %s\nContent-Type: %s\nSize: %d bytes", name, contentType, size)), "text/plain"
+}
+
+// generateImagePlaceholder generates an SVG placeholder for image files
+func (h *StorageHandler) generateImagePlaceholder(name, contentType string) []byte {
+	// Get filename without path
+	filename := filepath.Base(name)
+
+	// Generate a color based on filename hash
+	hash := 0
+	for _, c := range filename {
+		hash = hash*31 + int(c)
+	}
+	colors := []string{"#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16"}
+	bgColor := colors[abs(hash)%len(colors)]
+
+	// Create SVG placeholder
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="%s"/>
+  <rect x="160" y="100" width="80" height="60" fill="white" opacity="0.3" rx="8"/>
+  <circle cx="185" cy="118" r="8" fill="white" opacity="0.5"/>
+  <polygon points="165,150 200,125 235,150" fill="white" opacity="0.5"/>
+  <text x="200" y="200" font-family="system-ui, sans-serif" font-size="14" fill="white" text-anchor="middle" opacity="0.8">%s</text>
+</svg>`, bgColor, filename)
+
+	return []byte(svg)
+}
+
+// generateTextPlaceholder generates sample text content based on file type
+func (h *StorageHandler) generateTextPlaceholder(name, contentType string) []byte {
+	filename := filepath.Base(name)
+	ext := strings.ToLower(filepath.Ext(filename))
+
+	switch ext {
+	case ".json":
+		return []byte(`{
+  "name": "sample",
+  "version": "1.0.0",
+  "description": "Sample JSON file",
+  "data": {
+    "items": ["item1", "item2", "item3"],
+    "count": 3
+  }
+}`)
+	case ".yaml", ".yml":
+		return []byte(`# Sample YAML configuration
+name: sample
+version: 1.0.0
+settings:
+  debug: true
+  timeout: 30
+items:
+  - item1
+  - item2
+  - item3
+`)
+	case ".md":
+		return []byte(`# Sample Markdown
+
+This is a sample markdown file.
+
+## Features
+
+- Feature 1
+- Feature 2
+- Feature 3
+
+## Code Example
+
+` + "```go" + `
+func main() {
+    fmt.Println("Hello, World!")
+}
+` + "```" + `
+`)
+	case ".sql":
+		return []byte(`-- Sample SQL file
+SELECT * FROM users WHERE active = true;
+
+CREATE TABLE IF NOT EXISTS sample (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+`)
+	case ".go":
+		return []byte(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, World!")
+}
+`)
+	case ".ts", ".tsx":
+		return []byte(`import React from 'react';
+
+interface Props {
+  title: string;
+}
+
+export const Component: React.FC<Props> = ({ title }) => {
+  return <div>{title}</div>;
+};
+`)
+	case ".py":
+		return []byte(`#!/usr/bin/env python3
+"""Sample Python script."""
+
+def main():
+    print("Hello, World!")
+
+if __name__ == "__main__":
+    main()
+`)
+	case ".css":
+		return []byte(`:root {
+  --primary-color: #3b82f6;
+  --background: #ffffff;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  background: var(--background);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+`)
+	case ".html":
+		return []byte(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sample HTML</title>
+</head>
+<body>
+  <h1>Hello, World!</h1>
+  <p>This is a sample HTML file.</p>
+</body>
+</html>
+`)
+	case ".svg":
+		return []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="40" fill="#3B82F6"/>
+  <text x="50" y="55" font-family="system-ui" font-size="12" fill="white" text-anchor="middle">SVG</text>
+</svg>`)
+	default:
+		return []byte(fmt.Sprintf("// Sample content for: %s\n// Content-Type: %s\n\nThis is placeholder content.", filename, contentType))
+	}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // DownloadPublicObject downloads a public file.
@@ -559,6 +796,15 @@ func (h *StorageHandler) DownloadAuthenticatedObject(c *mizu.Ctx) error {
 func (h *StorageHandler) GetObjectInfo(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
+
+	// Try bucket lookup by ID first, then by name for Supabase compatibility
+	if _, err := h.store.Storage().GetBucket(c.Context(), bucketID); err != nil {
+		bucket, err := h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
+	}
 
 	obj, err := h.store.Storage().GetObject(c.Context(), bucketID, path)
 	if err != nil {
@@ -607,10 +853,15 @@ func (h *StorageHandler) DeleteObject(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
 
-	// Get bucket for RLS check
+	// Get bucket for RLS check (try by ID first, then by name for Supabase compatibility)
 	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
 	if err != nil {
-		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		// Try by name as fallback
+		bucket, err = h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
 	}
 
 	// Check storage access (RLS enforcement)
@@ -853,6 +1104,15 @@ func (h *StorageHandler) CreateSignedURL(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
 
+	// Try bucket lookup by ID first, then by name for Supabase compatibility
+	if _, err := h.store.Storage().GetBucket(c.Context(), bucketID); err != nil {
+		bucket, err := h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
+	}
+
 	var req struct {
 		ExpiresIn int `json:"expiresIn"` // seconds
 	}
@@ -880,6 +1140,15 @@ func (h *StorageHandler) CreateSignedURL(c *mizu.Ctx) error {
 // CreateSignedURLs creates multiple signed URLs.
 func (h *StorageHandler) CreateSignedURLs(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
+
+	// Try bucket lookup by ID first, then by name for Supabase compatibility
+	if _, err := h.store.Storage().GetBucket(c.Context(), bucketID); err != nil {
+		bucket, err := h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
+	}
 
 	var req struct {
 		ExpiresIn int      `json:"expiresIn"`
@@ -923,9 +1192,13 @@ func (h *StorageHandler) CreateUploadSignedURL(c *mizu.Ctx) error {
 	bucketID := c.Param("bucket")
 	path := c.Param("path")
 
-	// Check bucket exists
+	// Check bucket exists (try by ID first, then by name for Supabase compatibility)
 	if _, err := h.store.Storage().GetBucket(c.Context(), bucketID); err != nil {
-		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		bucket, err := h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
 	}
 
 	token := uuid.New().String()
