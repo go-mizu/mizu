@@ -19,7 +19,7 @@ import {
   IconCode,
   IconApi,
   IconSettings,
-  IconDashboard,
+  IconLayoutDashboard,
   IconTable,
   IconChevronLeft,
   IconChevronRight,
@@ -30,19 +30,25 @@ import {
   IconUserShield,
   IconFileText,
   IconTerminal2,
+  IconBroadcast,
+  IconAlertCircle,
+  IconChartBar,
+  IconPlugConnected,
 } from '@tabler/icons-react';
 import { useAppStore } from '../../stores/appStore';
 import { useState } from 'react';
 
 interface NavItem {
-  icon: typeof IconDashboard;
+  icon: typeof IconLayoutDashboard;
   label: string;
   path: string;
   children?: NavItem[];
+  badge?: string;
+  badgeColor?: string;
 }
 
 const navItems: NavItem[] = [
-  { icon: IconDashboard, label: 'Dashboard', path: '/' },
+  { icon: IconLayoutDashboard, label: 'Project Overview', path: '/' },
   { icon: IconTable, label: 'Table Editor', path: '/table-editor' },
   { icon: IconCode, label: 'SQL Editor', path: '/sql-editor' },
   {
@@ -50,23 +56,30 @@ const navItems: NavItem[] = [
     label: 'Database',
     path: '/database',
     children: [
-      { icon: IconShield, label: 'Policies', path: '/database/policies' },
-      { icon: IconList, label: 'Indexes', path: '/database/indexes' },
+      { icon: IconTable, label: 'Tables', path: '/table-editor' },
       { icon: IconEye, label: 'Views', path: '/database/views' },
+      { icon: IconTerminal2, label: 'Functions', path: '/database/functions' },
       { icon: IconBolt, label: 'Triggers', path: '/database/triggers' },
       { icon: IconUserShield, label: 'Roles', path: '/database/roles' },
+      { icon: IconShield, label: 'Policies', path: '/database/policies' },
+      { icon: IconList, label: 'Indexes', path: '/database/indexes' },
     ],
   },
   { icon: IconUsers, label: 'Authentication', path: '/auth/users' },
   { icon: IconFolder, label: 'Storage', path: '/storage' },
-  { icon: IconBolt, label: 'Realtime', path: '/realtime' },
   { icon: IconTerminal2, label: 'Edge Functions', path: '/functions' },
+  { icon: IconBroadcast, label: 'Realtime', path: '/realtime' },
+];
+
+const toolsItems: NavItem[] = [
+  { icon: IconAlertCircle, label: 'Advisors', path: '/advisors', badge: 'New', badgeColor: 'green' },
   { icon: IconFileText, label: 'Logs', path: '/logs' },
   { icon: IconApi, label: 'API Docs', path: '/api-docs' },
+  { icon: IconPlugConnected, label: 'Integrations', path: '/integrations', badge: 'New', badgeColor: 'green' },
 ];
 
 const bottomNavItems: NavItem[] = [
-  { icon: IconSettings, label: 'Settings', path: '/settings' },
+  { icon: IconSettings, label: 'Project Settings', path: '/settings' },
 ];
 
 export function Sidebar() {
@@ -171,6 +184,13 @@ export function Sidebar() {
           to={item.path}
           label={sidebarCollapsed ? undefined : item.label}
           leftSection={<item.icon size={18} stroke={1.5} />}
+          rightSection={
+            item.badge && !sidebarCollapsed ? (
+              <Badge size="xs" variant="light" color={item.badgeColor || 'gray'}>
+                {item.badge}
+              </Badge>
+            ) : undefined
+          }
           active={isActive(item.path)}
           style={{ borderRadius: 6 }}
         />
@@ -222,6 +242,14 @@ export function Sidebar() {
       <Box p="xs" style={{ flex: 1, overflow: 'auto' }}>
         <Stack gap={2}>
           {navItems.map((item) => renderNavItem(item))}
+        </Stack>
+
+        {/* Divider before tools */}
+        <Divider my="sm" />
+
+        {/* Tools Section */}
+        <Stack gap={2}>
+          {toolsItems.map((item) => renderNavItem(item))}
         </Stack>
       </Box>
 
