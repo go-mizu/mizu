@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -413,7 +414,7 @@ func (h *StorageHandler) UploadObject(c *mizu.Ctx) error {
 		ContentType: contentType,
 		Size:        int64(len(content)),
 		Version:     uuid.New().String(),
-		Metadata:    make(map[string]string),
+		Metadata:    make(map[string]any),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -676,9 +677,11 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 	}
 
 	// Use standard JSON decoder without DisallowUnknownFields
-	dec := json.NewDecoder(c.Request().Body)
-	if err := dec.Decode(&req); err != nil && err.Error() != "EOF" {
-		return storageError(c, http.StatusBadRequest, "Bad Request", "invalid request body: "+err.Error())
+	if c.Request().Body != nil {
+		dec := json.NewDecoder(c.Request().Body)
+		if err := dec.Decode(&req); err != nil && err != io.EOF {
+			return storageError(c, http.StatusBadRequest, "Bad Request", "invalid request body: "+err.Error())
+		}
 	}
 
 	if req.Limit == 0 {
@@ -687,7 +690,9 @@ func (h *StorageHandler) ListObjects(c *mizu.Ctx) error {
 
 	objects, err := h.store.Storage().ListObjects(c.Context(), bucketID, req.Prefix, req.Limit, req.Offset)
 	if err != nil {
-		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to list objects")
+		// Log the actual error for debugging
+		fmt.Printf("ListObjects error for bucket %s: %v\n", bucketID, err)
+		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to list objects: "+err.Error())
 	}
 
 	// Format response to match Supabase (include content_type and size for UI)
