@@ -26,6 +26,7 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	logsHandler := api.NewLogsHandler(store)
 	settingsHandler := api.NewSettingsHandler(store)
 	reportsHandler := api.NewReportsHandler(store)
+	playgroundHandler := api.NewPlaygroundHandler(store)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
@@ -329,6 +330,20 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		settings.Patch("/database", settingsHandler.UpdateDatabaseSettings)
 		settings.Get("/storage", settingsHandler.GetStorageSettings)
 		settings.Patch("/storage", settingsHandler.UpdateStorageSettings)
+	})
+
+	// API Playground - Interactive API testing
+	app.Group("/api/playground", func(playground *mizu.Router) {
+		playground.Use(apiKeyMw)
+		playground.Use(serviceRoleMw)
+		playground.Get("/endpoints", playgroundHandler.GetEndpoints)
+		playground.Get("/tables", playgroundHandler.GetTables)
+		playground.Get("/functions", playgroundHandler.GetFunctions)
+		playground.Get("/docs/{schema}/{table}", playgroundHandler.GetTableDocs)
+		playground.Post("/execute", playgroundHandler.Execute)
+		playground.Get("/history", playgroundHandler.GetHistory)
+		playground.Post("/history", playgroundHandler.SaveHistory)
+		playground.Delete("/history", playgroundHandler.ClearHistory)
 	})
 
 	// postgres-meta API - Supabase Dashboard compatibility

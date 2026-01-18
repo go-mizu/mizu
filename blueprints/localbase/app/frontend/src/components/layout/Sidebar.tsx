@@ -37,6 +37,7 @@ import {
   IconSchema,
   IconSearch,
   IconChartBar,
+  IconPlayerPlay,
 } from '@tabler/icons-react';
 import { useAppStore } from '../../stores/appStore';
 import { useState } from 'react';
@@ -78,6 +79,7 @@ const toolsItems: NavItem[] = [
   { icon: IconAlertCircle, label: 'Advisors', path: '/advisors', badge: 'New', badgeColor: 'green' },
   { icon: IconChartBar, label: 'Reports', path: '/reports' },
   { icon: IconFileText, label: 'Logs', path: '/logs' },
+  { icon: IconPlayerPlay, label: 'API Playground', path: '/api-playground', badge: 'New', badgeColor: 'green' },
   { icon: IconApi, label: 'API Docs', path: '/api-docs' },
   { icon: IconPlugConnected, label: 'Integrations', path: '/integrations', badge: 'New', badgeColor: 'green' },
 ];
