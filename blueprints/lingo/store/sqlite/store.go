@@ -66,6 +66,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying database connection
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 // CreateExtensions is a no-op for SQLite
 func (s *Store) CreateExtensions(ctx context.Context) error {
 	return nil

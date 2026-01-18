@@ -10,15 +10,19 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/lingo/app/web"
+	"github.com/go-mizu/mizu/blueprints/lingo/store"
 	"github.com/go-mizu/mizu/blueprints/lingo/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/lingo/store/sqlite"
 	"github.com/spf13/cobra"
 )
 
 // NewServe creates the serve command
 func NewServe() *cobra.Command {
 	var (
-		port    int
-		devMode bool
+		port      int
+		devMode   bool
+		useSqlite bool
+		dbPath    string
 	)
 
 	cmd := &cobra.Command{
@@ -33,30 +37,40 @@ func NewServe() *cobra.Command {
 
 The server runs on port 8080 by default.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(cmd.Context(), port, devMode)
+			return runServe(cmd.Context(), port, devMode, useSqlite, dbPath)
 		},
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on")
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Enable development mode")
+	cmd.Flags().BoolVar(&useSqlite, "sqlite", false, "Use SQLite instead of PostgreSQL")
+	cmd.Flags().StringVar(&dbPath, "db", "lingo.db", "SQLite database path (when --sqlite is set)")
 
 	return cmd
 }
 
-func runServe(ctx context.Context, port int, devMode bool) error {
+func runServe(ctx context.Context, port int, devMode, useSqlite bool, dbPath string) error {
 	fmt.Println(Banner())
 
 	// Connect to database
-	fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
-	store, err := postgres.New(ctx, GetDatabaseURL())
+	var st store.Store
+	var err error
+
+	if useSqlite {
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Connecting to SQLite (%s)...", dbPath)))
+		st, err = sqlite.New(ctx, dbPath)
+	} else {
+		fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
+		st, err = postgres.New(ctx, GetDatabaseURL())
+	}
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer store.Close()
+	defer st.Close()
 	fmt.Println(successStyle.Render("  Connected"))
 
 	// Create server
-	srv, err := web.NewServer(store, devMode)
+	srv, err := web.NewServer(st, devMode)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
