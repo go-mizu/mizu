@@ -448,9 +448,9 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 		Difficulty: level,
 	}
 
-	translation := vocab.Translations[0]
-	if len(vocab.Translations) == 0 {
-		translation = "unknown"
+	translation := "unknown"
+	if len(vocab.Translations) > 0 {
+		translation = vocab.Translations[0]
 	}
 
 	switch exType {

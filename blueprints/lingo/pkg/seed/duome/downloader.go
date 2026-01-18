@@ -186,8 +186,14 @@ func (d *Downloader) DownloadVocabulary(ctx context.Context, pair LanguagePair) 
 		return err
 	}
 
-	url := pair.VocabularyURL()
 	path := d.VocabularyPath(pair)
+
+	// Skip if file already exists and has content
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		return nil // Already downloaded
+	}
+
+	url := pair.VocabularyURL()
 
 	data, err := d.fetch(ctx, url)
 	if err != nil {
@@ -218,8 +224,14 @@ func (d *Downloader) DownloadTips(ctx context.Context, pair LanguagePair) error 
 		return err
 	}
 
-	url := pair.TipsURL()
 	path := d.TipsPath(pair)
+
+	// Skip if file already exists and has content
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		return nil // Already downloaded
+	}
+
+	url := pair.TipsURL()
 
 	data, err := d.fetch(ctx, url)
 	if err != nil {
@@ -246,19 +258,39 @@ func (d *Downloader) DownloadTips(ctx context.Context, pair LanguagePair) error 
 
 // DownloadPair downloads both vocabulary and tips for a language pair
 func (d *Downloader) DownloadPair(ctx context.Context, pair LanguagePair) error {
-	// Download vocabulary
+	// Check if both files already exist
+	vocabPath := d.VocabularyPath(pair)
+	tipsPath := d.TipsPath(pair)
+	vocabExists := false
+	tipsExists := false
+
+	if info, err := os.Stat(vocabPath); err == nil && info.Size() > 0 {
+		vocabExists = true
+	}
+	if info, err := os.Stat(tipsPath); err == nil && info.Size() > 0 {
+		tipsExists = true
+	}
+
+	// If both exist, skip entirely
+	if vocabExists && tipsExists {
+		return nil
+	}
+
+	// Download vocabulary (will skip if exists)
 	if err := d.DownloadVocabulary(ctx, pair); err != nil {
 		return fmt.Errorf("download vocabulary: %w", err)
 	}
 
-	// Rate limiting delay
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(d.delay):
+	// Rate limiting delay only if we actually downloaded something
+	if !vocabExists {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d.delay):
+		}
 	}
 
-	// Download tips
+	// Download tips (will skip if exists)
 	if err := d.DownloadTips(ctx, pair); err != nil {
 		return fmt.Errorf("download tips: %w", err)
 	}
@@ -274,14 +306,17 @@ func (d *Downloader) DownloadAll(ctx context.Context, pairs []LanguagePair) erro
 			d.progress(i+1, total, fmt.Sprintf("Downloading %s", pair))
 		}
 
+		// Check if already downloaded before attempting
+		alreadyDownloaded := d.IsPairDownloaded(pair)
+
 		if err := d.DownloadPair(ctx, pair); err != nil {
 			// Log error but continue with other pairs
 			fmt.Printf("Warning: failed to download %s: %v\n", pair, err)
 			continue
 		}
 
-		// Rate limiting between pairs
-		if i < total-1 {
+		// Rate limiting between pairs only if we actually downloaded something
+		if i < total-1 && !alreadyDownloaded {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -291,6 +326,18 @@ func (d *Downloader) DownloadAll(ctx context.Context, pairs []LanguagePair) erro
 	}
 
 	return nil
+}
+
+// IsPairDownloaded checks if both vocabulary and tips files exist for a pair
+func (d *Downloader) IsPairDownloaded(pair LanguagePair) bool {
+	vocabPath := d.VocabularyPath(pair)
+	tipsPath := d.TipsPath(pair)
+
+	vocabInfo, vocabErr := os.Stat(vocabPath)
+	tipsInfo, tipsErr := os.Stat(tipsPath)
+
+	return vocabErr == nil && vocabInfo.Size() > 0 &&
+		tipsErr == nil && tipsInfo.Size() > 0
 }
 
 // DownloadAllSupported downloads all supported language pairs

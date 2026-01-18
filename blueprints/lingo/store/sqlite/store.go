@@ -424,8 +424,9 @@ func (s *Store) Achievements() store.AchievementStore {
 // Seeding functions
 // ============================================================================
 
-// SeedLanguages seeds the languages table
+// SeedLanguages seeds the languages table with all supported languages
 func (s *Store) SeedLanguages(ctx context.Context) error {
+	// Comprehensive list of all supported languages
 	languages := []struct {
 		ID         string
 		Name       string
@@ -433,14 +434,55 @@ func (s *Store) SeedLanguages(ctx context.Context) error {
 		FlagEmoji  string
 		RTL        bool
 	}{
+		// Major languages
 		{"en", "English", "English", "🇺🇸", false},
 		{"es", "Spanish", "Español", "🇪🇸", false},
 		{"fr", "French", "Français", "🇫🇷", false},
 		{"de", "German", "Deutsch", "🇩🇪", false},
+		{"it", "Italian", "Italiano", "🇮🇹", false},
+		{"pt", "Portuguese", "Português", "🇧🇷", false},
+		{"nl", "Dutch", "Nederlands", "🇳🇱", false},
+		{"sv", "Swedish", "Svenska", "🇸🇪", false},
+		{"nb", "Norwegian Bokmål", "Norsk Bokmål", "🇳🇴", false},
+		{"da", "Danish", "Dansk", "🇩🇰", false},
+		{"fi", "Finnish", "Suomi", "🇫🇮", false},
+		{"ru", "Russian", "Русский", "🇷🇺", false},
+		{"tr", "Turkish", "Türkçe", "🇹🇷", false},
+		{"ar", "Arabic", "العربية", "🇸🇦", true},
 		{"ja", "Japanese", "日本語", "🇯🇵", false},
 		{"ko", "Korean", "한국어", "🇰🇷", false},
 		{"zh", "Chinese", "中文", "🇨🇳", false},
-		{"pt", "Portuguese", "Português", "🇧🇷", false},
+		{"zs", "Chinese (Simplified)", "简体中文", "🇨🇳", false},
+		{"zc", "Cantonese", "廣東話", "🇭🇰", false},
+		{"hu", "Hungarian", "Magyar", "🇭🇺", false},
+		{"ro", "Romanian", "Română", "🇷🇴", false},
+		{"ga", "Irish", "Gaeilge", "🇮🇪", false},
+		{"gd", "Scottish Gaelic", "Gàidhlig", "🏴󠁧󠁢󠁳󠁣󠁴󠁿", false},
+		{"cy", "Welsh", "Cymraeg", "🏴󠁧󠁢󠁷󠁬󠁳󠁿", false},
+		{"ca", "Catalan", "Català", "🏴󠁥󠁳󠁣󠁴󠁿", false},
+		{"pl", "Polish", "Polski", "🇵🇱", false},
+		{"uk", "Ukrainian", "Українська", "🇺🇦", false},
+		{"cs", "Czech", "Čeština", "🇨🇿", false},
+		{"el", "Greek", "Ελληνικά", "🇬🇷", false},
+		{"he", "Hebrew", "עברית", "🇮🇱", true},
+		{"hi", "Hindi", "हिन्दी", "🇮🇳", false},
+		{"vi", "Vietnamese", "Tiếng Việt", "🇻🇳", false},
+		{"id", "Indonesian", "Bahasa Indonesia", "🇮🇩", false},
+		{"th", "Thai", "ภาษาไทย", "🇹🇭", false},
+		// Constructed and special languages
+		{"eo", "Esperanto", "Esperanto", "🟢", false},
+		{"la", "Latin", "Latina", "🏛️", false},
+		{"kl", "Klingon", "tlhIngan Hol", "🖖", false},
+		{"hv", "High Valyrian", "High Valyrian", "🐉", false},
+		// Indigenous and regional languages
+		{"gn", "Guarani", "Avañe'ẽ", "🇵🇾", false},
+		{"hw", "Hawaiian", "ʻŌlelo Hawaiʻi", "🌺", false},
+		{"nv", "Navajo", "Diné bizaad", "🏜️", false},
+		{"sw", "Swahili", "Kiswahili", "🇰🇪", false},
+		{"zu", "Zulu", "isiZulu", "🇿🇦", false},
+		{"yi", "Yiddish", "ייִדיש", "🕎", true},
+		{"ht", "Haitian Creole", "Kreyòl ayisyen", "🇭🇹", false},
+		{"dn", "Dutch", "Nederlands", "🇳🇱", false},
 	}
 
 	for _, lang := range languages {
