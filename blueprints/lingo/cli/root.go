@@ -66,6 +66,7 @@ Get started:
 	root.AddCommand(NewServe())
 	root.AddCommand(NewInit())
 	root.AddCommand(NewSeed())
+	root.AddCommand(NewSeedDuome())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
