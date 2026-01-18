@@ -108,10 +108,39 @@ export interface Extension {
 }
 
 export interface QueryResult {
+  query_id?: string;
   columns: string[];
   rows: Record<string, any>[];
   row_count: number;
   duration_ms: number;
+}
+
+export interface QueryHistoryEntry {
+  id: string;
+  query: string;
+  executed_at: string;
+  duration_ms: number;
+  role: string;
+  row_count: number;
+  success: boolean;
+  error?: string;
+}
+
+export interface SQLSnippet {
+  id: string;
+  name: string;
+  query: string;
+  folder_id?: string;
+  is_shared: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SQLFolder {
+  id: string;
+  name: string;
+  parent_id?: string;
+  created_at: string;
 }
 
 // Functions types

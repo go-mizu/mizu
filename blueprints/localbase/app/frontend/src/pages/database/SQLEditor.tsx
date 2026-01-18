@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   Box,
   Button,
@@ -22,6 +22,11 @@ import {
   UnstyledButton,
   Center,
   Loader,
+  Drawer,
+  Slider,
+  Switch,
+  Textarea,
+  ThemeIcon,
 } from '@mantine/core';
 import {
   IconTrash,
@@ -35,31 +40,43 @@ import {
   IconStarFilled,
   IconTemplate,
   IconBook,
-  IconClock,
   IconChartBar,
   IconFileAnalytics,
   IconDotsVertical,
   IconCopy,
   IconFolder,
   IconFile,
+  IconHistory,
+  IconPlayerPlay,
+  IconAdjustments,
+  IconCode,
+  IconBraces,
+  IconTableExport,
+  IconMinus,
+  IconCircleCheck,
+  IconCircleX,
+  IconWand,
+  IconSparkles,
 } from '@tabler/icons-react';
-import Editor from '@monaco-editor/react';
+import Editor, { Monaco } from '@monaco-editor/react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';
 import { databaseApi } from '../../api';
 import { useAppStore } from '../../stores/appStore';
-import type { QueryResult } from '../../types';
+import type { QueryResult, QueryHistoryEntry } from '../../types';
 
 interface QueryTab {
   id: string;
   name: string;
   query: string;
+  selectedText: string | null;
   isDirty: boolean;
+  isTransient: boolean;
   result: QueryResult | null;
   error: string | null;
   loading: boolean;
+  executionRole: string;
 }
-
 
 // Query templates
 const QUERY_TEMPLATES = [
@@ -116,10 +133,13 @@ export function SQLEditorPage() {
       id: crypto.randomUUID(),
       name: 'New query',
       query: '',
+      selectedText: null,
       isDirty: false,
+      isTransient: true,
       result: null,
       error: null,
       loading: false,
+      executionRole: 'postgres',
     },
   ]);
   const [activeTabId, setActiveTabId] = useState(tabs[0].id);
@@ -143,8 +163,43 @@ export function SQLEditorPage() {
   // Favorites (local state, could be persisted)
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
+  // Query history
+  const [historyDrawerOpened, setHistoryDrawerOpened] = useState(false);
+  const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Editor settings
+  const [fontSize, setFontSize] = useState(14);
+  const [settingsOpened, setSettingsOpened] = useState(false);
+  const [wordWrap, setWordWrap] = useState(true);
+  const [minimap, setMinimap] = useState(false);
+
+  // AI Assistant
+  const [aiModalOpened, setAiModalOpened] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+
+  // Results panel
+  const [resultsPanelCollapsed, setResultsPanelCollapsed] = useState(false);
+
+  // Editor ref
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+
   // Get active tab
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+
+  // Load query history
+  const loadQueryHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const history = await databaseApi.getQueryHistory(100, 0);
+      setQueryHistory(history);
+    } catch (err) {
+      console.error('Failed to load query history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   // Toggle section
   const toggleSection = (section: string) => {
@@ -165,10 +220,13 @@ export function SQLEditorPage() {
       id: crypto.randomUUID(),
       name: 'New query',
       query: '',
+      selectedText: null,
       isDirty: false,
+      isTransient: true,
       result: null,
       error: null,
       loading: false,
+      executionRole: selectedRole,
     };
     setTabs([...tabs, newTab]);
     setActiveTabId(newTab.id);
@@ -183,10 +241,13 @@ export function SQLEditorPage() {
           id: crypto.randomUUID(),
           name: 'New query',
           query: '',
+          selectedText: null,
           isDirty: false,
+          isTransient: true,
           result: null,
           error: null,
           loading: false,
+          executionRole: selectedRole,
         },
       ]);
       setActiveTabId(tabs[0].id);
@@ -215,9 +276,38 @@ export function SQLEditorPage() {
     );
   };
 
+  // Update selected text
+  const updateSelectedText = () => {
+    if (editorRef.current) {
+      const selection = editorRef.current.getSelection();
+      const model = editorRef.current.getModel();
+      if (selection && model && !selection.isEmpty()) {
+        const selectedText = model.getValueInRange(selection);
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? { ...t, selectedText }
+              : t
+          )
+        );
+      } else {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? { ...t, selectedText: null }
+              : t
+          )
+        );
+      }
+    }
+  };
+
   // Execute query
-  const executeQuery = useCallback(async () => {
-    if (!activeTab.query.trim()) {
+  const executeQuery = useCallback(async (explain = false) => {
+    // Use selected text if available, otherwise use full query
+    const queryToRun = activeTab.selectedText || activeTab.query;
+
+    if (!queryToRun.trim()) {
       notifications.show({
         title: 'Error',
         message: 'Please enter a query',
@@ -235,7 +325,10 @@ export function SQLEditorPage() {
     );
 
     try {
-      const data = await databaseApi.executeQuery(activeTab.query);
+      const data = await databaseApi.executeQuery(queryToRun, {
+        role: selectedRole,
+        explain,
+      });
       setTabs((prev) =>
         prev.map((t) =>
           t.id === activeTabId
@@ -243,6 +336,13 @@ export function SQLEditorPage() {
             : t
         )
       );
+
+      // Switch to explain tab if explain was requested
+      if (explain) {
+        setResultTab('explain');
+      } else {
+        setResultTab('results');
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'Query execution failed';
       setTabs((prev) =>
@@ -258,7 +358,7 @@ export function SQLEditorPage() {
         color: 'red',
       });
     }
-  }, [activeTab, activeTabId]);
+  }, [activeTab, activeTabId, selectedRole]);
 
   // Save query
   const handleSaveQuery = () => {
@@ -280,11 +380,11 @@ export function SQLEditorPage() {
       color: 'green',
     });
 
-    // Update tab name
+    // Update tab name and make it permanent
     setTabs((prev) =>
       prev.map((t) =>
         t.id === activeTabId
-          ? { ...t, name: newQueryName, isDirty: false }
+          ? { ...t, name: newQueryName, isDirty: false, isTransient: false }
           : t
       )
     );
@@ -295,7 +395,7 @@ export function SQLEditorPage() {
     setTabs((prev) =>
       prev.map((t) =>
         t.id === activeTabId
-          ? { ...t, name, query, isDirty: false }
+          ? { ...t, name, query, isDirty: false, isTransient: false }
           : t
       )
     );
@@ -307,10 +407,13 @@ export function SQLEditorPage() {
       id: crypto.randomUUID(),
       name,
       query,
+      selectedText: null,
       isDirty: false,
+      isTransient: false,
       result: null,
       error: null,
       loading: false,
+      executionRole: selectedRole,
     };
     setTabs([...tabs, newTab]);
     setActiveTabId(newTab.id);
@@ -329,8 +432,8 @@ export function SQLEditorPage() {
     });
   };
 
-  // Export results
-  const exportResults = () => {
+  // Export results as CSV
+  const exportResultsCSV = () => {
     if (!activeTab.result) return;
 
     const csv = [
@@ -349,6 +452,45 @@ export function SQLEditorPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Export results as JSON
+  const exportResultsJSON = () => {
+    if (!activeTab.result) return;
+
+    const json = JSON.stringify(activeTab.result.rows, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'query_results.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Copy as SQL INSERT
+  const copyAsSQLInsert = () => {
+    if (!activeTab.result || activeTab.result.rows.length === 0) return;
+
+    const columns = activeTab.result.columns;
+    const inserts = activeTab.result.rows.map((row) => {
+      const values = columns.map((col) => {
+        const val = row[col];
+        if (val === null) return 'NULL';
+        if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+        if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+        if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+        return String(val);
+      });
+      return `INSERT INTO table_name (${columns.join(', ')}) VALUES (${values.join(', ')});`;
+    });
+
+    navigator.clipboard.writeText(inserts.join('\n'));
+    notifications.show({
+      title: 'Copied',
+      message: 'SQL INSERT statements copied to clipboard',
+      color: 'green',
+    });
+  };
+
   // Filter saved queries
   const filteredQueries = savedQueries.filter(
     (q) =>
@@ -358,6 +500,54 @@ export function SQLEditorPage() {
 
   // Get favorite queries
   const favoriteQueries = savedQueries.filter((q) => favorites.has(q.id));
+
+  // Handle editor mount
+  const handleEditorMount = (editor: any, monaco: Monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // Ctrl/Cmd + Enter to run
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+      () => executeQuery()
+    );
+
+    // Ctrl/Cmd + K for AI assistant
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK,
+      () => setAiModalOpened(true)
+    );
+
+    // Ctrl/Cmd + S to save
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+      () => setSaveModalOpened(true)
+    );
+
+    // Track selection changes
+    editor.onDidChangeCursorSelection(() => {
+      updateSelectedText();
+    });
+  };
+
+  // Format duration
+  const formatDuration = (ms: number) => {
+    if (ms < 1) return `${(ms * 1000).toFixed(0)}µs`;
+    if (ms < 1000) return `${ms.toFixed(2)}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  // Format date
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return date.toLocaleDateString();
+  };
 
   return (
     <PageContainer title="SQL Editor" description="" fullWidth noPadding noHeader>
@@ -482,7 +672,7 @@ export function SQLEditorPage() {
                           No private queries created yet
                         </Text>
                         <Text size="xs" c="dimmed">
-                          Queries will be automatically saved once you start writing in the editor
+                          Save queries to see them here
                         </Text>
                       </Box>
                     ) : (
@@ -599,15 +789,19 @@ export function SQLEditorPage() {
             </Stack>
           </ScrollArea>
 
-          {/* Running queries button */}
+          {/* Running queries / History button */}
           <Box p="sm" style={{ borderTop: '1px solid var(--supabase-border)' }}>
             <Button
               variant="subtle"
               fullWidth
               size="xs"
-              leftSection={<IconClock size={14} />}
+              leftSection={<IconHistory size={14} />}
+              onClick={() => {
+                loadQueryHistory();
+                setHistoryDrawerOpened(true);
+              }}
             >
-              View running queries
+              Query History
             </Button>
           </Box>
         </Box>
@@ -629,6 +823,14 @@ export function SQLEditorPage() {
                   <Box
                     key={tab.id}
                     onClick={() => setActiveTabId(tab.id)}
+                    onDoubleClick={() => {
+                      // Make transient tab permanent on double-click
+                      setTabs((prev) =>
+                        prev.map((t) =>
+                          t.id === tab.id ? { ...t, isTransient: false } : t
+                        )
+                      );
+                    }}
                     style={{
                       padding: '8px 12px',
                       cursor: 'pointer',
@@ -647,7 +849,7 @@ export function SQLEditorPage() {
                     }}
                   >
                     <IconFile size={14} />
-                    <Text size="sm">
+                    <Text size="sm" style={{ fontStyle: tab.isTransient ? 'italic' : 'normal' }}>
                       {tab.name}
                       {tab.isDirty && ' *'}
                     </Text>
@@ -679,8 +881,73 @@ export function SQLEditorPage() {
             </ScrollArea>
           </Box>
 
+          {/* Editor Toolbar */}
+          <Box
+            px="sm"
+            py={6}
+            style={{
+              borderBottom: '1px solid var(--supabase-border)',
+              backgroundColor: 'var(--supabase-bg)',
+            }}
+          >
+            <Group justify="space-between">
+              <Group gap="xs">
+                <Tooltip label="AI Assistant (⌘K)">
+                  <ActionIcon variant="subtle" size="sm" onClick={() => setAiModalOpened(true)}>
+                    <IconSparkles size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Format SQL">
+                  <ActionIcon variant="subtle" size="sm">
+                    <IconCode size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                <Divider orientation="vertical" />
+                <Tooltip label="Decrease font size">
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    onClick={() => setFontSize((s) => Math.max(10, s - 1))}
+                  >
+                    <IconMinus size={14} />
+                  </ActionIcon>
+                </Tooltip>
+                <Text size="xs" w={40} ta="center">{fontSize}px</Text>
+                <Tooltip label="Increase font size">
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    onClick={() => setFontSize((s) => Math.min(24, s + 1))}
+                  >
+                    <IconPlus size={14} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Settings">
+                  <ActionIcon variant="subtle" size="sm" onClick={() => setSettingsOpened(true)}>
+                    <IconAdjustments size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
+              <Group gap="xs">
+                {activeTab.selectedText && (
+                  <Badge size="xs" variant="light" color="blue">
+                    Selection active
+                  </Badge>
+                )}
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  leftSection={<IconDownload size={14} />}
+                  onClick={() => setSaveModalOpened(true)}
+                >
+                  Save
+                </Button>
+              </Group>
+            </Group>
+          </Box>
+
           {/* Editor */}
-          <Box style={{ flex: '0 0 50%', borderBottom: '1px solid var(--supabase-border)' }}>
+          <Box style={{ flex: resultsPanelCollapsed ? 1 : '0 0 50%', borderBottom: '1px solid var(--supabase-border)' }}>
             <Editor
               height="100%"
               defaultLanguage="sql"
@@ -688,46 +955,38 @@ export function SQLEditorPage() {
               onChange={(value) => updateTabQuery(value || '')}
               theme="vs-light"
               options={{
-                minimap: { enabled: false },
-                fontSize: 14,
+                minimap: { enabled: minimap },
+                fontSize,
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
                 tabSize: 2,
-                wordWrap: 'on',
-                placeholder: 'Hit CMD+K to generate query or just start typing',
+                wordWrap: wordWrap ? 'on' : 'off',
               }}
-              onMount={(editor, monaco) => {
-                // Ctrl/Cmd + Enter to run
-                editor.addCommand(
-                  monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-                  () => executeQuery()
-                );
-
-                // Placeholder text when empty
-                if (!activeTab.query) {
-                  const model = editor.getModel();
-                  if (model) {
-                    // We could add decorations for placeholder
-                  }
-                }
-              }}
+              onMount={handleEditorMount}
             />
           </Box>
 
           {/* Results Panel */}
-          <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Box style={{ flex: resultsPanelCollapsed ? 0 : 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Results Header */}
             <Box
               px="sm"
               py="xs"
               style={{
-                borderBottom: '1px solid var(--supabase-border)',
+                borderBottom: resultsPanelCollapsed ? 'none' : '1px solid var(--supabase-border)',
                 backgroundColor: 'var(--supabase-bg)',
               }}
             >
               <Group justify="space-between">
                 <Group gap="xs">
+                  <ActionIcon
+                    size="xs"
+                    variant="subtle"
+                    onClick={() => setResultsPanelCollapsed(!resultsPanelCollapsed)}
+                  >
+                    {resultsPanelCollapsed ? <IconChevronDown size={14} /> : <IconChevronRight size={14} style={{ transform: 'rotate(90deg)' }} />}
+                  </ActionIcon>
                   <SegmentedControl
                     size="xs"
                     value={resultTab}
@@ -740,23 +999,58 @@ export function SQLEditorPage() {
                   />
                   {activeTab.result && (
                     <Badge size="sm" variant="light" color="green">
-                      {activeTab.result.row_count} rows in {activeTab.result.duration_ms.toFixed(2)}ms
+                      {activeTab.result.row_count} rows in {formatDuration(activeTab.result.duration_ms)}
                     </Badge>
                   )}
                 </Group>
                 <Group gap="xs">
                   {activeTab.result && activeTab.result.rows.length > 0 && (
                     <>
-                      <Tooltip label="Copy as CSV">
-                        <ActionIcon variant="subtle" size="sm">
-                          <IconCopy size={14} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Export as CSV">
-                        <ActionIcon variant="subtle" size="sm" onClick={exportResults}>
-                          <IconDownload size={14} />
-                        </ActionIcon>
-                      </Tooltip>
+                      <Menu position="bottom-end">
+                        <Menu.Target>
+                          <Button size="xs" variant="subtle" leftSection={<IconCopy size={14} />}>
+                            Copy
+                          </Button>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          <Menu.Item
+                            leftSection={<IconCopy size={14} />}
+                            onClick={() => {
+                              navigator.clipboard.writeText(JSON.stringify(activeTab.result?.rows, null, 2));
+                              notifications.show({ message: 'Copied as JSON', color: 'green' });
+                            }}
+                          >
+                            Copy as JSON
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconTableExport size={14} />}
+                            onClick={copyAsSQLInsert}
+                          >
+                            Copy as SQL INSERT
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
+                      <Menu position="bottom-end">
+                        <Menu.Target>
+                          <Button size="xs" variant="subtle" leftSection={<IconDownload size={14} />}>
+                            Export
+                          </Button>
+                        </Menu.Target>
+                        <Menu.Dropdown>
+                          <Menu.Item
+                            leftSection={<IconDownload size={14} />}
+                            onClick={exportResultsCSV}
+                          >
+                            Export as CSV
+                          </Menu.Item>
+                          <Menu.Item
+                            leftSection={<IconBraces size={14} />}
+                            onClick={exportResultsJSON}
+                          >
+                            Export as JSON
+                          </Menu.Item>
+                        </Menu.Dropdown>
+                      </Menu>
                     </>
                   )}
                   <Divider orientation="vertical" />
@@ -781,10 +1075,21 @@ export function SQLEditorPage() {
                     leftSection={<Text size="xs" c="dimmed">Role</Text>}
                     styles={{ input: { fontSize: 12, paddingLeft: 40 } }}
                   />
+                  <Tooltip label="Run with EXPLAIN">
+                    <ActionIcon
+                      variant="subtle"
+                      size="sm"
+                      onClick={() => executeQuery(true)}
+                      loading={activeTab.loading}
+                    >
+                      <IconFileAnalytics size={16} />
+                    </ActionIcon>
+                  </Tooltip>
                   <Button
                     size="xs"
-                    onClick={executeQuery}
+                    onClick={() => executeQuery(false)}
                     loading={activeTab.loading}
+                    leftSection={<IconPlayerPlay size={14} />}
                     rightSection={
                       <Group gap={2}>
                         <Kbd size="xs">⌘</Kbd>
@@ -799,91 +1104,94 @@ export function SQLEditorPage() {
             </Box>
 
             {/* Results Content */}
-            <ScrollArea style={{ flex: 1 }}>
-              {activeTab.loading ? (
-                <Center py="xl">
-                  <Loader size="sm" />
-                </Center>
-              ) : activeTab.error ? (
-                <Box p="md">
-                  <Paper
-                    p="md"
-                    style={{
-                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                    }}
-                  >
-                    <Text size="sm" c="red">
-                      {activeTab.error}
-                    </Text>
-                  </Paper>
-                </Box>
-              ) : resultTab === 'results' ? (
-                activeTab.result ? (
-                  activeTab.result.rows.length > 0 ? (
-                    <Table striped highlightOnHover>
-                      <Table.Thead>
-                        <Table.Tr>
-                          {activeTab.result.columns.map((col) => (
-                            <Table.Th key={col}>{col}</Table.Th>
-                          ))}
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {activeTab.result.rows.map((row, i) => (
-                          <Table.Tr key={i}>
-                            {activeTab.result!.columns.map((col) => (
-                              <Table.Td key={col}>
-                                <Text size="sm" style={{ maxWidth: 300 }} truncate>
-                                  {row[col] === null
-                                    ? 'NULL'
-                                    : typeof row[col] === 'object'
-                                      ? JSON.stringify(row[col])
-                                      : String(row[col])}
-                                </Text>
-                              </Table.Td>
+            {!resultsPanelCollapsed && (
+              <ScrollArea style={{ flex: 1 }}>
+                {activeTab.loading ? (
+                  <Center py="xl">
+                    <Loader size="sm" />
+                  </Center>
+                ) : activeTab.error ? (
+                  <Box p="md">
+                    <Paper
+                      p="md"
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                      }}
+                    >
+                      <Text size="sm" c="red">
+                        {activeTab.error}
+                      </Text>
+                    </Paper>
+                  </Box>
+                ) : resultTab === 'results' ? (
+                  activeTab.result ? (
+                    activeTab.result.rows.length > 0 ? (
+                      <Table striped highlightOnHover>
+                        <Table.Thead>
+                          <Table.Tr>
+                            {activeTab.result.columns.map((col) => (
+                              <Table.Th key={col}>{col}</Table.Th>
                             ))}
                           </Table.Tr>
-                        ))}
-                      </Table.Tbody>
-                    </Table>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {activeTab.result.rows.map((row, i) => (
+                            <Table.Tr key={i}>
+                              {activeTab.result!.columns.map((col) => (
+                                <Table.Td key={col}>
+                                  <Text size="sm" style={{ maxWidth: 300, fontFamily: 'monospace' }} truncate>
+                                    {row[col] === null ? (
+                                      <Text span c="dimmed" fs="italic">NULL</Text>
+                                    ) : typeof row[col] === 'object' ? (
+                                      JSON.stringify(row[col])
+                                    ) : (
+                                      String(row[col])
+                                    )}
+                                  </Text>
+                                </Table.Td>
+                              ))}
+                            </Table.Tr>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    ) : (
+                      <Box p="xl" ta="center">
+                        <Text c="dimmed">Query executed successfully. No rows returned.</Text>
+                      </Box>
+                    )
                   ) : (
                     <Box p="xl" ta="center">
-                      <Text c="dimmed">Query executed successfully. No rows returned.</Text>
+                      <Text c="dimmed">Click Run to execute your query.</Text>
+                    </Box>
+                  )
+                ) : resultTab === 'explain' ? (
+                  activeTab.result ? (
+                    <Box p="md">
+                      <Paper p="md" withBorder>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12 }}>
+                          {JSON.stringify(activeTab.result.rows, null, 2)}
+                        </pre>
+                      </Paper>
+                    </Box>
+                  ) : (
+                    <Box p="xl" ta="center">
+                      <IconFileAnalytics size={32} style={{ opacity: 0.3 }} />
+                      <Text c="dimmed" mt="sm">
+                        Click the Explain button to see the query plan
+                      </Text>
                     </Box>
                   )
                 ) : (
                   <Box p="xl" ta="center">
-                    <Text c="dimmed">Click Run to execute your query.</Text>
+                    <IconChartBar size={32} style={{ opacity: 0.3 }} />
+                    <Text c="dimmed" mt="sm">
+                      Chart visualization coming soon
+                    </Text>
                   </Box>
-                )
-              ) : resultTab === 'explain' ? (
-                <Box p="xl" ta="center">
-                  <IconFileAnalytics size={32} style={{ opacity: 0.3 }} />
-                  <Text c="dimmed" mt="sm">
-                    Query plan will be shown here after running EXPLAIN
-                  </Text>
-                  <Button
-                    variant="subtle"
-                    size="xs"
-                    mt="md"
-                    onClick={() => {
-                      const explainQuery = `EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON)\n${activeTab.query}`;
-                      updateTabQuery(explainQuery);
-                    }}
-                  >
-                    Run with EXPLAIN
-                  </Button>
-                </Box>
-              ) : (
-                <Box p="xl" ta="center">
-                  <IconChartBar size={32} style={{ opacity: 0.3 }} />
-                  <Text c="dimmed" mt="sm">
-                    Chart visualization coming soon
-                  </Text>
-                </Box>
-              )}
-            </ScrollArea>
+                )}
+              </ScrollArea>
+            )}
           </Box>
         </Box>
       </Box>
@@ -911,6 +1219,204 @@ export function SQLEditorPage() {
           </Group>
         </Stack>
       </Modal>
+
+      {/* Settings Modal */}
+      <Modal
+        opened={settingsOpened}
+        onClose={() => setSettingsOpened(false)}
+        title="Editor Settings"
+        size="sm"
+      >
+        <Stack gap="md">
+          <Box>
+            <Text size="sm" fw={500} mb="xs">Font Size</Text>
+            <Slider
+              value={fontSize}
+              onChange={setFontSize}
+              min={10}
+              max={24}
+              step={1}
+              marks={[
+                { value: 10, label: '10' },
+                { value: 14, label: '14' },
+                { value: 18, label: '18' },
+                { value: 24, label: '24' },
+              ]}
+            />
+          </Box>
+          <Switch
+            label="Word wrap"
+            checked={wordWrap}
+            onChange={(e) => setWordWrap(e.currentTarget.checked)}
+          />
+          <Switch
+            label="Show minimap"
+            checked={minimap}
+            onChange={(e) => setMinimap(e.currentTarget.checked)}
+          />
+        </Stack>
+      </Modal>
+
+      {/* AI Assistant Modal */}
+      <Modal
+        opened={aiModalOpened}
+        onClose={() => setAiModalOpened(false)}
+        title={
+          <Group gap="xs">
+            <ThemeIcon size="sm" variant="light" color="violet">
+              <IconSparkles size={14} />
+            </ThemeIcon>
+            <Text>AI Assistant</Text>
+          </Group>
+        }
+        size="md"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Describe what you want to query and AI will generate the SQL for you.
+          </Text>
+          <Textarea
+            placeholder="e.g., Select all users who signed up in the last 7 days"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            minRows={3}
+            autoFocus
+          />
+          <Text size="xs" c="dimmed">
+            Examples:
+          </Text>
+          <Stack gap={4}>
+            {[
+              'Select all active users',
+              'Count orders by status',
+              'Find products with low inventory',
+              'List users who haven\'t logged in for 30 days',
+            ].map((example) => (
+              <UnstyledButton
+                key={example}
+                onClick={() => setAiPrompt(example)}
+                style={{ padding: '4px 8px', borderRadius: 4 }}
+              >
+                <Text size="xs" c="blue">{example}</Text>
+              </UnstyledButton>
+            ))}
+          </Stack>
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={() => setAiModalOpened(false)}>
+              Cancel
+            </Button>
+            <Button
+              leftSection={<IconWand size={14} />}
+              onClick={() => {
+                notifications.show({
+                  title: 'Coming Soon',
+                  message: 'AI query generation is not yet implemented',
+                  color: 'blue',
+                });
+              }}
+            >
+              Generate SQL
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      {/* Query History Drawer */}
+      <Drawer
+        opened={historyDrawerOpened}
+        onClose={() => setHistoryDrawerOpened(false)}
+        title="Query History"
+        position="right"
+        size="md"
+      >
+        <Stack gap="md">
+          <Group justify="space-between">
+            <TextInput
+              placeholder="Search history..."
+              size="xs"
+              leftSection={<IconSearch size={14} />}
+              style={{ flex: 1 }}
+            />
+            <Button
+              size="xs"
+              variant="subtle"
+              color="red"
+              onClick={async () => {
+                await databaseApi.clearQueryHistory();
+                setQueryHistory([]);
+                notifications.show({ message: 'History cleared', color: 'green' });
+              }}
+            >
+              Clear
+            </Button>
+          </Group>
+
+          {historyLoading ? (
+            <Center py="xl">
+              <Loader size="sm" />
+            </Center>
+          ) : queryHistory.length === 0 ? (
+            <Center py="xl">
+              <Text c="dimmed">No query history yet</Text>
+            </Center>
+          ) : (
+            <ScrollArea style={{ height: 'calc(100vh - 200px)' }}>
+              <Stack gap="xs">
+                {queryHistory.map((entry) => (
+                  <Paper
+                    key={entry.id}
+                    p="sm"
+                    withBorder
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      loadQuery('History query', entry.query);
+                      setHistoryDrawerOpened(false);
+                    }}
+                  >
+                    <Group justify="space-between" mb={4}>
+                      <Group gap="xs">
+                        {entry.success ? (
+                          <ThemeIcon size="xs" color="green" variant="light">
+                            <IconCircleCheck size={12} />
+                          </ThemeIcon>
+                        ) : (
+                          <ThemeIcon size="xs" color="red" variant="light">
+                            <IconCircleX size={12} />
+                          </ThemeIcon>
+                        )}
+                        <Badge size="xs" variant="light">
+                          {entry.role}
+                        </Badge>
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        {formatDate(entry.executed_at)}
+                      </Text>
+                    </Group>
+                    <Text size="xs" lineClamp={2} style={{ fontFamily: 'monospace' }}>
+                      {entry.query}
+                    </Text>
+                    <Group gap="xs" mt={4}>
+                      <Text size="xs" c="dimmed">
+                        {formatDuration(entry.duration_ms)}
+                      </Text>
+                      {entry.success && (
+                        <Text size="xs" c="dimmed">
+                          • {entry.row_count} rows
+                        </Text>
+                      )}
+                      {entry.error && (
+                        <Text size="xs" c="red" lineClamp={1}>
+                          {entry.error}
+                        </Text>
+                      )}
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            </ScrollArea>
+          )}
+        </Stack>
+      </Drawer>
     </PageContainer>
   );
 }

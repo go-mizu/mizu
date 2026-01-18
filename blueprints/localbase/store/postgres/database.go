@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/localbase/store"
@@ -1050,5 +1051,209 @@ func (s *DatabaseStore) setRLSContext(ctx context.Context, tx pgx.Tx, rlsCtx *RL
 		}
 	}
 
+	return nil
+}
+
+// ========================================
+// SQL Editor - Query History
+// ========================================
+
+// queryHistoryEntries is an in-memory store for query history.
+// In a production system, this would be persisted to the database.
+var queryHistoryEntries []*store.QueryHistoryEntry
+var queryHistoryMu = &sync.Mutex{}
+
+// AddQueryHistory adds a query to the history.
+func (s *DatabaseStore) AddQueryHistory(ctx context.Context, entry *store.QueryHistoryEntry) error {
+	queryHistoryMu.Lock()
+	defer queryHistoryMu.Unlock()
+
+	// Generate ID if not set
+	if entry.ID == "" {
+		entry.ID = fmt.Sprintf("qh_%d", time.Now().UnixNano())
+	}
+
+	// Add to beginning (most recent first)
+	queryHistoryEntries = append([]*store.QueryHistoryEntry{entry}, queryHistoryEntries...)
+
+	// Keep only last 1000 entries
+	if len(queryHistoryEntries) > 1000 {
+		queryHistoryEntries = queryHistoryEntries[:1000]
+	}
+
+	return nil
+}
+
+// ListQueryHistory returns query history entries.
+func (s *DatabaseStore) ListQueryHistory(ctx context.Context, limit, offset int) ([]*store.QueryHistoryEntry, error) {
+	queryHistoryMu.Lock()
+	defer queryHistoryMu.Unlock()
+
+	if limit <= 0 {
+		limit = 100
+	}
+
+	start := offset
+	if start < 0 {
+		start = 0
+	}
+	if start >= len(queryHistoryEntries) {
+		return []*store.QueryHistoryEntry{}, nil
+	}
+
+	end := start + limit
+	if end > len(queryHistoryEntries) {
+		end = len(queryHistoryEntries)
+	}
+
+	return queryHistoryEntries[start:end], nil
+}
+
+// ClearQueryHistory clears all query history.
+func (s *DatabaseStore) ClearQueryHistory(ctx context.Context) error {
+	queryHistoryMu.Lock()
+	defer queryHistoryMu.Unlock()
+
+	queryHistoryEntries = nil
+	return nil
+}
+
+// ========================================
+// SQL Editor - Snippets
+// ========================================
+
+// sqlSnippets is an in-memory store for SQL snippets.
+var sqlSnippets = make(map[string]*store.SQLSnippet)
+var sqlSnippetsMu = &sync.Mutex{}
+
+// CreateSnippet creates a new SQL snippet.
+func (s *DatabaseStore) CreateSnippet(ctx context.Context, snippet *store.SQLSnippet) error {
+	sqlSnippetsMu.Lock()
+	defer sqlSnippetsMu.Unlock()
+
+	// Generate ID if not set
+	if snippet.ID == "" {
+		snippet.ID = fmt.Sprintf("snp_%d", time.Now().UnixNano())
+	}
+	if snippet.CreatedAt.IsZero() {
+		snippet.CreatedAt = time.Now()
+	}
+	snippet.UpdatedAt = time.Now()
+
+	sqlSnippets[snippet.ID] = snippet
+	return nil
+}
+
+// GetSnippet retrieves a SQL snippet by ID.
+func (s *DatabaseStore) GetSnippet(ctx context.Context, id string) (*store.SQLSnippet, error) {
+	sqlSnippetsMu.Lock()
+	defer sqlSnippetsMu.Unlock()
+
+	snippet, ok := sqlSnippets[id]
+	if !ok {
+		return nil, fmt.Errorf("snippet not found")
+	}
+	return snippet, nil
+}
+
+// ListSnippets returns all SQL snippets.
+func (s *DatabaseStore) ListSnippets(ctx context.Context) ([]*store.SQLSnippet, error) {
+	sqlSnippetsMu.Lock()
+	defer sqlSnippetsMu.Unlock()
+
+	result := make([]*store.SQLSnippet, 0, len(sqlSnippets))
+	for _, snippet := range sqlSnippets {
+		result = append(result, snippet)
+	}
+	return result, nil
+}
+
+// UpdateSnippet updates a SQL snippet.
+func (s *DatabaseStore) UpdateSnippet(ctx context.Context, snippet *store.SQLSnippet) error {
+	sqlSnippetsMu.Lock()
+	defer sqlSnippetsMu.Unlock()
+
+	if _, ok := sqlSnippets[snippet.ID]; !ok {
+		return fmt.Errorf("snippet not found")
+	}
+
+	snippet.UpdatedAt = time.Now()
+	sqlSnippets[snippet.ID] = snippet
+	return nil
+}
+
+// DeleteSnippet deletes a SQL snippet.
+func (s *DatabaseStore) DeleteSnippet(ctx context.Context, id string) error {
+	sqlSnippetsMu.Lock()
+	defer sqlSnippetsMu.Unlock()
+
+	if _, ok := sqlSnippets[id]; !ok {
+		return fmt.Errorf("snippet not found")
+	}
+
+	delete(sqlSnippets, id)
+	return nil
+}
+
+// ========================================
+// SQL Editor - Folders
+// ========================================
+
+// sqlFolders is an in-memory store for SQL folders.
+var sqlFolders = make(map[string]*store.SQLFolder)
+var sqlFoldersMu = &sync.Mutex{}
+
+// CreateFolder creates a new SQL folder.
+func (s *DatabaseStore) CreateFolder(ctx context.Context, folder *store.SQLFolder) error {
+	sqlFoldersMu.Lock()
+	defer sqlFoldersMu.Unlock()
+
+	// Generate ID if not set
+	if folder.ID == "" {
+		folder.ID = fmt.Sprintf("fld_%d", time.Now().UnixNano())
+	}
+	if folder.CreatedAt.IsZero() {
+		folder.CreatedAt = time.Now()
+	}
+
+	sqlFolders[folder.ID] = folder
+	return nil
+}
+
+// ListFolders returns all SQL folders.
+func (s *DatabaseStore) ListFolders(ctx context.Context) ([]*store.SQLFolder, error) {
+	sqlFoldersMu.Lock()
+	defer sqlFoldersMu.Unlock()
+
+	result := make([]*store.SQLFolder, 0, len(sqlFolders))
+	for _, folder := range sqlFolders {
+		result = append(result, folder)
+	}
+	return result, nil
+}
+
+// UpdateFolder updates a SQL folder.
+func (s *DatabaseStore) UpdateFolder(ctx context.Context, folder *store.SQLFolder) error {
+	sqlFoldersMu.Lock()
+	defer sqlFoldersMu.Unlock()
+
+	if _, ok := sqlFolders[folder.ID]; !ok {
+		return fmt.Errorf("folder not found")
+	}
+
+	sqlFolders[folder.ID] = folder
+	return nil
+}
+
+// DeleteFolder deletes a SQL folder.
+func (s *DatabaseStore) DeleteFolder(ctx context.Context, id string) error {
+	sqlFoldersMu.Lock()
+	defer sqlFoldersMu.Unlock()
+
+	if _, ok := sqlFolders[id]; !ok {
+		return fmt.Errorf("folder not found")
+	}
+
+	delete(sqlFolders, id)
 	return nil
 }

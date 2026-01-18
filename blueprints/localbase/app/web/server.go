@@ -156,6 +156,23 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		database.Delete("/policies/{schema}/{table}/{name}", databaseHandler.DropPolicy)
 
 		database.Post("/query", databaseHandler.ExecuteQuery)
+
+		// SQL Editor - Query History
+		database.Get("/query/history", databaseHandler.ListQueryHistory)
+		database.Delete("/query/history", databaseHandler.ClearQueryHistory)
+
+		// SQL Editor - Snippets
+		database.Get("/snippets", databaseHandler.ListSnippets)
+		database.Get("/snippets/{id}", databaseHandler.GetSnippet)
+		database.Post("/snippets", databaseHandler.CreateSnippet)
+		database.Put("/snippets/{id}", databaseHandler.UpdateSnippet)
+		database.Delete("/snippets/{id}", databaseHandler.DeleteSnippet)
+
+		// SQL Editor - Folders
+		database.Get("/snippets/folders", databaseHandler.ListFolders)
+		database.Post("/snippets/folders", databaseHandler.CreateFolder)
+		database.Put("/snippets/folders/{id}", databaseHandler.UpdateFolder)
+		database.Delete("/snippets/folders/{id}", databaseHandler.DeleteFolder)
 	})
 
 	// Functions API - Requires service_role for management operations
