@@ -20,8 +20,9 @@ import {
   Switch,
   Drawer,
   SegmentedControl,
+  Collapse,
 } from '@mantine/core';
-import { useDisclosure, useMediaQuery } from '@mantine/hooks';
+import { useDisclosure, useMediaQuery, useHotkeys } from '@mantine/hooks';
 import {
   IconPlus,
   IconTrash,
@@ -45,11 +46,22 @@ import {
   IconBroadcast,
   IconSearch,
   IconLayoutSidebar,
+  IconDownload,
+  IconMaximize,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { PageContainer } from '../../components/layout/PageContainer';
 import { EmptyState } from '../../components/common/EmptyState';
 import { ConfirmModal } from '../../components/common/ConfirmModal';
+import {
+  TableTabs,
+  type TableTab,
+  FilterBuilder,
+  type Filter,
+  RowDetailDrawer,
+  ExportModal,
+  ColumnManager,
+} from '../../components/table-editor';
 import { databaseApi } from '../../api';
 import { useAppStore } from '../../stores/appStore';
 import type { Table as TableType, Column } from '../../types';
@@ -118,6 +130,32 @@ export function TableEditorPage() {
   const [addColumnOpened, { open: openAddColumn, close: closeAddColumn }] =
     useDisclosure(false);
 
+  // New feature modals
+  const [exportOpened, { open: openExport, close: closeExport }] = useDisclosure(false);
+  const [rowDetailOpened, { open: openRowDetail, close: closeRowDetail }] = useDisclosure(false);
+  const [filterOpened, { open: openFilter, close: closeFilter }] = useDisclosure(false);
+
+  // Table tabs state
+  const [openTabs, setOpenTabs] = useState<TableTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  // Filter state
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [filterLogic, setFilterLogic] = useState<'AND' | 'OR'>('AND');
+
+  // Column visibility state
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set());
+  const [columnOrder, setColumnOrder] = useState<string[]>([]);
+
+  // Row for detail view
+  const [detailRow, setDetailRow] = useState<Record<string, any> | null>(null);
+
+  // Total row count for pagination
+  const [totalRowCount, setTotalRowCount] = useState<number>(0);
+
+  // Keyboard navigation state
+  const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+
   // Form states
   const [newTableName, setNewTableName] = useState('');
   const [formLoading, setFormLoading] = useState(false);
@@ -133,6 +171,121 @@ export function TableEditorPage() {
   const [newColumnUnique, setNewColumnUnique] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Tab management functions
+  const addTab = useCallback((schema: string, table: string, isTransient = true) => {
+    const existingTab = openTabs.find((t) => t.schema === schema && t.table === table);
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
+      return;
+    }
+
+    // If there's a transient tab, replace it
+    const transientIndex = openTabs.findIndex((t) => t.isTransient);
+    const newTab: TableTab = {
+      id: crypto.randomUUID(),
+      schema,
+      table,
+      isTransient,
+    };
+
+    if (transientIndex !== -1 && isTransient) {
+      const newTabs = [...openTabs];
+      newTabs[transientIndex] = newTab;
+      setOpenTabs(newTabs);
+    } else {
+      setOpenTabs([...openTabs, newTab]);
+    }
+    setActiveTabId(newTab.id);
+  }, [openTabs]);
+
+  const closeTab = useCallback((tabId: string) => {
+    const tabIndex = openTabs.findIndex((t) => t.id === tabId);
+    const newTabs = openTabs.filter((t) => t.id !== tabId);
+    setOpenTabs(newTabs);
+
+    if (activeTabId === tabId) {
+      // Activate the previous tab or next tab
+      if (newTabs.length > 0) {
+        const newIndex = Math.min(tabIndex, newTabs.length - 1);
+        setActiveTabId(newTabs[newIndex].id);
+        setSelectedTable(newTabs[newIndex].table);
+        if (newTabs[newIndex].schema !== selectedSchema) {
+          setSelectedSchema(newTabs[newIndex].schema);
+        }
+      } else {
+        setActiveTabId(null);
+        setSelectedTable(null);
+      }
+    }
+  }, [openTabs, activeTabId, selectedSchema, setSelectedSchema, setSelectedTable]);
+
+  const makeTabPermanent = useCallback((tabId: string) => {
+    setOpenTabs(openTabs.map((t) => (t.id === tabId ? { ...t, isTransient: false } : t)));
+  }, [openTabs]);
+
+  // Update columns visibility when columns change
+  useEffect(() => {
+    if (columns.length > 0 && visibleColumns.size === 0) {
+      setVisibleColumns(new Set(columns.map((c) => c.name)));
+      setColumnOrder(columns.map((c) => c.name));
+    }
+  }, [columns, visibleColumns.size]);
+
+  // Apply filters to fetch
+  const buildFilterQuery = useCallback(() => {
+    if (filters.length === 0) return {};
+    const query: Record<string, string> = {};
+    filters.forEach((f) => {
+      if (f.column && f.value !== '') {
+        query[f.column] = `${f.operator}.${f.value}`;
+      }
+    });
+    return query;
+  }, [filters]);
+
+  // Keyboard navigation
+  useHotkeys([
+    ['ArrowUp', () => {
+      if (focusedCell && focusedCell.row > 0) {
+        setFocusedCell({ row: focusedCell.row - 1, col: focusedCell.col });
+      }
+    }],
+    ['ArrowDown', () => {
+      if (focusedCell && focusedCell.row < tableData.length - 1) {
+        setFocusedCell({ row: focusedCell.row + 1, col: focusedCell.col });
+      }
+    }],
+    ['ArrowLeft', () => {
+      if (focusedCell && focusedCell.col > 0) {
+        setFocusedCell({ row: focusedCell.row, col: focusedCell.col - 1 });
+      }
+    }],
+    ['ArrowRight', () => {
+      if (focusedCell && focusedCell.col < columns.length - 1) {
+        setFocusedCell({ row: focusedCell.row, col: focusedCell.col + 1 });
+      }
+    }],
+    ['Enter', () => {
+      if (focusedCell && !editingCell) {
+        const col = columns[focusedCell.col];
+        const row = tableData[focusedCell.row];
+        if (col && row) {
+          startEditingCell(focusedCell.row, col.name, row[col.name]);
+        }
+      }
+    }],
+    ['Escape', () => {
+      if (editingCell) {
+        cancelEditingCell();
+      }
+      setFocusedCell(null);
+    }],
+    ['mod+r', () => fetchTableData()],
+    ['mod+n', () => { setRowFormData({}); openInsertRow(); }],
+    ['mod+f', () => { filterOpened ? closeFilter() : openFilter(); }],
+    ['mod+shift+e', () => openExport()],
+  ]);
 
   const fetchSchemas = useCallback(async () => {
     try {
@@ -171,18 +324,29 @@ export function TableEditorPage() {
 
     setDataLoading(true);
     try {
-      // Build query with sorting
-      let query = 'limit=100';
+      // Build options with sorting and filters
+      const options: Parameters<typeof databaseApi.getTableData>[2] = {
+        limit: 100,
+        includeCount: true,
+      };
       if (sortColumn) {
-        query += `&order=${sortColumn}.${sortDirection}`;
+        options.order = `${sortColumn}.${sortDirection}`;
+      }
+      // Apply active filters
+      const filterQuery = buildFilterQuery();
+      if (Object.keys(filterQuery).length > 0) {
+        options.filters = filterQuery;
       }
 
-      const [columnsData, rowsData] = await Promise.all([
+      const [columnsData, tableResult] = await Promise.all([
         databaseApi.listColumns(selectedSchema, selectedTable),
-        databaseApi.selectTable(selectedTable, query),
+        databaseApi.getTableData(selectedSchema, selectedTable, options),
       ]);
       setColumns(columnsData ?? []);
-      setTableData(rowsData ?? []);
+      setTableData(tableResult.data ?? []);
+      if (tableResult.totalCount !== undefined) {
+        setTotalRowCount(tableResult.totalCount);
+      }
       setSelectedRows(new Set());
       setEditingCell(null);
     } catch (error: any) {
@@ -196,7 +360,7 @@ export function TableEditorPage() {
     } finally {
       setDataLoading(false);
     }
-  }, [selectedSchema, selectedTable, sortColumn, sortDirection]);
+  }, [selectedSchema, selectedTable, sortColumn, sortDirection, buildFilterQuery]);
 
   useEffect(() => {
     fetchSchemas();
@@ -963,7 +1127,7 @@ export function TableEditorPage() {
                   backgroundColor: 'var(--supabase-bg)',
                   display: 'flex',
                   alignItems: 'center',
-                  paddingLeft: isMobile ? 8 : 12,
+                  paddingLeft: isMobile ? 8 : 0,
                   paddingRight: 8,
                   minHeight: 40,
                   gap: 8,
@@ -981,34 +1145,57 @@ export function TableEditorPage() {
                     </ActionIcon>
                   </Tooltip>
                 )}
-                <Group gap={0} style={{ flex: 1, minWidth: 0 }}>
-                  <Box
-                    px="sm"
-                    py={8}
-                    style={{
-                      borderBottom: '2px solid var(--supabase-brand)',
-                      marginBottom: -1,
-                      minWidth: 0,
+                {openTabs.length > 0 ? (
+                  <TableTabs
+                    tabs={openTabs}
+                    activeTabId={activeTabId}
+                    onTabClick={(tabId) => {
+                      const tab = openTabs.find((t) => t.id === tabId);
+                      if (tab) {
+                        setActiveTabId(tabId);
+                        setSelectedTable(tab.table);
+                        if (tab.schema !== selectedSchema) {
+                          setSelectedSchema(tab.schema);
+                        }
+                      }
                     }}
-                  >
-                    <Group gap={6} wrap="nowrap">
-                      <IconTable size={14} color="var(--supabase-brand)" style={{ flexShrink: 0 }} />
-                      <Text size="sm" fw={500} truncate style={{ color: 'var(--supabase-brand)' }}>
-                        {selectedTable}
-                      </Text>
-                    </Group>
-                  </Box>
-                  {!isMobile && (
-                    <ActionIcon
-                      variant="subtle"
-                      size="sm"
-                      ml={4}
-                      style={{ opacity: 0.5 }}
+                    onTabDoubleClick={makeTabPermanent}
+                    onTabClose={closeTab}
+                    onAddTab={() => {
+                      // Open table selection or show all tables
+                    }}
+                  />
+                ) : (
+                  <Group gap={0} style={{ flex: 1, minWidth: 0 }} pl={12}>
+                    <Box
+                      px="sm"
+                      py={8}
+                      style={{
+                        borderBottom: '2px solid var(--supabase-brand)',
+                        marginBottom: -1,
+                        minWidth: 0,
+                      }}
                     >
-                      <IconPlus size={14} />
-                    </ActionIcon>
-                  )}
-                </Group>
+                      <Group gap={6} wrap="nowrap">
+                        <IconTable size={14} color="var(--supabase-brand)" style={{ flexShrink: 0 }} />
+                        <Text size="sm" fw={500} truncate style={{ color: 'var(--supabase-brand)' }}>
+                          {selectedTable}
+                        </Text>
+                      </Group>
+                    </Box>
+                    {!isMobile && (
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        ml={4}
+                        style={{ opacity: 0.5 }}
+                        onClick={() => addTab(selectedSchema, selectedTable!, false)}
+                      >
+                        <IconPlus size={14} />
+                      </ActionIcon>
+                    )}
+                  </Group>
+                )}
               </Box>
 
               {/* Toolbar */}
@@ -1021,21 +1208,28 @@ export function TableEditorPage() {
                 }}
               >
                 <Group justify="space-between" wrap={isMobile ? 'wrap' : 'nowrap'} gap={8}>
-                  {/* Left side - Filter, Sort, Insert */}
+                  {/* Left side - Filter, Sort, Columns, Export, Insert */}
                   <Group gap={8} wrap="nowrap">
                     {!isMobile && (
                       <>
                         <Button
                           size="xs"
-                          variant="outline"
+                          variant={filterOpened ? 'filled' : 'outline'}
                           leftSection={<IconFilter size={14} />}
+                          onClick={() => filterOpened ? closeFilter() : openFilter()}
+                          rightSection={filters.length > 0 ? (
+                            <Badge size="xs" variant="filled" color="green" circle>
+                              {filters.length}
+                            </Badge>
+                          ) : undefined}
                           styles={{
                             root: {
-                              borderColor: 'var(--supabase-border)',
-                              color: 'var(--supabase-text)',
+                              borderColor: filterOpened ? 'var(--supabase-brand)' : 'var(--supabase-border)',
+                              backgroundColor: filterOpened ? 'var(--supabase-brand)' : 'transparent',
+                              color: filterOpened ? 'white' : 'var(--supabase-text)',
                               fontWeight: 400,
                               '&:hover': {
-                                backgroundColor: 'var(--supabase-bg-surface)',
+                                backgroundColor: filterOpened ? 'var(--supabase-brand-hover)' : 'var(--supabase-bg-surface)',
                               },
                             },
                           }}
@@ -1047,6 +1241,11 @@ export function TableEditorPage() {
                           size="xs"
                           variant="outline"
                           leftSection={<IconSortAscending size={14} />}
+                          rightSection={sortColumn ? (
+                            <Badge size="xs" variant="light" color="blue">
+                              {sortDirection === 'asc' ? 'A-Z' : 'Z-A'}
+                            </Badge>
+                          ) : undefined}
                           styles={{
                             root: {
                               borderColor: 'var(--supabase-border)',
@@ -1059,6 +1258,48 @@ export function TableEditorPage() {
                           }}
                         >
                           Sort
+                        </Button>
+
+                        <ColumnManager
+                          columns={columns}
+                          visibleColumns={visibleColumns}
+                          columnOrder={columnOrder}
+                          onVisibilityChange={(colName, visible) => {
+                            const newVisible = new Set(visibleColumns);
+                            if (visible) {
+                              newVisible.add(colName);
+                            } else {
+                              newVisible.delete(colName);
+                            }
+                            setVisibleColumns(newVisible);
+                          }}
+                          onToggleAll={(visible) => {
+                            if (visible) {
+                              setVisibleColumns(new Set(columns.map((c) => c.name)));
+                            } else {
+                              setVisibleColumns(new Set());
+                            }
+                          }}
+                          onReorder={setColumnOrder}
+                        />
+
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          leftSection={<IconDownload size={14} />}
+                          onClick={openExport}
+                          styles={{
+                            root: {
+                              borderColor: 'var(--supabase-border)',
+                              color: 'var(--supabase-text)',
+                              fontWeight: 400,
+                              '&:hover': {
+                                backgroundColor: 'var(--supabase-bg-surface)',
+                              },
+                            },
+                          }}
+                        >
+                          Export
                         </Button>
                       </>
                     )}
@@ -1250,6 +1491,29 @@ export function TableEditorPage() {
                   </Group>
                 </Group>
               </Box>
+
+              {/* Filter Builder Panel */}
+              <Collapse in={filterOpened}>
+                <Box px="md" pb="md">
+                  <FilterBuilder
+                    columns={columns}
+                    filters={filters}
+                    logic={filterLogic}
+                    onChange={(newFilters, newLogic) => {
+                      setFilters(newFilters);
+                      setFilterLogic(newLogic);
+                    }}
+                    onApply={() => {
+                      fetchTableData();
+                    }}
+                    onClear={() => {
+                      setFilters([]);
+                      fetchTableData();
+                    }}
+                    onClose={closeFilter}
+                  />
+                </Box>
+              </Collapse>
 
               {/* Data Table / Definition View */}
               <Box style={{ flex: 1, overflow: 'hidden' }}>
@@ -1508,6 +1772,18 @@ export function TableEditorPage() {
                                 }}
                               >
                                 <Group gap={2} wrap="nowrap">
+                                  <Tooltip label="Expand row">
+                                    <ActionIcon
+                                      size="xs"
+                                      variant="subtle"
+                                      onClick={() => {
+                                        setDetailRow(row);
+                                        openRowDetail();
+                                      }}
+                                    >
+                                      <IconMaximize size={14} />
+                                    </ActionIcon>
+                                  </Tooltip>
                                   <Tooltip label="Edit row">
                                     <ActionIcon
                                       size="xs"
@@ -2000,6 +2276,43 @@ export function TableEditorPage() {
           </Group>
         </Stack>
       </Modal>
+
+      {/* Export Modal */}
+      <ExportModal
+        opened={exportOpened}
+        onClose={closeExport}
+        schema={selectedSchema}
+        table={selectedTable || ''}
+        totalRows={totalRowCount || tableData.length}
+        selectedRows={selectedRows.size}
+        filters={buildFilterQuery()}
+      />
+
+      {/* Row Detail Drawer */}
+      <RowDetailDrawer
+        opened={rowDetailOpened}
+        onClose={closeRowDetail}
+        columns={columns}
+        row={detailRow}
+        onSave={async (data) => {
+          if (!detailRow || !selectedTable) return;
+          const pkColumn = columns.find((c) => c.is_primary_key);
+          if (!pkColumn) return;
+          const pkValue = detailRow[pkColumn.name];
+          await databaseApi.updateRow(
+            selectedTable,
+            `${pkColumn.name}=eq.${pkValue}`,
+            data
+          );
+          notifications.show({
+            title: 'Success',
+            message: 'Row updated successfully',
+            color: 'green',
+          });
+          closeRowDetail();
+          fetchTableData();
+        }}
+      />
     </PageContainer>
   );
 }

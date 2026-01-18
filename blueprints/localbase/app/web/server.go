@@ -135,6 +135,11 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		database.Get("/tables/{schema}/{name}", databaseHandler.GetTable)
 		database.Delete("/tables/{schema}/{name}", databaseHandler.DropTable)
 
+		// Enhanced Table Editor endpoints
+		database.Get("/tables/{schema}/{name}/data", databaseHandler.GetTableData)
+		database.Get("/tables/{schema}/{name}/export", databaseHandler.ExportTableData)
+		database.Post("/tables/{schema}/{name}/bulk", databaseHandler.BulkTableOperation)
+
 		database.Get("/tables/{schema}/{name}/columns", databaseHandler.ListColumns)
 		database.Post("/tables/{schema}/{name}/columns", databaseHandler.AddColumn)
 		database.Put("/tables/{schema}/{name}/columns/{column}", databaseHandler.AlterColumn)
