@@ -438,13 +438,7 @@ func (s *Store) Ensure(ctx context.Context) error {
 		}
 	}
 
-	// Run migrations for existing databases (add columns that might be missing)
-	// This must happen BEFORE index creation so columns exist
-	if err := s.runMigrations(ctx); err != nil {
-		return fmt.Errorf("run migrations: %w", err)
-	}
-
-	// Create indexes after migrations to ensure all columns exist
+	// Create indexes
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
 		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
@@ -474,73 +468,6 @@ func (s *Store) Ensure(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// runMigrations adds missing columns to existing tables
-func (s *Store) runMigrations(ctx context.Context) error {
-	// Check if active_course_id column exists in users table
-	if !s.columnExists(ctx, "users", "active_course_id") {
-		_, err := s.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN active_course_id TEXT REFERENCES courses(id)`)
-		if err != nil {
-			return fmt.Errorf("add active_course_id column: %w", err)
-		}
-	}
-
-	// Check if native_language_id column exists in users table
-	if !s.columnExists(ctx, "users", "native_language_id") {
-		_, err := s.db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN native_language_id TEXT DEFAULT 'en'`)
-		if err != nil {
-			return fmt.Errorf("add native_language_id column: %w", err)
-		}
-	}
-
-	// Check if set_id column exists in stories table
-	if s.tableExists(ctx, "stories") && !s.columnExists(ctx, "stories", "set_id") {
-		_, err := s.db.ExecContext(ctx, `ALTER TABLE stories ADD COLUMN set_id INTEGER NOT NULL DEFAULT 1`)
-		if err != nil {
-			return fmt.Errorf("add set_id column to stories: %w", err)
-		}
-	}
-
-	// Check if set_position column exists in stories table
-	if s.tableExists(ctx, "stories") && !s.columnExists(ctx, "stories", "set_position") {
-		_, err := s.db.ExecContext(ctx, `ALTER TABLE stories ADD COLUMN set_position INTEGER DEFAULT 0`)
-		if err != nil {
-			return fmt.Errorf("add set_position column to stories: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// tableExists checks if a table exists in the database
-func (s *Store) tableExists(ctx context.Context, table string) bool {
-	var name string
-	err := s.db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)
-	return err == nil
-}
-
-// columnExists checks if a column exists in a table
-func (s *Store) columnExists(ctx context.Context, table, column string) bool {
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return false
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, pk int
-		var dfltValue interface{}
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
-			continue
-		}
-		if name == column {
-			return true
-		}
-	}
-	return false
 }
 
 // Users returns the user store
@@ -671,9 +598,19 @@ func (s *Store) SeedCourses(ctx context.Context) error {
 	}
 
 	for _, c := range courses {
+		// Check if course already exists for this language pair
+		var existingID string
+		err := s.db.QueryRowContext(ctx, `
+			SELECT id FROM courses WHERE from_language_id = ? AND learning_language_id = ? LIMIT 1
+		`, c.FromLang, c.LearnLang).Scan(&existingID)
+		if err == nil {
+			// Course already exists, skip
+			continue
+		}
+
 		courseID := uuid.New().String()
-		_, err := s.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO courses (id, from_language_id, learning_language_id, title, description, total_units, cefr_level, enabled)
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO courses (id, from_language_id, learning_language_id, title, description, total_units, cefr_level, enabled)
 			VALUES (?, ?, ?, ?, ?, 10, 'A1', 1)
 		`, courseID, c.FromLang, c.LearnLang, c.Title, c.Description)
 		if err != nil {

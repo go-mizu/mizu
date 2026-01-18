@@ -39,8 +39,8 @@ func (s *CourseStore) ListLanguages(ctx context.Context) ([]store.Language, erro
 // ListCourses lists courses available from a language
 func (s *CourseStore) ListCourses(ctx context.Context, fromLang string) ([]store.Course, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, from_language_id, learning_language_id, title, description, total_units, cefr_level, enabled
-		FROM courses WHERE from_language_id = $1 AND enabled = true ORDER BY title
+		SELECT DISTINCT ON (learning_language_id) id, from_language_id, learning_language_id, title, description, total_units, cefr_level, enabled
+		FROM courses WHERE from_language_id = $1 AND enabled = true ORDER BY learning_language_id, title
 	`, fromLang)
 	if err != nil {
 		return nil, fmt.Errorf("query courses: %w", err)

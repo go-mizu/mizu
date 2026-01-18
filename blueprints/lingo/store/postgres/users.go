@@ -30,7 +30,7 @@ func (s *UserStore) Create(ctx context.Context, user *store.User) error {
 func (s *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*store.User, error) {
 	user := &store.User{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, username, display_name, avatar_url, bio, encrypted_password, xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at, streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, active_course_id, native_language_id, created_at, last_active_at
+		SELECT id, email, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), COALESCE(bio, ''), encrypted_password, xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at, streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, active_course_id, native_language_id, created_at, last_active_at
 		FROM users WHERE id = $1
 	`, id).Scan(&user.ID, &user.Email, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio, &user.EncryptedPassword, &user.XPTotal, &user.Gems, &user.Hearts, &user.HeartsUpdatedAt, &user.StreakDays, &user.StreakUpdatedAt, &user.StreakFreezeCount, &user.IsPremium, &user.PremiumExpiresAt, &user.DailyGoalMinutes, &user.ActiveCourseID, &user.NativeLanguageID, &user.CreatedAt, &user.LastActiveAt)
 	if err != nil {
@@ -43,7 +43,7 @@ func (s *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*store.User, err
 func (s *UserStore) GetByEmail(ctx context.Context, email string) (*store.User, error) {
 	user := &store.User{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, username, display_name, avatar_url, bio, encrypted_password, xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at, streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, active_course_id, native_language_id, created_at, last_active_at
+		SELECT id, email, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), COALESCE(bio, ''), encrypted_password, xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at, streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, active_course_id, native_language_id, created_at, last_active_at
 		FROM users WHERE email = $1
 	`, email).Scan(&user.ID, &user.Email, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio, &user.EncryptedPassword, &user.XPTotal, &user.Gems, &user.Hearts, &user.HeartsUpdatedAt, &user.StreakDays, &user.StreakUpdatedAt, &user.StreakFreezeCount, &user.IsPremium, &user.PremiumExpiresAt, &user.DailyGoalMinutes, &user.ActiveCourseID, &user.NativeLanguageID, &user.CreatedAt, &user.LastActiveAt)
 	if err != nil {
@@ -56,7 +56,7 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*store.User, 
 func (s *UserStore) GetByUsername(ctx context.Context, username string) (*store.User, error) {
 	user := &store.User{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, username, display_name, avatar_url, bio, encrypted_password, xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at, streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, active_course_id, native_language_id, created_at, last_active_at
+		SELECT id, email, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), COALESCE(bio, ''), encrypted_password, xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at, streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, active_course_id, native_language_id, created_at, last_active_at
 		FROM users WHERE username = $1
 	`, username).Scan(&user.ID, &user.Email, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio, &user.EncryptedPassword, &user.XPTotal, &user.Gems, &user.Hearts, &user.HeartsUpdatedAt, &user.StreakDays, &user.StreakUpdatedAt, &user.StreakFreezeCount, &user.IsPremium, &user.PremiumExpiresAt, &user.DailyGoalMinutes, &user.ActiveCourseID, &user.NativeLanguageID, &user.CreatedAt, &user.LastActiveAt)
 	if err != nil {

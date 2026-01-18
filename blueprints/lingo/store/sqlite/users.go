@@ -159,9 +159,10 @@ func (s *UserStore) scanUser(row *sql.Row) (*store.User, error) {
 	var user store.User
 	var id string
 	var isPremium int
+	var displayName, avatarURL, bio sql.NullString
 	var activeCourseID, nativeLanguageID sql.NullString
 
-	err := row.Scan(&id, &user.Email, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio,
+	err := row.Scan(&id, &user.Email, &user.Username, &displayName, &avatarURL, &bio,
 		&user.EncryptedPassword, &user.XPTotal, &user.Gems, &user.Hearts, &user.HeartsUpdatedAt,
 		&user.StreakDays, &user.StreakUpdatedAt, &user.StreakFreezeCount, &isPremium,
 		&user.PremiumExpiresAt, &user.DailyGoalMinutes, &activeCourseID, &nativeLanguageID,
@@ -171,6 +172,9 @@ func (s *UserStore) scanUser(row *sql.Row) (*store.User, error) {
 	}
 
 	user.ID, _ = uuid.Parse(id)
+	user.DisplayName = displayName.String
+	user.AvatarURL = avatarURL.String
+	user.Bio = bio.String
 	user.IsPremium = isPremium == 1
 	if activeCourseID.Valid {
 		courseID, _ := uuid.Parse(activeCourseID.String)

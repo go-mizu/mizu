@@ -8,8 +8,8 @@ import (
 // GetUserID extracts the user ID from the request context
 // In production, this would come from JWT middleware
 func GetUserID(c *mizu.Ctx) uuid.UUID {
-	// Try to get from header (simplified auth for development)
-	if userIDStr := c.Header().Get("X-User-ID"); userIDStr != "" {
+	// Try to get from request header (simplified auth for development)
+	if userIDStr := c.Request().Header.Get("X-User-ID"); userIDStr != "" {
 		if id, err := uuid.Parse(userIDStr); err == nil {
 			return id
 		}

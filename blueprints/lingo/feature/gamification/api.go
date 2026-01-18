@@ -153,7 +153,7 @@ func (h *Handler) ClaimQuestReward(c *mizu.Ctx) error {
 
 // getUserID extracts the user ID from the request context
 func getUserID(c *mizu.Ctx) uuid.UUID {
-	if userIDStr := c.Header().Get("X-User-ID"); userIDStr != "" {
+	if userIDStr := c.Request().Header.Get("X-User-ID"); userIDStr != "" {
 		if id, err := uuid.Parse(userIDStr); err == nil {
 			return id
 		}
