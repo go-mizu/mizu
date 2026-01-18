@@ -12,7 +12,8 @@ body {
   font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #131f24;
+  background-color: #F7F7F7;
+  color: #4B4B4B;
 }
 
 /* Duolingo-style animations */
@@ -53,23 +54,23 @@ body {
   animation: fadeIn 0.3s ease-out;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - Light theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a2c33;
+  background: #F7F7F7;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3d5a68;
+  background: #E5E5E5;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a6b7a;
+  background: #CDCDCD;
 }
 
 /* Path node styles */
@@ -108,14 +109,387 @@ body {
 
 /* Heart icon */
 .heart {
-  color: #ff4b4b;
+  color: #FF4B4B;
 }
 
 .heart.empty {
-  color: #3d5a68;
+  color: #E5E5E5;
 }
 
 /* Streak flame */
 .streak-flame {
-  color: #ff9600;
+  color: #FF9600;
+}
+
+/* Duolingo-style button */
+.duo-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: none;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  user-select: none;
+}
+
+.duo-button-primary {
+  background-color: #58CC02;
+  color: white;
+  box-shadow: 0 4px 0 #58A700;
+}
+
+.duo-button-primary:hover {
+  background-color: #4CAD02;
+}
+
+.duo-button-primary:active {
+  box-shadow: 0 2px 0 #58A700;
+  transform: translateY(2px);
+}
+
+.duo-button-secondary {
+  background-color: #1CB0F6;
+  color: white;
+  box-shadow: 0 4px 0 #1899D6;
+}
+
+.duo-button-secondary:hover {
+  background-color: #1899D6;
+}
+
+.duo-button-secondary:active {
+  box-shadow: 0 2px 0 #1899D6;
+  transform: translateY(2px);
+}
+
+.duo-button-outline {
+  background-color: white;
+  color: #1CB0F6;
+  border: 2px solid #E5E5E5;
+  box-shadow: 0 4px 0 #E5E5E5;
+}
+
+.duo-button-outline:hover {
+  background-color: #F7F7F7;
+}
+
+.duo-button-outline:active {
+  box-shadow: 0 2px 0 #E5E5E5;
+  transform: translateY(2px);
+}
+
+.duo-button:disabled {
+  background-color: #E5E5E5;
+  color: #AFAFAF;
+  box-shadow: 0 4px 0 #CDCDCD;
+  cursor: not-allowed;
+}
+
+/* Skill node styles */
+.skill-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.skill-node-active {
+  background-color: #58CC02;
+  box-shadow: 0 4px 0 #58A700;
+}
+
+.skill-node-active:hover {
+  transform: scale(1.05);
+}
+
+.skill-node-active:active {
+  box-shadow: 0 2px 0 #58A700;
+  transform: translateY(2px);
+}
+
+.skill-node-completed {
+  background-color: #FFC800;
+  box-shadow: 0 4px 0 #E5B400;
+}
+
+.skill-node-locked {
+  background-color: #E5E5E5;
+  cursor: not-allowed;
+}
+
+.skill-node-locked:hover {
+  transform: none;
+}
+
+/* Choice button for exercises */
+.choice-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 1rem 1.25rem;
+  background-color: white;
+  border: 2px solid #E5E5E5;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #4B4B4B;
+}
+
+.choice-button:hover {
+  background-color: #F7F7F7;
+  border-color: #CDCDCD;
+}
+
+.choice-button.selected {
+  background-color: #DDF4FF;
+  border-color: #1CB0F6;
+  color: #1CB0F6;
+}
+
+.choice-button.correct {
+  background-color: #D7FFB8;
+  border-color: #58CC02;
+  color: #58CC02;
+}
+
+.choice-button.incorrect {
+  background-color: #FFDFE0;
+  border-color: #FF4B4B;
+  color: #FF4B4B;
+}
+
+/* Word bank pill */
+.word-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 1rem;
+  background-color: white;
+  border: 2px solid #E5E5E5;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #4B4B4B;
+  user-select: none;
+  box-shadow: 0 2px 0 #E5E5E5;
+}
+
+.word-pill:hover {
+  background-color: #F7F7F7;
+}
+
+.word-pill:active {
+  box-shadow: none;
+  transform: translateY(2px);
+}
+
+.word-pill.selected {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.word-pill.in-answer {
+  background-color: white;
+  border-color: #1CB0F6;
+  color: #4B4B4B;
+}
+
+/* Answer area */
+.answer-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 60px;
+  padding: 1rem;
+  background-color: white;
+  border: 2px solid #E5E5E5;
+  border-radius: 1rem;
+  margin-bottom: 1rem;
+}
+
+.answer-area.has-content {
+  border-color: #CDCDCD;
+}
+
+/* Feedback bar */
+.feedback-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.feedback-bar.correct {
+  background-color: #D7FFB8;
+}
+
+.feedback-bar.incorrect {
+  background-color: #FFDFE0;
+}
+
+/* Badge styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 0.5rem;
+}
+
+.badge-purple {
+  background-color: #F3E5FF;
+  color: #CE82FF;
+}
+
+.badge-green {
+  background-color: #D7FFB8;
+  color: #58CC02;
+}
+
+.badge-blue {
+  background-color: #DDF4FF;
+  color: #1CB0F6;
+}
+
+.badge-yellow {
+  background-color: #FFF4CC;
+  color: #FFC800;
+}
+
+/* Character bubble */
+.character-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: white;
+  border: 2px solid #E5E5E5;
+  border-radius: 1rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.character-bubble::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 8px;
+  border-style: solid;
+  border-color: transparent #E5E5E5 transparent transparent;
+}
+
+.character-bubble::after {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent white transparent transparent;
+}
+
+/* Hint tooltip */
+.hint-tooltip {
+  position: absolute;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background-color: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.875rem;
+  color: #777777;
+  max-width: 200px;
+}
+
+/* Section card */
+.section-card {
+  background-color: white;
+  border: 2px solid #E5E5E5;
+  border-radius: 1rem;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.section-card:hover {
+  border-color: #CDCDCD;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+}
+
+.section-card-locked {
+  opacity: 0.7;
+}
+
+/* Navigation item */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  font-weight: 700;
+  color: #777777;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.nav-item:hover {
+  background-color: #F7F7F7;
+  color: #4B4B4B;
+}
+
+.nav-item.active {
+  background-color: #DDF4FF;
+  color: #1CB0F6;
+}
+
+/* Stats display */
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 700;
+}
+
+.stat-item.streak {
+  color: #FF9600;
+}
+
+.stat-item.gems {
+  color: #1CB0F6;
+}
+
+.stat-item.hearts {
+  color: #FF4B4B;
+}
+
+.stat-item.xp {
+  color: #FFC800;
 }
