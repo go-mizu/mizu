@@ -1,6 +1,59 @@
 import { api } from './client';
 import type { Table, Column, Policy, Extension, QueryResult, QueryHistoryEntry, SQLSnippet, SQLFolder } from '../types';
 
+// Database Overview Types
+export interface SchemaInfo {
+  name: string;
+  table_count: number;
+  view_count: number;
+}
+
+export interface DatabaseOverview {
+  schemas: SchemaInfo[];
+  total_tables: number;
+  total_views: number;
+  total_functions: number;
+  total_indexes: number;
+  total_policies: number;
+  database_size: string;
+  connection_count: number;
+}
+
+export interface TableStats {
+  schema: string;
+  name: string;
+  row_count: number;
+  size_bytes: number;
+  size_pretty: string;
+  index_count: number;
+  has_rls: boolean;
+  policy_count: number;
+  last_vacuum?: string;
+  last_analyze?: string;
+}
+
+export interface IndexInfo {
+  name: string;
+  schema: string;
+  table: string;
+  type: string;
+  is_unique: boolean;
+  is_primary: boolean;
+  columns: string[];
+  definition: string;
+  size_bytes: number;
+}
+
+export interface CreateIndexRequest {
+  name: string;
+  schema: string;
+  table: string;
+  columns: string[];
+  type?: string;
+  is_unique?: boolean;
+  condition?: string;
+}
+
 export interface CreateTableRequest {
   schema: string;
   name: string;
@@ -27,6 +80,42 @@ export interface CreatePolicyRequest {
 }
 
 export const databaseApi = {
+  // Database Overview
+  getOverview: (): Promise<DatabaseOverview> => {
+    return api.get<DatabaseOverview>('/api/database/overview');
+  },
+
+  // Table Statistics
+  getTableStats: (schema = 'public'): Promise<TableStats[]> => {
+    return api.get<TableStats[]>(`/api/database/tables/stats?schema=${schema}`);
+  },
+
+  // Index operations
+  listIndexes: (schema?: string, table?: string): Promise<IndexInfo[]> => {
+    const params = new URLSearchParams();
+    if (schema) params.set('schema', schema);
+    if (table) params.set('table', table);
+    const queryString = params.toString();
+    return api.get<IndexInfo[]>(`/api/database/indexes${queryString ? '?' + queryString : ''}`);
+  },
+
+  createIndex: (data: CreateIndexRequest): Promise<void> => {
+    return api.post('/api/database/indexes', data);
+  },
+
+  dropIndex: (schema: string, name: string): Promise<void> => {
+    return api.delete(`/api/database/indexes/${schema}/${name}`);
+  },
+
+  // RLS Management
+  enableTableRLS: (schema: string, table: string): Promise<void> => {
+    return api.post(`/api/database/tables/${schema}/${table}/rls/enable`, {});
+  },
+
+  disableTableRLS: (schema: string, table: string): Promise<void> => {
+    return api.post(`/api/database/tables/${schema}/${table}/rls/disable`, {});
+  },
+
   // Schema operations
   listSchemas: (): Promise<string[]> => {
     return api.get<string[]>('/api/database/schemas');

@@ -52,15 +52,14 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: IconLayoutDashboard, label: 'Project Overview', path: '/' },
-  { icon: IconTable, label: 'Table Editor', path: '/table-editor' },
-  { icon: IconCode, label: 'SQL Editor', path: '/sql-editor' },
   {
     icon: IconDatabase,
     label: 'Database',
     path: '/database',
     children: [
-      { icon: IconSchema, label: 'Schema Visualizer', path: '/database/schema-visualizer' },
-      { icon: IconTable, label: 'Tables', path: '/table-editor' },
+      { icon: IconTable, label: 'Tables', path: '/database/tables' },
+      { icon: IconCode, label: 'SQL Editor', path: '/database/sql' },
+      { icon: IconSchema, label: 'Schema Visualizer', path: '/database/schema' },
       { icon: IconEye, label: 'Views', path: '/database/views' },
       { icon: IconTerminal2, label: 'Functions', path: '/database/functions' },
       { icon: IconBolt, label: 'Triggers', path: '/database/triggers' },

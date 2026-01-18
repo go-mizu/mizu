@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AppShell, Box, Burger, Group, LoadingOverlay } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { Suspense, lazy, useEffect } from 'react';
@@ -18,6 +18,8 @@ const ViewsPage = lazy(() => import('./pages/database/Views').then(m => ({ defau
 const TriggersPage = lazy(() => import('./pages/database/Triggers').then(m => ({ default: m.TriggersPage })));
 const RolesPage = lazy(() => import('./pages/database/Roles').then(m => ({ default: m.RolesPage })));
 const SchemaVisualizerPage = lazy(() => import('./pages/database/SchemaVisualizer').then(m => ({ default: m.SchemaVisualizerPage })));
+const ExtensionsPage = lazy(() => import('./pages/database/Extensions').then(m => ({ default: m.ExtensionsPage })));
+const DatabaseFunctionsPage = lazy(() => import('./pages/database/DatabaseFunctions').then(m => ({ default: m.DatabaseFunctionsPage })));
 const RealtimePage = lazy(() => import('./pages/realtime/Realtime').then(m => ({ default: m.RealtimePage })));
 const FunctionsPage = lazy(() => import('./pages/functions/Functions').then(m => ({ default: m.FunctionsPage })));
 const LogsExplorerPage = lazy(() => import('./pages/logs/LogsExplorer').then(m => ({ default: m.LogsExplorerPage })));
@@ -26,6 +28,9 @@ const ApiDocsPage = lazy(() => import('./pages/ApiDocs').then(m => ({ default: m
 const SettingsPage = lazy(() => import('./pages/settings/Settings').then(m => ({ default: m.SettingsPage })));
 const AdvisorsPage = lazy(() => import('./pages/advisors/Advisors').then(m => ({ default: m.AdvisorsPage })));
 const IntegrationsPage = lazy(() => import('./pages/integrations/Integrations').then(m => ({ default: m.IntegrationsPage })));
+
+// Database Layout
+const DatabaseLayout = lazy(() => import('./components/database/DatabaseLayout').then(m => ({ default: m.DatabaseLayout })));
 
 export default function App() {
   const { sidebarCollapsed } = useAppStore();
@@ -81,14 +86,27 @@ export default function App() {
           <Suspense fallback={<LoadingOverlay visible loaderProps={{ type: 'dots' }} />}>
             <Routes>
               <Route path="/" element={<ProjectOverviewPage />} />
-              <Route path="/table-editor" element={<TableEditorPage />} />
-              <Route path="/sql-editor" element={<SQLEditorPage />} />
-              <Route path="/database/schema-visualizer" element={<SchemaVisualizerPage />} />
-              <Route path="/database/policies" element={<PoliciesPage />} />
-              <Route path="/database/indexes" element={<IndexesPage />} />
-              <Route path="/database/views" element={<ViewsPage />} />
-              <Route path="/database/triggers" element={<TriggersPage />} />
-              <Route path="/database/roles" element={<RolesPage />} />
+
+              {/* Legacy routes - redirect to new database routes */}
+              <Route path="/table-editor" element={<Navigate to="/database/tables" replace />} />
+              <Route path="/sql-editor" element={<Navigate to="/database/sql" replace />} />
+
+              {/* Database routes with unified layout */}
+              <Route path="/database" element={<DatabaseLayout />}>
+                <Route index element={<Navigate to="/database/tables" replace />} />
+                <Route path="tables" element={<TableEditorPage />} />
+                <Route path="sql" element={<SQLEditorPage />} />
+                <Route path="schema" element={<SchemaVisualizerPage />} />
+                <Route path="schema-visualizer" element={<Navigate to="/database/schema" replace />} />
+                <Route path="policies" element={<PoliciesPage />} />
+                <Route path="indexes" element={<IndexesPage />} />
+                <Route path="views" element={<ViewsPage />} />
+                <Route path="triggers" element={<TriggersPage />} />
+                <Route path="roles" element={<RolesPage />} />
+                <Route path="functions" element={<DatabaseFunctionsPage />} />
+                <Route path="extensions" element={<ExtensionsPage />} />
+              </Route>
+
               <Route path="/auth/users" element={<UsersPage />} />
               <Route path="/storage" element={<StoragePage />} />
               <Route path="/realtime" element={<RealtimePage />} />
