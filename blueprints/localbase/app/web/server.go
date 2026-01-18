@@ -89,6 +89,11 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		storage.Post("/object/list/{bucket}", storageHandler.ListObjects)
 		storage.Post("/object/move", storageHandler.MoveObject)
 		storage.Post("/object/copy", storageHandler.CopyObject)
+		storage.Post("/object/rename", storageHandler.RenameObject)
+		storage.Delete("/object/folder/{bucket}/{path...}", storageHandler.DeleteFolder)
+
+		// Bucket by name (Supabase compatibility)
+		storage.Get("/bucket/name/{name}", storageHandler.GetBucketByName)
 
 		// Signed URLs
 		storage.Post("/object/sign/{bucket}/{path...}", storageHandler.CreateSignedURL)

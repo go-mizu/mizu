@@ -1208,3 +1208,165 @@ func (h *StorageHandler) CreateUploadSignedURL(c *mizu.Ctx) error {
 		"token": token,
 	})
 }
+
+// RenameObject renames an object (changes its path within the same bucket).
+func (h *StorageHandler) RenameObject(c *mizu.Ctx) error {
+	var req struct {
+		BucketID string `json:"bucketId"`
+		OldPath  string `json:"oldPath"`
+		NewPath  string `json:"newPath"`
+	}
+	if err := c.BindJSON(&req, 0); err != nil {
+		return storageError(c, http.StatusBadRequest, "Bad Request", "invalid request body")
+	}
+
+	if req.BucketID == "" {
+		return storageError(c, http.StatusBadRequest, "Bad Request", "bucketId required")
+	}
+	if req.OldPath == "" {
+		return storageError(c, http.StatusBadRequest, "Bad Request", "oldPath required")
+	}
+	if req.NewPath == "" {
+		return storageError(c, http.StatusBadRequest, "Bad Request", "newPath required")
+	}
+
+	// Sanitize paths
+	req.OldPath = sanitizeStoragePath(req.OldPath)
+	req.NewPath = sanitizeStoragePath(req.NewPath)
+
+	// Get bucket for RLS check
+	bucket, err := h.store.Storage().GetBucket(c.Context(), req.BucketID)
+	if err != nil {
+		bucket, err = h.store.Storage().GetBucketByName(c.Context(), req.BucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		req.BucketID = bucket.ID
+	}
+
+	// Check access for both old and new paths
+	if err := h.checkStorageAccess(c, bucket, req.OldPath, StorageAccessWrite); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
+	}
+	if err := h.checkStorageAccess(c, bucket, req.NewPath, StorageAccessWrite); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
+	}
+
+	// Check source exists
+	if _, err := h.store.Storage().GetObject(c.Context(), req.BucketID, req.OldPath); err != nil {
+		return storageError(c, http.StatusNotFound, "Not Found", "source object not found")
+	}
+
+	// Check destination doesn't exist
+	if _, err := h.store.Storage().GetObject(c.Context(), req.BucketID, req.NewPath); err == nil {
+		return storageError(c, http.StatusConflict, "Conflict", "destination object already exists")
+	}
+
+	// Move file on filesystem if it exists
+	oldFilePath := h.getFilePath(req.BucketID, req.OldPath)
+	newFilePath := h.getFilePath(req.BucketID, req.NewPath)
+	if _, err := os.Stat(oldFilePath); err == nil {
+		if err := os.MkdirAll(filepath.Dir(newFilePath), 0755); err != nil {
+			return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to create directory")
+		}
+		if err := os.Rename(oldFilePath, newFilePath); err != nil {
+			return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to rename file")
+		}
+	}
+
+	// Move in database
+	if err := h.store.Storage().MoveObject(c.Context(), req.BucketID, req.OldPath, req.NewPath); err != nil {
+		// Try to rollback filesystem change
+		if _, statErr := os.Stat(newFilePath); statErr == nil {
+			os.Rename(newFilePath, oldFilePath)
+		}
+		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to rename object")
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "Successfully renamed",
+		"oldPath": req.OldPath,
+		"newPath": req.NewPath,
+	})
+}
+
+// DeleteFolder recursively deletes a folder and all its contents.
+func (h *StorageHandler) DeleteFolder(c *mizu.Ctx) error {
+	bucketID := c.Param("bucket")
+	path := c.Param("path")
+
+	if path == "" {
+		return storageError(c, http.StatusBadRequest, "Bad Request", "folder path is required")
+	}
+
+	// Ensure path ends with / for folder
+	if !strings.HasSuffix(path, "/") {
+		path = path + "/"
+	}
+
+	// Sanitize path
+	path = sanitizeStoragePath(path)
+	if !strings.HasSuffix(path, "/") {
+		path = path + "/"
+	}
+
+	// Get bucket for RLS check
+	bucket, err := h.store.Storage().GetBucket(c.Context(), bucketID)
+	if err != nil {
+		bucket, err = h.store.Storage().GetBucketByName(c.Context(), bucketID)
+		if err != nil {
+			return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+		}
+		bucketID = bucket.ID
+	}
+
+	// Check delete access
+	if err := h.checkStorageAccess(c, bucket, path, StorageAccessDelete); err != nil {
+		return storageError(c, http.StatusForbidden, "Forbidden", err.Error())
+	}
+
+	// List all objects with this prefix
+	objects, err := h.store.Storage().ListObjects(c.Context(), bucketID, path, 10000, 0)
+	if err != nil {
+		return storageError(c, http.StatusInternalServerError, "Internal Server Error", "failed to list objects")
+	}
+
+	if len(objects) == 0 {
+		return storageError(c, http.StatusNotFound, "Not Found", "folder not found or empty")
+	}
+
+	// Delete all objects
+	var deleted []string
+	for _, obj := range objects {
+		// Delete from filesystem
+		filePath := h.getFilePath(bucketID, obj.Name)
+		os.Remove(filePath)
+
+		// Delete from database
+		if err := h.store.Storage().DeleteObject(c.Context(), bucketID, obj.Name); err == nil {
+			deleted = append(deleted, obj.Name)
+		}
+	}
+
+	// Try to remove empty directories
+	folderPath := h.getFilePath(bucketID, path)
+	os.RemoveAll(folderPath)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"message": "Successfully deleted folder",
+		"deleted": len(deleted),
+		"files":   deleted,
+	})
+}
+
+// GetBucketByName gets a bucket by name (for Supabase compatibility).
+func (h *StorageHandler) GetBucketByName(c *mizu.Ctx) error {
+	name := c.Param("name")
+
+	bucket, err := h.store.Storage().GetBucketByName(c.Context(), name)
+	if err != nil {
+		return storageError(c, http.StatusNotFound, "Not Found", "bucket not found")
+	}
+
+	return c.JSON(http.StatusOK, bucket)
+}

@@ -33,6 +33,7 @@ interface StorageToolbarProps {
   onUpload: () => void;
   onCreateFolder: () => void;
   onDeleteBucket: () => void;
+  onEditBucket: () => void;
   onViewModeChange: (mode: ViewMode) => void;
   onSearch: (query: string) => void;
   onNavigateToPath: (path: string) => void;
@@ -47,6 +48,7 @@ export function StorageToolbar({
   onUpload,
   onCreateFolder,
   onDeleteBucket,
+  onEditBucket,
   onViewModeChange,
   onSearch,
   onNavigateToPath,
@@ -178,7 +180,7 @@ export function StorageToolbar({
             <Menu.Dropdown>
               <Menu.Item
                 leftSection={<IconSettings size={14} />}
-                disabled
+                onClick={onEditBucket}
               >
                 Bucket settings
               </Menu.Item>
