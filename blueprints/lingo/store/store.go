@@ -33,6 +33,8 @@ type Store interface {
 	Social() SocialStore
 	// Achievements operations
 	Achievements() AchievementStore
+	// Stories operations
+	Stories() StoryStore
 }
 
 // UserStore handles user operations
@@ -116,6 +118,32 @@ type AchievementStore interface {
 	GetUserAchievements(ctx context.Context, userID uuid.UUID) ([]UserAchievement, error)
 	UpdateUserAchievement(ctx context.Context, ua *UserAchievement) error
 	CheckAndUnlock(ctx context.Context, userID uuid.UUID, achievementID string, progress int) (*UserAchievement, error)
+}
+
+// StoryStore handles story operations
+type StoryStore interface {
+	// Stories
+	GetStorySets(ctx context.Context, courseID uuid.UUID) ([]StorySet, error)
+	GetStories(ctx context.Context, courseID uuid.UUID) ([]Story, error)
+	GetStoriesBySet(ctx context.Context, courseID uuid.UUID, setID int) ([]Story, error)
+	GetStory(ctx context.Context, id uuid.UUID) (*Story, error)
+	GetStoryElements(ctx context.Context, storyID uuid.UUID) ([]StoryElement, error)
+	GetStoryCharacters(ctx context.Context, storyID uuid.UUID) ([]StoryCharacter, error)
+
+	// User progress
+	GetUserStory(ctx context.Context, userID, storyID uuid.UUID) (*UserStory, error)
+	GetUserStories(ctx context.Context, userID, courseID uuid.UUID) ([]UserStory, error)
+	StartStory(ctx context.Context, userID, storyID uuid.UUID) error
+	CompleteStory(ctx context.Context, userID, storyID uuid.UUID, xp, mistakes int) error
+	RecordElementProgress(ctx context.Context, progress *UserStoryProgress) error
+	GetStoryProgress(ctx context.Context, userID, storyID uuid.UUID) ([]UserStoryProgress, error)
+
+	// Seeding/Import
+	CreateStory(ctx context.Context, story *Story) error
+	CreateStoryCharacter(ctx context.Context, char *StoryCharacter) error
+	CreateStoryElement(ctx context.Context, elem *StoryElement) error
+	CreateStorySet(ctx context.Context, set *StorySet) error
+	DeleteStoriesByCourse(ctx context.Context, courseID uuid.UUID) error
 }
 
 // ============================================================================
@@ -397,21 +425,136 @@ type Notification struct {
 	CreatedAt time.Time              `json:"created_at"`
 }
 
+// StoryElementType defines the type of story element
+type StoryElementType string
+
+const (
+	ElementTypeHeader       StoryElementType = "header"
+	ElementTypeLine         StoryElementType = "line"
+	ElementTypeMultiChoice  StoryElementType = "multiple_choice"
+	ElementTypeSelectPhrase StoryElementType = "select_phrase"
+	ElementTypeArrange      StoryElementType = "arrange"
+	ElementTypeMatch        StoryElementType = "match"
+	ElementTypePointPhrase  StoryElementType = "point_to_phrase"
+	ElementTypeTapComplete  StoryElementType = "tap_complete"
+)
+
 // Story represents an interactive story
 type Story struct {
-	ID           uuid.UUID              `json:"id"`
-	CourseID     uuid.UUID              `json:"course_id"`
-	Title        string                 `json:"title"`
-	Difficulty   int                    `json:"difficulty"`
-	CharacterIDs []string               `json:"character_ids,omitempty"`
-	Content      map[string]interface{} `json:"content"`
-	XPReward     int                    `json:"xp_reward"`
+	ID               uuid.UUID        `json:"id"`
+	CourseID         uuid.UUID        `json:"course_id"`
+	ExternalID       string           `json:"external_id,omitempty"`
+	Title            string           `json:"title"`
+	TitleTranslation string           `json:"title_translation,omitempty"`
+	IllustrationURL  string           `json:"illustration_url,omitempty"`
+	SetID            int              `json:"set_id"`
+	SetPosition      int              `json:"set_position"`
+	Difficulty       int              `json:"difficulty"`
+	CEFRLevel        string           `json:"cefr_level,omitempty"`
+	DurationSeconds  int              `json:"duration_seconds"`
+	XPReward         int              `json:"xp_reward"`
+	Characters       []StoryCharacter `json:"characters,omitempty"`
+	Elements         []StoryElement   `json:"elements,omitempty"`
+	CreatedAt        time.Time        `json:"created_at"`
+}
+
+// StoryCharacter represents a character in a story
+type StoryCharacter struct {
+	ID          uuid.UUID `json:"id"`
+	StoryID     uuid.UUID `json:"story_id"`
+	Name        string    `json:"name"`
+	DisplayName string    `json:"display_name"`
+	AvatarURL   string    `json:"avatar_url,omitempty"`
+	VoiceID     string    `json:"voice_id,omitempty"`
+	Position    int       `json:"position"`
+}
+
+// StoryElement represents a single element in a story
+type StoryElement struct {
+	ID            uuid.UUID        `json:"id"`
+	StoryID       uuid.UUID        `json:"story_id"`
+	Position      int              `json:"position"`
+	ElementType   StoryElementType `json:"element_type"`
+	SpeakerID     *uuid.UUID       `json:"speaker_id,omitempty"`
+	Speaker       *StoryCharacter  `json:"speaker,omitempty"`
+	Text          string           `json:"text,omitempty"`
+	Translation   string           `json:"translation,omitempty"`
+	AudioURL      string           `json:"audio_url,omitempty"`
+	AudioTiming   []AudioTiming    `json:"audio_timing,omitempty"`
+	ChallengeData *ChallengeData   `json:"challenge_data,omitempty"`
+}
+
+// AudioTiming represents timing for a word in audio
+type AudioTiming struct {
+	Start    int `json:"start"`    // milliseconds from audio start
+	Duration int `json:"duration"` // milliseconds
+}
+
+// ChallengeData represents challenge-specific data
+type ChallengeData struct {
+	// Common
+	Prompt        string   `json:"prompt,omitempty"`
+	CorrectAnswer string   `json:"correct_answer,omitempty"`
+	Options       []string `json:"options,omitempty"`
+
+	// SelectPhrase: highlighted phrase boundaries
+	PhraseStart int `json:"phrase_start,omitempty"`
+	PhraseEnd   int `json:"phrase_end,omitempty"`
+
+	// Arrange: word segments to reorder
+	Segments []ArrangeSegment `json:"segments,omitempty"`
+
+	// Match: pairs to match
+	Pairs []MatchPair `json:"pairs,omitempty"`
+}
+
+// ArrangeSegment represents a word/phrase segment for arrange challenges
+type ArrangeSegment struct {
+	Text        string `json:"text"`
+	Translation string `json:"translation,omitempty"`
+	Position    int    `json:"position"` // correct position
+}
+
+// MatchPair represents a word-translation pair for matching
+type MatchPair struct {
+	Word        string `json:"word"`
+	Translation string `json:"translation"`
+}
+
+// StorySet represents a collection of stories
+type StorySet struct {
+	ID                int       `json:"id"`
+	CourseID          uuid.UUID `json:"course_id"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description,omitempty"`
+	Position          int       `json:"position"`
+	UnlockRequirement string    `json:"unlock_requirement,omitempty"`
+	IconURL           string    `json:"icon_url,omitempty"`
+	Stories           []Story   `json:"stories,omitempty"`
+	StoriesCount      int       `json:"stories_count"`
+	CompletedCount    int       `json:"completed_count,omitempty"`
 }
 
 // UserStory represents a user's completion of a story
 type UserStory struct {
+	UserID              uuid.UUID  `json:"user_id"`
+	StoryID             uuid.UUID  `json:"story_id"`
+	StartedAt           *time.Time `json:"started_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	Completed           bool       `json:"completed"`
+	XPEarned            int        `json:"xp_earned"`
+	MistakesCount       int        `json:"mistakes_count"`
+	ListenModeCompleted bool       `json:"listen_mode_completed"`
+}
+
+// UserStoryProgress represents element-level progress
+type UserStoryProgress struct {
+	ID          uuid.UUID  `json:"id"`
 	UserID      uuid.UUID  `json:"user_id"`
 	StoryID     uuid.UUID  `json:"story_id"`
+	ElementID   uuid.UUID  `json:"element_id"`
 	Completed   bool       `json:"completed"`
+	Correct     *bool      `json:"correct,omitempty"`
+	Attempts    int        `json:"attempts"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }

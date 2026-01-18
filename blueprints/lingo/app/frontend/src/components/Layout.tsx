@@ -1,16 +1,18 @@
 import { AppShell, Group, Stack, UnstyledButton, Text, Avatar, Tooltip } from '@mantine/core'
-import { IconFlame, IconHome, IconTrophy, IconUser, IconShoppingCart, IconMedal, IconHeart, IconBook } from '@tabler/icons-react'
+import { IconFlame, IconHome, IconTrophy, IconUser, IconShoppingCart, IconMedal, IconHeart, IconBook, IconDots } from '@tabler/icons-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
 import { colors } from '../styles/tokens'
 
+// Duolingo-style colorful navigation icons
 const navItems = [
-  { icon: IconHome, label: 'LEARN', path: '/learn' },
-  { icon: IconBook, label: 'LETTERS', path: '/letters' },
-  { icon: IconTrophy, label: 'LEADERBOARDS', path: '/leaderboards' },
-  { icon: IconMedal, label: 'QUESTS', path: '/quests' },
-  { icon: IconShoppingCart, label: 'SHOP', path: '/shop' },
-  { icon: IconUser, label: 'PROFILE', path: '/profile' },
+  { icon: IconHome, label: 'LEARN', path: '/learn', color: '#58CC02' },
+  { icon: IconBook, label: 'LETTERS', path: '/letters', color: '#CE82FF' },
+  { icon: IconTrophy, label: 'LEADERBOARDS', path: '/leaderboards', color: '#FFC800' },
+  { icon: IconMedal, label: 'QUESTS', path: '/quests', color: '#FF9600' },
+  { icon: IconShoppingCart, label: 'SHOP', path: '/shop', color: '#1CB0F6' },
+  { icon: IconUser, label: 'PROFILE', path: '/profile', color: '#58CC02' },
+  { icon: IconDots, label: 'MORE', path: '/more', color: '#CE82FF' },
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -20,79 +22,50 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShell
-      header={{ height: 60 }}
-      navbar={{ width: 256, breakpoint: 'sm' }}
-      padding="md"
+      navbar={{ width: 220, breakpoint: 'sm' }}
+      padding={0}
       styles={{
         main: {
-          backgroundColor: colors.neutral.background,
+          backgroundColor: '#FFFFFF',
           minHeight: '100vh',
         },
-        header: {
-          backgroundColor: colors.neutral.white,
-          borderBottom: `2px solid ${colors.neutral.border}`,
-        },
         navbar: {
-          backgroundColor: colors.neutral.white,
-          borderRight: `2px solid ${colors.neutral.border}`,
+          backgroundColor: '#FFFFFF',
+          borderRight: 'none',
+          padding: '24px 16px',
         },
       }}
     >
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group>
-            <Text
-              size="xl"
-              fw={800}
-              style={{ color: colors.primary.green, cursor: 'pointer', letterSpacing: '-0.5px' }}
-              onClick={() => navigate('/learn')}
-            >
-              lingo
-            </Text>
-          </Group>
+      <AppShell.Navbar>
+        {/* Logo */}
+        <Text
+          size="xl"
+          fw={800}
+          mb="xl"
+          style={{
+            color: colors.primary.green,
+            cursor: 'pointer',
+            letterSpacing: '-0.5px',
+            fontSize: '1.75rem',
+            fontFamily: '"Nunito", "DIN Round Pro", sans-serif',
+          }}
+          onClick={() => navigate('/learn')}
+        >
+          lingo
+        </Text>
 
-          <Group gap="lg">
-            {/* Streak */}
-            <Tooltip label={`${user?.streak_days || 0} day streak`}>
-              <Group gap={4} className="stat-item streak">
-                <IconFlame size={24} style={{ color: colors.accent.orange }} />
-                <Text fw={700} style={{ color: colors.accent.orange }}>{user?.streak_days || 0}</Text>
-              </Group>
-            </Tooltip>
-
-            {/* Gems */}
-            <Tooltip label="Gems">
-              <Group gap={4} className="stat-item gems">
-                <Text size="lg">💎</Text>
-                <Text fw={700} style={{ color: colors.secondary.blue }}>{user?.gems || 0}</Text>
-              </Group>
-            </Tooltip>
-
-            {/* Hearts */}
-            <Tooltip label="Hearts">
-              <Group gap={4} className="stat-item hearts">
-                <IconHeart size={24} style={{ color: colors.accent.pink, fill: colors.accent.pink }} />
-                <Text fw={700} style={{ color: colors.accent.pink }}>{user?.hearts || 0}</Text>
-              </Group>
-            </Tooltip>
-          </Group>
-        </Group>
-      </AppShell.Header>
-
-      <AppShell.Navbar p="md">
-        <Stack gap="xs">
+        <Stack gap={4}>
           {navItems.map((item) => {
             const isActive = location.pathname === item.path
             return (
               <UnstyledButton
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`nav-item ${isActive ? 'active' : ''}`}
                 style={{
                   padding: '12px 16px',
                   borderRadius: '12px',
-                  backgroundColor: isActive ? colors.secondary.blueLight : 'transparent',
-                  border: isActive ? `2px solid ${colors.secondary.blue}` : '2px solid transparent',
+                  backgroundColor: isActive ? `${item.color}20` : 'transparent',
+                  border: isActive ? `2px solid ${item.color}` : '2px solid transparent',
                   transition: 'all 0.15s ease',
                 }}
               >
@@ -100,15 +73,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <item.icon
                     size={28}
                     style={{
-                      color: isActive ? colors.secondary.blue : colors.text.secondary,
+                      color: item.color,
                     }}
                   />
                   <Text
                     fw={700}
                     size="sm"
                     style={{
-                      color: isActive ? colors.secondary.blue : colors.text.secondary,
+                      color: isActive ? item.color : colors.text.secondary,
                       letterSpacing: '0.5px',
+                      textTransform: 'uppercase',
                     }}
                   >
                     {item.label}
@@ -118,27 +92,55 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )
           })}
         </Stack>
-
-        {/* User info at bottom */}
-        <Stack mt="auto" pt="md" style={{ borderTop: `1px solid ${colors.neutral.border}` }}>
-          <Group>
-            <Avatar size="md" radius="xl" color="green" style={{ backgroundColor: colors.primary.green }}>
-              {user?.username?.charAt(0).toUpperCase()}
-            </Avatar>
-            <div>
-              <Text size="sm" fw={700} style={{ color: colors.text.primary }}>
-                {user?.display_name || user?.username}
-              </Text>
-              <Text size="xs" style={{ color: colors.text.secondary }}>
-                @{user?.username}
-              </Text>
-            </div>
-          </Group>
-        </Stack>
       </AppShell.Navbar>
 
       <AppShell.Main>
-        {children}
+        {/* Top stats bar */}
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          backgroundColor: '#FFFFFF',
+          zIndex: 100,
+          padding: '16px 24px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}>
+          <Group gap="lg">
+            {/* Language flag */}
+            <Text size="xl">🇪🇸</Text>
+
+            {/* Streak */}
+            <Tooltip label={`${user?.streak_days || 0} day streak`}>
+              <Group gap={4}>
+                <IconFlame size={24} style={{ color: user?.streak_days ? colors.accent.orange : '#E5E5E5' }} />
+                <Text fw={700} style={{ color: user?.streak_days ? colors.accent.orange : '#AFAFAF' }}>
+                  {user?.streak_days || 0}
+                </Text>
+              </Group>
+            </Tooltip>
+
+            {/* Gems */}
+            <Tooltip label="Gems">
+              <Group gap={4}>
+                <Text size="lg">💎</Text>
+                <Text fw={700} style={{ color: colors.secondary.blue }}>{user?.gems || 500}</Text>
+              </Group>
+            </Tooltip>
+
+            {/* Hearts */}
+            <Tooltip label="Hearts">
+              <Group gap={4}>
+                <IconHeart size={24} style={{ color: colors.accent.pink, fill: colors.accent.pink }} />
+                <Text fw={700} style={{ color: colors.accent.pink }}>{user?.hearts || 5}</Text>
+              </Group>
+            </Tooltip>
+          </Group>
+        </div>
+
+        {/* Main content */}
+        <div style={{ padding: '0 24px 24px' }}>
+          {children}
+        </div>
       </AppShell.Main>
     </AppShell>
   )

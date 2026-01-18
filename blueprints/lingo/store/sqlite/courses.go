@@ -296,8 +296,9 @@ func (s *CourseStore) GetExercises(ctx context.Context, lessonID uuid.UUID) ([]s
 // GetStories returns stories for a course
 func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]store.Story, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, course_id, title, difficulty, character_ids, content, xp_reward
-		FROM stories WHERE course_id = ? ORDER BY difficulty
+		SELECT id, course_id, external_id, title, title_translation, illustration_url,
+		       set_id, set_position, difficulty, cefr_level, duration_seconds, xp_reward, created_at
+		FROM stories WHERE course_id = ? ORDER BY set_id, set_position, difficulty
 	`, courseID.String())
 	if err != nil {
 		return nil, err
@@ -308,20 +309,23 @@ func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]sto
 	for rows.Next() {
 		var story store.Story
 		var id, cID string
-		var charIDsJSON, contentJSON sql.NullString
+		var externalID, titleTranslation, illustrationURL, cefrLevel sql.NullString
+		var createdAt sql.NullTime
 
-		if err := rows.Scan(&id, &cID, &story.Title, &story.Difficulty, &charIDsJSON, &contentJSON, &story.XPReward); err != nil {
+		if err := rows.Scan(&id, &cID, &externalID, &story.Title, &titleTranslation,
+			&illustrationURL, &story.SetID, &story.SetPosition, &story.Difficulty,
+			&cefrLevel, &story.DurationSeconds, &story.XPReward, &createdAt); err != nil {
 			return nil, err
 		}
 
 		story.ID, _ = uuid.Parse(id)
 		story.CourseID, _ = uuid.Parse(cID)
-
-		if charIDsJSON.Valid {
-			_ = json.Unmarshal([]byte(charIDsJSON.String), &story.CharacterIDs)
-		}
-		if contentJSON.Valid {
-			_ = json.Unmarshal([]byte(contentJSON.String), &story.Content)
+		story.ExternalID = externalID.String
+		story.TitleTranslation = titleTranslation.String
+		story.IllustrationURL = illustrationURL.String
+		story.CEFRLevel = cefrLevel.String
+		if createdAt.Valid {
+			story.CreatedAt = createdAt.Time
 		}
 
 		stories = append(stories, story)
@@ -334,24 +338,28 @@ func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]sto
 func (s *CourseStore) GetStory(ctx context.Context, id uuid.UUID) (*store.Story, error) {
 	var story store.Story
 	var storyID, courseID string
-	var charIDsJSON, contentJSON sql.NullString
+	var externalID, titleTranslation, illustrationURL, cefrLevel sql.NullString
+	var createdAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, course_id, title, difficulty, character_ids, content, xp_reward
+		SELECT id, course_id, external_id, title, title_translation, illustration_url,
+		       set_id, set_position, difficulty, cefr_level, duration_seconds, xp_reward, created_at
 		FROM stories WHERE id = ?
-	`, id.String()).Scan(&storyID, &courseID, &story.Title, &story.Difficulty, &charIDsJSON, &contentJSON, &story.XPReward)
+	`, id.String()).Scan(&storyID, &courseID, &externalID, &story.Title, &titleTranslation,
+		&illustrationURL, &story.SetID, &story.SetPosition, &story.Difficulty,
+		&cefrLevel, &story.DurationSeconds, &story.XPReward, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 
 	story.ID, _ = uuid.Parse(storyID)
 	story.CourseID, _ = uuid.Parse(courseID)
-
-	if charIDsJSON.Valid {
-		_ = json.Unmarshal([]byte(charIDsJSON.String), &story.CharacterIDs)
-	}
-	if contentJSON.Valid {
-		_ = json.Unmarshal([]byte(contentJSON.String), &story.Content)
+	story.ExternalID = externalID.String
+	story.TitleTranslation = titleTranslation.String
+	story.IllustrationURL = illustrationURL.String
+	story.CEFRLevel = cefrLevel.String
+	if createdAt.Valid {
+		story.CreatedAt = createdAt.Time
 	}
 
 	return &story, nil

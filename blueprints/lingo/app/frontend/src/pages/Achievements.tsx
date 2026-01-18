@@ -62,7 +62,7 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
       p="lg"
       radius="lg"
       style={{
-        backgroundColor: isMaxed ? '#3f9a02' : '#1a2c33',
+        backgroundColor: isMaxed ? '#3f9a02' : '#FFFFFF',
         border: isMaxed ? '2px solid #ffc800' : 'none',
       }}
     >
@@ -72,7 +72,7 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
             width: 60,
             height: 60,
             borderRadius: '50%',
-            backgroundColor: isMaxed ? '#ffc800' : '#233a42',
+            backgroundColor: isMaxed ? '#ffc800' : '#F7F7F7',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -83,7 +83,7 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
         </div>
         <div style={{ flex: 1 }}>
           <Group justify="space-between" mb={4}>
-            <Text fw={700} style={{ color: 'white' }}>{achievement.name}</Text>
+            <Text fw={700} style={{ color: '#4B4B4B' }}>{achievement.name}</Text>
             <Badge
               color={isMaxed ? 'yellow' : 'gray'}
               variant={isMaxed ? 'filled' : 'outline'}
@@ -91,7 +91,7 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
               Level {achievement.currentLevel}/{achievement.maxLevel}
             </Badge>
           </Group>
-          <Text size="sm" style={{ color: '#8fa8b2' }} mb="sm">
+          <Text size="sm" style={{ color: '#777777' }} mb="sm">
             {achievement.description}
           </Text>
           {!isMaxed && (
@@ -102,7 +102,7 @@ function AchievementCard({ achievement }: { achievement: Achievement }) {
                 radius="xl"
                 color={progressPercent >= 100 ? 'green' : 'blue'}
               />
-              <Text size="xs" style={{ color: '#8fa8b2' }} mt={4}>
+              <Text size="xs" style={{ color: '#777777' }} mt={4}>
                 {achievement.progress} / {nextThreshold}
               </Text>
             </>
@@ -136,7 +136,7 @@ export default function Achievements() {
         radius="lg"
         mb="xl"
         style={{
-          backgroundColor: '#1a2c33',
+          backgroundColor: '#FFFFFF',
         }}
       >
         <Group justify="space-around">
@@ -144,19 +144,19 @@ export default function Achievements() {
             <Text size="2.5rem" fw={800} style={{ color: '#58cc02' }}>
               {totalUnlocked}
             </Text>
-            <Text style={{ color: '#8fa8b2' }}>Unlocked</Text>
+            <Text style={{ color: '#777777' }}>Unlocked</Text>
           </Stack>
           <Stack align="center" gap="xs">
             <Text size="2.5rem" fw={800} style={{ color: '#ffc800' }}>
               {totalMaxed}
             </Text>
-            <Text style={{ color: '#8fa8b2' }}>Maxed Out</Text>
+            <Text style={{ color: '#777777' }}>Maxed Out</Text>
           </Stack>
           <Stack align="center" gap="xs">
             <Text size="2.5rem" fw={800} style={{ color: '#1cb0f6' }}>
               {achievements.length}
             </Text>
-            <Text style={{ color: '#8fa8b2' }}>Total</Text>
+            <Text style={{ color: '#777777' }}>Total</Text>
           </Stack>
         </Group>
       </Paper>
@@ -169,7 +169,7 @@ export default function Achievements() {
               key={cat.value}
               value={cat.value}
               style={{
-                color: category === cat.value ? '#58cc02' : '#8fa8b2',
+                color: category === cat.value ? '#58cc02' : '#777777',
                 fontWeight: 600,
               }}
             >

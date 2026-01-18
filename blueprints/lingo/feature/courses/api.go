@@ -21,14 +21,14 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/languages", h.ListLanguages)
 	r.Get("/courses", h.ListCourses)
-	r.Get("/courses/:id", h.GetCourse)
-	r.Post("/courses/:id/enroll", h.Enroll)
-	r.Get("/courses/:id/path", h.GetPath)
-	r.Get("/units/:id", h.GetUnit)
-	r.Get("/skills/:id", h.GetSkill)
+	r.Get("/courses/{id}", h.GetCourse)
+	r.Post("/courses/{id}/enroll", h.Enroll)
+	r.Get("/courses/{id}/path", h.GetPath)
+	r.Get("/units/{id}", h.GetUnit)
+	r.Get("/skills/{id}", h.GetSkill)
 	r.Get("/stories", h.GetStories)
-	r.Get("/stories/:id", h.GetStory)
-	r.Post("/stories/:id/complete", h.CompleteStory)
+	r.Get("/stories/{id}", h.GetStory)
+	r.Post("/stories/{id}/complete", h.CompleteStory)
 }
 
 // ListLanguages handles GET /languages
@@ -56,7 +56,7 @@ func (h *Handler) ListCourses(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, courses)
 }
 
-// GetCourse handles GET /courses/:id
+// GetCourse handles GET /courses/{id}
 func (h *Handler) GetCourse(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
@@ -82,7 +82,7 @@ func (h *Handler) GetCourse(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, course)
 }
 
-// Enroll handles POST /courses/:id/enroll
+// Enroll handles POST /courses/{id}/enroll
 func (h *Handler) Enroll(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
@@ -109,7 +109,7 @@ func (h *Handler) Enroll(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "enrolled successfully"})
 }
 
-// GetPath handles GET /courses/:id/path
+// GetPath handles GET /courses/{id}/path
 func (h *Handler) GetPath(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	courseID, err := uuid.Parse(idStr)
@@ -125,7 +125,7 @@ func (h *Handler) GetPath(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, path)
 }
 
-// GetUnit handles GET /units/:id
+// GetUnit handles GET /units/{id}
 func (h *Handler) GetUnit(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
@@ -141,7 +141,7 @@ func (h *Handler) GetUnit(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, unit)
 }
 
-// GetSkill handles GET /skills/:id
+// GetSkill handles GET /skills/{id}
 func (h *Handler) GetSkill(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
@@ -177,7 +177,7 @@ func (h *Handler) GetStories(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, stories)
 }
 
-// GetStory handles GET /stories/:id
+// GetStory handles GET /stories/{id}
 func (h *Handler) GetStory(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
@@ -193,7 +193,7 @@ func (h *Handler) GetStory(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, story)
 }
 
-// CompleteStory handles POST /stories/:id/complete
+// CompleteStory handles POST /stories/{id}/complete
 func (h *Handler) CompleteStory(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {

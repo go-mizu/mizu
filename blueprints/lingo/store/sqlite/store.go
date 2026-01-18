@@ -22,6 +22,7 @@ type Store struct {
 	gamification *GamificationStore
 	social       *SocialStore
 	achievements *AchievementStore
+	stories      *StoryStore
 }
 
 // New creates a new SQLite store
@@ -57,6 +58,7 @@ func New(ctx context.Context, dbPath string) (*Store, error) {
 	s.gamification = &GamificationStore{db: db}
 	s.social = &SocialStore{db: db}
 	s.achievements = &AchievementStore{db: db}
+	s.stories = &StoryStore{db: db}
 
 	return s, nil
 }
@@ -329,23 +331,82 @@ func (s *Store) Ensure(ctx context.Context) error {
 			completed INTEGER DEFAULT 0,
 			rewards_claimed INTEGER DEFAULT 0
 		)`,
+		// Story sets (collections)
+		`CREATE TABLE IF NOT EXISTS story_sets (
+			id INTEGER PRIMARY KEY,
+			course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			description TEXT,
+			position INTEGER NOT NULL,
+			unlock_requirement TEXT,
+			icon_url TEXT
+		)`,
 		// Stories
 		`CREATE TABLE IF NOT EXISTS stories (
 			id TEXT PRIMARY KEY,
-			course_id TEXT REFERENCES courses(id) ON DELETE CASCADE,
+			course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+			external_id TEXT,
 			title TEXT NOT NULL,
+			title_translation TEXT,
+			illustration_url TEXT,
+			set_id INTEGER NOT NULL DEFAULT 1,
+			set_position INTEGER DEFAULT 0,
 			difficulty INTEGER DEFAULT 1,
-			character_ids TEXT,
-			content TEXT,
-			xp_reward INTEGER DEFAULT 14
+			cefr_level TEXT,
+			duration_seconds INTEGER DEFAULT 180,
+			xp_reward INTEGER DEFAULT 14,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(course_id, external_id)
+		)`,
+		// Story characters
+		`CREATE TABLE IF NOT EXISTS story_characters (
+			id TEXT PRIMARY KEY,
+			story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			display_name TEXT,
+			avatar_url TEXT,
+			voice_id TEXT,
+			position INTEGER DEFAULT 0,
+			UNIQUE(story_id, name)
+		)`,
+		// Story elements (lines, challenges)
+		`CREATE TABLE IF NOT EXISTS story_elements (
+			id TEXT PRIMARY KEY,
+			story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+			position INTEGER NOT NULL,
+			element_type TEXT NOT NULL,
+			speaker_id TEXT REFERENCES story_characters(id),
+			text TEXT,
+			translation TEXT,
+			audio_url TEXT,
+			audio_timing TEXT,
+			challenge_data TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		// User stories
 		`CREATE TABLE IF NOT EXISTS user_stories (
-			user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-			story_id TEXT REFERENCES stories(id) ON DELETE CASCADE,
-			completed INTEGER DEFAULT 0,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+			started_at DATETIME,
 			completed_at DATETIME,
+			completed INTEGER DEFAULT 0,
+			xp_earned INTEGER DEFAULT 0,
+			mistakes_count INTEGER DEFAULT 0,
+			listen_mode_completed INTEGER DEFAULT 0,
 			PRIMARY KEY (user_id, story_id)
+		)`,
+		// User story element progress
+		`CREATE TABLE IF NOT EXISTS user_story_progress (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+			element_id TEXT NOT NULL REFERENCES story_elements(id) ON DELETE CASCADE,
+			completed INTEGER DEFAULT 0,
+			correct INTEGER,
+			attempts INTEGER DEFAULT 0,
+			completed_at DATETIME,
+			UNIQUE(user_id, story_id, element_id)
 		)`,
 		// Notifications
 		`CREATE TABLE IF NOT EXISTS notifications (
@@ -379,6 +440,14 @@ func (s *Store) Ensure(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_streak_history_user ON streak_history(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_leagues_season ON user_leagues(season_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_stories_course ON stories(course_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_stories_set ON stories(set_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_story_elements_story ON story_elements(story_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_story_elements_position ON story_elements(story_id, position)`,
+		`CREATE INDEX IF NOT EXISTS idx_story_characters_story ON story_characters(story_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_stories_user ON user_stories(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_stories_story ON user_stories(story_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_story_progress_user ON user_story_progress(user_id, story_id)`,
 	}
 
 	for _, stmt := range statements {
@@ -418,6 +487,11 @@ func (s *Store) Social() store.SocialStore {
 // Achievements returns the achievement store
 func (s *Store) Achievements() store.AchievementStore {
 	return s.achievements
+}
+
+// Stories returns the story store
+func (s *Store) Stories() store.StoryStore {
+	return s.stories
 }
 
 // ============================================================================

@@ -20,13 +20,13 @@ func NewHandler(svc *Service) *Handler {
 // RegisterRoutes registers social routes
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/friends", h.GetFriends)
-	r.Post("/friends/:id/follow", h.Follow)
-	r.Delete("/friends/:id/unfollow", h.Unfollow)
+	r.Post("/friends/{id}/follow", h.Follow)
+	r.Delete("/friends/{id}/unfollow", h.Unfollow)
 	r.Get("/friends/leaderboard", h.GetFriendLeaderboard)
 	r.Get("/friends/quests", h.GetFriendQuests)
 	r.Get("/friends/streaks", h.GetFriendStreaks)
 	r.Get("/notifications", h.GetNotifications)
-	r.Put("/notifications/:id/read", h.MarkNotificationRead)
+	r.Put("/notifications/{id}/read", h.MarkNotificationRead)
 }
 
 // GetFriends handles GET /friends
@@ -44,7 +44,7 @@ func (h *Handler) GetFriends(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, friends)
 }
 
-// Follow handles POST /friends/:id/follow
+// Follow handles POST /friends/{id}/follow
 func (h *Handler) Follow(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
@@ -73,7 +73,7 @@ func (h *Handler) Follow(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "followed"})
 }
 
-// Unfollow handles DELETE /friends/:id/unfollow
+// Unfollow handles DELETE /friends/{id}/unfollow
 func (h *Handler) Unfollow(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
@@ -155,7 +155,7 @@ func (h *Handler) GetNotifications(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, notifications)
 }
 
-// MarkNotificationRead handles PUT /notifications/:id/read
+// MarkNotificationRead handles PUT /notifications/{id}/read
 func (h *Handler) MarkNotificationRead(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {

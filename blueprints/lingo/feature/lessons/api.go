@@ -19,13 +19,13 @@ func NewHandler(svc *Service) *Handler {
 
 // RegisterRoutes registers lesson routes
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
-	r.Get("/lessons/:id", h.GetLesson)
-	r.Post("/lessons/:id/start", h.StartLesson)
-	r.Post("/lessons/:id/complete", h.CompleteLesson)
-	r.Post("/exercises/:id/answer", h.AnswerExercise)
+	r.Get("/lessons/{id}", h.GetLesson)
+	r.Post("/lessons/{id}/start", h.StartLesson)
+	r.Post("/lessons/{id}/complete", h.CompleteLesson)
+	r.Post("/exercises/{id}/answer", h.AnswerExercise)
 }
 
-// GetLesson handles GET /lessons/:id
+// GetLesson handles GET /lessons/{id}
 func (h *Handler) GetLesson(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
@@ -41,7 +41,7 @@ func (h *Handler) GetLesson(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, lesson)
 }
 
-// StartLesson handles POST /lessons/:id/start
+// StartLesson handles POST /lessons/{id}/start
 func (h *Handler) StartLesson(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
@@ -75,7 +75,7 @@ type CompleteLessonRequest struct {
 	HeartsLost    int `json:"hearts_lost"`
 }
 
-// CompleteLesson handles POST /lessons/:id/complete
+// CompleteLesson handles POST /lessons/{id}/complete
 func (h *Handler) CompleteLesson(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
@@ -106,7 +106,7 @@ type AnswerExerciseRequest struct {
 	Answer string `json:"answer"`
 }
 
-// AnswerExercise handles POST /exercises/:id/answer
+// AnswerExercise handles POST /exercises/{id}/answer
 func (h *Handler) AnswerExercise(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {

@@ -20,6 +20,7 @@ type Store struct {
 	gamification *GamificationStore
 	social       *SocialStore
 	achievements *AchievementStore
+	stories      *StoryStore
 }
 
 // New creates a new PostgreSQL store
@@ -51,6 +52,7 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	s.gamification = &GamificationStore{pool: pool}
 	s.social = &SocialStore{pool: pool}
 	s.achievements = &AchievementStore{pool: pool}
+	s.stories = &StoryStore{pool: pool}
 
 	return s, nil
 }
@@ -351,24 +353,84 @@ func (s *Store) Ensure(ctx context.Context) error {
 		rewards_claimed BOOLEAN DEFAULT FALSE
 	);
 
+	-- Story sets
+	CREATE TABLE IF NOT EXISTS story_sets (
+		id INT PRIMARY KEY,
+		course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+		name VARCHAR(100) NOT NULL,
+		description TEXT,
+		position INT NOT NULL,
+		unlock_requirement TEXT,
+		icon_url TEXT
+	);
+
 	-- Stories
 	CREATE TABLE IF NOT EXISTS stories (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
+		external_id VARCHAR(100),
 		title VARCHAR(200) NOT NULL,
+		title_translation VARCHAR(200),
+		illustration_url TEXT,
+		set_id INT,
+		set_position INT DEFAULT 0,
 		difficulty INT DEFAULT 1,
-		character_ids JSONB,
-		content JSONB,
-		xp_reward INT DEFAULT 14
+		cefr_level VARCHAR(10),
+		duration_seconds INT DEFAULT 0,
+		xp_reward INT DEFAULT 14,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+	);
+
+	-- Story characters
+	CREATE TABLE IF NOT EXISTS story_characters (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		story_id UUID REFERENCES stories(id) ON DELETE CASCADE,
+		name VARCHAR(100) NOT NULL,
+		display_name VARCHAR(100),
+		avatar_url TEXT,
+		voice_id VARCHAR(100),
+		position INT DEFAULT 0,
+		UNIQUE(story_id, name)
+	);
+
+	-- Story elements
+	CREATE TABLE IF NOT EXISTS story_elements (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		story_id UUID REFERENCES stories(id) ON DELETE CASCADE,
+		position INT NOT NULL,
+		element_type VARCHAR(50) NOT NULL,
+		speaker_id UUID REFERENCES story_characters(id) ON DELETE SET NULL,
+		text TEXT,
+		translation TEXT,
+		audio_url TEXT,
+		audio_timing JSONB,
+		challenge_data JSONB
 	);
 
 	-- User stories
 	CREATE TABLE IF NOT EXISTS user_stories (
 		user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 		story_id UUID REFERENCES stories(id) ON DELETE CASCADE,
-		completed BOOLEAN DEFAULT FALSE,
+		started_at TIMESTAMP WITH TIME ZONE,
 		completed_at TIMESTAMP WITH TIME ZONE,
+		completed BOOLEAN DEFAULT FALSE,
+		xp_earned INT DEFAULT 0,
+		mistakes_count INT DEFAULT 0,
+		listen_mode_completed BOOLEAN DEFAULT FALSE,
 		PRIMARY KEY (user_id, story_id)
+	);
+
+	-- User story progress (element-level)
+	CREATE TABLE IF NOT EXISTS user_story_progress (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+		story_id UUID REFERENCES stories(id) ON DELETE CASCADE,
+		element_id UUID REFERENCES story_elements(id) ON DELETE CASCADE,
+		completed BOOLEAN DEFAULT FALSE,
+		correct BOOLEAN,
+		attempts INT DEFAULT 0,
+		completed_at TIMESTAMP WITH TIME ZONE,
+		UNIQUE(user_id, story_id, element_id)
 	);
 
 	-- Notifications
@@ -442,6 +504,11 @@ func (s *Store) Social() store.SocialStore {
 // Achievements returns the achievement store
 func (s *Store) Achievements() store.AchievementStore {
 	return s.achievements
+}
+
+// Stories returns the story store
+func (s *Store) Stories() store.StoryStore {
+	return s.stories
 }
 
 // ============================================================================

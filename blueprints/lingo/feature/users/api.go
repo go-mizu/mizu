@@ -21,8 +21,8 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/users/me", h.GetMe)
 	r.Put("/users/me", h.UpdateMe)
-	r.Get("/users/:username", h.GetByUsername)
-	r.Get("/users/:id/stats", h.GetStats)
+	r.Get("/users/{username}", h.GetByUsername)
+	r.Get("/users/{id}/stats", h.GetStats)
 	r.Put("/users/me/settings", h.UpdateSettings)
 }
 
@@ -68,7 +68,7 @@ func (h *Handler) UpdateMe(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-// GetByUsername handles GET /users/:username
+// GetByUsername handles GET /users/{username}
 func (h *Handler) GetByUsername(c *mizu.Ctx) error {
 	username := c.Param("username")
 
@@ -90,7 +90,7 @@ func (h *Handler) GetByUsername(c *mizu.Ctx) error {
 	})
 }
 
-// GetStats handles GET /users/:id/stats
+// GetStats handles GET /users/{id}/stats
 func (h *Handler) GetStats(c *mizu.Ctx) error {
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)

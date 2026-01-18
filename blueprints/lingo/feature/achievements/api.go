@@ -22,7 +22,7 @@ func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/achievements", h.GetAchievements)
 	r.Get("/achievements/me", h.GetMyAchievements)
 	r.Get("/achievements/categories", h.GetCategories)
-	r.Get("/achievements/category/:category", h.GetByCategory)
+	r.Get("/achievements/category/{category}", h.GetByCategory)
 }
 
 // GetAchievements handles GET /achievements
@@ -62,7 +62,7 @@ func (h *Handler) GetCategories(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, h.svc.Categories())
 }
 
-// GetByCategory handles GET /achievements/category/:category
+// GetByCategory handles GET /achievements/category/{category}
 func (h *Handler) GetByCategory(c *mizu.Ctx) error {
 	category := c.Param("category")
 

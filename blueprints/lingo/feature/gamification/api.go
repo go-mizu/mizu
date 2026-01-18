@@ -23,9 +23,9 @@ func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/leagues", h.GetLeagues)
 	r.Get("/leagues/current", h.GetCurrentLeague)
 	r.Get("/leagues/leaderboard", h.GetLeaderboard)
-	r.Post("/leagues/:id/join", h.JoinLeague)
+	r.Post("/leagues/{id}/join", h.JoinLeague)
 	r.Get("/quests/daily", h.GetDailyQuests)
-	r.Post("/quests/:id/claim", h.ClaimQuestReward)
+	r.Post("/quests/{id}/claim", h.ClaimQuestReward)
 }
 
 // GetLeagues handles GET /leagues
@@ -80,7 +80,7 @@ func (h *Handler) GetLeaderboard(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, leaderboard)
 }
 
-// JoinLeague handles POST /leagues/:id/join
+// JoinLeague handles POST /leagues/{id}/join
 func (h *Handler) JoinLeague(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
@@ -122,7 +122,7 @@ func (h *Handler) GetDailyQuests(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, quests)
 }
 
-// ClaimQuestReward handles POST /quests/:id/claim
+// ClaimQuestReward handles POST /quests/{id}/claim
 func (h *Handler) ClaimQuestReward(c *mizu.Ctx) error {
 	userID := getUserID(c)
 	if userID == uuid.Nil {
