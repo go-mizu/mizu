@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Container, Paper, Title, Text, Button, Group, Stack, Progress, ActionIcon, Loader, Badge, TextInput } from '@mantine/core'
 import { IconX, IconHeart, IconCheck, IconVolume, IconVolume2 } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -6,36 +6,28 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuthStore } from '../stores/auth'
 import { colors } from '../styles/tokens'
 import { lessonsApi, Exercise, Lesson as LessonType } from '../api/client'
-import { sounds, playSound } from '../utils/sounds'
+import { sounds, playSound, playTTS, stopSpeaking } from '../utils/sounds'
 
-// Audio playback hook
+// Audio playback hook using Web Speech API
 function useAudio() {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
 
   const playAudio = useCallback((url: string, slow = false) => {
     if (!url) return
 
     // Stop any currently playing audio
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current = null
-    }
-
-    // Apply slow mode for Google TTS if requested
-    let audioUrl = url
-    if (slow && url.includes('translate.google.com')) {
-      audioUrl = url.includes('?') ? `${url}&ttsspeed=0.3` : `${url}?ttsspeed=0.3`
-    }
-
-    const audio = new Audio(audioUrl)
-    audioRef.current = audio
+    stopSpeaking()
     setIsPlaying(true)
 
-    audio.onended = () => setIsPlaying(false)
-    audio.onerror = () => setIsPlaying(false)
-
-    audio.play().catch(() => setIsPlaying(false))
+    // Use Web Speech API via playTTS (extracts text/lang from Google TTS URL)
+    playTTS(
+      url,
+      undefined, // text will be extracted from URL
+      undefined, // lang will be extracted from URL
+      slow,
+      () => setIsPlaying(false), // onEnd
+      () => setIsPlaying(false)  // onError
+    )
   }, [])
 
   return { playAudio, isPlaying }

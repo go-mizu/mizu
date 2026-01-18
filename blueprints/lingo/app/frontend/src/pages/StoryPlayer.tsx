@@ -4,7 +4,7 @@ import { Stack, Text, Group, Card, Center, Loader, Box, Button, Progress, Action
 import { IconX, IconVolume, IconCheck, IconArrowRight, IconStar, IconTrophy } from '@tabler/icons-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { storiesApi, Story, StoryElement, StoryCharacter } from '../api/client'
-import { sounds } from '../utils/sounds'
+import { sounds, playTTS, stopSpeaking } from '../utils/sounds'
 import { colors } from '../styles/tokens'
 
 // Character avatar component
@@ -51,14 +51,23 @@ function StoryLine({
   character?: StoryCharacter | null
   onAudioPlay?: () => void
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
 
   const playAudio = () => {
-    if (element.audio_url && audioRef.current) {
-      audioRef.current.play()
+    if (element.text) {
+      stopSpeaking()
       setIsPlaying(true)
       onAudioPlay?.()
+
+      // Use Web Speech API - try audio_url first to extract lang, fallback to element text
+      playTTS(
+        element.audio_url,
+        element.text,
+        undefined, // will try to extract from audio_url
+        false,
+        () => setIsPlaying(false),
+        () => setIsPlaying(false)
+      )
     }
   }
 
@@ -100,26 +109,19 @@ function StoryLine({
                 )}
               </Box>
 
-              {element.audio_url && (
+              {element.text && (
                 <ActionIcon
                   variant="light"
                   color="blue"
                   size="lg"
                   onClick={playAudio}
+                  loading={isPlaying}
                 >
                   <IconVolume size={20} />
                 </ActionIcon>
               )}
             </Group>
           </Stack>
-
-          {element.audio_url && (
-            <audio
-              ref={audioRef}
-              src={element.audio_url}
-              onEnded={() => setIsPlaying(false)}
-            />
-          )}
         </Card>
       </Group>
     </motion.div>

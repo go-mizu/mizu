@@ -149,3 +149,162 @@ export function useSounds() {
 export function playInteractionSound(): void {
   playSound('click', 0.2)
 }
+
+// Text-to-Speech using Web Speech API
+// This is a fallback for when external TTS URLs (like Google Translate) don't work
+
+// Language code mapping for Web Speech API
+const TTS_LANG_MAP: Record<string, string> = {
+  es: 'es-ES',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  it: 'it-IT',
+  pt: 'pt-BR',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  zh: 'zh-CN',
+  zs: 'zh-CN',
+  ru: 'ru-RU',
+  ar: 'ar-SA',
+  en: 'en-US',
+  nl: 'nl-NL',
+  pl: 'pl-PL',
+  tr: 'tr-TR',
+  sv: 'sv-SE',
+  no: 'nb-NO',
+  da: 'da-DK',
+  fi: 'fi-FI',
+  el: 'el-GR',
+  he: 'he-IL',
+  hi: 'hi-IN',
+  id: 'id-ID',
+  th: 'th-TH',
+  vi: 'vi-VN',
+  uk: 'uk-UA',
+  cs: 'cs-CZ',
+  ro: 'ro-RO',
+  hu: 'hu-HU',
+}
+
+// Check if Web Speech API is available
+export function isTTSAvailable(): boolean {
+  return typeof window !== 'undefined' && 'speechSynthesis' in window
+}
+
+// Get available voices for a language
+export function getVoicesForLanguage(langCode: string): SpeechSynthesisVoice[] {
+  if (!isTTSAvailable()) return []
+
+  const mappedLang = TTS_LANG_MAP[langCode] || langCode
+  const voices = window.speechSynthesis.getVoices()
+
+  return voices.filter(voice =>
+    voice.lang.startsWith(mappedLang.split('-')[0]) ||
+    voice.lang.startsWith(langCode)
+  )
+}
+
+// Speak text using Web Speech API
+export function speakText(
+  text: string,
+  langCode: string = 'en',
+  rate: number = 1.0,
+  onEnd?: () => void,
+  onError?: (error: Error) => void
+): SpeechSynthesisUtterance | null {
+  if (!isTTSAvailable()) {
+    onError?.(new Error('Web Speech API not available'))
+    return null
+  }
+
+  // Cancel any ongoing speech
+  window.speechSynthesis.cancel()
+
+  const utterance = new SpeechSynthesisUtterance(text)
+  const mappedLang = TTS_LANG_MAP[langCode] || langCode
+
+  utterance.lang = mappedLang
+  utterance.rate = rate
+  utterance.pitch = 1.0
+  utterance.volume = 1.0
+
+  // Try to find a good voice for this language
+  const voices = getVoicesForLanguage(langCode)
+  if (voices.length > 0) {
+    // Prefer non-local voices (usually higher quality)
+    const preferredVoice = voices.find(v => !v.localService) || voices[0]
+    utterance.voice = preferredVoice
+  }
+
+  utterance.onend = () => onEnd?.()
+  utterance.onerror = (event) => onError?.(new Error(event.error))
+
+  window.speechSynthesis.speak(utterance)
+  return utterance
+}
+
+// Stop any ongoing speech
+export function stopSpeaking(): void {
+  if (isTTSAvailable()) {
+    window.speechSynthesis.cancel()
+  }
+}
+
+// Extract language code from audio URL (for Google TTS URLs)
+export function extractLangFromAudioUrl(url: string): string | null {
+  if (!url) return null
+
+  // Match tl=XX parameter in Google Translate URLs
+  const match = url.match(/[?&]tl=([a-z]{2}(?:-[A-Z]{2})?)/i)
+  return match ? match[1].toLowerCase() : null
+}
+
+// Extract text from audio URL (for Google TTS URLs)
+export function extractTextFromAudioUrl(url: string): string | null {
+  if (!url) return null
+
+  // Match q=XXX parameter in Google Translate URLs
+  const match = url.match(/[?&]q=([^&]+)/)
+  if (match) {
+    try {
+      return decodeURIComponent(match[1])
+    } catch {
+      return match[1]
+    }
+  }
+  return null
+}
+
+// Play audio URL or fallback to Web Speech API
+export function playTTS(
+  url: string | undefined,
+  text?: string,
+  langCode?: string,
+  slow: boolean = false,
+  onEnd?: () => void,
+  onError?: () => void
+): void {
+  if (!url && !text) {
+    onError?.()
+    return
+  }
+
+  // If we have a URL, try to extract text and language from it
+  if (url) {
+    const extractedLang = extractLangFromAudioUrl(url)
+    const extractedText = extractTextFromAudioUrl(url)
+
+    // Use extracted values as fallbacks
+    text = text || extractedText || ''
+    langCode = langCode || extractedLang || 'en'
+  }
+
+  if (!text) {
+    onError?.()
+    return
+  }
+
+  // Use Web Speech API directly (Google TTS URLs often fail)
+  const rate = slow ? 0.6 : 1.0
+  speakText(text, langCode || 'en', rate, onEnd, () => onError?.())
+}

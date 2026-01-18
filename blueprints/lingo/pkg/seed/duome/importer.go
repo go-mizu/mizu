@@ -421,71 +421,123 @@ func (i *Importer) generateExercises(ctx context.Context, lessonID string, vocab
 }
 
 // getExerciseType returns an exercise type based on index and level
-// Includes all Duolingo exercise types: translation, multiple_choice, word_bank, listening, fill_blank, match_pairs
+// Duolingo-style progression:
+// - Level 1: Recognition only (multiple_choice, match_pairs) - NO typing
+// - Level 2: Add word_bank (tap words) - still no free typing
+// - Level 3: Add fill_blank with choices
+// - Level 4: Add translation with choices, listening with hints
+// - Level 5: Free-form translation and listening (typing required)
 func getExerciseType(index, level int) string {
-	// Level 1-2: Basic exercises with more multiple choice and listening
+	// Level 1: EASIEST - Only recognition, no production
+	// Just identify meanings - perfect for absolute beginners
 	level1Types := []string{
 		"multiple_choice",
-		"translation",
-		"listening",
-		"word_bank",
 		"multiple_choice",
-		"listening",
-		"fill_blank",
-		"translation",
-		"multiple_choice",
-		"listening",
-		"word_bank",
 		"match_pairs",
-		"translation",
-		"listening",
+		"multiple_choice",
+		"multiple_choice",
+		"match_pairs",
+		"multiple_choice",
+		"multiple_choice",
+		"match_pairs",
+		"multiple_choice",
+		"match_pairs",
+		"multiple_choice",
+		"multiple_choice",
+		"match_pairs",
 		"multiple_choice",
 	}
 
-	// Level 3: Balanced mix
+	// Level 2: Add word_bank (tap words to build answer)
+	// Still no free typing - user taps words in order
+	level2Types := []string{
+		"multiple_choice",
+		"word_bank",
+		"match_pairs",
+		"multiple_choice",
+		"word_bank",
+		"multiple_choice",
+		"match_pairs",
+		"word_bank",
+		"multiple_choice",
+		"word_bank",
+		"match_pairs",
+		"multiple_choice",
+		"word_bank",
+		"match_pairs",
+		"multiple_choice",
+	}
+
+	// Level 3: Add fill_blank (with choices)
+	// User selects from options, not free typing
 	level3Types := []string{
-		"translation",
 		"multiple_choice",
-		"listening",
 		"word_bank",
 		"fill_blank",
-		"translation",
-		"listening",
 		"match_pairs",
 		"multiple_choice",
-		"translation",
-		"word_bank",
-		"listening",
 		"fill_blank",
-		"translation",
+		"word_bank",
+		"multiple_choice",
+		"fill_blank",
 		"match_pairs",
+		"word_bank",
+		"fill_blank",
+		"multiple_choice",
+		"word_bank",
+		"fill_blank",
 	}
 
-	// Level 4-5: Advanced exercises with more translation and fill_blank
+	// Level 4: Add translation with choices, introduce listening
+	// Translation still has choices, listening has strong hints
+	level4Types := []string{
+		"translation_choice", // Multiple choice translation
+		"word_bank",
+		"fill_blank",
+		"match_pairs",
+		"listening_choice", // Listening with choices
+		"translation_choice",
+		"word_bank",
+		"fill_blank",
+		"listening_choice",
+		"translation_choice",
+		"match_pairs",
+		"word_bank",
+		"fill_blank",
+		"listening_choice",
+		"translation_choice",
+	}
+
+	// Level 5: HARDEST - Free-form typing required
+	// Full translation and listening exercises
 	level5Types := []string{
 		"translation",
-		"fill_blank",
 		"listening",
+		"fill_blank",
 		"word_bank",
 		"translation",
-		"fill_blank",
-		"translation",
 		"listening",
-		"match_pairs",
+		"translation",
 		"fill_blank",
+		"listening",
 		"translation",
 		"word_bank",
 		"listening",
+		"translation",
 		"fill_blank",
 		"translation",
 	}
 
 	var types []string
-	switch {
-	case level <= 2:
+	switch level {
+	case 1:
 		types = level1Types
-	case level == 3:
+	case 2:
+		types = level2Types
+	case 3:
 		types = level3Types
+	case 4:
+		types = level4Types
 	default:
 		types = level5Types
 	}
@@ -514,11 +566,11 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 
 	switch exType {
 	case "translation":
-		// Alternate between forward and reverse translation
+		// Free-form translation (typing required) - Level 5
 		if rand.Intn(2) == 0 {
 			ex.Prompt = fmt.Sprintf("Translate: %s", vocab.Word)
 			ex.CorrectAnswer = translation
-			ex.AudioURL = audioURL // Include audio for the source word
+			ex.AudioURL = audioURL
 		} else {
 			ex.Prompt = fmt.Sprintf("Translate to the target language: %s", translation)
 			ex.CorrectAnswer = vocab.Word
@@ -527,16 +579,29 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 			ex.Hints = []string{fmt.Sprintf("Romanization: %s", vocab.Romanization)}
 		}
 
+	case "translation_choice":
+		// Multiple choice translation (no typing) - Level 4
+		ex.Type = "multiple_choice" // Use multiple_choice type for frontend
+		if rand.Intn(2) == 0 {
+			ex.Prompt = fmt.Sprintf("What is '%s' in English?", vocab.Word)
+			ex.CorrectAnswer = translation
+			ex.Choices = generateDistractors(translation, allVocab, 4)
+			ex.AudioURL = audioURL
+		} else {
+			ex.Prompt = fmt.Sprintf("How do you say '%s'?", translation)
+			ex.CorrectAnswer = vocab.Word
+			ex.Choices = generateDistractorsWords(vocab.Word, allVocab, 4)
+		}
+
 	case "multiple_choice":
 		ex.Prompt = fmt.Sprintf("What does '%s' mean?", vocab.Word)
 		ex.CorrectAnswer = translation
 		ex.Choices = generateDistractors(translation, allVocab, 4)
-		ex.AudioURL = audioURL // Include audio for the word
+		ex.AudioURL = audioURL
 
 	case "word_bank":
 		ex.Prompt = translation
 		ex.CorrectAnswer = vocab.Word
-		// For word bank, generate word parts or shuffled words
 		ex.Choices = generateWordBankChoices(vocab.Word, allVocab)
 		if vocab.Romanization != "" {
 			ex.Hints = []string{vocab.Romanization}
@@ -551,17 +616,28 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 		}
 
 	case "listening":
+		// Free-form listening (typing required) - Level 5
 		ex.Prompt = "Type what you hear"
 		ex.CorrectAnswer = vocab.Word
-		ex.AudioURL = audioURL // Audio is required for listening exercises
+		ex.AudioURL = audioURL
 		if vocab.Romanization != "" {
 			ex.Hints = []string{fmt.Sprintf("Hint: %s", vocab.Romanization)}
+		}
+
+	case "listening_choice":
+		// Multiple choice listening (no typing) - Level 4
+		ex.Type = "multiple_choice" // Use multiple_choice type for frontend
+		ex.Prompt = "What did you hear?"
+		ex.CorrectAnswer = vocab.Word
+		ex.Choices = generateDistractorsWords(vocab.Word, allVocab, 4)
+		ex.AudioURL = audioURL
+		if vocab.Romanization != "" {
+			ex.Hints = []string{fmt.Sprintf("Romanization: %s", vocab.Romanization)}
 		}
 
 	case "match_pairs":
 		ex.Prompt = "Match the words with their meanings"
 		ex.CorrectAnswer = vocab.Word
-		// Generate pairs for matching
 		ex.Choices = generateMatchPairs(vocab, allVocab, 4)
 	}
 
@@ -726,6 +802,19 @@ func (i *Importer) ImportAll(ctx context.Context, pairs []LanguagePair) error {
 	return nil
 }
 
+// GetCourseID returns the course ID for a language pair
+func (i *Importer) GetCourseID(ctx context.Context, pair LanguagePair) (string, error) {
+	var courseID string
+	err := i.db.QueryRowContext(ctx, `
+		SELECT id FROM courses
+		WHERE from_language_id = ? AND learning_language_id = ?
+	`, pair.From, pair.To).Scan(&courseID)
+	if err != nil {
+		return "", fmt.Errorf("get course ID: %w", err)
+	}
+	return courseID, nil
+}
+
 // GetCourseStats returns statistics for a course
 func (i *Importer) GetCourseStats(ctx context.Context, pair LanguagePair) (map[string]int, error) {
 	stats := make(map[string]int)
@@ -793,4 +882,140 @@ func (i *Importer) GetCourseStats(ctx context.Context, pair LanguagePair) (map[s
 	stats["lexemes"] = count
 
 	return stats, nil
+}
+
+// ImportStory imports a single story into the database
+func (i *Importer) ImportStory(ctx context.Context, courseID string, story *StoryData, setID, setPosition int) error {
+	storyID := uuid.New().String()
+
+	// Determine CEFR level difficulty
+	difficulty := 1
+	switch {
+	case strings.HasPrefix(story.CEFRLevel, "A1"):
+		difficulty = 1
+	case strings.HasPrefix(story.CEFRLevel, "A2"):
+		difficulty = 2
+	case strings.HasPrefix(story.CEFRLevel, "B1"):
+		difficulty = 3
+	case strings.HasPrefix(story.CEFRLevel, "B2"):
+		difficulty = 4
+	case strings.HasPrefix(story.CEFRLevel, "C"):
+		difficulty = 5
+	}
+
+	// Calculate XP based on difficulty and element count
+	xpReward := 10 + (difficulty * 5) + (len(story.Elements) / 2)
+
+	// Estimate duration (3 seconds per element)
+	duration := len(story.Elements) * 3
+
+	// Insert story
+	_, err := i.db.ExecContext(ctx, `
+		INSERT INTO stories (id, course_id, external_id, title, title_translation, illustration_url,
+			set_id, set_position, difficulty, cefr_level, duration_seconds, xp_reward, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+	`, storyID, courseID, story.ExternalID, story.Title, story.TitleTranslation, story.IllustrationURL,
+		setID, setPosition, difficulty, story.CEFRLevel, duration, xpReward)
+	if err != nil {
+		return fmt.Errorf("insert story: %w", err)
+	}
+
+	// Insert characters
+	characterIDMap := make(map[string]string)
+	for pos, char := range story.Characters {
+		charID := uuid.New().String()
+		characterIDMap[char.Name] = charID
+
+		_, err := i.db.ExecContext(ctx, `
+			INSERT INTO story_characters (id, story_id, name, display_name, avatar_url, position)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, charID, storyID, char.Name, char.DisplayName, char.AvatarURL, pos)
+		if err != nil {
+			return fmt.Errorf("insert character %s: %w", char.Name, err)
+		}
+	}
+
+	// Insert elements
+	for _, elem := range story.Elements {
+		elemID := uuid.New().String()
+
+		var speakerID *string
+		if elem.Speaker != "" {
+			if id, ok := characterIDMap[elem.Speaker]; ok {
+				speakerID = &id
+			}
+		}
+
+		// Serialize challenge data if present
+		var challengeDataJSON *string
+		if elem.Challenge != nil {
+			data, err := json.Marshal(elem.Challenge)
+			if err == nil {
+				s := string(data)
+				challengeDataJSON = &s
+			}
+		}
+
+		_, err := i.db.ExecContext(ctx, `
+			INSERT INTO story_elements (id, story_id, position, element_type, speaker_id,
+				text, translation, audio_url, challenge_data)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, elemID, storyID, elem.Position, elem.ElementType, speakerID,
+			elem.Text, elem.Translation, elem.AudioURL, challengeDataJSON)
+		if err != nil {
+			return fmt.Errorf("insert element %d: %w", elem.Position, err)
+		}
+	}
+
+	return nil
+}
+
+// ImportStoriesForCourse imports all stories for a course
+func (i *Importer) ImportStoriesForCourse(ctx context.Context, courseID string, stories []*StoryData) error {
+	// Delete existing stories for this course
+	_, err := i.db.ExecContext(ctx, `
+		DELETE FROM story_elements WHERE story_id IN (SELECT id FROM stories WHERE course_id = ?)
+	`, courseID)
+	if err != nil {
+		return fmt.Errorf("delete story elements: %w", err)
+	}
+
+	_, err = i.db.ExecContext(ctx, `
+		DELETE FROM story_characters WHERE story_id IN (SELECT id FROM stories WHERE course_id = ?)
+	`, courseID)
+	if err != nil {
+		return fmt.Errorf("delete story characters: %w", err)
+	}
+
+	_, err = i.db.ExecContext(ctx, "DELETE FROM stories WHERE course_id = ?", courseID)
+	if err != nil {
+		return fmt.Errorf("delete stories: %w", err)
+	}
+
+	// Group stories by set (CEFR level)
+	setMap := make(map[string]int)
+	setCounter := 1
+
+	for idx, story := range stories {
+		setKey := story.CEFRLevel
+		if setKey == "" {
+			setKey = "Unknown"
+		}
+
+		setID, exists := setMap[setKey]
+		if !exists {
+			setID = setCounter
+			setMap[setKey] = setID
+			setCounter++
+		}
+
+		// Position within the set
+		setPosition := idx + 1
+
+		if err := i.ImportStory(ctx, courseID, story, setID, setPosition); err != nil {
+			return fmt.Errorf("import story %s: %w", story.ExternalID, err)
+		}
+	}
+
+	return nil
 }

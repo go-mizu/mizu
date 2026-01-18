@@ -303,6 +303,7 @@ func runSeedDuomeAll(ctx context.Context, useSqlite bool, primary bool) error {
 
 	var db *sql.DB
 	var err error
+	var sqliteStore *sqlite.Store
 
 	if useSqlite {
 		dbPath := defaultDBPath()
@@ -311,31 +312,31 @@ func runSeedDuomeAll(ctx context.Context, useSqlite bool, primary bool) error {
 			return fmt.Errorf("create db directory: %w", err)
 		}
 		fmt.Println(infoStyle.Render(fmt.Sprintf("Connecting to SQLite (%s)...", dbPath)))
-		store, err := sqlite.New(ctx, dbPath)
+		sqliteStore, err = sqlite.New(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("connect to sqlite: %w", err)
 		}
-		defer store.Close()
+		defer sqliteStore.Close()
 
-		if err := store.Ensure(ctx); err != nil {
+		if err := sqliteStore.Ensure(ctx); err != nil {
 			return fmt.Errorf("ensure schema: %w", err)
 		}
 
 		// Seed base data
-		if err := store.SeedLanguages(ctx); err != nil {
+		if err := sqliteStore.SeedLanguages(ctx); err != nil {
 			return fmt.Errorf("seed languages: %w", err)
 		}
-		if err := store.SeedAchievements(ctx); err != nil {
+		if err := sqliteStore.SeedAchievements(ctx); err != nil {
 			return fmt.Errorf("seed achievements: %w", err)
 		}
-		if err := store.SeedLeagues(ctx); err != nil {
+		if err := sqliteStore.SeedLeagues(ctx); err != nil {
 			return fmt.Errorf("seed leagues: %w", err)
 		}
-		if err := store.SeedUsers(ctx); err != nil {
+		if err := sqliteStore.SeedUsers(ctx); err != nil {
 			return fmt.Errorf("seed users: %w", err)
 		}
 
-		db = store.DB()
+		db = sqliteStore.DB()
 	} else {
 		fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
 		db, err = sql.Open("pgx", GetDatabaseURL())
@@ -354,6 +355,19 @@ func runSeedDuomeAll(ctx context.Context, useSqlite bool, primary bool) error {
 	if err := seeder.Seed(ctx, pairs); err != nil {
 		return fmt.Errorf("seed failed: %w", err)
 	}
+
+	// Seed ALL stories after courses are imported (parallel, 10 workers per language)
+	fmt.Println()
+	fmt.Println(infoStyle.Render("Seeding ALL stories from Duome (parallel downloads)..."))
+	totalStories := 0
+	for _, pair := range pairs {
+		count, err := seeder.SeedStoriesAll(ctx, pair, 10)
+		if err != nil {
+			fmt.Printf("Warning: failed to seed stories for %s: %v\n", pair, err)
+		}
+		totalStories += count
+	}
+	fmt.Printf("Total stories imported: %d\n", totalStories)
 
 	fmt.Println()
 	fmt.Println(successStyle.Render("Seed complete!"))
