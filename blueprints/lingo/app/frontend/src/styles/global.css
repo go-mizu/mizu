@@ -1,0 +1,121 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #131f24;
+}
+
+/* Duolingo-style animations */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 5px #58cc02; }
+  50% { box-shadow: 0 0 20px #58cc02; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-bounce {
+  animation: bounce 0.5s ease-in-out;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+.animate-glow {
+  animation: glow 1.5s ease-in-out infinite;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a2c33;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3d5a68;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4a6b7a;
+}
+
+/* Path node styles */
+.path-node {
+  transition: all 0.2s ease;
+}
+
+.path-node:hover {
+  transform: scale(1.05);
+}
+
+.path-node.active {
+  animation: glow 1.5s ease-in-out infinite;
+}
+
+/* XP animation */
+.xp-popup {
+  position: fixed;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffc800;
+  pointer-events: none;
+  animation: xpFloat 1s ease-out forwards;
+}
+
+@keyframes xpFloat {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50px);
+  }
+}
+
+/* Heart icon */
+.heart {
+  color: #ff4b4b;
+}
+
+.heart.empty {
+  color: #3d5a68;
+}
+
+/* Streak flame */
+.streak-flame {
+  color: #ff9600;
+}
