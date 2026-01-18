@@ -397,16 +397,19 @@ type ForeignKeyInfo struct {
 
 // Function represents an edge function.
 type Function struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Slug       string    `json:"slug"`
-	Version    int       `json:"version"`
-	Status     string    `json:"status"` // active, inactive
-	Entrypoint string    `json:"entrypoint"`
-	ImportMap  string    `json:"import_map,omitempty"`
-	VerifyJWT  bool      `json:"verify_jwt"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID               string      `json:"id"`
+	Name             string      `json:"name"`
+	Slug             string      `json:"slug"`
+	Version          int         `json:"version"`
+	Status           string      `json:"status"` // active, inactive
+	Entrypoint       string      `json:"entrypoint"`
+	ImportMap        string      `json:"import_map,omitempty"`
+	VerifyJWT        bool        `json:"verify_jwt"`
+	DraftSource      string      `json:"draft_source,omitempty"`
+	DraftImportMap   string      `json:"draft_import_map,omitempty"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+	LatestDeployment *Deployment `json:"latest_deployment,omitempty"`
 }
 
 // Deployment represents a function deployment.
@@ -428,6 +431,61 @@ type Secret struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// FunctionLog represents a single function execution log entry.
+type FunctionLog struct {
+	ID         string         `json:"id"`
+	FunctionID string         `json:"function_id"`
+	RequestID  string         `json:"request_id,omitempty"`
+	Timestamp  time.Time      `json:"timestamp"`
+	Level      string         `json:"level"` // debug, info, warn, error
+	Message    string         `json:"message"`
+	DurationMs int            `json:"duration_ms,omitempty"`
+	StatusCode int            `json:"status_code,omitempty"`
+	Region     string         `json:"region,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+}
+
+// FunctionMetrics represents aggregated function metrics.
+type FunctionMetrics struct {
+	FunctionID       string    `json:"function_id"`
+	Hour             time.Time `json:"hour"`
+	Invocations      int       `json:"invocations"`
+	Successes        int       `json:"successes"`
+	Errors           int       `json:"errors"`
+	TotalDurationMs  int64     `json:"total_duration_ms"`
+	P50Latency       int       `json:"p50_latency,omitempty"`
+	P95Latency       int       `json:"p95_latency,omitempty"`
+	P99Latency       int       `json:"p99_latency,omitempty"`
+}
+
+// FunctionTemplate represents a pre-built function template.
+type FunctionTemplate struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	Icon        string `json:"icon,omitempty"`
+	SourceCode  string `json:"source_code"`
+	ImportMap   string `json:"import_map,omitempty"`
+}
+
+// FunctionTestRequest represents a test request to a function.
+type FunctionTestRequest struct {
+	Method  string            `json:"method"`
+	Path    string            `json:"path"`
+	Headers map[string]string `json:"headers"`
+	Body    any               `json:"body,omitempty"`
+}
+
+// FunctionTestResponse represents a test response from a function.
+type FunctionTestResponse struct {
+	Status     int               `json:"status"`
+	Headers    map[string]string `json:"headers"`
+	Body       any               `json:"body"`
+	DurationMs int               `json:"duration_ms"`
+	Logs       []*FunctionLog    `json:"logs,omitempty"`
+}
+
 // FunctionsStore defines edge functions storage operations.
 type FunctionsStore interface {
 	// Functions
@@ -435,8 +493,13 @@ type FunctionsStore interface {
 	GetFunction(ctx context.Context, id string) (*Function, error)
 	GetFunctionByName(ctx context.Context, name string) (*Function, error)
 	ListFunctions(ctx context.Context) ([]*Function, error)
+	ListFunctionsWithLatestDeployment(ctx context.Context) ([]*Function, error)
 	UpdateFunction(ctx context.Context, fn *Function) error
 	DeleteFunction(ctx context.Context, id string) error
+
+	// Draft source (for in-browser editing without deploying)
+	SaveDraftSource(ctx context.Context, functionID, source, importMap string) error
+	ClearDraftSource(ctx context.Context, functionID string) error
 
 	// Deployments
 	CreateDeployment(ctx context.Context, deployment *Deployment) error
@@ -451,6 +514,15 @@ type FunctionsStore interface {
 	ListSecrets(ctx context.Context) ([]*Secret, error)
 	UpdateSecret(ctx context.Context, secret *Secret) error
 	DeleteSecret(ctx context.Context, name string) error
+	BulkUpsertSecrets(ctx context.Context, secrets []*Secret) (created, updated int, err error)
+
+	// Function Logs
+	CreateFunctionLog(ctx context.Context, log *FunctionLog) error
+	ListFunctionLogs(ctx context.Context, functionID string, limit int, level string, since *time.Time) ([]*FunctionLog, error)
+
+	// Function Metrics
+	RecordFunctionInvocation(ctx context.Context, functionID string, durationMs int, success bool) error
+	GetFunctionMetrics(ctx context.Context, functionID string, from, to time.Time) ([]*FunctionMetrics, error)
 }
 
 // ========== Realtime Types ==========

@@ -153,8 +153,11 @@ export interface EdgeFunction {
   entrypoint: string;
   import_map?: string;
   verify_jwt: boolean;
+  draft_source?: string;
+  draft_import_map?: string;
   created_at: string;
   updated_at: string;
+  latest_deployment?: Deployment;
 }
 
 export interface Deployment {
@@ -171,6 +174,72 @@ export interface Secret {
   id: string;
   name: string;
   created_at: string;
+}
+
+export interface FunctionLog {
+  id: string;
+  function_id: string;
+  request_id?: string;
+  timestamp: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+  duration_ms?: number;
+  status_code?: number;
+  region?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface FunctionMetrics {
+  function_id: string;
+  period: string;
+  invocations: {
+    total: number;
+    success: number;
+    error: number;
+    by_hour: Array<{ hour: string; count: number }>;
+  };
+  latency: {
+    avg: number;
+    p50?: number;
+    p95?: number;
+    p99?: number;
+  };
+}
+
+export interface FunctionTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+}
+
+export interface FunctionSource {
+  function_id: string;
+  entrypoint: string;
+  source_code: string;
+  import_map?: string;
+  version: number;
+  is_draft: boolean;
+}
+
+export interface FunctionTestRequest {
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body?: any;
+}
+
+export interface FunctionTestResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: any;
+  duration_ms: number;
+  logs?: Array<{
+    level: string;
+    message: string;
+    timestamp: string;
+  }>;
 }
 
 // Realtime types
