@@ -7,8 +7,16 @@ import (
 	"net/url"
 
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/lingo/app/web/handler/api"
 	"github.com/go-mizu/mizu/blueprints/lingo/assets"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/achievements"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/auth"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/courses"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/gamification"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/lessons"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/progress"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/shop"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/social"
+	"github.com/go-mizu/mizu/blueprints/lingo/feature/users"
 	"github.com/go-mizu/mizu/blueprints/lingo/store"
 )
 
@@ -16,83 +24,40 @@ import (
 func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	app := mizu.New()
 
-	// API handlers
-	authHandler := api.NewAuthHandler(st)
-	userHandler := api.NewUserHandler(st)
-	courseHandler := api.NewCourseHandler(st)
-	lessonHandler := api.NewLessonHandler(st)
-	progressHandler := api.NewProgressHandler(st)
-	leagueHandler := api.NewLeagueHandler(st)
-	socialHandler := api.NewSocialHandler(st)
-	achievementHandler := api.NewAchievementHandler(st)
-	shopHandler := api.NewShopHandler(st)
+	// Create services
+	authService := auth.NewService(st)
+	userService := users.NewService(st)
+	courseService := courses.NewService(st)
+	lessonService := lessons.NewService(st)
+	progressService := progress.NewService(st)
+	gamificationService := gamification.NewService(st)
+	socialService := social.NewService(st)
+	achievementService := achievements.NewService(st)
+	shopService := shop.NewService(st)
+
+	// Create handlers
+	authHandler := auth.NewHandler(authService)
+	userHandler := users.NewHandler(userService)
+	courseHandler := courses.NewHandler(courseService)
+	lessonHandler := lessons.NewHandler(lessonService)
+	progressHandler := progress.NewHandler(progressService)
+	gamificationHandler := gamification.NewHandler(gamificationService)
+	socialHandler := social.NewHandler(socialService)
+	achievementHandler := achievements.NewHandler(achievementService)
+	shopHandler := shop.NewHandler(shopService)
 
 	// API routes
 	app.Group("/api/v1", func(apiGroup *mizu.Router) {
-		// Auth endpoints
-		apiGroup.Post("/auth/signup", authHandler.Signup)
-		apiGroup.Post("/auth/login", authHandler.Login)
-		apiGroup.Post("/auth/logout", authHandler.Logout)
-		apiGroup.Post("/auth/refresh", authHandler.Refresh)
-
-		// User endpoints
-		apiGroup.Get("/users/me", userHandler.GetMe)
-		apiGroup.Put("/users/me", userHandler.UpdateMe)
-		apiGroup.Get("/users/:username", userHandler.GetByUsername)
-		apiGroup.Get("/users/:id/stats", userHandler.GetStats)
-		apiGroup.Put("/users/me/settings", userHandler.UpdateSettings)
-
-		// Course endpoints
-		apiGroup.Get("/languages", courseHandler.ListLanguages)
-		apiGroup.Get("/courses", courseHandler.ListCourses)
-		apiGroup.Get("/courses/:id", courseHandler.GetCourse)
-		apiGroup.Post("/courses/:id/enroll", courseHandler.Enroll)
-		apiGroup.Get("/courses/:id/path", courseHandler.GetPath)
-		apiGroup.Get("/units/:id", courseHandler.GetUnit)
-		apiGroup.Get("/skills/:id", courseHandler.GetSkill)
-
-		// Lesson endpoints
-		apiGroup.Get("/lessons/:id", lessonHandler.GetLesson)
-		apiGroup.Post("/lessons/:id/start", lessonHandler.StartLesson)
-		apiGroup.Post("/lessons/:id/complete", lessonHandler.CompleteLesson)
-		apiGroup.Post("/exercises/:id/answer", lessonHandler.AnswerExercise)
-
-		// Progress endpoints
-		apiGroup.Get("/progress", progressHandler.GetProgress)
-		apiGroup.Get("/xp/history", progressHandler.GetXPHistory)
-		apiGroup.Get("/streaks", progressHandler.GetStreaks)
-		apiGroup.Post("/streaks/freeze", progressHandler.UseStreakFreeze)
-		apiGroup.Get("/hearts", progressHandler.GetHearts)
-		apiGroup.Post("/hearts/refill", progressHandler.RefillHearts)
-		apiGroup.Get("/practice/mistakes", progressHandler.GetMistakes)
-
-		// League endpoints
-		apiGroup.Get("/leagues", leagueHandler.GetLeagues)
-		apiGroup.Get("/leagues/current", leagueHandler.GetCurrentLeague)
-		apiGroup.Get("/leagues/leaderboard", leagueHandler.GetLeaderboard)
-
-		// Social endpoints
-		apiGroup.Get("/friends", socialHandler.GetFriends)
-		apiGroup.Post("/friends/:id/follow", socialHandler.Follow)
-		apiGroup.Delete("/friends/:id/unfollow", socialHandler.Unfollow)
-		apiGroup.Get("/friends/leaderboard", socialHandler.GetFriendLeaderboard)
-		apiGroup.Get("/friends/quests", socialHandler.GetFriendQuests)
-		apiGroup.Get("/friends/streaks", socialHandler.GetFriendStreaks)
-		apiGroup.Get("/notifications", socialHandler.GetNotifications)
-		apiGroup.Put("/notifications/:id/read", socialHandler.MarkNotificationRead)
-
-		// Achievement endpoints
-		apiGroup.Get("/achievements", achievementHandler.GetAchievements)
-		apiGroup.Get("/achievements/me", achievementHandler.GetMyAchievements)
-
-		// Stories endpoints
-		apiGroup.Get("/stories", courseHandler.GetStories)
-		apiGroup.Get("/stories/:id", courseHandler.GetStory)
-		apiGroup.Post("/stories/:id/complete", courseHandler.CompleteStory)
-
-		// Shop endpoints
-		apiGroup.Get("/shop/items", shopHandler.GetItems)
-		apiGroup.Post("/shop/purchase", shopHandler.Purchase)
+		// Register all feature routes
+		authHandler.RegisterRoutes(apiGroup)
+		userHandler.RegisterRoutes(apiGroup)
+		courseHandler.RegisterRoutes(apiGroup)
+		lessonHandler.RegisterRoutes(apiGroup)
+		progressHandler.RegisterRoutes(apiGroup)
+		gamificationHandler.RegisterRoutes(apiGroup)
+		socialHandler.RegisterRoutes(apiGroup)
+		achievementHandler.RegisterRoutes(apiGroup)
+		shopHandler.RegisterRoutes(apiGroup)
 	})
 
 	// Health check

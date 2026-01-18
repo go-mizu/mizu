@@ -7,7 +7,7 @@ BINARY  ?= $(HOME)/bin/lingo
 CMD     ?= ./cmd/lingo
 DATA_DIR ?= $(HOME)/data/blueprint/lingo
 
-CGO_ENABLED ?= 0
+CGO_ENABLED ?= 1
 
 VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -19,13 +19,16 @@ GO_LDFLAGS ?= -s -w $(LDVARS)
 # Frontend configuration
 FRONTEND_DIR := app/frontend
 
-# Database configuration
+# Database configuration (PostgreSQL)
 DB_HOST ?= localhost
 DB_PORT ?= 5432
 DB_USER ?= lingo
 DB_PASS ?= lingo
 DB_NAME ?= lingo
 DATABASE_URL ?= postgres://$(DB_USER):$(DB_PASS)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
+
+# SQLite configuration (alternative)
+SQLITE_PATH ?= $(DATA_DIR)/lingo.db
 
 .PHONY: frontend-install
 frontend-install: ## Install frontend dependencies
@@ -77,6 +80,14 @@ test: ## Run all Go tests
 .PHONY: test-v
 test-v: ## Run all tests with verbose output
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+
+.PHONY: test-store
+test-store: ## Run store tests (SQLite and PostgreSQL)
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v ./store/storetest/...
+
+.PHONY: test-cover
+test-cover: ## Run tests with coverage
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -cover $(PKG)
 
 .PHONY: clean
 clean: ## Remove binary and data directory
