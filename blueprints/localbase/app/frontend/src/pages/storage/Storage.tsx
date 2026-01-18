@@ -29,7 +29,15 @@ import { storageApi } from '../../api';
 import { useAppStore } from '../../stores/appStore';
 import type { Bucket, StorageObject } from '../../types';
 
-import { MillerColumnBrowser, FilePreviewPanel, StorageToolbar } from './components';
+import {
+  MillerColumnBrowser,
+  FilePreviewPanel,
+  StorageToolbar,
+  EditBucketModal,
+  FileListView,
+  RenameModal,
+  BulkActionsBar,
+} from './components';
 import type { ViewMode } from './components';
 import { useMillerNavigation } from './hooks/useMillerNavigation';
 
@@ -49,10 +57,18 @@ export function StoragePage() {
     useDisclosure(false);
   const [createFolderOpened, { open: openCreateFolder, close: closeCreateFolder }] =
     useDisclosure(false);
+  const [editBucketOpened, { open: openEditBucket, close: closeEditBucket }] =
+    useDisclosure(false);
+  const [renameOpened, { open: openRename, close: closeRename }] =
+    useDisclosure(false);
+  const [bulkDeleteOpened, { open: openBulkDelete, close: closeBulkDelete }] =
+    useDisclosure(false);
 
   const [bucketForm, setBucketForm] = useState({ name: '', public: false });
   const [folderName, setFolderName] = useState('');
   const [formLoading, setFormLoading] = useState(false);
+  const [renameItem, setRenameItem] = useState<StorageObject | null>(null);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
   const dropzoneRef = useRef<() => void>(null);
 
@@ -320,6 +336,89 @@ export function StoragePage() {
     }
   };
 
+  // Bulk selection handlers
+  const handleItemCheck = (item: StorageObject, checked: boolean) => {
+    setSelectedItems((prev) => {
+      const next = new Set(prev);
+      const key = item.id || item.name;
+      if (checked) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!columns.length) return;
+    const currentItems = columns[columns.length - 1].items;
+    if (checked) {
+      setSelectedItems(new Set(currentItems.map((i) => i.id || i.name)));
+    } else {
+      setSelectedItems(new Set());
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedItems(new Set());
+  };
+
+  const handleRename = (item: StorageObject) => {
+    setRenameItem(item);
+    openRename();
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedBucket || selectedItems.size === 0) return;
+
+    setFormLoading(true);
+    try {
+      const currentItems = columns[columns.length - 1]?.items || [];
+      const itemsToDelete = currentItems.filter(
+        (item) => selectedItems.has(item.id || item.name)
+      );
+
+      for (const item of itemsToDelete) {
+        const isFolder = item.name.endsWith('/') || !item.content_type;
+        if (isFolder) {
+          await storageApi.deleteFolder(selectedBucket, item.name);
+        } else {
+          await storageApi.deleteObject(selectedBucket, item.name);
+        }
+      }
+
+      notifications.show({
+        title: 'Success',
+        message: `Deleted ${itemsToDelete.length} item(s)`,
+        color: 'green',
+      });
+      closeBulkDelete();
+      setSelectedItems(new Set());
+      refreshAll();
+    } catch (error: any) {
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to delete items',
+        color: 'red',
+      });
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleBulkDownload = () => {
+    if (!selectedBucket) return;
+    const currentItems = columns[columns.length - 1]?.items || [];
+    const itemsToDownload = currentItems.filter(
+      (item) => selectedItems.has(item.id || item.name) && item.content_type
+    );
+    for (const item of itemsToDownload) {
+      const url = storageApi.downloadObjectUrl(selectedBucket, item.name);
+      window.open(url, '_blank');
+    }
+  };
+
   const currentBucket = buckets.find((b) => b.id === selectedBucket);
 
   return (
@@ -436,6 +535,30 @@ export function StoragePage() {
         <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {selectedBucket && currentBucket ? (
             <>
+              {/* Bulk Actions Bar */}
+              {selectedItems.size > 0 && (
+                <BulkActionsBar
+                  selectedCount={selectedItems.size}
+                  onClearSelection={handleClearSelection}
+                  onDelete={openBulkDelete}
+                  onDownload={handleBulkDownload}
+                  onMove={() => {
+                    notifications.show({
+                      title: 'Coming soon',
+                      message: 'Move functionality will be available soon',
+                      color: 'blue',
+                    });
+                  }}
+                  onCopy={() => {
+                    notifications.show({
+                      title: 'Coming soon',
+                      message: 'Copy functionality will be available soon',
+                      color: 'blue',
+                    });
+                  }}
+                />
+              )}
+
               {/* Toolbar */}
               <StorageToolbar
                 bucketName={currentBucket.name}
@@ -445,6 +568,7 @@ export function StoragePage() {
                 onUpload={() => dropzoneRef.current?.()}
                 onCreateFolder={openCreateFolder}
                 onDeleteBucket={openDeleteBucket}
+                onEditBucket={openEditBucket}
                 onViewModeChange={setViewMode}
                 onSearch={handleSearch}
                 onNavigateToPath={handleNavigateToPath}
@@ -488,6 +612,23 @@ export function StoragePage() {
                         }}
                       />
                     </Center>
+                  ) : viewMode === 'list' ? (
+                    <FileListView
+                      items={columns[columns.length - 1]?.items || []}
+                      loading={columns[columns.length - 1]?.loading || false}
+                      error={columns[columns.length - 1]?.error || null}
+                      selectedItems={selectedItems}
+                      onItemSelect={(item) => selectItem(item, columns.length - 1)}
+                      onItemCheck={handleItemCheck}
+                      onSelectAll={handleSelectAll}
+                      onDownload={handleDownload}
+                      onCopyUrl={(item) => handleCopyUrl(item, 'signed')}
+                      onRename={handleRename}
+                      onDelete={(item) => {
+                        setRenameItem(item);
+                        openDeleteObject();
+                      }}
+                    />
                   ) : (
                     <MillerColumnBrowser
                       columns={columns}
@@ -593,6 +734,38 @@ export function StoragePage() {
         onConfirm={handleDeleteObject}
         title="Delete file"
         message={`Are you sure you want to delete "${selectedFile?.name.split('/').pop()}"?`}
+        confirmLabel="Delete"
+        danger
+        loading={formLoading}
+      />
+
+      {/* Edit Bucket Modal */}
+      <EditBucketModal
+        bucket={currentBucket || null}
+        opened={editBucketOpened}
+        onClose={closeEditBucket}
+        onSave={fetchBuckets}
+      />
+
+      {/* Rename Modal */}
+      <RenameModal
+        opened={renameOpened}
+        item={renameItem}
+        bucketId={selectedBucket}
+        onClose={() => {
+          closeRename();
+          setRenameItem(null);
+        }}
+        onRename={refreshAll}
+      />
+
+      {/* Bulk Delete Confirmation */}
+      <ConfirmModal
+        opened={bulkDeleteOpened}
+        onClose={closeBulkDelete}
+        onConfirm={handleBulkDelete}
+        title="Delete selected items"
+        message={`Are you sure you want to delete ${selectedItems.size} item(s)? This action cannot be undone.`}
         confirmLabel="Delete"
         danger
         loading={formLoading}

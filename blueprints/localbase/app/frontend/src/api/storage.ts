@@ -127,4 +127,28 @@ export const storageApi = {
   getObjectInfo: (bucket: string, path: string): Promise<StorageObject> => {
     return api.get<StorageObject>(`/storage/v1/object/info/${bucket}/${path}`);
   },
+
+  // Rename object (change path within same bucket)
+  renameObject: (bucketId: string, oldPath: string, newPath: string): Promise<void> => {
+    return api.post('/storage/v1/object/rename', {
+      bucketId,
+      oldPath,
+      newPath,
+    });
+  },
+
+  // Delete folder recursively
+  deleteFolder: (bucket: string, path: string): Promise<{ deleted: number; files: string[] }> => {
+    return api.delete(`/storage/v1/object/folder/${bucket}/${path}`);
+  },
+
+  // Get bucket by name (Supabase compatibility)
+  getBucketByName: (name: string): Promise<Bucket> => {
+    return api.get<Bucket>(`/storage/v1/bucket/name/${name}`);
+  },
+
+  // Create upload signed URL
+  createUploadSignedURL: (bucket: string, path: string): Promise<{ url: string; token: string }> => {
+    return api.post(`/storage/v1/object/upload/sign/${bucket}/${path}`);
+  },
 };
