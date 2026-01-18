@@ -44,7 +44,10 @@ func (s *CourseStore) ListLanguages(ctx context.Context) ([]store.Language, erro
 func (s *CourseStore) ListCourses(ctx context.Context, fromLang string) ([]store.Course, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, from_language_id, learning_language_id, title, description, total_units, cefr_level, enabled
-		FROM courses WHERE from_language_id = ? AND enabled = 1
+		FROM courses
+		WHERE from_language_id = ? AND enabled = 1
+		GROUP BY learning_language_id
+		ORDER BY title ASC
 	`, fromLang)
 	if err != nil {
 		return nil, err

@@ -1,42 +1,46 @@
 // Sound effects for Duolingo-style exercise interactions
-// Uses free sound effect URLs from reliable CDNs
+// Using Web Audio API for reliable, embedded sounds
 
-// Sound URLs (using royalty-free sounds that match Duolingo's style)
+// Generate simple beep sounds using Web Audio API
+function createBeep(frequency: number, duration: number, type: OscillatorType = 'sine'): string {
+  // Return empty string - we'll use Web Audio API directly
+  return `beep:${frequency}:${duration}:${type}`
+}
+
+// Sound configurations (frequency, duration, wave type)
 const SOUNDS = {
-  // Correct answer - pleasant ascending ding (like Duolingo's success sound)
-  correct: 'https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3',
-  // Wrong answer - soft descending tone
-  wrong: 'https://assets.mixkit.co/active_storage/sfx/2001/2001-preview.mp3',
-  // Lesson complete - celebratory fanfare
-  complete: 'https://assets.mixkit.co/active_storage/sfx/1997/1997-preview.mp3',
-  // Button click/tap - subtle pop
-  click: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
-  // Word selection - soft tap
-  select: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
-  // Word deselection - subtle release
-  deselect: 'https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3',
-  // Level up / achievement
-  levelUp: 'https://assets.mixkit.co/active_storage/sfx/2020/2020-preview.mp3',
-  // Streak celebration
-  streak: 'https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3',
-  // Match found (for matching exercises)
-  match: 'https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3',
-  // Typing keypress (subtle)
-  keypress: 'https://assets.mixkit.co/active_storage/sfx/2567/2567-preview.mp3',
-  // Progress milestone
-  milestone: 'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3',
-  // XP gain
-  xpGain: 'https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3',
-  // Heart lost
-  heartLost: 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3',
-  // Notification/alert
-  notification: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
+  correct: createBeep(880, 150, 'sine'),      // High pleasant tone
+  wrong: createBeep(220, 200, 'square'),      // Low buzzer
+  complete: createBeep(523, 300, 'sine'),     // Celebratory
+  click: createBeep(1000, 50, 'sine'),        // Quick click
+  select: createBeep(600, 80, 'sine'),        // Selection
+  deselect: createBeep(400, 60, 'sine'),      // Deselection
+  levelUp: createBeep(784, 400, 'sine'),      // Achievement
+  streak: createBeep(659, 350, 'sine'),       // Streak
+  match: createBeep(698, 120, 'sine'),        // Match found
+  keypress: createBeep(800, 30, 'sine'),      // Subtle keypress
+  milestone: createBeep(740, 250, 'sine'),    // Milestone
+  xpGain: createBeep(587, 150, 'sine'),       // XP gain
+  heartLost: createBeep(196, 300, 'sawtooth'), // Heart lost
+  notification: createBeep(523, 200, 'sine'), // Notification
 } as const
 
 export type SoundType = keyof typeof SOUNDS
 
-// Audio cache to prevent re-loading sounds
-const audioCache: Map<SoundType, HTMLAudioElement> = new Map()
+// Web Audio API context (lazy initialized)
+let audioContext: AudioContext | null = null
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  if (!audioContext) {
+    try {
+      audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    } catch {
+      return null
+    }
+  }
+  return audioContext
+}
 
 // User preference for sounds
 let soundsEnabled = true
@@ -59,40 +63,50 @@ export function getSoundsEnabled(): boolean {
   return soundsEnabled
 }
 
-// Preload sounds for faster playback
+// Preload sounds (no-op for Web Audio API)
 export function preloadSounds(): void {
-  Object.entries(SOUNDS).forEach(([key, url]) => {
-    const audio = new Audio(url)
-    audio.preload = 'auto'
-    audioCache.set(key as SoundType, audio)
-  })
+  // Web Audio API doesn't need preloading
 }
 
-// Play a sound effect
+// Play a sound effect using Web Audio API
 export function playSound(sound: SoundType, volume = 0.5): void {
   if (!soundsEnabled) return
 
   try {
-    // Try to get cached audio, or create new one
-    let audio = audioCache.get(sound)
+    const ctx = getAudioContext()
+    if (!ctx) return
 
-    if (!audio) {
-      audio = new Audio(SOUNDS[sound])
-      audioCache.set(sound, audio)
+    // Resume context if suspended (browser autoplay policy)
+    if (ctx.state === 'suspended') {
+      ctx.resume()
     }
 
-    // Clone the audio to allow overlapping sounds
-    const audioClone = audio.cloneNode() as HTMLAudioElement
-    audioClone.volume = Math.min(1, Math.max(0, volume))
+    // Parse the sound configuration
+    const config = SOUNDS[sound]
+    const [, freqStr, durStr, type] = config.split(':')
+    const frequency = parseInt(freqStr, 10)
+    const duration = parseInt(durStr, 10) / 1000 // Convert to seconds
 
-    // Play with error handling for autoplay restrictions
-    audioClone.play().catch((err) => {
-      // Silently fail if autoplay is blocked
-      console.debug('Sound playback blocked:', err.message)
-    })
-  } catch (err) {
+    // Create oscillator
+    const oscillator = ctx.createOscillator()
+    const gainNode = ctx.createGain()
+
+    oscillator.type = type as OscillatorType
+    oscillator.frequency.setValueAtTime(frequency, ctx.currentTime)
+
+    // Apply volume with envelope for smoother sound
+    const adjustedVolume = Math.min(1, Math.max(0, volume)) * 0.3
+    gainNode.gain.setValueAtTime(0, ctx.currentTime)
+    gainNode.gain.linearRampToValueAtTime(adjustedVolume, ctx.currentTime + 0.01)
+    gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + duration)
+
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
+
+    oscillator.start(ctx.currentTime)
+    oscillator.stop(ctx.currentTime + duration)
+  } catch {
     // Silently handle any errors
-    console.debug('Sound error:', err)
   }
 }
 
@@ -134,12 +148,4 @@ export function useSounds() {
 // Play sound on interaction (for touch feedback)
 export function playInteractionSound(): void {
   playSound('click', 0.2)
-}
-
-// Initialize sounds on module load (optional preload)
-if (typeof window !== 'undefined') {
-  // Delay preloading to not block initial page load
-  setTimeout(() => {
-    preloadSounds()
-  }, 2000)
 }

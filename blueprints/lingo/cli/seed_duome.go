@@ -94,36 +94,36 @@ func newSeedDuomeParse() *cobra.Command {
 
 func newSeedDuomeImport() *cobra.Command {
 	var lang string
-	var useSqlite bool
+	var usePostgres bool
 
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import parsed data into database",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSeedDuomeImport(cmd.Context(), lang, useSqlite)
+			return runSeedDuomeImport(cmd.Context(), lang, !usePostgres)
 		},
 	}
 
 	cmd.Flags().StringVarP(&lang, "lang", "l", "", "Target language code (e.g., ja, es, fr)")
-	cmd.Flags().BoolVar(&useSqlite, "sqlite", false, "Use SQLite instead of PostgreSQL")
+	cmd.Flags().BoolVar(&usePostgres, "postgres", false, "Use PostgreSQL instead of SQLite (default: SQLite)")
 	cmd.MarkFlagRequired("lang")
 
 	return cmd
 }
 
 func newSeedDuomeAll() *cobra.Command {
-	var useSqlite bool
+	var usePostgres bool
 	var primary bool
 
 	cmd := &cobra.Command{
 		Use:   "all",
 		Short: "Run full pipeline: download, parse, and import",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSeedDuomeAll(cmd.Context(), useSqlite, primary)
+			return runSeedDuomeAll(cmd.Context(), !usePostgres, primary)
 		},
 	}
 
-	cmd.Flags().BoolVar(&useSqlite, "sqlite", false, "Use SQLite instead of PostgreSQL")
+	cmd.Flags().BoolVar(&usePostgres, "postgres", false, "Use PostgreSQL instead of SQLite (default: SQLite)")
 	cmd.Flags().BoolVarP(&primary, "primary", "p", true, "Only process primary languages (default: true)")
 
 	return cmd
@@ -412,7 +412,8 @@ func runSeedDuomeList() {
 	fmt.Println()
 	fmt.Println(subtitleStyle.Render("Usage:"))
 	fmt.Println(subtitleStyle.Render("  lingo seed-duome download -l ja   # Download Japanese"))
-	fmt.Println(subtitleStyle.Render("  lingo seed-duome all --sqlite     # Full pipeline"))
+	fmt.Println(subtitleStyle.Render("  lingo seed-duome all              # Full pipeline (SQLite)"))
+	fmt.Println(subtitleStyle.Render("  lingo seed-duome all --postgres   # Full pipeline (PostgreSQL)"))
 	fmt.Println()
 }
 
