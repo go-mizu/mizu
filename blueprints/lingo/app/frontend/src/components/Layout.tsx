@@ -1,12 +1,15 @@
+import { useState, useEffect } from 'react'
 import { AppShell, Group, Stack, UnstyledButton, Text, Tooltip } from '@mantine/core'
-import { IconFlame, IconHome, IconTrophy, IconUser, IconShoppingCart, IconMedal, IconHeart, IconBook, IconDots } from '@tabler/icons-react'
+import { IconFlame, IconHome, IconTrophy, IconUser, IconShoppingCart, IconMedal, IconHeart, IconBook, IconDots, IconNotebook } from '@tabler/icons-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
 import { colors } from '../styles/tokens'
+import { coursesApi, Language } from '../api/client'
 
 // Duolingo-style colorful navigation icons
 const navItems = [
   { icon: IconHome, label: 'LEARN', path: '/learn', color: '#58CC02' },
+  { icon: IconNotebook, label: 'STORIES', path: '/stories', color: '#FF4B4B' },
   { icon: IconBook, label: 'LETTERS', path: '/letters', color: '#CE82FF' },
   { icon: IconTrophy, label: 'LEADERBOARDS', path: '/leaderboards', color: '#FFC800' },
   { icon: IconMedal, label: 'QUESTS', path: '/quests', color: '#FF9600' },
@@ -19,6 +22,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuthStore()
+  const [learningLanguage, setLearningLanguage] = useState<Language | null>(null)
+
+  useEffect(() => {
+    async function loadLanguage() {
+      if (!user?.active_course_id) return
+
+      try {
+        const course = await coursesApi.getCourse(user.active_course_id)
+        const languages = await coursesApi.listLanguages()
+        const lang = languages.find((l) => l.id === course.learning_language_id)
+        if (lang) {
+          setLearningLanguage(lang)
+        }
+      } catch (err) {
+        console.error('Failed to load language:', err)
+      }
+    }
+
+    loadLanguage()
+  }, [user?.active_course_id])
 
   return (
     <AppShell
@@ -106,8 +129,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           justifyContent: 'flex-end',
         }}>
           <Group gap="lg">
-            {/* Language flag */}
-            <Text size="xl">🇪🇸</Text>
+            {/* Language flag - clickable to change course */}
+            <Tooltip label={learningLanguage ? `Learning ${learningLanguage.name}` : 'Select a course'}>
+              <UnstyledButton
+                onClick={() => navigate('/courses')}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 8,
+                  transition: 'background-color 0.15s ease',
+                }}
+              >
+                <Text size="xl">{learningLanguage?.flag_emoji || '🌐'}</Text>
+              </UnstyledButton>
+            </Tooltip>
 
             {/* Streak */}
             <Tooltip label={`${user?.streak_days || 0} day streak`}>

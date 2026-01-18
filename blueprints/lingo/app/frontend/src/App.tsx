@@ -13,6 +13,9 @@ import Achievements from './pages/Achievements'
 import Quests from './pages/Quests'
 import Letters from './pages/Letters'
 import Guidebook from './pages/Guidebook'
+import Courses from './pages/Courses'
+import Stories from './pages/Stories'
+import StoryPlayer from './pages/StoryPlayer'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -76,6 +79,21 @@ function App() {
       <Route path="/guidebook/:unitId" element={
         <ProtectedRoute>
           <Guidebook />
+        </ProtectedRoute>
+      } />
+      <Route path="/courses" element={
+        <ProtectedRoute>
+          <Layout><Courses /></Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/stories" element={
+        <ProtectedRoute>
+          <Layout><Stories /></Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/story/:id" element={
+        <ProtectedRoute>
+          <StoryPlayer />
         </ProtectedRoute>
       } />
 

@@ -202,3 +202,20 @@ func (s *Service) AddGems(ctx context.Context, userID uuid.UUID, amount int) err
 
 	return s.users.UpdateGems(ctx, userID, user.Gems+amount)
 }
+
+// SetActiveCourse sets the user's active course
+func (s *Service) SetActiveCourse(ctx context.Context, userID, courseID uuid.UUID) (*store.User, error) {
+	// Verify user exists
+	_, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, ErrUserNotFound
+	}
+
+	// Set active course
+	if err := s.users.SetActiveCourse(ctx, userID, courseID); err != nil {
+		return nil, err
+	}
+
+	// Return updated user
+	return s.users.GetByID(ctx, userID)
+}

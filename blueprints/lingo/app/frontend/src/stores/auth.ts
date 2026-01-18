@@ -13,6 +13,8 @@ interface User {
   streak_days: number
   is_premium: boolean
   daily_goal_minutes: number
+  active_course_id?: string
+  native_language_id?: string
 }
 
 interface AuthState {
@@ -23,6 +25,7 @@ interface AuthState {
   signup: (email: string, username: string, password: string) => Promise<void>
   logout: () => void
   updateUser: (updates: Partial<User>) => void
+  setActiveCourse: (courseId: string) => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -45,6 +48,9 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const data = await response.json()
+        // Store in localStorage for API client
+        localStorage.setItem('auth_token', data.access_token)
+        localStorage.setItem('user_id', data.user.id)
         set({
           user: data.user,
           token: data.access_token,
@@ -65,6 +71,9 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const data = await response.json()
+        // Store in localStorage for API client
+        localStorage.setItem('auth_token', data.access_token)
+        localStorage.setItem('user_id', data.user.id)
         set({
           user: data.user,
           token: data.access_token,
@@ -73,6 +82,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
+        // Clear localStorage
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user_id')
         set({
           user: null,
           token: null,
@@ -86,6 +98,29 @@ export const useAuthStore = create<AuthState>()(
           set({ user: { ...current, ...updates } })
         }
       },
+
+      setActiveCourse: async (courseId: string) => {
+        const token = get().token
+        const userId = get().user?.id
+
+        const response = await fetch('/api/v1/users/me/course', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(userId ? { 'X-User-ID': userId } : {}),
+          },
+          body: JSON.stringify({ course_id: courseId }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to set active course')
+        }
+
+        const user = await response.json()
+        set({ user })
+      },
     }),
     {
       name: 'lingo-auth',
@@ -94,6 +129,14 @@ export const useAuthStore = create<AuthState>()(
         token: state.token,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Sync localStorage keys when store is rehydrated from persistence
+        // This ensures the API client has the auth headers it needs
+        if (state?.token && state?.user?.id) {
+          localStorage.setItem('auth_token', state.token)
+          localStorage.setItem('user_id', state.user.id)
+        }
+      },
     }
   )
 )

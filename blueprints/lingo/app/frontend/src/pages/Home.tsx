@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { colors } from '../styles/tokens'
 import { coursesApi, Unit, Skill } from '../api/client'
+import { useAuthStore } from '../stores/auth'
 
 interface SkillWithProgress extends Skill {
   crownLevel: number
@@ -354,6 +355,7 @@ function LockedSkillCard({ skill }: { skill: SkillWithProgress }) {
 
 export default function Home() {
   const navigate = useNavigate()
+  const { user } = useAuthStore()
   const [units, setUnits] = useState<UnitWithProgress[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -362,15 +364,21 @@ export default function Home() {
     async function loadCourseData() {
       try {
         setLoading(true)
-        const courses = await coursesApi.listCourses('en')
 
-        if (courses.length === 0) {
-          setError('No courses available')
+        // If user has no active course, redirect to course selection
+        if (!user?.active_course_id) {
+          // Try to get courses and auto-select first one, or redirect to course selection
+          const courses = await coursesApi.listCourses('en')
+          if (courses.length === 0) {
+            setError('No courses available')
+            return
+          }
+          // Redirect to course selection page
+          navigate('/courses')
           return
         }
 
-        const course = courses[0]
-        const coursePath = await coursesApi.getCoursePath(course.id)
+        const coursePath = await coursesApi.getCoursePath(user.active_course_id)
 
         // Transform to include progress
         const unitsWithProgress: UnitWithProgress[] = coursePath.map((unit, unitIndex) => ({
@@ -394,7 +402,7 @@ export default function Home() {
     }
 
     loadCourseData()
-  }, [])
+  }, [user?.active_course_id, navigate])
 
   const handleSkillClick = (skillId: string) => {
     navigate(`/lesson/${skillId}`)
@@ -426,11 +434,12 @@ export default function Home() {
     <div style={{
       display: 'flex',
       gap: 48,
-      maxWidth: 900,
+      maxWidth: 1000,
       margin: '0 auto',
+      justifyContent: 'center',
     }}>
       {/* Main content - skill tree */}
-      <div style={{ flex: 1, maxWidth: 500 }}>
+      <div style={{ flex: '0 0 600px', maxWidth: 600 }}>
         {units.map((unit, unitIndex) => (
           <div key={unit.id}>
             {/* Section header */}
@@ -489,7 +498,7 @@ export default function Home() {
       </div>
 
       {/* Right sidebar */}
-      <div style={{ width: 300, flexShrink: 0 }} className="right-sidebar">
+      <div style={{ flex: '0 0 330px', width: 330 }} className="right-sidebar">
         <Stack gap="lg" style={{ position: 'sticky', top: 80 }}>
           <UnlockLeaderboardsCard />
           <DailyQuestsCard />
