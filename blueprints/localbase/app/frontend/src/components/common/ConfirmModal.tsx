@@ -29,16 +29,38 @@ export function ConfirmModal({
       <Stack gap="lg">
         {danger && (
           <Group gap="sm" align="flex-start">
-            <IconAlertTriangle size={20} color="var(--supabase-error)" />
-            <Text size="sm" style={{ flex: 1 }}>
+            <IconAlertTriangle size={20} color="var(--lb-error)" />
+            <Text
+              size="sm"
+              style={{
+                flex: 1,
+                color: 'var(--lb-text-primary)',
+              }}
+            >
               {message}
             </Text>
           </Group>
         )}
-        {!danger && <Text size="sm">{message}</Text>}
+        {!danger && (
+          <Text
+            size="sm"
+            style={{
+              color: 'var(--lb-text-primary)',
+            }}
+          >
+            {message}
+          </Text>
+        )}
 
         <Group justify="flex-end" gap="sm">
-          <Button variant="outline" onClick={onClose} disabled={loading}>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+            style={{
+              borderColor: 'var(--lb-border-default)',
+            }}
+          >
             {cancelLabel}
           </Button>
           <Button

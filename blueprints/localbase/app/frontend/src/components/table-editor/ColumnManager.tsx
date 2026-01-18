@@ -74,11 +74,11 @@ export function ColumnManager({
           onClick={() => setOpened(!opened)}
           styles={{
             root: {
-              borderColor: 'var(--supabase-border)',
-              color: 'var(--supabase-text)',
+              borderColor: 'var(--lb-border-default)',
+              color: 'var(--lb-text-primary)',
               fontWeight: 400,
               '&:hover': {
-                backgroundColor: 'var(--supabase-bg-surface)',
+                backgroundColor: 'var(--lb-bg-secondary)',
               },
             },
           }}
@@ -90,8 +90,9 @@ export function ColumnManager({
       <Popover.Dropdown
         p="xs"
         style={{
-          backgroundColor: 'var(--supabase-bg)',
-          borderColor: 'var(--supabase-border)',
+          backgroundColor: 'var(--lb-bg-primary)',
+          borderColor: 'var(--lb-border-default)',
+          borderRadius: 'var(--lb-radius-md)',
         }}
       >
         <Stack gap="xs">
@@ -103,14 +104,14 @@ export function ColumnManager({
             leftSection={<IconSearch size={14} />}
             styles={{
               input: {
-                backgroundColor: 'var(--supabase-bg-surface)',
-                borderColor: 'var(--supabase-border)',
+                backgroundColor: 'var(--lb-bg-secondary)',
+                borderColor: 'var(--lb-border-default)',
               },
             }}
           />
 
           <Group justify="space-between">
-            <Text size="xs" c="dimmed">
+            <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
               {visibleColumns.size} of {columns.length} visible
             </Text>
             <Group gap={4}>
@@ -145,11 +146,12 @@ export function ColumnManager({
                   px={6}
                   wrap="nowrap"
                   style={{
-                    borderRadius: 4,
+                    borderRadius: 'var(--lb-radius-sm)',
                     cursor: 'pointer',
+                    transition: 'var(--lb-transition-fast)',
                     backgroundColor: visibleColumns.has(col.name)
                       ? 'transparent'
-                      : 'var(--supabase-bg-surface)',
+                      : 'var(--lb-bg-secondary)',
                   }}
                 >
                   <Checkbox
@@ -168,7 +170,7 @@ export function ColumnManager({
                     <Text size="xs" truncate fw={500}>
                       {col.name}
                     </Text>
-                    <Text size="xs" c="dimmed" truncate>
+                    <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }} truncate>
                       {col.type}
                     </Text>
                   </Box>
@@ -191,7 +193,7 @@ export function ColumnManager({
           </ScrollArea>
 
           {filteredColumns.length === 0 && (
-            <Text size="xs" c="dimmed" ta="center" py="sm">
+            <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }} ta="center" py="sm">
               No columns match "{search}"
             </Text>
           )}

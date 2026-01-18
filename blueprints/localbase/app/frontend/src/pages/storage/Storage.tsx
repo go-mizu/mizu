@@ -433,10 +433,10 @@ export function StoragePage() {
         <Box
           style={{
             width: 240,
-            borderRight: '1px solid var(--supabase-border)',
+            borderRight: '1px solid var(--lb-border-default)',
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: 'var(--supabase-bg)',
+            backgroundColor: 'var(--lb-bg-primary)',
             flexShrink: 0,
           }}
         >
@@ -446,8 +446,7 @@ export function StoragePage() {
               size="xs"
               fw={600}
               tt="uppercase"
-              c="dimmed"
-              style={{ letterSpacing: '0.05em', fontSize: '0.6875rem' }}
+              style={{ letterSpacing: '0.05em', fontSize: '0.6875rem', color: 'var(--lb-text-secondary)' }}
             >
               Manage
             </Text>
@@ -459,12 +458,12 @@ export function StoragePage() {
                 p="xs"
                 style={{
                   cursor: 'pointer',
-                  backgroundColor: 'var(--supabase-brand-light)',
-                  borderRadius: 6,
+                  backgroundColor: 'var(--lb-brand-light)',
+                  borderRadius: 'var(--lb-radius-md)',
                 }}
               >
                 <Group gap="xs">
-                  <IconFolder size={16} color="var(--supabase-brand)" />
+                  <IconFolder size={16} color="var(--lb-brand)" />
                   <Text size="sm" fw={500}>
                     Files
                   </Text>
@@ -478,7 +477,7 @@ export function StoragePage() {
           {/* Buckets List */}
           <Box px="md" pt="xs">
             <Group justify="space-between" mb="xs">
-              <Text size="xs" c="dimmed">
+              <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                 Buckets
               </Text>
               <ActionIcon variant="subtle" onClick={openCreateBucket} size="sm">
@@ -493,7 +492,7 @@ export function StoragePage() {
                 <Loader size="sm" />
               </Center>
             ) : buckets.length === 0 ? (
-              <Text size="sm" c="dimmed" ta="center" py="xl">
+              <Text size="sm" ta="center" py="xl" style={{ color: 'var(--lb-text-secondary)' }}>
                 No buckets yet
               </Text>
             ) : (
@@ -506,9 +505,10 @@ export function StoragePage() {
                       cursor: 'pointer',
                       backgroundColor:
                         selectedBucket === bucket.id
-                          ? 'var(--supabase-bg-surface)'
+                          ? 'var(--lb-bg-tertiary)'
                           : 'transparent',
-                      borderRadius: 6,
+                      borderRadius: 'var(--lb-radius-md)',
+                      transition: 'var(--lb-transition-fast)',
                     }}
                     onClick={() => {
                       setSelectedBucket(bucket.id);
@@ -517,7 +517,7 @@ export function StoragePage() {
                   >
                     <Group justify="space-between" wrap="nowrap">
                       <Group gap="xs" wrap="nowrap">
-                        <IconFolder size={16} color="var(--supabase-text-muted)" />
+                        <IconFolder size={16} color="var(--lb-text-muted)" />
                         <Text size="sm" truncate style={{ maxWidth: 120 }}>
                           {bucket.name}
                         </Text>

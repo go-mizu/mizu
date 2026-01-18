@@ -136,8 +136,8 @@ export function RowDetailDrawer({
           disabled={readOnly || col.is_primary_key}
           styles={{
             input: {
-              backgroundColor: 'var(--supabase-bg)',
-              borderColor: 'var(--supabase-border)',
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
             },
           }}
         />
@@ -159,8 +159,8 @@ export function RowDetailDrawer({
             input: {
               fontFamily: 'monospace',
               fontSize: '12px',
-              backgroundColor: 'var(--supabase-bg)',
-              borderColor: 'var(--supabase-border)',
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
             },
           }}
         />
@@ -180,8 +180,8 @@ export function RowDetailDrawer({
           disabled={readOnly}
           styles={{
             input: {
-              backgroundColor: 'var(--supabase-bg)',
-              borderColor: 'var(--supabase-border)',
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
             },
           }}
         />
@@ -198,8 +198,8 @@ export function RowDetailDrawer({
         styles={{
           input: {
             fontFamily: col.type.includes('uuid') || col.type.includes('int') ? 'monospace' : undefined,
-            backgroundColor: 'var(--supabase-bg)',
-            borderColor: 'var(--supabase-border)',
+            backgroundColor: 'var(--lb-bg-primary)',
+            borderColor: 'var(--lb-border-default)',
           },
         }}
       />
@@ -225,7 +225,7 @@ export function RowDetailDrawer({
       padding="md"
       styles={{
         header: {
-          borderBottom: '1px solid var(--supabase-border)',
+          borderBottom: '1px solid var(--lb-border-default)',
           paddingBottom: 12,
         },
         body: {
@@ -240,12 +240,12 @@ export function RowDetailDrawer({
               <Group gap="xs" mb={4} justify="space-between">
                 <Group gap="xs">
                   {col.is_primary_key && (
-                    <IconKey size={14} color="var(--supabase-brand)" />
+                    <IconKey size={14} color="var(--lb-brand)" />
                   )}
                   <Text size="sm" fw={500}>
                     {col.name}
                   </Text>
-                  <Text size="xs" c="dimmed">
+                  <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                     {col.type}
                   </Text>
                 </Group>
@@ -278,7 +278,7 @@ export function RowDetailDrawer({
               </Group>
               {renderField(col)}
               {col.default_value && (
-                <Text size="xs" c="dimmed" mt={2}>
+                <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }} mt={2}>
                   Default: {col.default_value}
                 </Text>
               )}
@@ -300,9 +300,10 @@ export function RowDetailDrawer({
               disabled={!hasChanges}
               styles={{
                 root: {
-                  backgroundColor: 'var(--supabase-brand)',
+                  backgroundColor: 'var(--lb-brand)',
+                  transition: 'var(--lb-transition-fast)',
                   '&:hover': {
-                    backgroundColor: 'var(--supabase-brand-hover)',
+                    backgroundColor: 'var(--lb-brand-hover)',
                   },
                 },
               }}

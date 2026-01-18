@@ -21,7 +21,15 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
   const config = statusConfig[status as StatusType] || statusConfig.default;
 
   return (
-    <Badge variant="light" color={config.color} size="sm">
+    <Badge
+      variant="light"
+      color={config.color}
+      size="sm"
+      style={{
+        textTransform: 'none',
+        fontWeight: 500,
+      }}
+    >
       {label || config.label}
     </Badge>
   );
@@ -30,7 +38,15 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
 // Specialized badges
 export function PublicBadge({ isPublic }: { isPublic: boolean }) {
   return (
-    <Badge variant="light" color={isPublic ? 'blue' : 'gray'} size="sm">
+    <Badge
+      variant="light"
+      color={isPublic ? 'blue' : 'gray'}
+      size="sm"
+      style={{
+        textTransform: 'none',
+        fontWeight: 500,
+      }}
+    >
       {isPublic ? 'Public' : 'Private'}
     </Badge>
   );
@@ -38,11 +54,27 @@ export function PublicBadge({ isPublic }: { isPublic: boolean }) {
 
 export function VerifiedBadge({ verified }: { verified: boolean }) {
   return verified ? (
-    <Badge variant="light" color="green" size="xs">
+    <Badge
+      variant="light"
+      color="green"
+      size="xs"
+      style={{
+        textTransform: 'none',
+        fontWeight: 500,
+      }}
+    >
       Verified
     </Badge>
   ) : (
-    <Badge variant="light" color="yellow" size="xs">
+    <Badge
+      variant="light"
+      color="yellow"
+      size="xs"
+      style={{
+        textTransform: 'none',
+        fontWeight: 500,
+      }}
+    >
       Unverified
     </Badge>
   );
@@ -51,7 +83,15 @@ export function VerifiedBadge({ verified }: { verified: boolean }) {
 export function RoleBadge({ role }: { role: string }) {
   const color = role === 'service_role' ? 'red' : role === 'authenticated' ? 'blue' : 'gray';
   return (
-    <Badge variant="light" color={color} size="sm">
+    <Badge
+      variant="light"
+      color={color}
+      size="sm"
+      style={{
+        textTransform: 'none',
+        fontWeight: 500,
+      }}
+    >
       {role}
     </Badge>
   );
