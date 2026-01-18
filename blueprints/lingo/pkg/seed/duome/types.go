@@ -9,6 +9,7 @@ type VocabularyEntry struct {
 	Translations []string `json:"translations"`            // English translations
 	POS          string   `json:"pos,omitempty"`           // Part of speech
 	SkillName    string   `json:"skill_name"`              // Parent skill name
+	AudioURL     string   `json:"audio_url,omitempty"`     // URL to audio pronunciation
 }
 
 // Skill represents a skill/category with its vocabulary and tips

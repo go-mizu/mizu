@@ -4,7 +4,7 @@ import { IconLock, IconCheck, IconBook, IconFlame, IconChevronLeft, IconStar } f
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../stores/auth'
-import { colors } from '../styles/tokens'
+import { colors, shadows } from '../styles/tokens'
 import { coursesApi, Unit, Skill } from '../api/client'
 
 interface SkillWithProgress extends Skill {
@@ -26,9 +26,9 @@ function SkillNode({ skill, onClick }: { skill: SkillWithProgress; onClick: () =
   }
 
   const getShadowColor = () => {
-    if (skill.isComplete) return colors.shadows?.skill?.completed || '0 4px 0 #E5B400'
-    if (skill.isLocked) return 'none'
-    return '0 4px 0 #58A700'
+    if (skill.isComplete) return shadows.skill.completed
+    if (skill.isLocked) return shadows.skill.locked
+    return shadows.skill.active
   }
 
   const getIconForSkill = (iconName: string) => {
@@ -115,7 +115,6 @@ export default function Home() {
   const [units, setUnits] = useState<UnitWithProgress[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currentCourseId, setCurrentCourseId] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadCourseData() {
@@ -131,7 +130,6 @@ export default function Home() {
 
         // Use first course for now (Spanish)
         const course = courses[0]
-        setCurrentCourseId(course.id)
 
         // Get course path (units with skills)
         const coursePath = await coursesApi.getCoursePath(course.id)

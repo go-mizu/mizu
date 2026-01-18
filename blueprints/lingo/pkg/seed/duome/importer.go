@@ -270,9 +270,9 @@ func (i *Importer) importCourseContent(ctx context.Context, courseID string, dat
 			return fmt.Errorf("create unit %d: %w", unitPos, err)
 		}
 
-		// Create skills
+		// Create skills with language code for audio generation
 		for localPos, skill := range unitSkills {
-			if err := i.importSkill(ctx, courseID, unitID, localPos+1, skill); err != nil {
+			if err := i.importSkill(ctx, courseID, unitID, localPos+1, skill, data.ToLanguage); err != nil {
 				return fmt.Errorf("import skill %s: %w", skill.Name, err)
 			}
 		}
@@ -310,7 +310,7 @@ func (i *Importer) createUnit(ctx context.Context, courseID string, position int
 }
 
 // importSkill imports a skill with its lessons and exercises
-func (i *Importer) importSkill(ctx context.Context, courseID, unitID string, position int, skill Skill) error {
+func (i *Importer) importSkill(ctx context.Context, courseID, unitID string, position int, skill Skill, languageCode string) error {
 	skillID := uuid.New().String()
 
 	_, err := i.db.ExecContext(ctx, `
@@ -321,10 +321,10 @@ func (i *Importer) importSkill(ctx context.Context, courseID, unitID string, pos
 		return fmt.Errorf("insert skill: %w", err)
 	}
 
-	// Import lexemes for this skill
+	// Import lexemes for this skill with audio URLs
 	lexemeIDs := make([]string, 0, len(skill.Vocabulary))
 	for _, vocab := range skill.Vocabulary {
-		lexemeID, err := i.importLexeme(ctx, courseID, vocab)
+		lexemeID, err := i.importLexeme(ctx, courseID, vocab, languageCode)
 		if err != nil {
 			return fmt.Errorf("import lexeme %s: %w", vocab.Word, err)
 		}
@@ -343,8 +343,8 @@ func (i *Importer) importSkill(ctx context.Context, courseID, unitID string, pos
 			return fmt.Errorf("insert lesson: %w", err)
 		}
 
-		// Generate exercises from vocabulary
-		if err := i.generateExercises(ctx, lessonID, skill.Vocabulary, level); err != nil {
+		// Generate exercises from vocabulary with audio support
+		if err := i.generateExercises(ctx, lessonID, skill.Vocabulary, level, languageCode); err != nil {
 			return fmt.Errorf("generate exercises: %w", err)
 		}
 	}
@@ -352,8 +352,8 @@ func (i *Importer) importSkill(ctx context.Context, courseID, unitID string, pos
 	return nil
 }
 
-// importLexeme imports a vocabulary word
-func (i *Importer) importLexeme(ctx context.Context, courseID string, vocab VocabularyEntry) (string, error) {
+// importLexeme imports a vocabulary word with audio URL
+func (i *Importer) importLexeme(ctx context.Context, courseID string, vocab VocabularyEntry, languageCode string) (string, error) {
 	lexemeID := uuid.New().String()
 
 	translation := strings.Join(vocab.Translations, ", ")
@@ -368,10 +368,16 @@ func (i *Importer) importLexeme(ctx context.Context, courseID string, vocab Voca
 		exampleTranslation = vocab.Translations[0]
 	}
 
+	// Generate audio URL if not provided
+	audioURL := vocab.AudioURL
+	if audioURL == "" && LanguageHasAudio(languageCode) {
+		audioURL = GenerateAudioURL(vocab.Word, languageCode)
+	}
+
 	_, err := i.db.ExecContext(ctx, `
-		INSERT INTO lexemes (id, course_id, word, translation, pos, example_sentence, example_translation)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, lexemeID, courseID, vocab.Word, translation, vocab.POS, exampleSentence, exampleTranslation)
+		INSERT INTO lexemes (id, course_id, word, translation, pos, audio_url, example_sentence, example_translation)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, lexemeID, courseID, vocab.Word, translation, vocab.POS, audioURL, exampleSentence, exampleTranslation)
 	if err != nil {
 		return "", err
 	}
@@ -379,8 +385,8 @@ func (i *Importer) importLexeme(ctx context.Context, courseID string, vocab Voca
 	return lexemeID, nil
 }
 
-// generateExercises creates exercises for a lesson
-func (i *Importer) generateExercises(ctx context.Context, lessonID string, vocabulary []VocabularyEntry, level int) error {
+// generateExercises creates exercises for a lesson with audio support
+func (i *Importer) generateExercises(ctx context.Context, lessonID string, vocabulary []VocabularyEntry, level int, languageCode string) error {
 	if len(vocabulary) == 0 {
 		return nil
 	}
@@ -392,20 +398,20 @@ func (i *Importer) generateExercises(ctx context.Context, lessonID string, vocab
 		vocab := vocabulary[j%len(vocabulary)]
 		exType := getExerciseType(j, level)
 
-		exercise := generateExercise(vocab, vocabulary, exType, level)
+		exercise := generateExercise(vocab, vocabulary, exType, level, languageCode)
 		exercises = append(exercises, exercise)
 	}
 
-	// Insert exercises
+	// Insert exercises with audio URLs
 	for _, ex := range exercises {
 		choicesJSON, _ := json.Marshal(ex.Choices)
 		hintsJSON, _ := json.Marshal(ex.Hints)
 
 		_, err := i.db.ExecContext(ctx, `
-			INSERT INTO exercises (id, lesson_id, type, prompt, correct_answer, choices, hints, difficulty)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO exercises (id, lesson_id, type, prompt, correct_answer, choices, audio_url, hints, difficulty)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, uuid.New().String(), lessonID, ex.Type, ex.Prompt, ex.CorrectAnswer,
-			string(choicesJSON), string(hintsJSON), ex.Difficulty)
+			string(choicesJSON), ex.AudioURL, string(hintsJSON), ex.Difficulty)
 		if err != nil {
 			return fmt.Errorf("insert exercise: %w", err)
 		}
@@ -415,33 +421,80 @@ func (i *Importer) generateExercises(ctx context.Context, lessonID string, vocab
 }
 
 // getExerciseType returns an exercise type based on index and level
+// Includes all Duolingo exercise types: translation, multiple_choice, word_bank, listening, fill_blank, match_pairs
 func getExerciseType(index, level int) string {
-	types := []string{
+	// Level 1-2: Basic exercises with more multiple choice and listening
+	level1Types := []string{
+		"multiple_choice",
+		"translation",
+		"listening",
+		"word_bank",
+		"multiple_choice",
+		"listening",
+		"fill_blank",
+		"translation",
+		"multiple_choice",
+		"listening",
+		"word_bank",
+		"match_pairs",
+		"translation",
+		"listening",
+		"multiple_choice",
+	}
+
+	// Level 3: Balanced mix
+	level3Types := []string{
+		"translation",
+		"multiple_choice",
+		"listening",
+		"word_bank",
+		"fill_blank",
+		"translation",
+		"listening",
+		"match_pairs",
 		"multiple_choice",
 		"translation",
 		"word_bank",
+		"listening",
 		"fill_blank",
-		"multiple_choice",
+		"translation",
+		"match_pairs",
+	}
+
+	// Level 4-5: Advanced exercises with more translation and fill_blank
+	level5Types := []string{
+		"translation",
+		"fill_blank",
+		"listening",
+		"word_bank",
+		"translation",
+		"fill_blank",
+		"translation",
+		"listening",
+		"match_pairs",
+		"fill_blank",
+		"translation",
+		"word_bank",
+		"listening",
+		"fill_blank",
 		"translation",
 	}
 
-	// Higher levels get harder exercise types
-	if level >= 4 {
-		types = []string{
-			"translation",
-			"fill_blank",
-			"word_bank",
-			"translation",
-			"fill_blank",
-			"translation",
-		}
+	var types []string
+	switch {
+	case level <= 2:
+		types = level1Types
+	case level == 3:
+		types = level3Types
+	default:
+		types = level5Types
 	}
 
 	return types[index%len(types)]
 }
 
-// generateExercise creates an exercise from vocabulary
-func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType string, level int) store.Exercise {
+// generateExercise creates an exercise from vocabulary with audio support
+func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType string, level int, languageCode string) store.Exercise {
 	ex := store.Exercise{
 		ID:         uuid.New(),
 		Type:       exType,
@@ -453,12 +506,19 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 		translation = vocab.Translations[0]
 	}
 
+	// Generate audio URL for exercises that need it
+	audioURL := vocab.AudioURL
+	if audioURL == "" && LanguageHasAudio(languageCode) {
+		audioURL = GenerateAudioURL(vocab.Word, languageCode)
+	}
+
 	switch exType {
 	case "translation":
 		// Alternate between forward and reverse translation
 		if rand.Intn(2) == 0 {
 			ex.Prompt = fmt.Sprintf("Translate: %s", vocab.Word)
 			ex.CorrectAnswer = translation
+			ex.AudioURL = audioURL // Include audio for the source word
 		} else {
 			ex.Prompt = fmt.Sprintf("Translate to the target language: %s", translation)
 			ex.CorrectAnswer = vocab.Word
@@ -471,12 +531,13 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 		ex.Prompt = fmt.Sprintf("What does '%s' mean?", vocab.Word)
 		ex.CorrectAnswer = translation
 		ex.Choices = generateDistractors(translation, allVocab, 4)
+		ex.AudioURL = audioURL // Include audio for the word
 
 	case "word_bank":
 		ex.Prompt = translation
 		ex.CorrectAnswer = vocab.Word
-		// For word bank, choices are the word parts (simplified)
-		ex.Choices = []string{vocab.Word}
+		// For word bank, generate word parts or shuffled words
+		ex.Choices = generateWordBankChoices(vocab.Word, allVocab)
 		if vocab.Romanization != "" {
 			ex.Hints = []string{vocab.Romanization}
 		}
@@ -484,6 +545,7 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 	case "fill_blank":
 		ex.Prompt = fmt.Sprintf("___ means '%s'", translation)
 		ex.CorrectAnswer = vocab.Word
+		ex.Choices = generateDistractorsWords(vocab.Word, allVocab, 4)
 		if vocab.Romanization != "" {
 			ex.Hints = []string{vocab.Romanization}
 		}
@@ -491,15 +553,82 @@ func generateExercise(vocab VocabularyEntry, allVocab []VocabularyEntry, exType 
 	case "listening":
 		ex.Prompt = "Type what you hear"
 		ex.CorrectAnswer = vocab.Word
-		// Audio would be added separately
+		ex.AudioURL = audioURL // Audio is required for listening exercises
+		if vocab.Romanization != "" {
+			ex.Hints = []string{fmt.Sprintf("Hint: %s", vocab.Romanization)}
+		}
 
 	case "match_pairs":
 		ex.Prompt = "Match the words with their meanings"
 		ex.CorrectAnswer = vocab.Word
-		// Match pairs would need special handling
+		// Generate pairs for matching
+		ex.Choices = generateMatchPairs(vocab, allVocab, 4)
 	}
 
 	return ex
+}
+
+// generateWordBankChoices creates word choices for word bank exercises
+func generateWordBankChoices(correct string, allVocab []VocabularyEntry) []string {
+	choices := []string{correct}
+
+	// Add some distractor words
+	for _, v := range allVocab {
+		if v.Word != correct && len(choices) < 6 {
+			choices = append(choices, v.Word)
+		}
+	}
+
+	// Shuffle
+	rand.Shuffle(len(choices), func(i, j int) {
+		choices[i], choices[j] = choices[j], choices[i]
+	})
+
+	return choices
+}
+
+// generateDistractorsWords creates wrong word choices
+func generateDistractorsWords(correct string, allVocab []VocabularyEntry, count int) []string {
+	choices := []string{correct}
+
+	// Collect unique words
+	for _, v := range allVocab {
+		if v.Word != correct && len(choices) < count {
+			choices = append(choices, v.Word)
+		}
+	}
+
+	// Shuffle
+	rand.Shuffle(len(choices), func(i, j int) {
+		choices[i], choices[j] = choices[j], choices[i]
+	})
+
+	return choices
+}
+
+// generateMatchPairs creates pairs for matching exercises
+func generateMatchPairs(vocab VocabularyEntry, allVocab []VocabularyEntry, pairCount int) []string {
+	// Format: word1|translation1,word2|translation2,...
+	pairs := make([]string, 0, pairCount)
+
+	// Add the correct pair
+	if len(vocab.Translations) > 0 {
+		pairs = append(pairs, fmt.Sprintf("%s|%s", vocab.Word, vocab.Translations[0]))
+	}
+
+	// Add distractor pairs
+	for _, v := range allVocab {
+		if v.Word != vocab.Word && len(v.Translations) > 0 && len(pairs) < pairCount {
+			pairs = append(pairs, fmt.Sprintf("%s|%s", v.Word, v.Translations[0]))
+		}
+	}
+
+	// Shuffle pairs
+	rand.Shuffle(len(pairs), func(i, j int) {
+		pairs[i], pairs[j] = pairs[j], pairs[i]
+	})
+
+	return pairs
 }
 
 // generateDistractors creates wrong answer choices
