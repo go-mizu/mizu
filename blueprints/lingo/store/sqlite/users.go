@@ -16,15 +16,21 @@ type UserStore struct {
 
 // Create creates a new user
 func (s *UserStore) Create(ctx context.Context, user *store.User) error {
+	var activeCourseID sql.NullString
+	if user.ActiveCourseID != nil {
+		activeCourseID = sql.NullString{String: user.ActiveCourseID.String(), Valid: true}
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (id, email, username, display_name, avatar_url, bio, encrypted_password,
 			xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at,
-			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, created_at, last_active_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes,
+			active_course_id, native_language_id, created_at, last_active_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, user.ID.String(), user.Email, user.Username, user.DisplayName, user.AvatarURL, user.Bio,
 		user.EncryptedPassword, user.XPTotal, user.Gems, user.Hearts, user.HeartsUpdatedAt,
 		user.StreakDays, user.StreakUpdatedAt, user.StreakFreezeCount, boolToInt(user.IsPremium),
-		user.PremiumExpiresAt, user.DailyGoalMinutes, user.CreatedAt, user.LastActiveAt)
+		user.PremiumExpiresAt, user.DailyGoalMinutes, activeCourseID, nullString(user.NativeLanguageID),
+		user.CreatedAt, user.LastActiveAt)
 	return err
 }
 
@@ -33,7 +39,8 @@ func (s *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*store.User, err
 	return s.scanUser(s.db.QueryRowContext(ctx, `
 		SELECT id, email, username, display_name, avatar_url, bio, encrypted_password,
 			xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at,
-			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, created_at, last_active_at
+			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes,
+			active_course_id, native_language_id, created_at, last_active_at
 		FROM users WHERE id = ?
 	`, id.String()))
 }
@@ -43,7 +50,8 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*store.User, 
 	return s.scanUser(s.db.QueryRowContext(ctx, `
 		SELECT id, email, username, display_name, avatar_url, bio, encrypted_password,
 			xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at,
-			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, created_at, last_active_at
+			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes,
+			active_course_id, native_language_id, created_at, last_active_at
 		FROM users WHERE email = ?
 	`, email))
 }
@@ -53,7 +61,8 @@ func (s *UserStore) GetByUsername(ctx context.Context, username string) (*store.
 	return s.scanUser(s.db.QueryRowContext(ctx, `
 		SELECT id, email, username, display_name, avatar_url, bio, encrypted_password,
 			xp_total, gems, hearts, hearts_updated_at, streak_days, streak_updated_at,
-			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes, created_at, last_active_at
+			streak_freeze_count, is_premium, premium_expires_at, daily_goal_minutes,
+			active_course_id, native_language_id, created_at, last_active_at
 		FROM users WHERE username = ?
 	`, username))
 }
@@ -138,21 +147,38 @@ func (s *UserStore) UpdateGems(ctx context.Context, userID uuid.UUID, gems int) 
 	return err
 }
 
+// SetActiveCourse sets the user's active course
+func (s *UserStore) SetActiveCourse(ctx context.Context, userID, courseID uuid.UUID) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users SET active_course_id = ? WHERE id = ?
+	`, courseID.String(), userID.String())
+	return err
+}
+
 func (s *UserStore) scanUser(row *sql.Row) (*store.User, error) {
 	var user store.User
 	var id string
 	var isPremium int
+	var activeCourseID, nativeLanguageID sql.NullString
 
 	err := row.Scan(&id, &user.Email, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Bio,
 		&user.EncryptedPassword, &user.XPTotal, &user.Gems, &user.Hearts, &user.HeartsUpdatedAt,
 		&user.StreakDays, &user.StreakUpdatedAt, &user.StreakFreezeCount, &isPremium,
-		&user.PremiumExpiresAt, &user.DailyGoalMinutes, &user.CreatedAt, &user.LastActiveAt)
+		&user.PremiumExpiresAt, &user.DailyGoalMinutes, &activeCourseID, &nativeLanguageID,
+		&user.CreatedAt, &user.LastActiveAt)
 	if err != nil {
 		return nil, err
 	}
 
 	user.ID, _ = uuid.Parse(id)
 	user.IsPremium = isPremium == 1
+	if activeCourseID.Valid {
+		courseID, _ := uuid.Parse(activeCourseID.String)
+		user.ActiveCourseID = &courseID
+	}
+	if nativeLanguageID.Valid {
+		user.NativeLanguageID = nativeLanguageID.String
+	}
 
 	return &user, nil
 }

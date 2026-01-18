@@ -292,3 +292,106 @@ export const progressApi = {
   getUserSkills: (courseId: string) =>
     api.get<UserSkill[]>('/progress/skills', { params: { course_id: courseId } }),
 }
+
+// Story types
+export type StoryElementType =
+  | 'header'
+  | 'line'
+  | 'multiple_choice'
+  | 'select_phrase'
+  | 'arrange'
+  | 'match'
+  | 'point_to_phrase'
+  | 'tap_complete'
+
+export interface AudioTiming {
+  start: number // milliseconds from audio start
+  end: number
+  word: string
+  index: number
+}
+
+export interface ChallengeData {
+  question?: string
+  question_translation?: string
+  options?: string[]
+  correct_index?: number
+  correct_indices?: number[]
+  selectable_indices?: number[]
+  phrase_indices?: number[]
+  arrange_words?: string[]
+  match_pairs?: { left: string; right: string }[]
+  feedback_correct?: string
+  feedback_incorrect?: string
+}
+
+export interface StoryCharacter {
+  id: string
+  story_id: string
+  name: string
+  display_name: string
+  avatar_url?: string
+  voice_id?: string
+  position: number
+}
+
+export interface StoryElement {
+  id: string
+  story_id: string
+  position: number
+  element_type: StoryElementType
+  speaker_id?: string
+  speaker?: StoryCharacter
+  text?: string
+  translation?: string
+  audio_url?: string
+  audio_timing?: AudioTiming[]
+  challenge_data?: ChallengeData
+}
+
+export interface Story {
+  id: string
+  course_id: string
+  external_id?: string
+  title: string
+  title_translation?: string
+  illustration_url?: string
+  set_id: number
+  set_position: number
+  difficulty: number
+  cefr_level?: string
+  duration_seconds: number
+  xp_reward: number
+  characters?: StoryCharacter[]
+  elements?: StoryElement[]
+  created_at: string
+}
+
+export interface StorySet {
+  id: number
+  course_id: string
+  name: string
+  description?: string
+  position: number
+  unlock_requirement?: string
+  icon_url?: string
+  stories?: Story[]
+  stories_count: number
+  completed_count?: number
+}
+
+export interface StoryCompletionResult {
+  xp_earned: number
+  message: string
+}
+
+export const storiesApi = {
+  getStories: (courseId: string) =>
+    api.get<Story[]>('/stories', { params: { course_id: courseId } }),
+
+  getStory: (id: string) =>
+    api.get<Story>(`/stories/${id}`),
+
+  completeStory: (id: string) =>
+    api.post<StoryCompletionResult>(`/stories/${id}/complete`),
+}

@@ -74,16 +74,47 @@ func runServe(ctx context.Context, port int, devMode, useSqlite bool, dbPath str
 			return fmt.Errorf("failed to create database directory: %w", err)
 		}
 		fmt.Println(infoStyle.Render(fmt.Sprintf("Connecting to SQLite (%s)...", dbPath)))
-		st, err = sqlite.New(ctx, dbPath)
+		sqliteStore, err := sqlite.New(ctx, dbPath)
+		if err != nil {
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+		st = sqliteStore
+		fmt.Println(successStyle.Render("  Connected"))
+
+		// Auto-initialize and seed SQLite database
+		fmt.Println(infoStyle.Render("Ensuring database schema..."))
+		if err := sqliteStore.Ensure(ctx); err != nil {
+			return fmt.Errorf("failed to ensure schema: %w", err)
+		}
+		fmt.Println(successStyle.Render("  Schema ready"))
+
+		// Seed data (these use INSERT OR IGNORE so it's safe to run multiple times)
+		fmt.Println(infoStyle.Render("Seeding data..."))
+		if err := sqliteStore.SeedLanguages(ctx); err != nil {
+			return fmt.Errorf("failed to seed languages: %w", err)
+		}
+		if err := sqliteStore.SeedCourses(ctx); err != nil {
+			return fmt.Errorf("failed to seed courses: %w", err)
+		}
+		if err := sqliteStore.SeedAchievements(ctx); err != nil {
+			return fmt.Errorf("failed to seed achievements: %w", err)
+		}
+		if err := sqliteStore.SeedLeagues(ctx); err != nil {
+			return fmt.Errorf("failed to seed leagues: %w", err)
+		}
+		if err := sqliteStore.SeedUsers(ctx); err != nil {
+			return fmt.Errorf("failed to seed users: %w", err)
+		}
+		fmt.Println(successStyle.Render("  Data seeded"))
 	} else {
 		fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
 		st, err = postgres.New(ctx, GetDatabaseURL())
-	}
-	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		if err != nil {
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+		fmt.Println(successStyle.Render("  Connected"))
 	}
 	defer st.Close()
-	fmt.Println(successStyle.Render("  Connected"))
 
 	// Create server
 	srv, err := web.NewServer(st, devMode)

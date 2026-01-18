@@ -48,6 +48,7 @@ type UserStore interface {
 	UpdateStreak(ctx context.Context, userID uuid.UUID) error
 	UpdateHearts(ctx context.Context, userID uuid.UUID, hearts int) error
 	UpdateGems(ctx context.Context, userID uuid.UUID, gems int) error
+	SetActiveCourse(ctx context.Context, userID, courseID uuid.UUID) error
 }
 
 // CourseStore handles course operations
@@ -171,18 +172,21 @@ type User struct {
 	IsPremium         bool       `json:"is_premium"`
 	PremiumExpiresAt  *time.Time `json:"premium_expires_at,omitempty"`
 	DailyGoalMinutes  int        `json:"daily_goal_minutes"`
+	ActiveCourseID    *uuid.UUID `json:"active_course_id,omitempty"`
+	NativeLanguageID  string     `json:"native_language_id,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 	LastActiveAt      *time.Time `json:"last_active_at,omitempty"`
 }
 
 // Language represents a language
 type Language struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	NativeName string `json:"native_name"`
-	FlagEmoji  string `json:"flag_emoji"`
-	RTL        bool   `json:"rtl"`
-	Enabled    bool   `json:"enabled"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	NativeName    string `json:"native_name"`
+	FlagEmoji     string `json:"flag_emoji"`
+	RTL           bool   `json:"rtl"`
+	Enabled       bool   `json:"enabled"`
+	LearnersCount int64  `json:"learners_count,omitempty"`
 }
 
 // Course represents a language course

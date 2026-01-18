@@ -21,6 +21,7 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/users/me", h.GetMe)
 	r.Put("/users/me", h.UpdateMe)
+	r.Put("/users/me/course", h.SetActiveCourse)
 	r.Get("/users/{username}", h.GetByUsername)
 	r.Get("/users/{id}/stats", h.GetStats)
 	r.Put("/users/me/settings", h.UpdateSettings)
@@ -121,6 +122,38 @@ func (h *Handler) UpdateSettings(c *mizu.Ctx) error {
 	user, err := h.svc.UpdateSettings(c.Context(), userID, input)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update settings"})
+	}
+
+	return c.JSON(http.StatusOK, user)
+}
+
+// SetActiveCourse handles PUT /users/me/course
+func (h *Handler) SetActiveCourse(c *mizu.Ctx) error {
+	userID := getUserID(c)
+	if userID == uuid.Nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+	}
+
+	var input struct {
+		CourseID string `json:"course_id"`
+	}
+	if err := c.BindJSON(&input, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	courseID, err := uuid.Parse(input.CourseID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid course id"})
+	}
+
+	user, err := h.svc.SetActiveCourse(c.Context(), userID, courseID)
+	if err != nil {
+		switch err {
+		case ErrUserNotFound:
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+		default:
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to set active course"})
+		}
 	}
 
 	return c.JSON(http.StatusOK, user)
