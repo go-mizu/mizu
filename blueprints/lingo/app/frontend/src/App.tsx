@@ -10,6 +10,8 @@ import Leaderboards from './pages/Leaderboards'
 import Profile from './pages/Profile'
 import Shop from './pages/Shop'
 import Achievements from './pages/Achievements'
+import Quests from './pages/Quests'
+import Letters from './pages/Letters'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -58,6 +60,16 @@ function App() {
       <Route path="/achievements" element={
         <ProtectedRoute>
           <Layout><Achievements /></Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/quests" element={
+        <ProtectedRoute>
+          <Layout><Quests /></Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/letters" element={
+        <ProtectedRoute>
+          <Layout><Letters /></Layout>
         </ProtectedRoute>
       } />
 

@@ -20,7 +20,7 @@ func NewHandler(svc *Service) *Handler {
 // RegisterRoutes registers shop routes
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/shop/items", h.GetItems)
-	r.Get("/shop/items/:id", h.GetItem)
+	r.Get("/shop/items/{id}", h.GetItem)
 	r.Post("/shop/purchase", h.Purchase)
 	r.Get("/shop/categories", h.GetCategories)
 }
@@ -37,7 +37,7 @@ func (h *Handler) GetItems(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, items)
 }
 
-// GetItem handles GET /shop/items/:id
+// GetItem handles GET /shop/items/{id}
 func (h *Handler) GetItem(c *mizu.Ctx) error {
 	itemID := c.Param("id")
 

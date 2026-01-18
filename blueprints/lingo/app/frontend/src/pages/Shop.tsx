@@ -83,11 +83,11 @@ export default function Shop() {
         radius="lg"
         mb="xl"
         style={{
-          backgroundColor: '#1a2c33',
+          backgroundColor: '#FFFFFF',
           textAlign: 'center',
         }}
       >
-        <Text size="lg" fw={600} style={{ color: '#8fa8b2' }} mb="xs">
+        <Text size="lg" fw={600} style={{ color: '#777777' }} mb="xs">
           Your Gems
         </Text>
         <Group justify="center" gap="xs">
@@ -97,7 +97,7 @@ export default function Shop() {
       </Paper>
 
       {/* Shop Items */}
-      <Title order={3} mb="lg" style={{ color: 'white' }}>
+      <Title order={3} mb="lg" style={{ color: '#4B4B4B' }}>
         Power-ups
       </Title>
       <Grid mb="xl">
@@ -107,7 +107,7 @@ export default function Shop() {
               p="xl"
               radius="lg"
               style={{
-                backgroundColor: '#1a2c33',
+                backgroundColor: '#FFFFFF',
                 height: '100%',
               }}
             >
@@ -127,8 +127,8 @@ export default function Shop() {
                   {item.icon}
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <Text fw={700} style={{ color: 'white' }}>{item.name}</Text>
-                  <Text size="sm" style={{ color: '#8fa8b2' }}>{item.description}</Text>
+                  <Text fw={700} style={{ color: '#4B4B4B' }}>{item.name}</Text>
+                  <Text size="sm" style={{ color: '#777777' }}>{item.description}</Text>
                 </div>
                 <Button
                   fullWidth
@@ -149,7 +149,7 @@ export default function Shop() {
       </Grid>
 
       {/* Super Lingo */}
-      <Title order={3} mb="lg" style={{ color: 'white' }}>
+      <Title order={3} mb="lg" style={{ color: '#4B4B4B' }}>
         Super Lingo
       </Title>
       <Paper
@@ -162,25 +162,25 @@ export default function Shop() {
         <Group justify="space-between" align="center">
           <div>
             <Group gap="xs" mb="xs">
-              <IconCrown size={28} style={{ color: 'white' }} />
-              <Title order={2} style={{ color: 'white' }}>Super Lingo</Title>
+              <IconCrown size={28} style={{ color: '#4B4B4B' }} />
+              <Title order={2} style={{ color: '#4B4B4B' }}>Super Lingo</Title>
             </Group>
             <Stack gap="xs">
               <Group gap="xs">
-                <IconHeart size={18} style={{ color: 'white' }} />
-                <Text style={{ color: 'white' }}>Unlimited Hearts</Text>
+                <IconHeart size={18} style={{ color: '#4B4B4B' }} />
+                <Text style={{ color: '#4B4B4B' }}>Unlimited Hearts</Text>
               </Group>
               <Group gap="xs">
-                <IconShield size={18} style={{ color: 'white' }} />
-                <Text style={{ color: 'white' }}>Unlimited Streak Freezes</Text>
+                <IconShield size={18} style={{ color: '#4B4B4B' }} />
+                <Text style={{ color: '#4B4B4B' }}>Unlimited Streak Freezes</Text>
               </Group>
               <Group gap="xs">
-                <IconBolt size={18} style={{ color: 'white' }} />
-                <Text style={{ color: 'white' }}>No Ads</Text>
+                <IconBolt size={18} style={{ color: '#4B4B4B' }} />
+                <Text style={{ color: '#4B4B4B' }}>No Ads</Text>
               </Group>
               <Group gap="xs">
-                <IconCrown size={18} style={{ color: 'white' }} />
-                <Text style={{ color: 'white' }}>Practice Hub Access</Text>
+                <IconCrown size={18} style={{ color: '#4B4B4B' }} />
+                <Text style={{ color: '#4B4B4B' }}>Practice Hub Access</Text>
               </Group>
             </Stack>
           </div>
@@ -201,27 +201,27 @@ export default function Shop() {
         radius="lg"
         mt="xl"
         style={{
-          backgroundColor: '#1a2c33',
+          backgroundColor: '#FFFFFF',
         }}
       >
-        <Title order={4} mb="md" style={{ color: 'white' }}>
+        <Title order={4} mb="md" style={{ color: '#4B4B4B' }}>
           Earn More Gems
         </Title>
         <Stack gap="md">
           <Group justify="space-between">
-            <Text style={{ color: '#8fa8b2' }}>Complete a lesson</Text>
+            <Text style={{ color: '#777777' }}>Complete a lesson</Text>
             <Badge color="blue">+5-15 💎</Badge>
           </Group>
           <Group justify="space-between">
-            <Text style={{ color: '#8fa8b2' }}>Perfect lesson (no mistakes)</Text>
+            <Text style={{ color: '#777777' }}>Perfect lesson (no mistakes)</Text>
             <Badge color="blue">+5 💎 bonus</Badge>
           </Group>
           <Group justify="space-between">
-            <Text style={{ color: '#8fa8b2' }}>Complete friend quest</Text>
+            <Text style={{ color: '#777777' }}>Complete friend quest</Text>
             <Badge color="blue">+100 💎</Badge>
           </Group>
           <Group justify="space-between">
-            <Text style={{ color: '#8fa8b2' }}>Win league</Text>
+            <Text style={{ color: '#777777' }}>Win league</Text>
             <Badge color="blue">+50-100 💎</Badge>
           </Group>
         </Stack>

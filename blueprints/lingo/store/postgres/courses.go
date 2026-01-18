@@ -190,8 +190,9 @@ func (s *CourseStore) GetExercises(ctx context.Context, lessonID uuid.UUID) ([]s
 // GetStories gets stories for a course
 func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]store.Story, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, course_id, title, difficulty, character_ids, content, xp_reward
-		FROM stories WHERE course_id = $1 ORDER BY difficulty
+		SELECT id, course_id, external_id, title, title_translation, illustration_url,
+		       set_id, set_position, difficulty, cefr_level, duration_seconds, xp_reward, created_at
+		FROM stories WHERE course_id = $1 ORDER BY set_id, set_position, difficulty
 	`, courseID)
 	if err != nil {
 		return nil, fmt.Errorf("query stories: %w", err)
@@ -201,7 +202,9 @@ func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]sto
 	var stories []store.Story
 	for rows.Next() {
 		var st store.Story
-		if err := rows.Scan(&st.ID, &st.CourseID, &st.Title, &st.Difficulty, &st.CharacterIDs, &st.Content, &st.XPReward); err != nil {
+		if err := rows.Scan(&st.ID, &st.CourseID, &st.ExternalID, &st.Title, &st.TitleTranslation,
+			&st.IllustrationURL, &st.SetID, &st.SetPosition, &st.Difficulty,
+			&st.CEFRLevel, &st.DurationSeconds, &st.XPReward, &st.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan story: %w", err)
 		}
 		stories = append(stories, st)
@@ -213,9 +216,12 @@ func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]sto
 func (s *CourseStore) GetStory(ctx context.Context, id uuid.UUID) (*store.Story, error) {
 	story := &store.Story{}
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, course_id, title, difficulty, character_ids, content, xp_reward
+		SELECT id, course_id, external_id, title, title_translation, illustration_url,
+		       set_id, set_position, difficulty, cefr_level, duration_seconds, xp_reward, created_at
 		FROM stories WHERE id = $1
-	`, id).Scan(&story.ID, &story.CourseID, &story.Title, &story.Difficulty, &story.CharacterIDs, &story.Content, &story.XPReward)
+	`, id).Scan(&story.ID, &story.CourseID, &story.ExternalID, &story.Title, &story.TitleTranslation,
+		&story.IllustrationURL, &story.SetID, &story.SetPosition, &story.Difficulty,
+		&story.CEFRLevel, &story.DurationSeconds, &story.XPReward, &story.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("query story: %w", err)
 	}

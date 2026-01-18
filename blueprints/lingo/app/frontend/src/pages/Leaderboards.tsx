@@ -49,7 +49,7 @@ export default function Leaderboards() {
         radius="lg"
         mb="xl"
         style={{
-          backgroundColor: '#1a2c33',
+          backgroundColor: '#FFFFFF',
           textAlign: 'center',
         }}
       >
@@ -66,13 +66,13 @@ export default function Leaderboards() {
               boxShadow: `0 0 20px ${currentLeague.color}40`,
             }}
           >
-            <IconTrophy size={48} style={{ color: 'white' }} />
+            <IconTrophy size={48} style={{ color: '#4B4B4B' }} />
           </div>
           <div>
             <Title order={2} style={{ color: currentLeague.color }}>
               {currentLeague.name} League
             </Title>
-            <Text style={{ color: '#8fa8b2' }}>
+            <Text style={{ color: '#777777' }}>
               Top 10 advance to Sapphire League
             </Text>
           </div>
@@ -93,9 +93,9 @@ export default function Leaderboards() {
           { label: 'Friends', value: 'friends' },
         ]}
         styles={{
-          root: { backgroundColor: '#1a2c33' },
+          root: { backgroundColor: '#FFFFFF' },
           indicator: { backgroundColor: '#58cc02' },
-          label: { color: '#8fa8b2', fontWeight: 600 },
+          label: { color: '#777777', fontWeight: 600 },
         }}
       />
 
@@ -112,7 +112,7 @@ export default function Leaderboards() {
               p="md"
               radius="lg"
               style={{
-                backgroundColor: isCurrentUser ? '#233a42' : '#1a2c33',
+                backgroundColor: isCurrentUser ? '#F7F7F7' : '#FFFFFF',
                 border: isCurrentUser ? '2px solid #58cc02' : 'none',
               }}
             >
@@ -124,13 +124,13 @@ export default function Leaderboards() {
                       width: 40,
                       height: 40,
                       borderRadius: '50%',
-                      backgroundColor: isTop3 ? rankColors[entry.rank - 1] : '#3d5a68',
+                      backgroundColor: isTop3 ? rankColors[entry.rank - 1] : '#E5E5E5',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    <Text fw={700} style={{ color: 'white' }}>
+                    <Text fw={700} style={{ color: '#4B4B4B' }}>
                       {entry.rank}
                     </Text>
                   </div>
@@ -140,11 +140,11 @@ export default function Leaderboards() {
                     {entry.displayName.charAt(0)}
                   </Avatar>
                   <div>
-                    <Text fw={700} style={{ color: 'white' }}>
+                    <Text fw={700} style={{ color: '#4B4B4B' }}>
                       {entry.displayName}
                       {isCurrentUser && <Badge ml="xs" size="xs" color="green">You</Badge>}
                     </Text>
-                    <Text size="sm" style={{ color: '#8fa8b2' }}>
+                    <Text size="sm" style={{ color: '#777777' }}>
                       @{entry.username}
                     </Text>
                   </div>
@@ -157,7 +157,7 @@ export default function Leaderboards() {
                   </Text>
                   {entry.change === 'up' && <IconChevronUp size={20} style={{ color: '#58cc02' }} />}
                   {entry.change === 'down' && <IconChevronDown size={20} style={{ color: '#ff4b4b' }} />}
-                  {entry.change === 'same' && <IconMinus size={20} style={{ color: '#8fa8b2' }} />}
+                  {entry.change === 'same' && <IconMinus size={20} style={{ color: '#777777' }} />}
                 </Group>
               </Group>
             </Paper>
@@ -171,7 +171,7 @@ export default function Leaderboards() {
         radius="lg"
         mt="xl"
         style={{
-          backgroundColor: '#233a42',
+          backgroundColor: '#F7F7F7',
           border: '2px dashed #58cc02',
         }}
       >
@@ -179,12 +179,12 @@ export default function Leaderboards() {
           <div style={{ textAlign: 'center' }}>
             <IconChevronUp size={24} style={{ color: '#58cc02' }} />
             <Text size="sm" fw={600} style={{ color: '#58cc02' }}>Top 10</Text>
-            <Text size="xs" style={{ color: '#8fa8b2' }}>Promotion Zone</Text>
+            <Text size="xs" style={{ color: '#777777' }}>Promotion Zone</Text>
           </div>
           <div style={{ textAlign: 'center' }}>
             <IconChevronDown size={24} style={{ color: '#ff4b4b' }} />
             <Text size="sm" fw={600} style={{ color: '#ff4b4b' }}>Bottom 5</Text>
-            <Text size="xs" style={{ color: '#8fa8b2' }}>Demotion Zone</Text>
+            <Text size="xs" style={{ color: '#777777' }}>Demotion Zone</Text>
           </div>
         </Group>
       </Paper>

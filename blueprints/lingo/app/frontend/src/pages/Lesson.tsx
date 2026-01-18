@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuthStore } from '../stores/auth'
 import { colors } from '../styles/tokens'
 import { lessonsApi, Exercise, Lesson as LessonType } from '../api/client'
+import { sounds } from '../utils/sounds'
 
 // Audio playback hook
 function useAudio() {
@@ -182,9 +183,11 @@ export default function Lesson() {
 
     if (correct) {
       setXpEarned((prev) => prev + 3)
+      sounds.correctAnswer()
     } else {
       setMistakes((prev) => prev + 1)
       setHearts((prev) => Math.max(0, prev - 1))
+      sounds.wrongAnswer()
     }
   }
 
@@ -194,9 +197,13 @@ export default function Lesson() {
       setSelectedAnswer(null)
       setTypedAnswer('')
       setIsChecked(false)
+      sounds.buttonClick()
     } else {
       // Lesson complete
       const finalXP = xpEarned + (mistakes === 0 ? 5 : 0) // Bonus for perfect
+
+      // Play completion sound
+      sounds.lessonComplete()
 
       // Try to complete lesson via API
       lessonsApi.completeLesson(lesson?.id || skillId || '', {
