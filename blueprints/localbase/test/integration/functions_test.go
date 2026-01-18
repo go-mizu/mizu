@@ -3178,3 +3178,535 @@ func TestFunctions_CORSComprehensive(t *testing.T) {
 		}
 	})
 }
+
+// =============================================================================
+// Source Code API Tests (New endpoints)
+// =============================================================================
+
+func TestFunctions_SourceCode(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-source-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("get source code", func(t *testing.T) {
+		status, respBody, _, err := serviceClient.Request("GET", "/api/functions/"+fnID+"/source", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var source map[string]any
+		if err := json.Unmarshal(respBody, &source); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Verify source response has expected fields
+		if source["function_id"] == nil {
+			t.Error("Missing function_id in response")
+		}
+		if source["source_code"] == nil {
+			t.Error("Missing source_code in response")
+		}
+		if source["entrypoint"] == nil {
+			t.Error("Missing entrypoint in response")
+		}
+	})
+
+	t.Run("update source (save draft)", func(t *testing.T) {
+		newSource := `export default async function handler(req) { return new Response("Updated code"); }`
+		body := map[string]any{
+			"source_code": newSource,
+		}
+
+		status, respBody, _, err := serviceClient.Request("PUT", "/api/functions/"+fnID+"/source", body, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if result["saved"] != true {
+			t.Error("Expected saved=true")
+		}
+		if result["is_draft"] != true {
+			t.Error("Expected is_draft=true")
+		}
+	})
+
+	t.Run("source not found for invalid function", func(t *testing.T) {
+		status, _, _, err := serviceClient.Request("GET", "/api/functions/invalid-id/source", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 404 {
+			t.Errorf("Expected 404, got %d", status)
+		}
+	})
+}
+
+// =============================================================================
+// Function Logs API Tests
+// =============================================================================
+
+func TestFunctions_Logs(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-logs-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("get empty logs", func(t *testing.T) {
+		status, respBody, _, err := serviceClient.Request("GET", "/api/functions/"+fnID+"/logs", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if result["logs"] == nil {
+			t.Error("Missing logs field in response")
+		}
+	})
+
+	t.Run("logs with limit parameter", func(t *testing.T) {
+		status, respBody, _, err := serviceClient.Request("GET", "/api/functions/"+fnID+"/logs?limit=10", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+	})
+
+	t.Run("logs with level filter", func(t *testing.T) {
+		status, respBody, _, err := serviceClient.Request("GET", "/api/functions/"+fnID+"/logs?level=error", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+	})
+}
+
+// =============================================================================
+// Function Metrics API Tests
+// =============================================================================
+
+func TestFunctions_Metrics(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-metrics-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("get metrics default period", func(t *testing.T) {
+		status, respBody, _, err := serviceClient.Request("GET", "/api/functions/"+fnID+"/metrics", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Verify expected fields
+		if result["function_id"] == nil {
+			t.Error("Missing function_id in response")
+		}
+		if result["period"] == nil {
+			t.Error("Missing period in response")
+		}
+		if result["invocations"] == nil {
+			t.Error("Missing invocations in response")
+		}
+		if result["latency"] == nil {
+			t.Error("Missing latency in response")
+		}
+	})
+
+	periods := []string{"1h", "24h", "7d", "30d"}
+	for _, period := range periods {
+		t.Run("metrics for period "+period, func(t *testing.T) {
+			status, respBody, _, err := serviceClient.Request("GET", "/api/functions/"+fnID+"/metrics?period="+period, nil, nil)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+
+			if status != 200 {
+				t.Errorf("Expected 200, got %d: %s", status, respBody)
+			}
+
+			var result map[string]any
+			if err := json.Unmarshal(respBody, &result); err != nil {
+				t.Fatalf("Failed to parse response: %v", err)
+			}
+
+			if result["period"] != period {
+				t.Errorf("Expected period=%s, got %v", period, result["period"])
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Function Test Endpoint Tests
+// =============================================================================
+
+func TestFunctions_TestEndpoint(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-test-%d", time.Now().UnixNano())
+	fnID := createTestFunction(t, serviceClient, fnName, false)
+	defer deleteTestFunction(t, serviceClient, fnID)
+
+	t.Run("test function with POST", func(t *testing.T) {
+		body := map[string]any{
+			"method": "POST",
+			"path":   "/",
+			"headers": map[string]string{
+				"Content-Type": "application/json",
+			},
+			"body": map[string]any{
+				"name": "Test",
+			},
+		}
+
+		status, respBody, _, err := serviceClient.Request("POST", "/api/functions/"+fnID+"/test", body, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Verify response structure
+		if result["status"] == nil {
+			t.Error("Missing status in response")
+		}
+		if result["headers"] == nil {
+			t.Error("Missing headers in response")
+		}
+		if result["body"] == nil {
+			t.Error("Missing body in response")
+		}
+		if result["duration_ms"] == nil {
+			t.Error("Missing duration_ms in response")
+		}
+	})
+
+	t.Run("test function with different methods", func(t *testing.T) {
+		methods := []string{"GET", "PUT", "PATCH", "DELETE"}
+		for _, method := range methods {
+			body := map[string]any{
+				"method": method,
+				"path":   "/test-path",
+			}
+
+			status, _, _, err := serviceClient.Request("POST", "/api/functions/"+fnID+"/test", body, nil)
+			if err != nil {
+				t.Fatalf("Request failed for %s: %v", method, err)
+			}
+
+			if status != 200 {
+				t.Errorf("Expected 200 for %s, got %d", method, status)
+			}
+		}
+	})
+}
+
+// =============================================================================
+// Function Templates API Tests
+// =============================================================================
+
+func TestFunctions_Templates(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	t.Run("list templates", func(t *testing.T) {
+		status, respBody, _, err := serviceClient.Request("GET", "/api/functions/templates", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		templates, ok := result["templates"].([]any)
+		if !ok {
+			t.Fatal("templates field should be an array")
+		}
+
+		if len(templates) == 0 {
+			t.Error("Expected at least one template")
+		}
+
+		// Verify first template structure
+		if len(templates) > 0 {
+			template := templates[0].(map[string]any)
+			if template["id"] == nil {
+				t.Error("Template missing id")
+			}
+			if template["name"] == nil {
+				t.Error("Template missing name")
+			}
+			if template["description"] == nil {
+				t.Error("Template missing description")
+			}
+			if template["category"] == nil {
+				t.Error("Template missing category")
+			}
+		}
+	})
+
+	t.Run("get specific template", func(t *testing.T) {
+		// First get the list to find an ID
+		_, respBody, _, _ := serviceClient.Request("GET", "/api/functions/templates", nil, nil)
+		var listResult map[string]any
+		json.Unmarshal(respBody, &listResult)
+		templates := listResult["templates"].([]any)
+
+		if len(templates) > 0 {
+			template := templates[0].(map[string]any)
+			templateID := template["id"].(string)
+
+			status, respBody, _, err := serviceClient.Request("GET", "/api/functions/templates/"+templateID, nil, nil)
+			if err != nil {
+				t.Fatalf("Request failed: %v", err)
+			}
+
+			if status != 200 {
+				t.Errorf("Expected 200, got %d: %s", status, respBody)
+			}
+
+			var result map[string]any
+			if err := json.Unmarshal(respBody, &result); err != nil {
+				t.Fatalf("Failed to parse response: %v", err)
+			}
+
+			if result["id"] != templateID {
+				t.Errorf("Expected id=%s, got %v", templateID, result["id"])
+			}
+			if result["source_code"] == nil {
+				t.Error("Template missing source_code")
+			}
+		}
+	})
+
+	t.Run("template not found", func(t *testing.T) {
+		status, _, _, err := serviceClient.Request("GET", "/api/functions/templates/nonexistent-template", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 404 {
+			t.Errorf("Expected 404, got %d", status)
+		}
+	})
+}
+
+// =============================================================================
+// Bulk Secrets API Tests
+// =============================================================================
+
+func TestFunctions_BulkSecrets(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	t.Run("bulk update secrets", func(t *testing.T) {
+		// Clean up any existing test secrets
+		secretsToClean := []string{"BULK_TEST_KEY_1", "BULK_TEST_KEY_2", "BULK_TEST_KEY_3"}
+		for _, name := range secretsToClean {
+			serviceClient.Request("DELETE", "/api/functions/secrets/"+name, nil, nil)
+		}
+
+		body := map[string]any{
+			"secrets": []map[string]string{
+				{"name": "BULK_TEST_KEY_1", "value": "value1"},
+				{"name": "BULK_TEST_KEY_2", "value": "value2"},
+				{"name": "BULK_TEST_KEY_3", "value": "value3"},
+			},
+		}
+
+		status, respBody, _, err := serviceClient.Request("PUT", "/api/functions/secrets/bulk", body, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		created, _ := result["created"].(float64)
+		if created < 1 {
+			t.Errorf("Expected at least 1 created, got %v", result["created"])
+		}
+
+		total, _ := result["total"].(float64)
+		if total != 3 {
+			t.Errorf("Expected total=3, got %v", result["total"])
+		}
+
+		// Clean up
+		for _, name := range secretsToClean {
+			serviceClient.Request("DELETE", "/api/functions/secrets/"+name, nil, nil)
+		}
+	})
+
+	t.Run("bulk update with updates", func(t *testing.T) {
+		// First create a secret
+		secretName := fmt.Sprintf("BULK_UPDATE_%d", time.Now().UnixNano())
+		createBody := map[string]any{
+			"name":  secretName,
+			"value": "original",
+		}
+		serviceClient.Request("POST", "/api/functions/secrets", createBody, nil)
+		defer serviceClient.Request("DELETE", "/api/functions/secrets/"+secretName, nil, nil)
+
+		// Now bulk update with the same name
+		body := map[string]any{
+			"secrets": []map[string]string{
+				{"name": secretName, "value": "updated"},
+			},
+		}
+
+		status, respBody, _, err := serviceClient.Request("PUT", "/api/functions/secrets/bulk", body, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		updated, _ := result["updated"].(float64)
+		if updated < 1 {
+			t.Errorf("Expected at least 1 updated, got %v", result["updated"])
+		}
+	})
+
+	t.Run("bulk update with empty list", func(t *testing.T) {
+		body := map[string]any{
+			"secrets": []map[string]string{},
+		}
+
+		status, respBody, _, err := serviceClient.Request("PUT", "/api/functions/secrets/bulk", body, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		var result map[string]any
+		json.Unmarshal(respBody, &result)
+		total, _ := result["total"].(float64)
+		if total != 0 {
+			t.Errorf("Expected total=0 for empty list, got %v", result["total"])
+		}
+	})
+}
+
+// =============================================================================
+// Function Download Tests
+// =============================================================================
+
+func TestFunctions_Download(t *testing.T) {
+	serviceClient := NewClient(localbaseURL, serviceRoleKey)
+
+	fnName := fmt.Sprintf("test-download-%d", time.Now().UnixNano())
+	sourceCode := `export default async function handler(req) { return new Response("Downloadable code"); }`
+
+	// Create and deploy the function
+	body := map[string]any{
+		"name":        fnName,
+		"verify_jwt":  false,
+		"source_code": sourceCode,
+	}
+
+	status, respBody, _, err := serviceClient.Request("POST", "/api/functions", body, nil)
+	if err != nil || status != 201 {
+		t.Fatalf("Failed to create function: %v, status: %d", err, status)
+	}
+
+	var fn Function
+	json.Unmarshal(respBody, &fn)
+	defer deleteTestFunction(t, serviceClient, fn.ID)
+
+	// Deploy to have source available
+	deployBody := map[string]any{
+		"source_code": sourceCode,
+	}
+	serviceClient.Request("POST", "/api/functions/"+fn.ID+"/deploy", deployBody, nil)
+
+	t.Run("download function", func(t *testing.T) {
+		status, respBody, headers, err := serviceClient.Request("POST", "/api/functions/"+fn.ID+"/download", nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, respBody)
+		}
+
+		// Check content type
+		contentType := headers.Get("Content-Type")
+		if contentType != "application/typescript" {
+			t.Logf("Content-Type: %s (expected application/typescript)", contentType)
+		}
+
+		// Check content disposition
+		disposition := headers.Get("Content-Disposition")
+		if !strings.Contains(disposition, fnName) {
+			t.Logf("Content-Disposition: %s (expected to contain function name)", disposition)
+		}
+	})
+}

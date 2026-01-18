@@ -205,17 +205,39 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	app.Group("/api/functions", func(functions *mizu.Router) {
 		functions.Use(apiKeyMw)
 		functions.Use(serviceRoleMw)
+
+		// Function CRUD
 		functions.Get("", functionsHandler.ListFunctions)
 		functions.Post("", functionsHandler.CreateFunction)
 		functions.Get("/{id}", functionsHandler.GetFunction)
 		functions.Put("/{id}", functionsHandler.UpdateFunction)
 		functions.Delete("/{id}", functionsHandler.DeleteFunction)
+
+		// Function source code (for browser editor)
+		functions.Get("/{id}/source", functionsHandler.GetSource)
+		functions.Put("/{id}/source", functionsHandler.UpdateSource)
+
+		// Deployment
 		functions.Post("/{id}/deploy", functionsHandler.DeployFunction)
 		functions.Get("/{id}/deployments", functionsHandler.ListDeployments)
+		functions.Post("/{id}/download", functionsHandler.DownloadFunction)
 
+		// Testing
+		functions.Post("/{id}/test", functionsHandler.TestFunction)
+
+		// Logs and metrics
+		functions.Get("/{id}/logs", functionsHandler.GetLogs)
+		functions.Get("/{id}/metrics", functionsHandler.GetMetrics)
+
+		// Secrets management
 		functions.Get("/secrets", functionsHandler.ListSecrets)
 		functions.Post("/secrets", functionsHandler.CreateSecret)
+		functions.Put("/secrets/bulk", functionsHandler.BulkUpdateSecrets)
 		functions.Delete("/secrets/{name}", functionsHandler.DeleteSecret)
+
+		// Templates
+		functions.Get("/templates", functionsHandler.ListTemplates)
+		functions.Get("/templates/{id}", functionsHandler.GetTemplate)
 	})
 
 	// Public function invocation (Supabase-compatible: supports all HTTP methods)

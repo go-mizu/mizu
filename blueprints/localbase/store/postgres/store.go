@@ -266,9 +266,17 @@ func (s *Store) createFunctionsTables(ctx context.Context) error {
 		entrypoint TEXT DEFAULT 'index.ts',
 		import_map TEXT,
 		verify_jwt BOOLEAN DEFAULT TRUE,
+		draft_source TEXT,
+		draft_import_map TEXT,
 		created_at TIMESTAMPTZ DEFAULT NOW(),
 		updated_at TIMESTAMPTZ DEFAULT NOW()
 	);
+
+	-- Add draft columns if they don't exist (migration)
+	DO $$ BEGIN
+		ALTER TABLE functions.functions ADD COLUMN IF NOT EXISTS draft_source TEXT;
+		ALTER TABLE functions.functions ADD COLUMN IF NOT EXISTS draft_import_map TEXT;
+	EXCEPTION WHEN duplicate_column THEN END $$;
 
 	-- Deployments table
 	CREATE TABLE IF NOT EXISTS functions.deployments (
@@ -289,8 +297,42 @@ func (s *Store) createFunctionsTables(ctx context.Context) error {
 		created_at TIMESTAMPTZ DEFAULT NOW()
 	);
 
+	-- Function logs table
+	CREATE TABLE IF NOT EXISTS functions.logs (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		function_id UUID NOT NULL REFERENCES functions.functions(id) ON DELETE CASCADE,
+		request_id UUID,
+		timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		level VARCHAR(10) NOT NULL DEFAULT 'info',
+		message TEXT,
+		duration_ms INTEGER,
+		status_code SMALLINT,
+		region VARCHAR(20),
+		metadata JSONB DEFAULT '{}'
+	);
+
+	-- Function metrics table (hourly aggregates)
+	CREATE TABLE IF NOT EXISTS functions.metrics (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		function_id UUID NOT NULL REFERENCES functions.functions(id) ON DELETE CASCADE,
+		hour TIMESTAMPTZ NOT NULL,
+		invocations INTEGER DEFAULT 0,
+		successes INTEGER DEFAULT 0,
+		errors INTEGER DEFAULT 0,
+		total_duration_ms BIGINT DEFAULT 0,
+		p50_latency INTEGER,
+		p95_latency INTEGER,
+		p99_latency INTEGER,
+		UNIQUE(function_id, hour)
+	);
+
 	-- Indexes
 	CREATE INDEX IF NOT EXISTS idx_deployments_function_id ON functions.deployments(function_id);
+	CREATE INDEX IF NOT EXISTS idx_deployments_version ON functions.deployments(function_id, version DESC);
+	CREATE INDEX IF NOT EXISTS idx_functions_logs_function_id ON functions.logs(function_id);
+	CREATE INDEX IF NOT EXISTS idx_functions_logs_timestamp ON functions.logs(timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_functions_logs_level ON functions.logs(level);
+	CREATE INDEX IF NOT EXISTS idx_functions_metrics_function_hour ON functions.metrics(function_id, hour);
 	`
 
 	_, err := s.pool.Exec(ctx, sql)
