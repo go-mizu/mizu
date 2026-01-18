@@ -253,6 +253,32 @@ func (s *CourseStore) GetLesson(ctx context.Context, id uuid.UUID) (*store.Lesso
 	return &lesson, nil
 }
 
+// GetLessonsBySkill returns all lessons for a skill
+func (s *CourseStore) GetLessonsBySkill(ctx context.Context, skillID uuid.UUID) ([]store.Lesson, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, skill_id, level, position, exercise_count
+		FROM lessons WHERE skill_id = ? ORDER BY level, position
+	`, skillID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lessons []store.Lesson
+	for rows.Next() {
+		var lesson store.Lesson
+		var id, sID string
+		if err := rows.Scan(&id, &sID, &lesson.Level, &lesson.Position, &lesson.ExerciseCount); err != nil {
+			return nil, err
+		}
+		lesson.ID, _ = uuid.Parse(id)
+		lesson.SkillID, _ = uuid.Parse(sID)
+		lessons = append(lessons, lesson)
+	}
+
+	return lessons, rows.Err()
+}
+
 // GetExercises returns exercises for a lesson
 func (s *CourseStore) GetExercises(ctx context.Context, lessonID uuid.UUID) ([]store.Exercise, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -332,6 +358,34 @@ func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]sto
 	}
 
 	return stories, rows.Err()
+}
+
+// GetLexemesByCourse returns all lexemes for a course
+func (s *CourseStore) GetLexemesByCourse(ctx context.Context, courseID uuid.UUID) ([]store.Lexeme, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, course_id, word, translation, pos, COALESCE(audio_url, ''), COALESCE(image_url, ''),
+		       COALESCE(example_sentence, ''), COALESCE(example_translation, '')
+		FROM lexemes WHERE course_id = ? ORDER BY word
+	`, courseID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lexemes []store.Lexeme
+	for rows.Next() {
+		var lex store.Lexeme
+		var id, cID string
+		if err := rows.Scan(&id, &cID, &lex.Word, &lex.Translation, &lex.POS,
+			&lex.AudioURL, &lex.ImageURL, &lex.ExampleSentence, &lex.ExampleTranslation); err != nil {
+			return nil, err
+		}
+		lex.ID, _ = uuid.Parse(id)
+		lex.CourseID, _ = uuid.Parse(cID)
+		lexemes = append(lexemes, lex)
+	}
+
+	return lexemes, rows.Err()
 }
 
 // GetStory returns a story by ID

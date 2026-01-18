@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Container, Paper, Title, TextInput, PasswordInput, Button, Text, Anchor, Stack, Alert } from '@mantine/core'
+import { Container, Title, TextInput, PasswordInput, Button, Text, Anchor, Stack, Alert } from '@mantine/core'
 import { IconMail, IconLock, IconAlertCircle } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'
+import { colors } from '../styles/tokens'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -30,73 +31,161 @@ export default function Login() {
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#131f24',
+      backgroundColor: '#FFFFFF',
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center',
+      paddingTop: 40,
     }}>
-      <Container size={420}>
-        <Title
-          ta="center"
-          style={{ color: '#58cc02', fontWeight: 800, fontSize: 42, cursor: 'pointer' }}
-          onClick={() => navigate('/')}
-          mb="xl"
-        >
-          Lingo
+      {/* Header */}
+      <Text
+        fw={800}
+        style={{
+          color: colors.primary.green,
+          fontSize: '1.75rem',
+          cursor: 'pointer',
+          marginBottom: 40,
+        }}
+        onClick={() => navigate('/')}
+      >
+        lingo
+      </Text>
+
+      <Container size={400}>
+        <Title order={2} ta="center" mb="xl" style={{ color: colors.text.primary }}>
+          Log in
         </Title>
 
-        <Paper radius="lg" p="xl" withBorder style={{ backgroundColor: '#1a2c33', borderColor: '#3d5a68' }}>
-          <Title order={2} ta="center" mb="md" style={{ color: 'white' }}>
-            Welcome back!
-          </Title>
+        {error && (
+          <Alert icon={<IconAlertCircle size={16} />} color="red" mb="md" radius="lg">
+            {error}
+          </Alert>
+        )}
 
-          {error && (
-            <Alert icon={<IconAlertCircle size={16} />} color="red" mb="md">
-              {error}
-            </Alert>
-          )}
+        <form onSubmit={handleSubmit}>
+          <Stack gap="md">
+            <TextInput
+              placeholder="Email or username"
+              leftSection={<IconMail size={18} style={{ color: colors.text.muted }} />}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              size="lg"
+              radius="xl"
+              styles={{
+                input: {
+                  backgroundColor: '#FFFFFF',
+                  border: `2px solid ${colors.neutral.border}`,
+                  color: colors.text.primary,
+                  '&:focus': {
+                    borderColor: colors.secondary.blue,
+                  },
+                },
+              }}
+            />
 
-          <form onSubmit={handleSubmit}>
-            <Stack gap="md">
-              <TextInput
-                label="Email"
-                placeholder="your@email.com"
-                leftSection={<IconMail size={16} />}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                styles={{
-                  input: { backgroundColor: '#233a42', borderColor: '#3d5a68', color: 'white' },
-                  label: { color: '#8fa8b2' },
-                }}
-              />
+            <PasswordInput
+              placeholder="Password"
+              leftSection={<IconLock size={18} style={{ color: colors.text.muted }} />}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              size="lg"
+              radius="xl"
+              styles={{
+                input: {
+                  backgroundColor: '#FFFFFF',
+                  border: `2px solid ${colors.neutral.border}`,
+                  color: colors.text.primary,
+                },
+              }}
+            />
 
-              <PasswordInput
-                label="Password"
-                placeholder="Your password"
-                leftSection={<IconLock size={16} />}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                styles={{
-                  input: { backgroundColor: '#233a42', borderColor: '#3d5a68', color: 'white' },
-                  label: { color: '#8fa8b2' },
-                }}
-              />
-
-              <Button type="submit" fullWidth color="green" radius="xl" size="md" loading={loading} mt="md">
-                Log In
-              </Button>
-            </Stack>
-          </form>
-
-          <Text ta="center" mt="md" style={{ color: '#8fa8b2' }}>
-            Don't have an account?{' '}
-            <Anchor component="button" onClick={() => navigate('/signup')} style={{ color: '#1cb0f6' }}>
-              Sign up
+            <Anchor
+              component="button"
+              type="button"
+              ta="right"
+              size="sm"
+              style={{ color: colors.secondary.blue }}
+            >
+              Forgot password?
             </Anchor>
-          </Text>
-        </Paper>
+
+            <Button
+              type="submit"
+              fullWidth
+              color="blue"
+              radius="xl"
+              size="lg"
+              loading={loading}
+              style={{
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                marginTop: 8,
+                boxShadow: '0 4px 0 #1899D6',
+              }}
+            >
+              Log in
+            </Button>
+          </Stack>
+        </form>
+
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          margin: '32px 0',
+        }}>
+          <div style={{ flex: 1, height: 1, backgroundColor: colors.neutral.border }} />
+          <Text size="sm" style={{ color: colors.text.muted }}>OR</Text>
+          <div style={{ flex: 1, height: 1, backgroundColor: colors.neutral.border }} />
+        </div>
+
+        <Stack gap="sm">
+          <Button
+            variant="outline"
+            fullWidth
+            radius="xl"
+            size="lg"
+            leftSection={<Text>🔵</Text>}
+            style={{
+              borderColor: colors.neutral.border,
+              borderWidth: 2,
+              color: colors.secondary.blue,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+            }}
+          >
+            Facebook
+          </Button>
+          <Button
+            variant="outline"
+            fullWidth
+            radius="xl"
+            size="lg"
+            leftSection={<Text>🔴</Text>}
+            style={{
+              borderColor: colors.neutral.border,
+              borderWidth: 2,
+              color: colors.text.primary,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+            }}
+          >
+            Google
+          </Button>
+        </Stack>
+
+        <Text ta="center" mt="xl" style={{ color: colors.text.secondary }}>
+          Don't have an account?{' '}
+          <Anchor
+            component="button"
+            onClick={() => navigate('/signup')}
+            style={{ color: colors.secondary.blue, fontWeight: 700 }}
+          >
+            Sign up
+          </Anchor>
+        </Text>
       </Container>
     </div>
   )

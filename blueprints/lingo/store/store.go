@@ -59,7 +59,9 @@ type CourseStore interface {
 	GetUnit(ctx context.Context, id uuid.UUID) (*Unit, error)
 	GetSkill(ctx context.Context, id uuid.UUID) (*Skill, error)
 	GetLesson(ctx context.Context, id uuid.UUID) (*Lesson, error)
+	GetLessonsBySkill(ctx context.Context, skillID uuid.UUID) ([]Lesson, error)
 	GetExercises(ctx context.Context, lessonID uuid.UUID) ([]Exercise, error)
+	GetLexemesByCourse(ctx context.Context, courseID uuid.UUID) ([]Lexeme, error)
 	GetStories(ctx context.Context, courseID uuid.UUID) ([]Story, error)
 	GetStory(ctx context.Context, id uuid.UUID) (*Story, error)
 }

@@ -20,6 +20,7 @@ func NewHandler(svc *Service) *Handler {
 // RegisterRoutes registers lesson routes
 func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/lessons/{id}", h.GetLesson)
+	r.Get("/skills/{id}/lesson", h.GetLessonBySkill)
 	r.Post("/lessons/{id}/start", h.StartLesson)
 	r.Post("/lessons/{id}/complete", h.CompleteLesson)
 	r.Post("/exercises/{id}/answer", h.AnswerExercise)
@@ -36,6 +37,23 @@ func (h *Handler) GetLesson(c *mizu.Ctx) error {
 	lesson, err := h.svc.GetLesson(c.Context(), id)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "lesson not found"})
+	}
+
+	return c.JSON(http.StatusOK, lesson)
+}
+
+// GetLessonBySkill handles GET /skills/{id}/lesson
+// Returns the first lesson for a skill (used when starting from skill node)
+func (h *Handler) GetLessonBySkill(c *mizu.Ctx) error {
+	idStr := c.Param("id")
+	skillID, err := uuid.Parse(idStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid skill id"})
+	}
+
+	lesson, err := h.svc.GetLessonBySkill(c.Context(), skillID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "no lesson found for this skill"})
 	}
 
 	return c.JSON(http.StatusOK, lesson)

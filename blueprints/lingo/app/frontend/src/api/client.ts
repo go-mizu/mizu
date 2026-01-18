@@ -231,6 +231,18 @@ export interface LessonResult {
 }
 
 // API functions
+export interface Lexeme {
+  id: string
+  course_id: string
+  word: string
+  translation: string
+  pos: string
+  audio_url?: string
+  image_url?: string
+  example_sentence?: string
+  example_translation?: string
+}
+
 export const coursesApi = {
   listLanguages: () =>
     api.get<Language[]>('/languages'),
@@ -244,13 +256,27 @@ export const coursesApi = {
   getCoursePath: (courseId: string) =>
     api.get<Unit[]>(`/courses/${courseId}/path`),
 
+  getVocabulary: (courseId: string) =>
+    api.get<Lexeme[]>(`/courses/${courseId}/vocabulary`),
+
+  getUnit: (id: string) =>
+    api.get<Unit>(`/units/${id}`),
+
   enrollCourse: (courseId: string) =>
     api.post(`/courses/${courseId}/enroll`),
 }
 
+export interface LessonWithExercises {
+  lesson: Lesson
+  exercises: Exercise[]
+}
+
 export const lessonsApi = {
   getLesson: (id: string) =>
-    api.get<Lesson>(`/lessons/${id}`),
+    api.get<LessonWithExercises>(`/lessons/${id}`),
+
+  getLessonBySkill: (skillId: string) =>
+    api.get<LessonWithExercises>(`/skills/${skillId}/lesson`),
 
   startLesson: (id: string) =>
     api.post<LessonSession>(`/lessons/${id}/start`),

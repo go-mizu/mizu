@@ -165,6 +165,28 @@ func (s *CourseStore) GetLesson(ctx context.Context, id uuid.UUID) (*store.Lesso
 	return lesson, nil
 }
 
+// GetLessonsBySkill returns all lessons for a skill
+func (s *CourseStore) GetLessonsBySkill(ctx context.Context, skillID uuid.UUID) ([]store.Lesson, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, skill_id, level, position, exercise_count
+		FROM lessons WHERE skill_id = $1 ORDER BY level, position
+	`, skillID)
+	if err != nil {
+		return nil, fmt.Errorf("query lessons: %w", err)
+	}
+	defer rows.Close()
+
+	var lessons []store.Lesson
+	for rows.Next() {
+		var lesson store.Lesson
+		if err := rows.Scan(&lesson.ID, &lesson.SkillID, &lesson.Level, &lesson.Position, &lesson.ExerciseCount); err != nil {
+			return nil, fmt.Errorf("scan lesson: %w", err)
+		}
+		lessons = append(lessons, lesson)
+	}
+	return lessons, nil
+}
+
 // GetExercises gets exercises for a lesson
 func (s *CourseStore) GetExercises(ctx context.Context, lessonID uuid.UUID) ([]store.Exercise, error) {
 	rows, err := s.pool.Query(ctx, `
@@ -210,6 +232,30 @@ func (s *CourseStore) GetStories(ctx context.Context, courseID uuid.UUID) ([]sto
 		stories = append(stories, st)
 	}
 	return stories, nil
+}
+
+// GetLexemesByCourse returns all lexemes for a course
+func (s *CourseStore) GetLexemesByCourse(ctx context.Context, courseID uuid.UUID) ([]store.Lexeme, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, course_id, word, translation, pos, COALESCE(audio_url, ''), COALESCE(image_url, ''),
+		       COALESCE(example_sentence, ''), COALESCE(example_translation, '')
+		FROM lexemes WHERE course_id = $1 ORDER BY word
+	`, courseID)
+	if err != nil {
+		return nil, fmt.Errorf("query lexemes: %w", err)
+	}
+	defer rows.Close()
+
+	var lexemes []store.Lexeme
+	for rows.Next() {
+		var lex store.Lexeme
+		if err := rows.Scan(&lex.ID, &lex.CourseID, &lex.Word, &lex.Translation, &lex.POS,
+			&lex.AudioURL, &lex.ImageURL, &lex.ExampleSentence, &lex.ExampleTranslation); err != nil {
+			return nil, fmt.Errorf("scan lexeme: %w", err)
+		}
+		lexemes = append(lexemes, lex)
+	}
+	return lexemes, nil
 }
 
 // GetStory gets a story by ID
