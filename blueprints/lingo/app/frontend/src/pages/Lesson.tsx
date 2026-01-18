@@ -1,12 +1,105 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Container, Paper, Title, Text, Button, Group, Stack, Progress, ActionIcon, Loader, Badge, TextInput } from '@mantine/core'
-import { IconX, IconHeart, IconCheck, IconVolume, IconVolume2 } from '@tabler/icons-react'
+import { IconX, IconHeart, IconCheck, IconVolume, IconVolume2, IconFlag, IconFlame } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuthStore } from '../stores/auth'
 import { colors } from '../styles/tokens'
 import { lessonsApi, Exercise, Lesson as LessonType } from '../api/client'
 import { sounds, playSound, playTTS, stopSpeaking } from '../utils/sounds'
+
+// Celebratory messages for correct answers
+const CORRECT_MESSAGES = [
+  'Great!',
+  'Excellent!',
+  'Nice!',
+  'Amazing!',
+  'Perfect!',
+  'Awesome!',
+  'Well done!',
+  'Fantastic!',
+  'Brilliant!',
+  'Super!',
+]
+
+// Confetti component for celebrations
+function Confetti({ show }: { show: boolean }) {
+  if (!show) return null
+
+  const confettiColors = ['#58CC02', '#1CB0F6', '#FF9600', '#FFC800', '#CE82FF', '#FF4B4B']
+  const pieces = Array.from({ length: 50 }, (_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 0.5,
+    color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
+    size: Math.random() * 8 + 6,
+    duration: Math.random() * 1 + 2,
+  }))
+
+  return (
+    <div className="confetti-container">
+      {pieces.map((piece) => (
+        <div
+          key={piece.id}
+          className="confetti-piece"
+          style={{
+            left: `${piece.left}%`,
+            backgroundColor: piece.color,
+            width: piece.size,
+            height: piece.size,
+            borderRadius: Math.random() > 0.5 ? '50%' : '0',
+            animationDelay: `${piece.delay}s`,
+            animationDuration: `${piece.duration}s`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// Mascot character component
+function Mascot({ message, variant = 'neutral' }: { message?: string; variant?: 'neutral' | 'happy' | 'sad' }) {
+  const mascotColors = {
+    neutral: { body: '#1CB0F6', accent: '#1899D6' },
+    happy: { body: '#58CC02', accent: '#58A700' },
+    sad: { body: '#FF4B4B', accent: '#EA2B2B' },
+  }
+  const { body, accent } = mascotColors[variant]
+
+  return (
+    <Group gap="md" align="flex-end">
+      {/* Simple owl mascot */}
+      <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+        {/* Body */}
+        <ellipse cx="40" cy="50" rx="28" ry="25" fill={body} />
+        {/* Eyes */}
+        <circle cx="30" cy="42" r="12" fill="white" />
+        <circle cx="50" cy="42" r="12" fill="white" />
+        <circle cx="32" cy="43" r="6" fill="#4B4B4B" />
+        <circle cx="52" cy="43" r="6" fill="#4B4B4B" />
+        <circle cx="34" cy="41" r="2" fill="white" />
+        <circle cx="54" cy="41" r="2" fill="white" />
+        {/* Beak */}
+        <path d="M36 52 L40 58 L44 52" fill="#FFC800" stroke="#E5B400" strokeWidth="1" />
+        {/* Ear tufts */}
+        <path d="M18 30 Q22 20 28 28" fill={accent} />
+        <path d="M62 30 Q58 20 52 28" fill={accent} />
+        {/* Feet */}
+        <ellipse cx="32" cy="73" rx="8" ry="4" fill="#FFC800" />
+        <ellipse cx="48" cy="73" rx="8" ry="4" fill="#FFC800" />
+      </svg>
+
+      {/* Speech bubble */}
+      {message && (
+        <div className="character-bubble">
+          <Text fw={600} size="lg" style={{ color: colors.text.primary }}>
+            {message}
+          </Text>
+        </div>
+      )}
+    </Group>
+  )
+}
 
 // Audio playback hook using Web Speech API
 function useAudio() {
@@ -52,58 +145,89 @@ function WordBankExercise({
   const availableWords = exercise.choices || []
 
   return (
-    <Stack gap="lg">
-      {/* Answer area - where selected words appear */}
-      <Paper
-        p="lg"
-        radius="lg"
-        style={{
-          backgroundColor: isChecked
-            ? isCorrect
-              ? colors.semantic.successLight
-              : colors.semantic.errorLight
-            : colors.neutral.background,
-          border: `2px ${isChecked ? 'solid' : 'dashed'} ${
-            isChecked
-              ? isCorrect
-                ? colors.semantic.success
-                : colors.semantic.error
-              : colors.neutral.border
-          }`,
-          minHeight: 70,
-        }}
+    <Stack gap="xl">
+      {/* Answer area - where selected words appear (like a text line) */}
+      <motion.div
+        animate={
+          isChecked && !isCorrect
+            ? { x: [0, -10, 10, -10, 10, 0] }
+            : {}
+        }
+        transition={{ duration: 0.4 }}
       >
-        <Group gap="sm" wrap="wrap">
-          {selectedWords.length === 0 ? (
-            <Text c={colors.text.muted} size="sm">Tap the words to form the answer</Text>
-          ) : (
-            selectedWords.map((word, index) => (
-              <motion.div
-                key={`${word}-${index}`}
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.15 }}
-              >
-                <Badge
-                  size="xl"
-                  variant="filled"
-                  color={isChecked ? (isCorrect ? 'green' : 'red') : 'blue'}
-                  style={{
-                    cursor: isChecked ? 'default' : 'pointer',
-                    padding: '12px 16px',
-                    fontSize: '1rem',
-                  }}
-                  onClick={() => !isChecked && onRemoveWord(index)}
+        <div
+          style={{
+            minHeight: 56,
+            borderBottom: `2px solid ${
+              isChecked
+                ? isCorrect
+                  ? colors.semantic.success
+                  : colors.semantic.error
+                : colors.neutral.border
+            }`,
+            paddingBottom: 12,
+            marginBottom: 8,
+          }}
+        >
+          <Group gap="sm" wrap="wrap" style={{ minHeight: 40 }}>
+            {selectedWords.length === 0 ? (
+              <Text c={colors.text.muted} size="lg" style={{ fontStyle: 'italic' }}>
+                _______________________
+              </Text>
+            ) : (
+              selectedWords.map((word, index) => (
+                <motion.div
+                  key={`${word}-${index}`}
+                  initial={{ scale: 0.8, opacity: 0, y: 10 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  transition={{ duration: 0.15, type: 'spring', stiffness: 500 }}
+                  layout
                 >
-                  {word}
-                </Badge>
-              </motion.div>
-            ))
-          )}
-        </Group>
-      </Paper>
+                  <Paper
+                    p="sm"
+                    px="md"
+                    radius="lg"
+                    onClick={() => !isChecked && onRemoveWord(index)}
+                    style={{
+                      backgroundColor: isChecked
+                        ? isCorrect
+                          ? colors.semantic.successLight
+                          : colors.semantic.errorLight
+                        : colors.neutral.white,
+                      border: `2px solid ${
+                        isChecked
+                          ? isCorrect
+                            ? colors.semantic.success
+                            : colors.semantic.error
+                          : colors.secondary.blue
+                      }`,
+                      cursor: isChecked ? 'default' : 'pointer',
+                      boxShadow: isChecked ? 'none' : '0 2px 0 #1899D6',
+                    }}
+                  >
+                    <Text
+                      fw={600}
+                      size="lg"
+                      style={{
+                        color: isChecked
+                          ? isCorrect
+                            ? colors.semantic.success
+                            : colors.semantic.error
+                          : colors.text.primary,
+                      }}
+                    >
+                      {word}
+                    </Text>
+                  </Paper>
+                </motion.div>
+              ))
+            )}
+          </Group>
+        </div>
+      </motion.div>
 
-      {/* Word choices */}
+      {/* Word choices - pill style like Duolingo */}
       <Group gap="sm" wrap="wrap" justify="center">
         {availableWords.map((word, index) => {
           const usedCount = selectedWords.filter(w => w === word).length
@@ -114,13 +238,16 @@ function WordBankExercise({
             <motion.div
               key={`${word}-${index}`}
               whileTap={{ scale: 0.95 }}
+              animate={isFullyUsed ? { opacity: 0.4, y: 0 } : { opacity: 1, y: 0 }}
+              layout
             >
               <Paper
-                p="md"
-                radius="lg"
+                p="sm"
+                px="lg"
+                radius="xl"
                 onClick={() => {
                   if (!isChecked && !isFullyUsed) {
-                    playSound('click', 0.2)
+                    playSound('select', 0.3)
                     onSelectWord(word)
                   }
                 }}
@@ -128,12 +255,18 @@ function WordBankExercise({
                   backgroundColor: isFullyUsed ? colors.neutral.background : colors.neutral.white,
                   border: `2px solid ${colors.neutral.border}`,
                   cursor: isChecked || isFullyUsed ? 'default' : 'pointer',
-                  opacity: isFullyUsed ? 0.4 : 1,
-                  boxShadow: isFullyUsed ? 'none' : '0 2px 0 #E5E5E5',
-                  transition: 'all 0.1s ease',
+                  boxShadow: isFullyUsed ? 'none' : '0 3px 0 #E5E5E5',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                <Text fw={600} style={{ color: isFullyUsed ? colors.text.muted : colors.text.primary }}>
+                <Text
+                  fw={600}
+                  size="lg"
+                  style={{
+                    color: isFullyUsed ? colors.text.muted : colors.text.primary,
+                    visibility: isFullyUsed ? 'hidden' : 'visible',
+                  }}
+                >
                   {word}
                 </Text>
               </Paper>
@@ -144,9 +277,14 @@ function WordBankExercise({
 
       {/* Show correct answer if wrong */}
       {isChecked && !isCorrect && (
-        <Text size="sm" c={colors.semantic.error}>
-          Correct answer: {exercise.correct_answer}
-        </Text>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Text size="sm" c={colors.semantic.error} ta="center">
+            Correct answer: {exercise.correct_answer}
+          </Text>
+        </motion.div>
       )}
     </Stack>
   )
@@ -407,13 +545,25 @@ function MultipleChoiceExercise({
 }) {
   return (
     <Stack gap="md">
-      {exercise.choices?.map((choice) => {
+      {exercise.choices?.map((choice, index) => {
         const isSelected = selectedAnswer === choice
         const showCorrect = isChecked && choice === exercise.correct_answer
         const showIncorrect = isChecked && isSelected && !isCorrect
+        const optionNumber = index + 1
 
         return (
-          <motion.div key={choice} whileTap={{ scale: 0.98 }}>
+          <motion.div
+            key={choice}
+            whileTap={{ scale: 0.98 }}
+            animate={
+              showIncorrect
+                ? { x: [0, -10, 10, -10, 10, 0] }
+                : showCorrect
+                ? { scale: [1, 1.02, 1] }
+                : {}
+            }
+            transition={{ duration: 0.4 }}
+          >
             <Paper
               p="lg"
               radius="lg"
@@ -449,11 +599,52 @@ function MultipleChoiceExercise({
                 transition: 'all 0.15s ease',
               }}
             >
-              <Group justify="space-between">
+              <Group gap="md">
+                {/* Number badge like Duolingo */}
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    border: `2px solid ${
+                      showCorrect
+                        ? colors.semantic.success
+                        : showIncorrect
+                        ? colors.semantic.error
+                        : isSelected
+                        ? colors.secondary.blue
+                        : colors.neutral.border
+                    }`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    backgroundColor: showCorrect
+                      ? colors.semantic.success
+                      : showIncorrect
+                      ? colors.semantic.error
+                      : isSelected
+                      ? colors.secondary.blue
+                      : 'transparent',
+                  }}
+                >
+                  <Text
+                    size="sm"
+                    fw={700}
+                    style={{
+                      color: (showCorrect || showIncorrect || isSelected)
+                        ? 'white'
+                        : colors.text.secondary,
+                    }}
+                  >
+                    {optionNumber}
+                  </Text>
+                </div>
                 <Text
                   size="lg"
                   fw={600}
                   style={{
+                    flex: 1,
                     color: showCorrect
                       ? colors.semantic.success
                       : showIncorrect
@@ -465,7 +656,15 @@ function MultipleChoiceExercise({
                 >
                   {choice}
                 </Text>
-                {showCorrect && <IconCheck size={24} style={{ color: colors.semantic.success }} />}
+                {showCorrect && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                  >
+                    <IconCheck size={24} style={{ color: colors.semantic.success }} />
+                  </motion.div>
+                )}
               </Group>
             </Paper>
           </motion.div>
@@ -544,6 +743,10 @@ export default function Lesson() {
   const [hearts, setHearts] = useState(user?.hearts || 5)
   const [xpEarned, setXpEarned] = useState(0)
   const [mistakes, setMistakes] = useState(0)
+  const [streak, setStreak] = useState(0)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const [correctMessage, setCorrectMessage] = useState('')
+  const streakRef = useRef(0)
 
   // Match pairs state
   const [matchedPairs, setMatchedPairs] = useState<Map<string, string>>(new Map())
@@ -702,11 +905,26 @@ export default function Lesson() {
 
     if (correct) {
       setXpEarned((prev) => prev + 3)
-      sounds.correctAnswer()
+      const newStreak = streakRef.current + 1
+      streakRef.current = newStreak
+      setStreak(newStreak)
+      setCorrectMessage(CORRECT_MESSAGES[Math.floor(Math.random() * CORRECT_MESSAGES.length)])
+
+      // Show confetti for streaks of 3 or more
+      if (newStreak >= 3) {
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 3000)
+        sounds.streakCelebration()
+      } else {
+        sounds.correctAnswer()
+      }
     } else {
+      streakRef.current = 0
+      setStreak(0)
       setMistakes((prev) => prev + 1)
       setHearts((prev) => Math.max(0, prev - 1))
       sounds.wrongAnswer()
+      sounds.heartLost()
     }
   }
 
@@ -804,6 +1022,9 @@ export default function Lesson() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: colors.neutral.white }}>
+      {/* Confetti overlay */}
+      <Confetti show={showConfetti} />
+
       {/* Header */}
       <Paper
         p="md"
@@ -817,21 +1038,65 @@ export default function Lesson() {
         }}
       >
         <Container size="md">
+          {/* Streak counter - shows above progress bar when streak >= 2 */}
+          {streak >= 2 && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ textAlign: 'center', marginBottom: 8 }}
+            >
+              <Text
+                size="xs"
+                fw={800}
+                tt="uppercase"
+                style={{
+                  color: colors.accent.orange,
+                  letterSpacing: '0.1em',
+                }}
+                className={streak >= 5 ? 'animate-celebrate' : ''}
+              >
+                <IconFlame
+                  size={14}
+                  style={{
+                    color: colors.accent.orange,
+                    verticalAlign: 'middle',
+                    marginRight: 4,
+                  }}
+                />
+                {streak} IN A ROW
+              </Text>
+            </motion.div>
+          )}
+
           <Group justify="space-between">
             <ActionIcon variant="subtle" size="lg" onClick={handleQuit}>
               <IconX size={24} style={{ color: colors.text.secondary }} />
             </ActionIcon>
 
-            <Progress
-              value={progress}
-              size="lg"
-              radius="xl"
-              color="green"
-              style={{ flex: 1, margin: '0 20px' }}
-            />
+            <div style={{ flex: 1, margin: '0 20px' }}>
+              <Progress
+                value={progress}
+                size="lg"
+                radius="xl"
+                color="green"
+                styles={{
+                  root: {
+                    backgroundColor: colors.neutral.border,
+                  },
+                  section: {
+                    transition: 'width 0.3s ease',
+                  },
+                }}
+              />
+            </div>
 
             <Group gap={4}>
-              <IconHeart size={24} style={{ color: colors.accent.pink, fill: colors.accent.pink }} />
+              <motion.div
+                animate={hearts < (user?.hearts || 5) ? { scale: [1, 1.3, 1] } : {}}
+                transition={{ duration: 0.3 }}
+              >
+                <IconHeart size={24} style={{ color: colors.accent.pink, fill: colors.accent.pink }} />
+              </motion.div>
               <Text fw={700} style={{ color: colors.accent.pink }}>{hearts}</Text>
             </Group>
           </Group>
@@ -849,46 +1114,72 @@ export default function Lesson() {
           >
             <Stack gap="xl">
               {/* Exercise type label */}
-              <Text size="sm" tt="uppercase" fw={700} style={{ color: colors.text.secondary }}>
+              <Title order={3} ta="center" fw={800} style={{ color: colors.text.primary }}>
                 {getExerciseTypeLabel(currentExercise.type)}
-              </Text>
+              </Title>
 
-              {/* Prompt with audio */}
-              <Group gap="md" align="center">
+              {/* Mascot with prompt in speech bubble */}
+              <Group gap="lg" align="flex-start" justify="center">
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.1, type: 'spring', stiffness: 300 }}
+                >
+                  <Mascot
+                    variant={isChecked ? (isCorrect ? 'happy' : 'sad') : 'neutral'}
+                    message={
+                      currentExercise.type === 'listening'
+                        ? undefined
+                        : currentExercise.type !== 'fill_blank'
+                        ? currentExercise.prompt
+                        : undefined
+                    }
+                  />
+                </motion.div>
+
+                {/* Audio buttons for listening exercises */}
                 {currentExercise.audio_url && (
-                  <Group gap="xs">
-                    <ActionIcon
-                      variant="filled"
-                      color="blue"
-                      size="xl"
-                      radius="xl"
-                      onClick={() => playAudio(currentExercise.audio_url!)}
-                      style={{ opacity: isPlaying ? 0.7 : 1 }}
-                    >
-                      <IconVolume size={20} />
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="light"
-                      color="blue"
-                      size="lg"
-                      radius="xl"
-                      onClick={() => playAudio(currentExercise.audio_url!, true)}
-                      title="Play slowly"
-                    >
-                      <IconVolume2 size={16} />
-                    </ActionIcon>
+                  <Group gap="xs" style={{ marginTop: 20 }}>
+                    <motion.div whileTap={{ scale: 0.95 }}>
+                      <ActionIcon
+                        variant="filled"
+                        color="blue"
+                        size="xl"
+                        radius="xl"
+                        onClick={() => playAudio(currentExercise.audio_url!)}
+                        style={{
+                          opacity: isPlaying ? 0.7 : 1,
+                          boxShadow: '0 4px 0 #1899D6',
+                        }}
+                      >
+                        <IconVolume size={20} />
+                      </ActionIcon>
+                    </motion.div>
+                    <motion.div whileTap={{ scale: 0.95 }}>
+                      <ActionIcon
+                        variant="light"
+                        color="blue"
+                        size="lg"
+                        radius="xl"
+                        onClick={() => playAudio(currentExercise.audio_url!, true)}
+                        title="Play slowly"
+                        style={{
+                          border: `2px solid ${colors.secondary.blue}`,
+                        }}
+                      >
+                        <IconVolume2 size={16} />
+                      </ActionIcon>
+                    </motion.div>
                   </Group>
                 )}
-                {currentExercise.type === 'listening' ? (
-                  <Title order={2} style={{ color: colors.text.muted }}>
-                    Type what you hear
-                  </Title>
-                ) : currentExercise.type !== 'fill_blank' && (
-                  <Title order={2} style={{ color: colors.text.primary }}>
-                    {currentExercise.prompt}
-                  </Title>
-                )}
               </Group>
+
+              {/* Listening prompt (separate since mascot doesn't have speech bubble for it) */}
+              {currentExercise.type === 'listening' && (
+                <Title order={2} ta="center" style={{ color: colors.text.muted }}>
+                  Type what you hear
+                </Title>
+              )}
 
               {/* Hint */}
               {currentExercise.hints && currentExercise.hints.length > 0 && (
@@ -958,76 +1249,152 @@ export default function Lesson() {
       </Container>
 
       {/* Footer */}
-      <Paper
-        p="lg"
-        radius={0}
-        style={{
-          backgroundColor: isChecked
-            ? isCorrect
-              ? colors.semantic.successLight
-              : colors.semantic.errorLight
-            : colors.neutral.white,
-          borderTop: `2px solid ${colors.neutral.border}`,
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-        }}
-      >
-        <Container size="sm">
-          {isChecked ? (
-            <Group justify="space-between">
-              <div>
-                <Text size="lg" fw={700} style={{ color: isCorrect ? colors.semantic.success : colors.semantic.error }}>
-                  {isCorrect ? 'Correct!' : 'Incorrect'}
-                </Text>
-                {!isCorrect && currentExercise.type !== 'match_pairs' && (
-                  <Text size="sm" style={{ color: colors.semantic.error }}>
-                    Correct answer: {currentExercise.correct_answer}
-                  </Text>
-                )}
-              </div>
-              <Button
-                size="lg"
-                color={isCorrect ? 'green' : 'red'}
-                onClick={handleContinue}
-                style={{
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  boxShadow: isCorrect ? '0 4px 0 #58A700' : '0 4px 0 #EA2B2B',
-                }}
-              >
-                Continue
-              </Button>
-            </Group>
-          ) : (
-            <Group justify="space-between">
-              <Button
-                size="lg"
-                variant="subtle"
-                color="gray"
-                onClick={handleQuit}
-                style={{ fontWeight: 700, textTransform: 'uppercase' }}
-              >
-                Skip
-              </Button>
-              <Button
-                size="lg"
-                color="green"
-                disabled={!hasAnswer()}
-                onClick={handleCheck}
-                style={{
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  boxShadow: hasAnswer() ? '0 4px 0 #58A700' : '0 4px 0 #CDCDCD',
-                }}
-              >
-                Check
-              </Button>
-            </Group>
-          )}
-        </Container>
-      </Paper>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={isChecked ? 'checked' : 'unchecked'}
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 20, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
+          }}
+        >
+          <Paper
+            p="lg"
+            radius={0}
+            style={{
+              backgroundColor: isChecked
+                ? isCorrect
+                  ? colors.semantic.successLight
+                  : colors.semantic.errorLight
+                : colors.neutral.white,
+              borderTop: isChecked ? 'none' : `2px solid ${colors.neutral.border}`,
+            }}
+          >
+            <Container size="sm">
+              {isChecked ? (
+                <Group justify="space-between" align="center">
+                  <Group gap="md">
+                    {/* Large checkmark or X icon */}
+                    <motion.div
+                      initial={{ scale: 0, rotate: -180 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                    >
+                      <div
+                        style={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: '50%',
+                          backgroundColor: isCorrect ? colors.semantic.success : colors.semantic.error,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <IconCheck
+                          size={28}
+                          style={{
+                            color: 'white',
+                            transform: isCorrect ? 'none' : 'rotate(45deg)',
+                          }}
+                        />
+                      </div>
+                    </motion.div>
+
+                    <div>
+                      <Text
+                        size="xl"
+                        fw={800}
+                        style={{ color: isCorrect ? colors.semantic.success : colors.semantic.error }}
+                      >
+                        {isCorrect ? correctMessage || 'Correct!' : 'Incorrect'}
+                      </Text>
+                      {isCorrect ? (
+                        <Group gap="xs" style={{ marginTop: 4 }}>
+                          <IconFlag size={14} style={{ color: colors.semantic.success }} />
+                          <Text
+                            size="xs"
+                            fw={700}
+                            tt="uppercase"
+                            style={{ color: colors.semantic.success, cursor: 'pointer' }}
+                          >
+                            Report
+                          </Text>
+                        </Group>
+                      ) : (
+                        currentExercise.type !== 'match_pairs' && (
+                          <Text size="sm" style={{ color: colors.semantic.error }}>
+                            Correct answer: {currentExercise.correct_answer}
+                          </Text>
+                        )
+                      )}
+                    </div>
+                  </Group>
+
+                  <motion.div
+                    initial={{ scale: 0.8 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.1 }}
+                  >
+                    <Button
+                      size="lg"
+                      color={isCorrect ? 'green' : 'red'}
+                      onClick={handleContinue}
+                      style={{
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        boxShadow: isCorrect ? '0 4px 0 #58A700' : '0 4px 0 #EA2B2B',
+                        minWidth: 140,
+                      }}
+                    >
+                      Continue
+                    </Button>
+                  </motion.div>
+                </Group>
+              ) : (
+                <Group justify="space-between">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    color="gray"
+                    onClick={handleQuit}
+                    style={{
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      borderWidth: 2,
+                      borderColor: colors.neutral.border,
+                      color: colors.text.secondary,
+                      boxShadow: '0 4px 0 #E5E5E5',
+                    }}
+                  >
+                    Skip
+                  </Button>
+                  <Button
+                    size="lg"
+                    color="green"
+                    disabled={!hasAnswer()}
+                    onClick={handleCheck}
+                    style={{
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      boxShadow: hasAnswer() ? '0 4px 0 #58A700' : '0 4px 0 #CDCDCD',
+                      minWidth: 140,
+                    }}
+                  >
+                    Check
+                  </Button>
+                </Group>
+              )}
+            </Container>
+          </Paper>
+        </motion.div>
+      </AnimatePresence>
     </div>
   )
 }
