@@ -25,6 +25,7 @@ const FunctionsPage = lazy(() => import('./pages/functions/Functions').then(m =>
 const LogsExplorerPage = lazy(() => import('./pages/logs/LogsExplorer').then(m => ({ default: m.LogsExplorerPage })));
 const ReportsPage = lazy(() => import('./pages/reports/Reports').then(m => ({ default: m.ReportsPage })));
 const ApiDocsPage = lazy(() => import('./pages/ApiDocs').then(m => ({ default: m.ApiDocsPage })));
+const ApiPlaygroundPage = lazy(() => import('./pages/ApiPlayground').then(m => ({ default: m.ApiPlaygroundPage })));
 const SettingsPage = lazy(() => import('./pages/settings/Settings').then(m => ({ default: m.SettingsPage })));
 const AdvisorsPage = lazy(() => import('./pages/advisors/Advisors').then(m => ({ default: m.AdvisorsPage })));
 const IntegrationsPage = lazy(() => import('./pages/integrations/Integrations').then(m => ({ default: m.IntegrationsPage })));
@@ -114,6 +115,7 @@ export default function App() {
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/logs" element={<LogsExplorerPage />} />
               <Route path="/api-docs" element={<ApiDocsPage />} />
+              <Route path="/api-playground" element={<ApiPlaygroundPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/advisors" element={<AdvisorsPage />} />
               <Route path="/integrations" element={<IntegrationsPage />} />
