@@ -20,7 +20,7 @@ vi.mock('./client', () => ({
 
 // Mock fetch for direct fetch calls
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+(globalThis as any).fetch = mockFetch;
 
 describe('functionsApi', () => {
   beforeEach(() => {
@@ -314,11 +314,13 @@ describe('functionsApi', () => {
         await functionsApi.testFunction('func-1', {
           method: 'GET',
           path: '/users',
+          headers: {},
         });
 
         expect(mockApi.post).toHaveBeenCalledWith('/api/functions/func-1/test', {
           method: 'GET',
           path: '/users',
+          headers: {},
         });
       });
 
@@ -328,11 +330,13 @@ describe('functionsApi', () => {
         await functionsApi.testFunction('func-1', {
           method: 'GET',
           path: '/search?q=hello',
+          headers: {},
         });
 
         expect(mockApi.post).toHaveBeenCalledWith('/api/functions/func-1/test', {
           method: 'GET',
           path: '/search?q=hello',
+          headers: {},
         });
       });
     });

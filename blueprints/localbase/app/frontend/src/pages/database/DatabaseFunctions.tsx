@@ -6,7 +6,6 @@ import {
   Card,
   Group,
   Badge,
-  Button,
   TextInput,
   Stack,
   Table,
@@ -31,15 +30,15 @@ import {
 import { pgmetaApi } from '../../api/pgmeta';
 
 interface DatabaseFunction {
-  id: string;
+  id: number;
   schema: string;
   name: string;
   language: string;
   definition: string;
   return_type: string;
   argument_types: string;
-  type: string;
-  security_definer: boolean;
+  is_security_definer: boolean;
+  volatility: string;
 }
 
 export function DatabaseFunctionsPage() {
@@ -180,10 +179,10 @@ export function DatabaseFunctionsPage() {
                   <Table.Td>
                     <Badge
                       variant="outline"
-                      color={fn.security_definer ? 'orange' : 'gray'}
+                      color={fn.is_security_definer ? 'orange' : 'gray'}
                       size="xs"
                     >
-                      {fn.security_definer ? 'DEFINER' : 'INVOKER'}
+                      {fn.is_security_definer ? 'DEFINER' : 'INVOKER'}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
@@ -230,8 +229,8 @@ export function DatabaseFunctionsPage() {
               <Badge variant="light" color="blue">
                 {selectedFunction.language}
               </Badge>
-              <Badge variant="outline" color={selectedFunction.security_definer ? 'orange' : 'gray'}>
-                {selectedFunction.security_definer ? 'SECURITY DEFINER' : 'SECURITY INVOKER'}
+              <Badge variant="outline" color={selectedFunction.is_security_definer ? 'orange' : 'gray'}>
+                {selectedFunction.is_security_definer ? 'SECURITY DEFINER' : 'SECURITY INVOKER'}
               </Badge>
             </Group>
 
