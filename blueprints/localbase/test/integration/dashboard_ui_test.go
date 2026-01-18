@@ -1067,6 +1067,306 @@ func TestDashboardUI_RequiresServiceRole(t *testing.T) {
 }
 
 // =============================================================================
+// Enhanced Table Editor API Tests
+// =============================================================================
+
+// TestDashboardUI_TableEditorEnhanced tests the enhanced table editor API endpoints
+func TestDashboardUI_TableEditorEnhanced(t *testing.T) {
+	client := NewClient(localbaseURL, serviceRoleKey)
+
+	// Create a test table first
+	tableName := fmt.Sprintf("test_editor_%d", time.Now().UnixNano())
+	createTableBody := map[string]any{
+		"schema": "public",
+		"name":   tableName,
+		"columns": []map[string]any{
+			{"name": "id", "type": "uuid", "is_primary_key": true, "default_value": "gen_random_uuid()"},
+			{"name": "name", "type": "text", "is_nullable": false},
+			{"name": "email", "type": "text"},
+			{"name": "age", "type": "integer"},
+			{"name": "active", "type": "boolean", "default_value": "true"},
+			{"name": "metadata", "type": "jsonb"},
+			{"name": "created_at", "type": "timestamptz", "default_value": "now()"},
+		},
+	}
+
+	status, _, _, err := client.Request("POST", "/api/database/tables", createTableBody, nil)
+	if err != nil || status != 201 {
+		t.Fatalf("Failed to create test table: status=%d, err=%v", status, err)
+	}
+	defer client.Request("DELETE", "/api/database/tables/public/"+tableName, nil, nil)
+
+	// Insert some test data
+	for i := 1; i <= 15; i++ {
+		insertBody := map[string]any{
+			"name":     fmt.Sprintf("User %d", i),
+			"email":    fmt.Sprintf("user%d@test.com", i),
+			"age":      20 + i,
+			"active":   i%2 == 0,
+			"metadata": map[string]any{"index": i},
+		}
+		_, _, _, _ = client.Request("POST", fmt.Sprintf("/rest/v1/%s", tableName), insertBody, map[string]string{
+			"Prefer": "return=minimal",
+		})
+	}
+
+	t.Run("get table data with pagination", func(t *testing.T) {
+		status, body, headers, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/data?limit=5&offset=0&count=true", tableName), nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if len(rows) > 5 {
+			t.Errorf("Expected at most 5 rows, got %d", len(rows))
+		}
+
+		// Check for total count header
+		totalCount := headers.Get("X-Total-Count")
+		t.Logf("Got %d rows, total count header: %s", len(rows), totalCount)
+	})
+
+	t.Run("get table data with sorting", func(t *testing.T) {
+		status, body, _, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/data?order=age.desc&limit=5", tableName), nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Verify descending order
+		if len(rows) >= 2 {
+			age1, ok1 := rows[0]["age"].(float64)
+			age2, ok2 := rows[1]["age"].(float64)
+			if ok1 && ok2 && age1 < age2 {
+				t.Error("Expected descending order by age")
+			}
+		}
+		t.Logf("Got %d sorted rows", len(rows))
+	})
+
+	t.Run("get table data with filter", func(t *testing.T) {
+		status, body, _, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/data?active=eq.true", tableName), nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Verify all rows have active=true
+		for _, row := range rows {
+			if active, ok := row["active"].(bool); ok && !active {
+				t.Error("Expected all rows to have active=true")
+			}
+		}
+		t.Logf("Got %d filtered rows with active=true", len(rows))
+	})
+
+	t.Run("export table data as JSON", func(t *testing.T) {
+		status, body, headers, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/export?format=json", tableName), nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		contentType := headers.Get("Content-Type")
+		if !containsString(contentType, "application/json") {
+			t.Errorf("Expected JSON content type, got %s", contentType)
+		}
+
+		contentDisposition := headers.Get("Content-Disposition")
+		if !containsString(contentDisposition, "attachment") {
+			t.Errorf("Expected attachment content-disposition, got %s", contentDisposition)
+		}
+
+		t.Logf("Export JSON content type: %s", contentType)
+	})
+
+	t.Run("export table data as CSV", func(t *testing.T) {
+		status, body, headers, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/export?format=csv", tableName), nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		contentType := headers.Get("Content-Type")
+		if !containsString(contentType, "text/csv") {
+			t.Errorf("Expected CSV content type, got %s", contentType)
+		}
+
+		// Check CSV has header row
+		bodyStr := string(body)
+		if !containsString(bodyStr, "id,") && !containsString(bodyStr, "name,") {
+			t.Error("CSV should contain column headers")
+		}
+
+		t.Logf("Export CSV content type: %s, length: %d", contentType, len(body))
+	})
+
+	t.Run("export table data as SQL", func(t *testing.T) {
+		status, body, headers, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/export?format=sql", tableName), nil, nil)
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		contentType := headers.Get("Content-Type")
+		if !containsString(contentType, "text/plain") {
+			t.Errorf("Expected text/plain content type, got %s", contentType)
+		}
+
+		// Check SQL has INSERT statements
+		bodyStr := string(body)
+		if !containsString(bodyStr, "INSERT INTO") {
+			t.Error("SQL export should contain INSERT statements")
+		}
+
+		t.Logf("Export SQL content type: %s, length: %d", contentType, len(body))
+	})
+
+	t.Run("bulk delete rows", func(t *testing.T) {
+		// First get some IDs to delete
+		status, body, _, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/data?limit=2", tableName), nil, nil)
+		if err != nil || status != 200 {
+			t.Fatalf("Failed to get rows: %v", err)
+		}
+
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if len(rows) < 2 {
+			t.Skip("Not enough rows for bulk delete test")
+		}
+
+		ids := []any{rows[0]["id"], rows[1]["id"]}
+
+		bulkBody := map[string]any{
+			"operation": "delete",
+			"ids":       ids,
+			"column":    "id",
+		}
+
+		status, body, _, err = client.Request("POST", fmt.Sprintf("/api/database/tables/public/%s/bulk", tableName), bulkBody, nil)
+		if err != nil {
+			t.Fatalf("Bulk delete request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if result["operation"] != "delete" {
+			t.Errorf("Expected operation=delete, got %v", result["operation"])
+		}
+
+		rowsAffected, _ := result["rows_affected"].(float64)
+		if rowsAffected < 1 {
+			t.Errorf("Expected at least 1 row affected, got %v", rowsAffected)
+		}
+
+		t.Logf("Bulk deleted %v rows", rowsAffected)
+	})
+
+	t.Run("bulk update rows", func(t *testing.T) {
+		// First get some IDs to update
+		status, body, _, err := client.Request("GET", fmt.Sprintf("/api/database/tables/public/%s/data?limit=3", tableName), nil, nil)
+		if err != nil || status != 200 {
+			t.Fatalf("Failed to get rows: %v", err)
+		}
+
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if len(rows) < 2 {
+			t.Skip("Not enough rows for bulk update test")
+		}
+
+		ids := make([]any, 0)
+		for _, row := range rows[:2] {
+			ids = append(ids, row["id"])
+		}
+
+		bulkBody := map[string]any{
+			"operation": "update",
+			"ids":       ids,
+			"column":    "id",
+			"data": map[string]any{
+				"name": "Bulk Updated",
+			},
+		}
+
+		status, body, _, err = client.Request("POST", fmt.Sprintf("/api/database/tables/public/%s/bulk", tableName), bulkBody, nil)
+		if err != nil {
+			t.Fatalf("Bulk update request failed: %v", err)
+		}
+
+		if status != 200 {
+			t.Errorf("Expected 200, got %d: %s", status, body)
+			return
+		}
+
+		var result map[string]any
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if result["operation"] != "update" {
+			t.Errorf("Expected operation=update, got %v", result["operation"])
+		}
+
+		rowsAffected, _ := result["rows_affected"].(float64)
+		t.Logf("Bulk updated %v rows", rowsAffected)
+	})
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 

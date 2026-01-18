@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/localbase/app/web/middleware"
@@ -678,4 +680,427 @@ func parseIntQueryDB(c *mizu.Ctx, key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// ========================================
+// Enhanced Table Editor API handlers
+// ========================================
+
+// GetTableData returns table data with enhanced filtering and count.
+func (h *DatabaseHandler) GetTableData(c *mizu.Ctx) error {
+	schema := c.Param("schema")
+	table := c.Param("name")
+
+	// Build query with filtering and pagination
+	limit := parseIntQueryDB(c, "limit", 100)
+	offset := parseIntQueryDB(c, "offset", 0)
+	orderBy := c.Query("order")
+	selectCols := c.Query("select")
+	includeCount := c.Query("count") == "true"
+
+	// Build SELECT query
+	var colList string
+	if selectCols != "" {
+		colList = selectCols
+	} else {
+		colList = "*"
+	}
+
+	query := "SELECT " + colList + " FROM " + schema + "." + table
+
+	// Parse filters from query params
+	filters, _, _, err := h.parseFilters(c)
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": err.Error()})
+	}
+
+	// Build WHERE clause from filters
+	if len(filters) > 0 {
+		query += " WHERE "
+		conditions := make([]string, 0, len(filters))
+		for _, f := range filters {
+			condition := buildFilterCondition(f)
+			if condition != "" {
+				conditions = append(conditions, condition)
+			}
+		}
+		query += strings.Join(conditions, " AND ")
+	}
+
+	// Add ORDER BY
+	if orderBy != "" {
+		parts := strings.Split(orderBy, ".")
+		if len(parts) == 2 {
+			col := parts[0]
+			dir := strings.ToUpper(parts[1])
+			if dir != "ASC" && dir != "DESC" {
+				dir = "ASC"
+			}
+			query += " ORDER BY " + col + " " + dir
+		} else {
+			query += " ORDER BY " + orderBy
+		}
+	}
+
+	// Add pagination
+	query += " LIMIT " + strconv.Itoa(limit) + " OFFSET " + strconv.Itoa(offset)
+
+	// Execute query
+	result, err := h.store.Database().Query(c.Context(), query)
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": err.Error()})
+	}
+
+	// Get total count if requested
+	if includeCount {
+		countQuery := "SELECT COUNT(*) as count FROM " + schema + "." + table
+		if len(filters) > 0 {
+			countQuery += " WHERE "
+			conditions := make([]string, 0, len(filters))
+			for _, f := range filters {
+				condition := buildFilterCondition(f)
+				if condition != "" {
+					conditions = append(conditions, condition)
+				}
+			}
+			countQuery += strings.Join(conditions, " AND ")
+		}
+		countResult, err := h.store.Database().Query(c.Context(), countQuery)
+		if err == nil && len(countResult.Rows) > 0 {
+			if count, ok := countResult.Rows[0]["count"].(int64); ok {
+				c.Header().Set("X-Total-Count", strconv.FormatInt(count, 10))
+			}
+		}
+	}
+
+	return c.JSON(200, result.Rows)
+}
+
+// ExportTableData exports table data in various formats.
+func (h *DatabaseHandler) ExportTableData(c *mizu.Ctx) error {
+	schema := c.Param("schema")
+	table := c.Param("name")
+	format := c.Query("format")
+	if format == "" {
+		format = "json"
+	}
+
+	selectCols := c.Query("select")
+	var colList string
+	if selectCols != "" {
+		colList = selectCols
+	} else {
+		colList = "*"
+	}
+
+	// Build query
+	query := "SELECT " + colList + " FROM " + schema + "." + table
+
+	// Parse filters
+	filters, _, _, err := h.parseFilters(c)
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": err.Error()})
+	}
+
+	// Build WHERE clause
+	if len(filters) > 0 {
+		query += " WHERE "
+		conditions := make([]string, 0, len(filters))
+		for _, f := range filters {
+			condition := buildFilterCondition(f)
+			if condition != "" {
+				conditions = append(conditions, condition)
+			}
+		}
+		query += strings.Join(conditions, " AND ")
+	}
+
+	// Execute query (no limit for export)
+	result, err := h.store.Database().Query(c.Context(), query)
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": err.Error()})
+	}
+
+	// Set download headers
+	filename := table + "_export"
+	switch format {
+	case "csv":
+		c.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		c.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".csv\"")
+		return exportCSV(c, result)
+	case "sql":
+		c.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		c.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".sql\"")
+		return exportSQL(c, schema, table, result)
+	default: // json
+		c.Header().Set("Content-Type", "application/json; charset=utf-8")
+		c.Header().Set("Content-Disposition", "attachment; filename=\""+filename+".json\"")
+		return c.JSON(200, result.Rows)
+	}
+}
+
+// BulkTableOperation performs bulk operations on table rows.
+func (h *DatabaseHandler) BulkTableOperation(c *mizu.Ctx) error {
+	schema := c.Param("schema")
+	table := c.Param("name")
+
+	var req struct {
+		Operation string                   `json:"operation"` // delete, update
+		IDs       []interface{}            `json:"ids"`       // Primary key values
+		Column    string                   `json:"column"`    // Primary key column name
+		Data      map[string]interface{}   `json:"data"`      // For update operation
+	}
+	if err := c.BindJSON(&req, 0); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid request body"})
+	}
+
+	if len(req.IDs) == 0 {
+		return c.JSON(400, map[string]string{"error": "ids required"})
+	}
+
+	if req.Column == "" {
+		req.Column = "id"
+	}
+
+	switch req.Operation {
+	case "delete":
+		// Build DELETE query with IN clause
+		placeholders := make([]string, len(req.IDs))
+		args := make([]interface{}, len(req.IDs))
+		for i, id := range req.IDs {
+			placeholders[i] = "$" + strconv.Itoa(i+1)
+			args[i] = id
+		}
+		query := "DELETE FROM " + schema + "." + table + " WHERE " + req.Column + " IN (" + strings.Join(placeholders, ", ") + ")"
+
+		rows, err := h.store.Database().Exec(c.Context(), query, args...)
+		if err != nil {
+			return c.JSON(400, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(200, map[string]interface{}{
+			"operation":     "delete",
+			"rows_affected": rows,
+		})
+
+	case "update":
+		if req.Data == nil || len(req.Data) == 0 {
+			return c.JSON(400, map[string]string{"error": "data required for update"})
+		}
+
+		// Build UPDATE query
+		setClauses := make([]string, 0, len(req.Data))
+		args := make([]interface{}, 0, len(req.Data)+len(req.IDs))
+		argIdx := 1
+
+		for col, val := range req.Data {
+			setClauses = append(setClauses, col+" = $"+strconv.Itoa(argIdx))
+			args = append(args, val)
+			argIdx++
+		}
+
+		// Add ID placeholders
+		idPlaceholders := make([]string, len(req.IDs))
+		for i, id := range req.IDs {
+			idPlaceholders[i] = "$" + strconv.Itoa(argIdx)
+			args = append(args, id)
+			argIdx++
+		}
+
+		query := "UPDATE " + schema + "." + table + " SET " + strings.Join(setClauses, ", ") + " WHERE " + req.Column + " IN (" + strings.Join(idPlaceholders, ", ") + ")"
+
+		rows, err := h.store.Database().Exec(c.Context(), query, args...)
+		if err != nil {
+			return c.JSON(400, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(200, map[string]interface{}{
+			"operation":     "update",
+			"rows_affected": rows,
+		})
+
+	default:
+		return c.JSON(400, map[string]string{"error": "unsupported operation: " + req.Operation})
+	}
+}
+
+// buildFilterCondition builds a SQL condition from a filter.
+func buildFilterCondition(f postgrest.Filter) string {
+	// Convert value to string
+	valStr := valueToString(f.Value)
+
+	// Handle different operators
+	switch f.Operator {
+	case "eq":
+		return f.Column + " = '" + escapeSQL(valStr) + "'"
+	case "neq":
+		return f.Column + " != '" + escapeSQL(valStr) + "'"
+	case "gt":
+		return f.Column + " > '" + escapeSQL(valStr) + "'"
+	case "gte":
+		return f.Column + " >= '" + escapeSQL(valStr) + "'"
+	case "lt":
+		return f.Column + " < '" + escapeSQL(valStr) + "'"
+	case "lte":
+		return f.Column + " <= '" + escapeSQL(valStr) + "'"
+	case "like":
+		return f.Column + " LIKE '" + escapeSQL(valStr) + "'"
+	case "ilike":
+		return f.Column + " ILIKE '" + escapeSQL(valStr) + "'"
+	case "is":
+		if valStr == "null" {
+			return f.Column + " IS NULL"
+		} else if valStr == "true" {
+			return f.Column + " IS TRUE"
+		} else if valStr == "false" {
+			return f.Column + " IS FALSE"
+		}
+		return ""
+	case "in":
+		// Value should be comma-separated list in parens
+		return f.Column + " IN " + valStr
+	default:
+		return f.Column + " = '" + escapeSQL(valStr) + "'"
+	}
+}
+
+// valueToString converts an interface{} value to string.
+func valueToString(val interface{}) string {
+	if val == nil {
+		return ""
+	}
+	switch v := val.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return formatValue(val)
+	case float32, float64:
+		return formatValue(val)
+	default:
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+		return ""
+	}
+}
+
+// escapeSQL escapes single quotes in SQL strings.
+func escapeSQL(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+// exportCSV exports query results as CSV.
+func exportCSV(c *mizu.Ctx, result *store.QueryResult) error {
+	var sb strings.Builder
+
+	// Write header
+	sb.WriteString(strings.Join(result.Columns, ",") + "\n")
+
+	// Write rows
+	for _, row := range result.Rows {
+		values := make([]string, len(result.Columns))
+		for i, col := range result.Columns {
+			val := row[col]
+			if val == nil {
+				values[i] = ""
+			} else {
+				str := formatCSVValue(val)
+				values[i] = str
+			}
+		}
+		sb.WriteString(strings.Join(values, ",") + "\n")
+	}
+
+	return c.Text(200, sb.String())
+}
+
+// formatCSVValue formats a value for CSV output.
+func formatCSVValue(val interface{}) string {
+	switch v := val.(type) {
+	case string:
+		// Escape quotes and wrap in quotes if contains comma, quote, or newline
+		if strings.ContainsAny(v, ",\"\n") {
+			return "\"" + strings.ReplaceAll(v, "\"", "\"\"") + "\""
+		}
+		return v
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case nil:
+		return ""
+	default:
+		return strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(strings.Trim(strings.Trim(formatValue(val), "["), "]")), "\"", "\"\""), "\n", " ")
+	}
+}
+
+// formatValue formats a value for output.
+func formatValue(val interface{}) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case nil:
+		return "null"
+	default:
+		// Use JSON encoding for complex types
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+		return ""
+	}
+}
+
+// exportSQL exports query results as SQL INSERT statements.
+func exportSQL(c *mizu.Ctx, schema, table string, result *store.QueryResult) error {
+	var sb strings.Builder
+
+	sb.WriteString("-- Exported from " + schema + "." + table + "\n")
+	sb.WriteString("-- Generated at " + time.Now().Format(time.RFC3339) + "\n\n")
+
+	for _, row := range result.Rows {
+		cols := make([]string, 0, len(result.Columns))
+		vals := make([]string, 0, len(result.Columns))
+
+		for _, col := range result.Columns {
+			cols = append(cols, col)
+			val := row[col]
+			vals = append(vals, formatSQLValue(val))
+		}
+
+		sb.WriteString("INSERT INTO " + schema + "." + table + " (" + strings.Join(cols, ", ") + ") VALUES (" + strings.Join(vals, ", ") + ");\n")
+	}
+
+	return c.Text(200, sb.String())
+}
+
+// formatSQLValue formats a value for SQL INSERT.
+func formatSQLValue(val interface{}) string {
+	if val == nil {
+		return "NULL"
+	}
+	switch v := val.(type) {
+	case string:
+		return "'" + escapeSQL(v) + "'"
+	case bool:
+		if v {
+			return "TRUE"
+		}
+		return "FALSE"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return formatValue(val)
+	default:
+		// JSON or complex types
+		if b, err := json.Marshal(v); err == nil {
+			return "'" + escapeSQL(string(b)) + "'"
+		}
+		return "NULL"
+	}
 }
