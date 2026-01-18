@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
@@ -19,10 +19,10 @@ vi.mock('@monaco-editor/react', () => ({
 
 // Mock fetch
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+(globalThis as any).fetch = mockFetch;
 
 // Mock crypto.randomUUID
-Object.defineProperty(global, 'crypto', {
+Object.defineProperty(globalThis, 'crypto', {
   value: {
     randomUUID: () => 'test-uuid-' + Math.random().toString(36).substr(2, 9),
   },
@@ -103,7 +103,6 @@ describe('ApiPlaygroundPage', () => {
 
   describe('Endpoint Selection', () => {
     it('expands category when clicked', async () => {
-      const user = userEvent.setup();
       renderWithProviders(<ApiPlaygroundPage />);
 
       await waitFor(() => {

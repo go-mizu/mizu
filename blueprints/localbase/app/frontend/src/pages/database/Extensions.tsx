@@ -8,11 +8,9 @@ import {
   Badge,
   Button,
   TextInput,
-  Stack,
   SimpleGrid,
   Loader,
   Alert,
-  Switch,
   Tooltip,
 } from '@mantine/core';
 import {
