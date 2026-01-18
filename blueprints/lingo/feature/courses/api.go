@@ -24,6 +24,7 @@ func (h *Handler) RegisterRoutes(r *mizu.Router) {
 	r.Get("/courses/{id}", h.GetCourse)
 	r.Post("/courses/{id}/enroll", h.Enroll)
 	r.Get("/courses/{id}/path", h.GetPath)
+	r.Get("/courses/{id}/vocabulary", h.GetVocabulary)
 	r.Get("/units/{id}", h.GetUnit)
 	r.Get("/skills/{id}", h.GetSkill)
 	r.Get("/stories", h.GetStories)
@@ -123,6 +124,22 @@ func (h *Handler) GetPath(c *mizu.Ctx) error {
 	}
 
 	return c.JSON(http.StatusOK, path)
+}
+
+// GetVocabulary handles GET /courses/{id}/vocabulary
+func (h *Handler) GetVocabulary(c *mizu.Ctx) error {
+	idStr := c.Param("id")
+	courseID, err := uuid.Parse(idStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid course id"})
+	}
+
+	lexemes, err := h.svc.GetLexemesByCourse(c.Context(), courseID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get vocabulary"})
+	}
+
+	return c.JSON(http.StatusOK, lexemes)
 }
 
 // GetUnit handles GET /units/{id}

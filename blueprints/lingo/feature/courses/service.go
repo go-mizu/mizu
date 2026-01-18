@@ -115,6 +115,11 @@ func (s *Service) GetStory(ctx context.Context, id uuid.UUID) (*store.Story, err
 	return story, nil
 }
 
+// GetLexemesByCourse returns all vocabulary for a course
+func (s *Service) GetLexemesByCourse(ctx context.Context, courseID uuid.UUID) ([]store.Lexeme, error) {
+	return s.courses.GetLexemesByCourse(ctx, courseID)
+}
+
 // CourseWithProgress represents a course with user progress
 type CourseWithProgress struct {
 	Course   store.Course     `json:"course"`

@@ -66,23 +66,25 @@ export default function Lesson() {
       try {
         setLoading(true)
 
-        // Get the lesson directly using the skill ID as a lesson ID
-        // In a real implementation, we'd have a proper skill -> lesson relationship
-        const lessonData = await lessonsApi.getLesson(skillId)
+        // Get the first lesson for this skill with exercises
+        // Uses the /skills/{id}/lesson endpoint which returns { lesson: {...}, exercises: [...] }
+        const response = await lessonsApi.getLessonBySkill(skillId)
 
-        if (lessonData) {
-          setLesson(lessonData)
+        if (response && response.lesson) {
+          setLesson(response.lesson)
 
-          // Get exercises for this lesson
-          // The lesson object should contain exercises
-          if (lessonData.exercises && lessonData.exercises.length > 0) {
-            setExercises(lessonData.exercises)
+          // Use exercises from API response
+          if (response.exercises && response.exercises.length > 0) {
+            console.log(`Loaded ${response.exercises.length} exercises from database`)
+            setExercises(response.exercises)
           } else {
-            // Generate mock exercises if none exist
+            // Generate mock exercises if none exist in database
+            console.log('No exercises found in database, using mock data')
             setExercises(generateMockExercises())
           }
         } else {
           // Use mock exercises if API fails
+          console.log('No lesson data returned, using mock data')
           setExercises(generateMockExercises())
         }
       } catch (err) {

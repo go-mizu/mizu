@@ -1,4 +1,4 @@
-import { AppShell, Group, Stack, UnstyledButton, Text, Avatar, Tooltip } from '@mantine/core'
+import { AppShell, Group, Stack, UnstyledButton, Text, Tooltip } from '@mantine/core'
 import { IconFlame, IconHome, IconTrophy, IconUser, IconShoppingCart, IconMedal, IconHeart, IconBook, IconDots } from '@tabler/icons-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/auth'

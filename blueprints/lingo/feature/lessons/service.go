@@ -81,6 +81,29 @@ func (s *Service) GetLesson(ctx context.Context, lessonID uuid.UUID) (*LessonWit
 	}, nil
 }
 
+// GetLessonBySkill returns the first lesson for a skill with its exercises
+// This is used when the frontend navigates to a lesson using skill ID
+func (s *Service) GetLessonBySkill(ctx context.Context, skillID uuid.UUID) (*LessonWithExercises, error) {
+	// Get all lessons for this skill
+	lessons, err := s.courses.GetLessonsBySkill(ctx, skillID)
+	if err != nil || len(lessons) == 0 {
+		return nil, ErrLessonNotFound
+	}
+
+	// Return the first lesson (level 1)
+	firstLesson := lessons[0]
+
+	exercises, err := s.courses.GetExercises(ctx, firstLesson.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LessonWithExercises{
+		Lesson:    firstLesson,
+		Exercises: exercises,
+	}, nil
+}
+
 // StartLesson starts a new lesson session
 func (s *Service) StartLesson(ctx context.Context, userID, lessonID uuid.UUID) (*store.LessonSession, error) {
 	// Check if user has hearts (unless premium)

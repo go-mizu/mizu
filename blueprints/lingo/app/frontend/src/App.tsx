@@ -12,6 +12,7 @@ import Shop from './pages/Shop'
 import Achievements from './pages/Achievements'
 import Quests from './pages/Quests'
 import Letters from './pages/Letters'
+import Guidebook from './pages/Guidebook'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -70,6 +71,11 @@ function App() {
       <Route path="/letters" element={
         <ProtectedRoute>
           <Layout><Letters /></Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/guidebook/:unitId" element={
+        <ProtectedRoute>
+          <Guidebook />
         </ProtectedRoute>
       } />
 
