@@ -511,7 +511,7 @@ describe('functionsApi', () => {
 
         const result = await functionsApi.listTemplates();
 
-        expect(mockApi.get).toHaveBeenCalledWith('/api/functions/templates');
+        expect(mockApi.get).toHaveBeenCalledWith('/api/function-templates');
         expect(result).toEqual(mockTemplates);
       });
     });
@@ -526,7 +526,7 @@ describe('functionsApi', () => {
 
         const result = await functionsApi.getTemplate('hello-world');
 
-        expect(mockApi.get).toHaveBeenCalledWith('/api/functions/templates/hello-world');
+        expect(mockApi.get).toHaveBeenCalledWith('/api/function-templates/hello-world');
         expect(result).toEqual(template);
       });
 

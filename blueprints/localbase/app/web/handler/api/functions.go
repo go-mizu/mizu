@@ -735,15 +735,15 @@ func (h *FunctionsHandler) ListTemplates(c *mizu.Ctx) error {
 
 // GetTemplate returns a specific function template with source code.
 func (h *FunctionsHandler) GetTemplate(c *mizu.Ctx) error {
-	id := c.Param("id")
+	templateID := c.Param("templateId")
 
-	source, importMap := getTemplateSource(id)
+	source, importMap := getTemplateSource(templateID)
 	if source == "" {
 		return c.JSON(404, map[string]string{"error": "template not found"})
 	}
 
 	return c.JSON(200, map[string]any{
-		"id":          id,
+		"id":          templateID,
 		"source_code": source,
 		"import_map":  importMap,
 	})
