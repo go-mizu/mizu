@@ -174,7 +174,8 @@ func TestExerciseChoices(t *testing.T) {
 
 					for _, ex := range exercises {
 						switch ex.Type {
-						case "multiple_choice", "translation", "listening":
+						case "multiple_choice":
+							// Multiple choice must have choices with correct answer included
 							require.GreaterOrEqual(t, len(ex.Choices), 3,
 								"Exercise type %s should have at least 3 choices", ex.Type)
 
@@ -189,6 +190,22 @@ func TestExerciseChoices(t *testing.T) {
 							require.True(t, found,
 								"Correct answer '%s' should be in choices for exercise %s",
 								ex.CorrectAnswer, ex.ID)
+
+						case "listening":
+							// Listening exercises should have audio URL or be free-form typing
+							require.NotEmpty(t, ex.Prompt, "Listening exercise should have a prompt")
+
+						case "translation":
+							// Translation exercises are free-form typing, no choices required
+							require.NotEmpty(t, ex.CorrectAnswer, "Translation exercise should have correct answer")
+
+						case "word_bank", "fill_blank":
+							// Word bank and fill_blank may have choices
+							require.NotEmpty(t, ex.CorrectAnswer, "Exercise should have correct answer")
+
+						case "match_pairs":
+							// Match pairs should have choices (the pairs)
+							require.NotEmpty(t, ex.CorrectAnswer, "Match pairs exercise should have correct answer")
 						}
 					}
 				}

@@ -1,23 +1,57 @@
-import { useState, useEffect } from 'react'
-import { Container, Paper, Title, Text, Button, Group, Stack, Progress, ActionIcon, Loader, Center, Badge } from '@mantine/core'
-import { IconX, IconHeart, IconCheck, IconVolume, IconSettings } from '@tabler/icons-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Container, Paper, Title, Text, Button, Group, Stack, Progress, ActionIcon, Loader, Badge, TextInput } from '@mantine/core'
+import { IconX, IconHeart, IconCheck, IconVolume, IconSettings, IconVolume2 } from '@tabler/icons-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuthStore } from '../stores/auth'
 import { colors } from '../styles/tokens'
-import { lessonsApi, coursesApi, Exercise, Skill, Lesson as LessonType } from '../api/client'
+import { lessonsApi, Exercise, Lesson as LessonType } from '../api/client'
+
+// Audio playback hook
+function useAudio() {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const playAudio = useCallback((url: string, slow = false) => {
+    if (!url) return
+
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+
+    // Apply slow mode for Google TTS if requested
+    let audioUrl = url
+    if (slow && url.includes('translate.google.com')) {
+      audioUrl = url.includes('?') ? `${url}&ttsspeed=0.3` : `${url}?ttsspeed=0.3`
+    }
+
+    const audio = new Audio(audioUrl)
+    audioRef.current = audio
+    setIsPlaying(true)
+
+    audio.onended = () => setIsPlaying(false)
+    audio.onerror = () => setIsPlaying(false)
+
+    audio.play().catch(() => setIsPlaying(false))
+  }, [])
+
+  return { playAudio, isPlaying }
+}
 
 export default function Lesson() {
   const navigate = useNavigate()
   const { id: skillId } = useParams<{ id: string }>()
   const { user, updateUser } = useAuthStore()
+  const { playAudio, isPlaying } = useAudio()
 
   const [loading, setLoading] = useState(true)
-  const [skill, setSkill] = useState<Skill | null>(null)
   const [lesson, setLesson] = useState<LessonType | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null)
+  const [typedAnswer, setTypedAnswer] = useState('')
   const [isChecked, setIsChecked] = useState(false)
   const [isCorrect, setIsCorrect] = useState(false)
   const [hearts, setHearts] = useState(user?.hearts || 5)
@@ -31,10 +65,7 @@ export default function Lesson() {
       try {
         setLoading(true)
 
-        // First get the skill details to find the first lesson
-        const skillData = await coursesApi.getCoursePath(skillId).catch(() => null)
-
-        // For now, we'll get the lesson directly using the skill ID as a lesson ID
+        // Get the lesson directly using the skill ID as a lesson ID
         // In a real implementation, we'd have a proper skill -> lesson relationship
         const lessonData = await lessonsApi.getLesson(skillId)
 
@@ -120,15 +151,31 @@ export default function Lesson() {
   const progress = exercises.length > 0 ? ((currentIndex + 1) / exercises.length) * 100 : 0
 
   const handleCheck = async () => {
-    if (!selectedAnswer || !currentExercise) return
+    if (!currentExercise) return
 
-    const correct = selectedAnswer === currentExercise.correct_answer
+    // Get the answer based on exercise type
+    let userAnswer: string
+    const exerciseType = currentExercise.type
+
+    if (exerciseType === 'listening' || (exerciseType === 'translation' && (!currentExercise.choices || currentExercise.choices.length === 0))) {
+      // Free-form typing exercise
+      userAnswer = typedAnswer.trim()
+    } else {
+      // Choice-based exercise
+      if (!selectedAnswer) return
+      userAnswer = selectedAnswer
+    }
+
+    if (!userAnswer) return
+
+    // Check if correct (case-insensitive for typed answers)
+    const correct = userAnswer.toLowerCase() === currentExercise.correct_answer.toLowerCase()
     setIsCorrect(correct)
     setIsChecked(true)
 
     // Try to submit answer to API
     try {
-      await lessonsApi.answerExercise(currentExercise.id, selectedAnswer)
+      await lessonsApi.answerExercise(currentExercise.id, userAnswer)
     } catch (err) {
       console.log('Failed to submit answer to API, continuing locally')
     }
@@ -145,6 +192,7 @@ export default function Lesson() {
     if (currentIndex < exercises.length - 1) {
       setCurrentIndex((prev) => prev + 1)
       setSelectedAnswer(null)
+      setTypedAnswer('')
       setIsChecked(false)
     } else {
       // Lesson complete
@@ -203,9 +251,23 @@ export default function Lesson() {
         return 'Build the sentence'
       case 'fill_blank':
         return 'Complete the sentence'
+      case 'match_pairs':
+        return 'Match the pairs'
       default:
         return 'Answer the question'
     }
+  }
+
+  // Check if user has provided an answer (for enabling Check button)
+  const hasAnswer = () => {
+    if (!currentExercise) return false
+    const exerciseType = currentExercise.type
+
+    if (exerciseType === 'listening' ||
+        (exerciseType === 'translation' && (!currentExercise.choices || currentExercise.choices.length === 0))) {
+      return typedAnswer.trim().length > 0
+    }
+    return selectedAnswer !== null
   }
 
   return (
@@ -276,13 +338,39 @@ export default function Lesson() {
                 </Text>
                 <Group gap="md" align="center">
                   {currentExercise.audio_url && (
-                    <ActionIcon variant="filled" color="blue" size="xl" radius="xl">
-                      <IconVolume size={20} />
-                    </ActionIcon>
+                    <Group gap="xs">
+                      <ActionIcon
+                        variant="filled"
+                        color="blue"
+                        size="xl"
+                        radius="xl"
+                        onClick={() => playAudio(currentExercise.audio_url!)}
+                        style={{ opacity: isPlaying ? 0.7 : 1 }}
+                      >
+                        <IconVolume size={20} />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="light"
+                        color="blue"
+                        size="lg"
+                        radius="xl"
+                        onClick={() => playAudio(currentExercise.audio_url!, true)}
+                        title="Play slowly"
+                      >
+                        <IconVolume2 size={16} />
+                      </ActionIcon>
+                    </Group>
                   )}
-                  <Title order={2} style={{ color: colors.text.primary }}>
-                    {currentExercise.prompt}
-                  </Title>
+                  {/* Hide prompt for listening exercises to make them more challenging */}
+                  {currentExercise.type === 'listening' ? (
+                    <Title order={2} style={{ color: colors.text.muted }}>
+                      Type what you hear
+                    </Title>
+                  ) : (
+                    <Title order={2} style={{ color: colors.text.primary }}>
+                      {currentExercise.prompt}
+                    </Title>
+                  )}
                 </Group>
               </div>
 
@@ -302,63 +390,179 @@ export default function Lesson() {
                 </Paper>
               )}
 
-              {/* Choices */}
-              <Stack gap="md">
-                {currentExercise.choices?.map((choice) => {
-                  const isSelected = selectedAnswer === choice
-                  const showCorrect = isChecked && choice === currentExercise.correct_answer
-                  const showIncorrect = isChecked && isSelected && !isCorrect
-
-                  return (
-                    <Paper
-                      key={choice}
-                      p="lg"
-                      radius="lg"
-                      onClick={() => !isChecked && setSelectedAnswer(choice)}
-                      className={`choice-button ${isSelected ? 'selected' : ''} ${showCorrect ? 'correct' : ''} ${showIncorrect ? 'incorrect' : ''}`}
-                      style={{
-                        backgroundColor: showCorrect
-                          ? colors.semantic.successLight
-                          : showIncorrect
-                          ? colors.semantic.errorLight
-                          : isSelected
-                          ? colors.secondary.blueLight
+              {/* Answer Input - either choices or text input based on exercise type */}
+              {(currentExercise.type === 'listening' ||
+                (currentExercise.type === 'translation' && (!currentExercise.choices || currentExercise.choices.length === 0))) ? (
+                /* Text input for listening and free-form translation */
+                <Stack gap="md">
+                  <TextInput
+                    placeholder="Type your answer..."
+                    size="lg"
+                    value={typedAnswer}
+                    onChange={(e) => !isChecked && setTypedAnswer(e.target.value)}
+                    disabled={isChecked}
+                    onKeyDown={(e) => e.key === 'Enter' && !isChecked && handleCheck()}
+                    styles={{
+                      input: {
+                        backgroundColor: isChecked
+                          ? isCorrect
+                            ? colors.semantic.successLight
+                            : colors.semantic.errorLight
                           : colors.neutral.white,
-                        border: `2px solid ${
-                          showCorrect
+                        borderColor: isChecked
+                          ? isCorrect
                             ? colors.semantic.success
-                            : showIncorrect
-                            ? colors.semantic.error
-                            : isSelected
-                            ? colors.secondary.blue
-                            : colors.neutral.border
-                        }`,
-                        cursor: isChecked ? 'default' : 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <Group justify="space-between">
-                        <Text
-                          size="lg"
-                          fw={600}
+                            : colors.semantic.error
+                          : colors.neutral.border,
+                        borderWidth: 2,
+                        fontSize: '1.1rem',
+                        padding: '1rem',
+                      },
+                    }}
+                  />
+                  {isChecked && !isCorrect && (
+                    <Text size="sm" c={colors.semantic.error}>
+                      Correct answer: {currentExercise.correct_answer}
+                    </Text>
+                  )}
+                </Stack>
+              ) : currentExercise.type === 'match_pairs' ? (
+                /* Match pairs exercise */
+                <Stack gap="md">
+                  <Text size="sm" c={colors.text.secondary}>
+                    Match the words with their translations
+                  </Text>
+                  <Group gap="md" wrap="wrap">
+                    {currentExercise.choices?.map((pair) => {
+                      const [word, translation] = pair.split('|')
+                      const isSelected = selectedAnswer === pair
+                      return (
+                        <Paper
+                          key={pair}
+                          p="md"
+                          radius="lg"
+                          onClick={() => !isChecked && setSelectedAnswer(pair)}
                           style={{
-                            color: showCorrect
+                            backgroundColor: isSelected ? colors.secondary.blueLight : colors.neutral.white,
+                            border: `2px solid ${isSelected ? colors.secondary.blue : colors.neutral.border}`,
+                            cursor: isChecked ? 'default' : 'pointer',
+                            minWidth: 120,
+                          }}
+                        >
+                          <Stack gap="xs" align="center">
+                            <Text fw={600} style={{ color: colors.text.primary }}>{word}</Text>
+                            <Text size="sm" c={colors.text.secondary}>{translation}</Text>
+                          </Stack>
+                        </Paper>
+                      )
+                    })}
+                  </Group>
+                </Stack>
+              ) : currentExercise.type === 'word_bank' ? (
+                /* Word bank exercise - show words as pills to select */
+                <Stack gap="md">
+                  <Paper
+                    p="lg"
+                    radius="lg"
+                    style={{
+                      backgroundColor: colors.neutral.background,
+                      border: `2px dashed ${colors.neutral.border}`,
+                      minHeight: 60,
+                    }}
+                  >
+                    {selectedAnswer && (
+                      <Badge
+                        size="xl"
+                        variant="filled"
+                        color="blue"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => !isChecked && setSelectedAnswer(null)}
+                      >
+                        {selectedAnswer}
+                      </Badge>
+                    )}
+                  </Paper>
+                  <Group gap="sm" wrap="wrap">
+                    {currentExercise.choices?.map((word) => {
+                      const isSelected = selectedAnswer === word
+                      const showCorrect = isChecked && word === currentExercise.correct_answer
+                      return (
+                        <Badge
+                          key={word}
+                          size="xl"
+                          variant={isSelected ? 'filled' : 'light'}
+                          color={showCorrect ? 'green' : isSelected ? 'blue' : 'gray'}
+                          style={{
+                            cursor: isChecked || isSelected ? 'default' : 'pointer',
+                            opacity: isSelected && !isChecked ? 0.5 : 1,
+                          }}
+                          onClick={() => !isChecked && !isSelected && setSelectedAnswer(word)}
+                        >
+                          {word}
+                        </Badge>
+                      )
+                    })}
+                  </Group>
+                </Stack>
+              ) : (
+                /* Multiple choice (default) */
+                <Stack gap="md">
+                  {currentExercise.choices?.map((choice) => {
+                    const isSelected = selectedAnswer === choice
+                    const showCorrect = isChecked && choice === currentExercise.correct_answer
+                    const showIncorrect = isChecked && isSelected && !isCorrect
+
+                    return (
+                      <Paper
+                        key={choice}
+                        p="lg"
+                        radius="lg"
+                        onClick={() => !isChecked && setSelectedAnswer(choice)}
+                        className={`choice-button ${isSelected ? 'selected' : ''} ${showCorrect ? 'correct' : ''} ${showIncorrect ? 'incorrect' : ''}`}
+                        style={{
+                          backgroundColor: showCorrect
+                            ? colors.semantic.successLight
+                            : showIncorrect
+                            ? colors.semantic.errorLight
+                            : isSelected
+                            ? colors.secondary.blueLight
+                            : colors.neutral.white,
+                          border: `2px solid ${
+                            showCorrect
                               ? colors.semantic.success
                               : showIncorrect
                               ? colors.semantic.error
                               : isSelected
                               ? colors.secondary.blue
-                              : colors.text.primary,
-                          }}
-                        >
-                          {choice}
-                        </Text>
-                        {showCorrect && <IconCheck size={24} style={{ color: colors.semantic.success }} />}
-                      </Group>
-                    </Paper>
-                  )
-                })}
-              </Stack>
+                              : colors.neutral.border
+                          }`,
+                          cursor: isChecked ? 'default' : 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <Group justify="space-between">
+                          <Text
+                            size="lg"
+                            fw={600}
+                            style={{
+                              color: showCorrect
+                                ? colors.semantic.success
+                                : showIncorrect
+                                ? colors.semantic.error
+                                : isSelected
+                                ? colors.secondary.blue
+                                : colors.text.primary,
+                            }}
+                          >
+                            {choice}
+                          </Text>
+                          {showCorrect && <IconCheck size={24} style={{ color: colors.semantic.success }} />}
+                        </Group>
+                      </Paper>
+                    )
+                  })}
+                </Stack>
+              )}
             </Stack>
           </motion.div>
         </AnimatePresence>
@@ -421,12 +625,12 @@ export default function Lesson() {
               <Button
                 size="lg"
                 color="green"
-                disabled={!selectedAnswer}
+                disabled={!hasAnswer()}
                 onClick={handleCheck}
                 style={{
                   fontWeight: 700,
                   textTransform: 'uppercase',
-                  boxShadow: selectedAnswer ? '0 4px 0 #58A700' : '0 4px 0 #CDCDCD',
+                  boxShadow: hasAnswer() ? '0 4px 0 #58A700' : '0 4px 0 #CDCDCD',
                 }}
               >
                 Check
