@@ -18,6 +18,22 @@ func TestGetSupportedPairs(t *testing.T) {
 		t.Error("expected at least one supported pair")
 	}
 
+	// Verify we have pairs from multiple source languages
+	sourceLanguages := make(map[string]bool)
+	for _, pair := range pairs {
+		sourceLanguages[pair.From] = true
+	}
+	if len(sourceLanguages) < 10 {
+		t.Errorf("expected at least 10 source languages, got %d", len(sourceLanguages))
+	}
+}
+
+func TestGetPairsFromEnglish(t *testing.T) {
+	pairs := GetPairsFromEnglish()
+	if len(pairs) == 0 {
+		t.Error("expected at least one pair from English")
+	}
+
 	// Verify all pairs are from English
 	for _, pair := range pairs {
 		if pair.From != "en" {
