@@ -130,8 +130,14 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 	app.Group("/api/database", func(database *mizu.Router) {
 		database.Use(apiKeyMw)
 		database.Use(serviceRoleMw)
+
+		// Database Overview
+		database.Get("/overview", databaseHandler.GetOverview)
+
+		// Tables
 		database.Get("/tables", databaseHandler.ListTables)
 		database.Post("/tables", databaseHandler.CreateTable)
+		database.Get("/tables/stats", databaseHandler.GetTableStats)
 		database.Get("/tables/{schema}/{name}", databaseHandler.GetTable)
 		database.Delete("/tables/{schema}/{name}", databaseHandler.DropTable)
 
@@ -140,21 +146,35 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		database.Get("/tables/{schema}/{name}/export", databaseHandler.ExportTableData)
 		database.Post("/tables/{schema}/{name}/bulk", databaseHandler.BulkTableOperation)
 
+		// Columns
 		database.Get("/tables/{schema}/{name}/columns", databaseHandler.ListColumns)
 		database.Post("/tables/{schema}/{name}/columns", databaseHandler.AddColumn)
 		database.Put("/tables/{schema}/{name}/columns/{column}", databaseHandler.AlterColumn)
 		database.Delete("/tables/{schema}/{name}/columns/{column}", databaseHandler.DropColumn)
 
+		// RLS Management
+		database.Post("/tables/{schema}/{name}/rls/enable", databaseHandler.EnableTableRLS)
+		database.Post("/tables/{schema}/{name}/rls/disable", databaseHandler.DisableTableRLS)
+
+		// Schemas
 		database.Get("/schemas", databaseHandler.ListSchemas)
 		database.Post("/schemas", databaseHandler.CreateSchema)
 
+		// Extensions
 		database.Get("/extensions", databaseHandler.ListExtensions)
 		database.Post("/extensions", databaseHandler.EnableExtension)
 
+		// Policies
 		database.Get("/policies/{schema}/{table}", databaseHandler.ListPolicies)
 		database.Post("/policies", databaseHandler.CreatePolicy)
 		database.Delete("/policies/{schema}/{table}/{name}", databaseHandler.DropPolicy)
 
+		// Indexes
+		database.Get("/indexes", databaseHandler.ListIndexes)
+		database.Post("/indexes", databaseHandler.CreateIndex)
+		database.Delete("/indexes/{schema}/{name}", databaseHandler.DropIndex)
+
+		// Query Execution
 		database.Post("/query", databaseHandler.ExecuteQuery)
 
 		// SQL Editor - Query History

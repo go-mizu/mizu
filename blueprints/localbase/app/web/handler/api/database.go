@@ -1335,3 +1335,362 @@ func formatSQLValue(val interface{}) string {
 		return "NULL"
 	}
 }
+
+// ========================================
+// Database Overview API
+// ========================================
+
+// DatabaseOverview represents the database overview response.
+type DatabaseOverview struct {
+	Schemas         []SchemaInfo `json:"schemas"`
+	TotalTables     int          `json:"total_tables"`
+	TotalViews      int          `json:"total_views"`
+	TotalFunctions  int          `json:"total_functions"`
+	TotalIndexes    int          `json:"total_indexes"`
+	TotalPolicies   int          `json:"total_policies"`
+	DatabaseSize    string       `json:"database_size"`
+	ConnectionCount int          `json:"connection_count"`
+}
+
+// SchemaInfo represents schema information.
+type SchemaInfo struct {
+	Name       string `json:"name"`
+	TableCount int    `json:"table_count"`
+	ViewCount  int    `json:"view_count"`
+}
+
+// GetOverview returns database overview statistics.
+func (h *DatabaseHandler) GetOverview(c *mizu.Ctx) error {
+	ctx := c.Context()
+
+	// Get schemas with table/view counts
+	schemasQuery := `
+		SELECT
+			n.nspname as schema_name,
+			COUNT(CASE WHEN c.relkind = 'r' THEN 1 END) as table_count,
+			COUNT(CASE WHEN c.relkind = 'v' THEN 1 END) as view_count
+		FROM pg_namespace n
+		LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind IN ('r', 'v')
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		AND n.nspname NOT LIKE 'pg_%'
+		GROUP BY n.nspname
+		ORDER BY n.nspname
+	`
+
+	result, err := h.store.Database().Query(ctx, schemasQuery)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to get schema info"})
+	}
+
+	var schemas []SchemaInfo
+	var totalTables, totalViews int
+
+	for _, row := range result.Rows {
+		schema := SchemaInfo{
+			Name: row["schema_name"].(string),
+		}
+		if tc, ok := row["table_count"].(int64); ok {
+			schema.TableCount = int(tc)
+			totalTables += int(tc)
+		}
+		if vc, ok := row["view_count"].(int64); ok {
+			schema.ViewCount = int(vc)
+			totalViews += int(vc)
+		}
+		schemas = append(schemas, schema)
+	}
+
+	// Get total function count
+	funcQuery := `
+		SELECT COUNT(*) as count FROM pg_proc p
+		JOIN pg_namespace n ON p.pronamespace = n.oid
+		WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+		AND n.nspname NOT LIKE 'pg_%'
+	`
+	funcResult, err := h.store.Database().Query(ctx, funcQuery)
+	totalFunctions := 0
+	if err == nil && len(funcResult.Rows) > 0 {
+		if count, ok := funcResult.Rows[0]["count"].(int64); ok {
+			totalFunctions = int(count)
+		}
+	}
+
+	// Get total index count
+	indexQuery := `
+		SELECT COUNT(*) as count FROM pg_indexes
+		WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+		AND schemaname NOT LIKE 'pg_%'
+	`
+	indexResult, err := h.store.Database().Query(ctx, indexQuery)
+	totalIndexes := 0
+	if err == nil && len(indexResult.Rows) > 0 {
+		if count, ok := indexResult.Rows[0]["count"].(int64); ok {
+			totalIndexes = int(count)
+		}
+	}
+
+	// Get total policy count
+	policyQuery := `SELECT COUNT(*) as count FROM pg_policies`
+	policyResult, err := h.store.Database().Query(ctx, policyQuery)
+	totalPolicies := 0
+	if err == nil && len(policyResult.Rows) > 0 {
+		if count, ok := policyResult.Rows[0]["count"].(int64); ok {
+			totalPolicies = int(count)
+		}
+	}
+
+	// Get database size
+	sizeQuery := `SELECT pg_size_pretty(pg_database_size(current_database())) as size`
+	sizeResult, err := h.store.Database().Query(ctx, sizeQuery)
+	databaseSize := "0 bytes"
+	if err == nil && len(sizeResult.Rows) > 0 {
+		if size, ok := sizeResult.Rows[0]["size"].(string); ok {
+			databaseSize = size
+		}
+	}
+
+	// Get connection count
+	connQuery := `SELECT COUNT(*) as count FROM pg_stat_activity WHERE datname = current_database()`
+	connResult, err := h.store.Database().Query(ctx, connQuery)
+	connectionCount := 0
+	if err == nil && len(connResult.Rows) > 0 {
+		if count, ok := connResult.Rows[0]["count"].(int64); ok {
+			connectionCount = int(count)
+		}
+	}
+
+	overview := DatabaseOverview{
+		Schemas:         schemas,
+		TotalTables:     totalTables,
+		TotalViews:      totalViews,
+		TotalFunctions:  totalFunctions,
+		TotalIndexes:    totalIndexes,
+		TotalPolicies:   totalPolicies,
+		DatabaseSize:    databaseSize,
+		ConnectionCount: connectionCount,
+	}
+
+	return c.JSON(200, overview)
+}
+
+// ========================================
+// Table Statistics API
+// ========================================
+
+// TableStats represents table statistics.
+type TableStats struct {
+	Schema       string     `json:"schema"`
+	Name         string     `json:"name"`
+	RowCount     int64      `json:"row_count"`
+	SizeBytes    int64      `json:"size_bytes"`
+	SizePretty   string     `json:"size_pretty"`
+	IndexCount   int        `json:"index_count"`
+	HasRLS       bool       `json:"has_rls"`
+	PolicyCount  int        `json:"policy_count"`
+	LastVacuum   *time.Time `json:"last_vacuum,omitempty"`
+	LastAnalyze  *time.Time `json:"last_analyze,omitempty"`
+}
+
+// GetTableStats returns statistics for all tables.
+func (h *DatabaseHandler) GetTableStats(c *mizu.Ctx) error {
+	schema := c.Query("schema")
+	if schema == "" {
+		schema = "public"
+	}
+
+	query := `
+		SELECT
+			t.schemaname as schema,
+			t.tablename as name,
+			COALESCE(s.n_live_tup, 0) as row_count,
+			pg_table_size(quote_ident(t.schemaname) || '.' || quote_ident(t.tablename)) as size_bytes,
+			pg_size_pretty(pg_table_size(quote_ident(t.schemaname) || '.' || quote_ident(t.tablename))) as size_pretty,
+			(SELECT COUNT(*)::int FROM pg_indexes WHERE schemaname = t.schemaname AND tablename = t.tablename) as index_count,
+			COALESCE(c.relrowsecurity, false) as has_rls,
+			(SELECT COUNT(*)::int FROM pg_policies WHERE schemaname = t.schemaname AND tablename = t.tablename) as policy_count,
+			s.last_vacuum,
+			s.last_analyze
+		FROM pg_tables t
+		LEFT JOIN pg_stat_user_tables s ON t.schemaname = s.schemaname AND t.tablename = s.relname
+		LEFT JOIN pg_class c ON c.relname = t.tablename
+			AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = t.schemaname)
+		WHERE t.schemaname = $1
+		ORDER BY t.tablename
+	`
+
+	result, err := h.store.Database().Query(c.Context(), query, schema)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to get table stats: " + err.Error()})
+	}
+
+	stats := make([]TableStats, 0, len(result.Rows))
+	for _, row := range result.Rows {
+		stat := TableStats{
+			Schema: row["schema"].(string),
+			Name:   row["name"].(string),
+		}
+
+		if rowCount, ok := row["row_count"].(int64); ok {
+			stat.RowCount = rowCount
+		}
+		if sizeBytes, ok := row["size_bytes"].(int64); ok {
+			stat.SizeBytes = sizeBytes
+		}
+		if sizePretty, ok := row["size_pretty"].(string); ok {
+			stat.SizePretty = sizePretty
+		}
+		if indexCount, ok := row["index_count"].(int64); ok {
+			stat.IndexCount = int(indexCount)
+		}
+		if hasRLS, ok := row["has_rls"].(bool); ok {
+			stat.HasRLS = hasRLS
+		}
+		if policyCount, ok := row["policy_count"].(int64); ok {
+			stat.PolicyCount = int(policyCount)
+		}
+		if lastVacuum, ok := row["last_vacuum"].(time.Time); ok {
+			stat.LastVacuum = &lastVacuum
+		}
+		if lastAnalyze, ok := row["last_analyze"].(time.Time); ok {
+			stat.LastAnalyze = &lastAnalyze
+		}
+
+		stats = append(stats, stat)
+	}
+
+	return c.JSON(200, stats)
+}
+
+// ========================================
+// Index Management API
+// ========================================
+
+// CreateIndexRequest represents a request to create an index.
+type CreateIndexRequest struct {
+	Name      string   `json:"name"`
+	Schema    string   `json:"schema"`
+	Table     string   `json:"table"`
+	Columns   []string `json:"columns"`
+	Type      string   `json:"type"`
+	IsUnique  bool     `json:"is_unique"`
+	Condition string   `json:"condition,omitempty"`
+}
+
+// ListIndexes lists indexes for a table.
+func (h *DatabaseHandler) ListIndexes(c *mizu.Ctx) error {
+	schema := c.Query("schema")
+	table := c.Query("table")
+
+	query := `
+		SELECT
+			i.indexname as name,
+			i.schemaname as schema,
+			i.tablename as table,
+			am.amname as type,
+			ix.indisunique as is_unique,
+			ix.indisprimary as is_primary,
+			array_agg(a.attname ORDER BY array_position(ix.indkey, a.attnum)) as columns,
+			pg_get_indexdef(ix.indexrelid) as definition,
+			pg_relation_size(ix.indexrelid) as size_bytes
+		FROM pg_indexes i
+		JOIN pg_class c ON c.relname = i.indexname
+		JOIN pg_index ix ON ix.indexrelid = c.oid
+		JOIN pg_am am ON c.relam = am.oid
+		JOIN pg_class t ON t.oid = ix.indrelid
+		LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+		WHERE ($1 = '' OR i.schemaname = $1)
+		AND ($2 = '' OR i.tablename = $2)
+		AND i.schemaname NOT IN ('pg_catalog', 'information_schema')
+		GROUP BY i.indexname, i.schemaname, i.tablename, am.amname, ix.indisunique, ix.indisprimary, ix.indexrelid
+		ORDER BY i.schemaname, i.tablename, i.indexname
+	`
+
+	result, err := h.store.Database().Query(c.Context(), query, schema, table)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to list indexes: " + err.Error()})
+	}
+
+	return c.JSON(200, result.Rows)
+}
+
+// CreateIndex creates a new index.
+func (h *DatabaseHandler) CreateIndex(c *mizu.Ctx) error {
+	var req CreateIndexRequest
+	if err := c.BindJSON(&req, 0); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid request body"})
+	}
+
+	if req.Schema == "" {
+		req.Schema = "public"
+	}
+	if req.Type == "" {
+		req.Type = "btree"
+	}
+
+	// Build CREATE INDEX statement
+	unique := ""
+	if req.IsUnique {
+		unique = "UNIQUE "
+	}
+
+	columns := strings.Join(req.Columns, ", ")
+	sql := fmt.Sprintf("CREATE %sINDEX %s ON %s.%s USING %s (%s)",
+		unique, req.Name, req.Schema, req.Table, req.Type, columns)
+
+	if req.Condition != "" {
+		sql += " WHERE " + req.Condition
+	}
+
+	_, err := h.store.Database().Exec(c.Context(), sql)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to create index: " + err.Error()})
+	}
+
+	return c.JSON(201, map[string]string{"message": "index created"})
+}
+
+// DropIndex drops an index.
+func (h *DatabaseHandler) DropIndex(c *mizu.Ctx) error {
+	schema := c.Param("schema")
+	name := c.Param("name")
+
+	sql := fmt.Sprintf("DROP INDEX %s.%s", schema, name)
+	_, err := h.store.Database().Exec(c.Context(), sql)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to drop index: " + err.Error()})
+	}
+
+	return c.NoContent()
+}
+
+// ========================================
+// RLS Management API
+// ========================================
+
+// EnableTableRLS enables RLS on a table.
+func (h *DatabaseHandler) EnableTableRLS(c *mizu.Ctx) error {
+	schema := c.Param("schema")
+	table := c.Param("name")
+
+	sql := fmt.Sprintf("ALTER TABLE %s.%s ENABLE ROW LEVEL SECURITY", schema, table)
+	_, err := h.store.Database().Exec(c.Context(), sql)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to enable RLS: " + err.Error()})
+	}
+
+	return c.JSON(200, map[string]string{"message": "RLS enabled"})
+}
+
+// DisableTableRLS disables RLS on a table.
+func (h *DatabaseHandler) DisableTableRLS(c *mizu.Ctx) error {
+	schema := c.Param("schema")
+	table := c.Param("name")
+
+	sql := fmt.Sprintf("ALTER TABLE %s.%s DISABLE ROW LEVEL SECURITY", schema, table)
+	_, err := h.store.Database().Exec(c.Context(), sql)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "failed to disable RLS: " + err.Error()})
+	}
+
+	return c.JSON(200, map[string]string{"message": "RLS disabled"})
+}
