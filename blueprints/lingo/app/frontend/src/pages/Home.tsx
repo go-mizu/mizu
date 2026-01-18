@@ -1,67 +1,45 @@
-import { useState } from 'react'
-import { Container, Title, Text, Paper, Group, Stack, Progress, Badge, ActionIcon, Tooltip } from '@mantine/core'
-import { IconLock, IconCheck, IconBook, IconFlame } from '@tabler/icons-react'
+import { useState, useEffect } from 'react'
+import { Container, Title, Text, Paper, Group, Stack, Progress, Badge, ActionIcon, Tooltip, Loader, Center } from '@mantine/core'
+import { IconLock, IconCheck, IconBook, IconFlame, IconChevronLeft, IconStar } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../stores/auth'
+import { colors } from '../styles/tokens'
+import { coursesApi, Unit, Skill } from '../api/client'
 
-interface Skill {
-  id: string
-  name: string
-  icon: string
-  level: number
-  maxLevel: number
+interface SkillWithProgress extends Skill {
+  crownLevel: number
   isLocked: boolean
   isComplete: boolean
 }
 
-interface Unit {
-  id: string
-  title: string
-  description: string
-  skills: Skill[]
+interface UnitWithProgress extends Omit<Unit, 'skills'> {
+  skills: SkillWithProgress[]
 }
 
-// Mock data - in production, fetch from API
-const mockUnits: Unit[] = [
-  {
-    id: '1',
-    title: 'Basics 1',
-    description: 'Learn basic greetings and introductions',
-    skills: [
-      { id: '1', name: 'Greetings', icon: '👋', level: 3, maxLevel: 5, isLocked: false, isComplete: false },
-      { id: '2', name: 'Introduction', icon: '🙋', level: 0, maxLevel: 5, isLocked: false, isComplete: false },
-      { id: '3', name: 'Common Phrases', icon: '💬', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-    ],
-  },
-  {
-    id: '2',
-    title: 'Basics 2',
-    description: 'Learn more fundamental vocabulary',
-    skills: [
-      { id: '4', name: 'Family', icon: '👨‍👩‍👧', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-      { id: '5', name: 'Numbers', icon: '🔢', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-      { id: '6', name: 'Colors', icon: '🎨', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-    ],
-  },
-  {
-    id: '3',
-    title: 'Food',
-    description: 'Learn food vocabulary',
-    skills: [
-      { id: '7', name: 'Fruits', icon: '🍎', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-      { id: '8', name: 'Vegetables', icon: '🥕', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-      { id: '9', name: 'Drinks', icon: '🥤', level: 0, maxLevel: 5, isLocked: true, isComplete: false },
-    ],
-  },
-]
+function SkillNode({ skill, onClick }: { skill: SkillWithProgress; onClick: () => void }) {
+  const getBackgroundColor = () => {
+    if (skill.isComplete) return colors.accent.yellow
+    if (skill.isLocked) return colors.neutral.border
+    if (skill.crownLevel > 0) return colors.primary.green
+    return colors.primary.green
+  }
 
-function SkillNode({ skill, onClick }: { skill: Skill; onClick: () => void }) {
-  const getColor = () => {
-    if (skill.isComplete) return '#ffc800'
-    if (skill.isLocked) return '#3d5a68'
-    if (skill.level > 0) return '#58cc02'
-    return '#58cc02'
+  const getShadowColor = () => {
+    if (skill.isComplete) return colors.shadows?.skill?.completed || '0 4px 0 #E5B400'
+    if (skill.isLocked) return 'none'
+    return '0 4px 0 #58A700'
+  }
+
+  const getIconForSkill = (iconName: string) => {
+    switch (iconName) {
+      case 'star':
+        return <IconStar size={32} style={{ color: 'white' }} />
+      case 'book':
+        return <IconBook size={32} style={{ color: 'white' }} />
+      default:
+        return <Text size="1.5rem" style={{ color: 'white' }}>字</Text>
+    }
   }
 
   return (
@@ -73,35 +51,38 @@ function SkillNode({ skill, onClick }: { skill: Skill; onClick: () => void }) {
         <Paper
           onClick={skill.isLocked ? undefined : onClick}
           style={{
-            width: 80,
-            height: 80,
+            width: 72,
+            height: 72,
             borderRadius: '50%',
-            backgroundColor: getColor(),
+            backgroundColor: getBackgroundColor(),
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: skill.isLocked ? 'not-allowed' : 'pointer',
             position: 'relative',
-            boxShadow: skill.isLocked ? 'none' : '0 4px 0 #3f9a02',
+            boxShadow: getShadowColor(),
+            transition: 'all 0.15s ease',
           }}
         >
           {skill.isLocked ? (
-            <IconLock size={32} style={{ color: '#8fa8b2' }} />
+            <IconLock size={32} style={{ color: colors.text.muted }} />
           ) : (
-            <Text size="2rem">{skill.icon}</Text>
+            getIconForSkill(skill.icon_name)
           )}
 
-          {!skill.isLocked && skill.level > 0 && (
+          {!skill.isLocked && skill.crownLevel > 0 && (
             <Badge
               size="sm"
-              color="yellow"
               style={{
                 position: 'absolute',
-                bottom: -5,
+                bottom: -8,
+                backgroundColor: colors.accent.yellow,
+                color: colors.text.primary,
                 fontWeight: 700,
+                border: '2px solid white',
               }}
             >
-              {skill.level}/{skill.maxLevel}
+              {skill.crownLevel}/{skill.levels}
             </Badge>
           )}
 
@@ -110,17 +91,18 @@ function SkillNode({ skill, onClick }: { skill: Skill; onClick: () => void }) {
               size={20}
               style={{
                 position: 'absolute',
-                top: -5,
-                right: -5,
-                backgroundColor: '#ffc800',
+                top: -4,
+                right: -4,
+                backgroundColor: colors.accent.yellow,
                 borderRadius: '50%',
                 padding: 2,
+                color: 'white',
               }}
             />
           )}
         </Paper>
       </Tooltip>
-      <Text ta="center" mt="xs" size="sm" fw={600} style={{ color: skill.isLocked ? '#8fa8b2' : 'white' }}>
+      <Text ta="center" mt="sm" size="sm" fw={600} style={{ color: skill.isLocked ? colors.text.muted : colors.text.primary }}>
         {skill.name}
       </Text>
     </motion.div>
@@ -130,35 +112,110 @@ function SkillNode({ skill, onClick }: { skill: Skill; onClick: () => void }) {
 export default function Home() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const [units] = useState<Unit[]>(mockUnits)
+  const [units, setUnits] = useState<UnitWithProgress[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [currentCourseId, setCurrentCourseId] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadCourseData() {
+      try {
+        setLoading(true)
+        // Get available courses for English speakers
+        const courses = await coursesApi.listCourses('en')
+
+        if (courses.length === 0) {
+          setError('No courses available')
+          return
+        }
+
+        // Use first course for now (Spanish)
+        const course = courses[0]
+        setCurrentCourseId(course.id)
+
+        // Get course path (units with skills)
+        const coursePath = await coursesApi.getCoursePath(course.id)
+
+        // Transform to include progress (mock for now until progress API is connected)
+        const unitsWithProgress: UnitWithProgress[] = coursePath.map((unit, unitIndex) => ({
+          ...unit,
+          skills: unit.skills.map((skill, skillIndex) => ({
+            ...skill,
+            crownLevel: unitIndex === 0 && skillIndex === 0 ? 3 : 0,
+            isLocked: !(unitIndex === 0 && skillIndex <= 1),
+            isComplete: false,
+          })),
+        }))
+
+        setUnits(unitsWithProgress)
+      } catch (err) {
+        console.error('Failed to load course data:', err)
+        setError('Failed to load course data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadCourseData()
+  }, [])
 
   const handleSkillClick = (skillId: string) => {
     navigate(`/lesson/${skillId}`)
   }
 
+  if (loading) {
+    return (
+      <Center h="60vh">
+        <Stack align="center" gap="md">
+          <Loader size="lg" color="green" />
+          <Text c={colors.text.secondary}>Loading your lessons...</Text>
+        </Stack>
+      </Center>
+    )
+  }
+
+  if (error) {
+    return (
+      <Center h="60vh">
+        <Stack align="center" gap="md">
+          <Text c={colors.semantic.error} fw={600}>{error}</Text>
+          <Text c={colors.text.secondary}>Please try again later</Text>
+        </Stack>
+      </Center>
+    )
+  }
+
   return (
-    <Container size="md">
+    <Container size="md" py="lg">
+      {/* Back button */}
+      <Group mb="lg">
+        <ActionIcon variant="subtle" size="lg" onClick={() => navigate(-1)}>
+          <IconChevronLeft size={24} style={{ color: colors.text.secondary }} />
+        </ActionIcon>
+        <Text size="sm" fw={600} c={colors.text.secondary}>Back</Text>
+      </Group>
+
       {/* Daily Goal Progress */}
-      <Paper p="lg" radius="lg" mb="xl" style={{ backgroundColor: '#1a2c33' }}>
+      <Paper p="lg" radius="lg" mb="xl" style={{ backgroundColor: colors.neutral.white, border: `2px solid ${colors.neutral.border}` }}>
         <Group justify="space-between" mb="md">
           <div>
-            <Text size="lg" fw={700} style={{ color: 'white' }}>Daily Goal</Text>
-            <Text size="sm" style={{ color: '#8fa8b2' }}>
+            <Text size="lg" fw={700} style={{ color: colors.text.primary }}>Daily Goal</Text>
+            <Text size="sm" style={{ color: colors.text.secondary }}>
               {user?.daily_goal_minutes || 10} minutes per day
             </Text>
           </div>
           <Group gap="xs">
-            <IconFlame size={24} style={{ color: '#ff9600' }} />
-            <Text fw={700} style={{ color: '#ff9600' }}>{user?.streak_days || 0} day streak</Text>
+            <IconFlame size={24} style={{ color: colors.accent.orange }} />
+            <Text fw={700} style={{ color: colors.accent.orange }}>{user?.streak_days || 0} day streak</Text>
           </Group>
         </Group>
         <Progress value={35} size="lg" radius="xl" color="green" />
-        <Text ta="center" mt="sm" size="sm" style={{ color: '#8fa8b2' }}>
+        <Text ta="center" mt="sm" size="sm" style={{ color: colors.text.secondary }}>
           3.5 / 10 minutes completed today
         </Text>
       </Paper>
 
-      {/* Learning Path */}
+      {/* Learning Path - Sections */}
       <Stack gap="xl">
         {units.map((unit, unitIndex) => (
           <motion.div
@@ -167,52 +224,107 @@ export default function Home() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: unitIndex * 0.1 }}
           >
-            {/* Unit Header */}
-            <Paper p="md" radius="lg" mb="md" style={{ backgroundColor: '#1a2c33' }}>
-              <Group justify="space-between">
-                <div>
-                  <Badge color="blue" mb="xs">{`Unit ${unitIndex + 1}`}</Badge>
-                  <Title order={3} style={{ color: 'white' }}>{unit.title}</Title>
-                  <Text size="sm" style={{ color: '#8fa8b2' }}>{unit.description}</Text>
+            {/* Section Card */}
+            <Paper
+              p="lg"
+              radius="lg"
+              mb="lg"
+              style={{
+                backgroundColor: colors.neutral.white,
+                border: `2px solid ${colors.neutral.border}`,
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              <Group justify="space-between" align="flex-start">
+                <div style={{ flex: 1 }}>
+                  <Group gap="xs" mb="xs">
+                    <Badge
+                      variant="light"
+                      color="gray"
+                      size="sm"
+                      style={{ fontWeight: 700, textTransform: 'uppercase' }}
+                    >
+                      Section {unitIndex + 1}
+                    </Badge>
+                    <Text size="xs" c={colors.text.muted}>{unit.skills.length} UNITS</Text>
+                  </Group>
+                  <Title order={3} style={{ color: colors.text.primary }} mb="xs">{unit.title}</Title>
+                  <Text size="sm" style={{ color: colors.text.secondary }}>{unit.description}</Text>
                 </div>
-                <ActionIcon variant="subtle" size="lg" radius="xl">
-                  <IconBook size={20} style={{ color: '#8fa8b2' }} />
-                </ActionIcon>
+
+                {/* Guidebook button */}
+                {unit.guidebook_content && (
+                  <ActionIcon
+                    variant="light"
+                    size="lg"
+                    radius="xl"
+                    color="blue"
+                    style={{ border: `2px solid ${colors.secondary.blue}` }}
+                  >
+                    <IconBook size={20} style={{ color: colors.secondary.blue }} />
+                  </ActionIcon>
+                )}
               </Group>
+
+              {/* Continue/Start button */}
+              {unitIndex === 0 && (
+                <Paper
+                  p="md"
+                  mt="lg"
+                  radius="lg"
+                  style={{
+                    backgroundColor: colors.primary.green,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 0 #58A700',
+                  }}
+                  onClick={() => handleSkillClick(unit.skills[0]?.id)}
+                >
+                  <Text fw={700} style={{ color: 'white', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Continue
+                  </Text>
+                </Paper>
+              )}
+
+              {unitIndex > 0 && (
+                <Paper
+                  p="md"
+                  mt="lg"
+                  radius="lg"
+                  style={{
+                    backgroundColor: colors.neutral.white,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    border: `2px solid ${colors.secondary.blue}`,
+                  }}
+                  onClick={() => handleSkillClick(unit.skills[0]?.id)}
+                >
+                  <Text fw={700} style={{ color: colors.secondary.blue, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Jump to Section {unitIndex + 1}
+                  </Text>
+                </Paper>
+              )}
             </Paper>
 
-            {/* Skills Path */}
-            <Group justify="center" gap="xl" style={{ position: 'relative' }}>
-              {unit.skills.map((skill, skillIndex) => (
-                <div
-                  key={skill.id}
-                  style={{
-                    marginTop: skillIndex % 2 === 1 ? 40 : 0,
-                  }}
-                >
-                  <SkillNode skill={skill} onClick={() => handleSkillClick(skill.id)} />
-                </div>
-              ))}
-            </Group>
+            {/* Skills Path - only show for first section or expanded */}
+            {unitIndex === 0 && (
+              <Group justify="center" gap="xl" mt="lg" style={{ position: 'relative' }}>
+                {unit.skills.map((skill, skillIndex) => (
+                  <div
+                    key={skill.id}
+                    style={{
+                      marginTop: skillIndex % 2 === 1 ? 40 : 0,
+                    }}
+                  >
+                    <SkillNode skill={skill} onClick={() => handleSkillClick(skill.id)} />
+                  </div>
+                ))}
+              </Group>
+            )}
           </motion.div>
         ))}
       </Stack>
-
-      {/* Start Button for Current Skill */}
-      <Paper
-        p="lg"
-        radius="lg"
-        mt="xl"
-        style={{
-          backgroundColor: '#58cc02',
-          textAlign: 'center',
-          cursor: 'pointer',
-        }}
-        onClick={() => handleSkillClick('1')}
-      >
-        <Title order={3} style={{ color: 'white' }}>Start Learning</Title>
-        <Text style={{ color: 'rgba(255,255,255,0.9)' }}>Continue with Greetings</Text>
-      </Paper>
     </Container>
   )
 }
