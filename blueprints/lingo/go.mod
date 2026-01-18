@@ -1,13 +1,14 @@
 module github.com/go-mizu/mizu/blueprints/lingo
 
-go 1.24.11
+go 1.25
 
 require (
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/go-mizu/mizu v0.5.16
+	github.com/go-mizu/mizu v0.5.17
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.47.0
 )
