@@ -233,3 +233,145 @@ func (s *Seeder) PrintStats(ctx context.Context, pairs []LanguagePair) {
 		fmt.Printf("  Lexemes:   %d\n", pairStats["lexemes"])
 	}
 }
+
+// DownloadStoriesAll downloads ALL stories for a language pair in parallel
+func (s *Seeder) DownloadStoriesAll(ctx context.Context, pair LanguagePair, workers int) (int, error) {
+	// Download stories list first
+	if err := s.downloader.DownloadStoriesList(ctx, pair); err != nil {
+		return 0, fmt.Errorf("download stories list: %w", err)
+	}
+
+	// Parse stories list to get individual story IDs
+	list, err := s.parser.ParseStoriesList(pair)
+	if err != nil {
+		return 0, fmt.Errorf("parse stories list: %w", err)
+	}
+
+	if len(list.Stories) == 0 {
+		return 0, nil
+	}
+
+	// Collect all story IDs
+	storyIDs := make([]string, len(list.Stories))
+	for i, story := range list.Stories {
+		storyIDs[i] = story.ExternalID
+	}
+
+	// Download all stories in parallel
+	progressFn := func(done, total, skipped int, current string) {
+		fmt.Printf("\r    Downloading [%d/%d] (cached: %d) %s                    ", done, total, skipped, truncate(current, 40))
+	}
+
+	if err := s.downloader.DownloadStoriesParallel(ctx, storyIDs, workers, progressFn); err != nil {
+		return 0, fmt.Errorf("download stories parallel: %w", err)
+	}
+	fmt.Println()
+
+	return len(storyIDs), nil
+}
+
+// ParseStoriesAll parses ALL downloaded stories for a language pair in parallel
+func (s *Seeder) ParseStoriesAll(pair LanguagePair, workers int) ([]*StoryData, error) {
+	// Get story IDs from the list
+	list, err := s.parser.ParseStoriesList(pair)
+	if err != nil {
+		return nil, fmt.Errorf("parse stories list: %w", err)
+	}
+
+	// Save the list
+	if err := s.parser.SaveStoriesListJSON(list, pair); err != nil {
+		return nil, fmt.Errorf("save stories list: %w", err)
+	}
+
+	if len(list.Stories) == 0 {
+		return nil, nil
+	}
+
+	// Collect all story IDs
+	storyIDs := make([]string, len(list.Stories))
+	listItemMap := make(map[string]StoryListItem)
+	for i, item := range list.Stories {
+		storyIDs[i] = item.ExternalID
+		listItemMap[item.ExternalID] = item
+	}
+
+	// Parse all stories in parallel
+	progressFn := func(done, total int, current string) {
+		fmt.Printf("\r    Parsing [%d/%d] %s                    ", done, total, truncate(current, 50))
+	}
+
+	stories, err := s.parser.ParseStoriesParallel(storyIDs, pair, workers, progressFn)
+	if err != nil {
+		return nil, fmt.Errorf("parse stories parallel: %w", err)
+	}
+	fmt.Println()
+
+	// Enrich stories with metadata from list
+	for _, story := range stories {
+		if item, ok := listItemMap[story.ExternalID]; ok {
+			if story.Title == "" {
+				story.Title = item.Title
+			}
+			if story.CEFRLevel == "" {
+				story.CEFRLevel = item.CEFRLevel
+			}
+			if story.IllustrationURL == "" {
+				story.IllustrationURL = item.IllustrationURL
+			}
+		}
+	}
+
+	return stories, nil
+}
+
+// ImportStoriesAll imports parsed stories for a language pair (idempotent)
+func (s *Seeder) ImportStoriesAll(ctx context.Context, pair LanguagePair, stories []*StoryData) error {
+	// Get course ID
+	courseID, err := s.getCourseID(ctx, pair)
+	if err != nil {
+		return fmt.Errorf("get course ID: %w", err)
+	}
+
+	return s.importer.ImportStoriesForCourse(ctx, courseID, stories)
+}
+
+// getCourseID returns the course ID for a language pair
+func (s *Seeder) getCourseID(ctx context.Context, pair LanguagePair) (string, error) {
+	return s.importer.GetCourseID(ctx, pair)
+}
+
+// SeedStoriesAll performs download, parse, and import of ALL stories for a language pair
+func (s *Seeder) SeedStoriesAll(ctx context.Context, pair LanguagePair, workers int) (int, error) {
+	fmt.Printf("  %s: Downloading stories...\n", pair)
+	count, err := s.DownloadStoriesAll(ctx, pair, workers)
+	if err != nil {
+		return 0, fmt.Errorf("download stories: %w", err)
+	}
+
+	if count == 0 {
+		fmt.Printf("  %s: No stories available\n", pair)
+		return 0, nil
+	}
+
+	fmt.Printf("  %s: Parsing %d stories...\n", pair, count)
+	stories, err := s.ParseStoriesAll(pair, workers)
+	if err != nil {
+		return 0, fmt.Errorf("parse stories: %w", err)
+	}
+
+	fmt.Printf("  %s: Importing %d stories...\n", pair, len(stories))
+	if err := s.ImportStoriesAll(ctx, pair, stories); err != nil {
+		return 0, fmt.Errorf("import stories: %w", err)
+	}
+
+	fmt.Printf("  %s: Done! Imported %d stories\n", pair, len(stories))
+	return len(stories), nil
+}
+
+// truncate shortens a string to a maximum length
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
+}
