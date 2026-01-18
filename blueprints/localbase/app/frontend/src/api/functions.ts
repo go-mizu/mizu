@@ -143,11 +143,11 @@ export const functionsApi = {
 
   // Templates
   listTemplates: (): Promise<{ templates: FunctionTemplate[] }> => {
-    return api.get<{ templates: FunctionTemplate[] }>('/api/functions/templates');
+    return api.get<{ templates: FunctionTemplate[] }>('/api/function-templates');
   },
 
   getTemplate: (id: string): Promise<{ id: string; source_code: string; import_map?: string }> => {
-    return api.get<{ id: string; source_code: string; import_map?: string }>(`/api/functions/templates/${id}`);
+    return api.get<{ id: string; source_code: string; import_map?: string }>(`/api/function-templates/${id}`);
   },
 
   // Invoke function (public endpoint)

@@ -201,10 +201,24 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		database.Delete("/snippets/folders/{id}", databaseHandler.DeleteFolder)
 	})
 
+	// Function Templates API - Separated to avoid route conflicts with /api/functions/{id}/*
+	app.Group("/api/function-templates", func(templates *mizu.Router) {
+		templates.Use(apiKeyMw)
+		templates.Use(serviceRoleMw)
+		templates.Get("", functionsHandler.ListTemplates)
+		templates.Get("/{templateId}", functionsHandler.GetTemplate)
+	})
+
 	// Functions API - Requires service_role for management operations
 	app.Group("/api/functions", func(functions *mizu.Router) {
 		functions.Use(apiKeyMw)
 		functions.Use(serviceRoleMw)
+
+		// Secrets management
+		functions.Get("/secrets", functionsHandler.ListSecrets)
+		functions.Post("/secrets", functionsHandler.CreateSecret)
+		functions.Put("/secrets/bulk", functionsHandler.BulkUpdateSecrets)
+		functions.Delete("/secrets/{name}", functionsHandler.DeleteSecret)
 
 		// Function CRUD
 		functions.Get("", functionsHandler.ListFunctions)
@@ -228,16 +242,6 @@ func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
 		// Logs and metrics
 		functions.Get("/{id}/logs", functionsHandler.GetLogs)
 		functions.Get("/{id}/metrics", functionsHandler.GetMetrics)
-
-		// Secrets management
-		functions.Get("/secrets", functionsHandler.ListSecrets)
-		functions.Post("/secrets", functionsHandler.CreateSecret)
-		functions.Put("/secrets/bulk", functionsHandler.BulkUpdateSecrets)
-		functions.Delete("/secrets/{name}", functionsHandler.DeleteSecret)
-
-		// Templates
-		functions.Get("/templates", functionsHandler.ListTemplates)
-		functions.Get("/templates/{id}", functionsHandler.GetTemplate)
 	})
 
 	// Public function invocation (Supabase-compatible: supports all HTTP methods)
