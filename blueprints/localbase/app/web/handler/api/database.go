@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -329,11 +330,14 @@ func (h *DatabaseHandler) DropPolicy(c *mizu.Ctx) error {
 	return c.NoContent()
 }
 
-// ExecuteQuery executes a SQL query.
+// ExecuteQuery executes a SQL query with enhanced options.
 func (h *DatabaseHandler) ExecuteQuery(c *mizu.Ctx) error {
 	var req struct {
-		Query  string `json:"query"`
-		Params []any  `json:"params"`
+		Query   string `json:"query"`
+		Params  []any  `json:"params"`
+		Role    string `json:"role,omitempty"`
+		Timeout int    `json:"timeout,omitempty"`
+		Explain bool   `json:"explain,omitempty"`
 	}
 	if err := c.BindJSON(&req, 0); err != nil {
 		return c.JSON(400, map[string]string{"error": "invalid request body"})
@@ -343,25 +347,252 @@ func (h *DatabaseHandler) ExecuteQuery(c *mizu.Ctx) error {
 		return c.JSON(400, map[string]string{"error": "query required"})
 	}
 
-	// Check if it's a SELECT query
-	trimmed := strings.TrimSpace(strings.ToUpper(req.Query))
-	if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") {
-		result, err := h.store.Database().Query(c.Context(), req.Query, req.Params...)
-		if err != nil {
-			return c.JSON(400, map[string]string{"error": err.Error()})
-		}
-		return c.JSON(200, result)
+	// Record start time
+	startTime := time.Now()
+	queryID := fmt.Sprintf("q_%d", time.Now().UnixNano())
+
+	// Add EXPLAIN if requested
+	queryToRun := req.Query
+	if req.Explain {
+		queryToRun = "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) " + req.Query
 	}
 
-	// Execute non-SELECT query
-	rows, err := h.store.Database().Exec(c.Context(), req.Query, req.Params...)
+	// Use role-specific execution context
+	role := req.Role
+	if role == "" {
+		role = "postgres"
+	}
+
+	// Check if it's a SELECT query
+	trimmed := strings.TrimSpace(strings.ToUpper(queryToRun))
+	isSelect := strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") || strings.HasPrefix(trimmed, "EXPLAIN")
+
+	var result *store.QueryResult
+	var err error
+	var rowsAffected int64
+
+	if isSelect {
+		// For role-based execution with RLS
+		if role != "postgres" && role != "service_role" {
+			rlsCtx := &postgres.RLSContext{
+				Role:   role,
+				UserID: middleware.GetUserID(c),
+				Email:  middleware.GetUserEmail(c),
+			}
+			result, err = h.store.DatabaseRLS().QueryWithRLS(c.Context(), rlsCtx, queryToRun, req.Params...)
+		} else {
+			result, err = h.store.Database().Query(c.Context(), queryToRun, req.Params...)
+		}
+	} else {
+		// Execute non-SELECT query
+		if role != "postgres" && role != "service_role" {
+			rlsCtx := &postgres.RLSContext{
+				Role:   role,
+				UserID: middleware.GetUserID(c),
+				Email:  middleware.GetUserEmail(c),
+			}
+			rowsAffected, err = h.store.DatabaseRLS().ExecWithRLS(c.Context(), rlsCtx, queryToRun, req.Params...)
+		} else {
+			rowsAffected, err = h.store.Database().Exec(c.Context(), queryToRun, req.Params...)
+		}
+	}
+
+	duration := time.Since(startTime).Seconds() * 1000
+
+	// Record in query history
+	historyEntry := &store.QueryHistoryEntry{
+		ID:         queryID,
+		Query:      req.Query, // Original query without EXPLAIN
+		ExecutedAt: startTime,
+		DurationMs: duration,
+		Role:       role,
+		Success:    err == nil,
+	}
+	if err != nil {
+		historyEntry.Error = err.Error()
+	} else if result != nil {
+		historyEntry.RowCount = result.RowCount
+	} else {
+		historyEntry.RowCount = int(rowsAffected)
+	}
+	// Record history asynchronously
+	go func() {
+		_ = h.store.Database().AddQueryHistory(context.Background(), historyEntry)
+	}()
+
 	if err != nil {
 		return c.JSON(400, map[string]string{"error": err.Error()})
 	}
 
+	if isSelect {
+		// Enhanced result with query ID and column types
+		response := map[string]any{
+			"query_id":    queryID,
+			"columns":     result.Columns,
+			"rows":        result.Rows,
+			"row_count":   result.RowCount,
+			"duration_ms": duration,
+		}
+		return c.JSON(200, response)
+	}
+
 	return c.JSON(200, map[string]any{
-		"rows_affected": rows,
+		"query_id":      queryID,
+		"rows_affected": rowsAffected,
+		"duration_ms":   duration,
 	})
+}
+
+// ========================================
+// SQL Editor - Query History Endpoints
+// ========================================
+
+// ListQueryHistory returns query history.
+func (h *DatabaseHandler) ListQueryHistory(c *mizu.Ctx) error {
+	limit := parseIntQueryDB(c, "limit", 100)
+	offset := parseIntQueryDB(c, "offset", 0)
+
+	entries, err := h.store.Database().ListQueryHistory(c.Context(), limit, offset)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, entries)
+}
+
+// ClearQueryHistory clears all query history.
+func (h *DatabaseHandler) ClearQueryHistory(c *mizu.Ctx) error {
+	if err := h.store.Database().ClearQueryHistory(c.Context()); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.NoContent()
+}
+
+// ========================================
+// SQL Editor - Snippets Endpoints
+// ========================================
+
+// ListSnippets returns all SQL snippets.
+func (h *DatabaseHandler) ListSnippets(c *mizu.Ctx) error {
+	snippets, err := h.store.Database().ListSnippets(c.Context())
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, snippets)
+}
+
+// GetSnippet returns a SQL snippet by ID.
+func (h *DatabaseHandler) GetSnippet(c *mizu.Ctx) error {
+	id := c.Param("id")
+	snippet, err := h.store.Database().GetSnippet(c.Context(), id)
+	if err != nil {
+		return c.JSON(404, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, snippet)
+}
+
+// CreateSnippet creates a new SQL snippet.
+func (h *DatabaseHandler) CreateSnippet(c *mizu.Ctx) error {
+	var snippet store.SQLSnippet
+	if err := c.BindJSON(&snippet, 0); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid request body"})
+	}
+
+	if snippet.Name == "" {
+		return c.JSON(400, map[string]string{"error": "name required"})
+	}
+	if snippet.Query == "" {
+		return c.JSON(400, map[string]string{"error": "query required"})
+	}
+
+	if err := h.store.Database().CreateSnippet(c.Context(), &snippet); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(201, snippet)
+}
+
+// UpdateSnippet updates a SQL snippet.
+func (h *DatabaseHandler) UpdateSnippet(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var snippet store.SQLSnippet
+	if err := c.BindJSON(&snippet, 0); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid request body"})
+	}
+
+	snippet.ID = id
+	if err := h.store.Database().UpdateSnippet(c.Context(), &snippet); err != nil {
+		return c.JSON(404, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, snippet)
+}
+
+// DeleteSnippet deletes a SQL snippet.
+func (h *DatabaseHandler) DeleteSnippet(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if err := h.store.Database().DeleteSnippet(c.Context(), id); err != nil {
+		return c.JSON(404, map[string]string{"error": err.Error()})
+	}
+	return c.NoContent()
+}
+
+// ========================================
+// SQL Editor - Folders Endpoints
+// ========================================
+
+// ListFolders returns all SQL folders.
+func (h *DatabaseHandler) ListFolders(c *mizu.Ctx) error {
+	folders, err := h.store.Database().ListFolders(c.Context())
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, folders)
+}
+
+// CreateFolder creates a new SQL folder.
+func (h *DatabaseHandler) CreateFolder(c *mizu.Ctx) error {
+	var folder store.SQLFolder
+	if err := c.BindJSON(&folder, 0); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid request body"})
+	}
+
+	if folder.Name == "" {
+		return c.JSON(400, map[string]string{"error": "name required"})
+	}
+
+	if err := h.store.Database().CreateFolder(c.Context(), &folder); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(201, folder)
+}
+
+// UpdateFolder updates a SQL folder.
+func (h *DatabaseHandler) UpdateFolder(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	var folder store.SQLFolder
+	if err := c.BindJSON(&folder, 0); err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid request body"})
+	}
+
+	folder.ID = id
+	if err := h.store.Database().UpdateFolder(c.Context(), &folder); err != nil {
+		return c.JSON(404, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, folder)
+}
+
+// DeleteFolder deletes a SQL folder.
+func (h *DatabaseHandler) DeleteFolder(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if err := h.store.Database().DeleteFolder(c.Context(), id); err != nil {
+		return c.JSON(404, map[string]string{"error": err.Error()})
+	}
+	return c.NoContent()
 }
 
 // ========================================

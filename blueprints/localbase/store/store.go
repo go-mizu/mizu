@@ -269,6 +269,53 @@ type QueryResult struct {
 	Duration  float64                  `json:"duration_ms"`
 }
 
+// ColumnDef represents a result column definition with type info.
+type ColumnDef struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// EnhancedQueryResult represents enhanced query execution results with column types.
+type EnhancedQueryResult struct {
+	QueryID    string                   `json:"query_id,omitempty"`
+	Columns    []ColumnDef              `json:"columns"`
+	Rows       []map[string]interface{} `json:"rows"`
+	RowCount   int                      `json:"row_count"`
+	DurationMs float64                  `json:"duration_ms"`
+	Truncated  bool                     `json:"truncated,omitempty"`
+}
+
+// QueryHistoryEntry represents a query history entry for the SQL editor.
+type QueryHistoryEntry struct {
+	ID         string    `json:"id"`
+	Query      string    `json:"query"`
+	ExecutedAt time.Time `json:"executed_at"`
+	DurationMs float64   `json:"duration_ms"`
+	Role       string    `json:"role"`
+	RowCount   int       `json:"row_count"`
+	Success    bool      `json:"success"`
+	Error      string    `json:"error,omitempty"`
+}
+
+// SQLSnippet represents a saved SQL query snippet.
+type SQLSnippet struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Query     string    `json:"query"`
+	FolderID  *string   `json:"folder_id,omitempty"`
+	IsShared  bool      `json:"is_shared"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// SQLFolder represents a folder for organizing SQL snippets.
+type SQLFolder struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	ParentID  *string   `json:"parent_id,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // DatabaseStore defines database operations.
 type DatabaseStore interface {
 	// Tables
@@ -317,6 +364,24 @@ type DatabaseStore interface {
 	// PostgREST helpers
 	TableExists(ctx context.Context, schema, table string) (bool, error)
 	GetForeignKeysForEmbedding(ctx context.Context, schema, table string) ([]ForeignKeyInfo, error)
+
+	// SQL Editor - Query History
+	AddQueryHistory(ctx context.Context, entry *QueryHistoryEntry) error
+	ListQueryHistory(ctx context.Context, limit, offset int) ([]*QueryHistoryEntry, error)
+	ClearQueryHistory(ctx context.Context) error
+
+	// SQL Editor - Snippets
+	CreateSnippet(ctx context.Context, snippet *SQLSnippet) error
+	GetSnippet(ctx context.Context, id string) (*SQLSnippet, error)
+	ListSnippets(ctx context.Context) ([]*SQLSnippet, error)
+	UpdateSnippet(ctx context.Context, snippet *SQLSnippet) error
+	DeleteSnippet(ctx context.Context, id string) error
+
+	// SQL Editor - Folders
+	CreateFolder(ctx context.Context, folder *SQLFolder) error
+	ListFolders(ctx context.Context) ([]*SQLFolder, error)
+	UpdateFolder(ctx context.Context, folder *SQLFolder) error
+	DeleteFolder(ctx context.Context, id string) error
 }
 
 // ForeignKeyInfo holds basic FK info for embedding.

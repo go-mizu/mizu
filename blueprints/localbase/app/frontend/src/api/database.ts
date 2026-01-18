@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { Table, Column, Policy, Extension, QueryResult } from '../types';
+import type { Table, Column, Policy, Extension, QueryResult, QueryHistoryEntry, SQLSnippet, SQLFolder } from '../types';
 
 export interface CreateTableRequest {
   schema: string;
@@ -97,9 +97,60 @@ export const databaseApi = {
     return api.post('/api/database/extensions', { name });
   },
 
-  // Query execution
-  executeQuery: (query: string): Promise<QueryResult> => {
-    return api.post<QueryResult>('/api/database/query', { query });
+  // Query execution (enhanced)
+  executeQuery: (query: string, options?: { role?: string; explain?: boolean }): Promise<QueryResult> => {
+    return api.post<QueryResult>('/api/database/query', {
+      query,
+      role: options?.role,
+      explain: options?.explain,
+    });
+  },
+
+  // Query history
+  getQueryHistory: (limit = 100, offset = 0): Promise<QueryHistoryEntry[]> => {
+    return api.get<QueryHistoryEntry[]>(`/api/database/query/history?limit=${limit}&offset=${offset}`);
+  },
+
+  clearQueryHistory: (): Promise<void> => {
+    return api.delete('/api/database/query/history');
+  },
+
+  // SQL Snippets
+  listSnippets: (): Promise<SQLSnippet[]> => {
+    return api.get<SQLSnippet[]>('/api/database/snippets');
+  },
+
+  getSnippet: (id: string): Promise<SQLSnippet> => {
+    return api.get<SQLSnippet>(`/api/database/snippets/${id}`);
+  },
+
+  createSnippet: (data: { name: string; query: string; folder_id?: string; is_shared?: boolean }): Promise<SQLSnippet> => {
+    return api.post<SQLSnippet>('/api/database/snippets', data);
+  },
+
+  updateSnippet: (id: string, data: Partial<SQLSnippet>): Promise<SQLSnippet> => {
+    return api.put<SQLSnippet>(`/api/database/snippets/${id}`, data);
+  },
+
+  deleteSnippet: (id: string): Promise<void> => {
+    return api.delete(`/api/database/snippets/${id}`);
+  },
+
+  // SQL Folders
+  listFolders: (): Promise<SQLFolder[]> => {
+    return api.get<SQLFolder[]>('/api/database/snippets/folders');
+  },
+
+  createFolder: (data: { name: string; parent_id?: string }): Promise<SQLFolder> => {
+    return api.post<SQLFolder>('/api/database/snippets/folders', data);
+  },
+
+  updateFolder: (id: string, data: Partial<SQLFolder>): Promise<SQLFolder> => {
+    return api.put<SQLFolder>(`/api/database/snippets/folders/${id}`, data);
+  },
+
+  deleteFolder: (id: string): Promise<void> => {
+    return api.delete(`/api/database/snippets/folders/${id}`);
   },
 
   // PostgREST-compatible REST API
