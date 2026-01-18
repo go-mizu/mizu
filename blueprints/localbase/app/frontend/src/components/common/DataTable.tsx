@@ -81,16 +81,33 @@ export function DataTable<T>({
   // Loading skeleton
   if (loading) {
     return (
-      <Table>
-        <Table.Thead>
+      <Table
+        style={{
+          border: '1px solid var(--lb-border-default)',
+          borderRadius: 'var(--lb-radius-lg)',
+          overflow: 'hidden',
+        }}
+      >
+        <Table.Thead style={{ backgroundColor: 'var(--lb-table-header-bg)' }}>
           <Table.Tr>
             {selectable && (
-              <Table.Th style={{ width: 40 }}>
+              <Table.Th style={{ width: 40, padding: '12px 16px' }}>
                 <Skeleton height={20} width={20} />
               </Table.Th>
             )}
             {columns.map((col) => (
-              <Table.Th key={col.key} style={{ width: col.width }}>
+              <Table.Th
+                key={col.key}
+                style={{
+                  width: col.width,
+                  padding: '12px 16px',
+                  fontSize: 'var(--lb-text-sm)',
+                  fontWeight: 500,
+                  color: 'var(--lb-text-secondary)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
                 {col.header}
               </Table.Th>
             ))}
@@ -100,12 +117,12 @@ export function DataTable<T>({
           {Array.from({ length: 5 }).map((_, i) => (
             <Table.Tr key={i}>
               {selectable && (
-                <Table.Td>
+                <Table.Td style={{ padding: '12px 16px' }}>
                   <Skeleton height={20} width={20} />
                 </Table.Td>
               )}
               {columns.map((col) => (
-                <Table.Td key={col.key}>
+                <Table.Td key={col.key} style={{ padding: '12px 16px' }}>
                   <Skeleton height={20} />
                 </Table.Td>
               ))}
@@ -127,6 +144,8 @@ export function DataTable<T>({
         style={{
           overflow: 'auto',
           maxHeight: maxHeight,
+          border: '1px solid var(--lb-border-default)',
+          borderRadius: 'var(--lb-radius-lg)',
         }}
       >
         <Table
@@ -134,10 +153,10 @@ export function DataTable<T>({
           highlightOnHover={!!onRowClick}
           style={{ minWidth: '100%' }}
         >
-          <Table.Thead>
+          <Table.Thead style={{ backgroundColor: 'var(--lb-table-header-bg)' }}>
             <Table.Tr>
               {selectable && (
-                <Table.Th style={{ width: 40 }}>
+                <Table.Th style={{ width: 40, padding: '12px 16px' }}>
                   <Checkbox
                     checked={allSelected}
                     indeterminate={someSelected}
@@ -146,7 +165,19 @@ export function DataTable<T>({
                 </Table.Th>
               )}
               {columns.map((col) => (
-                <Table.Th key={col.key} style={{ width: col.width }}>
+                <Table.Th
+                  key={col.key}
+                  style={{
+                    width: col.width,
+                    padding: '12px 16px',
+                    fontSize: 'var(--lb-text-sm)',
+                    fontWeight: 500,
+                    color: 'var(--lb-text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    borderBottom: '1px solid var(--lb-border-default)',
+                  }}
+                >
                   {col.header}
                 </Table.Th>
               ))}
@@ -163,11 +194,18 @@ export function DataTable<T>({
                   onClick={() => onRowClick?.(item)}
                   style={{
                     cursor: onRowClick ? 'pointer' : undefined,
-                    backgroundColor: isSelected ? 'var(--supabase-brand-light)' : undefined,
+                    backgroundColor: isSelected ? 'var(--lb-table-row-selected)' : undefined,
+                    transition: 'background-color var(--lb-transition-fast)',
                   }}
                 >
                   {selectable && (
-                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Table.Td
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid var(--lb-border-muted)',
+                      }}
+                    >
                       <Checkbox
                         checked={isSelected}
                         onChange={() => toggleRow(item)}
@@ -175,7 +213,15 @@ export function DataTable<T>({
                     </Table.Td>
                   )}
                   {columns.map((col) => (
-                    <Table.Td key={col.key}>
+                    <Table.Td
+                      key={col.key}
+                      style={{
+                        padding: '12px 16px',
+                        fontSize: 'var(--lb-text-md)',
+                        color: 'var(--lb-text-primary)',
+                        borderBottom: '1px solid var(--lb-border-muted)',
+                      }}
+                    >
                       {col.render
                         ? col.render(item)
                         : String((item as any)[col.key] ?? '')}
@@ -190,7 +236,13 @@ export function DataTable<T>({
 
       {pagination && pagination.totalPages > 1 && (
         <Group justify="space-between" mt="md">
-          <Text size="sm" c="dimmed">
+          <Text
+            size="sm"
+            style={{
+              color: 'var(--lb-text-secondary)',
+              fontSize: 'var(--lb-text-sm)',
+            }}
+          >
             Showing {data.length} of {pagination.total} items
           </Text>
           <Pagination

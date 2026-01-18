@@ -170,13 +170,14 @@ export function FilterBuilder({
       p="md"
       withBorder
       style={{
-        backgroundColor: 'var(--supabase-bg-surface)',
-        borderColor: 'var(--supabase-border)',
+        backgroundColor: 'var(--lb-bg-secondary)',
+        borderColor: 'var(--lb-border-default)',
+        borderRadius: 'var(--lb-radius-md)',
       }}
     >
       <Group justify="space-between" mb="sm">
         <Group gap="xs">
-          <IconFilter size={16} style={{ color: 'var(--supabase-brand)' }} />
+          <IconFilter size={16} style={{ color: 'var(--lb-brand)' }} />
           <Text size="sm" fw={600}>
             Filter rows
           </Text>
@@ -207,8 +208,8 @@ export function FilterBuilder({
                       ]}
                       styles={{
                         root: {
-                          backgroundColor: 'var(--supabase-bg)',
-                          border: '1px solid var(--supabase-border)',
+                          backgroundColor: 'var(--lb-bg-primary)',
+                          border: '1px solid var(--lb-border-default)',
                         },
                       }}
                     />
@@ -225,8 +226,8 @@ export function FilterBuilder({
                   style={{ flex: 1 }}
                   styles={{
                     input: {
-                      backgroundColor: 'var(--supabase-bg)',
-                      borderColor: 'var(--supabase-border)',
+                      backgroundColor: 'var(--lb-bg-primary)',
+                      borderColor: 'var(--lb-border-default)',
                     },
                   }}
                 />
@@ -239,8 +240,8 @@ export function FilterBuilder({
                   w={180}
                   styles={{
                     input: {
-                      backgroundColor: 'var(--supabase-bg)',
-                      borderColor: 'var(--supabase-border)',
+                      backgroundColor: 'var(--lb-bg-primary)',
+                      borderColor: 'var(--lb-border-default)',
                     },
                   }}
                 />
@@ -254,8 +255,8 @@ export function FilterBuilder({
                     style={{ flex: 1 }}
                     styles={{
                       input: {
-                        backgroundColor: 'var(--supabase-bg)',
-                        borderColor: 'var(--supabase-border)',
+                        backgroundColor: 'var(--lb-bg-primary)',
+                        borderColor: 'var(--lb-border-default)',
                       },
                     }}
                   />
@@ -268,8 +269,8 @@ export function FilterBuilder({
                     style={{ flex: 1 }}
                     styles={{
                       input: {
-                        backgroundColor: 'var(--supabase-bg)',
-                        borderColor: 'var(--supabase-border)',
+                        backgroundColor: 'var(--lb-bg-primary)',
+                        borderColor: 'var(--lb-border-default)',
                       },
                     }}
                   />
@@ -311,9 +312,10 @@ export function FilterBuilder({
             onClick={onApply}
             styles={{
               root: {
-                backgroundColor: 'var(--supabase-brand)',
+                backgroundColor: 'var(--lb-brand)',
+                transition: 'var(--lb-transition-fast)',
                 '&:hover': {
-                  backgroundColor: 'var(--supabase-brand-hover)',
+                  backgroundColor: 'var(--lb-brand-hover)',
                 },
               },
             }}

@@ -70,8 +70,8 @@ export function TableTabs({
     <Box
       ref={tabsRef}
       style={{
-        borderBottom: '1px solid var(--supabase-border)',
-        backgroundColor: 'var(--supabase-bg)',
+        borderBottom: '1px solid var(--lb-border-default)',
+        backgroundColor: 'var(--lb-bg-primary)',
         display: 'flex',
         alignItems: 'center',
         paddingLeft: 12,
@@ -101,11 +101,11 @@ export function TableTabs({
                   onClick={() => onTabClick(tab.id)}
                   onDoubleClick={() => onTabDoubleClick(tab.id)}
                   style={{
-                    borderBottom: isActive ? '2px solid var(--supabase-brand)' : '2px solid transparent',
+                    borderBottom: isActive ? '2px solid var(--lb-brand)' : '2px solid transparent',
                     marginBottom: -1,
                     cursor: 'pointer',
                     backgroundColor: isActive ? 'transparent' : 'transparent',
-                    transition: 'background-color 0.1s ease',
+                    transition: 'var(--lb-transition-fast)',
                     maxWidth: 200,
                     minWidth: 0,
                     display: 'flex',
@@ -114,7 +114,7 @@ export function TableTabs({
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'var(--supabase-bg-surface)';
+                      e.currentTarget.style.backgroundColor = 'var(--lb-bg-secondary)';
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -128,7 +128,7 @@ export function TableTabs({
                       size={14}
                       style={{
                         flexShrink: 0,
-                        color: isActive ? 'var(--supabase-brand)' : 'var(--supabase-text-muted)',
+                        color: isActive ? 'var(--lb-brand)' : 'var(--lb-text-muted)',
                       }}
                     />
                     <Text
@@ -136,7 +136,7 @@ export function TableTabs({
                       fw={isActive ? 500 : 400}
                       truncate
                       style={{
-                        color: isActive ? 'var(--supabase-brand)' : 'var(--supabase-text)',
+                        color: isActive ? 'var(--lb-brand)' : 'var(--lb-text-primary)',
                         fontStyle: tab.isTransient ? 'italic' : 'normal',
                       }}
                     >
@@ -148,7 +148,7 @@ export function TableTabs({
                           width: 6,
                           height: 6,
                           borderRadius: '50%',
-                          backgroundColor: 'var(--supabase-warning)',
+                          backgroundColor: 'var(--lb-warning)',
                           flexShrink: 0,
                         }}
                       />

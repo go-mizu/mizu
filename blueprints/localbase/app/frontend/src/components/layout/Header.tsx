@@ -61,8 +61,8 @@ export function Header() {
       <Box
         style={{
           height: 48,
-          borderBottom: '1px solid var(--supabase-border)',
-          backgroundColor: 'var(--supabase-bg)',
+          borderBottom: '1px solid var(--lb-border-default)',
+          backgroundColor: 'var(--lb-bg-primary)',
           display: 'flex',
           alignItems: 'center',
           paddingLeft: 16,
@@ -76,21 +76,21 @@ export function Header() {
             <Menu position="bottom-start" shadow="md">
               <Menu.Target>
                 <UnstyledButton
+                  className="lb-breadcrumb-item"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
                     padding: '4px 8px',
-                    borderRadius: 'var(--supabase-radius-sm)',
-                    transition: 'background-color var(--supabase-transition)',
+                    borderRadius: 'var(--lb-radius-sm)',
+                    transition: 'background-color var(--lb-transition-normal)',
                   }}
-                  className="breadcrumb-item"
                 >
-                  <IconBuilding size={14} color="var(--supabase-text-muted)" />
-                  <Text size="sm" c="dimmed">
+                  <IconBuilding size={14} color="var(--lb-text-muted)" />
+                  <Text size="sm" c="dimmed" style={{ color: 'var(--lb-text-secondary)' }}>
                     local
                   </Text>
-                  <IconChevronDown size={12} color="var(--supabase-text-muted)" />
+                  <IconChevronDown size={12} color="var(--lb-text-muted)" />
                 </UnstyledButton>
               </Menu.Target>
               <Menu.Dropdown>
@@ -101,27 +101,27 @@ export function Header() {
               </Menu.Dropdown>
             </Menu>
 
-            <Text c="dimmed" size="sm">/</Text>
+            <Text c="dimmed" size="sm" className="lb-breadcrumb-separator">/</Text>
 
             {/* Project Dropdown */}
             <Menu position="bottom-start" shadow="md">
               <Menu.Target>
                 <UnstyledButton
+                  className="lb-breadcrumb-item"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
                     padding: '4px 8px',
-                    borderRadius: 'var(--supabase-radius-sm)',
-                    transition: 'background-color var(--supabase-transition)',
+                    borderRadius: 'var(--lb-radius-sm)',
+                    transition: 'background-color var(--lb-transition-normal)',
                   }}
-                  className="breadcrumb-item"
                 >
-                  <IconDatabase size={14} color="var(--supabase-text-secondary)" />
-                  <Text size="sm" fw={500}>
+                  <IconDatabase size={14} color="var(--lb-text-secondary)" />
+                  <Text size="sm" fw={500} style={{ color: 'var(--lb-text-primary)' }}>
                     {projectName}
                   </Text>
-                  <IconChevronDown size={12} color="var(--supabase-text-muted)" />
+                  <IconChevronDown size={12} color="var(--lb-text-muted)" />
                 </UnstyledButton>
               </Menu.Target>
               <Menu.Dropdown>
@@ -137,14 +137,7 @@ export function Header() {
               size="xs"
               variant="light"
               color="green"
-              style={{
-                textTransform: 'uppercase',
-                fontWeight: 600,
-                letterSpacing: '0.05em',
-                fontSize: '0.625rem',
-                backgroundColor: 'var(--supabase-badge-local-bg)',
-                color: 'var(--supabase-brand)',
-              }}
+              className="lb-header-badge lb-header-badge-local"
             >
               Local
             </Badge>
@@ -160,12 +153,12 @@ export function Header() {
               onClick={() => setConnectModalOpened(true)}
               styles={{
                 root: {
-                  borderColor: 'var(--supabase-border)',
-                  color: 'var(--supabase-text)',
+                  borderColor: 'var(--lb-border-default)',
+                  color: 'var(--lb-text-primary)',
                   fontWeight: 500,
                   '&:hover': {
-                    backgroundColor: 'var(--supabase-bg-surface)',
-                    borderColor: 'var(--supabase-border-strong)',
+                    backgroundColor: 'var(--lb-bg-secondary)',
+                    borderColor: 'var(--lb-border-strong)',
                   },
                 },
               }}
@@ -250,7 +243,7 @@ export function Header() {
               radius="xl"
               color="gray"
               style={{
-                backgroundColor: 'var(--supabase-bg-surface)',
+                backgroundColor: 'var(--lb-bg-secondary)',
               }}
             >
               <IconUser size={18} />
@@ -267,27 +260,27 @@ export function Header() {
         size="lg"
       >
         <Stack gap="md">
-          <Text size="sm" c="dimmed">
+          <Text size="sm" c="dimmed" style={{ color: 'var(--lb-text-secondary)' }}>
             Use these credentials to connect to your local Supabase project.
           </Text>
 
           <Divider label="Connection String" labelPosition="left" />
 
           <Box>
-            <Text size="xs" fw={500} mb={4}>
+            <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
               Direct connection
             </Text>
-            <Text size="xs" c="dimmed" mb={8}>
+            <Text size="xs" c="dimmed" mb={8} style={{ color: 'var(--lb-text-tertiary)' }}>
               Use this for direct database connections (migrations, admin tasks)
             </Text>
             <ConnectionField value={connectionDetails.directUrl} />
           </Box>
 
           <Box>
-            <Text size="xs" fw={500} mb={4}>
+            <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
               Transaction pooler
             </Text>
-            <Text size="xs" c="dimmed" mb={8}>
+            <Text size="xs" c="dimmed" mb={8} style={{ color: 'var(--lb-text-tertiary)' }}>
               Use this for serverless functions (short-lived connections)
             </Text>
             <ConnectionField value={connectionDetails.poolerUrl} />
@@ -297,13 +290,13 @@ export function Header() {
 
           <Group grow>
             <Box>
-              <Text size="xs" fw={500} mb={4}>
+              <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
                 Host
               </Text>
               <ConnectionField value={connectionDetails.host} />
             </Box>
             <Box>
-              <Text size="xs" fw={500} mb={4}>
+              <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
                 Port
               </Text>
               <ConnectionField value={connectionDetails.port} />
@@ -312,13 +305,13 @@ export function Header() {
 
           <Group grow>
             <Box>
-              <Text size="xs" fw={500} mb={4}>
+              <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
                 Database
               </Text>
               <ConnectionField value={connectionDetails.database} />
             </Box>
             <Box>
-              <Text size="xs" fw={500} mb={4}>
+              <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
                 User
               </Text>
               <ConnectionField value={connectionDetails.user} />
@@ -326,7 +319,7 @@ export function Header() {
           </Group>
 
           <Box>
-            <Text size="xs" fw={500} mb={4}>
+            <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
               Password
             </Text>
             <ConnectionField value={connectionDetails.password} isSecret />
@@ -335,27 +328,27 @@ export function Header() {
           <Divider label="API Keys" labelPosition="left" />
 
           <Box>
-            <Text size="xs" fw={500} mb={4}>
+            <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
               Project URL
             </Text>
             <ConnectionField value={connectionDetails.projectUrl} />
           </Box>
 
           <Box>
-            <Text size="xs" fw={500} mb={4}>
+            <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
               anon key (public)
             </Text>
-            <Text size="xs" c="dimmed" mb={8}>
+            <Text size="xs" c="dimmed" mb={8} style={{ color: 'var(--lb-text-tertiary)' }}>
               Safe to use in browsers. Has limited access based on RLS policies.
             </Text>
             <ConnectionField value={connectionDetails.anonKey} />
           </Box>
 
           <Box>
-            <Text size="xs" fw={500} mb={4}>
+            <Text size="xs" fw={500} mb={4} style={{ color: 'var(--lb-text-primary)' }}>
               service_role key (secret)
             </Text>
-            <Text size="xs" c="red" mb={8}>
+            <Text size="xs" mb={8} style={{ color: 'var(--lb-error-text)' }}>
               Never expose in browsers. Bypasses RLS - use only in secure backend code.
             </Text>
             <ConnectionField value={connectionDetails.serviceKey} isSecret />
@@ -384,11 +377,12 @@ function ConnectionField({
         style={{ flex: 1 }}
         styles={{
           input: {
-            fontFamily: 'monospace',
+            fontFamily: 'var(--lb-font-mono)',
             fontSize: 11,
             borderTopRightRadius: 0,
             borderBottomRightRadius: 0,
-            backgroundColor: 'var(--supabase-bg-surface)',
+            backgroundColor: 'var(--lb-bg-secondary)',
+            borderColor: 'var(--lb-border-default)',
           },
         }}
       />
@@ -397,7 +391,10 @@ function ConnectionField({
           size="xs"
           variant="default"
           onClick={() => setRevealed(!revealed)}
-          style={{ borderRadius: 0 }}
+          style={{
+            borderRadius: 0,
+            borderColor: 'var(--lb-border-default)',
+          }}
         >
           {revealed ? 'Hide' : 'Reveal'}
         </Button>
@@ -412,6 +409,7 @@ function ConnectionField({
               style={{
                 borderTopLeftRadius: 0,
                 borderBottomLeftRadius: 0,
+                borderColor: 'var(--lb-border-default)',
               }}
             >
               {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}

@@ -133,13 +133,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 size={14}
                 style={{
                   transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 200ms ease',
+                  transition: 'transform var(--lb-transition-normal)',
                 }}
               />
             }
             onClick={() => toggleSection(item.label)}
             active={isChildActive}
-            style={{ borderRadius: 6 }}
+            style={{ borderRadius: 'var(--lb-radius-md)' }}
           />
           <Collapse in={isExpanded}>
             <Stack gap={2} pl="md" mt={4}>
@@ -149,7 +149,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   label={child.label}
                   position="right"
                   disabled={!sidebarCollapsed}
-                  withArrow
                 >
                   <NavLink
                     component={Link}
@@ -157,7 +156,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                     label={child.label}
                     leftSection={<child.icon size={16} stroke={1.5} />}
                     active={isActive(child.path)}
-                    style={{ borderRadius: 6 }}
+                    style={{ borderRadius: 'var(--lb-radius-md)' }}
                     onClick={onNavigate}
                   />
                 </Tooltip>
@@ -171,13 +170,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     // For collapsed sidebar or items without children
     if (hasChildren && sidebarCollapsed) {
       return (
-        <Tooltip key={item.path} label={item.label} position="right" withArrow>
+        <Tooltip key={item.path} label={item.label} position="right">
           <NavLink
             component={Link}
             to={item.children![0].path}
             leftSection={<item.icon size={18} stroke={1.5} />}
             active={isChildActive}
-            style={{ borderRadius: 6 }}
+            style={{ borderRadius: 'var(--lb-radius-md)' }}
             onClick={onNavigate}
           />
         </Tooltip>
@@ -190,7 +189,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         label={item.label}
         position="right"
         disabled={!sidebarCollapsed}
-        withArrow
       >
         <NavLink
           component={Link}
@@ -205,7 +203,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             ) : undefined
           }
           active={isActive(item.path)}
-          style={{ borderRadius: 6 }}
+          style={{ borderRadius: 'var(--lb-radius-md)' }}
           onClick={onNavigate}
         />
       </Tooltip>
@@ -218,7 +216,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: 'var(--supabase-sidebar-bg)',
+        backgroundColor: 'var(--lb-sidebar-bg)',
       }}
     >
       {/* Logo / Project Name */}
@@ -226,7 +224,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         p="md"
         pb="sm"
         style={{
-          borderBottom: '1px solid var(--supabase-sidebar-divider)',
+          borderBottom: '1px solid var(--lb-sidebar-border)',
         }}
       >
         <Group gap="xs" wrap="nowrap">
@@ -234,8 +232,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             style={{
               width: 32,
               height: 32,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #3ECF8E 0%, #1C9B5E 100%)',
+              borderRadius: 'var(--lb-radius-lg)',
+              background: 'linear-gradient(135deg, var(--lb-brand) 0%, var(--lb-brand-active) 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -250,7 +248,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 fw={600}
                 size="sm"
                 truncate
-                style={{ color: 'var(--supabase-text)' }}
+                style={{ color: 'var(--lb-text-primary)' }}
               >
                 {projectName}
               </Text>
@@ -259,8 +257,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 variant="light"
                 color="green"
                 style={{
-                  backgroundColor: 'rgba(62, 207, 142, 0.15)',
-                  color: '#059669',
+                  backgroundColor: 'var(--lb-badge-local-bg)',
+                  color: 'var(--lb-success-text)',
                   marginTop: 2,
                 }}
               >
@@ -282,11 +280,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             onChange={(e) => setSearchQuery(e.target.value)}
             styles={{
               input: {
-                backgroundColor: 'var(--supabase-sidebar-bg-hover)',
-                borderColor: 'var(--supabase-sidebar-border)',
-                color: 'var(--supabase-sidebar-text-active)',
+                backgroundColor: 'var(--lb-sidebar-bg-hover)',
+                borderColor: 'var(--lb-sidebar-border)',
+                color: 'var(--lb-sidebar-text-active)',
                 '&::placeholder': {
-                  color: 'var(--supabase-sidebar-text)',
+                  color: 'var(--lb-sidebar-text)',
                 },
               },
             }}
@@ -306,22 +304,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </Stack>
 
         {/* Divider before tools */}
-        <Divider my="sm" style={{ borderColor: 'var(--supabase-sidebar-divider)' }} />
+        <Divider my="sm" style={{ borderColor: 'var(--lb-sidebar-border)' }} />
 
         {/* Tools Section */}
         {!sidebarCollapsed && (
           <Text
-            size="xs"
-            fw={600}
-            tt="uppercase"
-            c="dimmed"
+            className="lb-sidebar-section-label"
             px="sm"
             mb="xs"
-            style={{
-              color: 'var(--supabase-sidebar-text)',
-              letterSpacing: '0.05em',
-              fontSize: '0.6875rem',
-            }}
           >
             Tools
           </Text>
@@ -331,7 +321,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </Stack>
       </Box>
 
-      <Divider style={{ borderColor: 'var(--supabase-sidebar-divider)' }} />
+      <Divider style={{ borderColor: 'var(--lb-sidebar-border)' }} />
 
       {/* Bottom Navigation */}
       <Box p="xs">
@@ -342,7 +332,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               label={item.label}
               position="right"
               disabled={!sidebarCollapsed}
-              withArrow
             >
               <NavLink
                 component={Link}
@@ -352,7 +341,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 active={isActive(item.path)}
                 onClick={onNavigate}
                 style={{
-                  borderRadius: 6,
+                  borderRadius: 'var(--lb-radius-md)',
                 }}
               />
             </Tooltip>
@@ -362,7 +351,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           <Tooltip
             label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             position="right"
-            withArrow
           >
             <ActionIcon
               variant="subtle"
@@ -371,7 +359,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 width: '100%',
                 justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
                 padding: '8px 12px',
-                color: 'var(--supabase-sidebar-text)',
+                color: 'var(--lb-sidebar-text)',
               }}
               h={36}
             >
@@ -382,7 +370,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   <IconChevronLeft size={18} />
                   <Text
                     size="sm"
-                    style={{ color: 'var(--supabase-sidebar-text)' }}
+                    style={{ color: 'var(--lb-sidebar-text)' }}
                   >
                     Collapse
                   </Text>

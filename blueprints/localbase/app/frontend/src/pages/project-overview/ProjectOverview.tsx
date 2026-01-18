@@ -186,9 +186,19 @@ export function ProjectOverviewPage() {
         {/* Two Column Layout */}
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
           {/* Service Health */}
-          <Paper p="md" radius="md" withBorder>
+          <Paper
+            p="md"
+            radius="md"
+            withBorder
+            style={{
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
+            }}
+          >
             <Group justify="space-between" mb="md">
-              <Text fw={600}>Service Health</Text>
+              <Text fw={600} style={{ color: 'var(--lb-text-primary)' }}>
+                Service Health
+              </Text>
               <Badge variant="light" color="green" size="sm">
                 All systems operational
               </Badge>
@@ -217,11 +227,13 @@ export function ProjectOverviewPage() {
                           <IconAlertTriangle size={14} />
                         )}
                       </ThemeIcon>
-                      <Text size="sm">{service.name}</Text>
+                      <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                        {service.name}
+                      </Text>
                     </Group>
                     <Group gap="xs">
                       {service.latency !== undefined && (
-                        <Text size="xs" c="dimmed">
+                        <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                           {service.latency}ms
                         </Text>
                       )}
@@ -240,9 +252,19 @@ export function ProjectOverviewPage() {
           </Paper>
 
           {/* Recent Activity */}
-          <Paper p="md" radius="md" withBorder>
+          <Paper
+            p="md"
+            radius="md"
+            withBorder
+            style={{
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
+            }}
+          >
             <Group justify="space-between" mb="md">
-              <Text fw={600}>Recent Activity</Text>
+              <Text fw={600} style={{ color: 'var(--lb-text-primary)' }}>
+                Recent Activity
+              </Text>
               <Button
                 variant="subtle"
                 size="xs"
@@ -257,17 +279,25 @@ export function ProjectOverviewPage() {
               {recentActivity.map((activity, index) => (
                 <Group key={index} justify="space-between">
                   <Group gap="sm">
-                    <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                    <ThemeIcon
+                      size="sm"
+                      radius="xl"
+                      variant="light"
+                      color="gray"
+                      style={{ backgroundColor: 'var(--lb-bg-secondary)' }}
+                    >
                       <IconActivity size={14} />
                     </ThemeIcon>
                     <Box>
-                      <Text size="sm">{activity.action}</Text>
-                      <Text size="xs" c="dimmed">
+                      <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                        {activity.action}
+                      </Text>
+                      <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                         {activity.target}
                       </Text>
                     </Box>
                   </Group>
-                  <Text size="xs" c="dimmed">
+                  <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                     {activity.time}
                   </Text>
                 </Group>
@@ -277,8 +307,16 @@ export function ProjectOverviewPage() {
         </SimpleGrid>
 
         {/* Quick Links */}
-        <Paper p="md" radius="md" withBorder>
-          <Text fw={600} mb="md">
+        <Paper
+          p="md"
+          radius="md"
+          withBorder
+          style={{
+            backgroundColor: 'var(--lb-bg-primary)',
+            borderColor: 'var(--lb-border-default)',
+          }}
+        >
+          <Text fw={600} mb="md" style={{ color: 'var(--lb-text-primary)' }}>
             Quick Actions
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
@@ -290,21 +328,27 @@ export function ProjectOverviewPage() {
                 padding="md"
                 radius="md"
                 withBorder
-                style={{ cursor: 'pointer' }}
+                style={{
+                  cursor: 'pointer',
+                  backgroundColor: 'var(--lb-bg-primary)',
+                  borderColor: 'var(--lb-border-default)',
+                  transition: 'all var(--lb-transition-normal)',
+                }}
+                className="lb-file-item"
               >
                 <Group>
                   <ThemeIcon size="lg" radius="md" variant="light" color={link.color}>
                     <link.icon size={20} />
                   </ThemeIcon>
                   <Box style={{ flex: 1 }}>
-                    <Text size="sm" fw={500}>
+                    <Text size="sm" fw={500} style={{ color: 'var(--lb-text-primary)' }}>
                       {link.title}
                     </Text>
-                    <Text size="xs" c="dimmed">
+                    <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                       {link.description}
                     </Text>
                   </Box>
-                  <IconArrowUpRight size={16} style={{ opacity: 0.5 }} />
+                  <IconArrowUpRight size={16} style={{ opacity: 0.5, color: 'var(--lb-text-muted)' }} />
                 </Group>
               </Card>
             ))}
@@ -313,8 +357,16 @@ export function ProjectOverviewPage() {
 
         {/* Getting Started / Resources */}
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
-          <Paper p="md" radius="md" withBorder>
-            <Text fw={600} mb="md">
+          <Paper
+            p="md"
+            radius="md"
+            withBorder
+            style={{
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
+            }}
+          >
+            <Text fw={600} mb="md" style={{ color: 'var(--lb-text-primary)' }}>
               Getting Started
             </Text>
             <List spacing="sm" size="sm">
@@ -325,7 +377,9 @@ export function ProjectOverviewPage() {
                   </ThemeIcon>
                 }
               >
-                <Text size="sm">Set up your local Supabase instance</Text>
+                <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                  Set up your local Supabase instance
+                </Text>
               </List.Item>
               <List.Item
                 icon={
@@ -335,7 +389,9 @@ export function ProjectOverviewPage() {
                 }
               >
                 <Group gap="xs">
-                  <Text size="sm">Create your first table</Text>
+                  <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                    Create your first table
+                  </Text>
                   <Button
                     variant="subtle"
                     size="compact-xs"
@@ -354,7 +410,9 @@ export function ProjectOverviewPage() {
                 }
               >
                 <Group gap="xs">
-                  <Text size="sm">Set up Row Level Security</Text>
+                  <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                    Set up Row Level Security
+                  </Text>
                   <Button
                     variant="subtle"
                     size="compact-xs"
@@ -373,7 +431,9 @@ export function ProjectOverviewPage() {
                 }
               >
                 <Group gap="xs">
-                  <Text size="sm">Add authentication to your app</Text>
+                  <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                    Add authentication to your app
+                  </Text>
                   <Button
                     variant="subtle"
                     size="compact-xs"
@@ -387,8 +447,16 @@ export function ProjectOverviewPage() {
             </List>
           </Paper>
 
-          <Paper p="md" radius="md" withBorder>
-            <Text fw={600} mb="md">
+          <Paper
+            p="md"
+            radius="md"
+            withBorder
+            style={{
+              backgroundColor: 'var(--lb-bg-primary)',
+              borderColor: 'var(--lb-border-default)',
+            }}
+          >
+            <Text fw={600} mb="md" style={{ color: 'var(--lb-text-primary)' }}>
               Resources
             </Text>
             <Stack gap="sm">
@@ -399,12 +467,20 @@ export function ProjectOverviewPage() {
                 c="inherit"
               >
                 <Group gap="sm">
-                  <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                  <ThemeIcon
+                    size="sm"
+                    radius="xl"
+                    variant="light"
+                    color="gray"
+                    style={{ backgroundColor: 'var(--lb-bg-secondary)' }}
+                  >
                     <IconExternalLink size={14} />
                   </ThemeIcon>
                   <Box style={{ flex: 1 }}>
-                    <Text size="sm">Documentation</Text>
-                    <Text size="xs" c="dimmed">
+                    <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                      Documentation
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                       Learn how to use Supabase features
                     </Text>
                   </Box>
@@ -417,12 +493,20 @@ export function ProjectOverviewPage() {
                 c="inherit"
               >
                 <Group gap="sm">
-                  <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                  <ThemeIcon
+                    size="sm"
+                    radius="xl"
+                    variant="light"
+                    color="gray"
+                    style={{ backgroundColor: 'var(--lb-bg-secondary)' }}
+                  >
                     <IconExternalLink size={14} />
                   </ThemeIcon>
                   <Box style={{ flex: 1 }}>
-                    <Text size="sm">API Reference</Text>
-                    <Text size="xs" c="dimmed">
+                    <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                      API Reference
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                       Complete API documentation
                     </Text>
                   </Box>
@@ -435,12 +519,20 @@ export function ProjectOverviewPage() {
                 c="inherit"
               >
                 <Group gap="sm">
-                  <ThemeIcon size="sm" radius="xl" variant="light" color="gray">
+                  <ThemeIcon
+                    size="sm"
+                    radius="xl"
+                    variant="light"
+                    color="gray"
+                    style={{ backgroundColor: 'var(--lb-bg-secondary)' }}
+                  >
                     <IconExternalLink size={14} />
                   </ThemeIcon>
                   <Box style={{ flex: 1 }}>
-                    <Text size="sm">GitHub</Text>
-                    <Text size="xs" c="dimmed">
+                    <Text size="sm" style={{ color: 'var(--lb-text-primary)' }}>
+                      GitHub
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                       View source code and contribute
                     </Text>
                   </Box>
@@ -476,17 +568,39 @@ function StatCard({
       padding="md"
       radius="md"
       withBorder
-      style={{ cursor: 'pointer' }}
+      className="lb-stat-card"
+      style={{
+        cursor: 'pointer',
+        backgroundColor: 'var(--lb-bg-primary)',
+        borderColor: 'var(--lb-border-default)',
+        transition: 'all var(--lb-transition-normal)',
+      }}
     >
       <Group justify="space-between">
         <Box>
-          <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+          <Text
+            size="xs"
+            tt="uppercase"
+            fw={600}
+            style={{
+              color: 'var(--lb-text-secondary)',
+              letterSpacing: '0.05em',
+            }}
+          >
             {title}
           </Text>
           {loading ? (
             <Skeleton height={32} width={60} mt={4} />
           ) : (
-            <Text size="xl" fw={700} mt={4}>
+            <Text
+              size="xl"
+              fw={700}
+              mt={4}
+              style={{
+                color: 'var(--lb-text-primary)',
+                fontSize: 'var(--lb-text-3xl)',
+              }}
+            >
               {value.toLocaleString()}
             </Text>
           )}

@@ -102,16 +102,16 @@ export function ExportModal({
             fullWidth
             styles={{
               root: {
-                backgroundColor: 'var(--supabase-bg-surface)',
-                border: '1px solid var(--supabase-border)',
+                backgroundColor: 'var(--lb-bg-secondary)',
+                border: '1px solid var(--lb-border-default)',
               },
               indicator: {
-                backgroundColor: 'var(--supabase-bg)',
-                boxShadow: 'var(--supabase-shadow-sm)',
+                backgroundColor: 'var(--lb-bg-primary)',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
               },
             }}
           />
-          <Text size="xs" c="dimmed">
+          <Text size="xs" style={{ color: 'var(--lb-text-secondary)' }}>
             {getFormatDescription()}
           </Text>
         </Stack>
@@ -148,9 +148,10 @@ export function ExportModal({
             onClick={handleExport}
             styles={{
               root: {
-                backgroundColor: 'var(--supabase-brand)',
+                backgroundColor: 'var(--lb-brand)',
+                transition: 'var(--lb-transition-fast)',
                 '&:hover': {
-                  backgroundColor: 'var(--supabase-brand-hover)',
+                  backgroundColor: 'var(--lb-brand-hover)',
                 },
               },
             }}

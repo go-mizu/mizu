@@ -418,7 +418,7 @@ export function FunctionsPage() {
     return (
       <Stack align="center" justify="center" h={400}>
         <Loader size="lg" />
-        <Text c="dimmed">Loading functions...</Text>
+        <Text style={{ color: 'var(--lb-text-secondary)' }}>Loading functions...</Text>
       </Stack>
     );
   }
@@ -426,18 +426,25 @@ export function FunctionsPage() {
   return (
     <Box h="calc(100vh - 60px)">
       <Group justify="space-between" mb="md">
-        <Title order={3}>Edge Functions</Title>
+        <Title order={3} style={{ color: 'var(--lb-text-primary)' }}>Edge Functions</Title>
         <Group>
           <Button
             variant="subtle"
             leftSection={<IconKey size={16} />}
             onClick={() => setSecretsModalOpen(true)}
+            style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
           >
             Manage Secrets
           </Button>
           <Button
             leftSection={<IconPlus size={16} />}
             onClick={() => setCreateModalOpen(true)}
+            style={{
+              background: 'var(--lb-brand)',
+              borderRadius: 'var(--lb-radius-md)',
+              transition: 'var(--lb-transition-fast)',
+            }}
+            className="lb-btn-primary"
           >
             Create function
           </Button>
@@ -451,15 +458,22 @@ export function FunctionsPage() {
           p="xs"
           w={260}
           h="100%"
-          style={{ flexShrink: 0, display: 'flex', flexDirection: 'column' }}
+          style={{
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'var(--lb-bg-secondary)',
+            borderColor: 'var(--lb-border-default)',
+            borderRadius: 'var(--lb-radius-md)',
+          }}
         >
-          <Text size="xs" fw={600} c="dimmed" mb="xs" px="xs">
+          <Text size="xs" fw={600} mb="xs" px="xs" style={{ color: 'var(--lb-text-muted)' }}>
             FUNCTIONS
           </Text>
           <ScrollArea style={{ flex: 1 }}>
             <Stack gap={2}>
               {functions.length === 0 ? (
-                <Text size="sm" c="dimmed" ta="center" py="lg">
+                <Text size="sm" ta="center" py="lg" style={{ color: 'var(--lb-text-secondary)' }}>
                   No functions yet
                 </Text>
               ) : (
@@ -468,8 +482,13 @@ export function FunctionsPage() {
                     key={fn.id}
                     p="xs"
                     withBorder={selectedFunctionId === fn.id}
-                    bg={selectedFunctionId === fn.id ? 'var(--mantine-color-dark-6)' : 'transparent'}
-                    style={{ cursor: 'pointer' }}
+                    style={{
+                      cursor: 'pointer',
+                      background: selectedFunctionId === fn.id ? 'var(--lb-bg-tertiary)' : 'transparent',
+                      borderColor: selectedFunctionId === fn.id ? 'var(--lb-border-strong)' : 'transparent',
+                      borderRadius: 'var(--lb-radius-sm)',
+                      transition: 'var(--lb-transition-fast)',
+                    }}
                     onClick={() => setSelectedFunctionId(fn.id)}
                   >
                     <Group gap="xs" wrap="nowrap">
@@ -478,24 +497,27 @@ export function FunctionsPage() {
                         radius="xl"
                         color={fn.status === 'active' ? 'green' : 'gray'}
                         variant="filled"
+                        style={{
+                          background: fn.status === 'active' ? 'var(--lb-success)' : 'var(--lb-text-muted)',
+                        }}
                       >
                         <Box w={6} h={6} style={{ borderRadius: '50%', background: 'currentColor' }} />
                       </ThemeIcon>
                       <Box style={{ flex: 1, minWidth: 0 }}>
-                        <Text size="sm" fw={500} truncate>
+                        <Text size="sm" fw={500} truncate style={{ color: 'var(--lb-text-primary)' }}>
                           {fn.name}
                         </Text>
-                        <Text size="xs" c="dimmed">
+                        <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                           v{fn.version}
                         </Text>
                       </Box>
                       {fn.verify_jwt ? (
                         <Tooltip label="JWT Required">
-                          <IconLock size={14} style={{ opacity: 0.5 }} />
+                          <IconLock size={14} style={{ opacity: 0.5, color: 'var(--lb-text-muted)' }} />
                         </Tooltip>
                       ) : (
                         <Tooltip label="Public">
-                          <IconLockOpen size={14} style={{ opacity: 0.5 }} />
+                          <IconLockOpen size={14} style={{ opacity: 0.5, color: 'var(--lb-text-muted)' }} />
                         </Tooltip>
                       )}
                     </Group>
@@ -505,19 +527,19 @@ export function FunctionsPage() {
             </Stack>
           </ScrollArea>
 
-          <Divider my="sm" />
+          <Divider my="sm" style={{ borderColor: 'var(--lb-border-muted)' }} />
 
-          <Text size="xs" fw={600} c="dimmed" mb="xs" px="xs">
+          <Text size="xs" fw={600} mb="xs" px="xs" style={{ color: 'var(--lb-text-muted)' }}>
             SECRETS
           </Text>
           <Stack gap={2}>
             {secrets.slice(0, 3).map(secret => (
-              <Text key={secret.id} size="xs" c="dimmed" px="xs">
+              <Text key={secret.id} size="xs" px="xs" style={{ color: 'var(--lb-text-secondary)' }}>
                 {secret.name}
               </Text>
             ))}
             {secrets.length > 3 && (
-              <Text size="xs" c="dimmed" px="xs">
+              <Text size="xs" px="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                 +{secrets.length - 3} more
               </Text>
             )}
@@ -526,6 +548,7 @@ export function FunctionsPage() {
               size="xs"
               onClick={() => setSecretsModalOpen(true)}
               fullWidth
+              style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
             >
               Manage secrets
             </Button>
@@ -534,19 +557,43 @@ export function FunctionsPage() {
 
         {/* Main Content Area */}
         {selectedFunction ? (
-          <Paper withBorder p={0} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Paper
+            withBorder
+            p={0}
+            style={{
+              flex: 1,
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              background: 'var(--lb-bg-secondary)',
+              borderColor: 'var(--lb-border-default)',
+              borderRadius: 'var(--lb-radius-md)',
+            }}
+          >
             {/* Header */}
-            <Group justify="space-between" p="sm" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Group justify="space-between" p="sm" style={{ borderBottom: '1px solid var(--lb-border-default)' }}>
               <Group>
-                <Title order={4}>{selectedFunction.name}</Title>
+                <Title order={4} style={{ color: 'var(--lb-text-primary)' }}>{selectedFunction.name}</Title>
                 <Badge
                   color={selectedFunction.status === 'active' ? 'green' : 'gray'}
                   variant="light"
+                  style={{
+                    background: selectedFunction.status === 'active' ? 'var(--lb-success-bg)' : 'var(--lb-bg-tertiary)',
+                    color: selectedFunction.status === 'active' ? 'var(--lb-success-text)' : 'var(--lb-text-secondary)',
+                  }}
                 >
                   {selectedFunction.status}
                 </Badge>
                 {isDirty && (
-                  <Badge color="yellow" variant="light">
+                  <Badge
+                    color="yellow"
+                    variant="light"
+                    style={{
+                      background: 'var(--lb-warning-bg)',
+                      color: 'var(--lb-warning-text)',
+                    }}
+                  >
                     Unsaved changes
                   </Badge>
                 )}
@@ -556,6 +603,7 @@ export function FunctionsPage() {
                   variant="subtle"
                   leftSection={<IconPlayerPlay size={16} />}
                   onClick={() => setTestPanelOpen(!testPanelOpen)}
+                  style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
                 >
                   Test
                 </Button>
@@ -564,27 +612,35 @@ export function FunctionsPage() {
                   loading={isDeploying}
                   onClick={handleDeploy}
                   disabled={!isDirty && sourceCode === originalSourceCode}
+                  style={{
+                    background: 'var(--lb-brand)',
+                    borderRadius: 'var(--lb-radius-md)',
+                    transition: 'var(--lb-transition-fast)',
+                  }}
+                  className="lb-btn-primary"
                 >
                   Deploy
                 </Button>
                 <Menu shadow="md" width={200}>
                   <Menu.Target>
-                    <ActionIcon variant="subtle">
+                    <ActionIcon variant="subtle" style={{ color: 'var(--lb-text-secondary)' }}>
                       <IconDotsVertical size={16} />
                     </ActionIcon>
                   </Menu.Target>
-                  <Menu.Dropdown>
+                  <Menu.Dropdown style={{ background: 'var(--lb-bg-secondary)', borderColor: 'var(--lb-border-default)' }}>
                     <Menu.Item
                       leftSection={<IconDownload size={16} />}
                       onClick={handleDownload}
+                      style={{ color: 'var(--lb-text-primary)' }}
                     >
                       Download
                     </Menu.Item>
-                    <Menu.Divider />
+                    <Menu.Divider style={{ borderColor: 'var(--lb-border-muted)' }} />
                     <Menu.Item
                       leftSection={<IconTrash size={16} />}
                       color="red"
                       onClick={() => handleDeleteFunction(selectedFunction.id)}
+                      style={{ color: 'var(--lb-error)' }}
                     >
                       Delete function
                     </Menu.Item>
@@ -595,20 +651,20 @@ export function FunctionsPage() {
 
             {/* Tabs */}
             <Tabs value={activeTab} onChange={setActiveTab} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <Tabs.List px="sm">
-                <Tabs.Tab value="code" leftSection={<IconCode size={14} />}>
+              <Tabs.List px="sm" style={{ borderColor: 'var(--lb-border-default)' }}>
+                <Tabs.Tab value="code" leftSection={<IconCode size={14} />} style={{ color: 'var(--lb-text-secondary)' }}>
                   Code
                 </Tabs.Tab>
-                <Tabs.Tab value="logs" leftSection={<IconTerminal2 size={14} />}>
+                <Tabs.Tab value="logs" leftSection={<IconTerminal2 size={14} />} style={{ color: 'var(--lb-text-secondary)' }}>
                   Logs
                 </Tabs.Tab>
-                <Tabs.Tab value="metrics" leftSection={<IconChartBar size={14} />}>
+                <Tabs.Tab value="metrics" leftSection={<IconChartBar size={14} />} style={{ color: 'var(--lb-text-secondary)' }}>
                   Metrics
                 </Tabs.Tab>
-                <Tabs.Tab value="deployments" leftSection={<IconHistory size={14} />}>
+                <Tabs.Tab value="deployments" leftSection={<IconHistory size={14} />} style={{ color: 'var(--lb-text-secondary)' }}>
                   Deployments
                 </Tabs.Tab>
-                <Tabs.Tab value="settings" leftSection={<IconSettings size={14} />}>
+                <Tabs.Tab value="settings" leftSection={<IconSettings size={14} />} style={{ color: 'var(--lb-text-secondary)' }}>
                   Settings
                 </Tabs.Tab>
               </Tabs.List>
@@ -641,14 +697,15 @@ export function FunctionsPage() {
                       h="100%"
                       p="md"
                       style={{
-                        borderLeft: '1px solid var(--mantine-color-dark-4)',
+                        borderLeft: '1px solid var(--lb-border-default)',
                         display: 'flex',
                         flexDirection: 'column',
+                        background: 'var(--lb-bg-secondary)',
                       }}
                     >
                       <Group justify="space-between" mb="md">
-                        <Text fw={600}>Test Function</Text>
-                        <ActionIcon variant="subtle" onClick={() => setTestPanelOpen(false)}>
+                        <Text fw={600} style={{ color: 'var(--lb-text-primary)' }}>Test Function</Text>
+                        <ActionIcon variant="subtle" onClick={() => setTestPanelOpen(false)} style={{ color: 'var(--lb-text-secondary)' }}>
                           <IconX size={16} />
                         </ActionIcon>
                       </Group>
@@ -660,15 +717,21 @@ export function FunctionsPage() {
                             value={testMethod}
                             onChange={(v) => setTestMethod(v || 'POST')}
                             data={['GET', 'POST', 'PUT', 'PATCH', 'DELETE']}
+                            styles={{
+                              input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                            }}
                           />
                           <TextInput
                             flex={1}
                             value={`/functions/v1/${selectedFunction.slug}`}
                             readOnly
+                            styles={{
+                              input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                            }}
                           />
                         </Group>
 
-                        <Divider label="Headers" labelPosition="left" />
+                        <Divider label="Headers" labelPosition="left" style={{ borderColor: 'var(--lb-border-muted)' }} />
 
                         {testHeaders.map((header, idx) => (
                           <Group key={idx} gap="xs">
@@ -681,6 +744,9 @@ export function FunctionsPage() {
                                 setTestHeaders(newHeaders);
                               }}
                               style={{ flex: 1 }}
+                              styles={{
+                                input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                              }}
                             />
                             <TextInput
                               placeholder="Value"
@@ -691,6 +757,9 @@ export function FunctionsPage() {
                                 setTestHeaders(newHeaders);
                               }}
                               style={{ flex: 1 }}
+                              styles={{
+                                input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                              }}
                             />
                             <ActionIcon
                               variant="subtle"
@@ -698,6 +767,7 @@ export function FunctionsPage() {
                               onClick={() => {
                                 setTestHeaders(testHeaders.filter((_, i) => i !== idx));
                               }}
+                              style={{ color: 'var(--lb-error)' }}
                             >
                               <IconX size={14} />
                             </ActionIcon>
@@ -708,17 +778,25 @@ export function FunctionsPage() {
                           size="xs"
                           leftSection={<IconPlus size={14} />}
                           onClick={() => setTestHeaders([...testHeaders, { key: '', value: '' }])}
+                          style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
                         >
                           Add header
                         </Button>
 
-                        <Divider label="Body" labelPosition="left" />
+                        <Divider label="Body" labelPosition="left" style={{ borderColor: 'var(--lb-border-muted)' }} />
 
                         <Textarea
                           value={testBody}
                           onChange={(e) => setTestBody(e.target.value)}
                           minRows={4}
-                          styles={{ input: { fontFamily: 'monospace', fontSize: 12 } }}
+                          styles={{
+                            input: {
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              background: 'var(--lb-bg-tertiary)',
+                              borderColor: 'var(--lb-border-default)',
+                            },
+                          }}
                         />
 
                         <Button
@@ -726,26 +804,44 @@ export function FunctionsPage() {
                           leftSection={<IconPlayerPlay size={16} />}
                           loading={isTesting}
                           onClick={handleTestFunction}
+                          style={{
+                            background: 'var(--lb-brand)',
+                            borderRadius: 'var(--lb-radius-md)',
+                            transition: 'var(--lb-transition-fast)',
+                          }}
+                          className="lb-btn-primary"
                         >
                           Run function
                         </Button>
 
                         {testResponse && (
                           <>
-                            <Divider label="Response" labelPosition="left" />
-                            <Paper p="xs" withBorder bg="dark.8">
+                            <Divider label="Response" labelPosition="left" style={{ borderColor: 'var(--lb-border-muted)' }} />
+                            <Paper
+                              p="xs"
+                              withBorder
+                              style={{
+                                background: 'var(--lb-bg-tertiary)',
+                                borderColor: 'var(--lb-border-default)',
+                                borderRadius: 'var(--lb-radius-sm)',
+                              }}
+                            >
                               <Group gap="xs" mb="xs">
                                 <Badge
                                   color={testResponse.status < 400 ? 'green' : 'red'}
                                   variant="light"
+                                  style={{
+                                    background: testResponse.status < 400 ? 'var(--lb-success-bg)' : 'var(--lb-error-bg)',
+                                    color: testResponse.status < 400 ? 'var(--lb-success-text)' : 'var(--lb-error-text)',
+                                  }}
                                 >
                                   {testResponse.status}
                                 </Badge>
-                                <Text size="xs" c="dimmed">
+                                <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                                   {testResponse.duration_ms}ms
                                 </Text>
                               </Group>
-                              <Code block style={{ fontSize: 11, maxHeight: 200, overflow: 'auto' }}>
+                              <Code block style={{ fontSize: 11, maxHeight: 200, overflow: 'auto', background: 'var(--lb-bg-primary)' }}>
                                 {JSON.stringify(testResponse.body, null, 2)}
                               </Code>
                             </Paper>
@@ -760,13 +856,14 @@ export function FunctionsPage() {
               <Tabs.Panel value="logs" style={{ flex: 1 }}>
                 <Box p="md" h="100%" style={{ overflow: 'auto' }}>
                   <Group justify="space-between" mb="md">
-                    <Text fw={500}>Execution Logs</Text>
+                    <Text fw={500} style={{ color: 'var(--lb-text-primary)' }}>Execution Logs</Text>
                     <Button
                       variant="subtle"
                       size="xs"
                       leftSection={<IconRefresh size={14} />}
                       onClick={() => loadLogs(selectedFunctionId!)}
                       loading={logsLoading}
+                      style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
                     >
                       Refresh
                     </Button>
@@ -775,14 +872,14 @@ export function FunctionsPage() {
                   {logsLoading ? (
                     <Stack gap="xs">
                       {[1, 2, 3, 4, 5].map(i => (
-                        <Skeleton key={i} height={40} />
+                        <Skeleton key={i} height={40} style={{ borderRadius: 'var(--lb-radius-sm)' }} />
                       ))}
                     </Stack>
                   ) : logs.length === 0 ? (
                     <Stack align="center" py="xl">
-                      <IconTerminal2 size={48} style={{ opacity: 0.3 }} />
-                      <Text c="dimmed">No logs yet</Text>
-                      <Text size="xs" c="dimmed">
+                      <IconTerminal2 size={48} style={{ opacity: 0.3, color: 'var(--lb-text-muted)' }} />
+                      <Text style={{ color: 'var(--lb-text-secondary)' }}>No logs yet</Text>
+                      <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                         Logs will appear here when the function is invoked
                       </Text>
                     </Stack>
@@ -793,8 +890,12 @@ export function FunctionsPage() {
                           key={log.id}
                           p="xs"
                           withBorder
-                          bg={log.level === 'error' ? 'red.9' : 'dark.7'}
-                          style={{ opacity: log.level === 'debug' ? 0.7 : 1 }}
+                          style={{
+                            background: log.level === 'error' ? 'var(--lb-error-bg)' : 'var(--lb-bg-tertiary)',
+                            borderColor: log.level === 'error' ? 'var(--lb-error)' : 'var(--lb-border-default)',
+                            borderRadius: 'var(--lb-radius-sm)',
+                            opacity: log.level === 'debug' ? 0.7 : 1,
+                          }}
                         >
                           <Group gap="xs">
                             <Badge
@@ -805,24 +906,34 @@ export function FunctionsPage() {
                                 log.level === 'debug' ? 'gray' : 'blue'
                               }
                               variant="filled"
+                              style={{
+                                background:
+                                  log.level === 'error' ? 'var(--lb-error)' :
+                                  log.level === 'warn' ? 'var(--lb-warning)' :
+                                  log.level === 'debug' ? 'var(--lb-text-muted)' : 'var(--lb-info)',
+                              }}
                             >
                               {log.level.toUpperCase()}
                             </Badge>
-                            <Text size="xs" c="dimmed">
+                            <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                               {new Date(log.timestamp).toLocaleTimeString()}
                             </Text>
                             {log.status_code && (
-                              <Badge size="xs" variant="outline">
+                              <Badge
+                                size="xs"
+                                variant="outline"
+                                style={{ borderColor: 'var(--lb-border-default)', color: 'var(--lb-text-secondary)' }}
+                              >
                                 {log.status_code}
                               </Badge>
                             )}
                             {log.duration_ms && (
-                              <Text size="xs" c="dimmed">
+                              <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                                 {log.duration_ms}ms
                               </Text>
                             )}
                           </Group>
-                          <Text size="sm" mt={4} style={{ fontFamily: 'monospace' }}>
+                          <Text size="sm" mt={4} style={{ fontFamily: 'monospace', color: 'var(--lb-text-primary)' }}>
                             {log.message}
                           </Text>
                         </Paper>
@@ -835,7 +946,7 @@ export function FunctionsPage() {
               <Tabs.Panel value="metrics" style={{ flex: 1 }}>
                 <Box p="md" h="100%" style={{ overflow: 'auto' }}>
                   <Group justify="space-between" mb="lg">
-                    <Text fw={500}>Function Metrics</Text>
+                    <Text fw={500} style={{ color: 'var(--lb-text-primary)' }}>Function Metrics</Text>
                     <SegmentedControl
                       size="xs"
                       value={metricsPeriod}
@@ -846,70 +957,111 @@ export function FunctionsPage() {
                         { label: '7d', value: '7d' },
                         { label: '30d', value: '30d' },
                       ]}
+                      styles={{
+                        root: { background: 'var(--lb-bg-tertiary)' },
+                      }}
                     />
                   </Group>
 
                   {metricsLoading ? (
                     <Stack gap="md">
-                      <Skeleton height={100} />
-                      <Skeleton height={200} />
+                      <Skeleton height={100} style={{ borderRadius: 'var(--lb-radius-md)' }} />
+                      <Skeleton height={200} style={{ borderRadius: 'var(--lb-radius-md)' }} />
                     </Stack>
                   ) : metrics ? (
                     <Stack gap="lg">
                       <SimpleGrid cols={3}>
-                        <Paper withBorder p="md">
-                          <Text size="xs" c="dimmed" tt="uppercase">
+                        <Paper
+                          withBorder
+                          p="md"
+                          style={{
+                            background: 'var(--lb-bg-tertiary)',
+                            borderColor: 'var(--lb-border-default)',
+                            borderRadius: 'var(--lb-radius-md)',
+                          }}
+                        >
+                          <Text size="xs" tt="uppercase" style={{ color: 'var(--lb-text-muted)' }}>
                             Total Invocations
                           </Text>
-                          <Text size="xl" fw={600}>
+                          <Text size="xl" fw={600} style={{ color: 'var(--lb-text-primary)' }}>
                             {metrics.invocations.total.toLocaleString()}
                           </Text>
                         </Paper>
-                        <Paper withBorder p="md">
-                          <Text size="xs" c="dimmed" tt="uppercase">
+                        <Paper
+                          withBorder
+                          p="md"
+                          style={{
+                            background: 'var(--lb-bg-tertiary)',
+                            borderColor: 'var(--lb-border-default)',
+                            borderRadius: 'var(--lb-radius-md)',
+                          }}
+                        >
+                          <Text size="xs" tt="uppercase" style={{ color: 'var(--lb-text-muted)' }}>
                             Success Rate
                           </Text>
-                          <Text size="xl" fw={600} c={metrics.invocations.error > 0 ? 'yellow' : 'green'}>
+                          <Text
+                            size="xl"
+                            fw={600}
+                            style={{
+                              color: metrics.invocations.error > 0 ? 'var(--lb-warning)' : 'var(--lb-success)',
+                            }}
+                          >
                             {metrics.invocations.total > 0
                               ? Math.round((metrics.invocations.success / metrics.invocations.total) * 100)
                               : 100}%
                           </Text>
                         </Paper>
-                        <Paper withBorder p="md">
-                          <Text size="xs" c="dimmed" tt="uppercase">
+                        <Paper
+                          withBorder
+                          p="md"
+                          style={{
+                            background: 'var(--lb-bg-tertiary)',
+                            borderColor: 'var(--lb-border-default)',
+                            borderRadius: 'var(--lb-radius-md)',
+                          }}
+                        >
+                          <Text size="xs" tt="uppercase" style={{ color: 'var(--lb-text-muted)' }}>
                             Avg Latency
                           </Text>
-                          <Text size="xl" fw={600}>
+                          <Text size="xl" fw={600} style={{ color: 'var(--lb-text-primary)' }}>
                             {metrics.latency.avg}ms
                           </Text>
                         </Paper>
                       </SimpleGrid>
 
-                      <Paper withBorder p="md">
-                        <Text fw={500} mb="md">Invocations Over Time</Text>
+                      <Paper
+                        withBorder
+                        p="md"
+                        style={{
+                          background: 'var(--lb-bg-tertiary)',
+                          borderColor: 'var(--lb-border-default)',
+                          borderRadius: 'var(--lb-radius-md)',
+                        }}
+                      >
+                        <Text fw={500} mb="md" style={{ color: 'var(--lb-text-primary)' }}>Invocations Over Time</Text>
                         <Box h={250}>
                           <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={metrics.invocations.by_hour}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="var(--mantine-color-dark-4)" />
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--lb-border-muted)" />
                               <XAxis
                                 dataKey="hour"
                                 tickFormatter={(value) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                stroke="var(--mantine-color-dimmed)"
+                                stroke="var(--lb-text-muted)"
                                 fontSize={11}
                               />
-                              <YAxis stroke="var(--mantine-color-dimmed)" fontSize={11} />
+                              <YAxis stroke="var(--lb-text-muted)" fontSize={11} />
                               <RechartsTooltip
                                 contentStyle={{
-                                  background: 'var(--mantine-color-dark-7)',
-                                  border: '1px solid var(--mantine-color-dark-4)',
-                                  borderRadius: 4,
+                                  background: 'var(--lb-bg-secondary)',
+                                  border: '1px solid var(--lb-border-default)',
+                                  borderRadius: 'var(--lb-radius-sm)',
                                 }}
                               />
                               <Area
                                 type="monotone"
                                 dataKey="count"
-                                stroke="#3ECF8E"
-                                fill="#3ECF8E"
+                                stroke="var(--lb-brand)"
+                                fill="var(--lb-brand)"
                                 fillOpacity={0.2}
                               />
                             </AreaChart>
@@ -919,8 +1071,8 @@ export function FunctionsPage() {
                     </Stack>
                   ) : (
                     <Stack align="center" py="xl">
-                      <IconChartBar size={48} style={{ opacity: 0.3 }} />
-                      <Text c="dimmed">No metrics data yet</Text>
+                      <IconChartBar size={48} style={{ opacity: 0.3, color: 'var(--lb-text-muted)' }} />
+                      <Text style={{ color: 'var(--lb-text-secondary)' }}>No metrics data yet</Text>
                     </Stack>
                   )}
                 </Box>
@@ -928,26 +1080,35 @@ export function FunctionsPage() {
 
               <Tabs.Panel value="deployments" style={{ flex: 1 }}>
                 <Box p="md" h="100%" style={{ overflow: 'auto' }}>
-                  <Text fw={500} mb="md">Deployment History</Text>
+                  <Text fw={500} mb="md" style={{ color: 'var(--lb-text-primary)' }}>Deployment History</Text>
 
                   {deploymentsLoading ? (
                     <Stack gap="xs">
                       {[1, 2, 3].map(i => (
-                        <Skeleton key={i} height={60} />
+                        <Skeleton key={i} height={60} style={{ borderRadius: 'var(--lb-radius-md)' }} />
                       ))}
                     </Stack>
                   ) : deployments.length === 0 ? (
                     <Stack align="center" py="xl">
-                      <IconHistory size={48} style={{ opacity: 0.3 }} />
-                      <Text c="dimmed">No deployments yet</Text>
-                      <Text size="xs" c="dimmed">
+                      <IconHistory size={48} style={{ opacity: 0.3, color: 'var(--lb-text-muted)' }} />
+                      <Text style={{ color: 'var(--lb-text-secondary)' }}>No deployments yet</Text>
+                      <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                         Deploy your function to see version history
                       </Text>
                     </Stack>
                   ) : (
                     <Stack gap="xs">
                       {deployments.map((deployment, idx) => (
-                        <Paper key={deployment.id} withBorder p="md">
+                        <Paper
+                          key={deployment.id}
+                          withBorder
+                          p="md"
+                          style={{
+                            background: 'var(--lb-bg-tertiary)',
+                            borderColor: 'var(--lb-border-default)',
+                            borderRadius: 'var(--lb-radius-md)',
+                          }}
+                        >
                           <Group justify="space-between">
                             <Group>
                               <Badge
@@ -957,17 +1118,31 @@ export function FunctionsPage() {
                                   deployment.status === 'failed' ? 'red' : 'gray'
                                 }
                                 variant="light"
+                                style={{
+                                  background:
+                                    deployment.status === 'deployed' ? 'var(--lb-success-bg)' :
+                                    deployment.status === 'deploying' ? 'var(--lb-info-bg)' :
+                                    deployment.status === 'failed' ? 'var(--lb-error-bg)' : 'var(--lb-bg-tertiary)',
+                                  color:
+                                    deployment.status === 'deployed' ? 'var(--lb-success-text)' :
+                                    deployment.status === 'deploying' ? 'var(--lb-info-text)' :
+                                    deployment.status === 'failed' ? 'var(--lb-error-text)' : 'var(--lb-text-secondary)',
+                                }}
                               >
                                 {deployment.status}
                               </Badge>
-                              <Text fw={500}>Version {deployment.version}</Text>
+                              <Text fw={500} style={{ color: 'var(--lb-text-primary)' }}>Version {deployment.version}</Text>
                               {idx === 0 && (
-                                <Badge variant="outline" size="xs">
+                                <Badge
+                                  variant="outline"
+                                  size="xs"
+                                  style={{ borderColor: 'var(--lb-brand)', color: 'var(--lb-brand)' }}
+                                >
                                   Current
                                 </Badge>
                               )}
                             </Group>
-                            <Text size="xs" c="dimmed">
+                            <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                               {new Date(deployment.deployed_at).toLocaleString()}
                             </Text>
                           </Group>
@@ -981,24 +1156,45 @@ export function FunctionsPage() {
               <Tabs.Panel value="settings" style={{ flex: 1 }}>
                 <Box p="md" maw={600}>
                   <Stack gap="lg">
-                    <Paper withBorder p="md">
-                      <Text fw={500} mb="md">Function Settings</Text>
+                    <Paper
+                      withBorder
+                      p="md"
+                      style={{
+                        background: 'var(--lb-bg-tertiary)',
+                        borderColor: 'var(--lb-border-default)',
+                        borderRadius: 'var(--lb-radius-md)',
+                      }}
+                    >
+                      <Text fw={500} mb="md" style={{ color: 'var(--lb-text-primary)' }}>Function Settings</Text>
                       <Stack gap="md">
                         <TextInput
                           label="Function Name"
                           value={selectedFunction.name}
                           disabled
+                          styles={{
+                            label: { color: 'var(--lb-text-secondary)' },
+                            input: { background: 'var(--lb-bg-secondary)', borderColor: 'var(--lb-border-default)' },
+                          }}
                         />
                         <TextInput
                           label="Slug"
                           value={selectedFunction.slug}
                           disabled
                           description="URL path for invoking the function"
+                          styles={{
+                            label: { color: 'var(--lb-text-secondary)' },
+                            description: { color: 'var(--lb-text-tertiary)' },
+                            input: { background: 'var(--lb-bg-secondary)', borderColor: 'var(--lb-border-default)' },
+                          }}
                         />
                         <TextInput
                           label="Entrypoint"
                           value={selectedFunction.entrypoint}
                           disabled
+                          styles={{
+                            label: { color: 'var(--lb-text-secondary)' },
+                            input: { background: 'var(--lb-bg-secondary)', borderColor: 'var(--lb-border-default)' },
+                          }}
                         />
                         <Switch
                           label="Require JWT verification"
@@ -1010,19 +1206,35 @@ export function FunctionsPage() {
                             });
                             await loadFunctions();
                           }}
+                          styles={{
+                            label: { color: 'var(--lb-text-primary)' },
+                            description: { color: 'var(--lb-text-tertiary)' },
+                          }}
                         />
                       </Stack>
                     </Paper>
 
-                    <Paper withBorder p="md">
-                      <Text fw={500} mb="md">Endpoint</Text>
+                    <Paper
+                      withBorder
+                      p="md"
+                      style={{
+                        background: 'var(--lb-bg-tertiary)',
+                        borderColor: 'var(--lb-border-default)',
+                        borderRadius: 'var(--lb-radius-md)',
+                      }}
+                    >
+                      <Text fw={500} mb="md" style={{ color: 'var(--lb-text-primary)' }}>Endpoint</Text>
                       <Group>
-                        <Code style={{ flex: 1 }}>
+                        <Code style={{ flex: 1, background: 'var(--lb-bg-secondary)', color: 'var(--lb-text-primary)' }}>
                           {window.location.origin}/functions/v1/{selectedFunction.slug}
                         </Code>
                         <CopyButton value={`${window.location.origin}/functions/v1/${selectedFunction.slug}`}>
                           {({ copied, copy }) => (
-                            <ActionIcon variant="subtle" onClick={copy}>
+                            <ActionIcon
+                              variant="subtle"
+                              onClick={copy}
+                              style={{ color: copied ? 'var(--lb-success)' : 'var(--lb-text-secondary)' }}
+                            >
                               {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
                             </ActionIcon>
                           )}
@@ -1030,13 +1242,26 @@ export function FunctionsPage() {
                       </Group>
                     </Paper>
 
-                    <Paper withBorder p="md" bg="red.9">
-                      <Text fw={500} mb="md" c="red.3">Danger Zone</Text>
+                    <Paper
+                      withBorder
+                      p="md"
+                      style={{
+                        background: 'var(--lb-error-bg)',
+                        borderColor: 'var(--lb-error)',
+                        borderRadius: 'var(--lb-radius-md)',
+                      }}
+                    >
+                      <Text fw={500} mb="md" style={{ color: 'var(--lb-error-text)' }}>Danger Zone</Text>
                       <Button
                         color="red"
                         variant="outline"
                         leftSection={<IconTrash size={16} />}
                         onClick={() => handleDeleteFunction(selectedFunction.id)}
+                        style={{
+                          borderColor: 'var(--lb-error)',
+                          color: 'var(--lb-error)',
+                          transition: 'var(--lb-transition-fast)',
+                        }}
                       >
                         Delete function
                       </Button>
@@ -1047,15 +1272,33 @@ export function FunctionsPage() {
             </Tabs>
           </Paper>
         ) : (
-          <Paper withBorder p="xl" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Paper
+            withBorder
+            p="xl"
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--lb-bg-secondary)',
+              borderColor: 'var(--lb-border-default)',
+              borderRadius: 'var(--lb-radius-md)',
+            }}
+          >
             <Stack align="center">
-              <IconFileCode size={64} style={{ opacity: 0.3 }} />
-              <Text size="lg" c="dimmed">
+              <IconFileCode size={64} style={{ opacity: 0.3, color: 'var(--lb-text-muted)' }} />
+              <Text size="lg" style={{ color: 'var(--lb-text-secondary)' }}>
                 Select a function or create a new one
               </Text>
               <Button
                 leftSection={<IconPlus size={16} />}
                 onClick={() => setCreateModalOpen(true)}
+                style={{
+                  background: 'var(--lb-brand)',
+                  borderRadius: 'var(--lb-radius-md)',
+                  transition: 'var(--lb-transition-fast)',
+                }}
+                className="lb-btn-primary"
               >
                 Create function
               </Button>
@@ -1070,6 +1313,12 @@ export function FunctionsPage() {
         onClose={() => setCreateModalOpen(false)}
         title="Create Edge Function"
         size="lg"
+        styles={{
+          header: { background: 'var(--lb-bg-secondary)', borderBottom: '1px solid var(--lb-border-default)' },
+          title: { color: 'var(--lb-text-primary)', fontWeight: 600 },
+          body: { background: 'var(--lb-bg-secondary)' },
+          content: { borderRadius: 'var(--lb-radius-lg)' },
+        }}
       >
         <Stack gap="md">
           <TextInput
@@ -1078,6 +1327,11 @@ export function FunctionsPage() {
             value={newFunctionName}
             onChange={(e) => setNewFunctionName(e.target.value)}
             description="Use lowercase letters, numbers, and hyphens"
+            styles={{
+              label: { color: 'var(--lb-text-primary)' },
+              description: { color: 'var(--lb-text-tertiary)' },
+              input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+            }}
           />
 
           <Switch
@@ -1085,9 +1339,13 @@ export function FunctionsPage() {
             description="Requests must include a valid JWT token"
             checked={verifyJwt}
             onChange={(e) => setVerifyJwt(e.target.checked)}
+            styles={{
+              label: { color: 'var(--lb-text-primary)' },
+              description: { color: 'var(--lb-text-tertiary)' },
+            }}
           />
 
-          <Divider label="Start from template" labelPosition="center" />
+          <Divider label="Start from template" labelPosition="center" style={{ borderColor: 'var(--lb-border-muted)' }} />
 
           <SimpleGrid cols={2}>
             {templates.map(template => (
@@ -1097,17 +1355,27 @@ export function FunctionsPage() {
                 padding="sm"
                 style={{
                   cursor: 'pointer',
-                  borderColor: selectedTemplate === template.id ? 'var(--mantine-color-blue-6)' : undefined,
+                  background: selectedTemplate === template.id ? 'var(--lb-brand-light)' : 'var(--lb-bg-tertiary)',
+                  borderColor: selectedTemplate === template.id ? 'var(--lb-brand)' : 'var(--lb-border-default)',
+                  borderRadius: 'var(--lb-radius-md)',
+                  transition: 'var(--lb-transition-fast)',
                 }}
                 onClick={() => setSelectedTemplate(selectedTemplate === template.id ? null : template.id)}
               >
                 <Group gap="sm">
-                  <ThemeIcon size="lg" variant="light" color="blue">
+                  <ThemeIcon
+                    size="lg"
+                    variant="light"
+                    style={{
+                      background: 'var(--lb-brand-light)',
+                      color: 'var(--lb-brand)',
+                    }}
+                  >
                     {templateIcons[template.icon] || <IconCode size={20} />}
                   </ThemeIcon>
                   <Box>
-                    <Text size="sm" fw={500}>{template.name}</Text>
-                    <Text size="xs" c="dimmed">{template.description}</Text>
+                    <Text size="sm" fw={500} style={{ color: 'var(--lb-text-primary)' }}>{template.name}</Text>
+                    <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>{template.description}</Text>
                   </Box>
                 </Group>
               </Card>
@@ -1115,10 +1383,23 @@ export function FunctionsPage() {
           </SimpleGrid>
 
           <Group justify="flex-end" mt="md">
-            <Button variant="subtle" onClick={() => setCreateModalOpen(false)}>
+            <Button
+              variant="subtle"
+              onClick={() => setCreateModalOpen(false)}
+              style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
+            >
               Cancel
             </Button>
-            <Button onClick={handleCreateFunction} disabled={!newFunctionName.trim()}>
+            <Button
+              onClick={handleCreateFunction}
+              disabled={!newFunctionName.trim()}
+              style={{
+                background: 'var(--lb-brand)',
+                borderRadius: 'var(--lb-radius-md)',
+                transition: 'var(--lb-transition-fast)',
+              }}
+              className="lb-btn-primary"
+            >
               Create function
             </Button>
           </Group>
@@ -1131,24 +1412,38 @@ export function FunctionsPage() {
         onClose={() => setSecretsModalOpen(false)}
         title="Manage Secrets"
         size="lg"
+        styles={{
+          header: { background: 'var(--lb-bg-secondary)', borderBottom: '1px solid var(--lb-border-default)' },
+          title: { color: 'var(--lb-text-primary)', fontWeight: 600 },
+          body: { background: 'var(--lb-bg-secondary)' },
+          content: { borderRadius: 'var(--lb-radius-lg)' },
+        }}
       >
         <Stack gap="md">
-          <Text size="sm" c="dimmed">
+          <Text size="sm" style={{ color: 'var(--lb-text-secondary)' }}>
             Secrets are available to all Edge Functions as environment variables.
           </Text>
 
-          <Paper withBorder p="md">
+          <Paper
+            withBorder
+            p="md"
+            style={{
+              background: 'var(--lb-bg-tertiary)',
+              borderColor: 'var(--lb-border-default)',
+              borderRadius: 'var(--lb-radius-md)',
+            }}
+          >
             <Stack gap="sm">
               {secrets.length === 0 ? (
-                <Text size="sm" c="dimmed" ta="center" py="md">
+                <Text size="sm" ta="center" py="md" style={{ color: 'var(--lb-text-secondary)' }}>
                   No secrets yet
                 </Text>
               ) : (
                 secrets.map(secret => (
                   <Group key={secret.id} justify="space-between">
-                    <Text size="sm" ff="monospace">{secret.name}</Text>
+                    <Text size="sm" ff="monospace" style={{ color: 'var(--lb-text-primary)' }}>{secret.name}</Text>
                     <Group gap="xs">
-                      <Text size="xs" c="dimmed">
+                      <Text size="xs" style={{ color: 'var(--lb-text-tertiary)' }}>
                         Added {new Date(secret.created_at).toLocaleDateString()}
                       </Text>
                       <ActionIcon
@@ -1156,6 +1451,7 @@ export function FunctionsPage() {
                         color="red"
                         size="sm"
                         onClick={() => handleDeleteSecret(secret.name)}
+                        style={{ color: 'var(--lb-error)' }}
                       >
                         <IconTrash size={14} />
                       </ActionIcon>
@@ -1166,7 +1462,7 @@ export function FunctionsPage() {
             </Stack>
           </Paper>
 
-          <Divider />
+          <Divider style={{ borderColor: 'var(--lb-border-muted)' }} />
 
           {bulkSecretsMode ? (
             <>
@@ -1176,13 +1472,28 @@ export function FunctionsPage() {
                 value={bulkSecretsText}
                 onChange={(e) => setBulkSecretsText(e.target.value)}
                 minRows={6}
-                styles={{ input: { fontFamily: 'monospace' } }}
+                styles={{
+                  label: { color: 'var(--lb-text-primary)' },
+                  input: { fontFamily: 'monospace', background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                }}
               />
               <Group justify="flex-end">
-                <Button variant="subtle" onClick={() => setBulkSecretsMode(false)}>
+                <Button
+                  variant="subtle"
+                  onClick={() => setBulkSecretsMode(false)}
+                  style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
+                >
                   Cancel
                 </Button>
-                <Button onClick={handleBulkUpdateSecrets}>
+                <Button
+                  onClick={handleBulkUpdateSecrets}
+                  style={{
+                    background: 'var(--lb-brand)',
+                    borderRadius: 'var(--lb-radius-md)',
+                    transition: 'var(--lb-transition-fast)',
+                  }}
+                  className="lb-btn-primary"
+                >
                   Add secrets
                 </Button>
               </Group>
@@ -1195,6 +1506,9 @@ export function FunctionsPage() {
                   value={newSecretName}
                   onChange={(e) => setNewSecretName(e.target.value)}
                   style={{ flex: 1 }}
+                  styles={{
+                    input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                  }}
                 />
                 <TextInput
                   placeholder="Secret value"
@@ -1202,16 +1516,24 @@ export function FunctionsPage() {
                   value={newSecretValue}
                   onChange={(e) => setNewSecretValue(e.target.value)}
                   style={{ flex: 1 }}
+                  styles={{
+                    input: { background: 'var(--lb-bg-tertiary)', borderColor: 'var(--lb-border-default)' },
+                  }}
                 />
                 <ActionIcon
                   variant="filled"
                   onClick={handleAddSecret}
                   disabled={!newSecretName.trim() || !newSecretValue.trim()}
+                  style={{ background: 'var(--lb-brand)', transition: 'var(--lb-transition-fast)' }}
                 >
                   <IconPlus size={16} />
                 </ActionIcon>
               </Group>
-              <Button variant="subtle" onClick={() => setBulkSecretsMode(true)}>
+              <Button
+                variant="subtle"
+                onClick={() => setBulkSecretsMode(true)}
+                style={{ color: 'var(--lb-text-secondary)', transition: 'var(--lb-transition-fast)' }}
+              >
                 Bulk add from .env
               </Button>
             </>

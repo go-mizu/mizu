@@ -1,4 +1,5 @@
-/* Global styles */
+/* Localbase Global Styles */
+
 * {
   box-sizing: border-box;
 }
@@ -12,9 +13,11 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  font-family: var(--lb-font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--lb-bg-primary);
+  color: var(--lb-text-primary);
 }
 
 /* Remove focus outlines but keep them for keyboard navigation */
@@ -23,37 +26,18 @@ body {
 }
 
 *:focus-visible {
-  outline: 2px solid var(--supabase-brand);
+  outline: 2px solid var(--lb-brand);
   outline-offset: 2px;
-}
-
-/* Custom scrollbar for webkit browsers */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
 }
 
 /* Selection color */
 ::selection {
-  background: rgba(62, 207, 142, 0.3);
+  background: var(--lb-brand-light);
 }
 
 /* Links */
 a {
-  color: var(--supabase-brand);
+  color: var(--lb-brand);
   text-decoration: none;
 }
 
@@ -64,5 +48,81 @@ a:hover {
 /* Code blocks */
 pre,
 code {
-  font-family: 'Source Code Pro', Menlo, Monaco, 'Courier New', monospace;
+  font-family: var(--lb-font-mono, 'Source Code Pro', Menlo, Monaco, 'Courier New', monospace);
+}
+
+/* Base text colors */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--lb-text-primary);
+  font-weight: 600;
+}
+
+p {
+  color: var(--lb-text-primary);
+}
+
+/* Placeholder styling */
+::placeholder {
+  color: var(--lb-text-placeholder);
+}
+
+/* Form element defaults */
+input, textarea, select, button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Table defaults */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* Image defaults */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Hide scrollbar by default, show on hover (for containers that need it) */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-auto {
+  -ms-overflow-style: auto;
+  scrollbar-width: thin;
+}
+
+.scrollbar-auto::-webkit-scrollbar {
+  display: block;
+}
+
+/* Accessibility: Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+
+  .no-print {
+    display: none !important;
+  }
 }
