@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -16,13 +17,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// defaultDBPath returns the default SQLite database path
+func defaultDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "lingo.db"
+	}
+	return filepath.Join(home, "data", "blueprints", "lingo", "lingo.db")
+}
+
 // NewServe creates the serve command
 func NewServe() *cobra.Command {
 	var (
-		port      int
-		devMode   bool
-		useSqlite bool
-		dbPath    string
+		port        int
+		devMode     bool
+		usePostgres bool
+		dbPath      string
 	)
 
 	cmd := &cobra.Command{
@@ -35,16 +45,17 @@ func NewServe() *cobra.Command {
   - Social features (friends, leaderboards)
   - Dashboard UI
 
-The server runs on port 8080 by default.`,
+The server runs on port 8080 by default.
+Database defaults to SQLite at $HOME/data/blueprints/lingo/lingo.db.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(cmd.Context(), port, devMode, useSqlite, dbPath)
+			return runServe(cmd.Context(), port, devMode, !usePostgres, dbPath)
 		},
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on")
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Enable development mode")
-	cmd.Flags().BoolVar(&useSqlite, "sqlite", false, "Use SQLite instead of PostgreSQL")
-	cmd.Flags().StringVar(&dbPath, "db", "lingo.db", "SQLite database path (when --sqlite is set)")
+	cmd.Flags().BoolVar(&usePostgres, "postgres", false, "Use PostgreSQL instead of SQLite")
+	cmd.Flags().StringVar(&dbPath, "db", defaultDBPath(), "SQLite database path")
 
 	return cmd
 }
@@ -57,6 +68,11 @@ func runServe(ctx context.Context, port int, devMode, useSqlite bool, dbPath str
 	var err error
 
 	if useSqlite {
+		// Ensure database directory exists
+		dbDir := filepath.Dir(dbPath)
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			return fmt.Errorf("failed to create database directory: %w", err)
+		}
 		fmt.Println(infoStyle.Render(fmt.Sprintf("Connecting to SQLite (%s)...", dbPath)))
 		st, err = sqlite.New(ctx, dbPath)
 	} else {

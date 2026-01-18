@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/lingo/pkg/seed/duome"
@@ -237,8 +239,13 @@ func runSeedDuomeImport(ctx context.Context, lang string, useSqlite bool) error 
 	var err error
 
 	if useSqlite {
-		fmt.Println(infoStyle.Render("Connecting to SQLite..."))
-		store, err := sqlite.New(ctx, "lingo.db")
+		dbPath := defaultDBPath()
+		// Ensure database directory exists
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+			return fmt.Errorf("create db directory: %w", err)
+		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Connecting to SQLite (%s)...", dbPath)))
+		store, err := sqlite.New(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("connect to sqlite: %w", err)
 		}
@@ -298,8 +305,13 @@ func runSeedDuomeAll(ctx context.Context, useSqlite bool, primary bool) error {
 	var err error
 
 	if useSqlite {
-		fmt.Println(infoStyle.Render("Connecting to SQLite..."))
-		store, err := sqlite.New(ctx, "lingo.db")
+		dbPath := defaultDBPath()
+		// Ensure database directory exists
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+			return fmt.Errorf("create db directory: %w", err)
+		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("Connecting to SQLite (%s)...", dbPath)))
+		store, err := sqlite.New(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("connect to sqlite: %w", err)
 		}
