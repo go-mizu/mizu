@@ -215,6 +215,164 @@ body {
   color: #FF9600;
 }
 
+/* ==========================================
+   LANDING PAGE ANIMATIONS - Duolingo Style
+   ========================================== */
+
+/* Character float animations with different timings */
+@keyframes characterFloat1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(5px, -10px) rotate(3deg); }
+}
+
+@keyframes characterFloat2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(-5px, -8px) rotate(-3deg); }
+}
+
+@keyframes characterFloat3 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(3px, -12px) rotate(2deg); }
+}
+
+/* Mascot idle breathing */
+@keyframes owlBreathe {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.02) translateY(-2px); }
+}
+
+/* Mascot wave animation */
+@keyframes owlWave {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-15deg); }
+  75% { transform: rotate(15deg); }
+}
+
+/* Button glow effect for CTA */
+@keyframes buttonGlow {
+  0%, 100% {
+    box-shadow: 0 4px 0 #58A700, 0 0 0 rgba(88, 204, 2, 0);
+  }
+  50% {
+    box-shadow: 0 4px 0 #58A700, 0 0 30px rgba(88, 204, 2, 0.4);
+  }
+}
+
+.animate-button-glow {
+  animation: buttonGlow 2s ease-in-out infinite;
+}
+
+/* Slide in from left */
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slideInLeft {
+  animation: slideInLeft 0.5s ease-out;
+}
+
+/* Slide in from right */
+@keyframes slideInRight {
+  from {
+    transform: translateX(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slideInRight {
+  animation: slideInRight 0.5s ease-out;
+}
+
+/* Scale in animation */
+@keyframes scaleIn {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.5s ease-out;
+}
+
+/* Landing page specific styles */
+.landing-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: white;
+}
+
+.landing-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 200px);
+  padding: 40px 0;
+}
+
+.landing-cta-button {
+  animation: buttonGlow 3s ease-in-out infinite;
+}
+
+/* Language carousel scrollbar hide */
+.language-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.language-carousel {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Feature card hover effect */
+.feature-card {
+  transition: all 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+/* Stats section */
+.stats-section {
+  background: linear-gradient(135deg, #58CC02 0%, #4CAD02 100%);
+}
+
+/* Responsive hero layout */
+@media (max-width: 768px) {
+  .landing-hero {
+    flex-direction: column;
+    gap: 40px;
+    text-align: center;
+  }
+
+  .landing-hero-content {
+    order: 2;
+  }
+
+  .landing-hero-characters {
+    order: 1;
+    transform: scale(0.8);
+  }
+}
+
 /* Duolingo-style button */
 .duo-button {
   display: inline-flex;
