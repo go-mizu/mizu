@@ -192,8 +192,11 @@ export type ExerciseType =
   | 'multiple_choice'
   | 'word_bank'
   | 'listening'
+  | 'listen_select'
   | 'fill_blank'
   | 'match_pairs'
+  | 'speaking'
+  | 'tap_complete'
 
 export interface LessonSession {
   id: string

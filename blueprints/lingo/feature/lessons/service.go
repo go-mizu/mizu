@@ -308,3 +308,223 @@ func (s *Service) UpdateUserLexeme(ctx context.Context, ul *store.UserLexeme, co
 
 	return s.progress.UpdateUserLexeme(ctx, ul)
 }
+
+// AdaptiveExerciseSelector handles intelligent exercise selection
+// based on user performance, weaknesses, and variety
+type AdaptiveExerciseSelector struct {
+	recentExerciseTypes []string
+	recentCorrectRate   float64
+	userMistakes        []store.UserMistake
+}
+
+// ExerciseScore represents a scored exercise for adaptive selection
+type ExerciseScore struct {
+	Exercise store.Exercise
+	Score    float64
+}
+
+// GetAdaptiveLesson returns a lesson with exercises ordered adaptively
+// based on user performance and spaced repetition principles
+func (s *Service) GetAdaptiveLesson(ctx context.Context, userID, lessonID uuid.UUID) (*LessonWithExercises, error) {
+	// Get base lesson with exercises
+	lesson, err := s.GetLesson(ctx, lessonID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(lesson.Exercises) == 0 {
+		return lesson, nil
+	}
+
+	// Get user's recent mistakes to target weak areas
+	mistakes, err := s.progress.GetUserMistakes(ctx, userID, 50)
+	if err != nil {
+		mistakes = []store.UserMistake{}
+	}
+
+	// Get user's lexeme strengths for spaced repetition
+	lexemes, err := s.progress.GetUserLexemes(ctx, userID, 100)
+	if err != nil {
+		lexemes = []store.UserLexeme{}
+	}
+
+	// Create selector with user data
+	selector := &AdaptiveExerciseSelector{
+		recentExerciseTypes: []string{},
+		userMistakes:        mistakes,
+	}
+
+	// Score and reorder exercises
+	scored := selector.scoreExercises(lesson.Exercises, lexemes, mistakes)
+
+	// Reorder exercises: easy warmup -> core learning -> challenge -> review
+	lesson.Exercises = selector.buildLessonStructure(scored)
+
+	return lesson, nil
+}
+
+// scoreExercises calculates a priority score for each exercise
+func (sel *AdaptiveExerciseSelector) scoreExercises(exercises []store.Exercise, lexemes []store.UserLexeme, mistakes []store.UserMistake) []ExerciseScore {
+	scored := make([]ExerciseScore, len(exercises))
+
+	// Build maps for quick lookup
+	mistakeMap := make(map[string]int) // exercise type -> count
+	for _, m := range mistakes {
+		mistakeMap[m.MistakeType]++
+	}
+
+	lexemeStrength := make(map[uuid.UUID]float64)
+	for _, l := range lexemes {
+		lexemeStrength[l.LexemeID] = l.Strength
+	}
+
+	for i, ex := range exercises {
+		score := 1.0
+
+		// 1. Difficulty targeting (aim for ~80% success rate)
+		// Lower difficulty exercises get lower scores, higher difficulty get higher
+		difficultyScore := float64(ex.Difficulty) * 0.2
+		score += difficultyScore
+
+		// 2. Weakness bonus - exercises targeting weak areas get higher scores
+		if mistakeCount, exists := mistakeMap[ex.Type]; exists && mistakeCount > 0 {
+			weaknessBonus := math.Min(0.5, float64(mistakeCount)*0.1)
+			score += weaknessBonus
+		}
+
+		// 3. Variety penalty - reduce score if exercise type was used recently
+		typeCount := 0
+		for _, t := range sel.recentExerciseTypes {
+			if t == ex.Type {
+				typeCount++
+			}
+		}
+		varietyPenalty := float64(typeCount) * 0.15
+		score -= varietyPenalty
+
+		// 4. Engagement boost - more interactive exercises get slight boost
+		if ex.Type == "word_bank" || ex.Type == "match_pairs" || ex.Type == "speaking" {
+			score += 0.1
+		}
+
+		scored[i] = ExerciseScore{
+			Exercise: ex,
+			Score:    score,
+		}
+	}
+
+	return scored
+}
+
+// buildLessonStructure creates an optimal lesson flow
+// Pattern: Easy warmup (1-3) -> Core learning (4-7) -> Challenge (8-10) -> Review (11-15)
+func (sel *AdaptiveExerciseSelector) buildLessonStructure(scored []ExerciseScore) []store.Exercise {
+	if len(scored) == 0 {
+		return []store.Exercise{}
+	}
+
+	// Sort by score
+	sortedByScore := make([]ExerciseScore, len(scored))
+	copy(sortedByScore, scored)
+
+	// Bubble sort for simplicity (small lists)
+	for i := 0; i < len(sortedByScore); i++ {
+		for j := i + 1; j < len(sortedByScore); j++ {
+			if sortedByScore[j].Score > sortedByScore[i].Score {
+				sortedByScore[i], sortedByScore[j] = sortedByScore[j], sortedByScore[i]
+			}
+		}
+	}
+
+	result := make([]store.Exercise, 0, len(scored))
+	total := len(scored)
+
+	// Warmup phase: 20% of exercises - pick easier ones
+	warmupCount := max(1, total/5)
+	easyExercises := filterByDifficulty(sortedByScore, 1, 2)
+	for i := 0; i < warmupCount && i < len(easyExercises); i++ {
+		result = append(result, easyExercises[i].Exercise)
+	}
+
+	// Core phase: 40% of exercises - medium difficulty, high score
+	coreCount := total * 2 / 5
+	mediumExercises := filterByDifficulty(sortedByScore, 2, 4)
+	for i := 0; i < coreCount && i < len(mediumExercises); i++ {
+		// Avoid duplicates
+		if !containsExercise(result, mediumExercises[i].Exercise.ID) {
+			result = append(result, mediumExercises[i].Exercise)
+		}
+	}
+
+	// Challenge phase: 20% - harder exercises
+	challengeCount := total / 5
+	hardExercises := filterByDifficulty(sortedByScore, 3, 5)
+	for i := 0; i < challengeCount && i < len(hardExercises); i++ {
+		if !containsExercise(result, hardExercises[i].Exercise.ID) {
+			result = append(result, hardExercises[i].Exercise)
+		}
+	}
+
+	// Review phase: remaining - mix of all difficulties
+	for _, s := range sortedByScore {
+		if !containsExercise(result, s.Exercise.ID) {
+			result = append(result, s.Exercise)
+		}
+	}
+
+	return result
+}
+
+// Helper functions for adaptive exercise selection
+func filterByDifficulty(scored []ExerciseScore, minDiff, maxDiff int) []ExerciseScore {
+	result := []ExerciseScore{}
+	for _, s := range scored {
+		if s.Exercise.Difficulty >= minDiff && s.Exercise.Difficulty <= maxDiff {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func containsExercise(exercises []store.Exercise, id uuid.UUID) bool {
+	for _, e := range exercises {
+		if e.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// CalculateOptimalDifficulty determines the ideal difficulty level
+// based on user's recent performance (target ~80% success rate)
+func (s *Service) CalculateOptimalDifficulty(ctx context.Context, userID uuid.UUID) (int, error) {
+	// Get recent session results
+	history, err := s.progress.GetXPHistory(ctx, userID, 7) // Last 7 days
+	if err != nil || len(history) == 0 {
+		return 2, nil // Default to medium difficulty
+	}
+
+	// Calculate average XP per session (proxy for performance)
+	totalXP := 0
+	for _, event := range history {
+		if event.Source == "lesson" {
+			totalXP += event.Amount
+		}
+	}
+	avgXP := float64(totalXP) / float64(len(history))
+
+	// Map XP to difficulty
+	// High XP (>12) = user doing well -> increase difficulty
+	// Medium XP (8-12) = good balance -> maintain
+	// Low XP (<8) = struggling -> decrease difficulty
+	switch {
+	case avgXP > 12:
+		return 4, nil // Increase to hard
+	case avgXP > 10:
+		return 3, nil // Medium-hard
+	case avgXP > 8:
+		return 2, nil // Medium
+	default:
+		return 1, nil // Easy
+	}
+}

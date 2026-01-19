@@ -8,94 +8,450 @@ import { colors } from '../styles/tokens'
 import { lessonsApi, Exercise, Lesson as LessonType } from '../api/client'
 import { sounds, playSound, playTTS, stopSpeaking } from '../utils/sounds'
 
-// Celebratory messages for correct answers
-const CORRECT_MESSAGES = [
-  'Great!',
-  'Excellent!',
-  'Nice!',
-  'Amazing!',
-  'Perfect!',
-  'Awesome!',
-  'Well done!',
-  'Fantastic!',
-  'Brilliant!',
-  'Super!',
-]
+// Celebratory messages for correct answers - organized by streak level
+const FEEDBACK_MESSAGES = {
+  correct: {
+    basic: ['Correct!', 'Nice!', 'Great!', 'Good!', 'Right!'],
+    streak3: ['Amazing!', 'On fire!', 'Fantastic!', 'Excellent!', 'Superb!'],
+    streak5: ['Incredible!', 'Unstoppable!', 'Brilliant!', 'Outstanding!', 'Magnificent!'],
+    streak10: ['LEGENDARY!', 'UNBELIEVABLE!', 'PERFECT RUN!', 'GODLIKE!', 'FLAWLESS!'],
+    perfect: ['Perfect lesson!', 'No mistakes!', 'Flawless!', 'Master!'],
+  },
+  incorrect: {
+    first: ['Not quite', 'Almost!', 'Try again', 'Keep going!'],
+    repeated: ['Keep trying!', "You'll get it!", 'Practice makes perfect', 'Don\'t give up!'],
+  },
+  encouragement: [
+    'You\'re doing great!',
+    'Keep it up!',
+    'Almost there!',
+    'Great progress!',
+  ],
+}
 
-// Confetti component for celebrations
+// Get appropriate message based on streak
+function getCorrectMessage(streak: number): string {
+  const messages = FEEDBACK_MESSAGES.correct
+  let pool: string[]
+
+  if (streak >= 10) {
+    pool = messages.streak10
+  } else if (streak >= 5) {
+    pool = messages.streak5
+  } else if (streak >= 3) {
+    pool = messages.streak3
+  } else {
+    pool = messages.basic
+  }
+
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+// Web Speech API type declarations for TypeScript
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList
+  resultIndex: number
+}
+
+interface SpeechRecognitionResultList {
+  length: number
+  item(index: number): SpeechRecognitionResult
+  [index: number]: SpeechRecognitionResult
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean
+  length: number
+  item(index: number): SpeechRecognitionAlternative
+  [index: number]: SpeechRecognitionAlternative
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string
+  confidence: number
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  maxAlternatives: number
+  onresult: ((event: SpeechRecognitionEvent) => void) | null
+  onerror: ((event: Event) => void) | null
+  onend: (() => void) | null
+  start(): void
+  stop(): void
+  abort(): void
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition
+    webkitSpeechRecognition: new () => SpeechRecognition
+  }
+}
+
+// Physics-based Confetti component using Canvas for celebrations
 function Confetti({ show }: { show: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    if (!show || !canvasRef.current) return
+
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Set canvas size
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+
+    const COLORS = ['#58CC02', '#1CB0F6', '#FF9600', '#FFC800', '#CE82FF', '#FF4B4B', '#FFE066', '#87CEEB']
+    const PARTICLE_COUNT = 80
+    const GRAVITY = 0.25
+    const DRAG = 0.98
+    const ROTATION_SPEED = 0.15
+
+    interface Particle {
+      x: number
+      y: number
+      vx: number
+      vy: number
+      rotation: number
+      rotationSpeed: number
+      color: string
+      size: number
+      shape: 'circle' | 'square' | 'triangle' | 'ribbon'
+      opacity: number
+    }
+
+    // Create particles with varied initial velocities for burst effect
+    const particles: Particle[] = Array.from({ length: PARTICLE_COUNT }, () => {
+      const angle = Math.random() * Math.PI * 2
+      const velocity = Math.random() * 12 + 6
+      return {
+        x: canvas.width / 2 + (Math.random() - 0.5) * 100,
+        y: canvas.height * 0.3,
+        vx: Math.cos(angle) * velocity * (Math.random() + 0.5),
+        vy: Math.sin(angle) * velocity * 0.5 - Math.random() * 8,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * ROTATION_SPEED,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        size: Math.random() * 10 + 6,
+        shape: (['circle', 'square', 'triangle', 'ribbon'] as const)[Math.floor(Math.random() * 4)],
+        opacity: 1,
+      }
+    })
+
+    let animationId: number
+    let startTime = Date.now()
+
+    function drawParticle(ctx: CanvasRenderingContext2D, p: Particle) {
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.rotation)
+      ctx.globalAlpha = p.opacity
+      ctx.fillStyle = p.color
+
+      switch (p.shape) {
+        case 'circle':
+          ctx.beginPath()
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2)
+          ctx.fill()
+          break
+        case 'square':
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size)
+          break
+        case 'triangle':
+          ctx.beginPath()
+          ctx.moveTo(0, -p.size / 2)
+          ctx.lineTo(-p.size / 2, p.size / 2)
+          ctx.lineTo(p.size / 2, p.size / 2)
+          ctx.closePath()
+          ctx.fill()
+          break
+        case 'ribbon':
+          ctx.fillRect(-p.size / 6, -p.size, p.size / 3, p.size * 2)
+          break
+      }
+      ctx.restore()
+    }
+
+    function animate() {
+      if (!ctx || !canvas) return
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+      const elapsed = Date.now() - startTime
+      let activeParticles = 0
+
+      for (const p of particles) {
+        // Physics
+        p.vy += GRAVITY
+        p.vx *= DRAG
+        p.vy *= DRAG
+        p.x += p.vx
+        p.y += p.vy
+        p.rotation += p.rotationSpeed
+
+        // Fade out after 2 seconds
+        if (elapsed > 2000) {
+          p.opacity = Math.max(0, p.opacity - 0.03)
+        }
+
+        // Draw if still visible
+        if (p.opacity > 0 && p.y < canvas.height + 50) {
+          drawParticle(ctx, p)
+          activeParticles++
+        }
+      }
+
+      // Stop animation when all particles are done
+      if (activeParticles > 0 && elapsed < 4000) {
+        animationId = requestAnimationFrame(animate)
+      }
+    }
+
+    animate()
+
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId)
+      }
+    }
+  }, [show])
+
   if (!show) return null
 
-  const confettiColors = ['#58CC02', '#1CB0F6', '#FF9600', '#FFC800', '#CE82FF', '#FF4B4B']
-  const pieces = Array.from({ length: 50 }, (_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 0.5,
-    color: confettiColors[Math.floor(Math.random() * confettiColors.length)],
-    size: Math.random() * 8 + 6,
-    duration: Math.random() * 1 + 2,
-  }))
-
   return (
-    <div className="confetti-container">
-      {pieces.map((piece) => (
-        <div
-          key={piece.id}
-          className="confetti-piece"
-          style={{
-            left: `${piece.left}%`,
-            backgroundColor: piece.color,
-            width: piece.size,
-            height: piece.size,
-            borderRadius: Math.random() > 0.5 ? '50%' : '0',
-            animationDelay: `${piece.delay}s`,
-            animationDuration: `${piece.duration}s`,
-          }}
-        />
-      ))}
-    </div>
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: 9999,
+      }}
+    />
   )
 }
 
-// Mascot character component
-function Mascot({ message, variant = 'neutral' }: { message?: string; variant?: 'neutral' | 'happy' | 'sad' }) {
-  const mascotColors = {
-    neutral: { body: '#1CB0F6', accent: '#1899D6' },
-    happy: { body: '#58CC02', accent: '#58A700' },
-    sad: { body: '#FF4B4B', accent: '#EA2B2B' },
+// Mascot expressions and animations
+type MascotExpression = 'neutral' | 'happy' | 'sad' | 'excited' | 'thinking'
+
+const MASCOT_CONFIG = {
+  neutral: { body: '#1CB0F6', accent: '#1899D6', eyeOffset: { x: 0, y: 0 }, mouthType: 'neutral' },
+  happy: { body: '#58CC02', accent: '#58A700', eyeOffset: { x: 0, y: -1 }, mouthType: 'smile' },
+  sad: { body: '#FF4B4B', accent: '#EA2B2B', eyeOffset: { x: 0, y: 2 }, mouthType: 'sad' },
+  excited: { body: '#FFC800', accent: '#E5B400', eyeOffset: { x: 0, y: -2 }, mouthType: 'open' },
+  thinking: { body: '#CE82FF', accent: '#A855F7', eyeOffset: { x: 2, y: -1 }, mouthType: 'neutral' },
+} as const
+
+// Mascot character component with idle animation and expressions
+function Mascot({ message, variant = 'neutral' }: { message?: string; variant?: MascotExpression }) {
+  const config = MASCOT_CONFIG[variant]
+  const { body, accent, eyeOffset, mouthType } = config
+
+  // Mouth paths for different expressions
+  const mouthPaths = {
+    neutral: "M36 54 Q40 56 44 54",
+    smile: "M34 52 Q40 60 46 52",
+    sad: "M34 56 Q40 52 46 56",
+    open: "M36 52 Q40 58 44 52 Q40 62 36 52",
   }
-  const { body, accent } = mascotColors[variant]
+
+  // Eye sizes for expressions
+  const eyeSize = variant === 'excited' ? 7 : variant === 'sad' ? 5 : 6
 
   return (
     <Group gap="md" align="flex-end">
-      {/* Simple owl mascot */}
-      <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-        {/* Body */}
-        <ellipse cx="40" cy="50" rx="28" ry="25" fill={body} />
-        {/* Eyes */}
-        <circle cx="30" cy="42" r="12" fill="white" />
-        <circle cx="50" cy="42" r="12" fill="white" />
-        <circle cx="32" cy="43" r="6" fill="#4B4B4B" />
-        <circle cx="52" cy="43" r="6" fill="#4B4B4B" />
-        <circle cx="34" cy="41" r="2" fill="white" />
-        <circle cx="54" cy="41" r="2" fill="white" />
-        {/* Beak */}
-        <path d="M36 52 L40 58 L44 52" fill="#FFC800" stroke="#E5B400" strokeWidth="1" />
-        {/* Ear tufts */}
-        <path d="M18 30 Q22 20 28 28" fill={accent} />
-        <path d="M62 30 Q58 20 52 28" fill={accent} />
-        {/* Feet */}
-        <ellipse cx="32" cy="73" rx="8" ry="4" fill="#FFC800" />
-        <ellipse cx="48" cy="73" rx="8" ry="4" fill="#FFC800" />
-      </svg>
+      {/* Animated owl mascot */}
+      <motion.div
+        // Idle breathing animation
+        animate={{
+          scale: [1, 1.02, 1],
+          y: [0, -2, 0],
+        }}
+        transition={{
+          duration: 3,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+      >
+        <motion.svg
+          width="80"
+          height="80"
+          viewBox="0 0 80 80"
+          fill="none"
+          // Celebration bounce for happy/excited
+          animate={
+            variant === 'happy' || variant === 'excited'
+              ? { rotate: [0, -5, 5, -5, 0], y: [0, -5, 0] }
+              : variant === 'sad'
+              ? { rotate: [0, -2, 2, 0] }
+              : {}
+          }
+          transition={{
+            duration: 0.6,
+            ease: "easeOut",
+          }}
+        >
+          {/* Shadow */}
+          <ellipse cx="40" cy="76" rx="20" ry="4" fill="rgba(0,0,0,0.1)" />
 
-      {/* Speech bubble */}
+          {/* Body with gradient effect */}
+          <defs>
+            <radialGradient id={`bodyGrad-${variant}`} cx="40%" cy="30%" r="70%">
+              <stop offset="0%" stopColor={body} stopOpacity="1" />
+              <stop offset="100%" stopColor={accent} stopOpacity="1" />
+            </radialGradient>
+          </defs>
+          <ellipse cx="40" cy="50" rx="28" ry="25" fill={`url(#bodyGrad-${variant})`} />
+
+          {/* Belly highlight */}
+          <ellipse cx="40" cy="55" rx="18" ry="15" fill="rgba(255,255,255,0.15)" />
+
+          {/* Eyes with expression-based positioning */}
+          <motion.g
+            animate={{ x: eyeOffset.x, y: eyeOffset.y }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Eye whites */}
+            <circle cx="30" cy="42" r="12" fill="white" />
+            <circle cx="50" cy="42" r="12" fill="white" />
+
+            {/* Pupils - animated blink */}
+            <motion.circle
+              cx="32"
+              cy="43"
+              r={eyeSize}
+              fill="#4B4B4B"
+              animate={variant === 'thinking' ? { cx: [32, 34, 32] } : {}}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
+            <motion.circle
+              cx="52"
+              cy="43"
+              r={eyeSize}
+              fill="#4B4B4B"
+              animate={variant === 'thinking' ? { cx: [52, 54, 52] } : {}}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
+
+            {/* Eye highlights */}
+            <circle cx="34" cy="41" r="2.5" fill="white" />
+            <circle cx="54" cy="41" r="2.5" fill="white" />
+
+            {/* Eyebrows for expressions */}
+            {variant === 'sad' && (
+              <>
+                <path d="M22 36 L34 38" stroke="#4B4B4B" strokeWidth="2" strokeLinecap="round" />
+                <path d="M58 36 L46 38" stroke="#4B4B4B" strokeWidth="2" strokeLinecap="round" />
+              </>
+            )}
+            {variant === 'excited' && (
+              <>
+                <path d="M22 38 L34 36" stroke="#4B4B4B" strokeWidth="2" strokeLinecap="round" />
+                <path d="M58 38 L46 36" stroke="#4B4B4B" strokeWidth="2" strokeLinecap="round" />
+              </>
+            )}
+          </motion.g>
+
+          {/* Beak with expression-based mouth */}
+          <path d="M36 50 L40 54 L44 50 Z" fill="#FFC800" stroke="#E5B400" strokeWidth="1" />
+          <motion.path
+            d={mouthPaths[mouthType as keyof typeof mouthPaths]}
+            stroke="#E5B400"
+            strokeWidth="2"
+            fill={mouthType === 'open' ? '#FF9500' : 'none'}
+            strokeLinecap="round"
+          />
+
+          {/* Ear tufts with subtle animation */}
+          <motion.path
+            d="M18 30 Q22 18 28 28"
+            fill={accent}
+            animate={{ d: ["M18 30 Q22 18 28 28", "M18 30 Q22 20 28 28", "M18 30 Q22 18 28 28"] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.path
+            d="M62 30 Q58 18 52 28"
+            fill={accent}
+            animate={{ d: ["M62 30 Q58 18 52 28", "M62 30 Q58 20 52 28", "M62 30 Q58 18 52 28"] }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+          />
+
+          {/* Wings (subtle movement) */}
+          <motion.ellipse
+            cx="14"
+            cy="52"
+            rx="6"
+            ry="12"
+            fill={accent}
+            animate={variant === 'happy' ? { rotate: [0, -10, 0] } : {}}
+            transition={{ duration: 0.3 }}
+          />
+          <motion.ellipse
+            cx="66"
+            cy="52"
+            rx="6"
+            ry="12"
+            fill={accent}
+            animate={variant === 'happy' ? { rotate: [0, 10, 0] } : {}}
+            transition={{ duration: 0.3 }}
+          />
+
+          {/* Feet */}
+          <ellipse cx="32" cy="73" rx="8" ry="4" fill="#FFC800" />
+          <ellipse cx="48" cy="73" rx="8" ry="4" fill="#FFC800" />
+
+          {/* Sparkles for excited state */}
+          {variant === 'excited' && (
+            <>
+              <motion.circle
+                cx="10"
+                cy="25"
+                r="3"
+                fill="#FFC800"
+                animate={{ scale: [0, 1, 0], opacity: [0, 1, 0] }}
+                transition={{ duration: 0.8, repeat: Infinity, delay: 0 }}
+              />
+              <motion.circle
+                cx="70"
+                cy="30"
+                r="2"
+                fill="#FFC800"
+                animate={{ scale: [0, 1, 0], opacity: [0, 1, 0] }}
+                transition={{ duration: 0.8, repeat: Infinity, delay: 0.3 }}
+              />
+              <motion.circle
+                cx="65"
+                cy="20"
+                r="2.5"
+                fill="#FFC800"
+                animate={{ scale: [0, 1, 0], opacity: [0, 1, 0] }}
+                transition={{ duration: 0.8, repeat: Infinity, delay: 0.6 }}
+              />
+            </>
+          )}
+        </motion.svg>
+      </motion.div>
+
+      {/* Speech bubble with animation */}
       {message && (
-        <div className="character-bubble">
+        <motion.div
+          className="character-bubble"
+          initial={{ opacity: 0, scale: 0.8, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.3, type: 'spring', stiffness: 300 }}
+        >
           <Text fw={600} size="lg" style={{ color: colors.text.primary }}>
             {message}
           </Text>
-        </div>
+        </motion.div>
       )}
     </Group>
   )
@@ -725,6 +1081,355 @@ function TypingExercise({
   )
 }
 
+// Speaking Exercise Component - Uses Web Speech API for pronunciation practice
+function SpeakingExercise({
+  exercise,
+  onResult,
+  isChecked,
+  isCorrect,
+}: {
+  exercise: Exercise
+  onResult: (transcript: string) => void
+  isChecked: boolean
+  isCorrect: boolean
+}) {
+  const [isListening, setIsListening] = useState(false)
+  const [transcript, setTranscript] = useState('')
+  const [confidence, setConfidence] = useState(0)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognitionCtor) return
+
+    const recognition = new SpeechRecognitionCtor()
+    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.maxAlternatives = 3
+
+    // Try to set language from exercise (e.g., 'ja' for Japanese)
+    const langMatch = exercise.audio_url?.match(/[?&]tl=([a-z]{2})/i)
+    if (langMatch) {
+      const langMap: Record<string, string> = {
+        ja: 'ja-JP', zh: 'zh-CN', es: 'es-ES', fr: 'fr-FR', de: 'de-DE',
+        ko: 'ko-KR', it: 'it-IT', pt: 'pt-BR', ru: 'ru-RU', ar: 'ar-SA',
+      }
+      recognition.lang = langMap[langMatch[1]] || 'en-US'
+    }
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const result = event.results[event.results.length - 1]
+      const text = result[0].transcript
+      const conf = result[0].confidence
+
+      setTranscript(text)
+      setConfidence(conf)
+
+      if (result.isFinal) {
+        setIsListening(false)
+        onResult(text)
+      }
+    }
+
+    recognition.onerror = () => {
+      setIsListening(false)
+    }
+
+    recognition.onend = () => {
+      setIsListening(false)
+    }
+
+    recognitionRef.current = recognition
+
+    return () => {
+      recognition.abort()
+    }
+  }, [exercise.audio_url, onResult])
+
+  const startListening = () => {
+    if (!recognitionRef.current || isChecked) return
+    setTranscript('')
+    setConfidence(0)
+    setIsListening(true)
+    recognitionRef.current.start()
+    sounds.buttonClick()
+  }
+
+  const stopListening = () => {
+    if (!recognitionRef.current) return
+    recognitionRef.current.stop()
+    setIsListening(false)
+  }
+
+  return (
+    <Stack gap="lg" align="center">
+      {/* Target phrase display */}
+      <Paper
+        p="xl"
+        radius="lg"
+        style={{
+          backgroundColor: colors.neutral.background,
+          border: `2px solid ${colors.neutral.border}`,
+          width: '100%',
+        }}
+      >
+        <Text size="xl" fw={700} ta="center" style={{ color: colors.text.primary }}>
+          {exercise.prompt}
+        </Text>
+        {exercise.hints && exercise.hints[0] && (
+          <Text size="sm" c={colors.text.muted} ta="center" mt="xs">
+            {exercise.hints[0]}
+          </Text>
+        )}
+      </Paper>
+
+      {/* Microphone button */}
+      <motion.div
+        whileTap={{ scale: 0.95 }}
+        animate={isListening ? { scale: [1, 1.1, 1] } : {}}
+        transition={isListening ? { duration: 1, repeat: Infinity } : {}}
+      >
+        <ActionIcon
+          variant="filled"
+          color={isListening ? 'red' : 'blue'}
+          size={80}
+          radius="50%"
+          onClick={isListening ? stopListening : startListening}
+          disabled={isChecked}
+          style={{
+            boxShadow: isListening ? '0 0 20px rgba(255, 75, 75, 0.5)' : '0 4px 0 #1899D6',
+          }}
+        >
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="white">
+            {isListening ? (
+              // Stop icon
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            ) : (
+              // Microphone icon
+              <>
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="white" strokeWidth="2" />
+                <line x1="12" y1="19" x2="12" y2="23" stroke="white" strokeWidth="2" />
+                <line x1="8" y1="23" x2="16" y2="23" stroke="white" strokeWidth="2" />
+              </>
+            )}
+          </svg>
+        </ActionIcon>
+      </motion.div>
+
+      {/* Listening indicator */}
+      {isListening && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <Text size="sm" c={colors.accent.pink} fw={600}>
+            Listening... Speak now!
+          </Text>
+        </motion.div>
+      )}
+
+      {/* Transcript display */}
+      {transcript && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ width: '100%' }}
+        >
+          <Paper
+            p="lg"
+            radius="lg"
+            style={{
+              backgroundColor: isChecked
+                ? isCorrect
+                  ? colors.semantic.successLight
+                  : colors.semantic.errorLight
+                : colors.neutral.white,
+              border: `2px solid ${
+                isChecked
+                  ? isCorrect
+                    ? colors.semantic.success
+                    : colors.semantic.error
+                  : colors.secondary.blue
+              }`,
+            }}
+          >
+            <Text size="lg" fw={600} ta="center" style={{ color: colors.text.primary }}>
+              "{transcript}"
+            </Text>
+            {confidence > 0 && (
+              <Text size="xs" c={colors.text.muted} ta="center" mt="xs">
+                Confidence: {Math.round(confidence * 100)}%
+              </Text>
+            )}
+          </Paper>
+        </motion.div>
+      )}
+
+      {/* Correct answer on error */}
+      {isChecked && !isCorrect && (
+        <Text size="sm" c={colors.semantic.error} ta="center">
+          Expected: {exercise.correct_answer}
+        </Text>
+      )}
+    </Stack>
+  )
+}
+
+// Listen and Select Exercise - Listen to audio and select the matching option
+function ListenSelectExercise({
+  exercise,
+  selectedAnswer,
+  onSelect,
+  isChecked,
+  isCorrect,
+}: {
+  exercise: Exercise
+  selectedAnswer: string | null
+  onSelect: (answer: string) => void
+  isChecked: boolean
+  isCorrect: boolean
+}) {
+  const [hasPlayed, setHasPlayed] = useState(false)
+
+  const playAudio = (slow = false) => {
+    setHasPlayed(true)
+    if (exercise.audio_url) {
+      playTTS(exercise.audio_url, undefined, undefined, slow)
+    }
+  }
+
+  // Auto-play on mount
+  useEffect(() => {
+    if (exercise.audio_url && !hasPlayed) {
+      setTimeout(() => playAudio(), 500)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <Stack gap="lg">
+      {/* Audio playback buttons */}
+      <Group justify="center" gap="md">
+        <motion.div whileTap={{ scale: 0.95 }}>
+          <ActionIcon
+            variant="filled"
+            color="blue"
+            size={64}
+            radius="50%"
+            onClick={() => playAudio(false)}
+            style={{ boxShadow: '0 4px 0 #1899D6' }}
+          >
+            <IconVolume size={32} />
+          </ActionIcon>
+        </motion.div>
+        <motion.div whileTap={{ scale: 0.95 }}>
+          <ActionIcon
+            variant="light"
+            color="blue"
+            size={48}
+            radius="50%"
+            onClick={() => playAudio(true)}
+            title="Play slowly"
+            style={{ border: `2px solid ${colors.secondary.blue}` }}
+          >
+            <IconVolume2 size={24} />
+          </ActionIcon>
+        </motion.div>
+      </Group>
+
+      <Text size="sm" c={colors.text.muted} ta="center">
+        Listen and select the correct answer
+      </Text>
+
+      {/* Options - can be text or audio buttons */}
+      <Stack gap="sm">
+        {exercise.choices?.map((choice, index) => {
+          const isSelected = selectedAnswer === choice
+          const showCorrect = isChecked && choice === exercise.correct_answer
+          const showIncorrect = isChecked && isSelected && !isCorrect
+
+          return (
+            <motion.div
+              key={choice}
+              whileTap={{ scale: 0.98 }}
+              animate={showIncorrect ? { x: [0, -10, 10, -10, 10, 0] } : {}}
+              transition={{ duration: 0.4 }}
+            >
+              <Paper
+                p="lg"
+                radius="lg"
+                onClick={() => !isChecked && onSelect(choice)}
+                style={{
+                  backgroundColor: showCorrect
+                    ? colors.semantic.successLight
+                    : showIncorrect
+                    ? colors.semantic.errorLight
+                    : isSelected
+                    ? colors.secondary.blueLight
+                    : colors.neutral.white,
+                  border: `2px solid ${
+                    showCorrect
+                      ? colors.semantic.success
+                      : showIncorrect
+                      ? colors.semantic.error
+                      : isSelected
+                      ? colors.secondary.blue
+                      : colors.neutral.border
+                  }`,
+                  cursor: isChecked ? 'default' : 'pointer',
+                  boxShadow: isChecked ? 'none' : isSelected ? '0 4px 0 #1899D6' : '0 4px 0 #E5E5E5',
+                }}
+              >
+                <Group>
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      border: `2px solid ${
+                        showCorrect
+                          ? colors.semantic.success
+                          : showIncorrect
+                          ? colors.semantic.error
+                          : isSelected
+                          ? colors.secondary.blue
+                          : colors.neutral.border
+                      }`,
+                      backgroundColor: showCorrect || showIncorrect || isSelected
+                        ? showCorrect
+                          ? colors.semantic.success
+                          : showIncorrect
+                          ? colors.semantic.error
+                          : colors.secondary.blue
+                        : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Text size="sm" fw={700} style={{ color: isSelected || showCorrect || showIncorrect ? 'white' : colors.text.secondary }}>
+                      {index + 1}
+                    </Text>
+                  </div>
+                  <Text fw={600} style={{ color: colors.text.primary, flex: 1 }}>
+                    {choice}
+                  </Text>
+                  {showCorrect && <IconCheck size={24} style={{ color: colors.semantic.success }} />}
+                </Group>
+              </Paper>
+            </motion.div>
+          )
+        })}
+      </Stack>
+    </Stack>
+  )
+}
+
 export default function Lesson() {
   const navigate = useNavigate()
   const { id: skillId } = useParams<{ id: string }>()
@@ -869,6 +1574,13 @@ export default function Lesson() {
 
     if (exerciseType === 'word_bank') {
       userAnswer = selectedWords.join(' ')
+    } else if (exerciseType === 'speaking') {
+      // For speaking, use the transcript stored in typedAnswer
+      // Compare loosely (ignore case, trim whitespace, allow partial matches)
+      userAnswer = typedAnswer.trim()
+    } else if (exerciseType === 'listen_select') {
+      if (!selectedAnswer) return
+      userAnswer = selectedAnswer
     } else if (exerciseType === 'listening' || (exerciseType === 'translation' && (!currentExercise.choices || currentExercise.choices.length === 0))) {
       userAnswer = typedAnswer.trim()
     } else if (exerciseType === 'match_pairs') {
@@ -904,19 +1616,30 @@ export default function Lesson() {
     }
 
     if (correct) {
-      setXpEarned((prev) => prev + 3)
+      // Award XP with streak bonus
+      const baseXP = 3
+      const streakBonus = streakRef.current >= 5 ? 2 : streakRef.current >= 3 ? 1 : 0
+      setXpEarned((prev) => prev + baseXP + streakBonus)
+
       const newStreak = streakRef.current + 1
       streakRef.current = newStreak
       setStreak(newStreak)
-      setCorrectMessage(CORRECT_MESSAGES[Math.floor(Math.random() * CORRECT_MESSAGES.length)])
+
+      // Use streak-aware message selection
+      setCorrectMessage(getCorrectMessage(newStreak))
 
       // Show confetti for streaks of 3 or more
       if (newStreak >= 3) {
         setShowConfetti(true)
-        setTimeout(() => setShowConfetti(false), 3000)
+        setTimeout(() => setShowConfetti(false), 4000)
         sounds.streakCelebration()
       } else {
         sounds.correctAnswer()
+      }
+
+      // Extra celebration for milestone streaks
+      if (newStreak === 5 || newStreak === 10) {
+        sounds.levelUp()
       }
     } else {
       streakRef.current = 0
@@ -975,6 +1698,12 @@ export default function Lesson() {
       const allPairs = currentExercise.choices?.length || 0
       return matchedPairs.size === allPairs
     }
+    if (exerciseType === 'speaking') {
+      return typedAnswer.trim().length > 0  // Speaking stores result in typedAnswer
+    }
+    if (exerciseType === 'listen_select') {
+      return selectedAnswer !== null
+    }
     if (exerciseType === 'listening' ||
         (exerciseType === 'translation' && (!currentExercise.choices || currentExercise.choices.length === 0))) {
       return typedAnswer.trim().length > 0
@@ -990,12 +1719,18 @@ export default function Lesson() {
         return 'Select the correct answer'
       case 'listening':
         return 'Type what you hear'
+      case 'listen_select':
+        return 'Listen and select'
       case 'word_bank':
         return 'Build the sentence'
       case 'fill_blank':
         return 'Complete the sentence'
       case 'match_pairs':
         return 'Match the pairs'
+      case 'speaking':
+        return 'Speak this phrase'
+      case 'tap_complete':
+        return 'Tap to complete'
       default:
         return 'Answer the question'
     }
@@ -1126,7 +1861,15 @@ export default function Lesson() {
                   transition={{ delay: 0.1, type: 'spring', stiffness: 300 }}
                 >
                   <Mascot
-                    variant={isChecked ? (isCorrect ? 'happy' : 'sad') : 'neutral'}
+                    variant={
+                      isChecked
+                        ? isCorrect
+                          ? streak >= 5
+                            ? 'excited'
+                            : 'happy'
+                          : 'sad'
+                        : 'neutral'
+                    }
                     message={
                       currentExercise.type === 'listening'
                         ? undefined
@@ -1224,6 +1967,21 @@ export default function Lesson() {
                   onSelectLeft={setSelectedLeft}
                   onSelectRight={setSelectedRight}
                   isChecked={isChecked}
+                />
+              ) : currentExercise.type === 'speaking' ? (
+                <SpeakingExercise
+                  exercise={currentExercise}
+                  onResult={(transcript) => setTypedAnswer(transcript)}
+                  isChecked={isChecked}
+                  isCorrect={isCorrect}
+                />
+              ) : currentExercise.type === 'listen_select' ? (
+                <ListenSelectExercise
+                  exercise={currentExercise}
+                  selectedAnswer={selectedAnswer}
+                  onSelect={setSelectedAnswer}
+                  isChecked={isChecked}
+                  isCorrect={isCorrect}
                 />
               ) : currentExercise.type === 'listening' ||
                 (currentExercise.type === 'translation' && (!currentExercise.choices || currentExercise.choices.length === 0)) ? (
