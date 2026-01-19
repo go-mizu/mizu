@@ -21,6 +21,7 @@ type Service struct {
 	store    store.Store
 	courses  store.CourseStore
 	progress store.ProgressStore
+	stories  store.StoryStore
 }
 
 // NewService creates a new course service
@@ -29,6 +30,7 @@ func NewService(st store.Store) *Service {
 		store:    st,
 		courses:  st.Courses(),
 		progress: st.Progress(),
+		stories:  st.Stories(),
 	}
 }
 
@@ -106,9 +108,9 @@ func (s *Service) GetStories(ctx context.Context, courseID uuid.UUID) ([]store.S
 	return s.courses.GetStories(ctx, courseID)
 }
 
-// GetStory returns a story by ID
+// GetStory returns a story by ID with characters and elements
 func (s *Service) GetStory(ctx context.Context, id uuid.UUID) (*store.Story, error) {
-	story, err := s.courses.GetStory(ctx, id)
+	story, err := s.stories.GetStory(ctx, id)
 	if err != nil {
 		return nil, ErrStoryNotFound
 	}

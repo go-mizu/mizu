@@ -105,6 +105,9 @@ func runServe(ctx context.Context, port int, devMode, useSqlite bool, dbPath str
 		if err := sqliteStore.SeedUsers(ctx); err != nil {
 			return fmt.Errorf("failed to seed users: %w", err)
 		}
+		if err := sqliteStore.SeedStories(ctx); err != nil {
+			return fmt.Errorf("failed to seed stories: %w", err)
+		}
 		fmt.Println(successStyle.Render("  Data seeded"))
 	} else {
 		fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))

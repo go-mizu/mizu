@@ -437,8 +437,11 @@ type StoryElementType string
 const (
 	ElementTypeHeader       StoryElementType = "header"
 	ElementTypeLine         StoryElementType = "line"
+	ElementTypeNarration    StoryElementType = "narration"    // Narrator text without speaker
 	ElementTypeMultiChoice  StoryElementType = "multiple_choice"
 	ElementTypeSelectPhrase StoryElementType = "select_phrase"
+	ElementTypeSelectWord   StoryElementType = "select_word"   // New: tap word that means X
+	ElementTypeWhatNext     StoryElementType = "what_next"     // New: What comes next?
 	ElementTypeArrange      StoryElementType = "arrange"
 	ElementTypeMatch        StoryElementType = "match"
 	ElementTypePointPhrase  StoryElementType = "point_to_phrase"
@@ -487,7 +490,16 @@ type StoryElement struct {
 	Translation   string           `json:"translation,omitempty"`
 	AudioURL      string           `json:"audio_url,omitempty"`
 	AudioTiming   []AudioTiming    `json:"audio_timing,omitempty"`
+	Tokens        []WordToken      `json:"tokens,omitempty"` // Tokenized text for tappable word hints
 	ChallengeData *ChallengeData   `json:"challenge_data,omitempty"`
+}
+
+// WordToken represents a word with optional translation hint for tappable words
+type WordToken struct {
+	Word        string `json:"word"`
+	Translation string `json:"translation,omitempty"` // For tappable hint words
+	IsTarget    bool   `json:"is_target,omitempty"`   // Is this the correct answer in select_word
+	IsTappable  bool   `json:"is_tappable,omitempty"` // Can be tapped for hint
 }
 
 // AudioTiming represents timing for a word in audio
@@ -500,15 +512,27 @@ type AudioTiming struct {
 type ChallengeData struct {
 	// Common
 	Prompt        string   `json:"prompt,omitempty"`
+	Question      string   `json:"question,omitempty"`       // Question text (e.g., "Vikram says his day was")
 	CorrectAnswer string   `json:"correct_answer,omitempty"`
+	CorrectIndex  int      `json:"correct_index,omitempty"`  // Index of correct option
 	Options       []string `json:"options,omitempty"`
+
+	// Feedback
+	FeedbackCorrect   string `json:"feedback_correct,omitempty"`
+	FeedbackIncorrect string `json:"feedback_incorrect,omitempty"`
 
 	// SelectPhrase: highlighted phrase boundaries
 	PhraseStart int `json:"phrase_start,omitempty"`
 	PhraseEnd   int `json:"phrase_end,omitempty"`
 
+	// SelectWord: word tokens for tap-to-select challenges
+	SentenceWords   []WordToken `json:"sentence_words,omitempty"`   // Tokenized sentence for word selection
+	TargetWordIndex int         `json:"target_word_index,omitempty"` // Which word is correct
+	TargetMeaning   string      `json:"target_meaning,omitempty"`    // The meaning hint (e.g., "thin" in "choose word meaning thin")
+
 	// Arrange: word segments to reorder
-	Segments []ArrangeSegment `json:"segments,omitempty"`
+	ArrangeWords []string         `json:"arrange_words,omitempty"` // Simple word array for arrange
+	Segments     []ArrangeSegment `json:"segments,omitempty"`
 
 	// Match: pairs to match
 	Pairs []MatchPair `json:"pairs,omitempty"`

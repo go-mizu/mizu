@@ -383,6 +383,7 @@ func (s *Store) Ensure(ctx context.Context) error {
 			translation TEXT,
 			audio_url TEXT,
 			audio_timing TEXT,
+			tokens TEXT,
 			challenge_data TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -862,6 +863,150 @@ func (s *Store) SeedUsers(ctx context.Context) error {
 		`, uuid.New().String(), u.Email, u.Username, u.DisplayName, string(hashedPassword), u.XP, u.Streak, u.Gems)
 		if err != nil {
 			return fmt.Errorf("insert user %s: %w", u.Email, err)
+		}
+	}
+
+	return nil
+}
+
+// SeedStories creates sample story data for testing
+func (s *Store) SeedStories(ctx context.Context) error {
+	// Get the Spanish course for English speakers
+	var courseID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id FROM courses WHERE from_language_id = 'en' AND learning_language_id = 'es' LIMIT 1
+	`).Scan(&courseID)
+	if err != nil {
+		// No Spanish course, skip seeding stories
+		return nil
+	}
+
+	// Check if stories already exist for this course
+	var count int
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stories WHERE course_id = ?`, courseID).Scan(&count)
+	if count > 0 {
+		return nil // Stories already exist
+	}
+
+	// Create a sample story similar to the Duolingo screenshot
+	storyID := uuid.New().String()
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO stories (id, course_id, external_id, title, title_translation, illustration_url,
+			set_id, set_position, difficulty, cefr_level, duration_seconds, xp_reward, created_at)
+		VALUES (?, ?, 'spa-day-vikram', 'A Relaxing Spa Day', 'A Review by Vikram', '',
+			1, 1, 1, 'A1', 120, 20, datetime('now'))
+	`, storyID, courseID)
+	if err != nil {
+		return fmt.Errorf("insert story: %w", err)
+	}
+
+	// Create character
+	characterID := uuid.New().String()
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO story_characters (id, story_id, name, display_name, avatar_url, position)
+		VALUES (?, ?, 'Vikram', 'Vikram', '', 0)
+	`, characterID, storyID)
+	if err != nil {
+		return fmt.Errorf("insert character: %w", err)
+	}
+
+	// Create story elements with tokens for tappable words
+	elements := []struct {
+		Position      int
+		ElementType   string
+		SpeakerID     *string
+		Text          string
+		Translation   string
+		Tokens        string
+		ChallengeData string
+	}{
+		{
+			Position:    0,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "I went to a spa recently. They said they had the fluffiest towels ever.",
+			Tokens:      `[{"word":"I","is_tappable":false},{"word":"went","is_tappable":true,"translation":"fui"},{"word":"to","is_tappable":false},{"word":"a","is_tappable":false},{"word":"spa","is_tappable":true,"translation":"spa, balneario"},{"word":"recently.","is_tappable":true,"translation":"recientemente"},{"word":"They","is_tappable":false},{"word":"said","is_tappable":true,"translation":"dijeron"},{"word":"they","is_tappable":false},{"word":"had","is_tappable":false},{"word":"the","is_tappable":false},{"word":"fluffiest","is_tappable":true,"translation":"más esponjosas"},{"word":"towels","is_tappable":true,"translation":"toallas"},{"word":"ever.","is_tappable":false}]`,
+		},
+		{
+			Position:    1,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "I love fluffy towels, so I had to try them!",
+			Tokens:      `[{"word":"I","is_tappable":false},{"word":"love","is_tappable":true,"translation":"amo, me encantan"},{"word":"fluffy","is_tappable":true,"translation":"esponjosas"},{"word":"towels,","is_tappable":true,"translation":"toallas"},{"word":"so","is_tappable":false},{"word":"I","is_tappable":false},{"word":"had","is_tappable":false},{"word":"to","is_tappable":false},{"word":"try","is_tappable":true,"translation":"probar"},{"word":"them!","is_tappable":false}]`,
+		},
+		{
+			Position:    2,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "Here is my relaxing day:",
+			Tokens:      `[{"word":"Here","is_tappable":false},{"word":"is","is_tappable":false},{"word":"my","is_tappable":false},{"word":"relaxing","is_tappable":true,"translation":"relajante"},{"word":"day:","is_tappable":true,"translation":"día"}]`,
+		},
+		{
+			Position:      3,
+			ElementType:   "multiple_choice",
+			ChallengeData: `{"question":"Vikram says his day was","options":["stressful and exhausting","full of errands","calming and enjoyable"],"correct_index":2}`,
+		},
+		{
+			Position:    4,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "When I arrived, the spa looked very nice and calm. But, when I went into the changing room, the towels weren't fluffy at all!",
+			Tokens:      `[{"word":"When","is_tappable":false},{"word":"I","is_tappable":false},{"word":"arrived,","is_tappable":true,"translation":"llegué"},{"word":"the","is_tappable":false},{"word":"spa","is_tappable":false},{"word":"looked","is_tappable":true,"translation":"se veía"},{"word":"very","is_tappable":false},{"word":"nice","is_tappable":true,"translation":"bonito"},{"word":"and","is_tappable":false},{"word":"calm.","is_tappable":true,"translation":"tranquilo"},{"word":"But,","is_tappable":false},{"word":"when","is_tappable":false},{"word":"I","is_tappable":false},{"word":"went","is_tappable":false},{"word":"into","is_tappable":false},{"word":"the","is_tappable":false},{"word":"changing","is_tappable":true,"translation":"vestuario"},{"word":"room,","is_tappable":false},{"word":"the","is_tappable":false},{"word":"towels","is_tappable":false},{"word":"weren't","is_tappable":true,"translation":"no eran"},{"word":"fluffy","is_tappable":false},{"word":"at","is_tappable":false},{"word":"all!","is_tappable":true,"translation":"para nada"}]`,
+		},
+		{
+			Position:    5,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "They were flat like paper.",
+			Tokens:      `[{"word":"They","is_tappable":false},{"word":"were","is_tappable":false},{"word":"flat","is_tappable":true,"translation":"planas"},{"word":"like","is_tappable":false},{"word":"paper.","is_tappable":true,"translation":"papel"}]`,
+		},
+		{
+			Position:      6,
+			ElementType:   "select_word",
+			Text:          "They were flat like paper.",
+			ChallengeData: `{"question":"Choose the option that means \"thin\".","sentence_words":[{"word":"They","is_target":false},{"word":"were","is_target":false},{"word":"flat","is_target":true},{"word":"like","is_target":false},{"word":"paper.","is_target":false}],"target_meaning":"thin","target_word_index":2}`,
+		},
+		{
+			Position:    7,
+			ElementType: "what_next",
+			Text:        "What comes next?",
+		},
+		{
+			Position:    8,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "But this was OK because they were surprisingly good for drying my hands quickly.",
+			Tokens:      `[{"word":"But","is_tappable":false},{"word":"this","is_tappable":false},{"word":"was","is_tappable":false},{"word":"OK","is_tappable":false},{"word":"because","is_tappable":true,"translation":"porque"},{"word":"they","is_tappable":false},{"word":"were","is_tappable":false},{"word":"surprisingly","is_tappable":true,"translation":"sorprendentemente"},{"word":"good","is_tappable":true,"translation":"buenas"},{"word":"for","is_tappable":false},{"word":"drying","is_tappable":true,"translation":"secar"},{"word":"my","is_tappable":false},{"word":"hands","is_tappable":true,"translation":"manos"},{"word":"quickly.","is_tappable":true,"translation":"rápidamente"}]`,
+		},
+		{
+			Position:      9,
+			ElementType:   "multiple_choice",
+			ChallengeData: `{"question":"The towels were good for...","options":["making you look stylish","drying hands quickly","keeping warm"],"correct_index":1}`,
+		},
+		{
+			Position:    10,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "The massage was incredible. I felt so relaxed afterwards!",
+			Tokens:      `[{"word":"The","is_tappable":false},{"word":"massage","is_tappable":true,"translation":"masaje"},{"word":"was","is_tappable":false},{"word":"incredible.","is_tappable":true,"translation":"increíble"},{"word":"I","is_tappable":false},{"word":"felt","is_tappable":true,"translation":"me sentí"},{"word":"so","is_tappable":false},{"word":"relaxed","is_tappable":true,"translation":"relajado"},{"word":"afterwards!","is_tappable":true,"translation":"después"}]`,
+		},
+		{
+			Position:    11,
+			ElementType: "line",
+			SpeakerID:   nil,
+			Text:        "I definitely recommend this spa. Even if the towels aren't perfect!",
+			Tokens:      `[{"word":"I","is_tappable":false},{"word":"definitely","is_tappable":true,"translation":"definitivamente"},{"word":"recommend","is_tappable":true,"translation":"recomiendo"},{"word":"this","is_tappable":false},{"word":"spa.","is_tappable":false},{"word":"Even","is_tappable":false},{"word":"if","is_tappable":false},{"word":"the","is_tappable":false},{"word":"towels","is_tappable":false},{"word":"aren't","is_tappable":false},{"word":"perfect!","is_tappable":true,"translation":"perfectas"}]`,
+		},
+	}
+
+	for _, elem := range elements {
+		elemID := uuid.New().String()
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO story_elements (id, story_id, position, element_type, speaker_id, text, translation, audio_url, audio_timing, tokens, challenge_data)
+			VALUES (?, ?, ?, ?, ?, ?, '', '', '', ?, ?)
+		`, elemID, storyID, elem.Position, elem.ElementType, elem.SpeakerID, elem.Text, elem.Tokens, elem.ChallengeData)
+		if err != nil {
+			return fmt.Errorf("insert element %d: %w", elem.Position, err)
 		}
 	}
 

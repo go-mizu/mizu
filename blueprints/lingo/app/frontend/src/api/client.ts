@@ -300,8 +300,11 @@ export const progressApi = {
 export type StoryElementType =
   | 'header'
   | 'line'
+  | 'narration'
   | 'multiple_choice'
   | 'select_phrase'
+  | 'select_word'
+  | 'what_next'
   | 'arrange'
   | 'match'
   | 'point_to_phrase'
@@ -314,15 +317,27 @@ export interface AudioTiming {
   index: number
 }
 
+export interface WordToken {
+  word: string
+  translation?: string
+  is_target?: boolean
+  is_tappable?: boolean
+}
+
 export interface ChallengeData {
   question?: string
   question_translation?: string
+  prompt?: string
   options?: string[]
   correct_index?: number
+  correct_answer?: string
   correct_indices?: number[]
   selectable_indices?: number[]
   phrase_indices?: number[]
   arrange_words?: string[]
+  sentence_words?: WordToken[]
+  target_word_index?: number
+  target_meaning?: string
   match_pairs?: { left: string; right: string }[]
   feedback_correct?: string
   feedback_incorrect?: string
@@ -349,6 +364,7 @@ export interface StoryElement {
   translation?: string
   audio_url?: string
   audio_timing?: AudioTiming[]
+  tokens?: WordToken[]
   challenge_data?: ChallengeData
 }
 
