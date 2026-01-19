@@ -1,55 +1,69 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Stack, Text, Group, Card, Center, Loader, Box, Button, Progress, ActionIcon, UnstyledButton } from '@mantine/core'
-import { IconX, IconVolume, IconCheck, IconArrowRight, IconStar, IconTrophy } from '@tabler/icons-react'
+import { Stack, Text, Group, Card, Center, Loader, Box, Button, Progress, ActionIcon, Tooltip } from '@mantine/core'
+import { IconChevronLeft, IconVolume, IconCheck, IconTrophy, IconStar } from '@tabler/icons-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { storiesApi, Story, StoryElement, StoryCharacter } from '../api/client'
+import { storiesApi, Story, StoryElement, StoryCharacter, WordToken } from '../api/client'
 import { sounds, playTTS, stopSpeaking } from '../utils/sounds'
 import { colors } from '../styles/tokens'
 
-// Character avatar component
-function CharacterAvatar({ character, isActive = false }: { character?: StoryCharacter | null; isActive?: boolean }) {
-  if (!character) return null
-
+// Audio button component - Duolingo style speaker icon
+function AudioButton({ onClick, isPlaying = false, size = 24 }: { onClick: () => void; isPlaying?: boolean; size?: number }) {
   return (
-    <Box
-      style={{
-        width: 56,
-        height: 56,
-        borderRadius: '50%',
-        backgroundColor: isActive ? '#E8F5E9' : '#F5F5F5',
-        border: `3px solid ${isActive ? '#58CC02' : '#E5E5E5'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}
+    <ActionIcon
+      variant="transparent"
+      color="blue"
+      size={size + 8}
+      onClick={onClick}
+      style={{ flexShrink: 0 }}
     >
-      {character.avatar_url ? (
-        <img
-          src={character.avatar_url}
-          alt={character.display_name || character.name}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-      ) : (
-        <Text fw={700} size="lg" style={{ color: isActive ? '#58CC02' : '#AFAFAF' }}>
-          {(character.display_name || character.name).charAt(0).toUpperCase()}
-        </Text>
-      )}
-    </Box>
+      <IconVolume
+        size={size}
+        style={{
+          color: '#1CB0F6',
+          opacity: isPlaying ? 0.6 : 1,
+        }}
+      />
+    </ActionIcon>
   )
 }
 
-// Story line component (dialogue)
+// Tappable word component with translation tooltip
+function TappableWord({ token }: { token: WordToken }) {
+  const [showHint, setShowHint] = useState(false)
+
+  if (!token.is_tappable || !token.translation) {
+    return <span>{token.word} </span>
+  }
+
+  return (
+    <Tooltip
+      label={token.translation}
+      opened={showHint}
+      position="top"
+      withArrow
+      color="dark"
+    >
+      <span
+        onClick={() => setShowHint(!showHint)}
+        style={{
+          textDecoration: 'underline',
+          textDecorationStyle: 'dotted',
+          textDecorationColor: '#AFAFAF',
+          cursor: 'pointer',
+        }}
+      >
+        {token.word}{' '}
+      </span>
+    </Tooltip>
+  )
+}
+
+// Story line with audio button on left (Duolingo style - no cards)
 function StoryLine({
   element,
-  character,
-  onAudioPlay,
 }: {
   element: StoryElement
-  character?: StoryCharacter | null
-  onAudioPlay?: () => void
 }) {
   const [isPlaying, setIsPlaying] = useState(false)
 
@@ -57,13 +71,11 @@ function StoryLine({
     if (element.text) {
       stopSpeaking()
       setIsPlaying(true)
-      onAudioPlay?.()
 
-      // Use Web Speech API - try audio_url first to extract lang, fallback to element text
       playTTS(
         element.audio_url,
         element.text,
-        undefined, // will try to extract from audio_url
+        undefined,
         false,
         () => setIsPlaying(false),
         () => setIsPlaying(false)
@@ -73,88 +85,178 @@ function StoryLine({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.2 }}
     >
-      <Group align="flex-start" gap="md" wrap="nowrap">
-        <CharacterAvatar character={character} isActive={isPlaying} />
-
-        <Card
-          shadow="sm"
-          radius="lg"
-          p="md"
-          style={{
-            flex: 1,
-            backgroundColor: '#FFFFFF',
-            border: '2px solid #E5E5E5',
-          }}
-        >
-          <Stack gap="xs">
-            {character && (
-              <Text fw={700} size="sm" style={{ color: '#58CC02' }}>
-                {character.display_name || character.name}
-              </Text>
+      <Group align="flex-start" gap="sm" wrap="nowrap" py={8}>
+        <AudioButton onClick={playAudio} isPlaying={isPlaying} />
+        <Box style={{ flex: 1 }}>
+          <Text
+            size="lg"
+            style={{
+              color: colors.text.primary,
+              lineHeight: 1.6,
+            }}
+          >
+            {element.tokens && element.tokens.length > 0 ? (
+              element.tokens.map((token, i) => (
+                <TappableWord key={i} token={token} />
+              ))
+            ) : (
+              element.text
             )}
-
-            <Group justify="space-between" align="flex-start">
-              <Box style={{ flex: 1 }}>
-                <Text fw={600} size="md" style={{ color: colors.text.primary }}>
-                  {element.text}
-                </Text>
-                {element.translation && (
-                  <Text size="sm" c="dimmed" mt={4}>
-                    {element.translation}
-                  </Text>
-                )}
-              </Box>
-
-              {element.text && (
-                <ActionIcon
-                  variant="light"
-                  color="blue"
-                  size="lg"
-                  onClick={playAudio}
-                  loading={isPlaying}
-                >
-                  <IconVolume size={20} />
-                </ActionIcon>
-              )}
-            </Group>
-          </Stack>
-        </Card>
+          </Text>
+          {element.translation && (
+            <Text size="sm" c="dimmed" mt={4}>
+              {element.translation}
+            </Text>
+          )}
+        </Box>
       </Group>
     </motion.div>
   )
 }
 
-// Header element
-function StoryHeader({ element }: { element: StoryElement }) {
+// Narration line (no speaker, same style as line)
+function NarrationLine({ element }: { element: StoryElement }) {
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const playAudio = () => {
+    if (element.text) {
+      stopSpeaking()
+      setIsPlaying(true)
+
+      playTTS(
+        element.audio_url,
+        element.text,
+        undefined,
+        false,
+        () => setIsPlaying(false),
+        () => setIsPlaying(false)
+      )
+    }
+  }
+
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
     >
-      <Center py="xl">
+      <Group align="flex-start" gap="sm" wrap="nowrap" py={8}>
+        <AudioButton onClick={playAudio} isPlaying={isPlaying} />
+        <Box style={{ flex: 1 }}>
+          <Text
+            size="lg"
+            style={{
+              color: colors.text.primary,
+              lineHeight: 1.6,
+            }}
+          >
+            {element.tokens && element.tokens.length > 0 ? (
+              element.tokens.map((token, i) => (
+                <TappableWord key={i} token={token} />
+              ))
+            ) : (
+              element.text
+            )}
+          </Text>
+        </Box>
+      </Group>
+    </motion.div>
+  )
+}
+
+// Story header with title and audio
+function StoryHeader({
+  story,
+  character,
+}: {
+  story: Story
+  character?: StoryCharacter | null
+}) {
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const playAudio = () => {
+    if (story.title) {
+      stopSpeaking()
+      setIsPlaying(true)
+
+      playTTS(
+        undefined,
+        story.title,
+        undefined,
+        false,
+        () => setIsPlaying(false),
+        () => setIsPlaying(false)
+      )
+    }
+  }
+
+  return (
+    <Stack align="center" gap="md" mb="xl">
+      {/* Character illustration */}
+      {character?.avatar_url ? (
+        <Box
+          style={{
+            width: 180,
+            height: 180,
+            borderRadius: '50%',
+            overflow: 'hidden',
+          }}
+        >
+          <img
+            src={character.avatar_url}
+            alt={character.display_name || character.name}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </Box>
+      ) : story.illustration_url ? (
+        <Box
+          style={{
+            width: 180,
+            height: 180,
+            borderRadius: 16,
+            overflow: 'hidden',
+          }}
+        >
+          <img
+            src={story.illustration_url}
+            alt={story.title}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </Box>
+      ) : null}
+
+      {/* Title with audio */}
+      <Group gap="sm" justify="center">
+        <AudioButton onClick={playAudio} isPlaying={isPlaying} size={28} />
         <Text
-          fw={800}
+          fw={700}
           size="xl"
-          ta="center"
           style={{
             color: colors.text.primary,
             fontFamily: '"Nunito", "DIN Round Pro", sans-serif',
           }}
         >
-          {element.text}
+          {story.title}
+          {story.title_translation && (
+            <Text component="span" c="dimmed" fw={400}>
+              {' '}{story.title_translation}
+            </Text>
+          )}
         </Text>
-      </Center>
-    </motion.div>
+      </Group>
+
+      {/* Divider */}
+      <Box w="100%" h={1} bg="#E5E5E5" />
+    </Stack>
   )
 }
 
-// Multiple choice challenge
-function MultipleChoiceChallenge({
+// Inline multiple choice challenge (gray box style)
+function InlineMultipleChoice({
   element,
   onAnswer,
 }: {
@@ -167,17 +269,17 @@ function MultipleChoiceChallenge({
 
   if (!challenge?.options) return null
 
+  const correctIndex = challenge.correct_index ?? 0
+
   const handleSelect = (index: number) => {
     if (showResult) return
     setSelected(index)
     sounds.buttonClick()
-  }
 
-  const handleCheck = () => {
-    if (selected === null) return
+    // Show result immediately
     setShowResult(true)
+    const isCorrect = index === correctIndex
 
-    const isCorrect = selected === challenge.correct_index
     if (isCorrect) {
       sounds.correctAnswer()
     } else {
@@ -186,126 +288,172 @@ function MultipleChoiceChallenge({
 
     setTimeout(() => {
       onAnswer(isCorrect)
-    }, 1500)
+    }, 1200)
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <Card
-        shadow="md"
-        radius="lg"
-        p="xl"
+      <Box
+        py="md"
+        px="lg"
+        my="md"
         style={{
-          backgroundColor: '#FFFFFF',
-          border: '2px solid #E5E5E5',
+          backgroundColor: '#F7F7F7',
+          borderRadius: 8,
         }}
       >
-        <Stack gap="lg">
-          <Text fw={700} size="lg" ta="center" style={{ color: colors.text.primary }}>
-            {challenge.question || element.text}
-          </Text>
+        <Text size="md" c="dimmed" mb="sm">
+          {challenge.question || challenge.prompt || element.text}
+        </Text>
+        <Stack gap={4}>
+          {challenge.options.map((option, index) => {
+            const isSelected = selected === index
+            const isCorrect = index === correctIndex
+            const showCorrect = showResult && isCorrect
+            const showWrong = showResult && isSelected && !isCorrect
 
-          {challenge.question_translation && (
-            <Text size="sm" c="dimmed" ta="center">
-              {challenge.question_translation}
-            </Text>
-          )}
-
-          <Stack gap="sm">
-            {challenge.options.map((option, index) => {
-              const isSelected = selected === index
-              const isCorrect = index === challenge.correct_index
-              const showCorrect = showResult && isCorrect
-              const showWrong = showResult && isSelected && !isCorrect
-
-              return (
-                <UnstyledButton
-                  key={index}
-                  onClick={() => handleSelect(index)}
+            return (
+              <Group
+                key={index}
+                gap="xs"
+                onClick={() => handleSelect(index)}
+                style={{
+                  cursor: showResult ? 'default' : 'pointer',
+                  padding: '4px 0',
+                }}
+              >
+                <Text c="dimmed" size="md">•</Text>
+                <Text
+                  size="md"
                   style={{
-                    padding: '16px 20px',
-                    borderRadius: 12,
-                    border: `2px solid ${
-                      showCorrect ? '#58CC02' :
-                      showWrong ? '#FF4B4B' :
-                      isSelected ? '#1CB0F6' :
-                      '#E5E5E5'
-                    }`,
-                    backgroundColor: showCorrect ? '#E8F5E9' :
-                      showWrong ? '#FFEBEE' :
-                      isSelected ? '#E3F2FD' :
-                      '#FFFFFF',
-                    transition: 'all 0.15s ease',
+                    color: showCorrect ? '#58CC02' : showWrong ? '#FF4B4B' : '#1CB0F6',
+                    textDecoration: 'underline',
+                    textDecorationStyle: 'dotted',
+                    fontWeight: isSelected ? 600 : 400,
                   }}
                 >
-                  <Group>
-                    <Box
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '50%',
-                        border: `2px solid ${
-                          showCorrect ? '#58CC02' :
-                          showWrong ? '#FF4B4B' :
-                          isSelected ? '#1CB0F6' :
-                          '#E5E5E5'
-                        }`,
-                        backgroundColor: isSelected || showResult ? (
-                          showCorrect ? '#58CC02' :
-                          showWrong ? '#FF4B4B' :
-                          '#1CB0F6'
-                        ) : 'transparent',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {(isSelected || showResult) && (showCorrect || (isSelected && !showResult)) && (
-                        <IconCheck size={16} color="white" />
-                      )}
-                    </Box>
-                    <Text fw={600} style={{ color: colors.text.primary }}>
-                      {option}
-                    </Text>
-                  </Group>
-                </UnstyledButton>
-              )
-            })}
-          </Stack>
-
-          {!showResult && (
-            <Button
-              size="lg"
-              color="green"
-              radius="xl"
-              disabled={selected === null}
-              onClick={handleCheck}
-              fullWidth
-            >
-              CHECK
-            </Button>
-          )}
-
-          {showResult && (
-            <Box
-              p="md"
-              style={{
-                borderRadius: 12,
-                backgroundColor: selected === challenge.correct_index ? '#E8F5E9' : '#FFEBEE',
-              }}
-            >
-              <Text fw={600} style={{ color: selected === challenge.correct_index ? '#58CC02' : '#FF4B4B' }}>
-                {selected === challenge.correct_index
-                  ? (challenge.feedback_correct || 'Correct!')
-                  : (challenge.feedback_incorrect || 'Not quite...')}
-              </Text>
-            </Box>
-          )}
+                  {option}
+                </Text>
+                {showCorrect && <IconCheck size={16} style={{ color: '#58CC02' }} />}
+              </Group>
+            )
+          })}
         </Stack>
-      </Card>
+      </Box>
+    </motion.div>
+  )
+}
+
+// Word selection challenge (tap the word that means X)
+function SelectWordChallenge({
+  element,
+  onAnswer,
+}: {
+  element: StoryElement
+  onAnswer: (correct: boolean) => void
+}) {
+  const [selected, setSelected] = useState<number | null>(null)
+  const [showResult, setShowResult] = useState(false)
+  const challenge = element.challenge_data
+
+  if (!challenge?.sentence_words && !element.tokens) return null
+
+  const words = challenge?.sentence_words || element.tokens || []
+  const targetIndex = challenge?.target_word_index ?? words.findIndex(w => w.is_target)
+
+  const handleSelect = (index: number) => {
+    if (showResult) return
+
+    const word = words[index]
+    if (!word) return
+
+    setSelected(index)
+    sounds.buttonClick()
+
+    setShowResult(true)
+    const isCorrect = word.is_target || index === targetIndex
+
+    if (isCorrect) {
+      sounds.correctAnswer()
+    } else {
+      sounds.wrongAnswer()
+    }
+
+    setTimeout(() => {
+      onAnswer(isCorrect)
+    }, 1200)
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <Box
+        py="md"
+        px="lg"
+        my="md"
+        style={{
+          backgroundColor: '#F7F7F7',
+          borderRadius: 8,
+        }}
+      >
+        <Text size="md" c="dimmed" mb="md">
+          {challenge?.question || challenge?.prompt || `Choose the option that means "${challenge?.target_meaning || 'this'}".`}
+        </Text>
+        <Group gap={8}>
+          {words.map((word, index) => {
+            const isSelected = selected === index
+            const isCorrect = word.is_target || index === targetIndex
+            const showCorrect = showResult && isCorrect
+            const showWrong = showResult && isSelected && !isCorrect
+
+            return (
+              <Button
+                key={index}
+                variant="outline"
+                color={showCorrect ? 'green' : showWrong ? 'red' : isSelected ? 'blue' : 'gray'}
+                radius="md"
+                size="sm"
+                onClick={() => handleSelect(index)}
+                style={{
+                  borderWidth: 2,
+                  backgroundColor: showCorrect ? '#E8F5E9' : showWrong ? '#FFEBEE' : isSelected ? '#E3F2FD' : 'white',
+                }}
+              >
+                {word.word}
+              </Button>
+            )
+          })}
+        </Group>
+      </Box>
+    </motion.div>
+  )
+}
+
+// "What comes next?" prompt
+function WhatNextPrompt() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <Box
+        py="md"
+        px="lg"
+        my="md"
+        style={{
+          backgroundColor: '#F7F7F7',
+          borderRadius: 8,
+        }}
+      >
+        <Text size="md" c="dimmed">
+          What comes next?
+        </Text>
+      </Box>
     </motion.div>
   )
 }
@@ -319,11 +467,12 @@ function ArrangeChallenge({
   onAnswer: (correct: boolean) => void
 }) {
   const challenge = element.challenge_data
+  const initialWords = challenge?.arrange_words || []
   const [arranged, setArranged] = useState<string[]>([])
-  const [available, setAvailable] = useState<string[]>(challenge?.arrange_words || [])
+  const [available, setAvailable] = useState<string[]>([...initialWords])
   const [showResult, setShowResult] = useState(false)
 
-  if (!challenge?.arrange_words) return null
+  if (!initialWords.length) return null
 
   const handleWordClick = (word: string, fromArranged: boolean) => {
     if (showResult) return
@@ -340,9 +489,8 @@ function ArrangeChallenge({
 
   const handleCheck = () => {
     setShowResult(true)
-    // Simple check - compare with correct answer
     const userAnswer = arranged.join(' ')
-    const correctAnswer = element.text || ''
+    const correctAnswer = element.text || challenge?.correct_answer || ''
     const isCorrect = userAnswer.toLowerCase().trim() === correctAnswer.toLowerCase().trim()
 
     if (isCorrect) {
@@ -353,58 +501,41 @@ function ArrangeChallenge({
 
     setTimeout(() => {
       onAnswer(isCorrect)
-    }, 1500)
+    }, 1200)
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <Card shadow="md" radius="lg" p="xl" style={{ border: '2px solid #E5E5E5' }}>
-        <Stack gap="lg">
-          <Text fw={700} size="lg" ta="center" style={{ color: colors.text.primary }}>
-            {challenge.question || 'Arrange the words'}
-          </Text>
+      <Box
+        py="md"
+        px="lg"
+        my="md"
+        style={{
+          backgroundColor: '#F7F7F7',
+          borderRadius: 8,
+        }}
+      >
+        <Text size="md" c="dimmed" mb="md">
+          {challenge?.question || challenge?.prompt || 'Arrange the words'}
+        </Text>
 
-          {/* Arranged words area */}
-          <Box
-            style={{
-              minHeight: 60,
-              padding: 16,
-              borderRadius: 12,
-              border: '2px dashed #E5E5E5',
-              backgroundColor: '#F7F7F7',
-            }}
-          >
-            <Group gap="xs">
-              <AnimatePresence mode="popLayout">
-                {arranged.map((word, index) => (
-                  <motion.div
-                    key={`${word}-${index}`}
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    exit={{ scale: 0 }}
-                    layout
-                  >
-                    <Button
-                      variant="filled"
-                      color="blue"
-                      radius="md"
-                      onClick={() => handleWordClick(word, true)}
-                    >
-                      {word}
-                    </Button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </Group>
-          </Box>
-
-          {/* Available words */}
-          <Group gap="xs" justify="center">
+        {/* Arranged words area */}
+        <Box
+          mb="md"
+          p="md"
+          style={{
+            minHeight: 50,
+            borderRadius: 8,
+            border: '2px dashed #E5E5E5',
+            backgroundColor: 'white',
+          }}
+        >
+          <Group gap="xs">
             <AnimatePresence mode="popLayout">
-              {available.map((word, index) => (
+              {arranged.map((word, index) => (
                 <motion.div
                   key={`${word}-${index}`}
                   initial={{ scale: 0 }}
@@ -413,10 +544,11 @@ function ArrangeChallenge({
                   layout
                 >
                   <Button
-                    variant="outline"
-                    color="gray"
+                    variant="filled"
+                    color="blue"
                     radius="md"
-                    onClick={() => handleWordClick(word, false)}
+                    size="sm"
+                    onClick={() => handleWordClick(word, true)}
                   >
                     {word}
                   </Button>
@@ -424,21 +556,46 @@ function ArrangeChallenge({
               ))}
             </AnimatePresence>
           </Group>
+        </Box>
 
-          {!showResult && (
-            <Button
-              size="lg"
-              color="green"
-              radius="xl"
-              disabled={arranged.length === 0}
-              onClick={handleCheck}
-              fullWidth
-            >
-              CHECK
-            </Button>
-          )}
-        </Stack>
-      </Card>
+        {/* Available words */}
+        <Group gap="xs">
+          <AnimatePresence mode="popLayout">
+            {available.map((word, index) => (
+              <motion.div
+                key={`${word}-${index}`}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0 }}
+                layout
+              >
+                <Button
+                  variant="outline"
+                  color="gray"
+                  radius="md"
+                  size="sm"
+                  onClick={() => handleWordClick(word, false)}
+                >
+                  {word}
+                </Button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </Group>
+
+        {!showResult && available.length === 0 && arranged.length > 0 && (
+          <Button
+            mt="md"
+            size="md"
+            color="green"
+            radius="xl"
+            onClick={handleCheck}
+            fullWidth
+          >
+            CHECK
+          </Button>
+        )}
+      </Box>
     </motion.div>
   )
 }
@@ -625,33 +782,35 @@ export default function StoryPlayer() {
     setTimeout(handleContinue, 500)
   }
 
-  const getCharacter = (speakerId?: string): StoryCharacter | null => {
-    if (!speakerId || !story?.characters) return null
-    return story.characters.find((c) => c.id === speakerId) || null
+  const getMainCharacter = (): StoryCharacter | null => {
+    if (!story?.characters || story.characters.length === 0) return null
+    return story.characters[0]
   }
 
   const renderElement = (element: StoryElement, index: number) => {
     const isLatest = index === visibleElements.length - 1
-    const character = getCharacter(element.speaker_id)
 
     switch (element.element_type) {
       case 'header':
-        return <StoryHeader key={element.id} element={element} />
+        return null // Header is handled separately
 
       case 'line':
         return (
-          <StoryLine
+          <StoryLine key={element.id} element={element} />
+        )
+
+      case 'narration':
+        return (
+          <NarrationLine
             key={element.id}
             element={element}
-            character={character}
           />
         )
 
       case 'multiple_choice':
-      case 'select_phrase':
         if (isLatest) {
           return (
-            <MultipleChoiceChallenge
+            <InlineMultipleChoice
               key={element.id}
               element={element}
               onAnswer={handleChallengeAnswer}
@@ -659,6 +818,35 @@ export default function StoryPlayer() {
           )
         }
         return null
+
+      case 'select_word':
+        if (isLatest) {
+          return (
+            <SelectWordChallenge
+              key={element.id}
+              element={element}
+              onAnswer={handleChallengeAnswer}
+            />
+          )
+        }
+        return null
+
+      case 'select_phrase':
+        if (isLatest) {
+          return (
+            <InlineMultipleChoice
+              key={element.id}
+              element={element}
+              onAnswer={handleChallengeAnswer}
+            />
+          )
+        }
+        return null
+
+      case 'what_next':
+        return (
+          <WhatNextPrompt key={element.id} />
+        )
 
       case 'arrange':
         if (isLatest) {
@@ -674,11 +862,7 @@ export default function StoryPlayer() {
 
       default:
         return (
-          <StoryLine
-            key={element.id}
-            element={element}
-            character={character}
-          />
+          <StoryLine key={element.id} element={element} />
         )
     }
   }
@@ -688,6 +872,7 @@ export default function StoryPlayer() {
   const isChallenge = currentElement && [
     'multiple_choice',
     'select_phrase',
+    'select_word',
     'arrange',
     'match',
     'point_to_phrase',
@@ -728,41 +913,42 @@ export default function StoryPlayer() {
         height: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#F7F7F7',
+        backgroundColor: '#FFFFFF',
       }}
     >
-      {/* Header */}
+      {/* Header with language info */}
       <Box
         px="md"
         py="sm"
         style={{
-          backgroundColor: '#FFFFFF',
           borderBottom: '1px solid #E5E5E5',
         }}
       >
-        <Group justify="space-between">
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg"
-            onClick={() => navigate('/stories')}
-          >
-            <IconX size={24} />
-          </ActionIcon>
-
-          <Progress
-            value={progress}
-            color="green"
-            size="md"
-            radius="xl"
-            style={{ flex: 1, maxWidth: 400, margin: '0 16px' }}
-          />
-
-          <Text fw={600} size="sm" c="dimmed">
-            {currentIndex + 1}/{story.elements?.length || 0}
-          </Text>
+        <Group justify="space-between" align="center">
+          <Group gap="sm">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg"
+              onClick={() => navigate('/stories')}
+            >
+              <IconChevronLeft size={24} />
+            </ActionIcon>
+            <Text fw={600} style={{ color: '#1CB0F6' }}>
+              English Stories
+            </Text>
+            <Text c="dimmed">from English</Text>
+          </Group>
         </Group>
       </Box>
+
+      {/* Progress bar */}
+      <Progress
+        value={progress}
+        color="green"
+        size="xs"
+        radius={0}
+      />
 
       {/* Story content */}
       <Box
@@ -773,8 +959,12 @@ export default function StoryPlayer() {
           padding: '24px 16px',
         }}
       >
-        <Box maw={600} mx="auto">
-          <Stack gap="lg">
+        <Box maw={700} mx="auto">
+          {/* Story header with illustration and title */}
+          <StoryHeader story={story} character={getMainCharacter()} />
+
+          {/* Story elements */}
+          <Stack gap={0}>
             {visibleElements.map((element, index) => renderElement(element, index))}
           </Stack>
         </Box>
@@ -789,14 +979,13 @@ export default function StoryPlayer() {
             borderTop: '1px solid #E5E5E5',
           }}
         >
-          <Box maw={600} mx="auto">
+          <Box maw={700} mx="auto">
             <Button
               size="lg"
               color="green"
               radius="xl"
               fullWidth
               onClick={handleContinue}
-              rightSection={<IconArrowRight size={20} />}
             >
               CONTINUE
             </Button>

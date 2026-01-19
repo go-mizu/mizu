@@ -173,7 +173,7 @@ func (s *StoryStore) GetStory(ctx context.Context, id uuid.UUID) (*store.Story, 
 // GetStoryElements returns all elements for a story
 func (s *StoryStore) GetStoryElements(ctx context.Context, storyID uuid.UUID) ([]store.StoryElement, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, story_id, position, element_type, speaker_id, text, translation, audio_url, audio_timing, challenge_data
+		SELECT id, story_id, position, element_type, speaker_id, text, translation, audio_url, audio_timing, tokens, challenge_data
 		FROM story_elements
 		WHERE story_id = ?
 		ORDER BY position
@@ -187,10 +187,10 @@ func (s *StoryStore) GetStoryElements(ctx context.Context, storyID uuid.UUID) ([
 	for rows.Next() {
 		var elem store.StoryElement
 		var idStr, storyIDStr string
-		var speakerIDStr, text, translation, audioURL, audioTimingStr, challengeDataStr sql.NullString
+		var speakerIDStr, text, translation, audioURL, audioTimingStr, tokensStr, challengeDataStr sql.NullString
 
 		if err := rows.Scan(&idStr, &storyIDStr, &elem.Position, &elem.ElementType,
-			&speakerIDStr, &text, &translation, &audioURL, &audioTimingStr, &challengeDataStr); err != nil {
+			&speakerIDStr, &text, &translation, &audioURL, &audioTimingStr, &tokensStr, &challengeDataStr); err != nil {
 			return nil, fmt.Errorf("scan story element: %w", err)
 		}
 
@@ -209,6 +209,14 @@ func (s *StoryStore) GetStoryElements(ctx context.Context, storyID uuid.UUID) ([
 			var timing []store.AudioTiming
 			if err := json.Unmarshal([]byte(audioTimingStr.String), &timing); err == nil {
 				elem.AudioTiming = timing
+			}
+		}
+
+		// Parse tokens JSON
+		if tokensStr.Valid && tokensStr.String != "" {
+			var tokens []store.WordToken
+			if err := json.Unmarshal([]byte(tokensStr.String), &tokens); err == nil {
+				elem.Tokens = tokens
 			}
 		}
 
@@ -480,13 +488,20 @@ func (s *StoryStore) CreateStoryCharacter(ctx context.Context, char *store.Story
 
 // CreateStoryElement creates a new story element
 func (s *StoryStore) CreateStoryElement(ctx context.Context, elem *store.StoryElement) error {
-	var audioTimingJSON, challengeDataJSON []byte
+	var audioTimingJSON, tokensJSON, challengeDataJSON []byte
 	var err error
 
 	if len(elem.AudioTiming) > 0 {
 		audioTimingJSON, err = json.Marshal(elem.AudioTiming)
 		if err != nil {
 			return fmt.Errorf("marshal audio timing: %w", err)
+		}
+	}
+
+	if len(elem.Tokens) > 0 {
+		tokensJSON, err = json.Marshal(elem.Tokens)
+		if err != nil {
+			return fmt.Errorf("marshal tokens: %w", err)
 		}
 	}
 
@@ -504,11 +519,11 @@ func (s *StoryStore) CreateStoryElement(ctx context.Context, elem *store.StoryEl
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO story_elements (id, story_id, position, element_type, speaker_id, text, translation, audio_url, audio_timing, challenge_data)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO story_elements (id, story_id, position, element_type, speaker_id, text, translation, audio_url, audio_timing, tokens, challenge_data)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, elem.ID.String(), elem.StoryID.String(), elem.Position, string(elem.ElementType),
 		speakerID, nullString(elem.Text), nullString(elem.Translation), nullString(elem.AudioURL),
-		nullString(string(audioTimingJSON)), nullString(string(challengeDataJSON)))
+		nullString(string(audioTimingJSON)), nullString(string(tokensJSON)), nullString(string(challengeDataJSON)))
 	if err != nil {
 		return fmt.Errorf("create story element: %w", err)
 	}
