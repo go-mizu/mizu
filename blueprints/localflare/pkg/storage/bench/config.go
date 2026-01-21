@@ -200,7 +200,7 @@ func AllDriverConfigs() []DriverConfig {
 	return []DriverConfig{
 		{
 			Name:      "minio",
-			DSN:       "s3://minioadmin:minioadmin@localhost:9000/test-bucket?insecure=true&force_path_style=true",
+			DSN:       "s3://minioadmin:minioadmin@localhost:9000/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-minio-1",
@@ -240,7 +240,7 @@ func AllDriverConfigs() []DriverConfig {
 		},
 		{
 			Name:      "rabbit_s3",
-			DSN:       "s3://rabbit:rabbit123@localhost:9300/test-bucket?insecure=true&force_path_style=true",
+			DSN:       "s3://rabbit:rabbit123@localhost:9300/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-rabbit_s3-1",
@@ -248,7 +248,7 @@ func AllDriverConfigs() []DriverConfig {
 		},
 		{
 			Name:      "usagi_s3",
-			DSN:       "s3://usagi:usagi123@localhost:9301/test-bucket?insecure=true&force_path_style=true",
+			DSN:       "s3://usagi:usagi123@localhost:9301/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-usagi_s3-1",
@@ -256,7 +256,7 @@ func AllDriverConfigs() []DriverConfig {
 		},
 		{
 			Name:      "devnull_s3",
-			DSN:       "s3://devnull:devnull123@localhost:9302/test-bucket?insecure=true&force_path_style=true",
+			DSN:       "s3://devnull:devnull123@localhost:9302/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-devnull_s3-1",
