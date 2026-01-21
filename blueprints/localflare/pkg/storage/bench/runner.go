@@ -36,18 +36,28 @@ type Runner struct {
 	currentOp       string
 	currentIter     int64
 	currentDuration time.Duration
+	payloads        map[int][]byte
+	payloadsMu      sync.Mutex
+	readBufPool     sync.Pool
 }
 
 // NewRunner creates a new benchmark runner.
 func NewRunner(cfg *Config) *Runner {
-	return &Runner{
+	r := &Runner{
 		config:          cfg,
 		drivers:         FilterDrivers(AllDriverConfigs(), cfg.Drivers),
 		results:         make([]*Metrics, 0),
 		dockerStats:     make(map[string]*DockerStats),
 		logger:          func(format string, args ...any) { fmt.Printf(format+"\n", args...) },
 		dockerCollector: NewDockerStatsCollector("all-"),
+		payloads:        make(map[int][]byte),
 	}
+	if cfg.ReadBufferSize > 0 {
+		r.readBufPool.New = func() any {
+			return make([]byte, cfg.ReadBufferSize)
+		}
+	}
+	return r
 }
 
 // SetLogger sets a custom logger.
@@ -59,6 +69,9 @@ func (r *Runner) SetLogger(fn func(format string, args ...any)) {
 // Returns a cleanup function that must be called when the benchmark completes.
 // The cleanup function is safe to call multiple times.
 func (r *Runner) showLiveProgress(operation string, targetDuration time.Duration) func() {
+	if !r.config.Progress || r.config.ProgressEvery <= 0 {
+		return func() {}
+	}
 	stopCh := make(chan struct{})
 	startTime := time.Now()
 	var once sync.Once
@@ -129,6 +142,12 @@ func (r *Runner) showLiveProgress(operation string, targetDuration time.Duration
 
 // updateProgress updates the live progress counters.
 func (r *Runner) updateProgress(iters int64) {
+	if !r.config.Progress || r.config.ProgressEvery <= 0 {
+		return
+	}
+	if iters%int64(r.config.ProgressEvery) != 0 {
+		return
+	}
 	r.progressMu.Lock()
 	r.currentIter = iters
 	r.progressMu.Unlock()
@@ -447,7 +466,7 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 
 func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
 	operation := fmt.Sprintf("Write/%s", SizeLabel(size))
-	data := generateRandomData(size)
+	data := r.payload(size)
 
 	warmup := r.config.WarmupForSize(size)
 
@@ -504,7 +523,7 @@ func (r *Runner) benchmarkWrite(ctx context.Context, bucket storage.Bucket, driv
 
 func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
 	operation := fmt.Sprintf("Read/%s", SizeLabel(size))
-	data := generateRandomData(size)
+	data := r.payload(size)
 
 	warmup := r.config.WarmupForSize(size)
 
@@ -521,11 +540,11 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	// Warmup
 	for i := 0; i < warmup && i < len(keys); i++ {
 		opCtx, cancel := r.opContextForSize(ctx, size)
-		rc, _, _ := bucket.Open(opCtx, keys[i], 0, 0, nil)
-		if rc != nil {
-			io.Copy(io.Discard, rc)
-			rc.Close()
-		}
+			rc, _, _ := bucket.Open(opCtx, keys[i], 0, 0, nil)
+			if rc != nil {
+				r.copyToDiscard(rc)
+				rc.Close()
+			}
 		cancel()
 	}
 
@@ -553,13 +572,18 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 			opCtx, cancel := r.opContextForSize(ctx, size)
 			rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
 			if err == nil {
-				// Wrap reader to capture TTFB
-				ttfbReader := NewTTFBReader(rc, start)
-				io.Copy(io.Discard, ttfbReader)
-				rc.Close()
+				if r.config.EnableTTFB {
+					ttfbReader := NewTTFBReader(rc, start)
+					r.copyToDiscard(ttfbReader)
+					rc.Close()
 
-				latency := time.Since(start)
-				collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+					latency := time.Since(start)
+					collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+				} else {
+					r.copyToDiscard(rc)
+					rc.Close()
+					collector.RecordWithError(time.Since(start), nil)
+				}
 			} else {
 				collector.RecordWithError(time.Since(start), err)
 			}
@@ -583,7 +607,7 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 
 func (r *Runner) benchmarkStat(ctx context.Context, bucket storage.Bucket, driver string) error {
 	operation := "Stat"
-	data := generateRandomData(1024)
+	data := r.payload(1024)
 
 	// Create test object
 	key := r.uniqueKey("stat")
@@ -639,7 +663,7 @@ func (r *Runner) benchmarkStat(ctx context.Context, bucket storage.Bucket, drive
 
 func (r *Runner) benchmarkList(ctx context.Context, bucket storage.Bucket, driver string) error {
 	operation := "List/100"
-	data := generateRandomData(100)
+	data := r.payload(100)
 
 	// Create 100 objects
 	prefix := r.uniqueKey("list")
@@ -716,7 +740,7 @@ func (r *Runner) benchmarkList(ctx context.Context, bucket storage.Bucket, drive
 
 func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, driver string) error {
 	operation := "Delete"
-	data := generateRandomData(1024)
+	data := r.payload(1024)
 
 	// Adaptive benchmark
 	collector := NewCollector()
@@ -768,7 +792,7 @@ func (r *Runner) benchmarkDelete(ctx context.Context, bucket storage.Bucket, dri
 
 func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Bucket, driver string, size, concurrency int) error {
 	operation := fmt.Sprintf("ParallelWrite/%s/C%d", SizeLabel(size), concurrency)
-	data := generateRandomData(size)
+	data := r.payload(size)
 
 	// Use parallel timeout if set, otherwise use default
 	timeout := r.config.ParallelTimeout
@@ -816,7 +840,11 @@ func (r *Runner) benchmarkParallelWrite(ctx context.Context, bucket storage.Buck
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
+				opCtx := benchCtx
+				opCancel := func() {}
+				if r.config.PerOpTimeouts {
+					opCtx, opCancel = context.WithTimeout(benchCtx, opTimeout)
+				}
 				defer opCancel()
 
 				key := r.uniqueKey("parallel-write")
@@ -846,7 +874,7 @@ done:
 
 func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucket, driver string, size, concurrency int) error {
 	operation := fmt.Sprintf("ParallelRead/%s/C%d", SizeLabel(size), concurrency)
-	data := generateRandomData(size)
+	data := r.payload(size)
 
 	// Pre-create objects
 	numObjects := r.readPoolSize(size)
@@ -905,7 +933,11 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				opCtx, opCancel := context.WithTimeout(benchCtx, opTimeout)
+				opCtx := benchCtx
+				opCancel := func() {}
+				if r.config.PerOpTimeouts {
+					opCtx, opCancel = context.WithTimeout(benchCtx, opTimeout)
+				}
 				defer opCancel()
 
 				idx := atomic.AddUint64(&keyIdx, 1) % uint64(numObjects)
@@ -913,12 +945,18 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 
 				rc, _, err := bucket.Open(opCtx, keys[idx], 0, 0, nil)
 				if err == nil {
-					ttfbReader := NewTTFBReader(rc, opStart)
-					io.Copy(io.Discard, ttfbReader)
-					rc.Close()
+					if r.config.EnableTTFB {
+						ttfbReader := NewTTFBReader(rc, opStart)
+						r.copyToDiscard(ttfbReader)
+						rc.Close()
 
-					latency := time.Since(opStart)
-					collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+						latency := time.Since(opStart)
+						collector.RecordWithTTFB(latency, ttfbReader.TTFB(), nil)
+					} else {
+						r.copyToDiscard(rc)
+						rc.Close()
+						collector.RecordWithError(time.Since(opStart), nil)
+					}
 				} else {
 					collector.RecordWithError(time.Since(opStart), err)
 				}
@@ -960,7 +998,7 @@ func (r *Runner) addSkippedBenchmark(driver, operation, reason string) {
 
 func (r *Runner) uniqueKey(prefix string) string {
 	n := atomic.AddUint64(&r.keyCounter, 1)
-	return fmt.Sprintf("%s/%d/%d", prefix, time.Now().UnixNano(), n)
+	return fmt.Sprintf("%s/%d", prefix, n)
 }
 
 func (r *Runner) cleanupBucket(ctx context.Context, bucket storage.Bucket) {
@@ -1058,7 +1096,7 @@ func (r *Runner) runBenchmark(ctx context.Context, bucket storage.Bucket, label 
 }
 
 func (r *Runner) opContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if r.config.Timeout <= 0 {
+	if !r.config.PerOpTimeouts || r.config.Timeout <= 0 {
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, r.config.Timeout)
@@ -1066,7 +1104,7 @@ func (r *Runner) opContext(ctx context.Context) (context.Context, context.Cancel
 
 func (r *Runner) opContextForSize(ctx context.Context, size int) (context.Context, context.CancelFunc) {
 	timeout := r.timeoutForSize(size)
-	if timeout <= 0 {
+	if !r.config.PerOpTimeouts || timeout <= 0 {
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)
@@ -1106,6 +1144,49 @@ func (r *Runner) timeoutForSize(size int) time.Duration {
 	return timeout
 }
 
+func (r *Runner) payload(size int) []byte {
+	if size <= 0 {
+		return nil
+	}
+	r.payloadsMu.Lock()
+	if data, ok := r.payloads[size]; ok {
+		r.payloadsMu.Unlock()
+		return data
+	}
+	r.payloadsMu.Unlock()
+
+	var data []byte
+	if r.config.LowOverhead {
+		data = make([]byte, size)
+	} else {
+		data = generateRandomData(size)
+	}
+
+	r.payloadsMu.Lock()
+	if existing, ok := r.payloads[size]; ok {
+		r.payloadsMu.Unlock()
+		return existing
+	}
+	r.payloads[size] = data
+	r.payloadsMu.Unlock()
+	return data
+}
+
+func (r *Runner) copyToDiscard(src io.Reader) {
+	if r.config.ReadBufferSize <= 0 {
+		io.Copy(io.Discard, src)
+		return
+	}
+	bufAny := r.readBufPool.Get()
+	buf, ok := bufAny.([]byte)
+	if !ok || len(buf) == 0 {
+		io.Copy(io.Discard, src)
+		return
+	}
+	io.CopyBuffer(io.Discard, src, buf)
+	r.readBufPool.Put(buf)
+}
+
 func (r *Runner) generateReport() *Report {
 	return &Report{
 		Timestamp:         time.Now(),
@@ -1118,7 +1199,7 @@ func (r *Runner) generateReport() *Report {
 
 func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, driver string) error {
 	const totalSize = 1024 * 1024 // 1MB object
-	data := generateRandomData(totalSize)
+	data := r.payload(totalSize)
 
 	// Create test object
 	key := r.uniqueKey("range")
@@ -1159,7 +1240,7 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 				opCtx, cancel := r.opContextForSize(ctx, int(rng.length))
 				rc, _, err := bucket.Open(opCtx, key, rng.offset, rng.length, nil)
 				if err == nil {
-					io.Copy(io.Discard, rc)
+					r.copyToDiscard(rc)
 					rc.Close()
 				}
 
@@ -1184,7 +1265,7 @@ func (r *Runner) benchmarkRangeRead(ctx context.Context, bucket storage.Bucket, 
 
 func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, driver string, size int) error {
 	operation := fmt.Sprintf("Copy/%s", SizeLabel(size))
-	data := generateRandomData(size)
+	data := r.payload(size)
 
 	// Create source object
 	srcKey := r.uniqueKey("copy-src")
@@ -1237,7 +1318,7 @@ func (r *Runner) benchmarkCopy(ctx context.Context, bucket storage.Bucket, drive
 
 func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Bucket, driver string, maxConcurrency int) error {
 	objectSize := 16 * 1024 // 16KB
-	data := generateRandomData(objectSize)
+	data := r.payload(objectSize)
 
 	// Use config concurrency if maxConcurrency is 0 (unlimited)
 	concurrency := maxConcurrency
@@ -1303,7 +1384,7 @@ func (r *Runner) benchmarkMixedWorkload(ctx context.Context, bucket storage.Buck
 						opCtx, cancel := r.opContext(ctx)
 						rc, _, e := bucket.Open(opCtx, keys[idx], 0, 0, nil)
 						if e == nil {
-							io.Copy(io.Discard, rc)
+							r.copyToDiscard(rc)
 							rc.Close()
 						}
 						cancel()
@@ -1348,7 +1429,7 @@ func (r *Runner) benchmarkMultipart(ctx context.Context, bucket storage.Bucket, 
 	partSize := 5 * 1024 * 1024 // 5MB
 	partCount := 3              // 15MB total
 	totalSize := partSize * partCount
-	partData := generateRandomData(partSize)
+	partData := r.payload(partSize)
 
 	operation := fmt.Sprintf("Multipart/%dMB_%dParts", totalSize/(1024*1024), partCount)
 	collector := NewCollector()
@@ -1462,7 +1543,7 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 	// Long key names (256 chars)
 	{
 		operation := "EdgeCase/LongKey256"
-		data := generateRandomData(100)
+		data := r.payload(100)
 		collector := NewCollector()
 		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 		var keyCounter uint64
@@ -1503,7 +1584,7 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 	// Deep nesting
 	{
 		operation := "EdgeCase/DeepNested"
-		data := generateRandomData(100)
+		data := r.payload(100)
 		collector := NewCollector()
 		ab := NewAdaptiveBenchmarkWithContext(ctx, r.config.BenchTime, r.config.MinBenchIterations, r.config.MaxBenchIterations)
 		var keyCounter uint64
@@ -1555,7 +1636,7 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 	if objectSize <= 0 {
 		objectSize = sizeSmall
 	}
-	data := generateRandomData(objectSize)
+	data := r.payload(objectSize)
 
 	for _, count := range scaleCounts {
 		// Skip very large counts if timeout is short
@@ -1577,7 +1658,7 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 		{
 			operation := fmt.Sprintf("Scale/Write/%d", count)
 			collector := NewCollector()
-			progress := NewProgress(operation, count, true)
+			progress := NewProgress(operation, count, r.config.Progress)
 			timer := NewTimer()
 
 			for i := 0; i < count; i++ {
@@ -1617,7 +1698,7 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 		{
 			operation := fmt.Sprintf("Scale/List/%d", count)
 			collector := NewCollector()
-			progress := NewProgress(operation, 1, true)
+			progress := NewProgress(operation, 1, r.config.Progress)
 			timer := NewTimer()
 
 			opCtx, cancel := r.opContext(ctx)
@@ -1655,7 +1736,7 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 		{
 			operation := fmt.Sprintf("Scale/Delete/%d", count)
 			collector := NewCollector()
-			progress := NewProgress(operation, count, true)
+			progress := NewProgress(operation, count, r.config.Progress)
 			timer := NewTimer()
 
 			for i := 0; i < count; i++ {

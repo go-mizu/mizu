@@ -12,6 +12,7 @@ const (
 	defaultConcurrency      = 200
 	defaultTimeout          = 60 * time.Second
 	defaultParallelTimeout  = 120 * time.Second
+	defaultReadBufferSize   = 256 * 1024
 
 	// Go-style adaptive benchmark defaults (same as 'go test -bench')
 	defaultBenchTime          = 1 * time.Second // Same as Go's default
@@ -53,6 +54,18 @@ type Config struct {
 	DockerStats bool
 	// Verbose enables verbose output.
 	Verbose bool
+	// LowOverhead enables client-side optimizations to minimize benchmark overhead.
+	LowOverhead bool
+	// Progress enables live progress output.
+	Progress bool
+	// ProgressEvery controls progress update frequency (iterations). 0 disables updates.
+	ProgressEvery int
+	// PerOpTimeouts enables per-operation timeouts (extra client overhead).
+	PerOpTimeouts bool
+	// ReadBufferSize is the buffer size for read copy operations.
+	ReadBufferSize int
+	// EnableTTFB captures time-to-first-byte for reads (extra client overhead).
+	EnableTTFB bool
 
 	// Go-style adaptive benchmark settings (same as 'go test -bench')
 	// BenchTime is the target duration for each benchmark.
@@ -105,6 +118,12 @@ func DefaultConfig() *Config {
 		Large:             false,
 		DockerStats:       true,
 		Verbose:           false,
+		LowOverhead:       true,
+		Progress:          false,
+		ProgressEvery:     256,
+		PerOpTimeouts:     false,
+		ReadBufferSize:    defaultReadBufferSize,
+		EnableTTFB:        false,
 		// Go-style adaptive benchmark settings
 		BenchTime:          defaultBenchTime,
 		MinBenchIterations: defaultMinBenchIterations,
@@ -232,7 +251,7 @@ func AllDriverConfigs() []DriverConfig {
 		},
 		{
 			Name:      "liteio",
-			DSN:       "s3://liteio:liteio123@localhost:9200/test-bucket?insecure=true&force_path_style=true",
+			DSN:       "s3://liteio:liteio123@localhost:9200/test-bucket?insecure=true&force_path_style=true&unsigned_payload=true",
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-liteio-1",
