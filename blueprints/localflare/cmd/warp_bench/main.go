@@ -20,19 +20,22 @@ import (
 
 func main() {
 	var (
-		duration    = flag.Duration("duration", 5*time.Second, "Duration per benchmark operation")
-		concurrent  = flag.Int("concurrent", 10, "Number of concurrent operations")
-		objects     = flag.Int("objects", 20, "Number of objects to use")
-		sizes       = flag.String("sizes", "1KiB,1MiB", "Comma-separated object sizes")
-		operations  = flag.String("operations", "put,get,stat", "Comma-separated operations to benchmark")
-		drivers     = flag.String("drivers", "", "Comma-separated drivers to test (empty = all)")
-		outputDir   = flag.String("output", "./pkg/storage/report/warp_bench", "Output directory for reports")
-		quick       = flag.Bool("quick", true, "Quick mode (shorter duration, fewer sizes)")
-		verbose     = flag.Bool("verbose", false, "Show warp output in real-time")
-		dockerClean = flag.Bool("docker-clean", false, "Enable Docker cleanup before/after each driver")
-		composeDir  = flag.String("compose-dir", "./docker/s3/all", "Path to docker-compose directory")
-		workDir     = flag.String("work-dir", "", "Working directory for warp temp files (empty = auto)")
-		keepWorkDir = flag.Bool("keep-workdir", false, "Keep work directory after run")
+		duration      = flag.Duration("duration", 10*time.Second, "Duration per benchmark operation")
+		concurrent    = flag.Int("concurrent", 16, "Number of concurrent operations")
+		objects       = flag.Int("objects", 100, "Number of objects to use")
+		sizes         = flag.String("sizes", "4KiB,1MiB", "Comma-separated object sizes")
+		operations    = flag.String("operations", "put,get,stat,list,mixed", "Comma-separated operations to benchmark")
+		drivers       = flag.String("drivers", "", "Comma-separated drivers to test (empty = all)")
+		outputDir     = flag.String("output", "./pkg/storage/report/warp_bench", "Output directory for reports")
+		quick         = flag.Bool("quick", false, "Quick mode (shorter duration, fewer sizes)")
+		verbose       = flag.Bool("verbose", false, "Show warp output in real-time")
+		dockerClean   = flag.Bool("docker-clean", false, "Enable Docker cleanup before/after each driver")
+		composeDir    = flag.String("compose-dir", "./docker/s3/all", "Path to docker-compose directory")
+		workDir       = flag.String("work-dir", "", "Working directory for warp temp files (empty = auto)")
+		keepWorkDir   = flag.Bool("keep-workdir", false, "Keep work directory after run")
+		progressEvery = flag.Duration("progress-every", 5*time.Second, "Progress log interval (0 to disable)")
+		deleteObjects = flag.Int("delete-objects", 1000, "Delete operation object count")
+		deleteBatch   = flag.Int("delete-batch", 25, "Delete operation batch size")
 	)
 	flag.Parse()
 
@@ -53,8 +56,11 @@ func main() {
 	cfg.ComposeDir = *composeDir
 	cfg.WorkDir = *workDir
 	cfg.KeepWorkDir = *keepWorkDir
+	cfg.ProgressEvery = *progressEvery
+	cfg.DeleteObjects = *deleteObjects
+	cfg.DeleteBatch = *deleteBatch
 
-	if *sizes != "" && !*quick {
+	if *sizes != "" {
 		cfg.ObjectSizes = strings.Split(*sizes, ",")
 	}
 	if *operations != "" {

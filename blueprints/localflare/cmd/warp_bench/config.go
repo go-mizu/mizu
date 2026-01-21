@@ -16,53 +16,62 @@ type DriverConfig struct {
 
 // Config holds the benchmark configuration.
 type Config struct {
-	Duration    time.Duration
-	Concurrent  int
-	Objects     int
-	ObjectSizes []string
-	Operations  []string
-	Drivers     []string // Filter to specific drivers (empty = all)
-	OutputDir   string
-	Verbose     bool
-	Quick       bool
-	DockerClean bool   // Enable Docker cleanup before/after each driver
-	ComposeDir  string // Path to docker-compose directory
-	WorkDir     string // Working directory for warp temp files (empty = auto)
-	KeepWorkDir bool   // Keep work dir after run (for debugging)
-	WarpPath    string // Resolved warp binary path
-	WarpVersion string // Resolved warp version
-	RunDir      string // Actual run directory used (auto)
+	Duration      time.Duration
+	Concurrent    int
+	Objects       int
+	ObjectSizes   []string
+	Operations    []string
+	Drivers       []string // Filter to specific drivers (empty = all)
+	OutputDir     string
+	Verbose       bool
+	Quick         bool
+	DockerClean   bool   // Enable Docker cleanup before/after each driver
+	ComposeDir    string // Path to docker-compose directory
+	WorkDir       string // Working directory for warp temp files (empty = auto)
+	KeepWorkDir   bool   // Keep work dir after run (for debugging)
+	WarpPath      string // Resolved warp binary path
+	WarpVersion   string // Resolved warp version
+	RunDir        string // Actual run directory used (auto)
+	ProgressEvery time.Duration
+	DeleteObjects int
+	DeleteBatch   int
 }
 
 // DefaultConfig returns the default benchmark configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Duration:    5 * time.Second,
-		Concurrent:  10,
-		Objects:     20,
-		ObjectSizes: []string{"1KiB", "1MiB"},
-		Operations:  []string{"put", "get", "stat"},
-		OutputDir:   "./pkg/storage/report/warp_bench",
-		Verbose:     false,
-		Quick:       true,
-		DockerClean: false,
-		ComposeDir:  "./docker/s3/all",
+		Duration:      10 * time.Second,
+		Concurrent:    16,
+		Objects:       100,
+		ObjectSizes:   []string{"4KiB", "1MiB"},
+		Operations:    []string{"put", "get", "stat", "list", "mixed"},
+		OutputDir:     "./pkg/storage/report/warp_bench",
+		Verbose:       false,
+		Quick:         false,
+		DockerClean:   false,
+		ComposeDir:    "./docker/s3/all",
+		ProgressEvery: 5 * time.Second,
+		DeleteObjects: 1000,
+		DeleteBatch:   25,
 	}
 }
 
 // QuickConfig returns a faster configuration for quick testing.
 func QuickConfig() *Config {
 	return &Config{
-		Duration:    10 * time.Second,
-		Concurrent:  10,
-		Objects:     50,
-		ObjectSizes: []string{"1KiB", "1MiB"},
-		Operations:  []string{"put", "get", "mixed"},
-		OutputDir:   "./pkg/storage/report/warp_bench",
-		Verbose:     false,
-		Quick:       true,
-		DockerClean: true,
-		ComposeDir:  "./docker/s3/all",
+		Duration:      5 * time.Second,
+		Concurrent:    8,
+		Objects:       50,
+		ObjectSizes:   []string{"4KiB", "1MiB"},
+		Operations:    []string{"put", "get", "stat"},
+		OutputDir:     "./pkg/storage/report/warp_bench",
+		Verbose:       false,
+		Quick:         true,
+		DockerClean:   false,
+		ComposeDir:    "./docker/s3/all",
+		ProgressEvery: 5 * time.Second,
+		DeleteObjects: 500,
+		DeleteBatch:   10,
 	}
 }
 
