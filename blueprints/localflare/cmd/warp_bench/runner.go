@@ -37,6 +37,7 @@ type Runner struct {
 	warpPath string
 	script   string
 	workDir  string
+	runID    string
 	logger   func(format string, args ...any)
 }
 
@@ -44,6 +45,7 @@ type Runner struct {
 func NewRunner(cfg *Config) *Runner {
 	return &Runner{
 		config: cfg,
+		runID:  fmt.Sprintf("run-%d", time.Now().UnixNano()),
 		logger: func(format string, args ...any) {
 			fmt.Printf(format+"\n", args...)
 		},
@@ -110,6 +112,21 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 		"--no-color",
 		"--insecure", // Allow HTTP endpoints
 	}
+	if r.config.Lookup != "" {
+		args = append(args, "--lookup="+r.config.Lookup)
+	}
+	if r.config.DisableSHA256 {
+		args = append(args, "--disable-sha256-payload")
+	}
+	if r.config.AutoTerm {
+		args = append(args, "--autoterm")
+		if r.config.AutoTermDur > 0 {
+			args = append(args, "--autoterm.dur="+r.config.AutoTermDur.String())
+		}
+		if r.config.AutoTermPct > 0 {
+			args = append(args, "--autoterm.pct="+formatFloat(r.config.AutoTermPct))
+		}
+	}
 
 	// Add object size for data operations (not for list)
 	if size != "" && op != "list" {
@@ -165,7 +182,15 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 
 	case "list":
 		// list uses --objects to create test objects first
-		args = append(args, "--objects="+strconv.Itoa(r.config.Objects))
+		listObjects := r.config.ListObjects
+		if listObjects <= 0 {
+			listObjects = r.config.Objects
+		}
+		args = append(args, "--objects="+strconv.Itoa(listObjects))
+		if r.config.ListMaxKeys > 0 {
+			args = append(args, "--max-keys="+strconv.Itoa(r.config.ListMaxKeys))
+		}
+		args = append(args, "--obj.size=1KiB")
 
 	case "mixed":
 		// mixed workload with distribution
@@ -187,6 +212,15 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 
 	if r.config.Verbose {
 		r.logger("  Running: warp %s", strings.Join(args, " "))
+	}
+
+	if r.config.NoClear {
+		args = append(args, "--noclear")
+	}
+	if r.config.NoClear || r.config.Prefix != "" {
+		if prefix := r.prefixForRun(driver, op, size); prefix != "" {
+			args = append(args, "--prefix="+prefix)
+		}
 	}
 
 	cmd := r.buildCommand(ctx, args)
@@ -396,6 +430,7 @@ func (r *Runner) Run(ctx context.Context) ([]*Result, error) {
 
 	for _, driver := range availableDrivers {
 		r.logger("=== Driver: %s ===", driver.Name)
+		driverPrefixes := make(map[string]struct{})
 
 		// Pre-benchmark cleanup: recreate container with fresh volumes
 		if dockerCleanup != nil {
@@ -429,6 +464,12 @@ func (r *Runner) Run(ctx context.Context) ([]*Result, error) {
 				}
 				r.logger("[%d/%d] %s %s %s...", currentOp, totalOps, driver.Name, op, sizeStr)
 
+				if r.config.NoClear {
+					if prefix := r.prefixForRun(driver, op, size); prefix != "" {
+						driverPrefixes[prefix] = struct{}{}
+					}
+				}
+
 				result, err := r.RunBenchmark(ctx, driver, op, size)
 				if err != nil {
 					r.logger("  Error: %v", err)
@@ -448,7 +489,14 @@ func (r *Runner) Run(ctx context.Context) ([]*Result, error) {
 
 		// Post-benchmark cleanup: clear bucket data
 		if dockerCleanup != nil {
-			dockerCleanup.PostBenchmarkCleanup(ctx, driver)
+			var prefixes []string
+			if r.config.NoClear && len(driverPrefixes) > 0 {
+				prefixes = make([]string, 0, len(driverPrefixes))
+				for prefix := range driverPrefixes {
+					prefixes = append(prefixes, prefix)
+				}
+			}
+			dockerCleanup.PostBenchmarkCleanup(ctx, driver, prefixes)
 		}
 
 		r.logger("")
@@ -505,6 +553,26 @@ func formatBytes(val int64) string {
 	}
 	gb := mb / 1024
 	return fmt.Sprintf("%.2f GiB", gb)
+}
+
+func (r *Runner) prefixForRun(driver *DriverConfig, op, size string) string {
+	base := r.config.Prefix
+	if base == "" {
+		base = r.runID
+	}
+	sizeStr := size
+	if sizeStr == "" {
+		sizeStr = "na"
+	}
+	sizeStr = strings.ReplaceAll(sizeStr, "/", "_")
+	op = strings.ReplaceAll(op, "/", "_")
+	driverName := strings.ReplaceAll(driver.Name, "/", "_")
+	return strings.Trim(strings.Join([]string{base, driverName, op, sizeStr}, "/"), "/")
+}
+
+func formatFloat(val float64) string {
+	s := strconv.FormatFloat(val, 'f', -1, 64)
+	return s
 }
 
 func (r *Runner) buildCommand(ctx context.Context, args []string) *exec.Cmd {

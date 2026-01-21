@@ -71,9 +71,18 @@ func (r *Report) SaveMarkdown(outputDir string) error {
 	fmt.Fprintf(f, "| Objects | %d |\n", r.Config.Objects)
 	fmt.Fprintf(f, "| Object sizes | %s |\n", strings.Join(r.Config.ObjectSizes, ", "))
 	fmt.Fprintf(f, "| Operations | %s |\n", strings.Join(r.Config.Operations, ", "))
+	fmt.Fprintf(f, "| List objects | %d |\n", r.Config.ListObjects)
+	fmt.Fprintf(f, "| List max keys | %d |\n", r.Config.ListMaxKeys)
 	fmt.Fprintf(f, "| Docker cleanup | %t |\n", r.Config.DockerClean)
 	fmt.Fprintf(f, "| Compose dir | %s |\n", r.Config.ComposeDir)
 	fmt.Fprintf(f, "| Output dir | %s |\n", r.Config.OutputDir)
+	fmt.Fprintf(f, "| No clear | %t |\n", r.Config.NoClear)
+	fmt.Fprintf(f, "| Prefix | %s |\n", r.Config.Prefix)
+	fmt.Fprintf(f, "| Lookup style | %s |\n", r.Config.Lookup)
+	fmt.Fprintf(f, "| Disable SHA256 | %t |\n", r.Config.DisableSHA256)
+	fmt.Fprintf(f, "| Autoterm | %t |\n", r.Config.AutoTerm)
+	fmt.Fprintf(f, "| Autoterm duration | %v |\n", r.Config.AutoTermDur)
+	fmt.Fprintf(f, "| Autoterm pct | %.2f |\n", r.Config.AutoTermPct)
 	fmt.Fprintf(f, "\n")
 
 	// Environment
