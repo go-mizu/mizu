@@ -19,21 +19,21 @@ func newReaderPool() *readerPool {
 
 type segmentReaderPools struct {
 	mu    sync.Mutex
-	pools map[int64]*readerPool
+	pools map[string]*readerPool
 }
 
 func newSegmentReaderPools() *segmentReaderPools {
 	return &segmentReaderPools{
-		pools: make(map[int64]*readerPool),
+		pools: make(map[string]*readerPool),
 	}
 }
 
-func (p *segmentReaderPools) get(id int64, openFn func() (*os.File, error)) (*os.File, func(), error) {
+func (p *segmentReaderPools) get(key string, openFn func() (*os.File, error)) (*os.File, func(), error) {
 	p.mu.Lock()
-	rp := p.pools[id]
+	rp := p.pools[key]
 	if rp == nil {
 		rp = newReaderPool()
-		p.pools[id] = rp
+		p.pools[key] = rp
 	}
 	p.mu.Unlock()
 
@@ -63,5 +63,5 @@ func (p *segmentReaderPools) closeAll() {
 		rp.files = nil
 		rp.mu.Unlock()
 	}
-	p.pools = make(map[int64]*readerPool)
+	p.pools = make(map[string]*readerPool)
 }

@@ -25,6 +25,7 @@ type store struct {
 	defaultBucket string
 	nofsync       bool
 	segmentSize   int64
+	segmentShards int
 	manifestEvery time.Duration
 	smallCacheMax int64
 	smallCacheCap int64
@@ -103,7 +104,7 @@ func (s *store) CreateBucket(ctx context.Context, name string, opts storage.Opti
 	if err := os.MkdirAll(segmentDir, defaultPermissions); err != nil {
 		return nil, fmt.Errorf("usagi: create segment dir: %w", err)
 	}
-	segmentPath := filepath.Join(segmentDir, segmentFileName(1))
+	segmentPath := filepath.Join(segmentDir, segmentFileName(0, 1))
 	file, err := os.OpenFile(segmentPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("usagi: create segment: %w", err)
@@ -190,7 +191,8 @@ func (s *store) getBucket(name string) *bucket {
 		dir:              filepath.Join(s.root, name),
 		logPath:          filepath.Join(s.root, name, logFileName),
 		index:            newShardedIndex(),
-		prefixIndex:      newPrefixIndex(2),
+		segmentShards:    s.segmentShards,
+		writers:          make([]*segmentWriter, s.segmentShards),
 		smallCache:       newSmallCache(s.smallCacheCap, s.smallCacheMax),
 		features:         storage.Features{"move": true, "multipart": true},
 		multipartDir:     filepath.Join(s.root, name, multipartDirName),

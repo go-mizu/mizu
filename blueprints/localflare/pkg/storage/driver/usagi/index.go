@@ -1,9 +1,9 @@
 package usagi
 
 import (
-	"hash/fnv"
 	"sort"
 	"sync"
+	"sync/atomic"
 )
 
 const indexShardCount = 256
@@ -11,11 +11,14 @@ const indexShardCount = 256
 type indexShard struct {
 	mu    sync.RWMutex
 	items map[string]*entry
-	keys  []string
 }
 
 type shardedIndex struct {
 	shards [indexShardCount]indexShard
+	cacheMu      sync.Mutex
+	cacheKeys    []string
+	cacheVersion uint64
+	modVersion   uint64
 }
 
 func newShardedIndex() *shardedIndex {
@@ -27,9 +30,7 @@ func newShardedIndex() *shardedIndex {
 }
 
 func (s *shardedIndex) shard(key string) *indexShard {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return &s.shards[h.Sum32()%indexShardCount]
+	return &s.shards[fnv32a(key)%indexShardCount]
 }
 
 func (s *shardedIndex) Get(key string) (*entry, bool) {
@@ -43,18 +44,18 @@ func (s *shardedIndex) Get(key string) (*entry, bool) {
 func (s *shardedIndex) Set(key string, e *entry) {
 	sh := s.shard(key)
 	sh.mu.Lock()
-	if _, ok := sh.items[key]; !ok {
-		insertKeySorted(&sh.keys, key)
-	}
 	sh.items[key] = e
 	sh.mu.Unlock()
+	atomic.AddUint64(&s.modVersion, 1)
 }
 
 func (s *shardedIndex) Delete(key string) {
 	sh := s.shard(key)
 	sh.mu.Lock()
-	delete(sh.items, key)
-	removeKeySorted(&sh.keys, key)
+	if _, ok := sh.items[key]; ok {
+		delete(sh.items, key)
+		atomic.AddUint64(&s.modVersion, 1)
+	}
 	sh.mu.Unlock()
 }
 
@@ -70,10 +71,28 @@ func (s *shardedIndex) Len() int {
 }
 
 func (s *shardedIndex) Keys(prefix string) []string {
-	if prefix == "" {
-		return mergeShardKeys(s.shards[:], "")
+	version := atomic.LoadUint64(&s.modVersion)
+	s.cacheMu.Lock()
+	if s.cacheVersion != version {
+		keys := make([]string, 0)
+		for i := range s.shards {
+			sh := &s.shards[i]
+			sh.mu.RLock()
+			for k := range sh.items {
+				keys = append(keys, k)
+			}
+			sh.mu.RUnlock()
+		}
+		sort.Strings(keys)
+		s.cacheKeys = keys
+		s.cacheVersion = version
 	}
-	return mergeShardKeys(s.shards[:], prefix)
+	keys := append([]string(nil), s.cacheKeys...)
+	s.cacheMu.Unlock()
+	if prefix == "" {
+		return keys
+	}
+	return prefixSlice(keys, prefix)
 }
 
 func (s *shardedIndex) Snapshot() map[string]*entry {
@@ -89,64 +108,18 @@ func (s *shardedIndex) Snapshot() map[string]*entry {
 	return out
 }
 
-func insertKeySorted(keys *[]string, key string) {
-	idx := sort.SearchStrings(*keys, key)
-	if idx < len(*keys) && (*keys)[idx] == key {
-		return
-	}
-	*keys = append(*keys, "")
-	copy((*keys)[idx+1:], (*keys)[idx:])
-	(*keys)[idx] = key
-}
+const (
+	fnv32aOffset = 2166136261
+	fnv32aPrime  = 16777619
+)
 
-func removeKeySorted(keys *[]string, key string) {
-	idx := sort.SearchStrings(*keys, key)
-	if idx < len(*keys) && (*keys)[idx] == key {
-		*keys = append((*keys)[:idx], (*keys)[idx+1:]...)
+func fnv32a(key string) uint32 {
+	var h uint32 = fnv32aOffset
+	for i := 0; i < len(key); i++ {
+		h ^= uint32(key[i])
+		h *= fnv32aPrime
 	}
-}
-
-func mergeShardKeys(shards []indexShard, prefix string) []string {
-	type shardIter struct {
-		keys []string
-		idx  int
-	}
-	iters := make([]shardIter, 0, len(shards))
-	for i := range shards {
-		sh := &shards[i]
-		sh.mu.RLock()
-		var slice []string
-		if prefix == "" {
-			slice = append([]string(nil), sh.keys...)
-		} else {
-			slice = prefixSlice(sh.keys, prefix)
-		}
-		sh.mu.RUnlock()
-		if len(slice) > 0 {
-			iters = append(iters, shardIter{keys: slice, idx: 0})
-		}
-	}
-
-	if len(iters) == 0 {
-		return nil
-	}
-
-	h := &keyHeap{}
-	for i := range iters {
-		heapPush(h, heapItem{key: iters[i].keys[0], shard: i})
-	}
-
-	merged := make([]string, 0)
-	for h.len() > 0 {
-		item := heapPop(h)
-		merged = append(merged, item.key)
-		iter := &iters[item.shard]
-		iter.idx++
-		if iter.idx < len(iter.keys) {
-			heapPush(h, heapItem{key: iter.keys[iter.idx], shard: item.shard})
-		}
-	}
-	return merged
+	return h
 }
 
 func prefixSlice(keys []string, prefix string) []string {
@@ -177,58 +150,4 @@ func nextPrefix(prefix string) string {
 		}
 	}
 	return ""
-}
-
-type heapItem struct {
-	key   string
-	shard int
-}
-
-type keyHeap struct {
-	items []heapItem
-}
-
-func (h *keyHeap) len() int {
-	return len(h.items)
-}
-
-func heapPush(h *keyHeap, item heapItem) {
-	h.items = append(h.items, item)
-	up := len(h.items) - 1
-	for up > 0 {
-		parent := (up - 1) / 2
-		if h.items[parent].key <= h.items[up].key {
-			break
-		}
-		h.items[parent], h.items[up] = h.items[up], h.items[parent]
-		up = parent
-	}
-}
-
-func heapPop(h *keyHeap) heapItem {
-	item := h.items[0]
-	last := h.items[len(h.items)-1]
-	h.items = h.items[:len(h.items)-1]
-	if len(h.items) == 0 {
-		return item
-	}
-	h.items[0] = last
-	down := 0
-	for {
-		left := 2*down + 1
-		right := left + 1
-		smallest := down
-		if left < len(h.items) && h.items[left].key < h.items[smallest].key {
-			smallest = left
-		}
-		if right < len(h.items) && h.items[right].key < h.items[smallest].key {
-			smallest = right
-		}
-		if smallest == down {
-			break
-		}
-		h.items[down], h.items[smallest] = h.items[smallest], h.items[down]
-		down = smallest
-	}
-	return item
 }
