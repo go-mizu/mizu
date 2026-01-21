@@ -1548,7 +1548,7 @@ func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driv
 	// Test performance with varying numbers of objects
 	scaleCounts := r.config.ScaleCounts
 	if len(scaleCounts) == 0 {
-		scaleCounts = []int{1, 10, 100, 1000, 10000, 1000000}
+		scaleCounts = []int{10, 100, 1000, 10000}
 	}
 
 	objectSize := r.config.ScaleObjectSize

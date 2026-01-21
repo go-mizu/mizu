@@ -360,6 +360,41 @@ services:
       exit 0;
       "
 
+  # ============================================================================
+  # Devnull S3 - S3-compatible server backed by devnull driver
+  # Credentials: devnull / devnull123
+  # ============================================================================
+  devnull_s3:
+    image: localflare-s3:latest
+    ports:
+      - "9302:9000"
+    environment:
+      LITEIO_ACCESS_KEY: devnull
+      LITEIO_SECRET_KEY: devnull123
+      LITEIO_DRIVER: "devnull://test-bucket"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  devnull_s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      devnull_s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: devnull
+      AWS_SECRET_ACCESS_KEY: devnull123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://devnull_s3:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
 volumes:
   minio_data:
   rustfs_data:

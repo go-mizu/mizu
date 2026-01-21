@@ -110,7 +110,7 @@ func DefaultConfig() *Config {
 		MinBenchIterations: defaultMinBenchIterations,
 		MaxBenchIterations: defaultMaxBenchIterations,
 		OutputFormats:      []string{"markdown", "json"},
-		ScaleCounts:        []int{10, 100, 1000, 10000, 100000, 1000000},
+		ScaleCounts:        []int{10, 100, 1000, 10000},
 		ScaleObjectSize:    sizeTiny,
 		ScaleMaxBytes:      2 * 1024 * 1024 * 1024, // 2GB cap to prevent runaway disk usage
 		CleanupDataPaths:   true,
@@ -253,6 +253,14 @@ func AllDriverConfigs() []DriverConfig {
 			Enabled:   true,
 			Container: "all-usagi_s3-1",
 			DataPath:  "/data",
+		},
+		{
+			Name:      "devnull_s3",
+			DSN:       "s3://devnull:devnull123@localhost:9302/test-bucket?insecure=true&force_path_style=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "all-devnull_s3-1",
+			DataPath:  "",
 		},
 		{
 			Name:      "devnull",
