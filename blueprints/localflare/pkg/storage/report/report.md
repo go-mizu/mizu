@@ -1,6 +1,6 @@
 # Storage Benchmark Report
 
-**Generated:** 2026-01-21T17:00:41+07:00
+**Generated:** 2026-01-21T17:42:23+07:00
 
 **Go Version:** go1.25.5
 
@@ -10,56 +10,56 @@
 
 ### Summary
 
-**Overall Winner:** usagi_s3 (won 26/39 benchmarks, 67%)
+**Overall Winner:** usagi_s3 (won 40/48 benchmarks, 83%)
 
 | Rank | Driver | Wins | Win Rate |
 |------|--------|------|----------|
-| 1 | usagi_s3 | 26 | 67% |
-| 2 | minio | 13 | 33% |
+| 1 | usagi_s3 | 40 | 83% |
+| 2 | minio | 8 | 17% |
 
 ### Performance Leaders
 
 | Operation | Leader | Performance | Margin |
 |-----------|--------|-------------|--------|
-| Small Read (1KB) | minio | 2.9 MB/s | +32% vs usagi_s3 |
-| Small Write (1KB) | minio | 1.1 MB/s | +98% vs usagi_s3 |
-| Large Read (100MB) | minio | 250.8 MB/s | +39% vs usagi_s3 |
-| Large Write (100MB) | minio | 155.3 MB/s | +10% vs usagi_s3 |
-| Delete | usagi_s3 | 4.1K ops/s | +53% vs minio |
-| Stat | minio | 3.6K ops/s | 3.0x vs usagi_s3 |
-| List (100 objects) | minio | 562 ops/s | +84% vs usagi_s3 |
-| Copy | usagi_s3 | 1.2 MB/s | +22% vs minio |
+| Small Read (1KB) | usagi_s3 | 3.9 MB/s | +43% vs minio |
+| Small Write (1KB) | usagi_s3 | 1.8 MB/s | +45% vs minio |
+| Large Read (100MB) | minio | 196.9 MB/s | +20% vs usagi_s3 |
+| Large Write (100MB) | minio | 130.5 MB/s | close |
+| Delete | usagi_s3 | 3.8K ops/s | +51% vs minio |
+| Stat | usagi_s3 | 3.8K ops/s | +17% vs minio |
+| List (100 objects) | usagi_s3 | 869 ops/s | +65% vs minio |
+| Copy | usagi_s3 | 1.0 MB/s | +20% vs minio |
 
 ### Best Driver by Use Case
 
 | Use Case | Recommended | Performance | Notes |
 |----------|-------------|-------------|-------|
-| Large File Uploads (100MB+) | **minio** | 155 MB/s | Best for media, backups |
-| Large File Downloads (100MB) | **minio** | 251 MB/s | Best for streaming, CDN |
-| Small File Operations | **minio** | 2068 ops/s | Best for metadata, configs |
+| Large File Uploads (100MB+) | **minio** | 131 MB/s | Best for media, backups |
+| Large File Downloads (100MB) | **minio** | 197 MB/s | Best for streaming, CDN |
+| Small File Operations | **usagi_s3** | 2913 ops/s | Best for metadata, configs |
 | High Concurrency (C10) | **usagi_s3** | - | Best for multi-user apps |
-| Memory Constrained | **minio** | 1001 MB RAM | Best for edge/embedded |
+| Memory Constrained | **minio** | 961 MB RAM | Best for edge/embedded |
 
 ### Large File Performance (100MB)
 
 | Driver | Write (MB/s) | Read (MB/s) | Write Latency | Read Latency |
 |--------|-------------|-------------|---------------|---------------|
-| minio | 155.3 | 250.8 | 640.4ms | 400.5ms |
-| usagi_s3 | 140.9 | 180.9 | 702.1ms | 558.7ms |
+| minio | 130.5 | 196.9 | 727.6ms | 507.7ms |
+| usagi_s3 | 125.0 | 164.5 | 804.0ms | 615.8ms |
 
 ### Small File Performance (1KB)
 
 | Driver | Write (ops/s) | Read (ops/s) | Write Latency | Read Latency |
 |--------|--------------|--------------|---------------|---------------|
-| minio | 1134 | 3002 | 854.2us | 312.3us |
-| usagi_s3 | 574 | 2277 | 1.6ms | 401.3us |
+| minio | 1269 | 2796 | 738.1us | 331.2us |
+| usagi_s3 | 1838 | 3989 | 509.4us | 232.4us |
 
 ### Metadata Operations (ops/s)
 
 | Driver | Stat | List (100 objects) | Delete |
 |--------|------|-------------------|--------|
-| minio | 3594 | 562 | 2679 |
-| usagi_s3 | 1199 | 305 | 4102 |
+| minio | 3277 | 528 | 2480 |
+| usagi_s3 | 3829 | 869 | 3756 |
 
 ### Concurrency Performance
 
@@ -67,8 +67,8 @@
 
 | Driver | C1 | C10 | C25 | C50 | C100 | C200 |
 |--------|------|------|------|------|------|------|
-| minio | 1.19 | 0.27 | 0.11 | 0.05 | 0.03 | 0.01 |
-| usagi_s3 | 1.22 | 0.43 | 0.14 | 0.07 | 0.04 | 0.02 |
+| minio | 1.06 | 0.30 | 0.10 | 0.05 | 0.02 | 0.01 |
+| usagi_s3 | 1.31 | 0.29 | 0.10 | 0.06 | 0.03 | 0.02 |
 
 *\* indicates errors occurred*
 
@@ -76,39 +76,50 @@
 
 | Driver | C1 | C10 | C25 | C50 | C100 | C200 |
 |--------|------|------|------|------|------|------|
-| minio | 2.61 | 0.88 | 0.43 | 0.24 | 0.12 | 0.07 |
-| usagi_s3 | 3.61 | 1.30 | 0.64 | 0.37 | 0.17 | 0.09 |
+| minio | 2.32 | 0.69 | 0.34 | 0.21 | 0.10 | 0.05 |
+| usagi_s3 | 3.09 | 1.00 | 0.52 | 0.32 | 0.18 | 0.08 |
 
 *\* indicates errors occurred*
 
 ### Scale Performance
 
-Performance with varying numbers of objects (1KB each).
+Performance with varying numbers of objects (256B each).
 
 **Write N Files (total time)**
 
-| Driver | 10 |
-|--------|------|
-| minio | 10.2ms |
-| usagi_s3 | 8.8ms |
+| Driver | 10 | 100 | 1000 | 10000 |
+|--------|------|------|------|------|
+| minio | 10.1ms | 101.8ms | 1.07s | 10.57s |
+| usagi_s3 | 6.6ms | 87.0ms | 729.1ms | 6.13s |
 
 *\* indicates errors occurred*
 
 **List N Files (total time)**
 
-| Driver | 10 |
-|--------|------|
-| minio | 809.7us |
-| usagi_s3 | 497.9us |
+| Driver | 10 | 100 | 1000 | 10000 |
+|--------|------|------|------|------|
+| minio | 1.0ms | 2.3ms | 14.7ms | 179.1ms |
+| usagi_s3 | 1.1ms | 1.2ms | 8.0ms | 255.7ms |
 
 *\* indicates errors occurred*
+
+### Skipped Benchmarks
+
+Some benchmarks were skipped due to driver limitations:
+
+- **minio**: 2 skipped
+  - Scale/100000 (requires longer timeout)
+  - Scale/1000000 (requires longer timeout)
+- **usagi_s3**: 2 skipped
+  - Scale/100000 (requires longer timeout)
+  - Scale/1000000 (requires longer timeout)
 
 ### Resource Usage Summary
 
 | Driver | Memory | CPU |
 |--------|--------|-----|
-| minio | 1001.0 MB | 2.0% |
-| usagi_s3 | 1133.6 MB | 4.3% |
+| minio | 961.1 MB | 0.0% |
+| usagi_s3 | 1332.2 MB | 1.6% |
 
 ---
 
@@ -124,8 +135,8 @@ Performance with varying numbers of objects (1KB each).
 
 ## Drivers Tested
 
-- **minio** (39 benchmarks)
-- **usagi_s3** (39 benchmarks)
+- **minio** (48 benchmarks)
+- **usagi_s3** (48 benchmarks)
 
 ## Detailed Results
 
@@ -133,369 +144,369 @@ Performance with varying numbers of objects (1KB each).
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.17 MB/s | 674.4us | 1.9ms | 2.7ms | 0 |
-| minio | 0.96 MB/s | 905.7us | 1.7ms | 2.3ms | 0 |
+| usagi_s3 | 1.03 MB/s | 743.1us | 1.8ms | 2.7ms | 0 |
+| minio | 0.86 MB/s | 1.0ms | 1.8ms | 2.2ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.17 MB/s
-minio        ████████████████████████ 0.96 MB/s
+usagi_s3     ██████████████████████████████ 1.03 MB/s
+minio        ████████████████████████ 0.86 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 674.4us
-minio        ██████████████████████████████ 905.7us
+usagi_s3     █████████████████████ 743.1us
+minio        ██████████████████████████████ 1.0ms
 ```
 
 ### Delete
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 4102 ops/s | 215.2us | 380.6us | 755.1us | 0 |
-| minio | 2679 ops/s | 352.6us | 464.6us | 685.1us | 0 |
+| usagi_s3 | 3756 ops/s | 239.4us | 404.3us | 717.2us | 0 |
+| minio | 2480 ops/s | 380.8us | 527.1us | 732.5us | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 4102 ops/s
-minio        ███████████████████ 2679 ops/s
+usagi_s3     ██████████████████████████████ 3756 ops/s
+minio        ███████████████████ 2480 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████ 215.2us
-minio        ██████████████████████████████ 352.6us
+usagi_s3     ██████████████████ 239.4us
+minio        ██████████████████████████████ 380.8us
 ```
 
 ### EdgeCase/DeepNested
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.14 MB/s | 648.3us | 1.1ms | 1.5ms | 0 |
-| minio | 0.09 MB/s | 967.5us | 1.4ms | 1.8ms | 0 |
+| usagi_s3 | 0.13 MB/s | 640.3us | 1.2ms | 1.7ms | 0 |
+| minio | 0.09 MB/s | 1.0ms | 1.4ms | 1.9ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.14 MB/s
+usagi_s3     ██████████████████████████████ 0.13 MB/s
 minio        ████████████████████ 0.09 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 648.3us
-minio        ██████████████████████████████ 967.5us
+usagi_s3     ███████████████████ 640.3us
+minio        ██████████████████████████████ 1.0ms
 ```
 
 ### EdgeCase/EmptyObject
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1666 ops/s | 569.6us | 863.7us | 1.2ms | 0 |
-| minio | 1016 ops/s | 860.6us | 1.7ms | 2.5ms | 0 |
+| usagi_s3 | 1584 ops/s | 564.4us | 1.0ms | 1.5ms | 0 |
+| minio | 965 ops/s | 896.6us | 1.8ms | 2.4ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1666 ops/s
-minio        ██████████████████ 1016 ops/s
+usagi_s3     ██████████████████████████████ 1584 ops/s
+minio        ██████████████████ 965 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████ 569.6us
-minio        ██████████████████████████████ 860.6us
+usagi_s3     ██████████████████ 564.4us
+minio        ██████████████████████████████ 896.6us
 ```
 
 ### EdgeCase/LongKey256
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.13 MB/s | 678.1us | 1.2ms | 1.6ms | 0 |
-| minio | 0.10 MB/s | 916.4us | 1.5ms | 2.0ms | 0 |
+| usagi_s3 | 0.14 MB/s | 580.3us | 1.1ms | 1.5ms | 0 |
+| minio | 0.08 MB/s | 997.0us | 1.9ms | 2.5ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.13 MB/s
-minio        ██████████████████████ 0.10 MB/s
+usagi_s3     ██████████████████████████████ 0.14 MB/s
+minio        █████████████████ 0.08 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 678.1us
-minio        ██████████████████████████████ 916.4us
+usagi_s3     █████████████████ 580.3us
+minio        ██████████████████████████████ 997.0us
 ```
 
 ### List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 562 ops/s | 1.7ms | 2.1ms | 2.3ms | 0 |
-| usagi_s3 | 305 ops/s | 2.7ms | 6.7ms | 10.9ms | 0 |
+| usagi_s3 | 869 ops/s | 1.1ms | 1.5ms | 1.8ms | 0 |
+| minio | 528 ops/s | 1.8ms | 2.3ms | 2.8ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 562 ops/s
-usagi_s3     ████████████████ 305 ops/s
+usagi_s3     ██████████████████████████████ 869 ops/s
+minio        ██████████████████ 528 ops/s
 ```
 
 **Latency (P50)**
 ```
-minio        ███████████████████ 1.7ms
-usagi_s3     ██████████████████████████████ 2.7ms
+usagi_s3     ██████████████████ 1.1ms
+minio        ██████████████████████████████ 1.8ms
 ```
 
 ### MixedWorkload/Balanced_50_50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.47 MB/s | 25.7ms | 59.0ms | 92.6ms | 0 |
-| minio | 0.26 MB/s | 41.3ms | 172.8ms | 231.5ms | 0 |
+| usagi_s3 | 0.36 MB/s | 14.5ms | 106.3ms | 119.7ms | 0 |
+| minio | 0.22 MB/s | 29.7ms | 230.3ms | 358.8ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.47 MB/s
-minio        ████████████████ 0.26 MB/s
+usagi_s3     ██████████████████████████████ 0.36 MB/s
+minio        ██████████████████ 0.22 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████ 25.7ms
-minio        ██████████████████████████████ 41.3ms
+usagi_s3     ██████████████ 14.5ms
+minio        ██████████████████████████████ 29.7ms
 ```
 
 ### MixedWorkload/ReadHeavy_90_10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.63 MB/s | 24.4ms | 38.9ms | 52.4ms | 0 |
-| minio | 0.51 MB/s | 21.7ms | 100.6ms | 159.2ms | 0 |
+| usagi_s3 | 0.61 MB/s | 22.9ms | 44.0ms | 78.4ms | 0 |
+| minio | 0.44 MB/s | 24.4ms | 107.6ms | 223.7ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.63 MB/s
-minio        ████████████████████████ 0.51 MB/s
+usagi_s3     ██████████████████████████████ 0.61 MB/s
+minio        █████████████████████ 0.44 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████████████ 24.4ms
-minio        ██████████████████████████ 21.7ms
+usagi_s3     ████████████████████████████ 22.9ms
+minio        ██████████████████████████████ 24.4ms
 ```
 
 ### MixedWorkload/WriteHeavy_10_90
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.37 MB/s | 33.4ms | 76.5ms | 251.5ms | 0 |
-| minio | 0.16 MB/s | 59.7ms | 249.1ms | 835.5ms | 0 |
+| usagi_s3 | 0.25 MB/s | 74.4ms | 104.2ms | 119.6ms | 0 |
+| minio | 0.17 MB/s | 66.7ms | 248.2ms | 302.3ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.37 MB/s
-minio        █████████████ 0.16 MB/s
+usagi_s3     ██████████████████████████████ 0.25 MB/s
+minio        ███████████████████ 0.17 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████ 33.4ms
-minio        ██████████████████████████████ 59.7ms
+usagi_s3     ██████████████████████████████ 74.4ms
+minio        ██████████████████████████ 66.7ms
 ```
 
 ### Multipart/15MB_3Parts
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 132.20 MB/s | 114.5ms | 127.5ms | 127.5ms | 0 |
-| usagi_s3 | 125.55 MB/s | 118.3ms | 124.4ms | 124.4ms | 0 |
+| minio | 118.30 MB/s | 123.5ms | 136.8ms | 136.8ms | 0 |
+| usagi_s3 | 99.09 MB/s | 130.5ms | 168.3ms | 168.3ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 132.20 MB/s
-usagi_s3     ████████████████████████████ 125.55 MB/s
+minio        ██████████████████████████████ 118.30 MB/s
+usagi_s3     █████████████████████████ 99.09 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        █████████████████████████████ 114.5ms
-usagi_s3     ██████████████████████████████ 118.3ms
+minio        ████████████████████████████ 123.5ms
+usagi_s3     ██████████████████████████████ 130.5ms
 ```
 
 ### ParallelRead/1KB/C1
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| usagi_s3 | 3.61 MB/s | 270.3us | 394.8us | 248.5us | 394.8us | 629.6us | 0 |
-| minio | 2.61 MB/s | 374.2us | 487.0us | 356.0us | 487.2us | 686.1us | 0 |
+| usagi_s3 | 3.09 MB/s | 315.4us | 510.8us | 285.8us | 511.0us | 726.1us | 0 |
+| minio | 2.32 MB/s | 420.2us | 574.5us | 391.5us | 574.6us | 856.4us | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 3.61 MB/s
-minio        █████████████████████ 2.61 MB/s
+usagi_s3     ██████████████████████████████ 3.09 MB/s
+minio        ██████████████████████ 2.32 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 248.5us
-minio        ██████████████████████████████ 356.0us
+usagi_s3     █████████████████████ 285.8us
+minio        ██████████████████████████████ 391.5us
 ```
 
 ### ParallelRead/1KB/C10
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| usagi_s3 | 1.30 MB/s | 750.5us | 1.2ms | 712.5us | 1.2ms | 1.5ms | 0 |
-| minio | 0.88 MB/s | 1.1ms | 1.8ms | 1.0ms | 1.8ms | 2.6ms | 0 |
+| usagi_s3 | 1.00 MB/s | 976.4us | 1.5ms | 906.9us | 1.5ms | 2.1ms | 0 |
+| minio | 0.69 MB/s | 1.4ms | 2.4ms | 1.3ms | 2.4ms | 4.5ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.30 MB/s
-minio        ████████████████████ 0.88 MB/s
+usagi_s3     ██████████████████████████████ 1.00 MB/s
+minio        ████████████████████ 0.69 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 712.5us
-minio        ██████████████████████████████ 1.0ms
+usagi_s3     █████████████████████ 906.9us
+minio        ██████████████████████████████ 1.3ms
 ```
 
 ### ParallelRead/1KB/C100
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| usagi_s3 | 0.17 MB/s | 5.6ms | 9.9ms | 5.3ms | 9.9ms | 13.9ms | 0 |
-| minio | 0.12 MB/s | 7.8ms | 15.6ms | 7.0ms | 15.6ms | 21.9ms | 0 |
+| usagi_s3 | 0.18 MB/s | 5.5ms | 9.7ms | 5.3ms | 9.7ms | 13.1ms | 0 |
+| minio | 0.10 MB/s | 9.9ms | 20.2ms | 8.7ms | 20.2ms | 32.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.17 MB/s
-minio        █████████████████████ 0.12 MB/s
+usagi_s3     ██████████████████████████████ 0.18 MB/s
+minio        ████████████████ 0.10 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 5.3ms
-minio        ██████████████████████████████ 7.0ms
+usagi_s3     ██████████████████ 5.3ms
+minio        ██████████████████████████████ 8.7ms
 ```
 
 ### ParallelRead/1KB/C200
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| usagi_s3 | 0.09 MB/s | 10.5ms | 15.9ms | 10.7ms | 15.9ms | 18.4ms | 0 |
-| minio | 0.07 MB/s | 14.9ms | 30.9ms | 13.3ms | 31.0ms | 43.2ms | 0 |
+| usagi_s3 | 0.08 MB/s | 12.3ms | 17.5ms | 12.2ms | 17.5ms | 25.2ms | 0 |
+| minio | 0.05 MB/s | 21.2ms | 44.9ms | 19.0ms | 44.9ms | 63.8ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.09 MB/s
-minio        █████████████████████ 0.07 MB/s
+usagi_s3     ██████████████████████████████ 0.08 MB/s
+minio        █████████████████ 0.05 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████████ 10.7ms
-minio        ██████████████████████████████ 13.3ms
+usagi_s3     ███████████████████ 12.2ms
+minio        ██████████████████████████████ 19.0ms
 ```
 
 ### ParallelRead/1KB/C25
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| usagi_s3 | 0.64 MB/s | 1.5ms | 2.6ms | 1.4ms | 2.6ms | 3.2ms | 0 |
-| minio | 0.43 MB/s | 2.3ms | 3.9ms | 2.1ms | 3.9ms | 5.4ms | 0 |
+| usagi_s3 | 0.52 MB/s | 1.9ms | 3.2ms | 1.7ms | 3.2ms | 4.5ms | 0 |
+| minio | 0.34 MB/s | 2.9ms | 5.3ms | 2.7ms | 5.3ms | 7.6ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.64 MB/s
-minio        ████████████████████ 0.43 MB/s
+usagi_s3     ██████████████████████████████ 0.52 MB/s
+minio        ███████████████████ 0.34 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 1.4ms
-minio        ██████████████████████████████ 2.1ms
+usagi_s3     ███████████████████ 1.7ms
+minio        ██████████████████████████████ 2.7ms
 ```
 
 ### ParallelRead/1KB/C50
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| usagi_s3 | 0.37 MB/s | 2.6ms | 4.6ms | 2.5ms | 4.6ms | 6.1ms | 0 |
-| minio | 0.24 MB/s | 4.0ms | 7.4ms | 3.7ms | 7.4ms | 10.7ms | 0 |
+| usagi_s3 | 0.32 MB/s | 3.1ms | 5.3ms | 2.9ms | 5.3ms | 7.0ms | 0 |
+| minio | 0.21 MB/s | 4.7ms | 8.3ms | 4.4ms | 8.3ms | 10.8ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.37 MB/s
-minio        ███████████████████ 0.24 MB/s
+usagi_s3     ██████████████████████████████ 0.32 MB/s
+minio        ███████████████████ 0.21 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 2.5ms
-minio        ██████████████████████████████ 3.7ms
+usagi_s3     ███████████████████ 2.9ms
+minio        ██████████████████████████████ 4.4ms
 ```
 
 ### ParallelWrite/1KB/C1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.22 MB/s | 746.6us | 1.0ms | 1.6ms | 0 |
-| minio | 1.19 MB/s | 763.3us | 1.1ms | 2.5ms | 0 |
+| usagi_s3 | 1.31 MB/s | 685.8us | 1.1ms | 1.6ms | 0 |
+| minio | 1.06 MB/s | 849.0us | 1.2ms | 2.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.22 MB/s
-minio        █████████████████████████████ 1.19 MB/s
+usagi_s3     ██████████████████████████████ 1.31 MB/s
+minio        ████████████████████████ 1.06 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████████████ 746.6us
-minio        ██████████████████████████████ 763.3us
+usagi_s3     ████████████████████████ 685.8us
+minio        ██████████████████████████████ 849.0us
 ```
 
 ### ParallelWrite/1KB/C10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.43 MB/s | 2.2ms | 3.3ms | 4.2ms | 0 |
-| minio | 0.27 MB/s | 3.3ms | 5.9ms | 7.6ms | 0 |
+| minio | 0.30 MB/s | 3.2ms | 4.6ms | 6.1ms | 0 |
+| usagi_s3 | 0.29 MB/s | 3.1ms | 5.6ms | 7.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.43 MB/s
-minio        ██████████████████ 0.27 MB/s
+minio        ██████████████████████████████ 0.30 MB/s
+usagi_s3     █████████████████████████████ 0.29 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████ 2.2ms
-minio        ██████████████████████████████ 3.3ms
+minio        ██████████████████████████████ 3.2ms
+usagi_s3     █████████████████████████████ 3.1ms
 ```
 
 ### ParallelWrite/1KB/C100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.04 MB/s | 29.2ms | 46.2ms | 60.2ms | 0 |
-| minio | 0.03 MB/s | 32.4ms | 54.9ms | 70.2ms | 0 |
+| usagi_s3 | 0.03 MB/s | 35.4ms | 44.6ms | 49.4ms | 0 |
+| minio | 0.02 MB/s | 36.5ms | 72.1ms | 92.8ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.04 MB/s
-minio        ███████████████████████ 0.03 MB/s
+usagi_s3     ██████████████████████████████ 0.03 MB/s
+minio        ██████████████████████ 0.02 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████████████ 29.2ms
-minio        ██████████████████████████████ 32.4ms
+usagi_s3     █████████████████████████████ 35.4ms
+minio        ██████████████████████████████ 36.5ms
 ```
 
 ### ParallelWrite/1KB/C200
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.02 MB/s | 56.7ms | 75.7ms | 95.0ms | 0 |
-| minio | 0.01 MB/s | 62.5ms | 120.1ms | 182.1ms | 0 |
+| usagi_s3 | 0.02 MB/s | 72.0ms | 112.5ms | 122.2ms | 0 |
+| minio | 0.01 MB/s | 77.1ms | 159.7ms | 264.1ms | 0 |
 
 **Throughput**
 ```
@@ -505,377 +516,548 @@ minio        ██████████████████████ 
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████████████ 56.7ms
-minio        ██████████████████████████████ 62.5ms
+usagi_s3     ████████████████████████████ 72.0ms
+minio        ██████████████████████████████ 77.1ms
 ```
 
 ### ParallelWrite/1KB/C25
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.14 MB/s | 7.0ms | 11.4ms | 13.5ms | 0 |
-| minio | 0.11 MB/s | 8.5ms | 14.1ms | 18.3ms | 0 |
+| usagi_s3 | 0.10 MB/s | 10.2ms | 15.3ms | 24.0ms | 0 |
+| minio | 0.10 MB/s | 8.8ms | 17.9ms | 22.4ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.14 MB/s
-minio        ██████████████████████ 0.11 MB/s
+usagi_s3     ██████████████████████████████ 0.10 MB/s
+minio        █████████████████████████████ 0.10 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████████ 7.0ms
-minio        ██████████████████████████████ 8.5ms
+usagi_s3     ██████████████████████████████ 10.2ms
+minio        █████████████████████████ 8.8ms
 ```
 
 ### ParallelWrite/1KB/C50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.07 MB/s | 13.1ms | 20.6ms | 39.2ms | 0 |
-| minio | 0.05 MB/s | 15.5ms | 37.7ms | 54.1ms | 0 |
+| usagi_s3 | 0.06 MB/s | 14.6ms | 38.3ms | 51.3ms | 0 |
+| minio | 0.05 MB/s | 18.9ms | 32.8ms | 48.8ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.07 MB/s
-minio        █████████████████████ 0.05 MB/s
+usagi_s3     ██████████████████████████████ 0.06 MB/s
+minio        █████████████████████████ 0.05 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████████ 13.1ms
-minio        ██████████████████████████████ 15.5ms
+usagi_s3     ███████████████████████ 14.6ms
+minio        ██████████████████████████████ 18.9ms
 ```
 
 ### RangeRead/End_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 167.23 MB/s | 1.4ms | 1.9ms | 2.7ms | 0 |
-| minio | 143.48 MB/s | 1.7ms | 2.2ms | 3.6ms | 0 |
+| usagi_s3 | 146.78 MB/s | 1.6ms | 2.1ms | 2.4ms | 0 |
+| minio | 118.19 MB/s | 2.0ms | 2.7ms | 3.6ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 167.23 MB/s
-minio        █████████████████████████ 143.48 MB/s
+usagi_s3     ██████████████████████████████ 146.78 MB/s
+minio        ████████████████████████ 118.19 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████████ 1.4ms
-minio        ██████████████████████████████ 1.7ms
+usagi_s3     ████████████████████████ 1.6ms
+minio        ██████████████████████████████ 2.0ms
 ```
 
 ### RangeRead/Middle_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 168.44 MB/s | 1.4ms | 1.8ms | 2.2ms | 0 |
-| minio | 144.49 MB/s | 1.7ms | 2.1ms | 2.7ms | 0 |
+| usagi_s3 | 144.33 MB/s | 1.7ms | 2.2ms | 2.9ms | 0 |
+| minio | 118.62 MB/s | 2.0ms | 2.6ms | 3.2ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 168.44 MB/s
-minio        █████████████████████████ 144.49 MB/s
+usagi_s3     ██████████████████████████████ 144.33 MB/s
+minio        ████████████████████████ 118.62 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████████ 1.4ms
-minio        ██████████████████████████████ 1.7ms
+usagi_s3     ████████████████████████ 1.7ms
+minio        ██████████████████████████████ 2.0ms
 ```
 
 ### RangeRead/Start_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 144.25 MB/s | 1.6ms | 2.6ms | 3.2ms | 0 |
-| minio | 123.21 MB/s | 1.8ms | 3.0ms | 4.8ms | 0 |
+| usagi_s3 | 131.15 MB/s | 1.8ms | 2.6ms | 3.2ms | 0 |
+| minio | 91.89 MB/s | 2.4ms | 4.4ms | 7.2ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 144.25 MB/s
-minio        █████████████████████████ 123.21 MB/s
+usagi_s3     ██████████████████████████████ 131.15 MB/s
+minio        █████████████████████ 91.89 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████████ 1.6ms
-minio        ██████████████████████████████ 1.8ms
+usagi_s3     ██████████████████████ 1.8ms
+minio        ██████████████████████████████ 2.4ms
 ```
 
 ### Read/100MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 250.82 MB/s | 1.0ms | 979.2us | 400.5ms | 400.5ms | 400.5ms | 0 |
-| usagi_s3 | 180.88 MB/s | 1.7ms | 1.8ms | 558.7ms | 558.7ms | 558.7ms | 0 |
+| minio | 196.92 MB/s | 1.2ms | 1.2ms | 507.7ms | 507.7ms | 507.7ms | 0 |
+| usagi_s3 | 164.55 MB/s | 2.0ms | 1.9ms | 615.8ms | 615.8ms | 615.8ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 250.82 MB/s
-usagi_s3     █████████████████████ 180.88 MB/s
+minio        ██████████████████████████████ 196.92 MB/s
+usagi_s3     █████████████████████████ 164.55 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        █████████████████████ 400.5ms
-usagi_s3     ██████████████████████████████ 558.7ms
+minio        ████████████████████████ 507.7ms
+usagi_s3     ██████████████████████████████ 615.8ms
 ```
 
 ### Read/10MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 252.47 MB/s | 971.2us | 1.1ms | 39.6ms | 40.6ms | 40.7ms | 0 |
-| usagi_s3 | 181.82 MB/s | 1.8ms | 2.3ms | 54.1ms | 59.6ms | 61.3ms | 0 |
+| minio | 199.19 MB/s | 1.3ms | 1.7ms | 49.6ms | 53.0ms | 54.6ms | 0 |
+| usagi_s3 | 163.63 MB/s | 2.5ms | 3.3ms | 60.0ms | 67.1ms | 67.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 252.47 MB/s
-usagi_s3     █████████████████████ 181.82 MB/s
+minio        ██████████████████████████████ 199.19 MB/s
+usagi_s3     ████████████████████████ 163.63 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        █████████████████████ 39.6ms
-usagi_s3     ██████████████████████████████ 54.1ms
+minio        ████████████████████████ 49.6ms
+usagi_s3     ██████████████████████████████ 60.0ms
 ```
 
 ### Read/1KB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 2.93 MB/s | 333.0us | 427.1us | 312.3us | 427.2us | 721.6us | 0 |
-| usagi_s3 | 2.22 MB/s | 438.9us | 671.2us | 401.3us | 671.6us | 943.2us | 0 |
+| usagi_s3 | 3.90 MB/s | 250.6us | 362.9us | 232.4us | 363.0us | 552.6us | 0 |
+| minio | 2.73 MB/s | 357.6us | 497.2us | 331.2us | 497.3us | 753.5us | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 2.93 MB/s
-usagi_s3     ██████████████████████ 2.22 MB/s
+usagi_s3     ██████████████████████████████ 3.90 MB/s
+minio        █████████████████████ 2.73 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ███████████████████████ 312.3us
-usagi_s3     ██████████████████████████████ 401.3us
+usagi_s3     █████████████████████ 232.4us
+minio        ██████████████████████████████ 331.2us
 ```
 
 ### Read/1MB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 205.97 MB/s | 971.5us | 1.5ms | 4.6ms | 6.2ms | 9.0ms | 0 |
-| usagi_s3 | 185.46 MB/s | 605.7us | 1.1ms | 5.3ms | 6.3ms | 7.1ms | 0 |
+| minio | 171.97 MB/s | 1.2ms | 1.9ms | 5.5ms | 7.5ms | 9.8ms | 0 |
+| usagi_s3 | 162.94 MB/s | 566.5us | 948.9us | 6.0ms | 7.3ms | 8.0ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 205.97 MB/s
-usagi_s3     ███████████████████████████ 185.46 MB/s
+minio        ██████████████████████████████ 171.97 MB/s
+usagi_s3     ████████████████████████████ 162.94 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████████████ 4.6ms
-usagi_s3     ██████████████████████████████ 5.3ms
+minio        ███████████████████████████ 5.5ms
+usagi_s3     ██████████████████████████████ 6.0ms
 ```
 
 ### Read/64KB
 
 | Driver | Throughput | TTFB Avg | TTFB P95 | P50 | P95 | P99 | Errors |
 |--------|------------|----------|----------|-----|-----|-----|--------|
-| minio | 97.19 MB/s | 449.7us | 740.7us | 599.5us | 901.9us | 1.3ms | 0 |
-| usagi_s3 | 73.44 MB/s | 550.4us | 932.7us | 791.8us | 1.3ms | 1.7ms | 0 |
+| usagi_s3 | 95.23 MB/s | 334.9us | 599.1us | 615.4us | 948.8us | 1.2ms | 0 |
+| minio | 90.61 MB/s | 482.6us | 787.5us | 639.2us | 986.1us | 1.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 97.19 MB/s
-usagi_s3     ██████████████████████ 73.44 MB/s
+usagi_s3     ██████████████████████████████ 95.23 MB/s
+minio        ████████████████████████████ 90.61 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████████ 599.5us
-usagi_s3     ██████████████████████████████ 791.8us
+usagi_s3     ████████████████████████████ 615.4us
+minio        ██████████████████████████████ 639.2us
 ```
 
 ### Scale/Delete/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 340 ops/s | 2.9ms | 2.9ms | 2.9ms | 0 |
-| minio | 253 ops/s | 3.9ms | 3.9ms | 3.9ms | 0 |
+| usagi_s3 | 388 ops/s | 2.6ms | 2.6ms | 2.6ms | 0 |
+| minio | 216 ops/s | 4.6ms | 4.6ms | 4.6ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 340 ops/s
-minio        ██████████████████████ 253 ops/s
+usagi_s3     ██████████████████████████████ 388 ops/s
+minio        ████████████████ 216 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 2.9ms
-minio        ██████████████████████████████ 3.9ms
+usagi_s3     ████████████████ 2.6ms
+minio        ██████████████████████████████ 4.6ms
+```
+
+### Scale/Delete/100
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 41 ops/s | 24.5ms | 24.5ms | 24.5ms | 0 |
+| minio | 24 ops/s | 41.6ms | 41.6ms | 41.6ms | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 41 ops/s
+minio        █████████████████ 24 ops/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     █████████████████ 24.5ms
+minio        ██████████████████████████████ 41.6ms
+```
+
+### Scale/Delete/1000
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 4 ops/s | 270.8ms | 270.8ms | 270.8ms | 0 |
+| minio | 2 ops/s | 416.8ms | 416.8ms | 416.8ms | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 4 ops/s
+minio        ███████████████████ 2 ops/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     ███████████████████ 270.8ms
+minio        ██████████████████████████████ 416.8ms
+```
+
+### Scale/Delete/10000
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 0 ops/s | 2.70s | 2.70s | 2.70s | 0 |
+| minio | 0 ops/s | 4.35s | 4.35s | 4.35s | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 0 ops/s
+minio        ██████████████████ 0 ops/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     ██████████████████ 2.70s
+minio        ██████████████████████████████ 4.35s
 ```
 
 ### Scale/List/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 2009 ops/s | 497.9us | 497.9us | 497.9us | 0 |
-| minio | 1235 ops/s | 809.7us | 809.7us | 809.7us | 0 |
+| minio | 989 ops/s | 1.0ms | 1.0ms | 1.0ms | 0 |
+| usagi_s3 | 946 ops/s | 1.1ms | 1.1ms | 1.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 2009 ops/s
-minio        ██████████████████ 1235 ops/s
+minio        ██████████████████████████████ 989 ops/s
+usagi_s3     ████████████████████████████ 946 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████ 497.9us
-minio        ██████████████████████████████ 809.7us
+minio        ████████████████████████████ 1.0ms
+usagi_s3     ██████████████████████████████ 1.1ms
+```
+
+### Scale/List/100
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 836 ops/s | 1.2ms | 1.2ms | 1.2ms | 0 |
+| minio | 436 ops/s | 2.3ms | 2.3ms | 2.3ms | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 836 ops/s
+minio        ███████████████ 436 ops/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     ███████████████ 1.2ms
+minio        ██████████████████████████████ 2.3ms
+```
+
+### Scale/List/1000
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 125 ops/s | 8.0ms | 8.0ms | 8.0ms | 0 |
+| minio | 68 ops/s | 14.7ms | 14.7ms | 14.7ms | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 125 ops/s
+minio        ████████████████ 68 ops/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     ████████████████ 8.0ms
+minio        ██████████████████████████████ 14.7ms
+```
+
+### Scale/List/10000
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| minio | 6 ops/s | 179.1ms | 179.1ms | 179.1ms | 0 |
+| usagi_s3 | 4 ops/s | 255.7ms | 255.7ms | 255.7ms | 0 |
+
+**Throughput**
+```
+minio        ██████████████████████████████ 6 ops/s
+usagi_s3     █████████████████████ 4 ops/s
+```
+
+**Latency (P50)**
+```
+minio        █████████████████████ 179.1ms
+usagi_s3     ██████████████████████████████ 255.7ms
 ```
 
 ### Scale/Write/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.10 MB/s | 8.8ms | 8.8ms | 8.8ms | 0 |
-| minio | 0.96 MB/s | 10.2ms | 10.2ms | 10.2ms | 0 |
+| usagi_s3 | 0.37 MB/s | 6.6ms | 6.6ms | 6.6ms | 0 |
+| minio | 0.24 MB/s | 10.1ms | 10.1ms | 10.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.10 MB/s
-minio        ██████████████████████████ 0.96 MB/s
+usagi_s3     ██████████████████████████████ 0.37 MB/s
+minio        ███████████████████ 0.24 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████████ 8.8ms
-minio        ██████████████████████████████ 10.2ms
+usagi_s3     ███████████████████ 6.6ms
+minio        ██████████████████████████████ 10.1ms
+```
+
+### Scale/Write/100
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 0.28 MB/s | 87.0ms | 87.0ms | 87.0ms | 0 |
+| minio | 0.24 MB/s | 101.8ms | 101.8ms | 101.8ms | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 0.28 MB/s
+minio        █████████████████████████ 0.24 MB/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     █████████████████████████ 87.0ms
+minio        ██████████████████████████████ 101.8ms
+```
+
+### Scale/Write/1000
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 0.33 MB/s | 729.1ms | 729.1ms | 729.1ms | 0 |
+| minio | 0.23 MB/s | 1.07s | 1.07s | 1.07s | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 0.33 MB/s
+minio        ████████████████████ 0.23 MB/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     ████████████████████ 729.1ms
+minio        ██████████████████████████████ 1.07s
+```
+
+### Scale/Write/10000
+
+| Driver | Throughput | P50 | P95 | P99 | Errors |
+|--------|------------|-----|-----|-----|--------|
+| usagi_s3 | 0.40 MB/s | 6.13s | 6.13s | 6.13s | 0 |
+| minio | 0.23 MB/s | 10.57s | 10.57s | 10.57s | 0 |
+
+**Throughput**
+```
+usagi_s3     ██████████████████████████████ 0.40 MB/s
+minio        █████████████████ 0.23 MB/s
+```
+
+**Latency (P50)**
+```
+usagi_s3     █████████████████ 6.13s
+minio        ██████████████████████████████ 10.57s
 ```
 
 ### Stat
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 3594 ops/s | 261.2us | 368.0us | 610.7us | 0 |
-| usagi_s3 | 1199 ops/s | 426.5us | 2.1ms | 6.2ms | 0 |
+| usagi_s3 | 3829 ops/s | 242.9us | 381.9us | 537.8us | 0 |
+| minio | 3277 ops/s | 289.3us | 411.2us | 539.5us | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 3594 ops/s
-usagi_s3     ██████████ 1199 ops/s
+usagi_s3     ██████████████████████████████ 3829 ops/s
+minio        █████████████████████████ 3277 ops/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████ 261.2us
-usagi_s3     ██████████████████████████████ 426.5us
+usagi_s3     █████████████████████████ 242.9us
+minio        ██████████████████████████████ 289.3us
 ```
 
 ### Write/100MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 155.28 MB/s | 640.4ms | 640.4ms | 640.4ms | 0 |
-| usagi_s3 | 140.92 MB/s | 702.1ms | 702.1ms | 702.1ms | 0 |
+| minio | 130.54 MB/s | 727.6ms | 727.6ms | 727.6ms | 0 |
+| usagi_s3 | 125.03 MB/s | 804.0ms | 804.0ms | 804.0ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 155.28 MB/s
-usagi_s3     ███████████████████████████ 140.92 MB/s
+minio        ██████████████████████████████ 130.54 MB/s
+usagi_s3     ████████████████████████████ 125.03 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ███████████████████████████ 640.4ms
-usagi_s3     ██████████████████████████████ 702.1ms
+minio        ███████████████████████████ 727.6ms
+usagi_s3     ██████████████████████████████ 804.0ms
 ```
 
 ### Write/10MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 156.51 MB/s | 64.7ms | 67.6ms | 68.4ms | 0 |
-| usagi_s3 | 107.11 MB/s | 89.6ms | 114.8ms | 114.8ms | 0 |
+| usagi_s3 | 130.54 MB/s | 76.3ms | 83.2ms | 83.2ms | 0 |
+| minio | 126.03 MB/s | 79.5ms | 85.5ms | 85.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 156.51 MB/s
-usagi_s3     ████████████████████ 107.11 MB/s
+usagi_s3     ██████████████████████████████ 130.54 MB/s
+minio        ████████████████████████████ 126.03 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        █████████████████████ 64.7ms
-usagi_s3     ██████████████████████████████ 89.6ms
+usagi_s3     ████████████████████████████ 76.3ms
+minio        ██████████████████████████████ 79.5ms
 ```
 
 ### Write/1KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 1.11 MB/s | 854.2us | 1.1ms | 1.3ms | 0 |
-| usagi_s3 | 0.56 MB/s | 1.6ms | 3.0ms | 5.3ms | 0 |
+| usagi_s3 | 1.79 MB/s | 509.4us | 768.2us | 1.2ms | 0 |
+| minio | 1.24 MB/s | 738.1us | 1.1ms | 1.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 1.11 MB/s
-usagi_s3     ███████████████ 0.56 MB/s
+usagi_s3     ██████████████████████████████ 1.79 MB/s
+minio        ████████████████████ 1.24 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ████████████████ 854.2us
-usagi_s3     ██████████████████████████████ 1.6ms
+usagi_s3     ████████████████████ 509.4us
+minio        ██████████████████████████████ 738.1us
 ```
 
 ### Write/1MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 122.58 MB/s | 7.9ms | 10.3ms | 11.5ms | 0 |
-| usagi_s3 | 98.29 MB/s | 8.8ms | 19.4ms | 30.2ms | 0 |
+| usagi_s3 | 104.99 MB/s | 8.7ms | 13.4ms | 20.8ms | 0 |
+| minio | 103.24 MB/s | 9.2ms | 12.6ms | 16.2ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 122.58 MB/s
-usagi_s3     ████████████████████████ 98.29 MB/s
+usagi_s3     ██████████████████████████████ 104.99 MB/s
+minio        █████████████████████████████ 103.24 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ███████████████████████████ 7.9ms
-usagi_s3     ██████████████████████████████ 8.8ms
+usagi_s3     ████████████████████████████ 8.7ms
+minio        ██████████████████████████████ 9.2ms
 ```
 
 ### Write/64KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 45.75 MB/s | 1.3ms | 1.7ms | 3.7ms | 0 |
-| usagi_s3 | 26.57 MB/s | 2.0ms | 4.9ms | 8.2ms | 0 |
+| usagi_s3 | 59.61 MB/s | 944.3us | 1.5ms | 2.2ms | 0 |
+| minio | 43.07 MB/s | 1.3ms | 2.2ms | 3.8ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 45.75 MB/s
-usagi_s3     █████████████████ 26.57 MB/s
+usagi_s3     ██████████████████████████████ 59.61 MB/s
+minio        █████████████████████ 43.07 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████ 1.3ms
-usagi_s3     ██████████████████████████████ 2.0ms
+usagi_s3     █████████████████████ 944.3us
+minio        ██████████████████████████████ 1.3ms
 ```
 
 ## Resource Usage
 
 | Driver | Memory | RSS | Cache | CPU | Volume | Block I/O |
 |--------|--------|-----|-------|-----|--------|----------|
-| minio | 1001MiB / 7.653GiB | 1001.0 MB | - | 2.0% | 2169.0 MB | 5.76MB / 2.34GB |
-| usagi_s3 | 1.107GiB / 7.653GiB | 1133.6 MB | - | 4.3% | 1626.1 MB | 0B / 2.08GB |
+| minio | 961.1MiB / 7.653GiB | 961.1 MB | - | 0.0% | 1986.0 MB | 46.1MB / 2.22GB |
+| usagi_s3 | 1.301GiB / 7.653GiB | 1332.2 MB | - | 1.6% | 5024.8 MB | 1.25MB / 2.15GB |
 
 > **Note:** RSS = actual application memory. Cache = OS page cache (reclaimable).
 

@@ -29,6 +29,12 @@ var recordBufPool = sync.Pool{
 	},
 }
 
+var copyBufPool = sync.Pool{
+	New: func() any {
+		return make([]byte, 256*1024)
+	},
+}
+
 type entry struct {
 	shard       int
 	segmentID   int64
@@ -904,7 +910,9 @@ func (b *bucket) appendRecordStream(key, contentType string, src io.Reader, size
 	}
 	dataOffset := off + recordHeaderSize + int64(len(key)) + int64(len(contentType))
 	hasher := crc32.New(crcTable)
-	written, err := io.Copy(io.MultiWriter(writer.file, hasher), src)
+	buf := copyBufPool.Get().([]byte)
+	written, err := io.CopyBuffer(io.MultiWriter(writer.file, hasher), src, buf)
+	copyBufPool.Put(buf)
 	if err != nil {
 		return 0, 0, 0, 0, 0, fmt.Errorf("usagi: stream data: %w", err)
 	}
@@ -962,17 +970,25 @@ func readAllSized(src io.Reader, size int64) ([]byte, error) {
 	if size == 0 {
 		return nil, nil
 	}
-	var buf bytes.Buffer
 	if size > 0 {
 		if size > int64(1<<31) {
 			return nil, fmt.Errorf("usagi: object too large")
 		}
-		buf.Grow(int(size))
+		data := make([]byte, size)
+		n, err := io.ReadFull(src, data)
+		if err != nil {
+			if err == io.ErrUnexpectedEOF || err == io.EOF {
+				return data[:n], nil
+			}
+			return nil, fmt.Errorf("usagi: read data: %w", err)
+		}
+		return data[:n], nil
 	}
-	if _, err := io.Copy(&buf, src); err != nil {
+	data, err := io.ReadAll(src)
+	if err != nil {
 		return nil, fmt.Errorf("usagi: read data: %w", err)
 	}
-	return buf.Bytes(), nil
+	return data, nil
 }
 
 type readCloser struct {
