@@ -39,6 +39,7 @@ import (
 	// Register storage drivers
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/local"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/memory"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/devnull"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/rabbit"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/usagi"
 )
