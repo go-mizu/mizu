@@ -237,6 +237,22 @@ services:
       retries: 10
       start_period: 10s
 
+  # LiteIO in-memory mode (ephemeral, no persistence)
+  liteio_mem:
+    image: all-liteio:latest
+    ports:
+      - "9201:9000"   # S3 API (mapped to 9201 for memory mode)
+    environment:
+      LITEIO_ACCESS_KEY: liteio
+      LITEIO_SECRET_KEY: liteio123
+      LITEIO_IN_MEMORY: "true"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   liteio-init:
     image: public.ecr.aws/aws-cli/aws-cli:latest
     pull_policy: if_not_present
@@ -250,6 +266,22 @@ services:
     entrypoint: >
       /bin/sh -c "
       aws --endpoint-url=http://liteio:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  liteio_mem-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      liteio_mem:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: liteio
+      AWS_SECRET_ACCESS_KEY: liteio123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://liteio_mem:9000 s3 mb s3://test-bucket || true;
       exit 0;
       "
 
