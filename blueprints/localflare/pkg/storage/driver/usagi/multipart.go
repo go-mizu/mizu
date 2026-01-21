@@ -1,7 +1,6 @@
 package usagi
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -236,11 +235,19 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	}
 	sort.Slice(selected, func(i, j int) bool { return selected[i].number < selected[j].number })
 
-	data, err := assembleParts(selected)
+	totalSize := int64(0)
+	paths := make([]string, 0, len(selected))
+	for _, p := range selected {
+		totalSize += p.size
+		paths = append(paths, p.path)
+	}
+	reader, err := newMultipartReader(paths)
 	if err != nil {
 		return nil, err
 	}
-	obj, err := b.Write(ctx, up.key, bytes.NewReader(data), int64(len(data)), up.contentType, nil)
+	defer reader.Close()
+
+	obj, err := b.Write(ctx, up.key, reader, totalSize, up.contentType, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +257,50 @@ func (b *bucket) CompleteMultipart(ctx context.Context, mu *storage.MultipartUpl
 	delete(b.multipartUploads, mu.UploadID)
 	b.multipartMu.Unlock()
 	return obj, nil
+}
+
+type multipartReader struct {
+	paths []string
+	idx   int
+	file  *os.File
+}
+
+func newMultipartReader(paths []string) (*multipartReader, error) {
+	return &multipartReader{paths: paths}, nil
+}
+
+func (r *multipartReader) Read(p []byte) (int, error) {
+	for {
+		if r.file == nil {
+			if r.idx >= len(r.paths) {
+				return 0, io.EOF
+			}
+			f, err := os.Open(r.paths[r.idx])
+			if err != nil {
+				return 0, err
+			}
+			r.file = f
+		}
+		n, err := r.file.Read(p)
+		if err == io.EOF {
+			_ = r.file.Close()
+			r.file = nil
+			r.idx++
+			if n > 0 {
+				return n, nil
+			}
+			continue
+		}
+		return n, err
+	}
+}
+
+func (r *multipartReader) Close() error {
+	if r.file != nil {
+		_ = r.file.Close()
+		r.file = nil
+	}
+	return nil
 }
 
 func (b *bucket) AbortMultipart(ctx context.Context, mu *storage.MultipartUpload, opts storage.Options) error {
