@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -75,12 +76,22 @@ func (d *Driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 			smallCacheCap = n * 1024 * 1024
 		}
 	}
+	segmentShards := runtime.GOMAXPROCS(0)
+	if v := strings.TrimSpace(q.Get("segment_shards")); v != "" {
+		if n, err := parseInt64(v); err == nil && n > 0 {
+			segmentShards = int(n)
+		}
+	}
+	if segmentShards < 1 {
+		segmentShards = 1
+	}
 
 	st := &store{
 		root:          root,
 		defaultBucket: defaultBucket,
 		nofsync:       nofsync,
 		segmentSize:   segmentSize,
+		segmentShards: segmentShards,
 		manifestEvery: time.Duration(manifestEvery) * time.Second,
 		smallCacheMax: smallCacheMax,
 		smallCacheCap: smallCacheCap,

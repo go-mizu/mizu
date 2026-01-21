@@ -50,6 +50,29 @@ func (p *prefixIndex) Get(prefix string) ([]string, bool) {
 	return keys, true
 }
 
+func (p *prefixIndex) Candidates(prefix string) ([]string, bool) {
+	if prefix == "" {
+		return nil, false
+	}
+	if keys, ok := p.Get(prefix); ok {
+		return keys, true
+	}
+	parts := strings.Split(prefix, "/")
+	if len(parts) <= 1 {
+		return nil, false
+	}
+	if len(parts) > p.maxDepth {
+		parts = parts[:p.maxDepth]
+	}
+	for depth := len(parts); depth >= 1; depth-- {
+		candidate := strings.Join(parts[:depth], "/")
+		if keys, ok := p.Get(candidate); ok {
+			return keys, true
+		}
+	}
+	return nil, false
+}
+
 func (p *prefixIndex) BuildFromIndex(entries map[string]*entry) {
 	p.mu.Lock()
 	p.items = make(map[string]*prefixList)

@@ -40,6 +40,7 @@ func (c *smallCache) Get(key string) ([]byte, bool) {
 	defer c.mu.Unlock()
 	if elem, ok := c.items[key]; ok {
 		entry := elem.Value.(*cacheEntry)
+		c.order.MoveToFront(elem)
 		return append([]byte(nil), entry.data...), true
 	}
 	return nil, false
