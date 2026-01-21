@@ -21,9 +21,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go/middleware"
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 )
 
@@ -52,6 +54,11 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		// Disable response checksum validation for S3-compatible storage
 		// (MinIO, SeaweedFS, RustFS, etc. may not return checksums)
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+		if cfg.unsignedPayload {
+			o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+				return v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware(stack)
+			})
+		}
 	})
 
 	return &store{
@@ -64,15 +71,16 @@ func (d *driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 
 // dsnConfig holds parsed DSN configuration.
 type dsnConfig struct {
-	endpoint       string
-	bucket         string
-	region         string
-	accessKey      string
-	secretKey      string
-	sessionToken   string
-	forcePathStyle bool
-	insecure       bool
-	useAccelerate  bool
+	endpoint        string
+	bucket          string
+	region          string
+	accessKey       string
+	secretKey       string
+	sessionToken    string
+	forcePathStyle  bool
+	insecure        bool
+	useAccelerate   bool
+	unsignedPayload bool
 }
 
 // parseDSN parses an S3 DSN string into configuration.
@@ -121,6 +129,7 @@ func parseDSN(dsn string) (*dsnConfig, error) {
 	cfg.insecure = parseBool(q.Get("insecure")) || parseBool(q.Get("disable_ssl"))
 	cfg.sessionToken = q.Get("session_token")
 	cfg.useAccelerate = parseBool(q.Get("use_accelerate"))
+	cfg.unsignedPayload = parseBool(q.Get("unsigned_payload"))
 
 	// Parse host and path
 	host := u.Host

@@ -11,7 +11,6 @@
 package devnull
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -72,6 +71,13 @@ type store struct {
 }
 
 var _ storage.Storage = (*store)(nil)
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
 
 func (s *store) Bucket(name string) storage.Bucket {
 	s.mu.Lock()
@@ -269,13 +275,11 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	}, nil
 }
 
-// Open returns an empty reader (zero bytes).
-// For benchmarks measuring read throughput, this measures infrastructure overhead only.
+// Open returns a zero-filled reader sized to the requested range.
+// For benchmarks measuring read throughput, this keeps the protocol realistic while avoiding storage I/O.
 func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opts storage.Options) (io.ReadCloser, *storage.Object, error) {
 	_ = ctx
 	_ = opts
-	_ = offset
-	_ = length
 
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -291,11 +295,23 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, storage.ErrNotExist
 	}
 
-	// Return empty reader - measures infrastructure overhead only
-	return io.NopCloser(bytes.NewReader(nil)), &storage.Object{
+	size := meta.size
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > size {
+		return nil, nil, storage.ErrNotExist
+	}
+	readLen := size - offset
+	if length > 0 && length < readLen {
+		readLen = length
+	}
+
+	// Return zero-filled reader sized to the requested range.
+	return io.NopCloser(io.LimitReader(zeroReader{}, readLen)), &storage.Object{
 		Bucket:      b.name,
 		Key:         key,
-		Size:        meta.size,
+		Size:        size,
 		ContentType: meta.contentType,
 		Created:     meta.created,
 		Updated:     meta.created,
