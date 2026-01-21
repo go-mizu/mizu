@@ -26,6 +26,8 @@ type store struct {
 	nofsync       bool
 	segmentSize   int64
 	manifestEvery time.Duration
+	smallCacheMax int64
+	smallCacheCap int64
 
 	mu       sync.RWMutex
 	buckets  map[string]*bucket
@@ -189,9 +191,11 @@ func (s *store) getBucket(name string) *bucket {
 		logPath:          filepath.Join(s.root, name, logFileName),
 		index:            newShardedIndex(),
 		prefixIndex:      newPrefixIndex(2),
+		smallCache:       newSmallCache(s.smallCacheCap, s.smallCacheMax),
 		features:         storage.Features{"move": true, "multipart": true},
 		multipartDir:     filepath.Join(s.root, name, multipartDirName),
 		multipartUploads: make(map[string]*multipartUpload),
+		segmentReaders:   newSegmentReaderPools(),
 	}
 	s.buckets[name] = b
 	return b

@@ -71,8 +71,17 @@ type Config struct {
 	// SaveBaseline saves results as baseline for future comparisons.
 	SaveBaseline string
 
-	// FileCounts is the list of file counts to benchmark.
-	FileCounts []int
+	// ScaleCounts is the list of object counts to benchmark in the Scale suite.
+	ScaleCounts []int
+	// ScaleObjectSize is the object size for the Scale suite.
+	ScaleObjectSize int
+	// ScaleMaxBytes is the maximum total bytes allowed per Scale test.
+	ScaleMaxBytes int64
+
+	// CleanupDataPaths removes local benchmark data paths after each driver run.
+	CleanupDataPaths bool
+	// CleanupDockerData clears docker volume data paths after each driver run.
+	CleanupDockerData bool
 
 	// Filter is a substring filter for benchmark names.
 	// Only benchmarks containing this string will run. Empty means all.
@@ -100,7 +109,11 @@ func DefaultConfig() *Config {
 		MinBenchIterations: defaultMinBenchIterations,
 		MaxBenchIterations: defaultMaxBenchIterations,
 		OutputFormats:      []string{"markdown", "json"},
-		FileCounts:         []int{1, 10, 100, 1000, 10000},
+		ScaleCounts:        []int{10},
+		ScaleObjectSize:    sizeSmall,
+		ScaleMaxBytes:      2 * 1024 * 1024 * 1024, // 2GB cap to prevent runaway disk usage
+		CleanupDataPaths:   true,
+		CleanupDockerData:  true,
 	}
 }
 
@@ -109,11 +122,23 @@ func DefaultConfig() *Config {
 func QuickConfig() *Config {
 	cfg := DefaultConfig()
 	cfg.WarmupIterations = 5
-	cfg.ConcurrencyLevels = []int{1, 10, 50} // Fewer levels for quick runs
+	cfg.ConcurrencyLevels = []int{1, 10, 50}                              // Fewer levels for quick runs
 	cfg.ObjectSizes = []int{sizeSmall, sizeMedium, sizeLarge, sizeXLarge} // Up to 10MB for quick
 	cfg.Quick = true
 	cfg.BenchTime = 500 * time.Millisecond // Shorter target for quick runs
+	cfg.ScaleCounts = []int{1, 10, 100, 1000}
 	return cfg
+}
+
+// EnableLargeObjects enables 100MB benchmarks for large object testing.
+func (c *Config) EnableLargeObjects() {
+	c.Large = true
+	for _, size := range c.ObjectSizes {
+		if size == sizeXXLarge {
+			return
+		}
+	}
+	c.ObjectSizes = append(c.ObjectSizes, sizeXXLarge)
 }
 
 // WarmupForSize returns adaptive warmup iterations based on object size.
@@ -210,6 +235,22 @@ func AllDriverConfigs() []DriverConfig {
 			Bucket:    "test-bucket",
 			Enabled:   true,
 			Container: "all-liteio-1",
+			DataPath:  "/data",
+		},
+		{
+			Name:      "rabbit_s3",
+			DSN:       "s3://rabbit:rabbit123@localhost:9300/test-bucket?insecure=true&force_path_style=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "all-rabbit_s3-1",
+			DataPath:  "/data",
+		},
+		{
+			Name:      "usagi_s3",
+			DSN:       "s3://usagi:usagi123@localhost:9301/test-bucket?insecure=true&force_path_style=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "all-usagi_s3-1",
 			DataPath:  "/data",
 		},
 		{

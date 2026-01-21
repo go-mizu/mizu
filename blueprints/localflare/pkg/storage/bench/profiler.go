@@ -64,14 +64,14 @@ func (p *Profiler) SetLogger(fn func(format string, args ...any)) {
 type ProfileType string
 
 const (
-	ProfileCPU         ProfileType = "profile"
-	ProfileHeap        ProfileType = "heap"
-	ProfileGoroutine   ProfileType = "goroutine"
-	ProfileBlock       ProfileType = "block"
-	ProfileMutex       ProfileType = "mutex"
-	ProfileAllocs      ProfileType = "allocs"
+	ProfileCPU          ProfileType = "profile"
+	ProfileHeap         ProfileType = "heap"
+	ProfileGoroutine    ProfileType = "goroutine"
+	ProfileBlock        ProfileType = "block"
+	ProfileMutex        ProfileType = "mutex"
+	ProfileAllocs       ProfileType = "allocs"
 	ProfileThreadcreate ProfileType = "threadcreate"
-	ProfileTrace       ProfileType = "trace"
+	ProfileTrace        ProfileType = "trace"
 )
 
 // CaptureAll captures all profile types and writes them to the output directory.

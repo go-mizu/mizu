@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -202,12 +203,27 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				r.logger("  Final: Memory=%.1fMB, Volume=%.1fMB", stats.MemoryUsageMB, stats.VolumeSize)
 			}
 
+			if r.config.CleanupDockerData && driver.DataPath != "" {
+				r.logger("  Clearing %s data path...", driver.Name)
+				if err := r.dockerCollector.ClearVolumeData(ctx, driver.Container, driver.DataPath); err != nil {
+					r.logger("  Warning: clear volume data failed: %v", err)
+				}
+			}
+
 			// Cleanup container to reset state for next benchmark
 			r.logger("  Cleaning up %s container...", driver.Name)
 			if err := r.dockerCollector.CleanupContainer(ctx, driver.Container); err != nil {
 				r.logger("  Warning: cleanup failed: %v", err)
 			} else {
 				r.logger("  Container restarted and healthy")
+			}
+		}
+
+		if r.config.CleanupDataPaths && driver.Container == "" && driver.DataPath != "" {
+			if err := os.RemoveAll(driver.DataPath); err != nil {
+				r.logger("  Warning: cleanup of %s failed: %v", driver.DataPath, err)
+			} else {
+				r.logger("  Cleaned up %s", driver.DataPath)
 			}
 		}
 
@@ -409,21 +425,21 @@ func (r *Runner) benchmarkDriver(ctx context.Context, driver DriverConfig) error
 	})
 
 	if r.config.Verbose {
-		r.logger("  [debug] EdgeCases done, starting FileCount...")
+		r.logger("  [debug] EdgeCases done, starting Scale...")
 	}
 
-	// Run file count benchmarks
+	// Run scale benchmarks
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if len(r.config.FileCounts) > 0 {
-		r.runBenchmark(ctx, bucket, "FileCount", func() error {
-			return r.benchmarkFileCount(ctx, bucket, driver.Name)
+	if len(r.config.ScaleCounts) > 0 {
+		r.runBenchmark(ctx, bucket, "Scale", func() error {
+			return r.benchmarkScale(ctx, bucket, driver.Name)
 		})
 	}
 
 	if r.config.Verbose {
-		r.logger("  [debug] FileCount done, driver %s complete", driver.Name)
+		r.logger("  [debug] Scale done, driver %s complete", driver.Name)
 	}
 
 	return nil
@@ -493,7 +509,7 @@ func (r *Runner) benchmarkRead(ctx context.Context, bucket storage.Bucket, drive
 	warmup := r.config.WarmupForSize(size)
 
 	// Pre-create objects (enough for adaptive benchmark)
-	numObjects := 100 // Pool of objects to read from
+	numObjects := r.readPoolSize(size)
 	keys := make([]string, numObjects)
 	for i := range keys {
 		keys[i] = r.uniqueKey("read")
@@ -833,11 +849,11 @@ func (r *Runner) benchmarkParallelRead(ctx context.Context, bucket storage.Bucke
 	data := generateRandomData(size)
 
 	// Pre-create objects
-	numObjects := 50 // Larger pool for adaptive benchmark
+	numObjects := r.readPoolSize(size)
 	keys := make([]string, numObjects)
 	for i := range keys {
 		keys[i] = r.uniqueKey("parallel-read")
-		opCtx, cancel := r.opContext(ctx)
+		opCtx, cancel := r.opContextForSize(ctx, size)
 		bucket.Write(opCtx, keys[i], bytes.NewReader(data), int64(size), "application/octet-stream", nil)
 		cancel()
 	}
@@ -1054,6 +1070,22 @@ func (r *Runner) opContextForSize(ctx context.Context, size int) (context.Contex
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, timeout)
+}
+
+func (r *Runner) readPoolSize(size int) int {
+	// Cap total pre-created read pool size to avoid excessive disk usage.
+	const targetPoolBytes = 128 * 1024 * 1024 // 128MB
+	if size <= 0 {
+		return 2
+	}
+	n := targetPoolBytes / size
+	if n < 2 {
+		n = 2
+	}
+	if n > 50 {
+		n = 50
+	}
+	return n
 }
 
 func (r *Runner) timeoutForSize(size int) time.Duration {
@@ -1512,30 +1544,38 @@ func (r *Runner) benchmarkEdgeCases(ctx context.Context, bucket storage.Bucket, 
 	return nil
 }
 
-func (r *Runner) benchmarkFileCount(ctx context.Context, bucket storage.Bucket, driver string) error {
-	// Test performance with varying numbers of files
-	// File counts to test: 1, 10, 100, 1000, 10000, 100000
-	fileCounts := r.config.FileCounts
-	if len(fileCounts) == 0 {
-		fileCounts = []int{1, 10, 100, 1000, 10000} // Default, skip 100k unless explicitly enabled
+func (r *Runner) benchmarkScale(ctx context.Context, bucket storage.Bucket, driver string) error {
+	// Test performance with varying numbers of objects
+	scaleCounts := r.config.ScaleCounts
+	if len(scaleCounts) == 0 {
+		scaleCounts = []int{1, 10, 100, 1000, 10000, 1000000}
 	}
 
-	objectSize := 1024 // 1KB files for file count tests
+	objectSize := r.config.ScaleObjectSize
+	if objectSize <= 0 {
+		objectSize = sizeSmall
+	}
 	data := generateRandomData(objectSize)
 
-	for _, count := range fileCounts {
+	for _, count := range scaleCounts {
 		// Skip very large counts if timeout is short
 		if count > 10000 && r.config.Timeout < 5*time.Minute {
-			r.logger("  FileCount/%d: skipped (requires longer timeout)", count)
-			r.addSkippedBenchmark(driver, fmt.Sprintf("FileCount/%d", count), "requires longer timeout")
+			r.logger("  Scale/%d: skipped (requires longer timeout)", count)
+			r.addSkippedBenchmark(driver, fmt.Sprintf("Scale/%d", count), "requires longer timeout")
 			continue
 		}
 
-		prefix := r.uniqueKey(fmt.Sprintf("filecount-%d", count))
+		if r.config.ScaleMaxBytes > 0 && int64(count)*int64(objectSize) > r.config.ScaleMaxBytes {
+			r.logger("  Scale/%d: skipped (exceeds max scale bytes)", count)
+			r.addSkippedBenchmark(driver, fmt.Sprintf("Scale/%d", count), "exceeds max scale bytes")
+			continue
+		}
+
+		prefix := r.uniqueKey(fmt.Sprintf("scale-%d", count))
 
 		// Benchmark: Write N files
 		{
-			operation := fmt.Sprintf("FileCount/Write/%d", count)
+			operation := fmt.Sprintf("Scale/Write/%d", count)
 			collector := NewCollector()
 			progress := NewProgress(operation, count, true)
 			timer := NewTimer()
@@ -1575,7 +1615,7 @@ func (r *Runner) benchmarkFileCount(ctx context.Context, bucket storage.Bucket, 
 
 		// Benchmark: List N files
 		{
-			operation := fmt.Sprintf("FileCount/List/%d", count)
+			operation := fmt.Sprintf("Scale/List/%d", count)
 			collector := NewCollector()
 			progress := NewProgress(operation, 1, true)
 			timer := NewTimer()
@@ -1613,7 +1653,7 @@ func (r *Runner) benchmarkFileCount(ctx context.Context, bucket storage.Bucket, 
 
 		// Benchmark: Delete N files (batch)
 		{
-			operation := fmt.Sprintf("FileCount/Delete/%d", count)
+			operation := fmt.Sprintf("Scale/Delete/%d", count)
 			collector := NewCollector()
 			progress := NewProgress(operation, count, true)
 			timer := NewTimer()
@@ -1680,12 +1720,12 @@ type AdaptiveBenchmark struct {
 	maxIterations int64
 
 	// Current state
-	totalN        int64         // Total iterations executed
-	totalDuration time.Duration // Total benchmark duration
-	lastN         int64         // Last run's iteration count
-	lastDuration  time.Duration // Last run's duration
-	nextN         int64         // Next iteration count to run
-	started       bool          // Whether benchmark has started
+	totalN        int64           // Total iterations executed
+	totalDuration time.Duration   // Total benchmark duration
+	lastN         int64           // Last run's iteration count
+	lastDuration  time.Duration   // Last run's duration
+	nextN         int64           // Next iteration count to run
+	started       bool            // Whether benchmark has started
 	ctx           context.Context // Context for cancellation
 
 	// Progress callback (called periodically during benchmark)

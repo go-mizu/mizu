@@ -9,22 +9,22 @@ import (
 
 // Metrics holds benchmark metrics for a single operation type.
 type Metrics struct {
-	Operation   string        `json:"operation"`
-	Driver      string        `json:"driver"`
-	ObjectSize  int           `json:"object_size,omitempty"`
-	Iterations  int           `json:"iterations"`
-	TotalTime   time.Duration `json:"total_time"`
-	MinLatency  time.Duration `json:"min_latency"`
-	MaxLatency  time.Duration `json:"max_latency"`
-	AvgLatency  time.Duration `json:"avg_latency"`
-	P50Latency  time.Duration `json:"p50_latency"`
-	P95Latency  time.Duration `json:"p95_latency"`
-	P99Latency  time.Duration `json:"p99_latency"`
-	Throughput  float64       `json:"throughput"`    // MB/s for data ops
-	OpsPerSec   float64       `json:"ops_per_sec"`   // operations per second
-	TotalBytes  int64         `json:"total_bytes,omitempty"`
-	Errors      int           `json:"errors"`
-	LastError   string        `json:"last_error,omitempty"`
+	Operation  string        `json:"operation"`
+	Driver     string        `json:"driver"`
+	ObjectSize int           `json:"object_size,omitempty"`
+	Iterations int           `json:"iterations"`
+	TotalTime  time.Duration `json:"total_time"`
+	MinLatency time.Duration `json:"min_latency"`
+	MaxLatency time.Duration `json:"max_latency"`
+	AvgLatency time.Duration `json:"avg_latency"`
+	P50Latency time.Duration `json:"p50_latency"`
+	P95Latency time.Duration `json:"p95_latency"`
+	P99Latency time.Duration `json:"p99_latency"`
+	Throughput float64       `json:"throughput"`  // MB/s for data ops
+	OpsPerSec  float64       `json:"ops_per_sec"` // operations per second
+	TotalBytes int64         `json:"total_bytes,omitempty"`
+	Errors     int           `json:"errors"`
+	LastError  string        `json:"last_error,omitempty"`
 
 	// TTFB (Time To First Byte) metrics for read operations
 	TTFBMin time.Duration `json:"ttfb_min,omitempty"`

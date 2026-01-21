@@ -20,17 +20,17 @@ type DockerStats struct {
 	DiskUsage     float64 `json:"disk_usage_mb,omitempty"`
 
 	// Enhanced metrics
-	MemoryUsageMB float64 `json:"memory_usage_mb,omitempty"`  // Parsed memory in MB
-	MemoryLimitMB float64 `json:"memory_limit_mb,omitempty"`  // Container memory limit
-	MemoryCacheMB float64 `json:"memory_cache_mb,omitempty"`  // Page cache (for disk drivers)
-	MemoryRSSMB   float64 `json:"memory_rss_mb,omitempty"`    // Resident Set Size (actual app memory)
-	BlockRead     string  `json:"block_read,omitempty"`       // Block I/O read
-	BlockWrite    string  `json:"block_write,omitempty"`      // Block I/O write
-	NetIO         string  `json:"net_io,omitempty"`           // Network I/O
-	PIDs          int     `json:"pids,omitempty"`             // Number of processes
-	VolumeSize    float64 `json:"volume_size_mb,omitempty"`   // Docker volume size in MB
-	VolumeName    string  `json:"volume_name,omitempty"`      // Docker volume name
-	ImageSize     float64 `json:"image_size_mb,omitempty"`    // Container image size
+	MemoryUsageMB float64 `json:"memory_usage_mb,omitempty"`   // Parsed memory in MB
+	MemoryLimitMB float64 `json:"memory_limit_mb,omitempty"`   // Container memory limit
+	MemoryCacheMB float64 `json:"memory_cache_mb,omitempty"`   // Page cache (for disk drivers)
+	MemoryRSSMB   float64 `json:"memory_rss_mb,omitempty"`     // Resident Set Size (actual app memory)
+	BlockRead     string  `json:"block_read,omitempty"`        // Block I/O read
+	BlockWrite    string  `json:"block_write,omitempty"`       // Block I/O write
+	NetIO         string  `json:"net_io,omitempty"`            // Network I/O
+	PIDs          int     `json:"pids,omitempty"`              // Number of processes
+	VolumeSize    float64 `json:"volume_size_mb,omitempty"`    // Docker volume size in MB
+	VolumeName    string  `json:"volume_name,omitempty"`       // Docker volume name
+	ImageSize     float64 `json:"image_size_mb,omitempty"`     // Container image size
 	ContainerSize float64 `json:"container_size_mb,omitempty"` // Container writable layer size
 }
 

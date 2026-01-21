@@ -29,11 +29,17 @@ func main() {
 		outputFormats = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
 		dockerStats   = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
 		verbose       = flag.Bool("verbose", false, "Verbose output")
-		fileCounts    = flag.String("file-counts", "1,10,100,1000,10000", "Comma-separated file counts to benchmark (e.g., 1,10,100,1000,10000,100000)")
+		large         = flag.Bool("large", false, "Include 100MB object benchmarks")
+		scales        = flag.String("scales", "10", "Comma-separated scale counts to benchmark (e.g., 10,1000,10000)")
+		objectCounts  = flag.String("object-counts", "", "Deprecated: use --scales (comma-separated object counts)")
+		scaleSize     = flag.Int("scale-object-size", 1024, "Object size in bytes for Scale benchmarks")
+		scaleMaxBytes = flag.Int64("scale-max-bytes", 2*1024*1024*1024, "Max total bytes per Scale test (safety cap)")
+		cleanupData   = flag.Bool("cleanup-data", true, "Cleanup local benchmark data paths after each driver run")
+		cleanupDocker = flag.Bool("cleanup-docker-data", true, "Cleanup docker volume data paths after each driver run")
 		filter        = flag.String("filter", "", "Filter benchmarks by name (substring match, e.g., 'MixedWorkload')")
 		// Go-style adaptive benchmark settings (same defaults as 'go test -bench')
-		benchTime     = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (e.g., 1s, 500ms, 2s)")
-		minIters      = flag.Int("min-iters", 3, "Minimum iterations for statistical significance")
+		benchTime = flag.Duration("benchtime", 1*time.Second, "Target duration for each benchmark (e.g., 1s, 500ms, 2s)")
+		minIters  = flag.Int("min-iters", 3, "Minimum iterations for statistical significance")
 		// Docker compose settings
 		composeDir = flag.String("compose-dir", "./docker/s3/all", "Docker compose directory for S3 services")
 		dockerUp   = flag.Bool("docker-up", false, "Start docker-compose services before benchmark")
@@ -49,6 +55,13 @@ func main() {
 	cfg.Verbose = *verbose
 	cfg.BenchTime = *benchTime
 	cfg.MinBenchIterations = *minIters
+	cfg.ScaleObjectSize = *scaleSize
+	cfg.ScaleMaxBytes = *scaleMaxBytes
+	cfg.CleanupDataPaths = *cleanupData
+	cfg.CleanupDockerData = *cleanupDocker
+	if *large {
+		cfg.EnableLargeObjects()
+	}
 
 	if *quick {
 		cfg = bench.QuickConfig()
@@ -64,9 +77,14 @@ func main() {
 	cfg.OutputFormats = strings.Split(*outputFormats, ",")
 	cfg.Filter = *filter
 
-	// Parse file counts
-	if *fileCounts != "" {
-		parts := strings.Split(*fileCounts, ",")
+	// Parse scale counts
+	countsInput := strings.TrimSpace(*scales)
+	if *objectCounts != "" {
+		fmt.Println("Warning: --object-counts is deprecated; use --scales")
+		countsInput = *objectCounts
+	}
+	if countsInput != "" {
+		parts := strings.Split(countsInput, ",")
 		counts := make([]int, 0, len(parts))
 		for _, p := range parts {
 			p = strings.TrimSpace(p)
@@ -75,7 +93,7 @@ func main() {
 			}
 		}
 		if len(counts) > 0 {
-			cfg.FileCounts = counts
+			cfg.ScaleCounts = counts
 		}
 	}
 
@@ -142,6 +160,9 @@ func main() {
 	fmt.Printf("Min iterations: %d, Warmup: %d\n", cfg.MinBenchIterations, cfg.WarmupIterations)
 	fmt.Printf("Output: %s\n", cfg.OutputDir)
 	fmt.Printf("Formats: %v\n", cfg.OutputFormats)
+	fmt.Printf("Scale: counts=%v, size=%dB, cap=%dB\n", cfg.ScaleCounts, cfg.ScaleObjectSize, cfg.ScaleMaxBytes)
+	fmt.Println("Disk note: if you see /Users/apple/Library/Containers/com.docker.docker/Data/log/vm/init.log: no space left on device, reduce --scales or --scale-object-size.")
+	fmt.Println("Cleanup: local benchmark data paths (/tmp/usagi-bench, /tmp/rabbit-bench) are removed after each driver run.")
 	if cfg.Filter != "" {
 		fmt.Printf("Filter: %s\n", cfg.Filter)
 	}

@@ -223,6 +223,7 @@ services:
     build:
       context: ../../..
       dockerfile: docker/s3/liteio/Dockerfile
+    image: localflare-s3:latest
     ports:
       - "9200:9000"   # S3 API (mapped to 9200, pprof at /debug/pprof/)
     environment:
@@ -239,7 +240,7 @@ services:
 
   # LiteIO in-memory mode (ephemeral, no persistence)
   liteio_mem:
-    image: all-liteio:latest
+    image: localflare-s3:latest
     ports:
       - "9201:9000"   # S3 API (mapped to 9201 for memory mode)
     environment:
@@ -285,6 +286,80 @@ services:
       exit 0;
       "
 
+  # ============================================================================
+  # Rabbit S3 - S3-compatible server backed by rabbit driver
+  # Credentials: rabbit / rabbit123
+  # ============================================================================
+  rabbit_s3:
+    image: localflare-s3:latest
+    ports:
+      - "9300:9000"
+    environment:
+      LITEIO_ACCESS_KEY: rabbit
+      LITEIO_SECRET_KEY: rabbit123
+      LITEIO_DRIVER: "rabbit:///data?nofsync=true"
+    volumes:
+      - rabbit_s3_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbit_s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      rabbit_s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: rabbit
+      AWS_SECRET_ACCESS_KEY: rabbit123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://rabbit_s3:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
+  # ============================================================================
+  # Usagi S3 - S3-compatible server backed by usagi driver
+  # Credentials: usagi / usagi123
+  # ============================================================================
+  usagi_s3:
+    image: localflare-s3:latest
+    ports:
+      - "9301:9000"
+    environment:
+      LITEIO_ACCESS_KEY: usagi
+      LITEIO_SECRET_KEY: usagi123
+      LITEIO_DRIVER: "usagi:///data?nofsync=true"
+    volumes:
+      - usagi_s3_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/liteio", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  usagi_s3-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    pull_policy: if_not_present
+    depends_on:
+      usagi_s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: usagi
+      AWS_SECRET_ACCESS_KEY: usagi123
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://usagi_s3:9000 s3 mb s3://test-bucket || true;
+      exit 0;
+      "
+
 volumes:
   minio_data:
   rustfs_data:
@@ -292,3 +367,5 @@ volumes:
   seaweedfs_volume:
   localstack_data:
   liteio_data:
+  rabbit_s3_data:
+  usagi_s3_data:
