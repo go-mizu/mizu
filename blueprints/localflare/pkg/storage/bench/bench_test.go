@@ -149,6 +149,36 @@ func getDriverConfigs(t testing.TB) []DriverConfig {
 		})
 	}
 
+	// Rabbit S3 (port 9300)
+	if checkS3Endpoint("localhost:9300", "rabbit", "rabbit123") {
+		configs = append(configs, DriverConfig{
+			Name:   "rabbit_s3",
+			DSN:    "s3://rabbit:rabbit123@localhost:9300/test-bucket?insecure=true&force_path_style=true",
+			Bucket: "test-bucket",
+		})
+	} else {
+		configs = append(configs, DriverConfig{
+			Name:    "rabbit_s3",
+			Skip:    true,
+			SkipMsg: "rabbit_s3 not available at localhost:9300",
+		})
+	}
+
+	// Usagi S3 (port 9301)
+	if checkS3Endpoint("localhost:9301", "usagi", "usagi123") {
+		configs = append(configs, DriverConfig{
+			Name:   "usagi_s3",
+			DSN:    "s3://usagi:usagi123@localhost:9301/test-bucket?insecure=true&force_path_style=true",
+			Bucket: "test-bucket",
+		})
+	} else {
+		configs = append(configs, DriverConfig{
+			Name:    "usagi_s3",
+			Skip:    true,
+			SkipMsg: "usagi_s3 not available at localhost:9301",
+		})
+	}
+
 	return configs
 }
 

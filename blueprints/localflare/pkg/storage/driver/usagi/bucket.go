@@ -53,10 +53,13 @@ type bucket struct {
 	lastManifest time.Time
 
 	prefixIndex *prefixIndex
+	smallCache  *smallCache
 
 	multipartMu      sync.Mutex
 	multipartDir     string
 	multipartUploads map[string]*multipartUpload
+
+	segmentReaders *segmentReaderPools
 }
 
 func (b *bucket) Name() string {
@@ -85,19 +88,76 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 		return nil, err
 	}
 
+	updated := time.Now()
+	if size >= 0 && b.smallCache != nil && size <= b.smallCache.maxItem {
+		data, err := readAllSized(src, size)
+		if err != nil {
+			return nil, err
+		}
+		sz := int64(len(data))
+		checksum := crc32.Checksum(data, crcTable)
+		segID, off, err := b.appendRecord(recordOpPut, key, contentType, data, checksum, updated)
+		if err != nil {
+			return nil, err
+		}
+		entry := &entry{
+			segmentID:   segID,
+			offset:      off,
+			size:        sz,
+			contentType: contentType,
+			updated:     updated,
+			checksum:    checksum,
+		}
+		b.index.Set(key, entry)
+		if b.prefixIndex != nil {
+			b.prefixIndex.Add(key)
+		}
+		b.smallCache.Put(key, data)
+		return &storage.Object{
+			Bucket:      b.name,
+			Key:         key,
+			Size:        sz,
+			ContentType: contentType,
+			Updated:     updated,
+		}, nil
+	}
+
+	if size >= 0 {
+		segID, off, sz, checksum, err := b.appendRecordStream(key, contentType, src, size, updated)
+		if err != nil {
+			return nil, err
+		}
+		entry := &entry{
+			segmentID:   segID,
+			offset:      off,
+			size:        sz,
+			contentType: contentType,
+			updated:     updated,
+			checksum:    checksum,
+		}
+		b.index.Set(key, entry)
+		if b.prefixIndex != nil {
+			b.prefixIndex.Add(key)
+		}
+		return &storage.Object{
+			Bucket:      b.name,
+			Key:         key,
+			Size:        sz,
+			ContentType: contentType,
+			Updated:     updated,
+		}, nil
+	}
+
 	data, err := readAllSized(src, size)
 	if err != nil {
 		return nil, err
 	}
 	sz := int64(len(data))
 	checksum := crc32.Checksum(data, crcTable)
-	updated := time.Now()
-
 	segID, off, err := b.appendRecord(recordOpPut, key, contentType, data, checksum, updated)
 	if err != nil {
 		return nil, err
 	}
-
 	entry := &entry{
 		segmentID:   segID,
 		offset:      off,
@@ -109,6 +169,9 @@ func (b *bucket) Write(ctx context.Context, key string, src io.Reader, size int6
 	b.index.Set(key, entry)
 	if b.prefixIndex != nil {
 		b.prefixIndex.Add(key)
+	}
+	if b.smallCache != nil && sz <= b.smallCache.maxItem {
+		b.smallCache.Put(key, data)
 	}
 
 	return &storage.Object{
@@ -135,6 +198,43 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		return nil, nil, storage.ErrNotExist
 	}
 
+	if b.smallCache != nil {
+		if data, ok := b.smallCache.Get(key); ok {
+			if offset < 0 {
+				offset = 0
+			}
+			readLen := int64(len(data)) - offset
+			if readLen < 0 {
+				return nil, nil, storage.ErrNotExist
+			}
+			if length > 0 && length < readLen {
+				readLen = length
+			}
+			if length == 0 {
+				readLen = int64(len(data)) - offset
+			}
+			if length < 0 {
+				readLen = int64(len(data)) - offset
+			}
+			start := int(offset)
+			end := start + int(readLen)
+			if start < 0 {
+				start = 0
+			}
+			if end > len(data) {
+				end = len(data)
+			}
+			reader := bytes.NewReader(data[start:end])
+			return io.NopCloser(reader), &storage.Object{
+				Bucket:      b.name,
+				Key:         key,
+				Size:        e.size,
+				ContentType: e.contentType,
+				Updated:     e.updated,
+			}, nil
+		}
+	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -149,12 +249,12 @@ func (b *bucket) Open(ctx context.Context, key string, offset, length int64, opt
 		readLen = length
 	}
 
-	file, err := os.Open(b.segmentPath(e.segmentID))
+	file, release, err := b.getSegmentReader(e.segmentID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("usagi: open segment: %w", err)
 	}
 	reader := io.NewSectionReader(file, start, readLen)
-	return &readCloser{SectionReader: reader, closer: file}, &storage.Object{
+	return &readCloser{SectionReader: reader, release: release}, &storage.Object{
 		Bucket:      b.name,
 		Key:         key,
 		Size:        e.size,
@@ -640,6 +740,66 @@ func (b *bucket) appendRecord(op uint8, key, contentType string, data []byte, ch
 	return b.currentSegmentID, dataOffset, nil
 }
 
+func (b *bucket) appendRecordStream(key, contentType string, src io.Reader, size int64, updated time.Time) (int64, int64, int64, uint32, error) {
+	b.logMu.Lock()
+	defer b.logMu.Unlock()
+
+	if b.segmentFile == nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: segment not open")
+	}
+	recordSize := int64(recordHeaderSize+len(key)+len(contentType)) + size
+	if b.store.segmentSize > 0 && b.currentSegmentSize+recordSize > b.store.segmentSize {
+		if err := b.rotateSegment(); err != nil {
+			return 0, 0, 0, 0, err
+		}
+	}
+	off, err := b.segmentFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: seek segment: %w", err)
+	}
+	hdr := recordHeader{
+		Magic:          recordMagic,
+		Version:        recordVersion,
+		Op:             recordOpPut,
+		KeyLen:         uint32(len(key)),
+		ContentTypeLen: uint16(len(contentType)),
+		DataLen:        uint64(size),
+		UpdatedUnixNs:  updated.UnixNano(),
+		Checksum:       0,
+	}
+	headerBuf := encodeHeader(hdr, nil)
+	if _, err := b.segmentFile.Write(headerBuf); err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: write header: %w", err)
+	}
+	if _, err := b.segmentFile.Write([]byte(key)); err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: write key: %w", err)
+	}
+	if _, err := b.segmentFile.Write([]byte(contentType)); err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: write content type: %w", err)
+	}
+	dataOffset := off + recordHeaderSize + int64(len(key)) + int64(len(contentType))
+	hasher := crc32.New(crcTable)
+	written, err := io.Copy(io.MultiWriter(b.segmentFile, hasher), src)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: stream data: %w", err)
+	}
+	checksum := hasher.Sum32()
+	hdr.Checksum = checksum
+	hdr.DataLen = uint64(written)
+	headerBuf = encodeHeader(hdr, headerBuf[:0])
+	if _, err := b.segmentFile.WriteAt(headerBuf, off); err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("usagi: patch header: %w", err)
+	}
+	if !b.store.nofsync {
+		if err := b.segmentFile.Sync(); err != nil {
+			return 0, 0, 0, 0, fmt.Errorf("usagi: sync log: %w", err)
+		}
+	}
+	b.currentSegmentSize = off + int64(recordHeaderSize+len(key)+len(contentType)) + written
+	b.maybeWriteManifestLocked()
+	return b.currentSegmentID, dataOffset, written, checksum, nil
+}
+
 func (b *bucket) close() {
 	_ = b.writeManifest()
 	b.logMu.Lock()
@@ -648,6 +808,23 @@ func (b *bucket) close() {
 		b.segmentFile = nil
 	}
 	b.logMu.Unlock()
+
+	if b.segmentReaders != nil {
+		b.segmentReaders.closeAll()
+	}
+}
+
+func (b *bucket) getSegmentReader(id int64) (*os.File, func(), error) {
+	if b.segmentReaders == nil {
+		f, err := os.Open(b.segmentPath(id))
+		if err != nil {
+			return nil, nil, err
+		}
+		return f, func() { _ = f.Close() }, nil
+	}
+	return b.segmentReaders.get(id, func() (*os.File, error) {
+		return os.Open(b.segmentPath(id))
+	})
 }
 
 // readAllSized reads from src, honoring size when provided.
@@ -670,11 +847,14 @@ func readAllSized(src io.Reader, size int64) ([]byte, error) {
 
 type readCloser struct {
 	*io.SectionReader
-	closer io.Closer
+	release func()
 }
 
 func (rc *readCloser) Close() error {
-	return rc.closer.Close()
+	if rc.release != nil {
+		rc.release()
+	}
+	return nil
 }
 
 // objectIter implements storage.ObjectIter.

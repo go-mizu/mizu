@@ -332,16 +332,16 @@ func GenerateMarkdown(report *BenchmarkReport) string {
 	}
 
 	type driverRank struct {
-		name   string
-		avgNs  float64
-		count  int
+		name  string
+		avgNs float64
+		count int
 	}
 	var ranks []driverRank
 	for d, total := range driverAvg {
 		ranks = append(ranks, driverRank{
-			name:   d,
-			avgNs:  total / float64(driverCount[d]),
-			count:  driverCount[d],
+			name:  d,
+			avgNs: total / float64(driverCount[d]),
+			count: driverCount[d],
 		})
 	}
 	sort.Slice(ranks, func(i, j int) bool {
@@ -583,13 +583,13 @@ func (r *Report) generateSummary() string {
 
 	// Categorize operations
 	type categoryResult struct {
-		operation  string
-		winner     string
-		winnerVal  float64
-		runnerUp   string
-		runnerVal  float64
-		unit       string
-		margin     string
+		operation string
+		winner    string
+		winnerVal float64
+		runnerUp  string
+		runnerVal float64
+		unit      string
+		margin    string
 	}
 
 	var results []categoryResult
@@ -628,13 +628,13 @@ func (r *Report) generateSummary() string {
 		}
 
 		results = append(results, categoryResult{
-			operation:  op,
-			winner:     winner.Driver,
-			winnerVal:  winner.Throughput,
-			runnerUp:   runnerUp.Driver,
-			runnerVal:  runnerUp.Throughput,
-			unit:       unit,
-			margin:     margin,
+			operation: op,
+			winner:    winner.Driver,
+			winnerVal: winner.Throughput,
+			runnerUp:  runnerUp.Driver,
+			runnerVal: runnerUp.Throughput,
+			unit:      unit,
+			margin:    margin,
 		})
 	}
 
@@ -702,7 +702,7 @@ func (r *Report) generateSummary() string {
 		"Stat":          {},
 		"List":          {},
 		"Copy":          {},
-		"FileCount":     {},
+		"Scale":         {},
 	}
 
 	for _, res := range results {
@@ -715,7 +715,7 @@ func (r *Report) generateSummary() string {
 	}
 
 	// Print summaries for each group
-	groupOrder := []string{"Write", "Read", "ParallelWrite", "ParallelRead", "Delete", "Stat", "List", "Copy", "FileCount"}
+	groupOrder := []string{"Write", "Read", "ParallelWrite", "ParallelRead", "Delete", "Stat", "List", "Copy", "Scale"}
 	for _, group := range groupOrder {
 		groupResults := opGroups[group]
 		if len(groupResults) == 0 {
@@ -1079,7 +1079,6 @@ func writeBarCharts(sb *strings.Builder, results []*Metrics) {
 	}
 	sb.WriteString("```\n\n")
 }
-
 
 func formatLatency(d time.Duration) string {
 	if d < time.Microsecond {
@@ -1548,8 +1547,8 @@ func (r *Report) continueExecutiveSummary(sb *strings.Builder) {
 	// Concurrency Performance Summary (if available)
 	r.generateConcurrencySummary(sb, drivers)
 
-	// File Count Performance Summary (if available)
-	r.generateFileCountSummary(sb, drivers)
+	// Scale Performance Summary (if available)
+	r.generateScaleSummary(sb, drivers)
 
 	// Warnings
 	hasWarnings := false
@@ -1768,9 +1767,9 @@ func (r *Report) generateConcurrencySummary(sb *strings.Builder, drivers []strin
 	}
 }
 
-// generateFileCountSummary creates a summary of file count benchmark results.
-func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string) {
-	// Collect file count results by operation type
+// generateScaleSummary creates a summary of scale benchmark results.
+func (r *Report) generateScaleSummary(sb *strings.Builder, drivers []string) {
+	// Collect scale results by operation type
 	type fileCountResult struct {
 		driver    string
 		count     int
@@ -1783,7 +1782,7 @@ func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string)
 	listResults := make(map[string][]fileCountResult)
 	deleteResults := make(map[string][]fileCountResult)
 
-	// Extract file count from operation name (e.g., "FileCount/Write/1000" -> 1000)
+	// Extract object count from operation name (e.g., "Scale/Write/1000" -> 1000)
 	extractCount := func(op string) int {
 		parts := strings.Split(op, "/")
 		if len(parts) >= 3 {
@@ -1795,7 +1794,7 @@ func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string)
 	}
 
 	for _, m := range r.Results {
-		if strings.HasPrefix(m.Operation, "FileCount/Write/") {
+		if strings.HasPrefix(m.Operation, "Scale/Write/") {
 			count := extractCount(m.Operation)
 			if count > 0 {
 				writeResults[m.Driver] = append(writeResults[m.Driver], fileCountResult{
@@ -1807,7 +1806,7 @@ func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string)
 				})
 			}
 		}
-		if strings.HasPrefix(m.Operation, "FileCount/List/") {
+		if strings.HasPrefix(m.Operation, "Scale/List/") {
 			count := extractCount(m.Operation)
 			if count > 0 {
 				listResults[m.Driver] = append(listResults[m.Driver], fileCountResult{
@@ -1819,7 +1818,7 @@ func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string)
 				})
 			}
 		}
-		if strings.HasPrefix(m.Operation, "FileCount/Delete/") {
+		if strings.HasPrefix(m.Operation, "Scale/Delete/") {
 			count := extractCount(m.Operation)
 			if count > 0 {
 				deleteResults[m.Driver] = append(deleteResults[m.Driver], fileCountResult{
@@ -1838,14 +1837,18 @@ func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string)
 		return
 	}
 
-	sb.WriteString("### File Count Performance\n\n")
-	sb.WriteString("Performance with varying numbers of files (1KB each).\n\n")
+	sb.WriteString("### Scale Performance\n\n")
+	if r.Config != nil && r.Config.ScaleObjectSize > 0 {
+		sb.WriteString(fmt.Sprintf("Performance with varying numbers of objects (%s each).\n\n", SizeLabel(r.Config.ScaleObjectSize)))
+	} else {
+		sb.WriteString("Performance with varying numbers of objects.\n\n")
+	}
 
 	if len(writeResults) > 0 {
 		sb.WriteString("**Write N Files (total time)**\n\n")
 		sb.WriteString("| Driver |")
 
-		// Get all file counts
+		// Get all scale counts
 		countSet := make(map[int]bool)
 		for _, results := range writeResults {
 			for _, r := range results {
@@ -1943,8 +1946,8 @@ func (r *Report) generateFileCountSummary(sb *strings.Builder, drivers []string)
 
 // CompareResult holds comparison data between baseline and current benchmark.
 type CompareResult struct {
-	Driver    string
-	Operation string
+	Driver     string
+	Operation  string
 	ObjectSize int
 
 	BaselineThroughput float64

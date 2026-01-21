@@ -63,6 +63,18 @@ func (d *Driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 			manifestEvery = int(n)
 		}
 	}
+	smallCacheMax := int64(64 * 1024)
+	if v := strings.TrimSpace(q.Get("small_cache_max_kb")); v != "" {
+		if n, err := parseInt64(v); err == nil && n > 0 {
+			smallCacheMax = n * 1024
+		}
+	}
+	smallCacheCap := int64(32 * 1024 * 1024)
+	if v := strings.TrimSpace(q.Get("small_cache_mb")); v != "" {
+		if n, err := parseInt64(v); err == nil && n > 0 {
+			smallCacheCap = n * 1024 * 1024
+		}
+	}
 
 	st := &store{
 		root:          root,
@@ -70,6 +82,8 @@ func (d *Driver) Open(ctx context.Context, dsn string) (storage.Storage, error) 
 		nofsync:       nofsync,
 		segmentSize:   segmentSize,
 		manifestEvery: time.Duration(manifestEvery) * time.Second,
+		smallCacheMax: smallCacheMax,
+		smallCacheCap: smallCacheCap,
 		buckets:       make(map[string]*bucket),
 		features: storage.Features{
 			"move": true,
