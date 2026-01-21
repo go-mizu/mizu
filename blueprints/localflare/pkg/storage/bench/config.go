@@ -227,6 +227,14 @@ func AllDriverConfigs() []DriverConfig {
 			Container: "", // No container - pure in-process driver
 			DataPath:  "/tmp/rabbit-bench",
 		},
+		{
+			Name:      "usagi",
+			DSN:       "usagi:///tmp/usagi-bench?nofsync=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "", // No container - pure in-process driver
+			DataPath:  "/tmp/usagi-bench",
+		},
 	}
 }
 
