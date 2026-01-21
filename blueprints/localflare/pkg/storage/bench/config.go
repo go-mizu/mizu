@@ -19,6 +19,7 @@ const (
 	defaultMaxBenchIterations = 1_000_000_000   // 1e9 safety limit
 
 	// Object sizes
+	sizeTiny    = 256               // 256B
 	sizeSmall   = 1024              // 1KB
 	sizeMedium  = 64 * 1024         // 64KB
 	sizeLarge   = 1024 * 1024       // 1MB
@@ -109,8 +110,8 @@ func DefaultConfig() *Config {
 		MinBenchIterations: defaultMinBenchIterations,
 		MaxBenchIterations: defaultMaxBenchIterations,
 		OutputFormats:      []string{"markdown", "json"},
-		ScaleCounts:        []int{10},
-		ScaleObjectSize:    sizeSmall,
+		ScaleCounts:        []int{10, 100, 1000, 10000, 100000, 1000000},
+		ScaleObjectSize:    sizeTiny,
 		ScaleMaxBytes:      2 * 1024 * 1024 * 1024, // 2GB cap to prevent runaway disk usage
 		CleanupDataPaths:   true,
 		CleanupDockerData:  true,

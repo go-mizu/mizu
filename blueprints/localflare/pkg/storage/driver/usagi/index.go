@@ -14,7 +14,7 @@ type indexShard struct {
 }
 
 type shardedIndex struct {
-	shards [indexShardCount]indexShard
+	shards       [indexShardCount]indexShard
 	cacheMu      sync.Mutex
 	cacheKeys    []string
 	cacheVersion uint64
@@ -88,6 +88,33 @@ func (s *shardedIndex) Keys(prefix string) []string {
 		s.cacheVersion = version
 	}
 	keys := append([]string(nil), s.cacheKeys...)
+	s.cacheMu.Unlock()
+	if prefix == "" {
+		return keys
+	}
+	return prefixSlice(keys, prefix)
+}
+
+// KeysView returns a read-only view of the cached key slice.
+// Callers must treat the returned slice as immutable.
+func (s *shardedIndex) KeysView(prefix string) []string {
+	version := atomic.LoadUint64(&s.modVersion)
+	s.cacheMu.Lock()
+	if s.cacheVersion != version {
+		keys := make([]string, 0)
+		for i := range s.shards {
+			sh := &s.shards[i]
+			sh.mu.RLock()
+			for k := range sh.items {
+				keys = append(keys, k)
+			}
+			sh.mu.RUnlock()
+		}
+		sort.Strings(keys)
+		s.cacheKeys = keys
+		s.cacheVersion = version
+	}
+	keys := s.cacheKeys
 	s.cacheMu.Unlock()
 	if prefix == "" {
 		return keys
