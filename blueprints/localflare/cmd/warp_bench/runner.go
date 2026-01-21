@@ -67,9 +67,13 @@ func (r *Runner) CheckWarp() error {
 	r.config.WarpPath = path
 	r.logger("Found warp at: %s", path)
 
-	if scriptPath, err := exec.LookPath("script"); err == nil {
-		r.script = scriptPath
-		r.logger("Using PTY wrapper: %s", scriptPath)
+	if r.config.UsePTY {
+		if scriptPath, err := exec.LookPath("script"); err == nil {
+			r.script = scriptPath
+			r.logger("Using PTY wrapper: %s", scriptPath)
+		} else {
+			r.logger("PTY requested but 'script' not found; running without PTY")
+		}
 	}
 
 	// Get version

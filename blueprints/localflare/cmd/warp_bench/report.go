@@ -83,6 +83,8 @@ func (r *Report) SaveMarkdown(outputDir string) error {
 	fmt.Fprintf(f, "| Autoterm | %t |\n", r.Config.AutoTerm)
 	fmt.Fprintf(f, "| Autoterm duration | %v |\n", r.Config.AutoTermDur)
 	fmt.Fprintf(f, "| Autoterm pct | %.2f |\n", r.Config.AutoTermPct)
+	fmt.Fprintf(f, "| PTY wrapper | %t |\n", r.Config.UsePTY)
+	fmt.Fprintf(f, "| Progress interval | %v |\n", r.Config.ProgressEvery)
 	fmt.Fprintf(f, "\n")
 
 	// Environment

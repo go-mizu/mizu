@@ -33,7 +33,7 @@ func main() {
 		composeDir    = flag.String("compose-dir", "./docker/s3/all", "Path to docker-compose directory")
 		workDir       = flag.String("work-dir", "", "Working directory for warp temp files (empty = auto)")
 		keepWorkDir   = flag.Bool("keep-workdir", false, "Keep work directory after run")
-		progressEvery = flag.Duration("progress-every", 5*time.Second, "Progress log interval (0 to disable)")
+		progressEvery = flag.Duration("progress-every", 0, "Progress log interval (0 to disable)")
 		deleteObjects = flag.Int("delete-objects", 1000, "Delete operation object count")
 		deleteBatch   = flag.Int("delete-batch", 100, "Delete operation batch size")
 		listObjects   = flag.Int("list-objects", 1000, "List operation object count")
@@ -45,6 +45,7 @@ func main() {
 		autoTerm      = flag.Bool("autoterm", true, "Enable warp autoterm")
 		autoTermDur   = flag.Duration("autoterm-dur", 15*time.Second, "Warp autoterm minimum stability duration")
 		autoTermPct   = flag.Float64("autoterm-pct", 7.5, "Warp autoterm stability percentage")
+		usePTY        = flag.Bool("pty", false, "Wrap warp in a PTY (use only if needed)")
 	)
 	flag.Parse()
 
@@ -77,6 +78,7 @@ func main() {
 	cfg.AutoTerm = *autoTerm
 	cfg.AutoTermDur = *autoTermDur
 	cfg.AutoTermPct = *autoTermPct
+	cfg.UsePTY = *usePTY
 
 	if *sizes != "" {
 		cfg.ObjectSizes = strings.Split(*sizes, ",")

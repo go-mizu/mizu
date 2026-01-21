@@ -38,6 +38,7 @@ type Config struct {
 	AutoTerm      bool
 	AutoTermDur   time.Duration
 	AutoTermPct   float64
+	UsePTY        bool
 	WarpPath      string // Resolved warp binary path
 	WarpVersion   string // Resolved warp version
 	RunDir        string // Actual run directory used (auto)
@@ -68,7 +69,8 @@ func DefaultConfig() *Config {
 		AutoTerm:      true,
 		AutoTermDur:   15 * time.Second,
 		AutoTermPct:   7.5,
-		ProgressEvery: 5 * time.Second,
+		UsePTY:        false,
+		ProgressEvery: 0,
 		DeleteObjects: 1000,
 		DeleteBatch:   100,
 	}
@@ -96,7 +98,8 @@ func QuickConfig() *Config {
 		AutoTerm:      true,
 		AutoTermDur:   10 * time.Second,
 		AutoTermPct:   10,
-		ProgressEvery: 5 * time.Second,
+		UsePTY:        false,
+		ProgressEvery: 0,
 		DeleteObjects: 500,
 		DeleteBatch:   50,
 	}
