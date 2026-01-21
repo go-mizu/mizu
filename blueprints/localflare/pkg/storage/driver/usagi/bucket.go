@@ -415,7 +415,7 @@ func (b *bucket) List(ctx context.Context, prefix string, limit, offset int, opt
 			return b.keysToIter(keys)
 		}
 	}
-	keys := b.index.Keys(prefix)
+	keys := b.index.KeysView(prefix)
 	keys = applyOffsetLimit(keys, offset, limit)
 
 	return b.keysToIter(keys)
@@ -431,19 +431,7 @@ func (b *bucket) SignedURL(ctx context.Context, key string, method string, expir
 }
 
 func (b *bucket) keysToIter(keys []string) (storage.ObjectIter, error) {
-	items := make([]*storage.Object, 0, len(keys))
-	for _, k := range keys {
-		if e, ok := b.index.Get(k); ok {
-			items = append(items, &storage.Object{
-				Bucket:      b.name,
-				Key:         k,
-				Size:        e.size,
-				ContentType: e.contentType,
-				Updated:     e.updated,
-			})
-		}
-	}
-	return &objectIter{items: items}, nil
+	return &objectIter{bucket: b, keys: keys}, nil
 }
 
 func applyOffsetLimit(keys []string, offset, limit int) []string {
@@ -1001,17 +989,26 @@ func (rc *readCloser) Close() error {
 
 // objectIter implements storage.ObjectIter.
 type objectIter struct {
-	items []*storage.Object
-	idx   int
+	bucket *bucket
+	keys   []string
+	idx    int
 }
 
 func (it *objectIter) Next() (*storage.Object, error) {
-	if it.idx >= len(it.items) {
-		return nil, nil
+	for it.idx < len(it.keys) {
+		key := it.keys[it.idx]
+		it.idx++
+		if e, ok := it.bucket.index.Get(key); ok {
+			return &storage.Object{
+				Bucket:      it.bucket.name,
+				Key:         key,
+				Size:        e.size,
+				ContentType: e.contentType,
+				Updated:     e.updated,
+			}, nil
+		}
 	}
-	item := it.items[it.idx]
-	it.idx++
-	return item, nil
+	return nil, nil
 }
 
 func (it *objectIter) Close() error {
