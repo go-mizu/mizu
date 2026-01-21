@@ -1,16 +1,16 @@
 # Warp S3 Benchmark Report
 
-**Generated**: 2026-01-20T21:59:42+07:00
+**Generated**: 2026-01-21T11:36:20+07:00
 
 ## Configuration
 
 | Parameter | Value |
 |-----------|-------|
 | Duration per test | 5s |
-| Concurrent clients | 10 |
-| Objects | 20 |
-| Object sizes | 1KiB, 1MiB |
-| Operations | put, get, stat |
+| Concurrent clients | 16 |
+| Objects | 100 |
+| Object sizes | 10MiB |
+| Operations | delete |
 | Docker cleanup | false |
 | Compose dir | ./docker/s3/all |
 | Output dir | ./pkg/storage/report/warp_bench |
@@ -23,113 +23,35 @@
 | OS/Arch | darwin/arm64 |
 | Warp version | warp version (dev) - (dev) |
 | Warp path | /Users/apple/bin/warp |
-| Warp work dir | /Users/apple/Library/Caches/mizu/warp_bench/run-1405766968 |
+| Warp work dir | /Users/apple/Library/Caches/mizu/warp_bench/run-3174482749 |
 | Keep work dir | false |
 
 ## Drivers
 
 | Driver | Endpoint | Bucket | Status | Notes |
 |--------|----------|--------|--------|-------|
-| liteio | localhost:9200 | test-bucket | benchmarked |  |
-| liteio_mem | localhost:9201 | test-bucket | benchmarked |  |
-| localstack | localhost:4566 | test-bucket | benchmarked |  |
 | minio | localhost:9000 | test-bucket | benchmarked |  |
-| rustfs | localhost:9100 | test-bucket | benchmarked |  |
-| seaweedfs | localhost:8333 | test-bucket | benchmarked |  |
 
 ## Summary
 
-| Driver | PUT (MB/s) | GET (MB/s) | STAT (MB/s) |
-|--------|------------|------------|------------|
-| liteio | 47.96 | 43.32 | **0.00** |
-| liteio_mem | **61.30** | **44.67** | **0.00** |
-| localstack | 2.92 | 40.14 | **0.00** |
-| minio | 44.26 | 40.32 | **0.00** |
-| rustfs | 51.66 | 39.35 | **0.00** |
-| seaweedfs | 50.62 | 41.98 | **0.00** |
+| Driver | DELETE (MB/s) |
+|--------|------------|
+| minio | **0.00** |
 
 ## Winners by Operation (Avg Throughput)
 
 | Operation | Winner | Avg MB/s | Margin vs #2 |
 |-----------|--------|----------|--------------|
-| PUT | liteio_mem | 61.30 | +18.7% |
-| GET | liteio_mem | 44.67 | +3.1% |
-| STAT | liteio | 0.00 | - |
+| DELETE | minio | 0.00 | - |
 
 ## Detailed Results
 
-### PUT Operations
+### DELETE Operations
 
-#### Object Size: 1KiB
-
-| Driver | Throughput (MB/s) | Δ vs best | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |
-|--------|-------------------|-----------|-------|----------|----------|----------|--------|
-| **liteio_mem** | 5.47 | 0.0% | 5597.16 | 1.60 | 1.50 | 4.10 | 0 |
-| rustfs | 2.22 | -59.4% | 2270.67 | 4.20 | 3.60 | 8.70 | 0 |
-| liteio | 2.22 | -59.4% | 2274.55 | 3.70 | 3.40 | 10.10 | 0 |
-| seaweedfs | 1.76 | -67.8% | 1802.08 | 5.10 | 4.80 | 11.60 | 0 |
-| minio | 1.33 | -75.7% | 1358.20 | 6.90 | 6.20 | 18.70 | 0 |
-| localstack | 0.75 | -86.3% | 766.90 | 12.30 | 11.30 | 22.70 | 0 |
-
-#### Object Size: 1MiB
+#### Object Size: 10MiB
 
 | Driver | Throughput (MB/s) | Δ vs best | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |
 |--------|-------------------|-----------|-------|----------|----------|----------|--------|
-| **liteio_mem** | 117.13 | 0.0% | 117.13 | 77.90 | 58.30 | 573.50 | 0 |
-| rustfs | 101.10 | -13.7% | 101.10 | 91.80 | 54.10 | 470.00 | 0 |
-| seaweedfs | 99.48 | -15.1% | 99.48 | 91.80 | 66.10 | 386.50 | 0 |
-| liteio | 93.70 | -20.0% | 93.70 | 93.80 | 71.70 | 321.90 | 0 |
-| minio | 87.18 | -25.6% | 87.18 | 103.10 | 94.90 | 257.80 | 0 |
-| localstack | 5.09 | -95.7% | 5.09 | 8186.20 | 9071.20 | 9157.30 | 0 |
-
-
-### GET Operations
-
-#### Object Size: 1KiB
-
-| Driver | Throughput (MB/s) | Δ vs best | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |
-|--------|-------------------|-----------|-------|----------|----------|----------|--------|
-| **liteio** | 6.50 | 0.0% | 6659.76 | 1.20 | 1.20 | 2.90 | 0 |
-| liteio_mem | 5.99 | -7.8% | 6131.54 | 1.30 | 1.20 | 3.20 | 0 |
-| minio | 4.67 | -28.2% | 4786.52 | 1.90 | 1.80 | 4.80 | 0 |
-| rustfs | 3.41 | -47.5% | 3487.64 | 2.50 | 2.30 | 6.30 | 0 |
-| seaweedfs | 3.23 | -50.3% | 3306.01 | 2.60 | 2.50 | 6.80 | 0 |
-| localstack | 0.73 | -88.8% | 744.15 | 11.70 | 10.90 | 23.80 | 0 |
-
-#### Object Size: 1MiB
-
-| Driver | Throughput (MB/s) | Δ vs best | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |
-|--------|-------------------|-----------|-------|----------|----------|----------|--------|
-| **liteio_mem** | 83.36 | 0.0% | 83.36 | 109.20 | 102.10 | 291.10 | 0 |
-| seaweedfs | 80.72 | -3.2% | 80.72 | 109.80 | 106.20 | 225.80 | 0 |
-| liteio | 80.14 | -3.9% | 80.14 | 107.60 | 104.80 | 187.20 | 0 |
-| localstack | 79.55 | -4.6% | 79.55 | 114.50 | 119.50 | 183.70 | 0 |
-| minio | 75.97 | -8.9% | 75.97 | 116.50 | 121.50 | 187.00 | 0 |
-| rustfs | 75.29 | -9.7% | 75.29 | 114.90 | 117.00 | 186.20 | 0 |
-
-
-### STAT Operations
-
-#### Object Size: 1KiB
-
-| Driver | Throughput (MB/s) | Δ vs best | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |
-|--------|-------------------|-----------|-------|----------|----------|----------|--------|
-| **minio** | 0.00 | - | 5251.19 | 1.60 | 1.60 | 3.90 | 0 |
-| **rustfs** | 0.00 | - | 5531.31 | 1.60 | 1.50 | 4.00 | 0 |
-| **seaweedfs** | 0.00 | - | 4355.33 | 2.00 | 1.90 | 5.00 | 0 |
-| **localstack** | 0.00 | - | 932.57 | 9.70 | 9.20 | 18.70 | 0 |
-| **liteio** | 0.00 | - | 7105.84 | 1.20 | 1.10 | 2.70 | 0 |
-| **liteio_mem** | 0.00 | - | 7483.58 | 1.10 | 1.10 | 2.60 | 0 |
-
-#### Object Size: 1MiB
-
-| Driver | Throughput (MB/s) | Δ vs best | Ops/s | Avg (ms) | P50 (ms) | P99 (ms) | Errors |
-|--------|-------------------|-----------|-------|----------|----------|----------|--------|
-| **minio** | 0.00 | - | 5638.67 | 1.60 | 1.50 | 4.10 | 0 |
-| **rustfs** | 0.00 | - | 5577.42 | 1.60 | 1.50 | 4.10 | 0 |
-| **seaweedfs** | 0.00 | - | 4488.03 | 1.90 | 1.80 | 5.20 | 0 |
-| **localstack** | 0.00 | - | 865.46 | 10.20 | 9.50 | 22.40 | 0 |
-| **liteio** | 0.00 | - | 6872.28 | 1.20 | 1.10 | 3.00 | 0 |
-| **liteio_mem** | 0.00 | - | 7603.89 | 1.10 | 1.10 | 3.00 | 0 |
+| **minio** | 0.00 | - | 0.00 | 0.00 | 0.00 | 0.00 | 0 |
 
 

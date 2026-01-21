@@ -27,7 +27,6 @@ type Result struct {
 	TotalRequests  int
 	Errors         int
 	Duration       time.Duration
-	RawOutput      string
 	Skipped        bool
 	SkipReason     string
 }
@@ -128,14 +127,41 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 		args = append(args, "--objects="+strconv.Itoa(r.config.Objects))
 
 	case "delete":
-		// delete needs many objects: batch (100) * concurrent * 4 = 8000 minimum
-		// Use a reasonable number for benchmarking
-		deleteObjects := r.config.Concurrent * 100 * 4
-		if deleteObjects < 8000 {
-			deleteObjects = 8000
+		// delete can be very slow with huge object counts; use configured values
+		deleteObjects := r.config.DeleteObjects
+		if deleteObjects <= 0 {
+			deleteObjects = r.config.Objects
+		}
+		batch := r.config.DeleteBatch
+		if batch <= 0 {
+			batch = 100
+		}
+		minObjects := r.config.Concurrent * batch * 4
+		if deleteObjects < minObjects {
+			adjusted := deleteObjects / (r.config.Concurrent * 4)
+			if adjusted < 1 {
+				adjusted = 1
+			}
+			if adjusted != batch {
+				r.logger("  [warn] delete objects (%d) below warp minimum (%d). Adjusting batch %d -> %d",
+					deleteObjects, minObjects, batch, adjusted)
+				batch = adjusted
+				minObjects = r.config.Concurrent * batch * 4
+			}
+		}
+		if deleteObjects < minObjects {
+			r.logger("  [warn] raising delete objects %d -> %d to satisfy warp minimum", deleteObjects, minObjects)
+			deleteObjects = minObjects
 		}
 		args = append(args, "--objects="+strconv.Itoa(deleteObjects))
-		args = append(args, "--batch=100")
+		args = append(args, "--batch="+strconv.Itoa(batch))
+		if size != "" {
+			if totalBytes := estimateTotalBytes(deleteObjects, size); totalBytes > 0 {
+				r.logger("  Delete workload: %d objects x %s (~%s)", deleteObjects, size, formatBytes(totalBytes))
+			} else {
+				r.logger("  Delete workload: %d objects x %s", deleteObjects, size)
+			}
+		}
 
 	case "list":
 		// list uses --objects to create test objects first
@@ -164,6 +190,29 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 	}
 
 	cmd := r.buildCommand(ctx, args)
+	progressDone := make(chan struct{})
+	if r.config.ProgressEvery > 0 {
+		ticker := time.NewTicker(r.config.ProgressEvery)
+		start := time.Now()
+		go func() {
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					elapsed := time.Since(start).Truncate(time.Second)
+					sizeStr := size
+					if sizeStr == "" {
+						sizeStr = "N/A"
+					}
+					r.logger("  [progress] %s %s %s running for %s", driver.Name, op, sizeStr, elapsed)
+				case <-progressDone:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 	if r.workDir != "" {
 		cmd.Dir = r.workDir
 		cmd.Env = append(os.Environ(), "TMPDIR="+r.workDir)
@@ -176,11 +225,11 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 
 	startTime := time.Now()
 	err := cmd.Run()
+	close(progressDone)
 	result.Duration = time.Since(startTime)
 
 	// Combine output
 	output := stdout.String() + stderr.String()
-	result.RawOutput = output
 
 	if err != nil {
 		// Check for context cancellation
@@ -406,6 +455,56 @@ func (r *Runner) Run(ctx context.Context) ([]*Result, error) {
 	}
 
 	return results, nil
+}
+
+func estimateTotalBytes(objects int, size string) int64 {
+	if objects <= 0 {
+		return 0
+	}
+	bytes := parseSizeBytes(size)
+	if bytes <= 0 {
+		return 0
+	}
+	return int64(objects) * bytes
+}
+
+func parseSizeBytes(size string) int64 {
+	s := strings.TrimSpace(size)
+	if s == "" {
+		return 0
+	}
+	s = strings.ToLower(s)
+	multiplier := int64(1)
+	switch {
+	case strings.HasSuffix(s, "kib") || strings.HasSuffix(s, "kb"):
+		multiplier = 1024
+	case strings.HasSuffix(s, "mib") || strings.HasSuffix(s, "mb"):
+		multiplier = 1024 * 1024
+	case strings.HasSuffix(s, "gib") || strings.HasSuffix(s, "gb"):
+		multiplier = 1024 * 1024 * 1024
+	}
+	numStr := strings.TrimRight(s, "kibmgab")
+	num, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(num * float64(multiplier))
+}
+
+func formatBytes(val int64) string {
+	if val < 1024 {
+		return fmt.Sprintf("%d B", val)
+	}
+	kb := float64(val) / 1024
+	if kb < 1024 {
+		return fmt.Sprintf("%.1f KiB", kb)
+	}
+	mb := kb / 1024
+	if mb < 1024 {
+		return fmt.Sprintf("%.1f MiB", mb)
+	}
+	gb := mb / 1024
+	return fmt.Sprintf("%.2f GiB", gb)
 }
 
 func (r *Runner) buildCommand(ctx context.Context, args []string) *exec.Cmd {

@@ -219,6 +219,14 @@ func AllDriverConfigs() []DriverConfig {
 			Enabled:   true,
 			Container: "", // No container - pure in-process baseline
 		},
+		{
+			Name:      "rabbit",
+			DSN:       "rabbit:///tmp/rabbit-bench?nofsync=true",
+			Bucket:    "test-bucket",
+			Enabled:   true,
+			Container: "", // No container - pure in-process driver
+			DataPath:  "/tmp/rabbit-bench",
+		},
 	}
 }
 

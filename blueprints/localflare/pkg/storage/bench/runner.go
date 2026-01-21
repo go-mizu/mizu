@@ -15,6 +15,7 @@ import (
 	"github.com/go-mizu/blueprints/localflare/pkg/storage"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/devnull"
 	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/exp/s3"
+	_ "github.com/go-mizu/blueprints/localflare/pkg/storage/driver/rabbit"
 )
 
 // Runner orchestrates benchmark execution.

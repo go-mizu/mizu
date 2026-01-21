@@ -121,22 +121,6 @@ func (r *Report) SaveMarkdown(outputDir string) error {
 	// Skipped drivers
 	r.writeSkippedSection(f)
 
-	// Raw output (collapsed)
-	fmt.Fprintf(f, "## Raw Warp Output\n\n")
-	for _, res := range r.Results {
-		if res.RawOutput == "" || res.Skipped {
-			continue
-		}
-		sizeStr := res.ObjectSize
-		if sizeStr == "" {
-			sizeStr = "N/A"
-		}
-		fmt.Fprintf(f, "<details>\n")
-		fmt.Fprintf(f, "<summary>%s - %s %s</summary>\n\n", res.Driver, res.Operation, sizeStr)
-		fmt.Fprintf(f, "```\n%s\n```\n\n", res.RawOutput)
-		fmt.Fprintf(f, "</details>\n\n")
-	}
-
 	return nil
 }
 
