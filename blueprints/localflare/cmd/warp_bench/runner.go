@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,6 +36,8 @@ type Result struct {
 type Runner struct {
 	config   *Config
 	warpPath string
+	script   string
+	workDir  string
 	logger   func(format string, args ...any)
 }
 
@@ -59,13 +63,20 @@ func (r *Runner) CheckWarp() error {
 		return fmt.Errorf("warp not found in PATH. Install with: go install github.com/minio/warp@latest")
 	}
 	r.warpPath = path
+	r.config.WarpPath = path
 	r.logger("Found warp at: %s", path)
+
+	if scriptPath, err := exec.LookPath("script"); err == nil {
+		r.script = scriptPath
+		r.logger("Using PTY wrapper: %s", scriptPath)
+	}
 
 	// Get version
 	cmd := exec.Command(path, "--version")
 	output, err := cmd.Output()
 	if err == nil {
-		r.logger("Warp version: %s", strings.TrimSpace(string(output)))
+		r.config.WarpVersion = strings.TrimSpace(string(output))
+		r.logger("Warp version: %s", r.config.WarpVersion)
 	}
 	return nil
 }
@@ -152,7 +163,11 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 		r.logger("  Running: warp %s", strings.Join(args, " "))
 	}
 
-	cmd := exec.CommandContext(ctx, r.warpPath, args...)
+	cmd := r.buildCommand(ctx, args)
+	if r.workDir != "" {
+		cmd.Dir = r.workDir
+		cmd.Env = append(os.Environ(), "TMPDIR="+r.workDir)
+	}
 
 	// Capture output
 	var stdout, stderr bytes.Buffer
@@ -188,8 +203,8 @@ func (r *Runner) RunBenchmark(ctx context.Context, driver *DriverConfig, op stri
 // parseOutput extracts metrics from warp output.
 // Example output:
 // Report: PUT. Concurrency: 10. Ran: 2s
-//   * Average: 3.51 MiB/s, 3591.95 obj/s
-//   * Reqs: Avg: 2.9ms, 50%: 2.6ms, 90%: 3.8ms, 99%: 6.1ms, Fastest: 0.8ms, Slowest: 176.1ms
+//   - Average: 3.51 MiB/s, 3591.95 obj/s
+//   - Reqs: Avg: 2.9ms, 50%: 2.6ms, 90%: 3.8ms, 99%: 6.1ms, Fastest: 0.8ms, Slowest: 176.1ms
 func (r *Runner) parseOutput(result *Result, output string) {
 	// Parse throughput: "Average: 3.51 MiB/s, 3591.95 obj/s"
 	avgRe := regexp.MustCompile(`Average:\s*([0-9.]+)\s*(MiB|MB|KiB|KB|GiB|GB)/s,\s*([0-9.]+)\s*obj/s`)
@@ -268,6 +283,10 @@ func (r *Runner) Run(ctx context.Context) ([]*Result, error) {
 	if err := r.CheckWarp(); err != nil {
 		return nil, err
 	}
+	if err := r.prepareWorkDir(); err != nil {
+		return nil, err
+	}
+	defer r.cleanupWorkDir()
 
 	drivers := FilterDrivers(DefaultDrivers(), r.config.Drivers)
 	if len(drivers) == 0 {
@@ -387,4 +406,52 @@ func (r *Runner) Run(ctx context.Context) ([]*Result, error) {
 	}
 
 	return results, nil
+}
+
+func (r *Runner) buildCommand(ctx context.Context, args []string) *exec.Cmd {
+	if r.script == "" {
+		return exec.CommandContext(ctx, r.warpPath, args...)
+	}
+	scriptArgs := make([]string, 0, len(args)+3)
+	scriptArgs = append(scriptArgs, "-q", "/dev/null", r.warpPath)
+	scriptArgs = append(scriptArgs, args...)
+	return exec.CommandContext(ctx, r.script, scriptArgs...)
+}
+
+func (r *Runner) prepareWorkDir() error {
+	if r.config.WorkDir != "" {
+		r.workDir = r.config.WorkDir
+		if err := os.MkdirAll(r.workDir, 0755); err != nil {
+			return fmt.Errorf("create work dir: %w", err)
+		}
+		r.config.RunDir = r.workDir
+		r.logger("Using work dir: %s", r.workDir)
+		return nil
+	}
+
+	cacheDir, err := os.UserCacheDir()
+	if err != nil || cacheDir == "" {
+		cacheDir = os.TempDir()
+	}
+	base := filepath.Join(cacheDir, "mizu", "warp_bench")
+	if err := os.MkdirAll(base, 0755); err != nil {
+		return fmt.Errorf("create work dir base: %w", err)
+	}
+	runDir, err := os.MkdirTemp(base, "run-")
+	if err != nil {
+		return fmt.Errorf("create work dir: %w", err)
+	}
+	r.workDir = runDir
+	r.config.RunDir = runDir
+	r.logger("Using work dir: %s", r.workDir)
+	return nil
+}
+
+func (r *Runner) cleanupWorkDir() {
+	if r.workDir == "" || r.config.KeepWorkDir {
+		return
+	}
+	if err := os.RemoveAll(r.workDir); err == nil {
+		r.logger("Cleaned work dir: %s", r.workDir)
+	}
 }

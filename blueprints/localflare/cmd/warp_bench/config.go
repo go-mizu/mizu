@@ -16,31 +16,36 @@ type DriverConfig struct {
 
 // Config holds the benchmark configuration.
 type Config struct {
-	Duration     time.Duration
-	Concurrent   int
-	Objects      int
-	ObjectSizes  []string
-	Operations   []string
-	Drivers      []string // Filter to specific drivers (empty = all)
-	OutputDir    string
-	Verbose      bool
-	Quick        bool
-	DockerClean  bool   // Enable Docker cleanup before/after each driver
-	ComposeDir   string // Path to docker-compose directory
+	Duration    time.Duration
+	Concurrent  int
+	Objects     int
+	ObjectSizes []string
+	Operations  []string
+	Drivers     []string // Filter to specific drivers (empty = all)
+	OutputDir   string
+	Verbose     bool
+	Quick       bool
+	DockerClean bool   // Enable Docker cleanup before/after each driver
+	ComposeDir  string // Path to docker-compose directory
+	WorkDir     string // Working directory for warp temp files (empty = auto)
+	KeepWorkDir bool   // Keep work dir after run (for debugging)
+	WarpPath    string // Resolved warp binary path
+	WarpVersion string // Resolved warp version
+	RunDir      string // Actual run directory used (auto)
 }
 
 // DefaultConfig returns the default benchmark configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Duration:    30 * time.Second,
-		Concurrent:  20,
-		Objects:     100,
-		ObjectSizes: []string{"1KiB", "64KiB", "1MiB", "10MiB"},
-		Operations:  []string{"put", "get", "delete", "list", "stat", "mixed"},
-		OutputDir:   "./pkg/storage/report",
+		Duration:    5 * time.Second,
+		Concurrent:  10,
+		Objects:     20,
+		ObjectSizes: []string{"1KiB", "1MiB"},
+		Operations:  []string{"put", "get", "stat"},
+		OutputDir:   "./pkg/storage/report/warp_bench",
 		Verbose:     false,
-		Quick:       false,
-		DockerClean: true,
+		Quick:       true,
+		DockerClean: false,
 		ComposeDir:  "./docker/s3/all",
 	}
 }
@@ -53,7 +58,7 @@ func QuickConfig() *Config {
 		Objects:     50,
 		ObjectSizes: []string{"1KiB", "1MiB"},
 		Operations:  []string{"put", "get", "mixed"},
-		OutputDir:   "./pkg/storage/report",
+		OutputDir:   "./pkg/storage/report/warp_bench",
 		Verbose:     false,
 		Quick:       true,
 		DockerClean: true,

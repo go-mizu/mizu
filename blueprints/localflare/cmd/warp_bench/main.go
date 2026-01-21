@@ -20,17 +20,19 @@ import (
 
 func main() {
 	var (
-		duration    = flag.Duration("duration", 30*time.Second, "Duration per benchmark operation")
-		concurrent  = flag.Int("concurrent", 20, "Number of concurrent operations")
-		objects     = flag.Int("objects", 100, "Number of objects to use")
-		sizes       = flag.String("sizes", "1KiB,64KiB,1MiB,10MiB", "Comma-separated object sizes")
-		operations  = flag.String("operations", "put,get,delete,list,stat,mixed", "Comma-separated operations to benchmark")
+		duration    = flag.Duration("duration", 5*time.Second, "Duration per benchmark operation")
+		concurrent  = flag.Int("concurrent", 10, "Number of concurrent operations")
+		objects     = flag.Int("objects", 20, "Number of objects to use")
+		sizes       = flag.String("sizes", "1KiB,1MiB", "Comma-separated object sizes")
+		operations  = flag.String("operations", "put,get,stat", "Comma-separated operations to benchmark")
 		drivers     = flag.String("drivers", "", "Comma-separated drivers to test (empty = all)")
-		outputDir   = flag.String("output", "./pkg/storage/report", "Output directory for reports")
-		quick       = flag.Bool("quick", false, "Quick mode (shorter duration, fewer sizes)")
+		outputDir   = flag.String("output", "./pkg/storage/report/warp_bench", "Output directory for reports")
+		quick       = flag.Bool("quick", true, "Quick mode (shorter duration, fewer sizes)")
 		verbose     = flag.Bool("verbose", false, "Show warp output in real-time")
-		dockerClean = flag.Bool("docker-clean", true, "Enable Docker cleanup before/after each driver")
+		dockerClean = flag.Bool("docker-clean", false, "Enable Docker cleanup before/after each driver")
 		composeDir  = flag.String("compose-dir", "./docker/s3/all", "Path to docker-compose directory")
+		workDir     = flag.String("work-dir", "", "Working directory for warp temp files (empty = auto)")
+		keepWorkDir = flag.Bool("keep-workdir", false, "Keep work directory after run")
 	)
 	flag.Parse()
 
@@ -49,6 +51,8 @@ func main() {
 	cfg.Verbose = *verbose
 	cfg.DockerClean = *dockerClean
 	cfg.ComposeDir = *composeDir
+	cfg.WorkDir = *workDir
+	cfg.KeepWorkDir = *keepWorkDir
 
 	if *sizes != "" && !*quick {
 		cfg.ObjectSizes = strings.Split(*sizes, ",")
