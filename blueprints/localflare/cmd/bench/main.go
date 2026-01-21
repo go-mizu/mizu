@@ -29,6 +29,12 @@ func main() {
 		outputFormats = flag.String("formats", "markdown,json,csv", "Output formats (markdown,json,csv)")
 		dockerStats   = flag.Bool("docker-stats", true, "Collect Docker container statistics and cleanup after each driver")
 		verbose       = flag.Bool("verbose", false, "Verbose output")
+		lowOverhead   = flag.Bool("low-overhead", true, "Enable low overhead client mode for benchmarks")
+		progress      = flag.Bool("progress", false, "Enable live progress output")
+		progressEvery = flag.Int("progress-every", 256, "Progress update frequency (iterations)")
+		perOpTimeouts = flag.Bool("per-op-timeouts", false, "Enable per-operation timeouts (adds client overhead)")
+		readBufSize   = flag.Int("read-buffer-size", 256*1024, "Read buffer size for io.CopyBuffer")
+		enableTTFB    = flag.Bool("enable-ttfb", false, "Capture time-to-first-byte for reads")
 		large         = flag.Bool("large", false, "Include 100MB object benchmarks")
 		scales        = flag.String("scales", "", "Comma-separated scale counts to benchmark (empty = defaults)")
 		objectCounts  = flag.String("object-counts", "", "Deprecated: use --scales (comma-separated object counts)")
@@ -59,6 +65,12 @@ func main() {
 	cfg.ScaleMaxBytes = *scaleMaxBytes
 	cfg.CleanupDataPaths = *cleanupData
 	cfg.CleanupDockerData = *cleanupDocker
+	cfg.LowOverhead = *lowOverhead
+	cfg.Progress = *progress
+	cfg.ProgressEvery = *progressEvery
+	cfg.PerOpTimeouts = *perOpTimeouts
+	cfg.ReadBufferSize = *readBufSize
+	cfg.EnableTTFB = *enableTTFB
 	if *large {
 		cfg.EnableLargeObjects()
 	}
@@ -161,6 +173,8 @@ func main() {
 	fmt.Printf("Output: %s\n", cfg.OutputDir)
 	fmt.Printf("Formats: %v\n", cfg.OutputFormats)
 	fmt.Printf("Scale: counts=%v, size=%dB, cap=%dB\n", cfg.ScaleCounts, cfg.ScaleObjectSize, cfg.ScaleMaxBytes)
+	fmt.Printf("Client: low-overhead=%v, per-op-timeouts=%v, progress=%v (every %d), read-buffer=%dB, ttfb=%v\n",
+		cfg.LowOverhead, cfg.PerOpTimeouts, cfg.Progress, cfg.ProgressEvery, cfg.ReadBufferSize, cfg.EnableTTFB)
 	fmt.Println("Disk note: if you see /Users/apple/Library/Containers/com.docker.docker/Data/log/vm/init.log: no space left on device, reduce --scales or --scale-object-size.")
 	fmt.Println("Cleanup: local benchmark data paths (/tmp/usagi-bench, /tmp/rabbit-bench) are removed after each driver run.")
 	if cfg.Filter != "" {
