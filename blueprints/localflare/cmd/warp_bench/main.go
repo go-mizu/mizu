@@ -20,10 +20,10 @@ import (
 
 func main() {
 	var (
-		duration      = flag.Duration("duration", 10*time.Second, "Duration per benchmark operation")
-		concurrent    = flag.Int("concurrent", 16, "Number of concurrent operations")
-		objects       = flag.Int("objects", 100, "Number of objects to use")
-		sizes         = flag.String("sizes", "4KiB,1MiB", "Comma-separated object sizes")
+		duration      = flag.Duration("duration", 30*time.Second, "Duration per benchmark operation")
+		concurrent    = flag.Int("concurrent", 20, "Number of concurrent operations")
+		objects       = flag.Int("objects", 200, "Number of objects to use")
+		sizes         = flag.String("sizes", "1MiB,10MiB", "Comma-separated object sizes")
 		operations    = flag.String("operations", "put,get,stat,list,mixed", "Comma-separated operations to benchmark")
 		drivers       = flag.String("drivers", "", "Comma-separated drivers to test (empty = all)")
 		outputDir     = flag.String("output", "./pkg/storage/report/warp_bench", "Output directory for reports")
@@ -35,7 +35,16 @@ func main() {
 		keepWorkDir   = flag.Bool("keep-workdir", false, "Keep work directory after run")
 		progressEvery = flag.Duration("progress-every", 5*time.Second, "Progress log interval (0 to disable)")
 		deleteObjects = flag.Int("delete-objects", 1000, "Delete operation object count")
-		deleteBatch   = flag.Int("delete-batch", 25, "Delete operation batch size")
+		deleteBatch   = flag.Int("delete-batch", 100, "Delete operation batch size")
+		listObjects   = flag.Int("list-objects", 1000, "List operation object count")
+		listMaxKeys   = flag.Int("list-max-keys", 100, "List operation max-keys")
+		noClear       = flag.Bool("noclear", true, "Do not clear bucket before/after each warp op")
+		prefix        = flag.String("prefix", "", "Prefix for benchmark objects (empty = auto)")
+		lookup        = flag.String("lookup", "path", "S3 lookup style (path or host)")
+		disableSHA256 = flag.Bool("disable-sha256", true, "Disable SHA256 payload hashing")
+		autoTerm      = flag.Bool("autoterm", true, "Enable warp autoterm")
+		autoTermDur   = flag.Duration("autoterm-dur", 15*time.Second, "Warp autoterm minimum stability duration")
+		autoTermPct   = flag.Float64("autoterm-pct", 7.5, "Warp autoterm stability percentage")
 	)
 	flag.Parse()
 
@@ -59,6 +68,15 @@ func main() {
 	cfg.ProgressEvery = *progressEvery
 	cfg.DeleteObjects = *deleteObjects
 	cfg.DeleteBatch = *deleteBatch
+	cfg.ListObjects = *listObjects
+	cfg.ListMaxKeys = *listMaxKeys
+	cfg.NoClear = *noClear
+	cfg.Prefix = *prefix
+	cfg.Lookup = *lookup
+	cfg.DisableSHA256 = *disableSHA256
+	cfg.AutoTerm = *autoTerm
+	cfg.AutoTermDur = *autoTermDur
+	cfg.AutoTermPct = *autoTermPct
 
 	if *sizes != "" {
 		cfg.ObjectSizes = strings.Split(*sizes, ",")

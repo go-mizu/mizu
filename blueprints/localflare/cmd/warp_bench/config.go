@@ -21,6 +21,8 @@ type Config struct {
 	Objects       int
 	ObjectSizes   []string
 	Operations    []string
+	ListObjects   int
+	ListMaxKeys   int
 	Drivers       []string // Filter to specific drivers (empty = all)
 	OutputDir     string
 	Verbose       bool
@@ -29,6 +31,13 @@ type Config struct {
 	ComposeDir    string // Path to docker-compose directory
 	WorkDir       string // Working directory for warp temp files (empty = auto)
 	KeepWorkDir   bool   // Keep work dir after run (for debugging)
+	NoClear       bool   // Do not clear bucket between warp runs (uses prefix per run)
+	Prefix        string // Base prefix for warp objects (empty = auto)
+	Lookup        string // Force path or host lookup style
+	DisableSHA256 bool
+	AutoTerm      bool
+	AutoTermDur   time.Duration
+	AutoTermPct   float64
 	WarpPath      string // Resolved warp binary path
 	WarpVersion   string // Resolved warp version
 	RunDir        string // Actual run directory used (auto)
@@ -40,38 +49,56 @@ type Config struct {
 // DefaultConfig returns the default benchmark configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		Duration:      10 * time.Second,
-		Concurrent:    16,
-		Objects:       100,
-		ObjectSizes:   []string{"4KiB", "1MiB"},
+		Duration:      30 * time.Second,
+		Concurrent:    20,
+		Objects:       200,
+		ObjectSizes:   []string{"1MiB", "10MiB"},
 		Operations:    []string{"put", "get", "stat", "list", "mixed"},
+		ListObjects:   1000,
+		ListMaxKeys:   100,
 		OutputDir:     "./pkg/storage/report/warp_bench",
 		Verbose:       false,
 		Quick:         false,
 		DockerClean:   false,
 		ComposeDir:    "./docker/s3/all",
+		NoClear:       true,
+		Prefix:        "",
+		Lookup:        "path",
+		DisableSHA256: true,
+		AutoTerm:      true,
+		AutoTermDur:   15 * time.Second,
+		AutoTermPct:   7.5,
 		ProgressEvery: 5 * time.Second,
 		DeleteObjects: 1000,
-		DeleteBatch:   25,
+		DeleteBatch:   100,
 	}
 }
 
 // QuickConfig returns a faster configuration for quick testing.
 func QuickConfig() *Config {
 	return &Config{
-		Duration:      5 * time.Second,
-		Concurrent:    8,
+		Duration:      8 * time.Second,
+		Concurrent:    10,
 		Objects:       50,
-		ObjectSizes:   []string{"4KiB", "1MiB"},
+		ObjectSizes:   []string{"1MiB"},
 		Operations:    []string{"put", "get", "stat"},
+		ListObjects:   200,
+		ListMaxKeys:   100,
 		OutputDir:     "./pkg/storage/report/warp_bench",
 		Verbose:       false,
 		Quick:         true,
 		DockerClean:   false,
 		ComposeDir:    "./docker/s3/all",
+		NoClear:       true,
+		Prefix:        "",
+		Lookup:        "path",
+		DisableSHA256: true,
+		AutoTerm:      true,
+		AutoTermDur:   10 * time.Second,
+		AutoTermPct:   10,
 		ProgressEvery: 5 * time.Second,
 		DeleteObjects: 500,
-		DeleteBatch:   10,
+		DeleteBatch:   50,
 	}
 }
 
@@ -85,6 +112,24 @@ func DefaultDrivers() []*DriverConfig {
 			SecretKey: "minioadmin",
 			Bucket:    "test-bucket",
 			Container: "all-minio-1",
+			Enabled:   true,
+		},
+		{
+			Name:      "usagi_s3",
+			Endpoint:  "localhost:9301",
+			AccessKey: "usagi",
+			SecretKey: "usagi123",
+			Bucket:    "test-bucket",
+			Container: "all-usagi_s3-1",
+			Enabled:   true,
+		},
+		{
+			Name:      "devnull_s3",
+			Endpoint:  "localhost:9302",
+			AccessKey: "devnull",
+			SecretKey: "devnull123",
+			Bucket:    "test-bucket",
+			Container: "all-devnull_s3-1",
 			Enabled:   true,
 		},
 		{
