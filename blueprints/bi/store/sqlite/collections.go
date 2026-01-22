@@ -104,10 +104,15 @@ func (s *CollectionStore) ListByParent(ctx context.Context, parentID string) ([]
 }
 
 func (s *CollectionStore) Update(ctx context.Context, c *store.Collection) error {
+	var parentID interface{}
+	if c.ParentID != "" {
+		parentID = c.ParentID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE collections SET name=?, description=?, parent_id=?, color=?
 		WHERE id=?
-	`, c.Name, c.Description, c.ParentID, c.Color, c.ID)
+	`, c.Name, c.Description, parentID, c.Color, c.ID)
 	return err
 }
 

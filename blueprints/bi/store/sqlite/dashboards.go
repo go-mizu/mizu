@@ -98,10 +98,16 @@ func (s *DashboardStore) ListByCollection(ctx context.Context, collectionID stri
 
 func (s *DashboardStore) Update(ctx context.Context, d *store.Dashboard) error {
 	d.UpdatedAt = time.Now()
+
+	var collID interface{}
+	if d.CollectionID != "" {
+		collID = d.CollectionID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE dashboards SET name=?, description=?, collection_id=?, auto_refresh=?, updated_at=?
 		WHERE id=?
-	`, d.Name, d.Description, d.CollectionID, d.AutoRefresh, d.UpdatedAt, d.ID)
+	`, d.Name, d.Description, collID, d.AutoRefresh, d.UpdatedAt, d.ID)
 	return err
 }
 
@@ -174,10 +180,18 @@ func (s *DashboardStore) ListCards(ctx context.Context, dashboardID string) ([]*
 }
 
 func (s *DashboardStore) UpdateCard(ctx context.Context, card *store.DashboardCard) error {
+	var questionID, tabID interface{}
+	if card.QuestionID != "" {
+		questionID = card.QuestionID
+	}
+	if card.TabID != "" {
+		tabID = card.TabID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE dashboard_cards SET question_id=?, card_type=?, tab_id=?, row_num=?, col_num=?, width=?, height=?, settings=?
 		WHERE id=?
-	`, card.QuestionID, card.CardType, card.TabID, card.Row, card.Col, card.Width, card.Height, toJSON(card.Settings), card.ID)
+	`, questionID, card.CardType, tabID, card.Row, card.Col, card.Width, card.Height, toJSON(card.Settings), card.ID)
 	return err
 }
 

@@ -79,10 +79,16 @@ func (s *ModelStore) List(ctx context.Context) ([]*store.Model, error) {
 
 func (s *ModelStore) Update(ctx context.Context, m *store.Model) error {
 	m.UpdatedAt = time.Now()
+
+	var collID interface{}
+	if m.CollectionID != "" {
+		collID = m.CollectionID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE models SET name=?, description=?, collection_id=?, query=?, updated_at=?
 		WHERE id=?
-	`, m.Name, m.Description, m.CollectionID, toJSON(m.Query), m.UpdatedAt, m.ID)
+	`, m.Name, m.Description, collID, toJSON(m.Query), m.UpdatedAt, m.ID)
 	return err
 }
 

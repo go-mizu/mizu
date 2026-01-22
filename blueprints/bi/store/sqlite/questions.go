@@ -107,10 +107,16 @@ func (s *QuestionStore) ListByCollection(ctx context.Context, collectionID strin
 
 func (s *QuestionStore) Update(ctx context.Context, q *store.Question) error {
 	q.UpdatedAt = time.Now()
+
+	var collID interface{}
+	if q.CollectionID != "" {
+		collID = q.CollectionID
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE questions SET name=?, description=?, collection_id=?, query_type=?, query=?, visualization=?, updated_at=?
 		WHERE id=?
-	`, q.Name, q.Description, q.CollectionID, q.QueryType, toJSON(q.Query), toJSON(q.Visualization), q.UpdatedAt, q.ID)
+	`, q.Name, q.Description, collID, q.QueryType, toJSON(q.Query), toJSON(q.Visualization), q.UpdatedAt, q.ID)
 	return err
 }
 
