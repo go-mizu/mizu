@@ -214,7 +214,7 @@ func createTestSubscription(t *testing.T, s *Store, dashID string) *store.Subscr
 func createTestUser(t *testing.T, s *Store) *store.User {
 	t.Helper()
 	u := &store.User{
-		Email:        fmt.Sprintf("test%s@example.com", ulid.Make().String()[:8]),
+		Email:        fmt.Sprintf("test_%s@example.com", ulid.Make().String()),
 		Name:         "Test User",
 		PasswordHash: "$argon2id$v=19$m=65536,t=3,p=2$abcdefghijklmnop$abcdefghijklmnopqrstuvwxyz012345",
 		Role:         "user",
