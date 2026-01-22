@@ -1,37 +1,68 @@
+import { useEffect, lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
-import { AppShell } from '@mantine/core'
+import { Box, LoadingOverlay } from '@mantine/core'
+import { useHotkeys } from '@mantine/hooks'
 import Sidebar from './components/layout/Sidebar'
-import Home from './pages/Home'
-import Browse from './pages/Browse'
-import Question from './pages/Question'
-import Dashboard from './pages/Dashboard'
-import DataModel from './pages/admin/DataModel'
-import Settings from './pages/admin/Settings'
+import CommandPalette from './components/core/CommandPalette'
+import { useUIStore } from './stores/uiStore'
+
+// Lazy load pages for better performance
+const Home = lazy(() => import('./pages/Home'))
+const Browse = lazy(() => import('./pages/Browse'))
+const Question = lazy(() => import('./pages/Question'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const DataModel = lazy(() => import('./pages/admin/DataModel'))
+const Settings = lazy(() => import('./pages/admin/Settings'))
+const People = lazy(() => import('./pages/admin/People'))
+
+function PageLoader() {
+  return <LoadingOverlay visible={true} />
+}
 
 function App() {
-  return (
-    <AppShell
-      navbar={{ width: 260, breakpoint: 'sm' }}
-      padding="md"
-    >
-      <AppShell.Navbar>
-        <Sidebar />
-      </AppShell.Navbar>
+  const { openCommandPalette, toggleCommandPalette } = useUIStore()
 
-      <AppShell.Main>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/browse" element={<Browse />} />
-          <Route path="/browse/:id" element={<Browse />} />
-          <Route path="/question/new" element={<Question />} />
-          <Route path="/question/:id" element={<Question />} />
-          <Route path="/dashboard/new" element={<Dashboard />} />
-          <Route path="/dashboard/:id" element={<Dashboard />} />
-          <Route path="/admin/datamodel" element={<DataModel />} />
-          <Route path="/admin/settings" element={<Settings />} />
-        </Routes>
-      </AppShell.Main>
-    </AppShell>
+  // Global keyboard shortcuts
+  useHotkeys([
+    ['mod+k', () => toggleCommandPalette()],
+    ['/', () => openCommandPalette()],
+  ])
+
+  return (
+    <Box style={{ display: 'flex', minHeight: '100vh' }}>
+      <Sidebar />
+      <Box
+        component="main"
+        style={{
+          flex: 1,
+          backgroundColor: '#f9fbfc',
+          minHeight: '100vh',
+          overflow: 'auto',
+        }}
+      >
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/browse" element={<Browse />} />
+            <Route path="/browse/databases" element={<Browse view="databases" />} />
+            <Route path="/browse/models" element={<Browse view="models" />} />
+            <Route path="/browse/metrics" element={<Browse view="metrics" />} />
+            <Route path="/browse/:id" element={<Browse />} />
+            <Route path="/question/new" element={<Question />} />
+            <Route path="/question/:id" element={<Question />} />
+            <Route path="/question/:id/edit" element={<Question mode="edit" />} />
+            <Route path="/dashboard/new" element={<Dashboard />} />
+            <Route path="/dashboard/:id" element={<Dashboard />} />
+            <Route path="/dashboard/:id/edit" element={<Dashboard mode="edit" />} />
+            <Route path="/admin/datamodel" element={<DataModel />} />
+            <Route path="/admin/datamodel/:tableId" element={<DataModel />} />
+            <Route path="/admin/people" element={<People />} />
+            <Route path="/admin/settings" element={<Settings />} />
+          </Routes>
+        </Suspense>
+      </Box>
+      <CommandPalette />
+    </Box>
   )
 }
 

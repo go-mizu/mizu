@@ -1,320 +1,485 @@
-import { useEffect, useState } from 'react'
-import { Container, Title, Text, Card, Group, Stack, Button, Select, Textarea, Table, Paper, Loader, Badge } from '@mantine/core'
-import { IconPlayerPlay, IconDeviceFloppy, IconChartBar, IconTable } from '@tabler/icons-react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { api } from '../api/client'
+import { useEffect, useState, useMemo } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Container, Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
+  Modal, TextInput, Textarea, Select, Badge, Divider, Tooltip, Stack,
+  Drawer, Title, ThemeIcon, Tabs
+} from '@mantine/core'
+import { useDisclosure } from '@mantine/hooks'
+import { notifications } from '@mantine/notifications'
+import {
+  IconPlayerPlay, IconDeviceFloppy, IconDots, IconDownload, IconShare,
+  IconPencil, IconTrash, IconCopy, IconBell, IconArrowLeft, IconChartBar,
+  IconTable, IconSettings, IconRefresh, IconMaximize, IconLayoutSidebar
+} from '@tabler/icons-react'
+import { QueryBuilder } from '../components/query-builder'
+import Visualization, { VisualizationSkeleton } from '../components/visualizations'
+import VisualizationPicker, { VisualizationTypeSelect } from '../components/visualizations/VisualizationPicker'
+import { useQueryStore } from '../stores/queryStore'
+import {
+  useQuestion, useCreateQuestion, useUpdateQuestion, useDeleteQuestion,
+  useExecuteQuery, useExecuteNativeQuery
+} from '../api/hooks'
+import type { QueryResult, VisualizationType } from '../api/types'
 
-interface DataSource {
-  id: string
-  name: string
+interface QuestionProps {
+  mode?: 'view' | 'edit'
 }
 
-interface Question {
-  id: string
-  name: string
-  description: string
-  datasource_id: string
-  query_type: string
-  query: { sql?: string }
-  visualization: { type: string; settings?: Record<string, unknown> }
-}
-
-interface QueryResult {
-  columns: { name: string; type: string }[]
-  rows: Record<string, unknown>[]
-  row_count: number
-  duration_ms: number
-}
-
-const COLORS = ['#509EE3', '#88BF4D', '#A989C5', '#F9CF48', '#EF8C8C', '#98D9D9', '#F2A86F', '#7172AD']
-
-export default function Question() {
+export default function Question({ mode: pageMode = 'view' }: QuestionProps) {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [question, setQuestion] = useState<Question | null>(null)
-  const [datasources, setDatasources] = useState<DataSource[]>([])
-  const [selectedDatasource, setSelectedDatasource] = useState<string | null>(null)
-  const [sql, setSql] = useState('')
-  const [vizType, setVizType] = useState('table')
+  const [searchParams] = useSearchParams()
+  const isNew = !id || id === 'new'
+
+  // Store state
+  const queryStore = useQueryStore()
+  const {
+    mode: queryMode,
+    datasourceId,
+    sourceTable,
+    nativeSql,
+    columns,
+    filters,
+    aggregations,
+    groupBy,
+    orderBy,
+    limit,
+    visualization,
+    setVisualizationType,
+    setVisualization,
+    isExecuting,
+    setIsExecuting,
+    reset,
+    loadQuestion,
+  } = queryStore
+
+  // Local state
   const [result, setResult] = useState<QueryResult | null>(null)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saveModalOpened, { open: openSaveModal, close: closeSaveModal }] = useDisclosure(false)
+  const [vizPickerOpened, { open: openVizPicker, close: closeVizPicker }] = useDisclosure(false)
+  const [sidebarOpened, setSidebarOpened] = useState(true)
+  const [questionName, setQuestionName] = useState('')
+  const [questionDescription, setQuestionDescription] = useState('')
 
+  // Queries
+  const { data: existingQuestion, isLoading: loadingQuestion } = useQuestion(isNew ? '' : id!)
+  const createQuestion = useCreateQuestion()
+  const updateQuestion = useUpdateQuestion()
+  const deleteQuestion = useDeleteQuestion()
+  const executeQuery = useExecuteQuery()
+  const executeNativeQuery = useExecuteNativeQuery()
+
+  // Load existing question
   useEffect(() => {
-    loadDatasources()
-    if (id && id !== 'new') {
-      loadQuestion(id)
-    }
-  }, [id])
-
-  const loadDatasources = async () => {
-    try {
-      const res = await api.get<DataSource[]>('/datasources')
-      setDatasources(res || [])
-      if (res?.length > 0 && !selectedDatasource) {
-        setSelectedDatasource(res[0].id)
-      }
-    } catch (error) {
-      console.error('Failed to load datasources:', error)
-    }
-  }
-
-  const loadQuestion = async (questionId: string) => {
-    try {
-      const q = await api.get<Question>(`/questions/${questionId}`)
-      setQuestion(q)
-      setSelectedDatasource(q.datasource_id)
-      setSql(q.query.sql || '')
-      setVizType(q.visualization?.type || 'table')
-      // Execute the query
-      executeQuery(q.datasource_id, q.query.sql || '')
-    } catch (error) {
-      console.error('Failed to load question:', error)
-    }
-  }
-
-  const executeQuery = async (datasourceId: string, query: string) => {
-    if (!datasourceId || !query) return
-
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await api.post<QueryResult>('/query/native', {
-        datasource_id: datasourceId,
-        query: query,
+    if (existingQuestion) {
+      loadQuestion({
+        mode: existingQuestion.query_type as 'query' | 'native',
+        datasourceId: existingQuestion.datasource_id,
+        query: existingQuestion.query,
+        visualization: existingQuestion.visualization,
       })
+      setQuestionName(existingQuestion.name)
+      setQuestionDescription(existingQuestion.description || '')
+
+      // Auto-execute on load
+      handleExecute()
+    }
+  }, [existingQuestion])
+
+  // Reset on new question
+  useEffect(() => {
+    if (isNew) {
+      reset()
+      setResult(null)
+      setError(null)
+      setQuestionName('')
+      setQuestionDescription('')
+    }
+  }, [isNew])
+
+  // Build query from store state
+  const buildQuery = () => {
+    if (queryMode === 'native') {
+      return {
+        sql: nativeSql,
+      }
+    }
+
+    return {
+      table: sourceTable,
+      columns: columns.map(c => c.column),
+      filters: filters.length > 0 ? filters : undefined,
+      aggregations: aggregations.length > 0 ? aggregations : undefined,
+      group_by: groupBy.length > 0 ? groupBy.map(g => g.column) : undefined,
+      order_by: orderBy.length > 0 ? orderBy : undefined,
+      limit: limit || undefined,
+    }
+  }
+
+  // Execute query
+  const handleExecute = async () => {
+    if (!datasourceId) {
+      notifications.show({
+        title: 'No data source',
+        message: 'Please select a data source first',
+        color: 'yellow',
+      })
+      return
+    }
+
+    if (queryMode === 'native' && !nativeSql.trim()) {
+      notifications.show({
+        title: 'No query',
+        message: 'Please enter a SQL query',
+        color: 'yellow',
+      })
+      return
+    }
+
+    if (queryMode === 'query' && !sourceTable) {
+      notifications.show({
+        title: 'No table',
+        message: 'Please select a table first',
+        color: 'yellow',
+      })
+      return
+    }
+
+    setIsExecuting(true)
+    setError(null)
+
+    try {
+      let res: QueryResult
+      if (queryMode === 'native') {
+        res = await executeNativeQuery.mutateAsync({
+          datasource_id: datasourceId,
+          query: nativeSql,
+        })
+      } else {
+        res = await executeQuery.mutateAsync({
+          datasource_id: datasourceId,
+          query: buildQuery(),
+        })
+      }
       setResult(res)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Query failed')
+    } catch (err: any) {
+      setError(err.message || 'Query execution failed')
       setResult(null)
     } finally {
-      setLoading(false)
+      setIsExecuting(false)
     }
   }
 
-  const handleRun = () => {
-    if (selectedDatasource && sql) {
-      executeQuery(selectedDatasource, sql)
-    }
-  }
-
+  // Save question
   const handleSave = async () => {
-    const name = prompt('Question name:')
-    if (!name) return
+    if (!questionName.trim()) {
+      notifications.show({
+        title: 'Name required',
+        message: 'Please enter a name for this question',
+        color: 'yellow',
+      })
+      return
+    }
+
+    const questionData = {
+      name: questionName,
+      description: questionDescription || undefined,
+      datasource_id: datasourceId!,
+      query_type: queryMode,
+      query: buildQuery(),
+      visualization,
+    }
 
     try {
-      const q = await api.post<Question>('/questions', {
-        name,
-        datasource_id: selectedDatasource,
-        query_type: 'native',
-        query: { sql },
-        visualization: { type: vizType },
+      if (isNew) {
+        const newQuestion = await createQuestion.mutateAsync(questionData)
+        notifications.show({
+          title: 'Question saved',
+          message: 'Your question has been saved',
+          color: 'green',
+        })
+        closeSaveModal()
+        navigate(`/question/${newQuestion.id}`)
+      } else {
+        await updateQuestion.mutateAsync({ id: id!, ...questionData })
+        notifications.show({
+          title: 'Question updated',
+          message: 'Your changes have been saved',
+          color: 'green',
+        })
+        closeSaveModal()
+      }
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to save question',
+        color: 'red',
       })
-      navigate(`/question/${q.id}`)
-    } catch (err) {
-      alert('Failed to save question')
     }
   }
 
-  const renderVisualization = () => {
-    if (!result || result.rows.length === 0) return null
+  // Delete question
+  const handleDelete = async () => {
+    if (!id || isNew) return
 
-    const data = result.rows as Record<string, unknown>[]
+    if (!confirm('Are you sure you want to delete this question?')) return
 
-    switch (vizType) {
-      case 'line':
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={result.columns[0]?.name} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              {result.columns.slice(1).map((col, i) => (
-                <Line key={col.name} type="monotone" dataKey={col.name} stroke={COLORS[i % COLORS.length]} />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        )
-
-      case 'bar':
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={result.columns[0]?.name} />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              {result.columns.slice(1).map((col, i) => (
-                <Bar key={col.name} dataKey={col.name} fill={COLORS[i % COLORS.length]} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        )
-
-      case 'pie':
-        return (
-          <ResponsiveContainer width="100%" height={400}>
-            <PieChart>
-              <Pie
-                data={data}
-                dataKey={result.columns[1]?.name}
-                nameKey={result.columns[0]?.name}
-                cx="50%"
-                cy="50%"
-                outerRadius={150}
-                label
-              >
-                {data.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        )
-
-      case 'number':
-        const value = result.rows[0]?.[result.columns[0]?.name]
-        return (
-          <Paper p="xl" ta="center">
-            <Text size="3rem" fw={700} c="blue">
-              {typeof value === 'number' ? value.toLocaleString() : String(value)}
-            </Text>
-            <Text c="dimmed">{result.columns[0]?.name}</Text>
-          </Paper>
-        )
-
-      default:
-        return (
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                {result.columns.map((col) => (
-                  <Table.Th key={col.name}>{col.name}</Table.Th>
-                ))}
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {result.rows.slice(0, 100).map((row, i) => (
-                <Table.Tr key={i}>
-                  {result.columns.map((col) => (
-                    <Table.Td key={col.name}>{String(row[col.name] ?? '')}</Table.Td>
-                  ))}
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        )
+    try {
+      await deleteQuestion.mutateAsync(id)
+      notifications.show({
+        title: 'Question deleted',
+        message: 'The question has been deleted',
+        color: 'green',
+      })
+      navigate('/browse')
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to delete question',
+        color: 'red',
+      })
     }
+  }
+
+  // Change visualization type
+  const handleVizTypeChange = (type: VisualizationType) => {
+    setVisualizationType(type)
+    closeVizPicker()
+  }
+
+  if (loadingQuestion && !isNew) {
+    return (
+      <Container size="xl" py="lg">
+        <Group justify="center" py="xl">
+          <Loader size="lg" />
+          <Text>Loading question...</Text>
+        </Group>
+      </Container>
+    )
   }
 
   return (
-    <Container size="xl" py="lg">
-      {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>{question?.name || 'New Question'}</Title>
-          <Text c="dimmed">Write SQL to explore your data</Text>
-        </div>
-        <Group>
-          <Button leftSection={<IconPlayerPlay size={16} />} onClick={handleRun} loading={loading}>
-            Run
-          </Button>
-          <Button variant="light" leftSection={<IconDeviceFloppy size={16} />} onClick={handleSave}>
-            Save
-          </Button>
+    <Box style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      {/* Query Builder Sidebar */}
+      <Box
+        style={{
+          width: sidebarOpened ? 400 : 0,
+          flexShrink: 0,
+          borderRight: sidebarOpened ? '1px solid var(--mantine-color-gray-3)' : 'none',
+          backgroundColor: 'white',
+          overflow: 'auto',
+          transition: 'width 0.2s ease',
+        }}
+      >
+        {sidebarOpened && (
+          <Box p="md">
+            <QueryBuilder onRun={handleExecute} isExecuting={isExecuting} />
+          </Box>
+        )}
+      </Box>
+
+      {/* Main Content */}
+      <Box style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Header */}
+        <Group
+          justify="space-between"
+          p="md"
+          style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+        >
+          <Group gap="md">
+            <Tooltip label={sidebarOpened ? 'Hide editor' : 'Show editor'}>
+              <ActionIcon variant="subtle" onClick={() => setSidebarOpened(!sidebarOpened)}>
+                <IconLayoutSidebar size={20} />
+              </ActionIcon>
+            </Tooltip>
+
+            <div>
+              <Group gap="xs">
+                {existingQuestion ? (
+                  <Text fw={600} size="lg">{existingQuestion.name}</Text>
+                ) : (
+                  <Text fw={600} size="lg" c="dimmed">New Question</Text>
+                )}
+                {result?.cached && (
+                  <Badge size="sm" variant="light" color="gray">cached</Badge>
+                )}
+              </Group>
+              {existingQuestion?.description && (
+                <Text size="sm" c="dimmed">{existingQuestion.description}</Text>
+              )}
+            </div>
+          </Group>
+
+          <Group gap="sm">
+            {/* Visualization type quick selector */}
+            <VisualizationTypeSelect
+              value={visualization.type}
+              onChange={handleVizTypeChange}
+            />
+
+            <Button
+              variant="light"
+              size="sm"
+              onClick={openVizPicker}
+            >
+              More charts
+            </Button>
+
+            <Divider orientation="vertical" />
+
+            <Button
+              leftSection={<IconDeviceFloppy size={16} />}
+              onClick={openSaveModal}
+              variant="light"
+            >
+              Save
+            </Button>
+
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <ActionIcon variant="subtle" size="lg">
+                  <IconDots size={20} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconRefresh size={14} />} onClick={handleExecute}>
+                  Refresh
+                </Menu.Item>
+                <Menu.Item leftSection={<IconDownload size={14} />}>
+                  Download results
+                </Menu.Item>
+                <Menu.Item leftSection={<IconCopy size={14} />}>
+                  Duplicate
+                </Menu.Item>
+                <Menu.Item leftSection={<IconShare size={14} />}>
+                  Share
+                </Menu.Item>
+                <Menu.Item leftSection={<IconBell size={14} />}>
+                  Create alert
+                </Menu.Item>
+                {!isNew && (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={handleDelete}>
+                      Delete
+                    </Menu.Item>
+                  </>
+                )}
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         </Group>
-      </Group>
 
-      {/* Query Editor */}
-      <Card withBorder mb="lg">
-        <Stack>
-          <Group>
-            <Select
-              label="Data Source"
-              placeholder="Select data source"
-              data={datasources.map((ds) => ({ value: ds.id, label: ds.name }))}
-              value={selectedDatasource}
-              onChange={setSelectedDatasource}
-              w={200}
-            />
-            <Select
-              label="Visualization"
-              data={[
-                { value: 'table', label: 'Table' },
-                { value: 'line', label: 'Line Chart' },
-                { value: 'bar', label: 'Bar Chart' },
-                { value: 'pie', label: 'Pie Chart' },
-                { value: 'number', label: 'Number' },
-              ]}
-              value={vizType}
-              onChange={(v) => setVizType(v || 'table')}
-              w={150}
-            />
-          </Group>
-          <Textarea
-            label="SQL Query"
-            placeholder="SELECT * FROM table LIMIT 100"
-            value={sql}
-            onChange={(e) => setSql(e.target.value)}
-            minRows={5}
-            styles={{
-              input: {
-                fontFamily: 'monospace',
-              },
-            }}
+        {/* Results Area */}
+        <Box style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          {isExecuting ? (
+            <Paper withBorder p="xl" radius="md" ta="center">
+              <Stack align="center" gap="md">
+                <Loader size="lg" />
+                <Text c="dimmed">Running query...</Text>
+              </Stack>
+            </Paper>
+          ) : error ? (
+            <Paper withBorder p="lg" radius="md" bg="red.0">
+              <Group gap="md">
+                <ThemeIcon color="red" variant="light" size="lg">
+                  <IconChartBar size={20} />
+                </ThemeIcon>
+                <div>
+                  <Text fw={500} c="red.7">Query Error</Text>
+                  <Text size="sm" c="red.6">{error}</Text>
+                </div>
+              </Group>
+            </Paper>
+          ) : result ? (
+            <Stack gap="md">
+              {/* Result stats */}
+              <Group gap="md">
+                <Badge variant="light" color="brand">
+                  {result.row_count.toLocaleString()} rows
+                </Badge>
+                <Badge variant="light" color="gray">
+                  {result.duration_ms.toFixed(1)} ms
+                </Badge>
+                <Badge variant="light" color="gray">
+                  {result.columns.length} columns
+                </Badge>
+              </Group>
+
+              {/* Visualization */}
+              <Paper withBorder p="md" radius="md">
+                <Visualization
+                  result={result}
+                  visualization={visualization}
+                  height={500}
+                />
+              </Paper>
+            </Stack>
+          ) : (
+            <Paper withBorder p="xl" radius="md" ta="center" bg="gray.0">
+              <Stack align="center" gap="md">
+                <ThemeIcon size={60} radius="xl" variant="light" color="brand">
+                  <IconChartBar size={30} />
+                </ThemeIcon>
+                <div>
+                  <Text fw={500} size="lg">Ready to explore</Text>
+                  <Text c="dimmed" size="sm">
+                    Select a data source and table, then click "Get Answer" to see results
+                  </Text>
+                </div>
+                <Button
+                  size="lg"
+                  leftSection={<IconPlayerPlay size={20} />}
+                  onClick={handleExecute}
+                  disabled={!datasourceId}
+                >
+                  Get Answer
+                </Button>
+              </Stack>
+            </Paper>
+          )}
+        </Box>
+      </Box>
+
+      {/* Save Modal */}
+      <Modal
+        opened={saveModalOpened}
+        onClose={closeSaveModal}
+        title={isNew ? 'Save Question' : 'Update Question'}
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Name"
+            placeholder="What does this question answer?"
+            value={questionName}
+            onChange={(e) => setQuestionName(e.target.value)}
+            required
           />
-        </Stack>
-      </Card>
-
-      {/* Results */}
-      {loading && (
-        <Paper withBorder p="xl" ta="center">
-          <Loader size="lg" />
-          <Text mt="md">Running query...</Text>
-        </Paper>
-      )}
-
-      {error && (
-        <Paper withBorder p="lg" bg="red.0">
-          <Text c="red" fw={500}>Error: {error}</Text>
-        </Paper>
-      )}
-
-      {result && !loading && (
-        <Card withBorder>
-          <Group justify="space-between" mb="md">
-            <Group>
-              <Badge color="blue">{result.row_count} rows</Badge>
-              <Badge color="gray">{result.duration_ms.toFixed(1)} ms</Badge>
-            </Group>
-            <Group>
-              <Button
-                variant={vizType === 'table' ? 'filled' : 'light'}
-                size="xs"
-                leftSection={<IconTable size={14} />}
-                onClick={() => setVizType('table')}
-              >
-                Table
-              </Button>
-              <Button
-                variant={vizType !== 'table' ? 'filled' : 'light'}
-                size="xs"
-                leftSection={<IconChartBar size={14} />}
-                onClick={() => setVizType('bar')}
-              >
-                Chart
-              </Button>
-            </Group>
+          <Textarea
+            label="Description"
+            placeholder="Optional description..."
+            value={questionDescription}
+            onChange={(e) => setQuestionDescription(e.target.value)}
+            rows={3}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button variant="light" onClick={closeSaveModal}>Cancel</Button>
+            <Button onClick={handleSave} loading={createQuestion.isPending || updateQuestion.isPending}>
+              {isNew ? 'Save' : 'Update'}
+            </Button>
           </Group>
-          {renderVisualization()}
-        </Card>
-      )}
-    </Container>
+        </Stack>
+      </Modal>
+
+      {/* Visualization Picker Modal */}
+      <VisualizationPicker
+        opened={vizPickerOpened}
+        onClose={closeVizPicker}
+        value={visualization.type}
+        onChange={handleVizTypeChange}
+      />
+    </Box>
   )
 }

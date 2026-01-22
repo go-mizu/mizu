@@ -16,7 +16,20 @@ class ApiClient {
     }
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  getToken(): string | null {
+    return this.token
+  }
+
+  isAuthenticated(): boolean {
+    return !!this.token
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    options?: { signal?: AbortSignal }
+  ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
@@ -29,18 +42,24 @@ class ApiClient {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal: options?.signal,
     })
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-      throw new Error(error.error || 'Request failed')
+      throw new ApiError(error.error || 'Request failed', response.status)
     }
 
-    return response.json()
+    // Handle empty responses
+    const text = await response.text()
+    if (!text) {
+      return {} as T
+    }
+    return JSON.parse(text)
   }
 
-  get<T>(path: string): Promise<T> {
-    return this.request<T>('GET', path)
+  get<T>(path: string, options?: { signal?: AbortSignal }): Promise<T> {
+    return this.request<T>('GET', path, undefined, options)
   }
 
   post<T>(path: string, body?: unknown): Promise<T> {
@@ -53,6 +72,13 @@ class ApiClient {
 
   delete<T>(path: string): Promise<T> {
     return this.request<T>('DELETE', path)
+  }
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message)
+    this.name = 'ApiError'
   }
 }
 
