@@ -1,8 +1,8 @@
 # Storage Benchmark Report
 
-**Generated:** 2026-01-21T18:54:52+07:00
+**Generated:** 2026-01-22T18:26:51+07:00
 
-**Go Version:** go1.25.5
+**Go Version:** go1.25.6
 
 **Platform:** darwin/arm64
 
@@ -10,60 +10,60 @@
 
 ### Summary
 
-**Overall Winner:** usagi_s3 (won 36/48 benchmarks, 75%)
+**Overall Winner:** usagi (won 43/48 benchmarks, 90%)
 
 | Rank | Driver | Wins | Win Rate |
 |------|--------|------|----------|
-| 1 | usagi_s3 | 36 | 75% |
-| 2 | devnull_s3 | 7 | 15% |
-| 3 | minio | 5 | 10% |
+| 1 | usagi | 43 | 90% |
+| 2 | usagi_s3 | 4 | 8% |
+| 3 | rustfs | 1 | 2% |
 
 ### Performance Leaders
 
 | Operation | Leader | Performance | Margin |
 |-----------|--------|-------------|--------|
-| Small Read (1KB) | usagi_s3 | 4.5 MB/s | +13% vs devnull_s3 |
-| Small Write (1KB) | usagi_s3 | 1.8 MB/s | +19% vs devnull_s3 |
-| Large Read (100MB) | minio | 237.4 MB/s | +36% vs usagi_s3 |
-| Large Write (100MB) | usagi_s3 | 152.3 MB/s | close |
-| Delete | usagi_s3 | 4.2K ops/s | close |
-| Stat | devnull_s3 | 4.2K ops/s | +16% vs usagi_s3 |
-| List (100 objects) | usagi_s3 | 1.0K ops/s | close |
-| Copy | usagi_s3 | 1.4 MB/s | close |
+| Small Read (1KB) | usagi | 3.4 GB/s | 941.2x vs usagi_s3 |
+| Small Write (1KB) | usagi | 231.7 MB/s | 146.6x vs rustfs |
+| Large Read (100MB) | usagi | 6.5 GB/s | 30.1x vs rustfs |
+| Large Write (100MB) | usagi | 483.5 MB/s | 2.9x vs rustfs |
+| Delete | usagi | 210.6K ops/s | 45.6x vs usagi_s3 |
+| Stat | usagi | 4.9M ops/s | 1264.8x vs usagi_s3 |
+| List (100 objects) | usagi | 61.7K ops/s | 61.3x vs usagi_s3 |
+| Copy | usagi | 94.4 MB/s | 92.5x vs usagi_s3 |
 
 ### Best Driver by Use Case
 
 | Use Case | Recommended | Performance | Notes |
 |----------|-------------|-------------|-------|
-| Large File Uploads (100MB+) | **usagi_s3** | 152 MB/s | Best for media, backups |
-| Large File Downloads (100MB) | **minio** | 237 MB/s | Best for streaming, CDN |
-| Small File Operations | **usagi_s3** | 3248 ops/s | Best for metadata, configs |
-| High Concurrency (C10) | **usagi_s3** | - | Best for multi-user apps |
-| Memory Constrained | **minio** | 651 MB RAM | Best for edge/embedded |
+| Large File Uploads (100MB+) | **usagi** | 483 MB/s | Best for media, backups |
+| Large File Downloads (100MB) | **usagi** | 6533 MB/s | Best for streaming, CDN |
+| Small File Operations | **usagi** | 1842877 ops/s | Best for metadata, configs |
+| High Concurrency (C10) | **usagi** | - | Best for multi-user apps |
+| Memory Constrained | **usagi_s3** | 781 MB RAM | Best for edge/embedded |
 
 ### Large File Performance (100MB)
 
 | Driver | Write (MB/s) | Read (MB/s) | Write Latency | Read Latency |
 |--------|-------------|-------------|---------------|---------------|
-| devnull_s3 | 123.7 | 165.2 | 818.0ms | 612.7ms |
-| minio | 146.8 | 237.4 | 681.8ms | 417.7ms |
-| usagi_s3 | 152.3 | 174.0 | 654.3ms | 577.9ms |
+| rustfs | 164.4 | 216.8 | 632.8ms | 429.1ms |
+| usagi | 483.5 | 6532.7 | 228.5ms | 12.8ms |
+| usagi_s3 | 148.5 | 195.5 | 682.3ms | 503.0ms |
 
 ### Small File Performance (1KB)
 
 | Driver | Write (ops/s) | Read (ops/s) | Write Latency | Read Latency |
 |--------|--------------|--------------|---------------|---------------|
-| devnull_s3 | 1565 | 4097 | 589.5us | 231.0us |
-| minio | 1128 | 2511 | 819.1us | 328.0us |
-| usagi_s3 | 1857 | 4639 | 512.2us | 202.1us |
+| rustfs | 1619 | 2522 | 586.5us | 381.2us |
+| usagi | 237244 | 3448510 | 2.5us | 208ns |
+| usagi_s3 | 1082 | 3664 | 745.3us | 226.6us |
 
 ### Metadata Operations (ops/s)
 
 | Driver | Stat | List (100 objects) | Delete |
 |--------|------|-------------------|--------|
-| devnull_s3 | 4229 | 999 | 4095 |
-| minio | 3203 | 461 | 2705 |
-| usagi_s3 | 3634 | 1049 | 4228 |
+| rustfs | 3426 | 193 | 1563 |
+| usagi | 4893524 | 61720 | 210637 |
+| usagi_s3 | 3869 | 1007 | 4621 |
 
 ### Concurrency Performance
 
@@ -71,9 +71,9 @@
 
 | Driver | C1 | C10 | C25 | C50 | C100 | C200 |
 |--------|------|------|------|------|------|------|
-| devnull_s3 | 1.38 | 0.40 | 0.19 | 0.11 | 0.06 | 0.03 |
-| minio | 1.25 | 0.25 | 0.09 | 0.05 | 0.02 | 0.01 |
-| usagi_s3 | 1.59 | 0.43 | 0.20 | 0.11 | 0.05 | 0.03 |
+| rustfs | 1.39 | 0.45 | 0.19 | 0.09 | 0.05 | 0.01 |
+| usagi | 93.11 | 21.51 | 0.00 | 4.05 | 2.31 | 0.78 |
+| usagi_s3 | 1.15 | 0.36 | 0.18 | 0.08 | 0.06 | 0.02 |
 
 *\* indicates errors occurred*
 
@@ -81,9 +81,9 @@
 
 | Driver | C1 | C10 | C25 | C50 | C100 | C200 |
 |--------|------|------|------|------|------|------|
-| devnull_s3 | 3.52 | 1.15 | 0.60 | 0.34 | 0.19 | 0.10 |
-| minio | 2.61 | 0.85 | 0.40 | 0.20 | 0.10 | 0.05 |
-| usagi_s3 | 3.89 | 1.18 | 0.61 | 0.37 | 0.19 | 0.10 |
+| rustfs | 2.07 | 0.87 | 0.36 | 0.15 | 0.10 | 0.04 |
+| usagi | 713.91 | 81.76 | 28.41 | 14.48 | 7.04 | 4.09 |
+| usagi_s3 | 4.03 | 1.29 | 0.56 | 0.34 | 0.16 | 0.09 |
 
 *\* indicates errors occurred*
 
@@ -95,9 +95,9 @@ Performance with varying numbers of objects (256B each).
 
 | Driver | 10 | 100 | 1000 | 10000 |
 |--------|------|------|------|------|
-| devnull_s3 | 7.0ms | 59.0ms | 602.4ms | 5.95s |
-| minio | 12.9ms | 118.8ms | 1.30s | 10.95s |
-| usagi_s3 | 14.1ms | 81.5ms | 545.7ms | 5.77s |
+| rustfs | 5.4ms | 62.3ms | 690.8ms | 6.72s |
+| usagi | 162.1us | 1.0ms | 11.3ms | 77.5ms |
+| usagi_s3 | 8.7ms | 81.3ms | 805.0ms | 7.26s |
 
 *\* indicates errors occurred*
 
@@ -105,9 +105,9 @@ Performance with varying numbers of objects (256B each).
 
 | Driver | 10 | 100 | 1000 | 10000 |
 |--------|------|------|------|------|
-| devnull_s3 | 449.4us | 1.0ms | 6.1ms | 208.4ms |
-| minio | 1.2ms | 2.1ms | 15.5ms | 179.5ms |
-| usagi_s3 | 487.2us | 1.0ms | 5.8ms | 234.4ms |
+| rustfs | 2.9ms | 6.9ms | 49.8ms | 632.6ms |
+| usagi | 1.04s | 1.32s | 1.17s | 945.2ms |
+| usagi_s3 | 1.3ms | 1.2ms | 7.7ms | 221.6ms |
 
 *\* indicates errors occurred*
 
@@ -115,9 +115,8 @@ Performance with varying numbers of objects (256B each).
 
 | Driver | Memory | CPU |
 |--------|--------|-----|
-| devnull_s3 | 1409.0 MB | 2.1% |
-| minio | 650.6 MB | 7.4% |
-| usagi_s3 | 1628.2 MB | 3.7% |
+| rustfs | 2167.8 MB | 0.1% |
+| usagi_s3 | 781.2 MB | 1.7% |
 
 ---
 
@@ -133,8 +132,8 @@ Performance with varying numbers of objects (256B each).
 
 ## Drivers Tested
 
-- **devnull_s3** (48 benchmarks)
-- **minio** (48 benchmarks)
+- **rustfs** (48 benchmarks)
+- **usagi** (48 benchmarks)
 - **usagi_s3** (48 benchmarks)
 
 ## Detailed Results
@@ -143,1072 +142,1071 @@ Performance with varying numbers of objects (256B each).
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.40 MB/s | 562.2us | 1.4ms | 2.3ms | 0 |
-| devnull_s3 | 1.36 MB/s | 631.3us | 1.3ms | 1.9ms | 0 |
-| minio | 0.80 MB/s | 1.1ms | 1.9ms | 2.5ms | 0 |
+| usagi | 94.36 MB/s | 4.8us | 16.6us | 42.9us | 0 |
+| usagi_s3 | 1.02 MB/s | 759.3us | 1.7ms | 3.6ms | 0 |
+| rustfs | 0.88 MB/s | 1.0ms | 1.7ms | 3.0ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.40 MB/s
-devnull_s3   █████████████████████████████ 1.36 MB/s
-minio        █████████████████ 0.80 MB/s
+usagi        ██████████████████████████████ 94.36 MB/s
+usagi_s3     █ 1.02 MB/s
+rustfs       █ 0.88 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████ 562.2us
-devnull_s3   ████████████████ 631.3us
-minio        ██████████████████████████████ 1.1ms
+usagi        █ 4.8us
+usagi_s3     ██████████████████████ 759.3us
+rustfs       ██████████████████████████████ 1.0ms
 ```
 
 ### Delete
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 4228 ops/s | 217.8us | 329.0us | 519.6us | 0 |
-| devnull_s3 | 4095 ops/s | 227.3us | 329.8us | 507.8us | 0 |
-| minio | 2705 ops/s | 352.7us | 472.3us | 667.8us | 0 |
+| usagi | 210637 ops/s | 3.8us | 5.8us | 21.3us | 0 |
+| usagi_s3 | 4621 ops/s | 197.4us | 323.8us | 434.1us | 0 |
+| rustfs | 1563 ops/s | 587.6us | 772.2us | 1.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 4228 ops/s
-devnull_s3   █████████████████████████████ 4095 ops/s
-minio        ███████████████████ 2705 ops/s
+usagi        ██████████████████████████████ 210637 ops/s
+usagi_s3     █ 4621 ops/s
+rustfs       █ 1563 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████ 217.8us
-devnull_s3   ███████████████████ 227.3us
-minio        ██████████████████████████████ 352.7us
+usagi        █ 3.8us
+usagi_s3     ██████████ 197.4us
+rustfs       ██████████████████████████████ 587.6us
 ```
 
 ### EdgeCase/DeepNested
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.17 MB/s | 526.3us | 680.2us | 931.8us | 0 |
-| devnull_s3 | 0.15 MB/s | 604.5us | 896.0us | 1.2ms | 0 |
-| minio | 0.07 MB/s | 1.2ms | 1.8ms | 3.0ms | 0 |
+| usagi | 1.83 MB/s | 3.2us | 12.3us | 28.5us | 0 |
+| rustfs | 0.15 MB/s | 608.2us | 797.9us | 973.5us | 0 |
+| usagi_s3 | 0.14 MB/s | 639.1us | 903.8us | 1.2ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.17 MB/s
-devnull_s3   █████████████████████████ 0.15 MB/s
-minio        ████████████ 0.07 MB/s
+usagi        ██████████████████████████████ 1.83 MB/s
+rustfs       ██ 0.15 MB/s
+usagi_s3     ██ 0.14 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████ 526.3us
-devnull_s3   ███████████████ 604.5us
-minio        ██████████████████████████████ 1.2ms
+usagi        █ 3.2us
+rustfs       ████████████████████████████ 608.2us
+usagi_s3     ██████████████████████████████ 639.1us
 ```
 
 ### EdgeCase/EmptyObject
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 2009 ops/s | 462.9us | 665.2us | 1.2ms | 0 |
-| devnull_s3 | 1771 ops/s | 485.0us | 774.0us | 1.1ms | 0 |
-| minio | 845 ops/s | 1.0ms | 2.0ms | 3.4ms | 0 |
+| usagi | 276989 ops/s | 2.7us | 3.5us | 17.7us | 0 |
+| rustfs | 1550 ops/s | 612.2us | 890.0us | 1.2ms | 0 |
+| usagi_s3 | 1472 ops/s | 608.2us | 1.0ms | 1.6ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 2009 ops/s
-devnull_s3   ██████████████████████████ 1771 ops/s
-minio        ████████████ 845 ops/s
+usagi        ██████████████████████████████ 276989 ops/s
+rustfs       █ 1550 ops/s
+usagi_s3     █ 1472 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████ 462.9us
-devnull_s3   ██████████████ 485.0us
-minio        ██████████████████████████████ 1.0ms
+usagi        █ 2.7us
+rustfs       ██████████████████████████████ 612.2us
+usagi_s3     █████████████████████████████ 608.2us
 ```
 
 ### EdgeCase/LongKey256
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.17 MB/s | 531.3us | 733.0us | 991.2us | 0 |
-| devnull_s3 | 0.15 MB/s | 577.5us | 937.4us | 1.6ms | 0 |
-| minio | 0.07 MB/s | 1.2ms | 1.9ms | 3.1ms | 0 |
+| usagi | 15.50 MB/s | 3.5us | 20.2us | 34.5us | 0 |
+| rustfs | 0.14 MB/s | 629.4us | 1.1ms | 1.9ms | 0 |
+| usagi_s3 | 0.13 MB/s | 671.5us | 1.2ms | 2.3ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.17 MB/s
-devnull_s3   ███████████████████████████ 0.15 MB/s
-minio        ████████████ 0.07 MB/s
+usagi        ██████████████████████████████ 15.50 MB/s
+rustfs       █ 0.14 MB/s
+usagi_s3     █ 0.13 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████ 531.3us
-devnull_s3   █████████████ 577.5us
-minio        ██████████████████████████████ 1.2ms
+usagi        █ 3.5us
+rustfs       ████████████████████████████ 629.4us
+usagi_s3     ██████████████████████████████ 671.5us
 ```
 
 ### List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1049 ops/s | 922.4us | 1.2ms | 1.7ms | 0 |
-| devnull_s3 | 999 ops/s | 986.4us | 1.1ms | 1.4ms | 0 |
-| minio | 461 ops/s | 1.9ms | 4.0ms | 6.1ms | 0 |
+| usagi | 61720 ops/s | 11.7us | 24.0us | 79.8us | 0 |
+| usagi_s3 | 1007 ops/s | 936.7us | 1.3ms | 2.2ms | 0 |
+| rustfs | 193 ops/s | 4.9ms | 6.5ms | 8.2ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1049 ops/s
-devnull_s3   ████████████████████████████ 999 ops/s
-minio        █████████████ 461 ops/s
+usagi        ██████████████████████████████ 61720 ops/s
+usagi_s3     █ 1007 ops/s
+rustfs       █ 193 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████ 922.4us
-devnull_s3   ███████████████ 986.4us
-minio        ██████████████████████████████ 1.9ms
+usagi        █ 11.7us
+usagi_s3     █████ 936.7us
+rustfs       ██████████████████████████████ 4.9ms
 ```
 
 ### MixedWorkload/Balanced_50_50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.53 MB/s | 23.8ms | 49.8ms | 64.0ms | 0 |
-| devnull_s3 | 0.48 MB/s | 23.7ms | 50.2ms | 249.1ms | 0 |
-| minio | 0.26 MB/s | 42.2ms | 140.3ms | 197.5ms | 0 |
+| usagi | 3.06 MB/s | 846.6us | 22.8ms | 46.6ms | 0 |
+| usagi_s3 | 0.55 MB/s | 22.9ms | 59.6ms | 111.9ms | 0 |
+| rustfs | 0.33 MB/s | 38.7ms | 70.7ms | 291.5ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.53 MB/s
-devnull_s3   ██████████████████████████ 0.48 MB/s
-minio        ███████████████ 0.26 MB/s
+usagi        ██████████████████████████████ 3.06 MB/s
+usagi_s3     █████ 0.55 MB/s
+rustfs       ███ 0.33 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████ 23.8ms
-devnull_s3   ████████████████ 23.7ms
-minio        ██████████████████████████████ 42.2ms
+usagi        █ 846.6us
+usagi_s3     █████████████████ 22.9ms
+rustfs       ██████████████████████████████ 38.7ms
 ```
 
 ### MixedWorkload/ReadHeavy_90_10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.63 MB/s | 24.4ms | 36.2ms | 50.4ms | 0 |
-| devnull_s3 | 0.61 MB/s | 25.2ms | 37.7ms | 44.0ms | 0 |
-| minio | 0.41 MB/s | 29.9ms | 102.4ms | 157.1ms | 0 |
+| usagi | 8.71 MB/s | 184.1us | 6.2ms | 26.0ms | 0 |
+| usagi_s3 | 0.70 MB/s | 21.8ms | 31.6ms | 41.1ms | 0 |
+| rustfs | 0.45 MB/s | 32.8ms | 57.9ms | 73.4ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.63 MB/s
-devnull_s3   █████████████████████████████ 0.61 MB/s
-minio        ███████████████████ 0.41 MB/s
+usagi        ██████████████████████████████ 8.71 MB/s
+usagi_s3     ██ 0.70 MB/s
+rustfs       █ 0.45 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████████ 24.4ms
-devnull_s3   █████████████████████████ 25.2ms
-minio        ██████████████████████████████ 29.9ms
+usagi        █ 184.1us
+usagi_s3     ███████████████████ 21.8ms
+rustfs       ██████████████████████████████ 32.8ms
 ```
 
 ### MixedWorkload/WriteHeavy_10_90
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.42 MB/s | 31.3ms | 61.7ms | 101.4ms | 0 |
-| devnull_s3 | 0.39 MB/s | 31.5ms | 59.0ms | 300.1ms | 0 |
-| minio | 0.14 MB/s | 102.6ms | 247.7ms | 325.4ms | 0 |
+| usagi | 1.84 MB/s | 5.2ms | 26.5ms | 69.5ms | 0 |
+| usagi_s3 | 0.31 MB/s | 47.9ms | 84.5ms | 121.4ms | 0 |
+| rustfs | 0.29 MB/s | 47.3ms | 60.7ms | 318.0ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.42 MB/s
-devnull_s3   ███████████████████████████ 0.39 MB/s
-minio        █████████ 0.14 MB/s
+usagi        ██████████████████████████████ 1.84 MB/s
+usagi_s3     █████ 0.31 MB/s
+rustfs       ████ 0.29 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████ 31.3ms
-devnull_s3   █████████ 31.5ms
-minio        ██████████████████████████████ 102.6ms
+usagi        ███ 5.2ms
+usagi_s3     ██████████████████████████████ 47.9ms
+rustfs       █████████████████████████████ 47.3ms
 ```
 
 ### Multipart/15MB_3Parts
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 125.88 MB/s | 119.1ms | 128.7ms | 128.7ms | 0 |
-| minio | 112.85 MB/s | 127.5ms | 148.8ms | 148.8ms | 0 |
-| devnull_s3 | 104.72 MB/s | 141.8ms | 149.9ms | 149.9ms | 0 |
+| usagi | 190.20 MB/s | 74.0ms | 115.8ms | 115.8ms | 0 |
+| usagi_s3 | 109.99 MB/s | 128.5ms | 139.4ms | 139.4ms | 0 |
+| rustfs | 98.92 MB/s | 124.2ms | 232.4ms | 232.4ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 125.88 MB/s
-minio        ██████████████████████████ 112.85 MB/s
-devnull_s3   ████████████████████████ 104.72 MB/s
+usagi        ██████████████████████████████ 190.20 MB/s
+usagi_s3     █████████████████ 109.99 MB/s
+rustfs       ███████████████ 98.92 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████████ 119.1ms
-minio        ██████████████████████████ 127.5ms
-devnull_s3   ██████████████████████████████ 141.8ms
+usagi        █████████████████ 74.0ms
+usagi_s3     ██████████████████████████████ 128.5ms
+rustfs       ████████████████████████████ 124.2ms
 ```
 
 ### ParallelRead/1KB/C1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 3.89 MB/s | 240.3us | 318.6us | 408.6us | 0 |
-| devnull_s3 | 3.52 MB/s | 262.7us | 361.0us | 464.8us | 0 |
-| minio | 2.61 MB/s | 350.4us | 471.9us | 909.3us | 0 |
+| usagi | 713.91 MB/s | 541ns | 2.8us | 5.6us | 0 |
+| usagi_s3 | 4.03 MB/s | 227.1us | 344.5us | 446.1us | 0 |
+| rustfs | 2.07 MB/s | 417.2us | 692.4us | 1.6ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 3.89 MB/s
-devnull_s3   ███████████████████████████ 3.52 MB/s
-minio        ████████████████████ 2.61 MB/s
+usagi        ██████████████████████████████ 713.91 MB/s
+usagi_s3     █ 4.03 MB/s
+rustfs       █ 2.07 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 240.3us
-devnull_s3   ██████████████████████ 262.7us
-minio        ██████████████████████████████ 350.4us
+usagi        █ 541ns
+usagi_s3     ████████████████ 227.1us
+rustfs       ██████████████████████████████ 417.2us
 ```
 
 ### ParallelRead/1KB/C10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.18 MB/s | 788.2us | 1.2ms | 1.7ms | 0 |
-| devnull_s3 | 1.15 MB/s | 825.5us | 1.2ms | 1.5ms | 0 |
-| minio | 0.85 MB/s | 1.1ms | 1.9ms | 2.9ms | 0 |
+| usagi | 81.76 MB/s | 792ns | 54.5us | 123.6us | 0 |
+| usagi_s3 | 1.29 MB/s | 716.5us | 1.2ms | 1.7ms | 0 |
+| rustfs | 0.87 MB/s | 1.1ms | 1.6ms | 1.9ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.18 MB/s
-devnull_s3   █████████████████████████████ 1.15 MB/s
-minio        █████████████████████ 0.85 MB/s
+usagi        ██████████████████████████████ 81.76 MB/s
+usagi_s3     █ 1.29 MB/s
+rustfs       █ 0.87 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 788.2us
-devnull_s3   ███████████████████████ 825.5us
-minio        ██████████████████████████████ 1.1ms
+usagi        █ 792ns
+usagi_s3     ███████████████████ 716.5us
+rustfs       ██████████████████████████████ 1.1ms
 ```
 
 ### ParallelRead/1KB/C100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.19 MB/s | 4.8ms | 7.9ms | 11.3ms | 0 |
-| devnull_s3 | 0.19 MB/s | 5.0ms | 8.3ms | 11.4ms | 0 |
-| minio | 0.10 MB/s | 9.0ms | 20.5ms | 31.4ms | 0 |
+| usagi | 7.04 MB/s | 1.2us | 657.6us | 1.3ms | 0 |
+| usagi_s3 | 0.16 MB/s | 5.2ms | 10.8ms | 21.7ms | 0 |
+| rustfs | 0.10 MB/s | 9.9ms | 13.7ms | 15.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.19 MB/s
-devnull_s3   ████████████████████████████ 0.19 MB/s
-minio        ██████████████ 0.10 MB/s
+usagi        ██████████████████████████████ 7.04 MB/s
+usagi_s3     █ 0.16 MB/s
+rustfs       █ 0.10 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████ 4.8ms
-devnull_s3   ████████████████ 5.0ms
-minio        ██████████████████████████████ 9.0ms
+usagi        █ 1.2us
+usagi_s3     ███████████████ 5.2ms
+rustfs       ██████████████████████████████ 9.9ms
 ```
 
 ### ParallelRead/1KB/C200
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.10 MB/s | 9.8ms | 15.1ms | 21.1ms | 0 |
-| devnull_s3 | 0.10 MB/s | 10.2ms | 14.8ms | 18.4ms | 0 |
-| minio | 0.05 MB/s | 18.4ms | 35.8ms | 48.0ms | 0 |
+| usagi | 4.09 MB/s | 1.2us | 1.2ms | 2.5ms | 0 |
+| usagi_s3 | 0.09 MB/s | 10.9ms | 16.0ms | 23.3ms | 0 |
+| rustfs | 0.04 MB/s | 22.3ms | 27.8ms | 32.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.10 MB/s
-devnull_s3   █████████████████████████████ 0.10 MB/s
-minio        ███████████████ 0.05 MB/s
+usagi        ██████████████████████████████ 4.09 MB/s
+usagi_s3     █ 0.09 MB/s
+rustfs       █ 0.04 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████ 9.8ms
-devnull_s3   ████████████████ 10.2ms
-minio        ██████████████████████████████ 18.4ms
+usagi        █ 1.2us
+usagi_s3     ██████████████ 10.9ms
+rustfs       ██████████████████████████████ 22.3ms
 ```
 
 ### ParallelRead/1KB/C25
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.61 MB/s | 1.5ms | 2.6ms | 3.7ms | 0 |
-| devnull_s3 | 0.60 MB/s | 1.6ms | 2.6ms | 3.5ms | 0 |
-| minio | 0.40 MB/s | 2.2ms | 4.1ms | 5.7ms | 0 |
+| usagi | 28.41 MB/s | 958ns | 176.0us | 387.0us | 0 |
+| usagi_s3 | 0.56 MB/s | 1.6ms | 3.1ms | 4.6ms | 0 |
+| rustfs | 0.36 MB/s | 2.6ms | 4.4ms | 6.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.61 MB/s
-devnull_s3   █████████████████████████████ 0.60 MB/s
-minio        ███████████████████ 0.40 MB/s
+usagi        ██████████████████████████████ 28.41 MB/s
+usagi_s3     █ 0.56 MB/s
+rustfs       █ 0.36 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 1.5ms
-devnull_s3   ████████████████████ 1.6ms
-minio        ██████████████████████████████ 2.2ms
+usagi        █ 958ns
+usagi_s3     ██████████████████ 1.6ms
+rustfs       ██████████████████████████████ 2.6ms
 ```
 
 ### ParallelRead/1KB/C50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.37 MB/s | 2.5ms | 4.0ms | 5.3ms | 0 |
-| devnull_s3 | 0.34 MB/s | 2.7ms | 4.8ms | 7.9ms | 0 |
-| minio | 0.20 MB/s | 4.4ms | 9.3ms | 15.6ms | 0 |
+| usagi | 14.48 MB/s | 1.1us | 317.0us | 665.0us | 0 |
+| usagi_s3 | 0.34 MB/s | 2.6ms | 5.3ms | 9.2ms | 0 |
+| rustfs | 0.15 MB/s | 6.2ms | 11.0ms | 15.5ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.37 MB/s
-devnull_s3   ███████████████████████████ 0.34 MB/s
-minio        ████████████████ 0.20 MB/s
+usagi        ██████████████████████████████ 14.48 MB/s
+usagi_s3     █ 0.34 MB/s
+rustfs       █ 0.15 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████ 2.5ms
-devnull_s3   █████████████████ 2.7ms
-minio        ██████████████████████████████ 4.4ms
+usagi        █ 1.1us
+usagi_s3     ████████████ 2.6ms
+rustfs       ██████████████████████████████ 6.2ms
 ```
 
 ### ParallelWrite/1KB/C1
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.59 MB/s | 586.6us | 772.2us | 1.0ms | 0 |
-| devnull_s3 | 1.38 MB/s | 649.9us | 990.7us | 1.6ms | 0 |
-| minio | 1.25 MB/s | 764.5us | 943.3us | 1.1ms | 0 |
+| usagi | 93.11 MB/s | 6.6us | 16.9us | 56.6us | 0 |
+| rustfs | 1.39 MB/s | 661.4us | 974.0us | 1.5ms | 0 |
+| usagi_s3 | 1.15 MB/s | 769.5us | 1.3ms | 2.3ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.59 MB/s
-devnull_s3   ██████████████████████████ 1.38 MB/s
-minio        ███████████████████████ 1.25 MB/s
+usagi        ██████████████████████████████ 93.11 MB/s
+rustfs       █ 1.39 MB/s
+usagi_s3     █ 1.15 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████████ 586.6us
-devnull_s3   █████████████████████████ 649.9us
-minio        ██████████████████████████████ 764.5us
+usagi        █ 6.6us
+rustfs       █████████████████████████ 661.4us
+usagi_s3     ██████████████████████████████ 769.5us
 ```
 
 ### ParallelWrite/1KB/C10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.43 MB/s | 2.1ms | 3.5ms | 7.9ms | 0 |
-| devnull_s3 | 0.40 MB/s | 2.2ms | 3.4ms | 7.0ms | 0 |
-| minio | 0.25 MB/s | 3.6ms | 6.6ms | 9.2ms | 0 |
+| usagi | 21.51 MB/s | 14.5us | 89.5us | 230.6us | 0 |
+| rustfs | 0.45 MB/s | 1.9ms | 3.5ms | 6.1ms | 0 |
+| usagi_s3 | 0.36 MB/s | 2.4ms | 4.4ms | 9.3ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.43 MB/s
-devnull_s3   ████████████████████████████ 0.40 MB/s
-minio        █████████████████ 0.25 MB/s
+usagi        ██████████████████████████████ 21.51 MB/s
+rustfs       █ 0.45 MB/s
+usagi_s3     █ 0.36 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████ 2.1ms
-devnull_s3   ██████████████████ 2.2ms
-minio        ██████████████████████████████ 3.6ms
+usagi        █ 14.5us
+rustfs       ████████████████████████ 1.9ms
+usagi_s3     ██████████████████████████████ 2.4ms
 ```
 
 ### ParallelWrite/1KB/C100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 0.06 MB/s | 16.0ms | 33.9ms | 45.1ms | 0 |
-| usagi_s3 | 0.05 MB/s | 15.9ms | 37.7ms | 54.6ms | 0 |
-| minio | 0.02 MB/s | 48.2ms | 96.1ms | 125.1ms | 0 |
+| usagi | 2.31 MB/s | 19.2us | 1.2ms | 9.0ms | 0 |
+| usagi_s3 | 0.06 MB/s | 15.5ms | 34.4ms | 53.5ms | 0 |
+| rustfs | 0.05 MB/s | 19.0ms | 31.4ms | 80.0ms | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 0.06 MB/s
-usagi_s3     █████████████████████████████ 0.05 MB/s
-minio        ██████████ 0.02 MB/s
+usagi        ██████████████████████████████ 2.31 MB/s
+usagi_s3     █ 0.06 MB/s
+rustfs       █ 0.05 MB/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   █████████ 16.0ms
-usagi_s3     █████████ 15.9ms
-minio        ██████████████████████████████ 48.2ms
+usagi        █ 19.2us
+usagi_s3     ████████████████████████ 15.5ms
+rustfs       ██████████████████████████████ 19.0ms
 ```
 
 ### ParallelWrite/1KB/C200
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.03 MB/s | 33.6ms | 64.2ms | 79.7ms | 0 |
-| devnull_s3 | 0.03 MB/s | 29.3ms | 87.3ms | 117.0ms | 0 |
-| minio | 0.01 MB/s | 82.3ms | 188.4ms | 286.7ms | 0 |
+| usagi | 0.78 MB/s | 294.9us | 4.5ms | 13.2ms | 0 |
+| usagi_s3 | 0.02 MB/s | 35.3ms | 86.2ms | 105.1ms | 0 |
+| rustfs | 0.01 MB/s | 37.0ms | 53.3ms | 968.4ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.03 MB/s
-devnull_s3   ████████████████████████████ 0.03 MB/s
-minio        ███████████ 0.01 MB/s
+usagi        ██████████████████████████████ 0.78 MB/s
+usagi_s3     █ 0.02 MB/s
+rustfs       █ 0.01 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████ 33.6ms
-devnull_s3   ██████████ 29.3ms
-minio        ██████████████████████████████ 82.3ms
+usagi        █ 294.9us
+usagi_s3     ████████████████████████████ 35.3ms
+rustfs       ██████████████████████████████ 37.0ms
 ```
 
 ### ParallelWrite/1KB/C25
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.20 MB/s | 4.4ms | 9.1ms | 15.9ms | 0 |
-| devnull_s3 | 0.19 MB/s | 4.9ms | 9.2ms | 11.8ms | 0 |
-| minio | 0.09 MB/s | 9.5ms | 20.6ms | 32.6ms | 0 |
+| rustfs | 0.19 MB/s | 4.5ms | 9.0ms | 12.6ms | 0 |
+| usagi_s3 | 0.18 MB/s | 4.9ms | 9.7ms | 15.5ms | 0 |
+| usagi | 0.00 MB/s | 224.3us | 224.3us | 224.3us | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.20 MB/s
-devnull_s3   ████████████████████████████ 0.19 MB/s
-minio        █████████████ 0.09 MB/s
+rustfs       ██████████████████████████████ 0.19 MB/s
+usagi_s3     ████████████████████████████ 0.18 MB/s
+usagi        █ 0.00 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████ 4.4ms
-devnull_s3   ███████████████ 4.9ms
-minio        ██████████████████████████████ 9.5ms
+rustfs       ████████████████████████████ 4.5ms
+usagi_s3     ██████████████████████████████ 4.9ms
+usagi        █ 224.3us
 ```
 
 ### ParallelWrite/1KB/C50
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.11 MB/s | 8.0ms | 15.1ms | 19.3ms | 0 |
-| devnull_s3 | 0.11 MB/s | 7.7ms | 18.0ms | 33.3ms | 0 |
-| minio | 0.05 MB/s | 18.6ms | 40.3ms | 49.2ms | 0 |
+| usagi | 4.05 MB/s | 16.2us | 630.7us | 2.4ms | 0 |
+| rustfs | 0.09 MB/s | 10.1ms | 16.3ms | 20.4ms | 0 |
+| usagi_s3 | 0.08 MB/s | 10.4ms | 31.2ms | 44.5ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.11 MB/s
-devnull_s3   ████████████████████████████ 0.11 MB/s
-minio        ████████████ 0.05 MB/s
+usagi        ██████████████████████████████ 4.05 MB/s
+rustfs       █ 0.09 MB/s
+usagi_s3     █ 0.08 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████ 8.0ms
-devnull_s3   ████████████ 7.7ms
-minio        ██████████████████████████████ 18.6ms
+usagi        █ 16.2us
+rustfs       █████████████████████████████ 10.1ms
+usagi_s3     ██████████████████████████████ 10.4ms
 ```
 
 ### RangeRead/End_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 155.02 MB/s | 1.6ms | 1.9ms | 2.6ms | 0 |
-| devnull_s3 | 150.84 MB/s | 1.6ms | 2.0ms | 2.4ms | 0 |
-| minio | 107.28 MB/s | 2.2ms | 3.2ms | 3.9ms | 0 |
+| usagi | 10601.18 MB/s | 20.7us | 34.5us | 69.0us | 0 |
+| usagi_s3 | 151.79 MB/s | 1.5ms | 2.0ms | 3.8ms | 0 |
+| rustfs | 79.33 MB/s | 2.8ms | 4.8ms | 7.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 155.02 MB/s
-devnull_s3   █████████████████████████████ 150.84 MB/s
-minio        ████████████████████ 107.28 MB/s
+usagi        ██████████████████████████████ 10601.18 MB/s
+usagi_s3     █ 151.79 MB/s
+rustfs       █ 79.33 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████ 1.6ms
-devnull_s3   ██████████████████████ 1.6ms
-minio        ██████████████████████████████ 2.2ms
+usagi        █ 20.7us
+usagi_s3     ████████████████ 1.5ms
+rustfs       ██████████████████████████████ 2.8ms
 ```
 
 ### RangeRead/Middle_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 156.09 MB/s | 1.6ms | 1.8ms | 2.1ms | 0 |
-| devnull_s3 | 145.68 MB/s | 1.7ms | 2.1ms | 2.7ms | 0 |
-| minio | 108.97 MB/s | 2.1ms | 3.2ms | 4.7ms | 0 |
+| usagi | 10690.63 MB/s | 20.8us | 33.2us | 62.2us | 0 |
+| usagi_s3 | 144.70 MB/s | 1.6ms | 2.3ms | 2.9ms | 0 |
+| rustfs | 76.80 MB/s | 3.0ms | 5.2ms | 7.0ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 156.09 MB/s
-devnull_s3   ███████████████████████████ 145.68 MB/s
-minio        ████████████████████ 108.97 MB/s
+usagi        ██████████████████████████████ 10690.63 MB/s
+usagi_s3     █ 144.70 MB/s
+rustfs       █ 76.80 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 1.6ms
-devnull_s3   ███████████████████████ 1.7ms
-minio        ██████████████████████████████ 2.1ms
+usagi        █ 20.8us
+usagi_s3     ████████████████ 1.6ms
+rustfs       ██████████████████████████████ 3.0ms
 ```
 
 ### RangeRead/Start_256KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 135.10 MB/s | 1.7ms | 2.3ms | 4.3ms | 0 |
-| devnull_s3 | 127.87 MB/s | 1.8ms | 2.8ms | 3.6ms | 0 |
-| minio | 87.58 MB/s | 2.5ms | 5.1ms | 8.7ms | 0 |
+| usagi | 8840.59 MB/s | 22.2us | 48.5us | 127.0us | 0 |
+| usagi_s3 | 136.99 MB/s | 1.7ms | 2.7ms | 3.3ms | 0 |
+| rustfs | 79.77 MB/s | 2.9ms | 4.7ms | 6.3ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 135.10 MB/s
-devnull_s3   ████████████████████████████ 127.87 MB/s
-minio        ███████████████████ 87.58 MB/s
+usagi        ██████████████████████████████ 8840.59 MB/s
+usagi_s3     █ 136.99 MB/s
+rustfs       █ 79.77 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████████████ 1.7ms
-devnull_s3   ██████████████████████ 1.8ms
-minio        ██████████████████████████████ 2.5ms
+usagi        █ 22.2us
+usagi_s3     █████████████████ 1.7ms
+rustfs       ██████████████████████████████ 2.9ms
 ```
 
 ### Read/100MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 237.37 MB/s | 417.7ms | 417.7ms | 417.7ms | 0 |
-| usagi_s3 | 173.97 MB/s | 577.9ms | 577.9ms | 577.9ms | 0 |
-| devnull_s3 | 165.22 MB/s | 612.7ms | 612.7ms | 612.7ms | 0 |
+| usagi | 6532.68 MB/s | 12.8ms | 30.5ms | 45.4ms | 0 |
+| rustfs | 216.78 MB/s | 429.1ms | 429.1ms | 429.1ms | 0 |
+| usagi_s3 | 195.54 MB/s | 503.0ms | 503.0ms | 503.0ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 237.37 MB/s
-usagi_s3     █████████████████████ 173.97 MB/s
-devnull_s3   ████████████████████ 165.22 MB/s
+usagi        ██████████████████████████████ 6532.68 MB/s
+rustfs       █ 216.78 MB/s
+usagi_s3     █ 195.54 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ████████████████████ 417.7ms
-usagi_s3     ████████████████████████████ 577.9ms
-devnull_s3   ██████████████████████████████ 612.7ms
+usagi        █ 12.8ms
+rustfs       █████████████████████████ 429.1ms
+usagi_s3     ██████████████████████████████ 503.0ms
 ```
 
 ### Read/10MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 242.38 MB/s | 40.6ms | 42.6ms | 44.9ms | 0 |
-| usagi_s3 | 182.26 MB/s | 53.4ms | 61.6ms | 61.7ms | 0 |
-| devnull_s3 | 168.17 MB/s | 58.9ms | 64.1ms | 67.6ms | 0 |
+| usagi | 8859.27 MB/s | 1.1ms | 1.4ms | 2.1ms | 0 |
+| rustfs | 220.63 MB/s | 44.3ms | 51.8ms | 51.9ms | 0 |
+| usagi_s3 | 172.16 MB/s | 51.1ms | 81.6ms | 82.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 242.38 MB/s
-usagi_s3     ██████████████████████ 182.26 MB/s
-devnull_s3   ████████████████████ 168.17 MB/s
+usagi        ██████████████████████████████ 8859.27 MB/s
+rustfs       █ 220.63 MB/s
+usagi_s3     █ 172.16 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ████████████████████ 40.6ms
-usagi_s3     ███████████████████████████ 53.4ms
-devnull_s3   ██████████████████████████████ 58.9ms
+usagi        █ 1.1ms
+rustfs       ██████████████████████████ 44.3ms
+usagi_s3     ██████████████████████████████ 51.1ms
 ```
 
 ### Read/1KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 4.53 MB/s | 202.1us | 303.5us | 411.8us | 0 |
-| devnull_s3 | 4.00 MB/s | 231.0us | 329.8us | 433.0us | 0 |
-| minio | 2.45 MB/s | 328.0us | 660.9us | 1.7ms | 0 |
+| usagi | 3367.69 MB/s | 208ns | 500ns | 1.4us | 0 |
+| usagi_s3 | 3.58 MB/s | 226.6us | 541.7us | 928.2us | 0 |
+| rustfs | 2.46 MB/s | 381.2us | 498.0us | 619.7us | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 4.53 MB/s
-devnull_s3   ██████████████████████████ 4.00 MB/s
-minio        ████████████████ 2.45 MB/s
+usagi        ██████████████████████████████ 3367.69 MB/s
+usagi_s3     █ 3.58 MB/s
+rustfs       █ 2.46 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████ 202.1us
-devnull_s3   █████████████████████ 231.0us
-minio        ██████████████████████████████ 328.0us
+usagi        █ 208ns
+usagi_s3     █████████████████ 226.6us
+rustfs       ██████████████████████████████ 381.2us
 ```
 
 ### Read/1MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 198.42 MB/s | 4.7ms | 6.9ms | 9.4ms | 0 |
-| usagi_s3 | 187.54 MB/s | 5.0ms | 7.6ms | 9.1ms | 0 |
-| devnull_s3 | 173.12 MB/s | 5.7ms | 6.6ms | 7.2ms | 0 |
+| usagi | 8349.51 MB/s | 108.5us | 137.6us | 364.2us | 0 |
+| usagi_s3 | 174.26 MB/s | 5.1ms | 9.3ms | 11.3ms | 0 |
+| rustfs | 172.98 MB/s | 5.3ms | 8.1ms | 9.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 198.42 MB/s
-usagi_s3     ████████████████████████████ 187.54 MB/s
-devnull_s3   ██████████████████████████ 173.12 MB/s
+usagi        ██████████████████████████████ 8349.51 MB/s
+usagi_s3     █ 174.26 MB/s
+rustfs       █ 172.98 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ████████████████████████ 4.7ms
-usagi_s3     ██████████████████████████ 5.0ms
-devnull_s3   ██████████████████████████████ 5.7ms
+usagi        █ 108.5us
+usagi_s3     ████████████████████████████ 5.1ms
+rustfs       ██████████████████████████████ 5.3ms
 ```
 
 ### Read/64KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 116.08 MB/s | 503.8us | 781.6us | 1.2ms | 0 |
-| devnull_s3 | 101.89 MB/s | 593.7us | 783.7us | 1.0ms | 0 |
-| minio | 98.99 MB/s | 576.6us | 905.6us | 1.6ms | 0 |
+| usagi | 16505.96 MB/s | 2.3us | 6.8us | 27.0us | 0 |
+| usagi_s3 | 118.29 MB/s | 504.1us | 728.1us | 932.8us | 0 |
+| rustfs | 76.48 MB/s | 708.0us | 1.3ms | 2.0ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 116.08 MB/s
-devnull_s3   ██████████████████████████ 101.89 MB/s
-minio        █████████████████████████ 98.99 MB/s
+usagi        ██████████████████████████████ 16505.96 MB/s
+usagi_s3     █ 118.29 MB/s
+rustfs       █ 76.48 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████████████ 503.8us
-devnull_s3   ██████████████████████████████ 593.7us
-minio        █████████████████████████████ 576.6us
+usagi        █ 2.3us
+usagi_s3     █████████████████████ 504.1us
+rustfs       ██████████████████████████████ 708.0us
 ```
 
 ### Scale/Delete/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 388 ops/s | 2.6ms | 2.6ms | 2.6ms | 0 |
-| usagi_s3 | 355 ops/s | 2.8ms | 2.8ms | 2.8ms | 0 |
-| minio | 152 ops/s | 6.6ms | 6.6ms | 6.6ms | 0 |
+| usagi | 3966 ops/s | 252.2us | 252.2us | 252.2us | 0 |
+| usagi_s3 | 125 ops/s | 8.0ms | 8.0ms | 8.0ms | 0 |
+| rustfs | 103 ops/s | 9.7ms | 9.7ms | 9.7ms | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 388 ops/s
-usagi_s3     ███████████████████████████ 355 ops/s
-minio        ███████████ 152 ops/s
+usagi        ██████████████████████████████ 3966 ops/s
+usagi_s3     █ 125 ops/s
+rustfs       █ 103 ops/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   ███████████ 2.6ms
-usagi_s3     ████████████ 2.8ms
-minio        ██████████████████████████████ 6.6ms
+usagi        █ 252.2us
+usagi_s3     ████████████████████████ 8.0ms
+rustfs       ██████████████████████████████ 9.7ms
 ```
 
 ### Scale/Delete/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 43 ops/s | 23.4ms | 23.4ms | 23.4ms | 0 |
-| devnull_s3 | 41 ops/s | 24.3ms | 24.3ms | 24.3ms | 0 |
-| minio | 21 ops/s | 47.3ms | 47.3ms | 47.3ms | 0 |
+| usagi | 1355 ops/s | 737.9us | 737.9us | 737.9us | 0 |
+| usagi_s3 | 45 ops/s | 22.3ms | 22.3ms | 22.3ms | 0 |
+| rustfs | 14 ops/s | 73.1ms | 73.1ms | 73.1ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 43 ops/s
-devnull_s3   ████████████████████████████ 41 ops/s
-minio        ██████████████ 21 ops/s
+usagi        ██████████████████████████████ 1355 ops/s
+usagi_s3     █ 45 ops/s
+rustfs       █ 14 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████ 23.4ms
-devnull_s3   ███████████████ 24.3ms
-minio        ██████████████████████████████ 47.3ms
+usagi        █ 737.9us
+usagi_s3     █████████ 22.3ms
+rustfs       ██████████████████████████████ 73.1ms
 ```
 
 ### Scale/Delete/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 4 ops/s | 237.9ms | 237.9ms | 237.9ms | 0 |
-| usagi_s3 | 4 ops/s | 257.2ms | 257.2ms | 257.2ms | 0 |
-| minio | 2 ops/s | 582.7ms | 582.7ms | 582.7ms | 0 |
+| usagi | 277 ops/s | 3.6ms | 3.6ms | 3.6ms | 0 |
+| usagi_s3 | 4 ops/s | 228.7ms | 228.7ms | 228.7ms | 0 |
+| rustfs | 1 ops/s | 835.8ms | 835.8ms | 835.8ms | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 4 ops/s
-usagi_s3     ███████████████████████████ 4 ops/s
-minio        ████████████ 2 ops/s
+usagi        ██████████████████████████████ 277 ops/s
+usagi_s3     █ 4 ops/s
+rustfs       █ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   ████████████ 237.9ms
-usagi_s3     █████████████ 257.2ms
-minio        ██████████████████████████████ 582.7ms
+usagi        █ 3.6ms
+usagi_s3     ████████ 228.7ms
+rustfs       ██████████████████████████████ 835.8ms
 ```
 
 ### Scale/Delete/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0 ops/s | 2.36s | 2.36s | 2.36s | 0 |
-| devnull_s3 | 0 ops/s | 2.44s | 2.44s | 2.44s | 0 |
-| minio | 0 ops/s | 3.99s | 3.99s | 3.99s | 0 |
+| usagi | 19 ops/s | 53.0ms | 53.0ms | 53.0ms | 0 |
+| usagi_s3 | 0 ops/s | 2.74s | 2.74s | 2.74s | 0 |
+| rustfs | 0 ops/s | 7.77s | 7.77s | 7.77s | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0 ops/s
-devnull_s3   █████████████████████████████ 0 ops/s
-minio        █████████████████ 0 ops/s
+usagi        ██████████████████████████████ 19 ops/s
+usagi_s3     █ 0 ops/s
+rustfs       █ 0 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     █████████████████ 2.36s
-devnull_s3   ██████████████████ 2.44s
-minio        ██████████████████████████████ 3.99s
+usagi        █ 53.0ms
+usagi_s3     ██████████ 2.74s
+rustfs       ██████████████████████████████ 7.77s
 ```
 
 ### Scale/List/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 2225 ops/s | 449.4us | 449.4us | 449.4us | 0 |
-| usagi_s3 | 2053 ops/s | 487.2us | 487.2us | 487.2us | 0 |
-| minio | 832 ops/s | 1.2ms | 1.2ms | 1.2ms | 0 |
+| usagi_s3 | 744 ops/s | 1.3ms | 1.3ms | 1.3ms | 0 |
+| rustfs | 347 ops/s | 2.9ms | 2.9ms | 2.9ms | 0 |
+| usagi | 1 ops/s | 1.04s | 1.04s | 1.04s | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 2225 ops/s
-usagi_s3     ███████████████████████████ 2053 ops/s
-minio        ███████████ 832 ops/s
+usagi_s3     ██████████████████████████████ 744 ops/s
+rustfs       █████████████ 347 ops/s
+usagi        █ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   ███████████ 449.4us
-usagi_s3     ████████████ 487.2us
-minio        ██████████████████████████████ 1.2ms
+usagi_s3     █ 1.3ms
+rustfs       █ 2.9ms
+usagi        ██████████████████████████████ 1.04s
 ```
 
 ### Scale/List/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 959 ops/s | 1.0ms | 1.0ms | 1.0ms | 0 |
-| devnull_s3 | 958 ops/s | 1.0ms | 1.0ms | 1.0ms | 0 |
-| minio | 474 ops/s | 2.1ms | 2.1ms | 2.1ms | 0 |
+| usagi_s3 | 842 ops/s | 1.2ms | 1.2ms | 1.2ms | 0 |
+| rustfs | 145 ops/s | 6.9ms | 6.9ms | 6.9ms | 0 |
+| usagi | 1 ops/s | 1.32s | 1.32s | 1.32s | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 959 ops/s
-devnull_s3   █████████████████████████████ 958 ops/s
-minio        ██████████████ 474 ops/s
+usagi_s3     ██████████████████████████████ 842 ops/s
+rustfs       █████ 145 ops/s
+usagi        █ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████ 1.0ms
-devnull_s3   ██████████████ 1.0ms
-minio        ██████████████████████████████ 2.1ms
+usagi_s3     █ 1.2ms
+rustfs       █ 6.9ms
+usagi        ██████████████████████████████ 1.32s
 ```
 
 ### Scale/List/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 174 ops/s | 5.8ms | 5.8ms | 5.8ms | 0 |
-| devnull_s3 | 163 ops/s | 6.1ms | 6.1ms | 6.1ms | 0 |
-| minio | 65 ops/s | 15.5ms | 15.5ms | 15.5ms | 0 |
+| usagi_s3 | 130 ops/s | 7.7ms | 7.7ms | 7.7ms | 0 |
+| rustfs | 20 ops/s | 49.8ms | 49.8ms | 49.8ms | 0 |
+| usagi | 1 ops/s | 1.17s | 1.17s | 1.17s | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 174 ops/s
-devnull_s3   ████████████████████████████ 163 ops/s
-minio        ███████████ 65 ops/s
+usagi_s3     ██████████████████████████████ 130 ops/s
+rustfs       ████ 20 ops/s
+usagi        █ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████ 5.8ms
-devnull_s3   ███████████ 6.1ms
-minio        ██████████████████████████████ 15.5ms
+usagi_s3     █ 7.7ms
+rustfs       █ 49.8ms
+usagi        ██████████████████████████████ 1.17s
 ```
 
 ### Scale/List/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 6 ops/s | 179.5ms | 179.5ms | 179.5ms | 0 |
-| devnull_s3 | 5 ops/s | 208.4ms | 208.4ms | 208.4ms | 0 |
-| usagi_s3 | 4 ops/s | 234.4ms | 234.4ms | 234.4ms | 0 |
+| usagi_s3 | 5 ops/s | 221.6ms | 221.6ms | 221.6ms | 0 |
+| rustfs | 2 ops/s | 632.6ms | 632.6ms | 632.6ms | 0 |
+| usagi | 1 ops/s | 945.2ms | 945.2ms | 945.2ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 6 ops/s
-devnull_s3   █████████████████████████ 5 ops/s
-usagi_s3     ██████████████████████ 4 ops/s
+usagi_s3     ██████████████████████████████ 5 ops/s
+rustfs       ██████████ 2 ops/s
+usagi        ███████ 1 ops/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████████ 179.5ms
-devnull_s3   ██████████████████████████ 208.4ms
-usagi_s3     ██████████████████████████████ 234.4ms
+usagi_s3     ███████ 221.6ms
+rustfs       ████████████████████ 632.6ms
+usagi        ██████████████████████████████ 945.2ms
 ```
 
 ### Scale/Write/10
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 0.35 MB/s | 7.0ms | 7.0ms | 7.0ms | 0 |
-| minio | 0.19 MB/s | 12.9ms | 12.9ms | 12.9ms | 0 |
-| usagi_s3 | 0.17 MB/s | 14.1ms | 14.1ms | 14.1ms | 0 |
+| usagi | 15.06 MB/s | 162.1us | 162.1us | 162.1us | 0 |
+| rustfs | 0.45 MB/s | 5.4ms | 5.4ms | 5.4ms | 0 |
+| usagi_s3 | 0.28 MB/s | 8.7ms | 8.7ms | 8.7ms | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 0.35 MB/s
-minio        ████████████████ 0.19 MB/s
-usagi_s3     ██████████████ 0.17 MB/s
+usagi        ██████████████████████████████ 15.06 MB/s
+rustfs       █ 0.45 MB/s
+usagi_s3     █ 0.28 MB/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   ██████████████ 7.0ms
-minio        ███████████████████████████ 12.9ms
-usagi_s3     ██████████████████████████████ 14.1ms
+usagi        █ 162.1us
+rustfs       ██████████████████ 5.4ms
+usagi_s3     ██████████████████████████████ 8.7ms
 ```
 
 ### Scale/Write/100
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 0.41 MB/s | 59.0ms | 59.0ms | 59.0ms | 0 |
-| usagi_s3 | 0.30 MB/s | 81.5ms | 81.5ms | 81.5ms | 0 |
-| minio | 0.21 MB/s | 118.8ms | 118.8ms | 118.8ms | 0 |
+| usagi | 24.28 MB/s | 1.0ms | 1.0ms | 1.0ms | 0 |
+| rustfs | 0.39 MB/s | 62.3ms | 62.3ms | 62.3ms | 0 |
+| usagi_s3 | 0.30 MB/s | 81.3ms | 81.3ms | 81.3ms | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 0.41 MB/s
-usagi_s3     █████████████████████ 0.30 MB/s
-minio        ██████████████ 0.21 MB/s
+usagi        ██████████████████████████████ 24.28 MB/s
+rustfs       █ 0.39 MB/s
+usagi_s3     █ 0.30 MB/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   ██████████████ 59.0ms
-usagi_s3     ████████████████████ 81.5ms
-minio        ██████████████████████████████ 118.8ms
+usagi        █ 1.0ms
+rustfs       ███████████████████████ 62.3ms
+usagi_s3     ██████████████████████████████ 81.3ms
 ```
 
 ### Scale/Write/1000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.45 MB/s | 545.7ms | 545.7ms | 545.7ms | 0 |
-| devnull_s3 | 0.41 MB/s | 602.4ms | 602.4ms | 602.4ms | 0 |
-| minio | 0.19 MB/s | 1.30s | 1.30s | 1.30s | 0 |
+| usagi | 21.68 MB/s | 11.3ms | 11.3ms | 11.3ms | 0 |
+| rustfs | 0.35 MB/s | 690.8ms | 690.8ms | 690.8ms | 0 |
+| usagi_s3 | 0.30 MB/s | 805.0ms | 805.0ms | 805.0ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.45 MB/s
-devnull_s3   ███████████████████████████ 0.41 MB/s
-minio        ████████████ 0.19 MB/s
+usagi        ██████████████████████████████ 21.68 MB/s
+rustfs       █ 0.35 MB/s
+usagi_s3     █ 0.30 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ████████████ 545.7ms
-devnull_s3   █████████████ 602.4ms
-minio        ██████████████████████████████ 1.30s
+usagi        █ 11.3ms
+rustfs       █████████████████████████ 690.8ms
+usagi_s3     ██████████████████████████████ 805.0ms
 ```
 
 ### Scale/Write/10000
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 0.42 MB/s | 5.77s | 5.77s | 5.77s | 0 |
-| devnull_s3 | 0.41 MB/s | 5.95s | 5.95s | 5.95s | 0 |
-| minio | 0.22 MB/s | 10.95s | 10.95s | 10.95s | 0 |
+| usagi | 31.51 MB/s | 77.5ms | 77.5ms | 77.5ms | 0 |
+| rustfs | 0.36 MB/s | 6.72s | 6.72s | 6.72s | 0 |
+| usagi_s3 | 0.34 MB/s | 7.26s | 7.26s | 7.26s | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 0.42 MB/s
-devnull_s3   █████████████████████████████ 0.41 MB/s
-minio        ███████████████ 0.22 MB/s
+usagi        ██████████████████████████████ 31.51 MB/s
+rustfs       █ 0.36 MB/s
+usagi_s3     █ 0.34 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████ 5.77s
-devnull_s3   ████████████████ 5.95s
-minio        ██████████████████████████████ 10.95s
+usagi        █ 77.5ms
+rustfs       ███████████████████████████ 6.72s
+usagi_s3     ██████████████████████████████ 7.26s
 ```
 
 ### Stat
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| devnull_s3 | 4229 ops/s | 221.2us | 331.2us | 486.0us | 0 |
-| usagi_s3 | 3634 ops/s | 235.5us | 518.3us | 788.8us | 0 |
-| minio | 3203 ops/s | 298.9us | 396.0us | 594.9us | 0 |
+| usagi | 4893524 ops/s | 84ns | 125ns | 500ns | 0 |
+| usagi_s3 | 3869 ops/s | 208.6us | 529.6us | 695.6us | 0 |
+| rustfs | 3426 ops/s | 271.8us | 400.8us | 725.8us | 0 |
 
 **Throughput**
 ```
-devnull_s3   ██████████████████████████████ 4229 ops/s
-usagi_s3     █████████████████████████ 3634 ops/s
-minio        ██████████████████████ 3203 ops/s
+usagi        ██████████████████████████████ 4893524 ops/s
+usagi_s3     █ 3869 ops/s
+rustfs       █ 3426 ops/s
 ```
 
 **Latency (P50)**
 ```
-devnull_s3   ██████████████████████ 221.2us
-usagi_s3     ███████████████████████ 235.5us
-minio        ██████████████████████████████ 298.9us
+usagi        █ 84ns
+usagi_s3     ███████████████████████ 208.6us
+rustfs       ██████████████████████████████ 271.8us
 ```
 
 ### Write/100MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 152.32 MB/s | 654.3ms | 654.3ms | 654.3ms | 0 |
-| minio | 146.82 MB/s | 681.8ms | 681.8ms | 681.8ms | 0 |
-| devnull_s3 | 123.74 MB/s | 818.0ms | 818.0ms | 818.0ms | 0 |
+| usagi | 483.50 MB/s | 228.5ms | 231.7ms | 231.7ms | 0 |
+| rustfs | 164.38 MB/s | 632.8ms | 632.8ms | 632.8ms | 0 |
+| usagi_s3 | 148.51 MB/s | 682.3ms | 682.3ms | 682.3ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 152.32 MB/s
-minio        ████████████████████████████ 146.82 MB/s
-devnull_s3   ████████████████████████ 123.74 MB/s
+usagi        ██████████████████████████████ 483.50 MB/s
+rustfs       ██████████ 164.38 MB/s
+usagi_s3     █████████ 148.51 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████████ 654.3ms
-minio        █████████████████████████ 681.8ms
-devnull_s3   ██████████████████████████████ 818.0ms
+usagi        ██████████ 228.5ms
+rustfs       ███████████████████████████ 632.8ms
+usagi_s3     ██████████████████████████████ 682.3ms
 ```
 
 ### Write/10MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| minio | 143.83 MB/s | 68.2ms | 83.1ms | 83.1ms | 0 |
-| usagi_s3 | 142.54 MB/s | 69.8ms | 76.4ms | 76.6ms | 0 |
-| devnull_s3 | 128.90 MB/s | 77.8ms | 82.7ms | 82.7ms | 0 |
+| usagi | 398.53 MB/s | 14.5ms | 52.2ms | 61.5ms | 0 |
+| rustfs | 169.85 MB/s | 56.6ms | 64.7ms | 66.5ms | 0 |
+| usagi_s3 | 143.82 MB/s | 68.1ms | 83.5ms | 83.5ms | 0 |
 
 **Throughput**
 ```
-minio        ██████████████████████████████ 143.83 MB/s
-usagi_s3     █████████████████████████████ 142.54 MB/s
-devnull_s3   ██████████████████████████ 128.90 MB/s
+usagi        ██████████████████████████████ 398.53 MB/s
+rustfs       ████████████ 169.85 MB/s
+usagi_s3     ██████████ 143.82 MB/s
 ```
 
 **Latency (P50)**
 ```
-minio        ██████████████████████████ 68.2ms
-usagi_s3     ██████████████████████████ 69.8ms
-devnull_s3   ██████████████████████████████ 77.8ms
+usagi        ██████ 14.5ms
+rustfs       ████████████████████████ 56.6ms
+usagi_s3     ██████████████████████████████ 68.1ms
 ```
 
 ### Write/1KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 1.81 MB/s | 512.2us | 676.1us | 1.1ms | 0 |
-| devnull_s3 | 1.53 MB/s | 589.5us | 953.7us | 1.6ms | 0 |
-| minio | 1.10 MB/s | 819.1us | 1.3ms | 1.8ms | 0 |
+| usagi | 231.68 MB/s | 2.5us | 5.7us | 11.7us | 0 |
+| rustfs | 1.58 MB/s | 586.5us | 819.3us | 1.2ms | 0 |
+| usagi_s3 | 1.06 MB/s | 745.3us | 2.0ms | 2.7ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 1.81 MB/s
-devnull_s3   █████████████████████████ 1.53 MB/s
-minio        ██████████████████ 1.10 MB/s
+usagi        ██████████████████████████████ 231.68 MB/s
+rustfs       █ 1.58 MB/s
+usagi_s3     █ 1.06 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████ 512.2us
-devnull_s3   █████████████████████ 589.5us
-minio        ██████████████████████████████ 819.1us
+usagi        █ 2.5us
+rustfs       ███████████████████████ 586.5us
+usagi_s3     ██████████████████████████████ 745.3us
 ```
 
 ### Write/1MB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 144.07 MB/s | 6.6ms | 9.5ms | 10.7ms | 0 |
-| devnull_s3 | 112.37 MB/s | 8.4ms | 12.1ms | 17.5ms | 0 |
-| minio | 111.30 MB/s | 8.6ms | 11.9ms | 14.4ms | 0 |
+| usagi | 692.52 MB/s | 454.8us | 2.8ms | 13.8ms | 0 |
+| rustfs | 137.60 MB/s | 6.2ms | 13.3ms | 16.5ms | 0 |
+| usagi_s3 | 136.72 MB/s | 6.9ms | 10.6ms | 12.0ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 144.07 MB/s
-devnull_s3   ███████████████████████ 112.37 MB/s
-minio        ███████████████████████ 111.30 MB/s
+usagi        ██████████████████████████████ 692.52 MB/s
+rustfs       █████ 137.60 MB/s
+usagi_s3     █████ 136.72 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ██████████████████████ 6.6ms
-devnull_s3   █████████████████████████████ 8.4ms
-minio        ██████████████████████████████ 8.6ms
+usagi        █ 454.8us
+rustfs       ██████████████████████████ 6.2ms
+usagi_s3     ██████████████████████████████ 6.9ms
 ```
 
 ### Write/64KB
 
 | Driver | Throughput | P50 | P95 | P99 | Errors |
 |--------|------------|-----|-----|-----|--------|
-| usagi_s3 | 65.99 MB/s | 912.8us | 1.2ms | 1.6ms | 0 |
-| devnull_s3 | 51.41 MB/s | 1.1ms | 1.8ms | 3.0ms | 0 |
-| minio | 38.25 MB/s | 1.4ms | 3.2ms | 5.1ms | 0 |
+| usagi | 708.64 MB/s | 21.4us | 50.6us | 243.7us | 0 |
+| rustfs | 55.36 MB/s | 986.3us | 1.6ms | 3.6ms | 0 |
+| usagi_s3 | 45.88 MB/s | 1.2ms | 2.1ms | 3.4ms | 0 |
 
 **Throughput**
 ```
-usagi_s3     ██████████████████████████████ 65.99 MB/s
-devnull_s3   ███████████████████████ 51.41 MB/s
-minio        █████████████████ 38.25 MB/s
+usagi        ██████████████████████████████ 708.64 MB/s
+rustfs       ██ 55.36 MB/s
+usagi_s3     █ 45.88 MB/s
 ```
 
 **Latency (P50)**
 ```
-usagi_s3     ███████████████████ 912.8us
-devnull_s3   ███████████████████████ 1.1ms
-minio        ██████████████████████████████ 1.4ms
+usagi        █ 21.4us
+rustfs       ███████████████████████ 986.3us
+usagi_s3     ██████████████████████████████ 1.2ms
 ```
 
 ## Resource Usage
 
 | Driver | Memory | RSS | Cache | CPU | Volume | Block I/O |
 |--------|--------|-----|-------|-----|--------|----------|
-| devnull_s3 | 1.376GiB / 7.653GiB | 1409.0 MB | - | 2.1% | (no data) | 15.4MB / 1.52GB |
-| minio | 650.4MiB / 7.653GiB | 650.4 MB | - | 7.4% | 1889.0 MB | 61MB / 2.11GB |
-| usagi_s3 | 1.59GiB / 7.653GiB | 1628.2 MB | - | 3.7% | (no data) | 3.94MB / 2.34GB |
+| rustfs | 2.117GiB / 7.653GiB | 2167.8 MB | - | 0.1% | 2210.0 MB | 39.4MB / 2.25GB |
+| usagi_s3 | 781.1MiB / 7.653GiB | 781.1 MB | - | 1.7% | (no data) | 13.6MB / 2.04GB |
 
 > **Note:** RSS = actual application memory. Cache = OS page cache (reclaimable).
 
 ## Recommendations
 
-- **Write-heavy workloads:** usagi_s3
-- **Read-heavy workloads:** minio
+- **Write-heavy workloads:** usagi
+- **Read-heavy workloads:** usagi
 
 ---
 
