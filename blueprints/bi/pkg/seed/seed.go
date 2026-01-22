@@ -264,7 +264,9 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 		query      map[string]interface{}
 		viz        map[string]interface{}
 	}{
-		// Executive Questions
+		// =====================================================================
+		// EXECUTIVE QUESTIONS - KPIs and Overview
+		// =====================================================================
 		{
 			name:       "Total Revenue",
 			desc:       "Sum of all order revenue",
@@ -344,13 +346,65 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			viz: map[string]interface{}{
 				"type": "line",
 				"settings": map[string]interface{}{
-					"x_axis":    "month",
-					"y_axis":    "revenue",
-					"showArea":  true,
+					"x_axis":   "month",
+					"y_axis":   "revenue",
+					"showArea": true,
 				},
 			},
 		},
-		// Sales Questions
+		{
+			name:       "Orders by Month",
+			desc:       "Monthly order count trend",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', order_date) as month,
+					COUNT(*) as orders
+				FROM orders
+				GROUP BY month
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "month",
+					"y_axis": "orders",
+				},
+			},
+		},
+		{
+			name:       "Revenue Growth Rate",
+			desc:       "Month-over-month revenue growth percentage",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `WITH monthly_revenue AS (
+					SELECT
+						strftime('%Y-%m', o.order_date) as month,
+						SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+					FROM orders o
+					JOIN order_details od ON o.id = od.order_id
+					GROUP BY month
+				)
+				SELECT
+					month,
+					revenue,
+					LAG(revenue) OVER (ORDER BY month) as prev_revenue,
+					CASE
+						WHEN LAG(revenue) OVER (ORDER BY month) IS NULL THEN NULL
+						ELSE printf("%.1f%%", (revenue - LAG(revenue) OVER (ORDER BY month)) / LAG(revenue) OVER (ORDER BY month) * 100)
+					END as growth_rate
+				FROM monthly_revenue
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		// =====================================================================
+		// SALES QUESTIONS - Performance Analysis
+		// =====================================================================
 		{
 			name:       "Sales by Category",
 			desc:       "Revenue breakdown by product category",
@@ -447,7 +501,63 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				},
 			},
 		},
-		// Products Questions
+		{
+			name:       "Category Revenue Share",
+			desc:       "Revenue percentage by product category",
+			collection: "Sales",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.name as category,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
+					printf("%.1f%%", 100.0 * SUM(od.unit_price * od.quantity * (1 - od.discount)) /
+						(SELECT SUM(unit_price * quantity * (1 - discount)) FROM order_details)) as share
+				FROM order_details od
+				JOIN products p ON od.product_id = p.id
+				JOIN categories c ON p.category_id = c.id
+				GROUP BY c.id
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "pie",
+				"settings": map[string]interface{}{
+					"dimension": "category",
+					"metric":    "revenue",
+				},
+			},
+		},
+		{
+			name:       "Discount Analysis",
+			desc:       "Revenue impact of discounts",
+			collection: "Sales",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					CASE
+						WHEN discount = 0 THEN 'No Discount'
+						WHEN discount <= 0.05 THEN '5% Discount'
+						WHEN discount <= 0.10 THEN '10% Discount'
+						ELSE '15%+ Discount'
+					END as discount_tier,
+					COUNT(*) as line_items,
+					SUM(unit_price * quantity) as gross_revenue,
+					SUM(unit_price * quantity * discount) as discount_amount,
+					SUM(unit_price * quantity * (1 - discount)) as net_revenue
+				FROM order_details
+				GROUP BY discount_tier
+				ORDER BY net_revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "discount_tier",
+					"y_axis": "net_revenue",
+				},
+			},
+		},
+		// =====================================================================
+		// PRODUCTS QUESTIONS - Inventory and Catalog
+		// =====================================================================
 		{
 			name:       "Product Inventory Status",
 			desc:       "Current stock levels by product",
@@ -520,7 +630,57 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				"type": "table",
 			},
 		},
-		// Customer Questions
+		{
+			name:       "Inventory Value by Category",
+			desc:       "Total inventory value breakdown",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.name as category,
+					SUM(p.units_in_stock) as total_units,
+					SUM(p.units_in_stock * p.unit_price) as inventory_value
+				FROM products p
+				JOIN categories c ON p.category_id = c.id
+				WHERE p.discontinued = 0
+				GROUP BY c.id
+				ORDER BY inventory_value DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "pie",
+				"settings": map[string]interface{}{
+					"dimension": "category",
+					"metric":    "inventory_value",
+				},
+			},
+		},
+		{
+			name:       "Supplier Product Count",
+			desc:       "Number of products by supplier",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					s.company_name as supplier,
+					s.country,
+					COUNT(*) as products,
+					SUM(p.units_in_stock) as total_stock
+				FROM suppliers s
+				LEFT JOIN products p ON s.id = p.supplier_id
+				GROUP BY s.id
+				ORDER BY products DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "supplier",
+					"y_axis": "products",
+				},
+			},
+		},
+		// =====================================================================
+		// CUSTOMERS QUESTIONS - Insights and Segmentation
+		// =====================================================================
 		{
 			name:       "Top 10 Customers",
 			desc:       "Highest revenue customers",
@@ -551,8 +711,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			query: map[string]interface{}{
 				"sql": `SELECT
 					country,
-					COUNT(*) as customers,
-					COUNT(DISTINCT (SELECT id FROM orders WHERE customer_id = customers.id)) as orders
+					COUNT(*) as customers
 				FROM customers
 				GROUP BY country
 				ORDER BY customers DESC`,
@@ -596,7 +755,63 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				},
 			},
 		},
-		// Operations Questions
+		{
+			name:       "Customer Lifetime Value",
+			desc:       "Average order value and frequency by customer",
+			collection: "Customers",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.company_name as customer,
+					c.country,
+					COUNT(DISTINCT o.id) as total_orders,
+					MIN(o.order_date) as first_order,
+					MAX(o.order_date) as last_order,
+					printf("$%.2f", AVG(order_total)) as avg_order_value,
+					printf("$%.2f", SUM(order_total)) as lifetime_value
+				FROM customers c
+				JOIN orders o ON c.id = o.customer_id
+				JOIN (
+					SELECT order_id, SUM(unit_price * quantity * (1 - discount)) as order_total
+					FROM order_details
+					GROUP BY order_id
+				) ot ON o.id = ot.order_id
+				GROUP BY c.id
+				ORDER BY SUM(order_total) DESC
+				LIMIT 20`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		{
+			name:       "Revenue by Country",
+			desc:       "Total revenue by customer country",
+			collection: "Customers",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.country,
+					COUNT(DISTINCT c.id) as customers,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM customers c
+				JOIN orders o ON c.id = o.customer_id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY c.country
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "country",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		// =====================================================================
+		// OPERATIONS QUESTIONS - Fulfillment and Logistics
+		// =====================================================================
 		{
 			name:       "Recent Orders",
 			desc:       "Latest 100 orders with details",
@@ -690,7 +905,7 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 					c.company_name as customer,
 					o.order_date,
 					o.required_date,
-					julianday(o.required_date) - julianday('now') as days_until_due,
+					CAST(julianday(o.required_date) - julianday('now') AS INTEGER) as days_until_due,
 					printf("$%.2f", SUM(od.unit_price * od.quantity * (1 - od.discount))) as total
 				FROM orders o
 				JOIN customers c ON o.customer_id = c.id
@@ -701,6 +916,53 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			},
 			viz: map[string]interface{}{
 				"type": "table",
+			},
+		},
+		{
+			name:       "Average Shipping Time",
+			desc:       "Days between order and shipment by shipper",
+			collection: "Operations",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					s.company_name as shipper,
+					COUNT(*) as shipments,
+					printf("%.1f days", AVG(julianday(o.shipped_date) - julianday(o.order_date))) as avg_ship_time,
+					MIN(julianday(o.shipped_date) - julianday(o.order_date)) as min_days,
+					MAX(julianday(o.shipped_date) - julianday(o.order_date)) as max_days
+				FROM orders o
+				JOIN shippers s ON o.shipper_id = s.id
+				WHERE o.shipped_date IS NOT NULL
+				GROUP BY s.id
+				ORDER BY avg_ship_time`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		{
+			name:       "Freight Cost Analysis",
+			desc:       "Average freight by destination country",
+			collection: "Operations",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					ship_country as country,
+					COUNT(*) as orders,
+					printf("$%.2f", AVG(freight)) as avg_freight,
+					printf("$%.2f", SUM(freight)) as total_freight
+				FROM orders
+				WHERE ship_country IS NOT NULL
+				GROUP BY ship_country
+				ORDER BY SUM(freight) DESC
+				LIMIT 15`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "country",
+					"y_axis": "orders",
+				},
 			},
 		},
 	}
@@ -740,7 +1002,7 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 	}{
 		{
 			name:        "Executive Overview",
-			description: "High-level business metrics and KPIs",
+			description: "High-level business metrics and KPIs for leadership",
 			collection:  "Executive",
 			cards: []struct {
 				question string
@@ -751,7 +1013,8 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 				{"Total Orders", 0, 3, 3, 2},
 				{"Average Order Value", 0, 6, 3, 2},
 				{"Active Customers", 0, 9, 3, 2},
-				{"Revenue by Month", 2, 0, 12, 4},
+				{"Revenue by Month", 2, 0, 8, 4},
+				{"Orders by Month", 2, 8, 4, 4},
 				{"Sales by Category", 6, 0, 6, 4},
 				{"Sales by Region", 6, 6, 6, 4},
 			},
@@ -767,8 +1030,10 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 			}{
 				{"Top 10 Products by Revenue", 0, 0, 6, 4},
 				{"Sales Rep Performance", 0, 6, 6, 4},
-				{"Sales by Category", 4, 0, 6, 4},
-				{"Sales by Region", 4, 6, 6, 4},
+				{"Sales by Category", 4, 0, 4, 4},
+				{"Category Revenue Share", 4, 4, 4, 4},
+				{"Discount Analysis", 4, 8, 4, 4},
+				{"Sales by Region", 8, 0, 6, 4},
 			},
 		},
 		{
@@ -781,13 +1046,15 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 				w, h     int
 			}{
 				{"Products by Category", 0, 0, 6, 4},
-				{"Low Stock Alert", 0, 6, 6, 4},
-				{"Product Inventory Status", 4, 0, 12, 6},
+				{"Inventory Value by Category", 0, 6, 6, 4},
+				{"Low Stock Alert", 4, 0, 6, 4},
+				{"Supplier Product Count", 4, 6, 6, 4},
+				{"Product Inventory Status", 8, 0, 12, 6},
 			},
 		},
 		{
 			name:        "Customer Insights",
-			description: "Customer behavior and segmentation",
+			description: "Customer behavior and segmentation analysis",
 			collection:  "Customers",
 			cards: []struct {
 				question string
@@ -797,11 +1064,13 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 				{"Top 10 Customers", 0, 0, 8, 4},
 				{"Customers by Country", 0, 8, 4, 4},
 				{"Customer Order Frequency", 4, 0, 6, 4},
+				{"Revenue by Country", 4, 6, 6, 4},
+				{"Customer Lifetime Value", 8, 0, 12, 5},
 			},
 		},
 		{
 			name:        "Operations Dashboard",
-			description: "Order fulfillment and logistics",
+			description: "Order fulfillment and logistics metrics",
 			collection:  "Operations",
 			cards: []struct {
 				question string
@@ -810,8 +1079,10 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 			}{
 				{"Shipping Performance", 0, 0, 6, 4},
 				{"Orders by Day of Week", 0, 6, 6, 4},
-				{"Pending Orders", 4, 0, 6, 4},
-				{"Recent Orders", 4, 6, 6, 6},
+				{"Average Shipping Time", 4, 0, 6, 3},
+				{"Freight Cost Analysis", 4, 6, 6, 4},
+				{"Pending Orders", 7, 0, 6, 5},
+				{"Recent Orders", 7, 6, 6, 5},
 			},
 		},
 	}

@@ -1,4 +1,4 @@
-// Package postgres provides a PostgreSQL database driver.
+// Package postgres provides a PostgreSQL database driver using pgx/v5.
 package postgres
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/go-mizu/blueprints/bi/drivers"
 )
@@ -23,7 +23,7 @@ func init() {
 	})
 }
 
-// Driver implements the PostgreSQL database driver.
+// Driver implements the PostgreSQL database driver using pgx.
 type Driver struct {
 	db     *sql.DB
 	config drivers.Config
@@ -34,14 +34,14 @@ func (d *Driver) Name() string {
 	return "postgres"
 }
 
-// Open opens a PostgreSQL database connection.
+// Open opens a PostgreSQL database connection using pgx.
 func (d *Driver) Open(ctx context.Context, config drivers.Config) error {
 	d.config = config
 
-	// Build connection string
+	// Build connection string in pgx format
 	dsn := d.buildDSN(config)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return fmt.Errorf("open postgres: %w", err)
 	}
@@ -62,21 +62,21 @@ func (d *Driver) Open(ctx context.Context, config drivers.Config) error {
 	return nil
 }
 
-// buildDSN builds a PostgreSQL connection string.
+// buildDSN builds a PostgreSQL connection string (pgx format).
 func (d *Driver) buildDSN(config drivers.Config) string {
 	var parts []string
 
-	if config.Host != "" {
-		parts = append(parts, fmt.Sprintf("host=%s", config.Host))
-	} else {
-		parts = append(parts, "host=localhost")
+	host := config.Host
+	if host == "" {
+		host = "localhost"
 	}
+	parts = append(parts, fmt.Sprintf("host=%s", host))
 
-	if config.Port > 0 {
-		parts = append(parts, fmt.Sprintf("port=%d", config.Port))
-	} else {
-		parts = append(parts, "port=5432")
+	port := config.Port
+	if port <= 0 {
+		port = 5432
 	}
+	parts = append(parts, fmt.Sprintf("port=%d", port))
 
 	if config.Database != "" {
 		parts = append(parts, fmt.Sprintf("dbname=%s", config.Database))
@@ -204,15 +204,16 @@ func (d *Driver) ListTables(ctx context.Context, schema string) ([]drivers.Table
 			t.Type = strings.ToLower(tableType)
 		}
 
-		// Get row count for tables
+		// Get row count estimate for tables (fast method using pg_class)
 		if t.Type == "table" {
-			countQuery := fmt.Sprintf(
-				"SELECT reltuples::bigint FROM pg_class WHERE relname = %s AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = %s)",
-				d.quoteLiteral(t.Name),
-				d.quoteLiteral(schema),
-			)
+			countQuery := `
+				SELECT reltuples::bigint
+				FROM pg_class c
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE c.relname = $1 AND n.nspname = $2
+			`
 			var count int64
-			if err := d.db.QueryRowContext(ctx, countQuery).Scan(&count); err == nil && count >= 0 {
+			if err := d.db.QueryRowContext(ctx, countQuery, t.Name, schema).Scan(&count); err == nil && count >= 0 {
 				t.RowCount = count
 			}
 		}
@@ -287,6 +288,7 @@ func (d *Driver) ListColumns(ctx context.Context, schema, table string) ([]drive
 		SELECT kcu.column_name
 		FROM information_schema.table_constraints tc
 		JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+			AND tc.table_schema = kcu.table_schema
 		WHERE tc.table_schema = $1
 		AND tc.table_name = $2
 		AND tc.constraint_type = 'PRIMARY KEY'
@@ -315,6 +317,7 @@ func (d *Driver) ListColumns(ctx context.Context, schema, table string) ([]drive
 		SELECT kcu.column_name
 		FROM information_schema.table_constraints tc
 		JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+			AND tc.table_schema = kcu.table_schema
 		WHERE tc.table_schema = $1
 		AND tc.table_name = $2
 		AND tc.constraint_type = 'FOREIGN KEY'
@@ -438,11 +441,6 @@ func (d *Driver) convertValue(v any) any {
 // QuoteIdentifier quotes an identifier for PostgreSQL.
 func (d *Driver) QuoteIdentifier(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
-// quoteLiteral quotes a string literal for PostgreSQL.
-func (d *Driver) quoteLiteral(s string) string {
-	return `'` + strings.ReplaceAll(s, `'`, `''`) + `'`
 }
 
 // SupportsSchemas returns true for PostgreSQL.
