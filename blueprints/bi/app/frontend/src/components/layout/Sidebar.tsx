@@ -5,10 +5,10 @@ import {
   Tooltip, Menu, ScrollArea, Divider, Badge, rem
 } from '@mantine/core'
 import {
-  IconHome, IconFolder, IconPlus, IconLayoutDashboard, IconSettings, IconSearch,
+  IconHome2, IconLayoutGrid, IconPlus, IconLayoutDashboard, IconSettings2, IconSearch,
   IconDatabase, IconUsers, IconChevronRight, IconChevronDown, IconLogout,
-  IconFileAnalytics, IconChartBar, IconClock, IconStar, IconChevronLeft,
-  IconTable
+  IconFileAnalytics, IconChartLine, IconClock, IconStar, IconChevronLeft,
+  IconTable, IconFolder, IconFolderFilled, IconSparkles, IconPencil
 } from '@tabler/icons-react'
 import { useCollections, useCurrentUser, useLogout } from '../../api/hooks'
 import { useUIStore } from '../../stores/uiStore'
@@ -16,7 +16,7 @@ import { useBookmarkStore } from '../../stores/bookmarkStore'
 import { sidebarTheme, semanticColors } from '../../theme'
 
 // =============================================================================
-// SIDEBAR STYLES - Metabase exact match
+// SIDEBAR STYLES - Metabase Light Theme
 // =============================================================================
 
 const styles = {
@@ -33,12 +33,12 @@ const styles = {
     width: 60,
   },
   header: {
-    padding: `${rem(12)} ${rem(16)}`,
+    padding: `${rem(16)} ${rem(16)}`,
     borderBottom: `1px solid ${sidebarTheme.border}`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 56,
+    minHeight: 64,
   },
   logo: {
     display: 'flex',
@@ -49,24 +49,24 @@ const styles = {
   logoIcon: {
     width: 32,
     height: 32,
-    borderRadius: rem(6),
+    borderRadius: rem(8),
     background: `linear-gradient(135deg, ${semanticColors.brand} 0%, #3B7DBF 100%)`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchInput: {
-    padding: `${rem(8)} ${rem(12)}`,
+    padding: `${rem(8)} ${rem(16)}`,
   },
   navSection: {
-    padding: `${rem(8)} ${rem(8)}`,
+    padding: `${rem(8)} ${rem(12)}`,
   },
   navItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: rem(12),
-    padding: `${rem(8)} ${rem(12)}`,
-    borderRadius: rem(6),
+    gap: rem(10),
+    padding: `${rem(10)} ${rem(12)}`,
+    borderRadius: rem(8),
     color: sidebarTheme.text,
     fontSize: rem(14),
     fontWeight: 500,
@@ -76,14 +76,14 @@ const styles = {
   },
   navItemActive: {
     backgroundColor: sidebarTheme.bgActive,
-    color: '#ffffff',
+    color: sidebarTheme.textActive,
   },
   navItemHover: {
     backgroundColor: sidebarTheme.bgHover,
     color: sidebarTheme.textHover,
   },
   sectionHeader: {
-    padding: `${rem(8)} ${rem(12)}`,
+    padding: `${rem(12)} ${rem(12)} ${rem(4)}`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -93,23 +93,24 @@ const styles = {
     fontWeight: 700,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: sidebarTheme.sectionTitle,
   },
   userSection: {
     padding: rem(12),
     borderTop: `1px solid ${sidebarTheme.border}`,
+    marginTop: 'auto',
   },
   userButton: {
     display: 'flex',
     alignItems: 'center',
     gap: rem(12),
     padding: rem(8),
-    borderRadius: rem(6),
+    borderRadius: rem(8),
     width: '100%',
   },
   userAvatar: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     borderRadius: '50%',
     backgroundColor: semanticColors.brand,
     display: 'flex',
@@ -156,13 +157,11 @@ function CollectionItem({ id, name, color, depth = 0, collections, collapsed }: 
         onMouseEnter={(e) => {
           if (!isActive) {
             e.currentTarget.style.backgroundColor = sidebarTheme.bgHover
-            e.currentTarget.style.color = sidebarTheme.textHover
           }
         }}
         onMouseLeave={(e) => {
           if (!isActive) {
             e.currentTarget.style.backgroundColor = 'transparent'
-            e.currentTarget.style.color = sidebarTheme.text
           }
         }}
       >
@@ -174,14 +173,20 @@ function CollectionItem({ id, name, color, depth = 0, collections, collapsed }: 
               e.stopPropagation()
               setExpanded(!expanded)
             }}
-            style={{ color: 'inherit' }}
+            style={{ color: sidebarTheme.iconDefault }}
           >
             {expanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
           </ActionIcon>
         )}
         {!hasChildren && <Box w={18} />}
-        <IconFolder size={18} style={{ color: color || 'currentColor', flexShrink: 0 }} />
-        <Text size="sm" truncate style={{ flex: 1 }}>{name}</Text>
+        {expanded ? (
+          <IconFolderFilled size={18} style={{ color: color || sidebarTheme.newCollection, flexShrink: 0 }} />
+        ) : (
+          <IconFolder size={18} style={{ color: color || sidebarTheme.iconDefault, flexShrink: 0 }} />
+        )}
+        <Text size="sm" truncate style={{ flex: 1, color: isActive ? sidebarTheme.textActive : sidebarTheme.text }}>
+          {name}
+        </Text>
       </UnstyledButton>
 
       {hasChildren && (
@@ -207,17 +212,17 @@ function CollectionItem({ id, name, color, depth = 0, collections, collapsed }: 
 // =============================================================================
 
 interface NavItemProps {
-  icon: typeof IconHome
+  icon: typeof IconHome2
   label: string
   path?: string
   onClick?: () => void
   active?: boolean
   rightSection?: React.ReactNode
   collapsed?: boolean
-  color?: string
+  iconColor?: string
 }
 
-function NavItem({ icon: Icon, label, path, onClick, active, rightSection, collapsed, color }: NavItemProps) {
+function NavItem({ icon: Icon, label, path, onClick, active, rightSection, collapsed, iconColor }: NavItemProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const isActive = active ?? (path ? location.pathname === path || location.pathname.startsWith(path + '/') : false)
@@ -235,25 +240,32 @@ function NavItem({ icon: Icon, label, path, onClick, active, rightSection, colla
           ...styles.navItem,
           ...(isActive ? styles.navItemActive : {}),
           justifyContent: collapsed ? 'center' : 'flex-start',
-          padding: collapsed ? rem(10) : `${rem(8)} ${rem(12)}`,
+          padding: collapsed ? rem(12) : `${rem(10)} ${rem(12)}`,
         }}
         onMouseEnter={(e) => {
           if (!isActive) {
             e.currentTarget.style.backgroundColor = sidebarTheme.bgHover
-            e.currentTarget.style.color = sidebarTheme.textHover
           }
         }}
         onMouseLeave={(e) => {
           if (!isActive) {
             e.currentTarget.style.backgroundColor = 'transparent'
-            e.currentTarget.style.color = sidebarTheme.text
           }
         }}
       >
-        <Icon size={20} style={{ flexShrink: 0, color: color || 'inherit' }} />
+        <Icon
+          size={20}
+          style={{
+            flexShrink: 0,
+            color: isActive ? sidebarTheme.iconActive : (iconColor || sidebarTheme.iconDefault),
+            strokeWidth: 1.75
+          }}
+        />
         {!collapsed && (
           <>
-            <Text size="sm" style={{ flex: 1 }}>{label}</Text>
+            <Text size="sm" style={{ flex: 1, color: isActive ? sidebarTheme.textActive : sidebarTheme.text }}>
+              {label}
+            </Text>
             {rightSection}
           </>
         )}
@@ -288,10 +300,10 @@ export default function Sidebar() {
   const getItemIcon = (type: string) => {
     switch (type) {
       case 'dashboard': return IconLayoutDashboard
-      case 'question': return IconChartBar
+      case 'question': return IconChartLine
       case 'collection': return IconFolder
       case 'table': return IconTable
-      default: return IconChartBar
+      default: return IconChartLine
     }
   }
 
@@ -307,10 +319,10 @@ export default function Sidebar() {
       <Box style={styles.header}>
         <UnstyledButton onClick={() => navigate('/')} style={styles.logo}>
           <Box style={styles.logoIcon}>
-            <IconChartBar size={18} color="#ffffff" />
+            <IconSparkles size={18} color="#ffffff" strokeWidth={2} />
           </Box>
           {!collapsed && (
-            <Text size="lg" fw={700} style={{ color: '#ffffff' }}>
+            <Text size="lg" fw={700} style={{ color: sidebarTheme.text }}>
               Metabase
             </Text>
           )}
@@ -325,27 +337,27 @@ export default function Sidebar() {
                   variant="filled"
                   color="brand"
                   size="md"
-                  radius="sm"
+                  radius="md"
                 >
-                  <IconPlus size={16} />
+                  <IconPlus size={16} strokeWidth={2.5} />
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item
-                  leftSection={<IconChartBar size={16} color={semanticColors.brand} />}
+                  leftSection={<IconPencil size={16} color={semanticColors.brand} strokeWidth={1.75} />}
                   onClick={() => navigate('/question/new')}
                 >
                   New question
                 </Menu.Item>
                 <Menu.Item
-                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} />}
+                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} strokeWidth={1.75} />}
                   onClick={() => navigate('/dashboard/new')}
                 >
                   New dashboard
                 </Menu.Item>
                 <Menu.Divider />
                 <Menu.Item
-                  leftSection={<IconFolder size={16} color={semanticColors.warning} />}
+                  leftSection={<IconFolder size={16} color={sidebarTheme.newCollection} strokeWidth={1.75} />}
                   onClick={() => navigate('/collection/new')}
                 >
                   New collection
@@ -359,9 +371,9 @@ export default function Sidebar() {
                 variant="subtle"
                 size="md"
                 onClick={toggleSidebar}
-                style={{ color: sidebarTheme.text }}
+                style={{ color: sidebarTheme.iconDefault }}
               >
-                <IconChevronLeft size={16} />
+                <IconChevronLeft size={18} strokeWidth={1.75} />
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -373,9 +385,9 @@ export default function Sidebar() {
               variant="subtle"
               size="md"
               onClick={toggleSidebar}
-              style={{ color: sidebarTheme.text, position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+              style={{ color: sidebarTheme.iconDefault, position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
             >
-              <IconChevronRight size={16} />
+              <IconChevronRight size={18} strokeWidth={1.75} />
             </ActionIcon>
           </Tooltip>
         )}
@@ -386,7 +398,7 @@ export default function Sidebar() {
         <Box style={styles.searchInput}>
           <TextInput
             placeholder="Search..."
-            leftSection={<IconSearch size={16} />}
+            leftSection={<IconSearch size={16} color={sidebarTheme.inputPlaceholder} strokeWidth={1.75} />}
             size="sm"
             onClick={openCommandPalette}
             readOnly
@@ -398,14 +410,15 @@ export default function Sidebar() {
             styles={{
               input: {
                 backgroundColor: sidebarTheme.inputBg,
-                border: 'none',
+                border: `1px solid ${sidebarTheme.inputBorder}`,
                 color: sidebarTheme.inputText,
                 cursor: 'pointer',
                 '&::placeholder': {
                   color: sidebarTheme.inputPlaceholder,
                 },
                 '&:hover': {
-                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                  backgroundColor: '#F0F0F0',
+                  borderColor: '#E0E0E0',
                 },
               },
             }}
@@ -417,18 +430,27 @@ export default function Sidebar() {
       <ScrollArea style={{ flex: 1 }} scrollbarSize={6}>
         <Box style={styles.navSection}>
           {/* Home */}
-          <NavItem icon={IconHome} label="Home" path="/" collapsed={collapsed} />
+          <NavItem icon={IconHome2} label="Home" path="/" collapsed={collapsed} />
 
           {/* Browse with submenu */}
           <NavItem
-            icon={IconFolder}
+            icon={IconLayoutGrid}
             label="Browse"
             onClick={() => {
               if (!collapsed) setBrowseExpanded(!browseExpanded)
               else navigate('/browse')
             }}
             active={location.pathname.startsWith('/browse') && location.pathname === '/browse'}
-            rightSection={!collapsed && (browseExpanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />)}
+            rightSection={!collapsed && (
+              <IconChevronRight
+                size={14}
+                style={{
+                  color: sidebarTheme.iconDefault,
+                  transform: browseExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease'
+                }}
+              />
+            )}
             collapsed={collapsed}
           />
 
@@ -437,26 +459,26 @@ export default function Sidebar() {
               <Box pl={20}>
                 <NavItem icon={IconDatabase} label="Databases" path="/browse/databases" />
                 <NavItem icon={IconFileAnalytics} label="Models" path="/browse/models" />
-                <NavItem icon={IconChartBar} label="Metrics" path="/browse/metrics" />
+                <NavItem icon={IconChartLine} label="Metrics" path="/browse/metrics" />
               </Box>
             </Collapse>
           )}
 
-          <Divider my="sm" style={{ borderColor: sidebarTheme.border }} />
+          <Divider my="sm" color={sidebarTheme.border} />
 
           {/* Quick Create */}
           <NavItem
-            icon={IconChartBar}
+            icon={IconPencil}
             label="New question"
             path="/question/new"
-            color={semanticColors.brand}
+            iconColor={sidebarTheme.newQuestion}
             collapsed={collapsed}
           />
           <NavItem
             icon={IconLayoutDashboard}
             label="New dashboard"
             path="/dashboard/new"
-            color={semanticColors.summarize}
+            iconColor={sidebarTheme.newDashboard}
             collapsed={collapsed}
           />
         </Box>
@@ -464,19 +486,25 @@ export default function Sidebar() {
         {/* Bookmarks Section */}
         {!collapsed && bookmarks.length > 0 && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" style={{ borderColor: sidebarTheme.border }} />
+            <Divider mb="sm" color={sidebarTheme.border} />
             <Box style={styles.sectionHeader}>
               <Group gap="xs">
-                <IconStar size={14} style={{ color: 'rgba(255, 255, 255, 0.5)' }} />
+                <IconStar size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
                 <Text style={styles.sectionTitle}>Bookmarks</Text>
               </Group>
               <ActionIcon
                 size="xs"
                 variant="transparent"
                 onClick={() => setBookmarksExpanded(!bookmarksExpanded)}
-                style={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                style={{ color: sidebarTheme.sectionTitle }}
               >
-                {bookmarksExpanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                <IconChevronRight
+                  size={12}
+                  style={{
+                    transform: bookmarksExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease'
+                  }}
+                />
               </ActionIcon>
             </Box>
             <Collapse in={bookmarksExpanded}>
@@ -499,19 +527,25 @@ export default function Sidebar() {
         {/* Recents Section */}
         {!collapsed && recentItems.length > 0 && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" style={{ borderColor: sidebarTheme.border }} />
+            <Divider mb="sm" color={sidebarTheme.border} />
             <Box style={styles.sectionHeader}>
               <Group gap="xs">
-                <IconClock size={14} style={{ color: 'rgba(255, 255, 255, 0.5)' }} />
+                <IconClock size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
                 <Text style={styles.sectionTitle}>Recents</Text>
               </Group>
               <ActionIcon
                 size="xs"
                 variant="transparent"
                 onClick={() => setRecentsExpanded(!recentsExpanded)}
-                style={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                style={{ color: sidebarTheme.sectionTitle }}
               >
-                {recentsExpanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                <IconChevronRight
+                  size={12}
+                  style={{
+                    transform: recentsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease'
+                  }}
+                />
               </ActionIcon>
             </Box>
             <Collapse in={recentsExpanded}>
@@ -534,10 +568,10 @@ export default function Sidebar() {
         {/* Collections Section */}
         {!collapsed && rootCollections.length > 0 && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" style={{ borderColor: sidebarTheme.border }} />
+            <Divider mb="sm" color={sidebarTheme.border} />
             <Box style={styles.sectionHeader}>
               <Group gap="xs">
-                <IconFolder size={14} style={{ color: 'rgba(255, 255, 255, 0.5)' }} />
+                <IconFolder size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
                 <Text style={styles.sectionTitle}>Collections</Text>
               </Group>
               <Group gap={4}>
@@ -546,18 +580,24 @@ export default function Sidebar() {
                     size="xs"
                     variant="transparent"
                     onClick={() => navigate('/collection/new')}
-                    style={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                    style={{ color: sidebarTheme.sectionTitle }}
                   >
-                    <IconPlus size={12} />
+                    <IconPlus size={12} strokeWidth={2} />
                   </ActionIcon>
                 </Tooltip>
                 <ActionIcon
                   size="xs"
                   variant="transparent"
                   onClick={() => setCollectionsExpanded(!collectionsExpanded)}
-                  style={{ color: 'rgba(255, 255, 255, 0.5)' }}
+                  style={{ color: sidebarTheme.sectionTitle }}
                 >
-                  {collectionsExpanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  <IconChevronRight
+                    size={12}
+                    style={{
+                      transform: collectionsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s ease'
+                    }}
+                  />
                 </ActionIcon>
               </Group>
             </Box>
@@ -578,15 +618,24 @@ export default function Sidebar() {
         {/* Admin Section */}
         {user?.role === 'admin' && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" style={{ borderColor: sidebarTheme.border }} />
+            <Divider mb="sm" color={sidebarTheme.border} />
             <NavItem
-              icon={IconSettings}
+              icon={IconSettings2}
               label="Admin"
               onClick={() => {
                 if (!collapsed) setAdminExpanded(!adminExpanded)
                 else navigate('/admin/datamodel')
               }}
-              rightSection={!collapsed && (adminExpanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />)}
+              rightSection={!collapsed && (
+                <IconChevronRight
+                  size={14}
+                  style={{
+                    color: sidebarTheme.iconDefault,
+                    transform: adminExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease'
+                  }}
+                />
+              )}
               collapsed={collapsed}
             />
             {!collapsed && (
@@ -594,7 +643,7 @@ export default function Sidebar() {
                 <Box pl={20}>
                   <NavItem icon={IconDatabase} label="Data Model" path="/admin/datamodel" />
                   <NavItem icon={IconUsers} label="People" path="/admin/people" />
-                  <NavItem icon={IconSettings} label="Settings" path="/admin/settings" />
+                  <NavItem icon={IconSettings2} label="Settings" path="/admin/settings" />
                 </Box>
               </Collapse>
             )}
@@ -623,10 +672,10 @@ export default function Sidebar() {
               </Box>
               {!collapsed && (
                 <Box style={{ flex: 1, overflow: 'hidden' }}>
-                  <Text size="sm" c="white" truncate fw={500}>
+                  <Text size="sm" truncate fw={500} style={{ color: sidebarTheme.text }}>
                     {user?.name || 'User'}
                   </Text>
-                  <Text size="xs" truncate style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                  <Text size="xs" truncate style={{ color: sidebarTheme.textSecondary }}>
                     {user?.email || ''}
                   </Text>
                 </Box>
@@ -640,14 +689,14 @@ export default function Sidebar() {
             </Menu.Label>
             <Menu.Divider />
             <Menu.Item
-              leftSection={<IconSettings size={16} />}
+              leftSection={<IconSettings2 size={16} strokeWidth={1.75} />}
               onClick={() => navigate('/admin/settings')}
             >
               Account settings
             </Menu.Item>
             <Menu.Divider />
             <Menu.Item
-              leftSection={<IconLogout size={16} />}
+              leftSection={<IconLogout size={16} strokeWidth={1.75} />}
               color="red"
               onClick={() => logout()}
             >

@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/go-mizu/blueprints/bi/pkg/password"
 	"github.com/go-mizu/blueprints/bi/store"
@@ -16,7 +14,8 @@ import (
 
 // Seeder seeds the database with sample data.
 type Seeder struct {
-	store store.Store
+	store   store.Store
+	dataDir string
 }
 
 // New creates a new Seeder.
@@ -24,16 +23,21 @@ func New(s store.Store) *Seeder {
 	return &Seeder{store: s}
 }
 
+// SetDataDir sets the data directory for the seeder.
+func (s *Seeder) SetDataDir(dir string) {
+	s.dataDir = dir
+}
+
 // Run seeds all sample data.
 func (s *Seeder) Run(ctx context.Context) error {
-	slog.Info("Starting database seed")
+	slog.Info("Starting database seed with Northwind data")
 
 	// Create admin user
 	if err := s.seedUsers(ctx); err != nil {
 		return fmt.Errorf("seed users: %w", err)
 	}
 
-	// Create sample data source
+	// Create sample data source with Northwind database
 	dsID, err := s.seedDataSource(ctx)
 	if err != nil {
 		return fmt.Errorf("seed data source: %w", err)
@@ -45,7 +49,7 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return fmt.Errorf("seed collections: %w", err)
 	}
 
-	// Create questions
+	// Create comprehensive questions
 	questionIDs, err := s.seedQuestions(ctx, dsID, collIDs)
 	if err != nil {
 		return fmt.Errorf("seed questions: %w", err)
@@ -56,11 +60,21 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return fmt.Errorf("seed dashboards: %w", err)
 	}
 
-	slog.Info("Database seed complete")
+	slog.Info("Database seed complete",
+		"questions", len(questionIDs),
+		"collections", len(collIDs),
+	)
 	return nil
 }
 
 func (s *Seeder) seedUsers(ctx context.Context) error {
+	// Check if admin user already exists
+	existing, _ := s.store.Users().GetByEmail(ctx, "admin@example.com")
+	if existing != nil {
+		slog.Info("Admin user already exists, skipping")
+		return nil
+	}
+
 	// Hash the password "admin" using Argon2
 	passwordHash, err := password.Hash("admin", nil)
 	if err != nil {
@@ -74,147 +88,304 @@ func (s *Seeder) seedUsers(ctx context.Context) error {
 		Role:         "admin",
 	}
 
-	return s.store.Users().Create(ctx, user)
+	if err := s.store.Users().Create(ctx, user); err != nil {
+		return err
+	}
+
+	slog.Info("Created admin user", "email", user.Email)
+	return nil
 }
 
 func (s *Seeder) seedDataSource(ctx context.Context) (string, error) {
-	// Get data directory from store
-	sqliteStore, ok := s.store.(*sqliteStoreWrapper)
-	var dataDir string
-	if ok {
-		dataDir = sqliteStore.dataDir
-	} else {
+	// Check if data source already exists
+	existing, _ := s.store.DataSources().List(ctx)
+	for _, ds := range existing {
+		if ds.Name == "Northwind" {
+			slog.Info("Northwind data source already exists", "id", ds.ID)
+			return ds.ID, nil
+		}
+	}
+
+	// Determine data directory
+	dataDir := s.dataDir
+	if dataDir == "" {
 		home, _ := os.UserHomeDir()
 		dataDir = filepath.Join(home, "data", "blueprint", "bi")
 	}
 
-	// Create sample database
-	sampleDBPath := filepath.Join(dataDir, "sample_data.db")
-	if err := createSampleDatabase(sampleDBPath); err != nil {
-		return "", err
+	// Create Northwind database
+	northwindDBPath := filepath.Join(dataDir, "northwind.db")
+	if err := createNorthwindDatabase(northwindDBPath); err != nil {
+		return "", fmt.Errorf("create northwind database: %w", err)
 	}
 
 	ds := &store.DataSource{
-		Name:     "Sample Data",
+		Name:     "Northwind",
 		Engine:   "sqlite",
-		Database: sampleDBPath,
+		Database: northwindDBPath,
 	}
 
 	if err := s.store.DataSources().Create(ctx, ds); err != nil {
 		return "", err
 	}
 
+	slog.Info("Created Northwind data source", "id", ds.ID, "path", northwindDBPath)
+
 	// Sync tables
-	db, err := sql.Open("sqlite3", sampleDBPath)
+	if err := s.syncTables(ctx, ds.ID, northwindDBPath); err != nil {
+		slog.Warn("Failed to sync tables", "error", err)
+	}
+
+	return ds.ID, nil
+}
+
+func (s *Seeder) syncTables(ctx context.Context, dsID, dbPath string) error {
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return ds.ID, nil
+		return err
 	}
 	defer db.Close()
 
-	// Get table info
-	tables := []string{"orders", "products", "customers", "analytics"}
-	for _, tableName := range tables {
-		table := &store.Table{
-			DataSourceID: ds.ID,
-			Name:         tableName,
-			DisplayName:  tableName,
+	// Get table names
+	rows, err := db.Query(`
+		SELECT name FROM sqlite_master
+		WHERE type='table' AND name NOT LIKE 'sqlite_%'
+		ORDER BY name
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			continue
 		}
-		s.store.Tables().Create(ctx, table)
+
+		// Get row count
+		var rowCount int64
+		db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&rowCount)
+
+		// Create table record
+		table := &store.Table{
+			DataSourceID: dsID,
+			Name:         tableName,
+			DisplayName:  formatTableName(tableName),
+			RowCount:     rowCount,
+		}
+		if err := s.store.Tables().Create(ctx, table); err != nil {
+			slog.Warn("Failed to create table", "table", tableName, "error", err)
+			continue
+		}
 
 		// Get columns
-		rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+		colRows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 		if err != nil {
 			continue
 		}
 
 		pos := 0
-		for rows.Next() {
+		for colRows.Next() {
 			var cid int
 			var name, colType string
 			var notNull, pk int
 			var dflt interface{}
-			rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk)
+			colRows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk)
 
 			col := &store.Column{
 				TableID:     table.ID,
 				Name:        name,
-				DisplayName: name,
+				DisplayName: formatColumnName(name),
 				Type:        mapType(colType),
 				Position:    pos,
 			}
 			s.store.Tables().CreateColumn(ctx, col)
 			pos++
 		}
-		rows.Close()
+		colRows.Close()
+
+		slog.Info("Synced table", "table", tableName, "rows", rowCount, "columns", pos)
 	}
 
-	return ds.ID, nil
+	return nil
 }
 
 func (s *Seeder) seedCollections(ctx context.Context) (map[string]string, error) {
 	collections := []struct {
-		name  string
-		color string
+		name        string
+		description string
+		color       string
 	}{
-		{"Sales", "#509EE3"},
-		{"Marketing", "#88BF4D"},
-		{"Operations", "#A989C5"},
+		{"Executive", "High-level business metrics and KPIs", "#509EE3"},
+		{"Sales", "Sales performance and revenue analysis", "#84BB4C"},
+		{"Products", "Product catalog and inventory analytics", "#F2A86F"},
+		{"Customers", "Customer insights and segmentation", "#7172AD"},
+		{"Operations", "Operational metrics and logistics", "#ED6E6E"},
 	}
 
 	ids := make(map[string]string)
 	for _, c := range collections {
+		// Check if exists
+		existing, _ := s.store.Collections().List(ctx)
+		found := false
+		for _, e := range existing {
+			if e.Name == c.name {
+				ids[c.name] = e.ID
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+
 		coll := &store.Collection{
-			Name:  c.name,
-			Color: c.color,
+			Name:        c.name,
+			Description: c.description,
+			Color:       c.color,
 		}
 		if err := s.store.Collections().Create(ctx, coll); err != nil {
 			return nil, err
 		}
 		ids[c.name] = coll.ID
+		slog.Info("Created collection", "name", c.name)
 	}
 
 	return ids, nil
 }
 
-func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[string]string) ([]string, error) {
+func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[string]string) (map[string]string, error) {
 	questions := []struct {
 		name       string
+		desc       string
 		collection string
 		queryType  string
 		query      map[string]interface{}
 		viz        map[string]interface{}
 	}{
+		// Executive Questions
 		{
-			name:       "Revenue by Month",
-			collection: "Sales",
+			name:       "Total Revenue",
+			desc:       "Sum of all order revenue",
+			collection: "Executive",
 			queryType:  "native",
 			query: map[string]interface{}{
 				"sql": `SELECT
-					strftime('%Y-%m', order_date) as month,
-					SUM(total) as revenue
+					printf("$%,.0f", SUM(od.unit_price * od.quantity * (1 - od.discount))) as total_revenue
+				FROM order_details od`,
+			},
+			viz: map[string]interface{}{
+				"type": "number",
+				"settings": map[string]interface{}{
+					"prefix": "",
+				},
+			},
+		},
+		{
+			name:       "Total Orders",
+			desc:       "Count of all orders",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT COUNT(*) as total_orders FROM orders`,
+			},
+			viz: map[string]interface{}{
+				"type": "number",
+			},
+		},
+		{
+			name:       "Average Order Value",
+			desc:       "Average revenue per order",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					printf("$%.2f", AVG(order_total)) as avg_order_value
+				FROM (
+					SELECT o.id, SUM(od.unit_price * od.quantity * (1 - od.discount)) as order_total
+					FROM orders o
+					JOIN order_details od ON o.id = od.order_id
+					GROUP BY o.id
+				)`,
+			},
+			viz: map[string]interface{}{
+				"type": "number",
+			},
+		},
+		{
+			name:       "Active Customers",
+			desc:       "Customers with orders in the last 90 days",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT COUNT(DISTINCT customer_id) as active_customers
 				FROM orders
+				WHERE order_date >= date('now', '-90 days')`,
+			},
+			viz: map[string]interface{}{
+				"type": "number",
+			},
+		},
+		{
+			name:       "Revenue by Month",
+			desc:       "Monthly revenue trend over time",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', o.order_date) as month,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
 				GROUP BY month
 				ORDER BY month`,
 			},
 			viz: map[string]interface{}{
 				"type": "line",
 				"settings": map[string]interface{}{
-					"x_axis": "month",
+					"x_axis":    "month",
+					"y_axis":    "revenue",
+					"showArea":  true,
+				},
+			},
+		},
+		// Sales Questions
+		{
+			name:       "Sales by Category",
+			desc:       "Revenue breakdown by product category",
+			collection: "Sales",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.name as category,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM order_details od
+				JOIN products p ON od.product_id = p.id
+				JOIN categories c ON p.category_id = c.id
+				GROUP BY c.id
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "category",
 					"y_axis": "revenue",
 				},
 			},
 		},
 		{
-			name:       "Top Products by Sales",
+			name:       "Top 10 Products by Revenue",
+			desc:       "Best selling products by total revenue",
 			collection: "Sales",
 			queryType:  "native",
 			query: map[string]interface{}{
 				"sql": `SELECT
-					p.name,
-					SUM(o.quantity) as units_sold,
-					SUM(o.quantity * p.price) as revenue
-				FROM orders o
-				JOIN products p ON o.product_id = p.id
+					p.name as product,
+					SUM(od.quantity) as units_sold,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM order_details od
+				JOIN products p ON od.product_id = p.id
 				GROUP BY p.id
 				ORDER BY revenue DESC
 				LIMIT 10`,
@@ -222,19 +393,166 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			viz: map[string]interface{}{
 				"type": "bar",
 				"settings": map[string]interface{}{
-					"x_axis": "name",
+					"x_axis": "product",
 					"y_axis": "revenue",
 				},
 			},
 		},
 		{
-			name:       "Customer Distribution",
-			collection: "Marketing",
+			name:       "Sales by Region",
+			desc:       "Revenue distribution by customer region",
+			collection: "Sales",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.region,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN customers c ON o.customer_id = c.id
+				JOIN order_details od ON o.id = od.order_id
+				WHERE c.region IS NOT NULL
+				GROUP BY c.region
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "pie",
+				"settings": map[string]interface{}{
+					"dimension": "region",
+					"metric":    "revenue",
+				},
+			},
+		},
+		{
+			name:       "Sales Rep Performance",
+			desc:       "Revenue by sales representative",
+			collection: "Sales",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					e.first_name || ' ' || e.last_name as employee,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN employees e ON o.employee_id = e.id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY e.id
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "employee",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		// Products Questions
+		{
+			name:       "Product Inventory Status",
+			desc:       "Current stock levels by product",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					p.name as product,
+					c.name as category,
+					p.units_in_stock as stock,
+					p.unit_price as price,
+					CASE
+						WHEN p.units_in_stock = 0 THEN 'Out of Stock'
+						WHEN p.units_in_stock < 10 THEN 'Low Stock'
+						ELSE 'In Stock'
+					END as status
+				FROM products p
+				JOIN categories c ON p.category_id = c.id
+				WHERE p.discontinued = 0
+				ORDER BY p.units_in_stock ASC`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		{
+			name:       "Products by Category",
+			desc:       "Product count and average price by category",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.name as category,
+					COUNT(*) as product_count,
+					printf("$%.2f", AVG(p.unit_price)) as avg_price,
+					SUM(p.units_in_stock) as total_stock
+				FROM products p
+				JOIN categories c ON p.category_id = c.id
+				WHERE p.discontinued = 0
+				GROUP BY c.id
+				ORDER BY product_count DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "category",
+					"y_axis": "product_count",
+				},
+			},
+		},
+		{
+			name:       "Low Stock Alert",
+			desc:       "Products with stock below 10 units",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					p.name as product,
+					c.name as category,
+					s.company_name as supplier,
+					p.units_in_stock as stock,
+					p.reorder_level
+				FROM products p
+				JOIN categories c ON p.category_id = c.id
+				JOIN suppliers s ON p.supplier_id = s.id
+				WHERE p.units_in_stock < 10 AND p.discontinued = 0
+				ORDER BY p.units_in_stock ASC`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		// Customer Questions
+		{
+			name:       "Top 10 Customers",
+			desc:       "Highest revenue customers",
+			collection: "Customers",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.company_name as customer,
+					c.country,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM customers c
+				JOIN orders o ON c.id = o.customer_id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY c.id
+				ORDER BY revenue DESC
+				LIMIT 10`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		{
+			name:       "Customers by Country",
+			desc:       "Customer distribution by country",
+			collection: "Customers",
 			queryType:  "native",
 			query: map[string]interface{}{
 				"sql": `SELECT
 					country,
-					COUNT(*) as customers
+					COUNT(*) as customers,
+					COUNT(DISTINCT (SELECT id FROM orders WHERE customer_id = customers.id)) as orders
 				FROM customers
 				GROUP BY country
 				ORDER BY customers DESC`,
@@ -248,20 +566,58 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			},
 		},
 		{
+			name:       "Customer Order Frequency",
+			desc:       "Distribution of orders per customer",
+			collection: "Customers",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					CASE
+						WHEN order_count = 1 THEN '1 order'
+						WHEN order_count BETWEEN 2 AND 5 THEN '2-5 orders'
+						WHEN order_count BETWEEN 6 AND 10 THEN '6-10 orders'
+						ELSE '10+ orders'
+					END as frequency,
+					COUNT(*) as customers
+				FROM (
+					SELECT c.id, COUNT(o.id) as order_count
+					FROM customers c
+					LEFT JOIN orders o ON c.id = o.customer_id
+					GROUP BY c.id
+				)
+				GROUP BY frequency
+				ORDER BY MIN(order_count)`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "frequency",
+					"y_axis": "customers",
+				},
+			},
+		},
+		// Operations Questions
+		{
 			name:       "Recent Orders",
+			desc:       "Latest 100 orders with details",
 			collection: "Operations",
 			queryType:  "native",
 			query: map[string]interface{}{
 				"sql": `SELECT
-					o.id,
-					c.name as customer,
-					p.name as product,
-					o.quantity,
-					o.total,
-					o.order_date
+					o.id as order_id,
+					c.company_name as customer,
+					e.first_name || ' ' || e.last_name as employee,
+					o.order_date,
+					o.shipped_date,
+					s.company_name as shipper,
+					printf("$%.2f", o.freight) as freight,
+					printf("$%.2f", SUM(od.unit_price * od.quantity * (1 - od.discount))) as total
 				FROM orders o
 				JOIN customers c ON o.customer_id = c.id
-				JOIN products p ON o.product_id = p.id
+				LEFT JOIN employees e ON o.employee_id = e.id
+				LEFT JOIN shippers s ON o.shipper_id = s.id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY o.id
 				ORDER BY o.order_date DESC
 				LIMIT 100`,
 			},
@@ -270,25 +626,90 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			},
 		},
 		{
-			name:       "Total Revenue",
-			collection: "Sales",
+			name:       "Shipping Performance",
+			desc:       "On-time delivery rate by shipper",
+			collection: "Operations",
 			queryType:  "native",
 			query: map[string]interface{}{
-				"sql": "SELECT SUM(total) as total_revenue FROM orders",
+				"sql": `SELECT
+					s.company_name as shipper,
+					COUNT(*) as total_shipments,
+					SUM(CASE WHEN o.shipped_date <= o.required_date THEN 1 ELSE 0 END) as on_time,
+					printf("%.1f%%", 100.0 * SUM(CASE WHEN o.shipped_date <= o.required_date THEN 1 ELSE 0 END) / COUNT(*)) as on_time_rate
+				FROM orders o
+				JOIN shippers s ON o.shipper_id = s.id
+				WHERE o.shipped_date IS NOT NULL
+				GROUP BY s.id
+				ORDER BY on_time_rate DESC`,
 			},
 			viz: map[string]interface{}{
-				"type": "number",
+				"type": "bar",
 				"settings": map[string]interface{}{
-					"prefix": "$",
+					"x_axis": "shipper",
+					"y_axis": "total_shipments",
 				},
+			},
+		},
+		{
+			name:       "Orders by Day of Week",
+			desc:       "Order volume by day of week",
+			collection: "Operations",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					CASE strftime('%w', order_date)
+						WHEN '0' THEN 'Sunday'
+						WHEN '1' THEN 'Monday'
+						WHEN '2' THEN 'Tuesday'
+						WHEN '3' THEN 'Wednesday'
+						WHEN '4' THEN 'Thursday'
+						WHEN '5' THEN 'Friday'
+						WHEN '6' THEN 'Saturday'
+					END as day_of_week,
+					COUNT(*) as orders
+				FROM orders
+				GROUP BY strftime('%w', order_date)
+				ORDER BY strftime('%w', order_date)`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "day_of_week",
+					"y_axis": "orders",
+				},
+			},
+		},
+		{
+			name:       "Pending Orders",
+			desc:       "Orders not yet shipped",
+			collection: "Operations",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					o.id as order_id,
+					c.company_name as customer,
+					o.order_date,
+					o.required_date,
+					julianday(o.required_date) - julianday('now') as days_until_due,
+					printf("$%.2f", SUM(od.unit_price * od.quantity * (1 - od.discount))) as total
+				FROM orders o
+				JOIN customers c ON o.customer_id = c.id
+				JOIN order_details od ON o.id = od.order_id
+				WHERE o.shipped_date IS NULL
+				GROUP BY o.id
+				ORDER BY o.required_date ASC`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
 			},
 		},
 	}
 
-	var ids []string
+	ids := make(map[string]string)
 	for _, q := range questions {
 		question := &store.Question{
 			Name:          q.name,
+			Description:   q.desc,
 			CollectionID:  collIDs[q.collection],
 			DataSourceID:  dsID,
 			QueryType:     q.queryType,
@@ -296,179 +717,169 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 			Visualization: q.viz,
 		}
 		if err := s.store.Questions().Create(ctx, question); err != nil {
-			return nil, err
+			slog.Warn("Failed to create question", "name", q.name, "error", err)
+			continue
 		}
-		ids = append(ids, question.ID)
+		ids[q.name] = question.ID
+		slog.Info("Created question", "name", q.name)
 	}
 
 	return ids, nil
 }
 
-func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, questionIDs []string) error {
-	// Sales Overview Dashboard
-	salesDash := &store.Dashboard{
-		Name:         "Sales Overview",
-		Description:  "Key sales metrics and trends",
-		CollectionID: collIDs["Sales"],
-	}
-	if err := s.store.Dashboards().Create(ctx, salesDash); err != nil {
-		return err
+func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, questionIDs map[string]string) error {
+	dashboards := []struct {
+		name        string
+		description string
+		collection  string
+		cards       []struct {
+			question string
+			row, col int
+			w, h     int
+		}
+	}{
+		{
+			name:        "Executive Overview",
+			description: "High-level business metrics and KPIs",
+			collection:  "Executive",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Total Revenue", 0, 0, 3, 2},
+				{"Total Orders", 0, 3, 3, 2},
+				{"Average Order Value", 0, 6, 3, 2},
+				{"Active Customers", 0, 9, 3, 2},
+				{"Revenue by Month", 2, 0, 12, 4},
+				{"Sales by Category", 6, 0, 6, 4},
+				{"Sales by Region", 6, 6, 6, 4},
+			},
+		},
+		{
+			name:        "Sales Performance",
+			description: "Sales team and product performance analysis",
+			collection:  "Sales",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Top 10 Products by Revenue", 0, 0, 6, 4},
+				{"Sales Rep Performance", 0, 6, 6, 4},
+				{"Sales by Category", 4, 0, 6, 4},
+				{"Sales by Region", 4, 6, 6, 4},
+			},
+		},
+		{
+			name:        "Product Analytics",
+			description: "Product catalog and inventory insights",
+			collection:  "Products",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Products by Category", 0, 0, 6, 4},
+				{"Low Stock Alert", 0, 6, 6, 4},
+				{"Product Inventory Status", 4, 0, 12, 6},
+			},
+		},
+		{
+			name:        "Customer Insights",
+			description: "Customer behavior and segmentation",
+			collection:  "Customers",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Top 10 Customers", 0, 0, 8, 4},
+				{"Customers by Country", 0, 8, 4, 4},
+				{"Customer Order Frequency", 4, 0, 6, 4},
+			},
+		},
+		{
+			name:        "Operations Dashboard",
+			description: "Order fulfillment and logistics",
+			collection:  "Operations",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Shipping Performance", 0, 0, 6, 4},
+				{"Orders by Day of Week", 0, 6, 6, 4},
+				{"Pending Orders", 4, 0, 6, 4},
+				{"Recent Orders", 4, 6, 6, 6},
+			},
+		},
 	}
 
-	// Add cards to dashboard
-	cards := []store.DashboardCard{
-		{DashboardID: salesDash.ID, QuestionID: questionIDs[4], CardType: "question", Row: 0, Col: 0, Width: 4, Height: 2},  // Total Revenue
-		{DashboardID: salesDash.ID, QuestionID: questionIDs[0], CardType: "question", Row: 0, Col: 4, Width: 8, Height: 4},  // Revenue by Month
-		{DashboardID: salesDash.ID, QuestionID: questionIDs[1], CardType: "question", Row: 2, Col: 0, Width: 6, Height: 4},  // Top Products
-		{DashboardID: salesDash.ID, QuestionID: questionIDs[3], CardType: "question", Row: 4, Col: 0, Width: 12, Height: 6}, // Recent Orders
-	}
-	for _, card := range cards {
-		s.store.Dashboards().CreateCard(ctx, &card)
-	}
+	for _, d := range dashboards {
+		dashboard := &store.Dashboard{
+			Name:         d.name,
+			Description:  d.description,
+			CollectionID: collIDs[d.collection],
+		}
+		if err := s.store.Dashboards().Create(ctx, dashboard); err != nil {
+			slog.Warn("Failed to create dashboard", "name", d.name, "error", err)
+			continue
+		}
 
-	// Marketing Dashboard
-	mktDash := &store.Dashboard{
-		Name:         "Marketing Analytics",
-		Description:  "Customer insights and marketing metrics",
-		CollectionID: collIDs["Marketing"],
-	}
-	if err := s.store.Dashboards().Create(ctx, mktDash); err != nil {
-		return err
-	}
+		// Add cards
+		for _, c := range d.cards {
+			qID, ok := questionIDs[c.question]
+			if !ok {
+				slog.Warn("Question not found for card", "question", c.question)
+				continue
+			}
 
-	// Add cards
-	mktCards := []store.DashboardCard{
-		{DashboardID: mktDash.ID, QuestionID: questionIDs[2], CardType: "question", Row: 0, Col: 0, Width: 6, Height: 4}, // Customer Distribution
-	}
-	for _, card := range mktCards {
-		s.store.Dashboards().CreateCard(ctx, &card)
+			card := &store.DashboardCard{
+				DashboardID: dashboard.ID,
+				QuestionID:  qID,
+				CardType:    "question",
+				Row:         c.row,
+				Col:         c.col,
+				Width:       c.w,
+				Height:      c.h,
+			}
+			if err := s.store.Dashboards().CreateCard(ctx, card); err != nil {
+				slog.Warn("Failed to create card", "question", c.question, "error", err)
+			}
+		}
+
+		slog.Info("Created dashboard", "name", d.name, "cards", len(d.cards))
 	}
 
 	return nil
 }
 
-func createSampleDatabase(dbPath string) error {
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return err
+// formatTableName converts snake_case to Title Case
+func formatTableName(name string) string {
+	words := make([]byte, 0, len(name))
+	capitalize := true
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c == '_' {
+			words = append(words, ' ')
+			capitalize = true
+		} else if capitalize {
+			if c >= 'a' && c <= 'z' {
+				c -= 32 // to uppercase
+			}
+			words = append(words, c)
+			capitalize = false
+		} else {
+			words = append(words, c)
+		}
 	}
-	defer db.Close()
+	return string(words)
+}
 
-	// Create tables
-	schema := `
-	CREATE TABLE IF NOT EXISTS products (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		category TEXT NOT NULL,
-		price REAL NOT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS customers (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		email TEXT UNIQUE NOT NULL,
-		country TEXT NOT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS orders (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		customer_id INTEGER NOT NULL REFERENCES customers(id),
-		product_id INTEGER NOT NULL REFERENCES products(id),
-		quantity INTEGER NOT NULL,
-		total REAL NOT NULL,
-		order_date DATE NOT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS analytics (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		date DATE NOT NULL,
-		page_views INTEGER NOT NULL,
-		unique_visitors INTEGER NOT NULL,
-		bounce_rate REAL NOT NULL,
-		avg_session_duration REAL NOT NULL
-	);
-	`
-
-	if _, err := db.Exec(schema); err != nil {
-		return err
-	}
-
-	// Check if data already exists
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM products").Scan(&count)
-	if count > 0 {
-		return nil // Data already seeded
-	}
-
-	// Seed products
-	products := []struct {
-		name     string
-		category string
-		price    float64
-	}{
-		{"Widget Pro", "Electronics", 99.99},
-		{"Gadget Plus", "Electronics", 149.99},
-		{"Super Tool", "Tools", 49.99},
-		{"Mega Device", "Electronics", 299.99},
-		{"Basic Item", "General", 19.99},
-		{"Premium Package", "Services", 199.99},
-		{"Standard Kit", "Tools", 79.99},
-		{"Deluxe Set", "General", 129.99},
-		{"Mini Gadget", "Electronics", 39.99},
-		{"Pro Service", "Services", 499.99},
-	}
-
-	for _, p := range products {
-		db.Exec("INSERT INTO products (name, category, price) VALUES (?, ?, ?)",
-			p.name, p.category, p.price)
-	}
-
-	// Seed customers
-	countries := []string{"USA", "UK", "Canada", "Germany", "France", "Australia", "Japan", "Brazil"}
-	for i := 1; i <= 100; i++ {
-		name := fmt.Sprintf("Customer %d", i)
-		email := fmt.Sprintf("customer%d@example.com", i)
-		country := countries[rand.Intn(len(countries))]
-		db.Exec("INSERT INTO customers (name, email, country) VALUES (?, ?, ?)",
-			name, email, country)
-	}
-
-	// Seed orders (for the past year)
-	now := time.Now()
-	for i := 0; i < 1000; i++ {
-		customerID := rand.Intn(100) + 1
-		productID := rand.Intn(10) + 1
-		quantity := rand.Intn(5) + 1
-
-		// Get product price
-		var price float64
-		db.QueryRow("SELECT price FROM products WHERE id = ?", productID).Scan(&price)
-		total := price * float64(quantity)
-
-		// Random date in the past year
-		daysAgo := rand.Intn(365)
-		orderDate := now.AddDate(0, 0, -daysAgo).Format("2006-01-02")
-
-		db.Exec("INSERT INTO orders (customer_id, product_id, quantity, total, order_date) VALUES (?, ?, ?, ?, ?)",
-			customerID, productID, quantity, total, orderDate)
-	}
-
-	// Seed analytics (for the past 30 days)
-	for i := 0; i < 30; i++ {
-		date := now.AddDate(0, 0, -i).Format("2006-01-02")
-		pageViews := rand.Intn(10000) + 5000
-		uniqueVisitors := rand.Intn(5000) + 2000
-		bounceRate := rand.Float64()*30 + 20
-		avgSession := rand.Float64()*300 + 60
-
-		db.Exec("INSERT INTO analytics (date, page_views, unique_visitors, bounce_rate, avg_session_duration) VALUES (?, ?, ?, ?, ?)",
-			date, pageViews, uniqueVisitors, bounceRate, avgSession)
-	}
-
-	return nil
+// formatColumnName converts snake_case to Title Case
+func formatColumnName(name string) string {
+	return formatTableName(name)
 }
 
 func mapType(sqlType string) string {
