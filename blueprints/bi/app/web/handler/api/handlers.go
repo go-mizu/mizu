@@ -2,12 +2,12 @@ package api
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"time"
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/bi/pkg/password"
 	"github.com/go-mizu/blueprints/bi/store"
 	"github.com/go-mizu/blueprints/bi/store/sqlite"
 )
@@ -450,6 +450,13 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+type CreateUserRequest struct {
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+}
+
 func (h *Users) Login(c *mizu.Ctx) error {
 	var req LoginRequest
 	if err := c.BindJSON(&req, 1<<20); err != nil {
@@ -461,10 +468,17 @@ func (h *Users) Login(c *mizu.Ctx) error {
 		return c.JSON(401, map[string]string{"error": "Invalid credentials"})
 	}
 
-	// Simple password check (in production, use bcrypt)
-	hash := sha256.Sum256([]byte(req.Password))
-	if user.PasswordHash != hex.EncodeToString(hash[:]) {
+	// Verify password using Argon2id
+	if err := password.Verify(req.Password, user.PasswordHash); err != nil {
 		return c.JSON(401, map[string]string{"error": "Invalid credentials"})
+	}
+
+	// Check if password needs rehash with updated parameters
+	if password.NeedsRehash(user.PasswordHash, nil) {
+		if newHash, err := password.Hash(req.Password, nil); err == nil {
+			user.PasswordHash = newHash
+			h.store.Users().Update(c.Request().Context(), user)
+		}
 	}
 
 	// Create session
@@ -522,13 +536,38 @@ func (h *Users) List(c *mizu.Ctx) error {
 }
 
 func (h *Users) Create(c *mizu.Ctx) error {
-	var user store.User
-	if err := c.BindJSON(&user, 1<<20); err != nil {
+	var req CreateUserRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid request body"})
 	}
-	if err := h.store.Users().Create(c.Request().Context(), &user); err != nil {
+
+	// Validate required fields
+	if req.Email == "" || req.Password == "" || req.Name == "" {
+		return c.JSON(400, map[string]string{"error": "Email, password, and name are required"})
+	}
+
+	// Hash the password using Argon2id
+	passwordHash, err := password.Hash(req.Password, nil)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to hash password"})
+	}
+
+	user := &store.User{
+		Email:        req.Email,
+		Name:         req.Name,
+		PasswordHash: passwordHash,
+		Role:         req.Role,
+	}
+	if user.Role == "" {
+		user.Role = "user"
+	}
+
+	if err := h.store.Users().Create(c.Request().Context(), user); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
+
+	// Don't return the password hash
+	user.PasswordHash = ""
 	return c.JSON(201, user)
 }
 
