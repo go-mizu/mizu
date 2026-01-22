@@ -504,7 +504,7 @@ export const theme = createTheme({
 // CSS VARIABLES RESOLVER
 // =============================================================================
 
-export const cssVariablesResolver: CSSVariablesResolver = (theme) => ({
+export const cssVariablesResolver: CSSVariablesResolver = (_theme) => ({
   variables: {
     // Brand colors
     '--mb-color-brand': '#509EE3',

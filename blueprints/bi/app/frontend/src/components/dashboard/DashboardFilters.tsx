@@ -7,7 +7,7 @@ import { DatePickerInput, DateInput } from '@mantine/dates'
 import { useDisclosure } from '@mantine/hooks'
 import {
   IconPlus, IconFilter, IconX, IconChevronDown, IconCalendar,
-  IconHash, IconLetterCase, IconList, IconSearch, IconAdjustments
+  IconHash, IconLetterCase, IconList, IconSearch
 } from '@tabler/icons-react'
 import type { DashboardFilter, Column } from '../../api/types'
 
@@ -171,7 +171,7 @@ function FilterWidget({
             size="xs"
             placeholder={filter.name}
             value={value ? new Date(value) : null}
-            onChange={(date) => onChange(date?.toISOString() || null)}
+            onChange={(date) => onChange(date ? (typeof date === 'object' && date !== null ? (date as Date).toISOString() : String(date)) : null)}
             leftSection={getIcon()}
             clearable
             style={{ minWidth: 180 }}
@@ -262,7 +262,7 @@ function AddFilterModal({
   opened,
   onClose,
   onAdd,
-  availableColumns,
+  availableColumns: _availableColumns,
 }: {
   opened: boolean
   onClose: () => void
@@ -340,16 +340,16 @@ export function DateRangeFilter({
   value,
   onChange,
 }: {
-  value: { start: Date | null; end: Date | null }
-  onChange: (range: { start: Date | null; end: Date | null }) => void
+  value: { start: string | null; end: string | null }
+  onChange: (range: { start: string | null; end: string | null }) => void
 }) {
   return (
     <Group gap="xs">
       <DateInput
         size="xs"
         placeholder="Start date"
-        value={value.start}
-        onChange={(date) => onChange({ ...value, start: date })}
+        value={value.start ? new Date(value.start) : null}
+        onChange={(date) => onChange({ ...value, start: date ? new Date(date).toISOString() : null })}
         clearable
         style={{ width: 130 }}
       />
@@ -357,8 +357,8 @@ export function DateRangeFilter({
       <DateInput
         size="xs"
         placeholder="End date"
-        value={value.end}
-        onChange={(date) => onChange({ ...value, end: date })}
+        value={value.end ? new Date(value.end) : null}
+        onChange={(date) => onChange({ ...value, end: date ? new Date(date).toISOString() : null })}
         clearable
         style={{ width: 130 }}
       />

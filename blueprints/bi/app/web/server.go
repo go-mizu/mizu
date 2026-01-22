@@ -3,13 +3,18 @@ package web
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/go-mizu/mizu"
 
 	"github.com/go-mizu/blueprints/bi/app/web/handler/api"
+	"github.com/go-mizu/blueprints/bi/assets"
 	"github.com/go-mizu/blueprints/bi/store"
 	"github.com/go-mizu/blueprints/bi/store/sqlite"
 )
@@ -109,27 +114,6 @@ func (s *Server) setupRoutes() {
 		return c.JSON(200, map[string]string{"status": "ok"})
 	})
 
-	// Frontend routes - serve index.html for SPA
-	spaRoutes := []string{
-		"/",
-		"/browse",
-		"/browse/{path...}",
-		"/question/new",
-		"/question/{id}",
-		"/dashboard/new",
-		"/dashboard/{id}",
-		"/dashboard/{id}/edit",
-		"/model/{id}",
-		"/admin/datamodel",
-		"/admin/datamodel/{id}",
-		"/admin/settings",
-		"/admin/people",
-		"/login",
-	}
-	for _, route := range spaRoutes {
-		s.app.Get(route, s.serveUI)
-	}
-
 	// API routes
 	s.app.Group("/api", func(apiGroup *mizu.Router) {
 		// Auth
@@ -219,13 +203,69 @@ func (s *Server) setupRoutes() {
 		apiGroup.Put("/settings", s.settingsHandler.Update)
 		apiGroup.Get("/settings/audit", s.settingsHandler.AuditLogs)
 	})
+
+	// Serve static files
+	s.serveStatic()
 }
 
-func (s *Server) serveUI(c *mizu.Ctx) error {
-	// Return a basic HTML page (in production, frontend would be built separately)
-	c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
-	c.Writer().Write([]byte(defaultIndexHTML))
-	return nil
+func (s *Server) serveStatic() {
+	staticFS := assets.Static()
+
+	// Serve static files from embedded filesystem
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+
+	// Handle /static/* paths
+	s.app.Get("/static/{path...}", func(c *mizu.Ctx) error {
+		ext := filepath.Ext(c.Request().URL.Path)
+		if contentType := mime.TypeByExtension(ext); contentType != "" {
+			c.Writer().Header().Set("Content-Type", contentType)
+		}
+		// Cache static assets for 1 year (immutable since embedded)
+		c.Writer().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
+		staticHandler.ServeHTTP(c.Writer(), c.Request())
+		return nil
+	})
+
+	// SPA fallback - serve index.html for non-API routes
+	s.app.Get("/{path...}", func(c *mizu.Ctx) error {
+		reqPath := c.Request().URL.Path
+
+		// Don't handle API routes
+		if strings.HasPrefix(reqPath, "/api/") {
+			return c.JSON(404, map[string]string{"message": "not found"})
+		}
+		if strings.HasPrefix(reqPath, "/static/") {
+			return c.JSON(404, map[string]string{"message": "not found"})
+		}
+
+		// Try to serve the file directly first
+		if reqPath != "/" && reqPath != "" {
+			cleanPath := strings.TrimPrefix(reqPath, "/")
+			distPath := "dist/" + cleanPath
+			if info, err := fs.Stat(staticFS, distPath); err == nil && !info.IsDir() {
+				ext := filepath.Ext(cleanPath)
+				if contentType := mime.TypeByExtension(ext); contentType != "" {
+					c.Writer().Header().Set("Content-Type", contentType)
+				}
+				http.ServeFileFS(c.Writer(), c.Request(), staticFS, distPath)
+				return nil
+			}
+		}
+
+		// Serve index.html for SPA routes
+		indexContent, err := fs.ReadFile(staticFS, "dist/index.html")
+		if err != nil {
+			// If no index.html, show a placeholder
+			c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
+			c.Writer().Write([]byte(defaultIndexHTML))
+			return nil
+		}
+
+		c.Writer().Header().Set("Content-Type", "text/html; charset=utf-8")
+		c.Writer().Write(indexContent)
+		return nil
+	})
 }
 
 const defaultIndexHTML = `<!DOCTYPE html>

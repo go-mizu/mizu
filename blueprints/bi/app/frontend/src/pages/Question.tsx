@@ -1,19 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
+  Box, Group, Text, Button, ActionIcon, Menu, Loader,
   Modal, TextInput, Textarea, Badge, Divider, Tooltip, Stack,
-  ThemeIcon, rem, UnstyledButton
+  ThemeIcon, rem
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
   IconPlayerPlay, IconDeviceFloppy, IconDots, IconDownload, IconShare,
   IconTrash, IconCopy, IconBell, IconChartBar,
-  IconRefresh, IconLayoutSidebar, IconBookmark, IconBookmarkFilled,
-  IconStar, IconPinned, IconPinnedFilled, IconStarFilled,
-  IconChevronLeft, IconChevronRight, IconDatabase, IconFilter,
-  IconMathFunction
+  IconRefresh, IconBookmark, IconBookmarkFilled,
+  IconStar, IconStarFilled,
+  IconChevronLeft, IconChevronRight, IconDatabase
 } from '@tabler/icons-react'
 import { QueryBuilder } from '../components/query-builder'
 import Visualization from '../components/visualizations'
@@ -25,7 +24,7 @@ import {
   useExecuteQuery, useExecuteNativeQuery
 } from '../api/hooks'
 import type { QueryResult, VisualizationType } from '../api/types'
-import { semanticColors, chartColors } from '../theme'
+import { semanticColors } from '../theme'
 
 // =============================================================================
 // STYLES
