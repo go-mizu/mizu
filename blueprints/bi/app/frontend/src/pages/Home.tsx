@@ -1,21 +1,93 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Container, Title, Text, Card, Group, Stack, Button, SimpleGrid,
-  Badge, Paper, Skeleton, Avatar, ThemeIcon, ActionIcon, Menu
+  Box, Title, Text, Card, Group, Stack, Button, SimpleGrid,
+  Paper, Skeleton, ThemeIcon, ActionIcon, Menu, Tooltip, rem, Divider,
+  UnstyledButton
 } from '@mantine/core'
 import {
   IconChartBar, IconLayoutDashboard, IconFolder, IconDatabase,
-  IconPlus, IconDots, IconStar, IconClock,
-  IconArrowRight, IconBolt, IconSearch
+  IconPlus, IconDots, IconStar, IconClock, IconPinned, IconPinnedFilled,
+  IconArrowRight, IconBolt, IconSearch, IconBookmark, IconStarFilled,
+  IconTable, IconSparkles
 } from '@tabler/icons-react'
 import { useQuestions, useDashboards, useCollections, useDataSources } from '../api/hooks'
 import { useUIStore } from '../stores/uiStore'
-import { chartColors } from '../theme'
+import { useBookmarkStore, usePinActions } from '../stores/bookmarkStore'
+import { chartColors, semanticColors } from '../theme'
+
+// =============================================================================
+// STYLES
+// =============================================================================
+
+const styles = {
+  container: {
+    padding: rem(24),
+    maxWidth: 1200,
+    margin: '0 auto',
+    backgroundColor: semanticColors.bgLight,
+    minHeight: '100vh',
+  },
+  header: {
+    marginBottom: rem(32),
+  },
+  section: {
+    marginBottom: rem(32),
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: rem(16),
+  },
+  sectionTitle: {
+    fontSize: rem(18),
+    fontWeight: 700,
+    color: semanticColors.textPrimary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: rem(8),
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    border: `1px solid ${semanticColors.borderMedium}`,
+    borderRadius: rem(8),
+    padding: rem(16),
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+  cardHover: {
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+    transform: 'translateY(-2px)',
+  },
+  startCard: {
+    backgroundColor: '#ffffff',
+    border: `1px solid ${semanticColors.borderMedium}`,
+    borderRadius: rem(8),
+    padding: rem(20),
+    display: 'flex',
+    alignItems: 'center',
+    gap: rem(16),
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+  emptyState: {
+    backgroundColor: '#ffffff',
+    border: `1px solid ${semanticColors.borderMedium}`,
+    borderRadius: rem(8),
+    padding: rem(48),
+    textAlign: 'center' as const,
+  },
+}
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
 
 export default function Home() {
   const navigate = useNavigate()
   const { openCommandPalette } = useUIStore()
+  const { pinnedItems, recentItems } = useBookmarkStore()
 
   const { data: questions, isLoading: questionsLoading } = useQuestions()
   const { data: dashboards, isLoading: dashboardsLoading } = useDashboards()
@@ -23,301 +95,301 @@ export default function Home() {
   const { data: datasources, isLoading: datasourcesLoading } = useDataSources()
 
   const isLoading = questionsLoading || dashboardsLoading || collectionsLoading || datasourcesLoading
+  const hasData = (questions?.length || 0) > 0 || (dashboards?.length || 0) > 0
 
-  const stats = useMemo(() => ({
-    questions: questions?.length || 0,
-    dashboards: dashboards?.length || 0,
-    collections: collections?.length || 0,
-    datasources: datasources?.length || 0,
-  }), [questions, dashboards, collections, datasources])
+  // Get pinned dashboards and questions
+  const pinnedDashboards = useMemo(() => {
+    return pinnedItems
+      .filter(p => p.type === 'dashboard')
+      .map(p => dashboards?.find(d => d.id === p.id))
+      .filter(Boolean)
+  }, [pinnedItems, dashboards])
 
+  const pinnedQuestions = useMemo(() => {
+    return pinnedItems
+      .filter(p => p.type === 'question')
+      .map(p => questions?.find(q => q.id === p.id))
+      .filter(Boolean)
+  }, [pinnedItems, questions])
+
+  const hasPinnedItems = pinnedDashboards.length > 0 || pinnedQuestions.length > 0
+
+  // Recent items from the store
   const recentDashboards = useMemo(() => {
-    return (dashboards || [])
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    return recentItems
+      .filter(item => item.type === 'dashboard')
       .slice(0, 4)
-  }, [dashboards])
+      .map(item => dashboards?.find(d => d.id === item.id))
+      .filter(Boolean)
+  }, [recentItems, dashboards])
 
   const recentQuestions = useMemo(() => {
-    return (questions || [])
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    return recentItems
+      .filter(item => item.type === 'question')
       .slice(0, 6)
-  }, [questions])
+      .map(item => questions?.find(q => q.id === item.id))
+      .filter(Boolean)
+  }, [recentItems, questions])
 
-  const statCards = [
-    { label: 'Questions', value: stats.questions, icon: IconChartBar, color: 'brand', path: '/browse' },
-    { label: 'Dashboards', value: stats.dashboards, icon: IconLayoutDashboard, color: 'summarize', path: '/browse' },
-    { label: 'Collections', value: stats.collections, icon: IconFolder, color: 'filter', path: '/browse' },
-    { label: 'Data Sources', value: stats.datasources, icon: IconDatabase, color: 'warning', path: '/admin/datamodel' },
-  ]
+  const hasRecentItems = recentDashboards.length > 0 || recentQuestions.length > 0
 
-  const quickActions = [
-    { label: 'New question', icon: IconChartBar, color: 'brand', action: () => navigate('/question/new') },
-    { label: 'New dashboard', icon: IconLayoutDashboard, color: 'summarize', action: () => navigate('/dashboard/new') },
-    { label: 'Browse data', icon: IconDatabase, color: 'filter', action: () => navigate('/browse/databases') },
-  ]
-
-  const getVizIcon = (type: string) => {
-    switch (type) {
-      case 'line': return '📈'
-      case 'bar': return '📊'
-      case 'pie': return '🥧'
-      case 'number': return '#'
-      default: return '📋'
-    }
-  }
-
-  if (isLoading && stats.questions === 0 && stats.dashboards === 0) {
+  // Loading state
+  if (isLoading && !hasData) {
     return (
-      <Container size="xl" py="lg">
-        <Group justify="space-between" mb="xl">
-          <div>
-            <Skeleton height={32} width={200} mb="sm" />
-            <Skeleton height={20} width={300} />
-          </div>
-        </Group>
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} mb="xl">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} height={100} radius="md" />
+      <Box style={styles.container}>
+        <Box style={styles.header}>
+          <Skeleton height={32} width={200} mb="sm" />
+          <Skeleton height={20} width={300} />
+        </Box>
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} height={120} radius="md" />
           ))}
         </SimpleGrid>
-      </Container>
+      </Box>
     )
   }
 
   return (
-    <Container size="xl" py="lg">
+    <Box style={styles.container}>
       {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>Home</Title>
-          <Text c="dimmed">Your analytics at a glance</Text>
-        </div>
-        <Group>
-          <Button
-            variant="light"
-            leftSection={<IconSearch size={16} />}
-            onClick={openCommandPalette}
-            styles={{ root: { fontWeight: 400 } }}
-          >
-            Search or jump to...
-          </Button>
-          <Button leftSection={<IconPlus size={16} />} onClick={() => navigate('/question/new')}>
-            New Question
-          </Button>
-        </Group>
-      </Group>
-
-      {/* Quick Actions */}
-      <Card withBorder radius="md" p="lg" mb="xl" bg="gray.0">
-        <Group gap="lg">
-          <Text fw={500} c="dimmed">Quick actions</Text>
-          {quickActions.map((action) => (
-            <Button
-              key={action.label}
-              variant="white"
-              leftSection={<action.icon size={18} />}
-              onClick={action.action}
-              styles={{
-                root: {
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                }
-              }}
-            >
-              {action.label}
-            </Button>
-          ))}
-        </Group>
-      </Card>
-
-      {/* Stats */}
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} mb="xl">
-        {statCards.map((stat) => (
-          <Card
-            key={stat.label}
-            withBorder
-            radius="md"
-            padding="lg"
-            style={{ cursor: 'pointer' }}
-            onClick={() => navigate(stat.path)}
-          >
-            <Group justify="space-between" align="flex-start">
-              <div>
-                <Text size="2rem" fw={700} c={`${stat.color}.5`}>
-                  {stat.value}
-                </Text>
-                <Text c="dimmed" size="sm" mt={4}>
-                  {stat.label}
-                </Text>
-              </div>
-              <ThemeIcon
-                size={48}
-                radius="md"
-                variant="light"
-                color={stat.color}
-              >
-                <stat.icon size={24} />
-              </ThemeIcon>
-            </Group>
-          </Card>
-        ))}
-      </SimpleGrid>
-
-      {/* Recent Dashboards */}
-      {recentDashboards.length > 0 && (
-        <>
-          <Group justify="space-between" mb="md">
-            <Group gap="xs">
-              <IconClock size={20} color="var(--mantine-color-gray-6)" />
-              <Title order={4}>Recent Dashboards</Title>
-            </Group>
+      <Box style={styles.header}>
+        <Group justify="space-between" align="flex-start">
+          <Box>
+            <Title order={2} style={{ color: semanticColors.textPrimary }}>
+              Home
+            </Title>
+            <Text c="dimmed" size="sm" mt={4}>
+              Welcome back! Here's what's happening with your data.
+            </Text>
+          </Box>
+          <Group gap="sm">
             <Button
               variant="subtle"
-              size="sm"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/browse')}
+              leftSection={<IconSearch size={16} />}
+              onClick={openCommandPalette}
+              color="gray"
             >
-              View all
+              Search
             </Button>
+            <Menu position="bottom-end" shadow="md">
+              <Menu.Target>
+                <Button leftSection={<IconPlus size={16} />}>
+                  New
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconChartBar size={16} color={semanticColors.brand} />}
+                  onClick={() => navigate('/question/new')}
+                >
+                  Question
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} />}
+                  onClick={() => navigate('/dashboard/new')}
+                >
+                  Dashboard
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  leftSection={<IconFolder size={16} color={semanticColors.warning} />}
+                  onClick={() => navigate('/collection/new')}
+                >
+                  Collection
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} mb="xl">
-            {recentDashboards.map((dashboard, index) => (
-              <Card
+        </Group>
+      </Box>
+
+      {/* Start Here Section (for new users) */}
+      {!hasData && (
+        <Box style={styles.section}>
+          <Box style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              <IconSparkles size={20} color={semanticColors.brand} />
+              Start here
+            </Text>
+          </Box>
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
+            <StartCard
+              icon={IconDatabase}
+              color={semanticColors.warning}
+              title="Add your data"
+              description="Connect to a database to start exploring"
+              onClick={() => navigate('/admin/datamodel')}
+            />
+            <StartCard
+              icon={IconChartBar}
+              color={semanticColors.brand}
+              title="Ask a question"
+              description="Create visualizations from your data"
+              onClick={() => navigate('/question/new')}
+            />
+            <StartCard
+              icon={IconLayoutDashboard}
+              color={semanticColors.summarize}
+              title="Create a dashboard"
+              description="Combine questions into a dashboard"
+              onClick={() => navigate('/dashboard/new')}
+            />
+          </SimpleGrid>
+        </Box>
+      )}
+
+      {/* Pinned Items Section */}
+      {hasPinnedItems && (
+        <Box style={styles.section}>
+          <Box style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              <IconStarFilled size={18} color={semanticColors.warning} />
+              Pinned
+            </Text>
+          </Box>
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
+            {pinnedDashboards.map((dashboard: any, index: number) => (
+              <ItemCard
                 key={dashboard.id}
-                withBorder
-                radius="md"
-                padding="lg"
-                style={{ cursor: 'pointer' }}
+                id={dashboard.id}
+                type="dashboard"
+                name={dashboard.name}
+                description={dashboard.description}
+                cardCount={dashboard.cards?.length}
+                colorIndex={index}
                 onClick={() => navigate(`/dashboard/${dashboard.id}`)}
-              >
-                <Group justify="space-between" mb="sm">
-                  <ThemeIcon
-                    size={40}
-                    radius="md"
-                    variant="light"
-                    color="summarize"
-                    style={{
-                      backgroundColor: chartColors[index % chartColors.length] + '20',
-                    }}
-                  >
-                    <IconLayoutDashboard size={20} color={chartColors[index % chartColors.length]} />
-                  </ThemeIcon>
-                  <Menu position="bottom-end" withinPortal>
-                    <Menu.Target>
-                      <ActionIcon variant="subtle" color="gray" onClick={(e) => e.stopPropagation()}>
-                        <IconDots size={16} />
-                      </ActionIcon>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item leftSection={<IconStar size={14} />}>
-                        Pin to Home
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
-                </Group>
-                <Text fw={500} lineClamp={1}>{dashboard.name}</Text>
-                {dashboard.description && (
-                  <Text size="sm" c="dimmed" lineClamp={1} mt={4}>
-                    {dashboard.description}
-                  </Text>
-                )}
-                <Text size="xs" c="dimmed" mt="sm">
-                  {dashboard.cards?.length || 0} cards
-                </Text>
-              </Card>
+              />
+            ))}
+            {pinnedQuestions.map((question: any, index: number) => (
+              <ItemCard
+                key={question.id}
+                id={question.id}
+                type="question"
+                name={question.name}
+                description={question.description}
+                vizType={question.visualization?.type}
+                colorIndex={pinnedDashboards.length + index}
+                onClick={() => navigate(`/question/${question.id}`)}
+              />
             ))}
           </SimpleGrid>
-        </>
+        </Box>
       )}
 
-      {/* Recent Questions */}
-      {recentQuestions.length > 0 && (
-        <>
-          <Group justify="space-between" mb="md">
-            <Group gap="xs">
-              <IconClock size={20} color="var(--mantine-color-gray-6)" />
-              <Title order={4}>Recent Questions</Title>
-            </Group>
+      {/* Pick Up Where You Left Off Section */}
+      {hasRecentItems && (
+        <Box style={styles.section}>
+          <Box style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              <IconClock size={18} color={semanticColors.textSecondary} />
+              Pick up where you left off
+            </Text>
             <Button
               variant="subtle"
-              size="sm"
+              size="xs"
               rightSection={<IconArrowRight size={14} />}
               onClick={() => navigate('/browse')}
+              color="gray"
             >
               View all
             </Button>
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} mb="xl">
-            {recentQuestions.map((question, index) => (
-              <Card
-                key={question.id}
-                withBorder
-                radius="md"
-                padding="lg"
-                style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/question/${question.id}`)}
-              >
-                <Group justify="space-between" mb="sm">
-                  <Group gap="sm">
-                    <Avatar
-                      size="sm"
-                      radius="sm"
-                      color="brand"
-                      style={{
-                        backgroundColor: chartColors[index % chartColors.length] + '20',
-                        color: chartColors[index % chartColors.length],
-                      }}
-                    >
-                      {getVizIcon(question.visualization?.type || 'table')}
-                    </Avatar>
-                    <Badge size="sm" variant="light" color="brand">
-                      {question.visualization?.type || 'table'}
-                    </Badge>
-                  </Group>
-                  <Menu position="bottom-end" withinPortal>
-                    <Menu.Target>
-                      <ActionIcon variant="subtle" color="gray" onClick={(e) => e.stopPropagation()}>
-                        <IconDots size={16} />
-                      </ActionIcon>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item leftSection={<IconStar size={14} />}>
-                        Pin to Home
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
-                </Group>
-                <Text fw={500} lineClamp={2}>{question.name}</Text>
-                {question.description && (
-                  <Text size="sm" c="dimmed" lineClamp={1} mt={4}>
-                    {question.description}
-                  </Text>
-                )}
-              </Card>
-            ))}
+          </Box>
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }}>
+            {[...recentDashboards, ...recentQuestions].slice(0, 8).map((item: any, index: number) => {
+              const isDashboard = 'cards' in item
+              return (
+                <ItemCard
+                  key={item.id}
+                  id={item.id}
+                  type={isDashboard ? 'dashboard' : 'question'}
+                  name={item.name}
+                  description={item.description}
+                  cardCount={isDashboard ? item.cards?.length : undefined}
+                  vizType={!isDashboard ? item.visualization?.type : undefined}
+                  colorIndex={index}
+                  onClick={() => navigate(`/${isDashboard ? 'dashboard' : 'question'}/${item.id}`)}
+                  compact
+                />
+              )
+            })}
           </SimpleGrid>
-        </>
+        </Box>
       )}
 
-      {/* Empty state */}
-      {!isLoading && stats.questions === 0 && stats.dashboards === 0 && (
-        <Paper withBorder radius="md" p="xl" ta="center">
+      {/* Our Analytics Section */}
+      {hasData && (
+        <Box style={styles.section}>
+          <Box style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              <IconChartBar size={18} color={semanticColors.brand} />
+              Our analytics
+            </Text>
+            <Button
+              variant="subtle"
+              size="xs"
+              rightSection={<IconArrowRight size={14} />}
+              onClick={() => navigate('/browse')}
+              color="gray"
+            >
+              Browse all
+            </Button>
+          </Box>
+          <SimpleGrid cols={{ base: 2, sm: 4 }}>
+            <StatCard
+              label="Questions"
+              value={questions?.length || 0}
+              icon={IconChartBar}
+              color={semanticColors.brand}
+              onClick={() => navigate('/browse')}
+            />
+            <StatCard
+              label="Dashboards"
+              value={dashboards?.length || 0}
+              icon={IconLayoutDashboard}
+              color={semanticColors.summarize}
+              onClick={() => navigate('/browse')}
+            />
+            <StatCard
+              label="Collections"
+              value={collections?.length || 0}
+              icon={IconFolder}
+              color={semanticColors.filter}
+              onClick={() => navigate('/browse')}
+            />
+            <StatCard
+              label="Databases"
+              value={datasources?.length || 0}
+              icon={IconDatabase}
+              color={semanticColors.warning}
+              onClick={() => navigate('/admin/datamodel')}
+            />
+          </SimpleGrid>
+        </Box>
+      )}
+
+      {/* Empty State */}
+      {!hasData && !isLoading && (datasources?.length || 0) === 0 && (
+        <Box style={styles.emptyState}>
           <Stack align="center" gap="lg">
             <ThemeIcon size={80} radius="xl" variant="light" color="brand">
               <IconBolt size={40} />
             </ThemeIcon>
-            <div>
-              <Title order={3} mb="xs">Get started with BI</Title>
+            <Box>
+              <Title order={3} mb="xs" style={{ color: semanticColors.textPrimary }}>
+                Ready to explore your data?
+              </Title>
               <Text c="dimmed" maw={400} mx="auto">
-                Connect to a data source, or run 'bi seed' to add sample data and start exploring.
+                Connect to a database to start creating questions and dashboards, or run <code>bi seed</code> to add sample data.
               </Text>
-            </div>
+            </Box>
             <Group>
               <Button
                 size="lg"
                 leftSection={<IconDatabase size={20} />}
                 onClick={() => navigate('/admin/datamodel')}
               >
-                Add Data Source
+                Add a database
               </Button>
               <Button
                 size="lg"
@@ -325,12 +397,221 @@ export default function Home() {
                 leftSection={<IconPlus size={20} />}
                 onClick={() => navigate('/question/new')}
               >
-                New Question
+                New question
               </Button>
             </Group>
           </Stack>
-        </Paper>
+        </Box>
       )}
-    </Container>
+    </Box>
+  )
+}
+
+// =============================================================================
+// SUB-COMPONENTS
+// =============================================================================
+
+// Start Card for onboarding
+function StartCard({
+  icon: Icon,
+  color,
+  title,
+  description,
+  onClick,
+}: {
+  icon: typeof IconDatabase
+  color: string
+  title: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <UnstyledButton
+      onClick={onClick}
+      style={styles.startCard}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
+        e.currentTarget.style.transform = 'translateY(-2px)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.transform = 'translateY(0)'
+      }}
+    >
+      <ThemeIcon size={48} radius="md" style={{ backgroundColor: `${color}15` }}>
+        <Icon size={24} color={color} />
+      </ThemeIcon>
+      <Box>
+        <Text fw={600} size="md" style={{ color: semanticColors.textPrimary }}>
+          {title}
+        </Text>
+        <Text size="sm" c="dimmed">
+          {description}
+        </Text>
+      </Box>
+    </UnstyledButton>
+  )
+}
+
+// Stat Card
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  color,
+  onClick,
+}: {
+  label: string
+  value: number
+  icon: typeof IconChartBar
+  color: string
+  onClick: () => void
+}) {
+  return (
+    <UnstyledButton
+      onClick={onClick}
+      style={{
+        ...styles.card,
+        display: 'flex',
+        alignItems: 'center',
+        gap: rem(12),
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+    >
+      <ThemeIcon size={40} radius="md" style={{ backgroundColor: `${color}15` }}>
+        <Icon size={20} color={color} />
+      </ThemeIcon>
+      <Box>
+        <Text size="xl" fw={700} style={{ color: semanticColors.textPrimary }}>
+          {value}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {label}
+        </Text>
+      </Box>
+    </UnstyledButton>
+  )
+}
+
+// Item Card (Question/Dashboard)
+function ItemCard({
+  id,
+  type,
+  name,
+  description,
+  vizType,
+  cardCount,
+  colorIndex,
+  onClick,
+  compact = false,
+}: {
+  id: string
+  type: 'dashboard' | 'question'
+  name: string
+  description?: string
+  vizType?: string
+  cardCount?: number
+  colorIndex: number
+  onClick: () => void
+  compact?: boolean
+}) {
+  const { pinned, toggle: togglePin } = usePinActions(id, type)
+  const Icon = type === 'dashboard' ? IconLayoutDashboard : IconChartBar
+  const color = type === 'dashboard' ? semanticColors.summarize : semanticColors.brand
+
+  const getVizIcon = (vizType: string) => {
+    switch (vizType) {
+      case 'line': return '📈'
+      case 'bar': return '📊'
+      case 'pie': return '🥧'
+      case 'number': return '#'
+      case 'table': return '📋'
+      default: return '📊'
+    }
+  }
+
+  return (
+    <UnstyledButton
+      onClick={onClick}
+      style={{
+        ...styles.card,
+        padding: compact ? rem(12) : rem(16),
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
+        e.currentTarget.style.transform = 'translateY(-2px)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = 'none'
+        e.currentTarget.style.transform = 'translateY(0)'
+      }}
+    >
+      <Group justify="space-between" mb={compact ? 'xs' : 'sm'}>
+        <ThemeIcon
+          size={compact ? 32 : 40}
+          radius="md"
+          style={{
+            backgroundColor: chartColors[colorIndex % chartColors.length] + '20',
+          }}
+        >
+          <Icon size={compact ? 16 : 20} color={chartColors[colorIndex % chartColors.length]} />
+        </ThemeIcon>
+        <Group gap={4}>
+          <Tooltip label={pinned ? 'Unpin' : 'Pin to home'}>
+            <ActionIcon
+              variant="subtle"
+              color={pinned ? 'yellow' : 'gray'}
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                togglePin()
+              }}
+            >
+              {pinned ? <IconStarFilled size={14} /> : <IconStar size={14} />}
+            </ActionIcon>
+          </Tooltip>
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon variant="subtle" color="gray" size="sm" onClick={(e) => e.stopPropagation()}>
+                <IconDots size={14} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item leftSection={<IconBookmark size={14} />}>
+                Bookmark
+              </Menu.Item>
+              <Menu.Item leftSection={pinned ? <IconPinned size={14} /> : <IconPinnedFilled size={14} />} onClick={togglePin}>
+                {pinned ? 'Unpin from home' : 'Pin to home'}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </Group>
+      </Group>
+      <Text fw={600} lineClamp={compact ? 1 : 2} size={compact ? 'sm' : 'md'} style={{ color: semanticColors.textPrimary }}>
+        {name}
+      </Text>
+      {!compact && description && (
+        <Text size="sm" c="dimmed" lineClamp={1} mt={4}>
+          {description}
+        </Text>
+      )}
+      <Group gap="xs" mt={compact ? 'xs' : 'sm'}>
+        {vizType && (
+          <Text size="xs" c="dimmed">
+            {getVizIcon(vizType)} {vizType}
+          </Text>
+        )}
+        {cardCount !== undefined && (
+          <Text size="xs" c="dimmed">
+            {cardCount} {cardCount === 1 ? 'card' : 'cards'}
+          </Text>
+        )}
+      </Group>
+    </UnstyledButton>
   )
 }

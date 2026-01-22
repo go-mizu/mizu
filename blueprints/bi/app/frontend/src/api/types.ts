@@ -306,3 +306,44 @@ export interface SearchResult {
   collection?: string
   score: number
 }
+
+// Bookmark types
+export interface Bookmark {
+  id: string
+  user_id: string
+  item_type: 'question' | 'dashboard' | 'collection'
+  item_id: string
+  position: number
+  created_at: string
+}
+
+// Recent item types
+export interface RecentItem {
+  id: string
+  user_id: string
+  item_type: 'question' | 'dashboard' | 'collection' | 'table'
+  item_id: string
+  item_name: string
+  viewed_at: string
+}
+
+// Pin types (for home page)
+export interface Pin {
+  id: string
+  item_type: 'question' | 'dashboard'
+  item_id: string
+  position: number
+  created_by: string
+  created_at: string
+}
+
+// Activity types
+export interface Activity {
+  id: string
+  user_id: string
+  action: 'view' | 'create' | 'update' | 'delete' | 'query' | 'export'
+  item_type: string
+  item_id: string
+  details?: Record<string, any>
+  created_at: string
+}
