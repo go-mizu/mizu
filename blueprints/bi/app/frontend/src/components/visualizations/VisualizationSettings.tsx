@@ -1,14 +1,12 @@
-import { useState } from 'react'
 import {
-  Box, Stack, Group, Text, Switch, NumberInput, Select, TextInput,
-  ColorInput, Divider, Accordion, Tooltip, ActionIcon, Paper, Tabs,
-  SegmentedControl, Slider
+  Stack, Group, Text, Switch, NumberInput, Select, TextInput,
+  ColorInput, Divider, Accordion
 } from '@mantine/core'
 import {
   IconChartLine, IconPalette, IconTarget, IconEye, IconNumbers,
-  IconAxisX, IconAxisY, IconInfoCircle
+  IconAxisX
 } from '@tabler/icons-react'
-import type { VisualizationSettings, VisualizationType } from '../../api/types'
+import type { VisualizationSettings } from '../../api/types'
 import { chartColors } from '../../theme'
 
 interface VisualizationSettingsEditorProps {

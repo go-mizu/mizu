@@ -14,7 +14,7 @@ import {
   IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
   IconMaximize, IconFilter, IconClock, IconLink,
   IconGripVertical, IconLetterCase, IconBookmark, IconBookmarkFilled,
-  IconPlayerPlay, IconArrowsMaximize
+  IconArrowsMaximize
 } from '@tabler/icons-react'
 import Visualization from '../components/visualizations'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
@@ -46,7 +46,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
 
   // State
   const [editMode, setEditMode] = useState(isNew)
-  const [fullscreen, setFullscreen] = useState(false)
+  const [_fullscreen, setFullscreen] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState<number | null>(null)
   const [saveModalOpened, { open: openSaveModal, close: closeSaveModal }] = useDisclosure(false)
   const [addCardModalOpened, { open: openAddCardModal, close: closeAddCardModal }] = useDisclosure(false)

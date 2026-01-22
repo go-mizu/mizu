@@ -1,15 +1,15 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Title, Text, Card, Group, Stack, Button, SimpleGrid,
-  Paper, Skeleton, ThemeIcon, ActionIcon, Menu, Tooltip, rem, Divider,
+  Box, Title, Text, Group, Stack, Button, SimpleGrid,
+  Skeleton, ThemeIcon, ActionIcon, Menu, Tooltip, rem,
   UnstyledButton
 } from '@mantine/core'
 import {
   IconChartBar, IconLayoutDashboard, IconFolder, IconDatabase,
-  IconPlus, IconDots, IconStar, IconClock, IconPinned, IconPinnedFilled,
+  IconPlus, IconDots, IconStar, IconClock,
   IconArrowRight, IconBolt, IconSearch, IconBookmark, IconStarFilled,
-  IconTable, IconSparkles
+  IconSparkles
 } from '@tabler/icons-react'
 import { useQuestions, useDashboards, useCollections, useDataSources } from '../api/hooks'
 import { useUIStore } from '../stores/uiStore'
@@ -522,7 +522,6 @@ function ItemCard({
 }) {
   const { pinned, toggle: togglePin } = usePinActions(id, type)
   const Icon = type === 'dashboard' ? IconLayoutDashboard : IconChartBar
-  const color = type === 'dashboard' ? semanticColors.summarize : semanticColors.brand
 
   const getVizIcon = (vizType: string) => {
     switch (vizType) {
@@ -585,7 +584,7 @@ function ItemCard({
               <Menu.Item leftSection={<IconBookmark size={14} />}>
                 Bookmark
               </Menu.Item>
-              <Menu.Item leftSection={pinned ? <IconPinned size={14} /> : <IconPinnedFilled size={14} />} onClick={togglePin}>
+              <Menu.Item leftSection={<IconStar size={14} />} onClick={togglePin}>
                 {pinned ? 'Unpin from home' : 'Pin to home'}
               </Menu.Item>
             </Menu.Dropdown>

@@ -1,12 +1,12 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import {
-  Box, Paper, Stack, Group, Text, Button, ActionIcon, Modal,
-  TextInput, Tooltip, Tabs, ScrollArea, UnstyledButton, Badge,
-  Divider, Code, Kbd
+  Box, Paper, Stack, Group, Text, ActionIcon, Modal,
+  TextInput, Tooltip, ScrollArea, UnstyledButton, Badge,
+  Divider, Code
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import {
-  IconPlus, IconX, IconFunction, IconHelp, IconSparkles,
+  IconFunction, IconHelp, IconSparkles,
   IconBraces, IconMath, IconCalendar, IconLetterCase,
   IconEqual, IconArrowRight
 } from '@tabler/icons-react'
@@ -246,7 +246,7 @@ function FunctionBrowserModal({
   opened,
   onClose,
   onInsert,
-  mode,
+  mode: _mode,
 }: {
   opened: boolean
   onClose: () => void
@@ -341,7 +341,7 @@ function FunctionBrowserModal({
                   {fn.args.length > 0 && (
                     <Text size="xs" mt={4}>
                       <Text span c="dimmed">Arguments: </Text>
-                      <Code size="xs">{fn.args.join(', ')}</Code>
+                      <Code fz="xs">{fn.args.join(', ')}</Code>
                     </Text>
                   )}
                 </Paper>
