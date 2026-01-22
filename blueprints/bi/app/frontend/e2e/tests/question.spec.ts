@@ -8,7 +8,7 @@ test.describe('Question Builder', () => {
       await questionPage.goto();
 
       // Look for database/datasource picker
-      await page.click('label:has-text("Database") + div, [data-testid="datasource-picker"], text=Select a database');
+      await page.click('[data-testid="select-datasource"], label:has-text("Data Source") + div');
 
       // Verify dropdown opens
       await expect(page.locator('[role="listbox"], [role="option"]')).toBeVisible({ timeout: 5000 });
@@ -24,16 +24,22 @@ test.describe('Question Builder', () => {
       await questionPage.goto();
 
       // First select datasource if needed
-      const datasourcePicker = page.locator('label:has-text("Database") + div, [data-testid="datasource-picker"]');
+      const datasourcePicker = page.locator('[data-testid="select-datasource"]');
       if (await datasourcePicker.isVisible()) {
         await datasourcePicker.click();
         await page.locator('[role="option"]').first().click();
         await page.waitForTimeout(500);
       }
 
-      // Select table
-      await page.click('label:has-text("Table") + div, [data-testid="table-picker"], text=Select a table');
-      await page.locator('[role="option"]').first().click();
+      // Select table (opens modal)
+      await page.click('[data-testid="table-picker"]');
+      await page.waitForSelector('[data-testid="modal-table-picker"]', { timeout: 5000 });
+
+      // Click first table in the list
+      await page.locator('[data-testid="modal-table-picker"] button:has-text("orders"), [data-testid="modal-table-picker"] [role="button"]').first().click().catch(async () => {
+        // Fallback: click any table row
+        await page.locator('[data-testid="modal-table-picker"] .mantine-Paper-root').first().click();
+      });
 
       await questionPage.takeScreenshot('table_selected');
     });

@@ -1,0 +1,12 @@
+# E2E test artifacts
+e2e/screenshots/
+e2e-results/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Dependencies
+node_modules/
+
+# Build output (already in root gitignore but for safety)
+dist/

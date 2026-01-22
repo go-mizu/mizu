@@ -62,7 +62,7 @@ export default function TablePicker({ datasourceId, value, onChange }: TablePick
 
   return (
     <>
-      <UnstyledButton onClick={() => setOpened(true)} style={{ width: '100%' }}>
+      <UnstyledButton onClick={() => setOpened(true)} style={{ width: '100%' }} data-testid="table-picker">
         <Paper withBorder p="md" radius="md" style={{ cursor: 'pointer' }}>
           {selectedTable ? (
             <Group gap="sm">
@@ -91,6 +91,7 @@ export default function TablePicker({ datasourceId, value, onChange }: TablePick
         onClose={() => setOpened(false)}
         title="Select a Table"
         size="lg"
+        data-testid="modal-table-picker"
       >
         <Stack gap="md">
           <TextInput

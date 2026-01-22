@@ -38,6 +38,7 @@ export default function DataSourcePicker({ value, onChange, disabled }: DataSour
       leftSection={<IconDatabase size={16} />}
       searchable
       clearable
+      data-testid="select-datasource"
       renderOption={({ option }) => (
         <Group gap="sm">
           <IconDatabase size={16} color="var(--mantine-color-gray-6)" />
