@@ -6,7 +6,7 @@ import {
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
-  IconPlus, IconSearch, IconDots, IconEdit, IconTrash, IconMail,
+  IconSearch, IconDots, IconEdit, IconTrash, IconMail,
   IconUserPlus, IconUsers
 } from '@tabler/icons-react'
 import { useUsers, useCurrentUser } from '../../api/hooks'
@@ -19,7 +19,7 @@ interface InviteData {
 }
 
 export default function People() {
-  const { data: users, isLoading, refetch } = useUsers()
+  const { data: users, refetch } = useUsers()
   const { data: currentUser } = useCurrentUser()
   const [search, setSearch] = useState('')
   const [inviteModalOpened, { open: openInviteModal, close: closeInviteModal }] = useDisclosure(false)

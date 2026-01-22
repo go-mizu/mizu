@@ -1,4 +1,4 @@
-import { createTheme, MantineColorsTuple, virtualColor } from '@mantine/core'
+import { createTheme, MantineColorsTuple } from '@mantine/core'
 
 // Metabase-inspired color palette
 const brandBlue: MantineColorsTuple = [

@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import {
   Paper, Text, Group, Stack, Button, Select, ActionIcon, Badge, Divider, Box
 } from '@mantine/core'
 import { IconPlus, IconTrash, IconMathFunction, IconCategory } from '@tabler/icons-react'
 import { useColumns, useTables } from '../../api/hooks'
-import type { Aggregation, Column } from '../../api/types'
+import type { Aggregation } from '../../api/types'
 
 interface GroupByColumn {
   id: string

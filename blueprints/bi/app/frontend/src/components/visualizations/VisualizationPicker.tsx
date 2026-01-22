@@ -1,16 +1,15 @@
 import { useState, useMemo } from 'react'
 import {
-  Modal, Box, Text, Group, UnstyledButton, SimpleGrid, Paper, Tabs, Badge,
-  Stack, ThemeIcon
+  Modal, Text, Group, UnstyledButton, SimpleGrid, Paper, Tabs, Badge,
+  ThemeIcon
 } from '@mantine/core'
 import {
   IconTable, IconHash, IconTrendingUp, IconProgress, IconGauge,
   IconChartLine, IconChartArea, IconChartBar, IconChartPie, IconChartDonut,
-  IconChartScatter, IconChartArrows, IconMap, IconMapPin, IconTablePivot,
+  IconChartScatter, IconChartArrows, IconMap, IconMapPin, IconTableRow,
   IconArrowsSort, IconChartHistogram
 } from '@tabler/icons-react'
 import type { VisualizationType } from '../../api/types'
-import { chartColors } from '../../theme'
 
 interface VisualizationPickerProps {
   opened: boolean
@@ -58,7 +57,7 @@ const vizOptions: Record<string, VizOption[]> = {
     { value: 'map-region', label: 'Region Map', icon: IconMap, description: 'Colored regions map' },
   ],
   'Advanced': [
-    { value: 'pivot', label: 'Pivot Table', icon: IconTablePivot, description: 'Cross-tabulation table' },
+    { value: 'pivot', label: 'Pivot Table', icon: IconTableRow, description: 'Cross-tabulation table' },
   ],
 }
 

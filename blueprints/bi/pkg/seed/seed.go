@@ -2,9 +2,7 @@ package seed
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -12,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/go-mizu/blueprints/bi/pkg/password"
 	"github.com/go-mizu/blueprints/bi/store"
 )
 
@@ -62,9 +61,11 @@ func (s *Seeder) Run(ctx context.Context) error {
 }
 
 func (s *Seeder) seedUsers(ctx context.Context) error {
-	// Hash the password "admin"
-	hash := sha256.Sum256([]byte("admin"))
-	passwordHash := hex.EncodeToString(hash[:])
+	// Hash the password "admin" using Argon2
+	passwordHash, err := password.Hash("admin", nil)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
 
 	user := &store.User{
 		Email:        "admin@example.com",

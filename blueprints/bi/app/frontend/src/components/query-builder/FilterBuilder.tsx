@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import {
   Paper, Text, Group, Stack, Button, Select, TextInput, NumberInput,
-  ActionIcon, Badge, Popover, Box, Divider, Chip
+  ActionIcon, Badge, Divider
 } from '@mantine/core'
 import { DatePickerInput } from '@mantine/dates'
 import { IconPlus, IconTrash, IconFilter } from '@tabler/icons-react'
 import { useColumns, useTables } from '../../api/hooks'
-import type { Filter, FilterOperator, Column } from '../../api/types'
+import type { Filter, FilterOperator } from '../../api/types'
 
 interface FilterBuilderProps {
   datasourceId: string | null
@@ -54,8 +54,6 @@ export default function FilterBuilder({
   onUpdateFilter,
   onClearFilters,
 }: FilterBuilderProps) {
-  const [addingFilter, setAddingFilter] = useState(false)
-
   const { data: tables } = useTables(datasourceId || '')
   const selectedTableId = useMemo(() => {
     const table = tables?.find(t => t.name === sourceTable || t.id === sourceTable)
@@ -86,7 +84,6 @@ export default function FilterBuilder({
         value: '',
       })
     }
-    setAddingFilter(false)
   }
 
   if (!sourceTable) {
@@ -296,8 +293,8 @@ function FilterValueInput({
       return (
         <DatePickerInput
           size="xs"
-          value={value ? new Date(value) : null}
-          onChange={(d) => onChange(d?.toISOString())}
+          value={value || null}
+          onChange={(d) => onChange(d || null)}
           style={{ width: 140 }}
         />
       )

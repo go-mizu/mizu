@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react'
+import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Box, LoadingOverlay } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'

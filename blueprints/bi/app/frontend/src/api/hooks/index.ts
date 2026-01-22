@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
 import type {
   DataSource, Table, Column, Question, Dashboard, DashboardCard,
@@ -632,6 +632,12 @@ export function useUpdateColumn() {
 
 // Activity/Audit log
 export function useActivityLog(filters?: { user_id?: string; type?: string; limit?: number }) {
+  const params = new URLSearchParams()
+  if (filters?.user_id) params.append('user_id', filters.user_id)
+  if (filters?.type) params.append('type', filters.type)
+  if (filters?.limit) params.append('limit', String(filters.limit))
+  const queryString = params.toString()
+
   return useQuery({
     queryKey: ['activityLog', filters],
     queryFn: () => api.get<{
@@ -643,6 +649,6 @@ export function useActivityLog(filters?: { user_id?: string; type?: string; limi
         description: string
         created_at: string
       }[]
-    }>('/admin/activity', { params: filters }),
+    }>(`/admin/activity${queryString ? `?${queryString}` : ''}`),
   })
 }

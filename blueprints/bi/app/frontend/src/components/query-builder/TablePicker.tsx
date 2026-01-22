@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import {
-  Modal, TextInput, Stack, Group, Text, UnstyledButton, Box, Badge, Loader,
-  ScrollArea, Paper, Divider
+  Modal, TextInput, Stack, Group, Text, UnstyledButton, Badge, Loader,
+  ScrollArea, Paper, Select
 } from '@mantine/core'
 import { IconSearch, IconTable, IconDatabase } from '@tabler/icons-react'
 import { useTables } from '../../api/hooks'
