@@ -35,7 +35,7 @@ export class HomePage {
     // Header
     this.title = page.locator('h2:has-text("Home")');
     this.searchButton = page.locator('button:has-text("Search")');
-    this.newButton = page.locator('button:has-text("New")');
+    this.newButton = page.getByRole('button', { name: 'New', exact: true });
 
     // Menu items
     this.newQuestionMenuItem = page.locator('[role="menuitem"]:has-text("Question")');

@@ -1,9 +1,14 @@
 import { test as base, expect, Page } from '@playwright/test';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 /**
  * Custom test fixture with authentication and common utilities
  */
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Test user credentials
 export const TEST_USER = {
@@ -19,20 +24,22 @@ const SCREENSHOT_DIR = path.join(__dirname, '../screenshots');
 // Extend base test with custom fixtures
 export const test = base.extend<{
   authenticatedPage: Page;
-  screenshot: (name: string) => Promise<void>;
 }>({
-  // Authenticated page fixture - logs in before each test
+  // Authenticated page fixture
+  // Note: Currently the app doesn't require authentication, so this just
+  // navigates to the home page. When auth is implemented, this will
+  // handle login automatically.
   authenticatedPage: async ({ page }, use) => {
-    // Navigate to login
+    // Navigate to home page
     await page.goto('/');
 
-    // Check if already logged in
-    const isLoggedIn = await page.locator('text=Home').isVisible({ timeout: 2000 }).catch(() => false);
+    // Wait for the page to be ready
+    await page.waitForSelector('h2, main', { timeout: 10000 });
 
-    if (!isLoggedIn) {
-      // Wait for login form
-      await page.waitForSelector('input[placeholder*="email" i], input[type="email"]', { timeout: 10000 });
+    // Check if login is required (login form visible)
+    const hasLoginForm = await page.locator('input[type="email"], input[placeholder*="email" i]').isVisible({ timeout: 2000 }).catch(() => false);
 
+    if (hasLoginForm) {
       // Fill login form
       await page.fill('input[placeholder*="email" i], input[type="email"]', TEST_USER.email);
       await page.fill('input[placeholder*="password" i], input[type="password"]', TEST_USER.password);
@@ -41,25 +48,11 @@ export const test = base.extend<{
       await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")');
 
       // Wait for navigation
-      await page.waitForURL('**/');
+      await page.waitForURL('**/', { timeout: 10000 });
     }
 
-    // Use the authenticated page
+    // Use the page
     await use(page);
-  },
-
-  // Screenshot helper fixture
-  screenshot: async ({ page }, use) => {
-    const takeScreenshot = async (name: string) => {
-      const sanitizedName = name.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `${sanitizedName}_${timestamp}.png`;
-      await page.screenshot({
-        path: path.join(SCREENSHOT_DIR, filename),
-        fullPage: true,
-      });
-    };
-    await use(takeScreenshot);
   },
 });
 

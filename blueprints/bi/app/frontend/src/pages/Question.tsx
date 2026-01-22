@@ -386,6 +386,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
                 leftSection={<IconPlayerPlay size={16} />}
                 onClick={handleExecute}
                 loading={isExecuting}
+                data-testid="btn-get-answer"
               >
                 Get Answer
               </Button>
@@ -460,6 +461,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
               leftSection={<IconDeviceFloppy size={16} />}
               onClick={openSaveModal}
               variant="light"
+              data-testid="btn-save"
             >
               Save
             </Button>
@@ -500,7 +502,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
         </Box>
 
         {/* Results Area */}
-        <Box style={styles.results}>
+        <Box style={styles.results} data-testid="results-area">
           {isExecuting ? (
             <Box style={styles.emptyState}>
               <Stack align="center" gap="md">
@@ -584,6 +586,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
         onClose={closeSaveModal}
         title={isNew ? 'Save Question' : 'Update Question'}
         size="md"
+        data-testid="modal-save-question"
       >
         <Stack gap="md">
           <TextInput
@@ -592,6 +595,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
             value={questionName}
             onChange={(e) => setQuestionName(e.target.value)}
             required
+            data-testid="input-question-name"
           />
           <Textarea
             label="Description"

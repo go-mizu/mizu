@@ -90,11 +90,13 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
             { value: 'native', label: 'Native query' },
           ]}
           size="sm"
+          data-testid="mode-toggle"
         />
         <Button
           leftSection={<IconPlayerPlay size={16} />}
           onClick={onRun}
           loading={isExecuting}
+          data-testid="btn-run-query"
         >
           Get Answer
         </Button>
@@ -294,6 +296,7 @@ function NativeQueryBuilder({
           value={sql}
           onChange={(e) => onSqlChange(e.target.value)}
           placeholder="SELECT * FROM table LIMIT 100"
+          data-testid="sql-editor"
           style={{
             width: '100%',
             minHeight: 200,
