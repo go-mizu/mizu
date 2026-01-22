@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Container, Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
   Modal, TextInput, Textarea, Select, Stack, Title, ThemeIcon,
-  Tooltip, Tabs, Switch
+  Tooltip, Tabs, Switch, Badge
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -13,15 +13,18 @@ import {
   IconPlus, IconDeviceFloppy, IconDots, IconDownload, IconShare,
   IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
   IconMaximize, IconFilter, IconClock, IconLink,
-  IconGripVertical, IconLetterCase
+  IconGripVertical, IconLetterCase, IconBookmark, IconBookmarkFilled,
+  IconPlayerPlay, IconArrowsMaximize
 } from '@tabler/icons-react'
 import Visualization from '../components/visualizations'
+import DashboardFilters from '../components/dashboard/DashboardFilters'
 import {
   useDashboard, useCreateDashboard, useUpdateDashboard, useDeleteDashboard,
   useDashboardCards, useAddDashboardCard, useUpdateDashboardCard, useRemoveDashboardCard,
   useQuestions, useExecuteQuestion
 } from '../api/hooks'
-import type { DashboardCard, QueryResult, Question } from '../api/types'
+import { useBookmarkStore } from '../stores/bookmarkStore'
+import type { DashboardCard, QueryResult, Question, DashboardFilter } from '../api/types'
 
 // Use GridLayout directly
 
@@ -37,8 +40,14 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   const navigate = useNavigate()
   const isNew = !id || id === 'new'
 
+  // Bookmark store
+  const { addBookmark, removeBookmark, isBookmarked, addRecentItem } = useBookmarkStore()
+  const bookmarked = isBookmarked(id || '')
+
   // State
   const [editMode, setEditMode] = useState(isNew)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState<number | null>(null)
   const [saveModalOpened, { open: openSaveModal, close: closeSaveModal }] = useDisclosure(false)
   const [addCardModalOpened, { open: openAddCardModal, close: closeAddCardModal }] = useDisclosure(false)
   const [dashboardName, setDashboardName] = useState('')
@@ -47,6 +56,10 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   const [cardType, setCardType] = useState<'question' | 'text' | 'heading' | 'link'>('question')
   const [cardResults, setCardResults] = useState<Record<string, QueryResult>>({})
   const [loadingCards, setLoadingCards] = useState<Record<string, boolean>>({})
+
+  // Dashboard filters state
+  const [dashboardFilters, setDashboardFilters] = useState<DashboardFilter[]>([])
+  const [filterValues, setFilterValues] = useState<Record<string, any>>({})
 
   // Queries
   const { data: dashboard, isLoading: loadingDashboard } = useDashboard(isNew ? '' : id!)
@@ -65,8 +78,58 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
     if (dashboard) {
       setDashboardName(dashboard.name)
       setDashboardDescription(dashboard.description || '')
+      setDashboardFilters(dashboard.filters || [])
+      // Track in recents
+      addRecentItem({
+        id: dashboard.id,
+        type: 'dashboard',
+        name: dashboard.name,
+      })
     }
   }, [dashboard])
+
+  // Auto-refresh interval
+  useEffect(() => {
+    if (!autoRefresh || isNew) return
+    const interval = setInterval(() => {
+      handleRefreshAll()
+    }, autoRefresh * 1000)
+    return () => clearInterval(interval)
+  }, [autoRefresh, isNew])
+
+  // Handle filter value change
+  const handleFilterChange = (filterId: string, value: any) => {
+    setFilterValues(prev => ({ ...prev, [filterId]: value }))
+    // Refresh cards when filter changes
+    setTimeout(() => {
+      handleRefreshAll()
+    }, 300)
+  }
+
+  // Toggle bookmark
+  const toggleBookmark = () => {
+    if (!dashboard) return
+    if (bookmarked) {
+      removeBookmark(dashboard.id)
+    } else {
+      addBookmark({
+        id: dashboard.id,
+        type: 'dashboard',
+        name: dashboard.name,
+      })
+    }
+  }
+
+  // Toggle fullscreen
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+      setFullscreen(true)
+    } else {
+      document.exitFullscreen()
+      setFullscreen(false)
+    }
+  }
 
   // Load card results
   useEffect(() => {
@@ -321,21 +384,63 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
 
           <Group gap="sm">
             {!isNew && (
-              <Tooltip label="Refresh all cards">
-                <ActionIcon variant="subtle" size="lg" onClick={handleRefreshAll}>
-                  <IconRefresh size={20} />
-                </ActionIcon>
-              </Tooltip>
+              <>
+                <Tooltip label={bookmarked ? 'Remove bookmark' : 'Bookmark'}>
+                  <ActionIcon
+                    variant="subtle"
+                    size="lg"
+                    color={bookmarked ? 'yellow' : 'gray'}
+                    onClick={toggleBookmark}
+                  >
+                    {bookmarked ? <IconBookmarkFilled size={20} /> : <IconBookmark size={20} />}
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Refresh all cards">
+                  <ActionIcon variant="subtle" size="lg" onClick={handleRefreshAll}>
+                    <IconRefresh size={20} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Fullscreen">
+                  <ActionIcon variant="subtle" size="lg" onClick={toggleFullscreen}>
+                    <IconArrowsMaximize size={20} />
+                  </ActionIcon>
+                </Tooltip>
+              </>
+            )}
+
+            {autoRefresh && (
+              <Badge variant="light" color="brand" leftSection={<IconClock size={12} />}>
+                {autoRefresh}s
+              </Badge>
             )}
 
             {editMode && !isNew && (
-              <Button
-                variant="light"
-                leftSection={<IconPlus size={16} />}
-                onClick={openAddCardModal}
-              >
-                Add Card
-              </Button>
+              <>
+                <Button
+                  variant="light"
+                  leftSection={<IconFilter size={16} />}
+                  onClick={() => {
+                    const newFilter: DashboardFilter = {
+                      id: Math.random().toString(36).substring(2, 9),
+                      dashboard_id: id!,
+                      name: 'New Filter',
+                      type: 'text',
+                      required: false,
+                      targets: [],
+                    }
+                    setDashboardFilters(prev => [...prev, newFilter])
+                  }}
+                >
+                  Add Filter
+                </Button>
+                <Button
+                  variant="light"
+                  leftSection={<IconPlus size={16} />}
+                  onClick={openAddCardModal}
+                >
+                  Add Card
+                </Button>
+              </>
             )}
 
             <Switch
@@ -366,19 +471,24 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 <Menu.Item leftSection={<IconShare size={14} />}>
                   Share
                 </Menu.Item>
-                <Menu.Item leftSection={<IconClock size={14} />}>
-                  Auto-refresh settings
+                <Menu.Label>Auto-refresh</Menu.Label>
+                <Menu.Item onClick={() => setAutoRefresh(null)}>
+                  Off {!autoRefresh && '✓'}
                 </Menu.Item>
-                <Menu.Item leftSection={<IconFilter size={14} />}>
-                  Add filter
+                <Menu.Item onClick={() => setAutoRefresh(30)}>
+                  30 seconds {autoRefresh === 30 && '✓'}
                 </Menu.Item>
+                <Menu.Item onClick={() => setAutoRefresh(60)}>
+                  1 minute {autoRefresh === 60 && '✓'}
+                </Menu.Item>
+                <Menu.Item onClick={() => setAutoRefresh(300)}>
+                  5 minutes {autoRefresh === 300 && '✓'}
+                </Menu.Item>
+                <Menu.Divider />
                 {!isNew && (
-                  <>
-                    <Menu.Divider />
-                    <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={handleDelete}>
-                      Delete
-                    </Menu.Item>
-                  </>
+                  <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={handleDelete}>
+                    Delete
+                  </Menu.Item>
                 )}
               </Menu.Dropdown>
             </Menu>
@@ -388,6 +498,32 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
 
       {/* Dashboard Grid */}
       <Container size="xl" py="lg">
+        {/* Dashboard Filters */}
+        {(dashboardFilters.length > 0 || editMode) && !isNew && (
+          <DashboardFilters
+            filters={dashboardFilters}
+            filterValues={filterValues}
+            onFilterChange={handleFilterChange}
+            onAddFilter={editMode ? (filter) => {
+              const newFilter: DashboardFilter = {
+                ...filter,
+                id: Math.random().toString(36).substring(2, 9),
+                dashboard_id: id!,
+              }
+              setDashboardFilters(prev => [...prev, newFilter])
+            } : undefined}
+            onRemoveFilter={editMode ? (filterId) => {
+              setDashboardFilters(prev => prev.filter(f => f.id !== filterId))
+              setFilterValues(prev => {
+                const next = { ...prev }
+                delete next[filterId]
+                return next
+              })
+            } : undefined}
+            editMode={editMode}
+          />
+        )}
+
         {cards && cards.length > 0 ? (
           <GridLayout
             width={1200}
