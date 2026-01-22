@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react'
 import {
   Paper, Text, Group, Stack, UnstyledButton, Checkbox, Badge, TextInput,
-  ActionIcon, Menu, Tooltip, Box, Divider, ScrollArea, Collapse
+  ActionIcon, Tooltip, Box, Divider, ScrollArea, Collapse
 } from '@mantine/core'
 import {
   IconSearch, IconColumns, IconHash, IconCalendar, IconToggleLeft,
   IconLetterCase, IconChevronDown, IconChevronRight, IconGripVertical,
-  IconX, IconPlus
+  IconX
 } from '@tabler/icons-react'
 import { useColumns, useTables } from '../../api/hooks'
 import type { Column, Table } from '../../api/types'
@@ -252,11 +252,9 @@ function ColumnRow({
 export function SelectedColumnsList({
   columns,
   onRemove,
-  onReorder,
 }: {
   columns: SelectedColumn[]
   onRemove: (id: string) => void
-  onReorder: (columns: SelectedColumn[]) => void
 }) {
   if (columns.length === 0) {
     return (
@@ -269,7 +267,7 @@ export function SelectedColumnsList({
 
   return (
     <Stack gap="xs">
-      {columns.map((col, index) => (
+      {columns.map((col) => (
         <Paper
           key={col.id}
           withBorder

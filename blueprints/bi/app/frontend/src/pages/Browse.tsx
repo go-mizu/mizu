@@ -3,19 +3,19 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   Container, Title, Text, Card, Group, Stack, SimpleGrid, Badge, TextInput,
   Tabs, Paper, Menu, ActionIcon, Button, Breadcrumbs, Anchor, ThemeIcon,
-  Modal, Tooltip, Table, SegmentedControl
+  Modal, Table, SegmentedControl
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
   IconChartBar, IconLayoutDashboard, IconFolder, IconSearch, IconPlus,
-  IconDots, IconPencil, IconTrash, IconStar, IconDatabase, IconTable,
+  IconDots, IconPencil, IconTrash, IconStar, IconDatabase,
   IconFileAnalytics, IconChartLine, IconArrowRight, IconFolderPlus,
   IconGridDots, IconList
 } from '@tabler/icons-react'
 import {
   useCollections, useCollection, useCollectionItems, useCreateCollection,
-  useDeleteCollection, useDashboards, useQuestions, useDataSources, useTables,
+  useDashboards, useQuestions, useDataSources,
   useModels, useMetrics
 } from '../api/hooks'
 import { chartColors } from '../theme'
@@ -41,11 +41,10 @@ export default function Browse({ view = 'all' }: BrowseProps) {
   const { data: collectionItems } = useCollectionItems(collectionId || '')
   const { data: dashboards } = useDashboards()
   const { data: questions } = useQuestions()
-  const { data: datasources } = useDataSources()
-  const { data: models } = useModels()
-  const { data: metrics } = useMetrics()
+  useDataSources() // Pre-fetch datasources
+  useModels() // Pre-fetch models
+  useMetrics() // Pre-fetch metrics
   const createCollection = useCreateCollection()
-  const deleteCollection = useDeleteCollection()
 
   // Build breadcrumbs for collection navigation
   const breadcrumbs = useMemo(() => {
@@ -287,11 +286,10 @@ export default function Browse({ view = 'all' }: BrowseProps) {
             )}
             {viewMode === 'grid' ? (
               <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-                {filteredItems.dashboards.map((dashboard, i) => (
+                {filteredItems.dashboards.map((dashboard) => (
                   <DashboardCard
                     key={dashboard.id}
                     dashboard={dashboard}
-                    colorIndex={i}
                     onClick={() => navigate(`/dashboard/${dashboard.id}`)}
                   />
                 ))}
@@ -325,11 +323,10 @@ export default function Browse({ view = 'all' }: BrowseProps) {
             )}
             {viewMode === 'grid' ? (
               <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-                {filteredItems.questions.map((question, i) => (
+                {filteredItems.questions.map((question) => (
                   <QuestionCard
                     key={question.id}
                     question={question}
-                    colorIndex={i}
                     onClick={() => navigate(`/question/${question.id}`)}
                   />
                 ))}
@@ -444,11 +441,9 @@ function CollectionCard({
 // Dashboard Card Component
 function DashboardCard({
   dashboard,
-  colorIndex,
   onClick,
 }: {
   dashboard: { id: string; name: string; description?: string; cards?: any[] }
-  colorIndex: number
   onClick: () => void
 }) {
   return (
@@ -482,11 +477,9 @@ function DashboardCard({
 // Question Card Component
 function QuestionCard({
   question,
-  colorIndex,
   onClick,
 }: {
   question: { id: string; name: string; description?: string; visualization?: { type: string } }
-  colorIndex: number
   onClick: () => void
 }) {
   return (
@@ -670,7 +663,6 @@ function ModelsView({
   search: string
   setSearch: (value: string) => void
 }) {
-  const navigate = useNavigate()
   const { data: models } = useModels()
 
   const filteredModels = useMemo(() => {
@@ -752,7 +744,6 @@ function MetricsView({
   search: string
   setSearch: (value: string) => void
 }) {
-  const navigate = useNavigate()
   const { data: metrics } = useMetrics()
 
   const filteredMetrics = useMemo(() => {

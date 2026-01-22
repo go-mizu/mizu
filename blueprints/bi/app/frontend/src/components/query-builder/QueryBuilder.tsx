@@ -1,19 +1,18 @@
 import { useState } from 'react'
 import {
-  Box, Paper, Stack, Group, Text, Button, Tabs, Divider, ActionIcon,
-  Collapse, Badge, SegmentedControl, Tooltip
+  Box, Paper, Stack, Group, Text, Button, Divider, ActionIcon,
+  Collapse, Badge, SegmentedControl
 } from '@mantine/core'
-import { CodeHighlight } from '@mantine/code-highlight'
 import {
-  IconDatabase, IconTable, IconColumns, IconFilter, IconMathFunction,
-  IconArrowsSort, IconCode, IconPlayerPlay, IconSettings, IconChevronDown,
+  IconDatabase, IconColumns, IconFilter, IconMathFunction,
+  IconArrowsSort, IconCode, IconPlayerPlay, IconChevronDown,
   IconChevronRight
 } from '@tabler/icons-react'
 import DataSourcePicker from './DataSourcePicker'
 import TablePicker from './TablePicker'
-import ColumnSelector, { SelectedColumnsList } from './ColumnSelector'
-import FilterBuilder, { FilterBadges } from './FilterBuilder'
-import SummarizeBuilder, { SummarizeBadges } from './SummarizeBuilder'
+import ColumnSelector from './ColumnSelector'
+import FilterBuilder from './FilterBuilder'
+import SummarizeBuilder from './SummarizeBuilder'
 import { useQueryStore } from '../../stores/queryStore'
 
 interface QueryBuilderProps {
@@ -34,7 +33,6 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
     columns,
     addColumn,
     removeColumn,
-    reorderColumns,
     clearColumns,
     filters,
     addFilter,
@@ -127,7 +125,7 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
               <TablePicker
                 datasourceId={datasourceId}
                 value={sourceTable}
-                onChange={(tableId, tableName) => setSourceTable(tableName)}
+                onChange={(_tableId, tableName) => setSourceTable(tableName)}
               />
             </Stack>
           </BuilderSection>
@@ -386,7 +384,7 @@ function SortBuilder({
           <Text size="sm" c="dimmed">No sorting applied</Text>
         ) : (
           <Stack gap="xs">
-            {orderBy.map((sort, index) => (
+            {orderBy.map((sort) => (
               <Group key={sort.column} gap="xs">
                 <Select
                   size="xs"

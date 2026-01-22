@@ -2,16 +2,16 @@ import { useState, useMemo } from 'react'
 import {
   Container, Title, Text, Group, Stack, Button, TextInput, Select, Table, Paper,
   Badge, Modal, ActionIcon, Menu, Accordion, Tabs, Loader, ThemeIcon, Tooltip,
-  PasswordInput, NumberInput, Switch, Box, SimpleGrid, Card, Progress, Divider,
-  UnstyledButton, Collapse, ScrollArea
+  PasswordInput, NumberInput, Switch, Box, SimpleGrid, Card, Divider,
+  UnstyledButton, ScrollArea
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
   IconPlus, IconDatabase, IconTable, IconTrash, IconDotsVertical, IconRefresh,
-  IconPlugConnected, IconCheck, IconX, IconColumns, IconEdit, IconSearch,
-  IconChevronRight, IconChevronDown, IconHash, IconLetterCase, IconCalendar,
-  IconToggleLeft, IconKey, IconLink, IconSettings, IconBrandPostgresql,
+  IconPlugConnected, IconCheck, IconX, IconColumns, IconEdit,
+  IconHash, IconLetterCase, IconCalendar,
+  IconToggleLeft, IconSettings, IconSql,
   IconBrandMysql, IconFileDatabase, IconServer
 } from '@tabler/icons-react'
 import {
@@ -22,7 +22,7 @@ import type { DataSource, Table as TableType, Column } from '../../api/types'
 
 const ENGINE_ICONS: Record<string, React.ComponentType<any>> = {
   sqlite: IconFileDatabase,
-  postgres: IconBrandPostgresql,
+  postgres: IconSql,
   mysql: IconBrandMysql,
 }
 
@@ -859,7 +859,7 @@ function AddDataSourceModal({
           }}
           leftSection={
             engine === 'sqlite' ? <IconFileDatabase size={16} /> :
-            engine === 'postgres' ? <IconBrandPostgresql size={16} /> :
+            engine === 'postgres' ? <IconSql size={16} /> :
             <IconBrandMysql size={16} />
           }
         />

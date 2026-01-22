@@ -13,7 +13,6 @@ interface VisualizationProps {
   visualization: VisualizationSettings
   height?: number
   showLegend?: boolean
-  interactive?: boolean
 }
 
 export default function Visualization({
@@ -21,7 +20,6 @@ export default function Visualization({
   visualization,
   height = 400,
   showLegend = true,
-  interactive = true,
 }: VisualizationProps) {
   const { type, settings } = visualization
 
@@ -40,28 +38,28 @@ export default function Visualization({
     case 'number':
       return <NumberVisualization data={data} columns={columns} settings={settings} />
     case 'trend':
-      return <TrendVisualization data={data} columns={columns} settings={settings} />
+      return <TrendVisualization data={data} columns={columns} />
     case 'progress':
       return <ProgressVisualization data={data} columns={columns} settings={settings} />
     case 'gauge':
       return <GaugeVisualization data={data} columns={columns} settings={settings} />
     case 'line':
-      return <LineVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
+      return <LineVisualization data={data} columns={columns} height={height} showLegend={showLegend} />
     case 'area':
       return <AreaVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
     case 'bar':
       return <BarVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
     case 'row':
-      return <RowVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
+      return <RowVisualization data={data} columns={columns} height={height} showLegend={showLegend} />
     case 'pie':
     case 'donut':
-      return <PieVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} donut={type === 'donut'} />
+      return <PieVisualization data={data} columns={columns} height={height} showLegend={showLegend} donut={type === 'donut'} />
     case 'scatter':
-      return <ScatterVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
+      return <ScatterVisualization data={data} columns={columns} height={height} showLegend={showLegend} />
     case 'funnel':
-      return <FunnelVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
+      return <FunnelVisualization data={data} columns={columns} height={height} />
     case 'combo':
-      return <ComboVisualization data={data} columns={columns} settings={settings} height={height} showLegend={showLegend} />
+      return <ComboVisualization data={data} columns={columns} height={height} showLegend={showLegend} />
     case 'pivot':
       return <PivotVisualization data={data} columns={columns} settings={settings} />
     case 'table':
@@ -114,11 +112,9 @@ function NumberVisualization({
 function TrendVisualization({
   data,
   columns,
-  settings,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
 }) {
   const currentValue = data[0]?.[columns[0]?.name]
   const previousValue = data[1]?.[columns[0]?.name] || data[0]?.[columns[1]?.name]
@@ -257,13 +253,11 @@ function GaugeVisualization({
 function LineVisualization({
   data,
   columns,
-  settings,
   height,
   showLegend,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
   height: number
   showLegend: boolean
 }) {
@@ -398,13 +392,11 @@ function BarVisualization({
 function RowVisualization({
   data,
   columns,
-  settings,
   height,
   showLegend,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
   height: number
   showLegend: boolean
 }) {
@@ -442,14 +434,12 @@ function RowVisualization({
 function PieVisualization({
   data,
   columns,
-  settings,
   height,
   showLegend,
   donut,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
   height: number
   showLegend: boolean
   donut: boolean
@@ -469,7 +459,7 @@ function PieVisualization({
           outerRadius={height / 3}
           innerRadius={donut ? height / 5 : 0}
           paddingAngle={2}
-          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+          label={({ name, percent }) => `${name}: ${((percent ?? 0) * 100).toFixed(0)}%`}
           labelLine={{ stroke: 'var(--mantine-color-gray-5)' }}
         >
           {data.map((_, index) => (
@@ -493,13 +483,11 @@ function PieVisualization({
 function ScatterVisualization({
   data,
   columns,
-  settings,
   height,
   showLegend,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
   height: number
   showLegend: boolean
 }) {
@@ -531,15 +519,11 @@ function ScatterVisualization({
 function FunnelVisualization({
   data,
   columns,
-  settings,
   height,
-  showLegend,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
   height: number
-  showLegend: boolean
 }) {
   const nameKey = columns[0]?.name
   const valueKey = columns[1]?.name
@@ -576,13 +560,11 @@ function FunnelVisualization({
 function ComboVisualization({
   data,
   columns,
-  settings,
   height,
   showLegend,
 }: {
   data: Record<string, any>[]
   columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
   height: number
   showLegend: boolean
 }) {

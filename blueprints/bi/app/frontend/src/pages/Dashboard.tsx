@@ -2,19 +2,18 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Container, Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
-  Modal, TextInput, Textarea, Select, Badge, Stack, Title, ThemeIcon,
+  Modal, TextInput, Textarea, Select, Stack, Title, ThemeIcon,
   Tooltip, Tabs, Switch
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import GridLayout, { Layout, WidthProvider } from 'react-grid-layout'
+import GridLayout, { Layout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
-import 'react-resizable/css/styles.css'
 import {
   IconPlus, IconDeviceFloppy, IconDots, IconDownload, IconShare,
-  IconPencil, IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
-  IconMaximize, IconFilter, IconClock, IconSettings, IconText, IconLink,
-  IconGripVertical
+  IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
+  IconMaximize, IconFilter, IconClock, IconLink,
+  IconGripVertical, IconLetterCase
 } from '@tabler/icons-react'
 import Visualization from '../components/visualizations'
 import {
@@ -24,7 +23,7 @@ import {
 } from '../api/hooks'
 import type { DashboardCard, QueryResult, Question } from '../api/types'
 
-const ResponsiveGridLayout = WidthProvider(GridLayout)
+// Use GridLayout directly
 
 interface DashboardProps {
   mode?: 'view' | 'edit'
@@ -33,7 +32,7 @@ interface DashboardProps {
 // Card results cache
 const cardResultsCache = new Map<string, QueryResult>()
 
-export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
+export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) {
   const { id } = useParams()
   const navigate = useNavigate()
   const isNew = !id || id === 'new'
@@ -51,7 +50,7 @@ export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
 
   // Queries
   const { data: dashboard, isLoading: loadingDashboard } = useDashboard(isNew ? '' : id!)
-  const { data: cards, isLoading: loadingCards2, refetch: refetchCards } = useDashboardCards(isNew ? '' : id!)
+  const { data: cards, refetch: refetchCards } = useDashboardCards(isNew ? '' : id!)
   const { data: questions } = useQuestions()
   const createDashboard = useCreateDashboard()
   const updateDashboard = useUpdateDashboard()
@@ -236,11 +235,11 @@ export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
   }
 
   // Handle grid layout change
-  const handleLayoutChange = useCallback(async (layout: Layout[]) => {
+  const handleLayoutChange = useCallback(async (newLayout: Layout) => {
     if (!id || !editMode) return
 
     // Update each card position
-    for (const item of layout) {
+    for (const item of newLayout) {
       const card = cards?.find(c => c.id === item.i)
       if (card && (card.row !== item.y || card.col !== item.x || card.width !== item.w || card.height !== item.h)) {
         try {
@@ -260,7 +259,7 @@ export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
   }, [id, cards, editMode, updateDashboardCard])
 
   // Generate layout from cards
-  const layout: Layout[] = useMemo(() => {
+  const layout: Layout = useMemo(() => {
     return (cards || []).map(card => ({
       i: card.id,
       x: card.col,
@@ -390,16 +389,14 @@ export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
       {/* Dashboard Grid */}
       <Container size="xl" py="lg">
         {cards && cards.length > 0 ? (
-          <ResponsiveGridLayout
+          <GridLayout
+            width={1200}
             className="layout"
             layout={layout}
-            cols={18}
-            rowHeight={80}
-            isDraggable={editMode}
-            isResizable={editMode}
+            gridConfig={{ cols: 18, rowHeight: 80, margin: [16, 16], containerPadding: null, maxRows: Infinity }}
+            dragConfig={{ enabled: editMode, bounded: false, handle: '.drag-handle', threshold: 3 }}
+            resizeConfig={{ enabled: editMode }}
             onLayoutChange={handleLayoutChange}
-            draggableHandle=".drag-handle"
-            margin={[16, 16]}
           >
             {cards.map(card => (
               <div key={card.id}>
@@ -415,7 +412,7 @@ export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
                 />
               </div>
             ))}
-          </ResponsiveGridLayout>
+          </GridLayout>
         ) : (
           <Paper withBorder radius="md" p="xl" ta="center">
             <Stack align="center" gap="lg">
@@ -488,10 +485,10 @@ export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
               <Tabs.Tab value="question" leftSection={<IconChartBar size={14} />}>
                 Question
               </Tabs.Tab>
-              <Tabs.Tab value="text" leftSection={<IconText size={14} />}>
+              <Tabs.Tab value="text" leftSection={<IconLetterCase size={14} />}>
                 Text
               </Tabs.Tab>
-              <Tabs.Tab value="heading" leftSection={<IconText size={14} />}>
+              <Tabs.Tab value="heading" leftSection={<IconLetterCase size={14} />}>
                 Heading
               </Tabs.Tab>
               <Tabs.Tab value="link" leftSection={<IconLink size={14} />}>

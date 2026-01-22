@@ -2,20 +2,20 @@ import { useState } from 'react'
 import {
   Container, Title, Text, Card, Group, Stack, Button, TextInput, Switch, Divider,
   PasswordInput, Badge, Tabs, Table, ActionIcon, Modal, Select, Paper, Loader,
-  ThemeIcon, Menu, Avatar, SimpleGrid, Box, Progress, Tooltip
+  ThemeIcon, Menu, Avatar, SimpleGrid
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
   IconDeviceFloppy, IconUser, IconLock, IconPalette, IconUsers, IconShield,
-  IconBell, IconMail, IconWorld, IconCode, IconPlus, IconTrash, IconEdit,
-  IconDotsVertical, IconCheck, IconX, IconRefresh, IconSettings, IconActivity,
-  IconKey, IconUserPlus, IconAt, IconExternalLink
+  IconBell, IconMail, IconWorld, IconTrash, IconEdit,
+  IconDotsVertical, IconRefresh, IconSettings, IconActivity,
+  IconKey, IconUserPlus, IconAt
 } from '@tabler/icons-react'
 import {
   useCurrentUser, useUpdateProfile, useChangePassword, useSettings,
   useUpdateSettings, useUsers, useCreateUser, useUpdateUser, useDeleteUser,
-  useDeactivateUser, useResetUserPassword, useActivityLog
+  useResetUserPassword, useActivityLog
 } from '../../api/hooks'
 import type { User, Settings as SettingsType } from '../../api/types'
 
@@ -397,7 +397,6 @@ function UsersPanel({ currentUser }: { currentUser: User }) {
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
-  const deactivateUser = useDeactivateUser()
   const resetPassword = useResetUserPassword()
 
   const [addModalOpened, { open: openAddModal, close: closeAddModal }] = useDisclosure(false)
@@ -842,7 +841,6 @@ function ApplicationPanel({ settings }: { settings: SettingsType | undefined }) 
 
 // Email Panel (Admin only)
 function EmailPanel({ settings }: { settings: SettingsType | undefined }) {
-  const updateSettings = useUpdateSettings()
   const [adminEmail, setAdminEmail] = useState(settings?.admin_email || '')
   const [smtpHost, setSmtpHost] = useState('')
   const [smtpPort, setSmtpPort] = useState('587')

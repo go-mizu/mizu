@@ -1,19 +1,19 @@
-import { useEffect, useState, useMemo } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Container, Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
-  Modal, TextInput, Textarea, Select, Badge, Divider, Tooltip, Stack,
-  Drawer, Title, ThemeIcon, Tabs
+  Modal, TextInput, Textarea, Badge, Divider, Tooltip, Stack,
+  ThemeIcon
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
   IconPlayerPlay, IconDeviceFloppy, IconDots, IconDownload, IconShare,
-  IconPencil, IconTrash, IconCopy, IconBell, IconArrowLeft, IconChartBar,
-  IconTable, IconSettings, IconRefresh, IconMaximize, IconLayoutSidebar
+  IconTrash, IconCopy, IconBell, IconChartBar,
+  IconRefresh, IconLayoutSidebar
 } from '@tabler/icons-react'
 import { QueryBuilder } from '../components/query-builder'
-import Visualization, { VisualizationSkeleton } from '../components/visualizations'
+import Visualization from '../components/visualizations'
 import VisualizationPicker, { VisualizationTypeSelect } from '../components/visualizations/VisualizationPicker'
 import { useQueryStore } from '../stores/queryStore'
 import {
@@ -26,10 +26,9 @@ interface QuestionProps {
   mode?: 'view' | 'edit'
 }
 
-export default function Question({ mode: pageMode = 'view' }: QuestionProps) {
+export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   const isNew = !id || id === 'new'
 
   // Store state
@@ -47,7 +46,6 @@ export default function Question({ mode: pageMode = 'view' }: QuestionProps) {
     limit,
     visualization,
     setVisualizationType,
-    setVisualization,
     isExecuting,
     setIsExecuting,
     reset,
@@ -108,7 +106,7 @@ export default function Question({ mode: pageMode = 'view' }: QuestionProps) {
     }
 
     return {
-      table: sourceTable,
+      table: sourceTable || undefined,
       columns: columns.map(c => c.column),
       filters: filters.length > 0 ? filters : undefined,
       aggregations: aggregations.length > 0 ? aggregations : undefined,

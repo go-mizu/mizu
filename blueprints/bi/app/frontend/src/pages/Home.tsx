@@ -2,11 +2,11 @@ import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Container, Title, Text, Card, Group, Stack, Button, SimpleGrid,
-  Badge, Paper, Skeleton, Avatar, ThemeIcon, ActionIcon, Menu, Tooltip
+  Badge, Paper, Skeleton, Avatar, ThemeIcon, ActionIcon, Menu
 } from '@mantine/core'
 import {
   IconChartBar, IconLayoutDashboard, IconFolder, IconDatabase,
-  IconPlus, IconDots, IconStar, IconStarFilled, IconClock,
+  IconPlus, IconDots, IconStar, IconClock,
   IconArrowRight, IconBolt, IconSearch
 } from '@tabler/icons-react'
 import { useQuestions, useDashboards, useCollections, useDataSources } from '../api/hooks'

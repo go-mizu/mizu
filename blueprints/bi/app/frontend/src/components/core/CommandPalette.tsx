@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Modal, TextInput, Stack, Group, Text, UnstyledButton, Box, Kbd, Badge, Divider
+  Modal, TextInput, Stack, Group, Text, UnstyledButton, Box, Kbd
 } from '@mantine/core'
 import {
   IconSearch, IconHome, IconFolder, IconPlus, IconLayoutDashboard, IconDatabase,
-  IconSettings, IconUsers, IconFileAnalytics, IconChartBar, IconChevronRight,
-  IconCommand
+  IconSettings, IconUsers, IconFileAnalytics, IconChartBar, IconChevronRight
 } from '@tabler/icons-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useQuestions, useDashboards, useCollections } from '../../api/hooks'
@@ -29,7 +28,7 @@ export default function CommandPalette() {
 
   const { data: questions } = useQuestions()
   const { data: dashboards } = useDashboards()
-  const { data: collections } = useCollections()
+  useCollections() // Load collections for cache
 
   // Reset state when opening
   useEffect(() => {
@@ -234,7 +233,7 @@ export default function CommandPalette() {
                   <Text size="xs" fw={600} c="dimmed" px="md" py="xs">
                     Actions
                   </Text>
-                  {groupedItems.action.map((item, i) => (
+                  {groupedItems.action.map((item) => (
                     <CommandItemRow
                       key={item.id}
                       item={item}
@@ -251,7 +250,7 @@ export default function CommandPalette() {
                   <Text size="xs" fw={600} c="dimmed" px="md" py="xs">
                     Go to
                   </Text>
-                  {groupedItems.navigation.map((item, i) => (
+                  {groupedItems.navigation.map((item) => (
                     <CommandItemRow
                       key={item.id}
                       item={item}
@@ -268,7 +267,7 @@ export default function CommandPalette() {
                   <Text size="xs" fw={600} c="dimmed" px="md" py="xs">
                     Recent
                   </Text>
-                  {groupedItems.recent.map((item, i) => (
+                  {groupedItems.recent.map((item) => (
                     <CommandItemRow
                       key={item.id}
                       item={item}

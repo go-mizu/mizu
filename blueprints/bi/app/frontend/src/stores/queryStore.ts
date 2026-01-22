@@ -134,7 +134,7 @@ const initialState = {
   lastExecuted: null,
 }
 
-export const useQueryStore = create<QueryState>((set, get) => ({
+export const useQueryStore = create<QueryState>((set) => ({
   ...initialState,
 
   // Mode
@@ -285,7 +285,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     datasourceId: question.datasourceId,
     sourceTable: question.query?.table || null,
     nativeSql: question.query?.sql || '',
-    columns: question.query?.columns?.map((c: string, i: number) => ({
+    columns: question.query?.columns?.map((c: string) => ({
       id: generateId(),
       table: question.query?.table || '',
       column: c,
