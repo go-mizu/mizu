@@ -560,22 +560,34 @@ export const cssVariablesResolver: CSSVariablesResolver = (_theme) => ({
 })
 
 // =============================================================================
-// SIDEBAR THEME TOKENS
+// SIDEBAR THEME TOKENS (Light Theme - Metabase Style)
 // =============================================================================
 
 export const sidebarTheme = {
-  bg: '#2E353B',
-  bgHover: 'rgba(255, 255, 255, 0.08)',
-  bgActive: '#509EE3',
-  text: 'rgba(255, 255, 255, 0.7)',
-  textHover: '#ffffff',
-  textActive: '#ffffff',
+  // Light theme (Metabase default)
+  bg: '#FFFFFF',
+  bgHover: '#F9FBFC',
+  bgActive: '#EEF6FC',
+  text: '#4C5773',
+  textSecondary: '#696E7B',
+  textHover: '#4C5773',
+  textActive: '#509EE3',
   active: '#509EE3',
-  border: 'rgba(255, 255, 255, 0.1)',
-  inputBg: 'rgba(255, 255, 255, 0.08)',
-  inputBorder: 'rgba(255, 255, 255, 0.15)',
-  inputText: 'rgba(255, 255, 255, 0.8)',
-  inputPlaceholder: 'rgba(255, 255, 255, 0.5)',
+  border: '#EEECEC',
+  inputBg: '#F9FBFC',
+  inputBorder: '#EEECEC',
+  inputText: '#4C5773',
+  inputPlaceholder: '#949AAB',
+  // Icon colors
+  iconDefault: '#696E7B',
+  iconHover: '#4C5773',
+  iconActive: '#509EE3',
+  // Section headers
+  sectionTitle: '#949AAB',
+  // Accent colors for specific icons
+  newQuestion: '#509EE3',
+  newDashboard: '#84BB4C',
+  newCollection: '#F9D45C',
 }
 
 // =============================================================================

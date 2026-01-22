@@ -1,7 +1,7 @@
 package api
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,6 +9,9 @@ import (
 
 	"github.com/go-mizu/mizu"
 
+	"github.com/go-mizu/blueprints/bi/drivers"
+	_ "github.com/go-mizu/blueprints/bi/drivers/postgres"
+	_ "github.com/go-mizu/blueprints/bi/drivers/sqlite"
 	"github.com/go-mizu/blueprints/bi/store"
 	"github.com/go-mizu/blueprints/bi/store/sqlite"
 )
@@ -113,67 +116,53 @@ func executeQuery(ds *store.DataSource, query map[string]any) (*store.QueryResul
 	return executeNativeQuery(ds, sqlQuery, params)
 }
 
-// executeNativeQuery executes a native SQL query.
+// executeNativeQuery executes a native SQL query using the drivers package.
 func executeNativeQuery(ds *store.DataSource, query string, params []any) (*store.QueryResult, error) {
-	switch ds.Engine {
-	case "sqlite":
-		return executeSQLiteQuery(ds.Database, query, params)
-	default:
-		return nil, fmt.Errorf("unsupported engine: %s", ds.Engine)
+	// Build driver config from data source
+	config := drivers.Config{
+		Engine:   ds.Engine,
+		Host:     ds.Host,
+		Port:     ds.Port,
+		Database: ds.Database,
+		Username: ds.Username,
+		Password: ds.Password,
+		SSL:      ds.SSL,
 	}
+
+	// Open connection using driver
+	ctx := context.Background()
+	driver, err := drivers.Open(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("open driver: %w", err)
+	}
+	defer driver.Close()
+
+	// Execute query
+	result, err := driver.Execute(ctx, query, params...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert driver result to store result
+	storeResult := &store.QueryResult{
+		Columns:  make([]store.ResultColumn, len(result.Columns)),
+		Rows:     result.Rows,
+		RowCount: result.RowCount,
+		Duration: result.Duration,
+		Cached:   result.Cached,
+	}
+
+	for i, col := range result.Columns {
+		storeResult.Columns[i] = store.ResultColumn{
+			Name:        col.Name,
+			DisplayName: col.DisplayName,
+			Type:        col.MappedType,
+		}
+	}
+
+	return storeResult, nil
 }
 
-// executeSQLiteQuery executes a query against SQLite.
-func executeSQLiteQuery(dbPath, query string, params []any) (*store.QueryResult, error) {
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	rows, err := db.Query(query, params...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	result := &store.QueryResult{
-		Columns: make([]store.ResultColumn, len(columns)),
-	}
-	for i, col := range columns {
-		result.Columns[i] = store.ResultColumn{
-			Name:        col,
-			DisplayName: col,
-			Type:        "string",
-		}
-	}
-
-	for rows.Next() {
-		values := make([]any, len(columns))
-		valuePtrs := make([]any, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return nil, err
-		}
-
-		row := make(map[string]any)
-		for i, col := range columns {
-			row[col] = values[i]
-		}
-		result.Rows = append(result.Rows, row)
-	}
-
-	result.RowCount = int64(len(result.Rows))
-	return result, nil
-}
 
 // identifierRegex validates SQL identifiers (table names, column names)
 // Only allows alphanumeric characters, underscores, and dots (for schema.table)

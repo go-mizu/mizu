@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import {
   Box, Title, Text, Group, Stack, Button, SimpleGrid,
   Skeleton, ThemeIcon, ActionIcon, Menu, Tooltip, rem,
-  UnstyledButton
+  UnstyledButton, Badge, Paper
 } from '@mantine/core'
 import {
-  IconChartBar, IconLayoutDashboard, IconFolder, IconDatabase,
+  IconChartLine, IconLayoutDashboard, IconFolder, IconDatabase,
   IconPlus, IconDots, IconStar, IconClock,
-  IconArrowRight, IconBolt, IconSearch, IconBookmark, IconStarFilled,
-  IconSparkles
+  IconArrowRight, IconSearch, IconBookmark, IconStarFilled,
+  IconSparkles, IconPencil
 } from '@tabler/icons-react'
 import { useQuestions, useDashboards, useCollections, useDataSources } from '../api/hooks'
 import { useUIStore } from '../stores/uiStore'
@@ -17,12 +17,12 @@ import { useBookmarkStore, usePinActions } from '../stores/bookmarkStore'
 import { chartColors, semanticColors } from '../theme'
 
 // =============================================================================
-// STYLES
+// STYLES - Metabase Light Theme
 // =============================================================================
 
 const styles = {
   container: {
-    padding: rem(24),
+    padding: rem(32),
     maxWidth: 1200,
     margin: '0 auto',
     backgroundColor: semanticColors.bgLight,
@@ -32,7 +32,7 @@ const styles = {
     marginBottom: rem(32),
   },
   section: {
-    marginBottom: rem(32),
+    marginBottom: rem(40),
   },
   sectionHeader: {
     display: 'flex',
@@ -41,9 +41,11 @@ const styles = {
     marginBottom: rem(16),
   },
   sectionTitle: {
-    fontSize: rem(18),
+    fontSize: rem(13),
     fontWeight: 700,
-    color: semanticColors.textPrimary,
+    color: semanticColors.textSecondary,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
     display: 'flex',
     alignItems: 'center',
     gap: rem(8),
@@ -52,9 +54,10 @@ const styles = {
     backgroundColor: '#ffffff',
     border: `1px solid ${semanticColors.borderMedium}`,
     borderRadius: rem(8),
-    padding: rem(16),
+    padding: rem(20),
     cursor: 'pointer',
     transition: 'all 0.15s ease',
+    height: '100%',
   },
   cardHover: {
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
@@ -64,9 +67,9 @@ const styles = {
     backgroundColor: '#ffffff',
     border: `1px solid ${semanticColors.borderMedium}`,
     borderRadius: rem(8),
-    padding: rem(20),
+    padding: rem(24),
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: rem(16),
     cursor: 'pointer',
     transition: 'all 0.15s ease',
@@ -75,8 +78,16 @@ const styles = {
     backgroundColor: '#ffffff',
     border: `1px solid ${semanticColors.borderMedium}`,
     borderRadius: rem(8),
-    padding: rem(48),
+    padding: rem(64),
     textAlign: 'center' as const,
+  },
+  statCard: {
+    backgroundColor: '#ffffff',
+    border: `1px solid ${semanticColors.borderMedium}`,
+    borderRadius: rem(8),
+    padding: rem(20),
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
   },
 }
 
@@ -156,7 +167,7 @@ export default function Home() {
       <Box style={styles.header}>
         <Group justify="space-between" align="flex-start">
           <Box>
-            <Title order={2} style={{ color: semanticColors.textPrimary }}>
+            <Title order={2} style={{ color: semanticColors.textPrimary, fontWeight: 700 }}>
               Home
             </Title>
             <Text c="dimmed" size="sm" mt={4}>
@@ -166,34 +177,39 @@ export default function Home() {
           <Group gap="sm">
             <Button
               variant="subtle"
-              leftSection={<IconSearch size={16} />}
+              leftSection={<IconSearch size={16} strokeWidth={1.75} />}
               onClick={openCommandPalette}
               color="gray"
+              styles={{
+                root: {
+                  fontWeight: 500,
+                }
+              }}
             >
               Search
             </Button>
             <Menu position="bottom-end" shadow="md">
               <Menu.Target>
-                <Button leftSection={<IconPlus size={16} />}>
+                <Button leftSection={<IconPlus size={16} strokeWidth={2} />}>
                   New
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item
-                  leftSection={<IconChartBar size={16} color={semanticColors.brand} />}
+                  leftSection={<IconPencil size={16} color={semanticColors.brand} strokeWidth={1.75} />}
                   onClick={() => navigate('/question/new')}
                 >
                   Question
                 </Menu.Item>
                 <Menu.Item
-                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} />}
+                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} strokeWidth={1.75} />}
                   onClick={() => navigate('/dashboard/new')}
                 >
                   Dashboard
                 </Menu.Item>
                 <Menu.Divider />
                 <Menu.Item
-                  leftSection={<IconFolder size={16} color={semanticColors.warning} />}
+                  leftSection={<IconFolder size={16} color="#F9D45C" strokeWidth={1.75} />}
                   onClick={() => navigate('/collection/new')}
                 >
                   Collection
@@ -209,30 +225,30 @@ export default function Home() {
         <Box style={styles.section}>
           <Box style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              <IconSparkles size={20} color={semanticColors.brand} />
+              <IconSparkles size={16} color={semanticColors.brand} strokeWidth={1.75} />
               Start here
             </Text>
           </Box>
           <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
             <StartCard
               icon={IconDatabase}
-              color={semanticColors.warning}
+              color="#F9D45C"
               title="Add your data"
-              description="Connect to a database to start exploring"
+              description="Connect to a database to start exploring your data"
               onClick={() => navigate('/admin/datamodel')}
             />
             <StartCard
-              icon={IconChartBar}
+              icon={IconPencil}
               color={semanticColors.brand}
               title="Ask a question"
-              description="Create visualizations from your data"
+              description="Create visualizations and insights from your data"
               onClick={() => navigate('/question/new')}
             />
             <StartCard
               icon={IconLayoutDashboard}
               color={semanticColors.summarize}
               title="Create a dashboard"
-              description="Combine questions into a dashboard"
+              description="Combine multiple questions into a dashboard"
               onClick={() => navigate('/dashboard/new')}
             />
           </SimpleGrid>
@@ -244,7 +260,7 @@ export default function Home() {
         <Box style={styles.section}>
           <Box style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              <IconStarFilled size={18} color={semanticColors.warning} />
+              <IconStarFilled size={14} color="#F9D45C" />
               Pinned
             </Text>
           </Box>
@@ -282,7 +298,7 @@ export default function Home() {
         <Box style={styles.section}>
           <Box style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              <IconClock size={18} color={semanticColors.textSecondary} />
+              <IconClock size={14} color={semanticColors.textSecondary} strokeWidth={1.75} />
               Pick up where you left off
             </Text>
             <Button
@@ -322,7 +338,7 @@ export default function Home() {
         <Box style={styles.section}>
           <Box style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
-              <IconChartBar size={18} color={semanticColors.brand} />
+              <IconChartLine size={14} color={semanticColors.brand} strokeWidth={1.75} />
               Our analytics
             </Text>
             <Button
@@ -339,7 +355,7 @@ export default function Home() {
             <StatCard
               label="Questions"
               value={questions?.length || 0}
-              icon={IconChartBar}
+              icon={IconChartLine}
               color={semanticColors.brand}
               onClick={() => navigate('/browse')}
             />
@@ -361,7 +377,7 @@ export default function Home() {
               label="Databases"
               value={datasources?.length || 0}
               icon={IconDatabase}
-              color={semanticColors.warning}
+              color="#F9D45C"
               onClick={() => navigate('/admin/datamodel')}
             />
           </SimpleGrid>
@@ -373,20 +389,20 @@ export default function Home() {
         <Box style={styles.emptyState}>
           <Stack align="center" gap="lg">
             <ThemeIcon size={80} radius="xl" variant="light" color="brand">
-              <IconBolt size={40} />
+              <IconSparkles size={40} strokeWidth={1.5} />
             </ThemeIcon>
             <Box>
               <Title order={3} mb="xs" style={{ color: semanticColors.textPrimary }}>
                 Ready to explore your data?
               </Title>
               <Text c="dimmed" maw={400} mx="auto">
-                Connect to a database to start creating questions and dashboards, or run <code>bi seed</code> to add sample data.
+                Connect to a database to start creating questions and dashboards, or run <code style={{ background: '#F0F0F0', padding: '2px 6px', borderRadius: 4 }}>bi seed</code> to add sample data.
               </Text>
             </Box>
             <Group>
               <Button
                 size="lg"
-                leftSection={<IconDatabase size={20} />}
+                leftSection={<IconDatabase size={20} strokeWidth={1.75} />}
                 onClick={() => navigate('/admin/datamodel')}
               >
                 Add a database
@@ -394,7 +410,7 @@ export default function Home() {
               <Button
                 size="lg"
                 variant="light"
-                leftSection={<IconPlus size={20} />}
+                leftSection={<IconPlus size={20} strokeWidth={2} />}
                 onClick={() => navigate('/question/new')}
               >
                 New question
@@ -439,13 +455,13 @@ function StartCard({
       }}
     >
       <ThemeIcon size={48} radius="md" style={{ backgroundColor: `${color}15` }}>
-        <Icon size={24} color={color} />
+        <Icon size={24} color={color} strokeWidth={1.75} />
       </ThemeIcon>
-      <Box>
-        <Text fw={600} size="md" style={{ color: semanticColors.textPrimary }}>
+      <Box style={{ flex: 1 }}>
+        <Text fw={600} size="md" style={{ color: semanticColors.textPrimary }} mb={4}>
           {title}
         </Text>
-        <Text size="sm" c="dimmed">
+        <Text size="sm" c="dimmed" lh={1.4}>
           {description}
         </Text>
       </Box>
@@ -463,19 +479,14 @@ function StatCard({
 }: {
   label: string
   value: number
-  icon: typeof IconChartBar
+  icon: typeof IconChartLine
   color: string
   onClick: () => void
 }) {
   return (
     <UnstyledButton
       onClick={onClick}
-      style={{
-        ...styles.card,
-        display: 'flex',
-        alignItems: 'center',
-        gap: rem(12),
-      }}
+      style={styles.statCard}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
       }}
@@ -483,17 +494,19 @@ function StatCard({
         e.currentTarget.style.boxShadow = 'none'
       }}
     >
-      <ThemeIcon size={40} radius="md" style={{ backgroundColor: `${color}15` }}>
-        <Icon size={20} color={color} />
-      </ThemeIcon>
-      <Box>
-        <Text size="xl" fw={700} style={{ color: semanticColors.textPrimary }}>
-          {value}
-        </Text>
-        <Text size="xs" c="dimmed">
-          {label}
-        </Text>
-      </Box>
+      <Group gap="md">
+        <ThemeIcon size={44} radius="md" style={{ backgroundColor: `${color}15` }}>
+          <Icon size={22} color={color} strokeWidth={1.75} />
+        </ThemeIcon>
+        <Box>
+          <Text size="xl" fw={700} style={{ color: semanticColors.textPrimary, lineHeight: 1.2 }}>
+            {value}
+          </Text>
+          <Text size="sm" c="dimmed" mt={2}>
+            {label}
+          </Text>
+        </Box>
+      </Group>
     </UnstyledButton>
   )
 }
@@ -521,26 +534,32 @@ function ItemCard({
   compact?: boolean
 }) {
   const { pinned, toggle: togglePin } = usePinActions(id, type)
-  const Icon = type === 'dashboard' ? IconLayoutDashboard : IconChartBar
+  const Icon = type === 'dashboard' ? IconLayoutDashboard : IconChartLine
+  const accentColor = chartColors[colorIndex % chartColors.length]
 
-  const getVizIcon = (vizType: string) => {
+  const getVizLabel = (vizType: string) => {
     switch (vizType) {
-      case 'line': return '📈'
-      case 'bar': return '📊'
-      case 'pie': return '🥧'
-      case 'number': return '#'
-      case 'table': return '📋'
-      default: return '📊'
+      case 'line': return 'Line'
+      case 'bar': return 'Bar'
+      case 'pie': return 'Pie'
+      case 'number': return 'Number'
+      case 'table': return 'Table'
+      case 'area': return 'Area'
+      default: return vizType
     }
   }
 
   return (
-    <UnstyledButton
-      onClick={onClick}
+    <Paper
+      withBorder
+      p={compact ? 'sm' : 'md'}
+      radius="md"
       style={{
-        ...styles.card,
-        padding: compact ? rem(12) : rem(16),
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        height: '100%',
       }}
+      onClick={onClick}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
         e.currentTarget.style.transform = 'translateY(-2px)'
@@ -555,10 +574,10 @@ function ItemCard({
           size={compact ? 32 : 40}
           radius="md"
           style={{
-            backgroundColor: chartColors[colorIndex % chartColors.length] + '20',
+            backgroundColor: `${accentColor}15`,
           }}
         >
-          <Icon size={compact ? 16 : 20} color={chartColors[colorIndex % chartColors.length]} />
+          <Icon size={compact ? 16 : 20} color={accentColor} strokeWidth={1.75} />
         </ThemeIcon>
         <Group gap={4}>
           <Tooltip label={pinned ? 'Unpin' : 'Pin to home'}>
@@ -571,7 +590,7 @@ function ItemCard({
                 togglePin()
               }}
             >
-              {pinned ? <IconStarFilled size={14} /> : <IconStar size={14} />}
+              {pinned ? <IconStarFilled size={14} /> : <IconStar size={14} strokeWidth={1.75} />}
             </ActionIcon>
           </Tooltip>
           <Menu position="bottom-end" withinPortal>
@@ -581,10 +600,10 @@ function ItemCard({
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconBookmark size={14} />}>
+              <Menu.Item leftSection={<IconBookmark size={14} strokeWidth={1.75} />}>
                 Bookmark
               </Menu.Item>
-              <Menu.Item leftSection={<IconStar size={14} />} onClick={togglePin}>
+              <Menu.Item leftSection={<IconStar size={14} strokeWidth={1.75} />} onClick={togglePin}>
                 {pinned ? 'Unpin from home' : 'Pin to home'}
               </Menu.Item>
             </Menu.Dropdown>
@@ -601,16 +620,26 @@ function ItemCard({
       )}
       <Group gap="xs" mt={compact ? 'xs' : 'sm'}>
         {vizType && (
-          <Text size="xs" c="dimmed">
-            {getVizIcon(vizType)} {vizType}
-          </Text>
+          <Badge size="xs" variant="light" color="gray" radius="sm">
+            {getVizLabel(vizType)}
+          </Badge>
         )}
         {cardCount !== undefined && (
-          <Text size="xs" c="dimmed">
+          <Badge size="xs" variant="light" color="gray" radius="sm">
             {cardCount} {cardCount === 1 ? 'card' : 'cards'}
-          </Text>
+          </Badge>
+        )}
+        {type === 'dashboard' && !cardCount && (
+          <Badge size="xs" variant="light" color="gray" radius="sm">
+            Dashboard
+          </Badge>
+        )}
+        {type === 'question' && !vizType && (
+          <Badge size="xs" variant="light" color="gray" radius="sm">
+            Question
+          </Badge>
         )}
       </Group>
-    </UnstyledButton>
+    </Paper>
   )
 }
