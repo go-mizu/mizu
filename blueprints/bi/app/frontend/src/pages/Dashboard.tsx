@@ -1,430 +1,464 @@
-import { useEffect, useState } from 'react'
-import { Container, Title, Text, Card, Group, Stack, Button, Select, Paper, Loader, Badge, SimpleGrid, Modal, TextInput, Textarea, ActionIcon, Menu } from '@mantine/core'
-import { IconPlus, IconDeviceFloppy, IconDotsVertical, IconTrash, IconEdit, IconRefresh } from '@tabler/icons-react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { api } from '../api/client'
+import {
+  Container, Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
+  Modal, TextInput, Textarea, Select, Badge, Stack, Title, ThemeIcon,
+  Tooltip, Tabs, Switch
+} from '@mantine/core'
+import { useDisclosure } from '@mantine/hooks'
+import { notifications } from '@mantine/notifications'
+import GridLayout, { Layout, WidthProvider } from 'react-grid-layout'
+import 'react-grid-layout/css/styles.css'
+import 'react-resizable/css/styles.css'
+import {
+  IconPlus, IconDeviceFloppy, IconDots, IconDownload, IconShare,
+  IconPencil, IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
+  IconMaximize, IconFilter, IconClock, IconSettings, IconText, IconLink,
+  IconGripVertical
+} from '@tabler/icons-react'
+import Visualization from '../components/visualizations'
+import {
+  useDashboard, useCreateDashboard, useUpdateDashboard, useDeleteDashboard,
+  useDashboardCards, useAddDashboardCard, useUpdateDashboardCard, useRemoveDashboardCard,
+  useQuestions, useExecuteQuestion
+} from '../api/hooks'
+import type { DashboardCard, QueryResult, Question } from '../api/types'
 
-interface Question {
-  id: string
-  name: string
-  visualization?: { type: string }
+const ResponsiveGridLayout = WidthProvider(GridLayout)
+
+interface DashboardProps {
+  mode?: 'view' | 'edit'
 }
 
-interface DashboardCard {
-  id: string
-  dashboard_id: string
-  question_id?: string
-  card_type: string
-  title: string
-  position_x: number
-  position_y: number
-  width: number
-  height: number
-  settings: Record<string, unknown>
-}
+// Card results cache
+const cardResultsCache = new Map<string, QueryResult>()
 
-interface Dashboard {
-  id: string
-  name: string
-  description: string
-  collection_id?: string
-  cards?: DashboardCard[]
-}
-
-interface QueryResult {
-  columns: { name: string; type: string }[]
-  rows: Record<string, unknown>[]
-  row_count: number
-  duration_ms: number
-}
-
-const COLORS = ['#509EE3', '#88BF4D', '#A989C5', '#F9CF48', '#EF8C8C', '#98D9D9', '#F2A86F', '#7172AD']
-
-export default function Dashboard() {
+export default function Dashboard({ mode: pageMode = 'view' }: DashboardProps) {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null)
-  const [questions, setQuestions] = useState<Question[]>([])
-  const [cardResults, setCardResults] = useState<Record<string, QueryResult>>({})
-  const [loading, setLoading] = useState(true)
-  const [addCardOpen, setAddCardOpen] = useState(false)
-  const [selectedQuestion, setSelectedQuestion] = useState<string | null>(null)
-  const [editMode, setEditMode] = useState(false)
-  const [nameModalOpen, setNameModalOpen] = useState(false)
+  const isNew = !id || id === 'new'
+
+  // State
+  const [editMode, setEditMode] = useState(isNew)
+  const [saveModalOpened, { open: openSaveModal, close: closeSaveModal }] = useDisclosure(false)
+  const [addCardModalOpened, { open: openAddCardModal, close: closeAddCardModal }] = useDisclosure(false)
   const [dashboardName, setDashboardName] = useState('')
-  const [dashboardDesc, setDashboardDesc] = useState('')
+  const [dashboardDescription, setDashboardDescription] = useState('')
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null)
+  const [cardType, setCardType] = useState<'question' | 'text' | 'heading' | 'link'>('question')
+  const [cardResults, setCardResults] = useState<Record<string, QueryResult>>({})
+  const [loadingCards, setLoadingCards] = useState<Record<string, boolean>>({})
 
-  const isNew = id === 'new'
+  // Queries
+  const { data: dashboard, isLoading: loadingDashboard } = useDashboard(isNew ? '' : id!)
+  const { data: cards, isLoading: loadingCards2, refetch: refetchCards } = useDashboardCards(isNew ? '' : id!)
+  const { data: questions } = useQuestions()
+  const createDashboard = useCreateDashboard()
+  const updateDashboard = useUpdateDashboard()
+  const deleteDashboard = useDeleteDashboard()
+  const addDashboardCard = useAddDashboardCard()
+  const updateDashboardCard = useUpdateDashboardCard()
+  const removeDashboardCard = useRemoveDashboardCard()
+  const executeQuestion = useExecuteQuestion()
 
+  // Load dashboard data
   useEffect(() => {
-    loadQuestions()
-    if (!isNew && id) {
-      loadDashboard(id)
-    } else {
-      setLoading(false)
-      setEditMode(true)
+    if (dashboard) {
+      setDashboardName(dashboard.name)
+      setDashboardDescription(dashboard.description || '')
     }
-  }, [id])
+  }, [dashboard])
 
-  const loadQuestions = async () => {
-    try {
-      const res = await api.get<Question[]>('/questions')
-      setQuestions(res || [])
-    } catch (error) {
-      console.error('Failed to load questions:', error)
-    }
-  }
-
-  const loadDashboard = async (dashboardId: string) => {
-    try {
-      const d = await api.get<Dashboard>(`/dashboards/${dashboardId}`)
-      setDashboard(d)
-      setDashboardName(d.name)
-      setDashboardDesc(d.description || '')
-
-      // Load results for each card
-      if (d.cards) {
-        for (const card of d.cards) {
-          if (card.question_id) {
-            loadCardResult(card.id, card.question_id)
-          }
+  // Load card results
+  useEffect(() => {
+    if (cards && cards.length > 0) {
+      cards.forEach(card => {
+        if (card.question_id && !cardResults[card.id]) {
+          loadCardResult(card)
         }
-      }
-    } catch (error) {
-      console.error('Failed to load dashboard:', error)
-    } finally {
-      setLoading(false)
+      })
     }
-  }
+  }, [cards])
 
-  const loadCardResult = async (cardId: string, questionId: string) => {
+  const loadCardResult = async (card: DashboardCard) => {
+    if (!card.question_id) return
+
+    // Check cache first
+    const cached = cardResultsCache.get(card.question_id)
+    if (cached) {
+      setCardResults(prev => ({ ...prev, [card.id]: cached }))
+      return
+    }
+
+    setLoadingCards(prev => ({ ...prev, [card.id]: true }))
     try {
-      const q = await api.get<{ datasource_id: string; query: { sql?: string } }>(`/questions/${questionId}`)
-      if (q.datasource_id && q.query.sql) {
-        const result = await api.post<QueryResult>('/query/native', {
-          datasource_id: q.datasource_id,
-          query: q.query.sql,
-        })
-        setCardResults(prev => ({ ...prev, [cardId]: result }))
-      }
-    } catch (error) {
-      console.error('Failed to load card result:', error)
+      const result = await executeQuestion.mutateAsync(card.question_id)
+      cardResultsCache.set(card.question_id, result)
+      setCardResults(prev => ({ ...prev, [card.id]: result }))
+    } catch (err) {
+      console.error('Failed to load card result:', err)
+    } finally {
+      setLoadingCards(prev => ({ ...prev, [card.id]: false }))
     }
   }
 
+  // Refresh all cards
+  const handleRefreshAll = () => {
+    cardResultsCache.clear()
+    setCardResults({})
+    cards?.forEach(card => loadCardResult(card))
+  }
+
+  // Create/save dashboard
   const handleSave = async () => {
-    if (isNew) {
-      setNameModalOpen(true)
-    } else if (dashboard) {
-      try {
-        await api.put(`/dashboards/${dashboard.id}`, {
+    if (!dashboardName.trim()) {
+      notifications.show({
+        title: 'Name required',
+        message: 'Please enter a name for this dashboard',
+        color: 'yellow',
+      })
+      return
+    }
+
+    try {
+      if (isNew) {
+        const newDashboard = await createDashboard.mutateAsync({
           name: dashboardName,
-          description: dashboardDesc,
+          description: dashboardDescription || undefined,
+        })
+        notifications.show({
+          title: 'Dashboard created',
+          message: 'Your dashboard has been created',
+          color: 'green',
+        })
+        closeSaveModal()
+        navigate(`/dashboard/${newDashboard.id}`)
+      } else {
+        await updateDashboard.mutateAsync({
+          id: id!,
+          name: dashboardName,
+          description: dashboardDescription || undefined,
+        })
+        notifications.show({
+          title: 'Dashboard saved',
+          message: 'Your changes have been saved',
+          color: 'green',
         })
         setEditMode(false)
-      } catch (err) {
-        alert('Failed to save dashboard')
+      }
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to save dashboard',
+        color: 'red',
+      })
+    }
+  }
+
+  // Delete dashboard
+  const handleDelete = async () => {
+    if (!id || isNew) return
+
+    if (!confirm('Are you sure you want to delete this dashboard?')) return
+
+    try {
+      await deleteDashboard.mutateAsync(id)
+      notifications.show({
+        title: 'Dashboard deleted',
+        message: 'The dashboard has been deleted',
+        color: 'green',
+      })
+      navigate('/browse')
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to delete dashboard',
+        color: 'red',
+      })
+    }
+  }
+
+  // Add card
+  const handleAddCard = async () => {
+    if (isNew || !id) {
+      notifications.show({
+        title: 'Save first',
+        message: 'Please save the dashboard before adding cards',
+        color: 'yellow',
+      })
+      return
+    }
+
+    const maxY = Math.max(0, ...(cards || []).map(c => c.row + c.height))
+
+    try {
+      await addDashboardCard.mutateAsync({
+        dashboardId: id,
+        question_id: cardType === 'question' ? selectedQuestionId || undefined : undefined,
+        card_type: cardType,
+        row: maxY,
+        col: 0,
+        width: cardType === 'question' ? 6 : 4,
+        height: cardType === 'question' ? 4 : 1,
+        title: cardType !== 'question' ? 'New Card' : undefined,
+      })
+      notifications.show({
+        title: 'Card added',
+        message: 'The card has been added to the dashboard',
+        color: 'green',
+      })
+      refetchCards()
+      closeAddCardModal()
+      setSelectedQuestionId(null)
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to add card',
+        color: 'red',
+      })
+    }
+  }
+
+  // Remove card
+  const handleRemoveCard = async (cardId: string) => {
+    if (!id) return
+
+    try {
+      await removeDashboardCard.mutateAsync({ dashboardId: id, cardId })
+      refetchCards()
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to remove card',
+        color: 'red',
+      })
+    }
+  }
+
+  // Handle grid layout change
+  const handleLayoutChange = useCallback(async (layout: Layout[]) => {
+    if (!id || !editMode) return
+
+    // Update each card position
+    for (const item of layout) {
+      const card = cards?.find(c => c.id === item.i)
+      if (card && (card.row !== item.y || card.col !== item.x || card.width !== item.w || card.height !== item.h)) {
+        try {
+          await updateDashboardCard.mutateAsync({
+            dashboardId: id,
+            id: item.i,
+            row: item.y,
+            col: item.x,
+            width: item.w,
+            height: item.h,
+          })
+        } catch (err) {
+          console.error('Failed to update card position:', err)
+        }
       }
     }
+  }, [id, cards, editMode, updateDashboardCard])
+
+  // Generate layout from cards
+  const layout: Layout[] = useMemo(() => {
+    return (cards || []).map(card => ({
+      i: card.id,
+      x: card.col,
+      y: card.row,
+      w: card.width,
+      h: card.height,
+      minW: 2,
+      minH: 2,
+    }))
+  }, [cards])
+
+  // Get question for card
+  const getQuestionForCard = (card: DashboardCard): Question | undefined => {
+    return questions?.find(q => q.id === card.question_id)
   }
 
-  const handleCreate = async () => {
-    if (!dashboardName) return
-    try {
-      const d = await api.post<Dashboard>('/dashboards', {
-        name: dashboardName,
-        description: dashboardDesc,
-      })
-      navigate(`/dashboard/${d.id}`)
-    } catch (err) {
-      alert('Failed to create dashboard')
-    }
-  }
-
-  const handleAddCard = async () => {
-    if (!selectedQuestion || !dashboard) return
-    try {
-      const card = await api.post<DashboardCard>(`/dashboards/${dashboard.id}/cards`, {
-        question_id: selectedQuestion,
-        card_type: 'question',
-        position_x: 0,
-        position_y: (dashboard.cards?.length || 0) * 4,
-        width: 6,
-        height: 4,
-      })
-      setDashboard(prev => prev ? {
-        ...prev,
-        cards: [...(prev.cards || []), card],
-      } : null)
-      loadCardResult(card.id, selectedQuestion)
-      setAddCardOpen(false)
-      setSelectedQuestion(null)
-    } catch (err) {
-      alert('Failed to add card')
-    }
-  }
-
-  const handleDeleteCard = async (cardId: string) => {
-    if (!dashboard) return
-    try {
-      await api.delete(`/dashboards/${dashboard.id}/cards/${cardId}`)
-      setDashboard(prev => prev ? {
-        ...prev,
-        cards: prev.cards?.filter(c => c.id !== cardId),
-      } : null)
-    } catch (err) {
-      alert('Failed to delete card')
-    }
-  }
-
-  const handleRefreshCard = async (cardId: string, questionId: string) => {
-    loadCardResult(cardId, questionId)
-  }
-
-  const renderCardVisualization = (card: DashboardCard, result: QueryResult | undefined) => {
-    if (!result || result.rows.length === 0) {
-      return (
-        <Paper p="xl" ta="center" h="100%">
-          <Loader size="sm" />
-        </Paper>
-      )
-    }
-
-    const question = questions.find(q => q.id === card.question_id)
-    const vizType = question?.visualization?.type || 'table'
-    const data = result.rows as Record<string, unknown>[]
-
-    switch (vizType) {
-      case 'line':
-        return (
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={result.columns[0]?.name} tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              {result.columns.slice(1).map((col, i) => (
-                <Line key={col.name} type="monotone" dataKey={col.name} stroke={COLORS[i % COLORS.length]} />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        )
-
-      case 'bar':
-        return (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey={result.columns[0]?.name} tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              {result.columns.slice(1).map((col, i) => (
-                <Bar key={col.name} dataKey={col.name} fill={COLORS[i % COLORS.length]} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        )
-
-      case 'pie':
-        return (
-          <ResponsiveContainer width="100%" height={250}>
-            <PieChart>
-              <Pie
-                data={data}
-                dataKey={result.columns[1]?.name}
-                nameKey={result.columns[0]?.name}
-                cx="50%"
-                cy="50%"
-                outerRadius={80}
-                label
-              >
-                {data.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        )
-
-      case 'number':
-        const value = result.rows[0]?.[result.columns[0]?.name]
-        return (
-          <Paper p="xl" ta="center">
-            <Text size="2.5rem" fw={700} c="blue">
-              {typeof value === 'number' ? value.toLocaleString() : String(value)}
-            </Text>
-            <Text c="dimmed" size="sm">{result.columns[0]?.name}</Text>
-          </Paper>
-        )
-
-      default:
-        return (
-          <Stack gap="xs" p="sm">
-            <Group gap="xs">
-              {result.columns.map(col => (
-                <Badge key={col.name} size="xs" variant="light">{col.name}</Badge>
-              ))}
-            </Group>
-            <Text size="sm" c="dimmed">
-              {result.row_count} rows
-            </Text>
-          </Stack>
-        )
-    }
-  }
-
-  if (loading) {
+  if (loadingDashboard && !isNew) {
     return (
       <Container size="xl" py="lg">
-        <Paper withBorder p="xl" ta="center">
+        <Group justify="center" py="xl">
           <Loader size="lg" />
-          <Text mt="md">Loading dashboard...</Text>
-        </Paper>
+          <Text>Loading dashboard...</Text>
+        </Group>
       </Container>
     )
   }
 
   return (
-    <Container size="xl" py="lg">
+    <Box style={{ minHeight: '100vh', backgroundColor: '#f9fbfc' }}>
       {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          {editMode ? (
-            <TextInput
-              value={dashboardName}
-              onChange={(e) => setDashboardName(e.target.value)}
-              placeholder="Dashboard name"
-              size="lg"
-              styles={{ input: { fontSize: '1.5rem', fontWeight: 600 } }}
-            />
-          ) : (
-            <Title order={2}>{dashboard?.name || 'New Dashboard'}</Title>
-          )}
-          <Text c="dimmed">
-            {dashboard?.cards?.length || 0} cards
-          </Text>
-        </div>
-        <Group>
-          {!isNew && (
-            <Button
-              variant="light"
-              leftSection={<IconRefresh size={16} />}
-              onClick={() => dashboard && loadDashboard(dashboard.id)}
-            >
-              Refresh
-            </Button>
-          )}
-          {editMode && (
-            <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={() => setAddCardOpen(true)}
-              disabled={isNew}
-            >
-              Add Card
-            </Button>
-          )}
-          <Button
-            variant={editMode ? 'filled' : 'light'}
-            leftSection={editMode ? <IconDeviceFloppy size={16} /> : <IconEdit size={16} />}
-            onClick={editMode ? handleSave : () => setEditMode(true)}
-          >
-            {editMode ? 'Save' : 'Edit'}
-          </Button>
-        </Group>
-      </Group>
+      <Box
+        p="md"
+        bg="white"
+        style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+      >
+        <Group justify="space-between">
+          <Group gap="md">
+            <ThemeIcon size={40} radius="md" variant="light" color="summarize">
+              <IconLayoutDashboard size={20} />
+            </ThemeIcon>
+            <div>
+              {editMode && !isNew ? (
+                <TextInput
+                  value={dashboardName}
+                  onChange={(e) => setDashboardName(e.target.value)}
+                  placeholder="Dashboard name"
+                  size="lg"
+                  variant="unstyled"
+                  styles={{ input: { fontSize: '1.5rem', fontWeight: 600 } }}
+                />
+              ) : (
+                <Title order={2}>{dashboard?.name || 'New Dashboard'}</Title>
+              )}
+              <Text size="sm" c="dimmed">
+                {cards?.length || 0} cards
+              </Text>
+            </div>
+          </Group>
 
-      {/* Cards Grid */}
-      {dashboard?.cards && dashboard.cards.length > 0 ? (
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
-          {dashboard.cards.map((card) => {
-            const question = questions.find(q => q.id === card.question_id)
-            return (
-              <Card key={card.id} withBorder radius="md" padding="lg">
-                <Group justify="space-between" mb="md">
-                  <Text fw={500}>{card.title || question?.name || 'Untitled'}</Text>
-                  {editMode && (
-                    <Menu shadow="md" width={200}>
-                      <Menu.Target>
-                        <ActionIcon variant="subtle" size="sm">
-                          <IconDotsVertical size={16} />
-                        </ActionIcon>
-                      </Menu.Target>
-                      <Menu.Dropdown>
-                        {card.question_id && (
-                          <Menu.Item
-                            leftSection={<IconRefresh size={14} />}
-                            onClick={() => handleRefreshCard(card.id, card.question_id!)}
-                          >
-                            Refresh
-                          </Menu.Item>
-                        )}
-                        <Menu.Item
-                          leftSection={<IconTrash size={14} />}
-                          color="red"
-                          onClick={() => handleDeleteCard(card.id)}
-                        >
-                          Delete
-                        </Menu.Item>
-                      </Menu.Dropdown>
-                    </Menu>
-                  )}
-                </Group>
-                {renderCardVisualization(card, cardResults[card.id])}
-              </Card>
-            )
-          })}
-        </SimpleGrid>
-      ) : (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="md">
-            <IconPlus size={48} color="var(--mantine-color-gray-5)" />
-            <Title order={3}>Add your first card</Title>
-            <Text c="dimmed">
-              {isNew
-                ? 'Save this dashboard first, then add cards'
-                : 'Click "Add Card" to add a question to this dashboard'}
-            </Text>
+          <Group gap="sm">
             {!isNew && (
-              <Button leftSection={<IconPlus size={16} />} onClick={() => setAddCardOpen(true)}>
+              <Tooltip label="Refresh all cards">
+                <ActionIcon variant="subtle" size="lg" onClick={handleRefreshAll}>
+                  <IconRefresh size={20} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+
+            {editMode && !isNew && (
+              <Button
+                variant="light"
+                leftSection={<IconPlus size={16} />}
+                onClick={openAddCardModal}
+              >
                 Add Card
               </Button>
             )}
-          </Stack>
-        </Paper>
-      )}
 
-      {/* Add Card Modal */}
-      <Modal opened={addCardOpen} onClose={() => setAddCardOpen(false)} title="Add Card">
-        <Stack>
-          <Select
-            label="Select a question"
-            placeholder="Choose a question"
-            data={questions.map(q => ({ value: q.id, label: q.name }))}
-            value={selectedQuestion}
-            onChange={setSelectedQuestion}
-            searchable
-          />
-          <Group justify="flex-end">
-            <Button variant="light" onClick={() => setAddCardOpen(false)}>
-              Cancel
+            <Switch
+              label="Edit"
+              checked={editMode}
+              onChange={(e) => setEditMode(e.currentTarget.checked)}
+              disabled={isNew}
+            />
+
+            <Button
+              leftSection={<IconDeviceFloppy size={16} />}
+              onClick={isNew ? openSaveModal : handleSave}
+              loading={createDashboard.isPending || updateDashboard.isPending}
+            >
+              Save
             </Button>
-            <Button onClick={handleAddCard} disabled={!selectedQuestion}>
-              Add
-            </Button>
+
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <ActionIcon variant="subtle" size="lg">
+                  <IconDots size={20} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconDownload size={14} />}>
+                  Download as PDF
+                </Menu.Item>
+                <Menu.Item leftSection={<IconShare size={14} />}>
+                  Share
+                </Menu.Item>
+                <Menu.Item leftSection={<IconClock size={14} />}>
+                  Auto-refresh settings
+                </Menu.Item>
+                <Menu.Item leftSection={<IconFilter size={14} />}>
+                  Add filter
+                </Menu.Item>
+                {!isNew && (
+                  <>
+                    <Menu.Divider />
+                    <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={handleDelete}>
+                      Delete
+                    </Menu.Item>
+                  </>
+                )}
+              </Menu.Dropdown>
+            </Menu>
           </Group>
-        </Stack>
-      </Modal>
+        </Group>
+      </Box>
 
-      {/* Name Modal for New Dashboard */}
-      <Modal opened={nameModalOpen} onClose={() => setNameModalOpen(false)} title="Create Dashboard">
-        <Stack>
+      {/* Dashboard Grid */}
+      <Container size="xl" py="lg">
+        {cards && cards.length > 0 ? (
+          <ResponsiveGridLayout
+            className="layout"
+            layout={layout}
+            cols={18}
+            rowHeight={80}
+            isDraggable={editMode}
+            isResizable={editMode}
+            onLayoutChange={handleLayoutChange}
+            draggableHandle=".drag-handle"
+            margin={[16, 16]}
+          >
+            {cards.map(card => (
+              <div key={card.id}>
+                <DashboardCardComponent
+                  card={card}
+                  question={getQuestionForCard(card)}
+                  result={cardResults[card.id]}
+                  isLoading={loadingCards[card.id]}
+                  editMode={editMode}
+                  onRefresh={() => loadCardResult(card)}
+                  onRemove={() => handleRemoveCard(card.id)}
+                  onNavigate={() => card.question_id && navigate(`/question/${card.question_id}`)}
+                />
+              </div>
+            ))}
+          </ResponsiveGridLayout>
+        ) : (
+          <Paper withBorder radius="md" p="xl" ta="center">
+            <Stack align="center" gap="lg">
+              <ThemeIcon size={80} radius="xl" variant="light" color="summarize">
+                <IconLayoutDashboard size={40} />
+              </ThemeIcon>
+              <div>
+                <Title order={3} mb="xs">
+                  {isNew ? 'Create your dashboard' : 'Add your first card'}
+                </Title>
+                <Text c="dimmed" maw={400} mx="auto">
+                  {isNew
+                    ? 'Give your dashboard a name and save it, then add cards to visualize your data.'
+                    : 'Click "Add Card" to add questions to this dashboard.'}
+                </Text>
+              </div>
+              {isNew ? (
+                <Button
+                  size="lg"
+                  leftSection={<IconDeviceFloppy size={20} />}
+                  onClick={openSaveModal}
+                >
+                  Save Dashboard
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  leftSection={<IconPlus size={20} />}
+                  onClick={openAddCardModal}
+                >
+                  Add Card
+                </Button>
+              )}
+            </Stack>
+          </Paper>
+        )}
+      </Container>
+
+      {/* Save Modal */}
+      <Modal opened={saveModalOpened} onClose={closeSaveModal} title="Save Dashboard">
+        <Stack gap="md">
           <TextInput
-            label="Dashboard name"
+            label="Name"
             placeholder="My Dashboard"
             value={dashboardName}
             onChange={(e) => setDashboardName(e.target.value)}
@@ -432,20 +466,253 @@ export default function Dashboard() {
           />
           <Textarea
             label="Description"
-            placeholder="Optional description"
-            value={dashboardDesc}
-            onChange={(e) => setDashboardDesc(e.target.value)}
+            placeholder="Optional description..."
+            value={dashboardDescription}
+            onChange={(e) => setDashboardDescription(e.target.value)}
+            rows={3}
           />
-          <Group justify="flex-end">
-            <Button variant="light" onClick={() => setNameModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCreate} disabled={!dashboardName}>
-              Create
+          <Group justify="flex-end" mt="md">
+            <Button variant="light" onClick={closeSaveModal}>Cancel</Button>
+            <Button onClick={handleSave} loading={createDashboard.isPending}>
+              {isNew ? 'Create' : 'Save'}
             </Button>
           </Group>
         </Stack>
       </Modal>
-    </Container>
+
+      {/* Add Card Modal */}
+      <Modal opened={addCardModalOpened} onClose={closeAddCardModal} title="Add Card">
+        <Stack gap="md">
+          <Tabs value={cardType} onChange={(v) => setCardType(v as any)}>
+            <Tabs.List>
+              <Tabs.Tab value="question" leftSection={<IconChartBar size={14} />}>
+                Question
+              </Tabs.Tab>
+              <Tabs.Tab value="text" leftSection={<IconText size={14} />}>
+                Text
+              </Tabs.Tab>
+              <Tabs.Tab value="heading" leftSection={<IconText size={14} />}>
+                Heading
+              </Tabs.Tab>
+              <Tabs.Tab value="link" leftSection={<IconLink size={14} />}>
+                Link
+              </Tabs.Tab>
+            </Tabs.List>
+          </Tabs>
+
+          {cardType === 'question' && (
+            <Select
+              label="Select a question"
+              placeholder="Choose a saved question"
+              data={(questions || []).map(q => ({
+                value: q.id,
+                label: q.name,
+                description: q.description,
+              }))}
+              value={selectedQuestionId}
+              onChange={setSelectedQuestionId}
+              searchable
+              nothingFoundMessage="No questions found"
+            />
+          )}
+
+          {cardType === 'text' && (
+            <Text size="sm" c="dimmed">
+              Add a text box to add context to your dashboard.
+            </Text>
+          )}
+
+          {cardType === 'heading' && (
+            <Text size="sm" c="dimmed">
+              Add a heading to organize your dashboard sections.
+            </Text>
+          )}
+
+          {cardType === 'link' && (
+            <Text size="sm" c="dimmed">
+              Add a link button to navigate to another page or dashboard.
+            </Text>
+          )}
+
+          <Group justify="flex-end" mt="md">
+            <Button variant="light" onClick={closeAddCardModal}>Cancel</Button>
+            <Button
+              onClick={handleAddCard}
+              disabled={cardType === 'question' && !selectedQuestionId}
+              loading={addDashboardCard.isPending}
+            >
+              Add Card
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Box>
+  )
+}
+
+// Dashboard Card Component
+function DashboardCardComponent({
+  card,
+  question,
+  result,
+  isLoading,
+  editMode,
+  onRefresh,
+  onRemove,
+  onNavigate,
+}: {
+  card: DashboardCard
+  question: Question | undefined
+  result: QueryResult | undefined
+  isLoading: boolean
+  editMode: boolean
+  onRefresh: () => void
+  onRemove: () => void
+  onNavigate: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  // Text or heading card
+  if (card.card_type === 'text' || card.card_type === 'heading') {
+    return (
+      <Paper
+        withBorder
+        radius="md"
+        p="md"
+        h="100%"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {editMode && (
+          <Group
+            justify="space-between"
+            mb="xs"
+            className="drag-handle"
+            style={{ cursor: 'grab' }}
+          >
+            <IconGripVertical size={16} color="var(--mantine-color-gray-5)" />
+            {hovered && (
+              <ActionIcon variant="subtle" size="sm" color="red" onClick={onRemove}>
+                <IconTrash size={14} />
+              </ActionIcon>
+            )}
+          </Group>
+        )}
+        <Text
+          fw={card.card_type === 'heading' ? 600 : 400}
+          size={card.card_type === 'heading' ? 'lg' : 'sm'}
+        >
+          {card.content || card.title || 'Click to edit...'}
+        </Text>
+      </Paper>
+    )
+  }
+
+  // Link card
+  if (card.card_type === 'link') {
+    return (
+      <Paper
+        withBorder
+        radius="md"
+        p="md"
+        h="100%"
+        style={{ cursor: 'pointer' }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {editMode && (
+          <Group
+            justify="space-between"
+            mb="xs"
+            className="drag-handle"
+            style={{ cursor: 'grab' }}
+          >
+            <IconGripVertical size={16} color="var(--mantine-color-gray-5)" />
+            {hovered && (
+              <ActionIcon variant="subtle" size="sm" color="red" onClick={onRemove}>
+                <IconTrash size={14} />
+              </ActionIcon>
+            )}
+          </Group>
+        )}
+        <Group gap="sm">
+          <IconLink size={16} />
+          <Text>{card.title || 'Link'}</Text>
+        </Group>
+      </Paper>
+    )
+  }
+
+  // Question card
+  return (
+    <Paper
+      withBorder
+      radius="md"
+      h="100%"
+      style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Card Header */}
+      <Group
+        justify="space-between"
+        p="sm"
+        style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}
+        className={editMode ? 'drag-handle' : ''}
+      >
+        <Group gap="sm">
+          {editMode && <IconGripVertical size={16} color="var(--mantine-color-gray-5)" style={{ cursor: 'grab' }} />}
+          <Text
+            fw={500}
+            size="sm"
+            style={{ cursor: 'pointer' }}
+            onClick={onNavigate}
+          >
+            {card.title || question?.name || 'Untitled'}
+          </Text>
+        </Group>
+        {(hovered || editMode) && (
+          <Group gap={4}>
+            <Tooltip label="Refresh">
+              <ActionIcon variant="subtle" size="sm" onClick={onRefresh}>
+                <IconRefresh size={14} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Fullscreen">
+              <ActionIcon variant="subtle" size="sm" onClick={onNavigate}>
+                <IconMaximize size={14} />
+              </ActionIcon>
+            </Tooltip>
+            {editMode && (
+              <Tooltip label="Remove">
+                <ActionIcon variant="subtle" size="sm" color="red" onClick={onRemove}>
+                  <IconTrash size={14} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+          </Group>
+        )}
+      </Group>
+
+      {/* Card Content */}
+      <Box style={{ flex: 1, overflow: 'auto', padding: 8 }}>
+        {isLoading ? (
+          <Group justify="center" align="center" h="100%">
+            <Loader size="sm" />
+          </Group>
+        ) : result ? (
+          <Visualization
+            result={result}
+            visualization={question?.visualization || { type: 'table' }}
+            height={Math.max(200, (card.height * 80) - 100)}
+            showLegend={false}
+          />
+        ) : (
+          <Group justify="center" align="center" h="100%">
+            <Text c="dimmed" size="sm">No data</Text>
+          </Group>
+        )}
+      </Box>
+    </Paper>
   )
 }
