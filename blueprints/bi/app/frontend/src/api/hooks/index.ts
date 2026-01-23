@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
 import type {
-  DataSource, Table, Column, Question, Dashboard, DashboardCard,
+  DataSource, DataSourceTestResult, DataSourceStatus, SyncResult, SyncLog, CacheStats,
+  Table, Column, ColumnScanResult, Question, Dashboard, DashboardCard,
   Collection, Model, Metric, Alert, Subscription, User, QueryResult, Settings
 } from '../types'
 
@@ -9,7 +10,12 @@ import type {
 export const queryKeys = {
   datasources: ['datasources'] as const,
   datasource: (id: string) => ['datasources', id] as const,
+  datasourceStatus: (id: string) => ['datasources', id, 'status'] as const,
+  datasourceSchemas: (id: string) => ['datasources', id, 'schemas'] as const,
+  datasourceSyncLog: (id: string) => ['datasources', id, 'sync-log'] as const,
+  datasourceCacheStats: (id: string) => ['datasources', id, 'cache-stats'] as const,
   tables: (datasourceId: string) => ['tables', datasourceId] as const,
+  table: (tableId: string) => ['table', tableId] as const,
   columns: (tableId: string) => ['columns', tableId] as const,
   questions: ['questions'] as const,
   question: (id: string) => ['questions', id] as const,
@@ -87,8 +93,101 @@ export function useTestDataSource() {
 export function useSyncDataSource() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.post<{ tables_synced: number }>(`/datasources/${id}/sync`),
-    onSuccess: (_, id) => queryClient.invalidateQueries({ queryKey: queryKeys.tables(id) }),
+    mutationFn: (params: { id: string; full_sync?: boolean; scan_field_values?: boolean }) =>
+      api.post<SyncResult>(`/datasources/${params.id}/sync`, {
+        full_sync: params.full_sync ?? true,
+        scan_field_values: params.scan_field_values ?? false,
+      }),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tables(params.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.datasourceStatus(params.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.datasourceSyncLog(params.id) })
+    },
+  })
+}
+
+// Data Source Status
+export function useDataSourceStatus(id: string) {
+  return useQuery({
+    queryKey: queryKeys.datasourceStatus(id),
+    queryFn: () => api.get<DataSourceStatus>(`/datasources/${id}/status`),
+    enabled: !!id,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  })
+}
+
+// Data Source Schemas
+export function useDataSourceSchemas(id: string) {
+  return useQuery({
+    queryKey: queryKeys.datasourceSchemas(id),
+    queryFn: () => api.get<string[]>(`/datasources/${id}/schemas`),
+    enabled: !!id,
+  })
+}
+
+// Scan Data Source (field values)
+export function useScanDataSource() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { id: string; table_id?: string; column_id?: string; limit?: number }) =>
+      api.post<SyncResult>(`/datasources/${params.id}/scan`, {
+        table_id: params.table_id,
+        column_id: params.column_id,
+        limit: params.limit ?? 1000,
+      }),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tables(params.id) })
+      if (params.table_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.columns(params.table_id) })
+      }
+    },
+  })
+}
+
+// Fingerprint Data Source
+export function useFingerprintDataSource() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { id: string; table_id?: string; sample_size?: number }) =>
+      api.post<SyncResult>(`/datasources/${params.id}/fingerprint`, {
+        table_id: params.table_id,
+        sample_size: params.sample_size ?? 10000,
+      }),
+    onSuccess: (_, params) => {
+      if (params.table_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.columns(params.table_id) })
+      }
+    },
+  })
+}
+
+// Sync Log
+export function useSyncLog(id: string, limit?: number) {
+  return useQuery({
+    queryKey: queryKeys.datasourceSyncLog(id),
+    queryFn: () => api.get<{ logs: SyncLog[] }>(`/datasources/${id}/sync-log?limit=${limit ?? 10}`),
+    enabled: !!id,
+  })
+}
+
+// Cache Stats
+export function useCacheStats(id: string) {
+  return useQuery({
+    queryKey: queryKeys.datasourceCacheStats(id),
+    queryFn: () => api.get<CacheStats>(`/datasources/${id}/cache/stats`),
+    enabled: !!id,
+  })
+}
+
+// Clear Cache
+export function useClearCache() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ status: string; columns_cleared: number }>(`/datasources/${id}/cache/clear`),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.datasourceCacheStats(id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.tables(id) })
+    },
   })
 }
 
@@ -101,11 +200,100 @@ export function useTables(datasourceId: string) {
   })
 }
 
+// Single Table
+export function useTable(datasourceId: string, tableId: string) {
+  return useQuery({
+    queryKey: queryKeys.table(tableId),
+    queryFn: () => api.get<Table>(`/datasources/${datasourceId}/tables/${tableId}`),
+    enabled: !!datasourceId && !!tableId,
+  })
+}
+
+// Update Table
+export function useUpdateTable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: {
+      datasourceId: string
+      tableId: string
+      display_name?: string
+      description?: string
+      visible?: boolean
+      field_order?: string
+    }) =>
+      api.put<Table>(`/datasources/${params.datasourceId}/tables/${params.tableId}`, {
+        display_name: params.display_name,
+        description: params.description,
+        visible: params.visible,
+        field_order: params.field_order,
+      }),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.table(params.tableId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.tables(params.datasourceId) })
+    },
+  })
+}
+
+// Sync Single Table
+export function useSyncTable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { datasourceId: string; tableId: string }) =>
+      api.post<SyncResult>(`/datasources/${params.datasourceId}/tables/${params.tableId}/sync`),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.columns(params.tableId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.table(params.tableId) })
+    },
+  })
+}
+
+// Scan Single Table
+export function useScanTable() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { datasourceId: string; tableId: string }) =>
+      api.post<SyncResult>(`/datasources/${params.datasourceId}/tables/${params.tableId}/scan`),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.columns(params.tableId) })
+    },
+  })
+}
+
+// Discard Cached Values for Table
+export function useDiscardCachedValues() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { datasourceId: string; tableId: string }) =>
+      api.post<{ status: string; columns_cleared: number }>(
+        `/datasources/${params.datasourceId}/tables/${params.tableId}/discard-values`
+      ),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.columns(params.tableId) })
+    },
+  })
+}
+
+// Columns
 export function useColumns(tableId: string) {
   return useQuery({
     queryKey: queryKeys.columns(tableId),
     queryFn: () => api.get<Column[]>(`/datasources/tables/${tableId}/columns`),
     enabled: !!tableId,
+  })
+}
+
+// Scan Single Column
+export function useScanColumn() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { datasourceId: string; tableId: string; columnId: string; limit?: number }) =>
+      api.post<ColumnScanResult>(
+        `/datasources/${params.datasourceId}/tables/${params.tableId}/columns/${params.columnId}/scan`,
+        { limit: params.limit ?? 1000 }
+      ),
+    onSuccess: (_, params) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.columns(params.tableId) })
+    },
   })
 }
 

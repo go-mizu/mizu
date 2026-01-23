@@ -115,6 +115,8 @@ func (s *Store) Ensure(ctx context.Context) error {
 		name TEXT NOT NULL,
 		display_name TEXT,
 		description TEXT,
+		visible INTEGER DEFAULT 1,
+		field_order TEXT DEFAULT '',
 		row_count INTEGER DEFAULT 0,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL

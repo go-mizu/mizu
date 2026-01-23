@@ -2,14 +2,120 @@
 export interface DataSource {
   id: string
   name: string
-  engine: 'sqlite' | 'postgres' | 'mysql'
+  engine: 'sqlite' | 'postgres' | 'mysql' | 'clickhouse' | 'duckdb'
+
+  // Basic connection
   host?: string
   port?: number
   database: string
   username?: string
+
+  // SSL/TLS Configuration
   ssl: boolean
+  ssl_mode?: 'disable' | 'allow' | 'prefer' | 'require' | 'verify-ca' | 'verify-full'
+  ssl_root_cert?: string
+  ssl_client_cert?: string
+
+  // SSH Tunnel
+  tunnel_enabled?: boolean
+  tunnel_host?: string
+  tunnel_port?: number
+  tunnel_user?: string
+  tunnel_auth_method?: 'password' | 'ssh-key'
+
+  // Schema Filtering
+  schema_filter_type?: 'all' | 'inclusion' | 'exclusion'
+  schema_filter_patterns?: string[]
+
+  // Sync Configuration
+  auto_sync?: boolean
+  sync_schedule?: string
+  last_sync_at?: string
+  last_sync_status?: 'success' | 'failed' | 'partial' | 'running'
+  last_sync_error?: string
+
+  // Cache Configuration
+  cache_ttl?: number
+
+  // Connection Pool
+  max_open_conns?: number
+  max_idle_conns?: number
+  conn_max_lifetime?: number
+  conn_max_idle_time?: number
+
+  // Additional options
+  options?: Record<string, string>
+
+  // Metadata
   created_at: string
   updated_at: string
+}
+
+export interface DataSourceTestResult {
+  success?: boolean
+  valid?: boolean
+  error?: string
+  error_code?: string
+  suggestions?: string[]
+  version?: string
+  schemas?: string[]
+  latency_ms?: number
+}
+
+export interface DataSourceStatus {
+  connected: boolean
+  error?: string
+  latency_ms?: number
+  last_sync_at?: string
+  last_sync_status?: string
+  last_sync_error?: string
+  capabilities?: DriverCapabilities
+}
+
+export interface DriverCapabilities {
+  supports_schemas: boolean
+  supports_ssl: boolean
+  supports_ssh: boolean
+  supports_ctes: boolean
+  supports_json: boolean
+  supports_arrays: boolean
+  supports_window_functions: boolean
+  max_query_timeout?: number
+  default_port?: number
+}
+
+export interface SyncResult {
+  status: string
+  duration_ms: number
+  schemas_synced?: number
+  tables_synced?: number
+  columns_synced?: number
+  tables_added?: number
+  tables_removed?: number
+  columns_added?: number
+  columns_removed?: number
+  fields_scanned?: number
+  values_cached?: number
+  columns_fingerprinted?: number
+  errors: string[]
+}
+
+export interface SyncLog {
+  id: string
+  type: 'schema_sync' | 'field_scan' | 'fingerprint'
+  status: 'completed' | 'failed' | 'running'
+  started_at?: string
+  completed_at?: string
+  duration_ms?: number
+  error?: string
+  details?: Record<string, any>
+}
+
+export interface CacheStats {
+  datasource_id: string
+  columns_with_cache: number
+  total_cached_values: number
+  cache_ttl?: number
 }
 
 export interface Table {
@@ -19,6 +125,8 @@ export interface Table {
   name: string
   display_name: string
   description?: string
+  visible: boolean
+  field_order?: 'database' | 'alphabetical' | 'custom' | 'smart'
   row_count: number
   created_at: string
   updated_at: string
@@ -29,13 +137,75 @@ export interface Column {
   table_id: string
   name: string
   display_name: string
-  type: 'string' | 'number' | 'boolean' | 'datetime' | 'date'
+
+  // Types
+  type: string  // Database type
+  mapped_type?: 'string' | 'number' | 'boolean' | 'datetime' | 'date' | 'json'
   semantic?: SemanticType
+
+  // Metadata
   description?: string
   position: number
+
+  // Visibility
+  visibility?: 'everywhere' | 'detail_only' | 'hidden'
+
+  // Filter widget type
+  filter_widget_type?: 'search' | 'dropdown' | 'input' | 'none'
+
+  // Constraints
+  nullable?: boolean
+  primary_key?: boolean
+  foreign_key?: boolean
+  foreign_table?: string
+  foreign_column?: string
+
+  // Fingerprint (statistics)
+  distinct_count?: number
+  null_count?: number
+  min_value?: string
+  max_value?: string
+  avg_length?: number
+
+  // Cached values (for dropdowns)
+  cached_values?: string[]
+  values_cached_at?: string
+
+  // Custom mappings
+  value_mappings?: Record<string, string>
 }
 
+export interface ColumnScanResult {
+  column_id: string
+  values: string[]
+  total_distinct: number
+  duration_ms: number
+  cached_at: string
+}
+
+// Complete Semantic Types (matching Metabase)
 export type SemanticType =
+  // Keys
+  | 'type/PK' | 'type/FK'
+  // Numbers
+  | 'type/Price' | 'type/Currency' | 'type/Score' | 'type/Percentage' | 'type/Quantity'
+  | 'type/Cost' | 'type/GrossMargin' | 'type/Discount'
+  // Text
+  | 'type/Name' | 'type/Title' | 'type/Description' | 'type/Comment'
+  | 'type/Category' | 'type/Company' | 'type/Product' | 'type/Source'
+  | 'type/AvatarURL' | 'type/ImageURL' | 'type/URL' | 'type/Email' | 'type/Phone'
+  | 'type/SerializedJSON'
+  // Dates
+  | 'type/CreationDate' | 'type/CreationTime' | 'type/CreationTimestamp'
+  | 'type/UpdateDate' | 'type/UpdateTime' | 'type/UpdateTimestamp'
+  | 'type/JoinDate' | 'type/JoinTime' | 'type/JoinTimestamp'
+  | 'type/Birthdate'
+  | 'type/CancelationDate' | 'type/CancelationTime' | 'type/CancelationTimestamp'
+  | 'type/DeletionDate' | 'type/DeletionTime' | 'type/DeletionTimestamp'
+  // Geo
+  | 'type/Latitude' | 'type/Longitude' | 'type/Coordinate'
+  | 'type/City' | 'type/State' | 'type/Country' | 'type/ZipCode' | 'type/Address'
+  // Legacy compatibility
   | 'pk' | 'fk' | 'name' | 'category' | 'quantity'
   | 'price' | 'percentage' | 'latitude' | 'longitude'
   | 'email' | 'url' | 'image' | 'created_at' | 'updated_at'

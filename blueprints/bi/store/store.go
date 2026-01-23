@@ -101,6 +101,8 @@ type Table struct {
 	Name         string    `json:"name"`
 	DisplayName  string    `json:"display_name"`
 	Description  string    `json:"description,omitempty"`
+	Visible      bool      `json:"visible"`           // Whether table is visible in query builder
+	FieldOrder   string    `json:"field_order,omitempty"` // database, alphabetical, custom, smart
 	RowCount     int64     `json:"row_count"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

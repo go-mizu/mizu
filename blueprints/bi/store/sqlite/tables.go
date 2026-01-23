@@ -20,20 +20,23 @@ func (s *TableStore) Create(ctx context.Context, t *store.Table) error {
 	now := time.Now()
 	t.CreatedAt = now
 	t.UpdatedAt = now
+	t.Visible = true // Default to visible
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO tables (id, datasource_id, schema_name, name, display_name, description, row_count, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, t.ID, t.DataSourceID, t.Schema, t.Name, t.DisplayName, t.Description, t.RowCount, t.CreatedAt, t.UpdatedAt)
+		INSERT INTO tables (id, datasource_id, schema_name, name, display_name, description, visible, field_order, row_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, t.ID, t.DataSourceID, t.Schema, t.Name, t.DisplayName, t.Description, t.Visible, t.FieldOrder, t.RowCount, t.CreatedAt, t.UpdatedAt)
 	return err
 }
 
 func (s *TableStore) GetByID(ctx context.Context, id string) (*store.Table, error) {
 	var t store.Table
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, datasource_id, schema_name, name, display_name, description, row_count, created_at, updated_at
+		SELECT id, datasource_id, schema_name, name, display_name, description,
+			COALESCE(visible, 1), COALESCE(field_order, ''), row_count, created_at, updated_at
 		FROM tables WHERE id = ?
-	`, id).Scan(&t.ID, &t.DataSourceID, &t.Schema, &t.Name, &t.DisplayName, &t.Description, &t.RowCount, &t.CreatedAt, &t.UpdatedAt)
+	`, id).Scan(&t.ID, &t.DataSourceID, &t.Schema, &t.Name, &t.DisplayName, &t.Description,
+		&t.Visible, &t.FieldOrder, &t.RowCount, &t.CreatedAt, &t.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -45,7 +48,8 @@ func (s *TableStore) GetByID(ctx context.Context, id string) (*store.Table, erro
 
 func (s *TableStore) ListByDataSource(ctx context.Context, dsID string) ([]*store.Table, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, datasource_id, schema_name, name, display_name, description, row_count, created_at, updated_at
+		SELECT id, datasource_id, schema_name, name, display_name, description,
+			COALESCE(visible, 1), COALESCE(field_order, ''), row_count, created_at, updated_at
 		FROM tables WHERE datasource_id = ? ORDER BY name
 	`, dsID)
 	if err != nil {
@@ -56,7 +60,8 @@ func (s *TableStore) ListByDataSource(ctx context.Context, dsID string) ([]*stor
 	var result []*store.Table
 	for rows.Next() {
 		var t store.Table
-		if err := rows.Scan(&t.ID, &t.DataSourceID, &t.Schema, &t.Name, &t.DisplayName, &t.Description, &t.RowCount, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.DataSourceID, &t.Schema, &t.Name, &t.DisplayName, &t.Description,
+			&t.Visible, &t.FieldOrder, &t.RowCount, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, &t)
@@ -67,9 +72,9 @@ func (s *TableStore) ListByDataSource(ctx context.Context, dsID string) ([]*stor
 func (s *TableStore) Update(ctx context.Context, t *store.Table) error {
 	t.UpdatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE tables SET display_name=?, description=?, row_count=?, updated_at=?
+		UPDATE tables SET display_name=?, description=?, visible=?, field_order=?, row_count=?, updated_at=?
 		WHERE id=?
-	`, t.DisplayName, t.Description, t.RowCount, t.UpdatedAt, t.ID)
+	`, t.DisplayName, t.Description, t.Visible, t.FieldOrder, t.RowCount, t.UpdatedAt, t.ID)
 	return err
 }
 
