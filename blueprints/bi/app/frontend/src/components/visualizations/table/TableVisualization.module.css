@@ -3,80 +3,135 @@
 .container {
   overflow: auto;
   background: white;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .tableWrapper {
   overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ccc transparent;
+}
+
+.tableWrapper::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.tableWrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableWrapper::-webkit-scrollbar-thumb {
+  background-color: #ccc;
+  border-radius: 4px;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
-/* Header styling */
+/* Header styling - Metabase's signature blue headers */
 .thead {
-  background: #f9fbfc;
+  background: linear-gradient(to bottom, #fafbfc, #f5f6f8);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .th {
   color: #509ee3;
   font-weight: 700;
-  font-size: 12px;
-  text-transform: none;
-  padding: 10px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 12px 16px;
   cursor: pointer;
   white-space: nowrap;
-  border-bottom: 2px solid #eeecec;
-  transition: background-color 0.15s ease;
+  border-bottom: 1px solid #e0e4e8;
+  transition: all 0.15s ease;
   user-select: none;
+  background: transparent;
 }
 
 .th:hover {
-  background: #eef6fc;
+  background: #edf2f7;
+  color: #3b7fc4;
+}
+
+.th:first-child {
+  border-left: none;
 }
 
 .headerText {
   display: inline;
+  font-weight: 700;
+}
+
+/* Sort indicator */
+.th .sortIcon {
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.th:hover .sortIcon {
+  opacity: 1;
 }
 
 /* Row index column */
 .rowIndexHeader {
-  width: 60px;
-  min-width: 60px;
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
   text-align: center;
-  color: #509ee3;
-  font-weight: 700;
-  font-size: 12px;
-  padding: 10px 12px;
-  border-bottom: 2px solid #eeecec;
-  background: #f9fbfc;
+  color: #74818f;
+  font-weight: 600;
+  font-size: 10px;
+  padding: 12px 8px;
+  border-bottom: 1px solid #e0e4e8;
+  background: transparent;
 }
 
 .rowIndexCell {
-  width: 60px;
-  min-width: 60px;
+  width: 50px;
+  min-width: 50px;
+  max-width: 50px;
   text-align: center;
-  padding: 6px 8px;
+  padding: 8px;
+  background: #fafbfc;
+  border-right: 1px solid #f0f0f0;
 }
 
 .rowIndexBadge {
-  min-width: 28px;
-  height: 24px;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 600;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  color: #74818f;
 }
 
 /* Cell styling */
 .td {
-  padding: 10px 12px;
-  font-size: 14px;
+  padding: 10px 16px;
+  font-size: 13px;
   color: #4c5773;
   border-bottom: 1px solid #f0f0f0;
   vertical-align: middle;
   transition: background-color 0.1s ease;
+  max-width: 300px;
+}
+
+.td:first-child {
+  border-left: none;
+}
+
+/* Hover effect on rows */
+tr:hover .td {
+  background: #f8fafc;
 }
 
 .cellContent {
@@ -86,41 +141,62 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
+  gap: 4px;
 }
 
-/* Null values */
+/* Null values - italic and lighter */
 .nullValue {
-  color: #949aab;
+  color: #a0aec0;
+  font-style: italic;
+  font-size: 12px;
 }
 
 /* Negative numbers */
 .negativeValue {
-  color: #ed6e6e;
+  color: #e53e3e;
+}
+
+/* Positive numbers styling */
+.positiveValue {
+  color: #38a169;
 }
 
 /* Links */
 .link {
   color: #509ee3;
   text-decoration: none;
+  font-weight: 500;
 }
 
 .link:hover {
   text-decoration: underline;
+  color: #3b7fc4;
 }
 
 /* Images in cells */
 .cellImage {
-  max-height: 40px;
-  max-width: 80px;
+  max-height: 32px;
+  max-width: 64px;
   object-fit: contain;
   border-radius: 4px;
+  border: 1px solid #e0e4e8;
 }
 
-/* Pagination */
+/* Pagination - matches Metabase footer */
 .pagination {
-  padding: 12px 16px;
-  border-top: 1px solid #f0f0f0;
-  background: #f9fbfc;
+  padding: 10px 16px;
+  border-top: 1px solid #e0e4e8;
+  background: linear-gradient(to bottom, #fafbfc, #f5f6f8);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.pagination :global(.mantine-Select-input) {
+  border-color: #e0e4e8;
+  font-size: 12px;
+  min-height: 28px;
 }
 
 /* Column resize handle */
@@ -129,20 +205,162 @@
   right: 0;
   top: 0;
   bottom: 0;
-  width: 8px;
+  width: 6px;
   cursor: col-resize;
   background: transparent;
   z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.th:hover .resizeHandle {
+  opacity: 1;
 }
 
 .resizeHandle:hover,
 .resizeHandle.resizing {
   background: #509ee3;
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 .thResizable {
   position: relative;
 }
 
-/* Hover states already handled by Mantine table */
+/* Striped rows */
+.table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.table tbody tr:nth-child(even):hover {
+  background: #f0f4f8;
+}
+
+/* Column type indicators */
+.columnTypeIcon {
+  color: #a0aec0;
+  margin-right: 4px;
+}
+
+/* Filter chips styling */
+.filterChip {
+  background: #eef6fc;
+  color: #509ee3;
+  border: 1px solid #cce5ff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.filterChip:hover {
+  background: #d9ecfc;
+}
+
+/* Numeric cell alignment */
+.cellNumeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Date cell styling */
+.cellDate {
+  color: #718096;
+}
+
+/* Boolean cell styling */
+.cellBoolean {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cellBooleanTrue {
+  color: #38a169;
+}
+
+.cellBooleanFalse {
+  color: #e53e3e;
+}
+
+/* Empty state */
+.emptyState {
+  padding: 48px 24px;
+  text-align: center;
+  color: #a0aec0;
+}
+
+.emptyState h4 {
+  margin-bottom: 8px;
+  color: #4a5568;
+}
+
+/* Loading state */
+.loadingOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+/* Compact mode */
+.compact .th {
+  padding: 8px 12px;
+  font-size: 10px;
+}
+
+.compact .td {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* Dense mode */
+.dense .th {
+  padding: 4px 8px;
+}
+
+.dense .td {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* Selection styling */
+.selectedRow {
+  background: #e6f3ff !important;
+}
+
+.selectedRow:hover {
+  background: #d9ecfc !important;
+}
+
+/* Action column */
+.actionColumn {
+  width: 40px;
+  min-width: 40px;
+  padding: 4px;
+  text-align: center;
+}
+
+/* Truncated text with tooltip */
+.truncated {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* JSON/Object cell preview */
+.cellObject {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 11px;
+  color: #805ad5;
+  background: #faf5ff;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Hover states already handled by Mantine table but enhanced */

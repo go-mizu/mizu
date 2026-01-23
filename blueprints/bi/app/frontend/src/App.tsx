@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DataModel = lazy(() => import('./pages/admin/DataModel'))
 const Settings = lazy(() => import('./pages/admin/Settings'))
 const People = lazy(() => import('./pages/admin/People'))
+const XRay = lazy(() => import('./pages/XRay'))
 
 function PageLoader() {
   return <LoadingOverlay visible={true} />
@@ -66,6 +67,10 @@ function App() {
             <Route path="/dashboard/new" element={<Dashboard />} />
             <Route path="/dashboard/:id" element={<Dashboard />} />
             <Route path="/dashboard/:id/edit" element={<Dashboard mode="edit" />} />
+            {/* X-Ray routes */}
+            <Route path="/xray/:datasourceId/table/:tableId" element={<XRay />} />
+            <Route path="/xray/:datasourceId/field/:columnId" element={<XRay />} />
+            {/* Admin routes */}
             <Route path="/admin/datamodel" element={<DataModel />} />
             <Route path="/admin/datamodel/:tableId" element={<DataModel />} />
             <Route path="/admin/people" element={<People />} />
