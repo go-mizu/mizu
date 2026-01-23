@@ -277,7 +277,7 @@ function TablePreviewPage({
   // Fetch table metadata
   const { data: tables } = useTables(datasourceId)
   const table = tables?.find(t => t.id === tableId)
-  const { data: columns, isLoading: loadingColumns } = useColumns(tableId)
+  const { data: columns, isLoading: loadingColumns } = useColumns(datasourceId, tableId)
   const syncTable = useSyncTable()
 
   // Fetch preview data

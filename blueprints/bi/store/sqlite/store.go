@@ -341,8 +341,6 @@ func (s *Store) Ensure(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_dashboards_collection ON dashboards(collection_id);
 	CREATE INDEX IF NOT EXISTS idx_dashboard_cards_dashboard ON dashboard_cards(dashboard_id);
 	CREATE INDEX IF NOT EXISTS idx_collections_parent ON collections(parent_id);
-	CREATE INDEX IF NOT EXISTS idx_collections_type ON collections(type);
-	CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner_id);
 	CREATE INDEX IF NOT EXISTS idx_models_collection ON models(collection_id);
 	CREATE INDEX IF NOT EXISTS idx_metrics_table ON metrics(table_id);
 	CREATE INDEX IF NOT EXISTS idx_alerts_question ON alerts(question_id);
@@ -354,7 +352,70 @@ func (s *Store) Ensure(ctx context.Context) error {
 	`
 
 	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations for existing databases
+	if err := s.runMigrations(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// runMigrations applies schema migrations for existing databases.
+func (s *Store) runMigrations(ctx context.Context) error {
+	// Check and add columns if they don't exist
+	// SQLite doesn't have IF NOT EXISTS for ALTER TABLE, so we check first
+
+	// Collections table migrations
+	if !s.columnExists(ctx, "collections", "type") {
+		if _, err := s.db.ExecContext(ctx, "ALTER TABLE collections ADD COLUMN type TEXT DEFAULT ''"); err != nil {
+			return fmt.Errorf("add collections.type: %w", err)
+		}
+	}
+	if !s.columnExists(ctx, "collections", "owner_id") {
+		if _, err := s.db.ExecContext(ctx, "ALTER TABLE collections ADD COLUMN owner_id TEXT"); err != nil {
+			return fmt.Errorf("add collections.owner_id: %w", err)
+		}
+	}
+
+	// Create indexes for new columns (after they're added)
+	_, _ = s.db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_collections_type ON collections(type)")
+	_, _ = s.db.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner_id)")
+
+	// Users table migrations
+	if !s.columnExists(ctx, "users", "active") {
+		if _, err := s.db.ExecContext(ctx, "ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1"); err != nil {
+			return fmt.Errorf("add users.active: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// columnExists checks if a column exists in a table using PRAGMA table_info.
+func (s *Store) columnExists(ctx context.Context, table, column string) bool {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue interface{}
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // Close closes the database connection.

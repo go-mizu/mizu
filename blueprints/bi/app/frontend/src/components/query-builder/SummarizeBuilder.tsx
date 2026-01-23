@@ -62,7 +62,7 @@ export default function SummarizeBuilder({
     const table = tables?.find(t => t.name === sourceTable || t.id === sourceTable)
     return table?.id || ''
   }, [tables, sourceTable])
-  const { data: columns } = useColumns(selectedTableId)
+  const { data: columns } = useColumns(datasourceId || '', selectedTableId)
 
   const numericColumns = useMemo(() => {
     return (columns || [])

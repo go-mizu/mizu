@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Box, LoadingOverlay } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
-import Sidebar from './components/layout/Sidebar'
+import Sidebar, { FloatingHamburger } from './components/layout/Sidebar'
 import CommandPalette from './components/core/CommandPalette'
 import { useUIStore } from './stores/uiStore'
 
@@ -22,7 +22,7 @@ function PageLoader() {
 }
 
 function App() {
-  const { openCommandPalette, toggleCommandPalette } = useUIStore()
+  const { openCommandPalette, toggleCommandPalette, sidebarCollapsed } = useUIStore()
 
   // Global keyboard shortcuts
   useHotkeys([
@@ -33,6 +33,7 @@ function App() {
   return (
     <Box style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
+      <FloatingHamburger />
       <Box
         component="main"
         style={{
@@ -40,6 +41,8 @@ function App() {
           backgroundColor: '#f9fbfc',
           minHeight: '100vh',
           overflow: 'auto',
+          marginLeft: sidebarCollapsed ? 0 : 260,
+          transition: 'margin-left 0.2s ease',
         }}
       >
         <Suspense fallback={<PageLoader />}>

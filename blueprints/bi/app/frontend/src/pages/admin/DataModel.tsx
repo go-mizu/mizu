@@ -339,7 +339,7 @@ function SchemaBrowserPanel({
   onSelectTable: (id: string | null) => void
 }) {
   const { data: tables, isLoading: loadingTables } = useTables(selectedDatasource || '')
-  const { data: columns, isLoading: loadingColumns } = useColumns(selectedTable || '')
+  const { data: columns, isLoading: loadingColumns } = useColumns(selectedDatasource || '', selectedTable || '')
 
   // Group tables by schema
   const tablesBySchema = useMemo(() => {
@@ -531,7 +531,7 @@ function MetadataPanel({
   onUpdateColumn: ReturnType<typeof useUpdateColumn>
 }) {
   const { data: tables } = useTables(selectedDatasource || '')
-  const { data: columns, isLoading: loadingColumns } = useColumns(selectedTable || '')
+  const { data: columns, isLoading: loadingColumns } = useColumns(selectedDatasource || '', selectedTable || '')
 
   const [editDisplayName, setEditDisplayName] = useState('')
   const [editDescription, setEditDescription] = useState('')

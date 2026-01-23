@@ -121,7 +121,7 @@ dev: ## Show development mode instructions
 .PHONY: dev-all
 dev-all: ## Run backend and frontend in development mode
 	@echo "Starting development servers..."
-	@echo "Backend: http://localhost:3000"
+	@echo "Backend: http://localhost:8080"
 	@echo "Frontend: http://localhost:5173"
 	@echo ""
 	@trap 'kill %1 %2 2>/dev/null' EXIT; \
