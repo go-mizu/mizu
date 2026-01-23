@@ -82,16 +82,31 @@ func (s *TableStore) CreateColumn(ctx context.Context, col *store.Column) error 
 	if col.ID == "" {
 		col.ID = generateID()
 	}
+	if col.Visibility == "" {
+		col.Visibility = "everywhere"
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO columns (id, table_id, name, display_name, type, semantic, description, position)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, col.ID, col.TableID, col.Name, col.DisplayName, col.Type, col.Semantic, col.Description, col.Position)
+		INSERT INTO columns (
+			id, table_id, name, display_name, type, mapped_type, semantic, description, position,
+			visibility, nullable, primary_key, foreign_key, foreign_table, foreign_column,
+			distinct_count, null_count, min_value, max_value, avg_length, cached_values, values_cached_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		col.ID, col.TableID, col.Name, col.DisplayName, col.Type, col.MappedType, col.Semantic, col.Description, col.Position,
+		col.Visibility, col.Nullable, col.PrimaryKey, col.ForeignKey, col.ForeignTable, col.ForeignColumn,
+		col.DistinctCount, col.NullCount, col.MinValue, col.MaxValue, col.AvgLength, toJSON(col.CachedValues), col.ValuesCachedAt,
+	)
 	return err
 }
 
 func (s *TableStore) ListColumns(ctx context.Context, tableID string) ([]*store.Column, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, table_id, name, display_name, type, semantic, description, position
+		SELECT id, table_id, name, COALESCE(display_name, name), type, COALESCE(mapped_type, ''), COALESCE(semantic, ''),
+			COALESCE(description, ''), position, COALESCE(visibility, 'everywhere'),
+			COALESCE(nullable, 1), COALESCE(primary_key, 0), COALESCE(foreign_key, 0),
+			COALESCE(foreign_table, ''), COALESCE(foreign_column, ''),
+			COALESCE(distinct_count, 0), COALESCE(null_count, 0), COALESCE(min_value, ''), COALESCE(max_value, ''),
+			COALESCE(avg_length, 0), COALESCE(cached_values, '[]'), values_cached_at
 		FROM columns WHERE table_id = ? ORDER BY position
 	`, tableID)
 	if err != nil {
@@ -102,8 +117,19 @@ func (s *TableStore) ListColumns(ctx context.Context, tableID string) ([]*store.
 	var result []*store.Column
 	for rows.Next() {
 		var c store.Column
-		if err := rows.Scan(&c.ID, &c.TableID, &c.Name, &c.DisplayName, &c.Type, &c.Semantic, &c.Description, &c.Position); err != nil {
+		var cachedValues string
+		var valuesCachedAt sql.NullTime
+		if err := rows.Scan(
+			&c.ID, &c.TableID, &c.Name, &c.DisplayName, &c.Type, &c.MappedType, &c.Semantic,
+			&c.Description, &c.Position, &c.Visibility,
+			&c.Nullable, &c.PrimaryKey, &c.ForeignKey, &c.ForeignTable, &c.ForeignColumn,
+			&c.DistinctCount, &c.NullCount, &c.MinValue, &c.MaxValue, &c.AvgLength, &cachedValues, &valuesCachedAt,
+		); err != nil {
 			return nil, err
+		}
+		fromJSON(cachedValues, &c.CachedValues)
+		if valuesCachedAt.Valid {
+			c.ValuesCachedAt = &valuesCachedAt.Time
 		}
 		result = append(result, &c)
 	}
@@ -117,23 +143,47 @@ func (s *TableStore) DeleteColumnsByTable(ctx context.Context, tableID string) e
 
 func (s *TableStore) GetColumn(ctx context.Context, id string) (*store.Column, error) {
 	var c store.Column
+	var cachedValues string
+	var valuesCachedAt sql.NullTime
+
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, table_id, name, display_name, type, semantic, description, position
+		SELECT id, table_id, name, COALESCE(display_name, name), type, COALESCE(mapped_type, ''), COALESCE(semantic, ''),
+			COALESCE(description, ''), position, COALESCE(visibility, 'everywhere'),
+			COALESCE(nullable, 1), COALESCE(primary_key, 0), COALESCE(foreign_key, 0),
+			COALESCE(foreign_table, ''), COALESCE(foreign_column, ''),
+			COALESCE(distinct_count, 0), COALESCE(null_count, 0), COALESCE(min_value, ''), COALESCE(max_value, ''),
+			COALESCE(avg_length, 0), COALESCE(cached_values, '[]'), values_cached_at
 		FROM columns WHERE id = ?
-	`, id).Scan(&c.ID, &c.TableID, &c.Name, &c.DisplayName, &c.Type, &c.Semantic, &c.Description, &c.Position)
+	`, id).Scan(
+		&c.ID, &c.TableID, &c.Name, &c.DisplayName, &c.Type, &c.MappedType, &c.Semantic,
+		&c.Description, &c.Position, &c.Visibility,
+		&c.Nullable, &c.PrimaryKey, &c.ForeignKey, &c.ForeignTable, &c.ForeignColumn,
+		&c.DistinctCount, &c.NullCount, &c.MinValue, &c.MaxValue, &c.AvgLength, &cachedValues, &valuesCachedAt,
+	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	fromJSON(cachedValues, &c.CachedValues)
+	if valuesCachedAt.Valid {
+		c.ValuesCachedAt = &valuesCachedAt.Time
+	}
 	return &c, nil
 }
 
 func (s *TableStore) UpdateColumn(ctx context.Context, col *store.Column) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE columns SET display_name=?, description=?, semantic=?
+		UPDATE columns SET
+			display_name=?, description=?, semantic=?, visibility=?,
+			distinct_count=?, null_count=?, min_value=?, max_value=?, avg_length=?,
+			cached_values=?, values_cached_at=?
 		WHERE id=?
-	`, col.DisplayName, col.Description, col.Semantic, col.ID)
+	`,
+		col.DisplayName, col.Description, col.Semantic, col.Visibility,
+		col.DistinctCount, col.NullCount, col.MinValue, col.MaxValue, col.AvgLength,
+		toJSON(col.CachedValues), col.ValuesCachedAt, col.ID,
+	)
 	return err
 }
