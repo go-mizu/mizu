@@ -132,6 +132,7 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
               datasourceId={datasourceId}
               isRunning={isExecuting}
               minHeight={350}
+              showSchema={false}
             />
           </Paper>
         </Stack>

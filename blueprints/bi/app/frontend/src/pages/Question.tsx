@@ -467,16 +467,25 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
               icon={<IconChartBar size={32} strokeWidth={1.5} />}
               iconColor="var(--color-primary)"
               title="Ready to explore"
-              description="Select a data source and table in the query builder, then click 'Get Answer' to see results"
+              description={
+                !datasourceId
+                  ? "Step 1: Select a data source from the Query Builder on the left"
+                  : !sourceTable && queryMode === 'query'
+                    ? "Step 2: Select a table to query from your data source"
+                    : queryMode === 'native' && !nativeSql.trim()
+                      ? "Step 2: Write your SQL query in the editor on the left"
+                      : "Click 'Get Answer' to run your query and see results"
+              }
               action={
-                <Button
-                  size="lg"
-                  leftSection={<IconPlayerPlay size={20} />}
-                  onClick={handleExecute}
-                  disabled={!datasourceId}
-                >
-                  Get Answer
-                </Button>
+                datasourceId && (sourceTable || (queryMode === 'native' && nativeSql.trim())) ? (
+                  <Button
+                    size="lg"
+                    leftSection={<IconPlayerPlay size={20} />}
+                    onClick={handleExecute}
+                  >
+                    Get Answer
+                  </Button>
+                ) : undefined
               }
               size="lg"
             />

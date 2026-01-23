@@ -474,6 +474,59 @@ a:hover {
 }
 
 /* =============================================================================
+   DASHBOARD GRID STYLES
+   ============================================================================= */
+
+.dashboard-grid {
+  position: relative;
+}
+
+.dashboard-grid .react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+}
+
+.dashboard-grid .react-grid-item.cssTransforms {
+  transition-property: transform, width, height;
+}
+
+.dashboard-grid .react-grid-item.resizing {
+  z-index: 1;
+  will-change: width, height;
+}
+
+.dashboard-grid .react-grid-item.react-draggable-dragging {
+  transition: none;
+  z-index: 3;
+  will-change: transform;
+}
+
+.dashboard-grid .react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+}
+
+.dashboard-grid .react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 5px;
+  height: 5px;
+  border-right: 2px solid var(--color-foreground-subtle);
+  border-bottom: 2px solid var(--color-foreground-subtle);
+}
+
+.dashboard-grid .react-grid-placeholder {
+  background: var(--color-primary);
+  opacity: 0.2;
+  transition-duration: 100ms;
+  z-index: 2;
+  border-radius: var(--radius-md);
+}
+
+/* =============================================================================
    SIDEBAR STYLES
    ============================================================================= */
 
