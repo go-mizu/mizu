@@ -487,6 +487,7 @@ function StatCard({
     <UnstyledButton
       onClick={onClick}
       style={styles.statCard}
+      data-testid="stat-card"
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
       }}
@@ -495,11 +496,11 @@ function StatCard({
       }}
     >
       <Group gap="md">
-        <ThemeIcon size={44} radius="md" style={{ backgroundColor: `${color}15` }}>
+        <ThemeIcon size={44} radius="md" style={{ backgroundColor: `${color}15` }} data-icon>
           <Icon size={22} color={color} strokeWidth={1.75} />
         </ThemeIcon>
         <Box>
-          <Text size="xl" fw={700} style={{ color: semanticColors.textPrimary, lineHeight: 1.2 }}>
+          <Text size="xl" fw={700} style={{ color: semanticColors.textPrimary, lineHeight: 1.2 }} data-value>
             {value}
           </Text>
           <Text size="sm" c="dimmed" mt={2}>

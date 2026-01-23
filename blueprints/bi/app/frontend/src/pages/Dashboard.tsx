@@ -529,13 +529,14 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
             width={1200}
             className="layout"
             layout={layout}
+            data-testid="dashboard-grid"
             gridConfig={{ cols: 18, rowHeight: 80, margin: [16, 16], containerPadding: null, maxRows: Infinity }}
             dragConfig={{ enabled: editMode, bounded: false, handle: '.drag-handle', threshold: 3 }}
             resizeConfig={{ enabled: editMode }}
             onLayoutChange={handleLayoutChange}
           >
             {cards.map(card => (
-              <div key={card.id}>
+              <div key={card.id} data-testid="dashboard-card">
                 <DashboardCardComponent
                   card={card}
                   question={getQuestionForCard(card)}

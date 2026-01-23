@@ -109,8 +109,8 @@ export class HomePage {
       databases: 0,
     };
 
-    // Extract numbers from stat cards
-    const cards = await this.page.locator('[data-testid="stat-card"], div:has(> span + span:has-text(/^\\d+$/))').all();
+    // Extract numbers from stat cards (use data-testid we added)
+    const cards = await this.page.locator('[data-testid="stat-card"]').all();
 
     for (const card of cards) {
       const text = await card.textContent();
@@ -151,8 +151,8 @@ export class HomePage {
     await expect(this.searchButton).toBeVisible();
     await expect(this.newButton).toBeVisible();
 
-    // Check section titles use uppercase letters and proper styling
-    const sectionTitles = await this.page.locator('text=/^(PINNED|PICK UP|OUR ANALYTICS|START HERE)/i').all();
+    // Check section titles exist (text is lowercase in DOM, uppercase via CSS)
+    const sectionTitles = await this.page.locator('text=/^(Pinned|Pick up where you left off|Our analytics|Start here)/i').all();
     expect(sectionTitles.length).toBeGreaterThanOrEqual(1);
   }
 

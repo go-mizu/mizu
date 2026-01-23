@@ -120,10 +120,13 @@ func (s *Server) setupRoutes() {
 		apiGroup.Post("/auth/login", s.usersHandler.Login)
 		apiGroup.Post("/auth/logout", s.usersHandler.Logout)
 		apiGroup.Get("/auth/me", s.usersHandler.Me)
+		apiGroup.Put("/auth/me", s.usersHandler.UpdateProfile)
+		apiGroup.Post("/auth/me/password", s.usersHandler.ChangePassword)
 
 		// Data Sources
 		apiGroup.Get("/datasources", s.datasourcesHandler.List)
 		apiGroup.Post("/datasources", s.datasourcesHandler.Create)
+		apiGroup.Post("/datasources/test-connection", s.datasourcesHandler.TestConnection)
 		apiGroup.Get("/datasources/{id}", s.datasourcesHandler.Get)
 		apiGroup.Put("/datasources/{id}", s.datasourcesHandler.Update)
 		apiGroup.Delete("/datasources/{id}", s.datasourcesHandler.Delete)
@@ -131,6 +134,7 @@ func (s *Server) setupRoutes() {
 		apiGroup.Post("/datasources/{id}/sync", s.datasourcesHandler.Sync)
 		apiGroup.Get("/datasources/{id}/tables", s.datasourcesHandler.ListTables)
 		apiGroup.Get("/datasources/{id}/tables/{table}/columns", s.datasourcesHandler.ListColumns)
+		apiGroup.Put("/datasources/tables/{tableId}/columns/{columnId}", s.datasourcesHandler.UpdateColumn)
 
 		// Questions
 		apiGroup.Get("/questions", s.questionsHandler.List)
@@ -195,8 +199,14 @@ func (s *Server) setupRoutes() {
 		// Users (admin)
 		apiGroup.Get("/users", s.usersHandler.List)
 		apiGroup.Post("/users", s.usersHandler.Create)
+		apiGroup.Get("/users/{id}", s.usersHandler.Get)
 		apiGroup.Put("/users/{id}", s.usersHandler.Update)
 		apiGroup.Delete("/users/{id}", s.usersHandler.Delete)
+		apiGroup.Post("/users/{id}/deactivate", s.usersHandler.Deactivate)
+		apiGroup.Post("/users/{id}/reset-password", s.usersHandler.ResetPassword)
+
+		// Admin
+		apiGroup.Get("/admin/activity", s.settingsHandler.ActivityLog)
 
 		// Settings
 		apiGroup.Get("/settings", s.settingsHandler.List)

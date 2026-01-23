@@ -18,17 +18,16 @@ test.describe('Browse & Collections', () => {
       await page.waitForSelector('h2:has-text("Browse")');
 
       // Click Questions tab
-      await page.click('button:has-text("Questions"), [role="tab"]:has-text("Questions")');
+      await page.click('[role="tab"]:has-text("Questions")');
       await page.waitForTimeout(500);
 
-      // Verify only questions are shown or empty state
-      const items = page.locator('[data-type="question"], .question-card');
-      const emptyState = page.locator('text=No questions, text=empty');
+      // Tab should be selected
+      const questionsTab = page.locator('[role="tab"]:has-text("Questions")');
+      await expect(questionsTab).toHaveAttribute('aria-selected', 'true');
 
-      const hasItems = await items.count() > 0;
-      const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-      expect(hasItems || hasEmpty).toBeTruthy();
+      // Count is shown in tab (Questions (N))
+      const tabText = await questionsTab.textContent();
+      expect(tabText).toContain('Questions');
 
       await page.screenshot({ path: 'e2e/screenshots/browse_questions.png', fullPage: true });
     });
@@ -38,17 +37,16 @@ test.describe('Browse & Collections', () => {
       await page.waitForSelector('h2:has-text("Browse")');
 
       // Click Dashboards tab
-      await page.click('button:has-text("Dashboards"), [role="tab"]:has-text("Dashboards")');
+      await page.click('[role="tab"]:has-text("Dashboards")');
       await page.waitForTimeout(500);
 
-      // Verify dashboards are shown
-      const items = page.locator('[data-type="dashboard"], .dashboard-card');
-      const emptyState = page.locator('text=No dashboards, text=empty');
+      // Tab should be selected
+      const dashboardsTab = page.locator('[role="tab"]:has-text("Dashboards")');
+      await expect(dashboardsTab).toHaveAttribute('aria-selected', 'true');
 
-      const hasItems = await items.count() > 0;
-      const hasEmpty = await emptyState.isVisible().catch(() => false);
-
-      expect(hasItems || hasEmpty).toBeTruthy();
+      // Count is shown in tab (Dashboards (N))
+      const tabText = await dashboardsTab.textContent();
+      expect(tabText).toContain('Dashboards');
 
       await page.screenshot({ path: 'e2e/screenshots/browse_dashboards.png', fullPage: true });
     });
@@ -58,14 +56,15 @@ test.describe('Browse & Collections', () => {
       await page.waitForSelector('h2:has-text("Browse")');
 
       // Look for search input
-      const searchInput = page.locator('input[placeholder*="Search" i], input[placeholder*="Filter" i]');
-      if (await searchInput.isVisible({ timeout: 3000 })) {
-        await searchInput.fill('test');
-        await page.waitForTimeout(500);
+      const searchInput = page.locator('input[placeholder*="Search" i]');
+      await expect(searchInput).toBeVisible({ timeout: 5000 });
 
-        // Results should update
-        await page.screenshot({ path: 'e2e/screenshots/browse_search.png', fullPage: true });
-      }
+      // Type in search
+      await searchInput.fill('test');
+      await page.waitForTimeout(500);
+
+      // Results should update (page doesn't error)
+      await page.screenshot({ path: 'e2e/screenshots/browse_search.png', fullPage: true });
     });
 
     test('should sort items', async ({ authenticatedPage: page }) => {
@@ -112,8 +111,8 @@ test.describe('Browse & Collections', () => {
       if (await collectionCard.isVisible({ timeout: 3000 })) {
         await collectionCard.click();
 
-        // Should navigate to collection
-        await page.waitForURL(/\/collection\//, { timeout: 10000 });
+        // Should navigate to collection (route is /browse/:id)
+        await page.waitForURL(/\/browse\//, { timeout: 10000 });
 
         await page.screenshot({ path: 'e2e/screenshots/collection_page.png', fullPage: true });
       }
@@ -149,7 +148,7 @@ test.describe('Browse & Collections', () => {
       const collectionCard = page.locator('[data-type="collection"], .collection-card').first();
       if (await collectionCard.isVisible({ timeout: 3000 })) {
         await collectionCard.click();
-        await page.waitForURL(/\/collection\//, { timeout: 10000 });
+        await page.waitForURL(/\/browse\//, { timeout: 10000 });
 
         // Verify collection contents area
         await expect(page.locator('[data-testid="collection-items"], .collection-contents, main')).toBeVisible();

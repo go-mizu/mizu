@@ -425,6 +425,8 @@ function CollectionCard({
       padding="lg"
       style={{ cursor: 'pointer', borderLeft: `4px solid ${color}` }}
       onClick={onClick}
+      data-type="collection"
+      className="collection-card"
     >
       <Group>
         <ThemeIcon size={40} radius="md" variant="light" style={{ backgroundColor: color + '20', color }}>
@@ -453,6 +455,8 @@ function DashboardCard({
       padding="lg"
       style={{ cursor: 'pointer' }}
       onClick={onClick}
+      data-type="dashboard"
+      className="dashboard-card"
     >
       <Group mb="sm">
         <ThemeIcon size={40} radius="md" variant="light" color="summarize">
@@ -489,6 +493,8 @@ function QuestionCard({
       padding="lg"
       style={{ cursor: 'pointer' }}
       onClick={onClick}
+      data-type="question"
+      className="question-card"
     >
       <Group mb="sm">
         <ThemeIcon size={40} radius="md" variant="light" color="brand">

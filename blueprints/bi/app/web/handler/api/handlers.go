@@ -592,6 +592,150 @@ func (h *Users) Delete(c *mizu.Ctx) error {
 	return c.JSON(200, map[string]string{"status": "deleted"})
 }
 
+func (h *Users) Get(c *mizu.Ctx) error {
+	id := c.Param("id")
+	user, err := h.store.Users().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if user == nil {
+		return c.JSON(404, map[string]string{"error": "User not found"})
+	}
+	user.PasswordHash = "" // Don't expose password hash
+	return c.JSON(200, user)
+}
+
+func (h *Users) UpdateProfile(c *mizu.Ctx) error {
+	token := c.Request().Header.Get("Authorization")
+	if token == "" {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	session, err := h.store.Users().GetSession(c.Request().Context(), token)
+	if err != nil || session == nil {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	var update struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+	if err := c.BindJSON(&update, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid request body"})
+	}
+
+	user, err := h.store.Users().GetByID(c.Request().Context(), session.UserID)
+	if err != nil || user == nil {
+		return c.JSON(404, map[string]string{"error": "User not found"})
+	}
+
+	if update.Name != "" {
+		user.Name = update.Name
+	}
+	if update.Email != "" {
+		user.Email = update.Email
+	}
+
+	if err := h.store.Users().Update(c.Request().Context(), user); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	user.PasswordHash = ""
+	return c.JSON(200, user)
+}
+
+func (h *Users) ChangePassword(c *mizu.Ctx) error {
+	token := c.Request().Header.Get("Authorization")
+	if token == "" {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	session, err := h.store.Users().GetSession(c.Request().Context(), token)
+	if err != nil || session == nil {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid request body"})
+	}
+
+	user, err := h.store.Users().GetByID(c.Request().Context(), session.UserID)
+	if err != nil || user == nil {
+		return c.JSON(404, map[string]string{"error": "User not found"})
+	}
+
+	// Verify current password
+	if err := password.Verify(req.CurrentPassword, user.PasswordHash); err != nil {
+		return c.JSON(400, map[string]string{"error": "Current password is incorrect"})
+	}
+
+	// Hash new password
+	newHash, err := password.Hash(req.NewPassword, nil)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to hash password"})
+	}
+
+	user.PasswordHash = newHash
+	if err := h.store.Users().Update(c.Request().Context(), user); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, map[string]string{"status": "password changed"})
+}
+
+func (h *Users) Deactivate(c *mizu.Ctx) error {
+	id := c.Param("id")
+	user, err := h.store.Users().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if user == nil {
+		return c.JSON(404, map[string]string{"error": "User not found"})
+	}
+
+	user.Active = false
+	if err := h.store.Users().Update(c.Request().Context(), user); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, map[string]string{"status": "deactivated"})
+}
+
+func (h *Users) ResetPassword(c *mizu.Ctx) error {
+	id := c.Param("id")
+	user, err := h.store.Users().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if user == nil {
+		return c.JSON(404, map[string]string{"error": "User not found"})
+	}
+
+	// Generate temporary password
+	tempPassword := make([]byte, 12)
+	rand.Read(tempPassword)
+	tempPasswordStr := hex.EncodeToString(tempPassword)[:12]
+
+	// Hash the temporary password
+	newHash, err := password.Hash(tempPasswordStr, nil)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": "Failed to hash password"})
+	}
+
+	user.PasswordHash = newHash
+	if err := h.store.Users().Update(c.Request().Context(), user); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, map[string]string{
+		"temporary_password": tempPasswordStr,
+	})
+}
+
 // Settings handles settings API endpoints.
 type Settings struct {
 	store *sqlite.Store
@@ -628,4 +772,34 @@ func (h *Settings) AuditLogs(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(200, logs)
+}
+
+func (h *Settings) ActivityLog(c *mizu.Ctx) error {
+	// Parse query params
+	limitStr := c.Query("limit")
+	limit := 100
+	if limitStr != "" {
+		if l, err := parseInt(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	logs, err := h.store.Settings().ListAuditLogs(c.Request().Context(), limit, 0)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, map[string]interface{}{
+		"activities": logs,
+	})
+}
+
+func parseInt(s string) (int, error) {
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, nil
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
 }
