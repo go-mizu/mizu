@@ -279,9 +279,48 @@ func validateOperator(op string) error {
 		"IS NULL": true, "is null": true,
 		"IS NOT NULL": true, "is not null": true,
 		"BETWEEN": true, "between": true,
+		// Additional operators for Metabase parity
+		"contains": true, "CONTAINS": true,
+		"not-contains": true, "NOT-CONTAINS": true,
+		"starts-with": true, "STARTS-WITH": true,
+		"ends-with": true, "ENDS-WITH": true,
+		"is-empty": true, "IS-EMPTY": true,
+		"is-not-empty": true, "IS-NOT-EMPTY": true,
+		// Relative date operators
+		"relative": true, "RELATIVE": true,
 	}
 	if !validOps[op] {
 		return fmt.Errorf("invalid operator: %s", op)
+	}
+	return nil
+}
+
+// validateJoinType checks if a join type is valid
+func validateJoinType(joinType string) error {
+	validTypes := map[string]bool{
+		"left": true, "LEFT": true,
+		"right": true, "RIGHT": true,
+		"inner": true, "INNER": true,
+		"full": true, "FULL": true,
+	}
+	if !validTypes[joinType] {
+		return fmt.Errorf("invalid join type: %s", joinType)
+	}
+	return nil
+}
+
+// validateAggregationFunction checks if an aggregation function is valid
+func validateAggregationFunction(fn string) error {
+	validFns := map[string]bool{
+		"count": true, "COUNT": true,
+		"sum": true, "SUM": true,
+		"avg": true, "AVG": true,
+		"min": true, "MIN": true,
+		"max": true, "MAX": true,
+		"distinct": true, "DISTINCT": true,
+	}
+	if !validFns[fn] {
+		return fmt.Errorf("invalid aggregation function: %s", fn)
 	}
 	return nil
 }
@@ -399,7 +438,91 @@ func buildSQLFromQuery(query map[string]any) (string, []any, error) {
 	// Build SELECT clause
 	sqlBuilder.WriteString("SELECT ")
 
-	if cols, ok := query["columns"].([]any); ok && len(cols) > 0 {
+	// Check for aggregations
+	hasAggregations := false
+	if aggs, ok := query["aggregations"].([]any); ok && len(aggs) > 0 {
+		hasAggregations = true
+		for i, a := range aggs {
+			agg, ok := a.(map[string]any)
+			if !ok {
+				return "", nil, fmt.Errorf("aggregation must be an object")
+			}
+
+			if i > 0 {
+				sqlBuilder.WriteString(", ")
+			}
+
+			fn, ok := agg["function"].(string)
+			if !ok {
+				return "", nil, fmt.Errorf("aggregation function must be a string")
+			}
+			if err := validateAggregationFunction(fn); err != nil {
+				return "", nil, err
+			}
+
+			fnUpper := strings.ToUpper(fn)
+			col, hasCol := agg["column"].(string)
+
+			switch fnUpper {
+			case "COUNT":
+				if hasCol && col != "" {
+					if err := validateIdentifier(col); err != nil {
+						return "", nil, fmt.Errorf("invalid aggregation column: %w", err)
+					}
+					sqlBuilder.WriteString("COUNT(")
+					sqlBuilder.WriteString(quoteIdentifier(col))
+					sqlBuilder.WriteString(")")
+				} else {
+					sqlBuilder.WriteString("COUNT(*)")
+				}
+			case "DISTINCT":
+				if !hasCol || col == "" {
+					return "", nil, fmt.Errorf("DISTINCT requires a column")
+				}
+				if err := validateIdentifier(col); err != nil {
+					return "", nil, fmt.Errorf("invalid aggregation column: %w", err)
+				}
+				sqlBuilder.WriteString("COUNT(DISTINCT ")
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(")")
+			case "SUM", "AVG", "MIN", "MAX":
+				if !hasCol || col == "" {
+					return "", nil, fmt.Errorf("%s requires a column", fnUpper)
+				}
+				if err := validateIdentifier(col); err != nil {
+					return "", nil, fmt.Errorf("invalid aggregation column: %w", err)
+				}
+				sqlBuilder.WriteString(fnUpper)
+				sqlBuilder.WriteString("(")
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(")")
+			}
+
+			// Add alias if provided
+			if alias, ok := agg["alias"].(string); ok && alias != "" {
+				if err := validateIdentifier(alias); err != nil {
+					return "", nil, fmt.Errorf("invalid alias: %w", err)
+				}
+				sqlBuilder.WriteString(" AS ")
+				sqlBuilder.WriteString(quoteIdentifier(alias))
+			}
+		}
+
+		// Add group by columns to SELECT for aggregation queries
+		if groupBy, ok := query["group_by"].([]any); ok && len(groupBy) > 0 {
+			for _, col := range groupBy {
+				colStr, ok := col.(string)
+				if !ok {
+					continue
+				}
+				if err := validateIdentifier(colStr); err != nil {
+					continue
+				}
+				sqlBuilder.WriteString(", ")
+				sqlBuilder.WriteString(quoteIdentifier(colStr))
+			}
+		}
+	} else if cols, ok := query["columns"].([]any); ok && len(cols) > 0 {
 		for i, col := range cols {
 			colStr, ok := col.(string)
 			if !ok {
@@ -413,13 +536,87 @@ func buildSQLFromQuery(query map[string]any) (string, []any, error) {
 			}
 			sqlBuilder.WriteString(quoteIdentifier(colStr))
 		}
-	} else {
+	} else if !hasAggregations {
 		sqlBuilder.WriteString("*")
 	}
 
 	// Add FROM clause
 	sqlBuilder.WriteString(" FROM ")
 	sqlBuilder.WriteString(quoteIdentifier(table))
+
+	// Add JOIN clauses
+	if joins, ok := query["joins"].([]any); ok && len(joins) > 0 {
+		for _, j := range joins {
+			join, ok := j.(map[string]any)
+			if !ok {
+				return "", nil, fmt.Errorf("join must be an object")
+			}
+
+			joinType, ok := join["type"].(string)
+			if !ok {
+				joinType = "left" // default to LEFT JOIN
+			}
+			if err := validateJoinType(joinType); err != nil {
+				return "", nil, err
+			}
+
+			targetTable, ok := join["target_table"].(string)
+			if !ok || targetTable == "" {
+				return "", nil, fmt.Errorf("join target_table is required")
+			}
+			if err := validateIdentifier(targetTable); err != nil {
+				return "", nil, fmt.Errorf("invalid join target table: %w", err)
+			}
+
+			sqlBuilder.WriteString(" ")
+			sqlBuilder.WriteString(strings.ToUpper(joinType))
+			sqlBuilder.WriteString(" JOIN ")
+			sqlBuilder.WriteString(quoteIdentifier(targetTable))
+
+			// Add ON conditions
+			conditions, ok := join["conditions"].([]any)
+			if !ok || len(conditions) == 0 {
+				return "", nil, fmt.Errorf("join requires at least one condition")
+			}
+
+			sqlBuilder.WriteString(" ON ")
+			for i, c := range conditions {
+				cond, ok := c.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("join condition must be an object")
+				}
+
+				if i > 0 {
+					sqlBuilder.WriteString(" AND ")
+				}
+
+				sourceCol, ok := cond["source_column"].(string)
+				if !ok || sourceCol == "" {
+					return "", nil, fmt.Errorf("join condition source_column is required")
+				}
+				if err := validateIdentifier(sourceCol); err != nil {
+					return "", nil, fmt.Errorf("invalid join source column: %w", err)
+				}
+
+				targetCol, ok := cond["target_column"].(string)
+				if !ok || targetCol == "" {
+					return "", nil, fmt.Errorf("join condition target_column is required")
+				}
+				if err := validateIdentifier(targetCol); err != nil {
+					return "", nil, fmt.Errorf("invalid join target column: %w", err)
+				}
+
+				// Format: "source_table"."column" = "target_table"."column"
+				sqlBuilder.WriteString(quoteIdentifier(table))
+				sqlBuilder.WriteString(".")
+				sqlBuilder.WriteString(quoteIdentifier(sourceCol))
+				sqlBuilder.WriteString(" = ")
+				sqlBuilder.WriteString(quoteIdentifier(targetTable))
+				sqlBuilder.WriteString(".")
+				sqlBuilder.WriteString(quoteIdentifier(targetCol))
+			}
+		}
+	}
 
 	// Add WHERE clause with parameterized values
 	if filters, ok := query["filters"].([]any); ok && len(filters) > 0 {
@@ -459,6 +656,18 @@ func buildSQLFromQuery(query map[string]any) (string, []any, error) {
 				sqlBuilder.WriteString(quoteIdentifier(col))
 				sqlBuilder.WriteString(" ")
 				sqlBuilder.WriteString(upperOp)
+			case "IS-EMPTY":
+				sqlBuilder.WriteString("(")
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" IS NULL OR ")
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" = '')")
+			case "IS-NOT-EMPTY":
+				sqlBuilder.WriteString("(")
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" IS NOT NULL AND ")
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" != '')")
 			case "IN", "NOT IN":
 				sqlBuilder.WriteString(quoteIdentifier(col))
 				sqlBuilder.WriteString(" ")
@@ -484,6 +693,92 @@ func buildSQLFromQuery(query map[string]any) (string, []any, error) {
 					params = append(params, valSlice[0], valSlice[1])
 				} else {
 					return "", nil, fmt.Errorf("BETWEEN requires an array of two values")
+				}
+			case "CONTAINS":
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" LIKE ?")
+				params = append(params, "%"+fmt.Sprintf("%v", val)+"%")
+			case "NOT-CONTAINS":
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" NOT LIKE ?")
+				params = append(params, "%"+fmt.Sprintf("%v", val)+"%")
+			case "STARTS-WITH":
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" LIKE ?")
+				params = append(params, fmt.Sprintf("%v", val)+"%")
+			case "ENDS-WITH":
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" LIKE ?")
+				params = append(params, "%"+fmt.Sprintf("%v", val))
+			case "RELATIVE":
+				// Handle relative date filters
+				relVal, ok := val.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("relative filter value must be an object")
+				}
+				relType, _ := relVal["type"].(string)
+				amount, _ := relVal["amount"].(float64)
+				unit, _ := relVal["unit"].(string)
+
+				// Validate unit
+				validUnits := map[string]string{
+					"day": "days", "days": "days",
+					"week": "days", "weeks": "days",
+					"month": "months", "months": "months",
+					"year": "years", "years": "years",
+				}
+				sqlUnit, ok := validUnits[unit]
+				if !ok {
+					return "", nil, fmt.Errorf("invalid relative date unit: %s", unit)
+				}
+
+				// Adjust amount for weeks
+				if unit == "week" || unit == "weeks" {
+					amount = amount * 7
+				}
+
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				switch relType {
+				case "last":
+					sqlBuilder.WriteString(" >= date('now', ?)")
+					params = append(params, fmt.Sprintf("-%d %s", int(amount), sqlUnit))
+				case "next":
+					sqlBuilder.WriteString(" <= date('now', ?)")
+					params = append(params, fmt.Sprintf("+%d %s", int(amount), sqlUnit))
+				case "this":
+					// For "this week/month/year", we use start of period
+					switch unit {
+					case "day", "days":
+						sqlBuilder.WriteString(" >= date('now', 'start of day')")
+					case "week", "weeks":
+						sqlBuilder.WriteString(" >= date('now', 'weekday 0', '-7 days')")
+					case "month", "months":
+						sqlBuilder.WriteString(" >= date('now', 'start of month')")
+					case "year", "years":
+						sqlBuilder.WriteString(" >= date('now', 'start of year')")
+					}
+				case "previous":
+					// For "previous week/month/year"
+					switch unit {
+					case "day", "days":
+						sqlBuilder.WriteString(" >= date('now', '-1 day', 'start of day') AND ")
+						sqlBuilder.WriteString(quoteIdentifier(col))
+						sqlBuilder.WriteString(" < date('now', 'start of day')")
+					case "week", "weeks":
+						sqlBuilder.WriteString(" >= date('now', '-14 days', 'weekday 0') AND ")
+						sqlBuilder.WriteString(quoteIdentifier(col))
+						sqlBuilder.WriteString(" < date('now', '-7 days', 'weekday 0')")
+					case "month", "months":
+						sqlBuilder.WriteString(" >= date('now', 'start of month', '-1 month') AND ")
+						sqlBuilder.WriteString(quoteIdentifier(col))
+						sqlBuilder.WriteString(" < date('now', 'start of month')")
+					case "year", "years":
+						sqlBuilder.WriteString(" >= date('now', 'start of year', '-1 year') AND ")
+						sqlBuilder.WriteString(quoteIdentifier(col))
+						sqlBuilder.WriteString(" < date('now', 'start of year')")
+					}
+				default:
+					return "", nil, fmt.Errorf("invalid relative type: %s", relType)
 				}
 			default:
 				// Standard comparison operators
@@ -511,6 +806,74 @@ func buildSQLFromQuery(query map[string]any) (string, []any, error) {
 				sqlBuilder.WriteString(", ")
 			}
 			sqlBuilder.WriteString(quoteIdentifier(colStr))
+		}
+	}
+
+	// Add HAVING clause (for filtering on aggregated results)
+	if having, ok := query["having"].([]any); ok && len(having) > 0 {
+		sqlBuilder.WriteString(" HAVING ")
+		for i, h := range having {
+			havingCond, ok := h.(map[string]any)
+			if !ok {
+				return "", nil, fmt.Errorf("having condition must be an object")
+			}
+
+			if i > 0 {
+				sqlBuilder.WriteString(" AND ")
+			}
+
+			// HAVING filters on aggregation results
+			// e.g., {"function": "count", "operator": ">", "value": 10}
+			fn, hasFn := havingCond["function"].(string)
+			col, _ := havingCond["column"].(string)
+			op, ok := havingCond["operator"].(string)
+			if !ok {
+				op = ">"
+			}
+			val := havingCond["value"]
+
+			if hasFn {
+				fnUpper := strings.ToUpper(fn)
+				switch fnUpper {
+				case "COUNT":
+					if col != "" {
+						if err := validateIdentifier(col); err != nil {
+							return "", nil, fmt.Errorf("invalid having column: %w", err)
+						}
+						sqlBuilder.WriteString("COUNT(")
+						sqlBuilder.WriteString(quoteIdentifier(col))
+						sqlBuilder.WriteString(")")
+					} else {
+						sqlBuilder.WriteString("COUNT(*)")
+					}
+				case "SUM", "AVG", "MIN", "MAX":
+					if col == "" {
+						return "", nil, fmt.Errorf("HAVING %s requires a column", fnUpper)
+					}
+					if err := validateIdentifier(col); err != nil {
+						return "", nil, fmt.Errorf("invalid having column: %w", err)
+					}
+					sqlBuilder.WriteString(fnUpper)
+					sqlBuilder.WriteString("(")
+					sqlBuilder.WriteString(quoteIdentifier(col))
+					sqlBuilder.WriteString(")")
+				default:
+					return "", nil, fmt.Errorf("unsupported HAVING function: %s", fn)
+				}
+			} else if col != "" {
+				// Direct column reference in HAVING
+				if err := validateIdentifier(col); err != nil {
+					return "", nil, fmt.Errorf("invalid having column: %w", err)
+				}
+				sqlBuilder.WriteString(quoteIdentifier(col))
+			} else {
+				return "", nil, fmt.Errorf("HAVING requires a function or column")
+			}
+
+			sqlBuilder.WriteString(" ")
+			sqlBuilder.WriteString(op)
+			sqlBuilder.WriteString(" ?")
+			params = append(params, val)
 		}
 	}
 
