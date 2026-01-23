@@ -12,6 +12,25 @@ export default defineConfig({
   build: {
     outDir: '../../assets/static/dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-mantine': [
+            '@mantine/core',
+            '@mantine/hooks',
+            '@mantine/modals',
+            '@mantine/notifications',
+            '@mantine/dates',
+            '@mantine/code-highlight',
+          ],
+          'vendor-icons': ['@tabler/icons-react'],
+          'vendor-charts': ['recharts'],
+          'vendor-dnd': ['@hello-pangea/dnd', 'react-grid-layout'],
+          'vendor-utils': ['@tanstack/react-query', 'zustand', 'dayjs'],
+        },
+      },
+    },
   },
   server: {
     port: 5173,
