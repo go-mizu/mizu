@@ -280,7 +280,81 @@ export interface Aggregation {
 // Visualization types
 export interface VisualizationSettings {
   type: VisualizationType
-  settings?: Record<string, any>
+  settings?: TableVisualizationSettings | Record<string, any>
+}
+
+// Table-specific visualization settings (Metabase feature parity)
+export interface TableVisualizationSettings {
+  // Card-level settings
+  title?: string
+  description?: string
+  hideIfNoResults?: boolean
+  paginateResults?: boolean
+  showRowIndex?: boolean
+
+  // Column configuration
+  columns?: TableColumnConfig[]
+
+  // Conditional formatting rules
+  conditionalFormatting?: ConditionalFormattingRule[]
+
+  // Pagination
+  pageSize?: number
+
+  // Display
+  maxHeight?: number
+  maxRows?: number
+  stickyHeader?: boolean
+  striped?: boolean
+  highlightOnHover?: boolean
+}
+
+export interface TableColumnConfig {
+  name: string
+  displayName?: string
+  visible: boolean
+  position: number
+  width?: number
+  alignment?: 'left' | 'center' | 'right' | 'auto'
+  wrap?: boolean
+  format?: ColumnFormat
+}
+
+export interface ColumnFormat {
+  type: 'auto' | 'text' | 'number' | 'currency' | 'percent' | 'date' | 'link' | 'email' | 'image'
+  decimals?: number
+  prefix?: string
+  suffix?: string
+  useGrouping?: boolean
+  negativeInRed?: boolean
+  showMiniBar?: boolean
+  currency?: string
+  currencyStyle?: 'symbol' | 'code' | 'name'
+  dateStyle?: 'short' | 'medium' | 'long' | 'full'
+  timeStyle?: 'none' | 'short' | 'medium' | 'long'
+  linkText?: string
+  linkUrl?: string
+  openInNewTab?: boolean
+}
+
+export interface ConditionalFormattingRule {
+  id: string
+  columns: string[]
+  style: 'single' | 'range'
+  condition?: {
+    operator: string
+    value?: any
+    valueEnd?: any
+  }
+  color: string
+  colorRange?: {
+    type: 'diverging' | 'sequential'
+    min?: number
+    max?: number
+    midpoint?: number
+    colors: string[]
+  }
+  highlightWholeRow?: boolean
 }
 
 export type VisualizationType =
@@ -455,6 +529,7 @@ export interface ResultColumn {
   name: string
   display_name: string
   type: string
+  semantic?: SemanticType
 }
 
 // Settings types

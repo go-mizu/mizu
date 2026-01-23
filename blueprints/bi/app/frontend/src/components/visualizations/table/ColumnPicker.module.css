@@ -1,0 +1,22 @@
+/* Column Picker - Column visibility selection */
+
+.container {
+  padding: 16px;
+}
+
+.addAllRow {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 8px;
+}
+
+.columnRow {
+  padding: 8px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.columnRow:hover {
+  background-color: #f9fbfc;
+}
