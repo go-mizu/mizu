@@ -649,3 +649,617 @@ func inferSemanticType(name, mappedType string, isPK, isFK bool) string {
 
 	return ""
 }
+
+// Scan scans field values for a data source (populates cached values for filters).
+func (h *DataSources) Scan(c *mizu.Ctx) error {
+	id := c.Param("id")
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	var req struct {
+		TableID  string `json:"table_id"`
+		ColumnID string `json:"column_id"`
+		Limit    int    `json:"limit"`
+	}
+	c.BindJSON(&req, 1<<20)
+	if req.Limit == 0 {
+		req.Limit = 1000
+	}
+
+	config := dataSourceToConfig(ds)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 5*time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	driver, err := drivers.Open(ctx, config)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	defer driver.Close()
+
+	// Get tables to scan
+	tables, err := h.store.Tables().ListByDataSource(ctx, id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	var fieldsScanned, valuesCached int
+	var scanErrors []string
+
+	for _, table := range tables {
+		if req.TableID != "" && table.ID != req.TableID {
+			continue
+		}
+
+		columns, err := h.store.Tables().ListColumns(ctx, table.ID)
+		if err != nil {
+			scanErrors = append(scanErrors, fmt.Sprintf("table %s: %v", table.Name, err))
+			continue
+		}
+
+		for _, col := range columns {
+			if req.ColumnID != "" && col.ID != req.ColumnID {
+				continue
+			}
+
+			// Skip non-scannable columns (long text, etc.)
+			if col.Visibility == "hidden" {
+				continue
+			}
+
+			// Scan distinct values
+			query := fmt.Sprintf(
+				"SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL ORDER BY %s LIMIT %d",
+				driver.QuoteIdentifier(col.Name),
+				driver.QuoteIdentifier(table.Name),
+				driver.QuoteIdentifier(col.Name),
+				driver.QuoteIdentifier(col.Name),
+				req.Limit,
+			)
+
+			if table.Schema != "" && driver.SupportsSchemas() {
+				query = fmt.Sprintf(
+					"SELECT DISTINCT %s FROM %s.%s WHERE %s IS NOT NULL ORDER BY %s LIMIT %d",
+					driver.QuoteIdentifier(col.Name),
+					driver.QuoteIdentifier(table.Schema),
+					driver.QuoteIdentifier(table.Name),
+					driver.QuoteIdentifier(col.Name),
+					driver.QuoteIdentifier(col.Name),
+					req.Limit,
+				)
+			}
+
+			result, err := driver.Execute(ctx, query)
+			if err != nil {
+				scanErrors = append(scanErrors, fmt.Sprintf("column %s.%s: %v", table.Name, col.Name, err))
+				continue
+			}
+
+			// Extract values
+			var values []string
+			for _, row := range result.Rows {
+				for _, v := range row {
+					if v != nil {
+						values = append(values, fmt.Sprintf("%v", v))
+					}
+				}
+			}
+
+			// Update column with cached values
+			col.CachedValues = values
+			now := time.Now()
+			col.ValuesCachedAt = &now
+			col.DistinctCount = int64(len(values))
+
+			if err := h.store.Tables().UpdateColumn(ctx, col); err != nil {
+				scanErrors = append(scanErrors, fmt.Sprintf("update column %s.%s: %v", table.Name, col.Name, err))
+				continue
+			}
+
+			fieldsScanned++
+			valuesCached += len(values)
+		}
+	}
+
+	return c.JSON(200, map[string]any{
+		"status":         "completed",
+		"duration_ms":    time.Since(start).Milliseconds(),
+		"fields_scanned": fieldsScanned,
+		"values_cached":  valuesCached,
+		"errors":         scanErrors,
+	})
+}
+
+// Fingerprint runs fingerprinting on columns (calculates statistics).
+func (h *DataSources) Fingerprint(c *mizu.Ctx) error {
+	id := c.Param("id")
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	var req struct {
+		TableID    string `json:"table_id"`
+		SampleSize int    `json:"sample_size"`
+	}
+	c.BindJSON(&req, 1<<20)
+	if req.SampleSize == 0 {
+		req.SampleSize = 10000
+	}
+
+	config := dataSourceToConfig(ds)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 10*time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	driver, err := drivers.Open(ctx, config)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	defer driver.Close()
+
+	tables, err := h.store.Tables().ListByDataSource(ctx, id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	var columnsFingerprinted int
+	var fingerErrors []string
+
+	for _, table := range tables {
+		if req.TableID != "" && table.ID != req.TableID {
+			continue
+		}
+
+		columns, err := h.store.Tables().ListColumns(ctx, table.ID)
+		if err != nil {
+			fingerErrors = append(fingerErrors, fmt.Sprintf("table %s: %v", table.Name, err))
+			continue
+		}
+
+		for _, col := range columns {
+			// Build fingerprint query based on column type
+			tableName := driver.QuoteIdentifier(table.Name)
+			if table.Schema != "" && driver.SupportsSchemas() {
+				tableName = driver.QuoteIdentifier(table.Schema) + "." + driver.QuoteIdentifier(table.Name)
+			}
+			colName := driver.QuoteIdentifier(col.Name)
+
+			query := fmt.Sprintf(`
+				SELECT
+					COUNT(DISTINCT %s) as distinct_count,
+					COUNT(*) - COUNT(%s) as null_count,
+					MIN(%s) as min_value,
+					MAX(%s) as max_value
+				FROM (SELECT %s FROM %s LIMIT %d) t
+			`, colName, colName, colName, colName, colName, tableName, req.SampleSize)
+
+			result, err := driver.Execute(ctx, query)
+			if err != nil {
+				fingerErrors = append(fingerErrors, fmt.Sprintf("column %s.%s: %v", table.Name, col.Name, err))
+				continue
+			}
+
+			if len(result.Rows) > 0 {
+				row := result.Rows[0]
+				if v, ok := row["distinct_count"]; ok {
+					col.DistinctCount = toInt64(v)
+				}
+				if v, ok := row["null_count"]; ok {
+					col.NullCount = toInt64(v)
+				}
+				if v, ok := row["min_value"]; ok && v != nil {
+					col.MinValue = fmt.Sprintf("%v", v)
+				}
+				if v, ok := row["max_value"]; ok && v != nil {
+					col.MaxValue = fmt.Sprintf("%v", v)
+				}
+
+				if err := h.store.Tables().UpdateColumn(ctx, col); err != nil {
+					fingerErrors = append(fingerErrors, fmt.Sprintf("update column %s.%s: %v", table.Name, col.Name, err))
+					continue
+				}
+				columnsFingerprinted++
+			}
+		}
+	}
+
+	return c.JSON(200, map[string]any{
+		"status":                 "completed",
+		"duration_ms":            time.Since(start).Milliseconds(),
+		"columns_fingerprinted":  columnsFingerprinted,
+		"errors":                 fingerErrors,
+	})
+}
+
+// GetSyncLog returns sync history for a data source.
+func (h *DataSources) GetSyncLog(c *mizu.Ctx) error {
+	id := c.Param("id")
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	// For now, return basic sync info from the data source itself
+	// A full implementation would store sync logs in a separate table
+	logs := []map[string]any{}
+	if ds.LastSyncAt != nil {
+		logs = append(logs, map[string]any{
+			"id":           fmt.Sprintf("log_%s", ds.ID),
+			"type":         "schema_sync",
+			"status":       ds.LastSyncStatus,
+			"completed_at": ds.LastSyncAt,
+			"error":        ds.LastSyncError,
+		})
+	}
+
+	return c.JSON(200, map[string]any{"logs": logs})
+}
+
+// UpdateTable updates table metadata.
+func (h *DataSources) UpdateTable(c *mizu.Ctx) error {
+	tableID := c.Param("table")
+	var update struct {
+		DisplayName string `json:"display_name"`
+		Description string `json:"description"`
+		Visible     *bool  `json:"visible"`
+		FieldOrder  string `json:"field_order"`
+	}
+	if err := c.BindJSON(&update, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid request body"})
+	}
+
+	table, err := h.store.Tables().GetByID(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if table == nil {
+		return c.JSON(404, map[string]string{"error": "Table not found"})
+	}
+
+	if update.DisplayName != "" {
+		table.DisplayName = update.DisplayName
+	}
+	if update.Description != "" {
+		table.Description = update.Description
+	}
+	if update.Visible != nil {
+		table.Visible = *update.Visible
+	}
+
+	if err := h.store.Tables().Update(c.Request().Context(), table); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, table)
+}
+
+// ScanColumn scans values for a single column.
+func (h *DataSources) ScanColumn(c *mizu.Ctx) error {
+	dsID := c.Param("id")
+	tableID := c.Param("table")
+	columnID := c.Param("column")
+
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), dsID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	table, err := h.store.Tables().GetByID(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if table == nil {
+		return c.JSON(404, map[string]string{"error": "Table not found"})
+	}
+
+	col, err := h.store.Tables().GetColumn(c.Request().Context(), columnID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if col == nil {
+		return c.JSON(404, map[string]string{"error": "Column not found"})
+	}
+
+	var req struct {
+		Limit int `json:"limit"`
+	}
+	c.BindJSON(&req, 1<<20)
+	if req.Limit == 0 {
+		req.Limit = 1000
+	}
+
+	config := dataSourceToConfig(ds)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	driver, err := drivers.Open(ctx, config)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	defer driver.Close()
+
+	tableName := driver.QuoteIdentifier(table.Name)
+	if table.Schema != "" && driver.SupportsSchemas() {
+		tableName = driver.QuoteIdentifier(table.Schema) + "." + driver.QuoteIdentifier(table.Name)
+	}
+	colName := driver.QuoteIdentifier(col.Name)
+
+	query := fmt.Sprintf(
+		"SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL ORDER BY %s LIMIT %d",
+		colName, tableName, colName, colName, req.Limit,
+	)
+
+	result, err := driver.Execute(ctx, query)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	var values []string
+	for _, row := range result.Rows {
+		for _, v := range row {
+			if v != nil {
+				values = append(values, fmt.Sprintf("%v", v))
+			}
+		}
+	}
+
+	// Update column
+	col.CachedValues = values
+	now := time.Now()
+	col.ValuesCachedAt = &now
+	col.DistinctCount = int64(len(values))
+
+	if err := h.store.Tables().UpdateColumn(ctx, col); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, map[string]any{
+		"column_id":      col.ID,
+		"values":         values,
+		"total_distinct": len(values),
+		"duration_ms":    time.Since(start).Milliseconds(),
+		"cached_at":      now,
+	})
+}
+
+// DiscardCachedValues clears cached field values for a table.
+func (h *DataSources) DiscardCachedValues(c *mizu.Ctx) error {
+	tableID := c.Param("table")
+
+	columns, err := h.store.Tables().ListColumns(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	cleared := 0
+	for _, col := range columns {
+		if len(col.CachedValues) > 0 {
+			col.CachedValues = nil
+			col.ValuesCachedAt = nil
+			if err := h.store.Tables().UpdateColumn(c.Request().Context(), col); err != nil {
+				continue
+			}
+			cleared++
+		}
+	}
+
+	return c.JSON(200, map[string]any{
+		"status":          "cleared",
+		"columns_cleared": cleared,
+	})
+}
+
+// GetCacheStats returns cache statistics for a data source.
+func (h *DataSources) GetCacheStats(c *mizu.Ctx) error {
+	id := c.Param("id")
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	tables, err := h.store.Tables().ListByDataSource(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	var totalCachedValues int
+	var columnsWithCache int
+
+	for _, table := range tables {
+		columns, err := h.store.Tables().ListColumns(c.Request().Context(), table.ID)
+		if err != nil {
+			continue
+		}
+		for _, col := range columns {
+			if len(col.CachedValues) > 0 {
+				columnsWithCache++
+				totalCachedValues += len(col.CachedValues)
+			}
+		}
+	}
+
+	return c.JSON(200, map[string]any{
+		"datasource_id":       id,
+		"columns_with_cache":  columnsWithCache,
+		"total_cached_values": totalCachedValues,
+		"cache_ttl":           ds.CacheTTL,
+	})
+}
+
+// ClearCache clears the query cache for a data source.
+func (h *DataSources) ClearCache(c *mizu.Ctx) error {
+	id := c.Param("id")
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	// Clear cached field values
+	tables, err := h.store.Tables().ListByDataSource(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	cleared := 0
+	for _, table := range tables {
+		columns, err := h.store.Tables().ListColumns(c.Request().Context(), table.ID)
+		if err != nil {
+			continue
+		}
+		for _, col := range columns {
+			if len(col.CachedValues) > 0 {
+				col.CachedValues = nil
+				col.ValuesCachedAt = nil
+				h.store.Tables().UpdateColumn(c.Request().Context(), col)
+				cleared++
+			}
+		}
+	}
+
+	return c.JSON(200, map[string]any{
+		"status":          "cleared",
+		"columns_cleared": cleared,
+	})
+}
+
+// GetTable returns a single table by ID.
+func (h *DataSources) GetTable(c *mizu.Ctx) error {
+	tableID := c.Param("table")
+	table, err := h.store.Tables().GetByID(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if table == nil {
+		return c.JSON(404, map[string]string{"error": "Table not found"})
+	}
+	return c.JSON(200, table)
+}
+
+// SyncTable syncs a single table.
+func (h *DataSources) SyncTable(c *mizu.Ctx) error {
+	dsID := c.Param("id")
+	tableID := c.Param("table")
+
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), dsID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	table, err := h.store.Tables().GetByID(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if table == nil {
+		return c.JSON(404, map[string]string{"error": "Table not found"})
+	}
+
+	config := dataSourceToConfig(ds)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Minute)
+	defer cancel()
+
+	start := time.Now()
+	driver, err := drivers.Open(ctx, config)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	defer driver.Close()
+
+	columns, err := driver.ListColumns(ctx, table.Schema, table.Name)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	var columnsSynced int
+	for _, col := range columns {
+		storeCol := &store.Column{
+			TableID:     table.ID,
+			Name:        col.Name,
+			DisplayName: col.Name,
+			Type:        col.Type,
+			MappedType:  col.MappedType,
+			Description: col.Description,
+			Position:    col.Position,
+			Nullable:    col.Nullable,
+			PrimaryKey:  col.PrimaryKey,
+			ForeignKey:  col.ForeignKey,
+			Visibility:  "everywhere",
+		}
+		storeCol.Semantic = inferSemanticType(col.Name, col.MappedType, col.PrimaryKey, col.ForeignKey)
+
+		if err := h.store.Tables().CreateColumn(ctx, storeCol); err != nil {
+			continue
+		}
+		columnsSynced++
+	}
+
+	return c.JSON(200, map[string]any{
+		"status":         "completed",
+		"duration_ms":    time.Since(start).Milliseconds(),
+		"columns_synced": columnsSynced,
+	})
+}
+
+// ScanTable scans field values for a single table.
+func (h *DataSources) ScanTable(c *mizu.Ctx) error {
+	dsID := c.Param("id")
+	tableID := c.Param("table")
+
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), dsID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	table, err := h.store.Tables().GetByID(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if table == nil {
+		return c.JSON(404, map[string]string{"error": "Table not found"})
+	}
+
+	// Delegate to Scan with table filter
+	c.Request().URL.RawQuery = fmt.Sprintf("table_id=%s", tableID)
+	return h.Scan(c)
+}
+
+// Helper to convert interface to int64
+func toInt64(v any) int64 {
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case float64:
+		return int64(val)
+	default:
+		return 0
+	}
+}
