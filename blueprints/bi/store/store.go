@@ -39,18 +39,58 @@ type Store interface {
 
 // DataSource represents a database connection.
 type DataSource struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Engine    string            `json:"engine"` // sqlite, postgres, mysql
-	Host      string            `json:"host,omitempty"`
-	Port      int               `json:"port,omitempty"`
-	Database  string            `json:"database"`
-	Username  string            `json:"username,omitempty"`
-	Password  string            `json:"-"` // encrypted
-	SSL       bool              `json:"ssl"`
-	Options   map[string]string `json:"options,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Engine   string `json:"engine"` // sqlite, postgres, mysql, mariadb
+	Host     string `json:"host,omitempty"`
+	Port     int    `json:"port,omitempty"`
+	Database string `json:"database"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"-"` // encrypted, never exposed
+
+	// SSL/TLS Configuration
+	SSL           bool   `json:"ssl"`
+	SSLMode       string `json:"ssl_mode,omitempty"`        // disable, allow, prefer, require, verify-ca, verify-full
+	SSLRootCert   string `json:"ssl_root_cert,omitempty"`   // PEM certificate content
+	SSLClientCert string `json:"ssl_client_cert,omitempty"` // Client certificate
+	SSLClientKey  string `json:"-"`                         // Client private key, never exposed
+
+	// SSH Tunnel Configuration
+	TunnelEnabled    bool   `json:"tunnel_enabled"`
+	TunnelHost       string `json:"tunnel_host,omitempty"`
+	TunnelPort       int    `json:"tunnel_port,omitempty"` // default 22
+	TunnelUser       string `json:"tunnel_user,omitempty"`
+	TunnelAuthMethod string `json:"tunnel_auth_method,omitempty"` // password, ssh-key
+	TunnelPassword   string `json:"-"`                            // never exposed
+	TunnelPrivateKey string `json:"-"`                            // never exposed
+	TunnelPassphrase string `json:"-"`                            // never exposed
+
+	// Schema Filtering
+	SchemaFilterType     string   `json:"schema_filter_type,omitempty"` // inclusion, exclusion
+	SchemaFilterPatterns []string `json:"schema_filter_patterns,omitempty"`
+
+	// Sync Configuration
+	AutoSync       bool       `json:"auto_sync"`
+	SyncSchedule   string     `json:"sync_schedule,omitempty"` // cron expression
+	LastSyncAt     *time.Time `json:"last_sync_at,omitempty"`
+	LastSyncStatus string     `json:"last_sync_status,omitempty"` // success, failed
+	LastSyncError  string     `json:"last_sync_error,omitempty"`
+
+	// Cache Configuration
+	CacheTTL int `json:"cache_ttl,omitempty"` // seconds, 0 = disabled
+
+	// Connection Pool Configuration
+	MaxOpenConns    int `json:"max_open_conns,omitempty"`
+	MaxIdleConns    int `json:"max_idle_conns,omitempty"`
+	ConnMaxLifetime int `json:"conn_max_lifetime,omitempty"` // seconds
+	ConnMaxIdleTime int `json:"conn_max_idle_time,omitempty"` // seconds
+
+	// Additional driver-specific options
+	Options map[string]string `json:"options,omitempty"`
+
+	// Metadata
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Table represents table metadata.
@@ -72,10 +112,81 @@ type Column struct {
 	TableID     string `json:"table_id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
-	Type        string `json:"type"` // string, number, boolean, date, datetime
+	Type        string `json:"type"`       // Database type
+	MappedType  string `json:"mapped_type"` // Normalized: string, number, boolean, datetime
 	Semantic    string `json:"semantic,omitempty"`
 	Description string `json:"description,omitempty"`
 	Position    int    `json:"position"`
+
+	// Visibility
+	Visibility string `json:"visibility"` // everywhere, detail_only, hidden
+
+	// Constraints
+	Nullable      bool   `json:"nullable"`
+	PrimaryKey    bool   `json:"primary_key"`
+	ForeignKey    bool   `json:"foreign_key"`
+	ForeignTable  string `json:"foreign_table,omitempty"`
+	ForeignColumn string `json:"foreign_column,omitempty"`
+
+	// Fingerprint Data (statistics)
+	DistinctCount int64   `json:"distinct_count,omitempty"`
+	NullCount     int64   `json:"null_count,omitempty"`
+	MinValue      string  `json:"min_value,omitempty"`
+	MaxValue      string  `json:"max_value,omitempty"`
+	AvgLength     float64 `json:"avg_length,omitempty"` // for string types
+
+	// Cached Values (for filter dropdowns)
+	CachedValues   []string   `json:"cached_values,omitempty"`
+	ValuesCachedAt *time.Time `json:"values_cached_at,omitempty"`
+}
+
+// Semantic type constants for columns.
+const (
+	// Keys
+	SemanticPK = "type/PK"
+	SemanticFK = "type/FK"
+
+	// Numbers
+	SemanticPrice    = "type/Price"
+	SemanticCurrency = "type/Currency"
+	SemanticScore    = "type/Score"
+	SemanticPercent  = "type/Percentage"
+	SemanticQuantity = "type/Quantity"
+
+	// Text
+	SemanticName        = "type/Name"
+	SemanticTitle       = "type/Title"
+	SemanticDescription = "type/Description"
+	SemanticCategory    = "type/Category"
+	SemanticURL         = "type/URL"
+	SemanticEmail       = "type/Email"
+	SemanticPhone       = "type/Phone"
+
+	// Dates
+	SemanticCreated  = "type/CreationDate"
+	SemanticUpdated  = "type/UpdateDate"
+	SemanticJoined   = "type/JoinDate"
+	SemanticBirthday = "type/Birthdate"
+
+	// Geo
+	SemanticLatitude  = "type/Latitude"
+	SemanticLongitude = "type/Longitude"
+	SemanticZipCode   = "type/ZipCode"
+	SemanticCity      = "type/City"
+	SemanticState     = "type/State"
+	SemanticCountry   = "type/Country"
+	SemanticAddress   = "type/Address"
+)
+
+// ValidSemanticTypes returns all valid semantic types.
+func ValidSemanticTypes() []string {
+	return []string{
+		SemanticPK, SemanticFK,
+		SemanticPrice, SemanticCurrency, SemanticScore, SemanticPercent, SemanticQuantity,
+		SemanticName, SemanticTitle, SemanticDescription, SemanticCategory, SemanticURL, SemanticEmail, SemanticPhone,
+		SemanticCreated, SemanticUpdated, SemanticJoined, SemanticBirthday,
+		SemanticLatitude, SemanticLongitude, SemanticZipCode, SemanticCity, SemanticState, SemanticCountry, SemanticAddress,
+	}
 }
 
 // Question represents a saved query.

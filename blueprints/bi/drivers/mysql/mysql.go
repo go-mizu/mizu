@@ -1,5 +1,5 @@
-// Package postgres provides a PostgreSQL database driver using pgx/v5.
-package postgres
+// Package mysql provides a MySQL/MariaDB database driver.
+package mysql
 
 import (
 	"context"
@@ -8,100 +8,155 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/go-mizu/blueprints/bi/drivers"
 )
 
 func init() {
-	drivers.Register("postgres", func() drivers.Driver {
+	drivers.Register("mysql", func() drivers.Driver {
 		return &Driver{}
 	})
-	// Also register as postgresql for compatibility
-	drivers.Register("postgresql", func() drivers.Driver {
+	// Also register as mariadb for compatibility
+	drivers.Register("mariadb", func() drivers.Driver {
 		return &Driver{}
 	})
 }
 
-// Driver implements the PostgreSQL database driver using pgx.
+// Driver implements the MySQL/MariaDB database driver.
 type Driver struct {
 	db     *sql.DB
 	config drivers.Config
 }
 
-// Name returns "postgres".
+// Name returns "mysql".
 func (d *Driver) Name() string {
-	return "postgres"
+	return "mysql"
 }
 
-// Open opens a PostgreSQL database connection using pgx.
+// Open opens a MySQL database connection.
 func (d *Driver) Open(ctx context.Context, config drivers.Config) error {
 	d.config = config
 
-	// Build connection string in pgx format
+	// Build connection string in MySQL DSN format
 	dsn := d.buildDSN(config)
 
-	db, err := sql.Open("pgx", dsn)
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("open postgres: %w", err)
+		return fmt.Errorf("open mysql: %w", err)
 	}
 
 	// Configure connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(time.Minute)
+	maxOpen := config.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 25
+	}
+	maxIdle := config.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 5
+	}
+	maxLifetime := config.ConnMaxLifetime
+	if maxLifetime <= 0 {
+		maxLifetime = 5 * time.Minute
+	}
+	maxIdleTime := config.ConnMaxIdleTime
+	if maxIdleTime <= 0 {
+		maxIdleTime = time.Minute
+	}
+
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(maxLifetime)
+	db.SetConnMaxIdleTime(maxIdleTime)
 
 	// Test connection
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return fmt.Errorf("ping postgres: %w", err)
+		return fmt.Errorf("ping mysql: %w", err)
 	}
 
 	d.db = db
 	return nil
 }
 
-// buildDSN builds a PostgreSQL connection string (pgx format).
+// buildDSN builds a MySQL connection string (DSN format).
+// Format: [user[:password]@][net[(addr)]]/dbname[?param1=value1&paramN=valueN]
 func (d *Driver) buildDSN(config drivers.Config) string {
-	var parts []string
+	var dsn strings.Builder
 
+	// User and password
+	if config.Username != "" {
+		dsn.WriteString(config.Username)
+		if config.Password != "" {
+			dsn.WriteString(":")
+			dsn.WriteString(config.Password)
+		}
+		dsn.WriteString("@")
+	}
+
+	// Protocol and address
 	host := config.Host
 	if host == "" {
 		host = "localhost"
 	}
-	parts = append(parts, fmt.Sprintf("host=%s", host))
-
 	port := config.Port
 	if port <= 0 {
-		port = 5432
+		port = 3306
 	}
-	parts = append(parts, fmt.Sprintf("port=%d", port))
+	dsn.WriteString(fmt.Sprintf("tcp(%s:%d)", host, port))
 
+	// Database name
+	dsn.WriteString("/")
 	if config.Database != "" {
-		parts = append(parts, fmt.Sprintf("dbname=%s", config.Database))
+		dsn.WriteString(config.Database)
 	}
 
-	if config.Username != "" {
-		parts = append(parts, fmt.Sprintf("user=%s", config.Username))
-	}
+	// Parameters
+	params := make([]string, 0)
 
-	if config.Password != "" {
-		parts = append(parts, fmt.Sprintf("password=%s", config.Password))
-	}
+	// Always use utf8mb4 charset
+	params = append(params, "charset=utf8mb4")
 
+	// Parse time values to time.Time
+	params = append(params, "parseTime=true")
+
+	// Set location to UTC
+	params = append(params, "loc=UTC")
+
+	// SSL/TLS
 	if config.SSL {
-		parts = append(parts, "sslmode=require")
+		sslMode := config.SSLMode
+		if sslMode == "" {
+			sslMode = "required"
+		}
+		// MySQL uses tls parameter: true, false, skip-verify, preferred, or custom config name
+		switch sslMode {
+		case "disable":
+			params = append(params, "tls=false")
+		case "allow", "prefer":
+			params = append(params, "tls=preferred")
+		case "require":
+			params = append(params, "tls=true")
+		case "verify-ca", "verify-full":
+			params = append(params, "tls=skip-verify") // Would need custom TLS config for full verification
+		default:
+			params = append(params, "tls=true")
+		}
 	} else {
-		parts = append(parts, "sslmode=disable")
+		params = append(params, "tls=false")
 	}
 
 	// Add custom options
 	for k, v := range config.Options {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+		params = append(params, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	return strings.Join(parts, " ")
+	if len(params) > 0 {
+		dsn.WriteString("?")
+		dsn.WriteString(strings.Join(params, "&"))
+	}
+
+	return dsn.String()
 }
 
 // Close closes the database connection.
@@ -125,17 +180,18 @@ func (d *Driver) DB() *sql.DB {
 	return d.db
 }
 
-// ListSchemas returns all schemas in the database.
+// ListSchemas returns all databases (MySQL treats databases as schemas).
 func (d *Driver) ListSchemas(ctx context.Context) ([]string, error) {
 	if d.db == nil {
 		return nil, fmt.Errorf("database not opened")
 	}
 
+	// MySQL uses databases as schemas
 	query := `
-		SELECT schema_name
-		FROM information_schema.schemata
-		WHERE schema_name NOT IN ('pg_catalog', 'pg_toast', 'information_schema')
-		ORDER BY schema_name
+		SELECT SCHEMA_NAME
+		FROM information_schema.SCHEMATA
+		WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+		ORDER BY SCHEMA_NAME
 	`
 
 	rows, err := d.db.QueryContext(ctx, query)
@@ -156,28 +212,28 @@ func (d *Driver) ListSchemas(ctx context.Context) ([]string, error) {
 	return schemas, rows.Err()
 }
 
-// ListTables returns all tables in a schema.
+// ListTables returns all tables in a database/schema.
 func (d *Driver) ListTables(ctx context.Context, schema string) ([]drivers.Table, error) {
 	if d.db == nil {
 		return nil, fmt.Errorf("database not opened")
 	}
 
+	// Use current database if schema not specified
 	if schema == "" {
-		schema = "public"
+		schema = d.config.Database
 	}
 
 	query := `
 		SELECT
-			t.table_schema,
-			t.table_name,
-			t.table_type,
-			COALESCE(pg_catalog.obj_description(c.oid, 'pg_class'), '') as description
-		FROM information_schema.tables t
-		LEFT JOIN pg_catalog.pg_class c ON c.relname = t.table_name
-		LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace AND n.nspname = t.table_schema
-		WHERE t.table_schema = $1
-		AND t.table_type IN ('BASE TABLE', 'VIEW')
-		ORDER BY t.table_name
+			TABLE_SCHEMA,
+			TABLE_NAME,
+			TABLE_TYPE,
+			COALESCE(TABLE_COMMENT, '') as description,
+			COALESCE(TABLE_ROWS, 0) as row_count
+		FROM information_schema.TABLES
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+		ORDER BY TABLE_NAME
 	`
 
 	rows, err := d.db.QueryContext(ctx, query, schema)
@@ -190,11 +246,11 @@ func (d *Driver) ListTables(ctx context.Context, schema string) ([]drivers.Table
 	for rows.Next() {
 		var t drivers.Table
 		var tableType string
-		if err := rows.Scan(&t.Schema, &t.Name, &tableType, &t.Description); err != nil {
+		if err := rows.Scan(&t.Schema, &t.Name, &tableType, &t.Description, &t.RowCount); err != nil {
 			return nil, fmt.Errorf("scan table: %w", err)
 		}
 
-		// Map PostgreSQL table types
+		// Map MySQL table types
 		switch tableType {
 		case "BASE TABLE":
 			t.Type = "table"
@@ -202,20 +258,6 @@ func (d *Driver) ListTables(ctx context.Context, schema string) ([]drivers.Table
 			t.Type = "view"
 		default:
 			t.Type = strings.ToLower(tableType)
-		}
-
-		// Get row count estimate for tables (fast method using pg_class)
-		if t.Type == "table" {
-			countQuery := `
-				SELECT reltuples::bigint
-				FROM pg_class c
-				JOIN pg_namespace n ON n.oid = c.relnamespace
-				WHERE c.relname = $1 AND n.nspname = $2
-			`
-			var count int64
-			if err := d.db.QueryRowContext(ctx, countQuery, t.Name, schema).Scan(&count); err == nil && count >= 0 {
-				t.RowCount = count
-			}
 		}
 
 		tables = append(tables, t)
@@ -230,26 +272,25 @@ func (d *Driver) ListColumns(ctx context.Context, schema, table string) ([]drive
 		return nil, fmt.Errorf("database not opened")
 	}
 
+	// Use current database if schema not specified
 	if schema == "" {
-		schema = "public"
+		schema = d.config.Database
 	}
 
 	query := `
 		SELECT
-			c.column_name,
-			c.data_type,
-			c.udt_name,
-			c.is_nullable = 'YES' as nullable,
-			c.column_default,
-			COALESCE(pg_catalog.col_description(
-				(SELECT oid FROM pg_class WHERE relname = c.table_name AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = c.table_schema)),
-				c.ordinal_position
-			), '') as description,
-			c.ordinal_position - 1 as position
-		FROM information_schema.columns c
-		WHERE c.table_schema = $1
-		AND c.table_name = $2
-		ORDER BY c.ordinal_position
+			COLUMN_NAME,
+			DATA_TYPE,
+			COLUMN_TYPE,
+			IS_NULLABLE = 'YES' as nullable,
+			COLUMN_DEFAULT,
+			COALESCE(COLUMN_COMMENT, '') as description,
+			ORDINAL_POSITION - 1 as position,
+			COLUMN_KEY = 'PRI' as is_primary
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_NAME = ?
+		ORDER BY ORDINAL_POSITION
 	`
 
 	rows, err := d.db.QueryContext(ctx, query, schema, table)
@@ -261,16 +302,16 @@ func (d *Driver) ListColumns(ctx context.Context, schema, table string) ([]drive
 	var columns []drivers.Column
 	for rows.Next() {
 		var col drivers.Column
-		var dataType, udtName string
+		var dataType, columnType string
 		var dfltValue sql.NullString
 
-		if err := rows.Scan(&col.Name, &dataType, &udtName, &col.Nullable, &dfltValue, &col.Description, &col.Position); err != nil {
+		if err := rows.Scan(&col.Name, &dataType, &columnType, &col.Nullable, &dfltValue, &col.Description, &col.Position, &col.PrimaryKey); err != nil {
 			return nil, fmt.Errorf("scan column: %w", err)
 		}
 
-		// Use udt_name for more accurate type mapping
-		col.Type = udtName
-		col.MappedType = drivers.MapColumnType(udtName)
+		// Use data_type for type mapping
+		col.Type = columnType
+		col.MappedType = drivers.MapColumnType(dataType)
 
 		if dfltValue.Valid {
 			col.DefaultValue = dfltValue.String
@@ -283,44 +324,13 @@ func (d *Driver) ListColumns(ctx context.Context, schema, table string) ([]drive
 		return nil, err
 	}
 
-	// Get primary key information
-	pkQuery := `
-		SELECT kcu.column_name
-		FROM information_schema.table_constraints tc
-		JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-			AND tc.table_schema = kcu.table_schema
-		WHERE tc.table_schema = $1
-		AND tc.table_name = $2
-		AND tc.constraint_type = 'PRIMARY KEY'
-	`
-
-	pkRows, err := d.db.QueryContext(ctx, pkQuery, schema, table)
-	if err == nil {
-		defer pkRows.Close()
-		pkColumns := make(map[string]bool)
-		for pkRows.Next() {
-			var colName string
-			if err := pkRows.Scan(&colName); err == nil {
-				pkColumns[colName] = true
-			}
-		}
-
-		for i := range columns {
-			if pkColumns[columns[i].Name] {
-				columns[i].PrimaryKey = true
-			}
-		}
-	}
-
 	// Get foreign key information
 	fkQuery := `
-		SELECT kcu.column_name
-		FROM information_schema.table_constraints tc
-		JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-			AND tc.table_schema = kcu.table_schema
-		WHERE tc.table_schema = $1
-		AND tc.table_name = $2
-		AND tc.constraint_type = 'FOREIGN KEY'
+		SELECT COLUMN_NAME
+		FROM information_schema.KEY_COLUMN_USAGE
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_NAME = ?
+		AND REFERENCED_TABLE_NAME IS NOT NULL
 	`
 
 	fkRows, err := d.db.QueryContext(ctx, fkQuery, schema, table)
@@ -422,7 +432,7 @@ func (d *Driver) Execute(ctx context.Context, query string, params ...any) (*dri
 	return result, nil
 }
 
-// convertValue converts PostgreSQL-specific types to JSON-serializable values.
+// convertValue converts MySQL-specific types to JSON-serializable values.
 func (d *Driver) convertValue(v any) any {
 	if v == nil {
 		return nil
@@ -438,24 +448,40 @@ func (d *Driver) convertValue(v any) any {
 	}
 }
 
-// QuoteIdentifier quotes an identifier for PostgreSQL.
+// QuoteIdentifier quotes an identifier for MySQL.
 func (d *Driver) QuoteIdentifier(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	return "`" + strings.ReplaceAll(s, "`", "``") + "`"
 }
 
-// SupportsSchemas returns true for PostgreSQL.
+// SupportsSchemas returns true for MySQL (databases act as schemas).
 func (d *Driver) SupportsSchemas() bool {
 	return true
 }
 
-// Version returns the PostgreSQL server version.
+// Capabilities returns MySQL driver capabilities.
+func (d *Driver) Capabilities() drivers.DriverCapabilities {
+	return drivers.DriverCapabilities{
+		SupportsSSH:          true,
+		SupportsSSL:          true,
+		SupportsSchemas:      true,
+		SupportsCTEs:         true, // MySQL 8.0+
+		SupportsJSON:         true, // MySQL 5.7+
+		SupportsArrays:       false,
+		SupportsWindowFuncs:  true, // MySQL 8.0+
+		SupportsTransactions: true,
+		MaxQueryTimeout:      time.Hour,
+		DefaultPort:          3306,
+	}
+}
+
+// Version returns the MySQL server version.
 func (d *Driver) Version(ctx context.Context) (string, error) {
 	if d.db == nil {
 		return "", fmt.Errorf("database not opened")
 	}
 
 	var version string
-	err := d.db.QueryRowContext(ctx, "SELECT version()").Scan(&version)
+	err := d.db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
 	return version, err
 }
 
@@ -465,34 +491,10 @@ func (d *Driver) CurrentDatabase(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("database not opened")
 	}
 
-	var name string
-	err := d.db.QueryRowContext(ctx, "SELECT current_database()").Scan(&name)
-	return name, err
-}
-
-// CurrentSchema returns the current schema (search_path).
-func (d *Driver) CurrentSchema(ctx context.Context) (string, error) {
-	if d.db == nil {
-		return "", fmt.Errorf("database not opened")
+	var name sql.NullString
+	err := d.db.QueryRowContext(ctx, "SELECT DATABASE()").Scan(&name)
+	if err != nil {
+		return "", err
 	}
-
-	var name string
-	err := d.db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&name)
-	return name, err
-}
-
-// Capabilities returns PostgreSQL driver capabilities.
-func (d *Driver) Capabilities() drivers.DriverCapabilities {
-	return drivers.DriverCapabilities{
-		SupportsSSH:          true,
-		SupportsSSL:          true,
-		SupportsSchemas:      true,
-		SupportsCTEs:         true,
-		SupportsJSON:         true,
-		SupportsArrays:       true,
-		SupportsWindowFuncs:  true,
-		SupportsTransactions: true,
-		MaxQueryTimeout:      time.Hour,
-		DefaultPort:          5432,
-	}
+	return name.String, nil
 }

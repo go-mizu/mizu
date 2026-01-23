@@ -307,6 +307,22 @@ func (d *Driver) SupportsSchemas() bool {
 	return false
 }
 
+// Capabilities returns SQLite driver capabilities.
+func (d *Driver) Capabilities() drivers.DriverCapabilities {
+	return drivers.DriverCapabilities{
+		SupportsSSH:          false,
+		SupportsSSL:          false,
+		SupportsSchemas:      false,
+		SupportsCTEs:         true,
+		SupportsJSON:         true,
+		SupportsArrays:       false,
+		SupportsWindowFuncs:  true,
+		SupportsTransactions: true,
+		MaxQueryTimeout:      time.Hour,
+		DefaultPort:          0,
+	}
+}
+
 // Version returns the SQLite version.
 func (d *Driver) Version(ctx context.Context) (string, error) {
 	if d.db == nil {
