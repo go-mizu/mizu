@@ -1385,6 +1385,208 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				},
 			},
 		},
+		// =====================================================================
+		// SHOWCASE QUESTIONS - Additional visualization types
+		// =====================================================================
+		{
+			name:       "Monthly Revenue Changes (Waterfall)",
+			desc:       "Revenue changes month over month shown as waterfall",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `WITH monthly AS (
+					SELECT
+						strftime('%Y-%m', o.order_date) as month,
+						SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+					FROM orders o
+					JOIN order_details od ON o.id = od.order_id
+					GROUP BY month
+					ORDER BY month
+					LIMIT 6
+				),
+				changes AS (
+					SELECT
+						month as period,
+						revenue - LAG(revenue, 1, 0) OVER (ORDER BY month) as change
+					FROM monthly
+				)
+				SELECT period, change FROM changes
+				UNION ALL
+				SELECT 'Total', SUM(change) FROM changes`,
+			},
+			viz: map[string]interface{}{
+				"type": "waterfall",
+			},
+		},
+		{
+			name:       "Products by Price and Quantity (Bubble)",
+			desc:       "Product analysis with price, quantity, and revenue as bubble size",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					AVG(p.unit_price) as avg_price,
+					SUM(od.quantity) as total_quantity,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as total_revenue
+				FROM products p
+				JOIN order_details od ON p.id = od.product_id
+				GROUP BY p.id
+				HAVING total_quantity > 100
+				ORDER BY total_revenue DESC
+				LIMIT 20`,
+			},
+			viz: map[string]interface{}{
+				"type": "bubble",
+			},
+		},
+		{
+			name:       "Revenue Goal Progress",
+			desc:       "Progress toward annual revenue goal",
+			collection: "Executive",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as current_revenue
+				FROM order_details od`,
+			},
+			viz: map[string]interface{}{
+				"type": "progress",
+				"settings": map[string]interface{}{
+					"goal": 2000000,
+				},
+			},
+		},
+		{
+			name:       "Order Completion Rate (Gauge)",
+			desc:       "Percentage of orders shipped on time",
+			collection: "Operations",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					CAST(100.0 * SUM(CASE WHEN shipped_date <= required_date THEN 1 ELSE 0 END) / COUNT(*) AS INTEGER) as on_time_rate
+				FROM orders
+				WHERE shipped_date IS NOT NULL`,
+			},
+			viz: map[string]interface{}{
+				"type": "gauge",
+				"settings": map[string]interface{}{
+					"min": 0,
+					"max": 100,
+				},
+			},
+		},
+		{
+			name:       "Sales Pipeline (Funnel)",
+			desc:       "Order stages from placed to delivered",
+			collection: "Operations",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					'Total Orders' as stage, COUNT(*) as count FROM orders
+				UNION ALL
+				SELECT 'Shipped', COUNT(*) FROM orders WHERE shipped_date IS NOT NULL
+				UNION ALL
+				SELECT 'On Time', COUNT(*) FROM orders WHERE shipped_date IS NOT NULL AND shipped_date <= required_date`,
+			},
+			viz: map[string]interface{}{
+				"type": "funnel",
+			},
+		},
+		{
+			name:       "Revenue by Country (Map)",
+			desc:       "Geographic distribution of revenue by country",
+			collection: "Geographic",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.country,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN customers c ON o.customer_id = c.id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY c.country
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "map-region",
+			},
+		},
+		{
+			name:       "Category Distribution (Donut)",
+			desc:       "Revenue share by product category as donut chart",
+			collection: "Sales",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.name as category,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM order_details od
+				JOIN products p ON od.product_id = p.id
+				JOIN categories c ON p.category_id = c.id
+				GROUP BY c.id
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "donut",
+			},
+		},
+		{
+			name:       "Monthly Revenue Trend (Area)",
+			desc:       "Revenue over time as filled area chart",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', o.order_date) as month,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY month
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "area",
+				"settings": map[string]interface{}{
+					"stacked": false,
+				},
+			},
+		},
+		{
+			name:       "Top Products (Horizontal Bar)",
+			desc:       "Best selling products as horizontal bars",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					p.name as product,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM order_details od
+				JOIN products p ON od.product_id = p.id
+				GROUP BY p.id
+				ORDER BY revenue DESC
+				LIMIT 10`,
+			},
+			viz: map[string]interface{}{
+				"type": "row",
+			},
+		},
+		{
+			name:       "Price vs Quantity (Scatter)",
+			desc:       "Product price vs quantity sold scatter plot",
+			collection: "Products",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					p.unit_price as price,
+					SUM(od.quantity) as quantity_sold
+				FROM products p
+				JOIN order_details od ON p.id = od.product_id
+				GROUP BY p.id`,
+			},
+			viz: map[string]interface{}{
+				"type": "scatter",
+			},
+		},
 	}
 
 	ids := make(map[string]string)
@@ -1555,6 +1757,40 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 				{"Product Sales Velocity", 8, 0, 6, 4},
 				{"Customer Acquisition Trend", 8, 6, 6, 4},
 				{"Category Trends Over Time", 12, 0, 12, 4},
+			},
+		},
+		{
+			name:        "Chart Type Showcase",
+			description: "All visualization types for verification and demonstration",
+			collection:  "Executive",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				// Row 1: Scalar types (number, trend, gauge, progress)
+				{"Total Revenue", 0, 0, 3, 2},
+				{"Total Orders", 0, 3, 3, 2},
+				{"Order Completion Rate (Gauge)", 0, 6, 3, 2},
+				{"Revenue Goal Progress", 0, 9, 3, 2},
+				// Row 2: Time series (line, area)
+				{"Revenue by Month", 2, 0, 6, 4},
+				{"Monthly Revenue Trend (Area)", 2, 6, 6, 4},
+				// Row 3: Bar variants (bar, row, combo)
+				{"Sales by Category", 6, 0, 4, 4},
+				{"Top Products (Horizontal Bar)", 6, 4, 4, 4},
+				{"Revenue vs Freight Cost", 6, 8, 4, 4},
+				// Row 4: Parts of whole (pie, donut, funnel)
+				{"Category Revenue Share", 10, 0, 4, 4},
+				{"Category Distribution (Donut)", 10, 4, 4, 4},
+				{"Sales Pipeline (Funnel)", 10, 8, 4, 4},
+				// Row 5: Distribution (scatter, bubble, waterfall)
+				{"Price vs Quantity (Scatter)", 14, 0, 4, 4},
+				{"Products by Price and Quantity (Bubble)", 14, 4, 4, 4},
+				{"Monthly Revenue Changes (Waterfall)", 14, 8, 4, 4},
+				// Row 6: Geographic and Table
+				{"Revenue by Country (Map)", 18, 0, 6, 4},
+				{"Recent Orders", 18, 6, 6, 4},
 			},
 		},
 	}
