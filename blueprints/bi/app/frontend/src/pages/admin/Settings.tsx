@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import {
-  Container, Title, Text, Card, Group, Stack, Button, TextInput, Switch, Divider,
-  PasswordInput, Badge, Tabs, Table, ActionIcon, Modal, Select, Paper, Loader,
-  ThemeIcon, Menu, Avatar, SimpleGrid
+  Card, Group, Stack, Button, TextInput, Switch, Divider,
+  PasswordInput, Badge, Tabs, Table, ActionIcon, Modal, Select, Paper,
+  ThemeIcon, Menu, Avatar, SimpleGrid, Text, Title
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -18,6 +18,7 @@ import {
   useResetUserPassword, useActivityLog
 } from '../../api/hooks'
 import type { User, Settings as SettingsType } from '../../api/types'
+import { PageHeader, PageContainer, LoadingState } from '../../components/ui'
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<string | null>('account')
@@ -27,26 +28,20 @@ export default function Settings() {
 
   if (loadingUser || loadingSettings) {
     return (
-      <Container size="lg" py="lg">
-        <Paper withBorder p="xl" ta="center">
-          <Loader size="lg" />
-          <Text mt="md">Loading settings...</Text>
-        </Paper>
-      </Container>
+      <PageContainer size="lg">
+        <LoadingState message="Loading settings..." />
+      </PageContainer>
     )
   }
 
   const isAdmin = user?.role === 'admin'
 
   return (
-    <Container size="lg" py="lg">
-      {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>Settings</Title>
-          <Text c="dimmed">Manage your account and application settings</Text>
-        </div>
-      </Group>
+    <PageContainer size="lg">
+      <PageHeader
+        title="Settings"
+        subtitle="Manage your account and application settings"
+      />
 
       <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List mb="lg">
@@ -121,7 +116,7 @@ export default function Settings() {
           </Group>
         </SimpleGrid>
       </Card>
-    </Container>
+    </PageContainer>
   )
 }
 
@@ -518,12 +513,7 @@ function UsersPanel({ currentUser }: { currentUser: User }) {
   }
 
   if (isLoading) {
-    return (
-      <Paper withBorder p="xl" ta="center">
-        <Loader size="lg" />
-        <Text mt="md">Loading users...</Text>
-      </Paper>
-    )
+    return <LoadingState message="Loading users..." />
   }
 
   return (
@@ -922,12 +912,7 @@ function ActivityPanel() {
   const { data: activityData, isLoading, refetch } = useActivityLog({ limit: 50 })
 
   if (isLoading) {
-    return (
-      <Paper withBorder p="xl" ta="center">
-        <Loader size="lg" />
-        <Text mt="md">Loading activity...</Text>
-      </Paper>
-    )
+    return <LoadingState message="Loading activity..." />
   }
 
   return (

@@ -1,94 +1,18 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Title, Text, Group, Stack, Button, SimpleGrid,
-  Skeleton, ThemeIcon, ActionIcon, Menu, Tooltip, rem,
-  UnstyledButton, Badge, Paper
+  Box, Title, Text, Group, Button, Skeleton, ThemeIcon, rem, Paper, Container
 } from '@mantine/core'
 import {
   IconChartLine, IconLayoutDashboard, IconFolder, IconDatabase,
-  IconPlus, IconDots, IconStar, IconClock,
-  IconArrowRight, IconBookmark, IconStarFilled,
+  IconPlus, IconClock, IconArrowRight, IconStarFilled,
   IconSparkles, IconPencil, IconBolt, IconBook2, IconDeviceDesktop
 } from '@tabler/icons-react'
 import { useQuestions, useDashboards, useCollections, useDataSources, useTables } from '../api/hooks'
 import { useBookmarkStore, usePinActions } from '../stores/bookmarkStore'
-import { chartColors, semanticColors } from '../theme'
-
-// =============================================================================
-// STYLES - Metabase Light Theme
-// =============================================================================
-
-const styles = {
-  container: {
-    padding: rem(32),
-    maxWidth: 1200,
-    margin: '0 auto',
-    backgroundColor: semanticColors.bgLight,
-    minHeight: '100vh',
-  },
-  header: {
-    marginBottom: rem(32),
-  },
-  section: {
-    marginBottom: rem(40),
-  },
-  sectionHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: rem(16),
-  },
-  sectionTitle: {
-    fontSize: rem(13),
-    fontWeight: 700,
-    color: semanticColors.textSecondary,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em',
-    display: 'flex',
-    alignItems: 'center',
-    gap: rem(8),
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${semanticColors.borderMedium}`,
-    borderRadius: rem(8),
-    padding: rem(20),
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-    height: '100%',
-  },
-  cardHover: {
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-    transform: 'translateY(-2px)',
-  },
-  startCard: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${semanticColors.borderMedium}`,
-    borderRadius: rem(8),
-    padding: rem(24),
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: rem(16),
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  },
-  emptyState: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${semanticColors.borderMedium}`,
-    borderRadius: rem(8),
-    padding: rem(64),
-    textAlign: 'center' as const,
-  },
-  statCard: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${semanticColors.borderMedium}`,
-    borderRadius: rem(8),
-    padding: rem(20),
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  },
-}
+import {
+  CardGrid, Section, DataCard, StatCard as UIStatCard, EmptyState
+} from '../components/ui'
 
 // =============================================================================
 // MAIN COMPONENT
@@ -145,246 +69,253 @@ export default function Home() {
   // Loading state
   if (isLoading && !hasData) {
     return (
-      <Box style={styles.container}>
-        <Box style={styles.header}>
+      <Container size="lg" py="xl">
+        <Box mb="xl">
           <Skeleton height={32} width={200} mb="sm" />
           <Skeleton height={20} width={300} />
         </Box>
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
+        <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} height={120} radius="md" />
           ))}
-        </SimpleGrid>
-      </Box>
+        </CardGrid>
+      </Container>
     )
   }
 
   return (
-    <Box style={styles.container}>
-      {/* Header - Metabase Style */}
-      <Box style={styles.header}>
-        <Group justify="space-between" align="flex-start">
-          <Group gap="md" align="center">
-            {/* Metabase-style greeting icon */}
-            <Box
-              style={{
-                width: 48,
-                height: 48,
-                border: `2px solid ${semanticColors.brand}`,
-                borderRadius: rem(8),
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#ffffff',
-              }}
-            >
-              <IconDeviceDesktop size={24} color={semanticColors.brand} strokeWidth={1.5} />
-            </Box>
-            <Title order={2} style={{ color: semanticColors.textPrimary, fontWeight: 700 }}>
-              Hey there
-            </Title>
-          </Group>
-          <Button
-            variant="subtle"
-            leftSection={<IconPencil size={14} strokeWidth={1.75} />}
-            color="gray"
-            size="sm"
-          >
-            Customize
-          </Button>
-        </Group>
-      </Box>
-
-      {/* X-Ray Sample Cards - Metabase Style */}
-      {(datasources?.length || 0) > 0 && (
-        <Box style={styles.section}>
-          <Text c="dimmed" mb="lg" style={{ fontSize: rem(15) }}>
-            Try out these sample x-rays to see what Metabase can do.
-          </Text>
-          <XRayCards datasources={datasources || []} navigate={navigate} />
-        </Box>
-      )}
-
-      {/* Start Here Section (for new users) */}
-      {!hasData && (datasources?.length || 0) === 0 && (
-        <Box style={styles.section}>
-          <Box style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              <IconSparkles size={16} color={semanticColors.brand} strokeWidth={1.75} />
-              Start here
-            </Text>
-          </Box>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-            <StartCard
-              icon={IconDatabase}
-              color="#F9D45C"
-              title="Add your data"
-              description="Connect to a database to start exploring your data"
-              onClick={() => navigate('/admin/datamodel')}
-            />
-            <StartCard
-              icon={IconPencil}
-              color={semanticColors.brand}
-              title="Ask a question"
-              description="Create visualizations and insights from your data"
-              onClick={() => navigate('/question/new')}
-            />
-            <StartCard
-              icon={IconLayoutDashboard}
-              color={semanticColors.summarize}
-              title="Create a dashboard"
-              description="Combine multiple questions into a dashboard"
-              onClick={() => navigate('/dashboard/new')}
-            />
-          </SimpleGrid>
-        </Box>
-      )}
-
-      {/* Pinned Items Section */}
-      {hasPinnedItems && (
-        <Box style={styles.section}>
-          <Box style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              <IconStarFilled size={14} color="#F9D45C" />
-              Pinned
-            </Text>
-          </Box>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
-            {pinnedDashboards.map((dashboard: any, index: number) => (
-              <ItemCard
-                key={dashboard.id}
-                id={dashboard.id}
-                type="dashboard"
-                name={dashboard.name}
-                description={dashboard.description}
-                cardCount={dashboard.cards?.length}
-                colorIndex={index}
-                onClick={() => navigate(`/dashboard/${dashboard.id}`)}
-              />
-            ))}
-            {pinnedQuestions.map((question: any, index: number) => (
-              <ItemCard
-                key={question.id}
-                id={question.id}
-                type="question"
-                name={question.name}
-                description={question.description}
-                vizType={question.visualization?.type}
-                colorIndex={pinnedDashboards.length + index}
-                onClick={() => navigate(`/question/${question.id}`)}
-              />
-            ))}
-          </SimpleGrid>
-        </Box>
-      )}
-
-      {/* Pick Up Where You Left Off Section */}
-      {hasRecentItems && (
-        <Box style={styles.section}>
-          <Box style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              <IconClock size={14} color={semanticColors.textSecondary} strokeWidth={1.75} />
-              Pick up where you left off
-            </Text>
-            <Button
-              variant="subtle"
-              size="xs"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/browse')}
-              color="gray"
-            >
-              View all
-            </Button>
-          </Box>
-          <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }}>
-            {[...recentDashboards, ...recentQuestions].slice(0, 8).map((item: any, index: number) => {
-              const isDashboard = 'cards' in item
-              return (
-                <ItemCard
-                  key={item.id}
-                  id={item.id}
-                  type={isDashboard ? 'dashboard' : 'question'}
-                  name={item.name}
-                  description={item.description}
-                  cardCount={isDashboard ? item.cards?.length : undefined}
-                  vizType={!isDashboard ? item.visualization?.type : undefined}
-                  colorIndex={index}
-                  onClick={() => navigate(`/${isDashboard ? 'dashboard' : 'question'}/${item.id}`)}
-                  compact
-                />
-              )
-            })}
-          </SimpleGrid>
-        </Box>
-      )}
-
-      {/* Our Analytics Section */}
-      {hasData && (
-        <Box style={styles.section}>
-          <Box style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              <IconChartLine size={14} color={semanticColors.brand} strokeWidth={1.75} />
-              Our analytics
-            </Text>
-            <Button
-              variant="subtle"
-              size="xs"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/browse')}
-              color="gray"
-            >
-              Browse all
-            </Button>
-          </Box>
-          <SimpleGrid cols={{ base: 2, sm: 4 }}>
-            <StatCard
-              label="Questions"
-              value={questions?.length || 0}
-              icon={IconChartLine}
-              color={semanticColors.brand}
-              onClick={() => navigate('/browse')}
-            />
-            <StatCard
-              label="Dashboards"
-              value={dashboards?.length || 0}
-              icon={IconLayoutDashboard}
-              color={semanticColors.summarize}
-              onClick={() => navigate('/browse')}
-            />
-            <StatCard
-              label="Collections"
-              value={collections?.length || 0}
-              icon={IconFolder}
-              color={semanticColors.filter}
-              onClick={() => navigate('/browse')}
-            />
-            <StatCard
-              label="Databases"
-              value={datasources?.length || 0}
-              icon={IconDatabase}
-              color="#F9D45C"
-              onClick={() => navigate('/admin/datamodel')}
-            />
-          </SimpleGrid>
-        </Box>
-      )}
-
-      {/* Empty State */}
-      {!hasData && !isLoading && (datasources?.length || 0) === 0 && (
-        <Box style={styles.emptyState}>
-          <Stack align="center" gap="lg">
-            <ThemeIcon size={80} radius="xl" variant="light" color="brand">
-              <IconSparkles size={40} strokeWidth={1.5} />
-            </ThemeIcon>
-            <Box>
-              <Title order={3} mb="xs" style={{ color: semanticColors.textPrimary }}>
-                Ready to explore your data?
+    <Box
+      style={{
+        minHeight: '100vh',
+        backgroundColor: 'var(--color-background-muted)',
+      }}
+    >
+      <Container size="lg" py="xl">
+        {/* Header */}
+        <Box mb="xl">
+          <Group justify="space-between" align="flex-start">
+            <Group gap="md" align="center">
+              <Box
+                style={{
+                  width: 48,
+                  height: 48,
+                  border: '2px solid var(--color-primary)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'var(--color-background)',
+                }}
+              >
+                <IconDeviceDesktop size={24} color="var(--color-primary)" strokeWidth={1.5} />
+              </Box>
+              <Title order={2} style={{ color: 'var(--color-foreground)', fontWeight: 700 }}>
+                Hey there
               </Title>
-              <Text c="dimmed" maw={400} mx="auto">
-                Connect to a database to start creating questions and dashboards, or run <code style={{ background: '#F0F0F0', padding: '2px 6px', borderRadius: 4 }}>bi seed</code> to add sample data.
-              </Text>
-            </Box>
-            <Group>
+            </Group>
+            <Button
+              variant="subtle"
+              leftSection={<IconPencil size={14} strokeWidth={1.75} />}
+              color="gray"
+              size="sm"
+            >
+              Customize
+            </Button>
+          </Group>
+        </Box>
+
+        {/* X-Ray Sample Cards */}
+        {(datasources?.length || 0) > 0 && (
+          <Section showHeader={false} mb="xl">
+            <Text c="dimmed" mb="lg" style={{ fontSize: rem(15) }}>
+              Try out these sample x-rays to see what the app can do.
+            </Text>
+            <XRayCards datasources={datasources || []} navigate={navigate} />
+          </Section>
+        )}
+
+        {/* Start Here Section (for new users) */}
+        {!hasData && (datasources?.length || 0) === 0 && (
+          <Section
+            title="Start here"
+            icon={<IconSparkles size={16} color="var(--color-primary)" strokeWidth={1.75} />}
+            mb="xl"
+          >
+            <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+              <StartCard
+                icon={IconDatabase}
+                color="var(--color-warning)"
+                title="Add your data"
+                description="Connect to a database to start exploring your data"
+                onClick={() => navigate('/admin/datamodel')}
+              />
+              <StartCard
+                icon={IconPencil}
+                color="var(--color-primary)"
+                title="Ask a question"
+                description="Create visualizations and insights from your data"
+                onClick={() => navigate('/question/new')}
+              />
+              <StartCard
+                icon={IconLayoutDashboard}
+                color="var(--color-success)"
+                title="Create a dashboard"
+                description="Combine multiple questions into a dashboard"
+                onClick={() => navigate('/dashboard/new')}
+              />
+            </CardGrid>
+          </Section>
+        )}
+
+        {/* Pinned Items Section */}
+        {hasPinnedItems && (
+          <Section
+            title="Pinned"
+            icon={<IconStarFilled size={14} color="var(--color-warning)" />}
+            mb="xl"
+          >
+            <CardGrid cols={{ base: 1, sm: 2, md: 4 }}>
+              {pinnedDashboards.map((dashboard: any, index: number) => (
+                <ItemCard
+                  key={dashboard.id}
+                  id={dashboard.id}
+                  type="dashboard"
+                  name={dashboard.name}
+                  description={dashboard.description}
+                  cardCount={dashboard.cards?.length}
+                  colorIndex={index}
+                  onClick={() => navigate(`/dashboard/${dashboard.id}`)}
+                />
+              ))}
+              {pinnedQuestions.map((question: any, index: number) => (
+                <ItemCard
+                  key={question.id}
+                  id={question.id}
+                  type="question"
+                  name={question.name}
+                  description={question.description}
+                  vizType={question.visualization?.type}
+                  colorIndex={pinnedDashboards.length + index}
+                  onClick={() => navigate(`/question/${question.id}`)}
+                />
+              ))}
+            </CardGrid>
+          </Section>
+        )}
+
+        {/* Pick Up Where You Left Off Section */}
+        {hasRecentItems && (
+          <Section
+            title="Pick up where you left off"
+            icon={<IconClock size={14} color="var(--color-foreground-muted)" strokeWidth={1.75} />}
+            actions={
+              <Button
+                variant="subtle"
+                size="xs"
+                rightSection={<IconArrowRight size={14} />}
+                onClick={() => navigate('/browse')}
+                color="gray"
+              >
+                View all
+              </Button>
+            }
+            mb="xl"
+          >
+            <CardGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }}>
+              {[...recentDashboards, ...recentQuestions].slice(0, 8).map((item: any, index: number) => {
+                const isDashboard = 'cards' in item
+                return (
+                  <ItemCard
+                    key={item.id}
+                    id={item.id}
+                    type={isDashboard ? 'dashboard' : 'question'}
+                    name={item.name}
+                    description={item.description}
+                    cardCount={isDashboard ? item.cards?.length : undefined}
+                    vizType={!isDashboard ? item.visualization?.type : undefined}
+                    colorIndex={index}
+                    onClick={() => navigate(`/${isDashboard ? 'dashboard' : 'question'}/${item.id}`)}
+                    compact
+                  />
+                )
+              })}
+            </CardGrid>
+          </Section>
+        )}
+
+        {/* Our Analytics Section */}
+        {hasData && (
+          <Section
+            title="Our analytics"
+            icon={<IconChartLine size={14} color="var(--color-primary)" strokeWidth={1.75} />}
+            actions={
+              <Button
+                variant="subtle"
+                size="xs"
+                rightSection={<IconArrowRight size={14} />}
+                onClick={() => navigate('/browse')}
+                color="gray"
+              >
+                Browse all
+              </Button>
+            }
+            mb="xl"
+          >
+            <CardGrid cols={{ base: 2, sm: 4 }}>
+              <UIStatCard
+                label="Questions"
+                value={questions?.length || 0}
+                icon={<IconChartLine size={22} strokeWidth={1.75} />}
+                iconColor="var(--color-primary)"
+                onClick={() => navigate('/browse')}
+              />
+              <UIStatCard
+                label="Dashboards"
+                value={dashboards?.length || 0}
+                icon={<IconLayoutDashboard size={22} strokeWidth={1.75} />}
+                iconColor="var(--color-success)"
+                onClick={() => navigate('/browse')}
+              />
+              <UIStatCard
+                label="Collections"
+                value={collections?.length || 0}
+                icon={<IconFolder size={22} strokeWidth={1.75} />}
+                iconColor="var(--color-info)"
+                onClick={() => navigate('/browse')}
+              />
+              <UIStatCard
+                label="Databases"
+                value={datasources?.length || 0}
+                icon={<IconDatabase size={22} strokeWidth={1.75} />}
+                iconColor="var(--color-warning)"
+                onClick={() => navigate('/admin/datamodel')}
+              />
+            </CardGrid>
+          </Section>
+        )}
+
+        {/* Empty State */}
+        {!hasData && !isLoading && (datasources?.length || 0) === 0 && (
+          <EmptyState
+            icon={<IconSparkles size={40} strokeWidth={1.5} />}
+            iconColor="var(--color-primary)"
+            title="Ready to explore your data?"
+            description={
+              <>
+                Connect to a database to start creating questions and dashboards, or run{' '}
+                <code style={{
+                  background: 'var(--color-background-subtle)',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.9em',
+                }}>
+                  bi seed
+                </code>{' '}
+                to add sample data.
+              </>
+            }
+            action={
               <Button
                 size="lg"
                 leftSection={<IconDatabase size={20} strokeWidth={1.75} />}
@@ -392,6 +323,8 @@ export default function Home() {
               >
                 Add a database
               </Button>
+            }
+            secondaryAction={
               <Button
                 size="lg"
                 variant="light"
@@ -400,10 +333,11 @@ export default function Home() {
               >
                 New question
               </Button>
-            </Group>
-          </Stack>
-        </Box>
-      )}
+            }
+            size="lg"
+          />
+        )}
+      </Container>
     </Box>
   )
 }
@@ -427,77 +361,47 @@ function StartCard({
   onClick: () => void
 }) {
   return (
-    <UnstyledButton
+    <Paper
+      withBorder
+      p="lg"
+      radius="md"
       onClick={onClick}
-      style={styles.startCard}
+      style={{
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: rem(16),
+        transition: 'all var(--transition-fast)',
+      }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
-        e.currentTarget.style.transform = 'translateY(-2px)'
+        e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
+        e.currentTarget.style.borderColor = 'var(--color-border-strong)'
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.boxShadow = 'none'
-        e.currentTarget.style.transform = 'translateY(0)'
+        e.currentTarget.style.borderColor = ''
       }}
     >
-      <ThemeIcon size={48} radius="md" style={{ backgroundColor: `${color}15` }}>
-        <Icon size={24} color={color} strokeWidth={1.75} />
+      <ThemeIcon
+        size={48}
+        radius="md"
+        style={{ backgroundColor: `${color}15`, color }}
+      >
+        <Icon size={24} strokeWidth={1.75} />
       </ThemeIcon>
       <Box style={{ flex: 1 }}>
-        <Text fw={600} size="md" style={{ color: semanticColors.textPrimary }} mb={4}>
+        <Text fw={600} size="md" style={{ color: 'var(--color-foreground)' }} mb={4}>
           {title}
         </Text>
-        <Text size="sm" c="dimmed" lh={1.4}>
+        <Text size="sm" style={{ color: 'var(--color-foreground-muted)', lineHeight: 1.4 }}>
           {description}
         </Text>
       </Box>
-    </UnstyledButton>
+    </Paper>
   )
 }
 
-// Stat Card
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  onClick,
-}: {
-  label: string
-  value: number
-  icon: typeof IconChartLine
-  color: string
-  onClick: () => void
-}) {
-  return (
-    <UnstyledButton
-      onClick={onClick}
-      style={styles.statCard}
-      data-testid="stat-card"
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = 'none'
-      }}
-    >
-      <Group gap="md">
-        <ThemeIcon size={44} radius="md" style={{ backgroundColor: `${color}15` }} data-icon>
-          <Icon size={22} color={color} strokeWidth={1.75} />
-        </ThemeIcon>
-        <Box>
-          <Text size="xl" fw={700} style={{ color: semanticColors.textPrimary, lineHeight: 1.2 }} data-value>
-            {value}
-          </Text>
-          <Text size="sm" c="dimmed" mt={2}>
-            {label}
-          </Text>
-        </Box>
-      </Group>
-    </UnstyledButton>
-  )
-}
-
-// Item Card (Question/Dashboard)
+// Item Card (Question/Dashboard) - Using new DataCard
 function ItemCard({
   id,
   type,
@@ -520,8 +424,6 @@ function ItemCard({
   compact?: boolean
 }) {
   const { pinned, toggle: togglePin } = usePinActions(id, type)
-  const Icon = type === 'dashboard' ? IconLayoutDashboard : IconChartLine
-  const accentColor = chartColors[colorIndex % chartColors.length]
 
   const getVizLabel = (vizType: string) => {
     switch (vizType) {
@@ -535,102 +437,29 @@ function ItemCard({
     }
   }
 
+  const badge = vizType
+    ? getVizLabel(vizType)
+    : cardCount !== undefined
+      ? `${cardCount} ${cardCount === 1 ? 'card' : 'cards'}`
+      : type === 'dashboard' ? 'Dashboard' : 'Question'
+
   return (
-    <Paper
-      withBorder
-      p={compact ? 'sm' : 'md'}
-      radius="md"
-      style={{
-        cursor: 'pointer',
-        transition: 'all 0.15s ease',
-        height: '100%',
-      }}
+    <DataCard
+      id={id}
+      type={type}
+      name={name}
+      description={compact ? undefined : description}
+      badge={badge}
+      colorIndex={colorIndex}
+      pinned={pinned}
+      onTogglePin={togglePin}
       onClick={onClick}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
-        e.currentTarget.style.transform = 'translateY(-2px)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = 'none'
-        e.currentTarget.style.transform = 'translateY(0)'
-      }}
-    >
-      <Group justify="space-between" mb={compact ? 'xs' : 'sm'}>
-        <ThemeIcon
-          size={compact ? 32 : 40}
-          radius="md"
-          style={{
-            backgroundColor: `${accentColor}15`,
-          }}
-        >
-          <Icon size={compact ? 16 : 20} color={accentColor} strokeWidth={1.75} />
-        </ThemeIcon>
-        <Group gap={4}>
-          <Tooltip label={pinned ? 'Unpin' : 'Pin to home'}>
-            <ActionIcon
-              variant="subtle"
-              color={pinned ? 'yellow' : 'gray'}
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation()
-                togglePin()
-              }}
-            >
-              {pinned ? <IconStarFilled size={14} /> : <IconStar size={14} strokeWidth={1.75} />}
-            </ActionIcon>
-          </Tooltip>
-          <Menu position="bottom-end" withinPortal>
-            <Menu.Target>
-              <ActionIcon variant="subtle" color="gray" size="sm" onClick={(e) => e.stopPropagation()}>
-                <IconDots size={14} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item leftSection={<IconBookmark size={14} strokeWidth={1.75} />}>
-                Bookmark
-              </Menu.Item>
-              <Menu.Item leftSection={<IconStar size={14} strokeWidth={1.75} />} onClick={togglePin}>
-                {pinned ? 'Unpin from home' : 'Pin to home'}
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Group>
-      </Group>
-      <Text fw={600} lineClamp={compact ? 1 : 2} size={compact ? 'sm' : 'md'} style={{ color: semanticColors.textPrimary }}>
-        {name}
-      </Text>
-      {!compact && description && (
-        <Text size="sm" c="dimmed" lineClamp={1} mt={4}>
-          {description}
-        </Text>
-      )}
-      <Group gap="xs" mt={compact ? 'xs' : 'sm'}>
-        {vizType && (
-          <Badge size="xs" variant="light" color="gray" radius="sm">
-            {getVizLabel(vizType)}
-          </Badge>
-        )}
-        {cardCount !== undefined && (
-          <Badge size="xs" variant="light" color="gray" radius="sm">
-            {cardCount} {cardCount === 1 ? 'card' : 'cards'}
-          </Badge>
-        )}
-        {type === 'dashboard' && !cardCount && (
-          <Badge size="xs" variant="light" color="gray" radius="sm">
-            Dashboard
-          </Badge>
-        )}
-        {type === 'question' && !vizType && (
-          <Badge size="xs" variant="light" color="gray" radius="sm">
-            Question
-          </Badge>
-        )}
-      </Group>
-    </Paper>
+      compact={compact}
+    />
   )
 }
 
-// X-Ray Cards Component - Metabase Style
+// X-Ray Cards Component
 function XRayCards({
   datasources,
   navigate,
@@ -638,11 +467,9 @@ function XRayCards({
   datasources: any[]
   navigate: (path: string) => void
 }) {
-  // Get tables from first datasource for X-ray suggestions
   const firstDatasource = datasources[0]
   const { data: tables } = useTables(firstDatasource?.id || '')
 
-  // X-ray card phrases
   const xrayPhrases = [
     { prefix: 'A glance at', suffix: '' },
     { prefix: 'A summary of', suffix: '' },
@@ -661,67 +488,63 @@ function XRayCards({
   if (xrayCards.length === 0) return null
 
   return (
-    <Box>
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-        {xrayCards.map(({ table, phrase }) => (
-          <UnstyledButton
-            key={table.id}
-            onClick={() => navigate(`/question/new?table=${table.id}&datasource=${firstDatasource.id}`)}
-            style={{
-              backgroundColor: '#ffffff',
-              border: `1px solid ${semanticColors.borderMedium}`,
-              borderRadius: rem(8),
-              padding: `${rem(16)} ${rem(20)}`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: rem(12),
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-          >
-            <IconBolt size={20} color="#F9D45C" strokeWidth={2} style={{ flexShrink: 0 }} />
-            <Text size="sm" style={{ color: semanticColors.textPrimary }}>
-              {phrase.prefix}{' '}
-              <Text span fw={700} inherit>
-                {table.display_name || table.name}
-              </Text>
-              {phrase.suffix}
-            </Text>
-          </UnstyledButton>
-        ))}
-        {/* Metabase Tips Card */}
-        <UnstyledButton
-          onClick={() => window.open('https://www.metabase.com/docs', '_blank')}
+    <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+      {xrayCards.map(({ table, phrase }) => (
+        <Paper
+          key={table.id}
+          withBorder
+          p="md"
+          radius="md"
+          onClick={() => navigate(`/question/new?table=${table.id}&datasource=${firstDatasource.id}`)}
           style={{
-            backgroundColor: '#ffffff',
-            border: `1px solid ${semanticColors.borderMedium}`,
-            borderRadius: rem(8),
-            padding: `${rem(16)} ${rem(20)}`,
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: rem(12),
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
+            transition: 'all var(--transition-fast)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
+            e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.boxShadow = 'none'
           }}
         >
-          <IconBook2 size={20} color={semanticColors.textSecondary} strokeWidth={1.75} style={{ flexShrink: 0 }} />
-          <Text size="sm" fw={500} style={{ color: semanticColors.textPrimary }}>
-            Metabase tips
+          <IconBolt size={20} color="var(--color-warning)" strokeWidth={2} style={{ flexShrink: 0 }} />
+          <Text size="sm" style={{ color: 'var(--color-foreground)' }}>
+            {phrase.prefix}{' '}
+            <Text span fw={700} inherit>
+              {table.display_name || table.name}
+            </Text>
+            {phrase.suffix}
           </Text>
-        </UnstyledButton>
-      </SimpleGrid>
-    </Box>
+        </Paper>
+      ))}
+      {/* Tips Card */}
+      <Paper
+        withBorder
+        p="md"
+        radius="md"
+        onClick={() => window.open('https://www.metabase.com/docs', '_blank')}
+        style={{
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: rem(12),
+          transition: 'all var(--transition-fast)',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = 'none'
+        }}
+      >
+        <IconBook2 size={20} color="var(--color-foreground-muted)" strokeWidth={1.75} style={{ flexShrink: 0 }} />
+        <Text size="sm" fw={500} style={{ color: 'var(--color-foreground)' }}>
+          Documentation & tips
+        </Text>
+      </Paper>
+    </CardGrid>
   )
 }

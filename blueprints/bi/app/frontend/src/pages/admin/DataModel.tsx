@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react'
 import {
-  Container, Title, Text, Group, Stack, Button, TextInput, Select, Table, Paper,
-  Badge, Modal, ActionIcon, Menu, Accordion, Tabs, Loader, ThemeIcon, Tooltip,
+  Text, Group, Stack, Button, TextInput, Select, Table, Paper,
+  Badge, Modal, ActionIcon, Menu, Accordion, Tabs, ThemeIcon, Tooltip,
   PasswordInput, NumberInput, Switch, Box, SimpleGrid, Card, Divider,
-  UnstyledButton, ScrollArea
+  UnstyledButton, ScrollArea, Title, Loader
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -19,6 +19,7 @@ import {
   useTestDataSourceConnection, useTables, useColumns, useUpdateColumn
 } from '../../api/hooks'
 import type { DataSource, Table as TableType, Column } from '../../api/types'
+import { PageHeader, PageContainer, LoadingState } from '../../components/ui'
 
 const ENGINE_ICONS: Record<string, React.ComponentType<any>> = {
   sqlite: IconFileDatabase,
@@ -122,27 +123,23 @@ export default function DataModel() {
 
   if (loadingDatasources) {
     return (
-      <Container size="xl" py="lg">
-        <Paper withBorder p="xl" ta="center">
-          <Loader size="lg" />
-          <Text mt="md">Loading data model...</Text>
-        </Paper>
-      </Container>
+      <PageContainer>
+        <LoadingState message="Loading data model..." />
+      </PageContainer>
     )
   }
 
   return (
-    <Container size="xl" py="lg">
-      {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>Data Model</Title>
-          <Text c="dimmed">Manage your data sources, tables, and metadata</Text>
-        </div>
-        <Button leftSection={<IconPlus size={16} />} onClick={openAddModal}>
-          Add Data Source
-        </Button>
-      </Group>
+    <PageContainer>
+      <PageHeader
+        title="Data Model"
+        subtitle="Manage your data sources, tables, and metadata"
+        actions={
+          <Button leftSection={<IconPlus size={16} />} onClick={openAddModal}>
+            Add Data Source
+          </Button>
+        }
+      />
 
       <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List mb="lg">
@@ -197,7 +194,7 @@ export default function DataModel() {
         onCreate={createDatasource}
         onTest={testConnection}
       />
-    </Container>
+    </PageContainer>
   )
 }
 
