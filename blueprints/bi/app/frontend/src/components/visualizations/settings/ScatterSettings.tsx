@@ -1,4 +1,4 @@
-import { Stack, Switch, NumberInput, Divider, Select, Accordion, Text, ColorInput } from '@mantine/core'
+import { Stack, Switch, NumberInput, Divider, Select, Accordion, ColorInput } from '@mantine/core'
 import { IconEye, IconTarget, IconPalette } from '@tabler/icons-react'
 import { chartColors } from '../../../theme'
 import type { ChartSettingsProps } from './types'

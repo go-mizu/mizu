@@ -7,14 +7,15 @@ import {
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import GridLayout, { Layout } from 'react-grid-layout'
+import GridLayout, { type Layout, type LayoutItem } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
+import './Dashboard.css'
 import {
   IconPlus, IconDeviceFloppy, IconDots, IconDownload, IconShare,
   IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
   IconMaximize, IconFilter, IconClock, IconLink,
   IconGripVertical, IconLetterCase, IconBookmark, IconBookmarkFilled,
-  IconArrowsMaximize, IconX, IconPencil, IconSettings
+  IconArrowsMaximize, IconX, IconPencil, IconLayoutGrid
 } from '@tabler/icons-react'
 import Visualization from '../components/visualizations'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
@@ -27,7 +28,19 @@ import { useBookmarkStore } from '../stores/bookmarkStore'
 import type { DashboardCard, QueryResult, Question, DashboardFilter, DashboardTab } from '../api/types'
 import { LoadingState, EmptyState } from '../components/ui'
 
-// Use GridLayout directly
+// Grid configuration constants
+const GRID_COLS = 18
+const GRID_MARGIN: [number, number] = [12, 12] // [horizontal, vertical] margin between items
+const MIN_CARD_WIDTH = 4 // Minimum card width in grid units
+const MIN_CARD_HEIGHT = 3 // Minimum card height in grid units
+
+// Calculate square row height based on grid width
+function calculateSquareRowHeight(gridWidth: number, cols: number, margin: number): number {
+  // For a square grid, rowHeight = (gridWidth - (cols - 1) * horizontalMargin) / cols
+  const totalMargin = (cols - 1) * margin
+  const availableWidth = gridWidth - totalMargin
+  return Math.floor(availableWidth / cols)
+}
 
 interface DashboardProps {
   mode?: 'view' | 'edit'
@@ -94,7 +107,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
 
   // Dashboard tabs state
   const [dashboardTabs, setDashboardTabs] = useState<DashboardTab[]>([])
-  const [activeTab, setActiveTab] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<string>('__all__') // Use special value for "all tabs"
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
   const [editingTabName, setEditingTabName] = useState('')
 
@@ -359,7 +372,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   }
 
   // Handle grid layout change
-  const handleLayoutChange = useCallback(async (newLayout: Layout[]) => {
+  const handleLayoutChange = useCallback(async (newLayout: Layout) => {
     if (!id || !editMode) return
 
     // Update each card position
@@ -390,22 +403,27 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   // Filter cards by active tab
   const filteredCards = useMemo(() => {
     if (!cards) return []
-    if (!activeTab) return cards
+    if (activeTab === '__all__') return cards
     return cards.filter(card => card.tab_id === activeTab)
   }, [cards, activeTab])
 
   // Filter layout to match filtered cards
-  const filteredLayout: Layout[] = useMemo(() => {
+  const filteredLayout: LayoutItem[] = useMemo(() => {
     return filteredCards.map(card => ({
       i: card.id,
       x: card.col,
       y: card.row,
       w: card.width,
       h: card.height,
-      minW: 2,
-      minH: 2,
+      minW: MIN_CARD_WIDTH,
+      minH: MIN_CARD_HEIGHT,
     }))
   }, [filteredCards])
+
+  // Calculate square row height for proper grid alignment
+  const rowHeight = useMemo(() => {
+    return calculateSquareRowHeight(gridWidth, GRID_COLS, GRID_MARGIN[0])
+  }, [gridWidth])
 
   // Add new tab
   const handleAddTab = () => {
@@ -433,7 +451,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   const handleRemoveTab = (tabId: string) => {
     setDashboardTabs(prev => prev.filter(tab => tab.id !== tabId))
     if (activeTab === tabId) {
-      setActiveTab(null)
+      setActiveTab('__all__')
     }
     // Unassign cards from removed tab
     cards?.forEach(card => {
@@ -656,12 +674,12 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
           <Paper withBorder radius="sm" mb="md" p={0} style={{ backgroundColor: 'white' }}>
             <Group gap={0} wrap="nowrap">
               <Tabs
-                value={activeTab || ''}
-                onChange={(value) => setActiveTab(value === '' ? null : value)}
+                value={activeTab}
+                onChange={(value) => setActiveTab(value || '__all__')}
                 style={{ flex: 1 }}
               >
                 <Tabs.List style={{ borderBottom: 'none' }}>
-                  <Tabs.Tab value="" key="all">
+                  <Tabs.Tab value="__all__" key="all">
                     All
                   </Tabs.Tab>
                   {dashboardTabs.map((tab) => (
@@ -727,46 +745,68 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
           </Paper>
         )}
 
+        {/* Edit mode indicator banner */}
+        {editMode && (
+          <div className="edit-mode-banner">
+            <IconLayoutGrid size={18} />
+            <span>Edit mode: Drag cards to reposition, resize from corners. Cards snap to grid.</span>
+          </div>
+        )}
+
         {filteredCards && filteredCards.length > 0 ? (
-          <GridLayout
-            width={gridWidth}
-            className="dashboard-grid"
-            layout={filteredLayout}
-            cols={18}
-            rowHeight={80}
-            margin={[16, 16]}
-            isDraggable={editMode}
-            isResizable={editMode}
-            draggableHandle=".drag-handle"
-            onLayoutChange={handleLayoutChange}
+          <Box
+            className={`dashboard-grid-container ${editMode ? 'edit-mode' : ''}`}
+            style={{
+              '--grid-cell-width': `${rowHeight + GRID_MARGIN[0]}px`,
+              '--grid-cell-height': `${rowHeight + GRID_MARGIN[1]}px`,
+            } as React.CSSProperties}
           >
-            {filteredCards.map(card => (
-              <div key={card.id} data-testid="dashboard-card">
-                <DashboardCardComponent
-                  card={card}
-                  question={getQuestionForCard(card)}
-                  result={cardResults[card.id]}
-                  isLoading={loadingCards[card.id]}
-                  editMode={editMode}
-                  onRefresh={() => loadCardResult(card)}
-                  onRemove={() => handleRemoveCard(card.id)}
-                  onNavigate={() => card.question_id && navigate(`/question/${card.question_id}`)}
-                  onEdit={card.question_id ? () => navigate(`/question/${card.question_id}?edit=true&returnTo=/dashboard/${id}`) : undefined}
-                  onUpdateContent={(content, title) => {
-                    if (!id) return
-                    const update: any = { dashboardId: id, id: card.id }
-                    if (card.card_type === 'link') {
-                      update.title = title || content
-                      update.settings = { ...card.settings, url: content }
-                    } else {
-                      update.content = content
-                    }
-                    updateDashboardCard.mutate(update)
-                  }}
-                />
-              </div>
-            ))}
-          </GridLayout>
+            {/* Grid background overlay - visible in edit mode */}
+            <div className={`dashboard-grid-background ${editMode ? 'edit-mode' : ''}`} />
+
+            <GridLayout
+              width={gridWidth}
+              className="dashboard-grid"
+              layout={filteredLayout}
+              gridConfig={{
+                cols: GRID_COLS,
+                rowHeight: rowHeight,
+                margin: GRID_MARGIN,
+                containerPadding: null,
+                maxRows: Infinity
+              }}
+              dragConfig={{ enabled: editMode, handle: '.drag-handle', bounded: false, threshold: 3 }}
+              resizeConfig={{ enabled: editMode, handles: ['se'] }}
+              onLayoutChange={handleLayoutChange}
+            >
+              {filteredCards.map(card => (
+                <div key={card.id} data-testid="dashboard-card">
+                  <DashboardCardComponent
+                    card={card}
+                    question={getQuestionForCard(card)}
+                    result={cardResults[card.id]}
+                    isLoading={loadingCards[card.id]}
+                    editMode={editMode}
+                    onRefresh={() => loadCardResult(card)}
+                    onRemove={() => handleRemoveCard(card.id)}
+                    onNavigate={() => card.question_id && navigate(`/question/${card.question_id}`)}
+                    onEdit={card.question_id ? () => navigate(`/question/${card.question_id}?edit=true&returnTo=/dashboard/${id}`) : undefined}
+                    onUpdateContent={(content, title) => {
+                      if (!id) return
+                      const update: any = { dashboardId: id, id: card.id }
+                      if (card.card_type === 'link') {
+                        update.title = title || content
+                        update.settings = { ...card.settings, url: content }
+                      } else {
+                        update.content = content
+                      }
+                      updateDashboardCard.mutate(update)
+                    }}
+                  />
+                </div>
+              ))}
+            </GridLayout>
+          </Box>
         ) : (
           <EmptyState
             icon={<IconLayoutDashboard size={40} strokeWidth={1.5} />}
@@ -775,7 +815,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
             description={
               isNew
                 ? 'Give your dashboard a name and save it, then add cards to visualize your data.'
-                : activeTab
+                : activeTab !== '__all__'
                   ? 'No cards in this tab. Add cards and assign them to this tab.'
                   : (questions?.length || 0) > 0
                     ? 'Click "Add Card" to add questions to this dashboard.'

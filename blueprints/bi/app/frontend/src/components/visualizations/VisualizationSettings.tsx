@@ -1,7 +1,6 @@
 import { Stack, Text, Accordion, Switch, NumberInput, Select, ColorInput, Group } from '@mantine/core'
 import { IconEye, IconNumbers, IconPalette } from '@tabler/icons-react'
 import type { VisualizationSettings } from '../../api/types'
-import { chartColors } from '../../theme'
 
 // Import modular settings components
 import {

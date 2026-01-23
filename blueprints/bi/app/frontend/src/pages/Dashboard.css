@@ -1,0 +1,158 @@
+/* Dashboard Grid Styles */
+
+/* Grid container */
+.dashboard-grid-container {
+  position: relative;
+  min-height: 400px;
+}
+
+/* Grid background overlay - only visible in edit mode */
+.dashboard-grid-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.dashboard-grid-background.edit-mode {
+  opacity: 1;
+}
+
+/* Grid dots pattern */
+.dashboard-grid-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(circle, var(--grid-dot-color, #d0d7de) 1px, transparent 1px);
+  background-size: var(--grid-cell-width, 60px) var(--grid-cell-height, 60px);
+  background-position: calc(var(--grid-cell-width, 60px) / 2) calc(var(--grid-cell-height, 60px) / 2);
+}
+
+/* Alternative grid lines pattern (uncomment to use instead of dots) */
+/*
+.dashboard-grid-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(to right, var(--grid-line-color, #e1e4e8) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line-color, #e1e4e8) 1px, transparent 1px);
+  background-size: var(--grid-cell-width, 60px) var(--grid-cell-height, 60px);
+}
+*/
+
+/* Dashboard grid layout */
+.dashboard-grid {
+  position: relative;
+  z-index: 1;
+}
+
+/* Grid item styling */
+.dashboard-grid > div {
+  transition: box-shadow 0.15s ease;
+}
+
+/* Drag handle cursor */
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+/* React-grid-layout overrides for edit mode */
+.dashboard-grid .react-grid-item.react-grid-placeholder {
+  background: var(--mantine-color-blue-1);
+  border: 2px dashed var(--mantine-color-blue-4);
+  border-radius: 8px;
+  opacity: 0.6;
+  transition: all 0.1s ease;
+}
+
+/* Resize handle styling */
+.dashboard-grid .react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.dashboard-grid .react-grid-item:hover > .react-resizable-handle {
+  opacity: 1;
+}
+
+.dashboard-grid .react-grid-item > .react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--mantine-color-gray-5);
+  border-bottom: 2px solid var(--mantine-color-gray-5);
+  border-radius: 0 0 2px 0;
+}
+
+/* Card drop target highlight */
+.dashboard-grid.is-dragging .react-grid-item:not(.react-draggable-dragging) {
+  opacity: 0.7;
+}
+
+/* Edit mode indicator border */
+.dashboard-grid-container.edit-mode {
+  border: 2px dashed var(--mantine-color-blue-3);
+  border-radius: 12px;
+  padding: 8px;
+  margin: -8px;
+  background: var(--mantine-color-blue-0);
+}
+
+/* Edit mode banner */
+.edit-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--mantine-color-blue-0);
+  border: 1px solid var(--mantine-color-blue-2);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: var(--mantine-color-blue-7);
+}
+
+.edit-mode-banner svg {
+  flex-shrink: 0;
+}
+
+/* Dark mode adjustments */
+[data-mantine-color-scheme="dark"] .dashboard-grid-background::before {
+  --grid-dot-color: #30363d;
+}
+
+[data-mantine-color-scheme="dark"] .dashboard-grid-container.edit-mode {
+  border-color: var(--mantine-color-blue-8);
+  background: rgba(56, 139, 253, 0.05);
+}
+
+[data-mantine-color-scheme="dark"] .edit-mode-banner {
+  background: rgba(56, 139, 253, 0.1);
+  border-color: var(--mantine-color-blue-8);
+  color: var(--mantine-color-blue-4);
+}
