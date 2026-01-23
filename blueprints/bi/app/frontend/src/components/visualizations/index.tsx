@@ -62,6 +62,14 @@ export default function Visualization({
       return <FunnelVisualization data={data} columns={columns} height={height} />
     case 'combo':
       return <ComboVisualization data={data} columns={columns} height={height} showLegend={showLegend} />
+    case 'waterfall':
+      return <WaterfallVisualization data={data} columns={columns} height={height} />
+    case 'bubble':
+      return <BubbleVisualization data={data} columns={columns} height={height} showLegend={showLegend} />
+    case 'map-pin':
+    case 'map-grid':
+    case 'map-region':
+      return <MapVisualization data={data} columns={columns} height={height} type={type} />
     case 'pivot':
       return <PivotVisualization data={data} columns={columns} settings={settings} />
     case 'table':
@@ -610,6 +618,243 @@ function ComboVisualization({
         />
       </ComposedChart>
     </ResponsiveContainer>
+  )
+}
+
+// Waterfall chart visualization
+function WaterfallVisualization({
+  data,
+  columns,
+  height,
+}: {
+  data: Record<string, any>[]
+  columns: { name: string; display_name: string; type: string }[]
+  height: number
+}) {
+  const xKey = columns[0]?.name
+  const valueKey = columns[1]?.name
+
+  // Transform data for waterfall: calculate running total and invisible base
+  const waterfallData = useMemo(() => {
+    let cumulative = 0
+    return data.map((item, index) => {
+      const value = Number(item[valueKey]) || 0
+      const isTotal = index === data.length - 1 && item[xKey]?.toLowerCase().includes('total')
+      const base = isTotal ? 0 : cumulative
+      cumulative += value
+
+      return {
+        ...item,
+        _base: isTotal ? 0 : Math.min(base, base + value),
+        _value: Math.abs(value),
+        _positive: value >= 0,
+        _cumulative: cumulative,
+      }
+    })
+  }, [data, xKey, valueKey])
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={waterfallData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--mantine-color-gray-2)" />
+        <XAxis dataKey={xKey} tick={{ fontSize: 12 }} stroke="var(--mantine-color-gray-5)" />
+        <YAxis tick={{ fontSize: 12 }} stroke="var(--mantine-color-gray-5)" />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: 'white',
+            border: '1px solid var(--mantine-color-gray-3)',
+            borderRadius: 6,
+          }}
+          formatter={(value: any, name: string | undefined) => {
+            if (name === '_base') return null
+            return [value, valueKey || name || '']
+          }}
+        />
+        {/* Invisible base bar for positioning */}
+        <Bar dataKey="_base" stackId="waterfall" fill="transparent" />
+        {/* Value bars with conditional coloring */}
+        <Bar
+          dataKey="_value"
+          stackId="waterfall"
+          radius={[4, 4, 0, 0]}
+        >
+          {waterfallData.map((entry, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={entry._positive ? '#40c057' : '#fa5252'}
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// Bubble chart visualization (scatter with variable size)
+function BubbleVisualization({
+  data,
+  columns,
+  height,
+  showLegend,
+}: {
+  data: Record<string, any>[]
+  columns: { name: string; display_name: string; type: string }[]
+  height: number
+  showLegend: boolean
+}) {
+  const xKey = columns[0]?.name
+  const yKey = columns[1]?.name
+  const sizeKey = columns[2]?.name // Third column for bubble size
+
+  // Calculate size scale
+  const { minSize, maxSize } = useMemo(() => {
+    if (!sizeKey) return { minSize: 1, maxSize: 1 }
+    const values = data.map(d => Number(d[sizeKey]) || 0).filter(v => v > 0)
+    return {
+      minSize: Math.min(...values),
+      maxSize: Math.max(...values),
+    }
+  }, [data, sizeKey])
+
+  // Scale bubble size between 5 and 30 pixels
+  const getSize = (value: number) => {
+    if (!sizeKey || maxSize === minSize) return 10
+    const normalized = (value - minSize) / (maxSize - minSize)
+    return 5 + normalized * 25
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ScatterChart margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--mantine-color-gray-2)" />
+        <XAxis dataKey={xKey} name={xKey} tick={{ fontSize: 12 }} stroke="var(--mantine-color-gray-5)" type="number" />
+        <YAxis dataKey={yKey} name={yKey} tick={{ fontSize: 12 }} stroke="var(--mantine-color-gray-5)" type="number" />
+        <Tooltip
+          cursor={{ strokeDasharray: '3 3' }}
+          contentStyle={{
+            backgroundColor: 'white',
+            border: '1px solid var(--mantine-color-gray-3)',
+            borderRadius: 6,
+          }}
+        />
+        {showLegend && <Legend />}
+        <Scatter name={yKey} data={data} fill={chartColors[0]}>
+          {data.map((_, index) => (
+            <Cell
+              key={`cell-${index}`}
+              fill={chartColors[index % chartColors.length]}
+            />
+          ))}
+          {sizeKey && data.map((item, index) => {
+            const size = getSize(Number(item[sizeKey]) || 0)
+            return (
+              <Cell
+                key={`size-${index}`}
+                // @ts-ignore - recharts doesn't have proper types for this
+                r={size}
+              />
+            )
+          })}
+        </Scatter>
+      </ScatterChart>
+    </ResponsiveContainer>
+  )
+}
+
+// Map visualization - displays geographic data in a tile/grid format
+function MapVisualization({
+  data,
+  columns,
+  height,
+  type,
+}: {
+  data: Record<string, any>[]
+  columns: { name: string; display_name: string; type: string }[]
+  height: number
+  type: 'map-pin' | 'map-grid' | 'map-region'
+}) {
+  const locationKey = columns[0]?.name
+  const valueKey = columns[1]?.name
+
+  // Calculate value range for color scaling
+  const { minValue, maxValue } = useMemo(() => {
+    const values = data.map(d => Number(d[valueKey]) || 0)
+    return {
+      minValue: Math.min(...values),
+      maxValue: Math.max(...values),
+    }
+  }, [data, valueKey])
+
+  // Get color based on value (heat map style)
+  const getColor = (value: number) => {
+    if (maxValue === minValue) return chartColors[0]
+    const normalized = (value - minValue) / (maxValue - minValue)
+    // Color gradient from light blue to dark blue
+    const hue = 210 // Blue
+    const saturation = 70
+    const lightness = 85 - (normalized * 50) // 85% to 35%
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`
+  }
+
+  // Format value for display
+  const formatValue = (value: number) => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
+    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
+    return value.toLocaleString()
+  }
+
+  return (
+    <Box style={{ height, overflow: 'auto', padding: 8 }}>
+      <Text size="xs" c="dimmed" mb="sm">
+        Geographic Distribution ({type === 'map-pin' ? 'Pin' : type === 'map-grid' ? 'Grid' : 'Region'} Map)
+      </Text>
+      <Box
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+          gap: 8,
+        }}
+      >
+        {data.map((item, index) => {
+          const location = item[locationKey]
+          const value = Number(item[valueKey]) || 0
+          const color = getColor(value)
+
+          return (
+            <Paper
+              key={index}
+              p="xs"
+              radius="sm"
+              style={{
+                backgroundColor: color,
+                border: '1px solid var(--mantine-color-gray-3)',
+                cursor: 'default',
+              }}
+            >
+              <Text size="xs" fw={600} style={{ color: value > (maxValue - minValue) / 2 + minValue ? 'white' : 'black' }}>
+                {location}
+              </Text>
+              <Text size="lg" fw={700} style={{ color: value > (maxValue - minValue) / 2 + minValue ? 'white' : 'black' }}>
+                {formatValue(value)}
+              </Text>
+            </Paper>
+          )
+        })}
+      </Box>
+      {/* Legend */}
+      <Group mt="md" gap="xs">
+        <Text size="xs" c="dimmed">Low</Text>
+        <Box
+          style={{
+            width: 100,
+            height: 10,
+            background: 'linear-gradient(to right, hsl(210, 70%, 85%), hsl(210, 70%, 35%))',
+            borderRadius: 2,
+          }}
+        />
+        <Text size="xs" c="dimmed">High</Text>
+      </Group>
+    </Box>
   )
 }
 

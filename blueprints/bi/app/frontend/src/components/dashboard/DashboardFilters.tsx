@@ -19,6 +19,8 @@ interface DashboardFiltersProps {
   onRemoveFilter?: (filterId: string) => void
   editMode?: boolean
   availableColumns?: Column[]
+  // Map of filter ID to its dropdown options (for category/dropdown filters)
+  filterOptions?: Record<string, string[]>
 }
 
 export default function DashboardFilters({
@@ -29,6 +31,7 @@ export default function DashboardFilters({
   onRemoveFilter,
   editMode = false,
   availableColumns = [],
+  filterOptions = {},
 }: DashboardFiltersProps) {
   const [addFilterModalOpen, { open: openAddFilter, close: closeAddFilter }] = useDisclosure(false)
   const [expanded, setExpanded] = useState(true)
@@ -109,6 +112,7 @@ export default function DashboardFilters({
               value={filterValues[filter.id]}
               onChange={(value) => onFilterChange(filter.id, value)}
               onRemove={editMode && onRemoveFilter ? () => onRemoveFilter(filter.id) : undefined}
+              options={filterOptions[filter.id]}
             />
           ))}
           {filters.length === 0 && editMode && (
@@ -139,11 +143,13 @@ function FilterWidget({
   value,
   onChange,
   onRemove,
+  options,
 }: {
   filter: DashboardFilter
   value: any
   onChange: (value: any) => void
   onRemove?: () => void
+  options?: string[]
 }) {
   const [focused, setFocused] = useState(false)
 
@@ -179,21 +185,22 @@ function FilterWidget({
         )
       case 'dropdown':
       case 'category':
+        // Use options prop if provided, otherwise show placeholder message
+        const dropdownData = options && options.length > 0
+          ? options.map(opt => ({ value: opt, label: opt }))
+          : [{ value: '', label: 'No options available', disabled: true }]
         return (
           <Select
             size="xs"
             placeholder={filter.name}
             value={value || null}
             onChange={onChange}
-            data={[
-              // TODO: Populate from card column values
-              { value: 'option1', label: 'Option 1' },
-              { value: 'option2', label: 'Option 2' },
-            ]}
+            data={dropdownData}
             clearable
             searchable
             leftSection={getIcon()}
             style={{ minWidth: 150 }}
+            nothingFoundMessage="No matching options"
           />
         )
       case 'number':

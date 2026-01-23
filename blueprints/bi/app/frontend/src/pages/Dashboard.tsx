@@ -1,7 +1,7 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Container, Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
+  Box, Group, Text, Button, ActionIcon, Menu, Paper, Loader,
   Modal, TextInput, Textarea, Select, Stack, Title, ThemeIcon,
   Tooltip, Tabs, Switch, Badge
 } from '@mantine/core'
@@ -14,7 +14,7 @@ import {
   IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
   IconMaximize, IconFilter, IconClock, IconLink,
   IconGripVertical, IconLetterCase, IconBookmark, IconBookmarkFilled,
-  IconArrowsMaximize
+  IconArrowsMaximize, IconX
 } from '@tabler/icons-react'
 import Visualization from '../components/visualizations'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
@@ -24,7 +24,7 @@ import {
   useQuestions, useExecuteQuestion
 } from '../api/hooks'
 import { useBookmarkStore } from '../stores/bookmarkStore'
-import type { DashboardCard, QueryResult, Question, DashboardFilter } from '../api/types'
+import type { DashboardCard, QueryResult, Question, DashboardFilter, DashboardTab } from '../api/types'
 
 // Use GridLayout directly
 
@@ -34,6 +34,34 @@ interface DashboardProps {
 
 // Card results cache
 const cardResultsCache = new Map<string, QueryResult>()
+
+// Sample filter options based on common Northwind columns
+// In production, these would be fetched via useScanColumn
+function getSampleFilterOptions(filterName: string): string[] {
+  const normalizedName = filterName.toLowerCase()
+  if (normalizedName.includes('category')) {
+    return ['Beverages', 'Condiments', 'Confections', 'Dairy Products', 'Grains/Cereals', 'Meat/Poultry', 'Produce', 'Seafood']
+  }
+  if (normalizedName.includes('country')) {
+    return ['Argentina', 'Austria', 'Belgium', 'Brazil', 'Canada', 'Denmark', 'Finland', 'France', 'Germany', 'Ireland', 'Italy', 'Mexico', 'Norway', 'Poland', 'Portugal', 'Spain', 'Sweden', 'Switzerland', 'UK', 'USA', 'Venezuela']
+  }
+  if (normalizedName.includes('region')) {
+    return ['North America', 'South America', 'Western Europe', 'Eastern Europe', 'Northern Europe', 'Southern Europe', 'Scandinavia']
+  }
+  if (normalizedName.includes('shipper') || normalizedName.includes('shipping')) {
+    return ['Federal Shipping', 'Speedy Express', 'United Package']
+  }
+  if (normalizedName.includes('employee') || normalizedName.includes('sales rep')) {
+    return ['Nancy Davolio', 'Andrew Fuller', 'Janet Leverling', 'Margaret Peacock', 'Steven Buchanan', 'Michael Suyama', 'Robert King', 'Laura Callahan', 'Anne Dodsworth']
+  }
+  if (normalizedName.includes('supplier')) {
+    return ['Exotic Liquids', 'New Orleans Cajun Delights', 'Grandma Kelly\'s Homestead', 'Tokyo Traders', 'Cooperativa de Quesos', 'Mayumi\'s', 'Pavlova Ltd.', 'Specialty Biscuits Ltd.', 'PB Knäckebröd AB', 'Refrescos Americanas']
+  }
+  if (normalizedName.includes('status')) {
+    return ['Active', 'Pending', 'Shipped', 'Delivered', 'Cancelled']
+  }
+  return []
+}
 
 export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) {
   const { id } = useParams()
@@ -60,6 +88,18 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   // Dashboard filters state
   const [dashboardFilters, setDashboardFilters] = useState<DashboardFilter[]>([])
   const [filterValues, setFilterValues] = useState<Record<string, any>>({})
+  // Filter dropdown options (map of filterId -> array of string values)
+  const [filterOptions, setFilterOptions] = useState<Record<string, string[]>>({})
+
+  // Dashboard tabs state
+  const [dashboardTabs, setDashboardTabs] = useState<DashboardTab[]>([])
+  const [activeTab, setActiveTab] = useState<string | null>(null)
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editingTabName, setEditingTabName] = useState('')
+
+  // Responsive grid width
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const [gridWidth, setGridWidth] = useState(1200)
 
   // Queries
   const { data: dashboard, isLoading: loadingDashboard } = useDashboard(isNew ? '' : id!)
@@ -79,6 +119,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
       setDashboardName(dashboard.name)
       setDashboardDescription(dashboard.description || '')
       setDashboardFilters(dashboard.filters || [])
+      setDashboardTabs(dashboard.tabs || [])
       // Track in recents
       addRecentItem({
         id: dashboard.id,
@@ -96,6 +137,25 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
     }, autoRefresh * 1000)
     return () => clearInterval(interval)
   }, [autoRefresh, isNew])
+
+  // Responsive grid width measurement
+  useEffect(() => {
+    const container = gridContainerRef.current
+    if (!container) return
+
+    const updateWidth = () => {
+      const width = container.offsetWidth
+      if (width > 0) {
+        setGridWidth(width - 32) // Account for padding
+      }
+    }
+
+    updateWidth()
+    const resizeObserver = new ResizeObserver(updateWidth)
+    resizeObserver.observe(container)
+
+    return () => resizeObserver.disconnect()
+  }, [])
 
   // Handle filter value change
   const handleFilterChange = (filterId: string, value: any) => {
@@ -321,9 +381,21 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
     }
   }, [id, cards, editMode, updateDashboardCard])
 
-  // Generate layout from cards
-  const layout: Layout = useMemo(() => {
-    return (cards || []).map(card => ({
+  // Get question for card
+  const getQuestionForCard = (card: DashboardCard): Question | undefined => {
+    return questions?.find(q => q.id === card.question_id)
+  }
+
+  // Filter cards by active tab
+  const filteredCards = useMemo(() => {
+    if (!cards) return []
+    if (!activeTab) return cards
+    return cards.filter(card => card.tab_id === activeTab)
+  }, [cards, activeTab])
+
+  // Filter layout to match filtered cards
+  const filteredLayout: Layout = useMemo(() => {
+    return filteredCards.map(card => ({
       i: card.id,
       x: card.col,
       y: card.row,
@@ -332,21 +404,56 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
       minW: 2,
       minH: 2,
     }))
-  }, [cards])
+  }, [filteredCards])
 
-  // Get question for card
-  const getQuestionForCard = (card: DashboardCard): Question | undefined => {
-    return questions?.find(q => q.id === card.question_id)
+  // Add new tab
+  const handleAddTab = () => {
+    const newTab: DashboardTab = {
+      id: Math.random().toString(36).substring(2, 9),
+      dashboard_id: id!,
+      name: `Tab ${dashboardTabs.length + 1}`,
+      position: dashboardTabs.length,
+    }
+    setDashboardTabs(prev => [...prev, newTab])
+    setActiveTab(newTab.id)
+  }
+
+  // Rename tab
+  const handleRenameTab = (tabId: string) => {
+    if (!editingTabName.trim()) return
+    setDashboardTabs(prev => prev.map(tab =>
+      tab.id === tabId ? { ...tab, name: editingTabName } : tab
+    ))
+    setEditingTabId(null)
+    setEditingTabName('')
+  }
+
+  // Remove tab
+  const handleRemoveTab = (tabId: string) => {
+    setDashboardTabs(prev => prev.filter(tab => tab.id !== tabId))
+    if (activeTab === tabId) {
+      setActiveTab(null)
+    }
+    // Unassign cards from removed tab
+    cards?.forEach(card => {
+      if (card.tab_id === tabId && id) {
+        updateDashboardCard.mutate({
+          dashboardId: id,
+          id: card.id,
+          tab_id: undefined,
+        })
+      }
+    })
   }
 
   if (loadingDashboard && !isNew) {
     return (
-      <Container size="xl" py="lg">
+      <Box px="lg" py="lg" style={{ width: '100%' }}>
         <Group justify="center" py="xl">
           <Loader size="lg" />
           <Text>Loading dashboard...</Text>
         </Group>
-      </Container>
+      </Box>
     )
   }
 
@@ -497,12 +604,13 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
       </Box>
 
       {/* Dashboard Grid */}
-      <Container size="xl" py="lg">
+      <Box ref={gridContainerRef} px="lg" py="lg" style={{ width: '100%' }}>
         {/* Dashboard Filters */}
         {(dashboardFilters.length > 0 || editMode) && !isNew && (
           <DashboardFilters
             filters={dashboardFilters}
             filterValues={filterValues}
+            filterOptions={filterOptions}
             onFilterChange={handleFilterChange}
             onAddFilter={editMode ? (filter) => {
               const newFilter: DashboardFilter = {
@@ -511,10 +619,24 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 dashboard_id: id!,
               }
               setDashboardFilters(prev => [...prev, newFilter])
+              // Initialize with sample options for category filters
+              if (filter.type === 'category' || filter.display_type === 'dropdown') {
+                // These would typically come from column scan results
+                // For now, use sample data based on common Northwind columns
+                const sampleOptions = getSampleFilterOptions(filter.name)
+                if (sampleOptions.length > 0) {
+                  setFilterOptions(prev => ({ ...prev, [newFilter.id]: sampleOptions }))
+                }
+              }
             } : undefined}
             onRemoveFilter={editMode ? (filterId) => {
               setDashboardFilters(prev => prev.filter(f => f.id !== filterId))
               setFilterValues(prev => {
+                const next = { ...prev }
+                delete next[filterId]
+                return next
+              })
+              setFilterOptions(prev => {
                 const next = { ...prev }
                 delete next[filterId]
                 return next
@@ -524,18 +646,94 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
           />
         )}
 
-        {cards && cards.length > 0 ? (
+        {/* Dashboard Tabs */}
+        {(dashboardTabs.length > 0 || editMode) && !isNew && (
+          <Paper withBorder radius="sm" mb="md" p={0} style={{ backgroundColor: 'white' }}>
+            <Group gap={0} wrap="nowrap">
+              <Tabs
+                value={activeTab || ''}
+                onChange={(value) => setActiveTab(value === '' ? null : value)}
+                style={{ flex: 1 }}
+              >
+                <Tabs.List style={{ borderBottom: 'none' }}>
+                  <Tabs.Tab value="" key="all">
+                    All
+                  </Tabs.Tab>
+                  {dashboardTabs.map((tab) => (
+                    <Tabs.Tab
+                      key={tab.id}
+                      value={tab.id}
+                      onDoubleClick={() => {
+                        if (editMode) {
+                          setEditingTabId(tab.id)
+                          setEditingTabName(tab.name)
+                        }
+                      }}
+                      rightSection={editMode && (
+                        <ActionIcon
+                          size="xs"
+                          variant="subtle"
+                          color="gray"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRemoveTab(tab.id)
+                          }}
+                        >
+                          <IconX size={12} />
+                        </ActionIcon>
+                      )}
+                    >
+                      {editingTabId === tab.id ? (
+                        <TextInput
+                          size="xs"
+                          value={editingTabName}
+                          onChange={(e) => setEditingTabName(e.target.value)}
+                          onBlur={() => handleRenameTab(tab.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRenameTab(tab.id)
+                            if (e.key === 'Escape') {
+                              setEditingTabId(null)
+                              setEditingTabName('')
+                            }
+                          }}
+                          autoFocus
+                          styles={{ input: { minWidth: 60, padding: '2px 6px', height: 24 } }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        tab.name
+                      )}
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+              </Tabs>
+              {editMode && (
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="md"
+                  mr="xs"
+                  onClick={handleAddTab}
+                >
+                  <IconPlus size={16} />
+                </ActionIcon>
+              )}
+            </Group>
+          </Paper>
+        )}
+
+        {filteredCards && filteredCards.length > 0 ? (
           <GridLayout
-            width={1200}
+            width={gridWidth}
             className="layout"
-            layout={layout}
+            layout={filteredLayout}
             data-testid="dashboard-grid"
             gridConfig={{ cols: 18, rowHeight: 80, margin: [16, 16], containerPadding: null, maxRows: Infinity }}
             dragConfig={{ enabled: editMode, bounded: false, handle: '.drag-handle', threshold: 3 }}
             resizeConfig={{ enabled: editMode }}
             onLayoutChange={handleLayoutChange}
           >
-            {cards.map(card => (
+            {filteredCards.map(card => (
               <div key={card.id} data-testid="dashboard-card">
                 <DashboardCardComponent
                   card={card}
@@ -546,6 +744,17 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                   onRefresh={() => loadCardResult(card)}
                   onRemove={() => handleRemoveCard(card.id)}
                   onNavigate={() => card.question_id && navigate(`/question/${card.question_id}`)}
+                  onUpdateContent={(content, title) => {
+                    if (!id) return
+                    const update: any = { dashboardId: id, id: card.id }
+                    if (card.card_type === 'link') {
+                      update.title = title || content
+                      update.settings = { ...card.settings, url: content }
+                    } else {
+                      update.content = content
+                    }
+                    updateDashboardCard.mutate(update)
+                  }}
                 />
               </div>
             ))}
@@ -563,7 +772,9 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 <Text c="dimmed" maw={400} mx="auto">
                   {isNew
                     ? 'Give your dashboard a name and save it, then add cards to visualize your data.'
-                    : 'Click "Add Card" to add questions to this dashboard.'}
+                    : activeTab
+                      ? 'No cards in this tab. Add cards and assign them to this tab.'
+                      : 'Click "Add Card" to add questions to this dashboard.'}
                 </Text>
               </div>
               {isNew ? (
@@ -586,7 +797,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
             </Stack>
           </Paper>
         )}
-      </Container>
+      </Box>
 
       {/* Save Modal */}
       <Modal opened={saveModalOpened} onClose={closeSaveModal} title="Save Dashboard">
@@ -694,6 +905,7 @@ function DashboardCardComponent({
   onRefresh,
   onRemove,
   onNavigate,
+  onUpdateContent,
 }: {
   card: DashboardCard
   question: Question | undefined
@@ -703,11 +915,23 @@ function DashboardCardComponent({
   onRefresh: () => void
   onRemove: () => void
   onNavigate: () => void
+  onUpdateContent?: (content: string, title?: string) => void
 }) {
   const [hovered, setHovered] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState(card.content || card.title || '')
+  const [editTitle, setEditTitle] = useState(card.title || '')
+  const [editUrl, setEditUrl] = useState(card.settings?.url || '')
 
   // Text or heading card
   if (card.card_type === 'text' || card.card_type === 'heading') {
+    const handleSaveContent = () => {
+      if (onUpdateContent && editContent !== (card.content || card.title)) {
+        onUpdateContent(editContent)
+      }
+      setIsEditing(false)
+    }
+
     return (
       <Paper
         withBorder
@@ -732,27 +956,80 @@ function DashboardCardComponent({
             )}
           </Group>
         )}
-        <Text
-          fw={card.card_type === 'heading' ? 600 : 400}
-          size={card.card_type === 'heading' ? 'lg' : 'sm'}
-        >
-          {card.content || card.title || 'Click to edit...'}
-        </Text>
+        {isEditing && editMode ? (
+          card.card_type === 'heading' ? (
+            <TextInput
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onBlur={handleSaveContent}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveContent()
+                if (e.key === 'Escape') {
+                  setEditContent(card.content || card.title || '')
+                  setIsEditing(false)
+                }
+              }}
+              autoFocus
+              variant="unstyled"
+              styles={{ input: { fontWeight: 600, fontSize: 'var(--mantine-font-size-lg)' } }}
+            />
+          ) : (
+            <Textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onBlur={handleSaveContent}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setEditContent(card.content || card.title || '')
+                  setIsEditing(false)
+                }
+              }}
+              autoFocus
+              variant="unstyled"
+              autosize
+              minRows={2}
+              styles={{ input: { fontSize: 'var(--mantine-font-size-sm)' } }}
+            />
+          )
+        ) : (
+          <Text
+            fw={card.card_type === 'heading' ? 600 : 400}
+            size={card.card_type === 'heading' ? 'lg' : 'sm'}
+            onClick={() => editMode && setIsEditing(true)}
+            style={{ cursor: editMode ? 'text' : 'default' }}
+          >
+            {card.content || card.title || (editMode ? 'Click to edit...' : '')}
+          </Text>
+        )}
       </Paper>
     )
   }
 
   // Link card
   if (card.card_type === 'link') {
+    const handleSaveLinkContent = () => {
+      if (onUpdateContent) {
+        onUpdateContent(editUrl, editTitle)
+      }
+      setIsEditing(false)
+    }
+
+    const handleLinkClick = () => {
+      if (!editMode && card.settings?.url) {
+        window.open(card.settings.url, '_blank')
+      }
+    }
+
     return (
       <Paper
         withBorder
         radius="md"
         p="md"
         h="100%"
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: editMode ? 'default' : 'pointer' }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
+        onClick={handleLinkClick}
       >
         {editMode && (
           <Group
@@ -769,10 +1046,41 @@ function DashboardCardComponent({
             )}
           </Group>
         )}
-        <Group gap="sm">
-          <IconLink size={16} />
-          <Text>{card.title || 'Link'}</Text>
-        </Group>
+        {isEditing && editMode ? (
+          <Stack gap="xs">
+            <TextInput
+              size="sm"
+              placeholder="Link title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              leftSection={<IconLink size={14} />}
+            />
+            <TextInput
+              size="sm"
+              placeholder="URL (e.g., https://example.com)"
+              value={editUrl}
+              onChange={(e) => setEditUrl(e.target.value)}
+            />
+            <Group gap="xs">
+              <Button size="xs" onClick={handleSaveLinkContent}>Save</Button>
+              <Button size="xs" variant="light" onClick={() => {
+                setEditTitle(card.title || '')
+                setEditUrl(card.settings?.url || '')
+                setIsEditing(false)
+              }}>Cancel</Button>
+            </Group>
+          </Stack>
+        ) : (
+          <Group gap="sm" onClick={(e) => {
+            if (editMode) {
+              e.stopPropagation()
+              setIsEditing(true)
+            }
+          }}>
+            <IconLink size={16} />
+            <Text>{card.title || (editMode ? 'Click to configure link...' : 'Link')}</Text>
+          </Group>
+        )}
       </Paper>
     )
   }
