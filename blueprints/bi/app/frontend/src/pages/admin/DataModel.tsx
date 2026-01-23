@@ -83,7 +83,7 @@ export default function DataModel() {
 
   const handleSyncTables = async (dsId: string) => {
     try {
-      const result = await syncDatasource.mutateAsync(dsId)
+      const result = await syncDatasource.mutateAsync({ id: dsId })
       notifications.show({
         title: 'Tables synced',
         message: `Synced ${result.tables_synced} tables from database`,
@@ -162,7 +162,7 @@ export default function DataModel() {
             datasources={datasources || []}
             onSync={handleSyncTables}
             onDelete={handleDeleteDatasource}
-            syncingId={syncDatasource.isPending ? syncDatasource.variables : null}
+            syncingId={syncDatasource.isPending ? syncDatasource.variables?.id ?? null : null}
           />
         </Tabs.Panel>
 
