@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Box, Text, Paper, Table, Skeleton, Group, Badge } from '@mantine/core'
+import { Box, Text, Paper, Skeleton, Group, Badge } from '@mantine/core'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -7,6 +7,8 @@ import {
 } from 'recharts'
 import type { QueryResult, VisualizationSettings, VisualizationType } from '../../api/types'
 import { chartColors } from '../../theme'
+import { TableVisualization } from './table'
+import type { TableSettings } from './table'
 
 interface VisualizationProps {
   result: QueryResult
@@ -64,7 +66,13 @@ export default function Visualization({
       return <PivotVisualization data={data} columns={columns} settings={settings} />
     case 'table':
     default:
-      return <TableVisualization data={data} columns={columns} settings={settings} />
+      return (
+        <TableVisualization
+          result={result}
+          settings={settings as TableSettings}
+          height={height}
+        />
+      )
   }
 }
 
@@ -605,7 +613,7 @@ function ComboVisualization({
   )
 }
 
-// Pivot table visualization
+// Pivot table visualization - Uses enhanced TableVisualization
 function PivotVisualization({
   data,
   columns,
@@ -616,62 +624,11 @@ function PivotVisualization({
   settings?: Record<string, any>
 }) {
   // Simple pivot implementation - shows grouped data
-  return <TableVisualization data={data} columns={columns} settings={settings} />
-}
-
-// Table visualization
-function TableVisualization({
-  data,
-  columns,
-  settings,
-}: {
-  data: Record<string, any>[]
-  columns: { name: string; display_name: string; type: string }[]
-  settings?: Record<string, any>
-}) {
-  const maxRows = settings?.maxRows || 100
-
-  const formatValue = (value: any, type: string) => {
-    if (value === null || value === undefined) return '-'
-    if (type === 'number' && typeof value === 'number') {
-      return value.toLocaleString()
-    }
-    if (type === 'datetime' || type === 'date') {
-      return new Date(value).toLocaleString()
-    }
-    return String(value)
-  }
-
   return (
-    <Box style={{ overflow: 'auto', maxHeight: settings?.maxHeight || 500 }}>
-      <Table striped highlightOnHover withTableBorder stickyHeader>
-        <Table.Thead>
-          <Table.Tr>
-            {columns.map((col) => (
-              <Table.Th key={col.name} style={{ whiteSpace: 'nowrap' }}>
-                {col.display_name || col.name}
-              </Table.Th>
-            ))}
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {data.slice(0, maxRows).map((row, i) => (
-            <Table.Tr key={i}>
-              {columns.map((col) => (
-                <Table.Td key={col.name} style={{ whiteSpace: 'nowrap' }}>
-                  {formatValue(row[col.name], col.type)}
-                </Table.Td>
-              ))}
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-      {data.length > maxRows && (
-        <Text size="sm" c="dimmed" ta="center" py="sm">
-          Showing {maxRows} of {data.length} rows
-        </Text>
-      )}
-    </Box>
+    <TableVisualization
+      result={{ columns, rows: data, row_count: data.length, duration_ms: 0 }}
+      settings={settings as TableSettings}
+    />
   )
 }
 

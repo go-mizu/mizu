@@ -1,0 +1,52 @@
+/* Table Settings Panel - Column configuration and conditional formatting */
+
+.panel {
+  padding: 0;
+}
+
+.columnRow {
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 2px;
+  transition: background-color 0.1s ease;
+}
+
+.columnRow:hover {
+  background-color: #f9fbfc;
+}
+
+.dragging {
+  background-color: #eef6fc;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dragHandle {
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.radioLabel input[type="radio"] {
+  accent-color: #509ee3;
+}
+
+.searchInput {
+  margin-bottom: 8px;
+}
+
+.addAllRow {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
