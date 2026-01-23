@@ -93,8 +93,26 @@ func (h *Questions) Execute(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": "Data source not found"})
 	}
 
-	// Execute the query
-	result, err := executeQuery(ds, q.Query)
+	var result *store.QueryResult
+
+	// Check if this is a native SQL query
+	if q.QueryType == "native" {
+		// Extract SQL from query object
+		sqlQuery, ok := q.Query["sql"].(string)
+		if !ok || sqlQuery == "" {
+			return c.JSON(400, map[string]string{"error": "Native query missing SQL"})
+		}
+		// Extract params if present
+		var params []any
+		if p, ok := q.Query["params"].([]any); ok {
+			params = p
+		}
+		result, err = executeNativeQuery(ds, sqlQuery, params)
+	} else {
+		// Execute structured query
+		result, err = executeQuery(ds, q.Query)
+	}
+
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
