@@ -17,17 +17,17 @@ func NewServe() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the BI server",
 		Long: `Start the BI server including:
-  - Dashboard UI on :3000
-  - REST API on :3000/api
+  - Dashboard UI on :8080
+  - REST API on :8080/api
 
 Examples:
   bi serve                    # Start with defaults
-  bi serve --addr :8080       # Custom port
+  bi serve --addr :9000       # Custom port
   bi serve --dev              # Enable development mode`,
 		RunE: runServe,
 	}
 
-	cmd.Flags().StringP("addr", "a", ":3000", "Server address")
+	cmd.Flags().StringP("addr", "a", ":8080", "Server address")
 
 	return cmd
 }

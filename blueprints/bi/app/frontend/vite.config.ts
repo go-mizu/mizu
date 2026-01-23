@@ -12,22 +12,61 @@ export default defineConfig({
   build: {
     outDir: '../../assets/static/dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-mantine': [
-            '@mantine/core',
-            '@mantine/hooks',
-            '@mantine/modals',
-            '@mantine/notifications',
-            '@mantine/dates',
-            '@mantine/code-highlight',
-          ],
-          'vendor-icons': ['@tabler/icons-react'],
-          'vendor-charts': ['recharts'],
-          'vendor-dnd': ['@hello-pangea/dnd', 'react-grid-layout'],
-          'vendor-utils': ['@tanstack/react-query', 'zustand', 'dayjs'],
+        manualChunks: (id) => {
+          // React core
+          if (id.includes('node_modules/react/') ||
+              id.includes('node_modules/react-dom/') ||
+              id.includes('node_modules/react-router-dom/')) {
+            return 'vendor-react'
+          }
+
+          // Mantine UI
+          if (id.includes('node_modules/@mantine/')) {
+            return 'vendor-mantine'
+          }
+
+          // Icons
+          if (id.includes('node_modules/@tabler/icons-react')) {
+            return 'vendor-icons'
+          }
+
+          // Charts (recharts)
+          if (id.includes('node_modules/recharts') ||
+              id.includes('node_modules/d3-') ||
+              id.includes('node_modules/victory-')) {
+            return 'vendor-charts'
+          }
+
+          // DnD and grid
+          if (id.includes('node_modules/@hello-pangea/dnd') ||
+              id.includes('node_modules/react-grid-layout')) {
+            return 'vendor-dnd'
+          }
+
+          // CodeMirror (SQL editor) - this is heavy
+          if (id.includes('node_modules/@codemirror/') ||
+              id.includes('node_modules/@uiw/react-codemirror') ||
+              id.includes('node_modules/@lezer/') ||
+              id.includes('node_modules/crelt') ||
+              id.includes('node_modules/style-mod') ||
+              id.includes('node_modules/w3c-keyname')) {
+            return 'vendor-codemirror'
+          }
+
+          // SQL formatter
+          if (id.includes('node_modules/sql-formatter')) {
+            return 'vendor-sql'
+          }
+
+          // Utils
+          if (id.includes('node_modules/@tanstack/react-query') ||
+              id.includes('node_modules/zustand') ||
+              id.includes('node_modules/dayjs')) {
+            return 'vendor-utils'
+          }
         },
       },
     },
@@ -36,7 +75,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },

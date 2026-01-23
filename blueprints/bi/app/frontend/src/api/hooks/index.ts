@@ -274,11 +274,11 @@ export function useDiscardCachedValues() {
 }
 
 // Columns
-export function useColumns(tableId: string) {
+export function useColumns(datasourceId: string, tableId: string) {
   return useQuery({
     queryKey: queryKeys.columns(tableId),
-    queryFn: () => api.get<Column[]>(`/datasources/tables/${tableId}/columns`),
-    enabled: !!tableId,
+    queryFn: () => api.get<Column[]>(`/datasources/${datasourceId}/tables/${tableId}/columns`),
+    enabled: !!datasourceId && !!tableId,
   })
 }
 

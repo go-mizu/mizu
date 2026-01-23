@@ -59,7 +59,7 @@ export default function FilterBuilder({
     const table = tables?.find(t => t.name === sourceTable || t.id === sourceTable)
     return table?.id || ''
   }, [tables, sourceTable])
-  const { data: columns } = useColumns(selectedTableId)
+  const { data: columns } = useColumns(datasourceId || '', selectedTableId)
 
   const columnOptions = useMemo(() => {
     return (columns || []).map(c => ({

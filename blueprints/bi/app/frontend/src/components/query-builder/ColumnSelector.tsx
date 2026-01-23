@@ -118,6 +118,7 @@ export default function ColumnSelector({
             <TableColumns
               key={table.id}
               table={table}
+              datasourceId={datasourceId!}
               search={search}
               expanded={expandedTables[table.id] ?? expandedTables[table.name] ?? true}
               onToggle={() => toggleTable(table.id)}
@@ -137,6 +138,7 @@ export default function ColumnSelector({
 
 function TableColumns({
   table,
+  datasourceId,
   search,
   expanded,
   onToggle,
@@ -144,13 +146,14 @@ function TableColumns({
   onToggleColumn,
 }: {
   table: Table
+  datasourceId: string
   search: string
   expanded: boolean
   onToggle: () => void
   isColumnSelected: (column: string) => boolean
   onToggleColumn: (column: string) => void
 }) {
-  const { data: columns, isLoading } = useColumns(table.id)
+  const { data: columns, isLoading } = useColumns(datasourceId, table.id)
 
   const filteredColumns = useMemo(() => {
     if (!search.trim()) return columns || []

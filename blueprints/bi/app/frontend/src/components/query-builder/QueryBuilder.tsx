@@ -68,7 +68,7 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
     const foundTable = tables?.find(t => t.name === sourceTable || t.id === sourceTable)
     return foundTable?.id || ''
   }, [tables, sourceTable])
-  const { data: sourceColumns } = useColumns(selectedTableId)
+  const { data: sourceColumns } = useColumns(datasourceId || '', selectedTableId)
 
   // Function to get columns for any table
   const getColumnsForTable = (_tableName: string) => {
@@ -429,7 +429,7 @@ function SortBuilder({
     const table = tables?.find(t => t.name === sourceTable || t.id === sourceTable)
     return table?.id || ''
   }, [tables, sourceTable])
-  const { data: columns } = useColumns(selectedTableId)
+  const { data: columns } = useColumns(datasourceId || '', selectedTableId)
 
   const columnOptions = useMemo(() => {
     return (columns || []).map(c => ({

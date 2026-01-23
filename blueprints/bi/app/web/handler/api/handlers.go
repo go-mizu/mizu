@@ -96,12 +96,14 @@ func (h *Dashboards) AddCard(c *mizu.Ctx) error {
 }
 
 func (h *Dashboards) UpdateCard(c *mizu.Ctx) error {
+	dashboardID := c.Param("id")
 	cardID := c.Param("card")
 	var card store.DashboardCard
 	if err := c.BindJSON(&card, 1<<20); err != nil {
 		return c.JSON(400, map[string]string{"error": "Invalid request body"})
 	}
 	card.ID = cardID
+	card.DashboardID = dashboardID
 	if err := h.store.Dashboards().UpdateCard(c.Request().Context(), &card); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}

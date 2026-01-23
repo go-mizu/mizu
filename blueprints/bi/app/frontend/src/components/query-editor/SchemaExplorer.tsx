@@ -94,6 +94,7 @@ export default function SchemaExplorer({ datasourceId, onInsertText }: SchemaExp
               <TableItem
                 key={table.id}
                 table={table}
+                datasourceId={datasourceId!}
                 expanded={expandedTables.has(table.id)}
                 onToggle={() => toggleTable(table.id)}
                 onDoubleClick={handleDoubleClick}
@@ -114,13 +115,14 @@ export default function SchemaExplorer({ datasourceId, onInsertText }: SchemaExp
 
 interface TableItemProps {
   table: Table
+  datasourceId: string
   expanded: boolean
   onToggle: () => void
   onDoubleClick: (text: string) => void
 }
 
-function TableItem({ table, expanded, onToggle, onDoubleClick }: TableItemProps) {
-  const { data: columns, isLoading } = useColumns(expanded ? table.id : '')
+function TableItem({ table, datasourceId, expanded, onToggle, onDoubleClick }: TableItemProps) {
+  const { data: columns, isLoading } = useColumns(expanded ? datasourceId : '', expanded ? table.id : '')
 
   return (
     <Box>
