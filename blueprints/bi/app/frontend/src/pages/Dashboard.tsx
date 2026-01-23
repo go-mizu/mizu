@@ -14,7 +14,7 @@ import {
   IconTrash, IconRefresh, IconLayoutDashboard, IconChartBar,
   IconMaximize, IconFilter, IconClock, IconLink,
   IconGripVertical, IconLetterCase, IconBookmark, IconBookmarkFilled,
-  IconArrowsMaximize, IconX
+  IconArrowsMaximize, IconX, IconPencil, IconSettings
 } from '@tabler/icons-react'
 import Visualization from '../components/visualizations'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
@@ -359,7 +359,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   }
 
   // Handle grid layout change
-  const handleLayoutChange = useCallback(async (newLayout: Layout) => {
+  const handleLayoutChange = useCallback(async (newLayout: Layout[]) => {
     if (!id || !editMode) return
 
     // Update each card position
@@ -395,7 +395,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
   }, [cards, activeTab])
 
   // Filter layout to match filtered cards
-  const filteredLayout: Layout = useMemo(() => {
+  const filteredLayout: Layout[] = useMemo(() => {
     return filteredCards.map(card => ({
       i: card.id,
       x: card.col,
@@ -732,9 +732,12 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
             width={gridWidth}
             className="dashboard-grid"
             layout={filteredLayout}
-            gridConfig={{ cols: 18, rowHeight: 80, margin: [16, 16] }}
-            dragConfig={{ enabled: editMode, handle: '.drag-handle' }}
-            resizeConfig={{ enabled: editMode }}
+            cols={18}
+            rowHeight={80}
+            margin={[16, 16]}
+            isDraggable={editMode}
+            isResizable={editMode}
+            draggableHandle=".drag-handle"
             onLayoutChange={handleLayoutChange}
           >
             {filteredCards.map(card => (
@@ -748,6 +751,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                   onRefresh={() => loadCardResult(card)}
                   onRemove={() => handleRemoveCard(card.id)}
                   onNavigate={() => card.question_id && navigate(`/question/${card.question_id}`)}
+                  onEdit={card.question_id ? () => navigate(`/question/${card.question_id}?edit=true&returnTo=/dashboard/${id}`) : undefined}
                   onUpdateContent={(content, title) => {
                     if (!id) return
                     const update: any = { dashboardId: id, id: card.id }
@@ -927,6 +931,7 @@ function DashboardCardComponent({
   onRefresh,
   onRemove,
   onNavigate,
+  onEdit,
   onUpdateContent,
 }: {
   card: DashboardCard
@@ -937,6 +942,7 @@ function DashboardCardComponent({
   onRefresh: () => void
   onRemove: () => void
   onNavigate: () => void
+  onEdit?: () => void
   onUpdateContent?: (content: string, title?: string) => void
 }) {
   const [hovered, setHovered] = useState(false)
@@ -1148,6 +1154,13 @@ function DashboardCardComponent({
                 <IconRefresh size={14} />
               </ActionIcon>
             </Tooltip>
+            {onEdit && (
+              <Tooltip label="Edit visualization">
+                <ActionIcon variant="subtle" size="sm" onClick={onEdit}>
+                  <IconPencil size={14} />
+                </ActionIcon>
+              </Tooltip>
+            )}
             <Tooltip label="Fullscreen">
               <ActionIcon variant="subtle" size="sm" onClick={onNavigate}>
                 <IconMaximize size={14} />
