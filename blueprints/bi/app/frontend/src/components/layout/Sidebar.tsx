@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Box, Text, TextInput, Group, UnstyledButton, Collapse, ActionIcon,
-  Tooltip, Menu, ScrollArea, Divider, Badge, rem
+  Tooltip, Menu, ScrollArea, Divider, Badge, rem, Button
 } from '@mantine/core'
 import {
-  IconHome2, IconLayoutGrid, IconPlus, IconLayoutDashboard, IconSettings2, IconSearch,
+  IconHome2, IconPlus, IconLayoutDashboard, IconSettings2, IconSearch,
   IconDatabase, IconUsers, IconChevronRight, IconChevronDown, IconLogout,
-  IconFileAnalytics, IconChartLine, IconClock, IconStar, IconChevronLeft,
-  IconTable, IconFolder, IconFolderFilled, IconSparkles, IconPencil
+  IconFileAnalytics, IconClock, IconStar,
+  IconFolder, IconFolderFilled, IconSparkles, IconPencil, IconMenu2,
+  IconUser, IconDots, IconChartPie
 } from '@tabler/icons-react'
 import { useCollections, useCurrentUser, useLogout } from '../../api/hooks'
 import { useUIStore } from '../../stores/uiStore'
@@ -33,40 +34,40 @@ const styles = {
     width: 60,
   },
   header: {
-    padding: `${rem(16)} ${rem(16)}`,
+    padding: `${rem(12)} ${rem(12)}`,
     borderBottom: `1px solid ${sidebarTheme.border}`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 64,
+    minHeight: 56,
   },
   logo: {
     display: 'flex',
     alignItems: 'center',
-    gap: rem(10),
+    gap: rem(8),
     cursor: 'pointer',
   },
   logoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: rem(8),
+    width: 28,
+    height: 28,
+    borderRadius: rem(6),
     background: `linear-gradient(135deg, ${semanticColors.brand} 0%, #3B7DBF 100%)`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchInput: {
-    padding: `${rem(8)} ${rem(16)}`,
+    padding: `${rem(8)} ${rem(12)}`,
   },
   navSection: {
-    padding: `${rem(8)} ${rem(12)}`,
+    padding: `${rem(4)} ${rem(8)}`,
   },
   navItem: {
     display: 'flex',
     alignItems: 'center',
     gap: rem(10),
-    padding: `${rem(10)} ${rem(12)}`,
-    borderRadius: rem(8),
+    padding: `${rem(8)} ${rem(12)}`,
+    borderRadius: rem(6),
     color: sidebarTheme.text,
     fontSize: rem(14),
     fontWeight: 500,
@@ -240,7 +241,7 @@ function NavItem({ icon: Icon, label, path, onClick, active, rightSection, colla
           ...styles.navItem,
           ...(isActive ? styles.navItemActive : {}),
           justifyContent: collapsed ? 'center' : 'flex-start',
-          padding: collapsed ? rem(12) : `${rem(10)} ${rem(12)}`,
+          padding: collapsed ? rem(12) : `${rem(8)} ${rem(12)}`,
         }}
         onMouseEnter={(e) => {
           if (!isActive) {
@@ -300,10 +301,9 @@ export default function Sidebar() {
   const getItemIcon = (type: string) => {
     switch (type) {
       case 'dashboard': return IconLayoutDashboard
-      case 'question': return IconChartLine
+      case 'question': return IconChartPie
       case 'collection': return IconFolder
-      case 'table': return IconTable
-      default: return IconChartLine
+      default: return IconChartPie
     }
   }
 
@@ -315,178 +315,181 @@ export default function Sidebar() {
         ...(collapsed ? styles.sidebarCollapsed : {}),
       }}
     >
-      {/* Header with Logo and New Button */}
+      {/* Header with Hamburger, Logo and New Button */}
       <Box style={styles.header}>
-        <UnstyledButton onClick={() => navigate('/')} style={styles.logo}>
-          <Box style={styles.logoIcon}>
-            <IconSparkles size={18} color="#ffffff" strokeWidth={2} />
-          </Box>
-          {!collapsed && (
-            <Text size="lg" fw={700} style={{ color: sidebarTheme.text }}>
-              Metabase
-            </Text>
-          )}
-        </UnstyledButton>
-
-        {!collapsed && (
-          <Group gap={4}>
-            {/* New Button with Dropdown */}
-            <Menu position="bottom-start" width={200} shadow="md">
-              <Menu.Target>
-                <ActionIcon
-                  variant="filled"
-                  color="brand"
-                  size="md"
-                  radius="md"
-                >
-                  <IconPlus size={16} strokeWidth={2.5} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item
-                  leftSection={<IconPencil size={16} color={semanticColors.brand} strokeWidth={1.75} />}
-                  onClick={() => navigate('/question/new')}
-                >
-                  New question
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} strokeWidth={1.75} />}
-                  onClick={() => navigate('/dashboard/new')}
-                >
-                  New dashboard
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Item
-                  leftSection={<IconFolder size={16} color={sidebarTheme.newCollection} strokeWidth={1.75} />}
-                  onClick={() => navigate('/collection/new')}
-                >
-                  New collection
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-
-            {/* Collapse Button */}
-            <Tooltip label="Collapse sidebar">
-              <ActionIcon
-                variant="subtle"
-                size="md"
-                onClick={toggleSidebar}
-                style={{ color: sidebarTheme.iconDefault }}
-              >
-                <IconChevronLeft size={18} strokeWidth={1.75} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        )}
-
-        {collapsed && (
-          <Tooltip label="Expand sidebar" position="right">
+        <Group gap="xs">
+          {/* Hamburger Menu - Metabase style */}
+          <Tooltip label={collapsed ? "Expand sidebar" : "Collapse sidebar"} position="right">
             <ActionIcon
               variant="subtle"
               size="md"
               onClick={toggleSidebar}
-              style={{ color: sidebarTheme.iconDefault, position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+              style={{ color: sidebarTheme.iconDefault }}
             >
-              <IconChevronRight size={18} strokeWidth={1.75} />
+              <IconMenu2 size={20} strokeWidth={1.75} />
             </ActionIcon>
           </Tooltip>
+
+          {!collapsed && (
+            <UnstyledButton onClick={() => navigate('/')} style={styles.logo}>
+              <Box style={styles.logoIcon}>
+                <IconSparkles size={16} color="#ffffff" strokeWidth={2} />
+              </Box>
+            </UnstyledButton>
+          )}
+        </Group>
+
+        {!collapsed && (
+          <Menu position="bottom-start" width={200} shadow="md">
+            <Menu.Target>
+              <ActionIcon
+                variant="filled"
+                color="brand"
+                size="md"
+                radius="md"
+              >
+                <IconPlus size={16} strokeWidth={2.5} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item
+                leftSection={<IconPencil size={16} color={semanticColors.brand} strokeWidth={1.75} />}
+                onClick={() => navigate('/question/new')}
+              >
+                New question
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} strokeWidth={1.75} />}
+                onClick={() => navigate('/dashboard/new')}
+              >
+                New dashboard
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item
+                leftSection={<IconFolder size={16} color={sidebarTheme.newCollection} strokeWidth={1.75} />}
+                onClick={() => navigate('/collection/new')}
+              >
+                New collection
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
         )}
       </Box>
 
-      {/* Search */}
-      {!collapsed && (
-        <Box style={styles.searchInput}>
-          <TextInput
-            placeholder="Search..."
-            leftSection={<IconSearch size={16} color={sidebarTheme.inputPlaceholder} strokeWidth={1.75} />}
-            size="sm"
-            onClick={openCommandPalette}
-            readOnly
-            rightSection={
-              <Badge size="xs" variant="light" color="gray" style={{ cursor: 'pointer' }}>
-                ⌘K
-              </Badge>
-            }
-            styles={{
-              input: {
-                backgroundColor: sidebarTheme.inputBg,
-                border: `1px solid ${sidebarTheme.inputBorder}`,
-                color: sidebarTheme.inputText,
-                cursor: 'pointer',
-                '&::placeholder': {
-                  color: sidebarTheme.inputPlaceholder,
-                },
-                '&:hover': {
-                  backgroundColor: '#F0F0F0',
-                  borderColor: '#E0E0E0',
-                },
-              },
-            }}
-          />
-        </Box>
-      )}
-
       {/* Main Navigation */}
       <ScrollArea style={{ flex: 1 }} scrollbarSize={6}>
+        {/* Search */}
+        {!collapsed && (
+          <Box style={styles.searchInput}>
+            <TextInput
+              placeholder="Search..."
+              leftSection={<IconSearch size={16} color={sidebarTheme.inputPlaceholder} strokeWidth={1.75} />}
+              size="sm"
+              onClick={openCommandPalette}
+              readOnly
+              rightSection={
+                <Badge size="xs" variant="light" color="gray" style={{ cursor: 'pointer' }}>
+                  K
+                </Badge>
+              }
+              styles={{
+                input: {
+                  backgroundColor: sidebarTheme.inputBg,
+                  border: `1px solid ${sidebarTheme.inputBorder}`,
+                  color: sidebarTheme.inputText,
+                  cursor: 'pointer',
+                  '&::placeholder': {
+                    color: sidebarTheme.inputPlaceholder,
+                  },
+                  '&:hover': {
+                    backgroundColor: '#F0F0F0',
+                    borderColor: '#E0E0E0',
+                  },
+                },
+              }}
+            />
+          </Box>
+        )}
+
         <Box style={styles.navSection}>
           {/* Home */}
           <NavItem icon={IconHome2} label="Home" path="/" collapsed={collapsed} />
 
-          {/* Browse with submenu */}
-          <NavItem
-            icon={IconLayoutGrid}
-            label="Browse"
-            onClick={() => {
-              if (!collapsed) setBrowseExpanded(!browseExpanded)
-              else navigate('/browse')
-            }}
-            active={location.pathname.startsWith('/browse') && location.pathname === '/browse'}
-            rightSection={!collapsed && (
-              <IconChevronRight
-                size={14}
-                style={{
-                  color: sidebarTheme.iconDefault,
-                  transform: browseExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s ease'
-                }}
-              />
-            )}
-            collapsed={collapsed}
-          />
+          {/* Browse Section - Metabase order: Models, Databases */}
+          {!collapsed && (
+            <Box style={styles.sectionHeader}>
+              <Text
+                style={{ ...styles.sectionTitle, cursor: 'pointer' }}
+                onClick={() => setBrowseExpanded(!browseExpanded)}
+              >
+                BROWSE
+              </Text>
+              <ActionIcon
+                size="xs"
+                variant="transparent"
+                onClick={() => setBrowseExpanded(!browseExpanded)}
+                style={{ color: sidebarTheme.sectionTitle }}
+              >
+                <IconChevronRight
+                  size={12}
+                  style={{
+                    transform: browseExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.2s ease'
+                  }}
+                />
+              </ActionIcon>
+            </Box>
+          )}
 
           {!collapsed && (
             <Collapse in={browseExpanded}>
-              <Box pl={20}>
-                <NavItem icon={IconDatabase} label="Databases" path="/browse/databases" />
-                <NavItem icon={IconFileAnalytics} label="Models" path="/browse/models" />
-                <NavItem icon={IconChartLine} label="Metrics" path="/browse/metrics" />
-              </Box>
+              <NavItem icon={IconFileAnalytics} label="Models" path="/browse/models" />
+              <NavItem icon={IconDatabase} label="Databases" path="/browse/databases" />
             </Collapse>
           )}
 
-          <Divider my="sm" color={sidebarTheme.border} />
+          {collapsed && (
+            <>
+              <NavItem icon={IconFileAnalytics} label="Models" path="/browse/models" collapsed={collapsed} />
+              <NavItem icon={IconDatabase} label="Databases" path="/browse/databases" collapsed={collapsed} />
+            </>
+          )}
 
-          {/* Quick Create */}
-          <NavItem
-            icon={IconPencil}
-            label="New question"
-            path="/question/new"
-            iconColor={sidebarTheme.newQuestion}
-            collapsed={collapsed}
-          />
-          <NavItem
-            icon={IconLayoutDashboard}
-            label="New dashboard"
-            path="/dashboard/new"
-            iconColor={sidebarTheme.newDashboard}
-            collapsed={collapsed}
-          />
+          {/* Add your own data button - Metabase style */}
+          {!collapsed && (
+            <Button
+              fullWidth
+              leftSection={<IconPlus size={16} />}
+              variant="filled"
+              color="brand"
+              size="sm"
+              radius="md"
+              style={{ margin: '12px 0' }}
+              onClick={() => navigate('/admin/datamodel?add=true')}
+            >
+              Add your own data
+            </Button>
+          )}
+
+          {collapsed && (
+            <Tooltip label="Add your own data" position="right">
+              <ActionIcon
+                variant="filled"
+                color="brand"
+                size="lg"
+                radius="md"
+                style={{ margin: '8px auto', display: 'flex' }}
+                onClick={() => navigate('/admin/datamodel?add=true')}
+              >
+                <IconPlus size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
         </Box>
 
         {/* Bookmarks Section */}
         {!collapsed && bookmarks.length > 0 && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" color={sidebarTheme.border} />
             <Box style={styles.sectionHeader}>
               <Group gap="xs">
                 <IconStar size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
@@ -527,7 +530,6 @@ export default function Sidebar() {
         {/* Recents Section */}
         {!collapsed && recentItems.length > 0 && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" color={sidebarTheme.border} />
             <Box style={styles.sectionHeader}>
               <Group gap="xs">
                 <IconClock size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
@@ -565,26 +567,37 @@ export default function Sidebar() {
           </Box>
         )}
 
-        {/* Collections Section */}
-        {!collapsed && rootCollections.length > 0 && (
+        {/* Collections Section - Metabase style */}
+        {!collapsed && (
           <Box style={styles.navSection}>
-            <Divider mb="sm" color={sidebarTheme.border} />
             <Box style={styles.sectionHeader}>
-              <Group gap="xs">
-                <IconFolder size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
-                <Text style={styles.sectionTitle}>Collections</Text>
-              </Group>
+              <Text style={styles.sectionTitle}>COLLECTIONS</Text>
               <Group gap={4}>
-                <Tooltip label="New collection">
-                  <ActionIcon
-                    size="xs"
-                    variant="transparent"
-                    onClick={() => navigate('/collection/new')}
-                    style={{ color: sidebarTheme.sectionTitle }}
-                  >
-                    <IconPlus size={12} strokeWidth={2} />
-                  </ActionIcon>
-                </Tooltip>
+                <Menu position="bottom-end" width={180}>
+                  <Menu.Target>
+                    <ActionIcon
+                      size="xs"
+                      variant="transparent"
+                      style={{ color: sidebarTheme.sectionTitle }}
+                    >
+                      <IconDots size={14} strokeWidth={2} />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item
+                      leftSection={<IconPlus size={14} />}
+                      onClick={() => navigate('/collection/new')}
+                    >
+                      New collection
+                    </Menu.Item>
+                    <Menu.Item
+                      leftSection={<IconFolder size={14} />}
+                      onClick={() => navigate('/browse')}
+                    >
+                      Browse all
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
                 <ActionIcon
                   size="xs"
                   variant="transparent"
@@ -602,6 +615,23 @@ export default function Sidebar() {
               </Group>
             </Box>
             <Collapse in={collectionsExpanded}>
+              {/* Our analytics (root collection) - Metabase style */}
+              <NavItem
+                icon={IconFolder}
+                label="Our analytics"
+                path="/collection/root"
+                iconColor="#7172AD"
+              />
+
+              {/* Your personal collection - Metabase style */}
+              <NavItem
+                icon={IconUser}
+                label="Your personal collection"
+                path="/collection/personal"
+                iconColor="#509EE3"
+              />
+
+              {/* User-created collections */}
               {rootCollections.map(collection => (
                 <CollectionItem
                   key={collection.id}

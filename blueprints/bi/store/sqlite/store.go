@@ -155,6 +155,8 @@ func (s *Store) Ensure(ctx context.Context) error {
 		description TEXT,
 		parent_id TEXT REFERENCES collections(id) ON DELETE CASCADE,
 		color TEXT,
+		type TEXT DEFAULT '',
+		owner_id TEXT,
 		created_by TEXT,
 		created_at DATETIME NOT NULL
 	);
@@ -339,6 +341,8 @@ func (s *Store) Ensure(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_dashboards_collection ON dashboards(collection_id);
 	CREATE INDEX IF NOT EXISTS idx_dashboard_cards_dashboard ON dashboard_cards(dashboard_id);
 	CREATE INDEX IF NOT EXISTS idx_collections_parent ON collections(parent_id);
+	CREATE INDEX IF NOT EXISTS idx_collections_type ON collections(type);
+	CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner_id);
 	CREATE INDEX IF NOT EXISTS idx_models_collection ON models(collection_id);
 	CREATE INDEX IF NOT EXISTS idx_metrics_table ON metrics(table_id);
 	CREATE INDEX IF NOT EXISTS idx_alerts_question ON alerts(question_id);

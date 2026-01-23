@@ -181,9 +181,91 @@ func (h *Collections) ListItems(c *mizu.Ctx) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
 
+	// Handle special collection IDs
+	if id == "root" {
+		root, err := h.store.Collections().EnsureRootCollection(ctx)
+		if err != nil {
+			return c.JSON(500, map[string]string{"error": err.Error()})
+		}
+		id = root.ID
+	}
+
 	questions, _ := h.store.Questions().ListByCollection(ctx, id)
 	dashboards, _ := h.store.Dashboards().ListByCollection(ctx, id)
 	subcollections, _ := h.store.Collections().ListByParent(ctx, id)
+
+	return c.JSON(200, map[string]interface{}{
+		"questions":      questions,
+		"dashboards":     dashboards,
+		"subcollections": subcollections,
+	})
+}
+
+// GetRoot returns the root "Our analytics" collection.
+func (h *Collections) GetRoot(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+	col, err := h.store.Collections().EnsureRootCollection(ctx)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, col)
+}
+
+// GetPersonal returns the current user's personal collection.
+func (h *Collections) GetPersonal(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+
+	// Get current user from session
+	token := c.Request().Header.Get("Authorization")
+	if token == "" {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	session, err := h.store.Users().GetSession(ctx, token)
+	if err != nil || session == nil {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	user, err := h.store.Users().GetByID(ctx, session.UserID)
+	if err != nil || user == nil {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	col, err := h.store.Collections().EnsurePersonalCollection(ctx, user.ID, user.Name)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, col)
+}
+
+// GetPersonalItems returns items in the current user's personal collection.
+func (h *Collections) GetPersonalItems(c *mizu.Ctx) error {
+	ctx := c.Request().Context()
+
+	// Get current user from session
+	token := c.Request().Header.Get("Authorization")
+	if token == "" {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	session, err := h.store.Users().GetSession(ctx, token)
+	if err != nil || session == nil {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	user, err := h.store.Users().GetByID(ctx, session.UserID)
+	if err != nil || user == nil {
+		return c.JSON(401, map[string]string{"error": "Unauthorized"})
+	}
+
+	col, err := h.store.Collections().EnsurePersonalCollection(ctx, user.ID, user.Name)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	questions, _ := h.store.Questions().ListByCollection(ctx, col.ID)
+	dashboards, _ := h.store.Dashboards().ListByCollection(ctx, col.ID)
+	subcollections, _ := h.store.Collections().ListByParent(ctx, col.ID)
 
 	return c.JSON(200, map[string]interface{}{
 		"questions":      questions,

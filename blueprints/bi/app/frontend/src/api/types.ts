@@ -417,6 +417,9 @@ export interface DashboardTab {
   position: number
 }
 
+// Collection type constants
+export type CollectionType = 'root' | 'personal' | 'trash' | ''
+
 // Collection types
 export interface Collection {
   id: string
@@ -424,6 +427,8 @@ export interface Collection {
   description?: string
   parent_id?: string
   color?: string
+  type?: CollectionType  // root, personal, trash, or empty for regular
+  owner_id?: string      // for personal collections
   created_by?: string
   created_at: string
 }

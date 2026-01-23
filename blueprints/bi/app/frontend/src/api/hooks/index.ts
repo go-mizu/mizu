@@ -541,6 +541,43 @@ export function useDeleteCollection() {
   })
 }
 
+// Special Collections (root/personal)
+export function useRootCollection() {
+  return useQuery({
+    queryKey: ['collections', 'root'] as const,
+    queryFn: () => api.get<Collection>('/collections/root'),
+  })
+}
+
+export function useRootCollectionItems() {
+  return useQuery({
+    queryKey: ['collections', 'root', 'items'] as const,
+    queryFn: () => api.get<{
+      questions: Question[]
+      dashboards: Dashboard[]
+      subcollections: Collection[]
+    }>('/collections/root/items'),
+  })
+}
+
+export function usePersonalCollection() {
+  return useQuery({
+    queryKey: ['collections', 'personal'] as const,
+    queryFn: () => api.get<Collection>('/collections/personal'),
+  })
+}
+
+export function usePersonalCollectionItems() {
+  return useQuery({
+    queryKey: ['collections', 'personal', 'items'] as const,
+    queryFn: () => api.get<{
+      questions: Question[]
+      dashboards: Dashboard[]
+      subcollections: Collection[]
+    }>('/collections/personal/items'),
+  })
+}
+
 // Models
 export function useModels() {
   return useQuery({
