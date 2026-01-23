@@ -179,6 +179,12 @@ func (s *Server) setupRoutes() {
 		// Collections
 		apiGroup.Get("/collections", s.collectionsHandler.List)
 		apiGroup.Post("/collections", s.collectionsHandler.Create)
+		// Special collections (must be before {id} routes)
+		apiGroup.Get("/collections/root", s.collectionsHandler.GetRoot)
+		apiGroup.Get("/collections/root/items", s.collectionsHandler.ListItems)
+		apiGroup.Get("/collections/personal", s.collectionsHandler.GetPersonal)
+		apiGroup.Get("/collections/personal/items", s.collectionsHandler.GetPersonalItems)
+		// Standard collection routes
 		apiGroup.Get("/collections/{id}", s.collectionsHandler.Get)
 		apiGroup.Put("/collections/{id}", s.collectionsHandler.Update)
 		apiGroup.Delete("/collections/{id}", s.collectionsHandler.Delete)

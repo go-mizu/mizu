@@ -257,6 +257,14 @@ type FilterTarget struct {
 	ColumnID string `json:"column_id"`
 }
 
+// Collection type constants.
+const (
+	CollectionTypeRoot     = "root"
+	CollectionTypePersonal = "personal"
+	CollectionTypeTrash    = "trash"
+	CollectionTypeRegular  = ""
+)
+
 // Collection represents a folder for organizing items.
 type Collection struct {
 	ID          string    `json:"id"`
@@ -264,6 +272,8 @@ type Collection struct {
 	Description string    `json:"description,omitempty"`
 	ParentID    string    `json:"parent_id,omitempty"`
 	Color       string    `json:"color,omitempty"`
+	Type        string    `json:"type,omitempty"`     // root, personal, trash, or empty for regular
+	OwnerID     string    `json:"owner_id,omitempty"` // for personal collections
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -475,6 +485,11 @@ type CollectionStore interface {
 	ListByParent(ctx context.Context, parentID string) ([]*Collection, error)
 	Update(ctx context.Context, c *Collection) error
 	Delete(ctx context.Context, id string) error
+	// Special collections
+	GetRootCollection(ctx context.Context) (*Collection, error)
+	GetPersonalCollection(ctx context.Context, userID string) (*Collection, error)
+	EnsureRootCollection(ctx context.Context) (*Collection, error)
+	EnsurePersonalCollection(ctx context.Context, userID, userName string) (*Collection, error)
 }
 
 type ModelStore interface {
