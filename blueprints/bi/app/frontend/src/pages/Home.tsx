@@ -8,11 +8,10 @@ import {
 import {
   IconChartLine, IconLayoutDashboard, IconFolder, IconDatabase,
   IconPlus, IconDots, IconStar, IconClock,
-  IconArrowRight, IconSearch, IconBookmark, IconStarFilled,
-  IconSparkles, IconPencil
+  IconArrowRight, IconBookmark, IconStarFilled,
+  IconSparkles, IconPencil, IconBolt, IconBook2, IconDeviceDesktop
 } from '@tabler/icons-react'
-import { useQuestions, useDashboards, useCollections, useDataSources } from '../api/hooks'
-import { useUIStore } from '../stores/uiStore'
+import { useQuestions, useDashboards, useCollections, useDataSources, useTables } from '../api/hooks'
 import { useBookmarkStore, usePinActions } from '../stores/bookmarkStore'
 import { chartColors, semanticColors } from '../theme'
 
@@ -97,7 +96,6 @@ const styles = {
 
 export default function Home() {
   const navigate = useNavigate()
-  const { openCommandPalette } = useUIStore()
   const { pinnedItems, recentItems } = useBookmarkStore()
 
   const { data: questions, isLoading: questionsLoading } = useQuestions()
@@ -163,65 +161,52 @@ export default function Home() {
 
   return (
     <Box style={styles.container}>
-      {/* Header */}
+      {/* Header - Metabase Style */}
       <Box style={styles.header}>
         <Group justify="space-between" align="flex-start">
-          <Box>
-            <Title order={2} style={{ color: semanticColors.textPrimary, fontWeight: 700 }}>
-              Home
-            </Title>
-            <Text c="dimmed" size="sm" mt={4}>
-              Welcome back! Here's what's happening with your data.
-            </Text>
-          </Box>
-          <Group gap="sm">
-            <Button
-              variant="subtle"
-              leftSection={<IconSearch size={16} strokeWidth={1.75} />}
-              onClick={openCommandPalette}
-              color="gray"
-              styles={{
-                root: {
-                  fontWeight: 500,
-                }
+          <Group gap="md" align="center">
+            {/* Metabase-style greeting icon */}
+            <Box
+              style={{
+                width: 48,
+                height: 48,
+                border: `2px solid ${semanticColors.brand}`,
+                borderRadius: rem(8),
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#ffffff',
               }}
             >
-              Search
-            </Button>
-            <Menu position="bottom-end" shadow="md">
-              <Menu.Target>
-                <Button leftSection={<IconPlus size={16} strokeWidth={2} />}>
-                  New
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item
-                  leftSection={<IconPencil size={16} color={semanticColors.brand} strokeWidth={1.75} />}
-                  onClick={() => navigate('/question/new')}
-                >
-                  Question
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} strokeWidth={1.75} />}
-                  onClick={() => navigate('/dashboard/new')}
-                >
-                  Dashboard
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Item
-                  leftSection={<IconFolder size={16} color="#F9D45C" strokeWidth={1.75} />}
-                  onClick={() => navigate('/collection/new')}
-                >
-                  Collection
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+              <IconDeviceDesktop size={24} color={semanticColors.brand} strokeWidth={1.5} />
+            </Box>
+            <Title order={2} style={{ color: semanticColors.textPrimary, fontWeight: 700 }}>
+              Hey there
+            </Title>
           </Group>
+          <Button
+            variant="subtle"
+            leftSection={<IconPencil size={14} strokeWidth={1.75} />}
+            color="gray"
+            size="sm"
+          >
+            Customize
+          </Button>
         </Group>
       </Box>
 
+      {/* X-Ray Sample Cards - Metabase Style */}
+      {(datasources?.length || 0) > 0 && (
+        <Box style={styles.section}>
+          <Text c="dimmed" mb="lg" style={{ fontSize: rem(15) }}>
+            Try out these sample x-rays to see what Metabase can do.
+          </Text>
+          <XRayCards datasources={datasources || []} navigate={navigate} />
+        </Box>
+      )}
+
       {/* Start Here Section (for new users) */}
-      {!hasData && (
+      {!hasData && (datasources?.length || 0) === 0 && (
         <Box style={styles.section}>
           <Box style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
@@ -642,5 +627,101 @@ function ItemCard({
         )}
       </Group>
     </Paper>
+  )
+}
+
+// X-Ray Cards Component - Metabase Style
+function XRayCards({
+  datasources,
+  navigate,
+}: {
+  datasources: any[]
+  navigate: (path: string) => void
+}) {
+  // Get tables from first datasource for X-ray suggestions
+  const firstDatasource = datasources[0]
+  const { data: tables } = useTables(firstDatasource?.id || '')
+
+  // X-ray card phrases
+  const xrayPhrases = [
+    { prefix: 'A glance at', suffix: '' },
+    { prefix: 'A summary of', suffix: '' },
+    { prefix: 'Some insights about', suffix: '' },
+    { prefix: 'A look at', suffix: '' },
+  ]
+
+  const xrayCards = useMemo(() => {
+    if (!tables || tables.length === 0) return []
+    return tables.slice(0, 8).map((table, index) => ({
+      table,
+      phrase: xrayPhrases[index % xrayPhrases.length],
+    }))
+  }, [tables])
+
+  if (xrayCards.length === 0) return null
+
+  return (
+    <Box>
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
+        {xrayCards.map(({ table, phrase }) => (
+          <UnstyledButton
+            key={table.id}
+            onClick={() => navigate(`/question/new?table=${table.id}&datasource=${firstDatasource.id}`)}
+            style={{
+              backgroundColor: '#ffffff',
+              border: `1px solid ${semanticColors.borderMedium}`,
+              borderRadius: rem(8),
+              padding: `${rem(16)} ${rem(20)}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: rem(12),
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            <IconBolt size={20} color="#F9D45C" strokeWidth={2} style={{ flexShrink: 0 }} />
+            <Text size="sm" style={{ color: semanticColors.textPrimary }}>
+              {phrase.prefix}{' '}
+              <Text span fw={700} inherit>
+                {table.display_name || table.name}
+              </Text>
+              {phrase.suffix}
+            </Text>
+          </UnstyledButton>
+        ))}
+        {/* Metabase Tips Card */}
+        <UnstyledButton
+          onClick={() => window.open('https://www.metabase.com/docs', '_blank')}
+          style={{
+            backgroundColor: '#ffffff',
+            border: `1px solid ${semanticColors.borderMedium}`,
+            borderRadius: rem(8),
+            padding: `${rem(16)} ${rem(20)}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: rem(12),
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.08)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = 'none'
+          }}
+        >
+          <IconBook2 size={20} color={semanticColors.textSecondary} strokeWidth={1.75} style={{ flexShrink: 0 }} />
+          <Text size="sm" fw={500} style={{ color: semanticColors.textPrimary }}>
+            Metabase tips
+          </Text>
+        </UnstyledButton>
+      </SimpleGrid>
+    </Box>
   )
 }

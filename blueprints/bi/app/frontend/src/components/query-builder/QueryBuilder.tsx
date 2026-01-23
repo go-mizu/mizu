@@ -92,14 +92,6 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
           size="sm"
           data-testid="mode-toggle"
         />
-        <Button
-          leftSection={<IconPlayerPlay size={16} />}
-          onClick={onRun}
-          loading={isExecuting}
-          data-testid="btn-run-query"
-        >
-          Get Answer
-        </Button>
       </Group>
 
       {mode === 'native' ? (
@@ -212,13 +204,58 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
               onLimitChange={setLimit}
             />
           </BuilderSection>
+
+          {/* Visualize Button - Metabase Green */}
+          <Button
+            fullWidth
+            size="md"
+            leftSection={<IconPlayerPlay size={18} />}
+            onClick={onRun}
+            loading={isExecuting}
+            data-testid="btn-run-query"
+            style={{
+              backgroundColor: '#84BB4C',
+              fontWeight: 700,
+            }}
+            styles={{
+              root: {
+                '&:hover': {
+                  backgroundColor: '#6FA83D',
+                },
+              },
+            }}
+          >
+            Visualize
+          </Button>
         </Stack>
       )}
     </Box>
   )
 }
 
-// Collapsible section wrapper
+// Metabase-style section colors
+const sectionColors = {
+  brand: {
+    bg: '#E6F2FF',
+    text: '#509EE3',
+    pillBg: '#509EE3',
+    pillText: '#ffffff',
+  },
+  filter: {
+    bg: '#EFEEF5',
+    text: '#7172AD',
+    pillBg: '#7172AD',
+    pillText: '#ffffff',
+  },
+  summarize: {
+    bg: '#EDF7E4',
+    text: '#84BB4C',
+    pillBg: '#84BB4C',
+    pillText: '#ffffff',
+  },
+}
+
+// Collapsible section wrapper - Metabase Notebook Style
 function BuilderSection({
   icon: Icon,
   title,
@@ -233,31 +270,54 @@ function BuilderSection({
   expanded: boolean
   onToggle: () => void
   badge?: string
-  color?: string
+  color?: 'brand' | 'filter' | 'summarize'
   children: React.ReactNode
 }) {
+  const colors = sectionColors[color] || sectionColors.brand
+
   return (
-    <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
+    <Paper
+      radius="md"
+      style={{
+        overflow: 'hidden',
+        border: `1px solid ${colors.bg}`,
+      }}
+    >
       <Group
         justify="space-between"
         p="sm"
-        bg="gray.0"
-        style={{ cursor: 'pointer' }}
+        style={{
+          backgroundColor: colors.bg,
+          cursor: 'pointer',
+        }}
         onClick={onToggle}
       >
         <Group gap="sm">
-          {expanded ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
-          <Icon size={18} color={`var(--mantine-color-${color}-5)`} />
-          <Text fw={500} size="sm">{title}</Text>
+          {expanded ? (
+            <IconChevronDown size={16} color={colors.text} />
+          ) : (
+            <IconChevronRight size={16} color={colors.text} />
+          )}
+          <Icon size={18} color={colors.text} />
+          <Text fw={600} size="sm" style={{ color: colors.text }}>
+            {title}
+          </Text>
           {badge && (
-            <Badge size="sm" variant="light" color={color}>
+            <Badge
+              size="sm"
+              radius="xl"
+              style={{
+                backgroundColor: colors.pillBg,
+                color: colors.pillText,
+              }}
+            >
               {badge}
             </Badge>
           )}
         </Group>
       </Group>
       <Collapse in={expanded}>
-        <Box p="sm" pt={0}>
+        <Box p="sm" pt="sm" style={{ backgroundColor: '#ffffff' }}>
           {children}
         </Box>
       </Collapse>

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../client'
 import type {
-  DataSource, DataSourceTestResult, DataSourceStatus, SyncResult, SyncLog, CacheStats,
+  DataSource, DataSourceStatus, SyncResult, SyncLog, CacheStats,
   Table, Column, ColumnScanResult, Question, Dashboard, DashboardCard,
   Collection, Model, Metric, Alert, Subscription, User, QueryResult, Settings
 } from '../types'
