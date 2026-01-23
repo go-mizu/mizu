@@ -626,7 +626,7 @@ function DatabasesView({
               radius="md"
               padding="lg"
               style={{ cursor: 'pointer' }}
-              onClick={() => navigate(`/admin/datamodel/${ds.id}`)}
+              onClick={() => navigate(`/browse/database/${ds.id}`)}
             >
               <Group mb="md">
                 <ThemeIcon size={48} radius="md" variant="light" color="warning">

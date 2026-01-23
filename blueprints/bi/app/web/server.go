@@ -148,6 +148,9 @@ func (s *Server) setupRoutes() {
 		apiGroup.Get("/datasources/{id}/tables/{table}/columns", s.datasourcesHandler.ListColumns)
 		apiGroup.Put("/datasources/tables/{tableId}/columns/{columnId}", s.datasourcesHandler.UpdateColumn)
 		apiGroup.Post("/datasources/{id}/tables/{table}/columns/{column}/scan", s.datasourcesHandler.ScanColumn)
+		apiGroup.Post("/datasources/{id}/tables/{table}/preview", s.datasourcesHandler.TablePreview)
+		apiGroup.Get("/datasources/{id}/tables/{table}/preview", s.datasourcesHandler.TablePreview)
+		apiGroup.Get("/datasources/{id}/search-tables", s.datasourcesHandler.SearchTables)
 
 		// Questions
 		apiGroup.Get("/questions", s.questionsHandler.List)

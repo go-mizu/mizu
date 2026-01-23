@@ -376,11 +376,15 @@ type QueryHistory struct {
 
 // QueryResult represents query execution results.
 type QueryResult struct {
-	Columns  []ResultColumn           `json:"columns"`
-	Rows     []map[string]interface{} `json:"rows"`
-	RowCount int64                    `json:"row_count"`
-	Duration float64                  `json:"duration_ms"`
-	Cached   bool                     `json:"cached"`
+	Columns    []ResultColumn           `json:"columns"`
+	Rows       []map[string]interface{} `json:"rows"`
+	RowCount   int64                    `json:"row_count"`
+	TotalRows  int64                    `json:"total_rows,omitempty"`  // Total rows before pagination
+	Page       int                      `json:"page,omitempty"`        // Current page (1-indexed)
+	PageSize   int                      `json:"page_size,omitempty"`   // Page size
+	TotalPages int                      `json:"total_pages,omitempty"` // Total pages
+	Duration   float64                  `json:"duration_ms"`
+	Cached     bool                     `json:"cached"`
 }
 
 // ResultColumn represents a column in query results.

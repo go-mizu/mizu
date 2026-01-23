@@ -118,8 +118,16 @@ export interface PaginationState {
   totalRows: number
 }
 
-// Sort state
+// Sort state (single column for backwards compatibility)
 export interface SortState {
   column: string | null
   direction: 'asc' | 'desc'
+}
+
+// Multi-column sort state
+export interface MultiSortState {
+  columns: Array<{
+    column: string
+    direction: 'asc' | 'desc'
+  }>
 }

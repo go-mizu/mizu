@@ -1263,3 +1263,275 @@ func toInt64(v any) int64 {
 		return 0
 	}
 }
+
+// TablePreviewRequest represents a table preview request with pagination and filtering.
+type TablePreviewRequest struct {
+	Page     int                `json:"page,omitempty"`
+	PageSize int                `json:"page_size,omitempty"`
+	OrderBy  []TableOrderBy     `json:"order_by,omitempty"`
+	Filters  []TableFilter      `json:"filters,omitempty"`
+}
+
+// TableOrderBy represents a sort specification.
+type TableOrderBy struct {
+	Column    string `json:"column"`
+	Direction string `json:"direction"` // asc or desc
+}
+
+// TableFilter represents a filter condition.
+type TableFilter struct {
+	Column   string `json:"column"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value"`
+}
+
+// TablePreview returns a preview of table data with pagination, sorting, and filtering.
+func (h *DataSources) TablePreview(c *mizu.Ctx) error {
+	dsID := c.Param("id")
+	tableID := c.Param("table")
+
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), dsID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	table, err := h.store.Tables().GetByID(c.Request().Context(), tableID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if table == nil {
+		return c.JSON(404, map[string]string{"error": "Table not found"})
+	}
+
+	// Parse request body (optional)
+	var req TablePreviewRequest
+	c.BindJSON(&req, 1<<20) // Ignore error - body is optional
+
+	// Set defaults
+	if req.PageSize <= 0 {
+		req.PageSize = 100
+	}
+	if req.PageSize > 1000 {
+		req.PageSize = 1000
+	}
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+
+	config := dataSourceToConfig(ds)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 30*time.Second)
+	defer cancel()
+
+	driver, err := drivers.Open(ctx, config)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	defer driver.Close()
+
+	// Build table name with schema
+	tableName := driver.QuoteIdentifier(table.Name)
+	if table.Schema != "" && driver.SupportsSchemas() {
+		tableName = driver.QuoteIdentifier(table.Schema) + "." + driver.QuoteIdentifier(table.Name)
+	}
+
+	// First, get total count
+	countQuery := fmt.Sprintf("SELECT COUNT(*) as count FROM %s", tableName)
+	var totalRows int64
+
+	// Add filters to count query
+	if len(req.Filters) > 0 {
+		whereClause, filterParams := buildFilterClause(driver, req.Filters)
+		if whereClause != "" {
+			countQuery += " WHERE " + whereClause
+		}
+		countResult, err := driver.Execute(ctx, countQuery, filterParams...)
+		if err == nil && len(countResult.Rows) > 0 {
+			if cnt, ok := countResult.Rows[0]["count"].(int64); ok {
+				totalRows = cnt
+			} else if cnt, ok := countResult.Rows[0]["count"].(float64); ok {
+				totalRows = int64(cnt)
+			}
+		}
+	} else {
+		countResult, err := driver.Execute(ctx, countQuery)
+		if err == nil && len(countResult.Rows) > 0 {
+			if cnt, ok := countResult.Rows[0]["count"].(int64); ok {
+				totalRows = cnt
+			} else if cnt, ok := countResult.Rows[0]["count"].(float64); ok {
+				totalRows = int64(cnt)
+			}
+		}
+	}
+
+	// Build data query
+	dataQuery := fmt.Sprintf("SELECT * FROM %s", tableName)
+	var queryParams []any
+
+	// Add filters
+	if len(req.Filters) > 0 {
+		whereClause, filterParams := buildFilterClause(driver, req.Filters)
+		if whereClause != "" {
+			dataQuery += " WHERE " + whereClause
+			queryParams = append(queryParams, filterParams...)
+		}
+	}
+
+	// Add ORDER BY
+	if len(req.OrderBy) > 0 {
+		var orderClauses []string
+		for _, o := range req.OrderBy {
+			dir := "ASC"
+			if strings.ToUpper(o.Direction) == "DESC" {
+				dir = "DESC"
+			}
+			orderClauses = append(orderClauses, driver.QuoteIdentifier(o.Column)+" "+dir)
+		}
+		dataQuery += " ORDER BY " + strings.Join(orderClauses, ", ")
+	}
+
+	// Add pagination
+	offset := (req.Page - 1) * req.PageSize
+	dataQuery += fmt.Sprintf(" LIMIT %d OFFSET %d", req.PageSize, offset)
+
+	// Execute query
+	start := time.Now()
+	result, err := driver.Execute(ctx, dataQuery, queryParams...)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	duration := time.Since(start).Milliseconds()
+
+	// Build response with pagination info
+	storeResult := &store.QueryResult{
+		Columns:    make([]store.ResultColumn, len(result.Columns)),
+		Rows:       result.Rows,
+		RowCount:   int64(len(result.Rows)),
+		TotalRows:  totalRows,
+		Page:       req.Page,
+		PageSize:   req.PageSize,
+		TotalPages: int((totalRows + int64(req.PageSize) - 1) / int64(req.PageSize)),
+		Duration:   float64(duration),
+	}
+
+	for i, col := range result.Columns {
+		storeResult.Columns[i] = store.ResultColumn{
+			Name:        col.Name,
+			DisplayName: col.DisplayName,
+			Type:        col.MappedType,
+		}
+	}
+
+	return c.JSON(200, storeResult)
+}
+
+// buildFilterClause builds a WHERE clause from filters.
+func buildFilterClause(driver drivers.Driver, filters []TableFilter) (string, []any) {
+	var clauses []string
+	var params []any
+
+	for _, f := range filters {
+		col := driver.QuoteIdentifier(f.Column)
+		op := strings.ToUpper(f.Operator)
+
+		switch op {
+		case "IS NULL", "IS_NULL":
+			clauses = append(clauses, col+" IS NULL")
+		case "IS NOT NULL", "IS_NOT_NULL":
+			clauses = append(clauses, col+" IS NOT NULL")
+		case "IN":
+			if arr, ok := f.Value.([]any); ok {
+				placeholders := make([]string, len(arr))
+				for i, v := range arr {
+					placeholders[i] = "?"
+					params = append(params, v)
+				}
+				clauses = append(clauses, col+" IN ("+strings.Join(placeholders, ", ")+")")
+			}
+		case "NOT IN":
+			if arr, ok := f.Value.([]any); ok {
+				placeholders := make([]string, len(arr))
+				for i, v := range arr {
+					placeholders[i] = "?"
+					params = append(params, v)
+				}
+				clauses = append(clauses, col+" NOT IN ("+strings.Join(placeholders, ", ")+")")
+			}
+		case "BETWEEN":
+			if arr, ok := f.Value.([]any); ok && len(arr) == 2 {
+				clauses = append(clauses, col+" BETWEEN ? AND ?")
+				params = append(params, arr[0], arr[1])
+			}
+		case "LIKE", "CONTAINS":
+			clauses = append(clauses, col+" LIKE ?")
+			params = append(params, "%"+fmt.Sprintf("%v", f.Value)+"%")
+		case "STARTS_WITH", "STARTS WITH":
+			clauses = append(clauses, col+" LIKE ?")
+			params = append(params, fmt.Sprintf("%v", f.Value)+"%")
+		case "ENDS_WITH", "ENDS WITH":
+			clauses = append(clauses, col+" LIKE ?")
+			params = append(params, "%"+fmt.Sprintf("%v", f.Value))
+		case "=", "EQUALS":
+			clauses = append(clauses, col+" = ?")
+			params = append(params, f.Value)
+		case "!=", "<>", "NOT_EQUALS":
+			clauses = append(clauses, col+" != ?")
+			params = append(params, f.Value)
+		case ">", "GREATER_THAN":
+			clauses = append(clauses, col+" > ?")
+			params = append(params, f.Value)
+		case ">=", "GREATER_OR_EQUAL":
+			clauses = append(clauses, col+" >= ?")
+			params = append(params, f.Value)
+		case "<", "LESS_THAN":
+			clauses = append(clauses, col+" < ?")
+			params = append(params, f.Value)
+		case "<=", "LESS_OR_EQUAL":
+			clauses = append(clauses, col+" <= ?")
+			params = append(params, f.Value)
+		default:
+			// Default to equals
+			clauses = append(clauses, col+" = ?")
+			params = append(params, f.Value)
+		}
+	}
+
+	return strings.Join(clauses, " AND "), params
+}
+
+// SearchTables searches tables by name in a data source.
+func (h *DataSources) SearchTables(c *mizu.Ctx) error {
+	dsID := c.Param("id")
+	query := c.Query("q")
+
+	ds, err := h.store.DataSources().GetByID(c.Request().Context(), dsID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if ds == nil {
+		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	tables, err := h.store.Tables().ListByDataSource(c.Request().Context(), dsID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	// Filter by query if provided
+	if query != "" {
+		query = strings.ToLower(query)
+		var filtered []*store.Table
+		for _, t := range tables {
+			if strings.Contains(strings.ToLower(t.Name), query) ||
+				strings.Contains(strings.ToLower(t.DisplayName), query) ||
+				strings.Contains(strings.ToLower(t.Schema), query) {
+				filtered = append(filtered, t)
+			}
+		}
+		tables = filtered
+	}
+
+	return c.JSON(200, tables)
+}

@@ -521,6 +521,10 @@ export interface QueryResult {
   columns: ResultColumn[]
   rows: Record<string, any>[]
   row_count: number
+  total_rows?: number    // Total rows before pagination
+  page?: number          // Current page (1-indexed)
+  page_size?: number     // Page size
+  total_pages?: number   // Total pages
   duration_ms: number
   cached?: boolean
 }

@@ -28,11 +28,15 @@ type ResultColumn struct {
 
 // QueryResult represents the result of a query execution.
 type QueryResult struct {
-	Columns  []ResultColumn   `json:"columns"`
-	Rows     []map[string]any `json:"rows"`
-	RowCount int64            `json:"row_count"`
-	Duration float64          `json:"duration_ms"`
-	Cached   bool             `json:"cached"`
+	Columns    []ResultColumn   `json:"columns"`
+	Rows       []map[string]any `json:"rows"`
+	RowCount   int64            `json:"row_count"`
+	TotalRows  int64            `json:"total_rows,omitempty"`  // Total rows before pagination
+	Page       int              `json:"page,omitempty"`        // Current page (1-indexed)
+	PageSize   int              `json:"page_size,omitempty"`   // Page size
+	TotalPages int              `json:"total_pages,omitempty"` // Total pages
+	Duration   float64          `json:"duration_ms"`
+	Cached     bool             `json:"cached"`
 }
 
 // StructuredQuery represents a structured query from the query builder.
@@ -47,6 +51,9 @@ type StructuredQuery struct {
 	Joins        []Join         `json:"joins,omitempty"`
 	Aggregations []Aggregation  `json:"aggregations,omitempty"`
 	Parameters   map[string]any `json:"parameters,omitempty"`
+	// Pagination
+	Page     int `json:"page,omitempty"`      // Page number (1-indexed), 0 = no pagination
+	PageSize int `json:"page_size,omitempty"` // Items per page
 }
 
 // Filter represents a query filter condition.

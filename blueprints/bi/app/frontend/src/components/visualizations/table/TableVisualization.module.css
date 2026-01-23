@@ -123,4 +123,26 @@
   background: #f9fbfc;
 }
 
+/* Column resize handle */
+.resizeHandle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 1;
+}
+
+.resizeHandle:hover,
+.resizeHandle.resizing {
+  background: #509ee3;
+  opacity: 0.5;
+}
+
+.thResizable {
+  position: relative;
+}
+
 /* Hover states already handled by Mantine table */
