@@ -1,10 +1,10 @@
 import {
   Stack, Group, Text, Switch, NumberInput, Select, TextInput,
-  ColorInput, Divider, Accordion, Slider, SegmentedControl
+  ColorInput, Divider, Accordion, Slider
 } from '@mantine/core'
 import {
   IconChartLine, IconPalette, IconTarget, IconEye, IconNumbers,
-  IconAxisX, IconLayoutGrid, IconPercentage
+  IconAxisX
 } from '@tabler/icons-react'
 import type { VisualizationSettings } from '../../api/types'
 import { chartColors } from '../../theme'

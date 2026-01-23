@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Box, Text, Paper, Group } from '@mantine/core'
+import { Box, Text, Paper } from '@mantine/core'
 import { chartColors } from '../../theme'
 
 interface SankeyVisualizationProps {
@@ -176,7 +176,7 @@ export default function SankeyVisualization({
       const startY = (availableHeight - layerHeight - (layer.length - 1) * nodePadding) / 2 + 20
 
       let currentY = startY
-      layer.forEach((node, i) => {
+      layer.forEach((node) => {
         node.x = layerIndex * layerWidth
         node.y = currentY
         node.height = Math.max(4, node.value * heightScale)

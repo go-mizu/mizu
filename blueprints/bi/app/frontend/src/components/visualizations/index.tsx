@@ -537,7 +537,7 @@ function AreaVisualization({
   const showPoints = settings.showPoints ?? false
   const showLabels = settings.showLabels ?? false
   const interpolation = settings.interpolation || 'monotone'
-  const stacked = settings.stacked ?? settings.stacking === 'stacked' ?? true
+  const stacked = settings.stacked !== undefined ? settings.stacked : (settings.stacking === 'stacked' || settings.stacking === undefined)
   const normalized = settings.stacking === 'normalized'
   const showGoal = settings.showGoal ?? false
   const goalValue = settings.goalValue
@@ -556,11 +556,11 @@ function AreaVisualization({
       const total = yKeys.reduce((acc, key) => acc + (Number(row[key]) || 0), 0)
       if (total === 0) return row
 
-      const normalized: Record<string, any> = { ...row }
+      const normalizedRow: Record<string, any> = { ...row }
       yKeys.forEach(key => {
-        normalized[key] = ((Number(row[key]) || 0) / total) * 100
+        normalizedRow[key] = ((Number(row[key]) || 0) / total) * 100
       })
-      return normalized
+      return normalizedRow
     })
   }, [data, yKeys, normalized])
 
@@ -587,7 +587,7 @@ function AreaVisualization({
             border: '1px solid var(--mantine-color-gray-3)',
             borderRadius: 6,
           }}
-          formatter={normalized ? (value: number) => `${value.toFixed(1)}%` : undefined}
+          formatter={normalized ? (value) => `${Number(value).toFixed(1)}%` : undefined}
         />
         {showLegend && <Legend />}
         {showGoal && goalValue !== undefined && !normalized && (
@@ -655,11 +655,11 @@ function BarVisualization({
       const total = yKeys.reduce((acc, key) => acc + (Number(row[key]) || 0), 0)
       if (total === 0) return row
 
-      const normalized: Record<string, any> = { ...row }
+      const normalizedRow: Record<string, any> = { ...row }
       yKeys.forEach(key => {
-        normalized[key] = ((Number(row[key]) || 0) / total) * 100
+        normalizedRow[key] = ((Number(row[key]) || 0) / total) * 100
       })
-      return normalized
+      return normalizedRow
     })
   }, [data, yKeys, normalized])
 
@@ -686,7 +686,7 @@ function BarVisualization({
             border: '1px solid var(--mantine-color-gray-3)',
             borderRadius: 6,
           }}
-          formatter={normalized ? (value: number) => `${value.toFixed(1)}%` : undefined}
+          formatter={normalized ? (value) => `${Number(value).toFixed(1)}%` : undefined}
         />
         {showLegend && <Legend />}
         {showGoal && goalValue !== undefined && !normalized && (
@@ -747,11 +747,11 @@ function RowVisualization({
       const total = xKeys.reduce((acc, key) => acc + (Number(row[key]) || 0), 0)
       if (total === 0) return row
 
-      const normalized: Record<string, any> = { ...row }
+      const normalizedRow: Record<string, any> = { ...row }
       xKeys.forEach(key => {
-        normalized[key] = ((Number(row[key]) || 0) / total) * 100
+        normalizedRow[key] = ((Number(row[key]) || 0) / total) * 100
       })
-      return normalized
+      return normalizedRow
     })
   }, [data, xKeys, normalized])
 
@@ -779,7 +779,7 @@ function RowVisualization({
             border: '1px solid var(--mantine-color-gray-3)',
             borderRadius: 6,
           }}
-          formatter={normalized ? (value: number) => `${value.toFixed(1)}%` : undefined}
+          formatter={normalized ? (value) => `${Number(value).toFixed(1)}%` : undefined}
         />
         {showLegend && <Legend />}
         {showGoal && goalValue !== undefined && !normalized && (
@@ -860,12 +860,13 @@ function PieVisualization({
   }, [data, nameKey, valueKey, minSlicePercent])
 
   // Custom label renderer
-  const renderLabel = ({ name, percent }: { name: string; percent: number }) => {
+  const renderLabel = (props: any) => {
+    const { name, percent } = props
     if (!showLabels) return null
     if (showPercentages) {
-      return `${name}: ${(percent * 100).toFixed(0)}%`
+      return `${name || ''}: ${((percent || 0) * 100).toFixed(0)}%`
     }
-    return name
+    return name || ''
   }
 
   return (
@@ -893,8 +894,8 @@ function PieVisualization({
             border: '1px solid var(--mantine-color-gray-3)',
             borderRadius: 6,
           }}
-          formatter={(value: number) => [
-            showPercentages ? `${value.toLocaleString()} (${((value / total) * 100).toFixed(1)}%)` : value.toLocaleString(),
+          formatter={(value) => [
+            showPercentages ? `${Number(value).toLocaleString()} (${((Number(value) / total) * 100).toFixed(1)}%)` : Number(value).toLocaleString(),
             valueKey
           ]}
         />
@@ -1068,11 +1069,11 @@ function FunnelVisualization({
             border: '1px solid var(--mantine-color-gray-3)',
             borderRadius: 6,
           }}
-          formatter={(value: number, name: string, props: any) => {
+          formatter={(value, name, props) => {
             if (showPercentage) {
-              return [`${value.toLocaleString()} (${props.payload.percentage}%)`, name]
+              return [`${Number(value).toLocaleString()} (${props.payload?.percentage}%)`, name]
             }
-            return [value.toLocaleString(), name]
+            return [Number(value).toLocaleString(), name]
           }}
         />
         <Funnel
@@ -1086,12 +1087,6 @@ function FunnelVisualization({
               fill="#000"
               stroke="none"
               dataKey="name"
-              formatter={(name: string, entry: any) => {
-                if (showPercentage && entry?.percentage) {
-                  return `${name} (${entry.percentage}%)`
-                }
-                return name
-              }}
             />
           )}
         </Funnel>
@@ -1149,7 +1144,7 @@ function ComboVisualization({
           }}
         />
         {showLegend && <Legend />}
-        {barKeys.map((key, i) => (
+        {barKeys.map((key) => (
           <Bar
             key={key}
             dataKey={key}
@@ -1238,9 +1233,9 @@ function WaterfallVisualization({
             border: '1px solid var(--mantine-color-gray-3)',
             borderRadius: 6,
           }}
-          formatter={(value: any, name: string, props: any) => {
+          formatter={(_value, name, props) => {
             if (name === '_base') return null
-            const displayValue = props.payload._displayValue
+            const displayValue = props?.payload?._displayValue ?? 0
             return [displayValue >= 0 ? `+${displayValue.toLocaleString()}` : displayValue.toLocaleString(), valueKey]
           }}
         />
@@ -1263,7 +1258,7 @@ function WaterfallVisualization({
               dataKey="_displayValue"
               position="top"
               fontSize={10}
-              formatter={(value: number) => value >= 0 ? `+${value}` : value}
+              formatter={(value) => Number(value) >= 0 ? `+${value}` : String(value)}
             />
           )}
         </Bar>
