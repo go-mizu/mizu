@@ -222,6 +222,9 @@ func (s *Seeder) seedCollections(ctx context.Context) (map[string]string, error)
 		{"Products", "Product catalog and inventory analytics", "#F2A86F"},
 		{"Customers", "Customer insights and segmentation", "#7172AD"},
 		{"Operations", "Operational metrics and logistics", "#ED6E6E"},
+		{"Finance", "Financial analysis and profitability metrics", "#88BF4D"},
+		{"Geographic", "Geographic and regional analysis", "#A989C5"},
+		{"Trends", "Time-series analysis and forecasting", "#EF8C8C"},
 	}
 
 	ids := make(map[string]string)
@@ -965,6 +968,423 @@ func (s *Seeder) seedQuestions(ctx context.Context, dsID string, collIDs map[str
 				},
 			},
 		},
+		// =====================================================================
+		// FINANCE QUESTIONS - Profitability and Cost Analysis
+		// =====================================================================
+		{
+			name:       "Gross Profit Margin",
+			desc:       "Overall profit margin percentage",
+			collection: "Finance",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					printf("%.1f%%", 100.0 * (SUM(od.unit_price * od.quantity * (1 - od.discount)) - SUM(od.unit_price * od.quantity * 0.6)) / SUM(od.unit_price * od.quantity * (1 - od.discount))) as gross_margin
+				FROM order_details od`,
+			},
+			viz: map[string]interface{}{
+				"type": "number",
+			},
+		},
+		{
+			name:       "Profit by Category",
+			desc:       "Estimated profit margin by product category",
+			collection: "Finance",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.name as category,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
+					SUM(od.unit_price * od.quantity * (1 - od.discount) * 0.4) as estimated_profit,
+					printf("%.1f%%", 40.0) as margin
+				FROM order_details od
+				JOIN products p ON od.product_id = p.id
+				JOIN categories c ON p.category_id = c.id
+				GROUP BY c.id
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "category",
+					"y_axis": "estimated_profit",
+				},
+			},
+		},
+		{
+			name:       "Monthly Profit Trend",
+			desc:       "Estimated profit over time",
+			collection: "Finance",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', o.order_date) as month,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
+					SUM(od.unit_price * od.quantity * (1 - od.discount) * 0.4) as profit
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY month
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "area",
+				"settings": map[string]interface{}{
+					"x_axis":   "month",
+					"y_axis":   "profit",
+					"showArea": true,
+				},
+			},
+		},
+		{
+			name:       "Revenue vs Freight Cost",
+			desc:       "Compare revenue to shipping costs",
+			collection: "Finance",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', o.order_date) as month,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
+					SUM(o.freight) as freight_cost,
+					printf("%.2f%%", 100.0 * SUM(o.freight) / SUM(od.unit_price * od.quantity * (1 - od.discount))) as freight_pct
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY month
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "combo",
+				"settings": map[string]interface{}{
+					"x_axis": "month",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		{
+			name:       "Discount Impact Analysis",
+			desc:       "Revenue lost to discounts",
+			collection: "Finance",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', o.order_date) as month,
+					SUM(od.unit_price * od.quantity) as gross_revenue,
+					SUM(od.unit_price * od.quantity * od.discount) as discount_amount,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as net_revenue
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY month
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "line",
+				"settings": map[string]interface{}{
+					"x_axis": "month",
+					"y_axis": "discount_amount",
+				},
+			},
+		},
+		// =====================================================================
+		// GEOGRAPHIC QUESTIONS - Regional Analysis
+		// =====================================================================
+		{
+			name:       "Revenue by Country Map",
+			desc:       "Geographic distribution of revenue",
+			collection: "Geographic",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.country,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN customers c ON o.customer_id = c.id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY c.country
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "country",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		{
+			name:       "Regional Growth Comparison",
+			desc:       "Revenue growth by region",
+			collection: "Geographic",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.region,
+					COUNT(DISTINCT c.id) as customers,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
+					printf("$%.2f", SUM(od.unit_price * od.quantity * (1 - od.discount)) / COUNT(DISTINCT o.id)) as avg_order_value
+				FROM customers c
+				JOIN orders o ON c.id = o.customer_id
+				JOIN order_details od ON o.id = od.order_id
+				WHERE c.region IS NOT NULL
+				GROUP BY c.region
+				ORDER BY revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "region",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		{
+			name:       "City Performance",
+			desc:       "Top performing cities by revenue",
+			collection: "Geographic",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					c.city,
+					c.country,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM customers c
+				JOIN orders o ON c.id = o.customer_id
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY c.city, c.country
+				ORDER BY revenue DESC
+				LIMIT 15`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		{
+			name:       "Supplier Geography",
+			desc:       "Supplier distribution by country",
+			collection: "Geographic",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					s.country,
+					COUNT(*) as suppliers,
+					COUNT(DISTINCT p.id) as products
+				FROM suppliers s
+				LEFT JOIN products p ON s.id = p.supplier_id
+				GROUP BY s.country
+				ORDER BY suppliers DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "pie",
+				"settings": map[string]interface{}{
+					"dimension": "country",
+					"metric":    "suppliers",
+				},
+			},
+		},
+		{
+			name:       "Shipping Destination Analysis",
+			desc:       "Where orders are shipped to",
+			collection: "Geographic",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					ship_country as country,
+					ship_city as city,
+					COUNT(*) as shipments,
+					SUM(freight) as total_freight
+				FROM orders
+				WHERE ship_country IS NOT NULL
+				GROUP BY ship_country, ship_city
+				ORDER BY shipments DESC
+				LIMIT 20`,
+			},
+			viz: map[string]interface{}{
+				"type": "table",
+			},
+		},
+		// =====================================================================
+		// TRENDS QUESTIONS - Time Series Analysis
+		// =====================================================================
+		{
+			name:       "Daily Order Volume",
+			desc:       "Orders per day over time",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					order_date as date,
+					COUNT(*) as orders
+				FROM orders
+				GROUP BY order_date
+				ORDER BY order_date
+				LIMIT 90`,
+			},
+			viz: map[string]interface{}{
+				"type": "line",
+				"settings": map[string]interface{}{
+					"x_axis": "date",
+					"y_axis": "orders",
+				},
+			},
+		},
+		{
+			name:       "Weekly Revenue Trend",
+			desc:       "Revenue aggregated by week",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-W%W', o.order_date) as week,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY week
+				ORDER BY week`,
+			},
+			viz: map[string]interface{}{
+				"type": "area",
+				"settings": map[string]interface{}{
+					"x_axis": "week",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		{
+			name:       "Quarterly Performance",
+			desc:       "Revenue by quarter",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y', o.order_date) || '-Q' || ((CAST(strftime('%m', o.order_date) AS INTEGER) - 1) / 3 + 1) as quarter,
+					COUNT(DISTINCT o.id) as orders,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY quarter
+				ORDER BY quarter`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "quarter",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		{
+			name:       "Product Sales Velocity",
+			desc:       "Units sold per product over time",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					p.name as product,
+					SUM(od.quantity) as total_units,
+					COUNT(DISTINCT o.id) as order_count,
+					printf("%.1f", 1.0 * SUM(od.quantity) / COUNT(DISTINCT strftime('%Y-%m', o.order_date))) as avg_monthly_units
+				FROM products p
+				JOIN order_details od ON p.id = od.product_id
+				JOIN orders o ON od.order_id = o.id
+				GROUP BY p.id
+				ORDER BY total_units DESC
+				LIMIT 15`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "product",
+					"y_axis": "total_units",
+				},
+			},
+		},
+		{
+			name:       "Seasonal Patterns",
+			desc:       "Revenue by month of year (seasonality)",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					CASE strftime('%m', o.order_date)
+						WHEN '01' THEN 'January'
+						WHEN '02' THEN 'February'
+						WHEN '03' THEN 'March'
+						WHEN '04' THEN 'April'
+						WHEN '05' THEN 'May'
+						WHEN '06' THEN 'June'
+						WHEN '07' THEN 'July'
+						WHEN '08' THEN 'August'
+						WHEN '09' THEN 'September'
+						WHEN '10' THEN 'October'
+						WHEN '11' THEN 'November'
+						WHEN '12' THEN 'December'
+					END as month_name,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue,
+					COUNT(DISTINCT o.id) as orders
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				GROUP BY strftime('%m', o.order_date)
+				ORDER BY strftime('%m', o.order_date)`,
+			},
+			viz: map[string]interface{}{
+				"type": "bar",
+				"settings": map[string]interface{}{
+					"x_axis": "month_name",
+					"y_axis": "revenue",
+				},
+			},
+		},
+		{
+			name:       "Customer Acquisition Trend",
+			desc:       "New customers over time",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', first_order) as month,
+					COUNT(*) as new_customers
+				FROM (
+					SELECT customer_id, MIN(order_date) as first_order
+					FROM orders
+					GROUP BY customer_id
+				)
+				GROUP BY month
+				ORDER BY month`,
+			},
+			viz: map[string]interface{}{
+				"type": "area",
+				"settings": map[string]interface{}{
+					"x_axis": "month",
+					"y_axis": "new_customers",
+				},
+			},
+		},
+		{
+			name:       "Category Trends Over Time",
+			desc:       "Revenue by category per month",
+			collection: "Trends",
+			queryType:  "native",
+			query: map[string]interface{}{
+				"sql": `SELECT
+					strftime('%Y-%m', o.order_date) as month,
+					c.name as category,
+					SUM(od.unit_price * od.quantity * (1 - od.discount)) as revenue
+				FROM orders o
+				JOIN order_details od ON o.id = od.order_id
+				JOIN products p ON od.product_id = p.id
+				JOIN categories c ON p.category_id = c.id
+				GROUP BY month, c.id
+				ORDER BY month, revenue DESC`,
+			},
+			viz: map[string]interface{}{
+				"type": "line",
+				"settings": map[string]interface{}{
+					"x_axis": "month",
+					"y_axis": "revenue",
+				},
+			},
+		},
 	}
 
 	ids := make(map[string]string)
@@ -1083,6 +1503,58 @@ func (s *Seeder) seedDashboards(ctx context.Context, collIDs map[string]string, 
 				{"Freight Cost Analysis", 4, 6, 6, 4},
 				{"Pending Orders", 7, 0, 6, 5},
 				{"Recent Orders", 7, 6, 6, 5},
+			},
+		},
+		{
+			name:        "Financial Analysis",
+			description: "Profitability and cost analysis metrics",
+			collection:  "Finance",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Gross Profit Margin", 0, 0, 4, 2},
+				{"Total Revenue", 0, 4, 4, 2},
+				{"Total Orders", 0, 8, 4, 2},
+				{"Profit by Category", 2, 0, 6, 4},
+				{"Monthly Profit Trend", 2, 6, 6, 4},
+				{"Revenue vs Freight Cost", 6, 0, 6, 4},
+				{"Discount Impact Analysis", 6, 6, 6, 4},
+			},
+		},
+		{
+			name:        "Geographic Insights",
+			description: "Regional performance and distribution analysis",
+			collection:  "Geographic",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Revenue by Country Map", 0, 0, 6, 4},
+				{"Regional Growth Comparison", 0, 6, 6, 4},
+				{"City Performance", 4, 0, 6, 5},
+				{"Supplier Geography", 4, 6, 6, 4},
+				{"Shipping Destination Analysis", 9, 0, 12, 5},
+			},
+		},
+		{
+			name:        "Trends & Forecasting",
+			description: "Time-series analysis and business trends",
+			collection:  "Trends",
+			cards: []struct {
+				question string
+				row, col int
+				w, h     int
+			}{
+				{"Daily Order Volume", 0, 0, 8, 4},
+				{"Quarterly Performance", 0, 8, 4, 4},
+				{"Weekly Revenue Trend", 4, 0, 6, 4},
+				{"Seasonal Patterns", 4, 6, 6, 4},
+				{"Product Sales Velocity", 8, 0, 6, 4},
+				{"Customer Acquisition Trend", 8, 6, 6, 4},
+				{"Category Trends Over Time", 12, 0, 12, 4},
 			},
 		},
 	}
