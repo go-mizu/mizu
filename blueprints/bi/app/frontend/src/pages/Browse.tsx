@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Container, Title, Text, Card, Group, Stack, SimpleGrid, Badge, TextInput,
-  Tabs, Paper, Menu, ActionIcon, Button, Breadcrumbs, Anchor, ThemeIcon,
-  Modal, Table, SegmentedControl
+  Group, TextInput, Tabs, Menu, ActionIcon, Button, Breadcrumbs, Anchor,
+  Modal, Table, SegmentedControl, Stack
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -18,7 +17,9 @@ import {
   useDashboards, useQuestions, useDataSources,
   useModels, useMetrics
 } from '../api/hooks'
-import { chartColors } from '../theme'
+import {
+  PageHeader, SectionHeader, DataCard, EmptyState, CardGrid, PageContainer
+} from '../components/ui'
 
 interface BrowseProps {
   view?: 'all' | 'databases' | 'models' | 'metrics'
@@ -138,78 +139,126 @@ export default function Browse({ view = 'all' }: BrowseProps) {
     filteredItems.questions.length
 
   return (
-    <Container size="xl" py="lg">
+    <PageContainer>
       {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          {collectionId ? (
-            <>
-              <Breadcrumbs mb="xs">
-                {breadcrumbs.map((crumb, i) => (
-                  <Anchor
-                    key={crumb.path}
-                    onClick={() => navigate(crumb.path)}
-                    c={i === breadcrumbs.length - 1 ? 'dark' : 'dimmed'}
-                    fw={i === breadcrumbs.length - 1 ? 600 : 400}
-                  >
-                    {crumb.label}
-                  </Anchor>
-                ))}
-              </Breadcrumbs>
-              <Title order={2}>{currentCollection?.name || 'Collection'}</Title>
-            </>
-          ) : (
-            <>
-              <Title order={2}>Browse</Title>
-              <Text c="dimmed">Explore your data</Text>
-            </>
-          )}
+      {collectionId ? (
+        <div style={{ marginBottom: 'var(--mantine-spacing-xl)' }}>
+          <Breadcrumbs mb="xs">
+            {breadcrumbs.map((crumb, i) => (
+              <Anchor
+                key={crumb.path}
+                onClick={() => navigate(crumb.path)}
+                style={{
+                  color: i === breadcrumbs.length - 1 ? 'var(--color-foreground)' : 'var(--color-foreground-muted)',
+                  fontWeight: i === breadcrumbs.length - 1 ? 600 : 400,
+                }}
+              >
+                {crumb.label}
+              </Anchor>
+            ))}
+          </Breadcrumbs>
+          <PageHeader
+            title={currentCollection?.name || 'Collection'}
+            actions={
+              <Group gap="sm">
+                <TextInput
+                  placeholder="Search..."
+                  leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  w={250}
+                />
+                <SegmentedControl
+                  value={viewMode}
+                  onChange={(v) => setViewMode(v as 'grid' | 'list')}
+                  data={[
+                    { value: 'grid', label: <IconGridDots size={16} /> },
+                    { value: 'list', label: <IconList size={16} /> },
+                  ]}
+                  size="sm"
+                />
+                <Menu position="bottom-end">
+                  <Menu.Target>
+                    <Button leftSection={<IconPlus size={16} />}>New</Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item
+                      leftSection={<IconChartBar size={14} style={{ color: 'var(--color-primary)' }} />}
+                      onClick={() => navigate('/question/new')}
+                    >
+                      New question
+                    </Menu.Item>
+                    <Menu.Item
+                      leftSection={<IconLayoutDashboard size={14} style={{ color: 'var(--color-success)' }} />}
+                      onClick={() => navigate('/dashboard/new')}
+                    >
+                      New dashboard
+                    </Menu.Item>
+                    <Menu.Divider />
+                    <Menu.Item
+                      leftSection={<IconFolderPlus size={14} style={{ color: 'var(--color-warning)' }} />}
+                      onClick={openNewCollectionModal}
+                    >
+                      New collection
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              </Group>
+            }
+          />
         </div>
-        <Group gap="sm">
-          <TextInput
-            placeholder="Search..."
-            leftSection={<IconSearch size={16} />}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            w={250}
-          />
-          <SegmentedControl
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'grid' | 'list')}
-            data={[
-              { value: 'grid', label: <IconGridDots size={16} /> },
-              { value: 'list', label: <IconList size={16} /> },
-            ]}
-            size="sm"
-          />
-          <Menu position="bottom-end">
-            <Menu.Target>
-              <Button leftSection={<IconPlus size={16} />}>New</Button>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconChartBar size={14} />}
-                onClick={() => navigate('/question/new')}
-              >
-                New question
-              </Menu.Item>
-              <Menu.Item
-                leftSection={<IconLayoutDashboard size={14} />}
-                onClick={() => navigate('/dashboard/new')}
-              >
-                New dashboard
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item
-                leftSection={<IconFolderPlus size={14} />}
-                onClick={openNewCollectionModal}
-              >
-                New collection
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Group>
-      </Group>
+      ) : (
+        <PageHeader
+          title="Browse"
+          subtitle="Explore your data"
+          actions={
+            <Group gap="sm">
+              <TextInput
+                placeholder="Search..."
+                leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                w={250}
+              />
+              <SegmentedControl
+                value={viewMode}
+                onChange={(v) => setViewMode(v as 'grid' | 'list')}
+                data={[
+                  { value: 'grid', label: <IconGridDots size={16} /> },
+                  { value: 'list', label: <IconList size={16} /> },
+                ]}
+                size="sm"
+              />
+              <Menu position="bottom-end">
+                <Menu.Target>
+                  <Button leftSection={<IconPlus size={16} />}>New</Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    leftSection={<IconChartBar size={14} style={{ color: 'var(--color-primary)' }} />}
+                    onClick={() => navigate('/question/new')}
+                  >
+                    New question
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<IconLayoutDashboard size={14} style={{ color: 'var(--color-success)' }} />}
+                    onClick={() => navigate('/dashboard/new')}
+                  >
+                    New dashboard
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item
+                    leftSection={<IconFolderPlus size={14} style={{ color: 'var(--color-warning)' }} />}
+                    onClick={openNewCollectionModal}
+                  >
+                    New collection
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
+          }
+        />
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={setActiveTab} mb="lg">
@@ -234,29 +283,35 @@ export default function Browse({ view = 'all' }: BrowseProps) {
         filteredItems.collections.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             {activeTab === 'all' && (
-              <Group justify="space-between" mb="md">
-                <Title order={4}>Collections</Title>
-                <Button
-                  variant="subtle"
-                  size="sm"
-                  rightSection={<IconArrowRight size={14} />}
-                  onClick={() => setActiveTab('collections')}
-                >
-                  View all
-                </Button>
-              </Group>
+              <SectionHeader
+                title="Collections"
+                icon={<IconFolder size={18} />}
+                count={filteredItems.collections.length}
+                actions={
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    rightSection={<IconArrowRight size={14} />}
+                    onClick={() => setActiveTab('collections')}
+                  >
+                    View all
+                  </Button>
+                }
+              />
             )}
             {viewMode === 'grid' ? (
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
+              <CardGrid cols={{ base: 1, sm: 2, md: 4 }}>
                 {filteredItems.collections.map((collection, i) => (
-                  <CollectionCard
+                  <DataCard
                     key={collection.id}
-                    collection={collection}
+                    id={collection.id}
+                    type="collection"
+                    name={collection.name}
                     colorIndex={i}
                     onClick={() => navigate(`/browse/${collection.id}`)}
                   />
                 ))}
-              </SimpleGrid>
+              </CardGrid>
             ) : (
               <ItemList
                 items={filteredItems.collections}
@@ -272,28 +327,37 @@ export default function Browse({ view = 'all' }: BrowseProps) {
         filteredItems.dashboards.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             {activeTab === 'all' && (
-              <Group justify="space-between" mb="md">
-                <Title order={4}>Dashboards</Title>
-                <Button
-                  variant="subtle"
-                  size="sm"
-                  rightSection={<IconArrowRight size={14} />}
-                  onClick={() => setActiveTab('dashboards')}
-                >
-                  View all
-                </Button>
-              </Group>
+              <SectionHeader
+                title="Dashboards"
+                icon={<IconLayoutDashboard size={18} />}
+                count={filteredItems.dashboards.length}
+                actions={
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    rightSection={<IconArrowRight size={14} />}
+                    onClick={() => setActiveTab('dashboards')}
+                  >
+                    View all
+                  </Button>
+                }
+              />
             )}
             {viewMode === 'grid' ? (
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-                {filteredItems.dashboards.map((dashboard) => (
-                  <DashboardCard
+              <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+                {filteredItems.dashboards.map((dashboard, i) => (
+                  <DataCard
                     key={dashboard.id}
-                    dashboard={dashboard}
+                    id={dashboard.id}
+                    type="dashboard"
+                    name={dashboard.name}
+                    description={dashboard.description}
+                    badge={`${dashboard.cards?.length || 0} cards`}
+                    colorIndex={i}
                     onClick={() => navigate(`/dashboard/${dashboard.id}`)}
                   />
                 ))}
-              </SimpleGrid>
+              </CardGrid>
             ) : (
               <ItemList
                 items={filteredItems.dashboards}
@@ -309,28 +373,37 @@ export default function Browse({ view = 'all' }: BrowseProps) {
         filteredItems.questions.length > 0 && (
           <div style={{ marginBottom: 32 }}>
             {activeTab === 'all' && (
-              <Group justify="space-between" mb="md">
-                <Title order={4}>Questions</Title>
-                <Button
-                  variant="subtle"
-                  size="sm"
-                  rightSection={<IconArrowRight size={14} />}
-                  onClick={() => setActiveTab('questions')}
-                >
-                  View all
-                </Button>
-              </Group>
+              <SectionHeader
+                title="Questions"
+                icon={<IconChartBar size={18} />}
+                count={filteredItems.questions.length}
+                actions={
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    rightSection={<IconArrowRight size={14} />}
+                    onClick={() => setActiveTab('questions')}
+                  >
+                    View all
+                  </Button>
+                }
+              />
             )}
             {viewMode === 'grid' ? (
-              <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-                {filteredItems.questions.map((question) => (
-                  <QuestionCard
+              <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+                {filteredItems.questions.map((question, i) => (
+                  <DataCard
                     key={question.id}
-                    question={question}
+                    id={question.id}
+                    type="question"
+                    name={question.name}
+                    description={question.description}
+                    badge={question.visualization?.type || 'table'}
+                    colorIndex={i}
                     onClick={() => navigate(`/question/${question.id}`)}
                   />
                 ))}
-              </SimpleGrid>
+              </CardGrid>
             ) : (
               <ItemList
                 items={filteredItems.questions}
@@ -344,40 +417,37 @@ export default function Browse({ view = 'all' }: BrowseProps) {
 
       {/* Empty state */}
       {totalItems === 0 && (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="lg">
-            <ThemeIcon size={60} radius="xl" variant="light" color="brand">
-              <IconFolder size={30} />
-            </ThemeIcon>
-            <div>
-              <Title order={3} mb="xs">
-                {search ? 'No results found' : 'This collection is empty'}
-              </Title>
-              <Text c="dimmed" maw={400} mx="auto">
-                {search
-                  ? 'Try adjusting your search terms'
-                  : 'Create a new question or dashboard to get started'}
-              </Text>
-            </div>
-            {!search && (
-              <Group>
-                <Button
-                  leftSection={<IconChartBar size={16} />}
-                  onClick={() => navigate('/question/new')}
-                >
-                  New Question
-                </Button>
-                <Button
-                  variant="light"
-                  leftSection={<IconLayoutDashboard size={16} />}
-                  onClick={() => navigate('/dashboard/new')}
-                >
-                  New Dashboard
-                </Button>
-              </Group>
-            )}
-          </Stack>
-        </Paper>
+        <EmptyState
+          icon={<IconFolder size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-info)"
+          title={search ? 'No results found' : 'This collection is empty'}
+          description={
+            search
+              ? 'Try adjusting your search terms'
+              : 'Create a new question or dashboard to get started'
+          }
+          action={
+            !search && (
+              <Button
+                leftSection={<IconChartBar size={16} />}
+                onClick={() => navigate('/question/new')}
+              >
+                New Question
+              </Button>
+            )
+          }
+          secondaryAction={
+            !search && (
+              <Button
+                variant="light"
+                leftSection={<IconLayoutDashboard size={16} />}
+                onClick={() => navigate('/dashboard/new')}
+              >
+                New Dashboard
+              </Button>
+            )
+          }
+        />
       )}
 
       {/* New Collection Modal */}
@@ -402,119 +472,10 @@ export default function Browse({ view = 'all' }: BrowseProps) {
           </Group>
         </Stack>
       </Modal>
-    </Container>
+    </PageContainer>
   )
 }
 
-// Collection Card Component
-function CollectionCard({
-  collection,
-  colorIndex,
-  onClick,
-}: {
-  collection: { id: string; name: string; color?: string }
-  colorIndex: number
-  onClick: () => void
-}) {
-  const color = collection.color || chartColors[colorIndex % chartColors.length]
-
-  return (
-    <Card
-      withBorder
-      radius="md"
-      padding="lg"
-      style={{ cursor: 'pointer', borderLeft: `4px solid ${color}` }}
-      onClick={onClick}
-      data-type="collection"
-      className="collection-card"
-    >
-      <Group>
-        <ThemeIcon size={40} radius="md" variant="light" style={{ backgroundColor: color + '20', color }}>
-          <IconFolder size={20} />
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text fw={500}>{collection.name}</Text>
-        </div>
-      </Group>
-    </Card>
-  )
-}
-
-// Dashboard Card Component
-function DashboardCard({
-  dashboard,
-  onClick,
-}: {
-  dashboard: { id: string; name: string; description?: string; cards?: any[] }
-  onClick: () => void
-}) {
-  return (
-    <Card
-      withBorder
-      radius="md"
-      padding="lg"
-      style={{ cursor: 'pointer' }}
-      onClick={onClick}
-      data-type="dashboard"
-      className="dashboard-card"
-    >
-      <Group mb="sm">
-        <ThemeIcon size={40} radius="md" variant="light" color="summarize">
-          <IconLayoutDashboard size={20} />
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text fw={500}>{dashboard.name}</Text>
-          {dashboard.description && (
-            <Text size="sm" c="dimmed" lineClamp={1}>
-              {dashboard.description}
-            </Text>
-          )}
-        </div>
-      </Group>
-      <Badge size="sm" variant="light" color="gray">
-        {dashboard.cards?.length || 0} cards
-      </Badge>
-    </Card>
-  )
-}
-
-// Question Card Component
-function QuestionCard({
-  question,
-  onClick,
-}: {
-  question: { id: string; name: string; description?: string; visualization?: { type: string } }
-  onClick: () => void
-}) {
-  return (
-    <Card
-      withBorder
-      radius="md"
-      padding="lg"
-      style={{ cursor: 'pointer' }}
-      onClick={onClick}
-      data-type="question"
-      className="question-card"
-    >
-      <Group mb="sm">
-        <ThemeIcon size={40} radius="md" variant="light" color="brand">
-          <IconChartBar size={20} />
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text fw={500}>{question.name}</Text>
-          {question.description && (
-            <Text size="sm" c="dimmed" lineClamp={1}>
-              {question.description}
-            </Text>
-          )}
-        </div>
-      </Group>
-      <Badge size="sm" variant="light" color="brand">
-        {question.visualization?.type || 'table'}
-      </Badge>
-    </Card>
-  )
-}
 
 // List View Component
 function ItemList({
@@ -527,10 +488,10 @@ function ItemList({
   onClick: (id: string) => void
 }) {
   const Icon = type === 'collection' ? IconFolder : type === 'dashboard' ? IconLayoutDashboard : IconChartBar
-  const color = type === 'collection' ? 'filter' : type === 'dashboard' ? 'summarize' : 'brand'
+  const colorVar = type === 'collection' ? 'var(--color-info)' : type === 'dashboard' ? 'var(--color-success)' : 'var(--color-primary)'
 
   return (
-    <Table striped highlightOnHover>
+    <Table striped highlightOnHover className="data-table">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Name</Table.Th>
@@ -543,16 +504,36 @@ function ItemList({
           <Table.Tr key={item.id} style={{ cursor: 'pointer' }} onClick={() => onClick(item.id)}>
             <Table.Td>
               <Group gap="sm">
-                <ThemeIcon size="sm" variant="light" color={color}>
-                  <Icon size={14} />
-                </ThemeIcon>
-                <Text fw={500}>{item.name}</Text>
+                <div
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: `${colorVar}15`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon size={14} style={{ color: colorVar }} />
+                </div>
+                <span style={{ fontWeight: 500, color: 'var(--color-foreground)' }}>{item.name}</span>
               </Group>
             </Table.Td>
             <Table.Td>
-              <Badge size="sm" variant="light" color={color}>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  padding: '0.125rem 0.5rem',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: `${colorVar}15`,
+                  color: colorVar,
+                  textTransform: 'capitalize',
+                }}
+              >
                 {type}
-              </Badge>
+              </span>
             </Table.Td>
             <Table.Td>
               <Menu position="bottom-end">
@@ -597,67 +578,55 @@ function DatabasesView({
   }, [datasources, search])
 
   return (
-    <Container size="xl" py="lg">
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>Databases</Title>
-          <Text c="dimmed">Explore your connected data sources</Text>
-        </div>
-        <Group gap="sm">
-          <TextInput
-            placeholder="Search databases..."
-            leftSection={<IconSearch size={16} />}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            w={250}
-          />
-          <Button leftSection={<IconPlus size={16} />} onClick={() => navigate('/admin/datamodel')}>
-            Add Database
-          </Button>
-        </Group>
-      </Group>
-
-      {filteredDatasources.length > 0 ? (
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {filteredDatasources.map((ds) => (
-            <Card
-              key={ds.id}
-              withBorder
-              radius="md"
-              padding="lg"
-              style={{ cursor: 'pointer' }}
-              onClick={() => navigate(`/browse/database/${ds.id}`)}
-            >
-              <Group mb="md">
-                <ThemeIcon size={48} radius="md" variant="light" color="warning">
-                  <IconDatabase size={24} />
-                </ThemeIcon>
-                <div style={{ flex: 1 }}>
-                  <Text fw={500}>{ds.name}</Text>
-                  <Text size="sm" c="dimmed">{ds.engine}</Text>
-                </div>
-              </Group>
-              <Badge size="sm" variant="light" color="gray">
-                {ds.database}
-              </Badge>
-            </Card>
-          ))}
-        </SimpleGrid>
-      ) : (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="md">
-            <ThemeIcon size={60} radius="xl" variant="light" color="warning">
-              <IconDatabase size={30} />
-            </ThemeIcon>
-            <Title order={3}>No databases connected</Title>
-            <Text c="dimmed">Connect a database to start exploring your data</Text>
+    <PageContainer>
+      <PageHeader
+        title="Databases"
+        subtitle="Explore your connected data sources"
+        actions={
+          <Group gap="sm">
+            <TextInput
+              placeholder="Search databases..."
+              leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              w={250}
+            />
             <Button leftSection={<IconPlus size={16} />} onClick={() => navigate('/admin/datamodel')}>
               Add Database
             </Button>
-          </Stack>
-        </Paper>
+          </Group>
+        }
+      />
+
+      {filteredDatasources.length > 0 ? (
+        <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+          {filteredDatasources.map((ds, i) => (
+            <DataCard
+              key={ds.id}
+              id={ds.id}
+              type="database"
+              name={ds.name}
+              description={ds.engine}
+              badge={ds.database}
+              colorIndex={i}
+              onClick={() => navigate(`/browse/database/${ds.id}`)}
+            />
+          ))}
+        </CardGrid>
+      ) : (
+        <EmptyState
+          icon={<IconDatabase size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-warning)"
+          title="No databases connected"
+          description="Connect a database to start exploring your data"
+          action={
+            <Button leftSection={<IconPlus size={16} />} onClick={() => navigate('/admin/datamodel')}>
+              Add Database
+            </Button>
+          }
+        />
       )}
-    </Container>
+    </PageContainer>
   )
 }
 
@@ -680,65 +649,53 @@ function ModelsView({
   }, [models, search])
 
   return (
-    <Container size="xl" py="lg">
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>Models</Title>
-          <Text c="dimmed">Curated views of your data</Text>
-        </div>
-        <Group gap="sm">
-          <TextInput
-            placeholder="Search models..."
-            leftSection={<IconSearch size={16} />}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            w={250}
-          />
-          <Button leftSection={<IconPlus size={16} />}>
-            New Model
-          </Button>
-        </Group>
-      </Group>
+    <PageContainer>
+      <PageHeader
+        title="Models"
+        subtitle="Curated views of your data"
+        actions={
+          <Group gap="sm">
+            <TextInput
+              placeholder="Search models..."
+              leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              w={250}
+            />
+            <Button leftSection={<IconPlus size={16} />}>
+              New Model
+            </Button>
+          </Group>
+        }
+      />
 
       {filteredModels.length > 0 ? (
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {filteredModels.map((model) => (
-            <Card
+        <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+          {filteredModels.map((model, i) => (
+            <DataCard
               key={model.id}
-              withBorder
-              radius="md"
-              padding="lg"
-              style={{ cursor: 'pointer' }}
-            >
-              <Group mb="md">
-                <ThemeIcon size={48} radius="md" variant="light" color="filter">
-                  <IconFileAnalytics size={24} />
-                </ThemeIcon>
-                <div style={{ flex: 1 }}>
-                  <Text fw={500}>{model.name}</Text>
-                  {model.description && (
-                    <Text size="sm" c="dimmed" lineClamp={1}>{model.description}</Text>
-                  )}
-                </div>
-              </Group>
-            </Card>
+              id={model.id}
+              type="question"
+              name={model.name}
+              description={model.description}
+              colorIndex={i}
+            />
           ))}
-        </SimpleGrid>
+        </CardGrid>
       ) : (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="md">
-            <ThemeIcon size={60} radius="xl" variant="light" color="filter">
-              <IconFileAnalytics size={30} />
-            </ThemeIcon>
-            <Title order={3}>No models yet</Title>
-            <Text c="dimmed">Models help you define curated views of your data</Text>
+        <EmptyState
+          icon={<IconFileAnalytics size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-info)"
+          title="No models yet"
+          description="Models help you define curated views of your data"
+          action={
             <Button leftSection={<IconPlus size={16} />}>
               Create Model
             </Button>
-          </Stack>
-        </Paper>
+          }
+        />
       )}
-    </Container>
+    </PageContainer>
   )
 }
 
@@ -761,67 +718,53 @@ function MetricsView({
   }, [metrics, search])
 
   return (
-    <Container size="xl" py="lg">
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>Metrics</Title>
-          <Text c="dimmed">Key business metrics</Text>
-        </div>
-        <Group gap="sm">
-          <TextInput
-            placeholder="Search metrics..."
-            leftSection={<IconSearch size={16} />}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            w={250}
-          />
-          <Button leftSection={<IconPlus size={16} />}>
-            New Metric
-          </Button>
-        </Group>
-      </Group>
+    <PageContainer>
+      <PageHeader
+        title="Metrics"
+        subtitle="Key business metrics"
+        actions={
+          <Group gap="sm">
+            <TextInput
+              placeholder="Search metrics..."
+              leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              w={250}
+            />
+            <Button leftSection={<IconPlus size={16} />}>
+              New Metric
+            </Button>
+          </Group>
+        }
+      />
 
       {filteredMetrics.length > 0 ? (
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {filteredMetrics.map((metric) => (
-            <Card
+        <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+          {filteredMetrics.map((metric, i) => (
+            <DataCard
               key={metric.id}
-              withBorder
-              radius="md"
-              padding="lg"
-              style={{ cursor: 'pointer' }}
-            >
-              <Group mb="md">
-                <ThemeIcon size={48} radius="md" variant="light" color="brand">
-                  <IconChartLine size={24} />
-                </ThemeIcon>
-                <div style={{ flex: 1 }}>
-                  <Text fw={500}>{metric.name}</Text>
-                  {metric.description && (
-                    <Text size="sm" c="dimmed" lineClamp={1}>{metric.description}</Text>
-                  )}
-                </div>
-              </Group>
-              <Badge size="sm" variant="light" color="brand">
-                {metric.definition?.aggregation || 'count'}
-              </Badge>
-            </Card>
+              id={metric.id}
+              type="question"
+              name={metric.name}
+              description={metric.description}
+              badge={metric.definition?.aggregation || 'count'}
+              colorIndex={i}
+            />
           ))}
-        </SimpleGrid>
+        </CardGrid>
       ) : (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="md">
-            <ThemeIcon size={60} radius="xl" variant="light" color="brand">
-              <IconChartLine size={30} />
-            </ThemeIcon>
-            <Title order={3}>No metrics defined</Title>
-            <Text c="dimmed">Define metrics to track key business numbers</Text>
+        <EmptyState
+          icon={<IconChartLine size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-primary)"
+          title="No metrics defined"
+          description="Define metrics to track key business numbers"
+          action={
             <Button leftSection={<IconPlus size={16} />}>
               Create Metric
             </Button>
-          </Stack>
-        </Paper>
+          }
+        />
       )}
-    </Container>
+    </PageContainer>
   )
 }

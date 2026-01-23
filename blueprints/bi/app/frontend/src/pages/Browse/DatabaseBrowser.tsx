@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Container, Title, Text, Card, Group, Stack, SimpleGrid, Badge, TextInput,
+  Card, Group, SimpleGrid, Badge, TextInput, Text, Title,
   Paper, Tabs, Table, ActionIcon, Button, Breadcrumbs, Anchor, ThemeIcon,
   Loader, Pagination, Select, Tooltip, Box, ScrollArea
 } from '@mantine/core'
@@ -13,6 +13,7 @@ import {
 import {
   useDataSource, useTables, useColumns, useTablePreview, useSyncTable
 } from '../../api/hooks'
+import { PageContainer, LoadingState, EmptyState } from '../../components/ui'
 
 export default function DatabaseBrowser() {
   const navigate = useNavigate()
@@ -56,25 +57,27 @@ export default function DatabaseBrowser() {
 
   if (loadingDs || loadingTables) {
     return (
-      <Container size="xl" py="xl">
-        <Stack align="center" gap="md">
-          <Loader size="lg" />
-          <Text c="dimmed">Loading database...</Text>
-        </Stack>
-      </Container>
+      <PageContainer>
+        <LoadingState message="Loading database..." />
+      </PageContainer>
     )
   }
 
   if (!datasource) {
     return (
-      <Container size="xl" py="xl">
-        <Paper withBorder p="xl" ta="center">
-          <Text c="dimmed">Database not found</Text>
-          <Button mt="md" onClick={() => navigate('/browse/databases')}>
-            Back to Databases
-          </Button>
-        </Paper>
-      </Container>
+      <PageContainer>
+        <EmptyState
+          icon={<IconDatabase size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-warning)"
+          title="Database not found"
+          description="The requested database could not be found."
+          action={
+            <Button onClick={() => navigate('/browse/databases')}>
+              Back to Databases
+            </Button>
+          }
+        />
+      </PageContainer>
     )
   }
 
@@ -91,28 +94,30 @@ export default function DatabaseBrowser() {
   }
 
   return (
-    <Container size="xl" py="lg">
+    <PageContainer>
       {/* Header */}
       <Group justify="space-between" mb="xl">
         <div>
           <Breadcrumbs mb="xs">
-            <Anchor onClick={() => navigate('/browse/databases')}>Databases</Anchor>
-            <Text fw={600}>{datasource.name}</Text>
+            <Anchor onClick={() => navigate('/browse/databases')} style={{ color: 'var(--color-foreground-muted)' }}>
+              Databases
+            </Anchor>
+            <Text fw={600} style={{ color: 'var(--color-foreground)' }}>{datasource.name}</Text>
           </Breadcrumbs>
           <Group gap="sm">
-            <ThemeIcon size={40} radius="md" variant="light" color="warning">
+            <ThemeIcon size={40} radius="md" variant="light" style={{ backgroundColor: 'var(--color-warning)15', color: 'var(--color-warning)' }}>
               <IconDatabase size={20} />
             </ThemeIcon>
             <div>
-              <Title order={2}>{datasource.name}</Title>
-              <Text size="sm" c="dimmed">{datasource.engine} - {datasource.database}</Text>
+              <Title order={2} style={{ color: 'var(--color-foreground)' }}>{datasource.name}</Title>
+              <Text size="sm" style={{ color: 'var(--color-foreground-muted)' }}>{datasource.engine} - {datasource.database}</Text>
             </div>
           </Group>
         </div>
         <Group gap="sm">
           <TextInput
             placeholder="Search tables..."
-            leftSection={<IconSearch size={16} />}
+            leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             w={250}
@@ -235,23 +240,18 @@ export default function DatabaseBrowser() {
           </Table>
         </Paper>
       ) : (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="md">
-            <ThemeIcon size={60} radius="xl" variant="light" color="gray">
-              <IconTable size={30} />
-            </ThemeIcon>
-            <Title order={3}>
-              {search ? 'No tables found' : 'No tables in this database'}
-            </Title>
-            <Text c="dimmed">
-              {search
-                ? 'Try adjusting your search terms'
-                : 'Sync the database to discover tables'}
-            </Text>
-          </Stack>
-        </Paper>
+        <EmptyState
+          icon={<IconTable size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-foreground-muted)"
+          title={search ? 'No tables found' : 'No tables in this database'}
+          description={
+            search
+              ? 'Try adjusting your search terms'
+              : 'Sync the database to discover tables'
+          }
+        />
       )}
-    </Container>
+    </PageContainer>
   )
 }
 
@@ -307,17 +307,20 @@ function TablePreviewPage({
 
   if (!table) {
     return (
-      <Container size="xl" py="xl">
-        <Paper withBorder p="xl" ta="center">
-          <Text c="dimmed">Table not found</Text>
-          <Button mt="md" onClick={onBack}>Back</Button>
-        </Paper>
-      </Container>
+      <PageContainer>
+        <EmptyState
+          icon={<IconTable size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-foreground-muted)"
+          title="Table not found"
+          description="The requested table could not be found."
+          action={<Button onClick={onBack}>Back</Button>}
+        />
+      </PageContainer>
     )
   }
 
   return (
-    <Container size="xl" py="lg">
+    <PageContainer>
       {/* Header */}
       <Group justify="space-between" mb="lg">
         <div>
@@ -560,6 +563,6 @@ function TablePreviewPage({
           )}
         </Paper>
       )}
-    </Container>
+    </PageContainer>
   )
 }

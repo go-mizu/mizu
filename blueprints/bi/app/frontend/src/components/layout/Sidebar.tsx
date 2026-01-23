@@ -14,120 +14,6 @@ import {
 import { useCollections, useCurrentUser, useLogout } from '../../api/hooks'
 import { useUIStore } from '../../stores/uiStore'
 import { useBookmarkStore } from '../../stores/bookmarkStore'
-import { sidebarTheme, semanticColors } from '../../theme'
-
-// =============================================================================
-// SIDEBAR STYLES - Metabase Light Theme
-// =============================================================================
-
-const styles = {
-  sidebar: {
-    width: 260,
-    height: '100vh',
-    backgroundColor: sidebarTheme.bg,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    borderRight: `1px solid ${sidebarTheme.border}`,
-    transition: 'transform 0.2s ease, opacity 0.2s ease',
-    position: 'fixed' as const,
-    left: 0,
-    top: 0,
-    zIndex: 200,
-  },
-  sidebarHidden: {
-    transform: 'translateX(-100%)',
-    opacity: 0,
-    pointerEvents: 'none' as const,
-  },
-  header: {
-    padding: `${rem(12)} ${rem(12)}`,
-    borderBottom: `1px solid ${sidebarTheme.border}`,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 56,
-  },
-  logo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: rem(8),
-    cursor: 'pointer',
-  },
-  logoIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: rem(6),
-    background: `linear-gradient(135deg, ${semanticColors.brand} 0%, #3B7DBF 100%)`,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchInput: {
-    padding: `${rem(8)} ${rem(12)}`,
-  },
-  navSection: {
-    padding: `${rem(4)} ${rem(8)}`,
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: rem(10),
-    padding: `${rem(8)} ${rem(12)}`,
-    borderRadius: rem(6),
-    color: sidebarTheme.text,
-    fontSize: rem(14),
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-    marginBottom: rem(2),
-  },
-  navItemActive: {
-    backgroundColor: sidebarTheme.bgActive,
-    color: sidebarTheme.textActive,
-  },
-  navItemHover: {
-    backgroundColor: sidebarTheme.bgHover,
-    color: sidebarTheme.textHover,
-  },
-  sectionHeader: {
-    padding: `${rem(12)} ${rem(12)} ${rem(4)}`,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    fontSize: rem(11),
-    fontWeight: 700,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em',
-    color: sidebarTheme.sectionTitle,
-  },
-  userSection: {
-    padding: rem(12),
-    borderTop: `1px solid ${sidebarTheme.border}`,
-    marginTop: 'auto',
-  },
-  userButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: rem(12),
-    padding: rem(8),
-    borderRadius: rem(8),
-    width: '100%',
-  },
-  userAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    backgroundColor: semanticColors.brand,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#ffffff',
-    fontWeight: 600,
-    fontSize: rem(14),
-  },
-}
 
 // =============================================================================
 // FLOATING HAMBURGER BUTTON (shown when sidebar is hidden)
@@ -153,9 +39,9 @@ export function FloatingHamburger() {
           size="lg"
           onClick={toggleSidebar}
           style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e0e0e0',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            backgroundColor: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow)',
           }}
         >
           <IconMenu2 size={20} strokeWidth={1.75} />
@@ -190,13 +76,23 @@ function CollectionItem({ id, name, color, depth = 0, collections }: CollectionI
       <UnstyledButton
         onClick={() => navigate(`/collection/${id}`)}
         style={{
-          ...styles.navItem,
-          ...(isActive ? styles.navItemActive : {}),
+          display: 'flex',
+          alignItems: 'center',
+          gap: rem(10),
+          padding: `${rem(8)} ${rem(12)}`,
           paddingLeft: rem(12 + depth * 16),
+          borderRadius: 'var(--radius)',
+          color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
+          fontSize: rem(14),
+          fontWeight: 500,
+          cursor: 'pointer',
+          transition: 'all var(--transition-fast)',
+          marginBottom: rem(2),
+          backgroundColor: isActive ? 'var(--sidebar-bg-active)' : 'transparent',
         }}
         onMouseEnter={(e) => {
           if (!isActive) {
-            e.currentTarget.style.backgroundColor = sidebarTheme.bgHover
+            e.currentTarget.style.backgroundColor = 'var(--sidebar-bg-hover)'
           }
         }}
         onMouseLeave={(e) => {
@@ -213,18 +109,18 @@ function CollectionItem({ id, name, color, depth = 0, collections }: CollectionI
               e.stopPropagation()
               setExpanded(!expanded)
             }}
-            style={{ color: sidebarTheme.iconDefault }}
+            style={{ color: 'var(--sidebar-icon)' }}
           >
             {expanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
           </ActionIcon>
         )}
         {!hasChildren && <Box w={18} />}
         {expanded ? (
-          <IconFolderFilled size={18} style={{ color: color || sidebarTheme.newCollection, flexShrink: 0 }} />
+          <IconFolderFilled size={18} style={{ color: color || 'var(--color-warning)', flexShrink: 0 }} />
         ) : (
-          <IconFolder size={18} style={{ color: color || sidebarTheme.iconDefault, flexShrink: 0 }} />
+          <IconFolder size={18} style={{ color: color || 'var(--sidebar-icon)', flexShrink: 0 }} />
         )}
-        <Text size="sm" truncate style={{ flex: 1, color: isActive ? sidebarTheme.textActive : sidebarTheme.text }}>
+        <Text size="sm" truncate style={{ flex: 1, color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)' }}>
           {name}
         </Text>
       </UnstyledButton>
@@ -275,12 +171,23 @@ function NavItem({ icon: Icon, label, path, onClick, active, rightSection, iconC
     <UnstyledButton
       onClick={handleClick}
       style={{
-        ...styles.navItem,
-        ...(isActive ? styles.navItemActive : {}),
+        display: 'flex',
+        alignItems: 'center',
+        gap: rem(10),
+        padding: `${rem(8)} ${rem(12)}`,
+        borderRadius: 'var(--radius)',
+        color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
+        fontSize: rem(14),
+        fontWeight: 500,
+        cursor: 'pointer',
+        transition: 'all var(--transition-fast)',
+        marginBottom: rem(2),
+        backgroundColor: isActive ? 'var(--sidebar-bg-active)' : 'transparent',
+        width: '100%',
       }}
       onMouseEnter={(e) => {
         if (!isActive) {
-          e.currentTarget.style.backgroundColor = sidebarTheme.bgHover
+          e.currentTarget.style.backgroundColor = 'var(--sidebar-bg-hover)'
         }
       }}
       onMouseLeave={(e) => {
@@ -293,11 +200,11 @@ function NavItem({ icon: Icon, label, path, onClick, active, rightSection, iconC
         size={20}
         style={{
           flexShrink: 0,
-          color: isActive ? sidebarTheme.iconActive : (iconColor || sidebarTheme.iconDefault),
+          color: isActive ? 'var(--sidebar-icon-active)' : (iconColor || 'var(--sidebar-icon)'),
           strokeWidth: 1.75
         }}
       />
-      <Text size="sm" style={{ flex: 1, color: isActive ? sidebarTheme.textActive : sidebarTheme.text }}>
+      <Text size="sm" style={{ flex: 1, color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)' }}>
         {label}
       </Text>
       {rightSection}
@@ -339,27 +246,68 @@ export default function Sidebar() {
     <Box
       component="aside"
       style={{
-        ...styles.sidebar,
-        ...(sidebarCollapsed ? styles.sidebarHidden : {}),
+        width: 'var(--sidebar-width)',
+        height: '100vh',
+        backgroundColor: 'var(--sidebar-bg)',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRight: '1px solid var(--sidebar-border)',
+        transition: 'transform var(--transition), opacity var(--transition)',
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        zIndex: 200,
+        ...(sidebarCollapsed ? {
+          transform: 'translateX(-100%)',
+          opacity: 0,
+          pointerEvents: 'none',
+        } : {}),
       }}
     >
       {/* Header with Hamburger, Logo and New Button */}
-      <Box style={styles.header}>
+      <Box
+        style={{
+          padding: `${rem(12)} ${rem(12)}`,
+          borderBottom: '1px solid var(--sidebar-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          minHeight: 56,
+        }}
+      >
         <Group gap="xs">
-          {/* Hamburger Menu - Metabase style */}
+          {/* Hamburger Menu */}
           <Tooltip label="Hide sidebar" position="right">
             <ActionIcon
               variant="subtle"
               size="md"
               onClick={toggleSidebar}
-              style={{ color: sidebarTheme.iconDefault }}
+              style={{ color: 'var(--sidebar-icon)' }}
             >
               <IconMenu2 size={20} strokeWidth={1.75} />
             </ActionIcon>
           </Tooltip>
 
-          <UnstyledButton onClick={() => navigate('/')} style={styles.logo}>
-            <Box style={styles.logoIcon}>
+          <UnstyledButton
+            onClick={() => navigate('/')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: rem(8),
+              cursor: 'pointer',
+            }}
+          >
+            <Box
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 'var(--radius)',
+                background: 'linear-gradient(135deg, var(--color-primary) 0%, #3B7DBF 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               <IconSparkles size={16} color="#ffffff" strokeWidth={2} />
             </Box>
           </UnstyledButton>
@@ -378,20 +326,20 @@ export default function Sidebar() {
           </Menu.Target>
           <Menu.Dropdown>
             <Menu.Item
-              leftSection={<IconPencil size={16} color={semanticColors.brand} strokeWidth={1.75} />}
+              leftSection={<IconPencil size={16} style={{ color: 'var(--color-primary)' }} strokeWidth={1.75} />}
               onClick={() => navigate('/question/new')}
             >
               New question
             </Menu.Item>
             <Menu.Item
-              leftSection={<IconLayoutDashboard size={16} color={semanticColors.summarize} strokeWidth={1.75} />}
+              leftSection={<IconLayoutDashboard size={16} style={{ color: 'var(--color-success)' }} strokeWidth={1.75} />}
               onClick={() => navigate('/dashboard/new')}
             >
               New dashboard
             </Menu.Item>
             <Menu.Divider />
             <Menu.Item
-              leftSection={<IconFolder size={16} color={sidebarTheme.newCollection} strokeWidth={1.75} />}
+              leftSection={<IconFolder size={16} style={{ color: 'var(--color-warning)' }} strokeWidth={1.75} />}
               onClick={() => navigate('/collection/new')}
             >
               New collection
@@ -403,10 +351,10 @@ export default function Sidebar() {
       {/* Main Navigation */}
       <ScrollArea style={{ flex: 1 }} scrollbarSize={6}>
         {/* Search */}
-        <Box style={styles.searchInput}>
+        <Box style={{ padding: `${rem(8)} ${rem(12)}` }}>
           <TextInput
             placeholder="Search..."
-            leftSection={<IconSearch size={16} color={sidebarTheme.inputPlaceholder} strokeWidth={1.75} />}
+            leftSection={<IconSearch size={16} style={{ color: 'var(--sidebar-input-placeholder)' }} strokeWidth={1.75} />}
             size="sm"
             onClick={openCommandPalette}
             readOnly
@@ -417,30 +365,44 @@ export default function Sidebar() {
             }
             styles={{
               input: {
-                backgroundColor: sidebarTheme.inputBg,
-                border: `1px solid ${sidebarTheme.inputBorder}`,
-                color: sidebarTheme.inputText,
+                backgroundColor: 'var(--sidebar-input-bg)',
+                border: '1px solid var(--sidebar-input-border)',
+                color: 'var(--sidebar-input-text)',
                 cursor: 'pointer',
                 '&::placeholder': {
-                  color: sidebarTheme.inputPlaceholder,
+                  color: 'var(--sidebar-input-placeholder)',
                 },
                 '&:hover': {
-                  backgroundColor: '#F0F0F0',
-                  borderColor: '#E0E0E0',
+                  backgroundColor: 'var(--color-background-subtle)',
+                  borderColor: 'var(--color-border-strong)',
                 },
               },
             }}
           />
         </Box>
 
-        <Box style={styles.navSection}>
+        <Box style={{ padding: `${rem(4)} ${rem(8)}` }}>
           {/* Home */}
           <NavItem icon={IconHome2} label="Home" path="/" />
 
-          {/* Browse Section - Metabase order: Models, Databases */}
-          <Box style={styles.sectionHeader}>
+          {/* Browse Section - Models, Databases */}
+          <Box
+            style={{
+              padding: `${rem(12)} ${rem(12)} ${rem(4)}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
             <Text
-              style={{ ...styles.sectionTitle, cursor: 'pointer' }}
+              style={{
+                fontSize: rem(11),
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'var(--sidebar-section-title)',
+                cursor: 'pointer',
+              }}
               onClick={() => setBrowseExpanded(!browseExpanded)}
             >
               BROWSE
@@ -449,13 +411,13 @@ export default function Sidebar() {
               size="xs"
               variant="transparent"
               onClick={() => setBrowseExpanded(!browseExpanded)}
-              style={{ color: sidebarTheme.sectionTitle }}
+              style={{ color: 'var(--sidebar-section-title)' }}
             >
               <IconChevronRight
                 size={12}
                 style={{
                   transform: browseExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s ease'
+                  transition: 'transform var(--transition)',
                 }}
               />
             </ActionIcon>
@@ -483,23 +445,40 @@ export default function Sidebar() {
 
         {/* Bookmarks Section */}
         {bookmarks.length > 0 && (
-          <Box style={styles.navSection}>
-            <Box style={styles.sectionHeader}>
+          <Box style={{ padding: `${rem(4)} ${rem(8)}` }}>
+            <Box
+              style={{
+                padding: `${rem(12)} ${rem(12)} ${rem(4)}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
               <Group gap="xs">
-                <IconStar size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
-                <Text style={styles.sectionTitle}>Bookmarks</Text>
+                <IconStar size={14} style={{ color: 'var(--sidebar-section-title)' }} strokeWidth={1.75} />
+                <Text
+                  style={{
+                    fontSize: rem(11),
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: 'var(--sidebar-section-title)',
+                  }}
+                >
+                  Bookmarks
+                </Text>
               </Group>
               <ActionIcon
                 size="xs"
                 variant="transparent"
                 onClick={() => setBookmarksExpanded(!bookmarksExpanded)}
-                style={{ color: sidebarTheme.sectionTitle }}
+                style={{ color: 'var(--sidebar-section-title)' }}
               >
                 <IconChevronRight
                   size={12}
                   style={{
                     transform: bookmarksExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease'
+                    transition: 'transform var(--transition)',
                   }}
                 />
               </ActionIcon>
@@ -523,23 +502,40 @@ export default function Sidebar() {
 
         {/* Recents Section */}
         {recentItems.length > 0 && (
-          <Box style={styles.navSection}>
-            <Box style={styles.sectionHeader}>
+          <Box style={{ padding: `${rem(4)} ${rem(8)}` }}>
+            <Box
+              style={{
+                padding: `${rem(12)} ${rem(12)} ${rem(4)}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
               <Group gap="xs">
-                <IconClock size={14} style={{ color: sidebarTheme.sectionTitle }} strokeWidth={1.75} />
-                <Text style={styles.sectionTitle}>Recents</Text>
+                <IconClock size={14} style={{ color: 'var(--sidebar-section-title)' }} strokeWidth={1.75} />
+                <Text
+                  style={{
+                    fontSize: rem(11),
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    color: 'var(--sidebar-section-title)',
+                  }}
+                >
+                  Recents
+                </Text>
               </Group>
               <ActionIcon
                 size="xs"
                 variant="transparent"
                 onClick={() => setRecentsExpanded(!recentsExpanded)}
-                style={{ color: sidebarTheme.sectionTitle }}
+                style={{ color: 'var(--sidebar-section-title)' }}
               >
                 <IconChevronRight
                   size={12}
                   style={{
                     transform: recentsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease'
+                    transition: 'transform var(--transition)',
                   }}
                 />
               </ActionIcon>
@@ -561,17 +557,34 @@ export default function Sidebar() {
           </Box>
         )}
 
-        {/* Collections Section - Metabase style */}
-        <Box style={styles.navSection}>
-          <Box style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>COLLECTIONS</Text>
+        {/* Collections Section */}
+        <Box style={{ padding: `${rem(4)} ${rem(8)}` }}>
+          <Box
+            style={{
+              padding: `${rem(12)} ${rem(12)} ${rem(4)}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: rem(11),
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'var(--sidebar-section-title)',
+              }}
+            >
+              COLLECTIONS
+            </Text>
             <Group gap={4}>
               <Menu position="bottom-end" width={180}>
                 <Menu.Target>
                   <ActionIcon
                     size="xs"
                     variant="transparent"
-                    style={{ color: sidebarTheme.sectionTitle }}
+                    style={{ color: 'var(--sidebar-section-title)' }}
                   >
                     <IconDots size={14} strokeWidth={2} />
                   </ActionIcon>
@@ -595,13 +608,13 @@ export default function Sidebar() {
                 size="xs"
                 variant="transparent"
                 onClick={() => setCollectionsExpanded(!collectionsExpanded)}
-                style={{ color: sidebarTheme.sectionTitle }}
+                style={{ color: 'var(--sidebar-section-title)' }}
               >
                 <IconChevronRight
                   size={12}
                   style={{
                     transform: collectionsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease'
+                    transition: 'transform var(--transition)',
                   }}
                 />
               </ActionIcon>
@@ -639,8 +652,8 @@ export default function Sidebar() {
 
         {/* Admin Section */}
         {user?.role === 'admin' && (
-          <Box style={styles.navSection}>
-            <Divider mb="sm" color={sidebarTheme.border} />
+          <Box style={{ padding: `${rem(4)} ${rem(8)}` }}>
+            <Divider mb="sm" style={{ borderColor: 'var(--sidebar-border)' }} />
             <NavItem
               icon={IconSettings2}
               label="Admin"
@@ -649,9 +662,9 @@ export default function Sidebar() {
                 <IconChevronRight
                   size={14}
                   style={{
-                    color: sidebarTheme.iconDefault,
+                    color: 'var(--sidebar-icon)',
                     transform: adminExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s ease'
+                    transition: 'transform var(--transition)',
                   }}
                 />
               }
@@ -668,26 +681,53 @@ export default function Sidebar() {
       </ScrollArea>
 
       {/* User Section */}
-      <Box style={styles.userSection}>
+      <Box
+        style={{
+          padding: rem(12),
+          borderTop: '1px solid var(--sidebar-border)',
+          marginTop: 'auto',
+        }}
+      >
         <Menu position="top-start" width={220} shadow="md">
           <Menu.Target>
             <UnstyledButton
-              style={styles.userButton}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: rem(12),
+                padding: rem(8),
+                borderRadius: 'var(--radius-md)',
+                width: '100%',
+                transition: 'background-color var(--transition-fast)',
+              }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = sidebarTheme.bgHover
+                e.currentTarget.style.backgroundColor = 'var(--sidebar-bg-hover)'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent'
               }}
             >
-              <Box style={styles.userAvatar}>
+              <Box
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--color-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  fontSize: rem(14),
+                }}
+              >
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
               </Box>
               <Box style={{ flex: 1, overflow: 'hidden' }}>
-                <Text size="sm" truncate fw={500} style={{ color: sidebarTheme.text }}>
+                <Text size="sm" truncate fw={500} style={{ color: 'var(--sidebar-text)' }}>
                   {user?.name || 'User'}
                 </Text>
-                <Text size="xs" truncate style={{ color: sidebarTheme.textSecondary }}>
+                <Text size="xs" truncate style={{ color: 'var(--sidebar-text-secondary)' }}>
                   {user?.email || ''}
                 </Text>
               </Box>

@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Container, Title, Text, Card, Group, Stack, SimpleGrid, Badge, TextInput,
-  Tabs, Paper, Menu, ActionIcon, Button, Breadcrumbs, Anchor, ThemeIcon,
-  Modal, Table, SegmentedControl
+  Group, TextInput, Tabs, Menu, ActionIcon, Button, Breadcrumbs, Anchor,
+  Modal, Table, SegmentedControl, Stack, ThemeIcon
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -18,7 +17,9 @@ import {
   useRootCollection, useRootCollectionItems,
   usePersonalCollection, usePersonalCollectionItems
 } from '../api/hooks'
-import { chartColors } from '../theme'
+import {
+  SectionHeader, DataCard, EmptyState, CardGrid, PageContainer, LoadingState
+} from '../components/ui'
 
 interface CollectionProps {
   type?: 'root' | 'personal' | 'trash'
@@ -113,18 +114,18 @@ export default function Collection({ type }: CollectionProps) {
   // Get collection title and icon
   const { title, icon: TitleIcon, iconColor } = useMemo(() => {
     if (type === 'root') {
-      return { title: 'Our analytics', icon: IconFolder, iconColor: '#7172AD' }
+      return { title: 'Our analytics', icon: IconFolder, iconColor: 'var(--color-info)' }
     }
     if (type === 'personal') {
-      return { title: 'Your personal collection', icon: IconUser, iconColor: '#509EE3' }
+      return { title: 'Your personal collection', icon: IconUser, iconColor: 'var(--color-primary)' }
     }
     if (type === 'trash') {
-      return { title: 'Trash', icon: IconTrash, iconColor: '#E85D54' }
+      return { title: 'Trash', icon: IconTrash, iconColor: 'var(--color-error)' }
     }
     return {
       title: currentCollection?.name || 'Collection',
       icon: IconFolder,
-      iconColor: currentCollection?.color || '#7172AD'
+      iconColor: currentCollection?.color || 'var(--color-info)'
     }
   }, [type, currentCollection])
 
@@ -179,90 +180,99 @@ export default function Collection({ type }: CollectionProps) {
   // Loading state
   if (isLoadingCollection || isLoadingItems) {
     return (
-      <Container size="xl" py="lg">
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Text>Loading...</Text>
-        </Paper>
-      </Container>
+      <PageContainer>
+        <LoadingState message="Loading collection..." />
+      </PageContainer>
     )
   }
 
   return (
-    <Container size="xl" py="lg">
+    <PageContainer>
       {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          {breadcrumbs.length > 1 && (
-            <Breadcrumbs mb="xs">
-              {breadcrumbs.map((crumb, i) => (
-                <Anchor
-                  key={crumb.path}
-                  onClick={() => navigate(crumb.path)}
-                  c={i === breadcrumbs.length - 1 ? 'dark' : 'dimmed'}
-                  fw={i === breadcrumbs.length - 1 ? 600 : 400}
-                >
-                  {crumb.label}
-                </Anchor>
-              ))}
-            </Breadcrumbs>
-          )}
+      <div style={{ marginBottom: 'var(--mantine-spacing-xl)' }}>
+        {breadcrumbs.length > 1 && (
+          <Breadcrumbs mb="xs">
+            {breadcrumbs.map((crumb, i) => (
+              <Anchor
+                key={crumb.path}
+                onClick={() => navigate(crumb.path)}
+                style={{
+                  color: i === breadcrumbs.length - 1 ? 'var(--color-foreground)' : 'var(--color-foreground-muted)',
+                  fontWeight: i === breadcrumbs.length - 1 ? 600 : 400,
+                }}
+              >
+                {crumb.label}
+              </Anchor>
+            ))}
+          </Breadcrumbs>
+        )}
+        <Group justify="space-between" align="flex-start">
           <Group gap="sm">
-            <ThemeIcon size={40} radius="md" variant="light" style={{ backgroundColor: iconColor + '20', color: iconColor }}>
+            <ThemeIcon
+              size={40}
+              radius="md"
+              variant="light"
+              style={{ backgroundColor: `${iconColor}15`, color: iconColor }}
+            >
               <TitleIcon size={24} />
             </ThemeIcon>
             <div>
-              <Title order={2}>{title}</Title>
+              <h2 style={{ margin: 0, color: 'var(--color-foreground)', fontSize: '1.5rem', fontWeight: 600 }}>
+                {title}
+              </h2>
               {currentCollection?.description && (
-                <Text c="dimmed" size="sm">{currentCollection.description}</Text>
+                <p style={{ margin: 0, color: 'var(--color-foreground-muted)', fontSize: '0.875rem' }}>
+                  {currentCollection.description}
+                </p>
               )}
             </div>
           </Group>
-        </div>
-        <Group gap="sm">
-          <TextInput
-            placeholder="Search..."
-            leftSection={<IconSearch size={16} />}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            w={250}
-          />
-          <SegmentedControl
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'grid' | 'list')}
-            data={[
-              { value: 'grid', label: <IconGridDots size={16} /> },
-              { value: 'list', label: <IconList size={16} /> },
-            ]}
-            size="sm"
-          />
-          <Menu position="bottom-end">
-            <Menu.Target>
-              <Button leftSection={<IconPlus size={16} />}>New</Button>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconChartBar size={14} />}
-                onClick={() => navigate('/question/new')}
-              >
-                New question
-              </Menu.Item>
-              <Menu.Item
-                leftSection={<IconLayoutDashboard size={14} />}
-                onClick={() => navigate('/dashboard/new')}
-              >
-                New dashboard
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item
-                leftSection={<IconFolderPlus size={14} />}
-                onClick={openNewCollectionModal}
-              >
-                New collection
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
+          <Group gap="sm">
+            <TextInput
+              placeholder="Search..."
+              leftSection={<IconSearch size={16} style={{ color: 'var(--color-foreground-subtle)' }} />}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              w={250}
+            />
+            <SegmentedControl
+              value={viewMode}
+              onChange={(v) => setViewMode(v as 'grid' | 'list')}
+              data={[
+                { value: 'grid', label: <IconGridDots size={16} /> },
+                { value: 'list', label: <IconList size={16} /> },
+              ]}
+              size="sm"
+            />
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button leftSection={<IconPlus size={16} />}>New</Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  leftSection={<IconChartBar size={14} style={{ color: 'var(--color-primary)' }} />}
+                  onClick={() => navigate('/question/new')}
+                >
+                  New question
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconLayoutDashboard size={14} style={{ color: 'var(--color-success)' }} />}
+                  onClick={() => navigate('/dashboard/new')}
+                >
+                  New dashboard
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  leftSection={<IconFolderPlus size={14} style={{ color: 'var(--color-warning)' }} />}
+                  onClick={openNewCollectionModal}
+                >
+                  New collection
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         </Group>
-      </Group>
+      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={setActiveTab} mb="lg">
@@ -286,29 +296,35 @@ export default function Collection({ type }: CollectionProps) {
       {(activeTab === 'all' || activeTab === 'collections') && filteredItems.collections.length > 0 && (
         <div style={{ marginBottom: 32 }}>
           {activeTab === 'all' && (
-            <Group justify="space-between" mb="md">
-              <Title order={4}>Collections</Title>
-              <Button
-                variant="subtle"
-                size="sm"
-                rightSection={<IconArrowRight size={14} />}
-                onClick={() => setActiveTab('collections')}
-              >
-                View all
-              </Button>
-            </Group>
+            <SectionHeader
+              title="Collections"
+              icon={<IconFolder size={18} />}
+              count={filteredItems.collections.length}
+              actions={
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  rightSection={<IconArrowRight size={14} />}
+                  onClick={() => setActiveTab('collections')}
+                >
+                  View all
+                </Button>
+              }
+            />
           )}
           {viewMode === 'grid' ? (
-            <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }}>
+            <CardGrid cols={{ base: 1, sm: 2, md: 4 }}>
               {filteredItems.collections.map((collection, i) => (
-                <CollectionCard
+                <DataCard
                   key={collection.id}
-                  collection={collection}
+                  id={collection.id}
+                  type="collection"
+                  name={collection.name}
                   colorIndex={i}
                   onClick={() => navigate(`/collection/${collection.id}`)}
                 />
               ))}
-            </SimpleGrid>
+            </CardGrid>
           ) : (
             <ItemList
               items={filteredItems.collections}
@@ -322,28 +338,37 @@ export default function Collection({ type }: CollectionProps) {
       {(activeTab === 'all' || activeTab === 'dashboards') && filteredItems.dashboards.length > 0 && (
         <div style={{ marginBottom: 32 }}>
           {activeTab === 'all' && (
-            <Group justify="space-between" mb="md">
-              <Title order={4}>Dashboards</Title>
-              <Button
-                variant="subtle"
-                size="sm"
-                rightSection={<IconArrowRight size={14} />}
-                onClick={() => setActiveTab('dashboards')}
-              >
-                View all
-              </Button>
-            </Group>
+            <SectionHeader
+              title="Dashboards"
+              icon={<IconLayoutDashboard size={18} />}
+              count={filteredItems.dashboards.length}
+              actions={
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  rightSection={<IconArrowRight size={14} />}
+                  onClick={() => setActiveTab('dashboards')}
+                >
+                  View all
+                </Button>
+              }
+            />
           )}
           {viewMode === 'grid' ? (
-            <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-              {filteredItems.dashboards.map((dashboard) => (
-                <DashboardCard
+            <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+              {filteredItems.dashboards.map((dashboard, i) => (
+                <DataCard
                   key={dashboard.id}
-                  dashboard={dashboard}
+                  id={dashboard.id}
+                  type="dashboard"
+                  name={dashboard.name}
+                  description={dashboard.description}
+                  badge={`${dashboard.cards?.length || 0} cards`}
+                  colorIndex={i}
                   onClick={() => navigate(`/dashboard/${dashboard.id}`)}
                 />
               ))}
-            </SimpleGrid>
+            </CardGrid>
           ) : (
             <ItemList
               items={filteredItems.dashboards}
@@ -357,28 +382,37 @@ export default function Collection({ type }: CollectionProps) {
       {(activeTab === 'all' || activeTab === 'questions') && filteredItems.questions.length > 0 && (
         <div style={{ marginBottom: 32 }}>
           {activeTab === 'all' && (
-            <Group justify="space-between" mb="md">
-              <Title order={4}>Questions</Title>
-              <Button
-                variant="subtle"
-                size="sm"
-                rightSection={<IconArrowRight size={14} />}
-                onClick={() => setActiveTab('questions')}
-              >
-                View all
-              </Button>
-            </Group>
+            <SectionHeader
+              title="Questions"
+              icon={<IconChartBar size={18} />}
+              count={filteredItems.questions.length}
+              actions={
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  rightSection={<IconArrowRight size={14} />}
+                  onClick={() => setActiveTab('questions')}
+                >
+                  View all
+                </Button>
+              }
+            />
           )}
           {viewMode === 'grid' ? (
-            <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-              {filteredItems.questions.map((question) => (
-                <QuestionCard
+            <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+              {filteredItems.questions.map((question, i) => (
+                <DataCard
                   key={question.id}
-                  question={question}
+                  id={question.id}
+                  type="question"
+                  name={question.name}
+                  description={question.description}
+                  badge={question.visualization?.type || 'table'}
+                  colorIndex={i}
                   onClick={() => navigate(`/question/${question.id}`)}
                 />
               ))}
-            </SimpleGrid>
+            </CardGrid>
           ) : (
             <ItemList
               items={filteredItems.questions}
@@ -391,42 +425,39 @@ export default function Collection({ type }: CollectionProps) {
 
       {/* Empty state */}
       {totalItems === 0 && (
-        <Paper withBorder radius="md" p="xl" ta="center">
-          <Stack align="center" gap="lg">
-            <ThemeIcon size={60} radius="xl" variant="light" style={{ backgroundColor: iconColor + '20', color: iconColor }}>
-              <TitleIcon size={30} />
-            </ThemeIcon>
-            <div>
-              <Title order={3} mb="xs">
-                {search ? 'No results found' : 'This collection is empty'}
-              </Title>
-              <Text c="dimmed" maw={400} mx="auto">
-                {search
-                  ? 'Try adjusting your search terms'
-                  : type === 'trash'
-                    ? 'Items you delete will appear here'
-                    : 'Create a new question or dashboard to get started'}
-              </Text>
-            </div>
-            {!search && type !== 'trash' && (
-              <Group>
-                <Button
-                  leftSection={<IconChartBar size={16} />}
-                  onClick={() => navigate('/question/new')}
-                >
-                  New Question
-                </Button>
-                <Button
-                  variant="light"
-                  leftSection={<IconLayoutDashboard size={16} />}
-                  onClick={() => navigate('/dashboard/new')}
-                >
-                  New Dashboard
-                </Button>
-              </Group>
-            )}
-          </Stack>
-        </Paper>
+        <EmptyState
+          icon={<TitleIcon size={32} strokeWidth={1.5} />}
+          iconColor={iconColor}
+          title={search ? 'No results found' : 'This collection is empty'}
+          description={
+            search
+              ? 'Try adjusting your search terms'
+              : type === 'trash'
+                ? 'Items you delete will appear here'
+                : 'Create a new question or dashboard to get started'
+          }
+          action={
+            !search && type !== 'trash' && (
+              <Button
+                leftSection={<IconChartBar size={16} />}
+                onClick={() => navigate('/question/new')}
+              >
+                New Question
+              </Button>
+            )
+          }
+          secondaryAction={
+            !search && type !== 'trash' && (
+              <Button
+                variant="light"
+                leftSection={<IconLayoutDashboard size={16} />}
+                onClick={() => navigate('/dashboard/new')}
+              >
+                New Dashboard
+              </Button>
+            )
+          }
+        />
       )}
 
       {/* New Collection Modal */}
@@ -451,111 +482,7 @@ export default function Collection({ type }: CollectionProps) {
           </Group>
         </Stack>
       </Modal>
-    </Container>
-  )
-}
-
-// Collection Card Component
-function CollectionCard({
-  collection,
-  colorIndex,
-  onClick,
-}: {
-  collection: { id: string; name: string; color?: string }
-  colorIndex: number
-  onClick: () => void
-}) {
-  const color = collection.color || chartColors[colorIndex % chartColors.length]
-
-  return (
-    <Card
-      withBorder
-      radius="md"
-      padding="lg"
-      style={{ cursor: 'pointer', borderLeft: `4px solid ${color}` }}
-      onClick={onClick}
-    >
-      <Group>
-        <ThemeIcon size={40} radius="md" variant="light" style={{ backgroundColor: color + '20', color }}>
-          <IconFolder size={20} />
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text fw={500}>{collection.name}</Text>
-        </div>
-      </Group>
-    </Card>
-  )
-}
-
-// Dashboard Card Component
-function DashboardCard({
-  dashboard,
-  onClick,
-}: {
-  dashboard: { id: string; name: string; description?: string; cards?: any[] }
-  onClick: () => void
-}) {
-  return (
-    <Card
-      withBorder
-      radius="md"
-      padding="lg"
-      style={{ cursor: 'pointer' }}
-      onClick={onClick}
-    >
-      <Group mb="sm">
-        <ThemeIcon size={40} radius="md" variant="light" color="summarize">
-          <IconLayoutDashboard size={20} />
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text fw={500}>{dashboard.name}</Text>
-          {dashboard.description && (
-            <Text size="sm" c="dimmed" lineClamp={1}>
-              {dashboard.description}
-            </Text>
-          )}
-        </div>
-      </Group>
-      <Badge size="sm" variant="light" color="gray">
-        {dashboard.cards?.length || 0} cards
-      </Badge>
-    </Card>
-  )
-}
-
-// Question Card Component
-function QuestionCard({
-  question,
-  onClick,
-}: {
-  question: { id: string; name: string; description?: string; visualization?: { type: string } }
-  onClick: () => void
-}) {
-  return (
-    <Card
-      withBorder
-      radius="md"
-      padding="lg"
-      style={{ cursor: 'pointer' }}
-      onClick={onClick}
-    >
-      <Group mb="sm">
-        <ThemeIcon size={40} radius="md" variant="light" color="brand">
-          <IconChartBar size={20} />
-        </ThemeIcon>
-        <div style={{ flex: 1 }}>
-          <Text fw={500}>{question.name}</Text>
-          {question.description && (
-            <Text size="sm" c="dimmed" lineClamp={1}>
-              {question.description}
-            </Text>
-          )}
-        </div>
-      </Group>
-      <Badge size="sm" variant="light" color="brand">
-        {question.visualization?.type || 'table'}
-      </Badge>
-    </Card>
+    </PageContainer>
   )
 }
 
@@ -570,10 +497,10 @@ function ItemList({
   onClick: (id: string) => void
 }) {
   const Icon = type === 'collection' ? IconFolder : type === 'dashboard' ? IconLayoutDashboard : IconChartBar
-  const color = type === 'collection' ? 'filter' : type === 'dashboard' ? 'summarize' : 'brand'
+  const colorVar = type === 'collection' ? 'var(--color-info)' : type === 'dashboard' ? 'var(--color-success)' : 'var(--color-primary)'
 
   return (
-    <Table striped highlightOnHover>
+    <Table striped highlightOnHover className="data-table">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Name</Table.Th>
@@ -586,16 +513,36 @@ function ItemList({
           <Table.Tr key={item.id} style={{ cursor: 'pointer' }} onClick={() => onClick(item.id)}>
             <Table.Td>
               <Group gap="sm">
-                <ThemeIcon size="sm" variant="light" color={color}>
-                  <Icon size={14} />
-                </ThemeIcon>
-                <Text fw={500}>{item.name}</Text>
+                <div
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: `${colorVar}15`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon size={14} style={{ color: colorVar }} />
+                </div>
+                <span style={{ fontWeight: 500, color: 'var(--color-foreground)' }}>{item.name}</span>
               </Group>
             </Table.Td>
             <Table.Td>
-              <Badge size="sm" variant="light" color={color}>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  padding: '0.125rem 0.5rem',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: `${colorVar}15`,
+                  color: colorVar,
+                  textTransform: 'capitalize',
+                }}
+              >
                 {type}
-              </Badge>
+              </span>
             </Table.Td>
             <Table.Td>
               <Menu position="bottom-end">

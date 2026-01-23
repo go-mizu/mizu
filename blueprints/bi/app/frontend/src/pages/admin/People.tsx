@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  Container, Title, Text, Card, Group, Stack, Button, TextInput, Table,
+  Card, Group, Stack, Button, TextInput, Table, Text,
   Badge, ActionIcon, Menu, Modal, Select, Tabs, Avatar
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
@@ -11,6 +11,7 @@ import {
 } from '@tabler/icons-react'
 import { useUsers, useCurrentUser } from '../../api/hooks'
 import { api } from '../../api/client'
+import { PageHeader, PageContainer, EmptyState } from '../../components/ui'
 
 interface InviteData {
   email: string
@@ -92,17 +93,16 @@ export default function People() {
   }
 
   return (
-    <Container size="xl" py="lg">
-      {/* Header */}
-      <Group justify="space-between" mb="xl">
-        <div>
-          <Title order={2}>People</Title>
-          <Text c="dimmed">Manage users and permissions</Text>
-        </div>
-        <Button leftSection={<IconUserPlus size={16} />} onClick={openInviteModal}>
-          Invite User
-        </Button>
-      </Group>
+    <PageContainer>
+      <PageHeader
+        title="People"
+        subtitle="Manage users and permissions"
+        actions={
+          <Button leftSection={<IconUserPlus size={16} />} onClick={openInviteModal}>
+            Invite User
+          </Button>
+        }
+      />
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={setActiveTab} mb="lg">
@@ -205,16 +205,13 @@ export default function People() {
       )}
 
       {activeTab === 'groups' && (
-        <Card withBorder radius="md" p="xl">
-          <Stack align="center" gap="md">
-            <IconUsers size={48} color="var(--mantine-color-gray-5)" />
-            <Text c="dimmed" ta="center">
-              Groups help you manage permissions for multiple users at once.
-              <br />
-              This feature is coming soon.
-            </Text>
-          </Stack>
-        </Card>
+        <EmptyState
+          icon={<IconUsers size={32} strokeWidth={1.5} />}
+          iconColor="var(--color-info)"
+          title="Groups coming soon"
+          description="Groups help you manage permissions for multiple users at once."
+          size="md"
+        />
       )}
 
       {/* Invite Modal */}
@@ -252,6 +249,6 @@ export default function People() {
           </Group>
         </Stack>
       </Modal>
-    </Container>
+    </PageContainer>
   )
 }
