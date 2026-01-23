@@ -17,6 +17,7 @@ import {
 import { QueryBuilder } from '../components/query-builder'
 import Visualization from '../components/visualizations'
 import VisualizationPicker, { VisualizationTypeSelect } from '../components/visualizations/VisualizationPicker'
+import VisualizationSettingsEditor from '../components/visualizations/VisualizationSettings'
 import { useQueryStore } from '../stores/queryStore'
 import { useBookmarkStore, useBookmarkActions, usePinActions } from '../stores/bookmarkStore'
 import {
@@ -69,6 +70,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
   const [error, setError] = useState<string | null>(null)
   const [saveModalOpened, { open: openSaveModal, close: closeSaveModal }] = useDisclosure(false)
   const [vizPickerOpened, { open: openVizPicker, close: closeVizPicker }] = useDisclosure(false)
+  const [vizSettingsOpened, { open: openVizSettings, close: closeVizSettings }] = useDisclosure(false)
   const [sidebarOpened, setSidebarOpened] = useState(true)
   const [questionName, setQuestionName] = useState('')
   const [questionDescription, setQuestionDescription] = useState('')
@@ -362,6 +364,15 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
               onClick={openVizPicker}
               color="gray"
             >
+              Type
+            </Button>
+
+            <Button
+              variant="light"
+              size="sm"
+              onClick={openVizSettings}
+              color="gray"
+            >
               Settings
             </Button>
 
@@ -535,6 +546,22 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
         value={visualization.type}
         onChange={handleVizTypeChange}
       />
+
+      {/* Visualization Settings Modal */}
+      <Modal
+        opened={vizSettingsOpened}
+        onClose={closeVizSettings}
+        title="Visualization Settings"
+        size="lg"
+      >
+        <VisualizationSettingsEditor
+          visualization={visualization}
+          onChange={(newViz) => {
+            queryStore.setVisualization(newViz)
+          }}
+          columns={result?.columns?.map(c => ({ name: c.name, type: c.type })) || []}
+        />
+      </Modal>
     </Box>
   )
 }
