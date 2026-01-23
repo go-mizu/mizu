@@ -9,6 +9,7 @@ import { useUIStore } from './stores/uiStore'
 // Lazy load pages for better performance
 const Home = lazy(() => import('./pages/Home'))
 const Browse = lazy(() => import('./pages/Browse'))
+const DatabaseBrowser = lazy(() => import('./pages/Browse/DatabaseBrowser'))
 const Question = lazy(() => import('./pages/Question'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DataModel = lazy(() => import('./pages/admin/DataModel'))
@@ -45,6 +46,8 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/browse" element={<Browse />} />
             <Route path="/browse/databases" element={<Browse view="databases" />} />
+            <Route path="/browse/database/:datasourceId" element={<DatabaseBrowser />} />
+            <Route path="/browse/database/:datasourceId/table/:tableId" element={<DatabaseBrowser />} />
             <Route path="/browse/models" element={<Browse view="models" />} />
             <Route path="/browse/metrics" element={<Browse view="metrics" />} />
             <Route path="/browse/:id" element={<Browse />} />

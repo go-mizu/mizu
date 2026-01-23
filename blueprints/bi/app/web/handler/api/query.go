@@ -28,8 +28,10 @@ func NewQuery(store *sqlite.Store) *Query {
 
 // ExecuteRequest represents a query execution request.
 type ExecuteRequest struct {
-	DataSourceID string                 `json:"datasource_id"`
+	DataSourceID string         `json:"datasource_id"`
 	Query        map[string]any `json:"query"`
+	Page         int            `json:"page,omitempty"`      // Page number (1-indexed)
+	PageSize     int            `json:"page_size,omitempty"` // Items per page
 }
 
 // NativeQueryRequest represents a native SQL query request.
@@ -49,6 +51,14 @@ func (h *Query) Execute(c *mizu.Ctx) error {
 	ds, err := h.store.DataSources().GetByID(c.Request().Context(), req.DataSourceID)
 	if err != nil || ds == nil {
 		return c.JSON(404, map[string]string{"error": "Data source not found"})
+	}
+
+	// Add pagination to query if specified
+	if req.Page > 0 {
+		req.Query["page"] = req.Page
+	}
+	if req.PageSize > 0 {
+		req.Query["page_size"] = req.PageSize
 	}
 
 	result, err := executeQuery(ds, req.Query)
@@ -106,14 +116,76 @@ func (h *Query) History(c *mizu.Ctx) error {
 	return c.JSON(200, history)
 }
 
+// paginationInfo holds pagination metadata
+type paginationInfo struct {
+	Page       int
+	PageSize   int
+	Offset     int
+	CountQuery string
+	CountParams []any
+}
+
 // executeQuery executes a structured query and returns results.
 func executeQuery(ds *store.DataSource, query map[string]any) (*store.QueryResult, error) {
+	// Extract pagination info
+	var pagination *paginationInfo
+	if page, ok := query["page"].(int); ok && page > 0 {
+		pageSize := 25 // default
+		if ps, ok := query["page_size"].(int); ok && ps > 0 {
+			pageSize = ps
+			if pageSize > 1000 {
+				pageSize = 1000 // max page size
+			}
+		}
+		pagination = &paginationInfo{
+			Page:     page,
+			PageSize: pageSize,
+			Offset:   (page - 1) * pageSize,
+		}
+	}
+
 	// Build SQL from structured query with parameterized values
 	sqlQuery, params, err := buildSQLFromQuery(query)
 	if err != nil {
 		return nil, err
 	}
-	return executeNativeQuery(ds, sqlQuery, params)
+
+	// If pagination is requested, first get the total count
+	var totalRows int64
+	if pagination != nil {
+		// Build count query (remove LIMIT/OFFSET from main query)
+		countQuery, countParams, err := buildCountQuery(query)
+		if err == nil {
+			countResult, err := executeNativeQuery(ds, countQuery, countParams)
+			if err == nil && len(countResult.Rows) > 0 {
+				if cnt, ok := countResult.Rows[0]["count"].(int64); ok {
+					totalRows = cnt
+				} else if cnt, ok := countResult.Rows[0]["count"].(float64); ok {
+					totalRows = int64(cnt)
+				}
+			}
+		}
+
+		// Add LIMIT/OFFSET to main query
+		sqlQuery = fmt.Sprintf("%s LIMIT %d OFFSET %d", sqlQuery, pagination.PageSize, pagination.Offset)
+	}
+
+	result, err := executeNativeQuery(ds, sqlQuery, params)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add pagination info to result
+	if pagination != nil {
+		result.Page = pagination.Page
+		result.PageSize = pagination.PageSize
+		result.TotalRows = totalRows
+		if totalRows > 0 {
+			result.TotalPages = int((totalRows + int64(pagination.PageSize) - 1) / int64(pagination.PageSize))
+		}
+	}
+
+	return result, nil
 }
 
 // executeNativeQuery executes a native SQL query using the drivers package.
@@ -212,6 +284,94 @@ func validateOperator(op string) error {
 		return fmt.Errorf("invalid operator: %s", op)
 	}
 	return nil
+}
+
+// buildCountQuery builds a COUNT(*) query for pagination.
+func buildCountQuery(query map[string]any) (string, []any, error) {
+	var params []any
+	var sqlBuilder strings.Builder
+
+	// Get and validate table name
+	table, ok := query["table"].(string)
+	if !ok || table == "" {
+		return "", nil, fmt.Errorf("no table specified")
+	}
+	if err := validateIdentifier(table); err != nil {
+		return "", nil, fmt.Errorf("invalid table name: %w", err)
+	}
+
+	sqlBuilder.WriteString("SELECT COUNT(*) as count FROM ")
+	sqlBuilder.WriteString(quoteIdentifier(table))
+
+	// Add WHERE clause with parameterized values (same as main query)
+	if filters, ok := query["filters"].([]any); ok && len(filters) > 0 {
+		sqlBuilder.WriteString(" WHERE ")
+		for i, f := range filters {
+			filter, ok := f.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			if i > 0 {
+				sqlBuilder.WriteString(" AND ")
+			}
+
+			col, ok := filter["column"].(string)
+			if !ok {
+				continue
+			}
+			if err := validateIdentifier(col); err != nil {
+				continue
+			}
+
+			op, ok := filter["operator"].(string)
+			if !ok {
+				op = "="
+			}
+
+			val := filter["value"]
+			upperOp := strings.ToUpper(op)
+
+			switch upperOp {
+			case "IS NULL", "IS NOT NULL":
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" ")
+				sqlBuilder.WriteString(upperOp)
+			case "IN", "NOT IN":
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" ")
+				sqlBuilder.WriteString(upperOp)
+				sqlBuilder.WriteString(" (")
+				if valSlice, ok := val.([]any); ok {
+					for j, v := range valSlice {
+						if j > 0 {
+							sqlBuilder.WriteString(", ")
+						}
+						sqlBuilder.WriteString("?")
+						params = append(params, v)
+					}
+				} else {
+					sqlBuilder.WriteString("?")
+					params = append(params, val)
+				}
+				sqlBuilder.WriteString(")")
+			case "BETWEEN":
+				if valSlice, ok := val.([]any); ok && len(valSlice) == 2 {
+					sqlBuilder.WriteString(quoteIdentifier(col))
+					sqlBuilder.WriteString(" BETWEEN ? AND ?")
+					params = append(params, valSlice[0], valSlice[1])
+				}
+			default:
+				sqlBuilder.WriteString(quoteIdentifier(col))
+				sqlBuilder.WriteString(" ")
+				sqlBuilder.WriteString(op)
+				sqlBuilder.WriteString(" ?")
+				params = append(params, val)
+			}
+		}
+	}
+
+	return sqlBuilder.String(), params, nil
 }
 
 // buildSQLFromQuery builds SQL from a structured query using parameterized queries.

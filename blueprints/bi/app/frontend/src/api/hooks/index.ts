@@ -282,6 +282,37 @@ export function useColumns(tableId: string) {
   })
 }
 
+// Table Preview - preview table data with pagination, sorting, filtering
+export interface TablePreviewParams {
+  datasourceId: string
+  tableId: string
+  page?: number
+  pageSize?: number
+  orderBy?: Array<{ column: string; direction: 'asc' | 'desc' }>
+  filters?: Array<{ column: string; operator: string; value: any }>
+}
+
+export function useTablePreview(params: TablePreviewParams) {
+  const { datasourceId, tableId, page = 1, pageSize = 100, orderBy = [], filters = [] } = params
+  return useQuery({
+    queryKey: ['tablePreview', datasourceId, tableId, page, pageSize, orderBy, filters] as const,
+    queryFn: () => api.post<QueryResult>(
+      `/datasources/${datasourceId}/tables/${tableId}/preview`,
+      { page, page_size: pageSize, order_by: orderBy, filters }
+    ),
+    enabled: !!datasourceId && !!tableId,
+  })
+}
+
+// Search Tables
+export function useSearchTables(datasourceId: string, query: string) {
+  return useQuery({
+    queryKey: ['searchTables', datasourceId, query] as const,
+    queryFn: () => api.get<Table[]>(`/datasources/${datasourceId}/search-tables?q=${encodeURIComponent(query)}`),
+    enabled: !!datasourceId && !!query,
+  })
+}
+
 // Scan Single Column
 export function useScanColumn() {
   const queryClient = useQueryClient()
