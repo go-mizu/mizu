@@ -234,7 +234,8 @@ type User struct {
 	Email        string    `json:"email"`
 	Name         string    `json:"name"`
 	PasswordHash string    `json:"-"`
-	Role         string    `json:"role"` // admin, user, viewer
+	Role         string    `json:"role"`   // admin, user, viewer
+	Active       bool      `json:"active"` // whether user account is active
 	CreatedAt    time.Time `json:"created_at"`
 	LastLogin    time.Time `json:"last_login,omitempty"`
 }
@@ -312,7 +313,9 @@ type TableStore interface {
 	Update(ctx context.Context, table *Table) error
 	Delete(ctx context.Context, id string) error
 	CreateColumn(ctx context.Context, col *Column) error
+	GetColumn(ctx context.Context, id string) (*Column, error)
 	ListColumns(ctx context.Context, tableID string) ([]*Column, error)
+	UpdateColumn(ctx context.Context, col *Column) error
 	DeleteColumnsByTable(ctx context.Context, tableID string) error
 }
 

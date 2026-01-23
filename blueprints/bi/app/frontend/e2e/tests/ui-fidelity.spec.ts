@@ -50,17 +50,20 @@ test.describe('UI Fidelity - Typography', () => {
 
   test('should use uppercase section titles', async ({ authenticatedPage: page }) => {
     await page.goto('/');
+    await page.waitForTimeout(500);
 
-    // Look for section titles (Our analytics, Pinned, etc)
-    const sectionTitles = page.locator('[class*="sectionTitle"], span:text-matches(/^[A-Z]{2,}/)');
+    // Look for section titles (Our analytics, Pinned, etc) - text is lowercase in DOM, uppercase via CSS
+    const sectionTitles = page.locator('text=/Our analytics|Pinned|Pick up where you left off|Start here/i');
 
     // If any exist, check they use uppercase styling
     const count = await sectionTitles.count();
+    expect(count).toBeGreaterThan(0);
+
     for (let i = 0; i < count; i++) {
       const el = sectionTitles.nth(i);
       const textTransform = await el.evaluate(e => getComputedStyle(e).textTransform);
-      // Should be uppercase
-      expect(textTransform === 'uppercase' || (await el.textContent())?.toUpperCase() === await el.textContent()).toBeTruthy();
+      // Should be uppercase (via CSS text-transform)
+      expect(textTransform).toBe('uppercase');
     }
 
     await page.screenshot({ path: 'e2e/screenshots/ui_section_titles.png', fullPage: true });

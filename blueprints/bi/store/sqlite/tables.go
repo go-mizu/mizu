@@ -114,3 +114,26 @@ func (s *TableStore) DeleteColumnsByTable(ctx context.Context, tableID string) e
 	_, err := s.db.ExecContext(ctx, `DELETE FROM columns WHERE table_id=?`, tableID)
 	return err
 }
+
+func (s *TableStore) GetColumn(ctx context.Context, id string) (*store.Column, error) {
+	var c store.Column
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, table_id, name, display_name, type, semantic, description, position
+		FROM columns WHERE id = ?
+	`, id).Scan(&c.ID, &c.TableID, &c.Name, &c.DisplayName, &c.Type, &c.Semantic, &c.Description, &c.Position)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (s *TableStore) UpdateColumn(ctx context.Context, col *store.Column) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE columns SET display_name=?, description=?, semantic=?
+		WHERE id=?
+	`, col.DisplayName, col.Description, col.Semantic, col.ID)
+	return err
+}

@@ -235,3 +235,86 @@ func mapSQLiteType(sqlType string) string {
 		return "string"
 	}
 }
+
+// TestConnection tests a connection before creating a datasource.
+func (h *DataSources) TestConnection(c *mizu.Ctx) error {
+	var req struct {
+		Engine   string `json:"engine"`
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		Database string `json:"database"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid request body"})
+	}
+
+	// Test connection based on engine type
+	var testErr error
+	switch req.Engine {
+	case "sqlite":
+		db, err := sql.Open("sqlite3", req.Database)
+		if err != nil {
+			testErr = err
+		} else {
+			testErr = db.Ping()
+			db.Close()
+		}
+	case "postgres", "postgresql":
+		// Would use postgres driver
+		testErr = fmt.Errorf("postgres driver not loaded")
+	case "mysql":
+		// Would use mysql driver
+		testErr = fmt.Errorf("mysql driver not loaded")
+	default:
+		testErr = fmt.Errorf("unsupported engine: %s", req.Engine)
+	}
+
+	if testErr != nil {
+		return c.JSON(200, map[string]interface{}{
+			"success": false,
+			"error":   testErr.Error(),
+		})
+	}
+	return c.JSON(200, map[string]interface{}{
+		"success": true,
+	})
+}
+
+// UpdateColumn updates metadata for a column.
+func (h *DataSources) UpdateColumn(c *mizu.Ctx) error {
+	columnID := c.Param("columnId")
+	var update struct {
+		DisplayName string `json:"display_name"`
+		Description string `json:"description"`
+		Semantic    string `json:"semantic"`
+	}
+	if err := c.BindJSON(&update, 1<<20); err != nil {
+		return c.JSON(400, map[string]string{"error": "Invalid request body"})
+	}
+
+	col, err := h.store.Tables().GetColumn(c.Request().Context(), columnID)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	if col == nil {
+		return c.JSON(404, map[string]string{"error": "Column not found"})
+	}
+
+	if update.DisplayName != "" {
+		col.DisplayName = update.DisplayName
+	}
+	if update.Description != "" {
+		col.Description = update.Description
+	}
+	if update.Semantic != "" {
+		col.Semantic = update.Semantic
+	}
+
+	if err := h.store.Tables().UpdateColumn(c.Request().Context(), col); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, col)
+}
