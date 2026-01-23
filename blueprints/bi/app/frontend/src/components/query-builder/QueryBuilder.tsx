@@ -6,7 +6,7 @@ import {
 import { IconPlus, IconTrash } from '@tabler/icons-react'
 import {
   IconDatabase, IconColumns, IconFilter, IconMathFunction,
-  IconArrowsSort, IconCode, IconPlayerPlay, IconChevronDown,
+  IconArrowsSort, IconPlayerPlay, IconChevronDown,
   IconChevronRight, IconLink
 } from '@tabler/icons-react'
 import DataSourcePicker from './DataSourcePicker'
@@ -15,6 +15,7 @@ import ColumnSelector from './ColumnSelector'
 import FilterBuilder from './FilterBuilder'
 import SummarizeBuilder from './SummarizeBuilder'
 import JoinBuilder from './JoinBuilder'
+import { SqlEditor } from '../query-editor'
 import { useQueryStore } from '../../stores/queryStore'
 import { useTables, useColumns } from '../../api/hooks'
 
@@ -118,12 +119,22 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
       </Group>
 
       {mode === 'native' ? (
-        <NativeQueryBuilder
-          datasourceId={datasourceId}
-          onDatasourceChange={setDatasource}
-          sql={nativeSql}
-          onSqlChange={setNativeSql}
-        />
+        <Stack gap="md">
+          <DataSourcePicker
+            value={datasourceId}
+            onChange={setDatasource}
+          />
+          <Paper withBorder radius="md" style={{ overflow: 'hidden', minHeight: 400 }}>
+            <SqlEditor
+              value={nativeSql}
+              onChange={setNativeSql}
+              onRun={() => onRun()}
+              datasourceId={datasourceId}
+              isRunning={isExecuting}
+              minHeight={350}
+            />
+          </Paper>
+        </Stack>
       ) : (
         <Stack gap="md">
           {/* Data Source Section */}
@@ -391,54 +402,7 @@ function BuilderSection({
   )
 }
 
-// Native SQL query builder
-function NativeQueryBuilder({
-  datasourceId,
-  onDatasourceChange,
-  sql,
-  onSqlChange,
-}: {
-  datasourceId: string | null
-  onDatasourceChange: (id: string | null) => void
-  sql: string
-  onSqlChange: (sql: string) => void
-}) {
-  return (
-    <Stack gap="md">
-      <DataSourcePicker
-        value={datasourceId}
-        onChange={onDatasourceChange}
-      />
-
-      <Paper withBorder radius="md" style={{ overflow: 'hidden' }}>
-        <Group justify="space-between" p="sm" bg="gray.0">
-          <Group gap="sm">
-            <IconCode size={18} />
-            <Text fw={500} size="sm">SQL Query</Text>
-          </Group>
-        </Group>
-        <Divider />
-        <textarea
-          value={sql}
-          onChange={(e) => onSqlChange(e.target.value)}
-          placeholder="SELECT * FROM table LIMIT 100"
-          data-testid="sql-editor"
-          style={{
-            width: '100%',
-            minHeight: 200,
-            padding: 12,
-            border: 'none',
-            fontFamily: 'var(--mantine-font-family-monospace)',
-            fontSize: 14,
-            lineHeight: 1.5,
-            resize: 'vertical',
-            outline: 'none',
-          }}
-        />
-      </Paper>
-    </Stack>
-  )
-}
+// Native SQL query builder is now handled by SqlEditor component
 
 // Sort/Order builder
 import type { OrderBy } from '../../api/types'

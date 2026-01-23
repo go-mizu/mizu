@@ -386,10 +386,19 @@ export function useExecuteQuery() {
   })
 }
 
+export interface VariableValue {
+  type: 'text' | 'number' | 'date'
+  value: any
+}
+
 export function useExecuteNativeQuery() {
   return useMutation({
-    mutationFn: (data: { datasource_id: string; query: string; params?: any[] }) =>
-      api.post<QueryResult>('/query/native', data),
+    mutationFn: (data: {
+      datasource_id: string
+      query: string
+      params?: any[]
+      variables?: Record<string, VariableValue>
+    }) => api.post<QueryResult>('/query/native', data),
   })
 }
 
