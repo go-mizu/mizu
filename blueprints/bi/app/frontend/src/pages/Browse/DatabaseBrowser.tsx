@@ -8,11 +8,13 @@ import {
 import {
   IconSearch, IconTable, IconDatabase, IconColumns, IconArrowLeft,
   IconRefresh, IconChartBar, IconSortAscending, IconSortDescending,
-  IconEye, IconEyeOff
+  IconEye, IconEyeOff, IconBolt
 } from '@tabler/icons-react'
 import {
   useDataSource, useTables, useColumns, useTablePreview, useSyncTable
 } from '../../api/hooks'
+import { useXRayTable, useSaveXRay } from '../../api/hooks/xray'
+import Visualization from '../../components/visualizations'
 import { PageContainer, LoadingState, EmptyState } from '../../components/ui'
 
 export default function DatabaseBrowser() {
@@ -210,6 +212,18 @@ export default function DatabaseBrowser() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap="xs">
+                      <Tooltip label="X-ray this table">
+                        <ActionIcon
+                          variant="subtle"
+                          color="yellow"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            navigate(`/xray/${datasourceId}/table/${table.id}`)
+                          }}
+                        >
+                          <IconBolt size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                       <Tooltip label="Preview data">
                         <ActionIcon
                           variant="subtle"
@@ -346,6 +360,16 @@ function TablePreviewPage({
           </Group>
         </div>
         <Group gap="sm">
+          <Tooltip label="X-ray this table">
+            <Button
+              variant="light"
+              color="yellow"
+              leftSection={<IconBolt size={16} />}
+              onClick={() => navigate(`/xray/${datasourceId}/table/${tableId}`)}
+            >
+              X-ray
+            </Button>
+          </Tooltip>
           <Button
             variant="light"
             leftSection={<IconRefresh size={16} />}
@@ -371,6 +395,9 @@ function TablePreviewPage({
           </Tabs.Tab>
           <Tabs.Tab value="columns" leftSection={<IconColumns size={14} />}>
             Columns ({columns?.length || 0})
+          </Tabs.Tab>
+          <Tabs.Tab value="xray" leftSection={<IconBolt size={14} />} color="yellow">
+            X-ray
           </Tabs.Tab>
         </Tabs.List>
       </Tabs>
@@ -563,6 +590,133 @@ function TablePreviewPage({
           )}
         </Paper>
       )}
+
+      {activeTab === 'xray' && (
+        <XRayTabContent datasourceId={datasourceId} tableId={tableId} />
+      )}
     </PageContainer>
+  )
+}
+
+// X-Ray Tab Content Component
+function XRayTabContent({ datasourceId, tableId }: { datasourceId: string; tableId: string }) {
+  const navigate = useNavigate()
+  const { data: xray, isLoading, error, refetch, isFetching } = useXRayTable(datasourceId, tableId, true)
+  const saveXRay = useSaveXRay()
+
+  const handleSave = async () => {
+    if (!xray) return
+    try {
+      const result = await saveXRay.mutateAsync({ xray })
+      navigate(`/dashboard/${result.dashboard_id}`)
+    } catch (err) {
+      console.error('Failed to save X-ray:', err)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <Paper withBorder p="xl" ta="center" radius="md">
+        <Loader size="lg" mb="md" />
+        <Text c="dimmed">Generating automatic insights...</Text>
+      </Paper>
+    )
+  }
+
+  if (error || !xray) {
+    return (
+      <Paper withBorder p="xl" ta="center" radius="md">
+        <Text c="red" mb="md">Failed to generate X-ray insights</Text>
+        <Button variant="light" onClick={() => refetch()}>
+          Try Again
+        </Button>
+      </Paper>
+    )
+  }
+
+  return (
+    <Box>
+      {/* X-Ray Header */}
+      <Group justify="space-between" mb="lg">
+        <div>
+          <Group gap="sm">
+            <ThemeIcon size="md" variant="gradient" gradient={{ from: 'yellow', to: 'orange' }}>
+              <IconBolt size={16} />
+            </ThemeIcon>
+            <Text fw={600}>{xray.title}</Text>
+          </Group>
+          <Text size="sm" c="dimmed" mt={4}>{xray.description}</Text>
+        </div>
+        <Group gap="sm">
+          <Button
+            variant="light"
+            size="sm"
+            onClick={() => refetch()}
+            loading={isFetching}
+          >
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            loading={saveXRay.isPending}
+          >
+            Save as Dashboard
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/xray/${datasourceId}/table/${tableId}`)}
+          >
+            Full View
+          </Button>
+        </Group>
+      </Group>
+
+      {/* X-Ray Cards Grid */}
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+        {xray.cards.slice(0, 9).map((card) => (
+          <Paper key={card.id} withBorder p="md" radius="md">
+            <Text size="sm" fw={600} mb="xs">{card.title}</Text>
+            {card.description && (
+              <Text size="xs" c="dimmed" mb="sm">{card.description}</Text>
+            )}
+            {card.data ? (
+              <Box h={card.visualization === 'number' ? 80 : 200}>
+                <Visualization
+                  result={{
+                    columns: card.data.columns || [],
+                    rows: card.data.rows || [],
+                    row_count: card.data.row_count || 0,
+                    duration_ms: 0
+                  }}
+                  visualization={{
+                    type: card.visualization as any || 'table',
+                    settings: card.settings || {}
+                  }}
+                  height={card.visualization === 'number' ? 80 : 200}
+                  showLegend={false}
+                />
+              </Box>
+            ) : (
+              <Box h={100} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Text size="sm" c="dimmed">No data</Text>
+              </Box>
+            )}
+          </Paper>
+        ))}
+      </SimpleGrid>
+
+      {xray.cards.length > 9 && (
+        <Box ta="center" mt="lg">
+          <Button
+            variant="light"
+            onClick={() => navigate(`/xray/${datasourceId}/table/${tableId}`)}
+          >
+            View All {xray.cards.length} Insights
+          </Button>
+        </Box>
+      )}
+    </Box>
   )
 }

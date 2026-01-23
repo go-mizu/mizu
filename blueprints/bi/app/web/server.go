@@ -33,17 +33,18 @@ type Server struct {
 	store *sqlite.Store
 
 	// Handlers
-	datasourcesHandler  *api.DataSources
-	questionsHandler    *api.Questions
-	queryHandler        *api.Query
-	dashboardsHandler   *api.Dashboards
-	collectionsHandler  *api.Collections
-	modelsHandler       *api.Models
-	metricsHandler      *api.Metrics
-	alertsHandler       *api.Alerts
+	datasourcesHandler   *api.DataSources
+	questionsHandler     *api.Questions
+	queryHandler         *api.Query
+	dashboardsHandler    *api.Dashboards
+	collectionsHandler   *api.Collections
+	modelsHandler        *api.Models
+	metricsHandler       *api.Metrics
+	alertsHandler        *api.Alerts
 	subscriptionsHandler *api.Subscriptions
-	usersHandler        *api.Users
-	settingsHandler     *api.Settings
+	usersHandler         *api.Users
+	settingsHandler      *api.Settings
+	xrayHandler          *api.XRay
 }
 
 // New creates a new server.
@@ -82,6 +83,7 @@ func New(cfg Config) (*Server, error) {
 	s.subscriptionsHandler = api.NewSubscriptions(st)
 	s.usersHandler = api.NewUsers(st)
 	s.settingsHandler = api.NewSettings(st)
+	s.xrayHandler = api.NewXRay(st)
 
 	s.setupRoutes()
 
@@ -234,6 +236,12 @@ func (s *Server) setupRoutes() {
 		apiGroup.Get("/settings", s.settingsHandler.List)
 		apiGroup.Put("/settings", s.settingsHandler.Update)
 		apiGroup.Get("/settings/audit", s.settingsHandler.AuditLogs)
+
+		// X-Ray (automatic insights)
+		apiGroup.Post("/xray/{datasourceId}/table/{tableId}", s.xrayHandler.XRayTable)
+		apiGroup.Post("/xray/{datasourceId}/field/{columnId}", s.xrayHandler.XRayField)
+		apiGroup.Post("/xray/{datasourceId}/table/{tableId}/compare", s.xrayHandler.XRayCompare)
+		apiGroup.Post("/xray/save", s.xrayHandler.SaveXRay)
 	})
 
 	// Serve static files
