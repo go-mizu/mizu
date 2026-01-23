@@ -1,19 +1,22 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Box, Paper, Stack, Group, Text, Button, Divider, ActionIcon,
-  Collapse, Badge, SegmentedControl
+  Collapse, Badge, SegmentedControl, Select, NumberInput
 } from '@mantine/core'
+import { IconPlus, IconTrash } from '@tabler/icons-react'
 import {
   IconDatabase, IconColumns, IconFilter, IconMathFunction,
   IconArrowsSort, IconCode, IconPlayerPlay, IconChevronDown,
-  IconChevronRight
+  IconChevronRight, IconLink
 } from '@tabler/icons-react'
 import DataSourcePicker from './DataSourcePicker'
 import TablePicker from './TablePicker'
 import ColumnSelector from './ColumnSelector'
 import FilterBuilder from './FilterBuilder'
 import SummarizeBuilder from './SummarizeBuilder'
+import JoinBuilder from './JoinBuilder'
 import { useQueryStore } from '../../stores/queryStore'
+import { useTables, useColumns } from '../../api/hooks'
 
 interface QueryBuilderProps {
   onRun: () => void
@@ -34,6 +37,10 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
     addColumn,
     removeColumn,
     clearColumns,
+    joins,
+    addJoin,
+    removeJoin,
+    updateJoin,
     filters,
     addFilter,
     removeFilter,
@@ -54,8 +61,24 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
     setLimit,
   } = useQueryStore()
 
+  // Get tables and columns for the JoinBuilder
+  const { data: tables } = useTables(datasourceId || '')
+  const selectedTableId = useMemo(() => {
+    const foundTable = tables?.find(t => t.name === sourceTable || t.id === sourceTable)
+    return foundTable?.id || ''
+  }, [tables, sourceTable])
+  const { data: sourceColumns } = useColumns(selectedTableId)
+
+  // Function to get columns for any table
+  const getColumnsForTable = (_tableName: string) => {
+    // For now, return source columns for the joined table
+    // In a real implementation, we'd fetch columns for each table
+    return sourceColumns || []
+  }
+
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     source: true,
+    joins: false,
     columns: true,
     filter: false,
     summarize: false,
@@ -123,6 +146,49 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
               />
             </Stack>
           </BuilderSection>
+
+          {/* Join Section */}
+          {sourceTable && tables && tables.length > 1 && (
+            <BuilderSection
+              icon={IconLink}
+              title="Join"
+              expanded={expandedSections.joins}
+              onToggle={() => toggleSection('joins')}
+              badge={joins.length > 0 ? `${joins.length} join${joins.length > 1 ? 's' : ''}` : undefined}
+            >
+              <JoinBuilder
+                joins={joins.map(j => ({
+                  id: j.id,
+                  type: j.type,
+                  target_table: j.target_table,
+                  conditions: j.conditions.map(c => ({
+                    source_column: c.source_column,
+                    target_column: c.target_column,
+                  })),
+                }))}
+                sourceTable={sourceTable}
+                sourceColumns={sourceColumns || []}
+                availableTables={tables}
+                onAddJoin={(join) => addJoin({
+                  ...join,
+                  source_table: sourceTable,
+                  conditions: join.conditions.map(c => ({
+                    ...c,
+                    operator: '=' as const,
+                  })),
+                })}
+                onRemoveJoin={removeJoin}
+                onUpdateJoin={(id, updates) => updateJoin(id, {
+                  ...updates,
+                  conditions: updates.conditions?.map(c => ({
+                    ...c,
+                    operator: '=' as const,
+                  })),
+                })}
+                getColumnsForTable={getColumnsForTable}
+              />
+            </BuilderSection>
+          )}
 
           {/* Columns Section */}
           <BuilderSection
@@ -375,11 +441,7 @@ function NativeQueryBuilder({
 }
 
 // Sort/Order builder
-import { Select, NumberInput } from '@mantine/core'
-import { useTables, useColumns } from '../../api/hooks'
-import { useMemo } from 'react'
 import type { OrderBy } from '../../api/types'
-import { IconPlus, IconTrash } from '@tabler/icons-react'
 
 function SortBuilder({
   datasourceId,
