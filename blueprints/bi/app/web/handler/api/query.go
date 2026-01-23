@@ -36,9 +36,16 @@ type ExecuteRequest struct {
 
 // NativeQueryRequest represents a native SQL query request.
 type NativeQueryRequest struct {
-	DataSourceID string `json:"datasource_id"`
-	Query        string `json:"query"`
-	Params       []any  `json:"params,omitempty"`
+	DataSourceID string                    `json:"datasource_id"`
+	Query        string                    `json:"query"`
+	Params       []any                     `json:"params,omitempty"`
+	Variables    map[string]VariableValue  `json:"variables,omitempty"`
+}
+
+// VariableValue represents a value for a query variable
+type VariableValue struct {
+	Type  string `json:"type"`
+	Value any    `json:"value"`
 }
 
 // Execute executes a structured query.
@@ -81,8 +88,21 @@ func (h *Query) ExecuteNative(c *mizu.Ctx) error {
 		return c.JSON(404, map[string]string{"error": "Data source not found"})
 	}
 
+	// Process variables if present
+	querySQL := req.Query
+	params := req.Params
+
+	if len(req.Variables) > 0 {
+		substitutedSQL, substitutedParams, err := substituteVariables(querySQL, req.Variables)
+		if err != nil {
+			return c.JSON(400, map[string]string{"error": "Variable substitution failed: " + err.Error()})
+		}
+		querySQL = substitutedSQL
+		params = substitutedParams
+	}
+
 	start := time.Now()
-	result, err := executeNativeQuery(ds, req.Query, req.Params)
+	result, err := executeNativeQuery(ds, querySQL, params)
 	duration := time.Since(start).Seconds() * 1000
 
 	// Record in history
@@ -104,6 +124,37 @@ func (h *Query) ExecuteNative(c *mizu.Ctx) error {
 
 	result.Duration = duration
 	return c.JSON(200, result)
+}
+
+// substituteVariables replaces {{var}} placeholders with parameterized placeholders
+func substituteVariables(sql string, variables map[string]VariableValue) (string, []any, error) {
+	variableRegex := regexp.MustCompile(`\{\{(\w+)\}\}`)
+	var params []any
+	var lastEnd int
+	var result strings.Builder
+
+	matches := variableRegex.FindAllStringSubmatchIndex(sql, -1)
+
+	for _, match := range matches {
+		// Add the text before this match
+		result.WriteString(sql[lastEnd:match[0]])
+
+		varName := sql[match[2]:match[3]]
+		value, ok := variables[varName]
+		if !ok {
+			return "", nil, fmt.Errorf("missing value for variable: %s", varName)
+		}
+
+		params = append(params, value.Value)
+		result.WriteString("?")
+
+		lastEnd = match[1]
+	}
+
+	// Add remaining text
+	result.WriteString(sql[lastEnd:])
+
+	return result.String(), params, nil
 }
 
 // History returns query history for the current user.

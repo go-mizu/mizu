@@ -601,6 +601,123 @@ test.describe('Query Builder API Tests', () => {
       expect(result.rows.length).toBeGreaterThan(0)
       expect(result.rows.every((r: any) => r.category && r.product_count > 0)).toBeTruthy()
     })
+
+    test('should execute native SQL with {{variable}} substitution', async ({ request }) => {
+      const ds = await getNorthwindDataSource(request)
+
+      const response = await request.post(`${API_BASE}/query/native`, {
+        data: {
+          datasource_id: ds.id,
+          query: 'SELECT name, unit_price FROM products WHERE unit_price > {{min_price}} ORDER BY unit_price DESC LIMIT {{limit}}',
+          variables: {
+            min_price: { type: 'number', value: 30 },
+            limit: { type: 'number', value: 5 },
+          },
+        },
+      })
+
+      expect(response.ok()).toBeTruthy()
+      const result = await response.json()
+      expect(result.rows.length).toBeLessThanOrEqual(5)
+      expect(result.rows.every((r: any) => r.unit_price > 30)).toBeTruthy()
+    })
+
+    test('should execute native SQL with text variable', async ({ request }) => {
+      const ds = await getNorthwindDataSource(request)
+
+      const response = await request.post(`${API_BASE}/query/native`, {
+        data: {
+          datasource_id: ds.id,
+          query: 'SELECT company_name, country FROM customers WHERE country = {{country}} LIMIT 10',
+          variables: {
+            country: { type: 'text', value: 'USA' },
+          },
+        },
+      })
+
+      expect(response.ok()).toBeTruthy()
+      const result = await response.json()
+      expect(result.rows.every((r: any) => r.country === 'USA')).toBeTruthy()
+    })
+
+    test('should execute native SQL with multiple variables', async ({ request }) => {
+      const ds = await getNorthwindDataSource(request)
+
+      const response = await request.post(`${API_BASE}/query/native`, {
+        data: {
+          datasource_id: ds.id,
+          query: `
+            SELECT name, unit_price, units_in_stock
+            FROM products
+            WHERE unit_price >= {{min_price}}
+              AND unit_price <= {{max_price}}
+              AND discontinued = {{discontinued}}
+            ORDER BY unit_price
+          `,
+          variables: {
+            min_price: { type: 'number', value: 10 },
+            max_price: { type: 'number', value: 30 },
+            discontinued: { type: 'number', value: 0 },
+          },
+        },
+      })
+
+      expect(response.ok()).toBeTruthy()
+      const result = await response.json()
+      expect(result.rows.every((r: any) => r.unit_price >= 10 && r.unit_price <= 30)).toBeTruthy()
+    })
+
+    test('should fail with missing variable value', async ({ request }) => {
+      const ds = await getNorthwindDataSource(request)
+
+      const response = await request.post(`${API_BASE}/query/native`, {
+        data: {
+          datasource_id: ds.id,
+          query: 'SELECT * FROM products WHERE category_id = {{category}}',
+          variables: {
+            // Missing 'category' variable
+          },
+        },
+      })
+
+      expect(response.ok()).toBeFalsy()
+      const result = await response.json()
+      expect(result.error).toContain('missing value')
+    })
+
+    test('should execute complex query with joins and variables', async ({ request }) => {
+      const ds = await getNorthwindDataSource(request)
+
+      const response = await request.post(`${API_BASE}/query/native`, {
+        data: {
+          datasource_id: ds.id,
+          query: `
+            SELECT
+              c.company_name as customer,
+              COUNT(o.id) as order_count,
+              SUM(od.quantity * od.unit_price) as total_value
+            FROM customers c
+            JOIN orders o ON c.id = o.customer_id
+            JOIN order_details od ON o.id = od.order_id
+            WHERE c.country = {{country}}
+            GROUP BY c.id
+            HAVING COUNT(o.id) >= {{min_orders}}
+            ORDER BY total_value DESC
+            LIMIT {{limit}}
+          `,
+          variables: {
+            country: { type: 'text', value: 'Germany' },
+            min_orders: { type: 'number', value: 2 },
+            limit: { type: 'number', value: 10 },
+          },
+        },
+      })
+
+      expect(response.ok()).toBeTruthy()
+      const result = await response.json()
+      expect(result.rows.length).toBeLessThanOrEqual(10)
+      expect(result.rows.every((r: any) => r.order_count >= 2)).toBeTruthy()
+    })
   })
 
   test.describe('Complex Queries', () => {
