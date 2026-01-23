@@ -25,6 +25,7 @@ import {
 } from '../api/hooks'
 import { useBookmarkStore } from '../stores/bookmarkStore'
 import type { DashboardCard, QueryResult, Question, DashboardFilter, DashboardTab } from '../api/types'
+import { LoadingState, EmptyState } from '../components/ui'
 
 // Use GridLayout directly
 
@@ -448,26 +449,30 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
 
   if (loadingDashboard && !isNew) {
     return (
-      <Box px="lg" py="lg" style={{ width: '100%' }}>
-        <Group justify="center" py="xl">
-          <Loader size="lg" />
-          <Text>Loading dashboard...</Text>
-        </Group>
+      <Box px="lg" py="lg" style={{ width: '100%', backgroundColor: 'var(--color-background-muted)', minHeight: '100vh' }}>
+        <LoadingState message="Loading dashboard..." />
       </Box>
     )
   }
 
   return (
-    <Box style={{ minHeight: '100vh', backgroundColor: '#f9fbfc' }}>
+    <Box style={{ minHeight: '100vh', backgroundColor: 'var(--color-background-muted)' }}>
       {/* Header */}
       <Box
         p="md"
-        bg="white"
-        style={{ borderBottom: '1px solid var(--mantine-color-gray-3)' }}
+        style={{
+          backgroundColor: 'var(--color-background)',
+          borderBottom: '1px solid var(--color-border)',
+        }}
       >
         <Group justify="space-between">
           <Group gap="md">
-            <ThemeIcon size={40} radius="md" variant="light" color="summarize">
+            <ThemeIcon
+              size={40}
+              radius="md"
+              variant="light"
+              style={{ backgroundColor: 'var(--color-success)15', color: 'var(--color-success)' }}
+            >
               <IconLayoutDashboard size={20} />
             </ThemeIcon>
             <div>
@@ -478,12 +483,12 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                   placeholder="Dashboard name"
                   size="lg"
                   variant="unstyled"
-                  styles={{ input: { fontSize: '1.5rem', fontWeight: 600 } }}
+                  styles={{ input: { fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-foreground)' } }}
                 />
               ) : (
-                <Title order={2}>{dashboard?.name || 'New Dashboard'}</Title>
+                <Title order={2} style={{ color: 'var(--color-foreground)' }}>{dashboard?.name || 'New Dashboard'}</Title>
               )}
-              <Text size="sm" c="dimmed">
+              <Text size="sm" style={{ color: 'var(--color-foreground-muted)' }}>
                 {cards?.length || 0} cards
               </Text>
             </div>
@@ -760,24 +765,20 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
             ))}
           </GridLayout>
         ) : (
-          <Paper withBorder radius="md" p="xl" ta="center">
-            <Stack align="center" gap="lg">
-              <ThemeIcon size={80} radius="xl" variant="light" color="summarize">
-                <IconLayoutDashboard size={40} />
-              </ThemeIcon>
-              <div>
-                <Title order={3} mb="xs">
-                  {isNew ? 'Create your dashboard' : 'Add your first card'}
-                </Title>
-                <Text c="dimmed" maw={400} mx="auto">
-                  {isNew
-                    ? 'Give your dashboard a name and save it, then add cards to visualize your data.'
-                    : activeTab
-                      ? 'No cards in this tab. Add cards and assign them to this tab.'
-                      : 'Click "Add Card" to add questions to this dashboard.'}
-                </Text>
-              </div>
-              {isNew ? (
+          <EmptyState
+            icon={<IconLayoutDashboard size={40} strokeWidth={1.5} />}
+            iconColor="var(--color-success)"
+            title={isNew ? 'Create your dashboard' : 'Add your first card'}
+            description={
+              isNew
+                ? 'Give your dashboard a name and save it, then add cards to visualize your data.'
+                : activeTab
+                  ? 'No cards in this tab. Add cards and assign them to this tab.'
+                  : 'Click "Add Card" to add questions to this dashboard.'
+            }
+            size="lg"
+            action={
+              isNew ? (
                 <Button
                   size="lg"
                   leftSection={<IconDeviceFloppy size={20} />}
@@ -793,9 +794,9 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 >
                   Add Card
                 </Button>
-              )}
-            </Stack>
-          </Paper>
+              )
+            }
+          />
         )}
       </Box>
 
@@ -1091,7 +1092,13 @@ function DashboardCardComponent({
       withBorder
       radius="md"
       h="100%"
-      style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        backgroundColor: 'var(--color-background)',
+        borderColor: 'var(--color-border)',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -1099,15 +1106,15 @@ function DashboardCardComponent({
       <Group
         justify="space-between"
         p="sm"
-        style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}
+        style={{ borderBottom: '1px solid var(--color-border)' }}
         className={editMode ? 'drag-handle' : ''}
       >
         <Group gap="sm">
-          {editMode && <IconGripVertical size={16} color="var(--mantine-color-gray-5)" style={{ cursor: 'grab' }} />}
+          {editMode && <IconGripVertical size={16} style={{ color: 'var(--color-foreground-subtle)', cursor: 'grab' }} />}
           <Text
             fw={500}
             size="sm"
-            style={{ cursor: 'pointer' }}
+            style={{ cursor: 'pointer', color: 'var(--color-foreground)' }}
             onClick={onNavigate}
           >
             {card.title || question?.name || 'Untitled'}

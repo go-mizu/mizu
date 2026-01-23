@@ -681,7 +681,7 @@ function WaterfallVisualization({
           {waterfallData.map((entry, index) => (
             <Cell
               key={`cell-${index}`}
-              fill={entry._positive ? '#40c057' : '#fa5252'}
+              fill={entry._positive ? 'var(--color-success)' : 'var(--color-error)'}
             />
           ))}
         </Bar>

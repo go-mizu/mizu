@@ -282,7 +282,7 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
             />
           </BuilderSection>
 
-          {/* Visualize Button - Metabase Green */}
+          {/* Visualize Button - Success/Summarize Green */}
           <Button
             fullWidth
             size="md"
@@ -290,17 +290,7 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
             onClick={onRun}
             loading={isExecuting}
             data-testid="btn-run-query"
-            style={{
-              backgroundColor: '#84BB4C',
-              fontWeight: 700,
-            }}
-            styles={{
-              root: {
-                '&:hover': {
-                  backgroundColor: '#6FA83D',
-                },
-              },
-            }}
+            className="btn-visualize"
           >
             Visualize
           </Button>
@@ -310,25 +300,25 @@ export default function QueryBuilder({ onRun, isExecuting }: QueryBuilderProps) 
   )
 }
 
-// Metabase-style section colors
+// Section color mappings using CSS variables
 const sectionColors = {
   brand: {
-    bg: '#E6F2FF',
-    text: '#509EE3',
-    pillBg: '#509EE3',
-    pillText: '#ffffff',
+    bg: 'var(--color-primary-light)',
+    text: 'var(--color-primary)',
+    pillBg: 'var(--color-primary)',
+    pillText: 'var(--color-primary-foreground)',
   },
   filter: {
-    bg: '#EFEEF5',
-    text: '#7172AD',
-    pillBg: '#7172AD',
+    bg: 'var(--color-info-light)',
+    text: 'var(--color-info)',
+    pillBg: 'var(--color-info)',
     pillText: '#ffffff',
   },
   summarize: {
-    bg: '#EDF7E4',
-    text: '#84BB4C',
-    pillBg: '#84BB4C',
-    pillText: '#ffffff',
+    bg: 'var(--color-success-light)',
+    text: 'var(--color-success)',
+    pillBg: 'var(--color-success)',
+    pillText: 'var(--color-success-foreground)',
   },
 }
 
@@ -394,7 +384,7 @@ function BuilderSection({
         </Group>
       </Group>
       <Collapse in={expanded}>
-        <Box p="sm" pt="sm" style={{ backgroundColor: '#ffffff' }}>
+        <Box p="sm" pt="sm" style={{ backgroundColor: 'var(--color-background)' }}>
           {children}
         </Box>
       </Collapse>

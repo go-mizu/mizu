@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Box, Group, Text, Button, ActionIcon, Menu, Loader,
+  Box, Group, Text, Button, ActionIcon, Menu,
   Modal, TextInput, Textarea, Badge, Divider, Tooltip, Stack,
-  ThemeIcon, rem
+  ThemeIcon
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
@@ -24,83 +24,8 @@ import {
   useExecuteQuery, useExecuteNativeQuery
 } from '../api/hooks'
 import type { QueryResult, VisualizationType } from '../api/types'
-import { semanticColors } from '../theme'
-
-// =============================================================================
-// STYLES
-// =============================================================================
-
-const styles = {
-  container: {
-    display: 'flex',
-    height: '100vh',
-    overflow: 'hidden',
-    backgroundColor: semanticColors.bgLight,
-  },
-  sidebar: {
-    width: 320,
-    flexShrink: 0,
-    borderRight: `1px solid ${semanticColors.borderMedium}`,
-    backgroundColor: '#ffffff',
-    overflow: 'auto',
-    transition: 'width 0.2s ease',
-    display: 'flex',
-    flexDirection: 'column' as const,
-  },
-  sidebarCollapsed: {
-    width: 0,
-    borderRight: 'none',
-  },
-  sidebarHeader: {
-    padding: rem(16),
-    borderBottom: `1px solid ${semanticColors.borderLight}`,
-    backgroundColor: '#ffffff',
-  },
-  sidebarContent: {
-    flex: 1,
-    overflow: 'auto',
-    padding: rem(16),
-  },
-  main: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column' as const,
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: `${rem(12)} ${rem(16)}`,
-    backgroundColor: '#ffffff',
-    borderBottom: `1px solid ${semanticColors.borderMedium}`,
-    minHeight: 56,
-  },
-  results: {
-    flex: 1,
-    overflow: 'auto',
-    padding: rem(20),
-  },
-  resultCard: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${semanticColors.borderMedium}`,
-    borderRadius: rem(8),
-    overflow: 'hidden',
-  },
-  emptyState: {
-    backgroundColor: '#ffffff',
-    border: `1px solid ${semanticColors.borderMedium}`,
-    borderRadius: rem(8),
-    padding: rem(48),
-    textAlign: 'center' as const,
-  },
-  statsBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: rem(12),
-    marginBottom: rem(16),
-  },
-}
+import { LoadingState, EmptyState } from '../components/ui'
+import './Question.css'
 
 // =============================================================================
 // MAIN COMPONENT
@@ -343,33 +268,25 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
 
   if (loadingQuestion && !isNew) {
     return (
-      <Box style={styles.container}>
+      <Box className="question-container">
         <Box style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Stack align="center" gap="md">
-            <Loader size="lg" color="brand" />
-            <Text c="dimmed">Loading question...</Text>
-          </Stack>
+          <LoadingState message="Loading question..." />
         </Box>
       </Box>
     )
   }
 
   return (
-    <Box style={styles.container}>
+    <Box className="question-container">
       {/* Query Builder Sidebar */}
-      <Box
-        style={{
-          ...styles.sidebar,
-          ...(sidebarOpened ? {} : styles.sidebarCollapsed),
-        }}
-      >
+      <Box className={`question-sidebar ${!sidebarOpened ? 'question-sidebar--collapsed' : ''}`}>
         {sidebarOpened && (
           <>
-            <Box style={styles.sidebarHeader}>
+            <Box className="question-sidebar__header">
               <Group justify="space-between" mb="md">
                 <Group gap="xs">
-                  <IconDatabase size={18} color={semanticColors.brand} />
-                  <Text fw={600} size="sm" style={{ color: semanticColors.textPrimary }}>
+                  <IconDatabase size={18} className="question-sidebar__icon" />
+                  <Text fw={600} size="sm" className="question-sidebar__title">
                     Query Builder
                   </Text>
                 </Group>
@@ -391,7 +308,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
                 Get Answer
               </Button>
             </Box>
-            <Box style={styles.sidebarContent}>
+            <Box className="question-sidebar__content">
               <QueryBuilder onRun={handleExecute} isExecuting={isExecuting} />
             </Box>
           </>
@@ -399,9 +316,9 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
       </Box>
 
       {/* Main Content */}
-      <Box style={styles.main}>
+      <Box className="question-main">
         {/* Header */}
-        <Box style={styles.header}>
+        <Box className="question-header">
           <Group gap="md">
             {!sidebarOpened && (
               <Tooltip label="Show query builder">
@@ -414,11 +331,11 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
             <Box>
               <Group gap="xs" mb={2}>
                 {existingQuestion ? (
-                  <Text fw={600} size="lg" style={{ color: semanticColors.textPrimary }}>
+                  <Text fw={600} size="lg" className="question-header__title">
                     {existingQuestion.name}
                   </Text>
                 ) : (
-                  <Text fw={600} size="lg" style={{ color: semanticColors.textTertiary }}>
+                  <Text fw={600} size="lg" className="question-header__title--placeholder">
                     New Question
                   </Text>
                 )}
@@ -502,34 +419,27 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
         </Box>
 
         {/* Results Area */}
-        <Box style={styles.results} data-testid="results-area">
+        <Box className="question-results" data-testid="results-area">
           {isExecuting ? (
-            <Box style={styles.emptyState}>
-              <Stack align="center" gap="md">
-                <Loader size="lg" color="brand" />
-                <Text c="dimmed">Running query...</Text>
-              </Stack>
+            <Box className="question-empty-state">
+              <LoadingState message="Running query..." />
             </Box>
           ) : error ? (
-            <Box style={{
-              ...styles.emptyState,
-              backgroundColor: semanticColors.errorLight,
-              borderColor: semanticColors.error,
-            }}>
+            <Box className="question-error-state">
               <Group gap="md" justify="center">
                 <ThemeIcon color="red" variant="light" size="lg">
                   <IconChartBar size={20} />
                 </ThemeIcon>
                 <Box style={{ textAlign: 'left' }}>
-                  <Text fw={600} style={{ color: semanticColors.error }}>Query Error</Text>
-                  <Text size="sm" style={{ color: semanticColors.error }}>{error}</Text>
+                  <Text fw={600} className="question-error-text">Query Error</Text>
+                  <Text size="sm" className="question-error-text">{error}</Text>
                 </Box>
               </Group>
             </Box>
           ) : result ? (
             <Stack gap="md">
               {/* Result stats */}
-              <Box style={styles.statsBar}>
+              <Box className="question-stats-bar">
                 <Badge variant="light" color="brand" radius="sm">
                   {result.row_count.toLocaleString()} rows
                 </Badge>
@@ -542,7 +452,7 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
               </Box>
 
               {/* Visualization */}
-              <Box style={styles.resultCard}>
+              <Box className="question-result-card">
                 <Box p="md">
                   <Visualization
                     result={result}
@@ -553,19 +463,12 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
               </Box>
             </Stack>
           ) : (
-            <Box style={styles.emptyState}>
-              <Stack align="center" gap="lg">
-                <ThemeIcon size={64} radius="xl" variant="light" color="brand">
-                  <IconChartBar size={32} />
-                </ThemeIcon>
-                <Box>
-                  <Text fw={600} size="lg" mb={4} style={{ color: semanticColors.textPrimary }}>
-                    Ready to explore
-                  </Text>
-                  <Text c="dimmed" size="sm" maw={300} mx="auto">
-                    Select a data source and table in the query builder, then click "Get Answer" to see results
-                  </Text>
-                </Box>
+            <EmptyState
+              icon={<IconChartBar size={32} strokeWidth={1.5} />}
+              iconColor="var(--color-primary)"
+              title="Ready to explore"
+              description="Select a data source and table in the query builder, then click 'Get Answer' to see results"
+              action={
                 <Button
                   size="lg"
                   leftSection={<IconPlayerPlay size={20} />}
@@ -574,8 +477,9 @@ export default function Question({ mode: _pageMode = 'view' }: QuestionProps) {
                 >
                   Get Answer
                 </Button>
-              </Stack>
-            </Box>
+              }
+              size="lg"
+            />
           )}
         </Box>
       </Box>
