@@ -730,11 +730,10 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
         {filteredCards && filteredCards.length > 0 ? (
           <GridLayout
             width={gridWidth}
-            className="layout"
+            className="dashboard-grid"
             layout={filteredLayout}
-            data-testid="dashboard-grid"
-            gridConfig={{ cols: 18, rowHeight: 80, margin: [16, 16], containerPadding: null, maxRows: Infinity }}
-            dragConfig={{ enabled: editMode, bounded: false, handle: '.drag-handle', threshold: 3 }}
+            gridConfig={{ cols: 18, rowHeight: 80, margin: [16, 16] }}
+            dragConfig={{ enabled: editMode, handle: '.drag-handle' }}
             resizeConfig={{ enabled: editMode }}
             onLayoutChange={handleLayoutChange}
           >
@@ -774,7 +773,9 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 ? 'Give your dashboard a name and save it, then add cards to visualize your data.'
                 : activeTab
                   ? 'No cards in this tab. Add cards and assign them to this tab.'
-                  : 'Click "Add Card" to add questions to this dashboard.'
+                  : (questions?.length || 0) > 0
+                    ? 'Click "Add Card" to add questions to this dashboard.'
+                    : 'Create questions first, then add them as cards to your dashboard.'
             }
             size="lg"
             action={
@@ -786,7 +787,7 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 >
                   Save Dashboard
                 </Button>
-              ) : (
+              ) : (questions?.length || 0) > 0 ? (
                 <Button
                   size="lg"
                   leftSection={<IconPlus size={20} />}
@@ -794,7 +795,27 @@ export default function Dashboard({ mode: _pageMode = 'view' }: DashboardProps) 
                 >
                   Add Card
                 </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  leftSection={<IconChartBar size={20} />}
+                  onClick={() => navigate('/question/new')}
+                >
+                  Create a Question
+                </Button>
               )
+            }
+            secondaryAction={
+              !isNew && (questions?.length || 0) === 0 ? (
+                <Button
+                  size="lg"
+                  variant="light"
+                  leftSection={<IconPlus size={20} />}
+                  onClick={openAddCardModal}
+                >
+                  Add Text Card
+                </Button>
+              ) : undefined
             }
           />
         )}
