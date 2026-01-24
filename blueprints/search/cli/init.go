@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -13,14 +13,13 @@ import (
 func NewInit() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize the database and create required schemas",
-		Long: `Initialize the Search database with all required schemas and extensions.
+		Short: "Initialize the SQLite database",
+		Long: `Initialize the Search SQLite database with all required tables.
 
 This command will:
-  - Connect to PostgreSQL
-  - Create required extensions (pg_trgm, pgcrypto, uuid-ossp)
-  - Create search schema with all tables
-  - Set up full-text search indexes`,
+  - Create the SQLite database file
+  - Create all required tables
+  - Set up FTS5 full-text search indexes`,
 		RunE: runInit,
 	}
 
@@ -56,27 +55,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 }
 
 func initDatabase(ctx context.Context) error {
-	fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
+	fmt.Println(infoStyle.Render("Opening SQLite database..."))
 
-	store, err := postgres.New(ctx, GetDatabaseURL())
+	store, err := sqlite.New(GetDatabasePath())
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer store.Close()
 
-	fmt.Println(successStyle.Render("  Connected"))
+	fmt.Println(successStyle.Render("  Database opened"))
 
-	fmt.Println(infoStyle.Render("Creating extensions..."))
-	if err := store.CreateExtensions(ctx); err != nil {
-		return fmt.Errorf("failed to create extensions: %w", err)
-	}
-	fmt.Println(successStyle.Render("  Extensions created"))
-
-	fmt.Println(infoStyle.Render("Creating schemas and tables..."))
+	fmt.Println(infoStyle.Render("Creating tables and indexes..."))
 	if err := store.Ensure(ctx); err != nil {
-		return fmt.Errorf("failed to create schemas: %w", err)
+		return fmt.Errorf("failed to create tables: %w", err)
 	}
-	fmt.Println(successStyle.Render("  Schemas created"))
+	fmt.Println(successStyle.Render("  Tables created"))
 
 	return nil
 }

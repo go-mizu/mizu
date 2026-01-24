@@ -1,18 +1,17 @@
-import { Paper, Text, Group, Badge } from '@mantine/core'
-import { IconCalculator, IconCurrencyDollar, IconCloud, IconBook, IconClock, IconTransform } from '@tabler/icons-react'
+import { Calculator, DollarSign, Cloud, BookOpen, Clock, ArrowRightLeft } from 'lucide-react'
 import type { InstantAnswer as InstantAnswerType } from '../types'
 
 interface InstantAnswerProps {
   answer: InstantAnswerType
 }
 
-const icons: Record<string, typeof IconCalculator> = {
-  calculator: IconCalculator,
-  currency: IconCurrencyDollar,
-  weather: IconCloud,
-  definition: IconBook,
-  time: IconClock,
-  unit: IconTransform,
+const icons: Record<string, typeof Calculator> = {
+  calculator: Calculator,
+  currency: DollarSign,
+  weather: Cloud,
+  definition: BookOpen,
+  time: Clock,
+  unit: ArrowRightLeft,
 }
 
 interface WeatherData {
@@ -51,23 +50,27 @@ interface UnitData {
 }
 
 export function InstantAnswer({ answer }: InstantAnswerProps) {
-  const Icon = icons[answer.type] || IconCalculator
+  const Icon = icons[answer.type] || Calculator
 
   return (
-    <Paper className="instant-answer" withBorder p="md">
-      <Group gap="sm" mb="xs">
-        <Icon size={20} className="text-blue-500" />
-        <Badge variant="light" size="sm">
+    <div className="bg-white border border-[#dadce0] rounded-lg p-4 mb-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={20} className="text-[#1a73e8]" />
+        <span className="px-2 py-0.5 text-xs font-medium text-[#1a73e8] bg-[#e8f0fe] rounded">
           {answer.type.charAt(0).toUpperCase() + answer.type.slice(1)}
-        </Badge>
-      </Group>
+        </span>
+      </div>
 
-      <Text className="instant-answer-result">{answer.result}</Text>
+      {/* Result */}
+      <div className="text-3xl font-semibold text-[#202124]">
+        {answer.result}
+      </div>
 
       {answer.type === 'calculator' && (
-        <Text size="sm" c="dimmed" mt="xs">
+        <p className="text-sm text-[#70757a] mt-1">
           {answer.query} =
-        </Text>
+        </p>
       )}
 
       {answer.type === 'weather' && answer.data ? (
@@ -89,26 +92,26 @@ export function InstantAnswer({ answer }: InstantAnswerProps) {
       {answer.type === 'unit' && answer.data ? (
         <UnitDetails data={answer.data as UnitData} />
       ) : null}
-    </Paper>
+    </div>
   )
 }
 
 function WeatherDetails({ data }: { data: WeatherData }) {
   return (
-    <Group mt="md" gap="xl">
+    <div className="flex gap-8 mt-4">
       <div>
-        <Text size="xs" c="dimmed">Humidity</Text>
-        <Text size="sm">{data.humidity}%</Text>
+        <p className="text-xs text-[#70757a]">Humidity</p>
+        <p className="text-sm text-[#202124]">{data.humidity}%</p>
       </div>
       <div>
-        <Text size="xs" c="dimmed">Wind</Text>
-        <Text size="sm">{data.wind_speed} {data.wind_unit}</Text>
+        <p className="text-xs text-[#70757a]">Wind</p>
+        <p className="text-sm text-[#202124]">{data.wind_speed} {data.wind_unit}</p>
       </div>
       <div>
-        <Text size="xs" c="dimmed">Condition</Text>
-        <Text size="sm">{data.condition}</Text>
+        <p className="text-xs text-[#70757a]">Condition</p>
+        <p className="text-sm text-[#202124]">{data.condition}</p>
       </div>
-    </Group>
+    </div>
   )
 }
 
@@ -116,18 +119,18 @@ function DefinitionDetails({ data }: { data: DefinitionData }) {
   return (
     <div className="mt-3">
       {data.phonetic && (
-        <Text size="sm" c="dimmed" fs="italic">{data.phonetic}</Text>
+        <p className="text-sm text-[#70757a] italic">{data.phonetic}</p>
       )}
-      <Text size="sm" c="dimmed" mt="xs">{data.part_of_speech}</Text>
+      <p className="text-sm text-[#70757a] mt-1">{data.part_of_speech}</p>
       {data.definitions && data.definitions.length > 1 && (
-        <Text size="sm" mt="xs" c="dimmed">
+        <p className="text-sm text-[#70757a] mt-1">
           2. {data.definitions[1]}
-        </Text>
+        </p>
       )}
       {data.synonyms && data.synonyms.length > 0 && (
-        <Text size="xs" c="dimmed" mt="sm">
+        <p className="text-xs text-[#70757a] mt-2">
           Synonyms: {data.synonyms.join(', ')}
-        </Text>
+        </p>
       )}
     </div>
   )
@@ -136,8 +139,8 @@ function DefinitionDetails({ data }: { data: DefinitionData }) {
 function TimeDetails({ data }: { data: TimeData }) {
   return (
     <div className="mt-2">
-      <Text size="sm" c="dimmed">{data.date}</Text>
-      <Text size="xs" c="dimmed">{data.timezone} ({data.offset})</Text>
+      <p className="text-sm text-[#70757a]">{data.date}</p>
+      <p className="text-xs text-[#70757a]">{data.timezone} ({data.offset})</p>
     </div>
   )
 }
@@ -145,10 +148,10 @@ function TimeDetails({ data }: { data: TimeData }) {
 function CurrencyDetails({ data }: { data: CurrencyData }) {
   return (
     <div className="mt-2">
-      <Text size="sm" c="dimmed">
+      <p className="text-sm text-[#70757a]">
         1 {data.from_currency} = {data.rate.toFixed(4)} {data.to_currency}
-      </Text>
-      <Text size="xs" c="dimmed">Rate as of {new Date(data.updated_at).toLocaleDateString()}</Text>
+      </p>
+      <p className="text-xs text-[#70757a]">Rate as of {new Date(data.updated_at).toLocaleDateString()}</p>
     </div>
   )
 }
@@ -156,10 +159,10 @@ function CurrencyDetails({ data }: { data: CurrencyData }) {
 function UnitDetails({ data }: { data: UnitData }) {
   return (
     <div className="mt-2">
-      <Text size="sm" c="dimmed">
+      <p className="text-sm text-[#70757a]">
         {data.from_value} {data.from_unit} = {data.to_value.toFixed(4)} {data.to_unit}
-      </Text>
-      <Text size="xs" c="dimmed" tt="capitalize">{data.category}</Text>
+      </p>
+      <p className="text-xs text-[#70757a] capitalize">{data.category}</p>
     </div>
   )
 }

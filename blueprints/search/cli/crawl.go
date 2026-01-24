@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/store"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/html"
 )
@@ -61,13 +61,13 @@ func runCrawl(ctx context.Context, startURL, sitemapURL string, depth, limit, de
 	fmt.Println()
 
 	// Connect to database
-	fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
-	s, err := postgres.New(ctx, GetDatabaseURL())
+	fmt.Println(infoStyle.Render("Opening SQLite database..."))
+	s, err := sqlite.New(GetDatabasePath())
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer s.Close()
-	fmt.Println(successStyle.Render("  Connected"))
+	fmt.Println(successStyle.Render("  Database opened"))
 
 	crawler := &Crawler{
 		store:    s,
@@ -102,7 +102,7 @@ func runCrawl(ctx context.Context, startURL, sitemapURL string, depth, limit, de
 
 // Crawler handles web crawling
 type Crawler struct {
-	store    *postgres.Store
+	store    store.Store
 	maxDepth int
 	maxPages int
 	delay    time.Duration

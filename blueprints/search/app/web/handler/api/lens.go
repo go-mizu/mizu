@@ -3,17 +3,16 @@ package api
 import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/store"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
 )
 
 // LensHandler handles search lens operations
 type LensHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewLensHandler creates a new lens handler
-func NewLensHandler(store *postgres.Store) *LensHandler {
-	return &LensHandler{store: store}
+func NewLensHandler(s store.Store) *LensHandler {
+	return &LensHandler{store: s}
 }
 
 // List returns all lenses

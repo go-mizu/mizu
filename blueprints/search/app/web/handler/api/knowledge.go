@@ -2,17 +2,17 @@ package api
 
 import (
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // KnowledgeHandler handles knowledge panel requests
 type KnowledgeHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewKnowledgeHandler creates a new knowledge handler
-func NewKnowledgeHandler(store *postgres.Store) *KnowledgeHandler {
-	return &KnowledgeHandler{store: store}
+func NewKnowledgeHandler(s store.Store) *KnowledgeHandler {
+	return &KnowledgeHandler{store: s}
 }
 
 // GetEntity returns a knowledge panel for an entity

@@ -11,9 +11,7 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@mantine/core": "^8.3.13",
-    "@mantine/hooks": "^8.3.13",
-    "@tabler/icons-react": "^3.36.1",
+    "lucide-react": "^0.469.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.13.0",

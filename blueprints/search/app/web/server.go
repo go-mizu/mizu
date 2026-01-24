@@ -7,23 +7,23 @@ import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/app/web/handler/api"
 	"github.com/go-mizu/mizu/blueprints/search/assets"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // NewServer creates a new HTTP server
-func NewServer(store *postgres.Store, devMode bool) (http.Handler, error) {
+func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	app := mizu.New()
 
 	// Create handlers
-	searchHandler := api.NewSearchHandler(store)
-	suggestHandler := api.NewSuggestHandler(store)
+	searchHandler := api.NewSearchHandler(st)
+	suggestHandler := api.NewSuggestHandler(st)
 	instantHandler := api.NewInstantHandler()
-	knowledgeHandler := api.NewKnowledgeHandler(store)
-	prefsHandler := api.NewPreferencesHandler(store)
-	lensHandler := api.NewLensHandler(store)
-	historyHandler := api.NewHistoryHandler(store)
-	settingsHandler := api.NewSettingsHandler(store)
-	indexHandler := api.NewIndexHandler(store)
+	knowledgeHandler := api.NewKnowledgeHandler(st)
+	prefsHandler := api.NewPreferencesHandler(st)
+	lensHandler := api.NewLensHandler(st)
+	historyHandler := api.NewHistoryHandler(st)
+	settingsHandler := api.NewSettingsHandler(st)
+	indexHandler := api.NewIndexHandler(st)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
