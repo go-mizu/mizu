@@ -35,9 +35,9 @@ export function KnowledgePanel({ panel }: KnowledgePanelProps) {
         <p className="knowledge-panel-description">{panel.description}</p>
 
         {/* Facts */}
-        {panel.facts && panel.facts.length > 0 && (
+        {(panel.facts?.length ?? 0) > 0 && (
           <div className="knowledge-panel-facts">
-            {panel.facts.map((fact) => (
+            {(panel.facts || []).map((fact) => (
               <div key={fact.label} className="knowledge-panel-fact">
                 <span className="knowledge-panel-fact-label">{fact.label}</span>
                 <span className="knowledge-panel-fact-value">{fact.value}</span>
@@ -47,9 +47,9 @@ export function KnowledgePanel({ panel }: KnowledgePanelProps) {
         )}
 
         {/* Links */}
-        {panel.links && panel.links.length > 0 && (
+        {(panel.links?.length ?? 0) > 0 && (
           <div className="mt-4 pt-4 border-t border-[#dadce0]">
-            {panel.links.map((link) => (
+            {(panel.links || []).map((link) => (
               <a
                 key={link.url}
                 href={link.url}

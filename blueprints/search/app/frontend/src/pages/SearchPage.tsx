@@ -238,18 +238,18 @@ export default function SearchPage() {
                   )}
 
                   {/* Results list */}
-                  {results.results.map((result) => (
+                  {(results.results || []).map((result) => (
                     <SearchResult key={result.id} result={result} />
                   ))}
 
                   {/* Related searches */}
-                  {results.related_searches && results.related_searches.length > 0 && (
+                  {(results.related_searches?.length ?? 0) > 0 && (
                     <div className="related-searches">
                       <p className="text-sm font-medium text-[#202124] mb-3">
                         Related searches
                       </p>
                       <div className="flex flex-wrap">
-                        {results.related_searches.map((search) => (
+                        {(results.related_searches || []).map((search) => (
                           <button
                             key={search}
                             type="button"
