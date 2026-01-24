@@ -56,9 +56,15 @@ func (h *SearchHandler) SearchImages(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
+	// Estimate total results for pagination
+	totalResults := estimateTotal(len(results), opts.Page, opts.PerPage)
+
 	return c.JSON(200, map[string]any{
-		"query":   query,
-		"results": results,
+		"query":         query,
+		"results":       results,
+		"total_results": totalResults,
+		"page":          opts.Page,
+		"per_page":      opts.PerPage,
 	})
 }
 
@@ -76,9 +82,15 @@ func (h *SearchHandler) SearchVideos(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
+	// Estimate total results for pagination
+	totalResults := estimateTotal(len(results), opts.Page, opts.PerPage)
+
 	return c.JSON(200, map[string]any{
-		"query":   query,
-		"results": results,
+		"query":         query,
+		"results":       results,
+		"total_results": totalResults,
+		"page":          opts.Page,
+		"per_page":      opts.PerPage,
 	})
 }
 
@@ -96,10 +108,31 @@ func (h *SearchHandler) SearchNews(c *mizu.Ctx) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
+	// Estimate total results for pagination
+	totalResults := estimateTotal(len(results), opts.Page, opts.PerPage)
+
 	return c.JSON(200, map[string]any{
-		"query":   query,
-		"results": results,
+		"query":         query,
+		"results":       results,
+		"total_results": totalResults,
+		"page":          opts.Page,
+		"per_page":      opts.PerPage,
 	})
+}
+
+// estimateTotal estimates total results for pagination when the exact count is unknown.
+// If we got a full page of results, assume there are more pages.
+// Otherwise, this is likely the last page.
+func estimateTotal(resultCount, page, perPage int) int {
+	if perPage <= 0 {
+		perPage = 10
+	}
+	if resultCount >= perPage {
+		// Got a full page, estimate at least 10 pages
+		return perPage * 10
+	}
+	// Partial page - calculate actual total
+	return (page-1)*perPage + resultCount
 }
 
 // parseSearchOptions extracts search options from query parameters
