@@ -1,6 +1,20 @@
 // AI Mode Types
 
-export type AIMode = 'quick' | 'deep' | 'research'
+export type AIMode = 'quick' | 'deep' | 'research' | 'deepsearch'
+
+export type ModelCapability = 'text' | 'vision' | 'embeddings' | 'voice'
+
+export interface ModelInfo {
+  id: string
+  provider: string
+  name: string
+  description?: string
+  capabilities: ModelCapability[]
+  context_size: number
+  speed: 'fast' | 'balanced' | 'thorough'
+  is_default?: boolean
+  available: boolean
+}
 
 export interface Citation {
   index: number

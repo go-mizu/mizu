@@ -207,7 +207,50 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 		MaxSources:       10,
 	}, searchSvc, chunkerSvc, sessionSvc)
 
-	return api.NewAIHandler(aiSvc, sessionSvc, canvasSvc)
+	// Create model registry
+	registry := ai.NewModelRegistry()
+
+	// Register models
+	if quickProvider != nil {
+		registry.RegisterModel(ai.ModelInfo{
+			ID:           "gemma-3-270m",
+			Provider:     "llamacpp",
+			Name:         "Gemma 3 270M",
+			Description:  "Fast, lightweight model for quick answers",
+			Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
+			ContextSize:  4096,
+			Speed:        "fast",
+			Available:    true,
+		}, quickProvider)
+	}
+
+	if deepProvider != nil {
+		registry.RegisterModel(ai.ModelInfo{
+			ID:           "gemma-3-1b",
+			Provider:     "llamacpp",
+			Name:         "Gemma 3 1B",
+			Description:  "Balanced model for detailed analysis",
+			Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
+			ContextSize:  8192,
+			Speed:        "balanced",
+			Available:    true,
+		}, deepProvider)
+	}
+
+	if researchProvider != nil {
+		registry.RegisterModel(ai.ModelInfo{
+			ID:           "gemma-3-4b",
+			Provider:     "llamacpp",
+			Name:         "Gemma 3 4B",
+			Description:  "Comprehensive model for in-depth research",
+			Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
+			ContextSize:  16384,
+			Speed:        "thorough",
+			Available:    true,
+		}, researchProvider)
+	}
+
+	return api.NewAIHandler(aiSvc, sessionSvc, canvasSvc, registry)
 }
 
 // createSearchHandler creates a search handler with SearXNG if available.

@@ -11,7 +11,7 @@ import { useSearchStore } from '../stores/searchStore'
 import { useAIStore } from '../stores/aiStore'
 import type { SearchResponse } from '../types'
 
-type SearchTab = 'all' | 'images' | 'videos' | 'news'
+type SearchTab = 'all' | 'ai' | 'images' | 'videos' | 'news'
 
 const TIME_OPTIONS = [
   { value: '', label: 'Any time' },
@@ -155,6 +155,16 @@ export default function SearchPage() {
             >
               All
             </button>
+            {aiAvailable && (
+              <button
+                type="button"
+                className={`search-tab ${activeTab === 'ai' ? 'active' : ''}`}
+                onClick={() => navigate(`/ai?q=${encodeURIComponent(query)}`)}
+              >
+                <Sparkles size={16} />
+                AI
+              </button>
+            )}
             <button
               type="button"
               className={`search-tab ${activeTab === 'images' ? 'active' : ''}`}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Copy, Check, BookOpen } from 'lucide-react'
+import { Copy, Check, BookOpen, Volume2, VolumeX } from 'lucide-react'
 import type { AIResponse as AIResponseType } from '../../types/ai'
+import { MarkdownRenderer } from './MarkdownRenderer'
 import { CitationChip } from './CitationChip'
 import { FollowUpChips } from './FollowUpChips'
 import { ThinkingSteps } from './ThinkingSteps'
@@ -24,6 +25,7 @@ export function AIResponse({
 }: AIResponseProps) {
   const [copied, setCopied] = useState(false)
   const [expandedCitation, setExpandedCitation] = useState<number | null>(null)
+  const [isSpeaking, setIsSpeaking] = useState(false)
 
   const content = streamingContent || response.text
   const thinkingSteps = streamingThinking.length ? streamingThinking : response.thinking_steps || []
@@ -34,13 +36,40 @@ export function AIResponse({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Process content to add inline citations
-  const processedContent = content.replace(/\[(\d+)\]/g, (match, num) => {
-    return `<span class="citation-marker" data-index="${num}">${match}</span>`
-  })
-
   const handleCitationClick = (index: number) => {
     setExpandedCitation(expandedCitation === index ? null : index)
+  }
+
+  const handleSpeak = () => {
+    if (isSpeaking) {
+      window.speechSynthesis.cancel()
+      setIsSpeaking(false)
+      return
+    }
+
+    // Strip markdown for TTS
+    const plainText = content
+      .replace(/\[(\d+)\]/g, '') // Remove citations
+      .replace(/```[\s\S]*?```/g, 'code block') // Replace code blocks
+      .replace(/`[^`]+`/g, '') // Remove inline code
+      .replace(/[#*_~]/g, '') // Remove markdown formatting
+
+    const utterance = new SpeechSynthesisUtterance(plainText)
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
+
+    window.speechSynthesis.speak(utterance)
+    setIsSpeaking(true)
+  }
+
+  const getModeLabel = (mode: string) => {
+    switch (mode) {
+      case 'quick': return 'Quick AI'
+      case 'deep': return 'Deep Analysis'
+      case 'research': return 'Research'
+      case 'deepsearch': return 'Deep Search'
+      default: return mode
+    }
   }
 
   return (
@@ -48,9 +77,7 @@ export function AIResponse({
       {/* Mode badge */}
       <div className="ai-response-header">
         <span className={`ai-mode-badge ${response.mode}`}>
-          {response.mode === 'quick' && 'Quick AI'}
-          {response.mode === 'deep' && 'Deep Analysis'}
-          {response.mode === 'research' && 'Research'}
+          {getModeLabel(response.mode)}
         </span>
         <span className="ai-sources-count">
           {response.sources_used} sources
@@ -62,13 +89,14 @@ export function AIResponse({
         <ThinkingSteps steps={thinkingSteps} isStreaming={isStreaming} />
       )}
 
-      {/* Main content */}
+      {/* Main content with markdown rendering */}
       <div className="ai-response-content">
-        <div
-          className="ai-response-text"
-          dangerouslySetInnerHTML={{ __html: processedContent }}
+        <MarkdownRenderer
+          content={content}
+          citations={response.citations}
+          isStreaming={isStreaming}
+          onCitationClick={handleCitationClick}
         />
-        {isStreaming && <span className="typing-cursor" />}
       </div>
 
       {/* Citations */}
@@ -105,6 +133,15 @@ export function AIResponse({
         >
           {copied ? <Check size={14} /> : <Copy size={14} />}
           {copied ? 'Copied' : 'Copy'}
+        </button>
+        <button
+          type="button"
+          onClick={handleSpeak}
+          className="ai-action-button"
+          title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+        >
+          {isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          {isSpeaking ? 'Stop' : 'Listen'}
         </button>
         {onAddToCanvas && (
           <button

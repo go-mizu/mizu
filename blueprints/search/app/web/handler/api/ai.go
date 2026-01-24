@@ -12,17 +12,19 @@ import (
 
 // AIHandler handles AI mode API endpoints.
 type AIHandler struct {
-	ai      *ai.Service
-	session *session.Service
-	canvas  *canvas.Service
+	ai       *ai.Service
+	session  *session.Service
+	canvas   *canvas.Service
+	registry *ai.ModelRegistry
 }
 
 // NewAIHandler creates a new AI handler.
-func NewAIHandler(aiSvc *ai.Service, sessionSvc *session.Service, canvasSvc *canvas.Service) *AIHandler {
+func NewAIHandler(aiSvc *ai.Service, sessionSvc *session.Service, canvasSvc *canvas.Service, registry *ai.ModelRegistry) *AIHandler {
 	return &AIHandler{
-		ai:      aiSvc,
-		session: sessionSvc,
-		canvas:  canvasSvc,
+		ai:       aiSvc,
+		session:  sessionSvc,
+		canvas:   canvasSvc,
+		registry: registry,
 	}
 }
 
@@ -30,6 +32,8 @@ func NewAIHandler(aiSvc *ai.Service, sessionSvc *session.Service, canvasSvc *can
 func (h *AIHandler) Register(r *mizu.Router) {
 	// AI modes and query
 	r.Get("/modes", h.GetModes)
+	r.Get("/models", h.GetModels)
+	r.Get("/models/{id}/health", h.GetModelHealth)
 	r.Post("/query", h.Query)
 	r.Post("/query/stream", h.QueryStream)
 
@@ -53,6 +57,33 @@ func (h *AIHandler) Register(r *mizu.Router) {
 func (h *AIHandler) GetModes(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"modes": ai.GetModes(),
+	})
+}
+
+// GetModels returns available AI models.
+func (h *AIHandler) GetModels(c *mizu.Ctx) error {
+	if h.registry == nil {
+		return c.JSON(http.StatusOK, []ai.ModelInfo{})
+	}
+
+	// Update availability before returning
+	h.registry.UpdateAvailability(c.Context())
+
+	return c.JSON(http.StatusOK, h.registry.ListModels())
+}
+
+// GetModelHealth checks if a specific model is available.
+func (h *AIHandler) GetModelHealth(c *mizu.Ctx) error {
+	id := c.Param("id")
+
+	if h.registry == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "model not found"})
+	}
+
+	available := h.registry.CheckHealth(c.Context(), id)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"available": available,
 	})
 }
 
