@@ -22,6 +22,7 @@ type Store struct {
 	knowledge  *KnowledgeStore
 	history    *HistoryStore
 	preference *PreferenceStore
+	cache      *CacheStore
 }
 
 // New creates a new SQLite store.
@@ -56,8 +57,14 @@ func New(dbPath string) (*Store, error) {
 	s.knowledge = &KnowledgeStore{db: db}
 	s.history = &HistoryStore{db: db}
 	s.preference = &PreferenceStore{db: db}
+	s.cache = NewCacheStore(db)
 
 	return s, nil
+}
+
+// Cache returns the cache store.
+func (s *Store) Cache() *CacheStore {
+	return s.cache
 }
 
 // Close closes the database connection.
