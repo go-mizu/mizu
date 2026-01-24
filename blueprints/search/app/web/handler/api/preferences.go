@@ -3,17 +3,16 @@ package api
 import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/store"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
 )
 
 // PreferencesHandler handles user preferences
 type PreferencesHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewPreferencesHandler creates a new preferences handler
-func NewPreferencesHandler(store *postgres.Store) *PreferencesHandler {
-	return &PreferencesHandler{store: store}
+func NewPreferencesHandler(s store.Store) *PreferencesHandler {
+	return &PreferencesHandler{store: s}
 }
 
 // List returns all user preferences

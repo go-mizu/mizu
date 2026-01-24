@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -45,22 +45,22 @@ func runSeed(cmd *cobra.Command, args []string) error {
 }
 
 func seedDatabase(ctx context.Context) error {
-	fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
+	fmt.Println(infoStyle.Render("Opening SQLite database..."))
 
-	store, err := postgres.New(ctx, GetDatabaseURL())
+	store, err := sqlite.New(GetDatabasePath())
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer store.Close()
 
-	fmt.Println(successStyle.Render("  Connected"))
+	fmt.Println(successStyle.Render("  Database opened"))
 
-	// Ensure all schemas and tables exist before seeding
-	fmt.Println(infoStyle.Render("Ensuring schemas exist..."))
+	// Ensure all tables exist before seeding
+	fmt.Println(infoStyle.Render("Ensuring tables exist..."))
 	if err := store.Ensure(ctx); err != nil {
-		return fmt.Errorf("failed to ensure schemas: %w", err)
+		return fmt.Errorf("failed to ensure tables: %w", err)
 	}
-	fmt.Println(successStyle.Render("  Schemas ready"))
+	fmt.Println(successStyle.Render("  Tables ready"))
 
 	fmt.Println(infoStyle.Render("Creating sample documents..."))
 	if err := store.SeedDocuments(ctx); err != nil {
@@ -73,12 +73,6 @@ func seedDatabase(ctx context.Context) error {
 		return fmt.Errorf("failed to seed knowledge: %w", err)
 	}
 	fmt.Println(successStyle.Render("  Entities created"))
-
-	fmt.Println(infoStyle.Render("Creating default lenses..."))
-	if err := store.SeedLenses(ctx); err != nil {
-		return fmt.Errorf("failed to seed lenses: %w", err)
-	}
-	fmt.Println(successStyle.Render("  Lenses created"))
 
 	return nil
 }

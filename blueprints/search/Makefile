@@ -19,13 +19,8 @@ GO_LDFLAGS ?= -s -w $(LDVARS)
 # Frontend configuration
 FRONTEND_DIR := app/frontend
 
-# Database configuration
-DB_HOST ?= localhost
-DB_PORT ?= 5432
-DB_USER ?= search
-DB_PASS ?= search
-DB_NAME ?= search
-DATABASE_URL ?= postgres://$(DB_USER):$(DB_PASS)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
+# Database configuration (SQLite)
+DATABASE_PATH ?= $(HOME)/data/blueprints/search/search.db
 
 .PHONY: frontend-install
 frontend-install: ## Install frontend dependencies
@@ -114,29 +109,19 @@ check-deps: ## Check if required dependencies are installed
 	else \
 		echo "\033[31mnot found\033[0m"; \
 	fi
-	@echo -n "  PostgreSQL: "
-	@if command -v psql >/dev/null 2>&1; then \
-		echo "\033[32mfound\033[0m ($$(psql --version | head -1))"; \
-	else \
-		echo "\033[31mnot found\033[0m"; \
-		echo "    Install: brew install postgresql"; \
-	fi
 	@echo ""
 
 .PHONY: dev
 dev: ## Show development mode instructions
 	@echo ""
-	@echo "Search - Full-Featured Search Engine"
+	@echo "Search - Full-Featured Search Engine (SQLite)"
 	@echo ""
 	@echo "Development mode:"
 	@echo ""
-	@echo "  Terminal 1 (PostgreSQL):"
-	@echo "    make docker-up"
-	@echo ""
-	@echo "  Terminal 2 (Backend):"
+	@echo "  Terminal 1 (Backend):"
 	@echo "    make run"
 	@echo ""
-	@echo "  Terminal 3 (Frontend):"
+	@echo "  Terminal 2 (Frontend):"
 	@echo "    make frontend-dev"
 	@echo ""
 	@echo "  Then open http://localhost:5173"
@@ -155,53 +140,16 @@ dev-all: ## Run backend and frontend in development mode
 	(cd $(FRONTEND_DIR) && pnpm run dev) & \
 	GOWORK=off $(GO) run $(CMD) serve --dev
 
-# Docker targets
-DOCKER_COMPOSE_POSTGRES := docker/postgres/docker-compose.yml
-
-.PHONY: docker-up
-docker-up: ## Start PostgreSQL with Docker
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) up -d
-	@echo "PostgreSQL started at localhost:$(DB_PORT)"
-	@echo "Connection: $(DATABASE_URL)"
-
-.PHONY: docker-down
-docker-down: ## Stop PostgreSQL Docker
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) down
-
-.PHONY: docker-logs
-docker-logs: ## View PostgreSQL logs
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) logs -f
-
-.PHONY: docker-psql
-docker-psql: ## Connect to PostgreSQL via psql
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) exec postgres psql -U $(DB_USER) -d $(DB_NAME)
-
-.PHONY: docker-build
-docker-build: ## Build Docker images
-	@docker build -t search:latest .
-	@echo "Built: search:latest"
-
 # Database management
 .PHONY: db-reset
-db-reset: ## Reset the database (drop and recreate)
+db-reset: ## Reset the SQLite database
 	@echo "Resetting database..."
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) exec postgres psql -U $(DB_USER) -c "DROP DATABASE IF EXISTS $(DB_NAME);"
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) exec postgres psql -U $(DB_USER) -c "CREATE DATABASE $(DB_NAME);"
+	@rm -f $(DATABASE_PATH)
 	@echo "Database reset complete"
-
-.PHONY: db-create-extensions
-db-create-extensions: ## Create PostgreSQL extensions
-	@echo "Creating extensions..."
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
-	@docker compose -f $(DOCKER_COMPOSE_POSTGRES) exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
-	@echo "Extensions created"
 
 # Quick start
 .PHONY: quickstart
-quickstart: docker-up ## Quick start: start database, initialize, seed, and run
-	@echo "Waiting for PostgreSQL to be ready..."
-	@sleep 5
+quickstart: ## Quick start: initialize, seed, and run
 	@make init
 	@make seed
 	@make run

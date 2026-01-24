@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { Container, Group, Text, Loader, Modal, Image, ActionIcon } from '@mantine/core'
-import { IconSettings, IconX } from '@tabler/icons-react'
+import { Settings, X } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
 import { searchApi } from '../api/search'
 import type { ImageResult } from '../types'
@@ -42,13 +41,12 @@ export default function ImagesPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="sticky top-0 bg-white border-b z-50">
-        <Container size="xl" className="py-3">
-          <Group>
+      <header className="sticky top-0 bg-white border-b border-[#dadce0] z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center gap-6">
             <Link to="/">
-              <Text
-                size="28px"
-                fw={700}
+              <span
+                className="text-3xl font-bold"
                 style={{
                   background: 'linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853)',
                   WebkitBackgroundClip: 'text',
@@ -56,7 +54,7 @@ export default function ImagesPage() {
                 }}
               >
                 Search
-              </Text>
+              </span>
             </Link>
 
             <div className="flex-1 max-w-xl">
@@ -67,25 +65,26 @@ export default function ImagesPage() {
               />
             </div>
 
-            <Link to="/settings">
-              <ActionIcon variant="subtle" color="gray" size="lg">
-                <IconSettings size={20} />
-              </ActionIcon>
+            <Link
+              to="/settings"
+              className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
+            >
+              <Settings size={20} />
             </Link>
-          </Group>
-        </Container>
+          </div>
+        </div>
       </header>
 
       {/* Main content */}
       <main>
-        <Container size="xl" className="py-4">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
-              <Loader />
+              <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : error ? (
             <div className="py-12 text-center">
-              <Text c="red">{error}</Text>
+              <p className="text-red-600">{error}</p>
             </div>
           ) : images.length > 0 ? (
             <div className="image-grid">
@@ -105,57 +104,57 @@ export default function ImagesPage() {
             </div>
           ) : query ? (
             <div className="py-12 text-center">
-              <Text c="dimmed">No images found</Text>
+              <p className="text-[#70757a]">No images found</p>
             </div>
           ) : (
             <div className="py-12 text-center">
-              <Text c="dimmed">Search for images</Text>
+              <p className="text-[#70757a]">Search for images</p>
             </div>
           )}
-        </Container>
+        </div>
       </main>
 
       {/* Image preview modal */}
-      <Modal
-        opened={!!selectedImage}
-        onClose={() => setSelectedImage(null)}
-        size="xl"
-        withCloseButton={false}
-        padding={0}
-      >
-        {selectedImage && (
-          <div className="relative">
-            <ActionIcon
-              variant="filled"
-              color="dark"
-              className="absolute top-2 right-2 z-10"
-              onClick={() => setSelectedImage(null)}
-            >
-              <IconX size={16} />
-            </ActionIcon>
-            <Image
-              src={selectedImage.url}
-              alt={selectedImage.title}
-              fit="contain"
-              mah="80vh"
-            />
-            <div className="p-4 bg-gray-50">
-              <Text fw={500}>{selectedImage.title}</Text>
-              <Text size="sm" c="dimmed">
-                {selectedImage.source_domain} - {selectedImage.width}x{selectedImage.height}
-              </Text>
-              <a
-                href={selectedImage.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:underline"
+      {selectedImage && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          onClick={() => setSelectedImage(null)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-2 right-2 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
               >
-                Visit page
-              </a>
+                <X size={16} />
+              </button>
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.title}
+                className="max-h-[70vh] w-auto mx-auto"
+              />
+              <div className="p-4 bg-[#f8f9fa]">
+                <p className="font-medium text-[#202124]">{selectedImage.title}</p>
+                <p className="text-sm text-[#70757a]">
+                  {selectedImage.source_domain} - {selectedImage.width}x{selectedImage.height}
+                </p>
+                <a
+                  href={selectedImage.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-[#1a73e8] hover:underline"
+                >
+                  Visit page
+                </a>
+              </div>
             </div>
           </div>
-        )}
-      </Modal>
+        </div>
+      )}
     </div>
   )
 }

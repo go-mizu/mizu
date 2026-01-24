@@ -4,17 +4,17 @@ import (
 	"strconv"
 
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // HistoryHandler handles search history
 type HistoryHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewHistoryHandler creates a new history handler
-func NewHistoryHandler(store *postgres.Store) *HistoryHandler {
-	return &HistoryHandler{store: store}
+func NewHistoryHandler(s store.Store) *HistoryHandler {
+	return &HistoryHandler{store: s}
 }
 
 // List returns search history

@@ -4,17 +4,17 @@ import (
 	"strconv"
 
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // SuggestHandler handles autocomplete suggestions
 type SuggestHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewSuggestHandler creates a new suggest handler
-func NewSuggestHandler(store *postgres.Store) *SuggestHandler {
-	return &SuggestHandler{store: store}
+func NewSuggestHandler(s store.Store) *SuggestHandler {
+	return &SuggestHandler{store: s}
 }
 
 // Suggest returns autocomplete suggestions

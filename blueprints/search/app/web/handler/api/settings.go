@@ -3,17 +3,16 @@ package api
 import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/store"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
 )
 
 // SettingsHandler handles user settings
 type SettingsHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewSettingsHandler creates a new settings handler
-func NewSettingsHandler(store *postgres.Store) *SettingsHandler {
-	return &SettingsHandler{store: store}
+func NewSettingsHandler(s store.Store) *SettingsHandler {
+	return &SettingsHandler{store: s}
 }
 
 // Get returns user settings

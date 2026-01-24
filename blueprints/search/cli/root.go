@@ -22,8 +22,8 @@ var (
 // dataDir is the default data directory
 var dataDir string
 
-// databaseURL is the PostgreSQL connection string
-var databaseURL string
+// databasePath is the SQLite database path
+var databasePath string
 
 // Execute runs the CLI
 func Execute(ctx context.Context) error {
@@ -51,16 +51,16 @@ Get started:
 		SilenceErrors: true,
 	}
 
-	// Set default data directory
+	// Set default data directory and database path
 	home, _ := os.UserHomeDir()
-	dataDir = filepath.Join(home, "data", "blueprint", "search")
-	databaseURL = "postgres://search:search@localhost:5432/search?sslmode=disable"
+	dataDir = filepath.Join(home, "data", "blueprints", "search")
+	databasePath = filepath.Join(dataDir, "search.db")
 
 	// Global flags
 	root.SetVersionTemplate("search {{.Version}}\n")
 	root.Version = versionString()
 	root.PersistentFlags().StringVar(&dataDir, "data", dataDir, "Data directory")
-	root.PersistentFlags().StringVar(&databaseURL, "database-url", databaseURL, "PostgreSQL connection URL")
+	root.PersistentFlags().StringVar(&databasePath, "database", databasePath, "SQLite database path")
 	root.PersistentFlags().Bool("dev", false, "Enable development mode")
 
 	// Add subcommands
@@ -96,7 +96,7 @@ func GetDataDir() string {
 	return dataDir
 }
 
-// GetDatabaseURL returns the database connection URL
-func GetDatabaseURL() string {
-	return databaseURL
+// GetDatabasePath returns the SQLite database path
+func GetDatabasePath() string {
+	return databasePath
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, KeyboardEvent } from 'react'
-import { TextInput, Paper, Text, Group, ActionIcon, Kbd } from '@mantine/core'
-import { IconSearch, IconX, IconMicrophone, IconCamera } from '@tabler/icons-react'
+import { Search, X, Mic, Camera } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { searchApi } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
@@ -8,8 +7,7 @@ import type { Suggestion } from '../types'
 
 interface SearchBoxProps {
   initialValue?: string
-  size?: 'sm' | 'md' | 'lg'
-  showLogo?: boolean
+  size?: 'sm' | 'lg'
   autoFocus?: boolean
   onSearch?: (query: string) => void
 }
@@ -26,6 +24,7 @@ export function SearchBox({
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const { addRecentSearch, recentSearches } = useSearchStore()
 
   useEffect(() => {
@@ -64,15 +63,17 @@ export function SearchBox({
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const items = suggestions.length > 0 ? suggestions : recentSearches.slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
+
     if (e.key === 'Enter') {
-      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-        handleSearch(suggestions[selectedIndex].text)
+      if (selectedIndex >= 0 && items[selectedIndex]) {
+        handleSearch(items[selectedIndex].text)
       } else {
         handleSearch(value)
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setSelectedIndex((prev) => Math.min(prev + 1, suggestions.length - 1))
+      setSelectedIndex((prev) => Math.min(prev + 1, items.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setSelectedIndex((prev) => Math.max(prev - 1, -1))
@@ -82,103 +83,90 @@ export function SearchBox({
     }
   }
 
-  const displaySuggestions = showSuggestions && (suggestions.length > 0 || recentSearches.length > 0)
+  const displayItems = suggestions.length > 0
+    ? suggestions
+    : recentSearches.slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
+
+  const showDropdown = showSuggestions && displayItems.length > 0
 
   return (
-    <div className="relative w-full max-w-2xl">
-      <TextInput
-        ref={inputRef}
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value)
-          setSelectedIndex(-1)
-        }}
-        onFocus={() => setShowSuggestions(true)}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-        onKeyDown={handleKeyDown}
-        placeholder="Search the web..."
-        size={size}
-        autoFocus={autoFocus}
-        leftSection={<IconSearch size={20} className="text-gray-400" />}
-        rightSection={
-          <Group gap={4}>
-            {value && (
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                onClick={() => setValue('')}
-              >
-                <IconX size={16} />
-              </ActionIcon>
-            )}
-            <ActionIcon variant="subtle" color="gray" size="sm">
-              <IconMicrophone size={16} />
-            </ActionIcon>
-            <ActionIcon variant="subtle" color="gray" size="sm">
-              <IconCamera size={16} />
-            </ActionIcon>
-          </Group>
-        }
-        rightSectionWidth={100}
-        styles={{
-          input: {
-            borderRadius: '24px',
-            border: '1px solid #dfe1e5',
-            boxShadow: '0 1px 6px rgba(32,33,36,.08)',
-            '&:hover': {
-              boxShadow: '0 1px 6px rgba(32,33,36,.28)',
-            },
-            '&:focus': {
-              boxShadow: '0 1px 6px rgba(32,33,36,.28)',
-              borderColor: 'transparent',
-            },
-          },
-        }}
-      />
+    <div
+      ref={containerRef}
+      className={`search-box-container ${size === 'lg' ? 'search-box-lg' : ''}`}
+    >
+      <div className="relative">
+        {/* Search icon */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9aa0a6] pointer-events-none">
+          <Search size={20} />
+        </div>
 
-      {displaySuggestions && (
-        <Paper
-          shadow="md"
-          className="absolute top-full left-0 right-0 mt-1 py-2 z-50 rounded-2xl overflow-hidden"
-        >
-          {suggestions.length > 0 ? (
-            suggestions.map((suggestion, index) => (
-              <div
-                key={suggestion.text}
-                className={`autocomplete-item flex items-center gap-3 ${
-                  index === selectedIndex ? 'active' : ''
-                }`}
-                onMouseDown={() => handleSearch(suggestion.text)}
-                onMouseEnter={() => setSelectedIndex(index)}
-              >
-                <IconSearch size={16} className="text-gray-400" />
-                <Text size="sm">{suggestion.text}</Text>
-              </div>
-            ))
-          ) : (
-            recentSearches.slice(0, 5).map((query, index) => (
-              <div
-                key={query}
-                className={`autocomplete-item flex items-center gap-3 ${
-                  index === selectedIndex ? 'active' : ''
-                }`}
-                onMouseDown={() => handleSearch(query)}
-                onMouseEnter={() => setSelectedIndex(index)}
-              >
-                <IconSearch size={16} className="text-gray-400" />
-                <Text size="sm" c="dimmed">
-                  {query}
-                </Text>
-              </div>
-            ))
+        {/* Input */}
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setSelectedIndex(-1)
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search the web"
+          autoFocus={autoFocus}
+          className="search-input"
+          style={{
+            borderRadius: showDropdown ? '24px 24px 0 0' : '24px',
+          }}
+        />
+
+        {/* Right icons */}
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+          {value && (
+            <button
+              type="button"
+              onClick={() => {
+                setValue('')
+                inputRef.current?.focus()
+              }}
+              className="p-2 text-[#70757a] hover:text-[#202124] rounded-full hover:bg-[#f1f3f4]"
+            >
+              <X size={18} />
+            </button>
           )}
-          <div className="px-4 py-2 border-t flex justify-end gap-2">
-            <Text size="xs" c="dimmed">
-              <Kbd size="xs">Enter</Kbd> to search
-            </Text>
-          </div>
-        </Paper>
+          <div className="w-px h-6 bg-[#dadce0] mx-1" />
+          <button
+            type="button"
+            className="p-2 text-[#4285f4] hover:bg-[#f1f3f4] rounded-full"
+            title="Voice search"
+          >
+            <Mic size={20} />
+          </button>
+          <button
+            type="button"
+            className="p-2 text-[#4285f4] hover:bg-[#f1f3f4] rounded-full"
+            title="Image search"
+          >
+            <Camera size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* Autocomplete dropdown */}
+      {showDropdown && (
+        <div className="autocomplete-dropdown">
+          {displayItems.map((item, index) => (
+            <div
+              key={item.text}
+              className={`autocomplete-item ${index === selectedIndex ? 'active' : ''}`}
+              onMouseDown={() => handleSearch(item.text)}
+              onMouseEnter={() => setSelectedIndex(index)}
+            >
+              <Search size={16} className="text-[#9aa0a6] shrink-0" />
+              <span className="truncate">{item.text}</span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/app/web"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -46,10 +46,10 @@ func runServe(ctx context.Context, port int, devMode bool) error {
 	fmt.Println(Banner())
 
 	// Connect to database
-	fmt.Println(infoStyle.Render("Connecting to PostgreSQL..."))
-	store, err := postgres.New(ctx, GetDatabaseURL())
+	fmt.Println(infoStyle.Render("Opening SQLite database..."))
+	store, err := sqlite.New(GetDatabasePath())
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer store.Close()
 	fmt.Println(successStyle.Render("  Connected"))

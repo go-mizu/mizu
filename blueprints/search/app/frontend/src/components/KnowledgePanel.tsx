@@ -1,5 +1,4 @@
-import { Paper, Text, Image, Group, Anchor, Stack, Divider } from '@mantine/core'
-import { IconExternalLink } from '@tabler/icons-react'
+import { ExternalLink } from 'lucide-react'
 import type { KnowledgePanel as KnowledgePanelType } from '../types'
 
 interface KnowledgePanelProps {
@@ -8,77 +7,70 @@ interface KnowledgePanelProps {
 
 export function KnowledgePanel({ panel }: KnowledgePanelProps) {
   return (
-    <Paper className="knowledge-panel" p="lg">
+    <div className="knowledge-panel">
+      {/* Image */}
       {panel.image && (
-        <Image
+        <img
           src={panel.image}
           alt={panel.title}
-          radius="md"
-          mb="md"
-          mah={200}
-          fit="contain"
+          className="knowledge-panel-image"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none'
+          }}
         />
       )}
 
-      <Text size="xl" fw={600}>
-        {panel.title}
-      </Text>
+      <div className="knowledge-panel-content">
+        {/* Title */}
+        <h2 className="knowledge-panel-title">{panel.title}</h2>
 
-      {panel.subtitle && (
-        <Text size="sm" c="dimmed">
-          {panel.subtitle}
-        </Text>
-      )}
+        {/* Subtitle */}
+        {panel.subtitle && (
+          <p className="knowledge-panel-subtitle">
+            {panel.subtitle.charAt(0).toUpperCase() + panel.subtitle.slice(1).replace(/_/g, ' ')}
+          </p>
+        )}
 
-      <Text size="sm" mt="md" lineClamp={5}>
-        {panel.description}
-      </Text>
+        {/* Description */}
+        <p className="knowledge-panel-description">{panel.description}</p>
 
-      {panel.facts && panel.facts.length > 0 && (
-        <>
-          <Divider my="md" />
-          <Stack gap="xs">
+        {/* Facts */}
+        {panel.facts && panel.facts.length > 0 && (
+          <div className="knowledge-panel-facts">
             {panel.facts.map((fact) => (
-              <Group key={fact.label} justify="space-between" gap="xs">
-                <Text size="sm" c="dimmed">
-                  {fact.label}
-                </Text>
-                <Text size="sm" fw={500}>
-                  {fact.value}
-                </Text>
-              </Group>
+              <div key={fact.label} className="knowledge-panel-fact">
+                <span className="knowledge-panel-fact-label">{fact.label}</span>
+                <span className="knowledge-panel-fact-value">{fact.value}</span>
+              </div>
             ))}
-          </Stack>
-        </>
-      )}
+          </div>
+        )}
 
-      {panel.links && panel.links.length > 0 && (
-        <>
-          <Divider my="md" />
-          <Stack gap="xs">
+        {/* Links */}
+        {panel.links && panel.links.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-[#dadce0]">
             {panel.links.map((link) => (
-              <Anchor
+              <a
                 key={link.url}
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                size="sm"
+                className="flex items-center gap-2 py-2 text-sm text-[#1a73e8] hover:underline"
               >
-                <Group gap={4}>
-                  <IconExternalLink size={14} />
-                  {link.title}
-                </Group>
-              </Anchor>
+                <ExternalLink size={14} />
+                {link.title}
+              </a>
             ))}
-          </Stack>
-        </>
-      )}
+          </div>
+        )}
 
-      {panel.source && (
-        <Text size="xs" c="dimmed" mt="md">
-          Source: {panel.source}
-        </Text>
-      )}
-    </Paper>
+        {/* Source */}
+        {panel.source && (
+          <p className="mt-4 text-xs text-[#70757a]">
+            Source: {panel.source}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }

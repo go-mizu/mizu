@@ -2,17 +2,17 @@ package api
 
 import (
 	"github.com/go-mizu/mizu"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
+	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // IndexHandler handles index management
 type IndexHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewIndexHandler creates a new index handler
-func NewIndexHandler(store *postgres.Store) *IndexHandler {
-	return &IndexHandler{store: store}
+func NewIndexHandler(s store.Store) *IndexHandler {
+	return &IndexHandler{store: s}
 }
 
 // Stats returns index statistics

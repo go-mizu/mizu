@@ -5,17 +5,16 @@ import (
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/store"
-	"github.com/go-mizu/mizu/blueprints/search/store/postgres"
 )
 
 // SearchHandler handles search API requests
 type SearchHandler struct {
-	store *postgres.Store
+	store store.Store
 }
 
 // NewSearchHandler creates a new search handler
-func NewSearchHandler(store *postgres.Store) *SearchHandler {
-	return &SearchHandler{store: store}
+func NewSearchHandler(s store.Store) *SearchHandler {
+	return &SearchHandler{store: s}
 }
 
 // Search handles the main search endpoint
