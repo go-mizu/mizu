@@ -195,8 +195,8 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 		})
 	}
 
-	// Create search service for AI
-	searchSvc := search.NewServiceWithDefaults(st)
+	// Use the same search service from the search handler (has SearXNG if available)
+	searchSvc := searchHandler.Service()
 
 	// Create AI service
 	aiSvc := ai.New(ai.Config{

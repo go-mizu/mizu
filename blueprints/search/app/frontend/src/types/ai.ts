@@ -58,7 +58,14 @@ export interface AIStreamEvent {
   thinking?: string
   query?: string
   error?: string
-  response?: AIResponse
+  response?: {
+    text: string
+    mode: AIMode
+    citations: Citation[]
+    follow_ups: string[]
+    session_id: string
+    sources_used: number
+  }
 }
 
 export interface AIModeInfo {

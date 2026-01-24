@@ -24,6 +24,11 @@ func NewSearchHandlerWithConfig(cfg search.ServiceConfig) *SearchHandler {
 	return &SearchHandler{service: search.NewService(cfg)}
 }
 
+// Service returns the underlying search service.
+func (h *SearchHandler) Service() *search.Service {
+	return h.service
+}
+
 // Search handles the main search endpoint
 func (h *SearchHandler) Search(c *mizu.Ctx) error {
 	query := c.Query("q")

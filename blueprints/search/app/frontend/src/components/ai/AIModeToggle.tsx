@@ -1,4 +1,4 @@
-import { Zap, Brain, FlaskConical } from 'lucide-react'
+import { Zap, Brain, FlaskConical, FileSearch } from 'lucide-react'
 import type { AIMode } from '../../types/ai'
 import { useAIStore } from '../../stores/aiStore'
 
@@ -25,6 +25,12 @@ const modes: { id: AIMode; label: string; icon: React.ReactNode; description: st
     label: 'Research',
     icon: <FlaskConical size={16} />,
     description: 'Multi-step research',
+  },
+  {
+    id: 'deepsearch',
+    label: 'Deep Search',
+    icon: <FileSearch size={16} />,
+    description: 'Comprehensive report from 50+ sources',
   },
 ]
 

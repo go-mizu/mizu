@@ -9,7 +9,7 @@ import { FileUploadZone, type UploadedFile } from '../components/ai/FileUploadZo
 import { VoiceInput } from '../components/ai/VoiceInput'
 import { aiApi } from '../api/ai'
 import { useAIStore } from '../stores/aiStore'
-import type { AIResponse as AIResponseType, AIMode, Citation } from '../types/ai'
+import type { AIResponse as AIResponseType, Citation } from '../types/ai'
 
 export default function AIPage() {
   const [searchParams] = useSearchParams()
@@ -67,6 +67,15 @@ export default function AIPage() {
 
       for await (const event of stream) {
         switch (event.type) {
+          case 'start':
+            // Stream started
+            break
+          case 'search':
+            // Searching for query
+            if (event.query) {
+              addThinkingStep(`Searching for: ${event.query}`)
+            }
+            break
           case 'token':
             if (event.content) {
               appendStreamContent(event.content)
@@ -84,7 +93,16 @@ export default function AIPage() {
             break
           case 'done':
             if (event.response) {
-              setResponse(event.response)
+              // Map stream response to AIResponse format
+              setResponse({
+                text: event.response.text,
+                mode: event.response.mode,
+                citations: event.response.citations || [],
+                follow_ups: event.response.follow_ups || [],
+                session_id: event.response.session_id,
+                sources_used: event.response.sources_used,
+                thinking_steps: streamingThinking,
+              })
             }
             break
           case 'error':
@@ -285,11 +303,11 @@ export default function AIPage() {
         {(displayContent || response) && (
           <div className="ai-main-response">
             <AIResponse
-              response={response || {
+              response={response ?? {
                 text: displayContent,
                 mode: mode,
                 citations: displayCitations,
-                follow_ups: response?.follow_ups || [],
+                follow_ups: [],
                 session_id: '',
                 sources_used: displayCitations.length,
                 thinking_steps: displayThinking,
