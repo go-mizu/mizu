@@ -23,6 +23,11 @@ type Store struct {
 	history    *HistoryStore
 	preference *PreferenceStore
 	cache      *CacheStore
+
+	// AI stores
+	session *SessionStore
+	canvas  *CanvasStore
+	chunker *ChunkerStore
 }
 
 // New creates a new SQLite store.
@@ -59,6 +64,11 @@ func New(dbPath string) (*Store, error) {
 	s.preference = &PreferenceStore{db: db}
 	s.cache = NewCacheStore(db)
 
+	// AI stores
+	s.session = NewSessionStore(db)
+	s.canvas = NewCanvasStore(db)
+	s.chunker = NewChunkerStore(db)
+
 	return s, nil
 }
 
@@ -79,7 +89,10 @@ func (s *Store) CreateExtensions(ctx context.Context) error {
 
 // Ensure creates all required tables and FTS indexes.
 func (s *Store) Ensure(ctx context.Context) error {
-	return createSchema(ctx, s.db)
+	if err := createSchema(ctx, s.db); err != nil {
+		return err
+	}
+	return createAISchema(ctx, s.db)
 }
 
 // Feature store accessors
@@ -106,6 +119,20 @@ func (s *Store) History() store.HistoryStore {
 
 func (s *Store) Preference() store.PreferenceStore {
 	return s.preference
+}
+
+// AI store accessors
+
+func (s *Store) Session() *SessionStore {
+	return s.session
+}
+
+func (s *Store) Canvas() *CanvasStore {
+	return s.canvas
+}
+
+func (s *Store) Chunker() *ChunkerStore {
+	return s.chunker
 }
 
 // SeedDocuments seeds sample documents.

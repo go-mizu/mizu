@@ -146,3 +146,6 @@ export interface UserPreference {
   action: 'upvote' | 'downvote' | 'block'
   created_at: string
 }
+
+// Re-export AI types
+export * from './ai'
