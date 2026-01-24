@@ -36,6 +36,8 @@ func (h *AIHandler) Register(r *mizu.Router) {
 	r.Get("/models/{id}/health", h.GetModelHealth)
 	r.Post("/query", h.Query)
 	r.Post("/query/stream", h.QueryStream)
+	r.Post("/deepsearch", h.DeepSearch)
+	r.Post("/deepsearch/stream", h.DeepSearchStream)
 
 	// Sessions
 	r.Get("/sessions", h.ListSessions)
@@ -405,4 +407,59 @@ func queryInt(c *mizu.Ctx, key string, defaultVal int) int {
 		return defaultVal
 	}
 	return v
+}
+
+// DeepSearch handles a non-streaming deep search request.
+func (h *AIHandler) DeepSearch(c *mizu.Ctx) error {
+	var req QueryRequest
+	if err := c.BindJSON(&req, 0); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if req.Text == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "text is required"})
+	}
+
+	resp, err := h.ai.ProcessDeepSearch(c.Context(), ai.Query{
+		Text:      req.Text,
+		Mode:      ai.ModeDeepSearch,
+		SessionID: req.SessionID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// DeepSearchStream handles a streaming deep search request via SSE.
+func (h *AIHandler) DeepSearchStream(c *mizu.Ctx) error {
+	var req QueryRequest
+	if err := c.BindJSON(&req, 0); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if req.Text == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "text is required"})
+	}
+
+	stream, err := h.ai.ProcessDeepSearchStream(c.Context(), ai.Query{
+		Text:      req.Text,
+		Mode:      ai.ModeDeepSearch,
+		SessionID: req.SessionID,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// Convert to any channel for SSE
+	ch := make(chan any, 100)
+	go func() {
+		defer close(ch)
+		for event := range stream {
+			ch <- event
+		}
+	}()
+
+	return c.SSE(ch)
 }

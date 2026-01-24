@@ -197,8 +197,9 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     },
 
     // Citation handling via custom element
-    cite({ ...props }) {
-      const index = Number(props['data-index'])
+    cite(props) {
+      const dataIndex = (props as Record<string, unknown>)['data-index']
+      const index = Number(dataIndex)
       const citation = citations.find((c) => c.index === index)
       return (
         <CitationMarker

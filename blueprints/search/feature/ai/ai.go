@@ -80,14 +80,23 @@ type ReasoningStep struct {
 
 // StreamEvent represents a streaming response event.
 type StreamEvent struct {
-	Type      string             `json:"type"` // token, citation, source, reasoning, done, error
-	Token     string             `json:"token,omitempty"`
+	Type      string             `json:"type"` // start, token, citation, thinking, search, done, error
+	Content   string             `json:"content,omitempty"`
 	Citation  *session.Citation  `json:"citation,omitempty"`
-	Source    *Source            `json:"source,omitempty"`
-	Reasoning *ReasoningStep     `json:"reasoning,omitempty"`
-	FollowUps []string           `json:"follow_ups,omitempty"`
+	Thinking  string             `json:"thinking,omitempty"`
+	Query     string             `json:"query,omitempty"`
+	Response  *StreamResponse    `json:"response,omitempty"`
 	Error     string             `json:"error,omitempty"`
-	SessionID string             `json:"session_id,omitempty"`
+}
+
+// StreamResponse is the response object sent with the done event.
+type StreamResponse struct {
+	Text        string             `json:"text"`
+	Mode        Mode               `json:"mode"`
+	Citations   []session.Citation `json:"citations"`
+	FollowUps   []string           `json:"follow_ups"`
+	SessionID   string             `json:"session_id"`
+	SourcesUsed int                `json:"sources_used"`
 }
 
 // New creates a new AI service.
@@ -185,11 +194,17 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 			return
 		}
 
-		// Send follow-ups and done
+		// Send done event with full response
 		ch <- StreamEvent{
-			Type:      "done",
-			FollowUps: resp.FollowUps,
-			SessionID: resp.SessionID,
+			Type: "done",
+			Response: &StreamResponse{
+				Text:        resp.Answer,
+				Mode:        resp.Mode,
+				Citations:   resp.Citations,
+				FollowUps:   resp.FollowUps,
+				SessionID:   resp.SessionID,
+				SourcesUsed: len(resp.Sources),
+			},
 		}
 	}()
 
@@ -290,13 +305,19 @@ If the search results don't contain relevant information, say so.`
 
 // processQuickStream implements streaming single-pass RAG.
 func (s *Service) processQuickStream(ctx context.Context, provider llm.Provider, query Query, ch chan<- StreamEvent) (*Response, error) {
+	// Send start event
+	ch <- StreamEvent{Type: "start"}
+
+	// Send search event
+	ch <- StreamEvent{Type: "search", Query: query.Text}
+
 	// Search for relevant results
 	searchResp, err := s.search.Search(ctx, query.Text, store.SearchOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("ai: search failed: %w", err)
 	}
 
-	// Build context and send sources
+	// Build context and send citations
 	var contextParts []string
 	var sources []Source
 	var citations []session.Citation
@@ -312,19 +333,15 @@ func (s *Service) processQuickStream(ctx context.Context, provider llm.Provider,
 			FetchedAt: time.Now(),
 		}
 		sources = append(sources, source)
-		citations = append(citations, session.Citation{
+		cit := session.Citation{
 			Index:   i + 1,
 			URL:     result.URL,
 			Title:   result.Title,
 			Snippet: result.Snippet,
-		})
-		ch <- StreamEvent{Type: "source", Source: &source}
-	}
-
-	// Send citations
-	for _, cit := range citations {
-		c := cit
-		ch <- StreamEvent{Type: "citation", Citation: &c}
+		}
+		citations = append(citations, cit)
+		// Send citation event
+		ch <- StreamEvent{Type: "citation", Citation: &cit}
 	}
 
 	// Build messages
@@ -363,7 +380,7 @@ Use inline citations like [1], [2] to reference sources. Be concise and accurate
 		}
 		if event.Delta != "" {
 			answer.WriteString(event.Delta)
-			ch <- StreamEvent{Type: "token", Token: event.Delta}
+			ch <- StreamEvent{Type: "token", Content: event.Delta}
 		}
 	}
 
@@ -555,14 +572,17 @@ Use inline citations like [1], [2] to reference sources. Be detailed but organiz
 func (s *Service) processDeepStream(ctx context.Context, provider llm.Provider, query Query, ch chan<- StreamEvent) (*Response, error) {
 	reasoning := []ReasoningStep{}
 
+	// Send start event
+	ch <- StreamEvent{Type: "start"}
+
 	// Decompose
 	step := ReasoningStep{Type: "decompose", Input: query.Text}
-	ch <- StreamEvent{Type: "reasoning", Reasoning: &step}
+	ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("Decomposing query: %s", query.Text)}
 
 	subQueries := s.decomposeQuery(ctx, provider, query.Text)
 	step.Output = strings.Join(subQueries, "; ")
 	reasoning = append(reasoning, step)
-	ch <- StreamEvent{Type: "reasoning", Reasoning: &step}
+	ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("Sub-queries: %s", step.Output)}
 
 	// Search each sub-query
 	var allResults []types.SearchResult
@@ -571,7 +591,7 @@ func (s *Service) processDeepStream(ctx context.Context, provider llm.Provider, 
 
 	for _, sq := range subQueries {
 		searchStep := ReasoningStep{Type: "search", Input: sq}
-		ch <- StreamEvent{Type: "reasoning", Reasoning: &searchStep}
+		ch <- StreamEvent{Type: "search", Query: sq}
 
 		searchResp, err := s.search.Search(ctx, sq, store.SearchOptions{})
 		if err != nil {
@@ -579,7 +599,7 @@ func (s *Service) processDeepStream(ctx context.Context, provider llm.Provider, 
 		}
 		searchStep.Output = fmt.Sprintf("Found %d results", len(searchResp.Results))
 		reasoning = append(reasoning, searchStep)
-		ch <- StreamEvent{Type: "reasoning", Reasoning: &searchStep}
+		ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("Search '%s': Found %d results", sq, len(searchResp.Results))}
 		allResults = append(allResults, searchResp.Results...)
 	}
 
@@ -594,7 +614,6 @@ func (s *Service) processDeepStream(ctx context.Context, provider llm.Provider, 
 
 		source := Source{URL: result.URL, Title: result.Title, FetchedAt: time.Now()}
 		sources = append(sources, source)
-		ch <- StreamEvent{Type: "source", Source: &source}
 
 		if s.chunker != nil {
 			doc, err := s.chunker.Fetch(ctx, result.URL)
@@ -638,7 +657,7 @@ func (s *Service) processDeepStream(ctx context.Context, provider llm.Provider, 
 
 	// Synthesize with streaming
 	synthStep := ReasoningStep{Type: "synthesize", Input: fmt.Sprintf("%d sources", len(sources))}
-	ch <- StreamEvent{Type: "reasoning", Reasoning: &synthStep}
+	ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("Synthesizing from %d sources", len(sources))}
 
 	var messages []llm.Message
 	if query.SessionID != "" && s.sessions != nil {
@@ -674,7 +693,7 @@ Use inline citations like [1], [2]. Be detailed but organized.`
 		}
 		if event.Delta != "" {
 			answer.WriteString(event.Delta)
-			ch <- StreamEvent{Type: "token", Token: event.Delta}
+			ch <- StreamEvent{Type: "token", Content: event.Delta}
 		}
 	}
 
@@ -899,22 +918,18 @@ Provide a detailed answer with citations [1], [2], etc.`, query.Text, strings.Jo
 
 // processResearchStream is the streaming version of processResearch.
 func (s *Service) processResearchStream(ctx context.Context, provider llm.Provider, query Query, ch chan<- StreamEvent) (*Response, error) {
+	// Send start event
+	ch <- StreamEvent{Type: "start"}
+
 	// For simplicity, process research and stream the final answer
 	resp, err := s.processResearch(ctx, provider, query)
 	if err != nil {
 		return nil, err
 	}
 
-	// Stream reasoning steps
+	// Stream reasoning steps as thinking
 	for _, step := range resp.Reasoning {
-		st := step
-		ch <- StreamEvent{Type: "reasoning", Reasoning: &st}
-	}
-
-	// Stream sources
-	for _, src := range resp.Sources {
-		s := src
-		ch <- StreamEvent{Type: "source", Source: &s}
+		ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("%s: %s -> %s", step.Type, step.Input, step.Output)}
 	}
 
 	// Stream citations
@@ -925,7 +940,7 @@ func (s *Service) processResearchStream(ctx context.Context, provider llm.Provid
 
 	// Stream answer tokens
 	for _, c := range resp.Answer {
-		ch <- StreamEvent{Type: "token", Token: string(c)}
+		ch <- StreamEvent{Type: "token", Content: string(c)}
 	}
 
 	return resp, nil
@@ -1019,9 +1034,10 @@ func generateID() string {
 // GetModes returns available AI modes.
 func GetModes() []ModeInfo {
 	return []ModeInfo{
-		{ID: string(ModeQuick), Name: "Quick", Description: "Fast single-pass answer", Model: "gemma-3-270m"},
-		{ID: string(ModeDeep), Name: "Deep", Description: "Multi-source research", Model: "gemma-3-1b"},
-		{ID: string(ModeResearch), Name: "Research", Description: "Comprehensive investigation", Model: "gemma-3-4b"},
+		{ID: string(ModeQuick), Name: "Quick", Description: "Fast single-pass answer", Model: "gemma-3-270m", Available: true},
+		{ID: string(ModeDeep), Name: "Deep", Description: "Multi-source research", Model: "gemma-3-1b", Available: true},
+		{ID: string(ModeResearch), Name: "Research", Description: "Comprehensive investigation", Model: "gemma-3-4b", Available: true},
+		{ID: string(ModeDeepSearch), Name: "Deep Search", Description: "Google-style comprehensive report", Model: "gemma-3-4b", Available: true},
 	}
 }
 
@@ -1031,4 +1047,5 @@ type ModeInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Model       string `json:"model"`
+	Available   bool   `json:"available"`
 }
