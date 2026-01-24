@@ -10,8 +10,14 @@ import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/app/web/handler/api"
 	"github.com/go-mizu/mizu/blueprints/search/assets"
+	"github.com/go-mizu/mizu/blueprints/search/feature/ai"
+	"github.com/go-mizu/mizu/blueprints/search/feature/canvas"
+	"github.com/go-mizu/mizu/blueprints/search/feature/chunker"
 	"github.com/go-mizu/mizu/blueprints/search/feature/search"
+	"github.com/go-mizu/mizu/blueprints/search/feature/session"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/searxng"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/llm"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/llm/llamacpp"
 	"github.com/go-mizu/mizu/blueprints/search/store"
 	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
 )
@@ -83,6 +89,14 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		// Index admin
 		apiGroup.Get("/admin/index/stats", indexHandler.Stats)
 		apiGroup.Post("/admin/index/rebuild", indexHandler.Rebuild)
+
+		// AI Mode (only if services are available)
+		if sqliteStore, ok := st.(*sqlite.Store); ok {
+			aiHandler := createAIHandler(sqliteStore, searchHandler)
+			if aiHandler != nil {
+				apiGroup.Group("/ai", aiHandler.Register)
+			}
+		}
 	})
 
 	// Serve frontend
@@ -123,6 +137,77 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	}
 
 	return app, nil
+}
+
+// createAIHandler creates the AI handler with LLM providers.
+func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AIHandler {
+	// Get LLM URLs from environment
+	quickURL := os.Getenv("LLAMACPP_QUICK_URL")
+	if quickURL == "" {
+		quickURL = "http://localhost:8082"
+	}
+	deepURL := os.Getenv("LLAMACPP_DEEP_URL")
+	if deepURL == "" {
+		deepURL = "http://localhost:8083"
+	}
+	researchURL := os.Getenv("LLAMACPP_RESEARCH_URL")
+	if researchURL == "" {
+		researchURL = "http://localhost:8084"
+	}
+
+	// Try to create LLM providers
+	var quickProvider, deepProvider, researchProvider llm.Provider
+
+	if client, err := llamacpp.New(llamacpp.Config{BaseURL: quickURL, Timeout: 120 * time.Second}); err == nil {
+		if err := client.Ping(context.Background()); err == nil {
+			quickProvider = client
+		}
+	}
+	if client, err := llamacpp.New(llamacpp.Config{BaseURL: deepURL, Timeout: 300 * time.Second}); err == nil {
+		if err := client.Ping(context.Background()); err == nil {
+			deepProvider = client
+		}
+	}
+	if client, err := llamacpp.New(llamacpp.Config{BaseURL: researchURL, Timeout: 600 * time.Second}); err == nil {
+		if err := client.Ping(context.Background()); err == nil {
+			researchProvider = client
+		}
+	}
+
+	// If no providers available, return nil (AI mode disabled)
+	if quickProvider == nil && deepProvider == nil && researchProvider == nil {
+		return nil
+	}
+
+	// Create session service
+	sessionSvc := session.New(st.Session())
+
+	// Create canvas service
+	canvasSvc := canvas.New(st.Canvas())
+
+	// Create chunker service (use quick provider for embeddings)
+	var chunkerSvc *chunker.Service
+	if quickProvider != nil {
+		chunkerSvc = chunker.New(st.Chunker(), quickProvider, chunker.Config{
+			ChunkSize:    1000,
+			ChunkOverlap: 200,
+			MaxChunks:    100,
+		})
+	}
+
+	// Create search service for AI
+	searchSvc := search.NewServiceWithDefaults(st)
+
+	// Create AI service
+	aiSvc := ai.New(ai.Config{
+		QuickProvider:    quickProvider,
+		DeepProvider:     deepProvider,
+		ResearchProvider: researchProvider,
+		MaxIterations:    10,
+		MaxSources:       10,
+	}, searchSvc, chunkerSvc, sessionSvc)
+
+	return api.NewAIHandler(aiSvc, sessionSvc, canvasSvc)
 }
 
 // createSearchHandler creates a search handler with SearXNG if available.

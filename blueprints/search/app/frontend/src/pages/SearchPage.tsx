@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, Image, Video, Newspaper, ChevronDown } from 'lucide-react'
+import { Settings, Image, Video, Newspaper, ChevronDown, Sparkles } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
 import { SearchResult } from '../components/SearchResult'
 import { InstantAnswer } from '../components/InstantAnswer'
 import { KnowledgePanel } from '../components/KnowledgePanel'
+import { AISummary } from '../components/ai'
 import { searchApi } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
+import { useAIStore } from '../stores/aiStore'
 import type { SearchResponse } from '../types'
 
 type SearchTab = 'all' | 'images' | 'videos' | 'news'
@@ -34,6 +36,7 @@ export default function SearchPage() {
   const timeDropdownRef = useRef<HTMLDivElement>(null)
 
   const { settings, addRecentSearch } = useSearchStore()
+  const { aiAvailable } = useAIStore()
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -122,6 +125,17 @@ export default function SearchPage() {
                 onSearch={handleSearch}
               />
             </div>
+
+            {/* AI Sessions */}
+            {aiAvailable && (
+              <Link
+                to="/ai/sessions"
+                className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
+                title="AI Research Sessions"
+              >
+                <Sparkles size={20} />
+              </Link>
+            )}
 
             {/* Settings */}
             <Link
@@ -229,6 +243,16 @@ export default function SearchPage() {
                         {results.corrected_query}
                       </button>
                     </p>
+                  )}
+
+                  {/* AI Summary */}
+                  {aiAvailable && query && (
+                    <div className="mb-6">
+                      <AISummary
+                        query={query}
+                        onFollowUp={(q) => handleSearch(q)}
+                      />
+                    </div>
                   )}
 
                   {/* Instant answer */}
