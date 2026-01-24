@@ -52,6 +52,11 @@ func runServe(ctx context.Context, port int, devMode bool) error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer store.Close()
+
+	// Ensure schema is up to date (handles migrations)
+	if err := store.Ensure(ctx); err != nil {
+		return fmt.Errorf("failed to ensure schema: %w", err)
+	}
 	fmt.Println(successStyle.Render("  Connected"))
 
 	// Create server

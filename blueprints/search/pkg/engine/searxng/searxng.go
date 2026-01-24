@@ -78,10 +78,25 @@ func (e *Engine) Search(ctx context.Context, query string, opts engine.SearchOpt
 		correctedQuery = resp.Corrections[0]
 	}
 
+	// SearXNG often returns 0 for number_of_results when aggregating from multiple engines.
+	// Fall back to results count when this happens, and estimate total based on pagination.
+	totalResults := resp.NumberOfResults
+	if totalResults == 0 && len(results) > 0 {
+		// Estimate total: if we got a full page, assume there are more pages
+		// Otherwise, this is likely the last/only page
+		if len(results) >= opts.PerPage {
+			// Estimate conservatively - at least 10 pages worth
+			totalResults = int64(opts.PerPage * 10)
+		} else {
+			// We got a partial page, so this is likely the total
+			totalResults = int64((opts.Page-1)*opts.PerPage + len(results))
+		}
+	}
+
 	return &engine.SearchResponse{
 		Query:          query,
 		CorrectedQuery: correctedQuery,
-		TotalResults:   resp.NumberOfResults,
+		TotalResults:   totalResults,
 		Results:        results,
 		Suggestions:    resp.Suggestions,
 		Infoboxes:      infoboxes,

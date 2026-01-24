@@ -61,6 +61,8 @@ func (s *Service) Search(ctx context.Context, query string, opts store.SearchOpt
 			response := toStoreResponse(cached)
 			// Still enrich with instant answer and knowledge panel
 			s.enrichResponse(ctx, query, response)
+			// Update search time to reflect cache hit
+			response.SearchTimeMs = float64(time.Since(start).Milliseconds())
 			return response, nil
 		}
 	}
