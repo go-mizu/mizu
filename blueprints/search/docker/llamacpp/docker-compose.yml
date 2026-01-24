@@ -1,6 +1,6 @@
 services:
   llamacpp-quick:
-    image: ghcr.io/ggerganov/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:server
     ports:
       - "8082:8080"
     volumes:
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   llamacpp-deep:
-    image: ghcr.io/ggerganov/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:server
     ports:
       - "8083:8080"
     volumes:
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   llamacpp-research:
-    image: ghcr.io/ggerganov/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:server
     ports:
       - "8084:8080"
     volumes:
