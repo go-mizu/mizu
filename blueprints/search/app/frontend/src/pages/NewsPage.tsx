@@ -124,7 +124,7 @@ export default function NewsPage() {
 
       {/* Main content */}
       <main>
-        <div className="max-w-3xl mx-auto px-4 py-4">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
