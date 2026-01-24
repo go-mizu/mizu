@@ -59,25 +59,6 @@ export default function AISessionPage() {
     }
   }, [id])
 
-  const handleAddToCanvas = async (content: string) => {
-    if (!id || !currentCanvas) return
-
-    try {
-      const { block } = await aiApi.addBlock(
-        id,
-        'ai_response',
-        content,
-        currentCanvas.blocks?.length || 0
-      )
-      setCurrentCanvas({
-        ...currentCanvas,
-        blocks: [...(currentCanvas.blocks || []), block],
-      })
-    } catch (err) {
-      console.error('Failed to add to canvas:', err)
-    }
-  }
-
   const handleCanvasUpdate = (canvas: CanvasType) => {
     setCurrentCanvas(canvas)
   }
@@ -166,7 +147,6 @@ export default function AISessionPage() {
           <AIChat
             sessionId={session.id}
             initialMessages={session.messages || []}
-            onAddToCanvas={handleAddToCanvas}
           />
         </div>
 

@@ -54,13 +54,32 @@ type Query struct {
 
 // Response represents an AI search response.
 type Response struct {
-	Answer    string            `json:"answer"`
-	Citations []session.Citation `json:"citations"`
-	FollowUps []string          `json:"follow_ups"`
-	Sources   []Source          `json:"sources"`
-	Reasoning []ReasoningStep   `json:"reasoning,omitempty"`
-	SessionID string            `json:"session_id"`
-	Mode      Mode              `json:"mode"`
+	Answer           string             `json:"answer"`
+	Citations        []session.Citation `json:"citations"`
+	FollowUps        []string           `json:"follow_ups"`         // Backward compat
+	RelatedQuestions []RelatedQuestion  `json:"related_questions"`  // Enhanced follow-ups
+	Images           []ImageResult      `json:"images"`             // Related images
+	Sources          []Source           `json:"sources"`
+	Reasoning        []ReasoningStep    `json:"reasoning,omitempty"`
+	SessionID        string             `json:"session_id"`
+	Mode             Mode               `json:"mode"`
+}
+
+// RelatedQuestion represents a categorized follow-up question.
+type RelatedQuestion struct {
+	Text     string `json:"text"`
+	Category string `json:"category,omitempty"` // deeper, related, practical, comparison, current
+}
+
+// ImageResult represents an image for the carousel.
+type ImageResult struct {
+	URL          string `json:"url"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	Title        string `json:"title"`
+	SourceURL    string `json:"source_url"`
+	SourceDomain string `json:"source_domain"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
 }
 
 // Source represents a fetched source.
@@ -91,12 +110,14 @@ type StreamEvent struct {
 
 // StreamResponse is the response object sent with the done event.
 type StreamResponse struct {
-	Text        string             `json:"text"`
-	Mode        Mode               `json:"mode"`
-	Citations   []session.Citation `json:"citations"`
-	FollowUps   []string           `json:"follow_ups"`
-	SessionID   string             `json:"session_id"`
-	SourcesUsed int                `json:"sources_used"`
+	Text             string             `json:"text"`
+	Mode             Mode               `json:"mode"`
+	Citations        []session.Citation `json:"citations"`
+	FollowUps        []string           `json:"follow_ups"`         // Backward compat
+	RelatedQuestions []RelatedQuestion  `json:"related_questions"`  // Enhanced follow-ups
+	Images           []ImageResult      `json:"images"`             // Related images
+	SessionID        string             `json:"session_id"`
+	SourcesUsed      int                `json:"sources_used"`
 }
 
 // New creates a new AI service.
@@ -206,12 +227,14 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 		ch <- StreamEvent{
 			Type: "done",
 			Response: &StreamResponse{
-				Text:        resp.Answer,
-				Mode:        resp.Mode,
-				Citations:   resp.Citations,
-				FollowUps:   resp.FollowUps,
-				SessionID:   resp.SessionID,
-				SourcesUsed: len(resp.Sources),
+				Text:             resp.Answer,
+				Mode:             resp.Mode,
+				Citations:        resp.Citations,
+				FollowUps:        resp.FollowUps,
+				RelatedQuestions: resp.RelatedQuestions,
+				Images:           resp.Images,
+				SessionID:        resp.SessionID,
+				SourcesUsed:      len(resp.Sources),
 			},
 		}
 	}()
@@ -221,6 +244,12 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 
 // processQuick implements single-pass RAG.
 func (s *Service) processQuick(ctx context.Context, provider llm.Provider, query Query) (*Response, error) {
+	// Fetch images in parallel with search
+	imagesCh := make(chan []ImageResult, 1)
+	go func() {
+		imagesCh <- s.fetchImagesForQuery(ctx, query.Text)
+	}()
+
 	// Search for relevant results
 	searchResp, err := s.search.Search(ctx, query.Text, store.SearchOptions{})
 	if err != nil {
@@ -249,6 +278,9 @@ func (s *Service) processQuick(ctx context.Context, provider llm.Provider, query
 			Snippet: result.Snippet,
 		})
 	}
+
+	// Enhance citations with domain and favicon
+	citations = enhanceCitations(citations)
 
 	// Build conversation context if in session
 	var messages []llm.Message
@@ -285,8 +317,15 @@ If the search results don't contain relevant information, say so.`
 		answer = chatResp.Choices[0].Message.Content
 	}
 
-	// Generate follow-up questions
-	followUps := s.generateFollowUps(ctx, provider, query.Text, answer)
+	// Generate related questions (enhanced follow-ups)
+	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer, citations)
+	followUps := make([]string, 0, len(relatedQuestions))
+	for _, q := range relatedQuestions {
+		followUps = append(followUps, q.Text)
+	}
+
+	// Get images from parallel fetch
+	images := <-imagesCh
 
 	// Create or update session
 	sessionID := query.SessionID
@@ -302,12 +341,14 @@ If the search results don't contain relevant information, say so.`
 	}
 
 	return &Response{
-		Answer:    answer,
-		Citations: citations,
-		FollowUps: followUps,
-		Sources:   sources,
-		SessionID: sessionID,
-		Mode:      ModeQuick,
+		Answer:           answer,
+		Citations:        citations,
+		FollowUps:        followUps,
+		RelatedQuestions: relatedQuestions,
+		Images:           images,
+		Sources:          sources,
+		SessionID:        sessionID,
+		Mode:             ModeQuick,
 	}, nil
 }
 
@@ -315,6 +356,12 @@ If the search results don't contain relevant information, say so.`
 func (s *Service) processQuickStream(ctx context.Context, provider llm.Provider, query Query, ch chan<- StreamEvent) (*Response, error) {
 	// Send start event
 	ch <- StreamEvent{Type: "start"}
+
+	// Fetch images in parallel
+	imagesCh := make(chan []ImageResult, 1)
+	go func() {
+		imagesCh <- s.fetchImagesForQuery(ctx, query.Text)
+	}()
 
 	// Send search event
 	ch <- StreamEvent{Type: "search", Query: query.Text}
@@ -348,8 +395,14 @@ func (s *Service) processQuickStream(ctx context.Context, provider llm.Provider,
 			Snippet: result.Snippet,
 		}
 		citations = append(citations, cit)
-		// Send citation event
-		ch <- StreamEvent{Type: "citation", Citation: &cit}
+	}
+
+	// Enhance citations with domain and favicon
+	citations = enhanceCitations(citations)
+
+	// Send enhanced citation events
+	for i := range citations {
+		ch <- StreamEvent{Type: "citation", Citation: &citations[i]}
 	}
 
 	// Build messages
@@ -392,8 +445,15 @@ Use inline citations like [1], [2] to reference sources. Be concise and accurate
 		}
 	}
 
-	// Generate follow-ups
-	followUps := s.generateFollowUps(ctx, provider, query.Text, answer.String())
+	// Generate related questions (enhanced follow-ups)
+	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer.String(), citations)
+	followUps := make([]string, 0, len(relatedQuestions))
+	for _, q := range relatedQuestions {
+		followUps = append(followUps, q.Text)
+	}
+
+	// Get images from parallel fetch
+	images := <-imagesCh
 
 	// Save to session
 	sessionID := query.SessionID
@@ -409,12 +469,14 @@ Use inline citations like [1], [2] to reference sources. Be concise and accurate
 	}
 
 	return &Response{
-		Answer:    answer.String(),
-		Citations: citations,
-		FollowUps: followUps,
-		Sources:   sources,
-		SessionID: sessionID,
-		Mode:      ModeQuick,
+		Answer:           answer.String(),
+		Citations:        citations,
+		FollowUps:        followUps,
+		RelatedQuestions: relatedQuestions,
+		Images:           images,
+		Sources:          sources,
+		SessionID:        sessionID,
+		Mode:             ModeQuick,
 	}, nil
 }
 
@@ -1091,18 +1153,58 @@ Output each sub-question on a new line, nothing else.`, query)
 	return subQueries
 }
 
-// generateFollowUps generates follow-up questions.
+// generateFollowUps generates follow-up questions (backward compat).
 func (s *Service) generateFollowUps(ctx context.Context, provider llm.Provider, query, answer string) []string {
-	prompt := fmt.Sprintf(`Based on this Q&A, suggest 3 follow-up questions the user might ask.
-Question: %s
-Answer: %s
+	related := s.generateRelatedQuestions(ctx, provider, query, answer, nil)
+	followUps := make([]string, 0, len(related))
+	for _, q := range related {
+		followUps = append(followUps, q.Text)
+	}
+	return followUps
+}
 
-Output each follow-up on a new line, nothing else.`, query, truncate(answer, 500))
+// generateRelatedQuestions generates categorized related questions.
+func (s *Service) generateRelatedQuestions(ctx context.Context, provider llm.Provider, query, answer string, citations []session.Citation) []RelatedQuestion {
+	// Build source context from citations
+	sourceContext := ""
+	for i, c := range citations {
+		if i < 3 {
+			sourceContext += fmt.Sprintf("- %s\n", c.Title)
+		}
+	}
+	if sourceContext == "" {
+		sourceContext = "(no sources)"
+	}
+
+	prompt := fmt.Sprintf(`Based on this search interaction, generate 5 follow-up questions a user might ask.
+
+Original Question: %s
+
+Answer Summary: %s
+
+Sources Used:
+%s
+
+Generate questions in these categories (one question per category):
+1. DEEPER: A question that dives deeper into the main topic
+2. RELATED: A question about a related but different aspect
+3. PRACTICAL: A how-to or practical application question
+4. COMPARISON: A question comparing alternatives or options
+5. CURRENT: A question about recent developments or news
+
+Output format (one per line):
+DEEPER: [question text]
+RELATED: [question text]
+PRACTICAL: [question text]
+COMPARISON: [question text]
+CURRENT: [question text]
+
+Output only the questions in this exact format, nothing else.`, query, truncate(answer, 400), sourceContext)
 
 	resp, err := provider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: prompt}},
-		MaxTokens:   128,
-		Temperature: 0.7,
+		MaxTokens:   256,
+		Temperature: 0.8,
 	})
 	if err != nil {
 		return nil
@@ -1113,16 +1215,117 @@ Output each follow-up on a new line, nothing else.`, query, truncate(answer, 500
 	}
 
 	lines := strings.Split(resp.Choices[0].Message.Content, "\n")
-	var followUps []string
+	var questions []RelatedQuestion
+	categories := map[string]string{
+		"DEEPER":     "deeper",
+		"RELATED":    "related",
+		"PRACTICAL":  "practical",
+		"COMPARISON": "comparison",
+		"CURRENT":    "current",
+	}
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		line = strings.TrimLeft(line, "0123456789.-) ")
-		if len(line) > 10 && len(followUps) < 3 {
-			followUps = append(followUps, line)
+		if line == "" {
+			continue
+		}
+
+		// Parse category prefix
+		for prefix, cat := range categories {
+			if strings.HasPrefix(line, prefix+":") {
+				text := strings.TrimSpace(strings.TrimPrefix(line, prefix+":"))
+				if len(text) > 10 {
+					questions = append(questions, RelatedQuestion{
+						Text:     text,
+						Category: cat,
+					})
+				}
+				break
+			}
 		}
 	}
 
-	return followUps
+	// If parsing failed, fall back to simple line parsing
+	if len(questions) == 0 {
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			line = strings.TrimLeft(line, "0123456789.-) ")
+			if len(line) > 10 && len(questions) < 5 {
+				questions = append(questions, RelatedQuestion{Text: line})
+			}
+		}
+	}
+
+	return questions
+}
+
+// fetchImagesForQuery fetches related images for a query.
+func (s *Service) fetchImagesForQuery(ctx context.Context, query string) []ImageResult {
+	if s.search == nil {
+		return nil
+	}
+
+	images, err := s.search.SearchImages(ctx, query, store.SearchOptions{
+		PerPage: 6,
+	})
+	if err != nil {
+		return nil
+	}
+
+	results := make([]ImageResult, 0, len(images))
+	for _, img := range images {
+		results = append(results, ImageResult{
+			URL:          img.URL,
+			ThumbnailURL: img.ThumbnailURL,
+			Title:        img.Title,
+			SourceURL:    img.SourceURL,
+			SourceDomain: img.SourceDomain,
+			Width:        img.Width,
+			Height:       img.Height,
+		})
+	}
+	return results
+}
+
+// enhanceCitations adds domain and favicon to citations.
+func enhanceCitations(citations []session.Citation) []session.Citation {
+	enhanced := make([]session.Citation, len(citations))
+	domainCount := make(map[string]int)
+
+	// Count domains for grouping
+	for _, c := range citations {
+		domain := extractDomain(c.URL)
+		domainCount[domain]++
+	}
+
+	for i, c := range citations {
+		domain := extractDomain(c.URL)
+		enhanced[i] = session.Citation{
+			Index:        c.Index,
+			URL:          c.URL,
+			Title:        c.Title,
+			Snippet:      c.Snippet,
+			Domain:       domain,
+			Favicon:      fmt.Sprintf("https://www.google.com/s2/favicons?domain=%s&sz=32", domain),
+			OtherSources: domainCount[domain] - 1,
+		}
+	}
+	return enhanced
+}
+
+// extractDomain extracts domain from URL.
+func extractDomain(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	// Simple extraction without full URL parsing for performance
+	url := strings.TrimPrefix(rawURL, "https://")
+	url = strings.TrimPrefix(url, "http://")
+	url = strings.TrimPrefix(url, "www.")
+	if idx := strings.Index(url, "/"); idx > 0 {
+		url = url[:idx]
+	}
+	return url
 }
 
 func truncate(s string, maxLen int) string {

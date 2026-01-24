@@ -1,15 +1,14 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, Image, Video, Newspaper, Sparkles, Loader2, Send, RefreshCw, Search } from 'lucide-react'
+import { Settings, Image, Video, Newspaper, Sparkles, Loader2, RefreshCw, Search } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
 import { AIResponse } from '../components/ai/AIResponse'
 import { AIModeToggle } from '../components/ai/AIModeToggle'
 import { ModelSelector } from '../components/ai/ModelSelector'
-import { FileUploadZone, type UploadedFile } from '../components/ai/FileUploadZone'
-import { VoiceInput } from '../components/ai/VoiceInput'
+import { FollowUpInput } from '../components/ai/FollowUpInput'
 import { aiApi } from '../api/ai'
 import { useAIStore } from '../stores/aiStore'
-import type { AIResponse as AIResponseType, Citation } from '../types/ai'
+import type { AIResponse as AIResponseType, Citation, RelatedQuestion, ImageResult } from '../types/ai'
 
 export default function AIPage() {
   const [searchParams] = useSearchParams()
@@ -35,10 +34,8 @@ export default function AIPage() {
 
   const [response, setResponse] = useState<AIResponseType | null>(null)
   const [citations, setCitations] = useState<Citation[]>([])
-  const [files, setFiles] = useState<UploadedFile[]>([])
-  const [followUpInput, setFollowUpInput] = useState('')
-  const [interimTranscript, setInterimTranscript] = useState('')
-  const followUpRef = useRef<HTMLTextAreaElement>(null)
+  const [relatedQuestions, setRelatedQuestions] = useState<RelatedQuestion[]>([])
+  const [images, setImages] = useState<ImageResult[]>([])
 
   // Run AI query when page loads with a query
   useEffect(() => {
@@ -55,6 +52,8 @@ export default function AIPage() {
     setError(null)
     setResponse(null)
     setCitations([])
+    setRelatedQuestions([])
+    setImages([])
 
     try {
       setStreaming(true)
@@ -99,10 +98,14 @@ export default function AIPage() {
                 mode: event.response.mode,
                 citations: event.response.citations || [],
                 follow_ups: event.response.follow_ups || [],
+                related_questions: event.response.related_questions || [],
+                images: event.response.images || [],
                 session_id: event.response.session_id,
                 sources_used: event.response.sources_used,
                 thinking_steps: streamingThinking,
               })
+              setRelatedQuestions(event.response.related_questions || [])
+              setImages(event.response.images || [])
             }
             break
           case 'error':
@@ -128,13 +131,6 @@ export default function AIPage() {
     handleSearch(question)
   }
 
-  const handleFollowUpSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!followUpInput.trim()) return
-    handleSearch(followUpInput)
-    setFollowUpInput('')
-  }
-
   const handleRefresh = () => {
     if (query) {
       setResponse(null)
@@ -142,15 +138,6 @@ export default function AIPage() {
       runAIQuery(query)
     }
   }
-
-  const handleVoiceTranscript = useCallback((text: string) => {
-    setFollowUpInput((prev) => prev + (prev ? ' ' : '') + text)
-    setInterimTranscript('')
-  }, [])
-
-  const handleInterimTranscript = useCallback((text: string) => {
-    setInterimTranscript(text)
-  }, [])
 
   const displayContent = streamingContent || response?.text || ''
   const displayThinking = streamingThinking.length > 0 ? streamingThinking : response?.thinking_steps || []
@@ -308,6 +295,8 @@ export default function AIPage() {
                 mode: mode,
                 citations: displayCitations,
                 follow_ups: [],
+                related_questions: relatedQuestions,
+                images: images,
                 session_id: '',
                 sources_used: displayCitations.length,
                 thinking_steps: displayThinking,
@@ -316,43 +305,17 @@ export default function AIPage() {
               streamingThinking={isStreaming ? streamingThinking : undefined}
               isStreaming={isStreaming}
               onFollowUp={handleFollowUp}
+              onRefresh={handleRefresh}
             />
           </div>
         )}
 
-        {/* Follow-up Input */}
+        {/* Follow-up Input - Perplexity style */}
         {(response || displayContent) && !isStreaming && (
-          <div className="ai-followup-section mt-8">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Ask a follow-up question</h3>
-            <FileUploadZone files={files} onFilesChange={setFiles}>
-              <form onSubmit={handleFollowUpSubmit} className="ai-followup-form">
-                <div className="ai-followup-input-wrapper">
-                  <textarea
-                    ref={followUpRef}
-                    value={followUpInput + (interimTranscript ? ` ${interimTranscript}` : '')}
-                    onChange={(e) => setFollowUpInput(e.target.value)}
-                    placeholder="Ask a follow-up question..."
-                    className="ai-followup-input"
-                    rows={1}
-                  />
-                </div>
-                <div className="ai-followup-actions">
-                  <VoiceInput
-                    onTranscript={handleVoiceTranscript}
-                    onInterimTranscript={handleInterimTranscript}
-                    size="sm"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!followUpInput.trim()}
-                    className="ai-followup-submit"
-                  >
-                    <Send size={18} />
-                  </button>
-                </div>
-              </form>
-            </FileUploadZone>
-          </div>
+          <FollowUpInput
+            onSubmit={handleFollowUp}
+            disabled={isLoading || isStreaming}
+          />
         )}
 
         {/* Empty State */}

@@ -12,10 +12,9 @@ import type { AIMessage, AIResponse as AIResponseType, AIMode } from '../../type
 interface AIChatProps {
   sessionId: string
   initialMessages?: AIMessage[]
-  onAddToCanvas?: (content: string) => void
 }
 
-export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AIChatProps) {
+export function AIChat({ sessionId, initialMessages = [] }: AIChatProps) {
   const {
     mode,
     selectedModelId,
@@ -189,11 +188,12 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
                   mode: (message.mode || 'quick') as AIMode,
                   citations: message.citations || [],
                   follow_ups: [],
+                  related_questions: [],
+                  images: [],
                   session_id: sessionId,
                   sources_used: message.citations?.length || 0,
                 }}
                 onFollowUp={handleFollowUp}
-                onAddToCanvas={onAddToCanvas ? () => onAddToCanvas(message.content) : undefined}
               />
             )}
           </div>
@@ -208,6 +208,8 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
                 mode,
                 citations: [],
                 follow_ups: [],
+                related_questions: [],
+                images: [],
                 session_id: sessionId,
                 sources_used: 0,
                 thinking_steps: streamingThinking,
