@@ -170,6 +170,14 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 		return nil, fmt.Errorf("ai: no provider available for mode %s", query.Mode)
 	}
 
+	// For Deep and Research modes, prefer quick provider for interactive feedback
+	// The larger models are too slow for interactive use
+	if query.Mode == ModeResearch || query.Mode == ModeDeep {
+		if quickProvider, ok := s.providers[ModeQuick]; ok {
+			provider = quickProvider
+		}
+	}
+
 	ch := make(chan StreamEvent, 100)
 
 	go func() {
@@ -916,34 +924,133 @@ Provide a detailed answer with citations [1], [2], etc.`, query.Text, strings.Jo
 	}, nil
 }
 
-// processResearchStream is the streaming version of processResearch.
+// processResearchStream is the streaming version of processResearch with real-time feedback.
+// It performs multiple searches automatically and synthesizes results without relying on LLM to choose actions.
 func (s *Service) processResearchStream(ctx context.Context, provider llm.Provider, query Query, ch chan<- StreamEvent) (*Response, error) {
 	// Send start event
 	ch <- StreamEvent{Type: "start"}
 
-	// For simplicity, process research and stream the final answer
-	resp, err := s.processResearch(ctx, provider, query)
+	reasoning := []ReasoningStep{}
+	var sources []Source
+	var citations []session.Citation
+	seen := make(map[string]bool)
+
+	// Phase 1: Multi-search with variations
+	ch <- StreamEvent{Type: "thinking", Thinking: "Starting comprehensive research..."}
+
+	searchQueries := []string{
+		query.Text,
+		query.Text + " explained",
+		query.Text + " overview",
+	}
+
+	for i, sq := range searchQueries {
+		ch <- StreamEvent{Type: "search", Query: sq}
+		ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("Search %d/3: %s", i+1, sq)}
+
+		searchResp, err := s.search.Search(ctx, sq, store.SearchOptions{})
+		if err != nil {
+			continue
+		}
+
+		reasoning = append(reasoning, ReasoningStep{
+			Type:   "search",
+			Input:  sq,
+			Output: fmt.Sprintf("Found %d results", len(searchResp.Results)),
+		})
+
+		// Collect top results
+		limit := 3
+		if len(searchResp.Results) < limit {
+			limit = len(searchResp.Results)
+		}
+		for _, r := range searchResp.Results[:limit] {
+			if !seen[r.URL] {
+				seen[r.URL] = true
+				sources = append(sources, Source{URL: r.URL, Title: r.Title, FetchedAt: time.Now()})
+				cit := session.Citation{
+					Index:   len(citations) + 1,
+					URL:     r.URL,
+					Title:   r.Title,
+					Snippet: r.Snippet,
+				}
+				citations = append(citations, cit)
+				ch <- StreamEvent{Type: "citation", Citation: &cit}
+			}
+		}
+	}
+
+	ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("Gathered %d sources, synthesizing answer...", len(sources))}
+
+	// Phase 2: Build context from citations
+	var contextParts []string
+	for _, cit := range citations {
+		contextParts = append(contextParts, fmt.Sprintf("[%d] %s: %s", cit.Index, cit.Title, cit.Snippet))
+	}
+
+	// Phase 3: Stream synthesized answer
+	synthPrompt := fmt.Sprintf(`You are a research assistant. Based on the following search results, provide a comprehensive answer about "%s".
+
+Search Results:
+%s
+
+Instructions:
+- Write a clear, well-organized answer
+- Use inline citations like [1], [2] to reference sources
+- Be thorough but concise`, query.Text, strings.Join(contextParts, "\n\n"))
+
+	stream, err := provider.ChatCompletionStream(ctx, llm.ChatRequest{
+		Messages:    []llm.Message{{Role: "user", Content: synthPrompt}},
+		MaxTokens:   1024,
+		Temperature: 0.7,
+		Stream:      true,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Stream reasoning steps as thinking
-	for _, step := range resp.Reasoning {
-		ch <- StreamEvent{Type: "thinking", Thinking: fmt.Sprintf("%s: %s -> %s", step.Type, step.Input, step.Output)}
+	var answer strings.Builder
+	for event := range stream {
+		if event.Error != nil {
+			return nil, event.Error
+		}
+		if event.Delta != "" {
+			answer.WriteString(event.Delta)
+			ch <- StreamEvent{Type: "token", Content: event.Delta}
+		}
 	}
 
-	// Stream citations
-	for _, cit := range resp.Citations {
-		c := cit
-		ch <- StreamEvent{Type: "citation", Citation: &c}
+	reasoning = append(reasoning, ReasoningStep{
+		Type:   "synthesize",
+		Input:  fmt.Sprintf("%d sources", len(sources)),
+		Output: truncate(answer.String(), 100),
+	})
+
+	// Generate follow-ups
+	followUps := s.generateFollowUps(ctx, provider, query.Text, answer.String())
+
+	// Save session
+	sessionID := query.SessionID
+	if sessionID == "" && s.sessions != nil {
+		sess, _ := s.sessions.Create(ctx, truncate(query.Text, 50))
+		if sess != nil {
+			sessionID = sess.ID
+		}
+	}
+	if sessionID != "" && s.sessions != nil {
+		s.sessions.AddMessage(ctx, sessionID, "user", query.Text, string(ModeResearch), nil)
+		s.sessions.AddMessage(ctx, sessionID, "assistant", answer.String(), string(ModeResearch), citations)
 	}
 
-	// Stream answer tokens
-	for _, c := range resp.Answer {
-		ch <- StreamEvent{Type: "token", Content: string(c)}
-	}
-
-	return resp, nil
+	return &Response{
+		Answer:    answer.String(),
+		Citations: citations,
+		FollowUps: followUps,
+		Sources:   sources,
+		Reasoning: reasoning,
+		SessionID: sessionID,
+		Mode:      ModeResearch,
+	}, nil
 }
 
 // decomposeQuery breaks a complex query into sub-queries.

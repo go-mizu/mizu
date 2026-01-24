@@ -452,12 +452,73 @@ func (h *AIHandler) DeepSearchStream(c *mizu.Ctx) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	// Convert to any channel for SSE
+	// Convert DeepSearchStreamEvent to unified StreamEvent format for frontend
 	ch := make(chan any, 100)
 	go func() {
 		defer close(ch)
+
+		// Send start event
+		ch <- ai.StreamEvent{Type: "start"}
+
+		citationIndex := 0
 		for event := range stream {
-			ch <- event
+			switch event.Type {
+			case "progress":
+				// Convert progress to thinking event
+				if event.Progress != nil {
+					ch <- ai.StreamEvent{
+						Type:     "thinking",
+						Thinking: event.Progress.Message,
+					}
+				}
+			case "source":
+				// Convert source to citation event
+				if event.Source != nil {
+					citationIndex++
+					ch <- ai.StreamEvent{
+						Type: "citation",
+						Citation: &session.Citation{
+							Index: citationIndex,
+							URL:   event.Source.URL,
+							Title: event.Source.Title,
+						},
+					}
+				}
+			case "citation":
+				if event.Citation != nil {
+					ch <- ai.StreamEvent{
+						Type:     "citation",
+						Citation: event.Citation,
+					}
+				}
+			case "section":
+				// Convert section to thinking + token events
+				if event.Section != nil {
+					ch <- ai.StreamEvent{
+						Type:     "thinking",
+						Thinking: "Writing section: " + event.Section.Title,
+					}
+					// Stream section content as tokens
+					for _, c := range event.Section.Content {
+						ch <- ai.StreamEvent{Type: "token", Content: string(c)}
+					}
+					ch <- ai.StreamEvent{Type: "token", Content: "\n\n"}
+				}
+			case "token":
+				ch <- ai.StreamEvent{Type: "token", Content: event.Token}
+			case "done":
+				// Send done event with response
+				ch <- ai.StreamEvent{
+					Type: "done",
+					Response: &ai.StreamResponse{
+						SessionID: event.SessionID,
+						FollowUps: event.FollowUps,
+						Mode:      ai.ModeDeepSearch,
+					},
+				}
+			case "error":
+				ch <- ai.StreamEvent{Type: "error", Error: event.Error}
+			}
 		}
 	}()
 

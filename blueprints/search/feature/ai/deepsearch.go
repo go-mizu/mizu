@@ -73,8 +73,11 @@ type DeepSearchResponse struct {
 func (s *Service) ProcessDeepSearch(ctx context.Context, query Query) (*DeepSearchResponse, error) {
 	startTime := time.Now()
 
-	// Use research provider for deep search (larger model)
-	provider := s.providers[ModeResearch]
+	// Use quick provider for speed (research provider is too slow for interactive use)
+	provider := s.providers[ModeQuick]
+	if provider == nil {
+		provider = s.providers[ModeResearch]
+	}
 	if provider == nil {
 		// Fall back to any available provider
 		for _, p := range s.providers {
@@ -87,11 +90,11 @@ func (s *Service) ProcessDeepSearch(ctx context.Context, query Query) (*DeepSear
 	}
 
 	cfg := DeepSearchConfig{
-		MaxSources:     50,
-		WorkerPool:     10,
-		FetchTimeout:   30 * time.Second,
-		AnalysisDepth:  5,
-		ReportSections: 5,
+		MaxSources:     10, // Reduced for faster response
+		WorkerPool:     5,
+		FetchTimeout:   15 * time.Second,
+		AnalysisDepth:  3,
+		ReportSections: 3,
 	}
 
 	// Phase 1: Generate search queries
@@ -178,8 +181,11 @@ func (s *Service) ProcessDeepSearchStream(ctx context.Context, query Query) (<-c
 
 		startTime := time.Now()
 
-		// Use research provider
-		provider := s.providers[ModeResearch]
+		// Use quick provider for interactive feedback (research provider is too slow)
+		provider := s.providers[ModeQuick]
+		if provider == nil {
+			provider = s.providers[ModeResearch]
+		}
 		if provider == nil {
 			for _, p := range s.providers {
 				provider = p
@@ -192,11 +198,11 @@ func (s *Service) ProcessDeepSearchStream(ctx context.Context, query Query) (<-c
 		}
 
 		cfg := DeepSearchConfig{
-			MaxSources:     50,
-			WorkerPool:     10,
-			FetchTimeout:   30 * time.Second,
-			AnalysisDepth:  5,
-			ReportSections: 5,
+			MaxSources:     10, // Reduced for faster response
+			WorkerPool:     5,
+			FetchTimeout:   15 * time.Second,
+			AnalysisDepth:  3,
+			ReportSections: 3,
 		}
 
 		// Phase 1: Generate search queries
@@ -227,6 +233,7 @@ func (s *Service) ProcessDeepSearchStream(ctx context.Context, query Query) (<-c
 		var allURLs []string
 		seenURLs := make(map[string]bool)
 		urlTitles := make(map[string]string)
+		urlSnippets := make(map[string]string)
 
 		for i, sq := range subQueries {
 			searchResp, err := s.search.Search(ctx, sq, store.SearchOptions{})
@@ -237,6 +244,7 @@ func (s *Service) ProcessDeepSearchStream(ctx context.Context, query Query) (<-c
 				if !seenURLs[result.URL] && len(allURLs) < cfg.MaxSources {
 					seenURLs[result.URL] = true
 					urlTitles[result.URL] = result.Title
+					urlSnippets[result.URL] = result.Snippet
 					allURLs = append(allURLs, result.URL)
 				}
 			}
@@ -251,36 +259,49 @@ func (s *Service) ProcessDeepSearchStream(ctx context.Context, query Query) (<-c
 			}
 		}
 
-		// Phase 3: Fetch sources
+		// Phase 3: Build sources from search results (skip slow fetching)
 		ch <- DeepSearchStreamEvent{
 			Type: "progress",
 			Progress: &DeepSearchProgress{
-				Phase:   "fetching",
-				Current: 0,
-				Total:   len(allURLs),
-				Message: fmt.Sprintf("Fetching %d sources...", len(allURLs)),
+				Phase:   "processing",
+				Message: "Processing sources...",
 			},
 		}
 
-		sources, chunks := s.fetchSourcesParallelWithProgress(ctx, allURLs, urlTitles, cfg, ch)
-
-		// Phase 4: Analyze
-		ch <- DeepSearchStreamEvent{
-			Type: "progress",
-			Progress: &DeepSearchProgress{
-				Phase:   "analyzing",
-				Message: "Analyzing content...",
-			},
+		// Build sources and chunks from snippets instead of fetching
+		var sources []Source
+		var relevantChunks []chunker.Chunk
+		seen := make(map[string]bool)
+		for i, url := range allURLs {
+			if seen[url] || i >= cfg.MaxSources {
+				continue
+			}
+			seen[url] = true
+			title := urlTitles[url]
+			snippet := urlSnippets[url]
+			sources = append(sources, Source{
+				URL:       url,
+				Title:     title,
+				FetchedAt: time.Now(),
+			})
+			if snippet != "" {
+				relevantChunks = append(relevantChunks, chunker.Chunk{
+					URL:  url,
+					Text: snippet,
+				})
+			}
+			ch <- DeepSearchStreamEvent{
+				Type:   "source",
+				Source: &sources[len(sources)-1],
+			}
 		}
 
-		relevantChunks := s.rankChunks(ctx, provider, query.Text, chunks, cfg.AnalysisDepth*len(sources))
-
-		// Phase 5: Generate report with streaming
+		// Phase 4: Generate report with streaming
 		ch <- DeepSearchStreamEvent{
 			Type: "progress",
 			Progress: &DeepSearchProgress{
 				Phase:   "writing",
-				Message: "Writing report...",
+				Message: "Writing comprehensive report...",
 			},
 		}
 
