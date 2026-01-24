@@ -221,8 +221,7 @@ body {
 .search-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--search-border);
-  padding-left: 150px;
+  padding-left: 0;
 }
 
 .search-tab {
@@ -344,7 +343,6 @@ body {
 .related-searches {
   margin-top: 32px;
   padding-top: 24px;
-  border-top: 1px solid var(--search-border);
 }
 
 .related-search-item {

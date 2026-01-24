@@ -40,9 +40,9 @@ export function SearchBox({
     const timer = setTimeout(async () => {
       try {
         const results = await searchApi.suggest(value)
-        setSuggestions(results)
+        setSuggestions(results || [])
       } catch {
-        // Ignore errors
+        setSuggestions([])
       }
     }, 150)
 
@@ -63,7 +63,7 @@ export function SearchBox({
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    const items = suggestions.length > 0 ? suggestions : recentSearches.slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
+    const items = suggestions.length > 0 ? suggestions : (recentSearches || []).slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
 
     if (e.key === 'Enter') {
       if (selectedIndex >= 0 && items[selectedIndex]) {
@@ -85,7 +85,7 @@ export function SearchBox({
 
   const displayItems = suggestions.length > 0
     ? suggestions
-    : recentSearches.slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
+    : (recentSearches || []).slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
 
   const showDropdown = showSuggestions && displayItems.length > 0
 
