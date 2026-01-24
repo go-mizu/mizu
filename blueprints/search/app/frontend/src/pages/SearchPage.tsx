@@ -276,9 +276,15 @@ export default function SearchPage() {
                           &lt;
                         </button>
                       )}
-                      {Array.from({ length: Math.min(10, totalPages) }, (_, i) => {
-                        const pageNum = i + 1
-                        return (
+                      {(() => {
+                        // Sliding window pagination
+                        const windowSize = 10
+                        let start = Math.max(1, page - Math.floor(windowSize / 2))
+                        const end = Math.min(totalPages, start + windowSize - 1)
+                        if (end - start + 1 < windowSize) {
+                          start = Math.max(1, end - windowSize + 1)
+                        }
+                        return Array.from({ length: end - start + 1 }, (_, i) => start + i).map(pageNum => (
                           <button
                             key={pageNum}
                             type="button"
@@ -287,8 +293,8 @@ export default function SearchPage() {
                           >
                             {pageNum}
                           </button>
-                        )
-                      })}
+                        ))
+                      })()}
                       {page < totalPages && (
                         <button
                           type="button"

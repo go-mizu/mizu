@@ -165,6 +165,8 @@ type SearchOptions struct {
 	FileType    string `json:"file_type,omitempty"`    // filetype: operator
 	ExcludeSite string `json:"exclude_site,omitempty"` // -site: operator
 	Lens        string `json:"lens,omitempty"`         // custom lens ID
+	Refetch     bool   `json:"refetch,omitempty"`      // force bypass cache and refetch
+	Version     int    `json:"version,omitempty"`      // specific cache version (0 = latest)
 }
 
 // SearchResponse represents complete search results.

@@ -53,10 +53,11 @@ func (s *Service) Search(ctx context.Context, query string, opts store.SearchOpt
 
 	// Convert store options to engine options
 	engineOpts := toEngineOptions(opts, engine.CategoryGeneral)
+	cacheOpts := CacheOptions{Refetch: opts.Refetch, Version: opts.Version}
 
 	// Try cache first if available
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(ctx, query, engine.CategoryGeneral, engineOpts); ok {
+		if cached, ok := s.cache.Get(ctx, query, engine.CategoryGeneral, engineOpts, cacheOpts); ok {
 			response := toStoreResponse(cached)
 			// Still enrich with instant answer and knowledge panel
 			s.enrichResponse(ctx, query, response)
@@ -132,10 +133,11 @@ func (s *Service) enrichResponse(ctx context.Context, query string, response *st
 func (s *Service) SearchImages(ctx context.Context, query string, opts store.SearchOptions) ([]store.ImageResult, error) {
 	// Convert store options to engine options
 	engineOpts := toEngineOptions(opts, engine.CategoryImages)
+	cacheOpts := CacheOptions{Refetch: opts.Refetch, Version: opts.Version}
 
 	// Try cache first if available
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(ctx, query, engine.CategoryImages, engineOpts); ok {
+		if cached, ok := s.cache.Get(ctx, query, engine.CategoryImages, engineOpts, cacheOpts); ok {
 			return toStoreImageResults(cached.Results), nil
 		}
 	}
@@ -163,10 +165,11 @@ func (s *Service) SearchImages(ctx context.Context, query string, opts store.Sea
 func (s *Service) SearchVideos(ctx context.Context, query string, opts store.SearchOptions) ([]store.VideoResult, error) {
 	// Convert store options to engine options
 	engineOpts := toEngineOptions(opts, engine.CategoryVideos)
+	cacheOpts := CacheOptions{Refetch: opts.Refetch, Version: opts.Version}
 
 	// Try cache first if available
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(ctx, query, engine.CategoryVideos, engineOpts); ok {
+		if cached, ok := s.cache.Get(ctx, query, engine.CategoryVideos, engineOpts, cacheOpts); ok {
 			return toStoreVideoResults(cached.Results), nil
 		}
 	}
@@ -194,10 +197,11 @@ func (s *Service) SearchVideos(ctx context.Context, query string, opts store.Sea
 func (s *Service) SearchNews(ctx context.Context, query string, opts store.SearchOptions) ([]store.NewsResult, error) {
 	// Convert store options to engine options
 	engineOpts := toEngineOptions(opts, engine.CategoryNews)
+	cacheOpts := CacheOptions{Refetch: opts.Refetch, Version: opts.Version}
 
 	// Try cache first if available
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(ctx, query, engine.CategoryNews, engineOpts); ok {
+		if cached, ok := s.cache.Get(ctx, query, engine.CategoryNews, engineOpts, cacheOpts); ok {
 			return toStoreNewsResults(cached.Results), nil
 		}
 	}

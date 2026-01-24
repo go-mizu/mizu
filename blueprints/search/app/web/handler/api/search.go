@@ -134,5 +134,16 @@ func parseSearchOptions(c *mizu.Ctx) store.SearchOptions {
 		opts.Verbatim = true
 	}
 
+	// Cache control options
+	if c.Query("refetch") == "true" {
+		opts.Refetch = true
+	}
+
+	if version := c.Query("version"); version != "" {
+		if v, err := strconv.Atoi(version); err == nil && v > 0 {
+			opts.Version = v
+		}
+	}
+
 	return opts
 }
