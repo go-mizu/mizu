@@ -66,11 +66,13 @@ func runServe(ctx context.Context, port int, devMode bool) error {
 	}
 
 	// Create HTTP server
+	// Note: WriteTimeout is disabled (0) because SSE streams and AI research mode
+	// require long-running connections. The AI service manages its own timeouts.
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      srv,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0, // Disabled for SSE streams
 		IdleTimeout:  120 * time.Second,
 	}
 

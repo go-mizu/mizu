@@ -79,7 +79,8 @@ func (noopWriter) WriteHeader(int)             {}
 // when WriteHeader is called directly on the writer (bypassing Ctx helpers).
 type statusCapturingWriter struct {
 	http.ResponseWriter
-	ctx *Ctx
+	ctx        *Ctx
+	headerSent bool // tracks whether we've sent headers to underlying writer
 }
 
 func (w *statusCapturingWriter) WriteHeader(code int) {
@@ -88,7 +89,11 @@ func (w *statusCapturingWriter) WriteHeader(code int) {
 		w.ctx.status = code
 		w.ctx.wroteHeader = true
 	}
-	w.ResponseWriter.WriteHeader(code)
+	// Only forward to underlying writer once to prevent superfluous WriteHeader warning
+	if !w.headerSent {
+		w.headerSent = true
+		w.ResponseWriter.WriteHeader(code)
+	}
 }
 
 func (w *statusCapturingWriter) Write(b []byte) (int, error) {
@@ -97,6 +102,8 @@ func (w *statusCapturingWriter) Write(b []byte) (int, error) {
 		w.ctx.wroteHeader = true
 		// status is already initialized to 200 in newCtx
 	}
+	// Mark headers as sent (Write implicitly sends headers if not already sent)
+	w.headerSent = true
 	return w.ResponseWriter.Write(b)
 }
 
