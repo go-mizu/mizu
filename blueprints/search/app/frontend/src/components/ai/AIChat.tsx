@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import { aiApi } from '../../api/ai'
 import { useAIStore } from '../../stores/aiStore'
 import { AIResponse } from './AIResponse'
 import { AIModeToggle } from './AIModeToggle'
+import { ModelSelector } from './ModelSelector'
+import { FileUploadZone, type UploadedFile } from './FileUploadZone'
+import { VoiceInput } from './VoiceInput'
 import type { AIMessage, AIResponse as AIResponseType, AIMode } from '../../types/ai'
 
 interface AIChatProps {
@@ -15,6 +18,8 @@ interface AIChatProps {
 export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AIChatProps) {
   const {
     mode,
+    selectedModelId,
+    setSelectedModelId,
     isLoading,
     isStreaming,
     streamingContent,
@@ -29,6 +34,8 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
 
   const [messages, setMessages] = useState<AIMessage[]>(initialMessages)
   const [input, setInput] = useState('')
+  const [files, setFiles] = useState<UploadedFile[]>([])
+  const [interimTranscript, setInterimTranscript] = useState('')
   const [currentStreamResponse, setCurrentStreamResponse] = useState<AIResponseType | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -41,9 +48,30 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
     scrollToBottom()
   }, [messages, streamingContent])
 
+  // Convert files to data URLs for the API
+  const getFileUrls = useCallback(async (): Promise<string[]> => {
+    const urls: string[] = []
+    for (const file of files) {
+      if (file.type === 'image' && file.preview) {
+        urls.push(file.preview)
+      } else {
+        // Read file as data URL
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file.file)
+        })
+        urls.push(dataUrl)
+      }
+    }
+    return urls
+  }, [files])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading || isStreaming) return
+
+    const imageUrls = await getFileUrls()
 
     const userMessage: AIMessage = {
       id: crypto.randomUUID(),
@@ -55,6 +83,8 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
 
     setMessages((prev) => [...prev, userMessage])
     setInput('')
+    setFiles([])
+    setInterimTranscript('')
     resetStream()
     setLoading(true)
     setError(null)
@@ -65,7 +95,9 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
       const stream = aiApi.queryStreamFetch({
         text: userMessage.content,
         mode,
+        model_id: selectedModelId || undefined,
         session_id: sessionId,
+        image_urls: imageUrls.length > 0 ? imageUrls : undefined,
       })
 
       let response: AIResponseType | null = null
@@ -128,6 +160,15 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
     }
   }
 
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setInput((prev) => prev + (prev ? ' ' : '') + text)
+    setInterimTranscript('')
+  }, [])
+
+  const handleInterimTranscript = useCallback((text: string) => {
+    setInterimTranscript(text)
+  }, [])
+
   return (
     <div className="ai-chat">
       {/* Messages */}
@@ -185,30 +226,51 @@ export function AIChat({ sessionId, initialMessages = [], onAddToCanvas }: AICha
       <div className="ai-chat-input-container">
         <div className="ai-chat-mode-bar">
           <AIModeToggle size="sm" />
-        </div>
-        <form onSubmit={handleSubmit} className="ai-chat-form">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a follow-up question..."
-            className="ai-chat-input"
-            rows={1}
-            disabled={isLoading || isStreaming}
+          <ModelSelector
+            selectedModel={selectedModelId || undefined}
+            onSelectModel={setSelectedModelId}
+            size="sm"
           />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading || isStreaming}
-            className="ai-chat-submit"
-          >
-            {isLoading || isStreaming ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Send size={18} />
-            )}
-          </button>
-        </form>
+        </div>
+
+        <FileUploadZone files={files} onFilesChange={setFiles}>
+          <form onSubmit={handleSubmit} className="ai-chat-form">
+            <div className="ai-chat-input-wrapper">
+              <textarea
+                ref={inputRef}
+                value={input + (interimTranscript ? ` ${interimTranscript}` : '')}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask a follow-up question..."
+                className="ai-chat-input"
+                rows={1}
+                disabled={isLoading || isStreaming}
+              />
+              {interimTranscript && (
+                <span className="ai-chat-interim">{interimTranscript}</span>
+              )}
+            </div>
+            <div className="ai-chat-actions">
+              <VoiceInput
+                onTranscript={handleVoiceTranscript}
+                onInterimTranscript={handleInterimTranscript}
+                disabled={isLoading || isStreaming}
+                size="sm"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading || isStreaming}
+                className="ai-chat-submit"
+              >
+                {isLoading || isStreaming ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <Send size={18} />
+                )}
+              </button>
+            </div>
+          </form>
+        </FileUploadZone>
       </div>
     </div>
   )

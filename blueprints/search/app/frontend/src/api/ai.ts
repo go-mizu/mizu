@@ -5,6 +5,7 @@ import type {
   AIResponse,
   AIStreamEvent,
   AIModeInfo,
+  ModelInfo,
   Canvas,
   CanvasBlock,
   BlockType,
@@ -14,13 +15,26 @@ import type {
 export interface AIQueryRequest {
   text: string
   mode?: AIMode
+  model_id?: string
   session_id?: string
+  image_urls?: string[]
+  audio_url?: string
 }
 
 export const aiApi = {
   // Get available AI modes
   getModes: (): Promise<{ modes: AIModeInfo[] }> => {
     return api.get('/api/ai/modes')
+  },
+
+  // Get available models
+  getModels: (): Promise<ModelInfo[]> => {
+    return api.get('/api/ai/models')
+  },
+
+  // Get model health
+  getModelHealth: (modelId: string): Promise<{ available: boolean }> => {
+    return api.get(`/api/ai/models/${encodeURIComponent(modelId)}/health`)
   },
 
   // Non-streaming query

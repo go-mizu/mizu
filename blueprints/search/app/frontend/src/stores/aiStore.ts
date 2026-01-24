@@ -1,10 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AIMode, AISession, AIResponse, Canvas } from '../types/ai'
+import type { AIMode, AISession, AIResponse, Canvas, ModelInfo } from '../types/ai'
 
 interface AIState {
   // Current mode
   mode: AIMode
+
+  // Model selection
+  selectedModelId: string | null
+  models: ModelInfo[]
 
   // Current session
   currentSessionId: string | null
@@ -27,6 +31,8 @@ interface AIState {
 
   // Actions
   setMode: (mode: AIMode) => void
+  setSelectedModelId: (id: string | null) => void
+  setModels: (models: ModelInfo[]) => void
   setCurrentSessionId: (id: string | null) => void
   setSessions: (sessions: AISession[]) => void
   addSession: (session: AISession) => void
@@ -48,6 +54,8 @@ export const useAIStore = create<AIState>()(
     (set) => ({
       // Initial state
       mode: 'quick',
+      selectedModelId: null,
+      models: [],
       currentSessionId: null,
       sessions: [],
       isLoading: false,
@@ -62,6 +70,8 @@ export const useAIStore = create<AIState>()(
 
       // Actions
       setMode: (mode) => set({ mode }),
+      setSelectedModelId: (selectedModelId) => set({ selectedModelId }),
+      setModels: (models) => set({ models }),
       setCurrentSessionId: (currentSessionId) => set({ currentSessionId }),
       setSessions: (sessions) => set({ sessions }),
       addSession: (session) => set((state) => ({
@@ -94,6 +104,7 @@ export const useAIStore = create<AIState>()(
       name: 'ai-storage',
       partialize: (state) => ({
         mode: state.mode,
+        selectedModelId: state.selectedModelId,
       }),
     }
   )
