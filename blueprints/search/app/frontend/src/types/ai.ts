@@ -21,6 +21,24 @@ export interface Citation {
   url: string
   title: string
   snippet?: string
+  domain?: string        // Source domain for badge display
+  favicon?: string       // Source favicon URL
+  other_sources?: number // Count of other sources (for "+N" display)
+}
+
+export interface ImageResult {
+  url: string
+  thumbnail_url: string
+  title: string
+  source_url: string
+  source_domain: string
+  width: number
+  height: number
+}
+
+export interface RelatedQuestion {
+  text: string
+  category?: 'deeper' | 'related' | 'practical' | 'comparison' | 'current'
 }
 
 export interface AIMessage {
@@ -46,6 +64,8 @@ export interface AIResponse {
   mode: AIMode
   citations: Citation[]
   follow_ups: string[]
+  related_questions?: RelatedQuestion[]
+  images?: ImageResult[]
   session_id: string
   sources_used: number
   thinking_steps?: string[]
@@ -63,6 +83,8 @@ export interface AIStreamEvent {
     mode: AIMode
     citations: Citation[]
     follow_ups: string[]
+    related_questions?: RelatedQuestion[]
+    images?: ImageResult[]
     session_id: string
     sources_used: number
   }

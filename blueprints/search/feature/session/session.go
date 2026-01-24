@@ -29,10 +29,13 @@ type Message struct {
 
 // Citation represents a source citation in a message.
 type Citation struct {
-	Index   int    `json:"index"`
-	URL     string `json:"url"`
-	Title   string `json:"title"`
-	Snippet string `json:"snippet"`
+	Index        int    `json:"index"`
+	URL          string `json:"url"`
+	Title        string `json:"title"`
+	Snippet      string `json:"snippet"`
+	Domain       string `json:"domain,omitempty"`        // Source domain for badge display
+	Favicon      string `json:"favicon,omitempty"`       // Source favicon URL
+	OtherSources int    `json:"other_sources,omitempty"` // Count of other sources (for "+N" display)
 }
 
 // Store defines the interface for session storage.

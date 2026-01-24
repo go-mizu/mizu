@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Copy, Check, BookOpen, Volume2, VolumeX } from 'lucide-react'
+import { Copy, Check, BookOpen, Share, Download, RefreshCw, ThumbsUp, ThumbsDown, MoreHorizontal } from 'lucide-react'
 import type { AIResponse as AIResponseType } from '../../types/ai'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { CitationChip } from './CitationChip'
-import { FollowUpChips } from './FollowUpChips'
 import { ThinkingSteps } from './ThinkingSteps'
+import { ImageCarousel } from './ImageCarousel'
+import { RelatedQuestions } from './RelatedQuestions'
 
 interface AIResponseProps {
   response: AIResponseType
@@ -12,7 +13,7 @@ interface AIResponseProps {
   streamingThinking?: string[]
   isStreaming?: boolean
   onFollowUp?: (question: string) => void
-  onAddToCanvas?: () => void
+  onRefresh?: () => void
 }
 
 export function AIResponse({
@@ -21,14 +22,16 @@ export function AIResponse({
   streamingThinking = [],
   isStreaming = false,
   onFollowUp,
-  onAddToCanvas,
+  onRefresh,
 }: AIResponseProps) {
   const [copied, setCopied] = useState(false)
   const [expandedCitation, setExpandedCitation] = useState<number | null>(null)
-  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [showSources, setShowSources] = useState(false)
 
   const content = streamingContent || response.text
   const thinkingSteps = streamingThinking.length ? streamingThinking : response.thinking_steps || []
+  const relatedQuestions = response.related_questions || []
+  const images = response.images || []
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(content)
@@ -40,26 +43,23 @@ export function AIResponse({
     setExpandedCitation(expandedCitation === index ? null : index)
   }
 
-  const handleSpeak = () => {
-    if (isSpeaking) {
-      window.speechSynthesis.cancel()
-      setIsSpeaking(false)
-      return
+  const handleShare = async () => {
+    if (navigator.share) {
+      await navigator.share({
+        title: 'AI Response',
+        text: content,
+      })
     }
+  }
 
-    // Strip markdown for TTS
-    const plainText = content
-      .replace(/\[(\d+)\]/g, '') // Remove citations
-      .replace(/```[\s\S]*?```/g, 'code block') // Replace code blocks
-      .replace(/`[^`]+`/g, '') // Remove inline code
-      .replace(/[#*_~]/g, '') // Remove markdown formatting
-
-    const utterance = new SpeechSynthesisUtterance(plainText)
-    utterance.onend = () => setIsSpeaking(false)
-    utterance.onerror = () => setIsSpeaking(false)
-
-    window.speechSynthesis.speak(utterance)
-    setIsSpeaking(true)
+  const handleDownload = () => {
+    const blob = new Blob([content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'ai-response.md'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const getModeLabel = (mode: string) => {
@@ -84,6 +84,14 @@ export function AIResponse({
         </span>
       </div>
 
+      {/* Image Carousel */}
+      {images.length > 0 && (
+        <ImageCarousel
+          images={images}
+          onImageClick={(img) => window.open(img.source_url || img.url, '_blank')}
+        />
+      )}
+
       {/* Thinking steps */}
       {thinkingSteps.length > 0 && (
         <ThinkingSteps steps={thinkingSteps} isStreaming={isStreaming} />
@@ -99,66 +107,91 @@ export function AIResponse({
         />
       </div>
 
-      {/* Citations */}
+      {/* Collapsible Sources */}
       {response.citations.length > 0 && (
         <div className="ai-citations">
-          <div className="ai-citations-header">
+          <button
+            type="button"
+            className="ai-citations-header"
+            onClick={() => setShowSources(!showSources)}
+          >
             <BookOpen size={14} />
-            <span>Sources</span>
-          </div>
-          <div className="ai-citations-list">
-            {response.citations.map((citation) => (
-              <div key={citation.index} className="ai-citation-item">
-                <CitationChip
-                  citation={citation}
-                  onClick={() => handleCitationClick(citation.index)}
-                />
-                {expandedCitation === citation.index && citation.snippet && (
-                  <div className="ai-citation-snippet">
-                    {citation.snippet}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+            <span>Sources ({response.citations.length})</span>
+          </button>
+          {showSources && (
+            <div className="ai-citations-list">
+              {response.citations.map((citation) => (
+                <div key={citation.index} className="ai-citation-item">
+                  <CitationChip
+                    citation={citation}
+                    onClick={() => handleCitationClick(citation.index)}
+                  />
+                  {expandedCitation === citation.index && citation.snippet && (
+                    <div className="ai-citation-snippet">
+                      {citation.snippet}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Actions */}
+      {/* Action Bar - Perplexity style */}
       <div className="ai-response-actions">
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="ai-action-button"
-        >
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-          {copied ? 'Copied' : 'Copy'}
+        <button type="button" onClick={handleShare} className="ai-action-button" title="Share">
+          <Share size={16} />
         </button>
-        <button
-          type="button"
-          onClick={handleSpeak}
-          className="ai-action-button"
-          title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
-        >
-          {isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          {isSpeaking ? 'Stop' : 'Listen'}
+        <button type="button" onClick={handleDownload} className="ai-action-button" title="Download">
+          <Download size={16} />
         </button>
-        {onAddToCanvas && (
-          <button
-            type="button"
-            onClick={onAddToCanvas}
-            className="ai-action-button"
-          >
-            <BookOpen size={14} />
-            Add to Canvas
+        <button type="button" onClick={handleCopy} className="ai-action-button" title={copied ? 'Copied!' : 'Copy'}>
+          {copied ? <Check size={16} /> : <Copy size={16} />}
+        </button>
+        {onRefresh && (
+          <button type="button" onClick={onRefresh} className="ai-action-button" title="Regenerate">
+            <RefreshCw size={16} />
           </button>
         )}
+
+        {/* Source icons indicator */}
+        <div className="sources-indicator">
+          <div className="source-icons">
+            {response.citations.slice(0, 4).map((c, i) => (
+              c.favicon && (
+                <img
+                  key={i}
+                  src={c.favicon}
+                  alt=""
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none'
+                  }}
+                />
+              )
+            ))}
+          </div>
+          <span>{response.sources_used} sources</span>
+        </div>
+
+        {/* Feedback buttons */}
+        <div className="feedback-buttons">
+          <button type="button" className="ai-action-button" title="Helpful">
+            <ThumbsUp size={16} />
+          </button>
+          <button type="button" className="ai-action-button" title="Not helpful">
+            <ThumbsDown size={16} />
+          </button>
+          <button type="button" className="ai-action-button" title="More options">
+            <MoreHorizontal size={16} />
+          </button>
+        </div>
       </div>
 
-      {/* Follow-up suggestions */}
-      {!isStreaming && response.follow_ups.length > 0 && onFollowUp && (
-        <FollowUpChips
-          suggestions={response.follow_ups}
+      {/* Related Questions - Perplexity style */}
+      {!isStreaming && relatedQuestions.length > 0 && onFollowUp && (
+        <RelatedQuestions
+          questions={relatedQuestions}
           onSelect={onFollowUp}
         />
       )}
