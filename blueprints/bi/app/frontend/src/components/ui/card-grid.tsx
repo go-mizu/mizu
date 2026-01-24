@@ -1,8 +1,10 @@
-import { SimpleGrid, rem } from '@mantine/core'
+import { SimpleGrid, rem, Box, Stack, Group, type StackProps } from '@mantine/core'
 import type { ReactNode } from 'react'
+import type { MantineSize } from '@mantine/core'
+import { SectionHeader, type SectionHeaderProps } from './page-header'
 
 // =============================================================================
-// CARD GRID - Responsive grid for cards
+// CARD GRID - Responsive grid for cards (modern, full-width friendly)
 // =============================================================================
 
 export interface CardGridProps {
@@ -40,60 +42,76 @@ export function CardGrid({
 }
 
 // =============================================================================
-// PAGE CONTAINER - Standard page wrapper with consistent padding
+// PAGE CONTAINER - Full-width wrapper with consistent padding (shadcn-inspired)
 // =============================================================================
-
-import { Container, type MantineSize } from '@mantine/core'
 
 export interface PageContainerProps {
   /** Page content */
   children: ReactNode
-  /** Container max width */
-  size?: MantineSize | 'fluid'
-  /** Custom padding */
-  padding?: MantineSize | number
-  /** Remove horizontal padding on mobile */
-  fluidOnMobile?: boolean
+  /** Container max width - 'full' (default), 'xl', 'lg', 'md' */
+  size?: 'full' | 'xl' | 'lg' | 'md'
+  /** Vertical padding */
+  py?: 'none' | 'sm' | 'md' | 'lg' | 'xl'
+  /** Horizontal padding */
+  px?: 'none' | 'sm' | 'md' | 'lg' | 'xl'
+  /** Background color */
+  bg?: 'default' | 'muted' | 'white'
+  /** Min height */
+  minHeight?: string
+}
+
+const sizesMap: Record<string, string> = {
+  full: 'none',
+  xl: '1400px',
+  lg: '1200px',
+  md: '960px',
+}
+
+const paddingMap: Record<string, string | number> = {
+  none: 0,
+  sm: rem(16),
+  md: rem(24),
+  lg: rem(32),
+  xl: rem(48),
+}
+
+const bgMap: Record<string, string> = {
+  default: 'var(--color-background-muted)',
+  muted: 'var(--color-background-muted)',
+  white: 'var(--color-background)',
 }
 
 export function PageContainer({
   children,
-  size = 'xl',
-  padding = 'lg',
-  fluidOnMobile = false,
+  size = 'full',
+  py = 'lg',
+  px = 'lg',
+  bg = 'default',
+  minHeight = '100vh',
 }: PageContainerProps) {
-  if (size === 'fluid') {
-    return (
-      <div
-        style={{
-          padding: typeof padding === 'number' ? rem(padding) : undefined,
-          paddingLeft: fluidOnMobile ? undefined : rem(24),
-          paddingRight: fluidOnMobile ? undefined : rem(24),
-        }}
-        data-padding={typeof padding === 'string' ? padding : undefined}
-      >
-        {children}
-      </div>
-    )
-  }
-
   return (
-    <Container
-      size={size}
-      py={padding}
-      px={fluidOnMobile ? { base: 'xs', sm: padding } : padding}
+    <Box
+      style={{
+        width: '100%',
+        maxWidth: sizesMap[size],
+        marginLeft: size !== 'full' ? 'auto' : undefined,
+        marginRight: size !== 'full' ? 'auto' : undefined,
+        paddingTop: paddingMap[py],
+        paddingBottom: paddingMap[py],
+        paddingLeft: paddingMap[px],
+        paddingRight: paddingMap[px],
+        backgroundColor: bgMap[bg],
+        minHeight,
+      }}
     >
       {children}
-    </Container>
+    </Box>
   )
 }
 
 // =============================================================================
-// SECTION - Content section with consistent spacing
+// SECTION - Content section with consistent spacing (modern)
 // =============================================================================
-
-import { Box } from '@mantine/core'
-import { SectionHeader, type SectionHeaderProps } from './page-header'
 
 export interface SectionProps extends Partial<SectionHeaderProps> {
   /** Section content */
@@ -111,6 +129,7 @@ export function Section({
   icon,
   count,
   actions,
+  size,
   mb = 'xl',
 }: SectionProps) {
   return (
@@ -121,6 +140,7 @@ export function Section({
           icon={icon}
           count={count}
           actions={actions}
+          size={size}
         />
       )}
       {children}
@@ -131,8 +151,6 @@ export function Section({
 // =============================================================================
 // CONTENT STACK - Vertical stack with consistent spacing
 // =============================================================================
-
-import { Stack, type StackProps } from '@mantine/core'
 
 export interface ContentStackProps extends Omit<StackProps, 'gap'> {
   /** Gap size */
@@ -154,8 +172,6 @@ export function ContentStack({
 // =============================================================================
 // SPLIT PANEL - Two-column layout
 // =============================================================================
-
-import { Group } from '@mantine/core'
 
 export interface SplitPanelProps {
   /** Left panel content */

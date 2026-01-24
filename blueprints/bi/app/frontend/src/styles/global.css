@@ -2,100 +2,108 @@
    MODERN UI GLOBAL STYLES - shadcn-inspired with Metabase compatibility
    ============================================================================= */
 
-/* Font Import - Inter (modern) + Lato (legacy) */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;500;600;700&display=swap');
+/* Font Import - Geist (shadcn default) + Inter fallback */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* =============================================================================
-   CSS VARIABLES - DESIGN TOKENS
+   CSS VARIABLES - DESIGN TOKENS (shadcn-inspired)
    ============================================================================= */
 
 :root {
-  /* Colors - Background */
+  /* Colors - Background (refined neutral scale) */
   --color-background: #ffffff;
-  --color-background-muted: #f9fafb;
-  --color-background-subtle: #f3f4f6;
-  --color-background-accent: #f1f5f9;
+  --color-background-muted: #fafafa;
+  --color-background-subtle: #f4f4f5;
+  --color-background-accent: #f4f4f5;
 
-  /* Colors - Foreground */
-  --color-foreground: #4c5773;
-  --color-foreground-muted: #6b7280;
-  --color-foreground-subtle: #9ca3af;
+  /* Colors - Foreground (sharper contrast) */
+  --color-foreground: #18181b;
+  --color-foreground-muted: #71717a;
+  --color-foreground-subtle: #a1a1aa;
 
-  /* Colors - Primary */
-  --color-primary: #509ee3;
-  --color-primary-hover: #4285c9;
-  --color-primary-light: #e6f2ff;
-  --color-primary-lighter: #f0f6fc;
+  /* Colors - Primary (refined blue) */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-primary-lighter: #f8fafc;
   --color-primary-foreground: #ffffff;
 
   /* Colors - Success / Summarize */
-  --color-success: #84bb4c;
-  --color-success-hover: #6fa83d;
-  --color-success-light: #edf7e4;
+  --color-success: #22c55e;
+  --color-success-hover: #16a34a;
+  --color-success-light: #f0fdf4;
   --color-success-foreground: #ffffff;
 
   /* Colors - Warning */
-  --color-warning: #f9d45c;
-  --color-warning-hover: #e0b73d;
-  --color-warning-light: #fffceb;
+  --color-warning: #f59e0b;
+  --color-warning-hover: #d97706;
+  --color-warning-light: #fffbeb;
 
-  /* Colors - Error */
-  --color-error: #ed6e6e;
-  --color-error-hover: #d65555;
-  --color-error-light: #fef0f0;
+  /* Colors - Error / Destructive */
+  --color-error: #ef4444;
+  --color-error-hover: #dc2626;
+  --color-error-light: #fef2f2;
 
-  /* Colors - Info / Filter */
-  --color-info: #7172ad;
-  --color-info-hover: #5f6099;
-  --color-info-light: #efeef5;
+  /* Colors - Info / Filter (muted purple) */
+  --color-info: #8b5cf6;
+  --color-info-hover: #7c3aed;
+  --color-info-light: #f5f3ff;
 
-  /* Colors - Border */
-  --color-border: #e5e7eb;
-  --color-border-light: #f3f4f6;
-  --color-border-muted: #f3f4f6;
-  --color-border-strong: #d1d5db;
+  /* Colors - Border (subtle, refined) */
+  --color-border: #e4e4e7;
+  --color-border-light: #f4f4f5;
+  --color-border-muted: #f4f4f5;
+  --color-border-strong: #d4d4d8;
 
-  /* Colors - Ring */
-  --color-ring: #509ee3;
+  /* Colors - Ring (focus) */
+  --color-ring: #2563eb;
 
-  /* Semantic colors */
-  --color-brand: #509ee3;
-  --color-summarize: #84bb4c;
-  --color-filter: #7172ad;
+  /* Semantic colors (Metabase compatibility) */
+  --color-brand: #2563eb;
+  --color-summarize: #22c55e;
+  --color-filter: #8b5cf6;
 
-  /* Spacing */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-  --spacing-2xl: 2.5rem;
-  --spacing-3xl: 3rem;
+  /* Spacing (8px grid system) */
+  --spacing-xs: 0.25rem;   /* 4px */
+  --spacing-sm: 0.5rem;    /* 8px */
+  --spacing-md: 1rem;      /* 16px */
+  --spacing-lg: 1.5rem;    /* 24px */
+  --spacing-xl: 2rem;      /* 32px */
+  --spacing-2xl: 2.5rem;   /* 40px */
+  --spacing-3xl: 3rem;     /* 48px */
 
-  /* Radius */
-  --radius-sm: 0.25rem;
-  --radius: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
+  /* Page layout */
+  --page-padding-x: 1.5rem;  /* 24px horizontal padding */
+  --page-padding-y: 1.5rem;  /* 24px vertical padding */
+  --page-max-width: none;    /* Full width by default */
+
+  /* Radius (refined, slightly larger) */
+  --radius-sm: 0.25rem;    /* 4px */
+  --radius: 0.375rem;      /* 6px */
+  --radius-md: 0.5rem;     /* 8px */
+  --radius-lg: 0.75rem;    /* 12px */
+  --radius-xl: 1rem;       /* 16px */
+  --radius-2xl: 1.5rem;    /* 24px */
   --radius-full: 9999px;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+  /* Shadows (softer, more refined - shadcn style) */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
-  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.06);
-  --shadow-card-hover: 0 4px 12px 0 rgb(0 0 0 / 0.08);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.03), 0 1px 3px 0 rgb(0 0 0 / 0.04);
+  --shadow-card-hover: 0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.06);
 
-  /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Transitions (snappier) */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 200ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Typography */
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: JetBrains Mono, Monaco, "SF Mono", Consolas, monospace;
+  --font-mono: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
 
   /* ===== LEGACY METABASE VARIABLES (for backward compatibility) ===== */
   --mb-color-brand: var(--color-primary);
@@ -398,14 +406,15 @@ a:hover {
 }
 
 /* =============================================================================
-   CARD STYLES
+   CARD STYLES (shadcn-inspired)
    ============================================================================= */
 
 .card {
   background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+  box-shadow: var(--shadow-card);
+  transition: all var(--transition-fast);
 }
 
 .card:hover {
@@ -415,6 +424,32 @@ a:hover {
 
 .card-interactive {
   cursor: pointer;
+}
+
+.card-interactive:hover {
+  transform: translateY(-1px);
+}
+
+/* Modern card variant - cleaner, minimal */
+.card-modern {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+  transition: all var(--transition);
+}
+
+.card-modern:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+/* Glass card variant */
+.card-glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-xl);
 }
 
 /* =============================================================================

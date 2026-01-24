@@ -1,6 +1,6 @@
-import { forwardRef } from 'react'
+import { forwardRef, useState } from 'react'
 import {
-  Paper, Group, Text, Badge, ActionIcon, Menu, Tooltip, ThemeIcon, rem
+  Paper, Group, Text, Badge, ActionIcon, Menu, Tooltip, Box, rem
 } from '@mantine/core'
 import {
   IconDots, IconStar, IconStarFilled, IconBookmark, IconBookmarkFilled,
@@ -9,7 +9,7 @@ import {
 import { chartPalette } from '../../lib/tokens'
 
 // =============================================================================
-// DATA CARD - Unified card for questions, dashboards, collections
+// DATA CARD - Modern card component (shadcn-inspired)
 // =============================================================================
 
 export type DataCardType = 'question' | 'dashboard' | 'collection' | 'database'
@@ -76,6 +76,7 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
     },
     ref
   ) {
+    const [isHovered, setIsHovered] = useState(false)
     const Icon = typeIcons[type]
     const accentColor = colorIndex !== undefined
       ? chartPalette[colorIndex % chartPalette.length]
@@ -84,48 +85,50 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
     return (
       <Paper
         ref={ref}
-        withBorder
-        p={compact ? 'sm' : 'md'}
-        radius="md"
+        p={compact ? rem(14) : rem(18)}
+        radius="lg"
         style={{
           cursor: onClick ? 'pointer' : 'default',
-          transition: 'all var(--transition-fast)',
+          transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
+          border: '1px solid var(--color-border)',
+          backgroundColor: 'var(--color-background)',
+          boxShadow: isHovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
+          transform: isHovered && onClick ? 'translateY(-2px)' : 'none',
         }}
         onClick={onClick}
-        onMouseEnter={(e) => {
-          if (onClick) {
-            e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
-            e.currentTarget.style.borderColor = 'var(--color-border-strong)'
-          }
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = 'none'
-          e.currentTarget.style.borderColor = ''
-        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        <Group justify="space-between" mb={compact ? 'xs' : 'sm'} wrap="nowrap">
-          <ThemeIcon
-            size={compact ? 32 : 40}
-            radius="md"
-            variant="light"
+        <Group justify="space-between" mb={compact ? rem(10) : rem(14)} wrap="nowrap">
+          {/* Modern icon container with gradient hint */}
+          <Box
             style={{
-              backgroundColor: `${accentColor}15`,
-              color: accentColor,
+              width: compact ? 36 : 44,
+              height: compact ? 36 : 44,
+              borderRadius: 'var(--radius-lg)',
+              backgroundColor: `${accentColor}12`,
+              border: `1px solid ${accentColor}20`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 150ms ease',
+              transform: isHovered ? 'scale(1.05)' : 'none',
             }}
           >
-            <Icon size={compact ? 16 : 20} strokeWidth={1.75} />
-          </ThemeIcon>
+            <Icon size={compact ? 18 : 22} color={accentColor} strokeWidth={1.75} />
+          </Box>
 
-          <Group gap={4} onClick={(e) => e.stopPropagation()}>
+          <Group gap={4} onClick={(e) => e.stopPropagation()} style={{ opacity: isHovered ? 1 : 0.6, transition: 'opacity 150ms ease' }}>
             {onTogglePin && (
-              <Tooltip label={pinned ? 'Unpin' : 'Pin to home'} position="top">
+              <Tooltip label={pinned ? 'Unpin' : 'Pin to home'} position="top" withArrow>
                 <ActionIcon
                   variant="subtle"
                   color={pinned ? 'yellow' : 'gray'}
                   size="sm"
+                  radius="md"
                   onClick={onTogglePin}
                 >
                   {pinned ? <IconStarFilled size={14} /> : <IconStar size={14} strokeWidth={1.75} />}
@@ -134,9 +137,9 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
             )}
 
             {(onToggleBookmark || menuItems) && (
-              <Menu position="bottom-end" withinPortal>
+              <Menu position="bottom-end" withinPortal shadow="md" radius="md">
                 <Menu.Target>
-                  <ActionIcon variant="subtle" color="gray" size="sm">
+                  <ActionIcon variant="subtle" color="gray" size="sm" radius="md">
                     <IconDots size={14} />
                   </ActionIcon>
                 </Menu.Target>
@@ -184,6 +187,8 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
           style={{
             color: 'var(--color-foreground)',
             flex: 1,
+            lineHeight: 1.4,
+            letterSpacing: '-0.01em',
           }}
         >
           {name}
@@ -192,10 +197,12 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
         {!compact && description && (
           <Text
             size="sm"
-            c="dimmed"
-            lineClamp={1}
-            mt={4}
-            style={{ color: 'var(--color-foreground-muted)' }}
+            lineClamp={2}
+            mt={rem(6)}
+            style={{
+              color: 'var(--color-foreground-muted)',
+              lineHeight: 1.5,
+            }}
           >
             {description}
           </Text>
@@ -203,11 +210,16 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
 
         {badge && (
           <Badge
-            size="xs"
+            size="sm"
             variant="light"
             color="gray"
-            radius="sm"
-            mt={compact ? 'xs' : 'sm'}
+            radius="md"
+            mt={compact ? rem(10) : rem(14)}
+            style={{
+              fontWeight: 500,
+              textTransform: 'none',
+              alignSelf: 'flex-start',
+            }}
           >
             {badge}
           </Badge>
@@ -218,55 +230,58 @@ export const DataCard = forwardRef<HTMLDivElement, DataCardProps>(
 )
 
 // =============================================================================
-// DATA CARD SKELETON - Loading placeholder
+// DATA CARD SKELETON - Modern loading placeholder
 // =============================================================================
 
 export function DataCardSkeleton({ compact = false }: { compact?: boolean }) {
   return (
     <Paper
-      withBorder
-      p={compact ? 'sm' : 'md'}
-      radius="md"
-      style={{ height: '100%' }}
+      p={compact ? rem(14) : rem(18)}
+      radius="lg"
+      style={{
+        height: '100%',
+        border: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-background)',
+      }}
     >
-      <Group justify="space-between" mb={compact ? 'xs' : 'sm'}>
+      <Group justify="space-between" mb={compact ? rem(10) : rem(14)}>
         <div
           style={{
-            width: compact ? 32 : 40,
-            height: compact ? 32 : 40,
-            borderRadius: 'var(--radius-md)',
+            width: compact ? 36 : 44,
+            height: compact ? 36 : 44,
+            borderRadius: 'var(--radius-lg)',
             backgroundColor: 'var(--color-background-subtle)',
-            animation: 'pulse 2s infinite',
+            animation: 'pulse 1.5s ease-in-out infinite',
           }}
         />
         <div
           style={{
             width: 24,
             height: 24,
-            borderRadius: 'var(--radius)',
+            borderRadius: 'var(--radius-md)',
             backgroundColor: 'var(--color-background-subtle)',
-            animation: 'pulse 2s infinite',
+            animation: 'pulse 1.5s ease-in-out infinite',
           }}
         />
       </Group>
       <div
         style={{
-          height: compact ? 16 : 20,
-          width: '80%',
-          borderRadius: 'var(--radius-sm)',
+          height: compact ? 18 : 22,
+          width: '75%',
+          borderRadius: 'var(--radius)',
           backgroundColor: 'var(--color-background-subtle)',
-          animation: 'pulse 2s infinite',
+          animation: 'pulse 1.5s ease-in-out infinite',
         }}
       />
       {!compact && (
         <div
           style={{
-            height: 14,
-            width: '60%',
-            borderRadius: 'var(--radius-sm)',
+            height: 16,
+            width: '55%',
+            borderRadius: 'var(--radius)',
             backgroundColor: 'var(--color-background-subtle)',
-            marginTop: rem(8),
-            animation: 'pulse 2s infinite',
+            marginTop: rem(10),
+            animation: 'pulse 1.5s ease-in-out infinite',
           }}
         />
       )}

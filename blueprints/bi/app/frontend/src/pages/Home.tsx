@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Title, Text, Group, Button, Skeleton, ThemeIcon, rem, Paper, Container
+  Box, Title, Text, Group, Button, Skeleton, rem, Paper
 } from '@mantine/core'
 import {
   IconChartLine, IconLayoutDashboard, IconFolder, IconDatabase,
@@ -11,7 +11,7 @@ import {
 import { useQuestions, useDashboards, useCollections, useDataSources, useTables } from '../api/hooks'
 import { useBookmarkStore, usePinActions } from '../stores/bookmarkStore'
 import {
-  CardGrid, Section, DataCard, StatCard as UIStatCard, EmptyState
+  CardGrid, Section, DataCard, StatCard as UIStatCard, EmptyState, PageContainer
 } from '../components/ui'
 
 // =============================================================================
@@ -69,60 +69,68 @@ export default function Home() {
   // Loading state
   if (isLoading && !hasData) {
     return (
-      <Container size="lg" py="xl">
+      <PageContainer>
         <Box mb="xl">
-          <Skeleton height={32} width={200} mb="sm" />
-          <Skeleton height={20} width={300} />
+          <Skeleton height={36} width={200} mb="sm" radius="md" />
+          <Skeleton height={20} width={300} radius="md" />
         </Box>
-        <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} height={120} radius="md" />
+        <CardGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }}>
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} height={140} radius="lg" />
           ))}
         </CardGrid>
-      </Container>
+      </PageContainer>
     )
   }
 
   return (
-    <Box
-      style={{
-        minHeight: '100vh',
-        backgroundColor: 'var(--color-background-muted)',
-      }}
-    >
-      <Container size="lg" py="xl">
-        {/* Header */}
-        <Box mb="xl">
-          <Group justify="space-between" align="flex-start">
-            <Group gap="md" align="center">
-              <Box
+    <PageContainer>
+      {/* Header */}
+      <Box mb="xl" pb="lg" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <Group justify="space-between" align="flex-start">
+          <Group gap="lg" align="center">
+            <Box
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 'var(--radius-xl)',
+                background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-info) 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+              }}
+            >
+              <IconDeviceDesktop size={26} color="white" strokeWidth={1.5} />
+            </Box>
+            <div>
+              <Title
+                order={2}
                 style={{
-                  width: 48,
-                  height: 48,
-                  border: '2px solid var(--color-primary)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: 'var(--color-background)',
+                  color: 'var(--color-foreground)',
+                  fontWeight: 700,
+                  fontSize: rem(28),
+                  letterSpacing: '-0.02em',
                 }}
               >
-                <IconDeviceDesktop size={24} color="var(--color-primary)" strokeWidth={1.5} />
-              </Box>
-              <Title order={2} style={{ color: 'var(--color-foreground)', fontWeight: 700 }}>
-                Hey there
+                Welcome back
               </Title>
-            </Group>
-            <Button
-              variant="subtle"
-              leftSection={<IconPencil size={14} strokeWidth={1.75} />}
-              color="gray"
-              size="sm"
-            >
-              Customize
-            </Button>
+              <Text size="sm" style={{ color: 'var(--color-foreground-muted)' }}>
+                Your analytics overview
+              </Text>
+            </div>
           </Group>
-        </Box>
+          <Button
+            variant="subtle"
+            leftSection={<IconPencil size={14} strokeWidth={1.75} />}
+            color="gray"
+            size="sm"
+            radius="md"
+          >
+            Customize
+          </Button>
+        </Group>
+      </Box>
 
         {/* X-Ray Sample Cards */}
         {(datasources?.length || 0) > 0 && (
@@ -337,8 +345,7 @@ export default function Home() {
             size="lg"
           />
         )}
-      </Container>
-    </Box>
+    </PageContainer>
   )
 }
 
@@ -346,7 +353,7 @@ export default function Home() {
 // SUB-COMPONENTS
 // =============================================================================
 
-// Start Card for onboarding
+// Start Card for onboarding (modern shadcn-inspired)
 function StartCard({
   icon: Icon,
   color,
@@ -360,40 +367,48 @@ function StartCard({
   description: string
   onClick: () => void
 }) {
+  const [isHovered, setIsHovered] = useState(false)
+
   return (
     <Paper
-      withBorder
-      p="lg"
-      radius="md"
+      p={rem(20)}
+      radius="lg"
       onClick={onClick}
       style={{
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'flex-start',
         gap: rem(16),
-        transition: 'all var(--transition-fast)',
+        transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+        border: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-background)',
+        boxShadow: isHovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
+        transform: isHovered ? 'translateY(-2px)' : 'none',
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
-        e.currentTarget.style.borderColor = 'var(--color-border-strong)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = 'none'
-        e.currentTarget.style.borderColor = ''
-      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      <ThemeIcon
-        size={48}
-        radius="md"
-        style={{ backgroundColor: `${color}15`, color }}
+      <Box
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: 'var(--radius-xl)',
+          backgroundColor: `${color}10`,
+          border: `1px solid ${color}18`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'transform 150ms ease',
+          transform: isHovered ? 'scale(1.05)' : 'none',
+        }}
       >
-        <Icon size={24} strokeWidth={1.75} />
-      </ThemeIcon>
+        <Icon size={26} color={color} strokeWidth={1.75} />
+      </Box>
       <Box style={{ flex: 1 }}>
-        <Text fw={600} size="md" style={{ color: 'var(--color-foreground)' }} mb={4}>
+        <Text fw={600} size="md" style={{ color: 'var(--color-foreground)', letterSpacing: '-0.01em' }} mb={rem(4)}>
           {title}
         </Text>
-        <Text size="sm" style={{ color: 'var(--color-foreground-muted)', lineHeight: 1.4 }}>
+        <Text size="sm" style={{ color: 'var(--color-foreground-muted)', lineHeight: 1.5 }}>
           {description}
         </Text>
       </Box>
@@ -459,7 +474,7 @@ function ItemCard({
   )
 }
 
-// X-Ray Cards Component
+// X-Ray Cards Component (modern shadcn-inspired)
 function XRayCards({
   datasources,
   navigate,
@@ -488,63 +503,81 @@ function XRayCards({
   if (xrayCards.length === 0) return null
 
   return (
-    <CardGrid cols={{ base: 1, sm: 2, md: 3 }}>
+    <CardGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }}>
       {xrayCards.map(({ table, phrase }) => (
-        <Paper
+        <XRayCard
           key={table.id}
-          withBorder
-          p="md"
-          radius="md"
-          onClick={() => navigate(`/question/new?table=${table.id}&datasource=${firstDatasource.id}`)}
-          style={{
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: rem(12),
-            transition: 'all var(--transition-fast)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = 'none'
-          }}
+          icon={<IconBolt size={18} color="var(--color-warning)" strokeWidth={2} />}
+          onClick={() => navigate(`/xray/${firstDatasource.id}/table/${table.id}`)}
         >
-          <IconBolt size={20} color="var(--color-warning)" strokeWidth={2} style={{ flexShrink: 0 }} />
           <Text size="sm" style={{ color: 'var(--color-foreground)' }}>
             {phrase.prefix}{' '}
-            <Text span fw={700} inherit>
+            <Text span fw={600} inherit>
               {table.display_name || table.name}
             </Text>
             {phrase.suffix}
           </Text>
-        </Paper>
+        </XRayCard>
       ))}
       {/* Tips Card */}
-      <Paper
-        withBorder
-        p="md"
-        radius="md"
+      <XRayCard
+        icon={<IconBook2 size={18} color="var(--color-foreground-muted)" strokeWidth={1.75} />}
         onClick={() => window.open('https://www.metabase.com/docs', '_blank')}
-        style={{
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: rem(12),
-          transition: 'all var(--transition-fast)',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = 'none'
-        }}
       >
-        <IconBook2 size={20} color="var(--color-foreground-muted)" strokeWidth={1.75} style={{ flexShrink: 0 }} />
         <Text size="sm" fw={500} style={{ color: 'var(--color-foreground)' }}>
           Documentation & tips
         </Text>
-      </Paper>
+      </XRayCard>
     </CardGrid>
+  )
+}
+
+// Individual X-Ray card component with hover state
+function XRayCard({
+  icon,
+  children,
+  onClick,
+}: {
+  icon: React.ReactNode
+  children: React.ReactNode
+  onClick: () => void
+}) {
+  const [isHovered, setIsHovered] = useState(false)
+
+  return (
+    <Paper
+      p={rem(16)}
+      radius="lg"
+      onClick={onClick}
+      style={{
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: rem(12),
+        transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+        border: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-background)',
+        boxShadow: isHovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
+        transform: isHovered ? 'translateY(-1px)' : 'none',
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <Box
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 'var(--radius-lg)',
+          backgroundColor: 'var(--color-background-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </Box>
+      {children}
+    </Paper>
   )
 }
