@@ -13,9 +13,15 @@ type SearchHandler struct {
 	service *search.Service
 }
 
-// NewSearchHandler creates a new search handler
+// NewSearchHandler creates a new search handler with default configuration.
+// For SearXNG integration, use NewSearchHandlerWithConfig.
 func NewSearchHandler(s store.Store) *SearchHandler {
-	return &SearchHandler{service: search.NewService(s)}
+	return &SearchHandler{service: search.NewServiceWithDefaults(s)}
+}
+
+// NewSearchHandlerWithConfig creates a new search handler with custom configuration.
+func NewSearchHandlerWithConfig(cfg search.ServiceConfig) *SearchHandler {
+	return &SearchHandler{service: search.NewService(cfg)}
 }
 
 // Search handles the main search endpoint

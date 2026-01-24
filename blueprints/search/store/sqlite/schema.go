@@ -269,6 +269,19 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 
 		-- Insert default settings
 		INSERT OR IGNORE INTO settings (id) VALUES (1);
+
+		-- Search cache table for query-hash based caching
+		CREATE TABLE IF NOT EXISTS search_cache (
+			hash TEXT PRIMARY KEY,
+			query TEXT NOT NULL,
+			category TEXT NOT NULL,
+			results_json TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expires_at DATETIME NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_cache_expires ON search_cache(expires_at);
+		CREATE INDEX IF NOT EXISTS idx_cache_query ON search_cache(query);
 	`
 
 	_, err := db.ExecContext(ctx, schema)

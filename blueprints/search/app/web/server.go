@@ -1,21 +1,27 @@
 package web
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/search/app/web/handler/api"
 	"github.com/go-mizu/mizu/blueprints/search/assets"
+	"github.com/go-mizu/mizu/blueprints/search/feature/search"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/searxng"
 	"github.com/go-mizu/mizu/blueprints/search/store"
+	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
 )
 
 // NewServer creates a new HTTP server
 func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	app := mizu.New()
 
-	// Create handlers
-	searchHandler := api.NewSearchHandler(st)
+	// Create search handler with SearXNG if available
+	searchHandler := createSearchHandler(st)
 	suggestHandler := api.NewSuggestHandler(st)
 	instantHandler := api.NewInstantHandler()
 	knowledgeHandler := api.NewKnowledgeHandler(st)
@@ -117,4 +123,36 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	}
 
 	return app, nil
+}
+
+// createSearchHandler creates a search handler with SearXNG if available.
+func createSearchHandler(st store.Store) *api.SearchHandler {
+	// Get SearXNG URL from environment or use default
+	searxngURL := os.Getenv("SEARXNG_URL")
+	if searxngURL == "" {
+		searxngURL = "http://localhost:8888"
+	}
+
+	// Try to connect to SearXNG
+	eng := searxng.New(searxngURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := eng.Healthz(ctx); err != nil {
+		// SearXNG not available, use store fallback
+		return api.NewSearchHandler(st)
+	}
+
+	// SearXNG is available, create cache and use engine
+	var cache *search.Cache
+	if sqliteStore, ok := st.(*sqlite.Store); ok {
+		cacheStore := sqliteStore.Cache()
+		cache = search.NewCache(cacheStore, 1*time.Hour)
+	}
+
+	return api.NewSearchHandlerWithConfig(search.ServiceConfig{
+		Engine: eng,
+		Cache:  cache,
+		Store:  st,
+	})
 }
