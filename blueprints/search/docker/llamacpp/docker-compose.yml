@@ -11,6 +11,7 @@ services:
       --model /models/gemma-3-270m-it.gguf
       --ctx-size 4096
       --embedding
+      --pooling mean
       --cont-batching
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -31,6 +32,7 @@ services:
       --model /models/gemma-3-1b-it.gguf
       --ctx-size 8192
       --embedding
+      --pooling mean
       --cont-batching
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -51,6 +53,7 @@ services:
       --model /models/gemma-3-4b-it.gguf
       --ctx-size 16384
       --embedding
+      --pooling mean
       --cont-batching
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
