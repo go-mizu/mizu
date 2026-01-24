@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { Settings, Image, Video, Newspaper, ChevronDown } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
 import { SearchResult } from '../components/SearchResult'
@@ -21,10 +21,11 @@ const TIME_OPTIONS = [
 
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const query = searchParams.get('q') || ''
   const page = parseInt(searchParams.get('page') || '1', 10)
   const timeFilter = searchParams.get('time') || ''
-  const [activeTab, setActiveTab] = useState<SearchTab>('all')
+  const [activeTab] = useState<SearchTab>('all')
 
   const [results, setResults] = useState<SearchResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -96,7 +97,7 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="sticky top-0 bg-white border-b border-[#dadce0] z-50">
+      <header className="sticky top-0 bg-white z-50">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center gap-6">
             {/* Logo */}
@@ -136,14 +137,14 @@ export default function SearchPage() {
             <button
               type="button"
               className={`search-tab ${activeTab === 'all' ? 'active' : ''}`}
-              onClick={() => setActiveTab('all')}
+              onClick={() => navigate(`/search?q=${encodeURIComponent(query)}`)}
             >
               All
             </button>
             <button
               type="button"
               className={`search-tab ${activeTab === 'images' ? 'active' : ''}`}
-              onClick={() => setActiveTab('images')}
+              onClick={() => navigate(`/images?q=${encodeURIComponent(query)}`)}
             >
               <Image size={16} />
               Images
@@ -151,7 +152,7 @@ export default function SearchPage() {
             <button
               type="button"
               className={`search-tab ${activeTab === 'videos' ? 'active' : ''}`}
-              onClick={() => setActiveTab('videos')}
+              onClick={() => navigate(`/videos?q=${encodeURIComponent(query)}`)}
             >
               <Video size={16} />
               Videos
@@ -159,7 +160,7 @@ export default function SearchPage() {
             <button
               type="button"
               className={`search-tab ${activeTab === 'news' ? 'active' : ''}`}
-              onClick={() => setActiveTab('news')}
+              onClick={() => navigate(`/news?q=${encodeURIComponent(query)}`)}
             >
               <Newspaper size={16} />
               News
@@ -200,7 +201,7 @@ export default function SearchPage() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex gap-8">
             {/* Results */}
-            <div className="flex-1 max-w-2xl" style={{ paddingLeft: '150px' }}>
+            <div className="flex-1 max-w-2xl">
               {isLoading ? (
                 <div className="flex justify-center py-12">
                   <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />

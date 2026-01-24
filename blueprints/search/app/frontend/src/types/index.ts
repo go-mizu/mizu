@@ -87,6 +87,10 @@ export interface VideoResult {
   channel: string
   views: number
   published_at: string
+  embed_url?: string
+  source_domain?: string
+  duration?: string
+  engine?: string
 }
 
 export interface NewsResult {
@@ -95,8 +99,12 @@ export interface NewsResult {
   title: string
   snippet: string
   source: string
+  source_name?: string
+  source_domain?: string
   image_url?: string
+  thumbnail_url?: string
   published_at: string
+  engine?: string
 }
 
 export interface SearchHistory {

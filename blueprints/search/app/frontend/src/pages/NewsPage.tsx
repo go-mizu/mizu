@@ -1,30 +1,29 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, X, Image, Video, Newspaper } from 'lucide-react'
+import { Settings, Image, Video, Newspaper } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
 import { searchApi } from '../api/search'
-import type { ImageResult } from '../types'
+import type { NewsResult } from '../types'
 
-export default function ImagesPage() {
+export default function NewsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const query = searchParams.get('q') || ''
 
-  const [images, setImages] = useState<ImageResult[]>([])
+  const [news, setNews] = useState<NewsResult[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedImage, setSelectedImage] = useState<ImageResult | null>(null)
 
   useEffect(() => {
     if (!query) return
 
-    const searchImages = async () => {
+    const searchNews = async () => {
       setIsLoading(true)
       setError(null)
 
       try {
-        const response = await searchApi.searchImages(query, { per_page: 50 })
-        setImages(response.results || [])
+        const response = await searchApi.searchNews(query, { per_page: 50 })
+        setNews(response.results || [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Search failed')
       } finally {
@@ -32,11 +31,24 @@ export default function ImagesPage() {
       }
     }
 
-    searchImages()
+    searchNews()
   }, [query])
 
   const handleSearch = (newQuery: string) => {
     setSearchParams({ q: newQuery })
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffHours < 1) return 'Just now'
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+    return date.toLocaleDateString()
   }
 
   return (
@@ -85,7 +97,8 @@ export default function ImagesPage() {
             </button>
             <button
               type="button"
-              className="search-tab active"
+              className="search-tab"
+              onClick={() => navigate(`/images?q=${encodeURIComponent(query)}`)}
             >
               <Image size={16} />
               Images
@@ -100,8 +113,7 @@ export default function ImagesPage() {
             </button>
             <button
               type="button"
-              className="search-tab"
-              onClick={() => navigate(`/news?q=${encodeURIComponent(query)}`)}
+              className="search-tab active"
             >
               <Newspaper size={16} />
               News
@@ -112,7 +124,7 @@ export default function ImagesPage() {
 
       {/* Main content */}
       <main>
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="max-w-3xl mx-auto px-4 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
@@ -121,82 +133,63 @@ export default function ImagesPage() {
             <div className="py-12 text-center">
               <p className="text-red-600">{error}</p>
             </div>
-          ) : images.length > 0 ? (
-            <div className="image-grid">
-              {images.map((image) => (
-                <div
-                  key={image.id}
-                  className="image-grid-item"
-                  onClick={() => setSelectedImage(image)}
+          ) : news.length > 0 ? (
+            <div className="space-y-6">
+              {news.map((article) => (
+                <a
+                  key={article.id}
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block p-4 rounded-lg hover:bg-[#f8f9fa] transition-colors"
                 >
-                  <img
-                    src={image.thumbnail_url || image.url}
-                    alt={image.title}
-                    loading="lazy"
-                    onError={(e) => {
-                      const parent = e.currentTarget.parentElement
-                      if (parent) parent.style.display = 'none'
-                    }}
-                  />
-                </div>
+                  <div className="flex gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 text-sm text-[#70757a] mb-1">
+                        <span>{article.source || article.source_name || article.source_domain}</span>
+                        {article.published_at && (
+                          <>
+                            <span>-</span>
+                            <span>{formatDate(article.published_at)}</span>
+                          </>
+                        )}
+                      </div>
+                      <h3 className="text-[#1a0dab] text-lg font-medium line-clamp-2 hover:underline">
+                        {article.title}
+                      </h3>
+                      {article.snippet && (
+                        <p className="text-sm text-[#4d5156] mt-2 line-clamp-2">
+                          {article.snippet}
+                        </p>
+                      )}
+                    </div>
+                    {(article.image_url || article.thumbnail_url) && (
+                      <div className="flex-shrink-0 w-32 h-20 bg-[#f1f3f4] rounded-lg overflow-hidden">
+                        <img
+                          src={article.image_url || article.thumbnail_url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.parentElement!.style.display = 'none'
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </a>
               ))}
             </div>
           ) : query ? (
             <div className="py-12 text-center">
-              <p className="text-[#70757a]">No images found</p>
+              <p className="text-[#70757a]">No news found</p>
             </div>
           ) : (
             <div className="py-12 text-center">
-              <p className="text-[#70757a]">Search for images</p>
+              <p className="text-[#70757a]">Search for news</p>
             </div>
           )}
         </div>
       </main>
-
-      {/* Image preview modal */}
-      {selectedImage && (
-        <div
-          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-          onClick={() => setSelectedImage(null)}
-        >
-          <div
-            className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setSelectedImage(null)}
-                className="absolute top-2 right-2 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-              >
-                <X size={16} />
-              </button>
-              <img
-                src={selectedImage.url}
-                alt={selectedImage.title}
-                className="max-h-[70vh] w-auto mx-auto"
-                onError={(e) => {
-                  e.currentTarget.src = selectedImage.thumbnail_url || ''
-                }}
-              />
-              <div className="p-4 bg-[#f8f9fa]">
-                <p className="font-medium text-[#202124]">{selectedImage.title}</p>
-                <p className="text-sm text-[#70757a]">
-                  {selectedImage.source_domain} - {selectedImage.width}x{selectedImage.height}
-                </p>
-                <a
-                  href={selectedImage.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-[#1a73e8] hover:underline"
-                >
-                  Visit page
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
