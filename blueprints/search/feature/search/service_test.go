@@ -49,7 +49,7 @@ func setupTestService(t *testing.T) (*search.Service, *sqlite.Store) {
 
 	// Create cache
 	cacheStore := st.Cache()
-	cache := search.NewCache(cacheStore, 1*time.Hour)
+	cache := search.NewCacheWithDefaults(cacheStore)
 
 	// Create service
 	svc := search.NewService(search.ServiceConfig{

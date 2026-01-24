@@ -21,6 +21,8 @@ export interface SearchOptions {
   site?: string
   lens?: string
   verbatim?: boolean
+  refetch?: boolean
+  version?: number
 }
 
 export const searchApi = {
@@ -36,30 +38,35 @@ export const searchApi = {
     if (options.site) params.set('site', options.site)
     if (options.lens) params.set('lens', options.lens)
     if (options.verbatim) params.set('verbatim', 'true')
+    if (options.refetch) params.set('refetch', 'true')
+    if (options.version) params.set('version', String(options.version))
     return api.get(`/api/search?${params}`)
   },
 
   // Image search
-  searchImages: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: ImageResult[] }> => {
+  searchImages: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: ImageResult[]; total_results?: number }> => {
     const params = new URLSearchParams({ q: query })
     if (options.page) params.set('page', String(options.page))
     if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.refetch) params.set('refetch', 'true')
     return api.get(`/api/search/images?${params}`)
   },
 
   // Video search
-  searchVideos: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: VideoResult[] }> => {
+  searchVideos: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: VideoResult[]; total_results?: number }> => {
     const params = new URLSearchParams({ q: query })
     if (options.page) params.set('page', String(options.page))
     if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.refetch) params.set('refetch', 'true')
     return api.get(`/api/search/videos?${params}`)
   },
 
   // News search
-  searchNews: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: NewsResult[] }> => {
+  searchNews: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: NewsResult[]; total_results?: number }> => {
     const params = new URLSearchParams({ q: query })
     if (options.page) params.set('page', String(options.page))
     if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.refetch) params.set('refetch', 'true')
     return api.get(`/api/search/news?${params}`)
   },
 

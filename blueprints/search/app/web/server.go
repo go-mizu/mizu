@@ -147,7 +147,7 @@ func createSearchHandler(st store.Store) *api.SearchHandler {
 	var cache *search.Cache
 	if sqliteStore, ok := st.(*sqlite.Store); ok {
 		cacheStore := sqliteStore.Cache()
-		cache = search.NewCache(cacheStore, 1*time.Hour)
+		cache = search.NewCacheWithDefaults(cacheStore)
 	}
 
 	return api.NewSearchHandlerWithConfig(search.ServiceConfig{
