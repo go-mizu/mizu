@@ -2,7 +2,7 @@ import { Box, Group, Title, Text, Breadcrumbs, Anchor, rem } from '@mantine/core
 import { IconChevronRight } from '@tabler/icons-react'
 
 // =============================================================================
-// PAGE HEADER - Consistent page title with optional breadcrumbs and actions
+// PAGE HEADER - Modern, clean page title (shadcn-inspired)
 // =============================================================================
 
 export interface PageHeaderProps {
@@ -16,6 +16,10 @@ export interface PageHeaderProps {
   actions?: React.ReactNode
   /** Content below the header (tabs, filters, etc.) */
   children?: React.ReactNode
+  /** Remove bottom border */
+  borderless?: boolean
+  /** Compact variant with less padding */
+  compact?: boolean
 }
 
 export function PageHeader({
@@ -24,22 +28,24 @@ export function PageHeader({
   breadcrumbs,
   actions,
   children,
+  borderless = false,
+  compact = false,
 }: PageHeaderProps) {
   return (
     <Box
+      mb={compact ? 'md' : 'xl'}
+      pb={borderless ? 0 : compact ? 'sm' : 'lg'}
       style={{
-        padding: `${rem(16)} ${rem(24)}`,
-        backgroundColor: 'var(--color-background)',
-        borderBottom: '1px solid var(--color-border)',
+        borderBottom: borderless ? 'none' : '1px solid var(--color-border)',
       }}
     >
       {breadcrumbs && breadcrumbs.length > 0 && (
         <Breadcrumbs
-          mb="xs"
-          separator={<IconChevronRight size={14} color="var(--color-foreground-subtle)" />}
+          mb="sm"
+          separator={<IconChevronRight size={12} color="var(--color-foreground-subtle)" strokeWidth={2} />}
           styles={{
             root: { flexWrap: 'wrap' },
-            separator: { marginLeft: rem(4), marginRight: rem(4) },
+            separator: { marginLeft: rem(6), marginRight: rem(6) },
           }}
         >
           {breadcrumbs.map((crumb, index) => (
@@ -48,9 +54,12 @@ export function PageHeader({
               onClick={crumb.onClick}
               href={crumb.href}
               size="sm"
-              c={index === breadcrumbs.length - 1 ? 'var(--color-foreground)' : 'var(--color-foreground-muted)'}
-              fw={index === breadcrumbs.length - 1 ? 500 : 400}
-              style={{ cursor: 'pointer' }}
+              style={{
+                color: index === breadcrumbs.length - 1 ? 'var(--color-foreground)' : 'var(--color-foreground-muted)',
+                fontWeight: index === breadcrumbs.length - 1 ? 500 : 400,
+                cursor: 'pointer',
+                textDecoration: 'none',
+              }}
             >
               {crumb.label}
             </Anchor>
@@ -58,15 +67,16 @@ export function PageHeader({
         </Breadcrumbs>
       )}
 
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
+      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xl">
         <Box style={{ flex: 1, minWidth: 0 }}>
           <Title
             order={2}
             style={{
-              fontSize: rem(24),
+              fontSize: compact ? rem(20) : rem(28),
               fontWeight: 600,
               color: 'var(--color-foreground)',
-              lineHeight: 1.3,
+              lineHeight: 1.2,
+              letterSpacing: '-0.02em',
             }}
           >
             {title}
@@ -74,9 +84,11 @@ export function PageHeader({
           {subtitle && (
             <Text
               size="sm"
-              c="dimmed"
-              mt={4}
-              style={{ color: 'var(--color-foreground-muted)' }}
+              mt={6}
+              style={{
+                color: 'var(--color-foreground-muted)',
+                lineHeight: 1.5,
+              }}
             >
               {subtitle}
             </Text>
@@ -96,7 +108,7 @@ export function PageHeader({
 }
 
 // =============================================================================
-// SECTION HEADER - For content sections within a page
+// SECTION HEADER - Clean section dividers (shadcn-inspired)
 // =============================================================================
 
 export interface SectionHeaderProps {
@@ -110,6 +122,8 @@ export interface SectionHeaderProps {
   actions?: React.ReactNode
   /** Custom styles */
   style?: React.CSSProperties
+  /** Size variant */
+  size?: 'sm' | 'md' | 'lg'
 }
 
 export function SectionHeader({
@@ -118,22 +132,33 @@ export function SectionHeader({
   count,
   actions,
   style,
+  size = 'md',
 }: SectionHeaderProps) {
+  const fontSizes = {
+    sm: rem(11),
+    md: rem(12),
+    lg: rem(13),
+  }
+
   return (
     <Group
       justify="space-between"
-      mb="md"
+      mb={size === 'sm' ? 'sm' : 'md'}
       style={style}
     >
-      <Group gap="xs" align="center">
-        {icon}
+      <Group gap={rem(8)} align="center">
+        {icon && (
+          <span style={{ color: 'var(--color-foreground-muted)', display: 'flex' }}>
+            {icon}
+          </span>
+        )}
         <Text
-          size="xs"
-          fw={600}
+          size={fontSizes[size]}
+          fw={500}
           tt="uppercase"
           style={{
             color: 'var(--color-foreground-muted)',
-            letterSpacing: '0.05em',
+            letterSpacing: '0.04em',
           }}
         >
           {title}
@@ -145,8 +170,9 @@ export function SectionHeader({
             style={{
               color: 'var(--color-foreground-subtle)',
               backgroundColor: 'var(--color-background-subtle)',
-              padding: `${rem(2)} ${rem(8)}`,
+              padding: `${rem(2)} ${rem(10)}`,
               borderRadius: 'var(--radius-full)',
+              fontSize: rem(11),
             }}
           >
             {count}

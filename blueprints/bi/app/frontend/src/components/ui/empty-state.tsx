@@ -1,8 +1,8 @@
-import { Paper, Stack, Text, Title, ThemeIcon, Group } from '@mantine/core'
+import { Paper, Stack, Text, Title, Box, Group, rem } from '@mantine/core'
 import { IconInbox } from '@tabler/icons-react'
 
 // =============================================================================
-// EMPTY STATE - Consistent empty/no-data display
+// EMPTY STATE - Modern empty/no-data display (shadcn-inspired)
 // =============================================================================
 
 export interface EmptyStateProps {
@@ -35,56 +35,75 @@ export function EmptyState({
   withBorder = true,
 }: EmptyStateProps) {
   const iconSizes = {
-    sm: 48,
-    md: 64,
-    lg: 80,
+    sm: 56,
+    md: 72,
+    lg: 88,
   }
 
   const innerIconSizes = {
-    sm: 24,
-    md: 32,
-    lg: 40,
+    sm: 26,
+    md: 34,
+    lg: 42,
   }
 
   const paddings = {
-    sm: 'lg',
-    md: 'xl',
-    lg: '48px',
+    sm: rem(32),
+    md: rem(48),
+    lg: rem(64),
   }
 
   const Container = withBorder ? Paper : 'div'
   const containerProps = withBorder
-    ? { withBorder: true, radius: 'md', p: paddings[size], bg: 'var(--color-background)' }
+    ? {
+        radius: 'xl',
+        p: paddings[size],
+        style: {
+          border: '1px solid var(--color-border)',
+          backgroundColor: 'var(--color-background)',
+        }
+      }
     : { style: { padding: paddings[size] } }
 
   return (
     <Container {...containerProps as any}>
-      <Stack align="center" gap="lg" ta="center">
-        <ThemeIcon
-          size={iconSizes[size]}
-          radius="xl"
-          variant="light"
+      <Stack align="center" gap="xl" ta="center">
+        {/* Modern icon container with subtle gradient */}
+        <Box
           style={{
-            backgroundColor: `${iconColor}10`,
-            color: iconColor,
+            width: iconSizes[size],
+            height: iconSizes[size],
+            borderRadius: 'var(--radius-2xl)',
+            backgroundColor: `${iconColor}08`,
+            border: `1px solid ${iconColor}15`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          {icon || <IconInbox size={innerIconSizes[size]} strokeWidth={1.5} />}
-        </ThemeIcon>
+          <span style={{ color: iconColor, display: 'flex' }}>
+            {icon || <IconInbox size={innerIconSizes[size]} strokeWidth={1.5} />}
+          </span>
+        </Box>
 
         <div>
           <Title
             order={size === 'sm' ? 5 : size === 'md' ? 4 : 3}
-            mb="xs"
-            style={{ color: 'var(--color-foreground)' }}
+            mb={rem(8)}
+            style={{
+              color: 'var(--color-foreground)',
+              letterSpacing: '-0.02em',
+            }}
           >
             {title}
           </Title>
           {description && (
             <Text
               size={size === 'sm' ? 'sm' : 'md'}
-              style={{ color: 'var(--color-foreground-muted)' }}
-              maw={400}
+              style={{
+                color: 'var(--color-foreground-muted)',
+                lineHeight: 1.6,
+              }}
+              maw={420}
               mx="auto"
             >
               {description}
@@ -93,7 +112,7 @@ export function EmptyState({
         </div>
 
         {(action || secondaryAction) && (
-          <Group justify="center" gap="sm">
+          <Group justify="center" gap="sm" mt={rem(8)}>
             {action}
             {secondaryAction}
           </Group>

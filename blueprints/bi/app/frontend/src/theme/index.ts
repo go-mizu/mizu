@@ -1,91 +1,91 @@
 import { createTheme, MantineColorsTuple, CSSVariablesResolver, rem } from '@mantine/core'
 
 // =============================================================================
-// METABASE EXACT COLOR PALETTE
+// MODERN COLOR PALETTE (shadcn-inspired with functional colors)
 // =============================================================================
 
-// Brand Blue - Primary color for actions, links, brand
+// Brand Blue - Primary color for actions (shadcn blue)
 const brandBlue: MantineColorsTuple = [
-  '#F0F6FC', // 0 - lightest
-  '#E6F2FF', // 1
-  '#CCE5FF', // 2
-  '#99CCFF', // 3
-  '#509EE3', // 4 - PRIMARY (Metabase brand)
-  '#4285C9', // 5
-  '#3A75B0', // 6
-  '#326597', // 7
-  '#2A557E', // 8
-  '#224565', // 9 - darkest
+  '#eff6ff', // 0 - lightest
+  '#dbeafe', // 1
+  '#bfdbfe', // 2
+  '#93c5fd', // 3
+  '#2563eb', // 4 - PRIMARY (shadcn primary blue)
+  '#1d4ed8', // 5
+  '#1e40af', // 6
+  '#1e3a8a', // 7
+  '#172554', // 8
+  '#0f172a', // 9 - darkest
 ]
 
-// Summarize Green - For aggregations, metrics, success
+// Success Green - For aggregations, metrics, success (shadcn green)
 const summarizeGreen: MantineColorsTuple = [
-  '#EDF7E4', // 0
-  '#DBEFC9', // 1
-  '#C2E5A0', // 2
-  '#A8DB77', // 3
-  '#84BB4C', // 4 - PRIMARY (Metabase summarize - adjusted)
-  '#6FA83D', // 5
-  '#5A912E', // 6
-  '#467A1F', // 7
-  '#336310', // 8
-  '#1F4C00', // 9
+  '#f0fdf4', // 0
+  '#dcfce7', // 1
+  '#bbf7d0', // 2
+  '#86efac', // 3
+  '#22c55e', // 4 - PRIMARY (shadcn success green)
+  '#16a34a', // 5
+  '#15803d', // 6
+  '#166534', // 7
+  '#14532d', // 8
+  '#052e16', // 9
 ]
 
-// Filter Purple - For filters, constraints (FIXED to Metabase exact)
+// Violet - For filters, constraints (shadcn violet)
 const filterPurple: MantineColorsTuple = [
-  '#EFEEF5', // 0
-  '#E0DEF0', // 1
-  '#C5C2E0', // 2
-  '#9995C5', // 3
-  '#7172AD', // 4 - PRIMARY (Metabase filter - CORRECTED)
-  '#5F6099', // 5
-  '#4D4E85', // 6
-  '#3B3C71', // 7
-  '#292A5D', // 8
-  '#171849', // 9
+  '#f5f3ff', // 0
+  '#ede9fe', // 1
+  '#ddd6fe', // 2
+  '#c4b5fd', // 3
+  '#8b5cf6', // 4 - PRIMARY (shadcn violet)
+  '#7c3aed', // 5
+  '#6d28d9', // 6
+  '#5b21b6', // 7
+  '#4c1d95', // 8
+  '#2e1065', // 9
 ]
 
-// Warning Yellow
+// Warning Amber (shadcn amber)
 const warningYellow: MantineColorsTuple = [
-  '#FFFCEB', // 0
-  '#FFF9D6', // 1
-  '#FFF3AD', // 2
-  '#FFED85', // 3
-  '#F9D45C', // 4 - PRIMARY (Metabase warning - adjusted)
-  '#E0B73D', // 5
-  '#C79F32', // 6
-  '#AE8727', // 7
-  '#956F1C', // 8
-  '#7C5711', // 9
+  '#fffbeb', // 0
+  '#fef3c7', // 1
+  '#fde68a', // 2
+  '#fcd34d', // 3
+  '#f59e0b', // 4 - PRIMARY (shadcn amber)
+  '#d97706', // 5
+  '#b45309', // 6
+  '#92400e', // 7
+  '#78350f', // 8
+  '#451a03', // 9
 ]
 
-// Error Red - For errors, destructive actions (FIXED)
+// Error Red - For errors, destructive actions (shadcn red)
 const errorRed: MantineColorsTuple = [
-  '#FEF0F0', // 0
-  '#FCDCDC', // 1
-  '#F9B8B8', // 2
-  '#F59494', // 3
-  '#ED6E6E', // 4 - PRIMARY (Metabase error - CORRECTED)
-  '#D65555', // 5
-  '#BD3C3C', // 6
-  '#A42323', // 7
-  '#8B0A0A', // 8
-  '#720000', // 9
+  '#fef2f2', // 0
+  '#fee2e2', // 1
+  '#fecaca', // 2
+  '#fca5a5', // 3
+  '#ef4444', // 4 - PRIMARY (shadcn red)
+  '#dc2626', // 5
+  '#b91c1c', // 6
+  '#991b1b', // 7
+  '#7f1d1d', // 8
+  '#450a0a', // 9
 ]
 
-// Text colors as a shade scale
+// Neutral gray scale (shadcn zinc)
 const textGray: MantineColorsTuple = [
-  '#FFFFFF', // 0 - white
-  '#F9FBFC', // 1 - bg light
-  '#F0F0F0', // 2 - bg medium
-  '#EEECEC', // 3 - border
-  '#949AAB', // 4 - text tertiary
-  '#696E7B', // 5 - text secondary
-  '#4C5773', // 6 - text primary (Metabase)
-  '#3B4357', // 7
-  '#2E353B', // 8 - sidebar bg
-  '#1C1F24', // 9 - darkest
+  '#ffffff', // 0 - white
+  '#fafafa', // 1 - bg light
+  '#f4f4f5', // 2 - bg medium
+  '#e4e4e7', // 3 - border
+  '#a1a1aa', // 4 - text tertiary
+  '#71717a', // 5 - text secondary
+  '#52525b', // 6 - text primary
+  '#3f3f46', // 7
+  '#27272a', // 8 - sidebar bg
+  '#18181b', // 9 - darkest
 ]
 
 // Chart colors - Metabase exact 8-color palette
@@ -229,31 +229,34 @@ export const theme = createTheme({
     warning: '#F9D45C',
   },
 
-  // Component defaults
+  // Component defaults (shadcn-inspired)
   components: {
     Button: {
       defaultProps: {
-        radius: 'sm',
+        radius: 'md',
       },
       styles: {
         root: {
-          fontWeight: 700,
-          transition: 'all 0.15s ease',
+          fontWeight: 500,
+          transition: 'all 120ms cubic-bezier(0.4, 0, 0.2, 1)',
+          '&:active': {
+            transform: 'scale(0.98)',
+          },
         },
       },
     },
 
     Card: {
       defaultProps: {
-        radius: 'sm',
-        shadow: 'sm',
+        radius: 'lg',
+        shadow: 'none',
       },
       styles: {
         root: {
-          border: '1px solid #EEECEC',
-          transition: 'box-shadow 0.15s ease, transform 0.15s ease',
+          border: '1px solid var(--color-border)',
+          transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
           '&:hover': {
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+            boxShadow: 'var(--shadow-md)',
           },
         },
       },
@@ -261,68 +264,73 @@ export const theme = createTheme({
 
     Paper: {
       defaultProps: {
-        radius: 'sm',
+        radius: 'lg',
       },
       styles: {
         root: {
-          border: '1px solid #EEECEC',
+          border: '1px solid var(--color-border)',
         },
       },
     },
 
     Modal: {
       defaultProps: {
-        radius: 'md',
+        radius: 'lg',
         centered: true,
         overlayProps: {
-          backgroundOpacity: 0.4,
-          blur: 2,
+          backgroundOpacity: 0.5,
+          blur: 4,
         },
       },
       styles: {
         title: {
-          fontWeight: 700,
-          fontSize: rem(20),
-          color: '#4C5773',
+          fontWeight: 600,
+          fontSize: rem(18),
+          color: 'var(--color-foreground)',
+          letterSpacing: '-0.02em',
         },
         header: {
-          borderBottom: '1px solid #EEECEC',
           paddingBottom: rem(16),
-          marginBottom: rem(16),
+        },
+        content: {
+          boxShadow: 'var(--shadow-xl)',
         },
       },
     },
 
     TextInput: {
       defaultProps: {
-        radius: 'sm',
+        radius: 'md',
       },
       styles: {
         input: {
-          borderColor: '#EEECEC',
+          borderColor: 'var(--color-border)',
+          backgroundColor: 'var(--color-background)',
+          transition: 'all 120ms ease',
           '&:focus': {
-            borderColor: '#509EE3',
-            boxShadow: '0 0 0 2px rgba(80, 158, 227, 0.2)',
+            borderColor: 'var(--color-primary)',
+            boxShadow: '0 0 0 2px rgba(37, 99, 235, 0.15)',
           },
         },
         label: {
-          fontWeight: 600,
+          fontWeight: 500,
           fontSize: rem(14),
-          color: '#4C5773',
-          marginBottom: rem(4),
+          color: 'var(--color-foreground)',
+          marginBottom: rem(6),
         },
       },
     },
 
     Select: {
       defaultProps: {
-        radius: 'sm',
+        radius: 'md',
       },
       styles: {
         input: {
-          borderColor: '#EEECEC',
+          borderColor: 'var(--color-border)',
           '&:focus': {
-            borderColor: '#509EE3',
+            borderColor: 'var(--color-primary)',
+            boxShadow: '0 0 0 2px rgba(37, 99, 235, 0.15)',
           },
         },
       },
@@ -330,14 +338,27 @@ export const theme = createTheme({
 
     Textarea: {
       defaultProps: {
-        radius: 'sm',
+        radius: 'md',
       },
       styles: {
         input: {
-          borderColor: '#EEECEC',
+          borderColor: 'var(--color-border)',
           '&:focus': {
-            borderColor: '#509EE3',
+            borderColor: 'var(--color-primary)',
+            boxShadow: '0 0 0 2px rgba(37, 99, 235, 0.15)',
           },
+        },
+      },
+    },
+
+    SegmentedControl: {
+      defaultProps: {
+        radius: 'md',
+      },
+      styles: {
+        root: {
+          backgroundColor: 'var(--color-background-subtle)',
+          border: '1px solid var(--color-border)',
         },
       },
     },
@@ -345,40 +366,43 @@ export const theme = createTheme({
     Tabs: {
       styles: {
         tab: {
-          fontWeight: 600,
-          color: '#696E7B',
-          transition: 'color 0.15s ease',
+          fontWeight: 500,
+          color: 'var(--color-foreground-muted)',
+          transition: 'all 120ms ease',
           '&[data-active]': {
-            color: '#509EE3',
+            color: 'var(--color-foreground)',
           },
           '&:hover': {
-            color: '#4C5773',
-            backgroundColor: 'transparent',
+            color: 'var(--color-foreground)',
+            backgroundColor: 'var(--color-background-subtle)',
           },
         },
         tabLabel: {
-          fontWeight: 600,
+          fontWeight: 500,
         },
       },
     },
 
     Badge: {
       defaultProps: {
-        radius: 'xl',
+        radius: 'md',
       },
       styles: {
         root: {
-          fontWeight: 700,
+          fontWeight: 500,
           textTransform: 'none',
-          fontSize: rem(11),
+          fontSize: rem(12),
         },
       },
     },
 
     ActionIcon: {
+      defaultProps: {
+        radius: 'md',
+      },
       styles: {
         root: {
-          transition: 'all 0.15s ease',
+          transition: 'all 120ms ease',
         },
       },
     },
@@ -387,29 +411,36 @@ export const theme = createTheme({
       defaultProps: {
         withArrow: true,
         arrowSize: 6,
+        radius: 'md',
       },
       styles: {
         tooltip: {
           fontSize: rem(12),
           fontWeight: 500,
-          backgroundColor: '#2E353B',
-          color: '#FFFFFF',
+          backgroundColor: 'var(--color-foreground)',
+          color: 'var(--color-background)',
+          boxShadow: 'var(--shadow-lg)',
         },
       },
     },
 
     Menu: {
+      defaultProps: {
+        radius: 'md',
+      },
       styles: {
         dropdown: {
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
-          border: '1px solid #EEECEC',
-          borderRadius: rem(8),
+          boxShadow: 'var(--shadow-lg)',
+          border: '1px solid var(--color-border)',
+          borderRadius: rem(12),
+          padding: rem(4),
         },
         item: {
           fontSize: rem(14),
           padding: `${rem(8)} ${rem(12)}`,
+          borderRadius: rem(8),
           '&[data-hovered]': {
-            backgroundColor: '#F9FBFC',
+            backgroundColor: 'var(--color-background-subtle)',
           },
         },
       },
@@ -418,9 +449,9 @@ export const theme = createTheme({
     NavLink: {
       styles: {
         root: {
-          borderRadius: rem(6),
+          borderRadius: rem(8),
           fontWeight: 500,
-          transition: 'all 0.15s ease',
+          transition: 'all 120ms ease',
         },
       },
     },
@@ -428,34 +459,38 @@ export const theme = createTheme({
     Table: {
       styles: {
         thead: {
-          backgroundColor: '#F9FBFC',
+          backgroundColor: 'var(--color-background-subtle)',
         },
         th: {
-          fontWeight: 700,
+          fontWeight: 500,
           fontSize: rem(12),
-          color: '#696E7B',
+          color: 'var(--color-foreground-muted)',
           textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          borderBottom: '2px solid #EEECEC',
+          letterSpacing: '0.04em',
+          borderBottom: '1px solid var(--color-border)',
         },
         td: {
           fontSize: rem(14),
-          color: '#4C5773',
-          borderBottom: '1px solid #F0F0F0',
+          color: 'var(--color-foreground)',
+          borderBottom: '1px solid var(--color-border-light)',
         },
         tr: {
+          transition: 'background-color 120ms ease',
           '&:hover': {
-            backgroundColor: '#F9FBFC',
+            backgroundColor: 'var(--color-background-subtle)',
           },
         },
       },
     },
 
     Notification: {
+      defaultProps: {
+        radius: 'lg',
+      },
       styles: {
         root: {
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)',
-          border: '1px solid #EEECEC',
+          boxShadow: 'var(--shadow-lg)',
+          border: '1px solid var(--color-border)',
         },
       },
     },
@@ -463,7 +498,15 @@ export const theme = createTheme({
     Divider: {
       styles: {
         root: {
-          borderColor: '#EEECEC',
+          borderColor: 'var(--color-border)',
+        },
+      },
+    },
+
+    Switch: {
+      styles: {
+        track: {
+          borderColor: 'var(--color-border)',
         },
       },
     },
@@ -479,10 +522,10 @@ export const theme = createTheme({
           },
         },
         thumb: {
-          backgroundColor: 'rgba(0, 0, 0, 0.15)',
+          backgroundColor: 'rgba(0, 0, 0, 0.12)',
           borderRadius: rem(4),
           '&:hover': {
-            backgroundColor: 'rgba(0, 0, 0, 0.25)',
+            backgroundColor: 'rgba(0, 0, 0, 0.2)',
           },
         },
       },
@@ -492,7 +535,7 @@ export const theme = createTheme({
       styles: {
         root: {
           '&::after': {
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
           },
         },
       },

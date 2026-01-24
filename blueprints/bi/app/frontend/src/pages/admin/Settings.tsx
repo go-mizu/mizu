@@ -28,7 +28,7 @@ export default function Settings() {
 
   if (loadingUser || loadingSettings) {
     return (
-      <PageContainer size="lg">
+      <PageContainer>
         <LoadingState message="Loading settings..." />
       </PageContainer>
     )
@@ -37,7 +37,7 @@ export default function Settings() {
   const isAdmin = user?.role === 'admin'
 
   return (
-    <PageContainer size="lg">
+    <PageContainer size="xl">
       <PageHeader
         title="Settings"
         subtitle="Manage your account and application settings"
@@ -99,20 +99,20 @@ export default function Settings() {
       </Tabs>
 
       {/* About section at the bottom */}
-      <Card withBorder radius="md" padding="lg" mt="xl">
-        <Title order={4} mb="md">About</Title>
+      <Card radius="lg" padding="xl" mt="xl" style={{ border: '1px solid var(--color-border)' }}>
+        <Title order={4} mb="md" style={{ letterSpacing: '-0.02em' }}>About</Title>
         <SimpleGrid cols={{ base: 1, sm: 3 }}>
           <Group>
             <Text size="sm" c="dimmed" w={100}>Version:</Text>
-            <Text size="sm">1.0.0</Text>
+            <Text size="sm" fw={500}>1.0.0</Text>
           </Group>
           <Group>
             <Text size="sm" c="dimmed" w={100}>Built with:</Text>
-            <Text size="sm">Mizu Framework</Text>
+            <Text size="sm" fw={500}>Mizu Framework</Text>
           </Group>
           <Group>
             <Text size="sm" c="dimmed" w={100}>License:</Text>
-            <Text size="sm">MIT</Text>
+            <Text size="sm" fw={500}>MIT</Text>
           </Group>
         </SimpleGrid>
       </Card>

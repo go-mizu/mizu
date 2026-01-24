@@ -1,10 +1,10 @@
-import { forwardRef } from 'react'
-import { Paper, Group, Text, ThemeIcon, rem, UnstyledButton, Skeleton } from '@mantine/core'
+import { forwardRef, useState } from 'react'
+import { Paper, Group, Text, Box, rem, UnstyledButton, Skeleton } from '@mantine/core'
 import { IconTrendingUp, IconTrendingDown, IconMinus } from '@tabler/icons-react'
 import { formatNumber, formatPercent } from '../../lib/utils'
 
 // =============================================================================
-// STAT CARD - Display a metric with optional trend
+// STAT CARD - Modern metric display (shadcn-inspired)
 // =============================================================================
 
 export interface StatCardProps {
@@ -30,6 +30,8 @@ export interface StatCardProps {
   formatValue?: (value: number | string) => string
   /** Loading state */
   loading?: boolean
+  /** Size variant */
+  size?: 'sm' | 'md' | 'lg'
 }
 
 export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
@@ -46,9 +48,12 @@ export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
       onClick,
       formatValue,
       loading = false,
+      size = 'md',
     },
     ref
   ) {
+    const [isHovered, setIsHovered] = useState(false)
+
     // Format the value
     const displayValue = (() => {
       if (formatValue) return formatValue(value)
@@ -84,56 +89,65 @@ export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
         ? IconTrendingDown
         : IconMinus
 
+    const padding = { sm: rem(14), md: rem(18), lg: rem(24) }
+    const valueFontSize = { sm: rem(22), md: rem(28), lg: rem(36) }
+    const iconSize = { sm: 40, md: 48, lg: 56 }
+
     const content = (
       <Paper
         ref={ref}
-        withBorder
-        p="md"
-        radius="md"
+        p={padding[size]}
+        radius="lg"
         style={{
           cursor: onClick ? 'pointer' : 'default',
-          transition: 'all var(--transition-fast)',
+          transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
           height: '100%',
+          border: '1px solid var(--color-border)',
+          backgroundColor: 'var(--color-background)',
+          boxShadow: isHovered && onClick ? 'var(--shadow-md)' : 'var(--shadow-xs)',
+          transform: isHovered && onClick ? 'translateY(-2px)' : 'none',
         }}
-        onMouseEnter={(e) => {
-          if (onClick) {
-            e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
-          }
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = 'none'
-        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        <Group gap="md" wrap="nowrap">
+        <Group gap="lg" wrap="nowrap" align="flex-start">
           {icon && (
-            <ThemeIcon
-              size={44}
-              radius="md"
-              variant="light"
+            <Box
               style={{
-                backgroundColor: `${iconColor}15`,
-                color: iconColor,
+                width: iconSize[size],
+                height: iconSize[size],
+                borderRadius: 'var(--radius-lg)',
+                backgroundColor: `${iconColor}10`,
+                border: `1px solid ${iconColor}18`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'transform 150ms ease',
+                transform: isHovered ? 'scale(1.05)' : 'none',
               }}
             >
-              {icon}
-            </ThemeIcon>
+              <span style={{ color: iconColor, display: 'flex' }}>
+                {icon}
+              </span>
+            </Box>
           )}
 
           <div style={{ flex: 1, minWidth: 0 }}>
             {loading ? (
               <>
-                <Skeleton height={28} width={80} mb={4} />
-                <Skeleton height={14} width={60} />
+                <Skeleton height={32} width={100} mb={6} radius="md" />
+                <Skeleton height={16} width={70} radius="md" />
               </>
             ) : (
               <>
                 <Text
-                  size="xl"
                   fw={700}
                   style={{
                     color: 'var(--color-foreground)',
-                    lineHeight: 1.2,
-                    fontSize: rem(24),
+                    lineHeight: 1.1,
+                    fontSize: valueFontSize[size],
+                    letterSpacing: '-0.02em',
                   }}
                 >
                   {displayValue}
@@ -141,7 +155,7 @@ export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
                 <Text
                   size="sm"
                   style={{ color: 'var(--color-foreground-muted)' }}
-                  mt={2}
+                  mt={rem(6)}
                 >
                   {label}
                 </Text>
@@ -150,27 +164,38 @@ export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
           </div>
 
           {trend !== undefined && !loading && (
-            <div style={{ textAlign: 'right' }}>
-              <Group gap={4} justify="flex-end">
-                <TrendIcon size={14} color={trendColor} strokeWidth={2} />
-                <Text
-                  size="sm"
-                  fw={600}
-                  style={{ color: trendColor }}
+            <Box style={{ textAlign: 'right', flexShrink: 0 }}>
+              <Group gap={rem(4)} justify="flex-end">
+                <Box
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: rem(4),
+                    backgroundColor: trendDirection === 'up' ? 'var(--color-success-light)' : trendDirection === 'down' ? 'var(--color-error-light)' : 'var(--color-background-subtle)',
+                    padding: `${rem(4)} ${rem(8)}`,
+                    borderRadius: 'var(--radius-full)',
+                  }}
                 >
-                  {trend > 0 ? '+' : ''}{formatPercent(Math.abs(trend) / 100, 1)}
-                </Text>
+                  <TrendIcon size={14} color={trendColor} strokeWidth={2.5} />
+                  <Text
+                    size="sm"
+                    fw={600}
+                    style={{ color: trendColor }}
+                  >
+                    {trend > 0 ? '+' : ''}{formatPercent(Math.abs(trend) / 100, 1)}
+                  </Text>
+                </Box>
               </Group>
               {trendLabel && (
                 <Text
                   size="xs"
                   style={{ color: 'var(--color-foreground-subtle)' }}
-                  mt={2}
+                  mt={rem(6)}
                 >
                   {trendLabel}
                 </Text>
               )}
-            </div>
+            </Box>
           )}
         </Group>
       </Paper>
@@ -189,17 +214,27 @@ export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
 )
 
 // =============================================================================
-// STAT CARD SKELETON - Loading placeholder
+// STAT CARD SKELETON - Modern loading placeholder
 // =============================================================================
 
-export function StatCardSkeleton() {
+export function StatCardSkeleton({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const padding = { sm: rem(14), md: rem(18), lg: rem(24) }
+  const iconSize = { sm: 40, md: 48, lg: 56 }
+
   return (
-    <Paper withBorder p="md" radius="md">
-      <Group gap="md" wrap="nowrap">
-        <Skeleton height={44} width={44} radius="md" />
+    <Paper
+      p={padding[size]}
+      radius="lg"
+      style={{
+        border: '1px solid var(--color-border)',
+        backgroundColor: 'var(--color-background)',
+      }}
+    >
+      <Group gap="lg" wrap="nowrap">
+        <Skeleton height={iconSize[size]} width={iconSize[size]} radius="lg" />
         <div style={{ flex: 1 }}>
-          <Skeleton height={28} width={80} mb={4} />
-          <Skeleton height={14} width={60} />
+          <Skeleton height={32} width={100} mb={6} radius="md" />
+          <Skeleton height={16} width={70} radius="md" />
         </div>
       </Group>
     </Paper>
