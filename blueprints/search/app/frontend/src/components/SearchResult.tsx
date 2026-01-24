@@ -123,9 +123,9 @@ export function SearchResult({ result }: SearchResultProps) {
       />
 
       {/* Sitelinks */}
-      {result.sitelinks && result.sitelinks.length > 0 && (
+      {(result.sitelinks?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-          {result.sitelinks.map((link) => (
+          {(result.sitelinks || []).map((link) => (
             <a
               key={link.url}
               href={link.url}

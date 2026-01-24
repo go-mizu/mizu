@@ -4,17 +4,18 @@ import (
 	"strconv"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/search/feature/search"
 	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // SearchHandler handles search API requests
 type SearchHandler struct {
-	store store.Store
+	service *search.Service
 }
 
 // NewSearchHandler creates a new search handler
 func NewSearchHandler(s store.Store) *SearchHandler {
-	return &SearchHandler{store: s}
+	return &SearchHandler{service: search.NewService(s)}
 }
 
 // Search handles the main search endpoint
@@ -26,40 +27,11 @@ func (h *SearchHandler) Search(c *mizu.Ctx) error {
 
 	opts := parseSearchOptions(c)
 
-	// Perform search
-	response, err := h.store.Search().Search(c.Context(), query, opts)
+	// Perform search via service
+	response, err := h.service.Search(c.Context(), query, opts)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
-
-	// Record the query for suggestions
-	h.store.Suggest().RecordQuery(c.Context(), query)
-
-	// Try to get instant answer
-	instantAnswer := detectInstantAnswer(query)
-	if instantAnswer != nil {
-		response.InstantAnswer = instantAnswer
-	}
-
-	// Try to get knowledge panel
-	panel, _ := h.store.Knowledge().GetEntity(c.Context(), query)
-	if panel != nil {
-		response.KnowledgePanel = panel
-	}
-
-	// Get related searches
-	suggestions, _ := h.store.Suggest().GetSuggestions(c.Context(), query, 5)
-	for _, s := range suggestions {
-		if s.Text != query {
-			response.RelatedSearches = append(response.RelatedSearches, s.Text)
-		}
-	}
-
-	// Record in history
-	h.store.History().RecordSearch(c.Context(), &store.SearchHistory{
-		Query:   query,
-		Results: int(response.TotalResults),
-	})
 
 	return c.JSON(200, response)
 }
@@ -73,7 +45,7 @@ func (h *SearchHandler) SearchImages(c *mizu.Ctx) error {
 
 	opts := parseSearchOptions(c)
 
-	results, err := h.store.Search().SearchImages(c.Context(), query, opts)
+	results, err := h.service.SearchImages(c.Context(), query, opts)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -93,7 +65,7 @@ func (h *SearchHandler) SearchVideos(c *mizu.Ctx) error {
 
 	opts := parseSearchOptions(c)
 
-	results, err := h.store.Search().SearchVideos(c.Context(), query, opts)
+	results, err := h.service.SearchVideos(c.Context(), query, opts)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -113,7 +85,7 @@ func (h *SearchHandler) SearchNews(c *mizu.Ctx) error {
 
 	opts := parseSearchOptions(c)
 
-	results, err := h.store.Search().SearchNews(c.Context(), query, opts)
+	results, err := h.service.SearchNews(c.Context(), query, opts)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}

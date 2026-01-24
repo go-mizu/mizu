@@ -23,7 +23,7 @@ export default function ImagesPage() {
 
       try {
         const response = await searchApi.searchImages(query, { per_page: 50 })
-        setImages(response.results)
+        setImages(response.results || [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Search failed')
       } finally {

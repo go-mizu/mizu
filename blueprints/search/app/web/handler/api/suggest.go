@@ -4,17 +4,18 @@ import (
 	"strconv"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/search/feature/suggest"
 	"github.com/go-mizu/mizu/blueprints/search/store"
 )
 
 // SuggestHandler handles autocomplete suggestions
 type SuggestHandler struct {
-	store store.Store
+	service *suggest.Service
 }
 
 // NewSuggestHandler creates a new suggest handler
 func NewSuggestHandler(s store.Store) *SuggestHandler {
-	return &SuggestHandler{store: s}
+	return &SuggestHandler{service: suggest.NewService(s)}
 }
 
 // Suggest returns autocomplete suggestions
@@ -31,7 +32,7 @@ func (h *SuggestHandler) Suggest(c *mizu.Ctx) error {
 		}
 	}
 
-	suggestions, err := h.store.Suggest().GetSuggestions(c.Context(), q, limit)
+	suggestions, err := h.service.GetSuggestions(c.Context(), q, limit)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -48,7 +49,7 @@ func (h *SuggestHandler) Trending(c *mizu.Ctx) error {
 		}
 	}
 
-	queries, err := h.store.Suggest().GetTrendingQueries(c.Context(), limit)
+	queries, err := h.service.GetTrending(c.Context(), limit)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}

@@ -122,14 +122,14 @@ function DefinitionDetails({ data }: { data: DefinitionData }) {
         <p className="text-sm text-[#70757a] italic">{data.phonetic}</p>
       )}
       <p className="text-sm text-[#70757a] mt-1">{data.part_of_speech}</p>
-      {data.definitions && data.definitions.length > 1 && (
+      {(data.definitions?.length ?? 0) > 1 && (
         <p className="text-sm text-[#70757a] mt-1">
-          2. {data.definitions[1]}
+          2. {data.definitions?.[1]}
         </p>
       )}
-      {data.synonyms && data.synonyms.length > 0 && (
+      {(data.synonyms?.length ?? 0) > 0 && (
         <p className="text-xs text-[#70757a] mt-2">
-          Synonyms: {data.synonyms.join(', ')}
+          Synonyms: {(data.synonyms || []).join(', ')}
         </p>
       )}
     </div>
