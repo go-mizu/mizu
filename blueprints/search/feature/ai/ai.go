@@ -45,6 +45,21 @@ type Service struct {
 	maxSources    int
 }
 
+// getBestProvider returns the largest available provider for better quality answers.
+func (s *Service) getBestProvider() llm.Provider {
+	// Prefer research (4B) > deep (1B) > quick (270M) for answer quality
+	if p, ok := s.providers[ModeResearch]; ok && p != nil {
+		return p
+	}
+	if p, ok := s.providers[ModeDeep]; ok && p != nil {
+		return p
+	}
+	if p, ok := s.providers[ModeQuick]; ok && p != nil {
+		return p
+	}
+	return nil
+}
+
 // Query represents an AI search query.
 type Query struct {
 	Text      string `json:"text"`
@@ -291,21 +306,38 @@ func (s *Service) processQuick(ctx context.Context, provider llm.Provider, query
 		}
 	}
 
-	// Add system prompt
-	systemPrompt := `You are a helpful AI search assistant. Answer the user's question based on the provided search results.
-Use inline citations like [1], [2] to reference sources. Be concise and accurate.
+	// Add system prompt - enhanced for comprehensive answers
+	systemPrompt := `You are a knowledgeable AI search assistant. Provide comprehensive, well-structured answers based on the search results.
+
+Guidelines:
+- Start with a clear introductory paragraph summarizing the topic
+- Use markdown headers (##, ###) to organize into logical sections
+- Include specific details, facts, and context from the sources
+- Use inline citations like [1], [2] to reference sources
+- For topics about media (anime, movies, games), include: overview, plot/story, characters, themes, reception
+- For topics about people, include: background, achievements, notable works
+- For topics about concepts, include: definition, explanation, examples, applications
+- Write 3-5 substantial paragraphs minimum
+- End with any relevant recent developments or additional context
+
 If the search results don't contain relevant information, say so.`
 
 	messages = append([]llm.Message{{Role: "system", Content: systemPrompt}}, messages...)
 	messages = append(messages, llm.Message{
 		Role:    "user",
-		Content: fmt.Sprintf("Search results:\n%s\n\nQuestion: %s", strings.Join(contextParts, "\n\n"), query.Text),
+		Content: fmt.Sprintf("Search results:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with sections:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	// Generate response
-	chatResp, err := provider.ChatCompletion(ctx, llm.ChatRequest{
+	// Use best available provider for quality
+	answerProvider := s.getBestProvider()
+	if answerProvider == nil {
+		answerProvider = provider
+	}
+
+	// Generate response with increased token limit
+	chatResp, err := answerProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    messages,
-		MaxTokens:   1024,
+		MaxTokens:   2048,
 		Temperature: 0.7,
 	})
 	if err != nil {
@@ -414,19 +446,35 @@ func (s *Service) processQuickStream(ctx context.Context, provider llm.Provider,
 		}
 	}
 
-	systemPrompt := `You are a helpful AI search assistant. Answer the user's question based on the provided search results.
-Use inline citations like [1], [2] to reference sources. Be concise and accurate.`
+	systemPrompt := `You are a knowledgeable AI search assistant. Provide comprehensive, well-structured answers based on the search results.
+
+Guidelines:
+- Start with a clear introductory paragraph summarizing the topic
+- Use markdown headers (##, ###) to organize into logical sections
+- Include specific details, facts, and context from the sources
+- Use inline citations like [1], [2] to reference sources
+- For topics about media (anime, movies, games), include: overview, plot/story, characters, themes, reception
+- For topics about people, include: background, achievements, notable works
+- For topics about concepts, include: definition, explanation, examples, applications
+- Write 3-5 substantial paragraphs minimum
+- End with any relevant recent developments or additional context`
 
 	messages = append([]llm.Message{{Role: "system", Content: systemPrompt}}, messages...)
 	messages = append(messages, llm.Message{
 		Role:    "user",
-		Content: fmt.Sprintf("Search results:\n%s\n\nQuestion: %s", strings.Join(contextParts, "\n\n"), query.Text),
+		Content: fmt.Sprintf("Search results:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with sections:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	// Stream response
-	stream, err := provider.ChatCompletionStream(ctx, llm.ChatRequest{
+	// Use best available provider for quality
+	streamProvider := s.getBestProvider()
+	if streamProvider == nil {
+		streamProvider = provider
+	}
+
+	// Stream response with increased token limit
+	stream, err := streamProvider.ChatCompletionStream(ctx, llm.ChatRequest{
 		Messages:    messages,
-		MaxTokens:   1024,
+		MaxTokens:   2048,
 		Temperature: 0.7,
 		Stream:      true,
 	})
@@ -583,18 +631,41 @@ func (s *Service) processDeep(ctx context.Context, provider llm.Provider, query 
 		}
 	}
 
-	systemPrompt := `You are a thorough AI research assistant. Synthesize information from multiple sources to provide a comprehensive answer.
-Use inline citations like [1], [2] to reference sources. Be detailed but organized.`
+	systemPrompt := `You are an expert AI research assistant. Synthesize information from multiple sources to provide a thorough, well-organized answer.
+
+Guidelines:
+- Begin with a comprehensive overview paragraph (2-3 sentences)
+- Use markdown headers (## and ###) to organize content into clear sections
+- For each major point, provide context, details, and citations
+- Include relevant background information, history, or context
+- For topics about media (anime, manga, movies):
+  - Story/Plot Overview: Summarize the narrative arc
+  - Main Characters: Describe key characters and their roles
+  - Themes: Discuss major themes and what makes it notable
+  - Reception/Adaptations: Cover critical acclaim, awards, adaptations
+- For people: Background, Career/Achievements, Notable Works, Legacy
+- For concepts: Definition, Explanation, Examples, Applications, History
+- Write substantial content with 4-6 well-developed sections
+- Use inline citations [1], [2], [3] throughout
+- Conclude with recent developments, future outlook, or key takeaways
+
+Be thorough and informative. Aim for the depth of an encyclopedia article.`
 
 	messages = append([]llm.Message{{Role: "system", Content: systemPrompt}}, messages...)
 	messages = append(messages, llm.Message{
 		Role:    "user",
-		Content: fmt.Sprintf("Research context:\n%s\n\nQuestion: %s\n\nProvide a comprehensive answer:", strings.Join(contextParts, "\n\n"), query.Text),
+		Content: fmt.Sprintf("Research context:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with multiple sections. Write at least 4-5 paragraphs covering all relevant aspects:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	chatResp, err := provider.ChatCompletion(ctx, llm.ChatRequest{
+	// Use best provider for comprehensive answers
+	answerProvider := s.getBestProvider()
+	if answerProvider == nil {
+		answerProvider = provider
+	}
+
+	chatResp, err := answerProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    messages,
-		MaxTokens:   2048,
+		MaxTokens:   4096,
 		Temperature: 0.7,
 	})
 	if err != nil {
@@ -612,7 +683,12 @@ Use inline citations like [1], [2] to reference sources. Be detailed but organiz
 		Output: truncate(answer, 100),
 	})
 
-	followUps := s.generateFollowUps(ctx, provider, query.Text, answer)
+	// Generate related questions with full context
+	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer, citations)
+	followUps := make([]string, 0, len(relatedQuestions))
+	for _, q := range relatedQuestions {
+		followUps = append(followUps, q.Text)
+	}
 
 	// Save to session
 	sessionID := query.SessionID
@@ -628,13 +704,14 @@ Use inline citations like [1], [2] to reference sources. Be detailed but organiz
 	}
 
 	return &Response{
-		Answer:    answer,
-		Citations: citations,
-		FollowUps: followUps,
-		Sources:   sources,
-		Reasoning: reasoning,
-		SessionID: sessionID,
-		Mode:      ModeDeep,
+		Answer:           answer,
+		Citations:        citations,
+		FollowUps:        followUps,
+		RelatedQuestions: relatedQuestions,
+		Sources:          sources,
+		Reasoning:        reasoning,
+		SessionID:        sessionID,
+		Mode:             ModeDeep,
 	}, nil
 }
 
@@ -737,18 +814,35 @@ func (s *Service) processDeepStream(ctx context.Context, provider llm.Provider, 
 		}
 	}
 
-	systemPrompt := `You are a thorough AI research assistant. Synthesize information from multiple sources.
-Use inline citations like [1], [2]. Be detailed but organized.`
+	systemPrompt := `You are an expert AI research assistant. Synthesize information from multiple sources to provide a thorough, well-organized answer.
+
+Guidelines:
+- Begin with a comprehensive overview paragraph
+- Use markdown headers (## and ###) to organize content into clear sections
+- For each major point, provide context, details, and citations
+- Include relevant background information, history, or context
+- For topics about media: Story/Plot, Characters, Themes, Reception
+- For people: Background, Career, Notable Works, Legacy
+- For concepts: Definition, Explanation, Examples, Applications
+- Write substantial content with 4-6 well-developed sections
+- Use inline citations [1], [2], [3] throughout
+- Conclude with recent developments or key takeaways`
 
 	messages = append([]llm.Message{{Role: "system", Content: systemPrompt}}, messages...)
 	messages = append(messages, llm.Message{
 		Role:    "user",
-		Content: fmt.Sprintf("Research context:\n%s\n\nQuestion: %s", strings.Join(contextParts, "\n\n"), query.Text),
+		Content: fmt.Sprintf("Research context:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with multiple sections:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	stream, err := provider.ChatCompletionStream(ctx, llm.ChatRequest{
+	// Use best provider for quality
+	streamProvider := s.getBestProvider()
+	if streamProvider == nil {
+		streamProvider = provider
+	}
+
+	stream, err := streamProvider.ChatCompletionStream(ctx, llm.ChatRequest{
 		Messages:    messages,
-		MaxTokens:   2048,
+		MaxTokens:   4096,
 		Temperature: 0.7,
 		Stream:      true,
 	})
@@ -770,7 +864,12 @@ Use inline citations like [1], [2]. Be detailed but organized.`
 	synthStep.Output = truncate(answer.String(), 100)
 	reasoning = append(reasoning, synthStep)
 
-	followUps := s.generateFollowUps(ctx, provider, query.Text, answer.String())
+	// Generate related questions with full context
+	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer.String(), citations)
+	followUps := make([]string, 0, len(relatedQuestions))
+	for _, q := range relatedQuestions {
+		followUps = append(followUps, q.Text)
+	}
 
 	sessionID := query.SessionID
 	if sessionID == "" && s.sessions != nil {
@@ -785,13 +884,14 @@ Use inline citations like [1], [2]. Be detailed but organized.`
 	}
 
 	return &Response{
-		Answer:    answer.String(),
-		Citations: citations,
-		FollowUps: followUps,
-		Sources:   sources,
-		Reasoning: reasoning,
-		SessionID: sessionID,
-		Mode:      ModeDeep,
+		Answer:           answer.String(),
+		Citations:        citations,
+		FollowUps:        followUps,
+		RelatedQuestions: relatedQuestions,
+		Sources:          sources,
+		Reasoning:        reasoning,
+		SessionID:        sessionID,
+		Mode:             ModeDeep,
 	}, nil
 }
 
@@ -909,7 +1009,12 @@ Respond with just the action and argument.`, agentContext, strings.Join(notes, "
 				})
 			}
 
-			followUps := s.generateFollowUps(ctx, provider, query.Text, answer)
+			// Generate related questions with context
+			relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer, citations)
+			followUps := make([]string, 0, len(relatedQuestions))
+			for _, q := range relatedQuestions {
+				followUps = append(followUps, q.Text)
+			}
 
 			sessionID := query.SessionID
 			if sessionID == "" && s.sessions != nil {
@@ -924,28 +1029,47 @@ Respond with just the action and argument.`, agentContext, strings.Join(notes, "
 			}
 
 			return &Response{
-				Answer:    answer,
-				Citations: citations,
-				FollowUps: followUps,
-				Sources:   sources,
-				Reasoning: reasoning,
-				SessionID: sessionID,
-				Mode:      ModeResearch,
+				Answer:           answer,
+				Citations:        citations,
+				FollowUps:        followUps,
+				RelatedQuestions: relatedQuestions,
+				Sources:          sources,
+				Reasoning:        reasoning,
+				SessionID:        sessionID,
+				Mode:             ModeResearch,
 			}, nil
 		}
 	}
 
-	// If loop exhausted, synthesize from notes
-	synthPrompt := fmt.Sprintf(`Based on your research notes, provide a comprehensive answer.
+	// If loop exhausted, synthesize from notes with comprehensive prompt
+	synthPrompt := fmt.Sprintf(`Based on your research notes, provide a thorough, well-structured answer.
+
 Question: %s
-Notes:
+
+Research Notes:
 %s
 
-Provide a detailed answer with citations [1], [2], etc.`, query.Text, strings.Join(notes, "\n"))
+Instructions:
+- Start with a clear introductory overview (2-3 sentences)
+- Use markdown headers (## and ###) to organize into logical sections
+- For topics about media: Story/Plot, Characters, Themes, Reception
+- For topics about people: Background, Career, Notable Works
+- For topics about concepts: Definition, Explanation, Examples, Applications
+- Include specific details and facts from the notes
+- Use inline citations [1], [2], [3] throughout
+- Write at least 4-5 substantial paragraphs
 
-	synthResp, err := provider.ChatCompletion(ctx, llm.ChatRequest{
+Provide a comprehensive answer:`, query.Text, strings.Join(notes, "\n"))
+
+	// Use best provider for synthesis
+	synthProvider := s.getBestProvider()
+	if synthProvider == nil {
+		synthProvider = provider
+	}
+
+	synthResp, err := synthProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: synthPrompt}},
-		MaxTokens:   2048,
+		MaxTokens:   4096,
 		Temperature: 0.7,
 	})
 	if err != nil {
@@ -961,7 +1085,12 @@ Provide a detailed answer with citations [1], [2], etc.`, query.Text, strings.Jo
 		citations = append(citations, session.Citation{Index: i + 1, URL: src.URL, Title: src.Title})
 	}
 
-	followUps := s.generateFollowUps(ctx, provider, query.Text, answer)
+	// Generate related questions with context
+	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer, citations)
+	followUps := make([]string, 0, len(relatedQuestions))
+	for _, q := range relatedQuestions {
+		followUps = append(followUps, q.Text)
+	}
 
 	sessionID := query.SessionID
 	if sessionID == "" && s.sessions != nil {
@@ -976,13 +1105,14 @@ Provide a detailed answer with citations [1], [2], etc.`, query.Text, strings.Jo
 	}
 
 	return &Response{
-		Answer:    answer,
-		Citations: citations,
-		FollowUps: followUps,
-		Sources:   sources,
-		Reasoning: reasoning,
-		SessionID: sessionID,
-		Mode:      ModeResearch,
+		Answer:           answer,
+		Citations:        citations,
+		FollowUps:        followUps,
+		RelatedQuestions: relatedQuestions,
+		Sources:          sources,
+		Reasoning:        reasoning,
+		SessionID:        sessionID,
+		Mode:             ModeResearch,
 	}, nil
 }
 
@@ -1050,20 +1180,34 @@ func (s *Service) processResearchStream(ctx context.Context, provider llm.Provid
 		contextParts = append(contextParts, fmt.Sprintf("[%d] %s: %s", cit.Index, cit.Title, cit.Snippet))
 	}
 
-	// Phase 3: Stream synthesized answer
-	synthPrompt := fmt.Sprintf(`You are a research assistant. Based on the following search results, provide a comprehensive answer about "%s".
+	// Phase 3: Stream synthesized answer with comprehensive prompt
+	synthPrompt := fmt.Sprintf(`You are an expert research assistant. Based on the following search results, provide a thorough, well-structured answer about "%s".
 
 Search Results:
 %s
 
 Instructions:
-- Write a clear, well-organized answer
-- Use inline citations like [1], [2] to reference sources
-- Be thorough but concise`, query.Text, strings.Join(contextParts, "\n\n"))
+- Start with a clear introductory overview (2-3 sentences)
+- Use markdown headers (## and ###) to organize into logical sections
+- For topics about media (anime, manga, movies, games): cover Story Overview, Main Characters, Themes, Reception/Adaptations
+- For topics about people: cover Background, Career/Achievements, Notable Works
+- For topics about concepts: cover Definition, Explanation, Examples, Applications
+- Include specific details, facts, and context from the sources
+- Use inline citations [1], [2], [3] throughout the answer
+- Write at least 4-5 substantial paragraphs with multiple sections
+- Conclude with recent developments or additional context
 
-	stream, err := provider.ChatCompletionStream(ctx, llm.ChatRequest{
+Provide a comprehensive answer:`, query.Text, strings.Join(contextParts, "\n\n"))
+
+	// Use best provider for synthesis
+	synthProvider := s.getBestProvider()
+	if synthProvider == nil {
+		synthProvider = provider
+	}
+
+	stream, err := synthProvider.ChatCompletionStream(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: synthPrompt}},
-		MaxTokens:   1024,
+		MaxTokens:   2048,
 		Temperature: 0.7,
 		Stream:      true,
 	})
@@ -1088,8 +1232,12 @@ Instructions:
 		Output: truncate(answer.String(), 100),
 	})
 
-	// Generate follow-ups
-	followUps := s.generateFollowUps(ctx, provider, query.Text, answer.String())
+	// Generate related questions with context
+	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer.String(), citations)
+	followUps := make([]string, 0, len(relatedQuestions))
+	for _, q := range relatedQuestions {
+		followUps = append(followUps, q.Text)
+	}
 
 	// Save session
 	sessionID := query.SessionID
@@ -1105,13 +1253,14 @@ Instructions:
 	}
 
 	return &Response{
-		Answer:    answer.String(),
-		Citations: citations,
-		FollowUps: followUps,
-		Sources:   sources,
-		Reasoning: reasoning,
-		SessionID: sessionID,
-		Mode:      ModeResearch,
+		Answer:           answer.String(),
+		Citations:        citations,
+		FollowUps:        followUps,
+		RelatedQuestions: relatedQuestions,
+		Sources:          sources,
+		Reasoning:        reasoning,
+		SessionID:        sessionID,
+		Mode:             ModeResearch,
 	}, nil
 }
 
@@ -1163,48 +1312,56 @@ func (s *Service) generateFollowUps(ctx context.Context, provider llm.Provider, 
 	return followUps
 }
 
-// generateRelatedQuestions generates categorized related questions.
+// generateRelatedQuestions generates categorized related questions based on the topic and answer.
 func (s *Service) generateRelatedQuestions(ctx context.Context, provider llm.Provider, query, answer string, citations []session.Citation) []RelatedQuestion {
-	// Build source context from citations
+	// Build source context from citations for topic awareness
 	sourceContext := ""
 	for i, c := range citations {
-		if i < 3 {
+		if i < 5 {
 			sourceContext += fmt.Sprintf("- %s\n", c.Title)
 		}
 	}
-	if sourceContext == "" {
-		sourceContext = "(no sources)"
+
+	// Extract key info from answer for better context (first 500 chars)
+	answerContext := answer
+	if len(answerContext) > 500 {
+		answerContext = answerContext[:500] + "..."
 	}
 
-	prompt := fmt.Sprintf(`Based on this search interaction, generate 5 follow-up questions a user might ask.
+	// Use the best provider for quality questions
+	questionProvider := s.getBestProvider()
+	if questionProvider == nil {
+		questionProvider = provider
+	}
 
-Original Question: %s
+	prompt := fmt.Sprintf(`You are generating follow-up search queries for a user who just searched about: "%s"
 
-Answer Summary: %s
-
-Sources Used:
+Here's a summary of what they learned:
 %s
 
-Generate questions in these categories (one question per category):
-1. DEEPER: A question that dives deeper into the main topic
-2. RELATED: A question about a related but different aspect
-3. PRACTICAL: A how-to or practical application question
-4. COMPARISON: A question comparing alternatives or options
-5. CURRENT: A question about recent developments or news
+Sources consulted:
+%s
 
-Output format (one per line):
-DEEPER: [question text]
-RELATED: [question text]
-PRACTICAL: [question text]
-COMPARISON: [question text]
-CURRENT: [question text]
+Generate 5 highly relevant follow-up questions that a curious user would naturally want to explore next. Each question should:
+- Be directly related to the topic (not generic)
+- Be specific and searchable
+- Build on what the user just learned
 
-Output only the questions in this exact format, nothing else.`, query, truncate(answer, 400), sourceContext)
+Categories:
+1. DEEPER: A question exploring more detail about a specific aspect mentioned
+2. RELATED: A question about a connected topic, person, or concept mentioned
+3. BACKGROUND: A question about history, origins, or context
+4. COMPARISON: A question comparing to similar things or alternatives
+5. CURRENT: A question about recent news, updates, or future developments
 
-	resp, err := provider.ChatCompletion(ctx, llm.ChatRequest{
+Format each question on its own line with its category prefix (e.g., "DEEPER: What is...?")
+
+Questions:`, query, answerContext, sourceContext)
+
+	resp, err := questionProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: prompt}},
-		MaxTokens:   256,
-		Temperature: 0.8,
+		MaxTokens:   512,
+		Temperature: 0.6, // Slightly higher for variety but still consistent
 	})
 	if err != nil {
 		return nil
@@ -1216,13 +1373,10 @@ Output only the questions in this exact format, nothing else.`, query, truncate(
 
 	lines := strings.Split(resp.Choices[0].Message.Content, "\n")
 	var questions []RelatedQuestion
-	categories := map[string]string{
-		"DEEPER":     "deeper",
-		"RELATED":    "related",
-		"PRACTICAL":  "practical",
-		"COMPARISON": "comparison",
-		"CURRENT":    "current",
-	}
+
+	// Category order matches prompt order (updated to match new prompt)
+	categoryOrder := []string{"deeper", "related", "background", "comparison", "current"}
+	categoryIdx := 0
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1230,29 +1384,38 @@ Output only the questions in this exact format, nothing else.`, query, truncate(
 			continue
 		}
 
-		// Parse category prefix
-		for prefix, cat := range categories {
-			if strings.HasPrefix(line, prefix+":") {
-				text := strings.TrimSpace(strings.TrimPrefix(line, prefix+":"))
-				if len(text) > 10 {
-					questions = append(questions, RelatedQuestion{
-						Text:     text,
-						Category: cat,
-					})
+		// Skip preamble/intro lines
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(lower, "here") || strings.HasPrefix(lower, "okay") ||
+			strings.HasPrefix(lower, "sure") || strings.HasPrefix(lower, "questions") {
+			continue
+		}
+
+		// Strip numbering, bullets, markdown
+		line = strings.TrimLeft(line, "0123456789.-) *•")
+		line = strings.ReplaceAll(line, "**", "")
+		line = strings.TrimSpace(line)
+
+		// Check for category prefix (DEEPER:, RELATED:, etc.)
+		for _, cat := range categoryOrder {
+			prefix := strings.ToUpper(cat) + ":"
+			if strings.HasPrefix(strings.ToUpper(line), prefix) {
+				line = strings.TrimSpace(line[len(prefix):])
+				if len(line) > 10 {
+					questions = append(questions, RelatedQuestion{Text: line, Category: cat})
 				}
 				break
 			}
 		}
-	}
 
-	// If parsing failed, fall back to simple line parsing
-	if len(questions) == 0 {
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			line = strings.TrimLeft(line, "0123456789.-) ")
-			if len(line) > 10 && len(questions) < 5 {
-				questions = append(questions, RelatedQuestion{Text: line})
+		// If no prefix found but looks like a question, add with sequential category
+		if len(line) > 15 && strings.HasSuffix(line, "?") && len(questions) < 5 {
+			cat := ""
+			if categoryIdx < len(categoryOrder) {
+				cat = categoryOrder[categoryIdx]
+				categoryIdx++
 			}
+			questions = append(questions, RelatedQuestion{Text: line, Category: cat})
 		}
 	}
 
