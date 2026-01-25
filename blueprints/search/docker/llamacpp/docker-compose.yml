@@ -61,3 +61,27 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+
+  llamacpp-gpt-oss:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    ports:
+      - "8085:8080"
+    volumes:
+      - ${HOME}/data/models:/models:ro
+    command: >
+      --host 0.0.0.0
+      --port 8080
+      --model /models/gpt-oss-20b.gguf
+      --ctx-size 32768
+      --cont-batching
+      --n-gpu-layers 99
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          memory: 16G

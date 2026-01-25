@@ -7,6 +7,26 @@ import { Copy, Check, ExternalLink } from 'lucide-react'
 import type { Components } from 'react-markdown'
 import type { Citation } from '../../types/ai'
 
+// Import only essential languages for syntax highlighting
+// This reduces bundle size significantly vs loading all languages
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import go from 'highlight.js/lib/languages/go'
+import bash from 'highlight.js/lib/languages/bash'
+import json from 'highlight.js/lib/languages/json'
+import xml from 'highlight.js/lib/languages/xml'
+import css from 'highlight.js/lib/languages/css'
+import sql from 'highlight.js/lib/languages/sql'
+import yaml from 'highlight.js/lib/languages/yaml'
+import markdown from 'highlight.js/lib/languages/markdown'
+
+const languages = {
+  javascript, typescript, python, go, bash, json, xml, css, sql, yaml, markdown,
+  // Aliases
+  js: javascript, ts: typescript, py: python, sh: bash, html: xml,
+}
+
 interface MarkdownRendererProps {
   content: string
   citations?: Citation[]
@@ -215,7 +235,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <div className={`markdown-content ${isStreaming ? 'streaming' : ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeRaw]}
+        rehypePlugins={[[rehypeHighlight, { languages }], rehypeRaw]}
         components={components}
       >
         {processedContent}

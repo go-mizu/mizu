@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 // createSchema creates all tables and FTS5 virtual tables.
@@ -404,6 +405,79 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 		END;
 	`
 
+	// Run migrations BEFORE schema creation to ensure columns exist
+	// This handles existing databases that may be missing newer columns
+	if err := runMigrations(ctx, db); err != nil {
+		return err
+	}
+
 	_, err := db.ExecContext(ctx, schema)
 	return err
+}
+
+// runMigrations applies schema migrations for existing databases.
+// Migrations run BEFORE schema creation to ensure columns exist when
+// CREATE INDEX statements reference them.
+func runMigrations(ctx context.Context, db *sql.DB) error {
+	// Define migrations: table -> column -> default value
+	migrations := []struct {
+		table      string
+		column     string
+		columnDef  string
+	}{
+		{"preferences", "level", "INTEGER DEFAULT 0"},
+		{"lenses", "user_id", "TEXT"},
+		{"lenses", "include_keywords", "TEXT DEFAULT '[]'"},
+		{"lenses", "exclude_keywords", "TEXT DEFAULT '[]'"},
+		{"lenses", "region", "TEXT"},
+		{"lenses", "file_type", "TEXT"},
+		{"lenses", "date_before", "TEXT"},
+		{"lenses", "date_after", "TEXT"},
+		{"lenses", "is_shared", "INTEGER DEFAULT 0"},
+		{"lenses", "share_link", "TEXT"},
+	}
+
+	for _, m := range migrations {
+		if err := addColumnIfNotExists(ctx, db, m.table, m.column, m.columnDef); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// addColumnIfNotExists adds a column to a table if the table exists and the column doesn't.
+func addColumnIfNotExists(ctx context.Context, db *sql.DB, table, column, columnDef string) error {
+	// Check if table exists
+	var tableExists int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?
+	`, table).Scan(&tableExists)
+	if err != nil {
+		return err
+	}
+
+	// If table doesn't exist yet, no migration needed (schema will create it)
+	if tableExists == 0 {
+		return nil
+	}
+
+	// Check if column exists
+	var columnExists int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?
+	`, table, column).Scan(&columnExists)
+	if err != nil {
+		return err
+	}
+
+	// Add column if it doesn't exist
+	if columnExists == 0 {
+		_, err = db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, columnDef))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
