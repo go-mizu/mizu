@@ -28,6 +28,12 @@ type Store struct {
 	session *SessionStore
 	canvas  *CanvasStore
 	chunker *ChunkerStore
+
+	// Kagi stores
+	bang     *BangStore
+	summary  *SummaryStore
+	widget   *WidgetStore
+	smallWeb *SmallWebStore
 }
 
 // New creates a new SQLite store.
@@ -68,6 +74,12 @@ func New(dbPath string) (*Store, error) {
 	s.session = NewSessionStore(db)
 	s.canvas = NewCanvasStore(db)
 	s.chunker = NewChunkerStore(db)
+
+	// Kagi stores
+	s.bang = &BangStore{db: db}
+	s.summary = &SummaryStore{db: db}
+	s.widget = &WidgetStore{db: db}
+	s.smallWeb = &SmallWebStore{db: db}
 
 	return s, nil
 }
@@ -119,6 +131,22 @@ func (s *Store) History() store.HistoryStore {
 
 func (s *Store) Preference() store.PreferenceStore {
 	return s.preference
+}
+
+func (s *Store) Bang() store.BangStore {
+	return s.bang
+}
+
+func (s *Store) Summary() store.SummaryStore {
+	return s.summary
+}
+
+func (s *Store) Widget() store.WidgetStore {
+	return s.widget
+}
+
+func (s *Store) SmallWeb() store.SmallWebStore {
+	return s.smallWeb
 }
 
 // AI store accessors

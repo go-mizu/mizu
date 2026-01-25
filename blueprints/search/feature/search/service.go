@@ -254,15 +254,26 @@ func toEngineOptions(opts store.SearchOptions, category engine.Category) engine.
 func toStoreResponse(resp *engine.SearchResponse) *store.SearchResponse {
 	results := make([]types.SearchResult, 0, len(resp.Results))
 	for _, r := range resp.Results {
-		results = append(results, types.SearchResult{
-			URL:      r.URL,
-			Title:    r.Title,
-			Snippet:  r.Content,
-			Domain:   extractDomain(r.URL),
-			Score:    r.Score,
-			Engine:   r.Engine,
-			Engines:  r.Engines,
-		})
+		result := types.SearchResult{
+			URL:     r.URL,
+			Title:   r.Title,
+			Snippet: r.Content,
+			Domain:  extractDomain(r.URL),
+			Score:   r.Score,
+			Engine:  r.Engine,
+			Engines: r.Engines,
+		}
+		// Add published date if available
+		if !r.PublishedAt.IsZero() {
+			result.Published = &r.PublishedAt
+		}
+		// Add thumbnail if available
+		if r.ThumbnailURL != "" {
+			result.Thumbnail = &types.Thumbnail{
+				URL: r.ThumbnailURL,
+			}
+		}
+		results = append(results, result)
 	}
 
 	return &store.SearchResponse{

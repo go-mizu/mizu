@@ -233,11 +233,13 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			id TEXT PRIMARY KEY,
 			domain TEXT UNIQUE NOT NULL,
 			action TEXT NOT NULL CHECK (action IN ('upvote', 'downvote', 'block')),
+			level INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_preferences_domain ON preferences(domain);
 		CREATE INDEX IF NOT EXISTS idx_preferences_action ON preferences(action);
+		CREATE INDEX IF NOT EXISTS idx_preferences_level ON preferences(level);
 
 		-- Search lenses table
 		CREATE TABLE IF NOT EXISTS lenses (
@@ -247,13 +249,23 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			domains TEXT DEFAULT '[]',
 			exclude TEXT DEFAULT '[]',
 			keywords TEXT DEFAULT '[]',
+			include_keywords TEXT DEFAULT '[]',
+			exclude_keywords TEXT DEFAULT '[]',
+			region TEXT,
+			file_type TEXT,
+			date_before TEXT,
+			date_after TEXT,
 			is_public INTEGER DEFAULT 0,
 			is_built_in INTEGER DEFAULT 0,
+			is_shared INTEGER DEFAULT 0,
+			share_link TEXT,
+			user_id TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_lenses_is_public ON lenses(is_public);
+		CREATE INDEX IF NOT EXISTS idx_lenses_user ON lenses(user_id);
 
 		-- Settings table (singleton)
 		CREATE TABLE IF NOT EXISTS settings (
@@ -286,6 +298,110 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_cache_hash ON search_cache(hash);
 		CREATE INDEX IF NOT EXISTS idx_cache_query ON search_cache(query);
 		CREATE INDEX IF NOT EXISTS idx_cache_created ON search_cache(created_at);
+
+		-- Bangs table for search shortcuts
+		CREATE TABLE IF NOT EXISTS bangs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			trigger TEXT UNIQUE NOT NULL,
+			name TEXT NOT NULL,
+			url_template TEXT NOT NULL,
+			category TEXT,
+			is_builtin INTEGER DEFAULT 0,
+			user_id TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_bangs_trigger ON bangs(trigger);
+		CREATE INDEX IF NOT EXISTS idx_bangs_user ON bangs(user_id);
+
+		-- Summaries cache for URL/text summarization
+		CREATE TABLE IF NOT EXISTS summaries_cache (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			url_hash TEXT NOT NULL,
+			url TEXT NOT NULL,
+			engine TEXT NOT NULL,
+			summary_type TEXT NOT NULL,
+			target_language TEXT,
+			output TEXT NOT NULL,
+			tokens INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expires_at DATETIME,
+			UNIQUE(url_hash, engine, summary_type, target_language)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_summaries_hash ON summaries_cache(url_hash);
+		CREATE INDEX IF NOT EXISTS idx_summaries_expires ON summaries_cache(expires_at);
+
+		-- Widget settings for user preferences
+		CREATE TABLE IF NOT EXISTS widget_settings (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id TEXT NOT NULL,
+			widget_type TEXT NOT NULL,
+			enabled INTEGER DEFAULT 1,
+			position INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, widget_type)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_widget_user ON widget_settings(user_id);
+
+		-- Cheat sheets for programming references
+		CREATE TABLE IF NOT EXISTS cheat_sheets (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			language TEXT UNIQUE NOT NULL,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		-- Related searches cache
+		CREATE TABLE IF NOT EXISTS related_searches (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			query_hash TEXT NOT NULL,
+			query TEXT NOT NULL,
+			related TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expires_at DATETIME
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_related_hash ON related_searches(query_hash);
+		CREATE INDEX IF NOT EXISTS idx_related_expires ON related_searches(expires_at);
+
+		-- Small web index for enrichment (Teclis-style)
+		CREATE TABLE IF NOT EXISTS small_web (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			url TEXT UNIQUE NOT NULL,
+			title TEXT NOT NULL,
+			snippet TEXT,
+			source_type TEXT NOT NULL,
+			domain TEXT NOT NULL,
+			published_at DATETIME,
+			indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_small_web_domain ON small_web(domain);
+		CREATE INDEX IF NOT EXISTS idx_small_web_type ON small_web(source_type);
+		CREATE INDEX IF NOT EXISTS idx_small_web_published ON small_web(published_at);
+
+		-- FTS for small web search
+		CREATE VIRTUAL TABLE IF NOT EXISTS small_web_fts USING fts5(
+			title,
+			snippet,
+			content='small_web',
+			content_rowid='rowid',
+			tokenize='porter unicode61'
+		);
+
+		CREATE TRIGGER IF NOT EXISTS small_web_ai AFTER INSERT ON small_web BEGIN
+			INSERT INTO small_web_fts(rowid, title, snippet)
+			VALUES (NEW.rowid, NEW.title, NEW.snippet);
+		END;
+
+		CREATE TRIGGER IF NOT EXISTS small_web_ad AFTER DELETE ON small_web BEGIN
+			INSERT INTO small_web_fts(small_web_fts, rowid, title, snippet)
+			VALUES ('delete', OLD.rowid, OLD.title, OLD.snippet);
+		END;
 	`
 
 	_, err := db.ExecContext(ctx, schema)

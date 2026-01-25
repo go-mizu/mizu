@@ -36,6 +36,9 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	historyHandler := api.NewHistoryHandler(st)
 	settingsHandler := api.NewSettingsHandler(st)
 	indexHandler := api.NewIndexHandler(st)
+	bangHandler := api.NewBangHandler(st)
+	widgetHandler := api.NewWidgetHandler(st)
+	enrichHandler := api.NewEnrichHandler(st)
 
 	// Health check
 	app.Get("/health", func(c *mizu.Ctx) error {
@@ -90,8 +93,32 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		apiGroup.Get("/admin/index/stats", indexHandler.Stats)
 		apiGroup.Post("/admin/index/rebuild", indexHandler.Rebuild)
 
-		// AI Mode (only if services are available)
+		// Bangs
+		apiGroup.Get("/bangs", bangHandler.List)
+		apiGroup.Get("/bangs/parse", bangHandler.Parse)
+		apiGroup.Post("/bangs", bangHandler.Create)
+		apiGroup.Delete("/bangs/{id}", bangHandler.Delete)
+
+		// Widgets
+		apiGroup.Get("/widgets", widgetHandler.GetSettings)
+		apiGroup.Put("/widgets", widgetHandler.UpdateSettings)
+		apiGroup.Get("/cheatsheet/{language}", widgetHandler.GetCheatSheet)
+		apiGroup.Get("/cheatsheets", widgetHandler.ListCheatSheets)
+		apiGroup.Get("/related", widgetHandler.GetRelated)
+
+		// Enrichment (Teclis/TinyGem style)
+		apiGroup.Get("/enrich/web", enrichHandler.SearchWeb)
+		apiGroup.Get("/enrich/news", enrichHandler.SearchNews)
+
+		// AI Mode and Summarizer (only if services are available)
 		if sqliteStore, ok := st.(*sqlite.Store); ok {
+			// Create summarize handler (uses first available LLM provider)
+			summarizeHandler := createSummarizeHandler(sqliteStore)
+			if summarizeHandler != nil {
+				apiGroup.Get("/summarize", summarizeHandler.Summarize)
+				apiGroup.Post("/summarize", summarizeHandler.Summarize)
+			}
+
 			aiHandler := createAIHandler(sqliteStore, searchHandler)
 			if aiHandler != nil {
 				apiGroup.Group("/ai", aiHandler.Register)
@@ -137,6 +164,25 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	}
 
 	return app, nil
+}
+
+// createSummarizeHandler creates the summarization handler with an LLM provider.
+func createSummarizeHandler(st *sqlite.Store) *api.SummarizeHandler {
+	// Try to find an available LLM provider
+	quickURL := os.Getenv("LLAMACPP_QUICK_URL")
+	if quickURL == "" {
+		quickURL = "http://localhost:8082"
+	}
+
+	var provider llm.Provider
+	if client, err := llamacpp.New(llamacpp.Config{BaseURL: quickURL, Timeout: 120 * time.Second}); err == nil {
+		if err := client.Ping(context.Background()); err == nil {
+			provider = client
+		}
+	}
+
+	// Return handler even if no provider (will use simple extraction)
+	return api.NewSummarizeHandler(st, provider)
 }
 
 // createAIHandler creates the AI handler with LLM providers.
@@ -282,5 +328,5 @@ func createSearchHandler(st store.Store) *api.SearchHandler {
 		Engine: eng,
 		Cache:  cache,
 		Store:  st,
-	})
+	}, st)
 }

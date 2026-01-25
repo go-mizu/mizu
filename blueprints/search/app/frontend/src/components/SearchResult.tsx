@@ -116,11 +116,37 @@ export function SearchResult({ result }: SearchResultProps) {
         {result.title}
       </a>
 
-      {/* Snippet */}
-      <p
-        className="search-result-snippet"
-        dangerouslySetInnerHTML={{ __html: result.snippet }}
-      />
+      {/* Snippet with optional thumbnail */}
+      <div className="flex gap-4">
+        <p
+          className="search-result-snippet flex-1"
+          dangerouslySetInnerHTML={{ __html: result.snippet }}
+        />
+        {result.thumbnail?.url && settings.show_thumbnails && (
+          <a
+            href={result.url}
+            target={settings.open_in_new_tab ? '_blank' : '_self'}
+            rel="noopener noreferrer"
+            className="flex-shrink-0"
+          >
+            <img
+              src={result.thumbnail.url}
+              alt=""
+              className="w-24 h-16 object-cover rounded border border-[#dadce0]"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none'
+              }}
+            />
+          </a>
+        )}
+      </div>
+
+      {/* Published date */}
+      {result.published && (
+        <p className="text-xs text-[#70757a] mt-1">
+          {new Date(result.published).toLocaleDateString()}
+        </p>
+      )}
 
       {/* Sitelinks */}
       {(result.sitelinks?.length ?? 0) > 0 && (

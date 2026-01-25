@@ -38,7 +38,7 @@ func (s *PreferenceStore) SetPreference(ctx context.Context, pref *store.UserPre
 // GetPreferences retrieves all user preferences.
 func (s *PreferenceStore) GetPreferences(ctx context.Context) ([]*store.UserPreference, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, domain, action, created_at
+		SELECT id, domain, action, COALESCE(level, 0), created_at
 		FROM search.preferences
 		ORDER BY created_at DESC
 	`)
@@ -50,13 +50,33 @@ func (s *PreferenceStore) GetPreferences(ctx context.Context) ([]*store.UserPref
 	var prefs []*store.UserPreference
 	for rows.Next() {
 		var p store.UserPreference
-		if err := rows.Scan(&p.ID, &p.Domain, &p.Action, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Domain, &p.Action, &p.Level, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan preference: %w", err)
 		}
 		prefs = append(prefs, &p)
 	}
 
 	return prefs, nil
+}
+
+// GetPreference retrieves a specific domain preference.
+func (s *PreferenceStore) GetPreference(ctx context.Context, domain string) (*store.UserPreference, error) {
+	var p store.UserPreference
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, domain, action, COALESCE(level, 0), created_at
+		FROM search.preferences
+		WHERE domain = $1
+	`, domain).Scan(&p.ID, &p.Domain, &p.Action, &p.Level, &p.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get preference: %w", err)
+	}
+
+	return &p, nil
 }
 
 // DeletePreference removes a domain preference.
