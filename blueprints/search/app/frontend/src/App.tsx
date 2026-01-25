@@ -1,17 +1,28 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import HomePage from './pages/HomePage'
-import SearchPage from './pages/SearchPage'
-import AIPage from './pages/AIPage'
-import ImagesPage from './pages/ImagesPage'
-import VideosPage from './pages/VideosPage'
-import NewsPage from './pages/NewsPage'
-import SettingsPage from './pages/SettingsPage'
-import HistoryPage from './pages/HistoryPage'
-import AISessionsPage from './pages/AISessionsPage'
-import AISessionPage from './pages/AISessionPage'
 import { useAIStore } from './stores/aiStore'
 import { aiApi } from './api/ai'
+
+// Lazy load pages for code splitting
+const SearchPage = lazy(() => import('./pages/SearchPage'))
+const AIPage = lazy(() => import('./pages/AIPage'))
+const ImagesPage = lazy(() => import('./pages/ImagesPage'))
+const VideosPage = lazy(() => import('./pages/VideosPage'))
+const NewsPage = lazy(() => import('./pages/NewsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const HistoryPage = lazy(() => import('./pages/HistoryPage'))
+const AISessionsPage = lazy(() => import('./pages/AISessionsPage'))
+const AISessionPage = lazy(() => import('./pages/AISessionPage'))
+
+// Minimal loading fallback
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="animate-pulse text-gray-500">Loading...</div>
+    </div>
+  )
+}
 
 function App() {
   const { setAIAvailable, setAvailableModes } = useAIStore()
@@ -34,18 +45,20 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/ai" element={<AIPage />} />
-        <Route path="/images" element={<ImagesPage />} />
-        <Route path="/videos" element={<VideosPage />} />
-        <Route path="/news" element={<NewsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/ai/sessions" element={<AISessionsPage />} />
-        <Route path="/ai/session/:id" element={<AISessionPage />} />
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/ai" element={<AIPage />} />
+          <Route path="/images" element={<ImagesPage />} />
+          <Route path="/videos" element={<VideosPage />} />
+          <Route path="/news" element={<NewsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/ai/sessions" element={<AISessionsPage />} />
+          <Route path="/ai/session/:id" element={<AISessionPage />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }

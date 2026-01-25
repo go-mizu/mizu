@@ -337,3 +337,114 @@ func TestRegistry_Integration(t *testing.T) {
 
 	t.Logf("Provider response: %s", resp.Choices[0].Message.Content)
 }
+
+// TestGPTOSS20B tests the gpt-oss-20b model specifically.
+func TestGPTOSS20B(t *testing.T) {
+	url := os.Getenv("LLAMACPP_GPTOSS_URL")
+	if url == "" {
+		url = "http://localhost:8085"
+	}
+
+	client, err := New(Config{
+		BaseURL: url,
+		Timeout: 180 * time.Second, // Longer timeout for larger model
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	skipIfNoServer(t, client)
+
+	ctx := context.Background()
+
+	// Test reasoning capability
+	req := llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "If I have 3 apples and give away 1, then buy 5 more, how many do I have? Think step by step."},
+		},
+		MaxTokens:   200,
+		Temperature: 0.3,
+	}
+
+	resp, err := client.ChatCompletion(ctx, req)
+	if err != nil {
+		t.Fatalf("ChatCompletion() error = %v", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		t.Fatal("ChatCompletion() returned no choices")
+	}
+
+	content := resp.Choices[0].Message.Content
+	t.Logf("GPT-OSS-20B reasoning response: %s", content)
+
+	// Check if the answer contains "7"
+	if !strings.Contains(content, "7") {
+		t.Errorf("Expected answer to contain '7', got: %s", content)
+	}
+}
+
+// TestAllModelsComparison runs a comparison test across all available models.
+func TestAllModelsComparison(t *testing.T) {
+	if os.Getenv("LLM_INTEGRATION_TEST") != "1" {
+		t.Skip("Skipping integration test (set LLM_INTEGRATION_TEST=1 to run)")
+	}
+
+	models := []struct {
+		name string
+		url  string
+	}{
+		{"gemma-270m-quick", "http://localhost:8082"},
+		{"gemma-1b-deep", "http://localhost:8083"},
+		{"gemma-4b-research", "http://localhost:8084"},
+		{"gpt-oss-20b", "http://localhost:8085"},
+	}
+
+	prompt := "What is 2 + 2? Answer with just the number."
+
+	for _, m := range models {
+		t.Run(m.name, func(t *testing.T) {
+			client, err := New(Config{
+				BaseURL: m.url,
+				Timeout: 120 * time.Second,
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := client.Ping(ctx); err != nil {
+				cancel()
+				t.Skipf("Server not available at %s: %v", m.url, err)
+				return
+			}
+			cancel()
+
+			start := time.Now()
+			resp, err := client.ChatCompletion(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{
+					{Role: "user", Content: prompt},
+				},
+				MaxTokens:   20,
+				Temperature: 0,
+			})
+			elapsed := time.Since(start)
+
+			if err != nil {
+				t.Fatalf("ChatCompletion() error = %v", err)
+			}
+
+			if len(resp.Choices) == 0 {
+				t.Fatal("ChatCompletion() returned no choices")
+			}
+
+			content := resp.Choices[0].Message.Content
+			correct := strings.Contains(content, "4")
+
+			t.Logf("Model: %s", m.name)
+			t.Logf("  Latency: %v", elapsed.Round(time.Millisecond))
+			t.Logf("  Response: %s", strings.TrimSpace(content))
+			t.Logf("  Correct: %v", correct)
+			t.Logf("  Tokens: %d", resp.Usage.CompletionTokens)
+		})
+	}
+}
