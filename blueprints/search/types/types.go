@@ -30,18 +30,27 @@ type Sitelink struct {
 	URL   string `json:"url"`
 }
 
+// Thumbnail represents an image thumbnail for search results.
+type Thumbnail struct {
+	URL    string `json:"url"`
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
+}
+
 // SearchResult represents a single search result.
 type SearchResult struct {
-	ID         string     `json:"id"`
-	URL        string     `json:"url"`
-	Title      string     `json:"title"`
-	Snippet    string     `json:"snippet"`
-	Domain     string     `json:"domain"`
-	Favicon    string     `json:"favicon,omitempty"`
-	Score      float64    `json:"score"`
-	Highlights []string   `json:"highlights,omitempty"`
-	Sitelinks  []Sitelink `json:"sitelinks,omitempty"`
-	CrawledAt  time.Time  `json:"crawled_at"`
+	ID          string      `json:"id"`
+	URL         string      `json:"url"`
+	Title       string      `json:"title"`
+	Snippet     string      `json:"snippet"`
+	Domain      string      `json:"domain"`
+	Favicon     string      `json:"favicon,omitempty"`
+	Thumbnail   *Thumbnail  `json:"thumbnail,omitempty"`
+	Published   *time.Time  `json:"published,omitempty"`
+	Score       float64     `json:"score"`
+	Highlights  []string    `json:"highlights,omitempty"`
+	Sitelinks   []Sitelink  `json:"sitelinks,omitempty"`
+	CrawledAt   time.Time   `json:"crawled_at"`
 	// Engine that provided this result
 	Engine  string   `json:"engine,omitempty"`
 	Engines []string `json:"engines,omitempty"`
@@ -160,10 +169,13 @@ type SearchOptions struct {
 	Region      string `json:"region,omitempty"`       // us, uk, de, etc.
 	Language    string `json:"language,omitempty"`
 	SafeSearch  string `json:"safe_search,omitempty"`  // off, moderate, strict
+	SafeLevel   int    `json:"safe_level,omitempty"`   // 0=off, 1=moderate, 2=strict (Kagi-style)
 	Verbatim    bool   `json:"verbatim,omitempty"`
 	Site        string `json:"site,omitempty"`         // site: operator
 	FileType    string `json:"file_type,omitempty"`    // filetype: operator
 	ExcludeSite string `json:"exclude_site,omitempty"` // -site: operator
+	DateBefore  string `json:"date_before,omitempty"`  // results before date (YYYY-MM-DD)
+	DateAfter   string `json:"date_after,omitempty"`   // results after date (YYYY-MM-DD)
 	Lens        string `json:"lens,omitempty"`         // custom lens ID
 	Refetch     bool   `json:"refetch,omitempty"`      // force bypass cache and refetch
 	Version     int    `json:"version,omitempty"`      // specific cache version (0 = latest)
@@ -175,6 +187,7 @@ type SearchResponse struct {
 	CorrectedQuery  string          `json:"corrected_query,omitempty"`
 	TotalResults    int64           `json:"total_results"`
 	Results         []SearchResult  `json:"results"`
+	Widgets         []Widget        `json:"widgets,omitempty"`
 	Suggestions     []string        `json:"suggestions,omitempty"`
 	InstantAnswer   *InstantAnswer  `json:"instant_answer,omitempty"`
 	KnowledgePanel  *KnowledgePanel `json:"knowledge_panel,omitempty"`
@@ -182,6 +195,7 @@ type SearchResponse struct {
 	SearchTimeMs    float64         `json:"search_time_ms"`
 	Page            int             `json:"page"`
 	PerPage         int             `json:"per_page"`
+	HasMore         bool            `json:"has_more"`
 }
 
 // ========== Suggestion Types ==========
@@ -302,26 +316,46 @@ type Entity struct {
 
 // ========== User Preference Types ==========
 
+// Preference level constants for personalization.
+const (
+	PreferenceBlocked = -2 // Never show
+	PreferenceLowered = -1 // Reduced ranking
+	PreferenceNormal  = 0  // Default
+	PreferenceRaised  = 1  // Boosted ranking
+	PreferencePinned  = 2  // Always at top
+)
+
 // UserPreference represents personalization settings.
 type UserPreference struct {
 	ID        string    `json:"id"`
 	Domain    string    `json:"domain"`
-	Action    string    `json:"action"` // upvote, downvote, block
+	Action    string    `json:"action"` // upvote, downvote, block (legacy)
+	Level     int       `json:"level"`  // -2 to +2 (new Kagi-style)
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
 // SearchLens represents a custom search filter.
 type SearchLens struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Domains     []string  `json:"domains,omitempty"`  // include domains
-	Exclude     []string  `json:"exclude,omitempty"`  // exclude domains
-	Keywords    []string  `json:"keywords,omitempty"` // filter keywords
-	IsPublic    bool      `json:"is_public"`
-	IsBuiltIn   bool      `json:"is_built_in"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description,omitempty"`
+	Domains         []string  `json:"domains,omitempty"`          // include domains (up to 10)
+	Exclude         []string  `json:"exclude,omitempty"`          // exclude domains (up to 10)
+	IncludeKeywords []string  `json:"include_keywords,omitempty"` // include keywords (up to 5)
+	ExcludeKeywords []string  `json:"exclude_keywords,omitempty"` // exclude keywords (up to 5)
+	Keywords        []string  `json:"keywords,omitempty"`         // legacy: filter keywords
+	Region          string    `json:"region,omitempty"`           // region filter
+	FileType        string    `json:"file_type,omitempty"`        // file type filter
+	DateBefore      string    `json:"date_before,omitempty"`      // results before date (YYYY-MM-DD)
+	DateAfter       string    `json:"date_after,omitempty"`       // results after date (YYYY-MM-DD)
+	IsPublic        bool      `json:"is_public"`
+	IsBuiltIn       bool      `json:"is_built_in"`
+	IsShared        bool      `json:"is_shared"`
+	ShareLink       string    `json:"share_link,omitempty"`
+	UserID          string    `json:"user_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // SearchHistory represents a user's search history.

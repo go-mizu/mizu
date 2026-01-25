@@ -9,6 +9,13 @@ import type {
   SearchSettings,
   SearchLens,
   UserPreference,
+  Bang,
+  BangResult,
+  SummarizeRequest,
+  SummarizeResponse,
+  EnrichmentResponse,
+  CheatSheet,
+  WidgetSetting,
 } from '../types'
 
 export interface SearchOptions {
@@ -18,11 +25,15 @@ export interface SearchOptions {
   region?: string
   lang?: string
   safe?: string
+  safe_level?: number // 0=off, 1=moderate, 2=strict
   site?: string
   lens?: string
   verbatim?: boolean
   refetch?: boolean
   version?: number
+  before?: string // date filter YYYY-MM-DD
+  after?: string // date filter YYYY-MM-DD
+  filetype?: string
 }
 
 export const searchApi = {
@@ -131,5 +142,63 @@ export const searchApi = {
 
   deletePreference: (domain: string): Promise<void> => {
     return api.delete(`/api/preferences/${encodeURIComponent(domain)}`)
+  },
+
+  // Bangs
+  getBangs: (): Promise<Bang[]> => {
+    return api.get('/api/bangs')
+  },
+
+  parseBang: (query: string): Promise<BangResult> => {
+    return api.get(`/api/bangs/parse?q=${encodeURIComponent(query)}`)
+  },
+
+  createBang: (bang: Partial<Bang>): Promise<Bang> => {
+    return api.post('/api/bangs', bang)
+  },
+
+  deleteBang: (id: number): Promise<void> => {
+    return api.delete(`/api/bangs/${id}`)
+  },
+
+  // Summarizer
+  summarize: (request: SummarizeRequest): Promise<SummarizeResponse> => {
+    const params = new URLSearchParams()
+    if (request.url) params.set('url', request.url)
+    if (request.text) params.set('text', request.text)
+    if (request.engine) params.set('engine', request.engine)
+    if (request.summary_type) params.set('summary_type', request.summary_type)
+    if (request.target_language) params.set('target_language', request.target_language)
+    return api.get(`/api/summarize?${params}`)
+  },
+
+  // Enrichment (Teclis/TinyGem style small web)
+  enrichWeb: (query: string, limit = 10): Promise<EnrichmentResponse> => {
+    return api.get(`/api/enrich/web?q=${encodeURIComponent(query)}&limit=${limit}`)
+  },
+
+  enrichNews: (query: string, limit = 10): Promise<EnrichmentResponse> => {
+    return api.get(`/api/enrich/news?q=${encodeURIComponent(query)}&limit=${limit}`)
+  },
+
+  // Widgets
+  getWidgetSettings: (): Promise<WidgetSetting[]> => {
+    return api.get('/api/widgets')
+  },
+
+  updateWidgetSetting: (setting: WidgetSetting): Promise<WidgetSetting> => {
+    return api.put('/api/widgets', setting)
+  },
+
+  getCheatSheet: (language: string): Promise<CheatSheet> => {
+    return api.get(`/api/cheatsheet/${encodeURIComponent(language)}`)
+  },
+
+  listCheatSheets: (): Promise<CheatSheet[]> => {
+    return api.get('/api/cheatsheets')
+  },
+
+  getRelated: (query: string): Promise<{ query: string; related: string[] }> => {
+    return api.get(`/api/related?q=${encodeURIComponent(query)}`)
   },
 }

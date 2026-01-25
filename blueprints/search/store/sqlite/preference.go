@@ -22,13 +22,28 @@ func (s *PreferenceStore) SetPreference(ctx context.Context, pref *store.UserPre
 	}
 	pref.CreatedAt = time.Now()
 
+	// Convert level to action for backwards compatibility
+	if pref.Action == "" {
+		switch pref.Level {
+		case -2:
+			pref.Action = "block"
+		case -1:
+			pref.Action = "downvote"
+		case 1, 2:
+			pref.Action = "upvote"
+		default:
+			pref.Action = "upvote" // default for level 0
+		}
+	}
+
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO preferences (id, domain, action, created_at)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO preferences (id, domain, action, level, created_at)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(domain) DO UPDATE SET
 			action = excluded.action,
+			level = excluded.level,
 			created_at = excluded.created_at
-	`, pref.ID, pref.Domain, pref.Action, pref.CreatedAt)
+	`, pref.ID, pref.Domain, pref.Action, pref.Level, pref.CreatedAt)
 
 	return err
 }
@@ -36,7 +51,7 @@ func (s *PreferenceStore) SetPreference(ctx context.Context, pref *store.UserPre
 // GetPreferences retrieves all domain preferences.
 func (s *PreferenceStore) GetPreferences(ctx context.Context) ([]*store.UserPreference, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, domain, action, created_at
+		SELECT id, domain, action, COALESCE(level, 0), created_at
 		FROM preferences
 		ORDER BY created_at DESC
 	`)
@@ -48,13 +63,33 @@ func (s *PreferenceStore) GetPreferences(ctx context.Context) ([]*store.UserPref
 	var prefs []*store.UserPreference
 	for rows.Next() {
 		var p store.UserPreference
-		if err := rows.Scan(&p.ID, &p.Domain, &p.Action, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Domain, &p.Action, &p.Level, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		prefs = append(prefs, &p)
 	}
 
 	return prefs, nil
+}
+
+// GetPreference retrieves a specific domain preference.
+func (s *PreferenceStore) GetPreference(ctx context.Context, domain string) (*store.UserPreference, error) {
+	var p store.UserPreference
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, domain, action, COALESCE(level, 0), created_at
+		FROM preferences
+		WHERE domain = ?
+	`, domain).Scan(&p.ID, &p.Domain, &p.Action, &p.Level, &p.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &p, nil
 }
 
 // DeletePreference removes a domain preference.

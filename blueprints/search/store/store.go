@@ -11,6 +11,7 @@ import (
 type (
 	Document             = types.Document
 	Sitelink             = types.Sitelink
+	Thumbnail            = types.Thumbnail
 	SearchResult         = types.SearchResult
 	ImageResult          = types.ImageResult
 	VideoResult          = types.VideoResult
@@ -40,6 +41,21 @@ type (
 	SearchSettings       = types.SearchSettings
 	IndexStats           = types.IndexStats
 	DomainStat           = types.DomainStat
+	Widget               = types.Widget
+	WidgetType           = types.WidgetType
+	WidgetSetting        = types.WidgetSetting
+	CheatSheet           = types.CheatSheet
+	CheatSection         = types.CheatSection
+	CheatItem            = types.CheatItem
+	Bang                 = types.Bang
+	BangResult           = types.BangResult
+	SummaryCache         = types.SummaryCache
+	SummaryEngine        = types.SummaryEngine
+	SummaryType          = types.SummaryType
+	SummarizeRequest     = types.SummarizeRequest
+	SummarizeResponse    = types.SummarizeResponse
+	EnrichmentResult     = types.EnrichmentResult
+	SmallWebEntry        = types.SmallWebEntry
 )
 
 // Store defines the interface for all storage operations.
@@ -60,6 +76,10 @@ type Store interface {
 	Knowledge() KnowledgeStore
 	History() HistoryStore
 	Preference() PreferenceStore
+	Bang() BangStore
+	Summary() SummaryStore
+	Widget() WidgetStore
+	SmallWeb() SmallWebStore
 }
 
 // ========== Store Interfaces ==========
@@ -126,6 +146,7 @@ type PreferenceStore interface {
 	// Domain preferences
 	SetPreference(ctx context.Context, pref *UserPreference) error
 	GetPreferences(ctx context.Context) ([]*UserPreference, error)
+	GetPreference(ctx context.Context, domain string) (*UserPreference, error)
 	DeletePreference(ctx context.Context, domain string) error
 
 	// Lenses
@@ -138,4 +159,47 @@ type PreferenceStore interface {
 	// Settings
 	GetSettings(ctx context.Context) (*SearchSettings, error)
 	UpdateSettings(ctx context.Context, settings *SearchSettings) error
+}
+
+// BangStore handles bang shortcuts.
+type BangStore interface {
+	// Bang CRUD
+	CreateBang(ctx context.Context, bang *Bang) error
+	GetBang(ctx context.Context, trigger string) (*Bang, error)
+	ListBangs(ctx context.Context) ([]*Bang, error)
+	ListUserBangs(ctx context.Context, userID string) ([]*Bang, error)
+	DeleteBang(ctx context.Context, id int64) error
+	SeedBuiltinBangs(ctx context.Context) error
+}
+
+// SummaryStore handles URL/text summarization cache.
+type SummaryStore interface {
+	// Summary cache
+	GetSummary(ctx context.Context, urlHash, engine, summaryType, lang string) (*SummaryCache, error)
+	SaveSummary(ctx context.Context, summary *SummaryCache) error
+	DeleteExpiredSummaries(ctx context.Context) error
+}
+
+// WidgetStore handles widget settings.
+type WidgetStore interface {
+	// Widget settings
+	GetWidgetSettings(ctx context.Context, userID string) ([]*WidgetSetting, error)
+	SetWidgetSetting(ctx context.Context, setting *WidgetSetting) error
+	GetCheatSheet(ctx context.Context, language string) (*CheatSheet, error)
+	SaveCheatSheet(ctx context.Context, sheet *CheatSheet) error
+	ListCheatSheets(ctx context.Context) ([]*CheatSheet, error)
+	SeedCheatSheets(ctx context.Context) error
+
+	// Related searches
+	GetRelatedSearches(ctx context.Context, queryHash string) ([]string, error)
+	SaveRelatedSearches(ctx context.Context, queryHash, query string, related []string) error
+}
+
+// SmallWebStore handles small web index for enrichment.
+type SmallWebStore interface {
+	// Small web entries
+	IndexEntry(ctx context.Context, entry *SmallWebEntry) error
+	SearchWeb(ctx context.Context, query string, limit int) ([]*EnrichmentResult, error)
+	SearchNews(ctx context.Context, query string, limit int) ([]*EnrichmentResult, error)
+	SeedSmallWeb(ctx context.Context) error
 }

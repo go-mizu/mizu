@@ -1,15 +1,16 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, Image, Video, Newspaper, ChevronDown, Sparkles } from 'lucide-react'
+import { Settings, Image, Video, Newspaper, ChevronDown, Sparkles, ExternalLink } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
 import { SearchResult } from '../components/SearchResult'
 import { InstantAnswer } from '../components/InstantAnswer'
 import { KnowledgePanel } from '../components/KnowledgePanel'
 import { AISummary } from '../components/ai'
+import { CheatSheetWidget, RelatedSearchesWidget } from '../components/widgets'
 import { searchApi } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
 import { useAIStore } from '../stores/aiStore'
-import type { SearchResponse } from '../types'
+import type { SearchResponse, CheatSheet } from '../types'
 
 type SearchTab = 'all' | 'ai' | 'images' | 'videos' | 'news'
 
@@ -33,6 +34,7 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showTimeDropdown, setShowTimeDropdown] = useState(false)
+  const [bangRedirect, setBangRedirect] = useState<{ url: string; name: string } | null>(null)
   const timeDropdownRef = useRef<HTMLDivElement>(null)
 
   const { settings, addRecentSearch } = useSearchStore()
@@ -54,6 +56,7 @@ export default function SearchPage() {
     const performSearch = async () => {
       setIsLoading(true)
       setError(null)
+      setBangRedirect(null)
 
       try {
         const response = await searchApi.search(query, {
@@ -64,7 +67,28 @@ export default function SearchPage() {
           region: settings.region,
           lang: settings.language,
         })
-        setResults(response)
+
+        // Check for bang redirect
+        if (response.redirect) {
+          // If it's an external redirect, show confirmation
+          if (response.redirect.startsWith('http')) {
+            setBangRedirect({
+              url: response.redirect,
+              name: response.bang?.name || 'External site'
+            })
+            setResults(null)
+          } else {
+            // Internal redirect (AI mode, images, etc.)
+            navigate(response.redirect)
+            return
+          }
+        } else if (response.category) {
+          // Redirect to category page
+          navigate(`/${response.category}?q=${encodeURIComponent(response.query)}`)
+          return
+        } else {
+          setResults(response)
+        }
         addRecentSearch(query)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Search failed')
@@ -230,6 +254,40 @@ export default function SearchPage() {
                 <div className="flex justify-center py-12">
                   <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
                 </div>
+              ) : bangRedirect ? (
+                <div className="py-12">
+                  <div className="bg-[#f8f9fa] border border-[#dadce0] rounded-lg p-6 text-center">
+                    <ExternalLink size={32} className="mx-auto mb-4 text-[#1a73e8]" />
+                    <h2 className="text-lg font-medium text-[#202124] mb-2">
+                      Redirecting to {bangRedirect.name}
+                    </h2>
+                    <p className="text-sm text-[#5f6368] mb-4">
+                      You're about to leave Mizu Search
+                    </p>
+                    <div className="flex justify-center gap-3">
+                      <a
+                        href={bangRedirect.url}
+                        className="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition-colors"
+                        rel="noopener noreferrer"
+                      >
+                        Continue to {bangRedirect.name}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBangRedirect(null)
+                          navigate('/')
+                        }}
+                        className="px-4 py-2 border border-[#dadce0] rounded-lg hover:bg-[#f1f3f4] transition-colors text-[#5f6368]"
+                      >
+                        Go Back
+                      </button>
+                    </div>
+                    <p className="text-xs text-[#9aa0a6] mt-4 break-all">
+                      {bangRedirect.url}
+                    </p>
+                  </div>
+                </div>
               ) : error ? (
                 <div className="py-12 text-center">
                   <p className="text-red-600">{error}</p>
@@ -265,6 +323,11 @@ export default function SearchPage() {
                     </div>
                   )}
 
+                  {/* Widgets - Cheat sheets */}
+                  {results.widgets?.filter(w => w.type === 'cheat_sheet').map((widget, index) => (
+                    <CheatSheetWidget key={index} sheet={widget.content as CheatSheet} />
+                  ))}
+
                   {/* Instant answer */}
                   {results.instant_answer && (
                     <div className="mb-4">
@@ -277,26 +340,23 @@ export default function SearchPage() {
                     <SearchResult key={result.id} result={result} />
                   ))}
 
-                  {/* Related searches */}
-                  {(results.related_searches?.length ?? 0) > 0 && (
-                    <div className="related-searches">
-                      <p className="text-sm font-medium text-[#202124] mb-3">
-                        Related searches
-                      </p>
-                      <div className="flex flex-wrap">
-                        {(results.related_searches || []).map((search) => (
-                          <button
-                            key={search}
-                            type="button"
-                            onClick={() => handleSearch(search)}
-                            className="related-search-item"
-                          >
-                            {search}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* Related searches - from widgets or response */}
+                  {(() => {
+                    const relatedWidget = results.widgets?.find(w => w.type === 'related_searches')
+                    const relatedSearches = relatedWidget
+                      ? (relatedWidget.content as string[])
+                      : results.related_searches || []
+
+                    if (relatedSearches.length > 0) {
+                      return (
+                        <RelatedSearchesWidget
+                          searches={relatedSearches}
+                          onSearch={handleSearch}
+                        />
+                      )
+                    }
+                    return null
+                  })()}
 
                   {/* Pagination */}
                   {totalPages > 1 && (

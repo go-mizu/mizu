@@ -1,9 +1,33 @@
-import { useState, useEffect, useRef, KeyboardEvent } from 'react'
-import { Search, X, Mic, Camera } from 'lucide-react'
+import { useState, useEffect, useRef, KeyboardEvent, useMemo } from 'react'
+import { Search, X, Mic, Camera, Zap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { searchApi } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
-import type { Suggestion } from '../types'
+import type { Suggestion, Bang } from '../types'
+
+// Common built-in bangs for autocomplete
+const BUILTIN_BANGS: Partial<Bang>[] = [
+  { trigger: 'g', name: 'Google', category: 'search' },
+  { trigger: 'ddg', name: 'DuckDuckGo', category: 'search' },
+  { trigger: 'yt', name: 'YouTube', category: 'video' },
+  { trigger: 'w', name: 'Wikipedia', category: 'reference' },
+  { trigger: 'r', name: 'Reddit', category: 'social' },
+  { trigger: 'gh', name: 'GitHub', category: 'code' },
+  { trigger: 'so', name: 'Stack Overflow', category: 'code' },
+  { trigger: 'amz', name: 'Amazon', category: 'shopping' },
+  { trigger: 'imdb', name: 'IMDb', category: 'media' },
+  { trigger: 'npm', name: 'npm', category: 'code' },
+  { trigger: 'go', name: 'Go Packages', category: 'code' },
+  { trigger: 'mdn', name: 'MDN Web Docs', category: 'code' },
+  { trigger: 'i', name: 'Images', category: 'internal' },
+  { trigger: 'n', name: 'News', category: 'internal' },
+  { trigger: 'v', name: 'Videos', category: 'internal' },
+  { trigger: 'ai', name: 'AI Mode', category: 'internal' },
+  { trigger: 'sum', name: 'Summarize', category: 'internal' },
+  { trigger: '24', name: 'Past 24 hours', category: 'time' },
+  { trigger: 'week', name: 'Past week', category: 'time' },
+  { trigger: 'month', name: 'Past month', category: 'time' },
+]
 
 interface SearchBoxProps {
   initialValue?: string
@@ -83,9 +107,26 @@ export function SearchBox({
     }
   }
 
-  const displayItems = suggestions.length > 0
-    ? suggestions
-    : (recentSearches || []).slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
+  // Detect if user is typing a bang
+  const bangMatch = useMemo(() => {
+    const match = value.match(/^!(\w*)/)
+    return match ? match[1] : null
+  }, [value])
+
+  // Filter bangs based on typed prefix
+  const matchingBangs = useMemo(() => {
+    if (bangMatch === null) return []
+    const prefix = bangMatch.toLowerCase()
+    return BUILTIN_BANGS.filter(b =>
+      b.trigger?.toLowerCase().startsWith(prefix)
+    ).slice(0, 6)
+  }, [bangMatch])
+
+  const displayItems = matchingBangs.length > 0
+    ? matchingBangs.map(b => ({ text: `!${b.trigger} `, type: 'bang' as const, bang: b }))
+    : suggestions.length > 0
+      ? suggestions.map(s => ({ ...s, type: s.type || 'suggestion' as const }))
+      : (recentSearches || []).slice(0, 5).map(text => ({ text, type: 'history' as const, frequency: 0 }))
 
   const showDropdown = showSuggestions && displayItems.length > 0
 
@@ -159,11 +200,30 @@ export function SearchBox({
             <div
               key={item.text}
               className={`autocomplete-item ${index === selectedIndex ? 'active' : ''}`}
-              onMouseDown={() => handleSearch(item.text)}
+              onMouseDown={() => {
+                if (item.type === 'bang') {
+                  // For bangs, set the value and keep focus
+                  setValue(item.text)
+                  setShowSuggestions(false)
+                  inputRef.current?.focus()
+                } else {
+                  handleSearch(item.text)
+                }
+              }}
               onMouseEnter={() => setSelectedIndex(index)}
             >
-              <Search size={16} className="text-[#9aa0a6] shrink-0" />
-              <span className="truncate">{item.text}</span>
+              {item.type === 'bang' ? (
+                <>
+                  <Zap size={16} className="text-[#fbbc05] shrink-0" />
+                  <span className="font-mono text-[#1a73e8]">{item.text.trim()}</span>
+                  <span className="text-[#70757a] ml-2">{(item as any).bang?.name}</span>
+                </>
+              ) : (
+                <>
+                  <Search size={16} className="text-[#9aa0a6] shrink-0" />
+                  <span className="truncate">{item.text}</span>
+                </>
+              )}
             </div>
           ))}
         </div>

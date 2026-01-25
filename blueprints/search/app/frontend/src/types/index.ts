@@ -1,3 +1,9 @@
+export interface Thumbnail {
+  url: string
+  width?: number
+  height?: number
+}
+
 export interface SearchResult {
   id: string
   url: string
@@ -9,11 +15,58 @@ export interface SearchResult {
   highlights?: string[]
   sitelinks?: Sitelink[]
   crawled_at: string
+  thumbnail?: Thumbnail
+  published?: string
+  engine?: string
+  engines?: string[]
 }
 
 export interface Sitelink {
   title: string
   url: string
+}
+
+export interface Widget {
+  type: WidgetType
+  title: string
+  position: number
+  content: unknown
+}
+
+export type WidgetType =
+  | 'cheat_sheet'
+  | 'related_searches'
+  | 'quick_peek'
+  | 'weather'
+  | 'stock'
+  | 'calculator'
+  | 'unit_converter'
+  | 'currency_converter'
+  | 'timer'
+  | 'stopwatch'
+  | 'color_picker'
+  | 'qr_code'
+  | 'ip_address'
+  | 'package_tracker'
+  | 'lyrics'
+  | 'recipe'
+
+export interface CheatSheet {
+  language: string
+  title: string
+  description: string
+  sections: CheatSection[]
+}
+
+export interface CheatSection {
+  title: string
+  items: CheatItem[]
+}
+
+export interface CheatItem {
+  code: string
+  description: string
+  category?: string
 }
 
 export interface SearchResponse {
@@ -25,9 +78,15 @@ export interface SearchResponse {
   instant_answer?: InstantAnswer
   knowledge_panel?: KnowledgePanel
   related_searches?: string[]
+  widgets?: Widget[]
+  has_more?: boolean
   search_time_ms: number
   page: number
   per_page: number
+  // Bang redirect
+  redirect?: string
+  bang?: Bang
+  category?: string
 }
 
 export interface InstantAnswer {
@@ -144,7 +203,75 @@ export interface UserPreference {
   id: string
   domain: string
   action: 'upvote' | 'downvote' | 'block'
+  level?: number // -2=blocked, -1=lowered, 0=normal, 1=raised, 2=pinned
   created_at: string
+}
+
+// Bang types
+export interface Bang {
+  id: number
+  trigger: string
+  name: string
+  url_template: string
+  category: string
+  is_builtin: boolean
+  user_id?: string
+  created_at: string
+}
+
+export interface BangResult {
+  bang?: Bang
+  query: string
+  orig_query: string
+  redirect?: string
+  internal: boolean
+  category?: string
+}
+
+// Summarizer types
+export type SummaryEngine = 'cecil' | 'agnes' | 'muriel'
+export type SummaryType = 'summary' | 'takeaway' | 'key_moments'
+
+export interface SummarizeRequest {
+  url?: string
+  text?: string
+  engine?: SummaryEngine
+  summary_type?: SummaryType
+  target_language?: string
+}
+
+export interface SummarizeResponse {
+  output: string
+  tokens: number
+  cached: boolean
+  engine: SummaryEngine
+}
+
+// Enrichment types (Teclis/TinyGem style)
+export interface EnrichmentResult {
+  type: string
+  rank: number
+  url: string
+  title: string
+  snippet: string
+  published?: string
+}
+
+export interface EnrichmentResponse {
+  meta: {
+    id: string
+    node: string
+    ms: number
+  }
+  data: EnrichmentResult[]
+}
+
+// Widget settings
+export interface WidgetSetting {
+  user_id: string
+  widget_type: WidgetType
+  enabled: boolean
+  position: number
 }
 
 // Re-export AI types
