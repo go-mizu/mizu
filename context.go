@@ -316,10 +316,8 @@ func (c *Ctx) Stream(fn func(io.Writer) error) error {
 
 // SSE writes Server-Sent Events from ch.
 func (c *Ctx) SSE(ch <-chan any) error {
-	// Use ResponseController to check for Flusher support (handles wrapped writers)
-	if err := c.rc.Flush(); err != nil {
-		return errors.New("SSE requires http.Flusher")
-	}
+	// Write SSE headers BEFORE flushing to prevent double WriteHeader.
+	// Some ResponseWriter implementations may send headers on Flush().
 	if !c.wroteHeader {
 		h := c.Header()
 		h.Set("Content-Type", "text/event-stream; charset=utf-8")
@@ -328,6 +326,11 @@ func (c *Ctx) SSE(ch <-chan any) error {
 		h.Set("X-Accel-Buffering", "no")
 		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
+	}
+
+	// Check for Flusher support (handles wrapped writers via Unwrap)
+	if err := c.rc.Flush(); err != nil {
+		return errors.New("SSE requires http.Flusher")
 	}
 
 	tick := time.NewTicker(30 * time.Second)
