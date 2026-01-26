@@ -1,11 +1,72 @@
 import { useState } from 'react'
-import { Copy, Check, BookOpen, Share, Download, RefreshCw, ThumbsUp, ThumbsDown, MoreHorizontal } from 'lucide-react'
-import type { AIResponse as AIResponseType } from '../../types/ai'
+import { Copy, Check, BookOpen, Share, Download, RefreshCw, ThumbsUp, ThumbsDown, MoreHorizontal, Zap, Database, Cpu, Cloud } from 'lucide-react'
+import type { AIResponse as AIResponseType, TokenUsage } from '../../types/ai'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { CitationChip } from './CitationChip'
 import { ThinkingSteps } from './ThinkingSteps'
 import { ImageCarousel } from './ImageCarousel'
 import { RelatedQuestions } from './RelatedQuestions'
+
+// Compact token usage display for AI responses
+function TokenUsageBadge({ usage }: { usage: TokenUsage }) {
+  const formatTokens = (tokens: number | undefined) => {
+    if (tokens === undefined || tokens === null) return '0'
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
+    return tokens.toString()
+  }
+
+  return (
+    <div className="token-usage-badge" title={`${usage.input_tokens ?? 0} in / ${usage.output_tokens ?? 0} out${usage.tokens_per_second ? ` • ${usage.tokens_per_second.toFixed(0)} tok/s` : ''}`}>
+      <Zap size={12} />
+      <span>{formatTokens(usage.total_tokens)} tokens</span>
+      {usage.tokens_per_second && usage.tokens_per_second > 0 && (
+        <span className="token-speed">• {usage.tokens_per_second.toFixed(0)} tok/s</span>
+      )}
+    </div>
+  )
+}
+
+// Provider and model info badge
+function ProviderBadge({ provider, model, fromCache }: { provider?: string; model?: string; fromCache?: boolean }) {
+  if (!provider && !model) return null
+
+  const getProviderIcon = () => {
+    if (provider === 'claude') return <Cloud size={12} />
+    if (provider === 'llamacpp') return <Cpu size={12} />
+    return <Cpu size={12} />
+  }
+
+  const getProviderLabel = () => {
+    if (provider === 'claude') return 'Claude'
+    if (provider === 'llamacpp') return 'Local'
+    return provider || 'AI'
+  }
+
+  const getModelLabel = () => {
+    if (!model) return ''
+    // Simplify model names for display
+    if (model.includes('haiku')) return 'Haiku'
+    if (model.includes('sonnet')) return 'Sonnet'
+    if (model.includes('opus')) return 'Opus'
+    if (model.includes('gemma-3-270m')) return 'Gemma 270M'
+    if (model.includes('gemma-3-1b')) return 'Gemma 1B'
+    if (model.includes('gemma-3-4b')) return 'Gemma 4B'
+    return model
+  }
+
+  return (
+    <div className="provider-badge" title={`Provider: ${provider || 'unknown'}, Model: ${model || 'unknown'}${fromCache ? ' (cached)' : ''}`}>
+      {getProviderIcon()}
+      <span>{getProviderLabel()}</span>
+      {model && <span className="model-name">{getModelLabel()}</span>}
+      {fromCache && (
+        <span className="cache-badge" title="Response from cache">
+          <Database size={10} />
+        </span>
+      )}
+    </div>
+  )
+}
 
 interface AIResponseProps {
   response: AIResponseType
@@ -74,7 +135,7 @@ export function AIResponse({
 
   return (
     <div className="ai-response">
-      {/* Mode badge */}
+      {/* Mode badge and stats */}
       <div className="ai-response-header">
         <span className={`ai-mode-badge ${response.mode}`}>
           {getModeLabel(response.mode)}
@@ -82,6 +143,16 @@ export function AIResponse({
         <span className="ai-sources-count">
           {response.sources_used} sources
         </span>
+        {!isStreaming && (
+          <ProviderBadge
+            provider={response.provider}
+            model={response.model}
+            fromCache={response.from_cache}
+          />
+        )}
+        {!isStreaming && response.usage && (
+          <TokenUsageBadge usage={response.usage} />
+        )}
       </div>
 
       {/* Image Carousel */}

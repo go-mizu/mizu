@@ -19,6 +19,10 @@ type mockProvider struct {
 	pingErr        error
 }
 
+func (m *mockProvider) Name() string {
+	return "mock"
+}
+
 func (m *mockProvider) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	if m.chatResponse != nil {
 		return m.chatResponse, nil
@@ -568,5 +572,146 @@ func TestModelErrorStruct(t *testing.T) {
 	err := ai.ErrNoModelAvailable
 	if err.Error() != "no model available" {
 		t.Errorf("Unexpected error message: %s", err.Error())
+	}
+}
+
+func TestTokenUsageStruct(t *testing.T) {
+	usage := ai.TokenUsage{
+		InputTokens:     100,
+		OutputTokens:    50,
+		TotalTokens:     150,
+		CacheReadTokens: 10,
+		CostUSD:         0.001,
+		TokensPerSecond: 25.5,
+	}
+
+	if usage.InputTokens != 100 {
+		t.Errorf("Expected InputTokens 100, got %d", usage.InputTokens)
+	}
+	if usage.OutputTokens != 50 {
+		t.Errorf("Expected OutputTokens 50, got %d", usage.OutputTokens)
+	}
+	if usage.TotalTokens != 150 {
+		t.Errorf("Expected TotalTokens 150, got %d", usage.TotalTokens)
+	}
+	if usage.TokensPerSecond != 25.5 {
+		t.Errorf("Expected TokensPerSecond 25.5, got %f", usage.TokensPerSecond)
+	}
+}
+
+func TestStreamResponseWithUsage(t *testing.T) {
+	// Test StreamResponse includes usage
+	resp := ai.StreamResponse{
+		Text:        "Test response",
+		Mode:        ai.ModeQuick,
+		Citations:   []session.Citation{{Index: 1, URL: "https://example.com", Title: "Test"}},
+		FollowUps:   []string{"Follow up 1", "Follow up 2"},
+		SessionID:   "test-session",
+		SourcesUsed: 1,
+		Usage: &ai.TokenUsage{
+			InputTokens:    100,
+			OutputTokens:   50,
+			TotalTokens:    150,
+			TokensPerSecond: 30.0,
+		},
+	}
+
+	if resp.Usage == nil {
+		t.Fatal("Expected Usage to be non-nil")
+	}
+	if resp.Usage.TotalTokens != 150 {
+		t.Errorf("Expected TotalTokens 150, got %d", resp.Usage.TotalTokens)
+	}
+	if resp.Usage.TokensPerSecond != 30.0 {
+		t.Errorf("Expected TokensPerSecond 30.0, got %f", resp.Usage.TokensPerSecond)
+	}
+}
+
+func TestRelatedQuestionStruct(t *testing.T) {
+	questions := []ai.RelatedQuestion{
+		{Text: "What is the history?", Category: "deeper"},
+		{Text: "How does it compare?", Category: "comparison"},
+		{Text: "What are current trends?", Category: "current"},
+	}
+
+	if len(questions) != 3 {
+		t.Errorf("Expected 3 questions, got %d", len(questions))
+	}
+	if questions[0].Text != "What is the history?" {
+		t.Errorf("Unexpected question text: %s", questions[0].Text)
+	}
+	if questions[0].Category != "deeper" {
+		t.Errorf("Unexpected category: %s", questions[0].Category)
+	}
+}
+
+func TestResponseWithFollowUps(t *testing.T) {
+	resp := ai.Response{
+		Answer:   "Test answer",
+		Mode:     ai.ModeQuick,
+		FollowUps: []string{"Follow up 1", "Follow up 2", "Follow up 3"},
+		RelatedQuestions: []ai.RelatedQuestion{
+			{Text: "Related question 1", Category: "related"},
+			{Text: "Related question 2", Category: "practical"},
+		},
+		Usage: &ai.TokenUsage{
+			InputTokens:  200,
+			OutputTokens: 100,
+			TotalTokens:  300,
+		},
+	}
+
+	if len(resp.FollowUps) != 3 {
+		t.Errorf("Expected 3 follow-ups, got %d", len(resp.FollowUps))
+	}
+	if len(resp.RelatedQuestions) != 2 {
+		t.Errorf("Expected 2 related questions, got %d", len(resp.RelatedQuestions))
+	}
+	if resp.Usage == nil {
+		t.Fatal("Expected Usage to be non-nil")
+	}
+	if resp.Usage.TotalTokens != 300 {
+		t.Errorf("Expected TotalTokens 300, got %d", resp.Usage.TotalTokens)
+	}
+}
+
+func TestStreamEventWithTokenUsage(t *testing.T) {
+	// Mock provider with token usage in stream events
+	provider := &mockProvider{
+		streamResponse: []llm.StreamEvent{
+			{Delta: "Hello "},
+			{Delta: "world"},
+			{Done: true, InputTokens: 10, OutputTokens: 5},
+		},
+	}
+
+	ctx := context.Background()
+	stream, err := provider.ChatCompletionStream(ctx, llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "test"}},
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	var inputTokens, outputTokens int
+	var content string
+	for event := range stream {
+		content += event.Delta
+		if event.InputTokens > 0 {
+			inputTokens = event.InputTokens
+		}
+		if event.OutputTokens > 0 {
+			outputTokens = event.OutputTokens
+		}
+	}
+
+	if content != "Hello world" {
+		t.Errorf("Expected 'Hello world', got '%s'", content)
+	}
+	if inputTokens != 10 {
+		t.Errorf("Expected inputTokens 10, got %d", inputTokens)
+	}
+	if outputTokens != 5 {
+		t.Errorf("Expected outputTokens 5, got %d", outputTokens)
 	}
 }

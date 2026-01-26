@@ -721,6 +721,60 @@ body {
   color: var(--search-light-gray);
 }
 
+.token-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #5f6368;
+  background: #f8f9fa;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+.token-usage-badge svg {
+  color: #fbbc04;
+}
+
+.token-usage-badge .token-speed {
+  color: #9aa0a6;
+  font-size: 10px;
+}
+
+/* Provider and model badge */
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #5f6368;
+  background: #e8f0fe;
+  border-radius: 12px;
+}
+
+.provider-badge svg {
+  color: #1a73e8;
+}
+
+.provider-badge .model-name {
+  color: #1a73e8;
+  font-weight: 500;
+}
+
+.provider-badge .cache-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  color: #34a853;
+}
+
+.provider-badge .cache-badge svg {
+  color: #34a853;
+}
+
 .ai-response-content {
   font-size: 14px;
   line-height: 1.7;

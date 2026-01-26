@@ -4,12 +4,17 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
+	"time"
 )
 
 // Provider is the main interface for LLM backends.
 type Provider interface {
+	// Name returns the provider name (e.g., "llamacpp", "claude").
+	Name() string
+
 	// ChatCompletion performs a chat completion request.
 	ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 
@@ -35,12 +40,52 @@ type ChatRequest struct {
 	TopP        float64   `json:"top_p,omitempty"`
 	Stream      bool      `json:"stream,omitempty"`
 	Stop        []string  `json:"stop,omitempty"`
+	Tools       []Tool    `json:"tools,omitempty"`
+	ToolChoice  string    `json:"tool_choice,omitempty"` // "auto", "any", "none"
 }
 
 // Message represents a chat message.
 type Message struct {
-	Role    string `json:"role"` // system, user, assistant
-	Content string `json:"content"`
+	Role       string       `json:"role"` // system, user, assistant, tool
+	Content    string       `json:"content,omitempty"`
+	ToolCalls  []ToolCall   `json:"tool_calls,omitempty"`
+	ToolCallID string       `json:"tool_call_id,omitempty"` // For tool result messages
+}
+
+// JSONSchema represents a JSON Schema for tool input validation.
+type JSONSchema struct {
+	Type        string              `json:"type"`
+	Properties  map[string]Property `json:"properties,omitempty"`
+	Required    []string            `json:"required,omitempty"`
+	Description string              `json:"description,omitempty"`
+}
+
+// Property represents a property in a JSON Schema.
+type Property struct {
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// Tool represents a function that can be called by the LLM.
+type Tool struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	InputSchema JSONSchema `json:"input_schema"`
+}
+
+// ToolCall represents a tool invocation from the LLM.
+type ToolCall struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
+// ToolResult represents the result of executing a tool.
+type ToolResult struct {
+	ToolCallID string `json:"tool_call_id"`
+	Content    string `json:"content"`
+	IsError    bool   `json:"is_error,omitempty"`
 }
 
 // ChatResponse represents a chat completion response.
@@ -65,14 +110,20 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	CacheReadTokens  int `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
 }
 
 // StreamEvent represents a streaming event.
 type StreamEvent struct {
-	ID    string `json:"id,omitempty"`
-	Delta string `json:"delta"`
-	Done  bool   `json:"done"`
-	Error error  `json:"error,omitempty"`
+	ID           string     `json:"id,omitempty"`
+	Delta        string     `json:"delta"`
+	Done         bool       `json:"done"`
+	Error        error      `json:"error,omitempty"`
+	ToolCall     *ToolCall  `json:"tool_call,omitempty"`
+	Usage        *Usage     `json:"usage,omitempty"`
+	InputTokens  int        `json:"input_tokens,omitempty"`
+	OutputTokens int        `json:"output_tokens,omitempty"`
 }
 
 // EmbeddingRequest represents an embedding request.
@@ -117,7 +168,34 @@ var (
 	ErrInvalidRequest   = errors.New("llm: invalid request")
 	ErrContextCanceled  = errors.New("llm: context canceled")
 	ErrStreamClosed     = errors.New("llm: stream closed")
+	ErrToolNotFound     = errors.New("llm: tool not found")
+	ErrToolExecution    = errors.New("llm: tool execution failed")
 )
+
+// RequestMetrics captures observability data for an LLM request.
+type RequestMetrics struct {
+	Provider         string        `json:"provider"`
+	Model            string        `json:"model"`
+	RequestID        string        `json:"request_id"`
+	StartTime        time.Time     `json:"start_time"`
+	TimeToFirstToken time.Duration `json:"time_to_first_token"`
+	TotalDuration    time.Duration `json:"total_duration"`
+	TokensPerSecond  float64       `json:"tokens_per_second"`
+	InputTokens      int           `json:"input_tokens"`
+	OutputTokens     int           `json:"output_tokens"`
+	CacheReadTokens  int           `json:"cache_read_tokens"`
+	CacheWriteTokens int           `json:"cache_write_tokens"`
+	CostUSD          float64       `json:"cost_usd"`
+	ToolCalls        int           `json:"tool_calls"`
+	Success          bool          `json:"success"`
+	Error            string        `json:"error,omitempty"`
+}
+
+// MetricsCollector is the interface for collecting LLM metrics.
+type MetricsCollector interface {
+	RecordRequest(ctx context.Context, m RequestMetrics)
+	GetSessionTotals(sessionID string) (inputTokens, outputTokens int, costUSD float64)
+}
 
 // ProviderFactory creates a new Provider instance.
 type ProviderFactory func(Config) (Provider, error)

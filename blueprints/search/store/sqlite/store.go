@@ -25,9 +25,11 @@ type Store struct {
 	cache      *CacheStore
 
 	// AI stores
-	session *SessionStore
-	canvas  *CanvasStore
-	chunker *ChunkerStore
+	session  *SessionStore
+	canvas   *CanvasStore
+	chunker  *ChunkerStore
+	llmCache *LLMCacheStore
+	llmLog   *LLMLogStore
 
 	// Kagi stores
 	bang     *BangStore
@@ -74,6 +76,8 @@ func New(dbPath string) (*Store, error) {
 	s.session = NewSessionStore(db)
 	s.canvas = NewCanvasStore(db)
 	s.chunker = NewChunkerStore(db)
+	s.llmCache = NewLLMCacheStore(db)
+	s.llmLog = NewLLMLogStore(db)
 
 	// Kagi stores
 	s.bang = &BangStore{db: db}
@@ -161,6 +165,14 @@ func (s *Store) Canvas() *CanvasStore {
 
 func (s *Store) Chunker() *ChunkerStore {
 	return s.chunker
+}
+
+func (s *Store) LLMCache() *LLMCacheStore {
+	return s.llmCache
+}
+
+func (s *Store) LLMLog() *LLMLogStore {
+	return s.llmLog
 }
 
 // SeedDocuments seeds sample documents.

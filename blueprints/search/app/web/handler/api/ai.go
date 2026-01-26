@@ -91,9 +91,12 @@ func (h *AIHandler) GetModelHealth(c *mizu.Ctx) error {
 
 // QueryRequest represents an AI query request.
 type QueryRequest struct {
-	Text      string  `json:"text"`
-	Mode      ai.Mode `json:"mode"`
-	SessionID string  `json:"session_id,omitempty"`
+	Text      string   `json:"text"`
+	Mode      ai.Mode  `json:"mode"`
+	ModelID   string   `json:"model_id,omitempty"`
+	SessionID string   `json:"session_id,omitempty"`
+	ImageURLs []string `json:"image_urls,omitempty"`
+	AudioURL  string   `json:"audio_url,omitempty"`
 }
 
 // Query handles a non-streaming AI query.

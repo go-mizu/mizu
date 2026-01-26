@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { Settings, Image, Video, Newspaper, Sparkles, Loader2, RefreshCw, Search } from 'lucide-react'
 import { SearchBox } from '../components/SearchBox'
@@ -37,16 +37,61 @@ export default function AIPage() {
   const [relatedQuestions, setRelatedQuestions] = useState<RelatedQuestion[]>([])
   const [images, setImages] = useState<ImageResult[]>([])
 
+  // Track which query has been processed to prevent duplicates
+  const processedQueryRef = useRef<string | null>(null)
+  // Abort controller for cancelling in-flight requests
+  const abortControllerRef = useRef<AbortController | null>(null)
+  // Query version to ignore stale events
+  const queryVersionRef = useRef(0)
+
+  // Cancel any in-flight request
+  const cancelCurrentRequest = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+  }, [])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      cancelCurrentRequest()
+    }
+  }, [cancelCurrentRequest])
+
   // Run AI query when page loads with a query
   useEffect(() => {
-    if (query && !isLoading && !isStreaming && !response) {
-      runAIQuery(query)
+    // Skip if no query or already processed this query
+    if (!query || query === processedQueryRef.current) {
+      return
     }
+
+    // Mark as processed
+    processedQueryRef.current = query
+
+    // Small delay to ensure state is ready
+    const timer = setTimeout(() => {
+      runAIQuery(query)
+    }, 50)
+
+    return () => clearTimeout(timer)
   }, [query])
 
   const runAIQuery = async (text: string) => {
-    if (!text.trim() || isLoading || isStreaming) return
+    if (!text.trim()) return
 
+    // Cancel any existing request
+    cancelCurrentRequest()
+
+    // Increment query version and capture it
+    queryVersionRef.current += 1
+    const currentVersion = queryVersionRef.current
+
+    // Create new abort controller
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    // Reset state for new query
     resetStream()
     setLoading(true)
     setError(null)
@@ -55,6 +100,9 @@ export default function AIPage() {
     setRelatedQuestions([])
     setImages([])
 
+    // Helper to check if this query is still current
+    const isStale = () => queryVersionRef.current !== currentVersion
+
     try {
       setStreaming(true)
 
@@ -62,36 +110,39 @@ export default function AIPage() {
         text,
         mode,
         model_id: selectedModelId || undefined,
-      })
+      }, controller.signal)
 
       for await (const event of stream) {
+        // Ignore events if a newer query has started
+        if (isStale()) break
+
         switch (event.type) {
           case 'start':
             // Stream started
             break
           case 'search':
             // Searching for query
-            if (event.query) {
+            if (event.query && !isStale()) {
               addThinkingStep(`Searching for: ${event.query}`)
             }
             break
           case 'token':
-            if (event.content) {
+            if (event.content && !isStale()) {
               appendStreamContent(event.content)
             }
             break
           case 'thinking':
-            if (event.thinking) {
+            if (event.thinking && !isStale()) {
               addThinkingStep(event.thinking)
             }
             break
           case 'citation':
-            if (event.citation) {
+            if (event.citation && !isStale()) {
               setCitations((prev) => [...prev, event.citation!])
             }
             break
           case 'done':
-            if (event.response) {
+            if (event.response && !isStale()) {
               // Map stream response to AIResponse format
               setResponse({
                 text: event.response.text,
@@ -103,28 +154,57 @@ export default function AIPage() {
                 session_id: event.response.session_id,
                 sources_used: event.response.sources_used,
                 thinking_steps: streamingThinking,
+                usage: event.response.usage,
+                provider: event.response.provider,
+                model: event.response.model,
+                from_cache: event.response.from_cache,
               })
               setRelatedQuestions(event.response.related_questions || [])
               setImages(event.response.images || [])
             }
             break
           case 'error':
-            setError(event.error || 'An error occurred')
+            if (!isStale()) {
+              setError(event.error || 'An error occurred')
+            }
             break
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get AI response')
+      // Ignore abort errors - they're expected when cancelling
+      if (err instanceof Error && err.name === 'AbortError') {
+        return
+      }
+      if (!isStale()) {
+        setError(err instanceof Error ? err.message : 'Failed to get AI response')
+      }
     } finally {
-      setLoading(false)
-      setStreaming(false)
+      // Only update loading state if this is still the current query
+      if (!isStale()) {
+        setLoading(false)
+        setStreaming(false)
+      }
+      // Clear abort controller if it's still ours
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
     }
   }
 
   const handleSearch = (newQuery: string) => {
-    navigate(`/ai?q=${encodeURIComponent(newQuery)}`)
+    // Cancel any in-flight request
+    cancelCurrentRequest()
+    // Reset processed query to allow the new query to run
+    processedQueryRef.current = null
     setResponse(null)
+    setError(null)
+    setCitations([])
+    setRelatedQuestions([])
+    setImages([])
     resetStream()
+    setLoading(false)
+    setStreaming(false)
+    navigate(`/ai?q=${encodeURIComponent(newQuery)}`)
   }
 
   const handleFollowUp = (question: string) => {
@@ -133,7 +213,15 @@ export default function AIPage() {
 
   const handleRefresh = () => {
     if (query) {
+      // Cancel any in-flight request first
+      cancelCurrentRequest()
+      // Reset to allow re-running the same query
+      processedQueryRef.current = null
       setResponse(null)
+      setError(null)
+      setCitations([])
+      setRelatedQuestions([])
+      setImages([])
       resetStream()
       runAIQuery(query)
     }

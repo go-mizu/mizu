@@ -4,7 +4,9 @@ package ai
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +18,52 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/store"
 	"github.com/go-mizu/mizu/blueprints/search/types"
 )
+
+// CacheEntry represents a cached LLM response.
+type CacheEntry struct {
+	QueryHash        string
+	Query            string
+	Mode             string
+	Model            string
+	ResponseText     string
+	Citations        string
+	FollowUps        string
+	RelatedQuestions string
+	InputTokens      int
+	OutputTokens     int
+	ExpiresAt        *time.Time
+}
+
+// CacheStore interface for LLM response caching.
+type CacheStore interface {
+	Get(ctx context.Context, queryHash, mode, model string) (*CacheEntry, error)
+	Set(ctx context.Context, entry *CacheEntry) error
+	Delete(ctx context.Context, queryHash, mode, model string) error
+	GetStats(ctx context.Context) (map[string]any, error)
+}
+
+// LogEntry represents an LLM API request/response log.
+type LogEntry struct {
+	RequestID    string
+	Provider     string
+	Model        string
+	Mode         string
+	Query        string
+	RequestJSON  string
+	ResponseJSON string
+	Status       string
+	ErrorMessage string
+	InputTokens  int
+	OutputTokens int
+	DurationMs   int
+	CostUSD      float64
+}
+
+// LogStore interface for LLM API logging.
+type LogStore interface {
+	Log(ctx context.Context, entry *LogEntry) error
+	GetStats(ctx context.Context) (map[string]any, error)
+}
 
 // Mode determines the inference strategy.
 type Mode string
@@ -33,6 +81,9 @@ type Config struct {
 	ResearchProvider llm.Provider
 	MaxIterations    int // For research mode (default 10)
 	MaxSources       int // Maximum sources to fetch (default 10)
+	CacheStore       CacheStore
+	LogStore         LogStore
+	CacheTTL         time.Duration // Default: 24 hours
 }
 
 // Service orchestrates AI-powered search.
@@ -41,24 +92,33 @@ type Service struct {
 	search        *search.Service
 	chunker       *chunker.Service
 	sessions      *session.Service
+	cache         CacheStore
+	logger        LogStore
 	maxIterations int
 	maxSources    int
+	cacheTTL      time.Duration
 }
 
-// getBestProvider returns the largest available provider for better quality answers.
-func (s *Service) getBestProvider() llm.Provider {
-	// Prefer research (4B) > deep (1B) > quick (270M) for answer quality
-	if p, ok := s.providers[ModeResearch]; ok && p != nil {
+// getProviderForMode returns the provider for a specific mode, with fallback.
+// This respects the user's mode selection instead of always using the most expensive model.
+func (s *Service) getProviderForMode(mode Mode) llm.Provider {
+	// First, try to get the provider for the requested mode
+	if p, ok := s.providers[mode]; ok && p != nil {
+		return p
+	}
+	// Fallback: try any available provider (prefer cheaper for cost savings)
+	if p, ok := s.providers[ModeQuick]; ok && p != nil {
 		return p
 	}
 	if p, ok := s.providers[ModeDeep]; ok && p != nil {
 		return p
 	}
-	if p, ok := s.providers[ModeQuick]; ok && p != nil {
+	if p, ok := s.providers[ModeResearch]; ok && p != nil {
 		return p
 	}
 	return nil
 }
+
 
 // Query represents an AI search query.
 type Query struct {
@@ -78,6 +138,7 @@ type Response struct {
 	Reasoning        []ReasoningStep    `json:"reasoning,omitempty"`
 	SessionID        string             `json:"session_id"`
 	Mode             Mode               `json:"mode"`
+	Usage            *TokenUsage        `json:"usage,omitempty"`    // Token usage stats
 }
 
 // RelatedQuestion represents a categorized follow-up question.
@@ -123,6 +184,17 @@ type StreamEvent struct {
 	Error     string             `json:"error,omitempty"`
 }
 
+// TokenUsage tracks token consumption and cost.
+type TokenUsage struct {
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	CacheReadTokens  int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
+	CostUSD          float64 `json:"cost_usd,omitempty"`
+	TokensPerSecond  float64 `json:"tokens_per_second,omitempty"`
+}
+
 // StreamResponse is the response object sent with the done event.
 type StreamResponse struct {
 	Text             string             `json:"text"`
@@ -133,6 +205,10 @@ type StreamResponse struct {
 	Images           []ImageResult      `json:"images"`             // Related images
 	SessionID        string             `json:"session_id"`
 	SourcesUsed      int                `json:"sources_used"`
+	Usage            *TokenUsage        `json:"usage,omitempty"`    // Token usage stats
+	Provider         string             `json:"provider,omitempty"` // Provider name (e.g., "llamacpp", "claude")
+	Model            string             `json:"model,omitempty"`    // Model ID (e.g., "gemma-3-270m", "claude-haiku-4.5")
+	FromCache        bool               `json:"from_cache"`         // Whether response came from cache
 }
 
 // New creates a new AI service.
@@ -156,15 +232,89 @@ func New(cfg Config, searchSvc *search.Service, chunkerSvc *chunker.Service, ses
 	if maxSrc <= 0 {
 		maxSrc = 10
 	}
+	cacheTTL := cfg.CacheTTL
+	if cacheTTL <= 0 {
+		cacheTTL = 24 * time.Hour
+	}
 
 	return &Service{
 		providers:     providers,
 		search:        searchSvc,
 		chunker:       chunkerSvc,
 		sessions:      sessionSvc,
+		cache:         cfg.CacheStore,
+		logger:        cfg.LogStore,
 		maxIterations: maxIter,
 		maxSources:    maxSrc,
+		cacheTTL:      cacheTTL,
 	}
+}
+
+// hashQuery generates a hash for caching based on query text.
+func hashQuery(query string) string {
+	h := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(query))))
+	return hex.EncodeToString(h[:])
+}
+
+// logRequest logs an LLM API request/response.
+func (s *Service) logRequest(ctx context.Context, entry *LogEntry) {
+	if s.logger == nil {
+		return
+	}
+	// Log asynchronously to avoid blocking
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.logger.Log(ctx, entry)
+	}()
+}
+
+// getCached attempts to retrieve a cached response.
+func (s *Service) getCached(ctx context.Context, query string, mode Mode, model string) (*CacheEntry, bool) {
+	if s.cache == nil {
+		return nil, false
+	}
+	hash := hashQuery(query)
+	entry, err := s.cache.Get(ctx, hash, string(mode), model)
+	if err != nil || entry == nil {
+		return nil, false
+	}
+	return entry, true
+}
+
+// setCache stores a response in the cache.
+func (s *Service) setCache(ctx context.Context, query string, mode Mode, model string, response *Response) {
+	if s.cache == nil {
+		return
+	}
+
+	citations, _ := json.Marshal(response.Citations)
+	followUps, _ := json.Marshal(response.FollowUps)
+	related, _ := json.Marshal(response.RelatedQuestions)
+
+	expiresAt := time.Now().Add(s.cacheTTL)
+	entry := &CacheEntry{
+		QueryHash:        hashQuery(query),
+		Query:            query,
+		Mode:             string(mode),
+		Model:            model,
+		ResponseText:     response.Answer,
+		Citations:        string(citations),
+		FollowUps:        string(followUps),
+		RelatedQuestions: string(related),
+		ExpiresAt:        &expiresAt,
+	}
+	if response.Usage != nil {
+		entry.InputTokens = response.Usage.InputTokens
+		entry.OutputTokens = response.Usage.OutputTokens
+	}
+
+	// Cache asynchronously
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.cache.Set(ctx, entry)
+	}()
 }
 
 // Process handles an AI query and returns a complete response.
@@ -206,11 +356,70 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 		return nil, fmt.Errorf("ai: no provider available for mode %s", query.Mode)
 	}
 
+	// Get the model name for caching
+	modelName := ""
+	if provider != nil {
+		models, _ := provider.Models(ctx)
+		if len(models) > 0 {
+			modelName = models[0].ID
+		}
+	}
+
+	// Get provider name
+	providerName := ""
+	if provider != nil {
+		providerName = provider.Name()
+	}
+
+	// Check cache first for non-streaming response
+	if cached, found := s.getCached(ctx, query.Text, query.Mode, modelName); found {
+		ch := make(chan StreamEvent, 10)
+		go func() {
+			defer close(ch)
+			// Parse cached data
+			var citations []session.Citation
+			var followUps []string
+			var related []RelatedQuestion
+			_ = json.Unmarshal([]byte(cached.Citations), &citations)
+			_ = json.Unmarshal([]byte(cached.FollowUps), &followUps)
+			_ = json.Unmarshal([]byte(cached.RelatedQuestions), &related)
+
+			// Send cached content as tokens for streaming effect
+			ch <- StreamEvent{Type: "thinking", Thinking: "Using cached response..."}
+			ch <- StreamEvent{Type: "token", Content: cached.ResponseText}
+			ch <- StreamEvent{
+				Type: "done",
+				Response: &StreamResponse{
+					Text:             cached.ResponseText,
+					Mode:             Mode(cached.Mode),
+					Citations:        citations,
+					FollowUps:        followUps,
+					RelatedQuestions: related,
+					SessionID:        query.SessionID,
+					SourcesUsed:      len(citations),
+					Usage: &TokenUsage{
+						InputTokens:  cached.InputTokens,
+						OutputTokens: cached.OutputTokens,
+					},
+					Provider:  providerName,
+					Model:     modelName,
+					FromCache: true,
+				},
+			}
+		}()
+		return ch, nil
+	}
+
 	// For Deep and Research modes, prefer quick provider for interactive feedback
 	// The larger models are too slow for interactive use
 	if query.Mode == ModeResearch || query.Mode == ModeDeep {
 		if quickProvider, ok := s.providers[ModeQuick]; ok {
 			provider = quickProvider
+			// Update model name and provider name for the fallback provider
+			providerName = provider.Name()
+			if models, err := provider.Models(ctx); err == nil && len(models) > 0 {
+				modelName = models[0].ID
+			}
 		}
 	}
 
@@ -219,6 +428,7 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 	go func() {
 		defer close(ch)
 
+		startTime := time.Now()
 		var resp *Response
 		var err error
 
@@ -233,10 +443,47 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 			resp, err = s.processQuickStream(ctx, provider, query, ch)
 		}
 
+		durationMs := int(time.Since(startTime).Milliseconds())
+
 		if err != nil {
+			// Log error
+			s.logRequest(ctx, &LogEntry{
+				RequestID:    generateRequestID(),
+				Provider:     "llm",
+				Model:        modelName,
+				Mode:         string(query.Mode),
+				Query:        query.Text,
+				RequestJSON:  "{}",
+				Status:       "error",
+				ErrorMessage: err.Error(),
+				DurationMs:   durationMs,
+			})
 			ch <- StreamEvent{Type: "error", Error: err.Error()}
 			return
 		}
+
+		// Log successful request
+		var inputTokens, outputTokens int
+		if resp.Usage != nil {
+			inputTokens = resp.Usage.InputTokens
+			outputTokens = resp.Usage.OutputTokens
+		}
+		s.logRequest(ctx, &LogEntry{
+			RequestID:    generateRequestID(),
+			Provider:     "llm",
+			Model:        modelName,
+			Mode:         string(query.Mode),
+			Query:        query.Text,
+			RequestJSON:  "{}",
+			Status:       "success",
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			DurationMs:   durationMs,
+			CostUSD:      estimateCost(modelName, inputTokens, outputTokens),
+		})
+
+		// Cache the response
+		s.setCache(ctx, query.Text, query.Mode, modelName, resp)
 
 		// Send done event with full response
 		ch <- StreamEvent{
@@ -250,11 +497,39 @@ func (s *Service) ProcessStream(ctx context.Context, query Query) (<-chan Stream
 				Images:           resp.Images,
 				SessionID:        resp.SessionID,
 				SourcesUsed:      len(resp.Sources),
+				Usage:            resp.Usage,
+				Provider:         providerName,
+				Model:            modelName,
+				FromCache:        false,
 			},
 		}
 	}()
 
 	return ch, nil
+}
+
+// generateRequestID generates a unique request ID for logging.
+func generateRequestID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// estimateCost estimates the cost of an LLM request based on model and tokens.
+func estimateCost(model string, inputTokens, outputTokens int) float64 {
+	// Pricing per million tokens
+	var inputPrice, outputPrice float64
+	switch {
+	case strings.Contains(model, "haiku"):
+		inputPrice, outputPrice = 1.0, 5.0
+	case strings.Contains(model, "sonnet"):
+		inputPrice, outputPrice = 3.0, 15.0
+	case strings.Contains(model, "opus"):
+		inputPrice, outputPrice = 15.0, 75.0
+	default:
+		inputPrice, outputPrice = 1.0, 5.0 // Default to haiku pricing
+	}
+	return (float64(inputTokens) * inputPrice / 1_000_000) + (float64(outputTokens) * outputPrice / 1_000_000)
 }
 
 // processQuick implements single-pass RAG.
@@ -328,11 +603,8 @@ If the search results don't contain relevant information, say so.`
 		Content: fmt.Sprintf("Search results:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with sections:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	// Use best available provider for quality
-	answerProvider := s.getBestProvider()
-	if answerProvider == nil {
-		answerProvider = provider
-	}
+	// Use the mode-specific provider (respects user's mode selection)
+	answerProvider := provider
 
 	// Generate response with increased token limit
 	chatResp, err := answerProvider.ChatCompletion(ctx, llm.ChatRequest{
@@ -465,11 +737,8 @@ Guidelines:
 		Content: fmt.Sprintf("Search results:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with sections:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	// Use best available provider for quality
-	streamProvider := s.getBestProvider()
-	if streamProvider == nil {
-		streamProvider = provider
-	}
+	// Use the mode-specific provider (respects user's mode selection)
+	streamProvider := provider
 
 	// Stream response with increased token limit
 	stream, err := streamProvider.ChatCompletionStream(ctx, llm.ChatRequest{
@@ -483,6 +752,8 @@ Guidelines:
 	}
 
 	var answer strings.Builder
+	var usage TokenUsage
+	startTime := time.Now()
 	for event := range stream {
 		if event.Error != nil {
 			return nil, event.Error
@@ -491,7 +762,27 @@ Guidelines:
 			answer.WriteString(event.Delta)
 			ch <- StreamEvent{Type: "token", Content: event.Delta}
 		}
+		// Track token usage from stream events
+		if event.Usage != nil {
+			usage.InputTokens = event.Usage.PromptTokens
+			usage.OutputTokens = event.Usage.CompletionTokens
+			usage.TotalTokens = event.Usage.TotalTokens
+			usage.CacheReadTokens = event.Usage.CacheReadTokens
+			usage.CacheWriteTokens = event.Usage.CacheWriteTokens
+		}
+		if event.InputTokens > 0 {
+			usage.InputTokens = event.InputTokens
+		}
+		if event.OutputTokens > 0 {
+			usage.OutputTokens = event.OutputTokens
+		}
 	}
+	// Calculate tokens per second
+	elapsed := time.Since(startTime).Seconds()
+	if elapsed > 0 && usage.OutputTokens > 0 {
+		usage.TokensPerSecond = float64(usage.OutputTokens) / elapsed
+	}
+	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 
 	// Generate related questions (enhanced follow-ups)
 	relatedQuestions := s.generateRelatedQuestions(ctx, provider, query.Text, answer.String(), citations)
@@ -525,6 +816,7 @@ Guidelines:
 		Sources:          sources,
 		SessionID:        sessionID,
 		Mode:             ModeQuick,
+		Usage:            &usage,
 	}, nil
 }
 
@@ -657,11 +949,8 @@ Be thorough and informative. Aim for the depth of an encyclopedia article.`
 		Content: fmt.Sprintf("Research context:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with multiple sections. Write at least 4-5 paragraphs covering all relevant aspects:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	// Use best provider for comprehensive answers
-	answerProvider := s.getBestProvider()
-	if answerProvider == nil {
-		answerProvider = provider
-	}
+	// Use the mode-specific provider
+	answerProvider := provider
 
 	chatResp, err := answerProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    messages,
@@ -834,13 +1123,13 @@ Guidelines:
 		Content: fmt.Sprintf("Research context:\n%s\n\nQuestion: %s\n\nProvide a comprehensive, detailed answer with multiple sections:", strings.Join(contextParts, "\n\n"), query.Text),
 	})
 
-	// Use best provider for quality
-	streamProvider := s.getBestProvider()
-	if streamProvider == nil {
-		streamProvider = provider
+	// Use the deep mode provider for synthesis
+	synthProvider := s.getProviderForMode(ModeDeep)
+	if synthProvider == nil {
+		synthProvider = provider
 	}
 
-	stream, err := streamProvider.ChatCompletionStream(ctx, llm.ChatRequest{
+	stream, err := synthProvider.ChatCompletionStream(ctx, llm.ChatRequest{
 		Messages:    messages,
 		MaxTokens:   4096,
 		Temperature: 0.7,
@@ -1061,13 +1350,13 @@ Instructions:
 
 Provide a comprehensive answer:`, query.Text, strings.Join(notes, "\n"))
 
-	// Use best provider for synthesis
-	synthProvider := s.getBestProvider()
-	if synthProvider == nil {
-		synthProvider = provider
+	// Use the research mode provider for synthesis
+	researchProvider := s.getProviderForMode(ModeResearch)
+	if researchProvider == nil {
+		researchProvider = provider
 	}
 
-	synthResp, err := synthProvider.ChatCompletion(ctx, llm.ChatRequest{
+	synthResp, err := researchProvider.ChatCompletion(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: synthPrompt}},
 		MaxTokens:   4096,
 		Temperature: 0.7,
@@ -1199,13 +1488,13 @@ Instructions:
 
 Provide a comprehensive answer:`, query.Text, strings.Join(contextParts, "\n\n"))
 
-	// Use best provider for synthesis
-	synthProvider := s.getBestProvider()
-	if synthProvider == nil {
-		synthProvider = provider
+	// Use the research mode provider for synthesis
+	researchProvider := s.getProviderForMode(ModeResearch)
+	if researchProvider == nil {
+		researchProvider = provider
 	}
 
-	stream, err := synthProvider.ChatCompletionStream(ctx, llm.ChatRequest{
+	stream, err := researchProvider.ChatCompletionStream(ctx, llm.ChatRequest{
 		Messages:    []llm.Message{{Role: "user", Content: synthPrompt}},
 		MaxTokens:   2048,
 		Temperature: 0.7,
@@ -1328,8 +1617,8 @@ func (s *Service) generateRelatedQuestions(ctx context.Context, provider llm.Pro
 		answerContext = answerContext[:500] + "..."
 	}
 
-	// Use the best provider for quality questions
-	questionProvider := s.getBestProvider()
+	// Use the quick provider for generating follow-up questions (cheaper, fast)
+	questionProvider := s.getProviderForMode(ModeQuick)
 	if questionProvider == nil {
 		questionProvider = provider
 	}
@@ -1498,11 +1787,6 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-func generateID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
 
 // GetModes returns available AI modes.
 func GetModes() []ModeInfo {

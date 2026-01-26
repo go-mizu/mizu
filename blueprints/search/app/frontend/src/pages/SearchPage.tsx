@@ -296,7 +296,7 @@ export default function SearchPage() {
                 <div>
                   {/* Stats */}
                   <p className="text-xs text-[#70757a] mb-4">
-                    About {results.total_results.toLocaleString()} results ({results.search_time_ms.toFixed(2)} ms)
+                    About {(results.total_results ?? 0).toLocaleString()} results ({(results.search_time_ms ?? 0).toFixed(2)} ms)
                   </p>
 
                   {/* Corrected query */}
