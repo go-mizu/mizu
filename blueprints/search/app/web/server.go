@@ -17,6 +17,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/feature/session"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/searxng"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/llm"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/llm/claude"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/llm/llamacpp"
 	"github.com/go-mizu/mizu/blueprints/search/store"
 	"github.com/go-mizu/mizu/blueprints/search/store/sqlite"
@@ -201,9 +202,13 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 		researchURL = "http://localhost:8084"
 	}
 
+	// Check for Claude API key
+	claudeAPIKey := os.Getenv("ANTHROPIC_API_KEY")
+
 	// Try to create LLM providers
 	var quickProvider, deepProvider, researchProvider llm.Provider
 
+	// Try local llama.cpp providers first
 	if client, err := llamacpp.New(llamacpp.Config{BaseURL: quickURL, Timeout: 120 * time.Second}); err == nil {
 		if err := client.Ping(context.Background()); err == nil {
 			quickProvider = client
@@ -220,6 +225,44 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 		}
 	}
 
+	// Try Claude providers as fallback or supplement
+	var claudeQuickProvider, claudeDeepProvider, claudeResearchProvider llm.Provider
+	if claudeAPIKey != "" {
+		// Create Claude providers for each tier with appropriate models
+		if client, err := claude.New(claude.Config{
+			APIKey:  claudeAPIKey,
+			Timeout: 120 * time.Second,
+			Model:   "claude-haiku-4.5", // Quick tier
+		}); err == nil {
+			claudeQuickProvider = client
+		}
+		if client, err := claude.New(claude.Config{
+			APIKey:  claudeAPIKey,
+			Timeout: 300 * time.Second,
+			Model:   "claude-sonnet-4.5", // Deep tier
+		}); err == nil {
+			claudeDeepProvider = client
+		}
+		if client, err := claude.New(claude.Config{
+			APIKey:  claudeAPIKey,
+			Timeout: 600 * time.Second,
+			Model:   "claude-opus-4.5", // Research tier
+		}); err == nil {
+			claudeResearchProvider = client
+		}
+	}
+
+	// Use Claude as fallback if local providers unavailable
+	if quickProvider == nil && claudeQuickProvider != nil {
+		quickProvider = claudeQuickProvider
+	}
+	if deepProvider == nil && claudeDeepProvider != nil {
+		deepProvider = claudeDeepProvider
+	}
+	if researchProvider == nil && claudeResearchProvider != nil {
+		researchProvider = claudeResearchProvider
+	}
+
 	// If no providers available, return nil (AI mode disabled)
 	if quickProvider == nil && deepProvider == nil && researchProvider == nil {
 		return nil
@@ -231,10 +274,17 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 	// Create canvas service
 	canvasSvc := canvas.New(st.Canvas())
 
-	// Create chunker service (use quick provider for embeddings)
+	// Create chunker service (use quick provider for embeddings, prefer llama.cpp)
 	var chunkerSvc *chunker.Service
-	if quickProvider != nil {
-		chunkerSvc = chunker.New(st.Chunker(), quickProvider, chunker.Config{
+	var embeddingProvider llm.Provider
+	// Prefer llama.cpp for embeddings since Claude doesn't support them
+	if client, err := llamacpp.New(llamacpp.Config{BaseURL: quickURL, Timeout: 120 * time.Second}); err == nil {
+		if err := client.Ping(context.Background()); err == nil {
+			embeddingProvider = client
+		}
+	}
+	if embeddingProvider != nil {
+		chunkerSvc = chunker.New(st.Chunker(), embeddingProvider, chunker.Config{
 			ChunkSize:    1000,
 			ChunkOverlap: 200,
 			MaxChunks:    100,
@@ -244,56 +294,107 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 	// Use the same search service from the search handler (has SearXNG if available)
 	searchSvc := searchHandler.Service()
 
-	// Create AI service
+	// Create AI service with caching and logging
 	aiSvc := ai.New(ai.Config{
 		QuickProvider:    quickProvider,
 		DeepProvider:     deepProvider,
 		ResearchProvider: researchProvider,
 		MaxIterations:    10,
 		MaxSources:       10,
+		CacheStore:       &llmCacheAdapter{st.LLMCache()},
+		LogStore:         &llmLogAdapter{st.LLMLog()},
+		CacheTTL:         24 * time.Hour,
 	}, searchSvc, chunkerSvc, sessionSvc)
 
 	// Create model registry
 	registry := ai.NewModelRegistry()
 
-	// Register models
-	if quickProvider != nil {
-		registry.RegisterModel(ai.ModelInfo{
-			ID:           "gemma-3-270m",
-			Provider:     "llamacpp",
-			Name:         "Gemma 3 270M",
-			Description:  "Fast, lightweight model for quick answers",
-			Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
-			ContextSize:  4096,
-			Speed:        "fast",
-			Available:    true,
-		}, quickProvider)
+	// Register llama.cpp models if available
+	if llamaQuick, err := llamacpp.New(llamacpp.Config{BaseURL: quickURL, Timeout: 120 * time.Second}); err == nil {
+		if llamaQuick.Ping(context.Background()) == nil {
+			registry.RegisterModel(ai.ModelInfo{
+				ID:           "gemma-3-270m",
+				Provider:     "llamacpp",
+				Name:         "Gemma 3 270M",
+				Description:  "Fast, lightweight model for quick answers",
+				Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
+				ContextSize:  4096,
+				Speed:        "fast",
+				Available:    true,
+			}, llamaQuick)
+		}
 	}
 
-	if deepProvider != nil {
-		registry.RegisterModel(ai.ModelInfo{
-			ID:           "gemma-3-1b",
-			Provider:     "llamacpp",
-			Name:         "Gemma 3 1B",
-			Description:  "Balanced model for detailed analysis",
-			Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
-			ContextSize:  8192,
-			Speed:        "balanced",
-			Available:    true,
-		}, deepProvider)
+	if llamaDeep, err := llamacpp.New(llamacpp.Config{BaseURL: deepURL, Timeout: 300 * time.Second}); err == nil {
+		if llamaDeep.Ping(context.Background()) == nil {
+			registry.RegisterModel(ai.ModelInfo{
+				ID:           "gemma-3-1b",
+				Provider:     "llamacpp",
+				Name:         "Gemma 3 1B",
+				Description:  "Balanced model for detailed analysis",
+				Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
+				ContextSize:  8192,
+				Speed:        "balanced",
+				Available:    true,
+			}, llamaDeep)
+		}
 	}
 
-	if researchProvider != nil {
-		registry.RegisterModel(ai.ModelInfo{
-			ID:           "gemma-3-4b",
-			Provider:     "llamacpp",
-			Name:         "Gemma 3 4B",
-			Description:  "Comprehensive model for in-depth research",
-			Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
-			ContextSize:  16384,
-			Speed:        "thorough",
-			Available:    true,
-		}, researchProvider)
+	if llamaResearch, err := llamacpp.New(llamacpp.Config{BaseURL: researchURL, Timeout: 600 * time.Second}); err == nil {
+		if llamaResearch.Ping(context.Background()) == nil {
+			registry.RegisterModel(ai.ModelInfo{
+				ID:           "gemma-3-4b",
+				Provider:     "llamacpp",
+				Name:         "Gemma 3 4B",
+				Description:  "Comprehensive model for in-depth research",
+				Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityEmbeddings},
+				ContextSize:  16384,
+				Speed:        "thorough",
+				Available:    true,
+			}, llamaResearch)
+		}
+	}
+
+	// Register Claude models if API key is available
+	if claudeAPIKey != "" {
+		if claudeQuickProvider != nil {
+			registry.RegisterModel(ai.ModelInfo{
+				ID:           "claude-haiku-4.5",
+				Provider:     "claude",
+				Name:         "Claude Haiku 4.5",
+				Description:  "Fast Claude model for quick answers",
+				Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityVision},
+				ContextSize:  200000,
+				Speed:        "fast",
+				Available:    true,
+			}, claudeQuickProvider)
+		}
+
+		if claudeDeepProvider != nil {
+			registry.RegisterModel(ai.ModelInfo{
+				ID:           "claude-sonnet-4.5",
+				Provider:     "claude",
+				Name:         "Claude Sonnet 4.5",
+				Description:  "Balanced Claude model for detailed analysis",
+				Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityVision},
+				ContextSize:  200000,
+				Speed:        "balanced",
+				Available:    true,
+			}, claudeDeepProvider)
+		}
+
+		if claudeResearchProvider != nil {
+			registry.RegisterModel(ai.ModelInfo{
+				ID:           "claude-opus-4.5",
+				Provider:     "claude",
+				Name:         "Claude Opus 4.5",
+				Description:  "Most capable Claude model for comprehensive research",
+				Capabilities: []ai.Capability{ai.CapabilityText, ai.CapabilityVision},
+				ContextSize:  200000,
+				Speed:        "thorough",
+				Available:    true,
+			}, claudeResearchProvider)
+		}
 	}
 
 	return api.NewAIHandler(aiSvc, sessionSvc, canvasSvc, registry)
@@ -329,4 +430,82 @@ func createSearchHandler(st store.Store) *api.SearchHandler {
 		Cache:  cache,
 		Store:  st,
 	}, st)
+}
+
+// ========== LLM Store Adapters ==========
+
+// llmCacheAdapter adapts sqlite.LLMCacheStore to ai.CacheStore.
+type llmCacheAdapter struct {
+	store *sqlite.LLMCacheStore
+}
+
+func (a *llmCacheAdapter) Get(ctx context.Context, queryHash, mode, model string) (*ai.CacheEntry, error) {
+	entry, err := a.store.Get(ctx, queryHash, mode, model)
+	if err != nil || entry == nil {
+		return nil, err
+	}
+	return &ai.CacheEntry{
+		QueryHash:        entry.QueryHash,
+		Query:            entry.Query,
+		Mode:             entry.Mode,
+		Model:            entry.Model,
+		ResponseText:     entry.ResponseText,
+		Citations:        entry.Citations,
+		FollowUps:        entry.FollowUps,
+		RelatedQuestions: entry.RelatedQuestions,
+		InputTokens:      entry.InputTokens,
+		OutputTokens:     entry.OutputTokens,
+		ExpiresAt:        entry.ExpiresAt,
+	}, nil
+}
+
+func (a *llmCacheAdapter) Set(ctx context.Context, entry *ai.CacheEntry) error {
+	return a.store.Set(ctx, &sqlite.LLMCacheEntry{
+		QueryHash:        entry.QueryHash,
+		Query:            entry.Query,
+		Mode:             entry.Mode,
+		Model:            entry.Model,
+		ResponseText:     entry.ResponseText,
+		Citations:        entry.Citations,
+		FollowUps:        entry.FollowUps,
+		RelatedQuestions: entry.RelatedQuestions,
+		InputTokens:      entry.InputTokens,
+		OutputTokens:     entry.OutputTokens,
+		ExpiresAt:        entry.ExpiresAt,
+	})
+}
+
+func (a *llmCacheAdapter) Delete(ctx context.Context, queryHash, mode, model string) error {
+	return a.store.Delete(ctx, queryHash, mode, model)
+}
+
+func (a *llmCacheAdapter) GetStats(ctx context.Context) (map[string]any, error) {
+	return a.store.GetStats(ctx)
+}
+
+// llmLogAdapter adapts sqlite.LLMLogStore to ai.LogStore.
+type llmLogAdapter struct {
+	store *sqlite.LLMLogStore
+}
+
+func (a *llmLogAdapter) Log(ctx context.Context, entry *ai.LogEntry) error {
+	return a.store.Log(ctx, &sqlite.LLMLogEntry{
+		RequestID:    entry.RequestID,
+		Provider:     entry.Provider,
+		Model:        entry.Model,
+		Mode:         entry.Mode,
+		Query:        entry.Query,
+		RequestJSON:  entry.RequestJSON,
+		ResponseJSON: entry.ResponseJSON,
+		Status:       entry.Status,
+		ErrorMessage: entry.ErrorMessage,
+		InputTokens:  entry.InputTokens,
+		OutputTokens: entry.OutputTokens,
+		DurationMs:   entry.DurationMs,
+		CostUSD:      entry.CostUSD,
+	})
+}
+
+func (a *llmLogAdapter) GetStats(ctx context.Context) (map[string]any, error) {
+	return a.store.GetStats(ctx)
 }

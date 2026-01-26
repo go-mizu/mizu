@@ -86,6 +86,57 @@ func createAISchema(ctx context.Context, db *sql.DB) error {
 
 		CREATE INDEX IF NOT EXISTS idx_ai_chunks_document ON ai_chunks(document_id);
 		CREATE INDEX IF NOT EXISTS idx_ai_chunks_url ON ai_chunks(url);
+
+		-- LLM Response Cache (for reusing expensive Claude API calls)
+		CREATE TABLE IF NOT EXISTS llm_cache (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			query_hash TEXT NOT NULL,
+			query TEXT NOT NULL,
+			mode TEXT NOT NULL,
+			model TEXT NOT NULL,
+			response_text TEXT NOT NULL,
+			citations TEXT DEFAULT '[]',
+			follow_ups TEXT DEFAULT '[]',
+			related_questions TEXT DEFAULT '[]',
+			input_tokens INTEGER DEFAULT 0,
+			output_tokens INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			expires_at DATETIME,
+			hit_count INTEGER DEFAULT 0,
+			last_hit_at DATETIME,
+			UNIQUE(query_hash, mode, model)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_llm_cache_hash ON llm_cache(query_hash);
+		CREATE INDEX IF NOT EXISTS idx_llm_cache_mode ON llm_cache(mode);
+		CREATE INDEX IF NOT EXISTS idx_llm_cache_model ON llm_cache(model);
+		CREATE INDEX IF NOT EXISTS idx_llm_cache_created ON llm_cache(created_at);
+		CREATE INDEX IF NOT EXISTS idx_llm_cache_expires ON llm_cache(expires_at);
+
+		-- LLM API Request/Response Log (for debugging and cost tracking)
+		CREATE TABLE IF NOT EXISTS llm_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			request_id TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			mode TEXT,
+			query TEXT,
+			request_json TEXT NOT NULL,
+			response_json TEXT,
+			status TEXT NOT NULL,
+			error_message TEXT,
+			input_tokens INTEGER DEFAULT 0,
+			output_tokens INTEGER DEFAULT 0,
+			duration_ms INTEGER DEFAULT 0,
+			cost_usd REAL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_llm_logs_request_id ON llm_logs(request_id);
+		CREATE INDEX IF NOT EXISTS idx_llm_logs_provider ON llm_logs(provider);
+		CREATE INDEX IF NOT EXISTS idx_llm_logs_model ON llm_logs(model);
+		CREATE INDEX IF NOT EXISTS idx_llm_logs_status ON llm_logs(status);
+		CREATE INDEX IF NOT EXISTS idx_llm_logs_created ON llm_logs(created_at);
 	`
 
 	_, err := db.ExecContext(ctx, schema)
@@ -443,4 +494,357 @@ func (s *ChunkerStore) DeleteOldDocuments(ctx context.Context, olderThan time.Du
 	cutoff := time.Now().Add(-olderThan)
 	_, err := s.db.ExecContext(ctx, `DELETE FROM ai_documents WHERE fetched_at < ?`, cutoff)
 	return err
+}
+
+// ========== LLM Cache Store ==========
+
+// LLMCacheEntry represents a cached LLM response.
+type LLMCacheEntry struct {
+	ID               int64     `json:"id"`
+	QueryHash        string    `json:"query_hash"`
+	Query            string    `json:"query"`
+	Mode             string    `json:"mode"`
+	Model            string    `json:"model"`
+	ResponseText     string    `json:"response_text"`
+	Citations        string    `json:"citations"`
+	FollowUps        string    `json:"follow_ups"`
+	RelatedQuestions string    `json:"related_questions"`
+	InputTokens      int       `json:"input_tokens"`
+	OutputTokens     int       `json:"output_tokens"`
+	CreatedAt        time.Time `json:"created_at"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	HitCount         int       `json:"hit_count"`
+	LastHitAt        *time.Time `json:"last_hit_at,omitempty"`
+}
+
+// LLMCacheStore manages LLM response caching.
+type LLMCacheStore struct {
+	db *sql.DB
+}
+
+// NewLLMCacheStore creates a new LLM cache store.
+func NewLLMCacheStore(db *sql.DB) *LLMCacheStore {
+	return &LLMCacheStore{db: db}
+}
+
+// Get retrieves a cached response by query hash, mode, and model.
+func (s *LLMCacheStore) Get(ctx context.Context, queryHash, mode, model string) (*LLMCacheEntry, error) {
+	var entry LLMCacheEntry
+	var expiresAt, lastHitAt sql.NullTime
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, query_hash, query, mode, model, response_text, citations, follow_ups, related_questions,
+		       input_tokens, output_tokens, created_at, expires_at, hit_count, last_hit_at
+		FROM llm_cache
+		WHERE query_hash = ? AND mode = ? AND model = ?
+		  AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+	`, queryHash, mode, model).Scan(
+		&entry.ID, &entry.QueryHash, &entry.Query, &entry.Mode, &entry.Model,
+		&entry.ResponseText, &entry.Citations, &entry.FollowUps, &entry.RelatedQuestions,
+		&entry.InputTokens, &entry.OutputTokens, &entry.CreatedAt, &expiresAt, &entry.HitCount, &lastHitAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.Valid {
+		entry.ExpiresAt = &expiresAt.Time
+	}
+	if lastHitAt.Valid {
+		entry.LastHitAt = &lastHitAt.Time
+	}
+
+	// Increment hit count
+	_, _ = s.db.ExecContext(ctx, `
+		UPDATE llm_cache SET hit_count = hit_count + 1, last_hit_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, entry.ID)
+
+	return &entry, nil
+}
+
+// Set stores a new cache entry.
+func (s *LLMCacheStore) Set(ctx context.Context, entry *LLMCacheEntry) error {
+	var expiresAt interface{}
+	if entry.ExpiresAt != nil {
+		expiresAt = entry.ExpiresAt
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO llm_cache (query_hash, query, mode, model, response_text, citations, follow_ups, related_questions,
+		                       input_tokens, output_tokens, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+		ON CONFLICT(query_hash, mode, model) DO UPDATE SET
+			response_text = excluded.response_text,
+			citations = excluded.citations,
+			follow_ups = excluded.follow_ups,
+			related_questions = excluded.related_questions,
+			input_tokens = excluded.input_tokens,
+			output_tokens = excluded.output_tokens,
+			created_at = CURRENT_TIMESTAMP,
+			expires_at = excluded.expires_at
+	`, entry.QueryHash, entry.Query, entry.Mode, entry.Model, entry.ResponseText,
+		entry.Citations, entry.FollowUps, entry.RelatedQuestions,
+		entry.InputTokens, entry.OutputTokens, expiresAt)
+
+	return err
+}
+
+// Delete removes a cache entry.
+func (s *LLMCacheStore) Delete(ctx context.Context, queryHash, mode, model string) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM llm_cache WHERE query_hash = ? AND mode = ? AND model = ?
+	`, queryHash, mode, model)
+	return err
+}
+
+// DeleteExpired removes all expired cache entries.
+func (s *LLMCacheStore) DeleteExpired(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM llm_cache WHERE expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP
+	`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// GetStats returns cache statistics.
+func (s *LLMCacheStore) GetStats(ctx context.Context) (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Total entries
+	var total int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_cache`).Scan(&total)
+	if err != nil {
+		return nil, err
+	}
+	stats["total_entries"] = total
+
+	// Total hits
+	var totalHits int64
+	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(hit_count), 0) FROM llm_cache`).Scan(&totalHits)
+	if err != nil {
+		return nil, err
+	}
+	stats["total_hits"] = totalHits
+
+	// Entries by mode
+	rows, err := s.db.QueryContext(ctx, `SELECT mode, COUNT(*) FROM llm_cache GROUP BY mode`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byMode := make(map[string]int64)
+	for rows.Next() {
+		var mode string
+		var count int64
+		if err := rows.Scan(&mode, &count); err != nil {
+			return nil, err
+		}
+		byMode[mode] = count
+	}
+	stats["by_mode"] = byMode
+
+	// Estimated tokens saved
+	var tokensSaved int64
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM((input_tokens + output_tokens) * hit_count), 0) FROM llm_cache
+	`).Scan(&tokensSaved)
+	if err != nil {
+		return nil, err
+	}
+	stats["tokens_saved"] = tokensSaved
+
+	return stats, nil
+}
+
+// ========== LLM Log Store ==========
+
+// LLMLogEntry represents an API request/response log entry.
+type LLMLogEntry struct {
+	ID           int64     `json:"id"`
+	RequestID    string    `json:"request_id"`
+	Provider     string    `json:"provider"`
+	Model        string    `json:"model"`
+	Mode         string    `json:"mode,omitempty"`
+	Query        string    `json:"query,omitempty"`
+	RequestJSON  string    `json:"request_json"`
+	ResponseJSON string    `json:"response_json,omitempty"`
+	Status       string    `json:"status"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	InputTokens  int       `json:"input_tokens"`
+	OutputTokens int       `json:"output_tokens"`
+	DurationMs   int       `json:"duration_ms"`
+	CostUSD      float64   `json:"cost_usd"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// LLMLogStore manages LLM API request/response logging.
+type LLMLogStore struct {
+	db *sql.DB
+}
+
+// NewLLMLogStore creates a new LLM log store.
+func NewLLMLogStore(db *sql.DB) *LLMLogStore {
+	return &LLMLogStore{db: db}
+}
+
+// Log records an API request/response.
+func (s *LLMLogStore) Log(ctx context.Context, entry *LLMLogEntry) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO llm_logs (request_id, provider, model, mode, query, request_json, response_json,
+		                      status, error_message, input_tokens, output_tokens, duration_ms, cost_usd)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, entry.RequestID, entry.Provider, entry.Model, entry.Mode, entry.Query,
+		entry.RequestJSON, entry.ResponseJSON, entry.Status, entry.ErrorMessage,
+		entry.InputTokens, entry.OutputTokens, entry.DurationMs, entry.CostUSD)
+
+	return err
+}
+
+// GetByRequestID retrieves a log entry by request ID.
+func (s *LLMLogStore) GetByRequestID(ctx context.Context, requestID string) (*LLMLogEntry, error) {
+	var entry LLMLogEntry
+	var mode, query, responseJSON, errorMsg sql.NullString
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, request_id, provider, model, mode, query, request_json, response_json,
+		       status, error_message, input_tokens, output_tokens, duration_ms, cost_usd, created_at
+		FROM llm_logs
+		WHERE request_id = ?
+	`, requestID).Scan(
+		&entry.ID, &entry.RequestID, &entry.Provider, &entry.Model, &mode, &query,
+		&entry.RequestJSON, &responseJSON, &entry.Status, &errorMsg,
+		&entry.InputTokens, &entry.OutputTokens, &entry.DurationMs, &entry.CostUSD, &entry.CreatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	entry.Mode = mode.String
+	entry.Query = query.String
+	entry.ResponseJSON = responseJSON.String
+	entry.ErrorMessage = errorMsg.String
+
+	return &entry, nil
+}
+
+// List retrieves recent log entries.
+func (s *LLMLogStore) List(ctx context.Context, limit, offset int) ([]LLMLogEntry, int, error) {
+	var total int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_logs`).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, request_id, provider, model, mode, query, request_json, response_json,
+		       status, error_message, input_tokens, output_tokens, duration_ms, cost_usd, created_at
+		FROM llm_logs
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var entries []LLMLogEntry
+	for rows.Next() {
+		var entry LLMLogEntry
+		var mode, query, responseJSON, errorMsg sql.NullString
+		if err := rows.Scan(
+			&entry.ID, &entry.RequestID, &entry.Provider, &entry.Model, &mode, &query,
+			&entry.RequestJSON, &responseJSON, &entry.Status, &errorMsg,
+			&entry.InputTokens, &entry.OutputTokens, &entry.DurationMs, &entry.CostUSD, &entry.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		entry.Mode = mode.String
+		entry.Query = query.String
+		entry.ResponseJSON = responseJSON.String
+		entry.ErrorMessage = errorMsg.String
+		entries = append(entries, entry)
+	}
+
+	return entries, total, rows.Err()
+}
+
+// GetStats returns logging statistics.
+func (s *LLMLogStore) GetStats(ctx context.Context) (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Total requests
+	var total int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_logs`).Scan(&total)
+	if err != nil {
+		return nil, err
+	}
+	stats["total_requests"] = total
+
+	// Success/error breakdown
+	var success, errors int64
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_logs WHERE status = 'success'`).Scan(&success)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_logs WHERE status = 'error'`).Scan(&errors)
+	stats["success_count"] = success
+	stats["error_count"] = errors
+
+	// Total tokens used
+	var inputTokens, outputTokens int64
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0) FROM llm_logs`).Scan(&inputTokens, &outputTokens)
+	stats["total_input_tokens"] = inputTokens
+	stats["total_output_tokens"] = outputTokens
+
+	// Total cost
+	var totalCost float64
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(cost_usd), 0) FROM llm_logs`).Scan(&totalCost)
+	stats["total_cost_usd"] = totalCost
+
+	// By provider
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT provider, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(cost_usd), 0)
+		FROM llm_logs GROUP BY provider
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byProvider := make(map[string]map[string]interface{})
+	for rows.Next() {
+		var provider string
+		var count, input, output int64
+		var cost float64
+		if err := rows.Scan(&provider, &count, &input, &output, &cost); err != nil {
+			return nil, err
+		}
+		byProvider[provider] = map[string]interface{}{
+			"count":         count,
+			"input_tokens":  input,
+			"output_tokens": output,
+			"cost_usd":      cost,
+		}
+	}
+	stats["by_provider"] = byProvider
+
+	return stats, nil
+}
+
+// DeleteOld removes log entries older than the specified duration.
+func (s *LLMLogStore) DeleteOld(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+	result, err := s.db.ExecContext(ctx, `DELETE FROM llm_logs WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

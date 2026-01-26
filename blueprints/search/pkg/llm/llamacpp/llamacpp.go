@@ -53,6 +53,11 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
+// Name returns the provider name.
+func (c *Client) Name() string {
+	return "llamacpp"
+}
+
 // ChatCompletion performs a chat completion request.
 func (c *Client) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	body, err := json.Marshal(req)

@@ -39,6 +39,25 @@ export function AIChat({ sessionId, initialMessages = [] }: AIChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  // Abort controller for cancelling in-flight requests
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const queryVersionRef = useRef(0)
+
+  // Cancel any in-flight request
+  const cancelCurrentRequest = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+  }, [])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      cancelCurrentRequest()
+    }
+  }, [cancelCurrentRequest])
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -70,6 +89,20 @@ export function AIChat({ sessionId, initialMessages = [] }: AIChatProps) {
     e.preventDefault()
     if (!input.trim() || isLoading || isStreaming) return
 
+    // Cancel any existing request
+    cancelCurrentRequest()
+
+    // Increment query version and capture it
+    queryVersionRef.current += 1
+    const currentVersion = queryVersionRef.current
+
+    // Create new abort controller
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    // Helper to check if this query is still current
+    const isStale = () => queryVersionRef.current !== currentVersion
+
     const imageUrls = await getFileUrls()
 
     const userMessage: AIMessage = {
@@ -97,35 +130,40 @@ export function AIChat({ sessionId, initialMessages = [] }: AIChatProps) {
         model_id: selectedModelId || undefined,
         session_id: sessionId,
         image_urls: imageUrls.length > 0 ? imageUrls : undefined,
-      })
+      }, controller.signal)
 
       let response: AIResponseType | null = null
 
       for await (const event of stream) {
+        // Ignore events if a newer query has started
+        if (isStale()) break
+
         switch (event.type) {
           case 'token':
-            if (event.content) {
+            if (event.content && !isStale()) {
               appendStreamContent(event.content)
             }
             break
           case 'thinking':
-            if (event.thinking) {
+            if (event.thinking && !isStale()) {
               addThinkingStep(event.thinking)
             }
             break
           case 'done':
-            if (event.response) {
+            if (event.response && !isStale()) {
               response = event.response
               setCurrentStreamResponse(response)
             }
             break
           case 'error':
-            setError(event.error || 'An error occurred')
+            if (!isStale()) {
+              setError(event.error || 'An error occurred')
+            }
             break
         }
       }
 
-      if (response) {
+      if (response && !isStale()) {
         const assistantMessage: AIMessage = {
           id: crypto.randomUUID(),
           session_id: sessionId,
@@ -138,12 +176,23 @@ export function AIChat({ sessionId, initialMessages = [] }: AIChatProps) {
         setMessages((prev) => [...prev, assistantMessage])
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get response')
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') {
+        return
+      }
+      if (!isStale()) {
+        setError(err instanceof Error ? err.message : 'Failed to get response')
+      }
     } finally {
-      setLoading(false)
-      setStreaming(false)
-      resetStream()
-      setCurrentStreamResponse(null)
+      if (!isStale()) {
+        setLoading(false)
+        setStreaming(false)
+        resetStream()
+        setCurrentStreamResponse(null)
+      }
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
     }
   }
 

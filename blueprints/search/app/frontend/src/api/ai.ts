@@ -54,8 +54,8 @@ export const aiApi = {
     return eventSource
   },
 
-  // Alternative streaming using fetch
-  queryStreamFetch: async function* (request: AIQueryRequest): AsyncGenerator<AIStreamEvent> {
+  // Alternative streaming using fetch with abort support
+  queryStreamFetch: async function* (request: AIQueryRequest, signal?: AbortSignal): AsyncGenerator<AIStreamEvent> {
     const response = await fetch('/api/ai/query/stream', {
       method: 'POST',
       headers: {
@@ -63,6 +63,7 @@ export const aiApi = {
         'Accept': 'text/event-stream',
       },
       body: JSON.stringify(request),
+      signal,
     })
 
     if (!response.ok) {
@@ -77,26 +78,31 @@ export const aiApi = {
     const decoder = new TextDecoder()
     let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim()
-          if (data && data !== '[DONE]') {
-            try {
-              yield JSON.parse(data) as AIStreamEvent
-            } catch {
-              // Skip invalid JSON
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim()
+            if (data && data !== '[DONE]') {
+              try {
+                yield JSON.parse(data) as AIStreamEvent
+              } catch {
+                // Skip invalid JSON
+              }
             }
           }
         }
       }
+    } finally {
+      // Ensure reader is released when aborted or finished
+      reader.releaseLock()
     }
   },
 

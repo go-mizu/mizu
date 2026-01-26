@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Sparkles, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { aiApi } from '../../api/ai'
 import { useAIStore } from '../../stores/aiStore'
@@ -33,8 +33,41 @@ export function AISummary({ query, onFollowUp }: AISummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const [hasQueried, setHasQueried] = useState(false)
 
+  // Abort controller for cancelling in-flight requests
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const queryVersionRef = useRef(0)
+
+  // Cancel any in-flight request
+  const cancelCurrentRequest = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+  }, [])
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      cancelCurrentRequest()
+    }
+  }, [cancelCurrentRequest])
+
   const runQuery = useCallback(async () => {
     if (!query || !aiAvailable) return
+
+    // Cancel any existing request
+    cancelCurrentRequest()
+
+    // Increment query version and capture it
+    queryVersionRef.current += 1
+    const currentVersion = queryVersionRef.current
+
+    // Create new abort controller
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
+    // Helper to check if this query is still current
+    const isStale = () => queryVersionRef.current !== currentVersion
 
     resetStream()
     setLoading(true)
@@ -47,44 +80,60 @@ export function AISummary({ query, onFollowUp }: AISummaryProps) {
       const stream = aiApi.queryStreamFetch({
         text: query,
         mode,
-      })
+      }, controller.signal)
 
       let response: AIResponseType | null = null
 
       for await (const event of stream) {
+        // Ignore events if a newer query has started
+        if (isStale()) break
+
         switch (event.type) {
           case 'token':
-            if (event.content) {
+            if (event.content && !isStale()) {
               appendStreamContent(event.content)
             }
             break
           case 'thinking':
-            if (event.thinking) {
+            if (event.thinking && !isStale()) {
               addThinkingStep(event.thinking)
             }
             break
           case 'done':
-            if (event.response) {
+            if (event.response && !isStale()) {
               response = event.response
             }
             break
           case 'error':
-            setError(event.error || 'An error occurred')
+            if (!isStale()) {
+              setError(event.error || 'An error occurred')
+            }
             break
         }
       }
 
-      if (response) {
+      if (response && !isStale()) {
         setCurrentResponse(response)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get AI response')
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') {
+        return
+      }
+      if (!isStale()) {
+        setError(err instanceof Error ? err.message : 'Failed to get AI response')
+      }
     } finally {
-      setLoading(false)
-      setStreaming(false)
-      setHasQueried(true)
+      if (!isStale()) {
+        setLoading(false)
+        setStreaming(false)
+        setHasQueried(true)
+      }
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null
+      }
     }
-  }, [query, mode, aiAvailable])
+  }, [query, mode, aiAvailable, cancelCurrentRequest])
 
   // Auto-run query when query changes
   useEffect(() => {
@@ -95,10 +144,11 @@ export function AISummary({ query, onFollowUp }: AISummaryProps) {
 
   // Reset when query changes
   useEffect(() => {
+    cancelCurrentRequest()
     setHasQueried(false)
     resetStream()
     setCurrentResponse(null)
-  }, [query])
+  }, [query, cancelCurrentRequest])
 
   if (!aiAvailable) {
     return null

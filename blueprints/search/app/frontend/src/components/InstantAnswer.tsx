@@ -58,7 +58,7 @@ export function InstantAnswer({ answer }: InstantAnswerProps) {
       <div className="flex items-center gap-2 mb-2">
         <Icon size={20} className="text-[#1a73e8]" />
         <span className="px-2 py-0.5 text-xs font-medium text-[#1a73e8] bg-[#e8f0fe] rounded">
-          {answer.type.charAt(0).toUpperCase() + answer.type.slice(1)}
+          {answer.type ? answer.type.charAt(0).toUpperCase() + answer.type.slice(1) : 'Answer'}
         </span>
       </div>
 
@@ -146,10 +146,11 @@ function TimeDetails({ data }: { data: TimeData }) {
 }
 
 function CurrencyDetails({ data }: { data: CurrencyData }) {
+  const rate = typeof data.rate === 'number' ? data.rate.toFixed(4) : data.rate ?? '—'
   return (
     <div className="mt-2">
       <p className="text-sm text-[#70757a]">
-        1 {data.from_currency} = {data.rate.toFixed(4)} {data.to_currency}
+        1 {data.from_currency} = {rate} {data.to_currency}
       </p>
       <p className="text-xs text-[#70757a]">Rate as of {new Date(data.updated_at).toLocaleDateString()}</p>
     </div>
@@ -157,10 +158,11 @@ function CurrencyDetails({ data }: { data: CurrencyData }) {
 }
 
 function UnitDetails({ data }: { data: UnitData }) {
+  const toValue = typeof data.to_value === 'number' ? data.to_value.toFixed(4) : data.to_value ?? '—'
   return (
     <div className="mt-2">
       <p className="text-sm text-[#70757a]">
-        {data.from_value} {data.from_unit} = {data.to_value.toFixed(4)} {data.to_unit}
+        {data.from_value} {data.from_unit} = {toValue} {data.to_unit}
       </p>
       <p className="text-xs text-[#70757a] capitalize">{data.category}</p>
     </div>

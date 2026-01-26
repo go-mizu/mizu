@@ -8,9 +8,17 @@ interface SourceBadgeProps {
 
 export function SourceBadge({ citation, compact, onClick }: SourceBadgeProps) {
   // Extract display name from domain
-  const displayName = citation.domain
-    ? citation.domain.replace('www.', '').split('.')[0]
-    : new URL(citation.url).hostname.replace('www.', '').split('.')[0]
+  const getDisplayName = () => {
+    if (citation.domain) {
+      return citation.domain.replace('www.', '').split('.')[0]
+    }
+    try {
+      return new URL(citation.url).hostname.replace('www.', '').split('.')[0]
+    } catch {
+      return 'Source'
+    }
+  }
+  const displayName = getDisplayName()
 
   return (
     <span

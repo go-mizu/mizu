@@ -4,6 +4,16 @@ export type AIMode = 'quick' | 'deep' | 'research' | 'deepsearch'
 
 export type ModelCapability = 'text' | 'vision' | 'embeddings' | 'voice'
 
+export type ProviderType = 'local' | 'cloud'
+
+export interface Provider {
+  id: string
+  name: string
+  type: ProviderType
+  requiresApiKey: boolean
+  available: boolean
+}
+
 export interface ModelInfo {
   id: string
   provider: string
@@ -14,6 +24,16 @@ export interface ModelInfo {
   speed: 'fast' | 'balanced' | 'thorough'
   is_default?: boolean
   available: boolean
+}
+
+export interface TokenUsage {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  cost_usd?: number
+  tokens_per_second?: number
 }
 
 export interface Citation {
@@ -69,15 +89,26 @@ export interface AIResponse {
   session_id: string
   sources_used: number
   thinking_steps?: string[]
+  usage?: TokenUsage
+  provider?: string   // Provider name (e.g., "llamacpp", "claude")
+  model?: string      // Model ID (e.g., "gemma-3-270m", "claude-haiku-4.5")
+  from_cache?: boolean // Whether response came from cache
+}
+
+export interface ToolCallEvent {
+  name: string
+  input: Record<string, unknown>
 }
 
 export interface AIStreamEvent {
-  type: 'start' | 'token' | 'citation' | 'thinking' | 'search' | 'done' | 'error'
+  type: 'start' | 'token' | 'citation' | 'thinking' | 'search' | 'tool_call' | 'done' | 'error'
   content?: string
   citation?: Citation
   thinking?: string
   query?: string
   error?: string
+  tool_call?: ToolCallEvent
+  usage?: TokenUsage
   response?: {
     text: string
     mode: AIMode
@@ -87,6 +118,10 @@ export interface AIStreamEvent {
     images?: ImageResult[]
     session_id: string
     sources_used: number
+    usage?: TokenUsage
+    provider?: string   // Provider name (e.g., "llamacpp", "claude")
+    model?: string      // Model ID (e.g., "gemma-3-270m", "claude-haiku-4.5")
+    from_cache?: boolean // Whether response came from cache
   }
 }
 
