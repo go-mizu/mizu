@@ -397,6 +397,16 @@ func BenchmarkSearchMethods(b *testing.B) {
 
 // TestLargeDatasetFTSCreation tests FTS creation with memory-optimized settings.
 // This test is specifically for validating the on-disk indexing configuration.
+//
+// Resource Requirements for FTS Index Creation:
+// - Memory: ~1GB per 100K documents minimum
+// - Disk (temp): ~6GB per 1M documents for index creation
+// - Disk (final): FTS tables stored in database, adds ~20-50% to DB size
+//
+// For 2.3M documents:
+// - Memory: 14GB+ recommended
+// - Temp disk: 15-20GB free space
+// - Time: 15-30 minutes
 func TestLargeDatasetFTSCreation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping large dataset FTS test in short mode")
@@ -444,7 +454,8 @@ func TestLargeDatasetFTSCreation(t *testing.T) {
 		Lower:        true,
 
 		// Memory-optimized settings for large datasets
-		MemoryLimit:            "8GB",
+		// Requires 14GB+ memory and 15-20GB temp disk space
+		MemoryLimit:            "14GB",
 		Threads:                4,
 		TempDirectory:          filepath.Join(dbDir, "fts_temp"),
 		MaxTempDirectorySize:   "100GB",
@@ -453,12 +464,14 @@ func TestLargeDatasetFTSCreation(t *testing.T) {
 
 	t.Log("Creating FTS index with on-disk configuration...")
 	t.Logf("Config: %+v", cfg)
+	t.Log("Note: This requires 14GB+ RAM and 15-20GB free disk space")
 
 	start := time.Now()
 	err = store.CreateFTSIndexWithConfig(ctx, cfg)
 	if err != nil {
-		t.Logf("FTS creation failed (expected for very large datasets): %v", err)
-		t.Log("This is expected behavior - the dataset may be too large for available resources")
+		t.Logf("FTS creation failed: %v", err)
+		t.Log("Common causes: insufficient disk space or memory")
+		t.Log("Requirements: 14GB+ RAM, 15-20GB free disk space for 2.3M documents")
 		return
 	}
 
@@ -471,6 +484,123 @@ func TestLargeDatasetFTSCreation(t *testing.T) {
 	} else {
 		t.Logf("FTS search returned %d results in %v", len(result.Documents), result.Duration)
 	}
+}
+
+// TestFTSvsLIKEComparison provides a controlled comparison between FTS and LIKE search.
+// This uses a small dataset that can be indexed without disk space issues.
+func TestFTSvsLIKEComparison(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	store, err := NewStore("comparison_test", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Insert test documents with varying characteristics
+	// to demonstrate FTS vs LIKE differences
+	testDocs := []struct {
+		id   string
+		text string
+	}{
+		// Documents that FTS should rank higher due to term frequency
+		{"1", "software engineering is about building quality software systems with good software practices"},
+		{"2", "software development requires understanding software architecture"},
+
+		// Document with term but lower density
+		{"3", "this is a document about software but also mentions many other topics like hardware networking databases and user interfaces"},
+
+		// Documents without the search term
+		{"4", "programming involves writing code and debugging"},
+		{"5", "databases store and retrieve information efficiently"},
+
+		// Document with stemmed variant (FTS with porter stemmer would match)
+		{"6", "developing applications is similar to engineering solutions"},
+
+		// Long document with search term buried
+		{"7", "the quick brown fox jumps over the lazy dog while the software runs in the background processing data for the user who is waiting patiently for results to appear on screen"},
+
+		// Multiple occurrences in short doc
+		{"8", "software software software"},
+	}
+
+	for _, doc := range testDocs {
+		_, err := store.db.ExecContext(ctx, `
+			INSERT INTO documents (id, url, text, dump, date, language, language_score)
+			VALUES (?, 'http://test.com', ?, '', '', 'en', 1.0)
+		`, doc.id, doc.text)
+		if err != nil {
+			t.Fatalf("Failed to insert: %v", err)
+		}
+	}
+
+	// Create FTS index
+	err = store.CreateFTSIndex(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create FTS index: %v", err)
+	}
+
+	// Compare search results
+	query := "software"
+
+	ftsResult, err := store.SearchFTS(ctx, query, 10, 0)
+	if err != nil {
+		t.Fatalf("FTS search failed: %v", err)
+	}
+
+	likeResult, err := store.SearchLike(ctx, query, 10, 0)
+	if err != nil {
+		t.Fatalf("LIKE search failed: %v", err)
+	}
+
+	t.Logf("Query: %q", query)
+	t.Logf("")
+	t.Logf("FTS Results (BM25 ranked):")
+	t.Logf("  Duration: %v", ftsResult.Duration)
+	for i, doc := range ftsResult.Documents {
+		t.Logf("  %d. [score=%.4f] id=%s: %s", i+1, doc.Score, doc.ID, truncate(doc.Text, 60))
+	}
+
+	t.Logf("")
+	t.Logf("LIKE Results (unranked):")
+	t.Logf("  Duration: %v", likeResult.Duration)
+	for i, doc := range likeResult.Documents {
+		t.Logf("  %d. [score=%.4f] id=%s: %s", i+1, doc.Score, doc.ID, truncate(doc.Text, 60))
+	}
+
+	// Verify FTS ranking is reasonable
+	// Doc 8 ("software software software") should rank highest due to term frequency
+	// Doc 1 should rank high due to multiple occurrences
+	if len(ftsResult.Documents) < 2 {
+		t.Error("FTS should return at least 2 results")
+	}
+
+	// Check that FTS has relevance scoring (not all 1.0)
+	hasVariedScores := false
+	if len(ftsResult.Documents) >= 2 {
+		if ftsResult.Documents[0].Score != ftsResult.Documents[1].Score {
+			hasVariedScores = true
+		}
+	}
+	if !hasVariedScores {
+		t.Error("FTS should return varied relevance scores")
+	}
+
+	t.Logf("")
+	t.Logf("Key Differences:")
+	t.Logf("  - FTS uses BM25 scoring: considers term frequency, document length, corpus statistics")
+	t.Logf("  - LIKE is pattern matching: returns all matches without relevance ranking")
+	t.Logf("  - FTS supports word boundaries: 'soft' won't match 'software'")
+	t.Logf("  - LIKE with %% matches substrings: '%%soft%%' matches 'software'")
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func min(a, b int) int {
