@@ -109,6 +109,7 @@ func (w *Wikipedia) Request(ctx context.Context, query string, params *RequestPa
 
 	params.URL = fmt.Sprintf("https://%s.wikipedia.org/w/api.php?%s", wikiLang, queryParams.Encode())
 	params.Headers.Set("Accept", "application/json")
+	params.Headers.Set("User-Agent", "MizuSearch/1.0 (https://github.com/go-mizu/mizu; mizu@example.com)")
 
 	return nil
 }
@@ -226,6 +227,7 @@ func (w *Wikidata) Request(ctx context.Context, query string, params *RequestPar
 
 	params.URL = "https://www.wikidata.org/w/api.php?" + queryParams.Encode()
 	params.Headers.Set("Accept", "application/json")
+	params.Headers.Set("User-Agent", "MizuSearch/1.0 (https://github.com/go-mizu/mizu; mizu@example.com)")
 
 	return nil
 }

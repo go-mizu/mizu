@@ -123,6 +123,7 @@ type GitHubCode struct {
 }
 
 // NewGitHubCode creates a new GitHub code search engine.
+// Note: GitHub Code Search API requires authentication.
 func NewGitHubCode() *GitHubCode {
 	g := &GitHubCode{
 		BaseEngine: NewBaseEngine("github code", "ghc", []Category{CategoryIT}),
@@ -130,11 +131,13 @@ func NewGitHubCode() *GitHubCode {
 
 	g.SetPaging(true).
 		SetTimeout(5 * time.Second).
+		SetDisabled(true). // Requires authentication
 		SetAbout(EngineAbout{
 			Website:         "https://github.com",
 			WikidataID:      "Q364",
 			OfficialAPIDocs: "https://docs.github.com/en/rest",
 			UseOfficialAPI:  true,
+			RequireAPIKey:   true,
 			Results:         "JSON",
 		})
 
