@@ -1,11 +1,9 @@
-version: "3.8"
-
 # Search services for fineweb benchmark suite
 # Usage: docker-compose -f docker-compose.search.yml up -d
 
 services:
   meilisearch:
-    image: getmeili/meilisearch:v1.6
+    image: getmeili/meilisearch:v1.11
     container_name: fineweb-meilisearch
     ports:
       - "7700:7700"
@@ -32,7 +30,7 @@ services:
           memory: 2G
 
   zinc:
-    image: public.ecr.aws/zinclabs/zinc:0.4.10
+    image: zincsearch/zincsearch:latest
     container_name: fineweb-zinc
     ports:
       - "4080:4080"

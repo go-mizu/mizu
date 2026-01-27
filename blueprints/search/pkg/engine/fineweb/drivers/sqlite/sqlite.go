@@ -172,8 +172,8 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 		LIMIT ? OFFSET ?
 	`, query, limit, offset)
 	if err != nil {
-		// Fall back to LIKE search if FTS fails
-		return d.searchLike(ctx, query, limit, offset)
+		// Return error instead of falling back to slow LIKE search
+		return nil, fmt.Errorf("FTS5 search failed (index may need rebuild): %w", err)
 	}
 	defer rows.Close()
 
@@ -202,46 +202,6 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 		Documents: docs,
 		Duration:  time.Since(start),
 		Method:    "sqlite-fts5",
-	}, nil
-}
-
-func (d *Driver) searchLike(ctx context.Context, query string, limit, offset int) (*fineweb.SearchResult, error) {
-	start := time.Now()
-
-	likePattern := "%" + query + "%"
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT id, url, text, dump, date, language, language_score
-		FROM documents
-		WHERE text LIKE ? OR url LIKE ?
-		LIMIT ? OFFSET ?
-	`, likePattern, likePattern, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("executing LIKE search: %w", err)
-	}
-	defer rows.Close()
-
-	var docs []fineweb.Document
-	for rows.Next() {
-		var doc fineweb.Document
-		err := rows.Scan(
-			&doc.ID, &doc.URL, &doc.Text, &doc.Dump,
-			&doc.Date, &doc.Language, &doc.LanguageScore,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("scanning row: %w", err)
-		}
-		doc.Score = 1.0
-		docs = append(docs, doc)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return &fineweb.SearchResult{
-		Documents: docs,
-		Duration:  time.Since(start),
-		Method:    "sqlite-like",
 	}, nil
 }
 
