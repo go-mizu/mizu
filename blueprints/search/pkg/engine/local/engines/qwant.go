@@ -16,6 +16,7 @@ type Qwant struct {
 }
 
 // NewQwant creates a new Qwant engine.
+// Note: Qwant has aggressive bot protection (CAPTCHA).
 func NewQwant() *Qwant {
 	q := &Qwant{
 		BaseEngine: NewBaseEngine("qwant", "qw", []Category{CategoryGeneral, CategoryWeb}),
@@ -24,6 +25,7 @@ func NewQwant() *Qwant {
 	q.SetPaging(true).
 		SetSafeSearch(true).
 		SetTimeout(5 * time.Second).
+		SetDisabled(true). // Bot protection (CAPTCHA)
 		SetAbout(EngineAbout{
 			Website:    "https://www.qwant.com",
 			WikidataID: "Q14657870",
@@ -123,6 +125,7 @@ type QwantImages struct {
 }
 
 // NewQwantImages creates a new Qwant Images engine.
+// Note: Qwant has aggressive bot protection (CAPTCHA).
 func NewQwantImages() *QwantImages {
 	q := &QwantImages{
 		BaseEngine: NewBaseEngine("qwant images", "qwi", []Category{CategoryImages}),
@@ -131,6 +134,7 @@ func NewQwantImages() *QwantImages {
 	q.SetPaging(true).
 		SetSafeSearch(true).
 		SetTimeout(5 * time.Second).
+		SetDisabled(true). // Bot protection (CAPTCHA)
 		SetAbout(EngineAbout{
 			Website:    "https://www.qwant.com",
 			WikidataID: "Q14657870",
@@ -231,6 +235,7 @@ type QwantNews struct {
 }
 
 // NewQwantNews creates a new Qwant News engine.
+// Note: Qwant has aggressive bot protection (CAPTCHA).
 func NewQwantNews() *QwantNews {
 	q := &QwantNews{
 		BaseEngine: NewBaseEngine("qwant news", "qwn", []Category{CategoryNews}),
@@ -238,6 +243,7 @@ func NewQwantNews() *QwantNews {
 
 	q.SetPaging(true).
 		SetTimeout(5 * time.Second).
+		SetDisabled(true). // Bot protection (CAPTCHA)
 		SetAbout(EngineAbout{
 			Website:    "https://www.qwant.com",
 			WikidataID: "Q14657870",
