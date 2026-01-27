@@ -294,20 +294,21 @@ func (s *Store) configureDuckDB(ctx context.Context, cfg FTSConfig) error {
 	}
 
 	// Set temp directory for disk spilling
+	// Note: temp_directory can only be set before it's first used
 	if cfg.TempDirectory != "" {
 		// Ensure temp directory exists
 		if err := os.MkdirAll(cfg.TempDirectory, 0755); err != nil {
 			return fmt.Errorf("creating temp directory: %w", err)
 		}
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("SET temp_directory = '%s'", cfg.TempDirectory)); err != nil {
-			return fmt.Errorf("setting temp_directory: %w", err)
-		}
+		// Try to set temp directory, ignore error if already in use
+		_, _ = s.db.ExecContext(ctx, fmt.Sprintf("SET temp_directory = '%s'", cfg.TempDirectory))
 	}
 
 	// Set max temp directory size
 	if cfg.MaxTempDirectorySize != "" {
 		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("SET max_temp_directory_size = '%s'", cfg.MaxTempDirectorySize)); err != nil {
-			return fmt.Errorf("setting max_temp_directory_size: %w", err)
+			// Ignore error - might not be settable if temp already used
+			_ = err
 		}
 	}
 
