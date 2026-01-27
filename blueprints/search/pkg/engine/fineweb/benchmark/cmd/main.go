@@ -3,10 +3,13 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,27 +29,62 @@ import (
 	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/tantivy"
 )
 
+// External service endpoints
+const (
+	MeiliSearchURL = "http://localhost:7700"
+	ZincURL        = "http://localhost:4080"
+)
+
 func main() {
 	var (
-		all       = flag.Bool("all", false, "Run all drivers")
-		driver    = flag.String("driver", "", "Run single driver")
-		drivers   = flag.String("drivers", "", "Comma-separated list of drivers")
-		combine   = flag.String("combine", "", "Combine JSON reports (glob pattern)")
-		output    = flag.String("output", "report.md", "Output file (.md or .json)")
-		dataDir   = flag.String("data", "", "Data directory for indexes")
-		parquet   = flag.String("parquet", "", "Parquet file/directory path")
-		list      = flag.Bool("list", false, "List available drivers")
-		timeout   = flag.Duration("timeout", 4*time.Hour, "Overall timeout")
+		// Driver selection
+		all     = flag.Bool("all", false, "Run all drivers")
+		driver  = flag.String("driver", "", "Run single driver")
+		drivers = flag.String("drivers", "", "Comma-separated list of drivers")
+		embedded = flag.Bool("embedded", false, "Run only embedded drivers (duckdb, sqlite, bleve, bluge, porter)")
+		external = flag.Bool("external", false, "Run only external drivers (meilisearch, zinc)")
+
+		// Data paths
+		dataDir = flag.String("data", "", "Data directory for indexes")
+		parquet = flag.String("parquet", "", "Parquet file/directory path")
+
+		// Output options
+		output    = flag.String("output", "", "Output file (.md, .json, or .csv)")
+		reportDir = flag.String("report-dir", "", "Directory for multiple report formats")
+
+		// Benchmark parameters
+		timeout    = flag.Duration("timeout", 4*time.Hour, "Overall timeout")
 		iterations = flag.Int("iterations", 100, "Iterations per query for latency")
+		quick      = flag.Bool("quick", false, "Quick mode: fewer iterations, smaller dataset")
+
+		// Service management
+		startDocker = flag.Bool("start-docker", false, "Start Docker services before benchmark")
+		stopDocker  = flag.Bool("stop-docker", false, "Stop Docker services after benchmark")
+		checkDocker = flag.Bool("check-docker", false, "Check Docker services availability")
+		dockerDir   = flag.String("docker-dir", "", "Docker compose directory")
+
+		// Utility commands
+		list    = flag.Bool("list", false, "List available drivers")
+		combine = flag.String("combine", "", "Combine JSON reports (glob pattern)")
+		info    = flag.Bool("info", false, "Show driver information")
 	)
 	flag.Parse()
 
 	// List drivers
 	if *list {
-		fmt.Println("Available drivers:")
-		for _, name := range fineweb.List() {
-			fmt.Printf("  - %s\n", name)
-		}
+		listDrivers()
+		return
+	}
+
+	// Show driver info
+	if *info {
+		showDriverInfo()
+		return
+	}
+
+	// Check Docker services
+	if *checkDocker {
+		checkDockerServices()
 		return
 	}
 
@@ -54,6 +92,23 @@ func main() {
 	if *combine != "" {
 		combineReports(*combine, *output)
 		return
+	}
+
+	// Resolve docker directory
+	if *dockerDir == "" {
+		// Try to find docker directory relative to current directory
+		candidates := []string{
+			"docker",
+			"../docker",
+			"../../docker",
+			"/Users/apple/github/go-mizu/mizu/blueprints/search/docker",
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(filepath.Join(c, "docker-compose.search.yml")); err == nil {
+				*dockerDir = c
+				break
+			}
+		}
 	}
 
 	// Determine data directory
@@ -74,22 +129,54 @@ func main() {
 		}
 	}
 
+	// Ensure data directory exists
+	if err := os.MkdirAll(*dataDir, 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
+	}
+
+	// Start Docker services if requested
+	if *startDocker && *dockerDir != "" {
+		log.Println("Starting Docker services...")
+		if err := startDockerServices(*dockerDir); err != nil {
+			log.Fatalf("Failed to start Docker services: %v", err)
+		}
+		// Wait for services to be healthy
+		waitForServices()
+	}
+
 	// Create runner
 	runner := benchmark.NewRunner(*dataDir, *parquet)
 	runner.Iterations = *iterations
 	runner.Logger = log.New(os.Stderr, "[benchmark] ", log.LstdFlags)
 
+	// Quick mode adjustments
+	if *quick {
+		runner.Iterations = 10
+		runner.Concurrency = []int{1, 10}
+	}
+
 	// Determine which drivers to run
 	if *all {
 		runner.Drivers = fineweb.List()
+	} else if *embedded {
+		runner.Drivers = []string{"duckdb", "sqlite", "bleve", "bluge", "porter"}
+	} else if *external {
+		runner.Drivers = []string{"meilisearch", "zinc"}
 	} else if *driver != "" {
 		runner.Drivers = []string{*driver}
 	} else if *drivers != "" {
 		runner.Drivers = strings.Split(*drivers, ",")
 	} else {
 		flag.Usage()
-		fmt.Fprintln(os.Stderr, "\nSpecify -all, -driver, or -drivers")
+		fmt.Fprintln(os.Stderr, "\nSpecify -all, -embedded, -external, -driver, or -drivers")
 		os.Exit(1)
+	}
+
+	// Filter out unavailable external drivers
+	runner.Drivers = filterAvailableDrivers(runner.Drivers)
+
+	if len(runner.Drivers) == 0 {
+		log.Fatal("No drivers available to benchmark")
 	}
 
 	// Validate drivers
@@ -108,6 +195,7 @@ func main() {
 	log.Printf("Starting benchmark with drivers: %v", runner.Drivers)
 	log.Printf("Data dir: %s", *dataDir)
 	log.Printf("Parquet: %s", *parquet)
+	log.Printf("Iterations: %d", runner.Iterations)
 
 	report, err := runner.Run(ctx)
 	if err != nil {
@@ -115,30 +203,335 @@ func main() {
 	}
 
 	// Write output
-	outputPath := *output
-	if outputPath == "" {
-		outputPath = "report.md"
+	if *reportDir != "" {
+		// Write multiple formats to report directory
+		if err := writeReportDir(report, *reportDir); err != nil {
+			log.Fatalf("Failed to write reports: %v", err)
+		}
+		log.Printf("Reports written to %s", *reportDir)
+	} else if *output != "" {
+		if err := writeReport(report, *output); err != nil {
+			log.Fatalf("Failed to write report: %v", err)
+		}
+		log.Printf("Report written to %s", *output)
 	}
 
-	if err := writeReport(report, outputPath); err != nil {
-		log.Fatalf("Failed to write report: %v", err)
-	}
-
-	log.Printf("Report written to %s", outputPath)
+	// Print summary
 	fmt.Println(report.String())
+
+	// Stop Docker services if requested
+	if *stopDocker && *dockerDir != "" {
+		log.Println("Stopping Docker services...")
+		if err := stopDockerServices(*dockerDir); err != nil {
+			log.Printf("Warning: Failed to stop Docker services: %v", err)
+		}
+	}
+}
+
+func listDrivers() {
+	fmt.Println("Available drivers:")
+	fmt.Println()
+
+	// Group by type
+	embedded := []string{"duckdb", "sqlite", "bleve", "bluge", "porter"}
+	external := []string{"meilisearch", "zinc"}
+	cgo := []string{"tantivy"}
+
+	fmt.Println("Embedded (no external dependencies):")
+	for _, name := range embedded {
+		status := "✓"
+		if !fineweb.IsRegistered(name) {
+			status = "✗"
+		}
+		fmt.Printf("  %s %s\n", status, name)
+	}
+
+	fmt.Println()
+	fmt.Println("External (require Docker/services):")
+	for _, name := range external {
+		status := "✓"
+		if !fineweb.IsRegistered(name) {
+			status = "✗"
+		}
+		available := checkServiceAvailable(name)
+		if available {
+			fmt.Printf("  %s %s (service available)\n", status, name)
+		} else {
+			fmt.Printf("  %s %s (service not running)\n", status, name)
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("CGO Required (special build):")
+	for _, name := range cgo {
+		status := "✗"
+		if fineweb.IsRegistered(name) {
+			status = "✓"
+		}
+		fmt.Printf("  %s %s\n", status, name)
+	}
+}
+
+func showDriverInfo() {
+	fmt.Println("Driver Information:")
+	fmt.Println()
+
+	tmpDir, _ := os.MkdirTemp("", "driver-info")
+	defer os.RemoveAll(tmpDir)
+
+	for _, name := range fineweb.List() {
+		driver, err := fineweb.Open(name, fineweb.DriverConfig{DataDir: tmpDir})
+		if err != nil {
+			fmt.Printf("%s: ERROR - %v\n", name, err)
+			continue
+		}
+
+		info := fineweb.GetDriverInfo(driver)
+		if info != nil {
+			fmt.Printf("%s:\n", name)
+			fmt.Printf("  Description: %s\n", info.Description)
+			fmt.Printf("  Features: %v\n", info.Features)
+			fmt.Printf("  External: %v\n", info.External)
+		} else {
+			fmt.Printf("%s: (no info available)\n", name)
+		}
+		driver.Close()
+		fmt.Println()
+	}
+}
+
+func checkDockerServices() {
+	fmt.Println("Docker Services Status:")
+	fmt.Println()
+
+	services := map[string]string{
+		"meilisearch": MeiliSearchURL + "/health",
+		"zinc":        ZincURL + "/healthz",
+	}
+
+	for name, url := range services {
+		resp, err := http.Get(url)
+		if err != nil {
+			fmt.Printf("  ✗ %s: not available (%v)\n", name, err)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			fmt.Printf("  ✓ %s: healthy\n", name)
+		} else {
+			fmt.Printf("  ✗ %s: unhealthy (status %d)\n", name, resp.StatusCode)
+		}
+	}
+}
+
+func checkServiceAvailable(name string) bool {
+	var url string
+	switch name {
+	case "meilisearch":
+		url = MeiliSearchURL + "/health"
+	case "zinc":
+		url = ZincURL + "/healthz"
+	default:
+		return true // Embedded drivers are always available
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+func filterAvailableDrivers(drivers []string) []string {
+	var available []string
+	for _, d := range drivers {
+		if d == "meilisearch" || d == "zinc" {
+			if !checkServiceAvailable(d) {
+				log.Printf("Skipping %s (service not available)", d)
+				continue
+			}
+		}
+		available = append(available, d)
+	}
+	return available
+}
+
+func startDockerServices(dockerDir string) error {
+	composePath := filepath.Join(dockerDir, "docker-compose.search.yml")
+	cmd := exec.Command("docker-compose", "-f", composePath, "up", "-d")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func stopDockerServices(dockerDir string) error {
+	composePath := filepath.Join(dockerDir, "docker-compose.search.yml")
+	cmd := exec.Command("docker-compose", "-f", composePath, "down")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func waitForServices() {
+	log.Println("Waiting for services to be healthy...")
+
+	services := map[string]string{
+		"meilisearch": MeiliSearchURL + "/health",
+		"zinc":        ZincURL + "/healthz",
+	}
+
+	deadline := time.Now().Add(2 * time.Minute)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	for time.Now().Before(deadline) {
+		allHealthy := true
+		for name, url := range services {
+			resp, err := client.Get(url)
+			if err != nil || resp.StatusCode != 200 {
+				allHealthy = false
+				log.Printf("  Waiting for %s...", name)
+				if resp != nil {
+					resp.Body.Close()
+				}
+				break
+			}
+			resp.Body.Close()
+		}
+		if allHealthy {
+			log.Println("All services healthy")
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	log.Println("Warning: Not all services became healthy")
 }
 
 func writeReport(report *benchmark.Report, path string) error {
+	// Create parent directory if needed
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	if strings.HasSuffix(path, ".json") {
+	switch {
+	case strings.HasSuffix(path, ".json"):
 		return report.WriteJSON(f)
+	case strings.HasSuffix(path, ".csv"):
+		return writeCSV(report, f)
+	default:
+		return report.WriteMarkdown(f)
 	}
-	return report.WriteMarkdown(f)
+}
+
+func writeReportDir(report *benchmark.Report, dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+
+	// Write all formats
+	formats := map[string]func() error{
+		filepath.Join(dir, fmt.Sprintf("benchmark_%s.md", timestamp)): func() error {
+			return writeReport(report, filepath.Join(dir, fmt.Sprintf("benchmark_%s.md", timestamp)))
+		},
+		filepath.Join(dir, fmt.Sprintf("benchmark_%s.json", timestamp)): func() error {
+			return writeReport(report, filepath.Join(dir, fmt.Sprintf("benchmark_%s.json", timestamp)))
+		},
+		filepath.Join(dir, fmt.Sprintf("benchmark_%s.csv", timestamp)): func() error {
+			return writeReport(report, filepath.Join(dir, fmt.Sprintf("benchmark_%s.csv", timestamp)))
+		},
+		filepath.Join(dir, "latest.md"): func() error {
+			return writeReport(report, filepath.Join(dir, "latest.md"))
+		},
+		filepath.Join(dir, "latest.json"): func() error {
+			return writeReport(report, filepath.Join(dir, "latest.json"))
+		},
+	}
+
+	for path, writeFunc := range formats {
+		if err := writeFunc(); err != nil {
+			log.Printf("Warning: Failed to write %s: %v", path, err)
+		} else {
+			log.Printf("Wrote %s", path)
+		}
+	}
+
+	return nil
+}
+
+func writeCSV(report *benchmark.Report, w *os.File) error {
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	// Header
+	header := []string{
+		"Driver", "Status", "Index Time (s)", "Index Size (MB)",
+		"p50 (ms)", "p95 (ms)", "p99 (ms)", "Avg (ms)",
+		"QPS (1)", "QPS (10)", "QPS (50)", "QPS (100)",
+		"Cold Start (ms)", "Peak Memory (MB)",
+	}
+	if err := writer.Write(header); err != nil {
+		return err
+	}
+
+	// Data rows
+	for _, result := range report.Results {
+		row := make([]string, len(header))
+		row[0] = result.Name
+
+		if result.Error != "" {
+			row[1] = "ERROR: " + result.Error
+			writer.Write(row)
+			continue
+		}
+		row[1] = "OK"
+
+		if result.Indexing != nil {
+			row[2] = fmt.Sprintf("%.2f", result.Indexing.Duration.Seconds())
+		}
+		if result.IndexSize > 0 {
+			row[3] = fmt.Sprintf("%.2f", float64(result.IndexSize)/(1024*1024))
+		}
+		if result.Latency != nil {
+			row[4] = fmt.Sprintf("%.3f", float64(result.Latency.P50.Microseconds())/1000)
+			row[5] = fmt.Sprintf("%.3f", float64(result.Latency.P95.Microseconds())/1000)
+			row[6] = fmt.Sprintf("%.3f", float64(result.Latency.P99.Microseconds())/1000)
+			row[7] = fmt.Sprintf("%.3f", float64(result.Latency.Avg.Microseconds())/1000)
+		}
+		if result.Throughput != nil {
+			row[8] = fmt.Sprintf("%.0f", result.Throughput.QPS)
+		}
+		if t, ok := result.Concurrency[10]; ok {
+			row[9] = fmt.Sprintf("%.0f", t.QPS)
+		}
+		if t, ok := result.Concurrency[50]; ok {
+			row[10] = fmt.Sprintf("%.0f", t.QPS)
+		}
+		if t, ok := result.Concurrency[100]; ok {
+			row[11] = fmt.Sprintf("%.0f", t.QPS)
+		}
+		if result.ColdStart > 0 {
+			row[12] = fmt.Sprintf("%.2f", float64(result.ColdStart.Milliseconds()))
+		}
+		if result.Memory != nil {
+			row[13] = fmt.Sprintf("%.2f", float64(result.Memory.IndexingPeak)/(1024*1024))
+		}
+
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func combineReports(pattern, output string) {
@@ -175,6 +568,10 @@ func combineReports(pattern, output string) {
 	}
 
 	combined := benchmark.CombineReports(reports...)
+
+	if output == "" {
+		output = "combined_report.md"
+	}
 
 	if err := writeReport(combined, output); err != nil {
 		log.Fatalf("Failed to write combined report: %v", err)

@@ -1,0 +1,2 @@
+Driver,Status,Index Time (s),Index Size (MB),p50 (ms),p95 (ms),p99 (ms),Avg (ms),QPS (1),QPS (10),QPS (50),QPS (100),Cold Start (ms),Peak Memory (MB)
+duckdb,OK,,18585.26,15.663,304.120,467.235,57.354,21,30,,,7.00,
