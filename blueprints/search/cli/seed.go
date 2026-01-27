@@ -19,9 +19,15 @@ This creates:
   - Sample documents (programming language websites, tools, databases)
   - Sample knowledge entities (Go, Python, JavaScript, etc.)
   - Sample search suggestions
-  - Default search lenses (Forums, Academic, News, etc.)`,
+  - Default search lenses (Forums, Academic, News, etc.)
+
+Subcommands:
+  fineweb    Download and index FineWeb-2 dataset`,
 		RunE: runSeed,
 	}
+
+	// Add subcommands
+	cmd.AddCommand(NewFinewebSeed())
 
 	return cmd
 }
