@@ -52,9 +52,10 @@ func DefaultFTSConfig() FTSConfig {
 
 // SearchResult contains search result with timing information.
 type SearchResult struct {
-	Documents []Document
-	Duration  time.Duration
-	Method    string // "fts" or "like"
+	Documents []Document    `json:"documents"`
+	Duration  time.Duration `json:"duration"`
+	Method    string        `json:"method"` // Driver name or search method
+	Total     int64         `json:"total"`  // Total matching documents (if known)
 }
 
 // Store manages DuckDB connection and queries for a language.

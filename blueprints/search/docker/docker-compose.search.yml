@@ -1,0 +1,69 @@
+version: "3.8"
+
+# Search services for fineweb benchmark suite
+# Usage: docker-compose -f docker-compose.search.yml up -d
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    container_name: fineweb-meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      - MEILI_ENV=development
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MAX_INDEXING_MEMORY=4Gb
+      - MEILI_MAX_INDEXING_THREADS=4
+      - MEILI_LOG_LEVEL=INFO
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
+
+  zinc:
+    image: public.ecr.aws/zinclabs/zinc:0.4.10
+    container_name: fineweb-zinc
+    ports:
+      - "4080:4080"
+    environment:
+      - ZINC_DATA_PATH=/data
+      - ZINC_FIRST_ADMIN_USER=admin
+      - ZINC_FIRST_ADMIN_PASSWORD=admin123
+      - ZINC_MAX_RESULTS=10000
+      - GIN_MODE=release
+    volumes:
+      - zinc_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 1G
+
+volumes:
+  meilisearch_data:
+    driver: local
+  zinc_data:
+    driver: local
+
+networks:
+  default:
+    name: fineweb-search
