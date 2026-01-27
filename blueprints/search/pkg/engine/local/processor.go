@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -147,19 +148,34 @@ func (p *Processor) Search(ctx context.Context, query string, params *engines.Re
 }
 
 func (p *Processor) searchOnline(ctx context.Context, eng engines.OnlineEngine, query string, params *engines.RequestParams) (*engines.EngineResults, error) {
+	engineName := eng.Name()
+
 	// Build request
 	if err := eng.Request(ctx, query, params); err != nil {
+		slog.Warn("engine request build failed",
+			"engine", engineName,
+			"query", query,
+			"error", err,
+		)
 		return nil, fmt.Errorf("request build failed: %w", err)
 	}
 
 	// Skip if URL is empty
 	if params.URL == "" {
+		slog.Debug("engine skipped - no URL generated",
+			"engine", engineName,
+			"query", query,
+		)
 		return nil, nil
 	}
 
 	// Create HTTP request
 	req, err := p.buildHTTPRequest(ctx, params)
 	if err != nil {
+		slog.Warn("engine http request build failed",
+			"engine", engineName,
+			"error", err,
+		)
 		return nil, fmt.Errorf("http request build failed: %w", err)
 	}
 
@@ -176,6 +192,12 @@ func (p *Processor) searchOnline(ctx context.Context, eng engines.OnlineEngine, 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		p.suspended.Suspend(time.Minute, err.Error())
+		slog.Warn("engine http request failed",
+			"engine", engineName,
+			"query", query,
+			"url", params.URL,
+			"error", err,
+		)
 		return nil, fmt.Errorf("http request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -184,13 +206,38 @@ func (p *Processor) searchOnline(ctx context.Context, eng engines.OnlineEngine, 
 	if params.RaiseForHTTPError && resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		p.suspended.Suspend(time.Minute, fmt.Sprintf("HTTP %d", resp.StatusCode))
+		slog.Warn("engine http error",
+			"engine", engineName,
+			"query", query,
+			"status", resp.StatusCode,
+			"body", string(body),
+		)
 		return nil, fmt.Errorf("http error %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
 	results, err := eng.Response(ctx, resp, params)
 	if err != nil {
+		slog.Warn("engine response parse failed",
+			"engine", engineName,
+			"query", query,
+			"error", err,
+		)
 		return nil, fmt.Errorf("response parse failed: %w", err)
+	}
+
+	// Log empty results
+	if results == nil || len(results.Results) == 0 {
+		slog.Debug("engine returned no results",
+			"engine", engineName,
+			"query", query,
+		)
+	} else {
+		slog.Debug("engine search completed",
+			"engine", engineName,
+			"query", query,
+			"results", len(results.Results),
+		)
 	}
 
 	// Resume on success

@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -81,6 +82,8 @@ func (ms *MetaSearch) Search(ctx context.Context, query string, opts SearchOptio
 		opts.Categories = ms.config.DefaultCategories
 	}
 
+	slog.Debug("search started", "query", query, "categories", opts.Categories, "page", opts.Page)
+
 	// Create result container
 	container := NewResultContainer()
 
@@ -93,6 +96,7 @@ func (ms *MetaSearch) Search(ctx context.Context, query string, opts SearchOptio
 	// Get engines to search
 	engineRefs := ms.getEngineRefs(opts)
 	if len(engineRefs) == 0 {
+		slog.Warn("no engines available for search", "query", query, "categories", opts.Categories)
 		return ms.buildResponse(query, container, startTime, opts), nil
 	}
 
@@ -125,7 +129,33 @@ func (ms *MetaSearch) Search(ctx context.Context, query string, opts SearchOptio
 	// Update container with filtered results
 	container.sortedResults = filteredResults
 
-	return ms.buildResponse(query, container, startTime, opts), nil
+	resp := ms.buildResponse(query, container, startTime, opts)
+
+	// Log warnings for empty results or unresponsive engines
+	if len(resp.Results) == 0 {
+		slog.Warn("search returned no results",
+			"query", query,
+			"engines_queried", len(search.EngineRefs),
+			"unresponsive_engines", len(resp.UnresponsiveEngines),
+		)
+	}
+	if len(resp.UnresponsiveEngines) > 0 {
+		for _, ue := range resp.UnresponsiveEngines {
+			slog.Warn("engine unresponsive",
+				"engine", ue.Engine,
+				"error", ue.ErrorType,
+				"suspended", ue.Suspended,
+			)
+		}
+	}
+
+	slog.Debug("search completed",
+		"query", query,
+		"results", len(resp.Results),
+		"duration_ms", resp.SearchTimeMs,
+	)
+
+	return resp, nil
 }
 
 func (ms *MetaSearch) getEngineRefs(opts SearchOptions) []EngineRef {

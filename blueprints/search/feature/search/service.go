@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -51,6 +52,8 @@ func NewServiceWithDefaults(s Store) *Service {
 func (s *Service) Search(ctx context.Context, query string, opts store.SearchOptions) (*store.SearchResponse, error) {
 	start := time.Now()
 
+	slog.Debug("search service starting", "query", query, "page", opts.Page)
+
 	// Convert store options to engine options
 	engineOpts := toEngineOptions(opts, engine.CategoryGeneral)
 	cacheOpts := CacheOptions{Refetch: opts.Refetch, Version: opts.Version}
@@ -58,6 +61,7 @@ func (s *Service) Search(ctx context.Context, query string, opts store.SearchOpt
 	// Try cache first if available
 	if s.cache != nil {
 		if cached, ok := s.cache.Get(ctx, query, engine.CategoryGeneral, engineOpts, cacheOpts); ok {
+			slog.Debug("search cache hit", "query", query, "results", len(cached.Results))
 			response := toStoreResponse(cached)
 			// Still enrich with instant answer and knowledge panel
 			s.enrichResponse(ctx, query, response)
@@ -73,19 +77,39 @@ func (s *Service) Search(ctx context.Context, query string, opts store.SearchOpt
 	if s.engine != nil {
 		engineResp, err := s.engine.Search(ctx, query, engineOpts)
 		if err != nil {
+			slog.Error("search engine error",
+				"query", query,
+				"engine", s.engine.Name(),
+				"error", err,
+			)
 			return nil, err
+		}
+
+		// Warn if no results from engine
+		if engineResp == nil || len(engineResp.Results) == 0 {
+			slog.Warn("search engine returned empty results",
+				"query", query,
+				"engine", s.engine.Name(),
+			)
 		}
 
 		// Cache the response
 		if s.cache != nil {
-			_ = s.cache.Set(ctx, query, engine.CategoryGeneral, engineOpts, engineResp)
+			if err := s.cache.Set(ctx, query, engine.CategoryGeneral, engineOpts, engineResp); err != nil {
+				slog.Warn("failed to cache search results",
+					"query", query,
+					"error", err,
+				)
+			}
 		}
 
 		response = toStoreResponse(engineResp)
 	} else {
+		slog.Debug("no search engine configured, falling back to store", "query", query)
 		// Fall back to store-based search
 		resp, err := s.store.Search().Search(ctx, query, opts)
 		if err != nil {
+			slog.Error("store search error", "query", query, "error", err)
 			return nil, err
 		}
 		response = resp
@@ -97,14 +121,24 @@ func (s *Service) Search(ctx context.Context, query string, opts store.SearchOpt
 	// Record search time
 	response.SearchTimeMs = float64(time.Since(start).Milliseconds())
 
-	// Record for suggestions
-	_ = s.store.Suggest().RecordQuery(ctx, query)
+	// Record for suggestions - log errors instead of ignoring
+	if err := s.store.Suggest().RecordQuery(ctx, query); err != nil {
+		slog.Warn("failed to record query for suggestions", "query", query, "error", err)
+	}
 
-	// Record in history
-	_ = s.store.History().RecordSearch(ctx, &store.SearchHistory{
+	// Record in history - log errors instead of ignoring
+	if err := s.store.History().RecordSearch(ctx, &store.SearchHistory{
 		Query:   query,
 		Results: int(response.TotalResults),
-	})
+	}); err != nil {
+		slog.Warn("failed to record search history", "query", query, "error", err)
+	}
+
+	slog.Debug("search service completed",
+		"query", query,
+		"results", len(response.Results),
+		"duration_ms", response.SearchTimeMs,
+	)
 
 	return response, nil
 }

@@ -310,7 +310,9 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 	// Create model registry
 	registry := ai.NewModelRegistry()
 
-	// Register llama.cpp models if available
+	// Register llama.cpp models if available (these are preferred as defaults)
+	var localTextModelRegistered, localEmbeddingModelRegistered bool
+
 	if llamaQuick, err := llamacpp.New(llamacpp.Config{BaseURL: quickURL, Timeout: 120 * time.Second}); err == nil {
 		if llamaQuick.Ping(context.Background()) == nil {
 			registry.RegisterModel(ai.ModelInfo{
@@ -323,6 +325,11 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 				Speed:        "fast",
 				Available:    true,
 			}, llamaQuick)
+			// Set llama.cpp as default for text and embeddings
+			registry.SetDefault(ai.CapabilityText, "gemma-3-270m")
+			registry.SetDefault(ai.CapabilityEmbeddings, "gemma-3-270m")
+			localTextModelRegistered = true
+			localEmbeddingModelRegistered = true
 		}
 	}
 
@@ -338,6 +345,13 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 				Speed:        "balanced",
 				Available:    true,
 			}, llamaDeep)
+			// If quick model wasn't available, use this as default
+			if !localTextModelRegistered {
+				registry.SetDefault(ai.CapabilityText, "gemma-3-1b")
+				registry.SetDefault(ai.CapabilityEmbeddings, "gemma-3-1b")
+				localTextModelRegistered = true
+				localEmbeddingModelRegistered = true
+			}
 		}
 	}
 
@@ -353,10 +367,21 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 				Speed:        "thorough",
 				Available:    true,
 			}, llamaResearch)
+			// If no other local models were available, use this as default
+			if !localTextModelRegistered {
+				registry.SetDefault(ai.CapabilityText, "gemma-3-4b")
+				registry.SetDefault(ai.CapabilityEmbeddings, "gemma-3-4b")
+				localTextModelRegistered = true
+				localEmbeddingModelRegistered = true
+			}
 		}
 	}
 
+	// Track if we need Claude for defaults (only when no local models available)
+	_ = localEmbeddingModelRegistered // embeddings handled above
+
 	// Register Claude models if API key is available
+	// Only set Claude as default if no local llama.cpp models are available
 	if claudeAPIKey != "" {
 		if claudeQuickProvider != nil {
 			registry.RegisterModel(ai.ModelInfo{
@@ -369,6 +394,13 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 				Speed:        "fast",
 				Available:    true,
 			}, claudeQuickProvider)
+			// Only set as default for text if no local model is available
+			if !localTextModelRegistered {
+				registry.SetDefault(ai.CapabilityText, "claude-haiku-4.5")
+				localTextModelRegistered = true
+			}
+			// Claude is the only option for vision capability
+			registry.SetDefault(ai.CapabilityVision, "claude-haiku-4.5")
 		}
 
 		if claudeDeepProvider != nil {
