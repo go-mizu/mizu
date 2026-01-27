@@ -14,7 +14,8 @@ import (
 
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize"
 	"github.com/go-mizu/blueprints/localflare/pkg/vectorize/driver"
-	_ "github.com/marcboeker/go-duckdb"
+
+	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 func init() {
