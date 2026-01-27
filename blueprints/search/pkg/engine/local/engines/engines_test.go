@@ -410,3 +410,247 @@ func TestTimeRangeConstants(t *testing.T) {
 		}
 	}
 }
+
+func TestBraveEngine(t *testing.T) {
+	brave := NewBrave()
+
+	if brave.Name() != "brave" {
+		t.Errorf("Expected name 'brave', got %s", brave.Name())
+	}
+
+	if brave.Shortcut() != "br" {
+		t.Errorf("Expected shortcut 'br', got %s", brave.Shortcut())
+	}
+
+	if !brave.SupportsPaging() {
+		t.Error("Expected Brave to support paging")
+	}
+
+	if !brave.SupportsTimeRange() {
+		t.Error("Expected Brave to support time range")
+	}
+
+	// Test request building
+	ctx := context.Background()
+	params := NewRequestParams()
+	params.PageNo = 1
+	params.Locale = "en-US"
+
+	err := brave.Request(ctx, "test query", params)
+	if err != nil {
+		t.Fatalf("Failed to build request: %v", err)
+	}
+
+	if params.URL == "" {
+		t.Error("Expected URL to be set")
+	}
+}
+
+func TestGitHubEngine(t *testing.T) {
+	github := NewGitHub()
+
+	if github.Name() != "github" {
+		t.Errorf("Expected name 'github', got %s", github.Name())
+	}
+
+	if github.Shortcut() != "gh" {
+		t.Errorf("Expected shortcut 'gh', got %s", github.Shortcut())
+	}
+
+	cats := github.Categories()
+	if len(cats) != 1 || cats[0] != CategoryIT {
+		t.Error("Expected IT category")
+	}
+
+	// Test request building
+	ctx := context.Background()
+	params := NewRequestParams()
+
+	err := github.Request(ctx, "golang", params)
+	if err != nil {
+		t.Fatalf("Failed to build request: %v", err)
+	}
+
+	if params.URL == "" {
+		t.Error("Expected URL to be set")
+	}
+}
+
+func TestArXivEngine(t *testing.T) {
+	arxiv := NewArXiv()
+
+	if arxiv.Name() != "arxiv" {
+		t.Errorf("Expected name 'arxiv', got %s", arxiv.Name())
+	}
+
+	if arxiv.Shortcut() != "arx" {
+		t.Errorf("Expected shortcut 'arx', got %s", arxiv.Shortcut())
+	}
+
+	cats := arxiv.Categories()
+	if len(cats) != 1 || cats[0] != CategoryScience {
+		t.Error("Expected Science category")
+	}
+
+	if !arxiv.SupportsPaging() {
+		t.Error("Expected arXiv to support paging")
+	}
+
+	// Test request building
+	ctx := context.Background()
+	params := NewRequestParams()
+	params.PageNo = 1
+
+	err := arxiv.Request(ctx, "machine learning", params)
+	if err != nil {
+		t.Fatalf("Failed to build request: %v", err)
+	}
+
+	if params.URL == "" {
+		t.Error("Expected URL to be set")
+	}
+}
+
+func TestYouTubeEngine(t *testing.T) {
+	youtube := NewYouTube()
+
+	if youtube.Name() != "youtube" {
+		t.Errorf("Expected name 'youtube', got %s", youtube.Name())
+	}
+
+	if youtube.Shortcut() != "yt" {
+		t.Errorf("Expected shortcut 'yt', got %s", youtube.Shortcut())
+	}
+
+	cats := youtube.Categories()
+	if len(cats) != 2 {
+		t.Errorf("Expected 2 categories, got %d", len(cats))
+	}
+
+	if !youtube.SupportsPaging() {
+		t.Error("Expected YouTube to support paging")
+	}
+
+	if !youtube.SupportsTimeRange() {
+		t.Error("Expected YouTube to support time range")
+	}
+
+	// Test request building
+	ctx := context.Background()
+	params := NewRequestParams()
+	params.PageNo = 1
+
+	err := youtube.Request(ctx, "golang tutorial", params)
+	if err != nil {
+		t.Fatalf("Failed to build request: %v", err)
+	}
+
+	if params.URL == "" {
+		t.Error("Expected URL to be set")
+	}
+}
+
+func TestRedditEngine(t *testing.T) {
+	reddit := NewReddit()
+
+	if reddit.Name() != "reddit" {
+		t.Errorf("Expected name 'reddit', got %s", reddit.Name())
+	}
+
+	if reddit.Shortcut() != "re" {
+		t.Errorf("Expected shortcut 're', got %s", reddit.Shortcut())
+	}
+
+	cats := reddit.Categories()
+	if len(cats) != 1 || cats[0] != CategorySocial {
+		t.Error("Expected Social category")
+	}
+
+	// Test request building
+	ctx := context.Background()
+	params := NewRequestParams()
+
+	err := reddit.Request(ctx, "golang", params)
+	if err != nil {
+		t.Fatalf("Failed to build request: %v", err)
+	}
+
+	if params.URL == "" {
+		t.Error("Expected URL to be set")
+	}
+}
+
+func TestQwantEngine(t *testing.T) {
+	qwant := NewQwant()
+
+	if qwant.Name() != "qwant" {
+		t.Errorf("Expected name 'qwant', got %s", qwant.Name())
+	}
+
+	if qwant.Shortcut() != "qw" {
+		t.Errorf("Expected shortcut 'qw', got %s", qwant.Shortcut())
+	}
+
+	if !qwant.SupportsPaging() {
+		t.Error("Expected Qwant to support paging")
+	}
+
+	if !qwant.SupportsSafeSearch() {
+		t.Error("Expected Qwant to support safe search")
+	}
+
+	// Test request building
+	ctx := context.Background()
+	params := NewRequestParams()
+	params.PageNo = 1
+
+	err := qwant.Request(ctx, "test query", params)
+	if err != nil {
+		t.Fatalf("Failed to build request: %v", err)
+	}
+
+	if params.URL == "" {
+		t.Error("Expected URL to be set")
+	}
+}
+
+func TestAllEnginesHaveRequiredFields(t *testing.T) {
+	engines := []Engine{
+		NewGoogle(),
+		NewBing(),
+		NewDuckDuckGo(),
+		NewWikipedia(),
+		NewBrave(),
+		NewQwant(),
+		NewGitHub(),
+		NewArXiv(),
+		NewYouTube(),
+		NewReddit(),
+		NewGoogleImages(),
+		NewBingImages(),
+		NewDuckDuckGoImages(),
+		NewQwantImages(),
+		NewBingNews(),
+		NewQwantNews(),
+	}
+
+	for _, eng := range engines {
+		t.Run(eng.Name(), func(t *testing.T) {
+			if eng.Name() == "" {
+				t.Error("Engine name is empty")
+			}
+			if eng.Shortcut() == "" {
+				t.Error("Engine shortcut is empty")
+			}
+			if len(eng.Categories()) == 0 {
+				t.Error("Engine has no categories")
+			}
+			if eng.Timeout() == 0 {
+				t.Error("Engine timeout is zero")
+			}
+			if eng.Weight() == 0 {
+				t.Error("Engine weight is zero")
+			}
+		})
+	}
+}
