@@ -338,14 +338,31 @@ func (ms *MetaSearch) registerBuiltinEngines() {
 		engines.NewDuckDuckGo(),
 		engines.NewWikipedia(),
 		engines.NewWikidata(),
+		engines.NewBrave(),
+		engines.NewQwant(),
 
 		// Image search
 		engines.NewGoogleImages(),
 		engines.NewBingImages(),
 		engines.NewDuckDuckGoImages(),
+		engines.NewQwantImages(),
+
+		// Video search
+		engines.NewYouTube(),
 
 		// News search
 		engines.NewBingNews(),
+		engines.NewQwantNews(),
+
+		// Social media
+		engines.NewReddit(),
+
+		// IT/Code
+		engines.NewGitHub(),
+		engines.NewGitHubCode(),
+
+		// Science
+		engines.NewArXiv(),
 	}
 
 	for _, eng := range builtinEngines {

@@ -15,6 +15,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/feature/chunker"
 	"github.com/go-mizu/mizu/blueprints/search/feature/search"
 	"github.com/go-mizu/mizu/blueprints/search/feature/session"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/local"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/searxng"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/llm/claude"
@@ -400,33 +401,37 @@ func createAIHandler(st *sqlite.Store, searchHandler *api.SearchHandler) *api.AI
 	return api.NewAIHandler(aiSvc, sessionSvc, canvasSvc, registry)
 }
 
-// createSearchHandler creates a search handler with SearXNG if available.
+// createSearchHandler creates a search handler with local engine or SearXNG.
 func createSearchHandler(st store.Store) *api.SearchHandler {
-	// Get SearXNG URL from environment or use default
-	searxngURL := os.Getenv("SEARXNG_URL")
-	if searxngURL == "" {
-		searxngURL = "http://localhost:8888"
-	}
-
-	// Try to connect to SearXNG
-	eng := searxng.New(searxngURL)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := eng.Healthz(ctx); err != nil {
-		// SearXNG not available, use store fallback
-		return api.NewSearchHandler(st)
-	}
-
-	// SearXNG is available, create cache and use engine
 	var cache *search.Cache
 	if sqliteStore, ok := st.(*sqlite.Store); ok {
 		cacheStore := sqliteStore.Cache()
 		cache = search.NewCacheWithDefaults(cacheStore)
 	}
 
+	// Check if we should use SearXNG (optional external instance)
+	searxngURL := os.Getenv("SEARXNG_URL")
+	if searxngURL != "" {
+		// Try to connect to SearXNG
+		eng := searxng.New(searxngURL)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := eng.Healthz(ctx); err == nil {
+			// SearXNG is available, use it
+			return api.NewSearchHandlerWithConfig(search.ServiceConfig{
+				Engine: eng,
+				Cache:  cache,
+				Store:  st,
+			}, st)
+		}
+	}
+
+	// Use local metasearch engine (built-in, always available)
+	localEngine := local.NewAdapterWithDefaults()
+
 	return api.NewSearchHandlerWithConfig(search.ServiceConfig{
-		Engine: eng,
+		Engine: localEngine,
 		Cache:  cache,
 		Store:  st,
 	}, st)
