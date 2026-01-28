@@ -4,9 +4,7 @@
 package fts_production
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"iter"
 	"math"
@@ -666,10 +664,19 @@ func (d *Driver) loadIndex() error {
 	// Read doc lengths
 	d.index.DocLens = r.ReadIntSlice()
 
-	// Read documents (using gob for complex structures)
-	docsData := r.ReadBytes()
-	if len(docsData) > 0 {
-		gob.NewDecoder(bytes.NewReader(docsData)).Decode(&d.index.Documents)
+	// Read documents (binary format)
+	numDocuments := int(r.ReadUint32())
+	d.index.Documents = make([]compressedDoc, numDocuments)
+	for i := range numDocuments {
+		d.index.Documents[i] = compressedDoc{
+			ID:        r.ReadString(),
+			URL:       r.ReadString(),
+			TextData:  r.ReadBytes(),
+			Dump:      r.ReadString(),
+			Date:      r.ReadString(),
+			Language:  r.ReadString(),
+			LangScore: r.ReadFloat64(),
+		}
 	}
 
 	// Read terms
@@ -712,10 +719,17 @@ func (d *Driver) saveIndex() error {
 	// Write doc lengths
 	w.WriteIntSlice(d.index.DocLens)
 
-	// Write documents (using gob for complex structures)
-	var docBuf bytes.Buffer
-	gob.NewEncoder(&docBuf).Encode(d.index.Documents)
-	w.WriteBytes(docBuf.Bytes())
+	// Write documents (binary format)
+	w.WriteUint32(uint32(len(d.index.Documents)))
+	for _, doc := range d.index.Documents {
+		w.WriteString(doc.ID)
+		w.WriteString(doc.URL)
+		w.WriteBytes(doc.TextData)
+		w.WriteString(doc.Dump)
+		w.WriteString(doc.Date)
+		w.WriteString(doc.Language)
+		w.WriteFloat64(doc.LangScore)
+	}
 
 	// Write terms
 	w.WriteUint32(uint32(len(d.index.Terms)))

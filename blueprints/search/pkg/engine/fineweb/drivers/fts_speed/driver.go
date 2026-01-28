@@ -4,9 +4,7 @@
 package fts_speed
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"iter"
 	"math"
