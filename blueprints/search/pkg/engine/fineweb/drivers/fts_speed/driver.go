@@ -595,25 +595,130 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) loadIndex() error {
-	indexPath := filepath.Join(d.indexDir, "index.gob")
+	indexPath := filepath.Join(d.indexDir, "index.bin")
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		return err
 	}
 
-	d.index = &BlockMaxIndex{}
-	return gob.NewDecoder(bytes.NewReader(data)).Decode(d.index)
+	r := algo.NewBinaryReader(data)
+	d.index = &BlockMaxIndex{
+		Terms:     make(map[string]*PostingList),
+		Documents: make(map[string]fineweb.Document),
+		DocNums:   make(map[string]uint32),
+	}
+
+	// Read metadata
+	d.index.NumDocs = int(r.ReadUint32())
+	d.index.AvgDocLen = r.ReadFloat64()
+	d.index.TotalTerms = int64(r.ReadUint64())
+
+	// Read doc lengths
+	d.index.DocLens = r.ReadIntSlice()
+
+	// Read NumToID
+	numIDs := int(r.ReadUint32())
+	d.index.NumToID = make([]string, numIDs)
+	for i := range numIDs {
+		d.index.NumToID[i] = r.ReadString()
+		d.index.DocNums[d.index.NumToID[i]] = uint32(i)
+	}
+
+	// Read documents (binary format)
+	numDocuments := int(r.ReadUint32())
+	for range numDocuments {
+		id := r.ReadString()
+		doc := fineweb.Document{
+			ID:            r.ReadString(),
+			URL:           r.ReadString(),
+			Text:          r.ReadString(),
+			Dump:          r.ReadString(),
+			Date:          r.ReadString(),
+			Language:      r.ReadString(),
+			LanguageScore: r.ReadFloat64(),
+		}
+		d.index.Documents[id] = doc
+	}
+
+	// Read terms
+	numTerms := int(r.ReadUint32())
+	for range numTerms {
+		term := r.ReadString()
+		pl := &PostingList{
+			DocFreq:  int(r.ReadUint32()),
+			MaxScore: r.ReadFloat32(),
+			IDF:      r.ReadFloat32(),
+		}
+
+		// Read blocks
+		numBlocks := int(r.ReadUint32())
+		pl.Blocks = make([]Block, numBlocks)
+		for j := range numBlocks {
+			pl.Blocks[j] = Block{
+				DocNums:   r.ReadUint32Slice(),
+				Freqs:     r.ReadUint16Slice(),
+				MaxScore:  r.ReadFloat32(),
+				MaxDocNum: r.ReadUint32(),
+			}
+		}
+
+		d.index.Terms[term] = pl
+	}
+
+	return nil
 }
 
 func (d *Driver) saveIndex() error {
-	indexPath := filepath.Join(d.indexDir, "index.gob")
+	indexPath := filepath.Join(d.indexDir, "index.bin")
 
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(d.index); err != nil {
-		return err
+	w := algo.NewBinaryWriter()
+
+	// Write metadata
+	w.WriteUint32(uint32(d.index.NumDocs))
+	w.WriteFloat64(d.index.AvgDocLen)
+	w.WriteUint64(uint64(d.index.TotalTerms))
+
+	// Write doc lengths
+	w.WriteIntSlice(d.index.DocLens)
+
+	// Write NumToID
+	w.WriteUint32(uint32(len(d.index.NumToID)))
+	for _, id := range d.index.NumToID {
+		w.WriteString(id)
 	}
 
-	return os.WriteFile(indexPath, buf.Bytes(), 0644)
+	// Write documents (binary format)
+	w.WriteUint32(uint32(len(d.index.Documents)))
+	for id, doc := range d.index.Documents {
+		w.WriteString(id)
+		w.WriteString(doc.ID)
+		w.WriteString(doc.URL)
+		w.WriteString(doc.Text)
+		w.WriteString(doc.Dump)
+		w.WriteString(doc.Date)
+		w.WriteString(doc.Language)
+		w.WriteFloat64(doc.LanguageScore)
+	}
+
+	// Write terms
+	w.WriteUint32(uint32(len(d.index.Terms)))
+	for term, pl := range d.index.Terms {
+		w.WriteString(term)
+		w.WriteUint32(uint32(pl.DocFreq))
+		w.WriteFloat32(pl.MaxScore)
+		w.WriteFloat32(pl.IDF)
+
+		// Write blocks
+		w.WriteUint32(uint32(len(pl.Blocks)))
+		for _, block := range pl.Blocks {
+			w.WriteUint32Slice(block.DocNums)
+			w.WriteUint16Slice(block.Freqs)
+			w.WriteFloat32(block.MaxScore)
+			w.WriteUint32(block.MaxDocNum)
+		}
+	}
+
+	return os.WriteFile(indexPath, w.Bytes(), 0644)
 }
 
 // searchResult for internal use.
