@@ -46,6 +46,7 @@ import (
 	// Optimized FTS profile drivers
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_balanced"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_compact"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_lowmem"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_production"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_speed"
 
