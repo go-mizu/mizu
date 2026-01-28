@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -36,8 +37,8 @@ const (
 	// DefaultProfile is the default search profile (ultra for max throughput)
 	DefaultProfile = "ultra"
 	// BatchSize for document indexing
-	// Optimal around 100k - balances FFI overhead with memory efficiency
-	BatchSize = 100000
+	// Balanced at 50k - reduces memory pressure while maintaining parallelism
+	BatchSize = 50000
 )
 
 // Available profiles
@@ -73,7 +74,13 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 		return nil, fmt.Errorf("invalid profile %q, must be one of: %v", profile, Profiles)
 	}
 
-	dataDirC := C.CString(cfg.DataDir)
+	// Create index directory similar to fts_lowmem
+	indexDir := cfg.DataDir + "/" + cfg.Language + ".fts_rust"
+	if err := os.MkdirAll(indexDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating index directory: %w", err)
+	}
+
+	dataDirC := C.CString(indexDir)
 	defer C.free(unsafe.Pointer(dataDirC))
 
 	profileC := C.CString(profile)
@@ -94,7 +101,7 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 	d := &Driver{
 		idx:     idx,
 		profile: profile,
-		dataDir: cfg.DataDir,
+		dataDir: indexDir,
 	}
 
 	runtime.SetFinalizer(d, (*Driver).Close)

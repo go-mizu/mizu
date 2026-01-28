@@ -392,6 +392,7 @@ dependencies = [
  "parking_lot",
  "rayon",
  "roaring",
+ "rustc-hash 2.1.1",
  "serde",
  "serde_json",
  "tantivy",

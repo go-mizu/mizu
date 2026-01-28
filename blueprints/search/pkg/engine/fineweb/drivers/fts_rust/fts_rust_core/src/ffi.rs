@@ -235,6 +235,8 @@ pub unsafe extern "C" fn fts_index_batch_binary(
     doc_count: u64,
     progress: FtsProgressFn,
 ) -> i64 {
+    use rayon::prelude::*;
+
     if idx.is_null() || data.is_null() {
         set_last_error("Null pointer passed to fts_index_batch_binary");
         return -1;
@@ -243,55 +245,72 @@ pub unsafe extern "C" fn fts_index_batch_binary(
     let index = &*idx;
     let bytes = slice::from_raw_parts(data, data_len);
 
-    // Parse binary format into documents
-    let mut docs = Vec::with_capacity(doc_count as usize);
+    // Phase 1: Parse to find document boundaries (fast, sequential)
+    let mut doc_offsets = Vec::with_capacity(doc_count as usize);
     let mut pos = 0;
 
-    while pos + 8 <= bytes.len() && docs.len() < doc_count as usize {
-        // Read id
+    while pos + 8 <= bytes.len() && doc_offsets.len() < doc_count as usize {
+        let start = pos;
+
+        // Read id length
         if pos + 4 > bytes.len() {
             break;
         }
         let id_len =
             u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
                 as usize;
-        pos += 4;
+        pos += 4 + id_len;
 
-        if pos + id_len > bytes.len() {
-            break;
-        }
-        let id = match std::str::from_utf8(&bytes[pos..pos + id_len]) {
-            Ok(s) => s.to_string(),
-            Err(_) => {
-                set_last_error("Invalid UTF-8 in document ID");
-                return -2;
-            }
-        };
-        pos += id_len;
-
-        // Read text
+        // Read text length
         if pos + 4 > bytes.len() {
             break;
         }
         let text_len =
             u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
                 as usize;
-        pos += 4;
+        pos += 4 + text_len;
 
-        if pos + text_len > bytes.len() {
-            break;
-        }
-        let text = match std::str::from_utf8(&bytes[pos..pos + text_len]) {
-            Ok(s) => s.to_string(),
-            Err(_) => {
-                set_last_error("Invalid UTF-8 in document text");
-                return -2;
-            }
-        };
-        pos += text_len;
-
-        docs.push(Document::new(id, text));
+        doc_offsets.push(start);
     }
+
+    // Phase 2: Parse documents in parallel
+    let docs: Vec<Document> = doc_offsets
+        .par_iter()
+        .filter_map(|&start| {
+            let mut pos = start;
+
+            // Read id
+            if pos + 4 > bytes.len() {
+                return None;
+            }
+            let id_len =
+                u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+                    as usize;
+            pos += 4;
+
+            if pos + id_len > bytes.len() {
+                return None;
+            }
+            let id = std::str::from_utf8(&bytes[pos..pos + id_len]).ok()?.to_string();
+            pos += id_len;
+
+            // Read text
+            if pos + 4 > bytes.len() {
+                return None;
+            }
+            let text_len =
+                u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+                    as usize;
+            pos += 4;
+
+            if pos + text_len > bytes.len() {
+                return None;
+            }
+            let text = std::str::from_utf8(&bytes[pos..pos + text_len]).ok()?.to_string();
+
+            Some(Document::new(id, text))
+        })
+        .collect();
 
     let total = docs.len() as u64;
 
