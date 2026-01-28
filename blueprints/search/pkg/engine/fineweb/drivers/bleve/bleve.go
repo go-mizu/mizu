@@ -94,7 +94,7 @@ func (d *Driver) createMapping() mapping.IndexMapping {
 	indexMapping := bleve.NewIndexMapping()
 
 	// Create custom Vietnamese analyzer
-	err := indexMapping.AddCustomAnalyzer("vietnamese", map[string]interface{}{
+	err := indexMapping.AddCustomAnalyzer("vietnamese", map[string]any{
 		"type":         custom.Name,
 		"tokenizer":    unicode.Name,
 		"token_filters": []string{
@@ -230,7 +230,7 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 // Import ingests documents from an iterator.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
 	batch := d.index.NewBatch()
-	batchSize := 1000
+	batchSize := 5000 // Increased batch size for better throughput
 	count := 0
 	var imported int64
 

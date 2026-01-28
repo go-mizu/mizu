@@ -43,6 +43,12 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres_textsearch"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres_trgm"
 
+	// Optimized FTS profile drivers
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_balanced"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_compact"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_production"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_speed"
+
 	// Note: tantivy driver requires CGO, import with -tags tantivy
 	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/tantivy"
 )
