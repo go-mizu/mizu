@@ -5,8 +5,7 @@ use crate::profiles::{Bm25Params, ProfileType, SearchProfile};
 use crate::result::{IndexError, MemoryStats, SearchError, SearchHit, SearchResult};
 use crate::tokenizer::FastTokenizer;
 
-use fst::{Map, MapBuilder, Streamer};
-use memmap2::Mmap;
+use fst::{Map, MapBuilder};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
@@ -18,6 +17,9 @@ use std::path::Path;
 use std::time::Instant;
 
 const BLOCK_SIZE: usize = 128;
+
+/// Type alias for pending document data
+type PendingDoc = (String, HashMap<String, u16>, u32);
 
 /// Posting block with max score
 #[derive(Debug, Clone)]
@@ -62,7 +64,7 @@ pub struct EnsembleProfile {
     /// Tokenizer
     tokenizer: FastTokenizer,
     /// Pending documents
-    pending: RwLock<Vec<(String, HashMap<String, u16>, u32)>>,
+    pending: RwLock<Vec<PendingDoc>>,
     /// Whether FST needs rebuild
     fst_dirty: RwLock<bool>,
 }
@@ -147,7 +149,9 @@ impl EnsembleProfile {
 
                 for &(doc_id, freq) in chunk {
                     let doc_len = doc_lengths[doc_id as usize] as f32;
-                    let score = self.bm25.score(freq as f32, df as f32, doc_len, avg_doc_len, total_docs);
+                    let score =
+                        self.bm25
+                            .score(freq as f32, df as f32, doc_len, avg_doc_len, total_docs);
                     block.max_score = block.max_score.max(score);
                     block.doc_ids.push(doc_id);
                     block.freqs.push(freq);
@@ -164,7 +168,9 @@ impl EnsembleProfile {
                 existing.blocks.extend(blocks);
                 existing.df += df;
                 // Recalculate IDF
-                existing.idf = ((total_docs - existing.df as f32 + 0.5) / (existing.df as f32 + 0.5) + 1.0).ln();
+                existing.idf =
+                    ((total_docs - existing.df as f32 + 0.5) / (existing.df as f32 + 0.5) + 1.0)
+                        .ln();
             } else {
                 // New term
                 let offset = postings.len();
@@ -209,7 +215,12 @@ impl EnsembleProfile {
         *self.fst_dirty.write() = false;
     }
 
-    fn search_ensemble(&self, query_terms: &[String], limit: usize, offset: usize) -> Vec<SearchHit> {
+    fn search_ensemble(
+        &self,
+        query_terms: &[String],
+        limit: usize,
+        offset: usize,
+    ) -> Vec<SearchHit> {
         // Ensure FST is built
         self.rebuild_fst();
 
@@ -375,7 +386,8 @@ impl SearchProfile for EnsembleProfile {
             .iter()
             .map(|p| {
                 let bitmap_size = p.bitmap.serialized_size();
-                let blocks_size: usize = p.blocks
+                let blocks_size: usize = p
+                    .blocks
                     .iter()
                     .map(|b| b.doc_ids.len() * 4 + b.freqs.len() * 2 + 4)
                     .sum();
@@ -387,7 +399,8 @@ impl SearchProfile for EnsembleProfile {
         let doc_ids_bytes: usize = doc_ids.iter().map(|s| s.len()).sum();
 
         MemoryStats {
-            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes) as u64,
+            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes)
+                as u64,
             term_dict_bytes: term_dict_bytes as u64,
             postings_bytes: postings_bytes as u64,
             docs_indexed: *self.doc_count.read(),
@@ -568,10 +581,19 @@ impl SearchProfile for EnsembleProfile {
                 reader.read_exact(&mut buf4)?;
                 let max_score = f32::from_le_bytes(buf4);
 
-                blocks.push(PostingBlock { doc_ids, freqs, max_score });
+                blocks.push(PostingBlock {
+                    doc_ids,
+                    freqs,
+                    max_score,
+                });
             }
 
-            postings.push(CompressedPosting { bitmap, blocks, df, idf });
+            postings.push(CompressedPosting {
+                bitmap,
+                blocks,
+                df,
+                idf,
+            });
         }
 
         // Doc lengths
@@ -631,15 +653,17 @@ impl SearchProfile for EnsembleProfile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OrderedFloat(f32);
 
-impl PartialOrd for OrderedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
-impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -662,7 +686,7 @@ mod tests {
         profile.commit().unwrap();
 
         let result = profile.search("rust programming", 10, 0).unwrap();
-        assert!(result.hits.len() >= 1);
+        assert!(!result.hits.is_empty());
         // Docs 1 and 3 both contain "rust", doc 1 and 2 contain "programming"
         let ids: Vec<_> = result.hits.iter().map(|h| h.id.as_str()).collect();
         assert!(ids.contains(&"1") || ids.contains(&"3"));

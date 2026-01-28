@@ -16,9 +16,8 @@ use crate::result::{IndexError, MemoryStats, SearchError, SearchHit, SearchResul
 
 use parking_lot::RwLock;
 use rayon::prelude::*;
-use roaring::RoaringBitmap;
-use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
@@ -54,16 +53,28 @@ impl PostingList {
         }
     }
 
-    fn compute_block_maxes(&mut self, doc_lengths: &[u16], avg_doc_len: f32, total_docs: f32, bm25: &Bm25Params) {
+    fn compute_block_maxes(
+        &mut self,
+        doc_lengths: &[u16],
+        avg_doc_len: f32,
+        total_docs: f32,
+        bm25: &Bm25Params,
+    ) {
         self.block_maxes.clear();
-        let num_blocks = (self.entries.len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        let num_blocks = self.entries.len().div_ceil(BLOCK_SIZE);
         self.block_maxes.reserve(num_blocks);
 
         for chunk in self.entries.chunks(BLOCK_SIZE) {
             let mut max_score = 0.0f32;
             for entry in chunk {
                 let doc_len = doc_lengths[entry.doc_id as usize] as f32;
-                let score = bm25.score(entry.freq as f32, self.df as f32, doc_len, avg_doc_len, total_docs);
+                let score = bm25.score(
+                    entry.freq as f32,
+                    self.df as f32,
+                    doc_len,
+                    avg_doc_len,
+                    total_docs,
+                );
                 max_score = max_score.max(score);
             }
             self.block_maxes.push(max_score);
@@ -108,17 +119,6 @@ impl UltraProfile {
         }
     }
 
-    /// Ultra-fast hash function for terms
-    #[inline]
-    fn hash_term(term: &str) -> u64 {
-        let mut hash = 0xcbf29ce484222325u64;
-        for byte in term.bytes() {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        hash
-    }
-
     /// Fast ASCII tokenization - returns (term_hash, freq) pairs
     #[inline]
     fn tokenize_fast(text: &str) -> Vec<(u64, u16, String)> {
@@ -139,7 +139,7 @@ impl UltraProfile {
             } else if in_token {
                 let end = i;
                 let len = end - start;
-                if len >= 2 && len <= 32 {
+                if (2..=32).contains(&len) {
                     // Lowercase and hash in one pass
                     let mut term = String::with_capacity(len);
                     let mut hash = 0xcbf29ce484222325u64;
@@ -149,7 +149,8 @@ impl UltraProfile {
                         hash ^= lower as u64;
                         hash = hash.wrapping_mul(0x100000001b3);
                     }
-                    freqs.entry(hash)
+                    freqs
+                        .entry(hash)
                         .and_modify(|(f, _)| *f = f.saturating_add(1))
                         .or_insert((1, term));
                 }
@@ -160,7 +161,7 @@ impl UltraProfile {
         // Handle last token
         if in_token {
             let len = bytes.len() - start;
-            if len >= 2 && len <= 32 {
+            if (2..=32).contains(&len) {
                 let mut term = String::with_capacity(len);
                 let mut hash = 0xcbf29ce484222325u64;
                 for &c in &bytes[start..] {
@@ -169,7 +170,8 @@ impl UltraProfile {
                     hash ^= lower as u64;
                     hash = hash.wrapping_mul(0x100000001b3);
                 }
-                freqs.entry(hash)
+                freqs
+                    .entry(hash)
                     .and_modify(|(f, _)| *f = f.saturating_add(1))
                     .or_insert((1, term));
             }
@@ -281,12 +283,12 @@ impl UltraProfile {
             if top_k.len() < k {
                 top_k.push(entry);
                 if top_k.len() == k {
-                    threshold = top_k.peek().unwrap().0.0.0;
+                    threshold = top_k.peek().unwrap().0 .0 .0;
                 }
             } else if score > threshold {
                 top_k.pop();
                 top_k.push(entry);
-                threshold = top_k.peek().unwrap().0.0.0;
+                threshold = top_k.peek().unwrap().0 .0 .0;
             }
         }
 
@@ -325,17 +327,24 @@ impl SearchProfile for UltraProfile {
         let base_doc_id = self.doc_count.load(Ordering::Relaxed) as u32;
 
         // Parallel tokenization
-        let tokenized: Vec<_> = docs.par_iter()
+        let tokenized: Vec<_> = docs
+            .par_iter()
             .enumerate()
             .map(|(i, doc)| {
                 let terms = Self::tokenize_fast(&doc.text);
                 let doc_len: u32 = terms.iter().map(|(_, f, _)| *f as u32).sum();
-                (base_doc_id + i as u32, doc.id.clone(), terms, doc_len as u16)
+                (
+                    base_doc_id + i as u32,
+                    doc.id.clone(),
+                    terms,
+                    doc_len as u16,
+                )
             })
             .collect();
 
         // Update counts atomically
-        self.doc_count.fetch_add(docs.len() as u64, Ordering::Relaxed);
+        self.doc_count
+            .fetch_add(docs.len() as u64, Ordering::Relaxed);
 
         // Sequential update of shared data structures
         {
@@ -353,7 +362,8 @@ impl SearchProfile for UltraProfile {
             for (doc_id, ext_id, terms, doc_len) in tokenized {
                 doc_ids.push(ext_id);
                 doc_lengths.push(doc_len);
-                self.total_doc_length.fetch_add(doc_len as u64, Ordering::Relaxed);
+                self.total_doc_length
+                    .fetch_add(doc_len as u64, Ordering::Relaxed);
 
                 for (hash, freq, term_str) in terms {
                     let idx = if let Some(&idx) = term_dict.get(&hash) {
@@ -374,7 +384,8 @@ impl SearchProfile for UltraProfile {
 
             // Update IDFs
             for posting in postings.iter_mut() {
-                posting.idf = ((total_docs - posting.df as f32 + 0.5) / (posting.df as f32 + 0.5) + 1.0).ln();
+                posting.idf =
+                    ((total_docs - posting.df as f32 + 0.5) / (posting.df as f32 + 0.5) + 1.0).ln();
             }
         }
 
@@ -422,7 +433,8 @@ impl SearchProfile for UltraProfile {
         let doc_ids_bytes: usize = doc_ids.iter().map(|s| s.len()).sum();
 
         MemoryStats {
-            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes) as u64,
+            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes)
+                as u64,
             term_dict_bytes: term_dict_bytes as u64,
             postings_bytes: postings_bytes as u64,
             docs_indexed: self.doc_count.load(Ordering::Relaxed),
@@ -554,7 +566,12 @@ impl SearchProfile for UltraProfile {
                 entries.push(PostingEntry { doc_id, freq });
             }
 
-            postings.push(PostingList { entries, block_maxes: Vec::new(), df, idf });
+            postings.push(PostingList {
+                entries,
+                block_maxes: Vec::new(),
+                df,
+                idf,
+            });
         }
 
         // Read doc lengths
@@ -583,7 +600,8 @@ impl SearchProfile for UltraProfile {
         *self.doc_lengths.write() = doc_lengths;
         *self.doc_ids.write() = doc_ids;
         self.doc_count.store(doc_count, Ordering::Relaxed);
-        self.total_doc_length.store(total_doc_length, Ordering::Relaxed);
+        self.total_doc_length
+            .store(total_doc_length, Ordering::Relaxed);
         *self.block_maxes_dirty.write() = true;
 
         Ok(())
@@ -609,15 +627,17 @@ impl SearchProfile for UltraProfile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OrderedFloat(f32);
 
-impl PartialOrd for OrderedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
-impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -626,7 +646,6 @@ impl Eq for OrderedFloat {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[test]
     fn test_ultra_basic() {
@@ -642,7 +661,7 @@ mod tests {
         profile.commit().unwrap();
 
         let result = profile.search("rust", 10, 0).unwrap();
-        assert!(result.hits.len() >= 1);
+        assert!(!result.hits.is_empty());
     }
 
     #[test]
@@ -652,8 +671,8 @@ mod tests {
         // Generate test documents
         let docs: Vec<_> = (0..100_000)
             .map(|i| Document::new(
-                &format!("doc_{}", i),
-                &format!("document {} contains words like rust go python java programming language system database", i),
+                format!("doc_{}", i),
+                format!("document {} contains words like rust go python java programming language system database", i),
             ))
             .collect();
 
@@ -665,6 +684,10 @@ mod tests {
         let throughput = docs.len() as f64 / duration.as_secs_f64();
         println!("Ultra throughput: {:.0} docs/sec", throughput);
 
-        assert!(throughput > 100_000.0, "Expected >100k docs/sec, got {}", throughput);
+        assert!(
+            throughput > 100_000.0,
+            "Expected >100k docs/sec, got {}",
+            throughput
+        );
     }
 }

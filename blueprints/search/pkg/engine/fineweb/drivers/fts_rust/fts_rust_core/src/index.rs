@@ -6,7 +6,6 @@ use crate::result::{IndexError, MemoryStats, SearchError, SearchResult};
 
 use parking_lot::RwLock;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// Main FTS index
 pub struct FtsIndex {
@@ -24,7 +23,7 @@ impl FtsIndex {
         let data_dir = data_dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&data_dir)?;
 
-        let profile_type = ProfileType::from_str(profile_name)
+        let profile_type = ProfileType::parse(profile_name)
             .ok_or_else(|| IndexError::UnknownProfile(profile_name.to_string()))?;
 
         let mut profile = create_profile(profile_type);
@@ -105,7 +104,12 @@ impl FtsIndex {
     }
 
     /// Search the index
-    pub fn search(&self, query: &str, limit: usize, offset: usize) -> Result<SearchResult, SearchError> {
+    pub fn search(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<SearchResult, SearchError> {
         self.profile.read().search(query, limit, offset)
     }
 
@@ -175,7 +179,11 @@ mod tests {
             index.commit().unwrap();
 
             let result = index.search("test", 10, 0).unwrap();
-            assert!(result.hits.len() >= 1, "Profile {} failed", profile.as_str());
+            assert!(
+                !result.hits.is_empty(),
+                "Profile {} failed",
+                profile.as_str()
+            );
         }
     }
 }

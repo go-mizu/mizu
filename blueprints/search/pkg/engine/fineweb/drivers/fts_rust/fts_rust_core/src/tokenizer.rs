@@ -21,7 +21,10 @@ impl Default for FastTokenizer {
 
 impl FastTokenizer {
     pub fn new(min_length: usize, max_length: usize) -> Self {
-        Self { min_length, max_length }
+        Self {
+            min_length,
+            max_length,
+        }
     }
 
     /// Tokenize text and count term frequencies
@@ -89,7 +92,8 @@ pub fn tokenize_batch_parallel(
     tokenizer: &FastTokenizer,
 ) -> Vec<HashMap<String, u16>> {
     use rayon::prelude::*;
-    texts.par_iter()
+    texts
+        .par_iter()
         .map(|text| tokenizer.tokenize_with_freqs(text))
         .collect()
 }
