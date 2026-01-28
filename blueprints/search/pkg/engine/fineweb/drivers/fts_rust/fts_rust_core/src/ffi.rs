@@ -249,12 +249,18 @@ pub unsafe extern "C" fn fts_index_batch_binary(
 
     while pos + 8 <= bytes.len() && docs.len() < doc_count as usize {
         // Read id
-        if pos + 4 > bytes.len() { break; }
-        let id_len = u32::from_le_bytes([bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3]]) as usize;
+        if pos + 4 > bytes.len() {
+            break;
+        }
+        let id_len =
+            u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+                as usize;
         pos += 4;
 
-        if pos + id_len > bytes.len() { break; }
-        let id = match std::str::from_utf8(&bytes[pos..pos+id_len]) {
+        if pos + id_len > bytes.len() {
+            break;
+        }
+        let id = match std::str::from_utf8(&bytes[pos..pos + id_len]) {
             Ok(s) => s.to_string(),
             Err(_) => {
                 set_last_error("Invalid UTF-8 in document ID");
@@ -264,12 +270,18 @@ pub unsafe extern "C" fn fts_index_batch_binary(
         pos += id_len;
 
         // Read text
-        if pos + 4 > bytes.len() { break; }
-        let text_len = u32::from_le_bytes([bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3]]) as usize;
+        if pos + 4 > bytes.len() {
+            break;
+        }
+        let text_len =
+            u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+                as usize;
         pos += 4;
 
-        if pos + text_len > bytes.len() { break; }
-        let text = match std::str::from_utf8(&bytes[pos..pos+text_len]) {
+        if pos + text_len > bytes.len() {
+            break;
+        }
+        let text = match std::str::from_utf8(&bytes[pos..pos + text_len]) {
             Ok(s) => s.to_string(),
             Err(_) => {
                 set_last_error("Invalid UTF-8 in document text");
@@ -345,7 +357,10 @@ pub unsafe extern "C" fn fts_search(
         .map(|hit| FtsHit {
             id: CString::new(hit.id).unwrap().into_raw(),
             score: hit.score,
-            text: hit.text.map(|t| CString::new(t).unwrap().into_raw()).unwrap_or(ptr::null_mut()),
+            text: hit
+                .text
+                .map(|t| CString::new(t).unwrap().into_raw())
+                .unwrap_or(ptr::null_mut()),
         })
         .collect();
 
@@ -459,16 +474,16 @@ pub unsafe extern "C" fn fts_profile_name(idx: *mut FtsIndex) -> *const c_char {
     let index = &*idx;
     let name = index.profile_name();
 
-    // Return static string pointer
+    // Return static string pointer using C string literals
     match name {
-        "bmw_simd" => b"bmw_simd\0".as_ptr() as *const c_char,
-        "roaring_bm25" => b"roaring_bm25\0".as_ptr() as *const c_char,
-        "ensemble" => b"ensemble\0".as_ptr() as *const c_char,
-        "seismic" => b"seismic\0".as_ptr() as *const c_char,
-        "tantivy" => b"tantivy\0".as_ptr() as *const c_char,
-        "turbo" => b"turbo\0".as_ptr() as *const c_char,
-        "ultra" => b"ultra\0".as_ptr() as *const c_char,
-        _ => b"unknown\0".as_ptr() as *const c_char,
+        "bmw_simd" => c"bmw_simd".as_ptr(),
+        "roaring_bm25" => c"roaring_bm25".as_ptr(),
+        "ensemble" => c"ensemble".as_ptr(),
+        "seismic" => c"seismic".as_ptr(),
+        "tantivy" => c"tantivy".as_ptr(),
+        "turbo" => c"turbo".as_ptr(),
+        "ultra" => c"ultra".as_ptr(),
+        _ => c"unknown".as_ptr(),
     }
 }
 
@@ -478,8 +493,8 @@ pub unsafe extern "C" fn fts_profile_name(idx: *mut FtsIndex) -> *const c_char {
 /// - Returns a pointer to a static string
 #[no_mangle]
 pub extern "C" fn fts_list_profiles() -> *const c_char {
-    static PROFILES_JSON: &[u8] = b"[\"bmw_simd\",\"roaring_bm25\",\"ensemble\",\"seismic\",\"tantivy\",\"turbo\",\"ultra\"]\0";
-    PROFILES_JSON.as_ptr() as *const c_char
+    c"[\"bmw_simd\",\"roaring_bm25\",\"ensemble\",\"seismic\",\"tantivy\",\"turbo\",\"ultra\"]"
+        .as_ptr()
 }
 
 /// Get document count

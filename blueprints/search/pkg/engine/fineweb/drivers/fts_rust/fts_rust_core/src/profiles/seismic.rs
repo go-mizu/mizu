@@ -20,6 +20,9 @@ const EMBED_DIM: usize = 32;
 /// Block size for geometry-cohesive partitioning
 const SEISMIC_BLOCK_SIZE: usize = 256;
 
+/// Type alias for pending document data
+type PendingDoc = (String, HashMap<String, u16>, u32);
+
 /// A geometry-cohesive block
 #[derive(Debug, Clone)]
 struct SeismicBlock {
@@ -72,7 +75,7 @@ pub struct SeismicProfile {
     /// Tokenizer
     tokenizer: FastTokenizer,
     /// Pending documents
-    pending: RwLock<Vec<(String, HashMap<String, u16>, u32)>>,
+    pending: RwLock<Vec<PendingDoc>>,
     /// Current block being filled
     current_block: RwLock<SeismicBlock>,
 }
@@ -171,8 +174,8 @@ impl SeismicProfile {
 
             // Update centroid (running average)
             let n = current_block.len() as f32;
-            for j in 0..EMBED_DIM {
-                current_block.centroid[j] = current_block.centroid[j] * (n - 1.0) / n + embedding[j] / n;
+            for (j, &emb_val) in embedding.iter().enumerate().take(EMBED_DIM) {
+                current_block.centroid[j] = current_block.centroid[j] * (n - 1.0) / n + emb_val / n;
             }
 
             // Finalize block if full
@@ -182,11 +185,21 @@ impl SeismicProfile {
 
                 // Calculate max score for block
                 let mut max_score = 0.0f32;
-                for (tfs, &doc_len) in current_block.term_freqs.iter().zip(current_block.doc_lengths.iter()) {
+                for (tfs, &doc_len) in current_block
+                    .term_freqs
+                    .iter()
+                    .zip(current_block.doc_lengths.iter())
+                {
                     let mut score = 0.0f32;
                     for (term, freq) in tfs {
                         let df = *term_dict.get(term).unwrap_or(&1) as f32;
-                        score += self.bm25.score(*freq as f32, df, doc_len as f32, avg_doc_len, total_docs);
+                        score += self.bm25.score(
+                            *freq as f32,
+                            df,
+                            doc_len as f32,
+                            avg_doc_len,
+                            total_docs,
+                        );
                     }
                     max_score = max_score.max(score);
                 }
@@ -200,7 +213,12 @@ impl SeismicProfile {
         *doc_count += pending.len() as u64;
     }
 
-    fn search_seismic(&self, query_terms: &[String], limit: usize, offset: usize) -> Vec<SearchHit> {
+    fn search_seismic(
+        &self,
+        query_terms: &[String],
+        limit: usize,
+        offset: usize,
+    ) -> Vec<SearchHit> {
         let blocks = self.blocks.read();
         let term_dict = self.term_dict.read();
         let doc_ids = self.doc_ids.read();
@@ -227,7 +245,12 @@ impl SeismicProfile {
         let mut block_scores: Vec<(usize, f32)> = blocks
             .iter()
             .enumerate()
-            .map(|(i, block)| (i, Self::cosine_similarity(&query_embedding, &block.centroid)))
+            .map(|(i, block)| {
+                (
+                    i,
+                    Self::cosine_similarity(&query_embedding, &block.centroid),
+                )
+            })
             .collect();
 
         // Sort by similarity descending
@@ -257,7 +280,9 @@ impl SeismicProfile {
                     // Find term in document
                     if let Some((_, freq)) = tfs.iter().find(|(t, _)| t == query_term) {
                         let df = *term_dict.get(query_term).unwrap_or(&1) as f32;
-                        score += self.bm25.score(*freq as f32, df, doc_len, avg_doc_len, total_docs);
+                        score +=
+                            self.bm25
+                                .score(*freq as f32, df, doc_len, avg_doc_len, total_docs);
                     }
                 }
 
@@ -287,7 +312,9 @@ impl SeismicProfile {
                 for query_term in query_terms {
                     if let Some((_, freq)) = tfs.iter().find(|(t, _)| t == query_term) {
                         let df = *term_dict.get(query_term).unwrap_or(&1) as f32;
-                        score += self.bm25.score(*freq as f32, df, doc_len, avg_doc_len, total_docs);
+                        score +=
+                            self.bm25
+                                .score(*freq as f32, df, doc_len, avg_doc_len, total_docs);
                     }
                 }
 
@@ -393,7 +420,11 @@ impl SearchProfile for SeismicProfile {
             .sum();
 
         let current_block_bytes = current_block.doc_ids.len() * 4
-            + current_block.term_freqs.iter().map(|v| v.len() * 20).sum::<usize>()
+            + current_block
+                .term_freqs
+                .iter()
+                .map(|v| v.len() * 20)
+                .sum::<usize>()
             + current_block.doc_lengths.len() * 2
             + EMBED_DIM * 4;
 
@@ -401,7 +432,8 @@ impl SearchProfile for SeismicProfile {
         let doc_ids_bytes: usize = doc_ids.iter().map(|s| s.len()).sum();
 
         MemoryStats {
-            index_bytes: (blocks_bytes + current_block_bytes + term_dict_bytes + doc_ids_bytes) as u64,
+            index_bytes: (blocks_bytes + current_block_bytes + term_dict_bytes + doc_ids_bytes)
+                as u64,
             term_dict_bytes: term_dict_bytes as u64,
             postings_bytes: (blocks_bytes + current_block_bytes) as u64,
             docs_indexed: *self.doc_count.read(),
@@ -439,34 +471,35 @@ impl SearchProfile for SeismicProfile {
         }
 
         // Helper to write a block
-        let write_block = |writer: &mut BufWriter<File>, block: &SeismicBlock| -> std::io::Result<()> {
-            writer.write_all(&(block.doc_ids.len() as u32).to_le_bytes())?;
+        let write_block =
+            |writer: &mut BufWriter<File>, block: &SeismicBlock| -> std::io::Result<()> {
+                writer.write_all(&(block.doc_ids.len() as u32).to_le_bytes())?;
 
-            for &doc_id in &block.doc_ids {
-                writer.write_all(&doc_id.to_le_bytes())?;
-            }
-
-            for tfs in &block.term_freqs {
-                writer.write_all(&(tfs.len() as u32).to_le_bytes())?;
-                for (term, freq) in tfs {
-                    let term_bytes = term.as_bytes();
-                    writer.write_all(&(term_bytes.len() as u32).to_le_bytes())?;
-                    writer.write_all(term_bytes)?;
-                    writer.write_all(&freq.to_le_bytes())?;
+                for &doc_id in &block.doc_ids {
+                    writer.write_all(&doc_id.to_le_bytes())?;
                 }
-            }
 
-            for &len in &block.doc_lengths {
-                writer.write_all(&len.to_le_bytes())?;
-            }
+                for tfs in &block.term_freqs {
+                    writer.write_all(&(tfs.len() as u32).to_le_bytes())?;
+                    for (term, freq) in tfs {
+                        let term_bytes = term.as_bytes();
+                        writer.write_all(&(term_bytes.len() as u32).to_le_bytes())?;
+                        writer.write_all(term_bytes)?;
+                        writer.write_all(&freq.to_le_bytes())?;
+                    }
+                }
 
-            for &c in &block.centroid {
-                writer.write_all(&c.to_le_bytes())?;
-            }
+                for &len in &block.doc_lengths {
+                    writer.write_all(&len.to_le_bytes())?;
+                }
 
-            writer.write_all(&block.max_score.to_le_bytes())?;
-            Ok(())
-        };
+                for &c in &block.centroid {
+                    writer.write_all(&c.to_le_bytes())?;
+                }
+
+                writer.write_all(&block.max_score.to_le_bytes())?;
+                Ok(())
+            };
 
         // Write blocks
         for block in blocks.iter() {
@@ -474,7 +507,14 @@ impl SearchProfile for SeismicProfile {
         }
 
         // Write current block
-        writer.write_all(&(if current_block.doc_ids.is_empty() { 0u8 } else { 1u8 }).to_le_bytes())?;
+        writer.write_all(
+            &(if current_block.doc_ids.is_empty() {
+                0u8
+            } else {
+                1u8
+            })
+            .to_le_bytes(),
+        )?;
         if !current_block.doc_ids.is_empty() {
             write_block(&mut writer, &current_block)?;
         }
@@ -641,15 +681,17 @@ impl SearchProfile for SeismicProfile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OrderedFloat(f32);
 
-impl PartialOrd for OrderedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
-impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

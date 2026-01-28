@@ -17,6 +17,9 @@ use std::time::Instant;
 /// Block size for SIMD alignment (128 docs per block)
 const BLOCK_SIZE: usize = 128;
 
+/// Type alias for pending document data: (doc_id, term_freqs, doc_length)
+type PendingDoc = (String, HashMap<String, u16>, u32);
+
 /// Term metadata
 #[derive(Debug, Clone)]
 struct TermMeta {
@@ -70,7 +73,7 @@ pub struct BmwSimdProfile {
     /// Tokenizer
     tokenizer: FastTokenizer,
     /// Pending documents (not yet committed)
-    pending: RwLock<Vec<(String, HashMap<String, u16>, u32)>>,
+    pending: RwLock<Vec<PendingDoc>>,
 }
 
 impl BmwSimdProfile {
@@ -146,7 +149,9 @@ impl BmwSimdProfile {
 
                 for &(doc_id, freq) in chunk {
                     let doc_len = doc_lengths[doc_id as usize] as f32;
-                    let score = self.bm25.score(freq as f32, df as f32, doc_len, avg_doc_len, total_docs);
+                    let score =
+                        self.bm25
+                            .score(freq as f32, df as f32, doc_len, avg_doc_len, total_docs);
                     max_score = max_score.max(score);
 
                     block.doc_ids.push(doc_id);
@@ -342,7 +347,8 @@ impl SearchProfile for BmwSimdProfile {
         let doc_ids_bytes: usize = doc_ids.iter().map(|s| s.len()).sum();
 
         MemoryStats {
-            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes) as u64,
+            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes)
+                as u64,
             term_dict_bytes: term_dict_bytes as u64,
             postings_bytes: postings_bytes as u64,
             docs_indexed: *self.doc_count.read(),
@@ -351,8 +357,6 @@ impl SearchProfile for BmwSimdProfile {
     }
 
     fn save(&self, path: &Path) -> Result<(), IndexError> {
-        use bincode::serialize_into;
-
         let file = File::create(path.join("bmw_simd.idx"))?;
         let mut writer = BufWriter::new(file);
 
@@ -459,7 +463,15 @@ impl SearchProfile for BmwSimdProfile {
             reader.read_exact(&mut buf4)?;
             let idf = f32::from_le_bytes(buf4);
 
-            term_dict.insert(term, TermMeta { df, posting_offset, num_blocks, idf });
+            term_dict.insert(
+                term,
+                TermMeta {
+                    df,
+                    posting_offset,
+                    num_blocks,
+                    idf,
+                },
+            );
         }
 
         // Read postings
@@ -484,7 +496,11 @@ impl SearchProfile for BmwSimdProfile {
             reader.read_exact(&mut buf4)?;
             let max_score = f32::from_le_bytes(buf4);
 
-            postings.push(PostingBlock { doc_ids, freqs, max_score });
+            postings.push(PostingBlock {
+                doc_ids,
+                freqs,
+                max_score,
+            });
         }
 
         // Read doc lengths
@@ -537,15 +553,17 @@ mod ordered_float {
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct OrderedFloat<T>(pub T);
 
-    impl<T: PartialOrd> PartialOrd for OrderedFloat<T> {
-        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            self.0.partial_cmp(&other.0)
+    impl<T: PartialOrd> Ord for OrderedFloat<T> {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.0
+                .partial_cmp(&other.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
         }
     }
 
-    impl<T: PartialOrd> Ord for OrderedFloat<T> {
-        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-            self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    impl<T: PartialOrd> PartialOrd for OrderedFloat<T> {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
         }
     }
 

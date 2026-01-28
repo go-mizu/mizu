@@ -1,16 +1,16 @@
 //! Search profile trait and implementations
 
 mod bmw_simd;
-mod roaring_bm25;
 mod ensemble;
+mod roaring_bm25;
 mod seismic;
 mod tantivy_profile;
 mod turbo;
 mod ultra;
 
 pub use bmw_simd::BmwSimdProfile;
-pub use roaring_bm25::RoaringBm25Profile;
 pub use ensemble::EnsembleProfile;
+pub use roaring_bm25::RoaringBm25Profile;
 pub use seismic::SeismicProfile;
 pub use tantivy_profile::TantivyProfile;
 pub use turbo::TurboProfile;
@@ -19,6 +19,7 @@ pub use ultra::UltraProfile;
 use crate::document::Document;
 use crate::result::{IndexError, MemoryStats, SearchError, SearchResult};
 use std::path::Path;
+use std::str::FromStr;
 
 /// Available profile types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,17 +34,9 @@ pub enum ProfileType {
 }
 
 impl ProfileType {
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "bmw_simd" | "bmwsimd" => Some(Self::BmwSimd),
-            "roaring_bm25" | "roaringbm25" | "roaring" => Some(Self::RoaringBm25),
-            "ensemble" | "default" => Some(Self::Ensemble),
-            "seismic" => Some(Self::Seismic),
-            "tantivy" => Some(Self::Tantivy),
-            "turbo" => Some(Self::Turbo),
-            "ultra" => Some(Self::Ultra),
-            _ => None,
-        }
+    /// Parse profile name (returns Option for convenience)
+    pub fn parse(s: &str) -> Option<Self> {
+        s.parse().ok()
     }
 
     pub fn as_str(&self) -> &'static str {
@@ -72,6 +65,23 @@ impl ProfileType {
     }
 }
 
+impl FromStr for ProfileType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bmw_simd" | "bmwsimd" => Ok(Self::BmwSimd),
+            "roaring_bm25" | "roaringbm25" | "roaring" => Ok(Self::RoaringBm25),
+            "ensemble" | "default" => Ok(Self::Ensemble),
+            "seismic" => Ok(Self::Seismic),
+            "tantivy" => Ok(Self::Tantivy),
+            "turbo" => Ok(Self::Turbo),
+            "ultra" => Ok(Self::Ultra),
+            _ => Err(format!("Unknown profile: {}", s)),
+        }
+    }
+}
+
 /// Core trait for search profiles
 pub trait SearchProfile: Send + Sync {
     /// Profile name
@@ -95,12 +105,8 @@ pub trait SearchProfile: Send + Sync {
     fn commit(&mut self) -> Result<(), IndexError>;
 
     /// Search the index
-    fn search(
-        &self,
-        query: &str,
-        limit: usize,
-        offset: usize,
-    ) -> Result<SearchResult, SearchError>;
+    fn search(&self, query: &str, limit: usize, offset: usize)
+        -> Result<SearchResult, SearchError>;
 
     /// Get memory statistics
     fn memory_stats(&self) -> MemoryStats;

@@ -12,17 +12,15 @@ use crate::profiles::{Bm25Params, ProfileType, SearchProfile};
 use crate::result::{IndexError, MemoryStats, SearchError, SearchHit, SearchResult};
 use crate::tokenizer::FastTokenizer;
 
-use crossbeam::channel::{bounded, Receiver, Sender};
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use roaring::RoaringBitmap;
-use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::Instant;
 
 /// Block size for SIMD alignment
@@ -182,7 +180,8 @@ impl TurboProfile {
             let doc_id = base_doc_id + i as u32;
             doc_ids.push(tdoc.id.clone());
             doc_lengths.push(tdoc.doc_len as u16);
-            self.total_doc_length.fetch_add(tdoc.doc_len as u64, Ordering::Relaxed);
+            self.total_doc_length
+                .fetch_add(tdoc.doc_len as u64, Ordering::Relaxed);
 
             for (term, &freq) in &tdoc.term_freqs {
                 term_posts
@@ -192,11 +191,16 @@ impl TurboProfile {
             }
         }
 
-        self.doc_count.fetch_add(pending_count as u64, Ordering::Relaxed);
+        self.doc_count
+            .fetch_add(pending_count as u64, Ordering::Relaxed);
 
         let total_docs = self.doc_count.load(Ordering::Relaxed) as f32;
         let total_len = self.total_doc_length.load(Ordering::Relaxed) as f32;
-        let avg_doc_len = if total_docs > 0.0 { total_len / total_docs } else { 1.0 };
+        let avg_doc_len = if total_docs > 0.0 {
+            total_len / total_docs
+        } else {
+            1.0
+        };
 
         // Build postings for each term
         for (term, posts) in term_posts {
@@ -210,14 +214,16 @@ impl TurboProfile {
             }
 
             // Build blocks
-            let mut blocks = Vec::with_capacity((posts.len() + BLOCK_SIZE - 1) / BLOCK_SIZE);
+            let mut blocks = Vec::with_capacity(posts.len().div_ceil(BLOCK_SIZE));
             for chunk in posts.chunks(BLOCK_SIZE) {
                 let mut block = PostingBlock::new();
                 let mut max_score = 0.0f32;
 
                 for &(doc_id, freq) in chunk {
                     let doc_len = doc_lengths[doc_id as usize] as f32;
-                    let score = self.bm25.score(freq as f32, df as f32, doc_len, avg_doc_len, total_docs);
+                    let score =
+                        self.bm25
+                            .score(freq as f32, df as f32, doc_len, avg_doc_len, total_docs);
                     max_score = max_score.max(score);
 
                     block.doc_ids.push(doc_id);
@@ -234,7 +240,9 @@ impl TurboProfile {
                 existing.bitmap |= &bitmap;
                 existing.blocks.extend(blocks);
                 existing.df += df;
-                existing.idf = ((total_docs - existing.df as f32 + 0.5) / (existing.df as f32 + 0.5) + 1.0).ln();
+                existing.idf =
+                    ((total_docs - existing.df as f32 + 0.5) / (existing.df as f32 + 0.5) + 1.0)
+                        .ln();
             } else {
                 let offset = postings.len();
                 term_dict.insert(term, offset);
@@ -248,49 +256,6 @@ impl TurboProfile {
         }
 
         pending.clear();
-    }
-
-    /// SIMD-accelerated BM25 scoring for 8 documents
-    #[cfg(target_arch = "x86_64")]
-    #[inline]
-    fn score_bm25_batch(
-        &self,
-        tfs: &[f32],
-        doc_lens: &[f32],
-        idf: f32,
-        avg_doc_len: f32,
-    ) -> Vec<f32> {
-        let k1 = self.bm25.k1;
-        let b = self.bm25.b;
-
-        tfs.iter()
-            .zip(doc_lens.iter())
-            .map(|(&tf, &dl)| {
-                let norm = 1.0 - b + b * (dl / avg_doc_len);
-                idf * (tf * (k1 + 1.0)) / (tf + k1 * norm)
-            })
-            .collect()
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    #[inline]
-    fn score_bm25_batch(
-        &self,
-        tfs: &[f32],
-        doc_lens: &[f32],
-        idf: f32,
-        avg_doc_len: f32,
-    ) -> Vec<f32> {
-        let k1 = self.bm25.k1;
-        let b = self.bm25.b;
-
-        tfs.iter()
-            .zip(doc_lens.iter())
-            .map(|(&tf, &dl)| {
-                let norm = 1.0 - b + b * (dl / avg_doc_len);
-                idf * (tf * (k1 + 1.0)) / (tf + k1 * norm)
-            })
-            .collect()
     }
 
     /// Search using Block-Max WAND with early termination
@@ -360,12 +325,12 @@ impl TurboProfile {
             if top_k.len() < k {
                 top_k.push(entry);
                 if top_k.len() == k {
-                    threshold = top_k.peek().unwrap().0.0.0;
+                    threshold = top_k.peek().unwrap().0 .0 .0;
                 }
             } else if score > threshold {
                 top_k.pop();
                 top_k.push(entry);
-                threshold = top_k.peek().unwrap().0.0.0;
+                threshold = top_k.peek().unwrap().0 .0 .0;
             }
         }
 
@@ -451,7 +416,8 @@ impl SearchProfile for TurboProfile {
             .iter()
             .map(|p| {
                 let bitmap_size = p.bitmap.serialized_size();
-                let blocks_size: usize = p.blocks
+                let blocks_size: usize = p
+                    .blocks
                     .iter()
                     .map(|b| b.doc_ids.len() * 4 + b.freqs.len() * 2 + 4)
                     .sum();
@@ -463,7 +429,8 @@ impl SearchProfile for TurboProfile {
         let doc_ids_bytes: usize = doc_ids.iter().map(|s| s.len()).sum();
 
         MemoryStats {
-            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes) as u64,
+            index_bytes: (term_dict_bytes + postings_bytes + doc_lengths_bytes + doc_ids_bytes)
+                as u64,
             term_dict_bytes: term_dict_bytes as u64,
             postings_bytes: postings_bytes as u64,
             docs_indexed: self.doc_count.load(Ordering::Relaxed),
@@ -616,10 +583,19 @@ impl SearchProfile for TurboProfile {
                 reader.read_exact(&mut buf4)?;
                 let max_score = f32::from_le_bytes(buf4);
 
-                blocks.push(PostingBlock { doc_ids, freqs, max_score });
+                blocks.push(PostingBlock {
+                    doc_ids,
+                    freqs,
+                    max_score,
+                });
             }
 
-            postings.push(CompressedPosting { bitmap, blocks, df, idf });
+            postings.push(CompressedPosting {
+                bitmap,
+                blocks,
+                df,
+                idf,
+            });
         }
 
         // Doc lengths
@@ -647,7 +623,8 @@ impl SearchProfile for TurboProfile {
         *self.doc_lengths.write() = doc_lengths;
         *self.doc_ids.write() = doc_ids;
         self.doc_count.store(doc_count, Ordering::Relaxed);
-        self.total_doc_length.store(total_doc_length, Ordering::Relaxed);
+        self.total_doc_length
+            .store(total_doc_length, Ordering::Relaxed);
 
         Ok(())
     }
@@ -671,25 +648,21 @@ impl SearchProfile for TurboProfile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OrderedFloat(f32);
 
-impl PartialOrd for OrderedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
-impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 impl Eq for OrderedFloat {}
-
-fn num_cpus() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-}
 
 #[cfg(test)]
 mod tests {
@@ -710,7 +683,7 @@ mod tests {
         profile.commit().unwrap();
 
         let result = profile.search("rust", 10, 0).unwrap();
-        assert!(result.hits.len() >= 1);
+        assert!(!result.hits.is_empty());
     }
 
     #[test]
@@ -720,8 +693,8 @@ mod tests {
         // Generate test documents
         let docs: Vec<_> = (0..100_000)
             .map(|i| Document::new(
-                &format!("doc_{}", i),
-                &format!("document {} contains words like rust go python java programming language system database", i),
+                format!("doc_{}", i),
+                format!("document {} contains words like rust go python java programming language system database", i),
             ))
             .collect();
 
@@ -734,7 +707,11 @@ mod tests {
         println!("Turbo throughput: {:.0} docs/sec", throughput);
 
         // Should be very fast
-        assert!(throughput > 50_000.0, "Expected >50k docs/sec, got {}", throughput);
+        assert!(
+            throughput > 50_000.0,
+            "Expected >50k docs/sec, got {}",
+            throughput
+        );
     }
 
     #[test]

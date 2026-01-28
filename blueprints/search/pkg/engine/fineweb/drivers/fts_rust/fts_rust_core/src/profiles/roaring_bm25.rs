@@ -15,6 +15,9 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use std::time::Instant;
 
+/// Type alias for pending document data
+type PendingDoc = (String, HashMap<String, u16>, u32);
+
 /// Term metadata for Roaring profile
 #[derive(Debug, Clone)]
 struct TermMeta {
@@ -45,7 +48,7 @@ pub struct RoaringBm25Profile {
     /// Tokenizer
     tokenizer: FastTokenizer,
     /// Pending documents
-    pending: RwLock<Vec<(String, HashMap<String, u16>, u32)>>,
+    pending: RwLock<Vec<PendingDoc>>,
 }
 
 impl RoaringBm25Profile {
@@ -102,7 +105,7 @@ impl RoaringBm25Profile {
 
         // Merge into main index
         for (term, posts) in new_postings {
-            let bitmap = postings.entry(term.clone()).or_insert_with(RoaringBitmap::new);
+            let bitmap = postings.entry(term.clone()).or_default();
             let freqs = term_freqs.entry(term.clone()).or_default();
 
             for (doc_id, freq) in posts {
@@ -117,7 +120,12 @@ impl RoaringBm25Profile {
         }
     }
 
-    fn search_roaring(&self, query_terms: &[String], limit: usize, offset: usize) -> Vec<SearchHit> {
+    fn search_roaring(
+        &self,
+        query_terms: &[String],
+        limit: usize,
+        offset: usize,
+    ) -> Vec<SearchHit> {
         let term_dict = self.term_dict.read();
         let postings = self.postings.read();
         let term_freqs = self.term_freqs.read();
@@ -276,19 +284,17 @@ impl SearchProfile for RoaringBm25Profile {
         let doc_ids = self.doc_ids.read();
 
         let term_dict_bytes = term_dict.len() * (32 + std::mem::size_of::<TermMeta>());
-        let postings_bytes: usize = postings
-            .values()
-            .map(|b| b.serialized_size())
-            .sum();
-        let term_freqs_bytes: usize = term_freqs
-            .values()
-            .map(|v| v.len() * 6)
-            .sum();
+        let postings_bytes: usize = postings.values().map(|b| b.serialized_size()).sum();
+        let term_freqs_bytes: usize = term_freqs.values().map(|v| v.len() * 6).sum();
         let doc_lengths_bytes = doc_lengths.len() * 2;
         let doc_ids_bytes: usize = doc_ids.iter().map(|s| s.len()).sum();
 
         MemoryStats {
-            index_bytes: (term_dict_bytes + postings_bytes + term_freqs_bytes + doc_lengths_bytes + doc_ids_bytes) as u64,
+            index_bytes: (term_dict_bytes
+                + postings_bytes
+                + term_freqs_bytes
+                + doc_lengths_bytes
+                + doc_ids_bytes) as u64,
             term_dict_bytes: term_dict_bytes as u64,
             postings_bytes: (postings_bytes + term_freqs_bytes) as u64,
             docs_indexed: *self.doc_count.read(),
@@ -480,15 +486,17 @@ impl SearchProfile for RoaringBm25Profile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OrderedFloat(f32);
 
-impl PartialOrd for OrderedFloat {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+impl Ord for OrderedFloat {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
-impl Ord for OrderedFloat {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

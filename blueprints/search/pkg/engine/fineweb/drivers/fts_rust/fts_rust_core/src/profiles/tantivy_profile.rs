@@ -3,17 +3,18 @@
 //! Uses the Tantivy library directly for maximum throughput and reliability.
 
 use crate::document::Document;
-use crate::profiles::{Bm25Params, ProfileType, SearchProfile};
+use crate::profiles::{ProfileType, SearchProfile};
 use crate::result::{IndexError, MemoryStats, SearchError, SearchHit, SearchResult};
 
 use parking_lot::RwLock;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Instant;
 
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
-use tantivy::schema::{Field, Schema, IndexRecordOption, TextFieldIndexing, TextOptions, STORED, STRING};
+use tantivy::schema::{
+    Field, IndexRecordOption, Schema, TextFieldIndexing, TextOptions, STORED, STRING,
+};
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument};
 
 /// Configuration for Tantivy profile
@@ -77,8 +78,7 @@ impl TantivyProfile {
         let text_indexing = TextFieldIndexing::default()
             .set_tokenizer("default")
             .set_index_option(IndexRecordOption::WithFreqsAndPositions);
-        let text_options = TextOptions::default()
-            .set_indexing_options(text_indexing);
+        let text_options = TextOptions::default().set_indexing_options(text_indexing);
         let text_field = schema_builder.add_text_field("text", text_options);
 
         let schema = schema_builder.build();
@@ -104,27 +104,31 @@ impl TantivyProfile {
         let index = if index_path.exists() {
             // Open existing index
             Index::open_in_dir(&index_path)
-                .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+                .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?
         } else {
             // Create new index
             std::fs::create_dir_all(&index_path)?;
             Index::create_in_dir(&index_path, self.schema.clone())
-                .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+                .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?
         };
 
         // Create writer with configured heap size
-        let writer = index.writer(self.config.heap_size)
-            .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let writer = index
+            .writer(self.config.heap_size)
+            .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?;
 
         // Create reader
-        let reader = index.reader_builder()
+        let reader = index
+            .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
             .try_into()
-            .map_err(|e: tantivy::TantivyError| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e: tantivy::TantivyError| {
+                IndexError::Io(std::io::Error::other(e.to_string()))
+            })?;
 
         // Get current doc count
         let searcher = reader.searcher();
-        let doc_count = searcher.num_docs() as u64;
+        let doc_count = searcher.num_docs();
 
         self.index = Some(index);
         *self.writer.write() = Some(writer);
@@ -132,14 +136,6 @@ impl TantivyProfile {
         *self.doc_count.write() = doc_count;
         *self.data_dir.write() = Some(data_dir.to_path_buf());
 
-        Ok(())
-    }
-
-    /// Ensure index is initialized
-    fn ensure_init(&self, data_dir: &Path) -> Result<(), IndexError> {
-        if self.index.is_none() {
-            return Err(IndexError::NotFound("Index not initialized".into()));
-        }
         Ok(())
     }
 }
@@ -167,11 +163,14 @@ impl SearchProfile for TantivyProfile {
     fn index_batch(&mut self, docs: &[Document]) -> Result<usize, IndexError> {
         // Check if initialized
         if self.index.is_none() {
-            return Err(IndexError::NotFound("Index not initialized - call init first".into()));
+            return Err(IndexError::NotFound(
+                "Index not initialized - call init first".into(),
+            ));
         }
 
         let mut writer_guard = self.writer.write();
-        let writer = writer_guard.as_mut()
+        let writer = writer_guard
+            .as_mut()
             .ok_or_else(|| IndexError::NotFound("Writer not initialized".into()))?;
 
         let mut count = 0;
@@ -180,8 +179,9 @@ impl SearchProfile for TantivyProfile {
             tantivy_doc.add_text(self.id_field, &doc.id);
             tantivy_doc.add_text(self.text_field, &doc.text);
 
-            writer.add_document(tantivy_doc)
-                .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            writer
+                .add_document(tantivy_doc)
+                .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?;
             count += 1;
         }
 
@@ -191,8 +191,9 @@ impl SearchProfile for TantivyProfile {
 
         // Auto-commit if threshold reached
         if *pending >= self.config.commit_interval {
-            writer.commit()
-                .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            writer
+                .commit()
+                .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?;
             *self.doc_count.write() += *pending as u64;
             *pending = 0;
 
@@ -208,8 +209,9 @@ impl SearchProfile for TantivyProfile {
     fn commit(&mut self) -> Result<(), IndexError> {
         let mut writer_guard = self.writer.write();
         if let Some(writer) = writer_guard.as_mut() {
-            writer.commit()
-                .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            writer
+                .commit()
+                .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?;
 
             let pending = *self.pending_count.read();
             *self.doc_count.write() += pending as u64;
@@ -233,8 +235,7 @@ impl SearchProfile for TantivyProfile {
         let start = Instant::now();
 
         let reader_guard = self.reader.read();
-        let reader = reader_guard.as_ref()
-            .ok_or_else(|| SearchError::NotReady)?;
+        let reader = reader_guard.as_ref().ok_or(SearchError::NotReady)?;
 
         let searcher = reader.searcher();
         let query_parser = QueryParser::for_index(
@@ -242,10 +243,12 @@ impl SearchProfile for TantivyProfile {
             vec![self.text_field],
         );
 
-        let parsed_query = query_parser.parse_query(query)
+        let parsed_query = query_parser
+            .parse_query(query)
             .map_err(|e| SearchError::InvalidQuery(e.to_string()))?;
 
-        let top_docs = searcher.search(&parsed_query, &TopDocs::with_limit(limit + offset))
+        let top_docs = searcher
+            .search(&parsed_query, &TopDocs::with_limit(limit + offset))
             .map_err(|e: tantivy::TantivyError| SearchError::Internal(e.to_string()))?;
 
         let mut hits = Vec::with_capacity(limit);
@@ -257,7 +260,9 @@ impl SearchProfile for TantivyProfile {
                 break;
             }
 
-            let doc: TantivyDocument = searcher.doc(doc_address)
+            // Fetch doc to verify it exists (result unused, using doc_address.doc_id)
+            let _doc: TantivyDocument = searcher
+                .doc(doc_address)
                 .map_err(|e: tantivy::TantivyError| SearchError::Internal(e.to_string()))?;
 
             // Extract document ID - use doc address as fallback
@@ -266,7 +271,7 @@ impl SearchProfile for TantivyProfile {
             hits.push(SearchHit::new(id, score));
         }
 
-        let total = searcher.num_docs() as u64;
+        let total = searcher.num_docs();
 
         Ok(SearchResult {
             hits,
@@ -296,8 +301,9 @@ impl SearchProfile for TantivyProfile {
     fn save(&self, path: &Path) -> Result<(), IndexError> {
         // Tantivy auto-saves on commit, just ensure committed
         if let Some(writer) = self.writer.write().as_mut() {
-            writer.commit()
-                .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            writer
+                .commit()
+                .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?;
         }
 
         // Write metadata
@@ -306,7 +312,7 @@ impl SearchProfile for TantivyProfile {
             doc_count: *self.doc_count.read(),
         };
         let meta_bytes = serde_json::to_vec(&meta)
-            .map_err(|e| IndexError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| IndexError::Io(std::io::Error::other(e.to_string())))?;
         std::fs::write(meta_path, meta_bytes)?;
 
         Ok(())
@@ -372,7 +378,7 @@ mod tests {
         profile.commit().unwrap();
 
         let result = profile.search("rust", 10, 0).unwrap();
-        assert!(result.hits.len() >= 1);
+        assert!(!result.hits.is_empty());
     }
 
     #[test]
@@ -385,8 +391,8 @@ mod tests {
         // Generate test documents
         let docs: Vec<_> = (0..10_000)
             .map(|i| Document::new(
-                &format!("doc_{}", i),
-                &format!("document {} contains various words like rust go python java programming language", i),
+                format!("doc_{}", i),
+                format!("document {} contains various words like rust go python java programming language", i),
             ))
             .collect();
 
@@ -399,6 +405,10 @@ mod tests {
         println!("Tantivy throughput: {:.0} docs/sec", throughput);
 
         // Should be reasonably fast
-        assert!(throughput > 10_000.0, "Expected >10k docs/sec, got {}", throughput);
+        assert!(
+            throughput > 10_000.0,
+            "Expected >10k docs/sec, got {}",
+            throughput
+        );
     }
 }

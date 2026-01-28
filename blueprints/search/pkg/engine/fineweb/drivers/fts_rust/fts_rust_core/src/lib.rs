@@ -7,16 +7,16 @@
 //! - `seismic`: Learned sparse retrieval with geometry-cohesive blocks
 
 pub mod document;
-pub mod tokenizer;
-pub mod result;
+pub mod ffi;
 pub mod index;
 pub mod profiles;
-pub mod ffi;
+pub mod result;
+pub mod tokenizer;
 
 pub use document::Document;
-pub use result::{SearchHit, SearchResult, MemoryStats};
 pub use index::FtsIndex;
-pub use profiles::{SearchProfile, ProfileType};
+pub use profiles::{ProfileType, SearchProfile};
+pub use result::{MemoryStats, SearchHit, SearchResult};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
