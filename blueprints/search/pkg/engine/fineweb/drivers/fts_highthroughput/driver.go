@@ -199,48 +199,9 @@ func tokenizeQuery(query string) []string {
 	return terms
 }
 
-// fastTokenize is an optimized tokenizer for high throughput.
+// fastTokenize uses the ultra-fast tokenizer with unsafe.String optimization.
 func fastTokenize(text string) map[string]int {
-	termFreqs := make(map[string]int, 64)
-	data := []byte(text)
-	start := -1
-
-	for i := 0; i < len(data); i++ {
-		c := data[i]
-		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
-			(c >= '[' && c <= '`') || (c >= '{' && c <= '~')
-
-		if isDelim {
-			if start >= 0 {
-				token := data[start:i]
-				if len(token) < 100 {
-					for j := 0; j < len(token); j++ {
-						if token[j] >= 'A' && token[j] <= 'Z' {
-							token[j] += 32
-						}
-					}
-					termFreqs[string(token)]++
-				}
-				start = -1
-			}
-		} else if start < 0 {
-			start = i
-		}
-	}
-
-	if start >= 0 {
-		token := data[start:]
-		if len(token) < 100 {
-			for j := 0; j < len(token); j++ {
-				if token[j] >= 'A' && token[j] <= 'Z' {
-					token[j] += 32
-				}
-			}
-			termFreqs[string(token)]++
-		}
-	}
-
-	return termFreqs
+	return algo.UltraFastTokenize(text)
 }
 
 // Import indexes documents using PipelineIndexer with high-throughput config.
