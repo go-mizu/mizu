@@ -310,12 +310,18 @@ type minimalDoc struct {
 
 // Import indexes documents using TurboIndexer for maximum throughput.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	// Use TurboIndexer with fast tokenizer for 50k+ docs/sec
-	indexer := algo.NewTurboIndexer(fastTokenize)
+	// Create temp directory for segments
+	segmentDir := filepath.Join(d.indexDir, "segments")
+	os.MkdirAll(segmentDir, 0755)
+	defer os.RemoveAll(segmentDir)
 
-	// Store minimal doc info only (saves memory for large datasets)
-	// Text is not needed after indexing, other fields optional
-	minimalDocs := make([]minimalDoc, 0, 100000)
+	// Use PipelineIndexer for low memory (<1GB peak)
+	indexer := algo.NewPipelineIndexer(segmentDir, fastTokenize)
+
+	// Stream minimal doc info in batches
+	docBatch := make([]minimalDoc, 0, 50000)
+	allDocBatches := make([][]minimalDoc, 0, 64)
+
 	var imported int64
 	batchSize := 10000
 	count := 0
@@ -331,18 +337,24 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		docNum := uint32(len(minimalDocs))
-		minimalDocs = append(minimalDocs, minimalDoc{
+		docNum := uint32(imported)
+		docBatch = append(docBatch, minimalDoc{
 			ID:   doc.ID,
 			URL:  doc.URL,
 			Date: doc.Date,
 		})
 
-		// Feed to TurboIndexer (concurrent processing)
+		// Feed to PipelineIndexer
 		indexer.Add(docNum, doc.Text)
 
 		imported++
 		count++
+
+		// Batch doc metadata to reduce memory
+		if len(docBatch) >= 50000 {
+			allDocBatches = append(allDocBatches, docBatch)
+			docBatch = make([]minimalDoc, 0, 50000)
+		}
 
 		if count >= batchSize {
 			if progress != nil {
@@ -352,23 +364,35 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		}
 	}
 
-	// Wait for parallel indexing to complete
+	// Save remaining batch
+	if len(docBatch) > 0 {
+		allDocBatches = append(allDocBatches, docBatch)
+	}
+
+	// Wait for pipeline indexing to complete
 	termPostings, docLens := indexer.Finish()
 
 	// Now lock and update index
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Convert minimal docs to full Document slice (text not stored)
-	d.index.Documents = make([]fineweb.Document, len(minimalDocs))
-	for i, mdoc := range minimalDocs {
-		d.index.Documents[i] = fineweb.Document{
-			ID:   mdoc.ID,
-			URL:  mdoc.URL,
-			Date: mdoc.Date,
+	// Flatten batches and convert to Documents
+	totalDocs := 0
+	for _, batch := range allDocBatches {
+		totalDocs += len(batch)
+	}
+	d.index.Documents = make([]fineweb.Document, 0, totalDocs)
+	for _, batch := range allDocBatches {
+		for _, mdoc := range batch {
+			d.index.Documents = append(d.index.Documents, fineweb.Document{
+				ID:   mdoc.ID,
+				URL:  mdoc.URL,
+				Date: mdoc.Date,
+			})
 		}
 	}
-	minimalDocs = nil // Help GC
+	allDocBatches = nil
+	runtime.GC()
 
 	d.index.DocLens = docLens
 	d.index.NumDocs = len(d.index.Documents)
