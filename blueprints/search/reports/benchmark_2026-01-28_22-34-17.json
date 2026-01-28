@@ -1,6 +1,6 @@
 {
-  "start_time": "2026-01-28T22:39:00.558044+07:00",
-  "end_time": "2026-01-28T22:40:01.274962+07:00",
+  "start_time": "2026-01-28T22:31:43.104222+07:00",
+  "end_time": "2026-01-28T22:34:17.841894+07:00",
   "system": {
     "os": "darwin",
     "arch": "arm64",
@@ -13,57 +13,57 @@
     {
       "name": "fts_rust",
       "indexing": {
-        "duration": 45412505459,
-        "docs_per_sec": 51065.22920418197,
-        "peak_memory": 2025547536,
+        "duration": 136314500417,
+        "docs_per_sec": 17012.129985481675,
+        "peak_memory": 17336131016,
         "total_docs": 2319000,
         "from_scratch": true
       },
       "index_size": 1408553073,
       "doc_count": 2319000,
       "latency": {
-        "p50": 9552250,
-        "p95": 85086667,
-        "p99": 95399292,
-        "max": 95827500,
-        "min": 2292,
-        "avg": 27204986
+        "p50": 14340292,
+        "p95": 203812000,
+        "p99": 215654500,
+        "max": 217466000,
+        "min": 3750,
+        "avg": 59035752
       },
       "throughput": {
-        "qps": 36.5,
+        "qps": 15.5,
         "duration": 2000000000,
-        "total_ops": 73,
+        "total_ops": 31,
         "goroutines": 1
       },
       "concurrency": {
         "10": {
-          "qps": 87.5,
+          "qps": 49,
           "duration": 2000000000,
-          "total_ops": 175,
+          "total_ops": 98,
           "goroutines": 10
         },
         "20": {
-          "qps": 98,
+          "qps": 20,
           "duration": 2000000000,
-          "total_ops": 196,
+          "total_ops": 40,
           "goroutines": 20
         },
         "40": {
-          "qps": 42.5,
+          "qps": 40,
           "duration": 2000000000,
-          "total_ops": 85,
+          "total_ops": 80,
           "goroutines": 40
         },
         "80": {
-          "qps": 80,
+          "qps": 45,
           "duration": 2000000000,
-          "total_ops": 160,
+          "total_ops": 90,
           "goroutines": 80
         }
       },
       "cold_start": 0,
       "memory": {
-        "indexing_peak": 2025547536,
+        "indexing_peak": 17336131016,
         "search_idle": 0,
         "search_peak": 0
       }
