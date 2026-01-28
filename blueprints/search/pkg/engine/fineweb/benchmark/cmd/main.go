@@ -37,6 +37,12 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/sonic"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/typesense"
 
+	// PostgreSQL FTS extension drivers
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres_pgroonga"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres_pgsearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres_textsearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres_trgm"
+
 	// Note: tantivy driver requires CGO, import with -tags tantivy
 	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/tantivy"
 )
@@ -53,6 +59,13 @@ const (
 	QuickWitURL       = "http://localhost:7280"
 	LnxURL            = "http://localhost:8000"
 	SonicURL          = "localhost:1491"
+
+	// PostgreSQL FTS extension service endpoints
+	ParadeDBURL         = "localhost:5433"
+	PGroongaURL         = "localhost:5434"
+	PostgresTrgmURL     = "localhost:5435"
+	PostgresNativeURL   = "localhost:5436"
+	PostgresTextsearchURL = "localhost:5437"
 )
 
 func main() {
@@ -398,6 +411,18 @@ func checkServiceAvailable(name string) bool {
 	case "sonic":
 		// Check Sonic via TCP connection
 		return checkTCPService(SonicURL)
+	case "postgres_pgsearch":
+		// Check ParadeDB via TCP connection
+		return checkTCPService(ParadeDBURL)
+	case "postgres_pgroonga":
+		// Check PGroonga via TCP connection
+		return checkTCPService(PGroongaURL)
+	case "postgres_trgm":
+		// Check PostgreSQL with pg_trgm via TCP connection
+		return checkTCPService(PostgresTrgmURL)
+	case "postgres_textsearch":
+		// Check PostgreSQL with pg_textsearch via TCP connection
+		return checkTCPService(PostgresTextsearchURL)
 	default:
 		return true // Embedded drivers are always available
 	}
@@ -422,16 +447,20 @@ func checkTCPService(addr string) bool {
 
 func filterAvailableDrivers(drivers []string) []string {
 	externalDrivers := map[string]bool{
-		"meilisearch":   true,
-		"zinc":          true,
-		"opensearch":    true,
-		"elasticsearch": true,
-		"postgres":      true,
-		"typesense":     true,
-		"manticore":     true,
-		"quickwit":      true,
-		"lnx":           true,
-		"sonic":         true,
+		"meilisearch":         true,
+		"zinc":                true,
+		"opensearch":          true,
+		"elasticsearch":       true,
+		"postgres":            true,
+		"typesense":           true,
+		"manticore":           true,
+		"quickwit":            true,
+		"lnx":                 true,
+		"sonic":               true,
+		"postgres_pgsearch":   true,
+		"postgres_pgroonga":   true,
+		"postgres_trgm":       true,
+		"postgres_textsearch": true,
 	}
 
 	var available []string
