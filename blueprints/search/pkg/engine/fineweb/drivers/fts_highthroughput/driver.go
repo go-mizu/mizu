@@ -23,10 +23,11 @@ func init() {
 
 // Driver implements ultra-high-throughput FTS.
 type Driver struct {
-	indexDir  string
-	language  string
-	mmapIndex *algo.MmapIndex
-	docIDs    []string
+	indexDir      string
+	language      string
+	mmapIndex     *algo.MmapIndex      // Legacy mmap index
+	segmentedIdx  *algo.SegmentedIndex // New segment-based index (no merge)
+	docIDs        []string
 }
 
 // New creates a new high-throughput driver.
@@ -112,10 +113,45 @@ func (d *Driver) Info() *fineweb.DriverInfo {
 	}
 }
 
-// Search performs BM25 search.
+// Search performs BM25 search across segments.
 func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*fineweb.SearchResult, error) {
 	start := time.Now()
 
+	// Try segmented index first (new approach)
+	if d.segmentedIdx != nil && d.segmentedIdx.NumDocs() > 0 {
+		queryTerms := tokenizeQuery(query)
+		results := d.segmentedIdx.Search(queryTerms, limit+offset)
+
+		if offset >= len(results) {
+			results = nil
+		} else {
+			results = results[offset:]
+		}
+		if len(results) > limit {
+			results = results[:limit]
+		}
+
+		docs := make([]fineweb.Document, len(results))
+		for i, r := range results {
+			docID := ""
+			if int(r.DocID) < len(d.docIDs) {
+				docID = d.docIDs[r.DocID]
+			}
+			docs[i] = fineweb.Document{
+				ID:    docID,
+				Score: float64(r.Score),
+			}
+		}
+
+		return &fineweb.SearchResult{
+			Documents: docs,
+			Duration:  time.Since(start),
+			Method:    "fts_highthroughput",
+			Total:     int64(len(results)),
+		}, nil
+	}
+
+	// Fall back to mmap index (legacy)
 	if d.mmapIndex == nil || d.mmapIndex.NumDocs == 0 {
 		return &fineweb.SearchResult{
 			Documents: []fineweb.Document{},
@@ -204,23 +240,29 @@ func fastTokenize(text string) map[string]int {
 	return algo.UltraFastTokenize(text)
 }
 
-// Import indexes documents using PipelineIndexer with high-throughput config.
+// Import indexes documents using NoMergeIndexer (segment-based, no merge phase).
+// This achieves high throughput by skipping the expensive k-way merge.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	// Create segments directory
+	// Create segments directory (persistent - not deleted)
 	segmentDir := filepath.Join(d.indexDir, "segments")
 	os.MkdirAll(segmentDir, 0755)
-	defer os.RemoveAll(segmentDir)
 
-	// Use PipelineIndexer with high-throughput config
-	indexer := algo.NewPipelineIndexerWithConfig(segmentDir, fastTokenize, algo.PipelineConfig{
-		HighThroughput: true,
-	})
+	// Close existing indexes
+	if d.mmapIndex != nil {
+		d.mmapIndex.Close()
+		d.mmapIndex = nil
+	}
+	if d.segmentedIdx != nil {
+		d.segmentedIdx.Close()
+		d.segmentedIdx = nil
+	}
+
+	// Use NoMergeIndexer - segments are kept separate, searched in parallel
+	indexer := algo.NewNoMergeIndexer(segmentDir, fastTokenize, 100000) // 100k docs per segment
 
 	// Collect doc IDs
-	d.docIDs = make([]string, 0, 100000)
+	d.docIDs = make([]string, 0, 3000000)
 	var imported int64
-	batchSize := 10000
-	count := 0
 
 	for doc, err := range docs {
 		if err != nil {
@@ -236,33 +278,22 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		docNum := uint32(len(d.docIDs))
 		d.docIDs = append(d.docIDs, doc.ID)
 
-		// Feed to pipeline indexer
+		// Feed to indexer
 		indexer.Add(docNum, doc.Text)
 
 		imported++
-		count++
 
-		if count >= batchSize {
-			if progress != nil {
-				progress(imported, 0)
-			}
-			count = 0
+		// Report progress every 10k docs
+		if imported%10000 == 0 && progress != nil {
+			progress(imported, 0)
 		}
 	}
 
-	// Finalize to mmap index
-	indexPath := filepath.Join(d.indexDir, "index.mmap")
-
-	// Close existing index
-	if d.mmapIndex != nil {
-		d.mmapIndex.Close()
-		d.mmapIndex = nil
-	}
-
+	// Finalize - returns SegmentedIndex (no merge!)
 	var err error
-	d.mmapIndex, err = indexer.FinishToMmap(indexPath)
+	d.segmentedIdx, err = indexer.Finish()
 	if err != nil {
-		return fmt.Errorf("creating mmap index: %w", err)
+		return fmt.Errorf("creating segmented index: %w", err)
 	}
 
 	// Save doc IDs
@@ -279,16 +310,22 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 
 // Count returns document count.
 func (d *Driver) Count(ctx context.Context) (int64, error) {
-	if d.mmapIndex == nil {
-		return 0, nil
+	if d.segmentedIdx != nil {
+		return int64(d.segmentedIdx.NumDocs()), nil
 	}
-	return int64(d.mmapIndex.NumDocs), nil
+	if d.mmapIndex != nil {
+		return int64(d.mmapIndex.NumDocs), nil
+	}
+	return 0, nil
 }
 
 // Close releases resources.
 func (d *Driver) Close() error {
+	if d.segmentedIdx != nil {
+		d.segmentedIdx.Close()
+	}
 	if d.mmapIndex != nil {
-		return d.mmapIndex.Close()
+		d.mmapIndex.Close()
 	}
 	return nil
 }
