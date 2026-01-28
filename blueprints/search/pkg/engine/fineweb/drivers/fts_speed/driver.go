@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -479,60 +480,105 @@ func (d *Driver) buildBlocks(termPostings map[string][]posting) {
 	b := float32(0.75)
 	avgDL := float32(d.index.AvgDocLen)
 	n := float64(d.index.NumDocs)
+	docLens := d.index.DocLens
 
-	for term, postings := range termPostings {
-		pl := &PostingList{
-			DocFreq: len(postings),
-		}
+	// Collect terms for parallel processing
+	terms := make([]string, 0, len(termPostings))
+	for term := range termPostings {
+		terms = append(terms, term)
+	}
 
-		// Compute IDF
-		df := float64(len(postings))
-		pl.IDF = float32(math.Log((n-df+0.5)/(df+0.5) + 1))
+	// Parallel posting list building
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 8 {
+		numWorkers = 8
+	}
 
-		// Sort postings by doc number
-		sort.Slice(postings, func(i, j int) bool {
-			return postings[i].docNum < postings[j].docNum
-		})
+	type termResult struct {
+		term string
+		pl   *PostingList
+	}
 
-		// Build blocks
-		for i := 0; i < len(postings); i += BlockSize {
-			end := i + BlockSize
-			if end > len(postings) {
-				end = len(postings)
-			}
+	resultCh := make(chan termResult, len(terms))
+	termCh := make(chan string, len(terms))
 
-			block := Block{
-				DocNums: make([]uint32, end-i),
-				Freqs:   make([]uint16, end-i),
-			}
-
-			maxScore := float32(0)
-			for j := i; j < end; j++ {
-				block.DocNums[j-i] = postings[j].docNum
-				block.Freqs[j-i] = postings[j].freq
-
-				// Compute BM25 score
-				tf := float32(postings[j].freq)
-				dl := float32(d.index.DocLens[postings[j].docNum])
-				tfNorm := (tf * (k1 + 1)) / (tf + k1*(1-b+b*dl/avgDL))
-				score := pl.IDF * tfNorm
-
-				if score > maxScore {
-					maxScore = score
+	var wg sync.WaitGroup
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for term := range termCh {
+				postings := termPostings[term]
+				pl := &PostingList{
+					DocFreq: len(postings),
 				}
+
+				// Compute IDF
+				df := float64(len(postings))
+				pl.IDF = float32(math.Log((n-df+0.5)/(df+0.5) + 1))
+
+				// Sort postings by doc number
+				sort.Slice(postings, func(i, j int) bool {
+					return postings[i].docNum < postings[j].docNum
+				})
+
+				// Build blocks
+				for i := 0; i < len(postings); i += BlockSize {
+					end := i + BlockSize
+					if end > len(postings) {
+						end = len(postings)
+					}
+
+					block := Block{
+						DocNums: make([]uint32, end-i),
+						Freqs:   make([]uint16, end-i),
+					}
+
+					maxScore := float32(0)
+					for j := i; j < end; j++ {
+						block.DocNums[j-i] = postings[j].docNum
+						block.Freqs[j-i] = postings[j].freq
+
+						// Compute BM25 score
+						tf := float32(postings[j].freq)
+						dl := float32(docLens[postings[j].docNum])
+						tfNorm := (tf * (k1 + 1)) / (tf + k1*(1-b+b*dl/avgDL))
+						score := pl.IDF * tfNorm
+
+						if score > maxScore {
+							maxScore = score
+						}
+					}
+
+					block.MaxScore = maxScore
+					block.MaxDocNum = postings[end-1].docNum
+
+					if maxScore > pl.MaxScore {
+						pl.MaxScore = maxScore
+					}
+
+					pl.Blocks = append(pl.Blocks, block)
+				}
+
+				resultCh <- termResult{term: term, pl: pl}
 			}
+		}()
+	}
 
-			block.MaxScore = maxScore
-			block.MaxDocNum = postings[end-1].docNum
+	// Feed terms to workers
+	for _, term := range terms {
+		termCh <- term
+	}
+	close(termCh)
 
-			if maxScore > pl.MaxScore {
-				pl.MaxScore = maxScore
-			}
+	// Wait and collect results
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
 
-			pl.Blocks = append(pl.Blocks, block)
-		}
-
-		d.index.Terms[term] = pl
+	for result := range resultCh {
+		d.index.Terms[result.term] = result.pl
 	}
 }
 

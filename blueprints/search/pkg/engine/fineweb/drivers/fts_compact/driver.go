@@ -404,10 +404,6 @@ type posting struct {
 func (d *Driver) buildCompressedPostings(termPostings map[string][]posting) {
 	n := float64(d.index.NumDocs)
 
-	// Build FST for term dictionary
-	fstBuilder := algo.NewFSTBuilder()
-	termIdx := uint64(0)
-
 	// Sort terms for FST
 	terms := make([]string, 0, len(termPostings))
 	for term := range termPostings {
@@ -415,40 +411,80 @@ func (d *Driver) buildCompressedPostings(termPostings map[string][]posting) {
 	}
 	sort.Strings(terms)
 
-	for _, term := range terms {
-		postings := termPostings[term]
-
-		// Sort postings by doc number
-		sort.Slice(postings, func(i, j int) bool {
-			return postings[i].docNum < postings[j].docNum
-		})
-
-		// Extract doc IDs and frequencies
-		docIDs := make([]uint32, len(postings))
-		freqs := make([]uint32, len(postings))
-		for i, p := range postings {
-			docIDs[i] = p.docNum
-			freqs[i] = uint32(p.freq)
-		}
-
-		// Compute IDF
-		df := float64(len(postings))
-		idf := float32(math.Log((n-df+0.5)/(df+0.5) + 1))
-
-		// Create compressed posting list
-		pl := &CompactPostingList{
-			DocIDs:   algo.NewEliasFano(docIDs),
-			FreqData: algo.StreamVByteEncode(freqs),
-			DocFreq:  len(postings),
-			IDF:      idf,
-		}
-
-		d.index.PostingLists[term] = pl
-
-		fstBuilder.Add(term, termIdx)
-		termIdx++
+	// Parallel posting list building
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 8 {
+		numWorkers = 8
 	}
 
+	type termResult struct {
+		term string
+		pl   *CompactPostingList
+	}
+
+	resultCh := make(chan termResult, len(terms))
+	termCh := make(chan string, len(terms))
+
+	var wg sync.WaitGroup
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for term := range termCh {
+				postings := termPostings[term]
+
+				// Sort postings by doc number
+				sort.Slice(postings, func(i, j int) bool {
+					return postings[i].docNum < postings[j].docNum
+				})
+
+				// Extract doc IDs and frequencies
+				docIDs := make([]uint32, len(postings))
+				freqs := make([]uint32, len(postings))
+				for i, p := range postings {
+					docIDs[i] = p.docNum
+					freqs[i] = uint32(p.freq)
+				}
+
+				// Compute IDF
+				df := float64(len(postings))
+				idf := float32(math.Log((n-df+0.5)/(df+0.5) + 1))
+
+				// Create compressed posting list
+				resultCh <- termResult{
+					term: term,
+					pl: &CompactPostingList{
+						DocIDs:   algo.NewEliasFano(docIDs),
+						FreqData: algo.StreamVByteEncode(freqs),
+						DocFreq:  len(postings),
+						IDF:      idf,
+					},
+				}
+			}
+		}()
+	}
+
+	// Feed terms to workers
+	for _, term := range terms {
+		termCh <- term
+	}
+	close(termCh)
+
+	// Wait and collect results
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	for result := range resultCh {
+		d.index.PostingLists[result.term] = result.pl
+	}
+
+	// Build FST (must be sequential due to sorted insertion)
+	fstBuilder := algo.NewFSTBuilder()
+	for idx, term := range terms {
+		fstBuilder.Add(term, uint64(idx))
+	}
 	d.index.TermDict = fstBuilder.Build()
 }
 

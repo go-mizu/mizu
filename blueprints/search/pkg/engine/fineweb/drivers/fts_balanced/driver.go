@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -339,85 +340,126 @@ func (d *Driver) buildBalancedPostings(termPostings map[string][]posting) {
 	k1 := float32(1.2)
 	b := float32(0.75)
 	avgDL := float32(d.index.AvgDocLen)
+	docLens := d.index.DocLens
 
-	// Build FST
-	fstBuilder := algo.NewFSTBuilder()
+	// Collect terms for parallel processing
 	terms := make([]string, 0, len(termPostings))
 	for term := range termPostings {
 		terms = append(terms, term)
 	}
 	sort.Strings(terms)
 
-	for idx, term := range terms {
-		postings := termPostings[term]
-
-		// Sort by doc number
-		sort.Slice(postings, func(i, j int) bool {
-			return postings[i].docNum < postings[j].docNum
-		})
-
-		// Build Roaring bitmap and frequency map
-		bitmap := algo.NewRoaringBitmap()
-		freqs := make(map[uint32]uint16)
-		docIDs := make([]uint32, len(postings))
-
-		for i, p := range postings {
-			bitmap.Add(p.docNum)
-			freqs[p.docNum] = p.freq
-			docIDs[i] = p.docNum
-		}
-
-		// Compute IDF
-		df := float64(len(postings))
-		idf := float32(math.Log((n-df+0.5)/(df+0.5) + 1))
-
-		// Build block metadata
-		var blocks []BlockMeta
-		for i := 0; i < len(postings); i += BlockSize {
-			end := i + BlockSize
-			if end > len(postings) {
-				end = len(postings)
-			}
-
-			block := BlockMeta{
-				MinDocID: postings[i].docNum,
-				MaxDocID: postings[end-1].docNum,
-			}
-
-			maxScore := float32(0)
-			for j := i; j < end; j++ {
-				tf := float32(postings[j].freq)
-				dl := float32(d.index.DocLens[postings[j].docNum])
-				tfNorm := (tf * (k1 + 1)) / (tf + k1*(1-b+b*dl/avgDL))
-				score := idf * tfNorm
-				if score > maxScore {
-					maxScore = score
-				}
-			}
-			block.MaxScore = maxScore
-			blocks = append(blocks, block)
-		}
-
-		// Compute global max score
-		maxScore := float32(0)
-		for _, block := range blocks {
-			if block.MaxScore > maxScore {
-				maxScore = block.MaxScore
-			}
-		}
-
-		d.index.Terms[term] = &BalancedPostingList{
-			DocIDs:   bitmap,
-			Freqs:    freqs,
-			Blocks:   blocks,
-			MaxScore: maxScore,
-			DocFreq:  len(postings),
-			IDF:      idf,
-		}
-
-		fstBuilder.Add(term, uint64(idx))
+	// Parallel posting list building
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 8 {
+		numWorkers = 8
 	}
 
+	type termResult struct {
+		term string
+		pl   *BalancedPostingList
+	}
+
+	resultCh := make(chan termResult, len(terms))
+	termCh := make(chan string, len(terms))
+
+	var wg sync.WaitGroup
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for term := range termCh {
+				postings := termPostings[term]
+
+				// Sort by doc number
+				sort.Slice(postings, func(i, j int) bool {
+					return postings[i].docNum < postings[j].docNum
+				})
+
+				// Build Roaring bitmap and frequency map
+				bitmap := algo.NewRoaringBitmap()
+				freqs := make(map[uint32]uint16, len(postings))
+
+				for _, p := range postings {
+					bitmap.Add(p.docNum)
+					freqs[p.docNum] = p.freq
+				}
+
+				// Compute IDF
+				df := float64(len(postings))
+				idf := float32(math.Log((n-df+0.5)/(df+0.5) + 1))
+
+				// Build block metadata
+				var blocks []BlockMeta
+				for i := 0; i < len(postings); i += BlockSize {
+					end := i + BlockSize
+					if end > len(postings) {
+						end = len(postings)
+					}
+
+					block := BlockMeta{
+						MinDocID: postings[i].docNum,
+						MaxDocID: postings[end-1].docNum,
+					}
+
+					maxScore := float32(0)
+					for j := i; j < end; j++ {
+						tf := float32(postings[j].freq)
+						dl := float32(docLens[postings[j].docNum])
+						tfNorm := (tf * (k1 + 1)) / (tf + k1*(1-b+b*dl/avgDL))
+						score := idf * tfNorm
+						if score > maxScore {
+							maxScore = score
+						}
+					}
+					block.MaxScore = maxScore
+					blocks = append(blocks, block)
+				}
+
+				// Compute global max score
+				maxScore := float32(0)
+				for _, block := range blocks {
+					if block.MaxScore > maxScore {
+						maxScore = block.MaxScore
+					}
+				}
+
+				resultCh <- termResult{
+					term: term,
+					pl: &BalancedPostingList{
+						DocIDs:   bitmap,
+						Freqs:    freqs,
+						Blocks:   blocks,
+						MaxScore: maxScore,
+						DocFreq:  len(postings),
+						IDF:      idf,
+					},
+				}
+			}
+		}()
+	}
+
+	// Feed terms to workers
+	for _, term := range terms {
+		termCh <- term
+	}
+	close(termCh)
+
+	// Wait and collect results
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	for result := range resultCh {
+		d.index.Terms[result.term] = result.pl
+	}
+
+	// Build FST (must be sequential due to sorted insertion)
+	fstBuilder := algo.NewFSTBuilder()
+	for idx, term := range terms {
+		fstBuilder.Add(term, uint64(idx))
+	}
 	d.index.TermDict = fstBuilder.Build()
 }
 
