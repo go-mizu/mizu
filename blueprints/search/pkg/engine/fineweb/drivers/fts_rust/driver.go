@@ -75,7 +75,12 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 	}
 
 	// Create index directory similar to fts_lowmem
-	indexDir := cfg.DataDir + "/" + cfg.Language + ".fts_rust"
+	// Include profile in directory name for non-default profiles
+	indexSuffix := "fts_rust"
+	if profile != DefaultProfile {
+		indexSuffix = "fts_rust_" + profile
+	}
+	indexDir := cfg.DataDir + "/" + cfg.Language + "." + indexSuffix
 	if err := os.MkdirAll(indexDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating index directory: %w", err)
 	}
