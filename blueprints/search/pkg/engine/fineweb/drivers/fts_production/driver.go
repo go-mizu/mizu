@@ -523,72 +523,115 @@ func (d *Driver) buildProductionPostings(termPostings map[string][]posting) {
 	k1 := float32(1.2)
 	b := float32(0.75)
 	avgDL := float32(d.index.AvgDocLen)
+	docLens := d.index.DocLens
 
-	// Build FST
-	fstBuilder := algo.NewFSTBuilder()
+	// Collect terms for parallel processing
 	terms := make([]string, 0, len(termPostings))
 	for term := range termPostings {
 		terms = append(terms, term)
 	}
 	sort.Strings(terms)
 
-	for idx, term := range terms {
-		postings := termPostings[term]
-
-		// Sort by doc number
-		sort.Slice(postings, func(i, j int) bool {
-			return postings[i].docNum < postings[j].docNum
-		})
-
-		// Build arrays
-		docIDs := make([]uint32, len(postings))
-		freqs := make([]uint16, len(postings))
-		bitmap := algo.NewRoaringBitmap()
-
-		for i, p := range postings {
-			docIDs[i] = p.docNum
-			freqs[i] = p.freq
-			bitmap.Add(p.docNum)
-		}
-
-		// Build skip pointers
-		var skipDocs []uint32
-		var skipOffsets []int
-		for i := 0; i < len(docIDs); i += SkipInterval {
-			skipDocs = append(skipDocs, docIDs[i])
-			skipOffsets = append(skipOffsets, i)
-		}
-
-		// Compute IDF
-		df := float64(len(postings))
-		idf := float32(math.Log((n-df+0.5)/(df+0.5) + 1))
-
-		// Compute max score
-		maxScore := float32(0)
-		for i, p := range postings {
-			tf := float32(p.freq)
-			dl := float32(d.index.DocLens[docIDs[i]])
-			tfNorm := (tf * (k1 + 1)) / (tf + k1*(1-b+b*dl/avgDL))
-			score := idf * tfNorm
-			if score > maxScore {
-				maxScore = score
-			}
-		}
-
-		d.index.Terms[term] = &ProductionPostingList{
-			DocBitmap:  bitmap,
-			DocIDs:     docIDs,
-			Freqs:      freqs,
-			SkipDocs:   skipDocs,
-			SkipOffset: skipOffsets,
-			MaxScore:   maxScore,
-			DocFreq:    len(postings),
-			IDF:        idf,
-		}
-
-		fstBuilder.Add(term, uint64(idx))
+	// Parallel posting list building
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 8 {
+		numWorkers = 8
 	}
 
+	type termResult struct {
+		term string
+		pl   *ProductionPostingList
+	}
+
+	resultCh := make(chan termResult, len(terms))
+	termCh := make(chan string, len(terms))
+
+	var wg sync.WaitGroup
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for term := range termCh {
+				postings := termPostings[term]
+
+				// Sort by doc number
+				sort.Slice(postings, func(i, j int) bool {
+					return postings[i].docNum < postings[j].docNum
+				})
+
+				// Build arrays
+				docIDs := make([]uint32, len(postings))
+				freqs := make([]uint16, len(postings))
+				bitmap := algo.NewRoaringBitmap()
+
+				for i, p := range postings {
+					docIDs[i] = p.docNum
+					freqs[i] = p.freq
+					bitmap.Add(p.docNum)
+				}
+
+				// Build skip pointers
+				var skipDocs []uint32
+				var skipOffsets []int
+				for i := 0; i < len(docIDs); i += SkipInterval {
+					skipDocs = append(skipDocs, docIDs[i])
+					skipOffsets = append(skipOffsets, i)
+				}
+
+				// Compute IDF
+				df := float64(len(postings))
+				idf := float32(math.Log((n-df+0.5)/(df+0.5) + 1))
+
+				// Compute max score
+				maxScore := float32(0)
+				for i, p := range postings {
+					tf := float32(p.freq)
+					dl := float32(docLens[docIDs[i]])
+					tfNorm := (tf * (k1 + 1)) / (tf + k1*(1-b+b*dl/avgDL))
+					score := idf * tfNorm
+					if score > maxScore {
+						maxScore = score
+					}
+				}
+
+				resultCh <- termResult{
+					term: term,
+					pl: &ProductionPostingList{
+						DocBitmap:  bitmap,
+						DocIDs:     docIDs,
+						Freqs:      freqs,
+						SkipDocs:   skipDocs,
+						SkipOffset: skipOffsets,
+						MaxScore:   maxScore,
+						DocFreq:    len(postings),
+						IDF:        idf,
+					},
+				}
+			}
+		}()
+	}
+
+	// Feed terms to workers
+	for _, term := range terms {
+		termCh <- term
+	}
+	close(termCh)
+
+	// Wait and collect results
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	for result := range resultCh {
+		d.index.Terms[result.term] = result.pl
+	}
+
+	// Build FST (must be sequential due to sorted insertion)
+	fstBuilder := algo.NewFSTBuilder()
+	for idx, term := range terms {
+		fstBuilder.Add(term, uint64(idx))
+	}
 	d.index.TermDict = fstBuilder.Build()
 }
 
@@ -605,25 +648,91 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) loadIndex() error {
-	indexPath := filepath.Join(d.indexDir, "index.gob")
+	indexPath := filepath.Join(d.indexDir, "index.bin")
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		return err
 	}
 
-	d.index = &ProductionIndex{Terms: make(map[string]*ProductionPostingList)}
-	return gob.NewDecoder(bytes.NewReader(data)).Decode(d.index)
+	r := algo.NewBinaryReader(data)
+	d.index = &ProductionIndex{
+		Terms: make(map[string]*ProductionPostingList),
+	}
+
+	// Read metadata
+	d.index.NumDocs = int(r.ReadUint32())
+	d.index.AvgDocLen = r.ReadFloat64()
+
+	// Read doc lengths
+	d.index.DocLens = r.ReadIntSlice()
+
+	// Read documents (using gob for complex structures)
+	docsData := r.ReadBytes()
+	if len(docsData) > 0 {
+		gob.NewDecoder(bytes.NewReader(docsData)).Decode(&d.index.Documents)
+	}
+
+	// Read terms
+	numTerms := int(r.ReadUint32())
+	for range numTerms {
+		term := r.ReadString()
+		pl := &ProductionPostingList{
+			DocFreq:  int(r.ReadUint32()),
+			MaxScore: r.ReadFloat32(),
+			IDF:      r.ReadFloat32(),
+		}
+
+		// Read arrays
+		pl.DocIDs = r.ReadUint32Slice()
+		pl.Freqs = r.ReadUint16Slice()
+		pl.SkipDocs = r.ReadUint32Slice()
+		pl.SkipOffset = r.ReadIntSlice()
+
+		// Rebuild bitmap from DocIDs
+		pl.DocBitmap = algo.NewRoaringBitmap()
+		for _, docID := range pl.DocIDs {
+			pl.DocBitmap.Add(docID)
+		}
+
+		d.index.Terms[term] = pl
+	}
+
+	return nil
 }
 
 func (d *Driver) saveIndex() error {
-	indexPath := filepath.Join(d.indexDir, "index.gob")
+	indexPath := filepath.Join(d.indexDir, "index.bin")
 
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(d.index); err != nil {
-		return err
+	w := algo.NewBinaryWriter()
+
+	// Write metadata
+	w.WriteUint32(uint32(d.index.NumDocs))
+	w.WriteFloat64(d.index.AvgDocLen)
+
+	// Write doc lengths
+	w.WriteIntSlice(d.index.DocLens)
+
+	// Write documents (using gob for complex structures)
+	var docBuf bytes.Buffer
+	gob.NewEncoder(&docBuf).Encode(d.index.Documents)
+	w.WriteBytes(docBuf.Bytes())
+
+	// Write terms
+	w.WriteUint32(uint32(len(d.index.Terms)))
+	for term, pl := range d.index.Terms {
+		w.WriteString(term)
+		w.WriteUint32(uint32(pl.DocFreq))
+		w.WriteFloat32(pl.MaxScore)
+		w.WriteFloat32(pl.IDF)
+
+		// Write arrays
+		w.WriteUint32Slice(pl.DocIDs)
+		w.WriteUint16Slice(pl.Freqs)
+		w.WriteUint32Slice(pl.SkipDocs)
+		w.WriteIntSlice(pl.SkipOffset)
 	}
 
-	return os.WriteFile(indexPath, buf.Bytes(), 0644)
+	return os.WriteFile(indexPath, w.Bytes(), 0644)
 }
 
 var (
