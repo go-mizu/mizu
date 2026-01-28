@@ -50,6 +50,9 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_production"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_speed"
 
+	// High-throughput driver
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_highthroughput"
+
 	// Note: tantivy driver requires CGO, import with -tags tantivy
 	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/tantivy"
 )
