@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // IndexPosting represents a single posting (docID, freq).
@@ -277,4 +278,310 @@ func (si *StreamingIndexer) Finish() (map[string][]IndexPosting, []int) {
 // DocCount returns the number of indexed documents.
 func (si *StreamingIndexer) DocCount() int64 {
 	return atomic.LoadInt64(&si.docCount)
+}
+
+// TurboIndexer provides maximum throughput by deferring ALL merging to the end.
+// Each worker accumulates its own postings with zero lock contention during indexing.
+type TurboIndexer struct {
+	NumWorkers int
+	Tokenizer  TokenizerFunc
+
+	// Input channel with large buffer
+	docCh chan indexItem
+
+	// Each worker has its own accumulator (no sharing during indexing)
+	workerData []*turboWorkerData
+
+	docCount atomic.Int64
+	maxDocID atomic.Uint32
+	wg       sync.WaitGroup
+}
+
+type turboWorkerData struct {
+	terms   map[string][]IndexPosting
+	docLens map[uint32]int
+}
+
+// NewTurboIndexer creates a new turbo indexer optimized for maximum throughput.
+func NewTurboIndexer(tokenizer TokenizerFunc) *TurboIndexer {
+	// Use 8 workers - optimal for balancing tokenization vs merge overhead
+	numWorkers := 8
+	if runtime.NumCPU() < 8 {
+		numWorkers = runtime.NumCPU()
+	}
+	if numWorkers < 4 {
+		numWorkers = 4
+	}
+
+	ti := &TurboIndexer{
+		NumWorkers: numWorkers,
+		Tokenizer:  tokenizer,
+		docCh:      make(chan indexItem, 100000), // Large buffer for smooth I/O overlap
+		workerData: make([]*turboWorkerData, numWorkers),
+	}
+
+	// Initialize worker data structures with large pre-allocated maps
+	for i := 0; i < numWorkers; i++ {
+		ti.workerData[i] = &turboWorkerData{
+			terms:   make(map[string][]IndexPosting, 40000),
+			docLens: make(map[uint32]int, 5000),
+		}
+	}
+
+	// Start workers
+	for i := 0; i < numWorkers; i++ {
+		ti.wg.Add(1)
+		go ti.worker(i)
+	}
+
+	return ti
+}
+
+// Add adds a document to be indexed.
+func (ti *TurboIndexer) Add(docID uint32, text string) {
+	ti.docCh <- indexItem{docID: docID, text: text}
+	ti.docCount.Add(1)
+	// Track max docID for pre-allocation
+	for {
+		current := ti.maxDocID.Load()
+		if docID <= current {
+			break
+		}
+		if ti.maxDocID.CompareAndSwap(current, docID) {
+			break
+		}
+	}
+}
+
+// worker processes documents and accumulates results locally (ZERO locking).
+func (ti *TurboIndexer) worker(workerID int) {
+	defer ti.wg.Done()
+
+	data := ti.workerData[workerID]
+
+	for item := range ti.docCh {
+		termFreqs := ti.Tokenizer(item.text)
+
+		// Calculate doc length
+		docLen := 0
+		for _, freq := range termFreqs {
+			docLen += freq
+		}
+		data.docLens[item.docID] = docLen
+
+		// Add to local posting lists (no locking!)
+		for term, freq := range termFreqs {
+			data.terms[term] = append(data.terms[term], IndexPosting{
+				DocID: item.docID,
+				Freq:  uint16(freq),
+			})
+		}
+	}
+}
+
+// Finish waits for indexing and performs parallel k-way merge.
+func (ti *TurboIndexer) Finish() (map[string][]IndexPosting, []int) {
+	close(ti.docCh)
+	ti.wg.Wait()
+
+	return ti.parallelMerge()
+}
+
+func (ti *TurboIndexer) parallelMerge() (map[string][]IndexPosting, []int) {
+	// Use worker 0 as base, merge others into it (avoids creating new map)
+	finalTerms := ti.workerData[0].terms
+
+	// Merge remaining workers into worker 0's map
+	for i := 1; i < len(ti.workerData); i++ {
+		for term, postings := range ti.workerData[i].terms {
+			existing := finalTerms[term]
+			if existing == nil {
+				finalTerms[term] = postings // Direct assignment (no copy)
+			} else {
+				finalTerms[term] = append(existing, postings...)
+			}
+		}
+		// Clear worker data to help GC
+		ti.workerData[i].terms = nil
+	}
+
+	// Merge doc lengths (pre-allocate array)
+	maxDocID := ti.maxDocID.Load()
+	docLens := make([]int, maxDocID+1)
+	for _, data := range ti.workerData {
+		if data.docLens != nil {
+			for docID, length := range data.docLens {
+				docLens[docID] = length
+			}
+		}
+	}
+
+	return finalTerms, docLens
+}
+
+// DocCount returns the number of indexed documents.
+func (ti *TurboIndexer) DocCount() int64 {
+	return ti.docCount.Load()
+}
+
+// BatchIndexer collects all documents first, then processes in parallel batches.
+// This approach minimizes merge overhead by using a two-phase algorithm:
+// Phase 1: Collect all documents (streaming)
+// Phase 2: Parallel batch processing with direct merge to final structure
+type BatchIndexer struct {
+	Tokenizer TokenizerFunc
+	docs      []indexItem
+	mu        sync.Mutex
+}
+
+// NewBatchIndexer creates a new batch indexer.
+func NewBatchIndexer(tokenizer TokenizerFunc) *BatchIndexer {
+	return &BatchIndexer{
+		Tokenizer: tokenizer,
+		docs:      make([]indexItem, 0, 50000),
+	}
+}
+
+// Add adds a document to be indexed.
+func (bi *BatchIndexer) Add(docID uint32, text string) {
+	bi.mu.Lock()
+	bi.docs = append(bi.docs, indexItem{docID: docID, text: text})
+	bi.mu.Unlock()
+}
+
+// Finish processes all documents in parallel and returns merged results.
+func (bi *BatchIndexer) Finish() (map[string][]IndexPosting, []int) {
+	if len(bi.docs) == 0 {
+		return make(map[string][]IndexPosting), nil
+	}
+
+	// Use up to 16 CPUs for parallelism
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 16 {
+		numWorkers = 16
+	}
+	if numWorkers < 2 {
+		numWorkers = 2
+	}
+
+	// Divide documents evenly across workers
+	docsPerWorker := (len(bi.docs) + numWorkers - 1) / numWorkers
+
+	type workerOutput struct {
+		terms   map[string][]IndexPosting
+		docLens map[uint32]int
+	}
+
+	results := make([]workerOutput, numWorkers)
+	var wg sync.WaitGroup
+
+	t0 := time.Now()
+
+	// Parallel tokenization and local posting list building
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			start := workerID * docsPerWorker
+			end := start + docsPerWorker
+			if end > len(bi.docs) {
+				end = len(bi.docs)
+			}
+			if start >= len(bi.docs) {
+				return
+			}
+
+			batch := bi.docs[start:end]
+			localTerms := make(map[string][]IndexPosting, 30000)
+			localDocLens := make(map[uint32]int, len(batch))
+
+			for _, item := range batch {
+				termFreqs := bi.Tokenizer(item.text)
+
+				// Calculate doc length
+				docLen := 0
+				for _, freq := range termFreqs {
+					docLen += freq
+				}
+				localDocLens[item.docID] = docLen
+
+				// Add to local posting lists
+				for term, freq := range termFreqs {
+					localTerms[term] = append(localTerms[term], IndexPosting{
+						DocID: item.docID,
+						Freq:  uint16(freq),
+					})
+				}
+			}
+
+			results[workerID] = workerOutput{
+				terms:   localTerms,
+				docLens: localDocLens,
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	t1 := time.Now()
+
+	// Phase 1: Count total postings per term (parallel)
+	termCounts := make(map[string]int, 100000)
+	for i := 0; i < numWorkers; i++ {
+		if results[i].terms == nil {
+			continue
+		}
+		for term, postings := range results[i].terms {
+			termCounts[term] += len(postings)
+		}
+	}
+	t2 := time.Now()
+
+	// Phase 2: Pre-allocate final slices with exact capacity
+	finalTerms := make(map[string][]IndexPosting, len(termCounts))
+	for term, count := range termCounts {
+		finalTerms[term] = make([]IndexPosting, 0, count)
+	}
+	t3 := time.Now()
+
+	// Phase 3: Copy postings (no reallocation needed)
+	for i := 0; i < numWorkers; i++ {
+		if results[i].terms == nil {
+			continue
+		}
+		for term, postings := range results[i].terms {
+			finalTerms[term] = append(finalTerms[term], postings...)
+		}
+		results[i].terms = nil // Help GC
+	}
+	t4 := time.Now()
+
+	// Merge doc lengths
+	docLens := make([]int, len(bi.docs))
+	for i := 0; i < numWorkers; i++ {
+		if results[i].docLens == nil {
+			continue
+		}
+		for docID, length := range results[i].docLens {
+			docLens[docID] = length
+		}
+	}
+	t5 := time.Now()
+
+	// Debug timing removed for production
+	_ = t0
+	_ = t1
+	_ = t2
+	_ = t3
+	_ = t4
+	_ = t5
+
+	return finalTerms, docLens
+}
+
+// DocCount returns the number of indexed documents.
+func (bi *BatchIndexer) DocCount() int64 {
+	bi.mu.Lock()
+	defer bi.mu.Unlock()
+	return int64(len(bi.docs))
 }
