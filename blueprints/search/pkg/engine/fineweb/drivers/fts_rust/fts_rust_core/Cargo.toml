@@ -6,7 +6,7 @@ authors = ["Mizu Team"]
 description = "High-performance full-text search engine with multiple algorithm profiles"
 
 [lib]
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 # Core search - using tantivy components
@@ -47,9 +47,15 @@ crossbeam-channel = "0.5"
 # Profiling (optional)
 dhat = { version = "0.3", optional = true }
 
+# Parquet/Arrow for benchmarks (optional)
+parquet = { version = "54", default-features = false, features = ["arrow", "zstd", "snap"], optional = true }
+arrow = { version = "54", default-features = false, optional = true }
+tempfile = { version = "3.24", optional = true }
+
 [features]
 default = []
 profiling = ["dhat"]
+bench = ["parquet", "arrow", "tempfile"]
 
 [profile.release]
 lto = true
@@ -64,4 +70,6 @@ debug = true
 [dev-dependencies]
 tempfile = "3.24"
 
-# cbindgen removed - header maintained manually
+[[example]]
+name = "bench_parquet"
+required-features = ["bench"]

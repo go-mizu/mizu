@@ -32,6 +32,45 @@
 | fts_rust_tantivy | 40s | 57602 | 3.31 GB | 2319000 |
 | fts_lowmem | 2m28s | 15700 | 3.85 GB | 2319000 |
 
+## Pure Rust vs Go FFI Comparison
+
+The following table compares pure Rust indexing performance (measured separately from parquet reading) against Go FFI performance:
+
+| Implementation | Profile | Duration | Docs/sec | FFI Overhead |
+|----------------|---------|----------|----------|--------------|
+| **Pure Rust (optimized)** | ultra | 14.36s | **161,519** | - |
+| **Pure Rust** | tantivy | 253.37s | 9,153 | - |
+| **Go FFI (optimized)** | ultra | 40.39s | 57,421 | 2.8x |
+
+**Optimizations Applied:**
+1. Lookup table for character classification (faster tokenization)
+2. Parallel ID hashing during indexing
+3. Deferred IDF computation to commit time
+4. Increased shards from 32 to 64
+5. Pre-sized hashmaps for token frequencies
+
+**Key Findings:**
+- Pure Rust ultra profile achieves **162k docs/sec** (parquet reading excluded)
+- Go FFI adds approximately **2.8x overhead** due to:
+  - Binary serialization of documents in Go
+  - FFI boundary crossing
+  - String allocations on both sides
+- Synthetic tests achieve 1.4M docs/sec because test documents are ~80 bytes
+- Real Vietnamese documents are ~2KB (compressed), leading to 10x slower indexing
+
+**1M docs/sec Target Analysis:**
+- Current pure Rust: 162k docs/sec (need 6.2x improvement)
+- Current Go FFI: 57k docs/sec (need 17.4x improvement)
+- Main bottlenecks:
+  - String allocations for document IDs and text
+  - Tokenization of long Vietnamese text (~2KB/doc)
+  - FFI serialization overhead
+- Further optimizations would require:
+  - Zero-copy text handling
+  - Memory-mapped data structures
+  - SIMD tokenization
+  - Skip storing document IDs entirely
+
 ## Latency Distribution
 
 | Driver | Min | Avg | p50 | p95 | p99 | Max |

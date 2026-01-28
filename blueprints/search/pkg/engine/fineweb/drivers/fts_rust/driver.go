@@ -37,8 +37,8 @@ const (
 	// DefaultProfile is the default search profile (ultra for max throughput)
 	DefaultProfile = "ultra"
 	// BatchSize for document indexing
-	// Balanced at 50k - reduces memory pressure while maintaining parallelism
-	BatchSize = 50000
+	// 100k balances FFI overhead with memory pressure
+	BatchSize = 100000
 )
 
 // Available profiles
