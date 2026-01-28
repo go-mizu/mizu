@@ -17,9 +17,9 @@ type EliasFano struct {
 	N         int      // Number of elements
 	Universe  uint64   // Maximum possible value + 1
 
-	// Select acceleration structures
-	selectSamples []int // Samples for fast select1
-	sampleRate    int   // Sample every N bits
+	// Select acceleration structures (exported for serialization)
+	SelectSamples []int // Samples for fast select1
+	SampleRate    int   // Sample every N bits
 }
 
 // NewEliasFano creates an Elias-Fano encoding of sorted integers.
@@ -49,7 +49,7 @@ func NewEliasFano(sorted []uint32) *EliasFano {
 		LowLen:     lowLen,
 		N:          n,
 		Universe:   u,
-		sampleRate: 64, // Sample every 64 ones
+		SampleRate: 64, // Sample every 64 ones
 	}
 
 	lowMask := uint64(1<<lowLen) - 1
@@ -138,8 +138,8 @@ func (ef *EliasFano) getBit(bits []uint64, pos int) bool {
 
 func (ef *EliasFano) buildSelectSamples() {
 	// Count ones and build samples
-	sampleCount := (ef.N + ef.sampleRate - 1) / ef.sampleRate
-	ef.selectSamples = make([]int, sampleCount)
+	sampleCount := (ef.N + ef.SampleRate - 1) / ef.SampleRate
+	ef.SelectSamples = make([]int, sampleCount)
 
 	oneCount := 0
 	sampleIdx := 0
@@ -151,8 +151,8 @@ func (ef *EliasFano) buildSelectSamples() {
 
 		for bitIdx := 0; bitIdx < 64; bitIdx++ {
 			if (word & (1 << bitIdx)) != 0 {
-				if oneCount%ef.sampleRate == 0 && sampleIdx < len(ef.selectSamples) {
-					ef.selectSamples[sampleIdx] = wordIdx*64 + bitIdx
+				if oneCount%ef.SampleRate == 0 && sampleIdx < len(ef.SelectSamples) {
+					ef.SelectSamples[sampleIdx] = wordIdx*64 + bitIdx
 					sampleIdx++
 				}
 				oneCount++
@@ -167,20 +167,20 @@ func (ef *EliasFano) select1(i int) int {
 		return -1
 	}
 
-	// Initialize sampleRate if not set (after gob decode)
-	if ef.sampleRate == 0 {
-		ef.sampleRate = 64
+	// Initialize SampleRate if not set (after gob decode)
+	if ef.SampleRate == 0 {
+		ef.SampleRate = 64
 	}
 
 	// Start from sample point
-	sampleIdx := i / ef.sampleRate
+	sampleIdx := i / ef.SampleRate
 	var startPos int
-	if sampleIdx < len(ef.selectSamples) {
-		startPos = ef.selectSamples[sampleIdx]
+	if sampleIdx < len(ef.SelectSamples) {
+		startPos = ef.SelectSamples[sampleIdx]
 	}
 
 	// Count ones from sample point
-	onesNeeded := i - sampleIdx*ef.sampleRate
+	onesNeeded := i - sampleIdx*ef.SampleRate
 
 	wordIdx := startPos / 64
 	bitIdx := startPos % 64
@@ -236,7 +236,7 @@ func (ef *EliasFano) Size() int {
 
 // Bytes returns the total memory used in bytes.
 func (ef *EliasFano) Bytes() int {
-	return len(ef.LowBits)*8 + len(ef.HighBits)*8 + len(ef.selectSamples)*8 + 48
+	return len(ef.LowBits)*8 + len(ef.HighBits)*8 + len(ef.SelectSamples)*8 + 48
 }
 
 // Decode returns all values as a slice.
