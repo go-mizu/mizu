@@ -220,7 +220,6 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer stmt.Close()
 
 	var imported int64
 	batchSize := 10000
@@ -228,17 +227,20 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 
 	for doc, err := range docs {
 		if err != nil {
+			stmt.Close()
 			return fmt.Errorf("reading document: %w", err)
 		}
 
 		select {
 		case <-ctx.Done():
+			stmt.Close()
 			return ctx.Err()
 		default:
 		}
 
 		_, err = stmt.ExecContext(ctx, doc.ID, doc.URL, doc.Text, doc.Dump, doc.Date, doc.Language, doc.LanguageScore)
 		if err != nil {
+			stmt.Close()
 			return fmt.Errorf("inserting document: %w", err)
 		}
 
@@ -246,6 +248,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		count++
 
 		if count >= batchSize {
+			stmt.Close() // Close old statement before commit
 			if err := tx.Commit(); err != nil {
 				return fmt.Errorf("committing batch: %w", err)
 			}
@@ -268,6 +271,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 			count = 0
 		}
 	}
+	stmt.Close() // Close final statement
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing final batch: %w", err)

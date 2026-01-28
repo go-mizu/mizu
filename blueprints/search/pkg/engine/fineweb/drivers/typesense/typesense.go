@@ -211,8 +211,8 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 // Import ingests documents from an iterator.
 // Uses JSONL batch import for high performance.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	batchSize := 1000
-	batch := make([]interface{}, 0, batchSize)
+	batchSize := 5000 // Increased batch size for better throughput
+	batch := make([]any, 0, batchSize)
 	var imported int64
 
 	for doc, err := range docs {
@@ -266,7 +266,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 }
 
 // importBatch imports a batch of documents using JSONL format.
-func (d *Driver) importBatch(ctx context.Context, batch []interface{}) error {
+func (d *Driver) importBatch(ctx context.Context, batch []any) error {
 	// Convert batch to JSONL
 	var jsonlBuilder strings.Builder
 	for _, doc := range batch {

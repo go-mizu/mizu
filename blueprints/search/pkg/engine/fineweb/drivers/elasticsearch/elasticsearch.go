@@ -94,35 +94,35 @@ func (d *Driver) ensureIndex() error {
 	}
 
 	// Create index with optimized settings for BM25 text search
-	mapping := map[string]interface{}{
-		"settings": map[string]interface{}{
+	mapping := map[string]any{
+		"settings": map[string]any{
 			"number_of_shards":   1,
 			"number_of_replicas": 0,
-			"index": map[string]interface{}{
+			"index": map[string]any{
 				"refresh_interval": "30s", // Less frequent refresh during indexing
 			},
 		},
-		"mappings": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
+		"mappings": map[string]any{
+			"properties": map[string]any{
+				"id": map[string]any{
 					"type": "keyword",
 				},
-				"url": map[string]interface{}{
+				"url": map[string]any{
 					"type": "keyword",
 				},
-				"text": map[string]interface{}{
+				"text": map[string]any{
 					"type": "text",
 				},
-				"dump": map[string]interface{}{
+				"dump": map[string]any{
 					"type": "keyword",
 				},
-				"date": map[string]interface{}{
+				"date": map[string]any{
 					"type": "keyword",
 				},
-				"language": map[string]interface{}{
+				"language": map[string]any{
 					"type": "keyword",
 				},
-				"language_score": map[string]interface{}{
+				"language_score": map[string]any{
 					"type": "float",
 				},
 			},
@@ -170,9 +170,9 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 	start := time.Now()
 
 	// Build Elasticsearch search query with match on text field (uses BM25 by default)
-	searchQuery := map[string]interface{}{
-		"query": map[string]interface{}{
-			"match": map[string]interface{}{
+	searchQuery := map[string]any{
+		"query": map[string]any{
+			"match": map[string]any{
 				"text": query,
 			},
 		},
@@ -251,7 +251,7 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 
 // Import ingests documents from an iterator using the bulk API.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	batchSize := 1000
+	batchSize := 5000 // Increased batch size for better throughput
 	batch := make([]ESDocument, 0, batchSize)
 	var imported int64
 
@@ -316,8 +316,8 @@ func (d *Driver) bulkIndex(ctx context.Context, docs []ESDocument) error {
 
 	for _, doc := range docs {
 		// Action line
-		meta := map[string]interface{}{
-			"index": map[string]interface{}{
+		meta := map[string]any{
+			"index": map[string]any{
 				"_index": d.indexName,
 				"_id":    doc.ID,
 			},

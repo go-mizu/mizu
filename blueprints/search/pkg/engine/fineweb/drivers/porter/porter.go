@@ -22,7 +22,7 @@ import (
 
 // termFreqPool is used to recycle term frequency maps to reduce allocations
 var termFreqPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return make(map[string]int, 256)
 	},
 }
@@ -161,13 +161,18 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 }
 
 // Import ingests documents from an iterator.
+// Periodically releases lock to allow concurrent searches during long imports.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	var imported int64
 	batchSize := 10000
 	count := 0
+
+	// Batch buffer for processing outside lock
+	type docData struct {
+		doc    fineweb.Document
+		tokens []string
+	}
+	batch := make([]docData, 0, batchSize)
 
 	for doc, err := range docs {
 		if err != nil {
@@ -180,7 +185,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		// Tokenize and stem text
+		// Tokenize and stem text (outside lock - CPU intensive)
 		tokens := d.tokenizer.Tokenize(doc.Text)
 		stemmedTokens := make([]string, 0, len(tokens))
 		for _, t := range tokens {
@@ -191,22 +196,42 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 			stemmedTokens = append(stemmedTokens, stemmed)
 		}
 
-		// Index document
-		d.index.IndexDocument(doc, stemmedTokens)
-
-		imported++
+		batch = append(batch, docData{doc: doc, tokens: stemmedTokens})
 		count++
 
 		if count >= batchSize {
+			// Index batch with lock held briefly
+			d.mu.Lock()
+			for _, item := range batch {
+				d.index.IndexDocument(item.doc, item.tokens)
+			}
+			d.mu.Unlock()
+
+			imported += int64(len(batch))
+			batch = batch[:0]
+			count = 0
+
 			if progress != nil {
 				progress(imported, 0)
 			}
-			count = 0
 		}
 	}
 
+	// Index remaining documents
+	if len(batch) > 0 {
+		d.mu.Lock()
+		for _, item := range batch {
+			d.index.IndexDocument(item.doc, item.tokens)
+		}
+		d.mu.Unlock()
+		imported += int64(len(batch))
+	}
+
 	// Save index to disk
-	if err := d.index.Save(d.indexDir); err != nil {
+	d.mu.Lock()
+	err := d.index.Save(d.indexDir)
+	d.mu.Unlock()
+	if err != nil {
 		return fmt.Errorf("saving index: %w", err)
 	}
 

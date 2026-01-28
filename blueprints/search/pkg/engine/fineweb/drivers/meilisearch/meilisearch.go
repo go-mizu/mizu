@@ -150,34 +150,29 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 		return nil, fmt.Errorf("executing search: %w", err)
 	}
 
-	// Convert results
+	// Convert results - marshal full hit and unmarshal into struct for efficiency
 	docs := make([]fineweb.Document, 0, len(searchRes.Hits))
 	for i, hit := range searchRes.Hits {
-		// Hit is map[string]json.RawMessage, unmarshal each field
-		doc := fineweb.Document{
-			Score: 1.0 / float64(i+1), // MeiliSearch doesn't return a score
+		// Marshal entire hit map and unmarshal into MeiliDocument struct
+		hitBytes, err := json.Marshal(hit)
+		if err != nil {
+			continue
 		}
 
-		if raw, exists := hit["id"]; exists {
-			json.Unmarshal(raw, &doc.ID)
+		var meiliDoc MeiliDocument
+		if err := json.Unmarshal(hitBytes, &meiliDoc); err != nil {
+			continue
 		}
-		if raw, exists := hit["url"]; exists {
-			json.Unmarshal(raw, &doc.URL)
-		}
-		if raw, exists := hit["text"]; exists {
-			json.Unmarshal(raw, &doc.Text)
-		}
-		if raw, exists := hit["dump"]; exists {
-			json.Unmarshal(raw, &doc.Dump)
-		}
-		if raw, exists := hit["date"]; exists {
-			json.Unmarshal(raw, &doc.Date)
-		}
-		if raw, exists := hit["language"]; exists {
-			json.Unmarshal(raw, &doc.Language)
-		}
-		if raw, exists := hit["language_score"]; exists {
-			json.Unmarshal(raw, &doc.LanguageScore)
+
+		doc := fineweb.Document{
+			ID:            meiliDoc.ID,
+			URL:           meiliDoc.URL,
+			Text:          meiliDoc.Text,
+			Dump:          meiliDoc.Dump,
+			Date:          meiliDoc.Date,
+			Language:      meiliDoc.Language,
+			LanguageScore: meiliDoc.LanguageScore,
+			Score:         1.0 / float64(i+1), // MeiliSearch doesn't return a score
 		}
 
 		docs = append(docs, doc)

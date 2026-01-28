@@ -176,7 +176,7 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 // Import ingests documents from an iterator.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
 	batch := bluge.NewBatch()
-	batchSize := 1000
+	batchSize := 5000 // Increased batch size for better throughput
 	count := 0
 	var imported int64
 
