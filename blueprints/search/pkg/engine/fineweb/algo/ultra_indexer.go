@@ -7,7 +7,11 @@
 package algo
 
 import (
+	"bufio"
+	"encoding/binary"
+	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -120,15 +124,21 @@ func NewUltraIndexer(cfg UltraConfig) *UltraIndexer {
 	if cfg.MaxDocs <= 0 {
 		cfg.MaxDocs = 3000000 // 3M docs default
 	}
+	if cfg.SegmentSize <= 0 {
+		cfg.SegmentSize = 50000 // 50k docs per segment for memory bounding
+	}
 
 	u := &UltraIndexer{
-		NumShards:  cfg.NumShards,
-		BatchSize:  cfg.BatchSize,
-		NumWorkers: cfg.NumWorkers,
-		shards:     make([]*TermShard, cfg.NumShards),
-		docLens:    make([]uint16, cfg.MaxDocs),
-		tokenizers: make([]*InlineTokenizer, cfg.NumWorkers),
-		localBufs:  make([]*LocalBuffer, cfg.NumWorkers),
+		NumShards:   cfg.NumShards,
+		BatchSize:   cfg.BatchSize,
+		NumWorkers:  cfg.NumWorkers,
+		SegmentSize: cfg.SegmentSize,
+		OutputDir:   cfg.OutputDir,
+		shards:      make([]*TermShard, cfg.NumShards),
+		docLens:     make([]uint16, cfg.MaxDocs),
+		tokenizers:  make([]*InlineTokenizer, cfg.NumWorkers),
+		localBufs:   make([]*LocalBuffer, cfg.NumWorkers),
+		segments:    make([]*SegmentMeta, 0, 64),
 	}
 
 	// Initialize shards
@@ -374,6 +384,147 @@ func (u *UltraIndexer) ProcessBatch(docs []UltraDocument) {
 		}(shardID)
 	}
 	flushWg.Wait()
+
+	// Check if we need to flush to disk (memory bounding)
+	if u.OutputDir != "" && u.SegmentSize > 0 {
+		totalPostings := uint64(0)
+		for _, shard := range u.shards {
+			totalPostings += shard.totalPostings
+		}
+		// Flush when postings exceed threshold (roughly SegmentSize * avg_terms_per_doc)
+		if totalPostings > uint64(u.SegmentSize)*50 {
+			u.flushToDisk()
+		}
+	}
+}
+
+// flushToDisk writes current shards to disk and resets them.
+func (u *UltraIndexer) flushToDisk() {
+	if u.OutputDir == "" {
+		return
+	}
+
+	// Merge all shards into segment format
+	seg := &Segment{
+		termPostings: make(map[string][]IndexPosting, 50000),
+		docLens:      make(map[uint32]int, u.SegmentSize),
+	}
+
+	for _, shard := range u.shards {
+		for term, termID := range shard.terms {
+			postings := shard.postings[termID]
+			seg.termPostings[term] = append(seg.termPostings[term], postings...)
+		}
+	}
+
+	// Get doc lens for this segment's docs
+	docCount := u.docCount.Load()
+	for i := uint32(0); i < docCount; i++ {
+		if u.docLens[i] > 0 {
+			seg.docLens[i] = int(u.docLens[i])
+		}
+	}
+	seg.docCount = int(docCount)
+
+	// Write segment to disk
+	u.segmentMu.Lock()
+	segPath := fmt.Sprintf("%s/seg_%05d.bin", u.OutputDir, u.segmentNum)
+	u.segmentNum++
+	u.segmentMu.Unlock()
+
+	meta := writeUltraSegment(segPath, seg)
+	if meta != nil {
+		u.segmentMu.Lock()
+		u.segments = append(u.segments, meta)
+		u.segmentMu.Unlock()
+	}
+
+	// Reset shards for next segment
+	for _, shard := range u.shards {
+		shard.terms = make(map[string]uint32, 50000)
+		shard.termList = shard.termList[:0]
+		shard.postings = shard.postings[:0]
+		shard.termCount = 0
+		shard.totalPostings = 0
+	}
+
+	runtime.GC()
+}
+
+// writeUltraSegment writes a segment to disk using PipelineIndexer format.
+func writeUltraSegment(path string, seg *Segment) *SegmentMeta {
+	f, err := os.Create(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	w := bufio.NewWriterSize(f, 4*1024*1024)
+
+	// Write header
+	binary.Write(w, binary.LittleEndian, uint32(seg.docCount))
+	binary.Write(w, binary.LittleEndian, uint32(len(seg.termPostings)))
+
+	// Collect and sort terms
+	terms := make([]string, 0, len(seg.termPostings))
+	for term := range seg.termPostings {
+		terms = append(terms, term)
+	}
+	sort.Strings(terms)
+
+	// Calculate offsets
+	termOffsets := make(map[string]int64, len(terms))
+	offset := int64(0)
+	for _, term := range terms {
+		postings := seg.termPostings[term]
+		termOffsets[term] = offset
+		offset += int64(len(postings) * 6)
+	}
+
+	// Write term dictionary
+	for _, term := range terms {
+		termBytes := []byte(term)
+		binary.Write(w, binary.LittleEndian, uint16(len(termBytes)))
+		w.Write(termBytes)
+		binary.Write(w, binary.LittleEndian, uint32(len(seg.termPostings[term])))
+		binary.Write(w, binary.LittleEndian, termOffsets[term])
+	}
+
+	// Write posting lists (sorted by docID)
+	for _, term := range terms {
+		postings := seg.termPostings[term]
+		sort.Slice(postings, func(i, j int) bool {
+			return postings[i].DocID < postings[j].DocID
+		})
+		for _, p := range postings {
+			binary.Write(w, binary.LittleEndian, p.DocID)
+			binary.Write(w, binary.LittleEndian, p.Freq)
+		}
+	}
+
+	// Write doc lengths
+	docIDs := make([]uint32, 0, len(seg.docLens))
+	for docID := range seg.docLens {
+		docIDs = append(docIDs, docID)
+	}
+	sort.Slice(docIDs, func(i, j int) bool { return docIDs[i] < docIDs[j] })
+
+	binary.Write(w, binary.LittleEndian, uint32(len(docIDs)))
+	for _, docID := range docIDs {
+		binary.Write(w, binary.LittleEndian, docID)
+		binary.Write(w, binary.LittleEndian, uint16(seg.docLens[docID]))
+	}
+
+	w.Flush()
+
+	fi, _ := f.Stat()
+	return &SegmentMeta{
+		ID:       0,
+		Path:     path,
+		NumDocs:  seg.docCount,
+		NumTerms: len(terms),
+		Size:     fi.Size(),
+	}
 }
 
 // Add adds a single document (less efficient than ProcessBatch).
@@ -431,6 +582,34 @@ func (u *UltraIndexer) Finish() (map[string][]IndexPosting, []int) {
 
 // FinishToMmap writes directly to mmap format for memory-efficient search.
 func (u *UltraIndexer) FinishToMmap(outputPath string) (*MmapIndex, error) {
+	// If we have disk segments, use streaming merge
+	if len(u.segments) > 0 {
+		// Flush any remaining data
+		if u.hasUnflushedData() {
+			u.flushToDisk()
+		}
+
+		// Collect segment paths
+		segmentPaths := make([]string, len(u.segments))
+		for i, seg := range u.segments {
+			segmentPaths[i] = seg.Path
+		}
+
+		// Use streaming merge
+		merger := NewTrueStreamingMerger(outputPath, segmentPaths)
+		if err := merger.Merge(); err != nil {
+			return nil, err
+		}
+
+		// Clean up segment files
+		for _, path := range segmentPaths {
+			os.Remove(path)
+		}
+
+		return OpenMmapIndex(outputPath)
+	}
+
+	// No disk segments - use in-memory data
 	// Get all terms across shards
 	numTerms := 0
 	for _, shard := range u.shards {
@@ -512,6 +691,16 @@ func (u *UltraIndexer) FinishToMmap(outputPath string) (*MmapIndex, error) {
 
 	// Open the mmap index
 	return OpenMmapIndex(outputPath)
+}
+
+// hasUnflushedData checks if there's data in shards that hasn't been flushed.
+func (u *UltraIndexer) hasUnflushedData() bool {
+	for _, shard := range u.shards {
+		if shard.totalPostings > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // DocCount returns the number of indexed documents.

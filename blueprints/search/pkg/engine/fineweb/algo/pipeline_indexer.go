@@ -83,28 +83,57 @@ type SegmentMeta struct {
 // NewPipelineIndexer creates a pipeline-parallel indexer with disk segments.
 // Memory usage bounded by segmentSize regardless of total document count.
 func NewPipelineIndexer(outputDir string, tokenizer TokenizerFunc) *PipelineIndexer {
-	numWorkers := runtime.NumCPU()
+	return NewPipelineIndexerWithConfig(outputDir, tokenizer, PipelineConfig{})
+}
+
+// PipelineConfig configures the PipelineIndexer.
+type PipelineConfig struct {
+	SegmentSize   int // Docs per segment (0 = default 10k)
+	NumWorkers    int // Number of tokenization workers (0 = auto)
+	ChannelBuffer int // Channel buffer multiplier (0 = default)
+	HighThroughput bool // Enable high-throughput mode (larger buffers)
+}
+
+// NewPipelineIndexerWithConfig creates a pipeline indexer with custom config.
+func NewPipelineIndexerWithConfig(outputDir string, tokenizer TokenizerFunc, cfg PipelineConfig) *PipelineIndexer {
+	numWorkers := cfg.NumWorkers
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
 	if numWorkers < 4 {
 		numWorkers = 4
 	}
-	if numWorkers > 16 {
-		numWorkers = 16
+	if numWorkers > 32 {
+		numWorkers = 32
 	}
 
-	// Segment size tuned for ~100MB memory per active segment
-	// 10k docs × ~10KB working set per doc = ~100MB
-	// Smaller segments = lower peak memory
-	segmentSize := 10000
+	segmentSize := cfg.SegmentSize
+	if segmentSize <= 0 {
+		if cfg.HighThroughput {
+			segmentSize = 100000 // 100k docs for high throughput
+		} else {
+			segmentSize = 10000 // 10k docs for low memory
+		}
+	}
+
+	bufferMult := cfg.ChannelBuffer
+	if bufferMult <= 0 {
+		if cfg.HighThroughput {
+			bufferMult = 500 // Large buffers for throughput
+		} else {
+			bufferMult = 100 // Small buffers for memory
+		}
+	}
 
 	pi := &PipelineIndexer{
 		SegmentSize:  segmentSize,
 		NumWorkers:   numWorkers,
 		OutputDir:    outputDir,
 		Tokenizer:    tokenizer,
-		docCh:        make(chan indexItem, numWorkers*100),       // Minimal buffer for low memory
-		tokenizedCh:  make(chan tokenizedDoc, numWorkers*50),     // Minimal buffer
-		segmentCh:    make(chan *diskSegment, 2),                 // Double-buffer segments
-		segments:     make([]*SegmentMeta, 0, 256),               // Many segments expected
+		docCh:        make(chan indexItem, numWorkers*bufferMult),
+		tokenizedCh:  make(chan tokenizedDoc, numWorkers*bufferMult/2),
+		segmentCh:    make(chan *diskSegment, 4), // More segment buffers
+		segments:     make([]*SegmentMeta, 0, 128),
 	}
 
 	// Create output directory

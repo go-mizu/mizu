@@ -199,21 +199,67 @@ func tokenizeQuery(query string) []string {
 	return terms
 }
 
-// Import indexes documents using ultra-high-throughput indexer.
+// fastTokenize is an optimized tokenizer for high throughput.
+func fastTokenize(text string) map[string]int {
+	termFreqs := make(map[string]int, 64)
+	data := []byte(text)
+	start := -1
+
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		isDelim := c <= ' ' || (c >= '!' && c <= '/') || (c >= ':' && c <= '@') ||
+			(c >= '[' && c <= '`') || (c >= '{' && c <= '~')
+
+		if isDelim {
+			if start >= 0 {
+				token := data[start:i]
+				if len(token) < 100 {
+					for j := 0; j < len(token); j++ {
+						if token[j] >= 'A' && token[j] <= 'Z' {
+							token[j] += 32
+						}
+					}
+					termFreqs[string(token)]++
+				}
+				start = -1
+			}
+		} else if start < 0 {
+			start = i
+		}
+	}
+
+	if start >= 0 {
+		token := data[start:]
+		if len(token) < 100 {
+			for j := 0; j < len(token); j++ {
+				if token[j] >= 'A' && token[j] <= 'Z' {
+					token[j] += 32
+				}
+			}
+			termFreqs[string(token)]++
+		}
+	}
+
+	return termFreqs
+}
+
+// Import indexes documents using PipelineIndexer with high-throughput config.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	// Create ultra indexer with optimal config
-	indexer := algo.NewUltraIndexer(algo.UltraConfig{
-		NumShards:  16,
-		BatchSize:  10000,
-		NumWorkers: 0, // Auto-detect
-		MaxDocs:    3000000,
+	// Create segments directory
+	segmentDir := filepath.Join(d.indexDir, "segments")
+	os.MkdirAll(segmentDir, 0755)
+	defer os.RemoveAll(segmentDir)
+
+	// Use PipelineIndexer with high-throughput config
+	indexer := algo.NewPipelineIndexerWithConfig(segmentDir, fastTokenize, algo.PipelineConfig{
+		HighThroughput: true,
 	})
 
-	// Collect documents into batches
+	// Collect doc IDs
 	d.docIDs = make([]string, 0, 100000)
-	batch := make([]algo.UltraDocument, 0, indexer.BatchSize)
 	var imported int64
-	batchNum := 0
+	batchSize := 10000
+	count := 0
 
 	for doc, err := range docs {
 		if err != nil {
@@ -229,31 +275,18 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		docNum := uint32(len(d.docIDs))
 		d.docIDs = append(d.docIDs, doc.ID)
 
-		batch = append(batch, algo.UltraDocument{
-			ID:   docNum,
-			Text: doc.Text,
-		})
+		// Feed to pipeline indexer
+		indexer.Add(docNum, doc.Text)
 
-		if len(batch) >= indexer.BatchSize {
-			indexer.ProcessBatch(batch)
-			batch = batch[:0]
-			batchNum++
-			imported = int64(indexer.DocCount())
+		imported++
+		count++
 
-			if progress != nil && batchNum%10 == 0 {
+		if count >= batchSize {
+			if progress != nil {
 				progress(imported, 0)
 			}
+			count = 0
 		}
-	}
-
-	// Process remaining batch
-	if len(batch) > 0 {
-		indexer.ProcessBatch(batch)
-	}
-
-	imported = int64(indexer.DocCount())
-	if progress != nil {
-		progress(imported, 0)
 	}
 
 	// Finalize to mmap index
