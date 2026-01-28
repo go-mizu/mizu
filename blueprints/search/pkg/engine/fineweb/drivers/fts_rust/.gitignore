@@ -1,0 +1,29 @@
+# Rust build artifacts
+fts_rust_core/target/
+
+# Cargo lock file (optional - include for binaries, exclude for libraries)
+# fts_rust_core/Cargo.lock
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS files
+.DS_Store
+
+# Test artifacts
+*.profraw
+*.profdata
+
+# Debug symbols
+*.dSYM/
+
+# Benchmark output
+*.bench
+
+# Coverage reports
+coverage/
+lcov.info

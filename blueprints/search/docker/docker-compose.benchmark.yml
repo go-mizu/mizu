@@ -1,0 +1,84 @@
+version: "3.8"
+
+# Full benchmark stack for fineweb search driver comparison
+# Usage: docker-compose -f docker-compose.benchmark.yml up -d
+#        docker-compose -f docker-compose.benchmark.yml run benchmark
+
+include:
+  - docker-compose.search.yml
+
+services:
+  benchmark:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.benchmark
+    container_name: fineweb-benchmark
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+      zinc:
+        condition: service_healthy
+    volumes:
+      # Mount data directory for parquet files
+      - ${DATA_DIR:-~/data/fineweb-2}:/data:ro
+      # Output directory for benchmark results
+      - benchmark_results:/results
+    environment:
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - ZINC_URL=http://zinc:4080
+      - ZINC_USER=admin
+      - ZINC_PASSWORD=admin123
+      - DATA_DIR=/data
+      - OUTPUT_DIR=/results
+    networks:
+      - default
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          memory: 4G
+
+  # Optional: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: fineweb-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+  # Optional: Grafana for visualization
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: fineweb-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+volumes:
+  benchmark_results:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

@@ -361,6 +361,13 @@ func (r *Router) syncCtx(c *Ctx, w http.ResponseWriter, req *http.Request) *Ctx 
 	if c == nil {
 		return newCtx(w, req, r.log)
 	}
+	// Only wrap if not already a statusCapturingWriter for this context
+	// to avoid double-wrapping which causes superfluous WriteHeader warnings
+	if sw, ok := w.(*statusCapturingWriter); ok && sw.ctx == c {
+		// Already wrapped with the same context, just update request
+		c.request = req
+		return c
+	}
 	// Wrap the new writer with status-capturing wrapper
 	wrapped := &statusCapturingWriter{ResponseWriter: w, ctx: c}
 	c.writer = wrapped

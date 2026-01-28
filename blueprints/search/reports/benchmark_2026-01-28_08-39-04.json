@@ -1,0 +1,304 @@
+{
+  "start_time": "2026-01-28T08:37:25.473448+07:00",
+  "end_time": "2026-01-28T08:39:04.627205+07:00",
+  "system": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 10,
+    "memory": "13.39 MB",
+    "go_version": "go1.25.6",
+    "document_count": 0
+  },
+  "results": [
+    {
+      "name": "fts_speed",
+      "indexing": {
+        "duration": 4648468667,
+        "docs_per_sec": 6082.863417093567,
+        "peak_memory": 783759792,
+        "total_docs": 28276,
+        "from_scratch": true
+      },
+      "index_size": 230793808,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 311042,
+        "p95": 1086916,
+        "p99": 1295125,
+        "max": 1301084,
+        "min": 3375,
+        "avg": 400492
+      },
+      "throughput": {
+        "qps": 2395.5,
+        "duration": 2000000000,
+        "total_ops": 4791,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 9788,
+          "duration": 2000000000,
+          "total_ops": 19576,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 8432.5,
+          "duration": 2000000000,
+          "total_ops": 16865,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 8239,
+          "duration": 2000000000,
+          "total_ops": 16478,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 8255.5,
+          "duration": 2000000000,
+          "total_ops": 16511,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 783759792,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    },
+    {
+      "name": "fts_compact",
+      "indexing": {
+        "duration": 4742894667,
+        "docs_per_sec": 5961.760061158027,
+        "peak_memory": 555386408,
+        "total_docs": 28276,
+        "from_scratch": true
+      },
+      "index_size": 94802492,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 1680375,
+        "p95": 5820083,
+        "p99": 6467416,
+        "max": 6593500,
+        "min": 255709,
+        "avg": 2414385
+      },
+      "throughput": {
+        "qps": 429.5,
+        "duration": 2000000000,
+        "total_ops": 859,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 2383,
+          "duration": 2000000000,
+          "total_ops": 4766,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 2349,
+          "duration": 2000000000,
+          "total_ops": 4698,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 2289,
+          "duration": 2000000000,
+          "total_ops": 4578,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 2207.5,
+          "duration": 2000000000,
+          "total_ops": 4415,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 555386408,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    },
+    {
+      "name": "fts_balanced",
+      "indexing": {
+        "duration": 5382543791,
+        "docs_per_sec": 5253.278207839108,
+        "peak_memory": 1117787696,
+        "total_docs": 28276,
+        "from_scratch": true
+      },
+      "index_size": 225998017,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 365459,
+        "p95": 2140083,
+        "p99": 2193708,
+        "max": 3146583,
+        "min": 2916,
+        "avg": 584573
+      },
+      "throughput": {
+        "qps": 1806,
+        "duration": 2000000000,
+        "total_ops": 3612,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 11187.5,
+          "duration": 2000000000,
+          "total_ops": 22375,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 10593,
+          "duration": 2000000000,
+          "total_ops": 21186,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 10865,
+          "duration": 2000000000,
+          "total_ops": 21730,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 10818,
+          "duration": 2000000000,
+          "total_ops": 21636,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 1117787696,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    },
+    {
+      "name": "fts_production",
+      "indexing": {
+        "duration": 4683336083,
+        "docs_per_sec": 6037.576526407916,
+        "peak_memory": 929270496,
+        "total_docs": 28276,
+        "from_scratch": true
+      },
+      "index_size": 159754829,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 580750,
+        "p95": 2638250,
+        "p99": 4547708,
+        "max": 4909958,
+        "min": 71125,
+        "avg": 952577
+      },
+      "throughput": {
+        "qps": 1182,
+        "duration": 2000000000,
+        "total_ops": 2364,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 5202,
+          "duration": 2000000000,
+          "total_ops": 10404,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 4776,
+          "duration": 2000000000,
+          "total_ops": 9552,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 4903.5,
+          "duration": 2000000000,
+          "total_ops": 9807,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 4803,
+          "duration": 2000000000,
+          "total_ops": 9606,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 929270496,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    },
+    {
+      "name": "porter",
+      "indexing": {
+        "duration": 27497318375,
+        "docs_per_sec": 1028.3184568902532,
+        "peak_memory": 2421103288,
+        "total_docs": 28276,
+        "from_scratch": true
+      },
+      "index_size": 621763283,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 554334,
+        "p95": 2506125,
+        "p99": 3087792,
+        "max": 3206625,
+        "min": 6417,
+        "avg": 982881
+      },
+      "throughput": {
+        "qps": 820.5,
+        "duration": 2000000000,
+        "total_ops": 1641,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 3258,
+          "duration": 2000000000,
+          "total_ops": 6516,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 3410.5,
+          "duration": 2000000000,
+          "total_ops": 6821,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 3347,
+          "duration": 2000000000,
+          "total_ops": 6694,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 3122,
+          "duration": 2000000000,
+          "total_ops": 6244,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 2421103288,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "start_time": "2026-01-28T16:50:34.929468+07:00",
+  "end_time": "2026-01-28T16:54:05.049498+07:00",
+  "system": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 10,
+    "memory": "17.89 MB",
+    "go_version": "go1.25.6",
+    "document_count": 0
+  },
+  "results": [
+    {
+      "name": "fts_lowmem",
+      "indexing": {
+        "duration": 184576627708,
+        "docs_per_sec": 12563.88757773089,
+        "peak_memory": 13314457280,
+        "total_docs": 2319000,
+        "from_scratch": true
+      },
+      "index_size": 4720585248,
+      "doc_count": 2319000,
+      "latency": {
+        "p50": 86964875,
+        "p95": 377460583,
+        "p99": 570640041,
+        "max": 582687667,
+        "min": 87417,
+        "avg": 153273094
+      },
+      "throughput": {
+        "qps": 5.5,
+        "duration": 2000000000,
+        "total_ops": 11,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 20,
+          "duration": 2000000000,
+          "total_ops": 40,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 21,
+          "duration": 2000000000,
+          "total_ops": 42,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 32.5,
+          "duration": 2000000000,
+          "total_ops": 65,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 40,
+          "duration": 2000000000,
+          "total_ops": 80,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 13314457280,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    }
+  ]
+}

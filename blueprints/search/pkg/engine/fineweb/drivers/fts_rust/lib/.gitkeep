@@ -1,0 +1,2 @@
+# This directory contains the compiled Rust static library.
+# Run `make rust` to build it.

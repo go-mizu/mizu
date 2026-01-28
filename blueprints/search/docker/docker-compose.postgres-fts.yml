@@ -1,0 +1,217 @@
+# PostgreSQL Full-Text Search Extensions for fineweb benchmark suite
+# This file provides separate containers for each PostgreSQL FTS extension
+#
+# Usage:
+#   docker-compose -f docker-compose.postgres-fts.yml up -d
+#   docker-compose -f docker-compose.postgres-fts.yml up -d paradedb pgroonga
+#
+# Available services:
+#   - paradedb:       ParadeDB with pg_search (BM25 via Tantivy)
+#   - pgroonga:       PostgreSQL with PGroonga (Groonga-based multilingual FTS)
+#   - postgres-trgm:  PostgreSQL 18 with pg_trgm enabled
+#   - postgres-native: PostgreSQL 18 baseline (native tsvector/GIN)
+#
+# Note: pg_textsearch is pre-release and requires building from source.
+#       A Dockerfile is provided in docker/pg_textsearch/
+
+services:
+  # ============================================
+  # ParadeDB - pg_search with BM25 (Tantivy)
+  # ============================================
+  paradedb:
+    image: paradedb/paradedb:latest
+    container_name: fineweb-paradedb
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=fineweb
+      - POSTGRES_USER=fineweb
+      - POSTGRES_PASSWORD=fineweb
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+    volumes:
+      - paradedb_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fineweb -d fineweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # ============================================
+  # PGroonga - Groonga-based multilingual FTS
+  # ============================================
+  pgroonga:
+    image: groonga/pgroonga:latest-debian-17
+    container_name: fineweb-pgroonga
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_DB=fineweb
+      - POSTGRES_USER=fineweb
+      - POSTGRES_PASSWORD=fineweb
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+    volumes:
+      - pgroonga_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fineweb -d fineweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # ============================================
+  # PostgreSQL with pg_trgm (trigram similarity)
+  # Uses native PostgreSQL 18 with pg_trgm extension
+  # ============================================
+  postgres-trgm:
+    image: postgres:18
+    container_name: fineweb-postgres-trgm
+    ports:
+      - "5435:5432"
+    environment:
+      - POSTGRES_DB=fineweb
+      - POSTGRES_USER=fineweb
+      - POSTGRES_PASSWORD=fineweb
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+    volumes:
+      - postgres_trgm_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fineweb -d fineweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # ============================================
+  # PostgreSQL Native (baseline for comparison)
+  # Uses native tsvector/ts_rank with GIN index
+  # ============================================
+  postgres-native:
+    image: postgres:18
+    container_name: fineweb-postgres-native
+    ports:
+      - "5436:5432"
+    environment:
+      - POSTGRES_DB=fineweb
+      - POSTGRES_USER=fineweb
+      - POSTGRES_PASSWORD=fineweb
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+    volumes:
+      - postgres_native_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fineweb -d fineweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # ============================================
+  # pg_textsearch (Tiger Data) - Build from source
+  # Note: Pre-release, requires custom build
+  # Uncomment once stable image is available
+  # ============================================
+  # pg-textsearch:
+  #   build:
+  #     context: ./pg_textsearch
+  #     dockerfile: Dockerfile
+  #   container_name: fineweb-pg-textsearch
+  #   ports:
+  #     - "5437:5432"
+  #   environment:
+  #     - POSTGRES_DB=fineweb
+  #     - POSTGRES_USER=fineweb
+  #     - POSTGRES_PASSWORD=fineweb
+  #   command: >
+  #     postgres
+  #     -c shared_buffers=1GB
+  #     -c effective_cache_size=3GB
+  #     -c maintenance_work_mem=512MB
+  #     -c work_mem=64MB
+  #   volumes:
+  #     - pg_textsearch_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U fineweb -d fineweb"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 4G
+  #       reservations:
+  #         memory: 1G
+
+volumes:
+  paradedb_data:
+    driver: local
+  pgroonga_data:
+    driver: local
+  postgres_trgm_data:
+    driver: local
+  postgres_native_data:
+    driver: local
+  # pg_textsearch_data:
+  #   driver: local
+
+networks:
+  default:
+    name: fineweb-search
+    external: true

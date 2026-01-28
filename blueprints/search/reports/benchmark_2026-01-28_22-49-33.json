@@ -1,0 +1,130 @@
+{
+  "start_time": "2026-01-28T22:45:53.937138+07:00",
+  "end_time": "2026-01-28T22:49:33.134315+07:00",
+  "system": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 10,
+    "memory": "17.89 MB",
+    "go_version": "go1.25.6",
+    "document_count": 0
+  },
+  "results": [
+    {
+      "name": "fts_rust",
+      "indexing": {
+        "duration": 44344782000,
+        "docs_per_sec": 52294.766044852804,
+        "peak_memory": 1834501080,
+        "total_docs": 2319000,
+        "from_scratch": true
+      },
+      "index_size": 1408553073,
+      "doc_count": 2319000,
+      "latency": {
+        "p50": 9204209,
+        "p95": 80361750,
+        "p99": 94164417,
+        "max": 94379583,
+        "min": 1542,
+        "avg": 26566773
+      },
+      "throughput": {
+        "qps": 37,
+        "duration": 2000000000,
+        "total_ops": 74,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 96,
+          "duration": 2000000000,
+          "total_ops": 192,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 103,
+          "duration": 2000000000,
+          "total_ops": 206,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 44.5,
+          "duration": 2000000000,
+          "total_ops": 89,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 80,
+          "duration": 2000000000,
+          "total_ops": 160,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 1834501080,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    },
+    {
+      "name": "fts_lowmem",
+      "indexing": {
+        "duration": 138369880875,
+        "docs_per_sec": 16759.42759605993,
+        "peak_memory": 3821563792,
+        "total_docs": 2319000,
+        "from_scratch": true
+      },
+      "index_size": 4720585248,
+      "doc_count": 2319000,
+      "latency": {
+        "p50": 72227625,
+        "p95": 327129542,
+        "p99": 507029625,
+        "max": 518328709,
+        "min": 72916,
+        "avg": 136226249
+      },
+      "throughput": {
+        "qps": 6,
+        "duration": 2000000000,
+        "total_ops": 12,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 25,
+          "duration": 2000000000,
+          "total_ops": 50,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 30,
+          "duration": 2000000000,
+          "total_ops": 60,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 40,
+          "duration": 2000000000,
+          "total_ops": 80,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 42,
+          "duration": 2000000000,
+          "total_ops": 84,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 3821563792,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    }
+  ]
+}

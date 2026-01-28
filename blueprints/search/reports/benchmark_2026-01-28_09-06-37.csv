@@ -1,0 +1,5 @@
+Driver,Status,Index Time (s),Index Size (MB),p50 (ms),p95 (ms),p99 (ms),Avg (ms),QPS (1),QPS (10),QPS (50),QPS (100),Cold Start (ms),Peak Memory (MB)
+fts_speed,OK,4.08,220.10,0.309,1.111,1.206,0.392,2596,10396,,,,747.26
+fts_compact,OK,4.53,90.41,1.326,4.701,6.086,2.157,456,2543,,,,680.26
+fts_balanced,OK,4.97,215.53,0.333,1.418,2.167,0.505,2022,11854,,,,862.31
+fts_production,OK,4.61,152.35,0.467,1.931,3.709,0.797,1290,5656,,,,617.18

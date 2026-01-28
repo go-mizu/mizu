@@ -1,0 +1,72 @@
+{
+  "start_time": "2026-01-28T22:36:24.780758+07:00",
+  "end_time": "2026-01-28T22:37:25.39154+07:00",
+  "system": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 10,
+    "memory": "13.64 MB",
+    "go_version": "go1.25.6",
+    "document_count": 0
+  },
+  "results": [
+    {
+      "name": "fts_rust",
+      "indexing": {
+        "duration": 45512288458,
+        "docs_per_sec": 50953.27171122229,
+        "peak_memory": 1960259544,
+        "total_docs": 2319000,
+        "from_scratch": true
+      },
+      "index_size": 1408553073,
+      "doc_count": 2319000,
+      "latency": {
+        "p50": 9190833,
+        "p95": 82554500,
+        "p99": 96394458,
+        "max": 97089542,
+        "min": 3042,
+        "avg": 27103207
+      },
+      "throughput": {
+        "qps": 37,
+        "duration": 2000000000,
+        "total_ops": 74,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 89,
+          "duration": 2000000000,
+          "total_ops": 178,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 89,
+          "duration": 2000000000,
+          "total_ops": 178,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 40.5,
+          "duration": 2000000000,
+          "total_ops": 81,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 80,
+          "duration": 2000000000,
+          "total_ops": 160,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 1960259544,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    }
+  ]
+}

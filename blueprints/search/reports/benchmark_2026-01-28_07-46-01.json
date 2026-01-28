@@ -1,0 +1,256 @@
+{
+  "start_time": "2026-01-28T07:44:54.458397+07:00",
+  "end_time": "2026-01-28T07:46:01.628475+07:00",
+  "system": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 10,
+    "memory": "13.89 MB",
+    "go_version": "go1.25.6",
+    "document_count": 0
+  },
+  "results": [
+    {
+      "name": "duckdb",
+      "index_size": 310128640,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 6972459,
+        "p95": 49126375,
+        "p99": 75386750,
+        "max": 134562333,
+        "min": 2672667,
+        "avg": 14151074
+      },
+      "throughput": {
+        "qps": 87.5,
+        "duration": 2000000000,
+        "total_ops": 175,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 320.5,
+          "duration": 2000000000,
+          "total_ops": 641,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 323,
+          "duration": 2000000000,
+          "total_ops": 646,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 402.5,
+          "duration": 2000000000,
+          "total_ops": 805,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 399,
+          "duration": 2000000000,
+          "total_ops": 798,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0
+    },
+    {
+      "name": "sqlite",
+      "index_size": 275537920,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 8498334,
+        "p95": 59566250,
+        "p99": 371582750,
+        "max": 532120792,
+        "min": 73000,
+        "avg": 32149429
+      },
+      "throughput": {
+        "qps": 74.5,
+        "duration": 2000000000,
+        "total_ops": 149,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 95,
+          "duration": 2000000000,
+          "total_ops": 190,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 40,
+          "duration": 2000000000,
+          "total_ops": 80,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 60,
+          "duration": 2000000000,
+          "total_ops": 120,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 72.5,
+          "duration": 2000000000,
+          "total_ops": 145,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0
+    },
+    {
+      "name": "bleve",
+      "index_size": 742769393,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 1329709,
+        "p95": 8666709,
+        "p99": 10404583,
+        "max": 37350084,
+        "min": 127166,
+        "avg": 3280318
+      },
+      "throughput": {
+        "qps": 993,
+        "duration": 2000000000,
+        "total_ops": 1986,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 2714,
+          "duration": 2000000000,
+          "total_ops": 5428,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 2682,
+          "duration": 2000000000,
+          "total_ops": 5364,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 2659,
+          "duration": 2000000000,
+          "total_ops": 5318,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 2694.5,
+          "duration": 2000000000,
+          "total_ops": 5389,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0
+    },
+    {
+      "name": "bluge",
+      "indexing": {
+        "duration": 8878379084,
+        "docs_per_sec": 3184.8155764104563,
+        "peak_memory": 1757313536,
+        "total_docs": 28276,
+        "from_scratch": true
+      },
+      "index_size": 0,
+      "doc_count": 0,
+      "latency": {
+        "p50": 1919125,
+        "p95": 6013625,
+        "p99": 6390708,
+        "max": 7196416,
+        "min": 88083,
+        "avg": 2140070
+      },
+      "throughput": {
+        "qps": 656.5,
+        "duration": 2000000000,
+        "total_ops": 1313,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 1951.5,
+          "duration": 2000000000,
+          "total_ops": 3903,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 1849,
+          "duration": 2000000000,
+          "total_ops": 3698,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 1894.5,
+          "duration": 2000000000,
+          "total_ops": 3789,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 1775.5,
+          "duration": 2000000000,
+          "total_ops": 3551,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0,
+      "memory": {
+        "indexing_peak": 1757313536,
+        "search_idle": 0,
+        "search_peak": 0
+      }
+    },
+    {
+      "name": "porter",
+      "index_size": 621763272,
+      "doc_count": 28276,
+      "latency": {
+        "p50": 569500,
+        "p95": 2406208,
+        "p99": 3054042,
+        "max": 3182459,
+        "min": 6084,
+        "avg": 970334
+      },
+      "throughput": {
+        "qps": 1017.5,
+        "duration": 2000000000,
+        "total_ops": 2035,
+        "goroutines": 1
+      },
+      "concurrency": {
+        "10": {
+          "qps": 3707.5,
+          "duration": 2000000000,
+          "total_ops": 7415,
+          "goroutines": 10
+        },
+        "20": {
+          "qps": 3679,
+          "duration": 2000000000,
+          "total_ops": 7358,
+          "goroutines": 20
+        },
+        "40": {
+          "qps": 3541,
+          "duration": 2000000000,
+          "total_ops": 7082,
+          "goroutines": 40
+        },
+        "80": {
+          "qps": 3348.5,
+          "duration": 2000000000,
+          "total_ops": 6697,
+          "goroutines": 80
+        }
+      },
+      "cold_start": 0
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+[defines]
+
+[export]
+include = ["FtsIndex", "FtsHit", "FtsSearchResult", "FtsMemoryStats"]
+exclude = []
+
+[export.rename]
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+
+[fn]
+rename_args = "None"
+
+[struct]
+rename_fields = "None"
+
+[layout]
+packed = "None"
+aligned_n = "None"
+
+[parse]
+parse_deps = false
+include = []
+exclude = []
+
+[parse.expand]
+crates = ["fts_rust_core"]
+all_features = false
+default_features = true
+features = []
+
+[macro_expansion]
+bitflags = true

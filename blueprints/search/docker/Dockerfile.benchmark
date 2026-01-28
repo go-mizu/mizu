@@ -1,0 +1,45 @@
+# Dockerfile for fineweb benchmark runner
+FROM golang:1.23-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git gcc musl-dev
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build benchmark CLI
+RUN CGO_ENABLED=1 go build -o /benchmark ./pkg/engine/fineweb/benchmark/cmd/
+
+# Runtime stage
+FROM alpine:3.19
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata curl
+
+WORKDIR /app
+
+# Copy binary
+COPY --from=builder /benchmark /usr/local/bin/benchmark
+
+# Create directories
+RUN mkdir -p /data /results
+
+# Default environment
+ENV DATA_DIR=/data
+ENV OUTPUT_DIR=/results
+ENV MEILISEARCH_URL=http://meilisearch:7700
+ENV ZINC_URL=http://zinc:4080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Default command
+ENTRYPOINT ["benchmark"]
+CMD ["--all", "--output=/results/report.md"]
