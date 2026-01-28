@@ -257,6 +257,7 @@ func (pi *PipelineIndexer) startWriteStage() {
 }
 
 // writeSegment writes a segment to disk and returns metadata.
+// Uses FastBinaryWriter for zero-reflection encoding.
 func (pi *PipelineIndexer) writeSegment(seg *diskSegment) *SegmentMeta {
 	path := filepath.Join(pi.OutputDir, fmt.Sprintf("seg_%05d.bin", seg.id))
 
@@ -267,10 +268,11 @@ func (pi *PipelineIndexer) writeSegment(seg *diskSegment) *SegmentMeta {
 	defer f.Close()
 
 	w := bufio.NewWriterSize(f, 4*1024*1024) // 4MB buffer
+	fw := NewFastBinaryWriter(w)
 
 	// Write header
-	binary.Write(w, binary.LittleEndian, uint32(seg.numDocs))
-	binary.Write(w, binary.LittleEndian, uint32(len(seg.termPostings)))
+	fw.WriteUint32(uint32(seg.numDocs))
+	fw.WriteUint32(uint32(len(seg.termPostings)))
 
 	// Collect and sort terms for consistent ordering
 	terms := make([]string, 0, len(seg.termPostings))
@@ -292,13 +294,14 @@ func (pi *PipelineIndexer) writeSegment(seg *diskSegment) *SegmentMeta {
 	// Write terms with their posting offsets
 	for _, term := range terms {
 		termBytes := []byte(term)
-		binary.Write(w, binary.LittleEndian, uint16(len(termBytes)))
-		w.Write(termBytes)
-		binary.Write(w, binary.LittleEndian, uint32(len(seg.termPostings[term])))
-		binary.Write(w, binary.LittleEndian, termOffsets[term])
+		fw.WriteUint16(uint16(len(termBytes)))
+		fw.WriteBytes(termBytes)
+		fw.WriteUint32(uint32(len(seg.termPostings[term])))
+		fw.WriteInt64(termOffsets[term])
 	}
 
-	// Write posting lists (sorted by docID for efficient merge)
+	// Write posting lists using batched writer
+	batchWriter := NewBatchPostingWriter(w, 64*1024) // 64KB batch
 	for _, term := range terms {
 		postings := seg.termPostings[term]
 		// Sort postings by docID
@@ -306,10 +309,10 @@ func (pi *PipelineIndexer) writeSegment(seg *diskSegment) *SegmentMeta {
 			return postings[i].DocID < postings[j].DocID
 		})
 		for _, p := range postings {
-			binary.Write(w, binary.LittleEndian, p.DocID)
-			binary.Write(w, binary.LittleEndian, p.Freq)
+			batchWriter.WritePosting(p.DocID, p.Freq)
 		}
 	}
+	batchWriter.Flush()
 
 	// Write doc lengths
 	docIDs := make([]uint32, 0, len(seg.docLens))
@@ -318,10 +321,10 @@ func (pi *PipelineIndexer) writeSegment(seg *diskSegment) *SegmentMeta {
 	}
 	sort.Slice(docIDs, func(i, j int) bool { return docIDs[i] < docIDs[j] })
 
-	binary.Write(w, binary.LittleEndian, uint32(len(docIDs)))
+	fw.WriteUint32(uint32(len(docIDs)))
 	for _, docID := range docIDs {
-		binary.Write(w, binary.LittleEndian, docID)
-		binary.Write(w, binary.LittleEndian, uint16(seg.docLens[docID]))
+		fw.WriteUint32(docID)
+		fw.WriteUint16(uint16(seg.docLens[docID]))
 	}
 
 	w.Flush()

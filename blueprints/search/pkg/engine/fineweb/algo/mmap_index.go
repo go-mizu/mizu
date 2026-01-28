@@ -587,6 +587,7 @@ func openStreamingSegment(path string) (*streamingSegment, error) {
 
 // readNextTerm reads the next term's postings in sequence.
 // Returns term name, docIDs, freqs. Must be called in term order.
+// Uses bulk read for better I/O efficiency.
 func (s *streamingSegment) readNextTerm() (string, []uint32, []uint16) {
 	if s.currentTermIdx >= len(s.terms) {
 		return "", nil, nil
@@ -595,12 +596,23 @@ func (s *streamingSegment) readNextTerm() (string, []uint32, []uint16) {
 	entry := s.terms[s.currentTermIdx]
 	s.currentTermIdx++
 
+	// Allocate arrays
 	docIDs := make([]uint32, entry.count)
 	freqs := make([]uint16, entry.count)
 
+	// Bulk read all postings at once (6 bytes per posting)
+	postingSize := int(entry.count) * 6
+	buf := make([]byte, postingSize)
+	io.ReadFull(s.reader, buf)
+
+	// Parse postings from buffer (much faster than binary.Read)
 	for i := uint32(0); i < entry.count; i++ {
-		binary.Read(s.reader, binary.LittleEndian, &docIDs[i])
-		binary.Read(s.reader, binary.LittleEndian, &freqs[i])
+		offset := int(i) * 6
+		docIDs[i] = uint32(buf[offset]) |
+			uint32(buf[offset+1])<<8 |
+			uint32(buf[offset+2])<<16 |
+			uint32(buf[offset+3])<<24
+		freqs[i] = uint16(buf[offset+4]) | uint16(buf[offset+5])<<8
 	}
 
 	return entry.term, docIDs, freqs
@@ -656,14 +668,20 @@ func (s *streamingSegment) finishReadingPostings() {
 		s.reader.Discard(int(skipBytes))
 	}
 
-	// Read doc lengths
-	var docLenCount uint32
-	binary.Read(s.reader, binary.LittleEndian, &docLenCount)
+	// Read doc lengths using bulk read
+	var countBuf [4]byte
+	io.ReadFull(s.reader, countBuf[:])
+	docLenCount := uint32(countBuf[0]) | uint32(countBuf[1])<<8 | uint32(countBuf[2])<<16 | uint32(countBuf[3])<<24
+
+	// Bulk read all doc lengths (6 bytes each: 4 docID + 2 length)
+	bulkSize := int(docLenCount) * 6
+	buf := make([]byte, bulkSize)
+	io.ReadFull(s.reader, buf)
+
 	for i := uint32(0); i < docLenCount; i++ {
-		var docID uint32
-		var length uint16
-		binary.Read(s.reader, binary.LittleEndian, &docID)
-		binary.Read(s.reader, binary.LittleEndian, &length)
+		offset := int(i) * 6
+		docID := uint32(buf[offset]) | uint32(buf[offset+1])<<8 | uint32(buf[offset+2])<<16 | uint32(buf[offset+3])<<24
+		length := uint16(buf[offset+4]) | uint16(buf[offset+5])<<8
 		s.docLens[docID] = length
 	}
 }
@@ -715,7 +733,8 @@ func (m *TrueStreamingMerger) Merge() error {
 		return err
 	}
 
-	postingBuf := make([]IndexPosting, 0, 10000) // Reusable buffer
+	// Reusable buffers to reduce allocations
+	postingBuf := make([]IndexPosting, 0, 50000)
 
 	for _, term := range terms {
 		postingBuf = postingBuf[:0]
@@ -735,21 +754,20 @@ func (m *TrueStreamingMerger) Merge() error {
 			continue
 		}
 
-		// Sort by docID
+		// Sort by docID using stdlib sort (highly optimized)
 		sort.Slice(postingBuf, func(i, j int) bool {
 			return postingBuf[i].DocID < postingBuf[j].DocID
 		})
 
 		// Extract sorted arrays
-		sortedDocIDs := make([]uint32, len(postingBuf))
-		sortedFreqs := make([]uint16, len(postingBuf))
+		docIDs := make([]uint32, len(postingBuf))
+		freqs := make([]uint16, len(postingBuf))
 		for i, p := range postingBuf {
-			sortedDocIDs[i] = p.DocID
-			sortedFreqs[i] = p.Freq
+			docIDs[i] = p.DocID
+			freqs[i] = p.Freq
 		}
 
-		// Placeholder IDF (will compute after we know total docs)
-		writer.AddTerm(term, sortedDocIDs, sortedFreqs, 0)
+		writer.AddTerm(term, docIDs, freqs, 0)
 	}
 
 	// Phase 3: Finish reading segments to get doc lengths
