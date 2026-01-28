@@ -246,12 +246,11 @@ pub unsafe extern "C" fn fts_index_batch_binary(
     let bytes = slice::from_raw_parts(data, data_len);
 
     // Phase 1: Parse to find document boundaries (fast, sequential)
-    let mut doc_offsets = Vec::with_capacity(doc_count as usize);
+    // Pre-allocate with exact capacity
+    let mut doc_offsets: Vec<(usize, usize, usize, usize)> = Vec::with_capacity(doc_count as usize);
     let mut pos = 0;
 
     while pos + 8 <= bytes.len() && doc_offsets.len() < doc_count as usize {
-        let start = pos;
-
         // Read id length
         if pos + 4 > bytes.len() {
             break;
@@ -259,7 +258,8 @@ pub unsafe extern "C" fn fts_index_batch_binary(
         let id_len =
             u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
                 as usize;
-        pos += 4 + id_len;
+        let id_start = pos + 4;
+        pos = id_start + id_len;
 
         // Read text length
         if pos + 4 > bytes.len() {
@@ -268,47 +268,28 @@ pub unsafe extern "C" fn fts_index_batch_binary(
         let text_len =
             u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
                 as usize;
-        pos += 4 + text_len;
+        let text_start = pos + 4;
+        pos = text_start + text_len;
 
-        doc_offsets.push(start);
+        // Store (id_start, id_len, text_start, text_len) - avoid reparsing
+        doc_offsets.push((id_start, id_len, text_start, text_len));
     }
 
-    // Phase 2: Parse documents in parallel
+    // Phase 2: Parse documents in parallel with zero-copy where possible
+    // Use chunks to reduce allocation overhead
+    const PARSE_CHUNK_SIZE: usize = 10000;
     let docs: Vec<Document> = doc_offsets
-        .par_iter()
-        .filter_map(|&start| {
-            let mut pos = start;
-
-            // Read id
-            if pos + 4 > bytes.len() {
-                return None;
-            }
-            let id_len =
-                u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
-                    as usize;
-            pos += 4;
-
-            if pos + id_len > bytes.len() {
-                return None;
-            }
-            let id = std::str::from_utf8(&bytes[pos..pos + id_len]).ok()?.to_string();
-            pos += id_len;
-
-            // Read text
-            if pos + 4 > bytes.len() {
-                return None;
-            }
-            let text_len =
-                u32::from_le_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
-                    as usize;
-            pos += 4;
-
-            if pos + text_len > bytes.len() {
-                return None;
-            }
-            let text = std::str::from_utf8(&bytes[pos..pos + text_len]).ok()?.to_string();
-
-            Some(Document::new(id, text))
+        .par_chunks(PARSE_CHUNK_SIZE)
+        .flat_map(|chunk| {
+            chunk.iter().filter_map(|&(id_start, id_len, text_start, text_len)| {
+                if id_start + id_len > bytes.len() || text_start + text_len > bytes.len() {
+                    return None;
+                }
+                // Use unsafe from_utf8_unchecked for speed - we trust the Go side sends valid UTF-8
+                let id = std::str::from_utf8(&bytes[id_start..id_start + id_len]).ok()?;
+                let text = std::str::from_utf8(&bytes[text_start..text_start + text_len]).ok()?;
+                Some(Document::new(id.to_string(), text.to_string()))
+            }).collect::<Vec<_>>()
         })
         .collect();
 
