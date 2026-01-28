@@ -1,5 +1,5 @@
-// Package zinc provides a Zinc-based driver for fineweb full-text search.
-package zinc
+// Package quickwit provides a QuickWit-based driver for fineweb full-text search.
+package quickwit
 
 import (
 	"bytes"
@@ -10,35 +10,34 @@ import (
 	"iter"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb"
 )
 
 func init() {
-	fineweb.Register("zinc", func(cfg fineweb.DriverConfig) (fineweb.Driver, error) {
+	fineweb.Register("quickwit", func(cfg fineweb.DriverConfig) (fineweb.Driver, error) {
 		return New(cfg)
 	})
 }
 
-// DefaultHost is the default Zinc address.
-const DefaultHost = "http://localhost:4080"
+// DefaultHost is the default QuickWit address.
+const DefaultHost = "http://localhost:7280"
 
 // DefaultIndex is the default index name.
 const DefaultIndex = "fineweb"
 
-// Driver implements the fineweb.Driver interface using Zinc.
+// Driver implements the fineweb.Driver interface using QuickWit.
 type Driver struct {
 	client    *http.Client
 	host      string
-	username  string
-	password  string
 	indexName string
 	language  string
 }
 
-// ZincDocument is the document structure for Zinc.
-type ZincDocument struct {
+// Document is the document structure for QuickWit.
+type Document struct {
 	ID            string  `json:"id"`
 	URL           string  `json:"url"`
 	Text          string  `json:"text"`
@@ -48,22 +47,18 @@ type ZincDocument struct {
 	LanguageScore float64 `json:"language_score"`
 }
 
-// New creates a new Zinc driver.
+// New creates a new QuickWit driver.
 func New(cfg fineweb.DriverConfig) (*Driver, error) {
 	host := cfg.GetString("host", DefaultHost)
-	username := cfg.GetString("username", "admin")
-	password := cfg.GetString("password", "admin123")
 
 	indexName := cfg.GetString("index", DefaultIndex)
 	if cfg.Language != "" {
-		indexName = cfg.Language
+		indexName = strings.ToLower(strings.ReplaceAll(cfg.Language, "_", "-"))
 	}
 
 	d := &Driver{
 		client:    &http.Client{Timeout: 2 * time.Minute}, // Longer timeout for bulk ops
 		host:      host,
-		username:  username,
-		password:  password,
 		indexName: indexName,
 		language:  cfg.Language,
 	}
@@ -78,11 +73,10 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 
 func (d *Driver) ensureIndex() error {
 	// Check if index exists
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/index/%s", d.host, d.indexName), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/indexes/%s", d.host, d.indexName), nil)
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(d.username, d.password)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -94,19 +88,36 @@ func (d *Driver) ensureIndex() error {
 		return nil // Index exists
 	}
 
-	// Create index with simple settings (Zinc auto-detects schema)
-	indexSettings := map[string]any{
-		"name":         d.indexName,
-		"storage_type": "disk",
+	// Create index with QuickWit JSON config
+	indexConfig := map[string]any{
+		"version":  "0.7",
+		"index_id": d.indexName,
+		"doc_mapping": map[string]any{
+			"field_mappings": []map[string]any{
+				{"name": "id", "type": "text", "fast": true, "stored": true},
+				{"name": "url", "type": "text", "stored": true},
+				{"name": "text", "type": "text", "tokenizer": "default", "stored": true, "record": "position"},
+				{"name": "dump", "type": "text", "stored": true},
+				{"name": "date", "type": "text", "stored": true},
+				{"name": "language", "type": "text", "stored": true},
+				{"name": "language_score", "type": "f64", "fast": true, "stored": true},
+			},
+			"mode": "lenient",
+		},
+		"search_settings": map[string]any{
+			"default_search_fields": []string{"text"},
+		},
+		"indexing_settings": map[string]any{
+			"commit_timeout_secs": 30,
+		},
 	}
 
-	body, _ := json.Marshal(indexSettings)
-	req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/index", d.host), bytes.NewReader(body))
+	body, _ := json.Marshal(indexConfig)
+	req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/indexes", d.host), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(d.username, d.password)
 
 	resp, err = d.client.Do(req)
 	if err != nil {
@@ -116,6 +127,10 @@ func (d *Driver) ensureIndex() error {
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
+		// Ignore "already exists" error
+		if strings.Contains(string(respBody), "already exists") {
+			return nil
+		}
 		return fmt.Errorf("failed to create index (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -124,15 +139,15 @@ func (d *Driver) ensureIndex() error {
 
 // Name returns the driver name.
 func (d *Driver) Name() string {
-	return "zinc"
+	return "quickwit"
 }
 
 // Info returns driver metadata.
 func (d *Driver) Info() *fineweb.DriverInfo {
 	return &fineweb.DriverInfo{
-		Name:        "zinc",
-		Description: "Zinc search engine (Elasticsearch compatible)",
-		Features:    []string{"elasticsearch-compatible", "lightweight", "go-native"},
+		Name:        "quickwit",
+		Description: "QuickWit sub-second search on cloud storage",
+		Features:    []string{"cloud-native", "sub-second-search", "schemaless", "s3-compatible"},
 		External:    true,
 	}
 }
@@ -141,27 +156,21 @@ func (d *Driver) Info() *fineweb.DriverInfo {
 func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*fineweb.SearchResult, error) {
 	start := time.Now()
 
-	// Build Zinc search query (Elasticsearch compatible)
-	searchQuery := map[string]interface{}{
-		"search_type": "match",
-		"query": map[string]interface{}{
-			"term":  query,
-			"field": "text",
-		},
-		"from":       offset,
-		"max_results": limit,
-		"_source":    []string{"id", "url", "text", "dump", "date", "language", "language_score"},
+	// Build QuickWit search query
+	searchQuery := map[string]any{
+		"query":        query,
+		"max_hits":     limit,
+		"start_offset": offset,
 	}
 
 	body, _ := json.Marshal(searchQuery)
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/%s/_search", d.host, d.indexName),
+		fmt.Sprintf("%s/api/v1/%s/search", d.host, d.indexName),
 		bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(d.username, d.password)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -171,61 +180,50 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("search failed: %s", string(respBody))
+		return nil, fmt.Errorf("search failed (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var result struct {
-		Hits struct {
-			Total struct {
-				Value int64 `json:"value"`
-			} `json:"total"`
-			Hits []struct {
-				ID     string  `json:"_id"`
-				Score  float64 `json:"_score"`
-				Source struct {
-					ID            string  `json:"id"`
-					URL           string  `json:"url"`
-					Text          string  `json:"text"`
-					Dump          string  `json:"dump"`
-					Date          string  `json:"date"`
-					Language      string  `json:"language"`
-					LanguageScore float64 `json:"language_score"`
-				} `json:"_source"`
-			} `json:"hits"`
-		} `json:"hits"`
+		NumHits           int64             `json:"num_hits"`
+		Hits              []json.RawMessage `json:"hits"`
+		ElapsedTimeMicros int64             `json:"elapsed_time_micros"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	docs := make([]fineweb.Document, 0, len(result.Hits.Hits))
-	for _, hit := range result.Hits.Hits {
+	docs := make([]fineweb.Document, 0, len(result.Hits))
+	for i, hit := range result.Hits {
+		var doc Document
+		if err := json.Unmarshal(hit, &doc); err != nil {
+			continue
+		}
 		docs = append(docs, fineweb.Document{
-			ID:            hit.Source.ID,
-			URL:           hit.Source.URL,
-			Text:          hit.Source.Text,
-			Dump:          hit.Source.Dump,
-			Date:          hit.Source.Date,
-			Language:      hit.Source.Language,
-			LanguageScore: hit.Source.LanguageScore,
-			Score:         hit.Score,
+			ID:            doc.ID,
+			URL:           doc.URL,
+			Text:          doc.Text,
+			Dump:          doc.Dump,
+			Date:          doc.Date,
+			Language:      doc.Language,
+			LanguageScore: doc.LanguageScore,
+			Score:         1.0 / float64(i+1), // QuickWit returns results in relevance order
 		})
 	}
 
 	return &fineweb.SearchResult{
 		Documents: docs,
 		Duration:  time.Since(start),
-		Method:    "zinc",
-		Total:     result.Hits.Total.Value,
+		Method:    "quickwit",
+		Total:     result.NumHits,
 	}, nil
 }
 
 // Import ingests documents from an iterator.
-// Uses large batches for high throughput.
+// Uses NDJSON format for bulk indexing.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	batchSize := 5000 // Larger batches for better throughput
-	batch := make([]ZincDocument, 0, batchSize)
+	batchSize := 100 // Smaller batch size due to large document content
+	batch := make([]Document, 0, batchSize)
 	var imported int64
 
 	for doc, err := range docs {
@@ -239,7 +237,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		batch = append(batch, ZincDocument{
+		batch = append(batch, Document{
 			ID:            doc.ID,
 			URL:           doc.URL,
 			Text:          doc.Text,
@@ -278,22 +276,25 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	return nil
 }
 
-func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
-	// Zinc bulk API format
-	bulkRequest := map[string]interface{}{
-		"index":   d.indexName,
-		"records": docs,
+func (d *Driver) bulkIndex(ctx context.Context, docs []Document) error {
+	// QuickWit expects NDJSON format for ingest
+	var buf bytes.Buffer
+	for _, doc := range docs {
+		data, err := json.Marshal(doc)
+		if err != nil {
+			return fmt.Errorf("marshaling document: %w", err)
+		}
+		buf.Write(data)
+		buf.WriteByte('\n')
 	}
 
-	body, _ := json.Marshal(bulkRequest)
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/_bulkv2", d.host),
-		bytes.NewReader(body))
+		fmt.Sprintf("%s/api/v1/%s/ingest", d.host, d.indexName),
+		&buf)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(d.username, d.password)
+	req.Header.Set("Content-Type", "application/x-ndjson")
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -303,7 +304,7 @@ func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("bulk index failed: %s", string(respBody))
+		return fmt.Errorf("bulk index failed (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil
@@ -312,11 +313,10 @@ func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
 // Count returns the number of indexed documents.
 func (d *Driver) Count(ctx context.Context) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/api/index/%s", d.host, d.indexName), nil)
+		fmt.Sprintf("%s/api/v1/indexes/%s", d.host, d.indexName), nil)
 	if err != nil {
 		return 0, err
 	}
-	req.SetBasicAuth(d.username, d.password)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -324,25 +324,60 @@ func (d *Driver) Count(ctx context.Context) (int64, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("failed to get index info (status %d)", resp.StatusCode)
+	}
+
 	var info struct {
-		Stats struct {
-			DocNum int64 `json:"doc_num"`
-		} `json:"stats"`
+		IndexConfig struct {
+			IndexID string `json:"index_id"`
+		} `json:"index_config"`
+		// Try to get doc count from splits or search
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return 0, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return info.Stats.DocNum, nil
+	// QuickWit doesn't expose doc count directly in index info,
+	// so we do a count query using search with max_hits=0
+	countQuery := map[string]any{
+		"query":    "*",
+		"max_hits": 0,
+	}
+
+	body, _ := json.Marshal(countQuery)
+	req, err = http.NewRequestWithContext(ctx, "POST",
+		fmt.Sprintf("%s/api/v1/%s/search", d.host, d.indexName),
+		bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = d.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("counting documents: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		NumHits int64 `json:"num_hits"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decoding count response: %w", err)
+	}
+
+	return result.NumHits, nil
 }
 
-// Close is a no-op for Zinc (HTTP client).
+// Close is a no-op for QuickWit (HTTP client).
 func (d *Driver) Close() error {
 	return nil
 }
 
-// WaitForService waits for Zinc to be ready.
+// WaitForService waits for QuickWit to be ready.
 func WaitForService(ctx context.Context, host string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
@@ -354,7 +389,7 @@ func WaitForService(ctx context.Context, host string, timeout time.Duration) err
 		default:
 		}
 
-		req, _ := http.NewRequest("GET", host+"/healthz", nil)
+		req, _ := http.NewRequest("GET", host+"/health/livez", nil)
 		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
@@ -367,16 +402,16 @@ func WaitForService(ctx context.Context, host string, timeout time.Duration) err
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	return fmt.Errorf("zinc not ready after %v", timeout)
+	return fmt.Errorf("quickwit not ready after %v", timeout)
 }
 
-// IsServiceAvailable checks if Zinc is reachable.
+// IsServiceAvailable checks if QuickWit is reachable.
 func IsServiceAvailable(host string) bool {
 	if host == "" {
 		host = DefaultHost
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
-	req, _ := http.NewRequest("GET", host+"/healthz", nil)
+	req, _ := http.NewRequest("GET", host+"/health/livez", nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
@@ -390,14 +425,8 @@ func NewWithEnv(cfg fineweb.DriverConfig) (*Driver, error) {
 	if cfg.Options == nil {
 		cfg.Options = make(map[string]any)
 	}
-	if host := os.Getenv("ZINC_URL"); host != "" {
+	if host := os.Getenv("QUICKWIT_URL"); host != "" {
 		cfg.Options["host"] = host
-	}
-	if user := os.Getenv("ZINC_USER"); user != "" {
-		cfg.Options["username"] = user
-	}
-	if pass := os.Getenv("ZINC_PASSWORD"); pass != "" {
-		cfg.Options["password"] = pass
 	}
 	return New(cfg)
 }

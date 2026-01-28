@@ -1,5 +1,5 @@
-// Package zinc provides a Zinc-based driver for fineweb full-text search.
-package zinc
+// Package lnx provides a Lnx (Tantivy REST server) driver for fineweb full-text search.
+package lnx
 
 import (
 	"bytes"
@@ -16,29 +16,31 @@ import (
 )
 
 func init() {
-	fineweb.Register("zinc", func(cfg fineweb.DriverConfig) (fineweb.Driver, error) {
+	fineweb.Register("lnx", func(cfg fineweb.DriverConfig) (fineweb.Driver, error) {
 		return New(cfg)
 	})
 }
 
-// DefaultHost is the default Zinc address.
-const DefaultHost = "http://localhost:4080"
+// DefaultHost is the default Lnx address.
+const DefaultHost = "http://localhost:8000"
 
 // DefaultIndex is the default index name.
 const DefaultIndex = "fineweb"
 
-// Driver implements the fineweb.Driver interface using Zinc.
+// DefaultAPIKey is the default API key for Lnx.
+const DefaultAPIKey = "fineweb-benchmark-key"
+
+// Driver implements the fineweb.Driver interface using Lnx.
 type Driver struct {
 	client    *http.Client
 	host      string
-	username  string
-	password  string
+	apiKey    string
 	indexName string
 	language  string
 }
 
-// ZincDocument is the document structure for Zinc.
-type ZincDocument struct {
+// LnxDocument is the document structure for Lnx.
+type LnxDocument struct {
 	ID            string  `json:"id"`
 	URL           string  `json:"url"`
 	Text          string  `json:"text"`
@@ -48,11 +50,17 @@ type ZincDocument struct {
 	LanguageScore float64 `json:"language_score"`
 }
 
-// New creates a new Zinc driver.
+// SchemaField defines a field in the Lnx index schema.
+type SchemaField struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Stored bool   `json:"stored"`
+}
+
+// New creates a new Lnx driver.
 func New(cfg fineweb.DriverConfig) (*Driver, error) {
 	host := cfg.GetString("host", DefaultHost)
-	username := cfg.GetString("username", "admin")
-	password := cfg.GetString("password", "admin123")
+	apiKey := cfg.GetString("api_key", DefaultAPIKey)
 
 	indexName := cfg.GetString("index", DefaultIndex)
 	if cfg.Language != "" {
@@ -62,8 +70,7 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 	d := &Driver{
 		client:    &http.Client{Timeout: 2 * time.Minute}, // Longer timeout for bulk ops
 		host:      host,
-		username:  username,
-		password:  password,
+		apiKey:    apiKey,
 		indexName: indexName,
 		language:  cfg.Language,
 	}
@@ -77,12 +84,12 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 }
 
 func (d *Driver) ensureIndex() error {
-	// Check if index exists
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/index/%s", d.host, d.indexName), nil)
+	// Check if index exists by trying to get it
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/indexes/%s", d.host, d.indexName), nil)
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(d.username, d.password)
+	req.Header.Set("Authorization", d.apiKey)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -94,19 +101,29 @@ func (d *Driver) ensureIndex() error {
 		return nil // Index exists
 	}
 
-	// Create index with simple settings (Zinc auto-detects schema)
-	indexSettings := map[string]any{
-		"name":         d.indexName,
-		"storage_type": "disk",
+	// Create index with schema
+	schema := []SchemaField{
+		{Name: "id", Type: "string", Stored: true},
+		{Name: "url", Type: "string", Stored: true},
+		{Name: "text", Type: "text", Stored: true},
+		{Name: "dump", Type: "string", Stored: true},
+		{Name: "date", Type: "string", Stored: true},
+		{Name: "language", Type: "string", Stored: true},
+		{Name: "language_score", Type: "f64", Stored: true},
 	}
 
-	body, _ := json.Marshal(indexSettings)
-	req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/index", d.host), bytes.NewReader(body))
+	indexConfig := map[string]any{
+		"name":   d.indexName,
+		"schema": schema,
+	}
+
+	body, _ := json.Marshal(indexConfig)
+	req, err = http.NewRequest("POST", fmt.Sprintf("%s/indexes", d.host), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(d.username, d.password)
+	req.Header.Set("Authorization", d.apiKey)
 
 	resp, err = d.client.Do(req)
 	if err != nil {
@@ -124,15 +141,15 @@ func (d *Driver) ensureIndex() error {
 
 // Name returns the driver name.
 func (d *Driver) Name() string {
-	return "zinc"
+	return "lnx"
 }
 
 // Info returns driver metadata.
 func (d *Driver) Info() *fineweb.DriverInfo {
 	return &fineweb.DriverInfo{
-		Name:        "zinc",
-		Description: "Zinc search engine (Elasticsearch compatible)",
-		Features:    []string{"elasticsearch-compatible", "lightweight", "go-native"},
+		Name:        "lnx",
+		Description: "Lnx search engine (Tantivy REST server)",
+		Features:    []string{"tantivy-based", "rust-performance", "rest-api"},
 		External:    true,
 	}
 }
@@ -141,27 +158,21 @@ func (d *Driver) Info() *fineweb.DriverInfo {
 func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*fineweb.SearchResult, error) {
 	start := time.Now()
 
-	// Build Zinc search query (Elasticsearch compatible)
-	searchQuery := map[string]interface{}{
-		"search_type": "match",
-		"query": map[string]interface{}{
-			"term":  query,
-			"field": "text",
-		},
-		"from":       offset,
-		"max_results": limit,
-		"_source":    []string{"id", "url", "text", "dump", "date", "language", "language_score"},
+	// Build Lnx search query
+	searchQuery := map[string]any{
+		"query": query,
+		"limit": limit,
 	}
 
 	body, _ := json.Marshal(searchQuery)
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/%s/_search", d.host, d.indexName),
+		fmt.Sprintf("%s/indexes/%s/search", d.host, d.indexName),
 		bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(d.username, d.password)
+	req.Header.Set("Authorization", d.apiKey)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -171,44 +182,39 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("search failed: %s", string(respBody))
+		return nil, fmt.Errorf("search failed (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var result struct {
-		Hits struct {
-			Total struct {
-				Value int64 `json:"value"`
-			} `json:"total"`
-			Hits []struct {
-				ID     string  `json:"_id"`
-				Score  float64 `json:"_score"`
-				Source struct {
-					ID            string  `json:"id"`
-					URL           string  `json:"url"`
-					Text          string  `json:"text"`
-					Dump          string  `json:"dump"`
-					Date          string  `json:"date"`
-					Language      string  `json:"language"`
-					LanguageScore float64 `json:"language_score"`
-				} `json:"_source"`
-			} `json:"hits"`
+		Hits []struct {
+			Doc struct {
+				ID            string  `json:"id"`
+				URL           string  `json:"url"`
+				Text          string  `json:"text"`
+				Dump          string  `json:"dump"`
+				Date          string  `json:"date"`
+				Language      string  `json:"language"`
+				LanguageScore float64 `json:"language_score"`
+			} `json:"doc"`
+			Score float64 `json:"score"`
 		} `json:"hits"`
+		Count int64 `json:"count"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
-	docs := make([]fineweb.Document, 0, len(result.Hits.Hits))
-	for _, hit := range result.Hits.Hits {
+	docs := make([]fineweb.Document, 0, len(result.Hits))
+	for _, hit := range result.Hits {
 		docs = append(docs, fineweb.Document{
-			ID:            hit.Source.ID,
-			URL:           hit.Source.URL,
-			Text:          hit.Source.Text,
-			Dump:          hit.Source.Dump,
-			Date:          hit.Source.Date,
-			Language:      hit.Source.Language,
-			LanguageScore: hit.Source.LanguageScore,
+			ID:            hit.Doc.ID,
+			URL:           hit.Doc.URL,
+			Text:          hit.Doc.Text,
+			Dump:          hit.Doc.Dump,
+			Date:          hit.Doc.Date,
+			Language:      hit.Doc.Language,
+			LanguageScore: hit.Doc.LanguageScore,
 			Score:         hit.Score,
 		})
 	}
@@ -216,8 +222,8 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 	return &fineweb.SearchResult{
 		Documents: docs,
 		Duration:  time.Since(start),
-		Method:    "zinc",
-		Total:     result.Hits.Total.Value,
+		Method:    "lnx",
+		Total:     result.Count,
 	}, nil
 }
 
@@ -225,7 +231,7 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 // Uses large batches for high throughput.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
 	batchSize := 5000 // Larger batches for better throughput
-	batch := make([]ZincDocument, 0, batchSize)
+	batch := make([]LnxDocument, 0, batchSize)
 	var imported int64
 
 	for doc, err := range docs {
@@ -239,7 +245,7 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		batch = append(batch, ZincDocument{
+		batch = append(batch, LnxDocument{
 			ID:            doc.ID,
 			URL:           doc.URL,
 			Text:          doc.Text,
@@ -278,22 +284,16 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	return nil
 }
 
-func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
-	// Zinc bulk API format
-	bulkRequest := map[string]interface{}{
-		"index":   d.indexName,
-		"records": docs,
-	}
-
-	body, _ := json.Marshal(bulkRequest)
+func (d *Driver) bulkIndex(ctx context.Context, docs []LnxDocument) error {
+	body, _ := json.Marshal(docs)
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/_bulkv2", d.host),
+		fmt.Sprintf("%s/indexes/%s/documents", d.host, d.indexName),
 		bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(d.username, d.password)
+	req.Header.Set("Authorization", d.apiKey)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -301,9 +301,9 @@ func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("bulk index failed: %s", string(respBody))
+		return fmt.Errorf("bulk index failed (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil
@@ -312,11 +312,11 @@ func (d *Driver) bulkIndex(ctx context.Context, docs []ZincDocument) error {
 // Count returns the number of indexed documents.
 func (d *Driver) Count(ctx context.Context) (int64, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/api/index/%s", d.host, d.indexName), nil)
+		fmt.Sprintf("%s/indexes/%s", d.host, d.indexName), nil)
 	if err != nil {
 		return 0, err
 	}
-	req.SetBasicAuth(d.username, d.password)
+	req.Header.Set("Authorization", d.apiKey)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
@@ -325,24 +325,22 @@ func (d *Driver) Count(ctx context.Context) (int64, error) {
 	defer resp.Body.Close()
 
 	var info struct {
-		Stats struct {
-			DocNum int64 `json:"doc_num"`
-		} `json:"stats"`
+		NumDocs int64 `json:"num_docs"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return 0, fmt.Errorf("decoding response: %w", err)
 	}
 
-	return info.Stats.DocNum, nil
+	return info.NumDocs, nil
 }
 
-// Close is a no-op for Zinc (HTTP client).
+// Close is a no-op for Lnx (HTTP client).
 func (d *Driver) Close() error {
 	return nil
 }
 
-// WaitForService waits for Zinc to be ready.
+// WaitForService waits for Lnx to be ready.
 func WaitForService(ctx context.Context, host string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
@@ -354,7 +352,7 @@ func WaitForService(ctx context.Context, host string, timeout time.Duration) err
 		default:
 		}
 
-		req, _ := http.NewRequest("GET", host+"/healthz", nil)
+		req, _ := http.NewRequest("GET", host+"/", nil)
 		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
@@ -367,16 +365,16 @@ func WaitForService(ctx context.Context, host string, timeout time.Duration) err
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	return fmt.Errorf("zinc not ready after %v", timeout)
+	return fmt.Errorf("lnx not ready after %v", timeout)
 }
 
-// IsServiceAvailable checks if Zinc is reachable.
+// IsServiceAvailable checks if Lnx is reachable.
 func IsServiceAvailable(host string) bool {
 	if host == "" {
 		host = DefaultHost
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
-	req, _ := http.NewRequest("GET", host+"/healthz", nil)
+	req, _ := http.NewRequest("GET", host+"/", nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
@@ -390,14 +388,11 @@ func NewWithEnv(cfg fineweb.DriverConfig) (*Driver, error) {
 	if cfg.Options == nil {
 		cfg.Options = make(map[string]any)
 	}
-	if host := os.Getenv("ZINC_URL"); host != "" {
+	if host := os.Getenv("LNX_URL"); host != "" {
 		cfg.Options["host"] = host
 	}
-	if user := os.Getenv("ZINC_USER"); user != "" {
-		cfg.Options["username"] = user
-	}
-	if pass := os.Getenv("ZINC_PASSWORD"); pass != "" {
-		cfg.Options["password"] = pass
+	if apiKey := os.Getenv("LNX_API_KEY"); apiKey != "" {
+		cfg.Options["api_key"] = apiKey
 	}
 	return New(cfg)
 }

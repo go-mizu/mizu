@@ -16,17 +16,27 @@ func (r *Report) WriteMarkdown(w io.Writer) error {
 	fmt.Fprintf(w, "**Date:** %s\n", r.StartTime.Format("2006-01-02 15:04:05"))
 	fmt.Fprintf(w, "**Duration:** %v\n", r.EndTime.Sub(r.StartTime).Round(time.Second))
 	fmt.Fprintf(w, "**System:** %s %s, %d CPUs, %s RAM\n", r.System.OS, r.System.Arch, r.System.CPUs, r.System.Memory)
-	fmt.Fprintf(w, "**Go Version:** %s\n\n", r.System.GoVersion)
+	fmt.Fprintf(w, "**Go Version:** %s\n", r.System.GoVersion)
+	fmt.Fprintf(w, "**Drivers Tested:** %d\n\n", len(r.Results))
+
+	// Executive Summary
+	fmt.Fprintf(w, "## Executive Summary\n\n")
+	r.writeExecutiveSummary(w)
 
 	// Summary table
-	fmt.Fprintf(w, "## Summary\n\n")
-	fmt.Fprintf(w, "| Driver | Index Time | Index Size | p50 Latency | p95 Latency | QPS (1) | QPS (10) |\n")
-	fmt.Fprintf(w, "|--------|------------|------------|-------------|-------------|---------|----------|\n")
+	fmt.Fprintf(w, "## Performance Summary\n\n")
+	fmt.Fprintf(w, "| Driver | Type | Index Time | Index Size | p50 | p95 | p99 | QPS (1) | QPS (10) | QPS (max) |\n")
+	fmt.Fprintf(w, "|--------|------|------------|------------|-----|-----|-----|---------|----------|----------|\n")
 
 	for _, result := range r.Results {
 		if result.Error != "" {
-			fmt.Fprintf(w, "| %s | ERROR | - | - | - | - | - |\n", result.Name)
+			fmt.Fprintf(w, "| %s | - | ERROR | - | - | - | - | - | - | - |\n", result.Name)
 			continue
+		}
+
+		driverType := "embedded"
+		if isExternalDriver(result.Name) {
+			driverType = "external"
 		}
 
 		indexTime := "-"
@@ -39,11 +49,11 @@ func (r *Report) WriteMarkdown(w io.Writer) error {
 			indexSize = FormatBytes(result.IndexSize)
 		}
 
-		p50 := "-"
-		p95 := "-"
+		p50, p95, p99 := "-", "-", "-"
 		if result.Latency != nil {
 			p50 = result.Latency.P50.Round(time.Microsecond).String()
 			p95 = result.Latency.P95.Round(time.Microsecond).String()
+			p99 = result.Latency.P99.Round(time.Microsecond).String()
 		}
 
 		qps1 := "-"
@@ -56,9 +66,58 @@ func (r *Report) WriteMarkdown(w io.Writer) error {
 			qps10 = fmt.Sprintf("%.0f", t.QPS)
 		}
 
-		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s |\n",
-			result.Name, indexTime, indexSize, p50, p95, qps1, qps10)
+		qpsMax := "-"
+		maxQPS := 0.0
+		for _, t := range result.Concurrency {
+			if t.QPS > maxQPS {
+				maxQPS = t.QPS
+			}
+		}
+		if maxQPS > 0 {
+			qpsMax = fmt.Sprintf("%.0f", maxQPS)
+		}
+
+		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			result.Name, driverType, indexTime, indexSize, p50, p95, p99, qps1, qps10, qpsMax)
 	}
+
+	// Indexing Performance Comparison
+	fmt.Fprintf(w, "\n## Indexing Performance\n\n")
+	fmt.Fprintf(w, "| Driver | Duration | Docs/sec | Peak Memory | Total Docs |\n")
+	fmt.Fprintf(w, "|--------|----------|----------|-------------|------------|\n")
+	for _, result := range r.Results {
+		if result.Error != "" || result.Indexing == nil {
+			continue
+		}
+		fmt.Fprintf(w, "| %s | %s | %.0f | %s | %d |\n",
+			result.Name,
+			result.Indexing.Duration.Round(time.Second),
+			result.Indexing.DocsPerSec,
+			FormatBytes(result.Indexing.PeakMemory),
+			result.Indexing.TotalDocs)
+	}
+
+	// Latency Distribution
+	fmt.Fprintf(w, "\n## Latency Distribution\n\n")
+	fmt.Fprintf(w, "| Driver | Min | Avg | p50 | p95 | p99 | Max |\n")
+	fmt.Fprintf(w, "|--------|-----|-----|-----|-----|-----|-----|\n")
+	for _, result := range r.Results {
+		if result.Error != "" || result.Latency == nil {
+			continue
+		}
+		fmt.Fprintf(w, "| %s | %v | %v | %v | %v | %v | %v |\n",
+			result.Name,
+			result.Latency.Min.Round(time.Microsecond),
+			result.Latency.Avg.Round(time.Microsecond),
+			result.Latency.P50.Round(time.Microsecond),
+			result.Latency.P95.Round(time.Microsecond),
+			result.Latency.P99.Round(time.Microsecond),
+			result.Latency.Max.Round(time.Microsecond))
+	}
+
+	// Scalability Analysis
+	fmt.Fprintf(w, "\n## Scalability Analysis (QPS by Concurrency)\n\n")
+	r.writeConcurrencyTable(w)
 
 	// Detailed results for each driver
 	fmt.Fprintf(w, "\n## Detailed Results\n")
@@ -161,17 +220,46 @@ func (r *Report) WriteMarkdown(w io.Writer) error {
 
 	// Vietnamese language notes
 	fmt.Fprintf(w, "## Vietnamese Language Support\n\n")
-	fmt.Fprintf(w, "| Driver | Tokenizer | Stemmer | Diacritics |\n")
-	fmt.Fprintf(w, "|--------|-----------|---------|------------|\n")
-	fmt.Fprintf(w, "| duckdb | Basic | None | Preserved |\n")
-	fmt.Fprintf(w, "| sqlite | Unicode61 | None | Preserved |\n")
-	fmt.Fprintf(w, "| bleve | ICU Vietnamese | None | Preserved |\n")
-	fmt.Fprintf(w, "| bluge | Shared Vietnamese | None | Preserved |\n")
-	fmt.Fprintf(w, "| tantivy | Vietnamese | None | Preserved |\n")
-	fmt.Fprintf(w, "| meilisearch | Auto-detect | None | Preserved |\n")
-	fmt.Fprintf(w, "| zinc | Basic | None | Preserved |\n")
-	fmt.Fprintf(w, "| porter | Shared Vietnamese | Porter (English) | Preserved |\n")
+	fmt.Fprintf(w, "| Driver | Tokenizer | Stemmer | Diacritics | Notes |\n")
+	fmt.Fprintf(w, "|--------|-----------|---------|------------|-------|\n")
+	fmt.Fprintf(w, "| duckdb | Basic | None | Preserved | Uses FTS extension |\n")
+	fmt.Fprintf(w, "| sqlite | Unicode61 | None | Preserved | FTS5 virtual table |\n")
+	fmt.Fprintf(w, "| bleve | ICU Vietnamese | None | Preserved | Best Vietnamese support |\n")
+	fmt.Fprintf(w, "| bluge | Shared Vietnamese | None | Preserved | Custom tokenizer |\n")
+	fmt.Fprintf(w, "| tantivy | Vietnamese | None | Preserved | Requires CGO |\n")
+	fmt.Fprintf(w, "| meilisearch | Auto-detect | None | Preserved | Good Unicode handling |\n")
+	fmt.Fprintf(w, "| zinc | Basic | None | Preserved | Bluge-based |\n")
+	fmt.Fprintf(w, "| porter | Shared Vietnamese | Porter (English) | Preserved | Custom inverted index |\n")
+	fmt.Fprintf(w, "| opensearch | ICU | None | Preserved | Plugin required |\n")
+	fmt.Fprintf(w, "| elasticsearch | ICU | None | Preserved | Plugin required |\n")
+	fmt.Fprintf(w, "| postgres | Simple | None | Preserved | tsvector + GIN |\n")
+	fmt.Fprintf(w, "| typesense | Unicode | None | Preserved | Good typo tolerance |\n")
+	fmt.Fprintf(w, "| manticore | Charset table | None | Preserved | SQL interface |\n")
+	fmt.Fprintf(w, "| quickwit | Default | None | Preserved | Cloud-native |\n")
+	fmt.Fprintf(w, "| lnx | Raw | None | Preserved | Tantivy REST |\n")
+	fmt.Fprintf(w, "| sonic | Basic | None | Preserved | ID-only storage |\n")
 	fmt.Fprintf(w, "\n")
+
+	// Driver Categories
+	fmt.Fprintf(w, "## Driver Categories\n\n")
+	fmt.Fprintf(w, "### Embedded (No External Dependencies)\n")
+	fmt.Fprintf(w, "- **duckdb**: Analytical database with FTS, great for batch processing\n")
+	fmt.Fprintf(w, "- **sqlite**: Lightweight, ACID-compliant, perfect for single-user apps\n")
+	fmt.Fprintf(w, "- **bleve**: Full-featured search library with excellent Vietnamese support\n")
+	fmt.Fprintf(w, "- **bluge**: Modern Bleve successor, better performance\n")
+	fmt.Fprintf(w, "- **porter**: Custom inverted index with Porter stemming\n\n")
+
+	fmt.Fprintf(w, "### External Services (Docker Required)\n")
+	fmt.Fprintf(w, "- **meilisearch**: Developer-friendly, instant search, typo tolerance\n")
+	fmt.Fprintf(w, "- **zinc**: Lightweight Elasticsearch alternative\n")
+	fmt.Fprintf(w, "- **opensearch**: AWS fork, enterprise-ready, scalable\n")
+	fmt.Fprintf(w, "- **elasticsearch**: Industry standard, most features\n")
+	fmt.Fprintf(w, "- **postgres**: Full-text search in your existing database\n")
+	fmt.Fprintf(w, "- **typesense**: Fast, typo-tolerant, simple API\n")
+	fmt.Fprintf(w, "- **manticore**: SQL interface, very fast indexing\n")
+	fmt.Fprintf(w, "- **quickwit**: Cloud-native, designed for logs\n")
+	fmt.Fprintf(w, "- **lnx**: Tantivy via REST, no CGO needed\n")
+	fmt.Fprintf(w, "- **sonic**: Ultra-fast search index layer\n\n")
 
 	// Recommendations
 	fmt.Fprintf(w, "## Recommendations\n\n")
@@ -181,18 +269,31 @@ func (r *Report) WriteMarkdown(w io.Writer) error {
 	bestLatency := findBestLatency(r.Results)
 	bestThroughput := findBestThroughput(r.Results)
 	smallestIndex := findSmallestIndex(r.Results)
+	fastestIndexing := findFastestIndexing(r.Results)
 
+	fmt.Fprintf(w, "### Performance Leaders\n")
 	if bestLatency != "" {
 		fmt.Fprintf(w, "- **Lowest Latency:** %s\n", bestLatency)
 	}
 	if bestThroughput != "" {
 		fmt.Fprintf(w, "- **Best Throughput:** %s\n", bestThroughput)
 	}
+	if fastestIndexing != "" {
+		fmt.Fprintf(w, "- **Fastest Indexing:** %s\n", fastestIndexing)
+	}
 	if smallestIndex != "" {
 		fmt.Fprintf(w, "- **Smallest Index:** %s\n", smallestIndex)
 	}
-	fmt.Fprintf(w, "- **Easiest Setup:** sqlite (embedded, no dependencies)\n")
-	fmt.Fprintf(w, "- **Most Features:** meilisearch (typo tolerance, facets, etc.)\n")
+
+	fmt.Fprintf(w, "\n### Use Case Recommendations\n")
+	fmt.Fprintf(w, "- **Simple embedded search:** sqlite (no dependencies, ACID)\n")
+	fmt.Fprintf(w, "- **High-performance embedded:** bluge or porter\n")
+	fmt.Fprintf(w, "- **Developer-friendly SaaS-like:** meilisearch or typesense\n")
+	fmt.Fprintf(w, "- **Enterprise distributed:** elasticsearch or opensearch\n")
+	fmt.Fprintf(w, "- **Existing PostgreSQL stack:** postgres (no new infra)\n")
+	fmt.Fprintf(w, "- **Maximum indexing speed:** manticore\n")
+	fmt.Fprintf(w, "- **Minimum memory footprint:** sonic\n")
+	fmt.Fprintf(w, "- **Cloud-native logs/traces:** quickwit\n")
 	fmt.Fprintf(w, "\n---\n")
 	fmt.Fprintf(w, "*Report generated by fineweb benchmark suite*\n")
 
@@ -294,6 +395,164 @@ func findSmallestIndex(results []*DriverResult) string {
 		return fmt.Sprintf("%s (%s)", best, FormatBytes(smallest))
 	}
 	return ""
+}
+
+func findFastestIndexing(results []*DriverResult) string {
+	var best string
+	var fastest float64
+
+	for _, r := range results {
+		if r.Error != "" || r.Indexing == nil {
+			continue
+		}
+		if r.Indexing.DocsPerSec > fastest {
+			fastest = r.Indexing.DocsPerSec
+			best = r.Name
+		}
+	}
+
+	if best != "" {
+		return fmt.Sprintf("%s (%.0f docs/sec)", best, fastest)
+	}
+	return ""
+}
+
+func findBestScalability(results []*DriverResult) string {
+	var best string
+	var bestRatio float64
+
+	for _, r := range results {
+		if r.Error != "" || r.Throughput == nil || len(r.Concurrency) == 0 {
+			continue
+		}
+		// Find max QPS at high concurrency
+		var maxConcurrentQPS float64
+		for _, t := range r.Concurrency {
+			if t.QPS > maxConcurrentQPS {
+				maxConcurrentQPS = t.QPS
+			}
+		}
+		ratio := maxConcurrentQPS / r.Throughput.QPS
+		if ratio > bestRatio {
+			bestRatio = ratio
+			best = r.Name
+		}
+	}
+
+	if best != "" {
+		return fmt.Sprintf("%s (%.1fx scaling)", best, bestRatio)
+	}
+	return ""
+}
+
+func isExternalDriver(name string) bool {
+	external := map[string]bool{
+		"meilisearch":   true,
+		"zinc":          true,
+		"opensearch":    true,
+		"elasticsearch": true,
+		"postgres":      true,
+		"typesense":     true,
+		"manticore":     true,
+		"quickwit":      true,
+		"lnx":           true,
+		"sonic":         true,
+	}
+	return external[name]
+}
+
+func (r *Report) writeExecutiveSummary(w io.Writer) {
+	bestLatency := findBestLatency(r.Results)
+	bestThroughput := findBestThroughput(r.Results)
+	smallestIndex := findSmallestIndex(r.Results)
+	fastestIndexing := findFastestIndexing(r.Results)
+	bestScalability := findBestScalability(r.Results)
+
+	fmt.Fprintf(w, "| Category | Winner |\n")
+	fmt.Fprintf(w, "|----------|--------|\n")
+	if bestLatency != "" {
+		fmt.Fprintf(w, "| Lowest Latency (p50) | %s |\n", bestLatency)
+	}
+	if bestThroughput != "" {
+		fmt.Fprintf(w, "| Highest Single-Thread QPS | %s |\n", bestThroughput)
+	}
+	if fastestIndexing != "" {
+		fmt.Fprintf(w, "| Fastest Indexing | %s |\n", fastestIndexing)
+	}
+	if smallestIndex != "" {
+		fmt.Fprintf(w, "| Smallest Index Size | %s |\n", smallestIndex)
+	}
+	if bestScalability != "" {
+		fmt.Fprintf(w, "| Best Scalability | %s |\n", bestScalability)
+	}
+	fmt.Fprintf(w, "\n")
+}
+
+func (r *Report) writeConcurrencyTable(w io.Writer) {
+	// Collect all concurrency levels
+	levels := make(map[int]bool)
+	for _, result := range r.Results {
+		for level := range result.Concurrency {
+			levels[level] = true
+		}
+	}
+
+	// Sort levels
+	var sortedLevels []int
+	for level := range levels {
+		sortedLevels = append(sortedLevels, level)
+	}
+	sort.Ints(sortedLevels)
+
+	if len(sortedLevels) == 0 {
+		return
+	}
+
+	// Header
+	fmt.Fprintf(w, "| Driver |")
+	for _, level := range sortedLevels {
+		fmt.Fprintf(w, " %d |", level)
+	}
+	fmt.Fprintf(w, " Scaling |\n")
+
+	// Separator
+	fmt.Fprintf(w, "|--------|")
+	for range sortedLevels {
+		fmt.Fprintf(w, "------|")
+	}
+	fmt.Fprintf(w, "---------|\n")
+
+	// Data
+	for _, result := range r.Results {
+		if result.Error != "" || len(result.Concurrency) == 0 {
+			continue
+		}
+
+		fmt.Fprintf(w, "| %s |", result.Name)
+
+		var maxQPS, minQPS float64 = 0, 1e12
+		for _, level := range sortedLevels {
+			if t, ok := result.Concurrency[level]; ok {
+				fmt.Fprintf(w, " %.0f |", t.QPS)
+				if t.QPS > maxQPS {
+					maxQPS = t.QPS
+				}
+				if t.QPS < minQPS {
+					minQPS = t.QPS
+				}
+			} else {
+				fmt.Fprintf(w, " - |")
+			}
+		}
+
+		// Calculate scaling factor
+		if minQPS > 0 && minQPS < 1e12 {
+			fmt.Fprintf(w, " %.1fx |\n", maxQPS/minQPS)
+		} else {
+			fmt.Fprintf(w, " - |\n")
+		}
+	}
+	fmt.Fprintf(w, "\n")
 }
 
 // String returns a short summary of the report.

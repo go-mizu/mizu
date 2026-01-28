@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,14 +26,33 @@ import (
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/porter"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/sqlite"
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/zinc"
+
+	// New search engine drivers
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/elasticsearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/lnx"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/manticore"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/opensearch"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/postgres"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/quickwit"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/sonic"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/typesense"
+
 	// Note: tantivy driver requires CGO, import with -tags tantivy
 	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/tantivy"
 )
 
 // External service endpoints
 const (
-	MeiliSearchURL = "http://localhost:7700"
-	ZincURL        = "http://localhost:4080"
+	MeiliSearchURL    = "http://localhost:7700"
+	ZincURL           = "http://localhost:4080"
+	OpenSearchURL     = "http://localhost:9200"
+	ElasticsearchURL  = "http://localhost:9201"
+	PostgresURL       = "localhost:5432"
+	TypesenseURL      = "http://localhost:8108"
+	ManticoreURL      = "http://localhost:9308"
+	QuickWitURL       = "http://localhost:7280"
+	LnxURL            = "http://localhost:8000"
+	SonicURL          = "localhost:1491"
 )
 
 func main() {
@@ -53,9 +73,13 @@ func main() {
 		reportDir = flag.String("report-dir", "", "Directory for multiple report formats")
 
 		// Benchmark parameters
-		timeout    = flag.Duration("timeout", 4*time.Hour, "Overall timeout")
-		iterations = flag.Int("iterations", 100, "Iterations per query for latency")
-		quick      = flag.Bool("quick", false, "Quick mode: fewer iterations, smaller dataset")
+		timeout            = flag.Duration("timeout", 4*time.Hour, "Overall timeout")
+		iterations         = flag.Int("iterations", 100, "Iterations per query for latency")
+		fast               = flag.Bool("fast", false, "Fast mode with good coverage")
+		throughputDuration = flag.Duration("throughput-duration", 10*time.Second, "Duration for each throughput test")
+		freshIndex         = flag.Bool("fresh", false, "Force fresh indexing (delete existing)")
+		testIncremental    = flag.Bool("incremental", false, "Test incremental indexing")
+		incrementalDocs    = flag.Int64("incremental-docs", 1000, "Number of docs for incremental test")
 
 		// Service management
 		startDocker = flag.Bool("start-docker", false, "Start Docker services before benchmark")
@@ -125,7 +149,7 @@ func main() {
 		*parquet = os.Getenv("PARQUET_PATH")
 		if *parquet == "" {
 			home, _ := os.UserHomeDir()
-			*parquet = filepath.Join(home, "data", "fineweb-2", "vie_Latn", "train")
+			*parquet = filepath.Join(home, "data", "fineweb-2", "vie_Latn", "test")
 		}
 	}
 
@@ -149,11 +173,25 @@ func main() {
 	runner.Iterations = *iterations
 	runner.Logger = log.New(os.Stderr, "[benchmark] ", log.LstdFlags)
 
-	// Quick mode adjustments
-	if *quick {
-		runner.Iterations = 10
-		runner.Concurrency = []int{1, 10}
+	// Mode adjustments
+	if *fast {
+		// Fast mode with comprehensive coverage
+		runner.Iterations = 3
+		runner.Concurrency = []int{10, 20, 40, 80}
+		runner.ThroughputDuration = 2 * time.Second
+		runner.SkipColdStart = true  // Cold start is slow (opens full index from disk)
+		runner.SkipPerQuery = true   // Per-query stats redundant with latency
 	}
+
+	// Override throughput duration if explicitly set
+	if *throughputDuration != 10*time.Second {
+		runner.ThroughputDuration = *throughputDuration
+	}
+
+	// Apply new options
+	runner.FreshIndex = *freshIndex
+	runner.TestIncremental = *testIncremental
+	runner.IncrementalDocs = *incrementalDocs
 
 	// Determine which drivers to run
 	if *all {
@@ -234,7 +272,7 @@ func listDrivers() {
 
 	// Group by type
 	embedded := []string{"duckdb", "sqlite", "bleve", "bluge", "porter"}
-	external := []string{"meilisearch", "zinc"}
+	external := []string{"meilisearch", "zinc", "opensearch", "elasticsearch", "postgres", "typesense", "manticore", "quickwit", "lnx", "sonic"}
 	cgo := []string{"tantivy"}
 
 	fmt.Println("Embedded (no external dependencies):")
@@ -305,8 +343,14 @@ func checkDockerServices() {
 	fmt.Println()
 
 	services := map[string]string{
-		"meilisearch": MeiliSearchURL + "/health",
-		"zinc":        ZincURL + "/healthz",
+		"meilisearch":   MeiliSearchURL + "/health",
+		"zinc":          ZincURL + "/healthz",
+		"opensearch":    OpenSearchURL + "/_cluster/health",
+		"elasticsearch": ElasticsearchURL + "/_cluster/health",
+		"typesense":     TypesenseURL + "/health",
+		"manticore":     ManticoreURL,
+		"quickwit":      QuickWitURL + "/health/livez",
+		"lnx":           LnxURL,
 	}
 
 	for name, url := range services {
@@ -316,12 +360,17 @@ func checkDockerServices() {
 			continue
 		}
 		resp.Body.Close()
-		if resp.StatusCode == 200 {
+		if resp.StatusCode == 200 || resp.StatusCode == 401 {
 			fmt.Printf("  ✓ %s: healthy\n", name)
 		} else {
 			fmt.Printf("  ✗ %s: unhealthy (status %d)\n", name, resp.StatusCode)
 		}
 	}
+
+	// Special checks for non-HTTP services
+	fmt.Println()
+	fmt.Println("  postgres: use 'pg_isready -h localhost -p 5432' to check")
+	fmt.Println("  sonic: use 'nc -z localhost 1491' to check")
 }
 
 func checkServiceAvailable(name string) bool {
@@ -331,6 +380,24 @@ func checkServiceAvailable(name string) bool {
 		url = MeiliSearchURL + "/health"
 	case "zinc":
 		url = ZincURL + "/healthz"
+	case "opensearch":
+		url = OpenSearchURL + "/_cluster/health"
+	case "elasticsearch":
+		url = ElasticsearchURL + "/_cluster/health"
+	case "typesense":
+		url = TypesenseURL + "/health"
+	case "manticore":
+		url = ManticoreURL
+	case "quickwit":
+		url = QuickWitURL + "/health/livez"
+	case "lnx":
+		url = LnxURL
+	case "postgres":
+		// Check PostgreSQL via TCP connection
+		return checkTCPService(PostgresURL)
+	case "sonic":
+		// Check Sonic via TCP connection
+		return checkTCPService(SonicURL)
 	default:
 		return true // Embedded drivers are always available
 	}
@@ -341,13 +408,35 @@ func checkServiceAvailable(name string) bool {
 		return false
 	}
 	resp.Body.Close()
-	return resp.StatusCode == 200
+	return resp.StatusCode == 200 || resp.StatusCode == 401
+}
+
+func checkTCPService(addr string) bool {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 func filterAvailableDrivers(drivers []string) []string {
+	externalDrivers := map[string]bool{
+		"meilisearch":   true,
+		"zinc":          true,
+		"opensearch":    true,
+		"elasticsearch": true,
+		"postgres":      true,
+		"typesense":     true,
+		"manticore":     true,
+		"quickwit":      true,
+		"lnx":           true,
+		"sonic":         true,
+	}
+
 	var available []string
 	for _, d := range drivers {
-		if d == "meilisearch" || d == "zinc" {
+		if externalDrivers[d] {
 			if !checkServiceAvailable(d) {
 				log.Printf("Skipping %s (service not available)", d)
 				continue
@@ -378,18 +467,24 @@ func waitForServices() {
 	log.Println("Waiting for services to be healthy...")
 
 	services := map[string]string{
-		"meilisearch": MeiliSearchURL + "/health",
-		"zinc":        ZincURL + "/healthz",
+		"meilisearch":   MeiliSearchURL + "/health",
+		"zinc":          ZincURL + "/healthz",
+		"opensearch":    OpenSearchURL + "/_cluster/health",
+		"elasticsearch": ElasticsearchURL + "/_cluster/health",
+		"typesense":     TypesenseURL + "/health",
+		"manticore":     ManticoreURL,
+		"quickwit":      QuickWitURL + "/health/livez",
+		"lnx":           LnxURL,
 	}
 
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := time.Now().Add(3 * time.Minute) // Longer timeout for more services
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
 		allHealthy := true
 		for name, url := range services {
 			resp, err := client.Get(url)
-			if err != nil || resp.StatusCode != 200 {
+			if err != nil || (resp.StatusCode != 200 && resp.StatusCode != 401) {
 				allHealthy = false
 				log.Printf("  Waiting for %s...", name)
 				if resp != nil {
@@ -399,6 +494,21 @@ func waitForServices() {
 			}
 			resp.Body.Close()
 		}
+
+		// Check TCP-based services
+		if allHealthy {
+			if !checkTCPService(PostgresURL) {
+				allHealthy = false
+				log.Printf("  Waiting for postgres...")
+			}
+		}
+		if allHealthy {
+			if !checkTCPService(SonicURL) {
+				allHealthy = false
+				log.Printf("  Waiting for sonic...")
+			}
+		}
+
 		if allHealthy {
 			log.Println("All services healthy")
 			return

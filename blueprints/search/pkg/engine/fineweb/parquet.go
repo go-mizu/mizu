@@ -142,6 +142,26 @@ func (r *ParquetReader) ReadAll(ctx context.Context) iter.Seq2[Document, error] 
 	}
 }
 
+// ReadN returns an iterator that yields at most n documents.
+func (r *ParquetReader) ReadN(ctx context.Context, n int) iter.Seq2[Document, error] {
+	return func(yield func(Document, error) bool) {
+		count := 0
+		for doc, err := range r.ReadAll(ctx) {
+			if err != nil {
+				yield(Document{}, err)
+				return
+			}
+			if !yield(doc, nil) {
+				return
+			}
+			count++
+			if count >= n {
+				return
+			}
+		}
+	}
+}
+
 // ReadFile returns an iterator over documents in a single parquet file.
 func (r *ParquetReader) ReadFile(ctx context.Context, file string) iter.Seq2[Document, error] {
 	return func(yield func(Document, error) bool) {

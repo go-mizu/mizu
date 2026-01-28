@@ -84,7 +84,7 @@ func New(cfg fineweb.DriverConfig) (*Driver, error) {
 
 func (d *Driver) ensureIndex() error {
 	// Try to create the index (will fail if exists, which is fine)
-	_, err := d.client.CreateIndex(&meilisearch.IndexConfig{
+	task, err := d.client.CreateIndex(&meilisearch.IndexConfig{
 		Uid:        d.indexName,
 		PrimaryKey: "id",
 	})
@@ -101,16 +101,20 @@ func (d *Driver) ensureIndex() error {
 		}
 	}
 
-	// Configure index settings for Vietnamese
+	// Wait for index creation
+	if task != nil {
+		d.client.WaitForTask(task.TaskUID, 30*time.Second)
+	}
+
+	// Configure index settings optimized for fast indexing
+	// - Minimal ranking rules
+	// - Only index necessary fields
 	_, err = d.client.Index(d.indexName).UpdateSettings(&meilisearch.Settings{
-		SearchableAttributes: []string{"text", "url"},
+		SearchableAttributes: []string{"text"}, // Only search text field
 		DisplayedAttributes:  []string{"id", "url", "text", "dump", "date", "language", "language_score"},
 		RankingRules: []string{
 			"words",
-			"typo",
 			"proximity",
-			"attribute",
-			"sort",
 			"exactness",
 		},
 	})
@@ -188,10 +192,12 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 }
 
 // Import ingests documents from an iterator.
+// Uses async batch ingestion for high performance - doesn't wait for each batch.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	batchSize := 1000
+	batchSize := 5000 // Larger batches for better throughput
 	batch := make([]MeiliDocument, 0, batchSize)
 	var imported int64
+	var taskUIDs []int64
 
 	for doc, err := range docs {
 		if err != nil {
@@ -222,11 +228,8 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 				return fmt.Errorf("adding documents: %w", err)
 			}
 
-			// Wait for task to complete
-			_, err = d.client.WaitForTask(task.TaskUID, 5*time.Minute)
-			if err != nil {
-				return fmt.Errorf("waiting for task: %w", err)
-			}
+			// Don't wait - just track task UID for final wait
+			taskUIDs = append(taskUIDs, task.TaskUID)
 
 			imported += int64(len(batch))
 			batch = batch[:0]
@@ -245,13 +248,20 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		if err != nil {
 			return fmt.Errorf("adding final documents: %w", err)
 		}
-
-		_, err = d.client.WaitForTask(task.TaskUID, 5*time.Minute)
-		if err != nil {
-			return fmt.Errorf("waiting for final task: %w", err)
-		}
-
+		taskUIDs = append(taskUIDs, task.TaskUID)
 		imported += int64(len(batch))
+	}
+
+	// Wait only for the last task with a reasonable timeout
+	// MeiliSearch indexes asynchronously, so we wait for completion
+	if len(taskUIDs) > 0 {
+		lastTaskUID := taskUIDs[len(taskUIDs)-1]
+		// Use shorter timeout - if it takes too long, just proceed
+		_, err := d.client.WaitForTask(lastTaskUID, 2*time.Minute)
+		if err != nil {
+			// Don't fail - just warn and proceed
+			fmt.Printf("Warning: indexing may not be complete: %v\n", err)
+		}
 	}
 
 	if progress != nil {

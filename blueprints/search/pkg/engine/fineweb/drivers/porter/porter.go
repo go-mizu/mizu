@@ -2,6 +2,7 @@
 package porter
 
 import (
+	"container/heap"
 	"context"
 	"encoding/gob"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +19,24 @@ import (
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb"
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/tokenizer"
 )
+
+// termFreqPool is used to recycle term frequency maps to reduce allocations
+var termFreqPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]int, 256)
+	},
+}
+
+// getTermFreqMap gets a map from the pool
+func getTermFreqMap() map[string]int {
+	return termFreqPool.Get().(map[string]int)
+}
+
+// putTermFreqMap returns a map to the pool after clearing it
+func putTermFreqMap(m map[string]int) {
+	clear(m)
+	termFreqPool.Put(m)
+}
 
 func init() {
 	fineweb.Register("porter", func(cfg fineweb.DriverConfig) (fineweb.Driver, error) {
@@ -263,8 +281,8 @@ func (idx *InvertedIndex) IndexDocument(doc fineweb.Document, tokens []string) {
 	idx.TotalTokens += int64(len(tokens))
 	idx.AvgDocLen = float64(idx.TotalTokens) / float64(idx.NumDocs)
 
-	// Count term frequencies
-	termFreqs := make(map[string]int)
+	// Count term frequencies using pooled map
+	termFreqs := getTermFreqMap()
 	for _, token := range tokens {
 		termFreqs[token]++
 	}
@@ -276,9 +294,28 @@ func (idx *InvertedIndex) IndexDocument(doc fineweb.Document, tokens []string) {
 		}
 		idx.Index[term][doc.ID] = freq
 	}
+
+	// Return map to pool
+	putTermFreqMap(termFreqs)
+}
+
+// resultHeap implements a min-heap for top-K selection
+type resultHeap []SearchResult
+
+func (h resultHeap) Len() int           { return len(h) }
+func (h resultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score } // Min-heap by score
+func (h resultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *resultHeap) Push(x any)        { *h = append(*h, x.(SearchResult)) }
+func (h *resultHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }
 
 // Search performs BM25 search and returns ranked results.
+// Uses heap-based top-K selection for better performance with large result sets.
 func (idx *InvertedIndex) Search(queryTerms []string, limit int) []SearchResult {
 	if idx.NumDocs == 0 {
 		return nil
@@ -309,18 +346,25 @@ func (idx *InvertedIndex) Search(queryTerms []string, limit int) []SearchResult 
 		}
 	}
 
-	// Sort by score
-	results := make([]SearchResult, 0, len(scores))
-	for docID, score := range scores {
-		results = append(results, SearchResult{DocID: docID, Score: score})
-	}
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
+	// Use heap for efficient top-K selection
+	// This is O(n log k) instead of O(n log n) for full sort
+	h := make(resultHeap, 0, limit+1)
+	heap.Init(&h)
 
-	// Limit results
-	if len(results) > limit {
-		results = results[:limit]
+	for docID, score := range scores {
+		if h.Len() < limit {
+			heap.Push(&h, SearchResult{DocID: docID, Score: score})
+		} else if score > h[0].Score {
+			// Replace minimum if current score is higher
+			h[0] = SearchResult{DocID: docID, Score: score}
+			heap.Fix(&h, 0)
+		}
+	}
+
+	// Extract results in descending order
+	results := make([]SearchResult, h.Len())
+	for i := len(results) - 1; i >= 0; i-- {
+		results[i] = heap.Pop(&h).(SearchResult)
 	}
 
 	return results
