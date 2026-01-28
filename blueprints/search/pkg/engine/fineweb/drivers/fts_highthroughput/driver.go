@@ -240,13 +240,10 @@ func fastTokenize(text string) map[string]int {
 	return algo.UltraFastTokenize(text)
 }
 
-// Import indexes documents using NoMergeIndexer (segment-based, no merge phase).
-// This achieves high throughput by skipping the expensive k-way merge.
+// Import indexes documents using UltraIndexer for maximum throughput.
+// Target: 1M+ docs/sec with <5GB memory.
+// Uses batch processing with hash-as-key approach from Rust ultra.rs.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
-	// Create segments directory (persistent - not deleted)
-	segmentDir := filepath.Join(d.indexDir, "segments")
-	os.MkdirAll(segmentDir, 0755)
-
 	// Close existing indexes
 	if d.mmapIndex != nil {
 		d.mmapIndex.Close()
@@ -257,10 +254,17 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		d.segmentedIdx = nil
 	}
 
-	// Use NoMergeIndexer - segments are kept separate, searched in parallel
-	indexer := algo.NewNoMergeIndexer(segmentDir, fastTokenize, 100000) // 100k docs per segment
+	// Use UltraIndexer with Rust-style optimizations
+	indexer := algo.NewUltraIndexer(d.indexDir, algo.UltraConfig{
+		NumWorkers:  0, // Auto-detect
+		SegmentDocs: 500000,
+	})
 
-	// Collect doc IDs
+	// Batch processing - larger batches = better throughput
+	const batchSize = 10000
+	batchDocIDs := make([]uint32, 0, batchSize)
+	batchTexts := make([]string, 0, batchSize)
+
 	d.docIDs = make([]string, 0, 3000000)
 	var imported int64
 
@@ -278,8 +282,16 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		docNum := uint32(len(d.docIDs))
 		d.docIDs = append(d.docIDs, doc.ID)
 
-		// Feed to indexer
-		indexer.Add(docNum, doc.Text)
+		// Accumulate batch
+		batchDocIDs = append(batchDocIDs, docNum)
+		batchTexts = append(batchTexts, doc.Text)
+
+		// Process batch when full
+		if len(batchDocIDs) >= batchSize {
+			indexer.AddBatch(batchDocIDs, batchTexts)
+			batchDocIDs = batchDocIDs[:0]
+			batchTexts = batchTexts[:0]
+		}
 
 		imported++
 
@@ -289,11 +301,16 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		}
 	}
 
-	// Finalize - returns SegmentedIndex (no merge!)
+	// Process remaining batch
+	if len(batchDocIDs) > 0 {
+		indexer.AddBatch(batchDocIDs, batchTexts)
+	}
+
+	// Finalize - returns SegmentedIndex
 	var err error
 	d.segmentedIdx, err = indexer.Finish()
 	if err != nil {
-		return fmt.Errorf("creating segmented index: %w", err)
+		return fmt.Errorf("creating index: %w", err)
 	}
 
 	// Save doc IDs

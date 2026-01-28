@@ -1,16 +1,15 @@
-// Package algo provides ultra-high-throughput indexing targeting 1M+ docs/sec.
-// Key innovations:
-// - Sharded accumulators (zero lock contention)
-// - Arena-based posting storage (zero GC pressure)
-// - Inline tokenization (zero intermediate allocations)
-// - Batch processing (amortized overhead)
+// Package algo provides UltraIndexer - Go port of Rust ultra.rs optimizations.
+// Key techniques from Rust:
+// 1. Pre-computed CHAR_LUT for instant lowercase check
+// 2. Hash-as-key: uint64 FNV hash instead of string (massive memory savings)
+// 3. Hash while tokenizing - no string allocation
+// 4. Phase-based batch processing
+// 5. 16 shards with fine-grained locking
 package algo
 
 import (
 	"bufio"
 	"encoding/binary"
-	"fmt"
-	"math"
 	"os"
 	"runtime"
 	"sort"
@@ -19,691 +18,596 @@ import (
 	"unsafe"
 )
 
-// UltraIndexer achieves high throughput with bounded memory through:
-// - Sharded parallel tokenization (16 shards, zero contention)
-// - Periodic disk flushing (keep memory bounded)
-// - Fast streaming merge
-type UltraIndexer struct {
-	// Configuration
-	NumShards    int    // Number of term shards (default: 16)
-	BatchSize    int    // Documents per batch (default: 10000)
-	NumWorkers   int    // Parallel workers
-	SegmentSize  int    // Docs per segment before flush to disk
-	OutputDir    string // Directory for segment files
+// Pre-computed character lookup table
+// 0 = delimiter, otherwise = lowercase ASCII value
+var ultraCharLUT [256]byte
 
-	// Sharded accumulators (each shard independent)
-	shards []*TermShard
-
-	// Document metadata
-	docLens  []uint16      // Document lengths
-	docCount atomic.Uint32 // Total documents processed
-
-	// Disk segments
-	segments   []*SegmentMeta
-	segmentMu  sync.Mutex
-	segmentNum int
-
-	// Worker pools
-	tokenizers []*InlineTokenizer
-	localBufs  []*LocalBuffer
-
-	// Sync
-	mu sync.Mutex
+func init() {
+	for i := 0; i < 256; i++ {
+		if i >= 'a' && i <= 'z' {
+			ultraCharLUT[i] = byte(i)
+		} else if i >= 'A' && i <= 'Z' {
+			ultraCharLUT[i] = byte(i) | 0x20 // lowercase
+		} else if i >= '0' && i <= '9' {
+			ultraCharLUT[i] = byte(i)
+		} else {
+			ultraCharLUT[i] = 0 // delimiter
+		}
+	}
 }
 
-// TermShard is a lock-free partition of the term dictionary.
-// Each shard owns terms exclusively based on hash assignment.
-type TermShard struct {
-	// Term dictionary
-	terms     map[string]uint32 // term → termID
-	termList  []string          // termID → term
-	termCount uint32
+// FNV-1a constants
+const (
+	fnvOffset = 0xcbf29ce484222325
+	fnvPrime  = 0x100000001b3
+)
 
-	// Posting storage (arena-based)
-	postings [][]IndexPosting // termID → postings (pre-allocated slices)
+// Shard configuration - 32 shards balances contention vs memory
+const (
+	ultraNumShards = 32
+	ultraShardMask = ultraNumShards - 1
+)
 
-	// Statistics
-	totalPostings uint64
-}
-
-// InlineTokenizer performs zero-allocation tokenization.
-type InlineTokenizer struct {
-	// Delimiter lookup table (cache-friendly)
-	isDelim [256]bool
-}
-
-// LocalBuffer collects postings locally before flushing to shards.
-// This reduces contention by batching writes to each shard.
-type LocalBuffer struct {
-	// Per-shard buffers
-	shardBufs [][]localPosting // [shardID][]posting
-
-	// Term intern map (local to this buffer)
-	termCache map[string]termRef
-
-	// Stats
-	totalPostings int
-}
-
-type localPosting struct {
-	termHash uint64
-	term     string // Interned term
-	docID    uint32
-	freq     uint16
-}
-
-type termRef struct {
-	shardID int
-	term    string
-}
-
-// UltraConfig configures the UltraIndexer.
+// UltraConfig configures the ultra indexer.
 type UltraConfig struct {
-	NumShards   int
-	BatchSize   int
-	NumWorkers  int
-	MaxDocs     int    // Pre-allocate for this many docs
-	SegmentSize int    // Docs per segment (for memory bounding)
-	OutputDir   string // Directory for segment files
+	NumWorkers  int // Parallel workers (0 = auto)
+	SegmentDocs int // Docs per segment for disk flush
 }
 
-// NewUltraIndexer creates a new ultra-high-throughput indexer.
-func NewUltraIndexer(cfg UltraConfig) *UltraIndexer {
-	if cfg.NumShards <= 0 {
-		cfg.NumShards = 16
-	}
-	if cfg.BatchSize <= 0 {
-		cfg.BatchSize = 10000
-	}
+// UltraIndexer is a high-performance indexer using hash-as-key approach.
+type UltraIndexer struct {
+	config  UltraConfig
+	outDir  string
+
+	// Sharded index - uses hash as key, not string
+	shards [ultraNumShards]*ultraShard
+
+	// Document state
+	docLens   []uint16
+	docCount  atomic.Uint64
+	totalLen  atomic.Uint64
+	docLensMu sync.Mutex
+}
+
+// ultraShard holds term postings for a hash range.
+type ultraShard struct {
+	mu       sync.Mutex
+	terms    map[uint64]*ultraPostings // hash -> postings
+}
+
+// ultraPostings stores doc IDs and frequencies.
+type ultraPostings struct {
+	docIDs []uint32
+	freqs  []uint16
+}
+
+// ultraTermFreq is the result of tokenization.
+type ultraTermFreq struct {
+	hash uint64
+	freq uint16
+}
+
+// ultraDocResult holds tokenization result for a document.
+type ultraDocResult struct {
+	docID  uint32
+	docLen uint16
+	terms  []ultraTermFreq
+}
+
+// NewUltraIndexer creates a new ultra indexer.
+func NewUltraIndexer(outDir string, cfg UltraConfig) *UltraIndexer {
 	if cfg.NumWorkers <= 0 {
 		cfg.NumWorkers = runtime.NumCPU()
 	}
-	if cfg.NumWorkers > 32 {
-		cfg.NumWorkers = 32
+	if cfg.NumWorkers > 16 {
+		cfg.NumWorkers = 16
 	}
-	if cfg.MaxDocs <= 0 {
-		cfg.MaxDocs = 3000000 // 3M docs default
-	}
-	if cfg.SegmentSize <= 0 {
-		cfg.SegmentSize = 50000 // 50k docs per segment for memory bounding
+	if cfg.SegmentDocs <= 0 {
+		cfg.SegmentDocs = 500000
 	}
 
-	u := &UltraIndexer{
-		NumShards:   cfg.NumShards,
-		BatchSize:   cfg.BatchSize,
-		NumWorkers:  cfg.NumWorkers,
-		SegmentSize: cfg.SegmentSize,
-		OutputDir:   cfg.OutputDir,
-		shards:      make([]*TermShard, cfg.NumShards),
-		docLens:     make([]uint16, cfg.MaxDocs),
-		tokenizers:  make([]*InlineTokenizer, cfg.NumWorkers),
-		localBufs:   make([]*LocalBuffer, cfg.NumWorkers),
-		segments:    make([]*SegmentMeta, 0, 64),
+	os.MkdirAll(outDir, 0755)
+
+	ui := &UltraIndexer{
+		config:  cfg,
+		outDir:  outDir,
+		docLens: make([]uint16, 0, 4000000),
 	}
 
-	// Initialize shards
-	for i := 0; i < cfg.NumShards; i++ {
-		u.shards[i] = newTermShard()
+	// Initialize shards with smaller initial capacity to reduce memory
+	for i := 0; i < ultraNumShards; i++ {
+		ui.shards[i] = &ultraShard{
+			terms: make(map[uint64]*ultraPostings, 20000),
+		}
 	}
 
-	// Initialize worker resources
-	for i := 0; i < cfg.NumWorkers; i++ {
-		u.tokenizers[i] = newInlineTokenizer()
-		u.localBufs[i] = newLocalBuffer(cfg.NumShards)
-	}
-
-	return u
+	return ui
 }
 
-func newTermShard() *TermShard {
-	return &TermShard{
-		terms:    make(map[string]uint32, 50000),
-		termList: make([]string, 0, 50000),
-		postings: make([][]IndexPosting, 0, 50000),
-	}
+// sync.Pool for frequency maps to reduce allocations
+var freqMapPool = sync.Pool{
+	New: func() any {
+		return make(map[uint64]uint16, 128)
+	},
 }
 
-func newInlineTokenizer() *InlineTokenizer {
-	t := &InlineTokenizer{}
+// tokenizeToHashReuse tokenizes text into a reusable map.
+// Returns the total token count for doc length calculation.
+func tokenizeToHashReuse(text string, freqs map[uint64]uint16) int {
+	// Clear the map for reuse (optimized clear pattern)
+	clear(freqs)
 
-	// Initialize delimiter table
-	for i := 0; i <= 32; i++ {
-		t.isDelim[i] = true // Control chars and space
-	}
-	for i := '!'; i <= '/'; i++ {
-		t.isDelim[i] = true
-	}
-	for i := ':'; i <= '@'; i++ {
-		t.isDelim[i] = true
-	}
-	for i := '['; i <= '`'; i++ {
-		t.isDelim[i] = true
-	}
-	for i := '{'; i <= '~'; i++ {
-		t.isDelim[i] = true
-	}
-
-	return t
-}
-
-func newLocalBuffer(numShards int) *LocalBuffer {
-	buf := &LocalBuffer{
-		shardBufs: make([][]localPosting, numShards),
-		termCache: make(map[string]termRef, 1000),
-	}
-	for i := 0; i < numShards; i++ {
-		buf.shardBufs[i] = make([]localPosting, 0, 10000)
-	}
-	return buf
-}
-
-// xxhash64 is a fast hash function for term sharding.
-// Using FNV-1a for simplicity, could use xxhash for better distribution.
-func xxhash64(s string) uint64 {
-	var h uint64 = 14695981039346656037
-	for i := 0; i < len(s); i++ {
-		h ^= uint64(s[i])
-		h *= 1099511628211
-	}
-	return h
-}
-
-// Tokenize performs inline tokenization with callback.
-// Zero allocations - uses byte slices directly.
-func (t *InlineTokenizer) Tokenize(text string, emit func(term string, freq int)) {
 	data := *(*[]byte)(unsafe.Pointer(&text))
-	start := -1
-	termFreqs := make(map[string]int, 64) // Reused within document
+	n := len(data)
+	if n == 0 {
+		return 0
+	}
 
-	for i := 0; i < len(data); i++ {
-		c := data[i]
-		if t.isDelim[c] {
-			if start >= 0 {
-				token := data[start:i]
-				if len(token) < 100 {
-					// Inline lowercase
-					for j := 0; j < len(token); j++ {
-						if token[j] >= 'A' && token[j] <= 'Z' {
-							token[j] += 32
-						}
-					}
-					termFreqs[string(token)]++
-				}
-				start = -1
+	totalTokens := 0
+	i := 0
+	for i < n {
+		// Skip delimiters using LUT
+		for i < n && ultraCharLUT[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		// Hash while scanning token
+		start := i
+		hash := uint64(fnvOffset)
+		for i < n {
+			c := ultraCharLUT[data[i]]
+			if c == 0 {
+				break
 			}
-		} else if start < 0 {
-			start = i
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		// Keep tokens of reasonable length
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			freqs[hash]++
+			totalTokens++
 		}
 	}
 
-	// Handle last token
-	if start >= 0 {
-		token := data[start:]
-		if len(token) < 100 {
-			for j := 0; j < len(token); j++ {
-				if token[j] >= 'A' && token[j] <= 'Z' {
-					token[j] += 32
-				}
-			}
-			termFreqs[string(token)]++
-		}
+	return totalTokens
+}
+
+// tokenizeToHash tokenizes text and returns hash-freq pairs (legacy).
+func tokenizeToHash(text string) []ultraTermFreq {
+	freqs := make(map[uint64]uint16, len(text)/6)
+	tokenizeToHashReuse(text, freqs)
+
+	result := make([]ultraTermFreq, 0, len(freqs))
+	for hash, freq := range freqs {
+		result = append(result, ultraTermFreq{hash: hash, freq: freq})
 	}
-
-	// Emit all terms
-	for term, freq := range termFreqs {
-		emit(term, freq)
-	}
+	return result
 }
 
-// Add adds a posting to the local buffer.
-func (b *LocalBuffer) Add(numShards int, term string, docID uint32, freq int) {
-	h := xxhash64(term)
-	shardID := int(h % uint64(numShards))
-
-	b.shardBufs[shardID] = append(b.shardBufs[shardID], localPosting{
-		termHash: h,
-		term:     term,
-		docID:    docID,
-		freq:     uint16(freq),
-	})
-	b.totalPostings++
-}
-
-// Reset clears the local buffer for reuse.
-func (b *LocalBuffer) Reset() {
-	for i := range b.shardBufs {
-		b.shardBufs[i] = b.shardBufs[i][:0]
-	}
-	b.totalPostings = 0
-	// Keep termCache for term interning across batches
-}
-
-// FlushToShards transfers postings to the global shards.
-func (b *LocalBuffer) FlushToShards(shards []*TermShard) {
-	for shardID, postings := range b.shardBufs {
-		if len(postings) == 0 {
-			continue
-		}
-		shard := shards[shardID]
-		shard.AddPostings(postings)
-	}
-}
-
-// AddPostings adds a batch of postings to the shard.
-// This shard is exclusively owned by one goroutine, so no locks needed.
-func (s *TermShard) AddPostings(postings []localPosting) {
-	for _, p := range postings {
-		termID, exists := s.terms[p.term]
-		if !exists {
-			termID = s.termCount
-			s.terms[p.term] = termID
-			s.termList = append(s.termList, p.term)
-			s.postings = append(s.postings, make([]IndexPosting, 0, 256))
-			s.termCount++
-		}
-
-		s.postings[termID] = append(s.postings[termID], IndexPosting{
-			DocID: p.docID,
-			Freq:  p.freq,
-		})
-		s.totalPostings++
-	}
-}
-
-// UltraDocument is a document for ultra-fast indexing.
-type UltraDocument struct {
-	ID   uint32
-	Text string
-}
-
-// ProcessBatch processes a batch of documents with maximum parallelism.
-func (u *UltraIndexer) ProcessBatch(docs []UltraDocument) {
-	if len(docs) == 0 {
+// AddBatch indexes a batch of documents using phase-based processing.
+// Optimized for reduced lock contention and GC pressure.
+func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
+	if len(texts) == 0 {
 		return
 	}
 
-	numWorkers := u.NumWorkers
-	if numWorkers > len(docs) {
-		numWorkers = len(docs)
+	numDocs := len(texts)
+	numWorkers := ui.config.NumWorkers
+	if numWorkers > numDocs {
+		numWorkers = numDocs
 	}
 
-	chunkSize := (len(docs) + numWorkers - 1) / numWorkers
+	// Pre-allocate per-worker shard postings to avoid Phase 3 contention
+	type posting struct {
+		hash  uint64
+		docID uint32
+		freq  uint16
+	}
+	workerShardPostings := make([][][]posting, numWorkers)
+	for w := 0; w < numWorkers; w++ {
+		workerShardPostings[w] = make([][]posting, ultraNumShards)
+		for s := 0; s < ultraNumShards; s++ {
+			workerShardPostings[w][s] = make([]posting, 0, (numDocs/numWorkers)*2)
+		}
+	}
 
+	// Phase 1: Parallel tokenization with per-worker shard accumulation
+	docLensLocal := make([]uint16, numDocs)
 	var wg sync.WaitGroup
+	batchSize := (numDocs + numWorkers - 1) / numWorkers
 
 	for w := 0; w < numWorkers; w++ {
-		start := w * chunkSize
-		end := start + chunkSize
-		if end > len(docs) {
-			end = len(docs)
+		start := w * batchSize
+		end := start + batchSize
+		if end > numDocs {
+			end = numDocs
 		}
-		if start >= len(docs) {
+		if start >= end {
 			break
 		}
 
 		wg.Add(1)
-		go func(workerID int, chunk []UltraDocument) {
+		go func(workerID, start, end int) {
 			defer wg.Done()
+			// Reusable map per worker to reduce allocations
+			freqs := make(map[uint64]uint16, 256)
+			myShards := workerShardPostings[workerID]
 
-			tokenizer := u.tokenizers[workerID]
-			localBuf := u.localBufs[workerID]
-			localBuf.Reset()
+			for i := start; i < end; i++ {
+				docID := docIDs[i]
+				docLen := tokenizeToHashReuse(texts[i], freqs)
+				if docLen > 65535 {
+					docLen = 65535
+				}
+				docLensLocal[i] = uint16(docLen)
 
-			for _, doc := range chunk {
-				var docLen uint16
-
-				tokenizer.Tokenize(doc.Text, func(term string, freq int) {
-					localBuf.Add(u.NumShards, term, doc.ID, freq)
-					docLen += uint16(freq)
-				})
-
-				// Store doc length (atomic not needed - each doc processed by one worker)
-				if int(doc.ID) < len(u.docLens) {
-					u.docLens[doc.ID] = docLen
+				// Distribute postings to per-worker shard slices
+				for hash, freq := range freqs {
+					shardID := hash & ultraShardMask
+					myShards[shardID] = append(myShards[shardID], posting{hash, docID, freq})
 				}
 			}
-
-			u.docCount.Add(uint32(len(chunk)))
-		}(w, docs[start:end])
+		}(w, start, end)
 	}
-
 	wg.Wait()
 
-	// Flush local buffers to shards (parallel, each shard independent)
-	var flushWg sync.WaitGroup
-	for shardID := 0; shardID < u.NumShards; shardID++ {
-		flushWg.Add(1)
-		go func(sid int) {
-			defer flushWg.Done()
-			for w := 0; w < numWorkers; w++ {
-				postings := u.localBufs[w].shardBufs[sid]
-				if len(postings) > 0 {
-					u.shards[sid].AddPostings(postings)
+	// Phase 2: Collect doc lengths
+	var totalLen uint64
+	for _, dl := range docLensLocal {
+		totalLen += uint64(dl)
+	}
+	ui.docCount.Add(uint64(numDocs))
+	ui.totalLen.Add(totalLen)
+
+	ui.docLensMu.Lock()
+	ui.docLens = append(ui.docLens, docLensLocal...)
+	ui.docLensMu.Unlock()
+
+	// Phase 3: Parallel shard updates - each worker handles a range of shards
+	shardsPerWorker := (ultraNumShards + numWorkers - 1) / numWorkers
+
+	for w := 0; w < numWorkers; w++ {
+		startShard := w * shardsPerWorker
+		endShard := startShard + shardsPerWorker
+		if endShard > ultraNumShards {
+			endShard = ultraNumShards
+		}
+		if startShard >= endShard {
+			break
+		}
+
+		wg.Add(1)
+		go func(startShard, endShard int) {
+			defer wg.Done()
+			for shardID := startShard; shardID < endShard; shardID++ {
+				shard := ui.shards[shardID]
+
+				// Collect postings from all workers for this shard
+				var totalPostings int
+				for _, ws := range workerShardPostings {
+					totalPostings += len(ws[shardID])
 				}
+				if totalPostings == 0 {
+					continue
+				}
+
+				shard.mu.Lock()
+				for _, ws := range workerShardPostings {
+					for _, p := range ws[shardID] {
+						pl, exists := shard.terms[p.hash]
+						if !exists {
+							pl = &ultraPostings{
+								docIDs: make([]uint32, 0, 128),
+								freqs:  make([]uint16, 0, 128),
+							}
+							shard.terms[p.hash] = pl
+						}
+						pl.docIDs = append(pl.docIDs, p.docID)
+						pl.freqs = append(pl.freqs, p.freq)
+					}
+				}
+				shard.mu.Unlock()
 			}
-		}(shardID)
+		}(startShard, endShard)
 	}
-	flushWg.Wait()
-
-	// Check if we need to flush to disk (memory bounding)
-	if u.OutputDir != "" && u.SegmentSize > 0 {
-		totalPostings := uint64(0)
-		for _, shard := range u.shards {
-			totalPostings += shard.totalPostings
-		}
-		// Flush when postings exceed threshold (roughly SegmentSize * avg_terms_per_doc)
-		if totalPostings > uint64(u.SegmentSize)*50 {
-			u.flushToDisk()
-		}
-	}
+	wg.Wait()
 }
 
-// flushToDisk writes current shards to disk and resets them.
-func (u *UltraIndexer) flushToDisk() {
-	if u.OutputDir == "" {
-		return
-	}
-
-	// Merge all shards into segment format
-	seg := &Segment{
-		termPostings: make(map[string][]IndexPosting, 50000),
-		docLens:      make(map[uint32]int, u.SegmentSize),
-	}
-
-	for _, shard := range u.shards {
-		for term, termID := range shard.terms {
-			postings := shard.postings[termID]
-			seg.termPostings[term] = append(seg.termPostings[term], postings...)
-		}
-	}
-
-	// Get doc lens for this segment's docs
-	docCount := u.docCount.Load()
-	for i := uint32(0); i < docCount; i++ {
-		if u.docLens[i] > 0 {
-			seg.docLens[i] = int(u.docLens[i])
-		}
-	}
-	seg.docCount = int(docCount)
-
-	// Write segment to disk
-	u.segmentMu.Lock()
-	segPath := fmt.Sprintf("%s/seg_%05d.bin", u.OutputDir, u.segmentNum)
-	u.segmentNum++
-	u.segmentMu.Unlock()
-
-	meta := writeUltraSegment(segPath, seg)
-	if meta != nil {
-		u.segmentMu.Lock()
-		u.segments = append(u.segments, meta)
-		u.segmentMu.Unlock()
-	}
-
-	// Reset shards for next segment
-	for _, shard := range u.shards {
-		shard.terms = make(map[string]uint32, 50000)
-		shard.termList = shard.termList[:0]
-		shard.postings = shard.postings[:0]
-		shard.termCount = 0
-		shard.totalPostings = 0
-	}
-
-	runtime.GC()
+// Add indexes a single document (for compatibility).
+func (ui *UltraIndexer) Add(docID uint32, text string) {
+	ui.AddBatch([]uint32{docID}, []string{text})
 }
 
-// writeUltraSegment writes a segment to disk using PipelineIndexer format.
-func writeUltraSegment(path string, seg *Segment) *SegmentMeta {
-	f, err := os.Create(path)
-	if err != nil {
+// hashToKey converts a uint64 hash to a string key.
+func hashToKey(hash uint64) string {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, hash)
+	return string(buf)
+}
+
+// Finish completes indexing and returns a searchable index.
+func (ui *UltraIndexer) Finish() (*SegmentedIndex, error) {
+	numDocs := int(ui.docCount.Load())
+	if numDocs == 0 {
+		return nil, nil
+	}
+
+	avgDocLen := float64(ui.totalLen.Load()) / float64(numDocs)
+
+	// Build segment with hash-based term lookup
+	terms := make(map[string]*SegmentPostings)
+
+	// Collect all terms from all shards
+	for shardID := 0; shardID < ultraNumShards; shardID++ {
+		shard := ui.shards[shardID]
+		shard.mu.Lock()
+		for hash, pl := range shard.terms {
+			hashKey := hashToKey(hash)
+			terms[hashKey] = &SegmentPostings{
+				DocIDs: pl.docIDs,
+				Freqs:  pl.freqs,
+			}
+		}
+		shard.mu.Unlock()
+	}
+
+	// Build doc lengths map
+	docLensMap := make(map[uint32]uint16, numDocs)
+	for i, dl := range ui.docLens {
+		docLensMap[uint32(i)] = dl
+	}
+
+	segment := &SearchSegment{
+		id:      0,
+		terms:   terms,
+		docLens: docLensMap,
+		numDocs: numDocs,
+	}
+
+	return &SegmentedIndex{
+		segments:  []*SearchSegment{segment},
+		numDocs:   numDocs,
+		avgDocLen: avgDocLen,
+		docLens:   ui.docLens,
+	}, nil
+}
+
+// FinishToFile writes index directly to disk.
+func (ui *UltraIndexer) FinishToFile(outputPath string) error {
+	numDocs := int(ui.docCount.Load())
+	if numDocs == 0 {
 		return nil
+	}
+
+	f, err := os.Create(outputPath)
+	if err != nil {
+		return err
 	}
 	defer f.Close()
 
-	w := bufio.NewWriterSize(f, 4*1024*1024)
+	w := bufio.NewWriterSize(f, 8*1024*1024)
 
-	// Write header
-	binary.Write(w, binary.LittleEndian, uint32(seg.docCount))
-	binary.Write(w, binary.LittleEndian, uint32(len(seg.termPostings)))
+	// Header
+	w.WriteString("ULTRA001")
+	binary.Write(w, binary.LittleEndian, uint64(numDocs))
+	binary.Write(w, binary.LittleEndian, ui.totalLen.Load())
+	binary.Write(w, binary.LittleEndian, uint64(ultraNumShards))
 
-	// Collect and sort terms
-	terms := make([]string, 0, len(seg.termPostings))
-	for term := range seg.termPostings {
-		terms = append(terms, term)
-	}
-	sort.Strings(terms)
+	// Write each shard
+	for shardID := 0; shardID < ultraNumShards; shardID++ {
+		shard := ui.shards[shardID]
+		binary.Write(w, binary.LittleEndian, uint64(len(shard.terms)))
 
-	// Calculate offsets
-	termOffsets := make(map[string]int64, len(terms))
-	offset := int64(0)
-	for _, term := range terms {
-		postings := seg.termPostings[term]
-		termOffsets[term] = offset
-		offset += int64(len(postings) * 6)
-	}
-
-	// Write term dictionary
-	for _, term := range terms {
-		termBytes := []byte(term)
-		binary.Write(w, binary.LittleEndian, uint16(len(termBytes)))
-		w.Write(termBytes)
-		binary.Write(w, binary.LittleEndian, uint32(len(seg.termPostings[term])))
-		binary.Write(w, binary.LittleEndian, termOffsets[term])
-	}
-
-	// Write posting lists (sorted by docID)
-	for _, term := range terms {
-		postings := seg.termPostings[term]
-		sort.Slice(postings, func(i, j int) bool {
-			return postings[i].DocID < postings[j].DocID
-		})
-		for _, p := range postings {
-			binary.Write(w, binary.LittleEndian, p.DocID)
-			binary.Write(w, binary.LittleEndian, p.Freq)
+		for hash, pl := range shard.terms {
+			binary.Write(w, binary.LittleEndian, hash)
+			binary.Write(w, binary.LittleEndian, uint32(len(pl.docIDs)))
+			for i := range pl.docIDs {
+				binary.Write(w, binary.LittleEndian, pl.docIDs[i])
+				binary.Write(w, binary.LittleEndian, pl.freqs[i])
+			}
 		}
 	}
 
 	// Write doc lengths
-	docIDs := make([]uint32, 0, len(seg.docLens))
-	for docID := range seg.docLens {
-		docIDs = append(docIDs, docID)
-	}
-	sort.Slice(docIDs, func(i, j int) bool { return docIDs[i] < docIDs[j] })
-
-	binary.Write(w, binary.LittleEndian, uint32(len(docIDs)))
-	for _, docID := range docIDs {
-		binary.Write(w, binary.LittleEndian, docID)
-		binary.Write(w, binary.LittleEndian, uint16(seg.docLens[docID]))
+	for _, dl := range ui.docLens {
+		binary.Write(w, binary.LittleEndian, dl)
 	}
 
-	w.Flush()
-
-	fi, _ := f.Stat()
-	return &SegmentMeta{
-		ID:       0,
-		Path:     path,
-		NumDocs:  seg.docCount,
-		NumTerms: len(terms),
-		Size:     fi.Size(),
-	}
+	return w.Flush()
 }
 
-// Add adds a single document (less efficient than ProcessBatch).
-func (u *UltraIndexer) Add(docID uint32, text string) {
-	u.ProcessBatch([]UltraDocument{{ID: docID, Text: text}})
-}
-
-// Finish finalizes the index and returns the merged posting lists.
-func (u *UltraIndexer) Finish() (map[string][]IndexPosting, []int) {
-	// Merge all shards into final result
-	numTerms := 0
-	for _, shard := range u.shards {
-		numTerms += int(shard.termCount)
+// UltraQueryTokenize tokenizes a query string using the hash algorithm.
+func UltraQueryTokenize(query string) []string {
+	data := *(*[]byte)(unsafe.Pointer(&query))
+	n := len(data)
+	if n == 0 {
+		return nil
 	}
 
-	result := make(map[string][]IndexPosting, numTerms)
+	var result []string
+	i := 0
+	for i < n {
+		for i < n && ultraCharLUT[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
 
-	// Parallel collection from shards
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	for _, shard := range u.shards {
-		wg.Add(1)
-		go func(s *TermShard) {
-			defer wg.Done()
-
-			localResult := make(map[string][]IndexPosting, len(s.terms))
-			for term, termID := range s.terms {
-				postings := s.postings[termID]
-				// Sort by docID
-				sort.Slice(postings, func(i, j int) bool {
-					return postings[i].DocID < postings[j].DocID
-				})
-				localResult[term] = postings
+		start := i
+		hash := uint64(fnvOffset)
+		for i < n {
+			c := ultraCharLUT[data[i]]
+			if c == 0 {
+				break
 			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
 
-			mu.Lock()
-			for term, postings := range localResult {
-				result[term] = postings
-			}
-			mu.Unlock()
-		}(shard)
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			result = append(result, hashToKey(hash))
+		}
 	}
-	wg.Wait()
-
-	// Convert docLens to []int
-	docCount := u.docCount.Load()
-	docLens := make([]int, docCount)
-	for i := uint32(0); i < docCount; i++ {
-		docLens[i] = int(u.docLens[i])
-	}
-
-	return result, docLens
+	return result
 }
 
-// FinishToMmap writes directly to mmap format for memory-efficient search.
-func (u *UltraIndexer) FinishToMmap(outputPath string) (*MmapIndex, error) {
-	// If we have disk segments, use streaming merge
-	if len(u.segments) > 0 {
-		// Flush any remaining data
-		if u.hasUnflushedData() {
-			u.flushToDisk()
-		}
+// UltraSegmentedIndex is a search-optimized index using hash keys.
+type UltraSegmentedIndex struct {
+	shards    [ultraNumShards]map[uint64]*ultraPostings
+	docLens   []uint16
+	numDocs   int
+	avgDocLen float64
+}
 
-		// Collect segment paths
-		segmentPaths := make([]string, len(u.segments))
-		for i, seg := range u.segments {
-			segmentPaths[i] = seg.Path
-		}
-
-		// Use streaming merge
-		merger := NewTrueStreamingMerger(outputPath, segmentPaths)
-		if err := merger.Merge(); err != nil {
-			return nil, err
-		}
-
-		// Clean up segment files
-		for _, path := range segmentPaths {
-			os.Remove(path)
-		}
-
-		return OpenMmapIndex(outputPath)
-	}
-
-	// No disk segments - use in-memory data
-	// Get all terms across shards
-	numTerms := 0
-	for _, shard := range u.shards {
-		numTerms += int(shard.termCount)
-	}
-
-	allTerms := make([]string, 0, numTerms)
-	termToShard := make(map[string]int, numTerms)
-
-	for shardID, shard := range u.shards {
-		for term := range shard.terms {
-			allTerms = append(allTerms, term)
-			termToShard[term] = shardID
-		}
-	}
-
-	// Sort terms alphabetically
-	sort.Strings(allTerms)
-
-	// Calculate statistics
-	docCount := u.docCount.Load()
-	var totalDocLen int64
-	for i := uint32(0); i < docCount; i++ {
-		totalDocLen += int64(u.docLens[i])
-	}
-	avgDocLen := float64(0)
-	if docCount > 0 {
-		avgDocLen = float64(totalDocLen) / float64(docCount)
-	}
-
-	// Create mmap writer
-	writer, err := NewMmapIndexWriter(outputPath)
+// LoadUltraIndex loads an ultra index from file.
+func LoadUltraIndex(path string) (*UltraSegmentedIndex, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 
-	writer.SetDocCount(int(docCount), avgDocLen)
+	r := bufio.NewReaderSize(f, 8*1024*1024)
 
-	// Write doc lengths
-	for i := uint32(0); i < docCount; i++ {
-		writer.AddDocLen(int(u.docLens[i]))
+	magic := make([]byte, 8)
+	r.Read(magic)
+	if string(magic) != "ULTRA001" {
+		return nil, os.ErrInvalid
 	}
 
-	// Write terms in sorted order
-	n := float64(docCount)
-	for _, term := range allTerms {
-		shardID := termToShard[term]
-		shard := u.shards[shardID]
-		termID := shard.terms[term]
-		postings := shard.postings[termID]
+	var numDocs, totalLen, numShards uint64
+	binary.Read(r, binary.LittleEndian, &numDocs)
+	binary.Read(r, binary.LittleEndian, &totalLen)
+	binary.Read(r, binary.LittleEndian, &numShards)
 
-		// Sort postings by docID
-		sort.Slice(postings, func(i, j int) bool {
-			return postings[i].DocID < postings[j].DocID
-		})
+	idx := &UltraSegmentedIndex{
+		docLens:   make([]uint16, numDocs),
+		numDocs:   int(numDocs),
+		avgDocLen: float64(totalLen) / float64(numDocs),
+	}
 
-		// Extract arrays
-		docIDs := make([]uint32, len(postings))
-		freqs := make([]uint16, len(postings))
-		for i, p := range postings {
-			docIDs[i] = p.DocID
-			freqs[i] = p.Freq
+	for shardID := 0; shardID < int(numShards) && shardID < ultraNumShards; shardID++ {
+		var termCount uint64
+		binary.Read(r, binary.LittleEndian, &termCount)
+
+		idx.shards[shardID] = make(map[uint64]*ultraPostings, termCount)
+
+		for i := uint64(0); i < termCount; i++ {
+			var hash uint64
+			var entryCount uint32
+			binary.Read(r, binary.LittleEndian, &hash)
+			binary.Read(r, binary.LittleEndian, &entryCount)
+
+			pl := &ultraPostings{
+				docIDs: make([]uint32, entryCount),
+				freqs:  make([]uint16, entryCount),
+			}
+
+			for j := uint32(0); j < entryCount; j++ {
+				binary.Read(r, binary.LittleEndian, &pl.docIDs[j])
+				binary.Read(r, binary.LittleEndian, &pl.freqs[j])
+			}
+
+			idx.shards[shardID][hash] = pl
 		}
-
-		// Compute IDF
-		df := float64(len(postings))
-		idf := float32(0)
-		if n > 0 && df > 0 {
-			idf = float32(math.Log((n-df+0.5)/(df+0.5) + 1))
-		}
-
-		writer.AddTerm(term, docIDs, freqs, idf)
 	}
 
-	// Finish writing
-	if err := writer.Finish(); err != nil {
-		return nil, err
+	for i := 0; i < int(numDocs); i++ {
+		binary.Read(r, binary.LittleEndian, &idx.docLens[i])
 	}
 
-	// Open the mmap index
-	return OpenMmapIndex(outputPath)
+	return idx, nil
 }
 
-// hasUnflushedData checks if there's data in shards that hasn't been flushed.
-func (u *UltraIndexer) hasUnflushedData() bool {
-	for _, shard := range u.shards {
-		if shard.totalPostings > 0 {
-			return true
+// Search performs BM25 search on the ultra index.
+func (idx *UltraSegmentedIndex) Search(query string, limit int) []MmapSearchResult {
+	if idx.numDocs == 0 {
+		return nil
+	}
+
+	data := *(*[]byte)(unsafe.Pointer(&query))
+	n := len(data)
+	if n == 0 {
+		return nil
+	}
+
+	var queryHashes []uint64
+	i := 0
+	for i < n {
+		for i < n && ultraCharLUT[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		start := i
+		hash := uint64(fnvOffset)
+		for i < n {
+			c := ultraCharLUT[data[i]]
+			if c == 0 {
+				break
+			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			queryHashes = append(queryHashes, hash)
 		}
 	}
-	return false
-}
 
-// DocCount returns the number of indexed documents.
-func (u *UltraIndexer) DocCount() uint32 {
-	return u.docCount.Load()
+	if len(queryHashes) == 0 {
+		return nil
+	}
+
+	const k1 = 1.2
+	const b = 0.75
+	n64 := float64(idx.numDocs)
+
+	scores := make(map[uint32]float32)
+
+	for _, hash := range queryHashes {
+		shardID := hash & ultraShardMask
+		pl, exists := idx.shards[shardID][hash]
+		if !exists {
+			continue
+		}
+
+		df := float64(len(pl.docIDs))
+		idf := float32(((n64-df+0.5)/(df+0.5) + 1))
+
+		for i, docID := range pl.docIDs {
+			freq := float64(pl.freqs[i])
+			docLen := float64(idx.docLens[docID])
+			tfNorm := float32(freq * (k1 + 1) / (freq + k1*(1-b+b*docLen/idx.avgDocLen)))
+			scores[docID] += idf * tfNorm
+		}
+	}
+
+	results := make([]MmapSearchResult, 0, len(scores))
+	for docID, score := range scores {
+		results = append(results, MmapSearchResult{DocID: docID, Score: score})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results
 }
