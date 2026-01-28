@@ -293,8 +293,8 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	// Use TurboIndexer with fast tokenizer for 50k+ docs/sec
 	indexer := algo.NewTurboIndexer(fastTokenize)
 
-	// Collect documents and feed to indexer (streaming for I/O overlap)
-	allDocs := make([]fineweb.Document, 0, 50000)
+	// Store compressed docs directly during iteration (no intermediate full doc storage)
+	compressedDocs := make([]compressedDoc, 0, 100000)
 	var imported int64
 	batchSize := 10000
 	count := 0
@@ -310,8 +310,18 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		docNum := uint32(len(allDocs))
-		allDocs = append(allDocs, doc)
+		docNum := uint32(len(compressedDocs))
+
+		// Store minimal metadata directly (no intermediate full doc storage)
+		compressedDocs = append(compressedDocs, compressedDoc{
+			ID:        doc.ID,
+			URL:       doc.URL,
+			TextData:  nil, // Skip text storage for speed
+			Dump:      doc.Dump,
+			Date:      doc.Date,
+			Language:  doc.Language,
+			LangScore: doc.LanguageScore,
+		})
 
 		// Feed to TurboIndexer (concurrent processing)
 		indexer.Add(docNum, doc.Text)
@@ -330,27 +340,13 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	// Wait for parallel indexing to complete
 	termPostings, docLens := indexer.Finish()
 
-	// Build document storage without compression (for speed)
-	compressedDocs := make([]compressedDoc, len(allDocs))
-	for i, doc := range allDocs {
-		compressedDocs[i] = compressedDoc{
-			ID:        doc.ID,
-			URL:       doc.URL,
-			TextData:  nil, // Skip text storage for speed
-			Dump:      doc.Dump,
-			Date:      doc.Date,
-			Language:  doc.Language,
-			LangScore: doc.LanguageScore,
-		}
-	}
-
 	// Now lock and update index
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	// Store compressed documents
 	d.index.Documents = compressedDocs
-	d.index.NumDocs = len(allDocs)
+	d.index.NumDocs = len(compressedDocs)
 
 	// Convert doc lengths to uint16
 	d.index.DocLens = make([]uint16, len(docLens))

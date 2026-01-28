@@ -313,18 +313,26 @@ func NewTurboIndexer(tokenizer TokenizerFunc) *TurboIndexer {
 		numWorkers = 4
 	}
 
+	// Channel buffer sized for ~10 seconds of work at 50k docs/sec
+	// Smaller buffer reduces memory while still allowing I/O overlap
+	bufferSize := numWorkers * 5000
+	if bufferSize > 50000 {
+		bufferSize = 50000
+	}
+
 	ti := &TurboIndexer{
 		NumWorkers: numWorkers,
 		Tokenizer:  tokenizer,
-		docCh:      make(chan indexItem, 100000), // Large buffer for smooth I/O overlap
+		docCh:      make(chan indexItem, bufferSize),
 		workerData: make([]*turboWorkerData, numWorkers),
 	}
 
-	// Initialize worker data structures with large pre-allocated maps
+	// Initialize worker data structures with moderate pre-allocation
+	// Maps will grow as needed - avoid over-allocation for smaller datasets
 	for i := 0; i < numWorkers; i++ {
 		ti.workerData[i] = &turboWorkerData{
-			terms:   make(map[string][]IndexPosting, 40000),
-			docLens: make(map[uint32]int, 5000),
+			terms:   make(map[string][]IndexPosting, 20000),
+			docLens: make(map[uint32]int, 10000),
 		}
 	}
 
@@ -401,20 +409,26 @@ func (ti *TurboIndexer) parallelMerge() (map[string][]IndexPosting, []int) {
 				finalTerms[term] = append(existing, postings...)
 			}
 		}
-		// Clear worker data to help GC
+		// Clear worker data immediately to help GC release memory
 		ti.workerData[i].terms = nil
+		ti.workerData[i].docLens = nil
 	}
 
 	// Merge doc lengths (pre-allocate array)
 	maxDocID := ti.maxDocID.Load()
 	docLens := make([]int, maxDocID+1)
 	for _, data := range ti.workerData {
-		if data.docLens != nil {
+		if data != nil && data.docLens != nil {
 			for docID, length := range data.docLens {
 				docLens[docID] = length
 			}
+			// Clear after merge
+			data.docLens = nil
 		}
 	}
+
+	// Clear worker 0's docLens (terms kept as finalTerms)
+	ti.workerData[0].docLens = nil
 
 	return finalTerms, docLens
 }
