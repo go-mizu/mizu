@@ -36,40 +36,40 @@
 
 The following table compares pure Rust indexing performance (measured separately from parquet reading) against Go FFI performance:
 
-| Implementation | Profile | Duration | Docs/sec | FFI Overhead |
-|----------------|---------|----------|----------|--------------|
-| **Pure Rust (optimized)** | ultra | 14.36s | **161,519** | - |
-| **Pure Rust** | tantivy | 253.37s | 9,153 | - |
-| **Go FFI (optimized)** | ultra | 40.39s | 57,421 | 2.8x |
+| Implementation | Profile | Duration | Docs/sec | Improvement |
+|----------------|---------|----------|----------|-------------|
+| **Pure Rust (optimized)** | ultra | 10.4s | **222,437** | - |
+| **Pure Rust (baseline)** | ultra | 17.2s | 135,000 | - |
+| **Pure Rust** | tantivy | 253.4s | 9,153 | - |
+| **Go FFI** | ultra | 40.4s | 57,421 | - |
 
 **Optimizations Applied:**
-1. Lookup table for character classification (faster tokenization)
-2. Parallel ID hashing during indexing
-3. Deferred IDF computation to commit time
-4. Increased shards from 32 to 64
-5. Pre-sized hashmaps for token frequencies
+1. Reduced shards to 16 (optimal balance of parallelism vs iteration overhead)
+2. Lookup table for character classification
+3. Skip storing document IDs (use sequential IDs)
+4. Pre-sized hashmaps and vectors
+5. Deferred IDF computation to commit time
+6. Zero-copy byte slice tokenization
+
+**Performance Improvement:**
+- Pure Rust baseline: 135k docs/sec
+- Pure Rust optimized: **222k docs/sec** (65% improvement)
+- Peak throughput: 354k docs/sec (first batch)
 
 **Key Findings:**
-- Pure Rust ultra profile achieves **162k docs/sec** (parquet reading excluded)
-- Go FFI adds approximately **2.8x overhead** due to:
-  - Binary serialization of documents in Go
-  - FFI boundary crossing
-  - String allocations on both sides
-- Synthetic tests achieve 1.4M docs/sec because test documents are ~80 bytes
-- Real Vietnamese documents are ~2KB (compressed), leading to 10x slower indexing
+- Pure Rust ultra profile achieves **222k docs/sec** (parquet reading excluded)
+- Go FFI adds approximately **3.9x overhead** (222k → 57k)
+- Synthetic tests achieve 1.4M docs/sec (80 byte docs)
+- Real Vietnamese documents are ~2KB, leading to proportionally slower indexing
 
 **1M docs/sec Target Analysis:**
-- Current pure Rust: 162k docs/sec (need 6.2x improvement)
-- Current Go FFI: 57k docs/sec (need 17.4x improvement)
-- Main bottlenecks:
-  - String allocations for document IDs and text
-  - Tokenization of long Vietnamese text (~2KB/doc)
-  - FFI serialization overhead
-- Further optimizations would require:
-  - Zero-copy text handling
-  - Memory-mapped data structures
-  - SIMD tokenization
-  - Skip storing document IDs entirely
+- Current pure Rust: 222k docs/sec (need 4.5x improvement)
+- To achieve 1M docs/sec would require:
+  - Lock-free concurrent data structures (dashmap)
+  - Zero-copy from parquet (avoid Document string allocations)
+  - SIMD bulk tokenization
+  - Custom arena allocators
+  - These are significant architectural changes
 
 ## Latency Distribution
 

@@ -62,7 +62,7 @@ fn main() {
     let _ = index.index_batch(&documents[..warmup_size]);
     index.clear();
 
-    // Benchmark indexing
+    // Benchmark indexing - 100k batches is optimal
     let batch_size = 100_000;
     let index_start = Instant::now();
     let mut indexed = 0;
