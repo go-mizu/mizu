@@ -7,6 +7,7 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/blugelabs/bluge"
@@ -32,6 +33,7 @@ type Driver struct {
 	language  string
 	analyzer  *analysis.Analyzer
 	tokenizer *tokenizer.Vietnamese
+	mu        sync.RWMutex // Protects reader access
 }
 
 // New creates a new Bluge driver.
@@ -103,14 +105,10 @@ func (d *Driver) Info() *fineweb.DriverInfo {
 func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*fineweb.SearchResult, error) {
 	start := time.Now()
 
-	// Refresh reader to see latest changes
-	newReader, err := d.writer.Reader()
-	if err != nil {
-		return nil, fmt.Errorf("refreshing reader: %w", err)
-	}
-	oldReader := d.reader
-	d.reader = newReader
-	oldReader.Close()
+	// Get cached reader (thread-safe)
+	d.mu.RLock()
+	reader := d.reader
+	d.mu.RUnlock()
 
 	// Build query
 	q := bluge.NewMatchQuery(query).SetField("text")
@@ -121,7 +119,7 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 		WithStandardAggregations()
 
 	// Execute search
-	dmi, err := d.reader.Search(ctx, req)
+	dmi, err := reader.Search(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("executing search: %w", err)
 	}
@@ -227,6 +225,11 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		}
 	}
 
+	// Refresh reader to see newly indexed documents
+	if err := d.RefreshReader(); err != nil {
+		return fmt.Errorf("refreshing reader after import: %w", err)
+	}
+
 	if progress != nil {
 		progress(imported, imported)
 	}
@@ -234,24 +237,36 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	return nil
 }
 
-// Count returns the number of indexed documents.
-func (d *Driver) Count(ctx context.Context) (int64, error) {
-	// Refresh reader
+// RefreshReader refreshes the reader to see latest changes.
+// Call this after indexing to make new documents searchable.
+func (d *Driver) RefreshReader() error {
 	newReader, err := d.writer.Reader()
 	if err != nil {
-		return 0, fmt.Errorf("refreshing reader: %w", err)
+		return fmt.Errorf("refreshing reader: %w", err)
 	}
+
+	d.mu.Lock()
 	oldReader := d.reader
 	d.reader = newReader
+	d.mu.Unlock()
+
 	if oldReader != nil {
 		oldReader.Close()
 	}
+	return nil
+}
+
+// Count returns the number of indexed documents.
+func (d *Driver) Count(ctx context.Context) (int64, error) {
+	d.mu.RLock()
+	reader := d.reader
+	d.mu.RUnlock()
 
 	// Count all documents
 	q := bluge.NewMatchAllQuery()
 	req := bluge.NewAllMatches(q).WithStandardAggregations()
 
-	dmi, err := d.reader.Search(ctx, req)
+	dmi, err := reader.Search(ctx, req)
 	if err != nil {
 		return 0, fmt.Errorf("counting documents: %w", err)
 	}
@@ -264,8 +279,12 @@ func (d *Driver) Count(ctx context.Context) (int64, error) {
 
 // Close closes the index.
 func (d *Driver) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.reader != nil {
 		d.reader.Close()
+		d.reader = nil
 	}
 	if d.writer != nil {
 		return d.writer.Close()

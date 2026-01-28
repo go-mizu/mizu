@@ -273,6 +273,12 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		return fmt.Errorf("committing final batch: %w", err)
 	}
 
+	// Optimize FTS index for faster searches
+	if err := d.OptimizeFTS(ctx); err != nil {
+		// Non-fatal, just log
+		fmt.Printf("Warning: FTS optimization failed: %v\n", err)
+	}
+
 	if progress != nil {
 		progress(imported, imported)
 	}

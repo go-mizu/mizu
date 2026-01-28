@@ -39,6 +39,16 @@ type IndexingMetrics struct {
 	DocsPerSec float64       `json:"docs_per_sec"`
 	PeakMemory int64         `json:"peak_memory"`
 	TotalDocs  int64         `json:"total_docs"`
+	FromScratch bool         `json:"from_scratch"` // true = fresh index, false = incremental
+}
+
+// IncrementalMetrics contains metrics from incremental indexing.
+type IncrementalMetrics struct {
+	Duration    time.Duration `json:"duration"`
+	DocsPerSec  float64       `json:"docs_per_sec"`
+	DocsAdded   int64         `json:"docs_added"`
+	StartCount  int64         `json:"start_count"`  // docs before
+	EndCount    int64         `json:"end_count"`    // docs after
 }
 
 // LatencyMetrics contains search latency percentiles.

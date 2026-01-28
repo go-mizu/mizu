@@ -1,9 +1,15 @@
 # Search services for fineweb benchmark suite
 # Usage: docker-compose -f docker-compose.search.yml up -d
+# Or start specific services: docker-compose -f docker-compose.search.yml up -d meilisearch elasticsearch
+# Note: Some images don't have "latest" tag, using current stable versions instead
 
 services:
+  # ============================================
+  # EXISTING SERVICES
+  # ============================================
+
   meilisearch:
-    image: getmeili/meilisearch:v1.11
+    image: getmeili/meilisearch:latest
     container_name: fineweb-meilisearch
     ports:
       - "7700:7700"
@@ -30,7 +36,7 @@ services:
           memory: 2G
 
   zinc:
-    image: zincsearch/zincsearch:latest
+    image: public.ecr.aws/zinclabs/zincsearch:latest
     container_name: fineweb-zinc
     ports:
       - "4080:4080"
@@ -56,10 +62,258 @@ services:
         reservations:
           memory: 1G
 
+  # ============================================
+  # NEW SERVICES
+  # ============================================
+
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: fineweb-opensearch
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - bootstrap.memory_lock=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: fineweb-elasticsearch
+    ports:
+      - "9201:9200"
+      - "9301:9300"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+  postgres:
+    image: postgres:18
+    container_name: fineweb-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=fineweb
+      - POSTGRES_USER=fineweb
+      - POSTGRES_PASSWORD=fineweb
+    command: >
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=64MB
+      -c max_parallel_workers_per_gather=4
+      -c max_parallel_workers=8
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fineweb -d fineweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  typesense:
+    image: typesense/typesense:28.0
+    container_name: fineweb-typesense
+    ports:
+      - "8108:8108"
+    environment:
+      - TYPESENSE_DATA_DIR=/data
+      - TYPESENSE_API_KEY=fineweb-benchmark-key
+      - TYPESENSE_ENABLE_CORS=true
+    volumes:
+      - typesense_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8108/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  manticore:
+    image: manticoresearch/manticore:latest
+    container_name: fineweb-manticore
+    ports:
+      - "9306:9306"
+      - "9308:9308"
+    environment:
+      - EXTRA=1
+    volumes:
+      - manticore_data:/var/lib/manticore
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9308 | grep -q 'Manticore'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  quickwit:
+    image: quickwit/quickwit:latest
+    container_name: fineweb-quickwit
+    ports:
+      - "7280:7280"
+    command: run
+    environment:
+      - QW_ENABLE_OTLP_ENDPOINT=false
+      - QW_DATA_DIR=/quickwit/data
+    volumes:
+      - quickwit_data:/quickwit/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7280/health/livez"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+
+  # lnx: Currently commented out - no official Docker image available
+  # Build from source: https://github.com/lnx-search/lnx
+  # lnx:
+  #   build:
+  #     context: https://github.com/lnx-search/lnx.git
+  #     dockerfile: Dockerfile
+  #   container_name: fineweb-lnx
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - LOG_LEVEL=info
+  #     - AUTHORIZATION_KEY=fineweb-benchmark-key
+  #   volumes:
+  #     - lnx_data:/data
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 30s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #       reservations:
+  #         memory: 512M
+
+  # sonic: Commented out - no arm64 image available
+  # sonic:
+  #   image: valeriansaliou/sonic:latest
+  #   container_name: fineweb-sonic
+  #   ports:
+  #     - "1491:1491"
+  #   volumes:
+  #     - sonic_data:/var/lib/sonic/store
+  #     - ./sonic.cfg:/etc/sonic.cfg:ro
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "nc -z localhost 1491"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #       reservations:
+  #         memory: 128M
+
 volumes:
   meilisearch_data:
     driver: local
   zinc_data:
+    driver: local
+  opensearch_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  postgres_data:
+    driver: local
+  typesense_data:
+    driver: local
+  manticore_data:
+    driver: local
+  quickwit_data:
+    driver: local
+  lnx_data:
+    driver: local
+  sonic_data:
     driver: local
 
 networks:
