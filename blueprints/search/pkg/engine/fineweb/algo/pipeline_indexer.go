@@ -91,19 +91,20 @@ func NewPipelineIndexer(outputDir string, tokenizer TokenizerFunc) *PipelineInde
 		numWorkers = 16
 	}
 
-	// Segment size tuned for ~400MB memory per active segment
-	// 50k docs × ~8KB working set per doc = ~400MB
-	segmentSize := 50000
+	// Segment size tuned for ~100MB memory per active segment
+	// 10k docs × ~10KB working set per doc = ~100MB
+	// Smaller segments = lower peak memory
+	segmentSize := 10000
 
 	pi := &PipelineIndexer{
 		SegmentSize:  segmentSize,
 		NumWorkers:   numWorkers,
 		OutputDir:    outputDir,
 		Tokenizer:    tokenizer,
-		docCh:        make(chan indexItem, numWorkers*2000),      // Buffer for I/O overlap
-		tokenizedCh:  make(chan tokenizedDoc, numWorkers*1000),   // Tokenize → Index buffer
+		docCh:        make(chan indexItem, numWorkers*100),       // Minimal buffer for low memory
+		tokenizedCh:  make(chan tokenizedDoc, numWorkers*50),     // Minimal buffer
 		segmentCh:    make(chan *diskSegment, 2),                 // Double-buffer segments
-		segments:     make([]*SegmentMeta, 0, 64),
+		segments:     make([]*SegmentMeta, 0, 256),               // Many segments expected
 	}
 
 	// Create output directory
