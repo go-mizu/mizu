@@ -38,6 +38,9 @@ log = "0.4"
 byteorder = "1.5"
 num_cpus = "1.17"
 
+# Fast hashing
+rustc-hash = "2.1"
+
 # Channels for pipeline
 crossbeam-channel = "0.5"
 

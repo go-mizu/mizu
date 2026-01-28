@@ -53,8 +53,8 @@ import (
 	// High-throughput driver
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_highthroughput"
 
-	// Note: tantivy driver requires CGO, import with -tags tantivy
-	// _ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/tantivy"
+	// Rust FFI driver (requires CGO and pre-built Rust library)
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_rust"
 )
 
 // External service endpoints
