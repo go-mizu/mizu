@@ -55,6 +55,7 @@ import (
 
 	// Rust FFI driver (requires CGO and pre-built Rust library)
 	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_rust"
+	_ "github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb/drivers/fts_rust_tantivy"
 )
 
 // External service endpoints

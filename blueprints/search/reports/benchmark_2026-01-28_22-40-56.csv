@@ -1,0 +1,3 @@
+Driver,Status,Index Time (s),Index Size (MB),p50 (ms),p95 (ms),p99 (ms),Avg (ms),QPS (1),QPS (10),QPS (50),QPS (100),Cold Start (ms),Peak Memory (MB)
+fts_rust,OK,,1343.30,9.883,95.808,97.415,28.140,36,84,,,,
+fts_lowmem,OK,,4501.90,77.334,340.822,511.362,141.465,6,25,,,,
