@@ -440,8 +440,8 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	// Use turbo indexer - streams docs with parallel processing (overlaps I/O with compute)
 	indexer := algo.NewTurboIndexer(tokenizerFunc)
 
-	// Pre-allocate document slice with estimated capacity
-	allDocs := make([]fineweb.Document, 0, 50000)
+	// Only store doc IDs, not full documents (saves memory for large datasets)
+	docIDs := make([]string, 0, 100000)
 	var imported int64
 	batchSize := 10000
 	count := 0
@@ -457,8 +457,8 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		docNum := uint32(len(allDocs))
-		allDocs = append(allDocs, doc)
+		docNum := uint32(len(docIDs))
+		docIDs = append(docIDs, doc.ID)
 
 		// Feed to segment indexer
 		indexer.Add(docNum, doc.Text)
@@ -483,21 +483,20 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Pre-allocate index structures
-	d.index.NumToID = make([]string, len(allDocs))
-	d.index.DocNums = make(map[string]uint32, len(allDocs))
+	// Pre-allocate index structures using collected IDs only
+	d.index.NumToID = docIDs
+	d.index.DocNums = make(map[string]uint32, len(docIDs))
 
-	// Build index structures (sequential - faster than parallel for small workloads)
-	for i, doc := range allDocs {
-		d.index.DocNums[doc.ID] = uint32(i)
-		d.index.NumToID[i] = doc.ID
+	// Build reverse mapping
+	for i, id := range docIDs {
+		d.index.DocNums[id] = uint32(i)
 	}
 
 	// Skip Documents map during indexing - build lazily on search if needed
 	d.index.Documents = nil
 
 	d.index.DocLens = docLens
-	d.index.NumDocs = len(allDocs)
+	d.index.NumDocs = len(docIDs)
 
 	// Calculate average doc length
 	totalLen := 0

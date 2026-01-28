@@ -118,12 +118,12 @@ func (r *Runner) runDriver(ctx context.Context, name string) (*DriverResult, err
 
 	// Delete existing index if fresh indexing requested
 	if r.FreshIndex {
-		r.log("  [1/6] Cleaning existing index...")
+		r.logPhase("CLEANUP", name, "Cleaning existing index...")
 		r.deleteExistingIndex(name)
 	}
 
 	// Open driver
-	r.log("  [1/6] Opening driver...")
+	r.logPhase("OPEN", name, "Opening driver...")
 	driver, err := fineweb.Open(name, cfg)
 	if err != nil {
 		return result, fmt.Errorf("opening driver: %w", err)
@@ -142,60 +142,80 @@ func (r *Runner) runDriver(ctx context.Context, name string) (*DriverResult, err
 	if r.ParquetPath != "" {
 		if indexer, ok := fineweb.AsIndexer(driver); ok {
 			if docCount == 0 {
-				r.log("  [2/6] Indexing from scratch...")
+				r.logPhase("INDEX", name, "Indexing from scratch...")
 				result.Indexing, result.Memory = r.benchmarkIndexing(ctx, indexer, name, true)
 				// Update doc count
 				if stats, ok := fineweb.AsStats(driver); ok {
 					result.DocCount, _ = stats.Count(ctx)
 				}
+				if result.Indexing != nil {
+					r.log("    Result: %d docs, %.0f docs/sec, peak memory %s",
+						result.Indexing.TotalDocs,
+						result.Indexing.DocsPerSec,
+						FormatBytes(result.Indexing.PeakMemory))
+				}
 			} else {
-				r.log("  [2/6] Skipping indexing (already indexed)")
+				r.logPhase("INDEX", name, "Skipping indexing (already indexed: %d docs)", docCount)
 			}
 
 			// Incremental indexing test
 			if r.TestIncremental && r.IncrementalDocs > 0 {
-				r.log("  [2.5/6] Testing incremental indexing...")
+				r.logPhase("INCREMENTAL", name, "Testing incremental indexing (%d docs)...", r.IncrementalDocs)
 				result.Incremental = r.benchmarkIncrementalIndexing(ctx, indexer, name)
 			}
 		}
 	}
 
 	// Measure index size
-	r.log("  [3/6] Measuring index size...")
+	r.logPhase("SIZE", name, "Measuring index size...")
 	result.IndexSize = r.measureIndexSize(name)
 	r.log("    Index size: %s", FormatBytes(result.IndexSize))
 
 	// Search latency benchmark
-	r.log("  [4/6] Measuring latency (%d iterations x %d queries)...", r.Iterations, len(r.Queries))
+	r.logPhase("LATENCY", name, "Measuring latency (%d iterations x %d queries = %d ops)...",
+		r.Iterations, len(r.Queries), r.Iterations*len(r.Queries))
 	result.Latency = r.benchmarkLatency(ctx, driver)
+	if result.Latency != nil {
+		r.log("    Result: p50=%v p95=%v p99=%v avg=%v",
+			result.Latency.P50, result.Latency.P95, result.Latency.P99, result.Latency.Avg)
+	}
 
 	// Throughput benchmark (single thread baseline)
-	r.log("  [5/6] Measuring throughput...")
+	r.logPhase("THROUGHPUT", name, "Measuring single-thread throughput (%v)...", r.ThroughputDuration)
 	result.Throughput = r.benchmarkThroughput(ctx, driver, 1)
+	if result.Throughput != nil {
+		r.log("    Result: %.1f QPS (single-thread baseline)", result.Throughput.QPS)
+	}
 
 	// Concurrent search benchmark
+	r.logPhase("CONCURRENCY", name, "Measuring concurrent throughput...")
 	for i, n := range r.Concurrency {
-		r.log("  [5/6] Measuring concurrency %d/%d (goroutines=%d)...", i+1, len(r.Concurrency), n)
+		r.log("    [%d/%d] Testing %d goroutines...", i+1, len(r.Concurrency), n)
 		result.Concurrency[n] = r.benchmarkThroughput(ctx, driver, n)
+		if result.Concurrency[n] != nil {
+			r.log("      %.1f QPS @ %d goroutines", result.Concurrency[n].QPS, n)
+		}
 	}
 
 	// Cold start benchmark
 	if !r.SkipColdStart {
-		r.log("  [6/6] Measuring cold start...")
+		r.logPhase("COLD_START", name, "Measuring cold start time...")
 		result.ColdStart = r.benchmarkColdStart(ctx, name, cfg)
+		r.log("    Cold start: %v", result.ColdStart)
 	} else {
-		r.log("  [6/6] Skipping cold start (disabled)")
+		r.logPhase("COLD_START", name, "Skipping (disabled)")
 	}
 
 	// Per-query stats
 	if !r.SkipPerQuery {
-		r.log("  [+] Collecting per-query stats...")
+		r.logPhase("QUERY_STATS", name, "Collecting per-query stats (%d queries)...", len(r.Queries))
 		for _, q := range r.Queries {
 			qm := r.benchmarkQuery(ctx, driver, q)
 			result.QueryStats[q.Text] = qm
 		}
 	}
 
+	r.logPhase("COMPLETE", name, "Benchmark complete")
 	return result, nil
 }
 
@@ -325,8 +345,6 @@ func (r *Runner) measureIndexSize(name string) int64 {
 }
 
 func (r *Runner) benchmarkLatency(ctx context.Context, driver fineweb.Driver) *LatencyMetrics {
-	r.log("  Measuring latency...")
-
 	collector := NewLatencyCollector()
 
 	for i := 0; i < r.Iterations; i++ {
@@ -341,17 +359,17 @@ func (r *Runner) benchmarkLatency(ctx context.Context, driver fineweb.Driver) *L
 			_, _ = driver.Search(ctx, q.Text, 20, 0)
 			collector.Add(time.Since(start))
 		}
+
+		// Log progress every 25% for larger tests
+		if r.Iterations > 10 && (i+1)%(r.Iterations/4) == 0 {
+			r.log("      Progress: %d/%d iterations (%.0f%%)", i+1, r.Iterations, float64(i+1)*100/float64(r.Iterations))
+		}
 	}
 
-	metrics := collector.Metrics()
-	r.log("    p50=%v p95=%v p99=%v", metrics.P50, metrics.P95, metrics.P99)
-
-	return metrics
+	return collector.Metrics()
 }
 
 func (r *Runner) benchmarkThroughput(ctx context.Context, driver fineweb.Driver, goroutines int) *ThroughputMetrics {
-	r.log("  Measuring throughput (goroutines=%d)...", goroutines)
-
 	duration := r.ThroughputDuration
 	if duration == 0 {
 		duration = 10 * time.Second
@@ -389,7 +407,6 @@ func (r *Runner) benchmarkThroughput(ctx context.Context, driver fineweb.Driver,
 	wg.Wait()
 
 	qps := float64(ops) / duration.Seconds()
-	r.log("    %d ops in %v = %.1f QPS", ops, duration, qps)
 
 	return &ThroughputMetrics{
 		QPS:        qps,
@@ -441,4 +458,10 @@ func (r *Runner) log(format string, args ...interface{}) {
 	if r.Logger != nil {
 		r.Logger.Printf(format, args...)
 	}
+}
+
+// logPhase logs a benchmark phase with consistent formatting
+func (r *Runner) logPhase(phase, driver string, format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	r.log("  [%s] %s: %s", phase, driver, msg)
 }

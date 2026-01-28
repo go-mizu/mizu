@@ -301,13 +301,21 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 	}, nil
 }
 
+// minimalDoc stores only essential fields for search results (saves ~70% memory vs full Document)
+type minimalDoc struct {
+	ID   string
+	URL  string
+	Date string
+}
+
 // Import indexes documents using TurboIndexer for maximum throughput.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
 	// Use TurboIndexer with fast tokenizer for 50k+ docs/sec
 	indexer := algo.NewTurboIndexer(fastTokenize)
 
-	// Collect documents and feed to indexer (streaming for I/O overlap)
-	allDocs := make([]fineweb.Document, 0, 50000)
+	// Store minimal doc info only (saves memory for large datasets)
+	// Text is not needed after indexing, other fields optional
+	minimalDocs := make([]minimalDoc, 0, 100000)
 	var imported int64
 	batchSize := 10000
 	count := 0
@@ -323,8 +331,12 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		default:
 		}
 
-		docNum := uint32(len(allDocs))
-		allDocs = append(allDocs, doc)
+		docNum := uint32(len(minimalDocs))
+		minimalDocs = append(minimalDocs, minimalDoc{
+			ID:   doc.ID,
+			URL:  doc.URL,
+			Date: doc.Date,
+		})
 
 		// Feed to TurboIndexer (concurrent processing)
 		indexer.Add(docNum, doc.Text)
@@ -347,10 +359,19 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Store documents
-	d.index.Documents = allDocs
+	// Convert minimal docs to full Document slice (text not stored)
+	d.index.Documents = make([]fineweb.Document, len(minimalDocs))
+	for i, mdoc := range minimalDocs {
+		d.index.Documents[i] = fineweb.Document{
+			ID:   mdoc.ID,
+			URL:  mdoc.URL,
+			Date: mdoc.Date,
+		}
+	}
+	minimalDocs = nil // Help GC
+
 	d.index.DocLens = docLens
-	d.index.NumDocs = len(allDocs)
+	d.index.NumDocs = len(d.index.Documents)
 
 	// Calculate average doc length
 	totalLen := 0
