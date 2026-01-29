@@ -241,8 +241,7 @@ func fastTokenize(text string) map[string]int {
 }
 
 // Import indexes documents using UltraIndexer for maximum throughput.
-// Target: 1M+ docs/sec with <5GB memory.
-// Uses batch processing with hash-as-key approach from Rust ultra.rs.
+// Uses pipelined batch processing with concurrent indexing.
 func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, error], progress fineweb.ProgressFunc) error {
 	// Close existing indexes
 	if d.mmapIndex != nil {
@@ -254,20 +253,23 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 		d.segmentedIdx = nil
 	}
 
-	// Use UltraIndexer with Rust-style optimizations
-	indexer := algo.NewUltraIndexer(d.indexDir, algo.UltraConfig{
-		NumWorkers:  0, // Auto-detect
+	// Use UltraIndexer with optimized settings
+	indexer := algo.NewMegaIndexer(d.indexDir, algo.MegaConfig{
+		NumWorkers:  0, // Auto-detect (will use 2x CPU)
 		SegmentDocs: 500000,
 	})
 
-	// Batch processing - larger batches = better throughput
-	const batchSize = 50000
-	batchDocIDs := make([]uint32, 0, batchSize)
-	batchTexts := make([]string, 0, batchSize)
+	// Larger batch size for better CPU utilization
+	const batchSize = 10000
 
 	d.docIDs = make([]string, 0, 3000000)
+
+	// Buffer for batching
+	batchDocIDs := make([]uint32, 0, batchSize)
+	batchTexts := make([]string, 0, batchSize)
 	var imported int64
 
+	// Process in batches
 	for doc, err := range docs {
 		if err != nil {
 			return fmt.Errorf("reading document: %w", err)
@@ -281,39 +283,35 @@ func (d *Driver) Import(ctx context.Context, docs iter.Seq2[fineweb.Document, er
 
 		docNum := uint32(len(d.docIDs))
 		d.docIDs = append(d.docIDs, doc.ID)
-
-		// Accumulate batch
 		batchDocIDs = append(batchDocIDs, docNum)
 		batchTexts = append(batchTexts, doc.Text)
 
 		// Process batch when full
 		if len(batchDocIDs) >= batchSize {
 			indexer.AddBatch(batchDocIDs, batchTexts)
+			imported += int64(len(batchDocIDs))
 			batchDocIDs = batchDocIDs[:0]
 			batchTexts = batchTexts[:0]
-		}
 
-		imported++
-
-		// Report progress every 50k docs
-		if imported%50000 == 0 && progress != nil {
-			progress(imported, 0)
+			if imported%50000 == 0 && progress != nil {
+				progress(imported, 0)
+			}
 		}
 	}
 
 	// Process remaining batch
 	if len(batchDocIDs) > 0 {
 		indexer.AddBatch(batchDocIDs, batchTexts)
+		imported += int64(len(batchDocIDs))
 	}
 
-	// Finalize - returns SegmentedIndex
+	// Finalize
 	var err error
 	d.segmentedIdx, err = indexer.Finish()
 	if err != nil {
 		return fmt.Errorf("creating index: %w", err)
 	}
 
-	// Save doc IDs
 	if err := d.saveDocIDs(); err != nil {
 		return fmt.Errorf("saving doc IDs: %w", err)
 	}
@@ -339,7 +337,7 @@ func (d *Driver) ImportTextsOnly(ctx context.Context, docs iter.Seq2[fineweb.Tex
 	}
 
 	// Use UltraIndexer with Rust-style optimizations
-	indexer := algo.NewUltraIndexer(d.indexDir, algo.UltraConfig{
+	indexer := algo.NewMegaIndexer(d.indexDir, algo.MegaConfig{
 		NumWorkers:  0, // Auto-detect
 		SegmentDocs: 500000,
 	})
@@ -423,7 +421,7 @@ func (d *Driver) ImportBatches(ctx context.Context, batches iter.Seq2[[]fineweb.
 	}
 
 	// Use UltraIndexer with Rust-style optimizations
-	indexer := algo.NewUltraIndexer(d.indexDir, algo.UltraConfig{
+	indexer := algo.NewMegaIndexer(d.indexDir, algo.MegaConfig{
 		NumWorkers:  0, // Auto-detect
 		SegmentDocs: 500000,
 	})
@@ -496,7 +494,7 @@ func (d *Driver) ImportParallel(ctx context.Context, parquetDir string, numReade
 	}
 
 	// Use UltraIndexer with Rust-style optimizations
-	indexer := algo.NewUltraIndexer(d.indexDir, algo.UltraConfig{
+	indexer := algo.NewMegaIndexer(d.indexDir, algo.MegaConfig{
 		NumWorkers:  0, // Auto-detect
 		SegmentDocs: 500000,
 	})
@@ -547,6 +545,127 @@ func (d *Driver) ImportParallel(ctx context.Context, parquetDir string, numReade
 	}
 
 	// Save doc IDs
+	if err := d.saveDocIDs(); err != nil {
+		return fmt.Errorf("saving doc IDs: %w", err)
+	}
+
+	if progress != nil {
+		progress(imported, imported)
+	}
+
+	return nil
+}
+
+// ImportPipelined uses a true producer-consumer pipeline for maximum throughput.
+// Reading and indexing happen concurrently with buffered channels.
+func (d *Driver) ImportPipelined(ctx context.Context, parquetDir string, numReaders int, progress fineweb.ProgressFunc) error {
+	// Close existing indexes
+	if d.mmapIndex != nil {
+		d.mmapIndex.Close()
+		d.mmapIndex = nil
+	}
+	if d.segmentedIdx != nil {
+		d.segmentedIdx.Close()
+		d.segmentedIdx = nil
+	}
+
+	// Create indexer
+	indexer := algo.NewMegaIndexer(d.indexDir, algo.MegaConfig{
+		NumWorkers:  0,
+		SegmentDocs: 500000,
+	})
+
+	// Buffered channel for batches - allows reading to continue while indexing
+	type batch struct {
+		docIDs []uint32
+		ids    []string
+		texts  []string
+	}
+	batchCh := make(chan batch, 64) // Buffer 64 batches
+
+	// Error channel
+	errCh := make(chan error, 1)
+
+	// Producer: read parquet in background
+	go func() {
+		defer close(batchCh)
+
+		reader := fineweb.NewParquetReader(parquetDir).WithBatchSize(10000)
+		var docNum uint32
+
+		for b, err := range reader.ReadTextsOnlyParallel(ctx, numReaders) {
+			if err != nil {
+				select {
+				case errCh <- fmt.Errorf("reading batch: %w", err):
+				default:
+				}
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			// Prepare batch
+			docIDs := make([]uint32, len(b))
+			ids := make([]string, len(b))
+			texts := make([]string, len(b))
+			for i, doc := range b {
+				docIDs[i] = docNum
+				ids[i] = doc.ID
+				texts[i] = doc.Text
+				docNum++
+			}
+
+			// Send to consumer (may block if buffer is full - that's ok)
+			select {
+			case batchCh <- batch{docIDs: docIDs, ids: ids, texts: texts}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Consumer: index batches as they arrive
+	d.docIDs = make([]string, 0, 3000000)
+	var imported int64
+
+	for b := range batchCh {
+		// Check for producer error
+		select {
+		case err := <-errCh:
+			return err
+		default:
+		}
+
+		// Accumulate doc IDs
+		d.docIDs = append(d.docIDs, b.ids...)
+
+		// Index
+		indexer.AddBatch(b.docIDs, b.texts)
+		imported += int64(len(b.texts))
+
+		if imported%50000 == 0 && progress != nil {
+			progress(imported, 0)
+		}
+	}
+
+	// Check for final error
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
+
+	// Finalize
+	var err error
+	d.segmentedIdx, err = indexer.Finish()
+	if err != nil {
+		return fmt.Errorf("creating index: %w", err)
+	}
+
 	if err := d.saveDocIDs(); err != nil {
 		return fmt.Errorf("saving doc IDs: %w", err)
 	}

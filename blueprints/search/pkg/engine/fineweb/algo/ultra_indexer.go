@@ -97,10 +97,11 @@ type ultraDocResult struct {
 // NewUltraIndexer creates a new ultra indexer.
 func NewUltraIndexer(outDir string, cfg UltraConfig) *UltraIndexer {
 	if cfg.NumWorkers <= 0 {
-		cfg.NumWorkers = runtime.NumCPU()
+		// Optimal worker count is 1.5-2x CPU count based on profiling
+		cfg.NumWorkers = runtime.NumCPU() * 2
 	}
-	if cfg.NumWorkers > 16 {
-		cfg.NumWorkers = 16
+	if cfg.NumWorkers > 32 {
+		cfg.NumWorkers = 32
 	}
 	if cfg.SegmentDocs <= 0 {
 		cfg.SegmentDocs = 500000
@@ -124,16 +125,11 @@ func NewUltraIndexer(outDir string, cfg UltraConfig) *UltraIndexer {
 	return ui
 }
 
-// sync.Pool for frequency maps to reduce allocations
-var freqMapPool = sync.Pool{
-	New: func() any {
-		return make(map[uint64]uint16, 128)
-	},
-}
 
-// tokenizeToHashReuse tokenizes text into a reusable map.
+// TokenizeToHashReuse tokenizes text into a reusable map.
 // Returns the total token count for doc length calculation.
-func tokenizeToHashReuse(text string, freqs map[uint64]uint16) int {
+// Exported for profiling.
+func TokenizeToHashReuse(text string, freqs map[uint64]uint16) int {
 	// Clear the map for reuse (optimized clear pattern)
 	clear(freqs)
 
@@ -178,10 +174,138 @@ func tokenizeToHashReuse(text string, freqs map[uint64]uint16) int {
 	return totalTokens
 }
 
+// tokenizeFresh creates a new map for each document (avoids clear() overhead for large maps).
+func tokenizeFresh(text string) (map[uint64]uint16, int) {
+	data := *(*[]byte)(unsafe.Pointer(&text))
+	n := len(data)
+	if n == 0 {
+		return nil, 0
+	}
+
+	// Estimate capacity based on text length (avg 6 chars per token)
+	freqs := make(map[uint64]uint16, n/6)
+	totalTokens := 0
+	i := 0
+
+	for i < n {
+		// Skip delimiters
+		for i < n && ultraCharLUT[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		// Hash while scanning
+		start := i
+		hash := uint64(fnvOffset)
+		for i < n {
+			c := ultraCharLUT[data[i]]
+			if c == 0 {
+				break
+			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			freqs[hash]++
+			totalTokens++
+		}
+	}
+
+	return freqs, totalTokens
+}
+
+// tokenizeToSlice collects hashes in a slice instead of map for faster collection.
+// The caller should then sort and dedupe the hashes.
+func tokenizeToSlice(text string, hashes []uint64) ([]uint64, int) {
+	hashes = hashes[:0] // Reuse slice
+
+	data := *(*[]byte)(unsafe.Pointer(&text))
+	n := len(data)
+	if n == 0 {
+		return hashes, 0
+	}
+
+	totalTokens := 0
+	i := 0
+	for i < n {
+		// Skip delimiters - unrolled for common case
+		for i < n && ultraCharLUT[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		// Hash while scanning
+		start := i
+		hash := uint64(fnvOffset)
+
+		// Unrolled inner loop - process 4 bytes at a time when possible
+		for i+4 <= n {
+			c0 := ultraCharLUT[data[i]]
+			c1 := ultraCharLUT[data[i+1]]
+			c2 := ultraCharLUT[data[i+2]]
+			c3 := ultraCharLUT[data[i+3]]
+
+			if c0 == 0 {
+				break
+			}
+			hash ^= uint64(c0)
+			hash *= fnvPrime
+			i++
+
+			if c1 == 0 {
+				break
+			}
+			hash ^= uint64(c1)
+			hash *= fnvPrime
+			i++
+
+			if c2 == 0 {
+				break
+			}
+			hash ^= uint64(c2)
+			hash *= fnvPrime
+			i++
+
+			if c3 == 0 {
+				break
+			}
+			hash ^= uint64(c3)
+			hash *= fnvPrime
+			i++
+		}
+
+		// Handle remaining bytes
+		for i < n {
+			c := ultraCharLUT[data[i]]
+			if c == 0 {
+				break
+			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			hashes = append(hashes, hash)
+			totalTokens++
+		}
+	}
+
+	return hashes, totalTokens
+}
+
 // tokenizeToHash tokenizes text and returns hash-freq pairs (legacy).
 func tokenizeToHash(text string) []ultraTermFreq {
 	freqs := make(map[uint64]uint16, len(text)/6)
-	tokenizeToHashReuse(text, freqs)
+	TokenizeToHashReuse(text, freqs)
 
 	result := make([]ultraTermFreq, 0, len(freqs))
 	for hash, freq := range freqs {
@@ -235,13 +359,14 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 		wg.Add(1)
 		go func(workerID, start, end int) {
 			defer wg.Done()
-			// Reusable map per worker to reduce allocations
+			// Fresh map per worker - sized for typical doc
 			freqs := make(map[uint64]uint16, 256)
 			myShards := workerShardPostings[workerID]
+			recreateCounter := 0
 
 			for i := start; i < end; i++ {
 				docID := docIDs[i]
-				docLen := tokenizeToHashReuse(texts[i], freqs)
+				docLen := TokenizeToHashReuse(texts[i], freqs)
 				if docLen > 65535 {
 					docLen = 65535
 				}
@@ -251,6 +376,13 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 				for hash, freq := range freqs {
 					shardID := hash & ultraShardMask
 					myShards[shardID] = append(myShards[shardID], posting{hash, docID, freq})
+				}
+
+				// Recreate map every 100 docs to prevent growth
+				recreateCounter++
+				if recreateCounter >= 100 {
+					freqs = make(map[uint64]uint16, 256)
+					recreateCounter = 0
 				}
 			}
 		}(w, start, end)
@@ -322,6 +454,201 @@ func (ui *UltraIndexer) AddBatch(docIDs []uint32, texts []string) {
 // Add indexes a single document (for compatibility).
 func (ui *UltraIndexer) Add(docID uint32, text string) {
 	ui.AddBatch([]uint32{docID}, []string{text})
+}
+
+// AddBatchFast is an optimized version that reduces sync points.
+// Uses slice-based collection instead of maps and overlaps phases.
+func (ui *UltraIndexer) AddBatchFast(docIDs []uint32, texts []string) {
+	if len(texts) == 0 {
+		return
+	}
+
+	numDocs := len(texts)
+	numWorkers := ui.config.NumWorkers
+	if numWorkers > numDocs {
+		numWorkers = numDocs
+	}
+
+	// Per-worker data - each worker processes independently then merges
+	type workerResult struct {
+		postings []struct {
+			shardID int
+			hash    uint64
+			docID   uint32
+			freq    uint16
+		}
+		docLens  []uint16
+		startIdx int
+		totalLen uint64
+	}
+
+	results := make([]workerResult, numWorkers)
+	var wg sync.WaitGroup
+	batchSize := (numDocs + numWorkers - 1) / numWorkers
+
+	// Single phase: parallel tokenization with no synchronization
+	for w := 0; w < numWorkers; w++ {
+		start := w * batchSize
+		end := start + batchSize
+		if end > numDocs {
+			end = numDocs
+		}
+		if start >= end {
+			break
+		}
+
+		wg.Add(1)
+		go func(workerID, start, end int) {
+			defer wg.Done()
+
+			// Pre-allocate for this worker's docs
+			numLocal := end - start
+			avgPostingsPerDoc := 200 // Estimate
+			localPostings := make([]struct {
+				shardID int
+				hash    uint64
+				docID   uint32
+				freq    uint16
+			}, 0, numLocal*avgPostingsPerDoc)
+			localDocLens := make([]uint16, numLocal)
+
+			// Reusable hash collection slice
+			hashes := make([]uint64, 0, 1024)
+			var totalLen uint64
+
+			for i := start; i < end; i++ {
+				docID := docIDs[i]
+
+				// Tokenize using slice-based approach (faster than map)
+				var docLen int
+				hashes, docLen = tokenizeToSlice(texts[i], hashes)
+				if docLen > 65535 {
+					docLen = 65535
+				}
+				localDocLens[i-start] = uint16(docLen)
+				totalLen += uint64(docLen)
+
+				// Sort hashes and count frequencies in one pass
+				if len(hashes) > 1 {
+					// Simple sort for small slices
+					sortUint64(hashes)
+				}
+
+				// Dedupe and count
+				prevHash := uint64(0)
+				freq := uint16(0)
+				for _, h := range hashes {
+					if h == prevHash && freq > 0 {
+						freq++
+					} else {
+						if freq > 0 {
+							shardID := int(prevHash & ultraShardMask)
+							localPostings = append(localPostings, struct {
+								shardID int
+								hash    uint64
+								docID   uint32
+								freq    uint16
+							}{shardID, prevHash, docID, freq})
+						}
+						prevHash = h
+						freq = 1
+					}
+				}
+				// Don't forget last term
+				if freq > 0 {
+					shardID := int(prevHash & ultraShardMask)
+					localPostings = append(localPostings, struct {
+						shardID int
+						hash    uint64
+						docID   uint32
+						freq    uint16
+					}{shardID, prevHash, docID, freq})
+				}
+			}
+
+			results[workerID] = workerResult{
+				postings: localPostings,
+				docLens:  localDocLens,
+				startIdx: start,
+				totalLen: totalLen,
+			}
+		}(w, start, end)
+	}
+	wg.Wait()
+
+	// Merge doc lengths (minimal sync)
+	docLensLocal := make([]uint16, numDocs)
+	var totalLen uint64
+	for _, r := range results {
+		if r.docLens != nil {
+			copy(docLensLocal[r.startIdx:], r.docLens)
+			totalLen += r.totalLen
+		}
+	}
+	ui.docCount.Add(uint64(numDocs))
+	ui.totalLen.Add(totalLen)
+
+	ui.docLensMu.Lock()
+	ui.docLens = append(ui.docLens, docLensLocal...)
+	ui.docLensMu.Unlock()
+
+	// Parallel shard updates
+	shardsPerWorker := (ultraNumShards + numWorkers - 1) / numWorkers
+
+	for w := 0; w < numWorkers; w++ {
+		startShard := w * shardsPerWorker
+		endShard := startShard + shardsPerWorker
+		if endShard > ultraNumShards {
+			endShard = ultraNumShards
+		}
+		if startShard >= endShard {
+			break
+		}
+
+		wg.Add(1)
+		go func(startShard, endShard int) {
+			defer wg.Done()
+			for shardID := startShard; shardID < endShard; shardID++ {
+				shard := ui.shards[shardID]
+
+				// Collect postings for this shard from all worker results
+				shard.mu.Lock()
+				for _, r := range results {
+					for _, p := range r.postings {
+						if p.shardID != shardID {
+							continue
+						}
+						pl, exists := shard.terms[p.hash]
+						if !exists {
+							pl = &ultraPostings{
+								docIDs: make([]uint32, 0, 64),
+								freqs:  make([]uint16, 0, 64),
+							}
+							shard.terms[p.hash] = pl
+						}
+						pl.docIDs = append(pl.docIDs, p.docID)
+						pl.freqs = append(pl.freqs, p.freq)
+					}
+				}
+				shard.mu.Unlock()
+			}
+		}(startShard, endShard)
+	}
+	wg.Wait()
+}
+
+// sortUint64 sorts a slice of uint64 using insertion sort (fast for small slices).
+func sortUint64(a []uint64) {
+	n := len(a)
+	for i := 1; i < n; i++ {
+		key := a[i]
+		j := i - 1
+		for j >= 0 && a[j] > key {
+			a[j+1] = a[j]
+			j--
+		}
+		a[j+1] = key
+	}
 }
 
 // hashToKey converts a uint64 hash to a string key.

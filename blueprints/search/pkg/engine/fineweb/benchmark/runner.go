@@ -232,6 +232,11 @@ func (r *Runner) deleteExistingIndex(name string) {
 	}
 }
 
+// ParallelImporter is implemented by drivers that support parallel import from a parquet path.
+type ParallelImporter interface {
+	ImportParallel(ctx context.Context, parquetDir string, numReaders int, progress fineweb.ProgressFunc) error
+}
+
 func (r *Runner) benchmarkIndexing(ctx context.Context, indexer fineweb.Indexer, name string, fromScratch bool) (*IndexingMetrics, *MemoryMetrics) {
 	reader := fineweb.NewParquetReader(r.ParquetPath)
 	total, err := reader.CountDocuments(ctx)
@@ -259,8 +264,14 @@ func (r *Runner) benchmarkIndexing(ctx context.Context, indexer fineweb.Indexer,
 		}
 	}
 
-	docs := reader.ReadAll(ctx)
-	err = indexer.Import(ctx, docs, progress)
+	// Check if driver supports parallel import
+	if pi, ok := indexer.(ParallelImporter); ok {
+		r.log("    Using parallel import (8 readers)")
+		err = pi.ImportParallel(ctx, r.ParquetPath, 8, progress)
+	} else {
+		docs := reader.ReadAll(ctx)
+		err = indexer.Import(ctx, docs, progress)
+	}
 	duration := time.Since(start)
 
 	if err != nil {
