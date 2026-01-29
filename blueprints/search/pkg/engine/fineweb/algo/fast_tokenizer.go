@@ -1,220 +1,269 @@
-// Package algo provides ultra-fast tokenization with minimal allocations.
+// Package algo provides FastTokenizer - eliminates map overhead in tokenization.
+//
+// Profiling shows tokenization takes 41.4% of time, with map operations being expensive.
+// New approach:
+//   1. Collect hashes into a slice (no map lookup)
+//   2. Sort the slice
+//   3. Count duplicates in sorted order (linear scan)
+//
+// This eliminates:
+//   - Map allocation
+//   - Map hash operations (ironic: we hash to store in a hash map)
+//   - Map resize operations
 package algo
 
 import (
+	"sort"
 	"unsafe"
 )
 
-// delimTable is a lookup table for delimiter characters.
-// 1 = delimiter, 0 = not delimiter
-var delimTable = func() [256]byte {
-	var t [256]byte
-	// Control characters and space
-	for i := 0; i <= 32; i++ {
-		t[i] = 1
+// FastTokenize collects hashes without a map, then deduplicates.
+// Returns hashes, frequencies, and total token count.
+func FastTokenize(text string) ([]uint64, []uint16, int) {
+	if len(text) == 0 {
+		return nil, nil, 0
 	}
-	// Punctuation: !"#$%&'()*+,-./
-	for i := '!'; i <= '/'; i++ {
-		t[i] = 1
-	}
-	// Punctuation: :;<=>?@
-	for i := ':'; i <= '@'; i++ {
-		t[i] = 1
-	}
-	// Punctuation: [\]^_`
-	for i := '['; i <= '`'; i++ {
-		t[i] = 1
-	}
-	// Punctuation: {|}~
-	for i := '{'; i <= '~'; i++ {
-		t[i] = 1
-	}
-	return t
-}()
 
-// lowerTable is a lookup table for lowercase conversion.
-var lowerTable = func() [256]byte {
-	var t [256]byte
-	for i := 0; i < 256; i++ {
-		t[i] = byte(i)
-	}
-	for i := 'A'; i <= 'Z'; i++ {
-		t[i] = byte(i + 32)
-	}
-	return t
-}()
+	const fnvOffset = 14695981039346656037
+	const fnvPrime = 1099511628211
 
-// UltraFastTokenize tokenizes text with minimal allocations.
-// Uses unsafe.String to avoid string copies during map operations.
-// The returned map keys are only valid while the input text is valid.
-func UltraFastTokenize(text string) map[string]int {
-	// Pre-allocate map with estimated capacity
-	termFreqs := make(map[string]int, 64)
+	data := unsafe.Slice(unsafe.StringData(text), len(text))
+	n := len(data)
+	tokenCount := 0
+	i := 0
 
-	// Convert to bytes for in-place lowercase
-	data := []byte(text)
-	start := -1
+	// Collect all hashes (with duplicates)
+	hashes := make([]uint64, 0, 128)
 
-	for i := 0; i < len(data); i++ {
-		c := data[i]
-		if delimTable[c] == 1 {
-			if start >= 0 {
-				length := i - start
-				if length > 0 && length < 100 {
-					// Lowercase in place
-					token := data[start:i]
-					for j := 0; j < len(token); j++ {
-						token[j] = lowerTable[token[j]]
-					}
-					// Use unsafe.String to avoid allocation
-					// This is safe because we're not modifying the underlying bytes
-					// after creating the string key
-					key := unsafe.String(&token[0], len(token))
-					termFreqs[key]++
-				}
-				start = -1
+	for i < n {
+		// Skip delimiters
+		for i < n && megaToLower[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		start := i
+		hash := uint64(fnvOffset)
+
+		for i < n {
+			c := megaToLower[data[i]]
+			if c == 0 {
+				break
 			}
-		} else if start < 0 {
-			start = i
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			hashes = append(hashes, hash)
+			tokenCount++
 		}
 	}
 
-	// Handle last token
-	if start >= 0 {
-		length := len(data) - start
-		if length > 0 && length < 100 {
-			token := data[start:]
-			for j := 0; j < len(token); j++ {
-				token[j] = lowerTable[token[j]]
+	if len(hashes) == 0 {
+		return nil, nil, 0
+	}
+
+	// Sort hashes
+	sort.Slice(hashes, func(i, j int) bool { return hashes[i] < hashes[j] })
+
+	// Deduplicate and count
+	uniqueHashes := make([]uint64, 0, len(hashes)/2)
+	frequencies := make([]uint16, 0, len(hashes)/2)
+
+	prevHash := hashes[0]
+	count := uint16(1)
+
+	for i := 1; i < len(hashes); i++ {
+		if hashes[i] == prevHash {
+			count++
+		} else {
+			uniqueHashes = append(uniqueHashes, prevHash)
+			frequencies = append(frequencies, count)
+			prevHash = hashes[i]
+			count = 1
+		}
+	}
+	// Don't forget the last one
+	uniqueHashes = append(uniqueHashes, prevHash)
+	frequencies = append(frequencies, count)
+
+	return uniqueHashes, frequencies, tokenCount
+}
+
+// FastTokenizeReuse reuses buffers for even less allocation.
+func FastTokenizeReuse(text string, hashBuf *[]uint64) ([]uint64, []uint16, int) {
+	if len(text) == 0 {
+		return nil, nil, 0
+	}
+
+	const fnvOffset = 14695981039346656037
+	const fnvPrime = 1099511628211
+
+	data := unsafe.Slice(unsafe.StringData(text), len(text))
+	n := len(data)
+	tokenCount := 0
+	i := 0
+
+	// Reuse hash buffer
+	hashes := (*hashBuf)[:0]
+
+	for i < n {
+		for i < n && megaToLower[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		start := i
+		hash := uint64(fnvOffset)
+
+		for i < n {
+			c := megaToLower[data[i]]
+			if c == 0 {
+				break
 			}
-			key := unsafe.String(&token[0], len(token))
-			termFreqs[key]++
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			hashes = append(hashes, hash)
+			tokenCount++
 		}
 	}
 
-	return termFreqs
+	*hashBuf = hashes
+
+	if len(hashes) == 0 {
+		return nil, nil, 0
+	}
+
+	// Sort hashes using radix sort for uint64 (faster than comparison sort)
+	radixSort64(hashes)
+
+	// Deduplicate and count in-place
+	uniqueHashes := make([]uint64, 0, len(hashes)/2)
+	frequencies := make([]uint16, 0, len(hashes)/2)
+
+	prevHash := hashes[0]
+	count := uint16(1)
+
+	for i := 1; i < len(hashes); i++ {
+		if hashes[i] == prevHash {
+			count++
+		} else {
+			uniqueHashes = append(uniqueHashes, prevHash)
+			frequencies = append(frequencies, count)
+			prevHash = hashes[i]
+			count = 1
+		}
+	}
+	uniqueHashes = append(uniqueHashes, prevHash)
+	frequencies = append(frequencies, count)
+
+	return uniqueHashes, frequencies, tokenCount
 }
 
-// UltraFastTokenizeCallback tokenizes text and calls the callback for each term.
-// This avoids map allocation entirely.
-func UltraFastTokenizeCallback(text string, callback func(term []byte, freq int)) {
-	// For frequency counting, we need a temporary map
-	termFreqs := make(map[string]int, 64)
-	data := []byte(text)
-	start := -1
-
-	for i := 0; i < len(data); i++ {
-		c := data[i]
-		if delimTable[c] == 1 {
-			if start >= 0 {
-				length := i - start
-				if length > 0 && length < 100 {
-					token := data[start:i]
-					for j := 0; j < len(token); j++ {
-						token[j] = lowerTable[token[j]]
-					}
-					key := unsafe.String(&token[0], len(token))
-					termFreqs[key]++
-				}
-				start = -1
+// radixSort64 sorts uint64 slice using LSD radix sort.
+// Much faster than comparison sort for large slices.
+func radixSort64(data []uint64) {
+	if len(data) < 64 {
+		// Use insertion sort for small slices
+		for i := 1; i < len(data); i++ {
+			key := data[i]
+			j := i - 1
+			for j >= 0 && data[j] > key {
+				data[j+1] = data[j]
+				j--
 			}
-		} else if start < 0 {
-			start = i
+			data[j+1] = key
+		}
+		return
+	}
+
+	// Radix sort with 8-bit digits (8 passes)
+	aux := make([]uint64, len(data))
+	var count [256]int
+
+	for shift := uint(0); shift < 64; shift += 8 {
+		// Clear counts
+		for i := range count {
+			count[i] = 0
+		}
+
+		// Count occurrences
+		for _, v := range data {
+			digit := (v >> shift) & 0xFF
+			count[digit]++
+		}
+
+		// Compute prefix sums
+		for i := 1; i < 256; i++ {
+			count[i] += count[i-1]
+		}
+
+		// Place elements in auxiliary array
+		for i := len(data) - 1; i >= 0; i-- {
+			digit := (data[i] >> shift) & 0xFF
+			count[digit]--
+			aux[count[digit]] = data[i]
+		}
+
+		// Copy back
+		copy(data, aux)
+	}
+}
+
+// StreamTokenize emits tokens directly without collecting them.
+// Useful for pipelined processing.
+func StreamTokenize(text string, emit func(hash uint64)) int {
+	if len(text) == 0 {
+		return 0
+	}
+
+	const fnvOffset = 14695981039346656037
+	const fnvPrime = 1099511628211
+
+	data := unsafe.Slice(unsafe.StringData(text), len(text))
+	n := len(data)
+	tokenCount := 0
+	i := 0
+
+	for i < n {
+		for i < n && megaToLower[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		start := i
+		hash := uint64(fnvOffset)
+
+		for i < n {
+			c := megaToLower[data[i]]
+			if c == 0 {
+				break
+			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			emit(hash)
+			tokenCount++
 		}
 	}
 
-	if start >= 0 {
-		length := len(data) - start
-		if length > 0 && length < 100 {
-			token := data[start:]
-			for j := 0; j < len(token); j++ {
-				token[j] = lowerTable[token[j]]
-			}
-			key := unsafe.String(&token[0], len(token))
-			termFreqs[key]++
-		}
-	}
-
-	// Call callback for each term
-	for term, freq := range termFreqs {
-		callback([]byte(term), freq)
-	}
-}
-
-// TermAccumulator efficiently accumulates term frequencies across documents.
-type TermAccumulator struct {
-	// Interned term strings to avoid duplicates
-	internedTerms map[string]string
-	// Term frequencies per document (reusable)
-	docTerms map[string]int
-}
-
-// NewTermAccumulator creates a term accumulator.
-func NewTermAccumulator() *TermAccumulator {
-	return &TermAccumulator{
-		internedTerms: make(map[string]string, 100000),
-		docTerms:      make(map[string]int, 128),
-	}
-}
-
-// Tokenize tokenizes text and returns interned term frequencies.
-// The map is reused across calls - copy if you need to keep it.
-func (ta *TermAccumulator) Tokenize(text string) map[string]int {
-	// Clear previous document terms
-	clear(ta.docTerms)
-
-	data := []byte(text)
-	start := -1
-
-	for i := 0; i < len(data); i++ {
-		c := data[i]
-		if delimTable[c] == 1 {
-			if start >= 0 {
-				length := i - start
-				if length > 0 && length < 100 {
-					token := data[start:i]
-					for j := 0; j < len(token); j++ {
-						token[j] = lowerTable[token[j]]
-					}
-					// Intern the term
-					termStr := ta.intern(token)
-					ta.docTerms[termStr]++
-				}
-				start = -1
-			}
-		} else if start < 0 {
-			start = i
-		}
-	}
-
-	if start >= 0 {
-		length := len(data) - start
-		if length > 0 && length < 100 {
-			token := data[start:]
-			for j := 0; j < len(token); j++ {
-				token[j] = lowerTable[token[j]]
-			}
-			termStr := ta.intern(token)
-			ta.docTerms[termStr]++
-		}
-	}
-
-	return ta.docTerms
-}
-
-// intern returns an interned version of the term.
-func (ta *TermAccumulator) intern(token []byte) string {
-	key := unsafe.String(&token[0], len(token))
-	if interned, ok := ta.internedTerms[key]; ok {
-		return interned
-	}
-	// Create a proper string (allocates)
-	str := string(token)
-	ta.internedTerms[str] = str
-	return str
-}
-
-// InternedCount returns the number of interned terms.
-func (ta *TermAccumulator) InternedCount() int {
-	return len(ta.internedTerms)
+	return tokenCount
 }
