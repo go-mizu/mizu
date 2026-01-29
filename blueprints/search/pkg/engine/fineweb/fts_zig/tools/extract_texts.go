@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/binary"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"os"
