@@ -119,7 +119,9 @@ func (d *Driver) Search(ctx context.Context, query string, limit, offset int) (*
 
 	// Try segmented index first (new approach)
 	if d.segmentedIdx != nil && d.segmentedIdx.NumDocs() > 0 {
-		queryTerms := tokenizeQuery(query)
+		// IMPORTANT: Use UltraQueryTokenize to convert terms to hash keys
+		// The index stores terms as hash keys, not actual strings
+		queryTerms := algo.UltraQueryTokenize(query)
 		results := d.segmentedIdx.Search(queryTerms, limit+offset)
 
 		if offset >= len(results) {
