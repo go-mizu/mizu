@@ -237,11 +237,6 @@ func tokenizeQuery(query string) []string {
 	return terms
 }
 
-// fastTokenize uses the ultra-fast tokenizer with unsafe.String optimization.
-func fastTokenize(text string) map[string]int {
-	return algo.UltraFastTokenize(text)
-}
-
 // Import indexes documents using UltraBatchIndexer for maximum throughput.
 // Uses pipelined batch processing with concurrent indexing.
 // Pure indexing: 275k docs/sec, With I/O: ~155k docs/sec
