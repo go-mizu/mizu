@@ -3,6 +3,7 @@ module github.com/go-mizu/mizu/blueprints/search
 go 1.25
 
 require (
+	github.com/DataDog/zstd v1.5.7
 	github.com/blevesearch/bleve/v2 v2.5.7
 	github.com/blugelabs/bluge v0.2.2
 	github.com/charmbracelet/fang v0.4.4
@@ -13,6 +14,7 @@ require (
 	github.com/go-mizu/mizu v0.5.19
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/klauspost/compress v1.18.3
 	github.com/kljensen/snowball v0.10.0
 	github.com/lib/pq v1.10.9
 	github.com/meilisearch/meilisearch-go v0.36.0
@@ -94,7 +96,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kamstrup/intmap v0.5.2 // indirect
-	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
