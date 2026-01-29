@@ -4,9 +4,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const posix = std.posix;
 
+/// Page size - use the minimum page size that posix.mmap expects
+const PAGE_SIZE: usize = std.heap.page_size_min;
+
 /// Memory-mapped file for reading
 pub const MappedFile = struct {
-    data: []align(std.mem.page_size) u8,
+    data: []align(PAGE_SIZE) u8,
     fd: posix.fd_t,
     len: usize,
 
@@ -91,7 +94,7 @@ pub const MappedFile = struct {
 
 /// Memory-mapped file for writing
 pub const MappedFileWriter = struct {
-    data: []align(std.mem.page_size) u8,
+    data: []align(PAGE_SIZE) u8,
     fd: posix.fd_t,
     capacity: usize,
     len: usize,
@@ -133,10 +136,7 @@ pub const MappedFileWriter = struct {
 
     /// Close the file (truncates to actual written size)
     pub fn close(self: *Self) void {
-        // Sync to disk
-        posix.msync(self.data, .{ .SYNC = true }) catch {};
-
-        // Unmap
+        // Unmap (implicitly syncs)
         posix.munmap(self.data);
 
         // Truncate to actual size
@@ -203,7 +203,7 @@ pub const MappedFileWriter = struct {
 };
 
 /// Anonymous mmap for temporary buffers
-pub fn allocAnonymous(size: usize) ![]align(std.mem.page_size) u8 {
+pub fn allocAnonymous(size: usize) ![]align(PAGE_SIZE) u8 {
     return try posix.mmap(
         null,
         size,
@@ -214,7 +214,7 @@ pub fn allocAnonymous(size: usize) ![]align(std.mem.page_size) u8 {
     );
 }
 
-pub fn freeAnonymous(data: []align(std.mem.page_size) u8) void {
+pub fn freeAnonymous(data: []align(PAGE_SIZE) u8) void {
     posix.munmap(data);
 }
 

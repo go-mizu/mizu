@@ -45,7 +45,8 @@ pub const EliasFano = struct {
         @memset(lower_bits, 0);
 
         // Allocate upper bits: n + (max_value >> l) + 1 bits
-        const upper_bound = n + @as(u32, @intCast(max_value >> l)) + 1;
+        const max_value_u64: u64 = max_value;
+        const upper_bound = n + @as(u32, @intCast(max_value_u64 >> l)) + 1;
         const upper_words = (upper_bound + 63) / 64;
         const upper_bits = try allocator.alloc(u64, upper_words);
         @memset(upper_bits, 0);
@@ -65,9 +66,11 @@ pub const EliasFano = struct {
 
                 lower_bits[word_idx] |= lower << bit_idx;
 
-                // Handle overflow to next word
-                if (bit_idx + l > 64) {
-                    lower_bits[word_idx + 1] |= lower >> @intCast(64 - bit_idx);
+                // Handle overflow to next word (use usize for comparison to avoid u6 overflow)
+                const bits_in_first_word = 64 - @as(usize, bit_idx);
+                if (@as(usize, l) > bits_in_first_word) {
+                    const shift_amt: u6 = @intCast(bits_in_first_word);
+                    lower_bits[word_idx + 1] |= lower >> shift_amt;
                 }
             }
 
@@ -114,43 +117,52 @@ pub const EliasFano = struct {
 
             lower = (self.lower_bits[word_idx] >> bit_idx);
 
-            if (bit_idx + self.l > 64 and word_idx + 1 < self.lower_bits.len) {
-                lower |= self.lower_bits[word_idx + 1] << @intCast(64 - bit_idx);
+            // Handle overflow from next word (use usize for comparison to avoid u6 overflow)
+            const bits_in_first_word = 64 - @as(usize, bit_idx);
+            if (@as(usize, self.l) > bits_in_first_word and word_idx + 1 < self.lower_bits.len) {
+                const shift_amt: u6 = @intCast(bits_in_first_word);
+                lower |= self.lower_bits[word_idx + 1] << shift_amt;
             }
 
             lower &= (@as(u64, 1) << self.l) - 1;
         }
 
-        // Get upper bits by counting 1s up to position i
+        // Get upper bits by finding position of (i+1)-th 1-bit, then subtract i
         const high = self.selectOne(i);
 
         return @intCast((high << self.l) | lower);
     }
 
-    /// Select the position of the (i+1)-th 1-bit, then subtract i
+    /// Select: find position of (i+1)-th 1-bit, return (position - i)
     fn selectOne(self: Self, i: u32) u64 {
-        var ones_count: u32 = 0;
-        var pos: u64 = 0;
+        var ones_seen: u32 = 0;
+        var word_idx: usize = 0;
 
         for (self.upper_bits) |word| {
-            const ones_in_word = @popCount(word);
+            const ones_in_word: u32 = @popCount(word);
 
-            if (ones_count + ones_in_word > i) {
+            if (ones_seen + ones_in_word > i) {
                 // Target 1-bit is in this word
                 var w = word;
-                while (ones_count <= i) {
-                    const tz = @ctz(w);
-                    if (ones_count == i) {
-                        return pos + tz - i;
+                var local_ones: u32 = 0;
+
+                while (w != 0) {
+                    const tz: u64 = @ctz(w);
+
+                    if (ones_seen + local_ones == i) {
+                        // Found the (i+1)-th 1-bit
+                        const abs_pos = word_idx * 64 + tz;
+                        return abs_pos - i;
                     }
-                    w &= w - 1; // Clear lowest bit
-                    ones_count += 1;
-                    pos += tz + 1;
+
+                    // Clear this bit and continue
+                    w &= w - 1;
+                    local_ones += 1;
                 }
             }
 
-            ones_count += ones_in_word;
-            pos += 64;
+            ones_seen += ones_in_word;
+            word_idx += 1;
         }
 
         return 0;
@@ -292,7 +304,11 @@ test "eliasfano empty" {
 }
 
 test "eliasfano large values" {
-    const values = [_]u32{ 1000000, 2000000, 3000000, 4000000 };
+    // Use more values to amortize word-alignment overhead
+    var values: [100]u32 = undefined;
+    for (0..100) |i| {
+        values[i] = @intCast((i + 1) * 40000);
+    }
 
     var ef = try EliasFano.build(std.testing.allocator, &values);
     defer ef.deinit(std.testing.allocator);
@@ -301,7 +317,7 @@ test "eliasfano large values" {
         try std.testing.expectEqual(expected, ef.get(@intCast(i)));
     }
 
-    // Check compression ratio
+    // Check compression ratio (should be better than 32 bits with enough elements)
     const bits_per_elem = ef.bitsPerElement();
-    try std.testing.expect(bits_per_elem < 32); // Should be much better than 32 bits
+    try std.testing.expect(bits_per_elem < 32);
 }

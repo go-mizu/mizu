@@ -5,6 +5,10 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// FST node stored in a compact format
 const Node = struct {
     /// Transition bytes (sorted)
@@ -22,9 +26,9 @@ const Node = struct {
 /// Builder for FST (requires sorted input)
 pub const FSTBuilder = struct {
     allocator: Allocator,
-    nodes: std.ArrayList(BuilderNode),
+    nodes: ManagedArrayList(*BuilderNode),
     /// Previous key for checking sorted order
-    prev_key: std.ArrayList(u8),
+    prev_key: ManagedArrayList(u8),
     /// Root node index (always 0)
     root: u32,
 
@@ -36,37 +40,41 @@ pub const FSTBuilder = struct {
         final_output: ?u64,
         is_final: bool,
 
-        fn init(allocator: Allocator) BuilderNode {
-            return .{
+        fn init(allocator: Allocator) !*BuilderNode {
+            const node = try allocator.create(BuilderNode);
+            node.* = .{
                 .transitions = std.AutoHashMap(u8, u32).init(allocator),
                 .outputs = std.AutoHashMap(u8, u64).init(allocator),
                 .final_output = null,
                 .is_final = false,
             };
+            return node;
         }
 
-        fn deinit(self: *BuilderNode) void {
+        fn deinit(self: *BuilderNode, allocator: Allocator) void {
             self.transitions.deinit();
             self.outputs.deinit();
+            allocator.destroy(self);
         }
     };
 
     pub fn init(allocator: Allocator) Self {
-        var nodes = std.ArrayList(BuilderNode).init(allocator);
+        var nodes = ManagedArrayList(*BuilderNode).init(allocator);
         // Add root node
-        nodes.append(BuilderNode.init(allocator)) catch unreachable;
+        const root_node = BuilderNode.init(allocator) catch unreachable;
+        nodes.append(root_node) catch unreachable;
 
         return .{
             .allocator = allocator,
             .nodes = nodes,
-            .prev_key = std.ArrayList(u8).init(allocator),
+            .prev_key = ManagedArrayList(u8).init(allocator),
             .root = 0,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        for (self.nodes.items) |*node| {
-            node.deinit();
+        for (self.nodes.items) |node| {
+            node.deinit(self.allocator);
         }
         self.nodes.deinit();
         self.prev_key.deinit();
@@ -90,14 +98,15 @@ pub const FSTBuilder = struct {
         var current: u32 = self.root;
 
         for (key) |byte| {
-            const node = &self.nodes.items[current];
+            const node = self.nodes.items[current];
 
             if (node.transitions.get(byte)) |next| {
                 current = next;
             } else {
                 // Create new node
                 const new_idx: u32 = @intCast(self.nodes.items.len);
-                try self.nodes.append(BuilderNode.init(self.allocator));
+                const new_node = try BuilderNode.init(self.allocator);
+                try self.nodes.append(new_node);
                 try node.transitions.put(byte, new_idx);
                 try node.outputs.put(byte, 0);
                 current = new_idx;
@@ -135,7 +144,7 @@ pub const FSTBuilder = struct {
             final_outputs[i] = node.final_output orelse 0;
 
             // Sort transitions by byte
-            var entries = std.ArrayList(struct { byte: u8, target: u32, output: u64 }).init(self.allocator);
+            var entries = ManagedArrayList(struct { byte: u8, target: u32, output: u64 }).init(self.allocator);
             defer entries.deinit();
 
             var iter = node.transitions.iterator();
@@ -217,9 +226,9 @@ pub const FST = struct {
             const transitions = self.trans_bytes[start..end];
 
             // Binary search for byte
-            const idx = std.sort.binarySearch(u8, byte, transitions, {}, struct {
-                fn cmp(_: void, a: u8, b: u8) std.math.Order {
-                    return std.math.order(a, b);
+            const idx = std.sort.binarySearch(u8, transitions, byte, struct {
+                fn cmp(search_key: u8, item: u8) std.math.Order {
+                    return std.math.order(search_key, item);
                 }
             }.cmp);
 
@@ -279,9 +288,10 @@ test "fst prefix sharing" {
     var builder = FSTBuilder.init(std.testing.allocator);
     defer builder.deinit();
 
+    // Keys must be in sorted order: test < tested < testing
     try builder.add("test", 1);
-    try builder.add("testing", 2);
     try builder.add("tested", 3);
+    try builder.add("testing", 2);
 
     var fst = try builder.build();
     defer fst.deinit();

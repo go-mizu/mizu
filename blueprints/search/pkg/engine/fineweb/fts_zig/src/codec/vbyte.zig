@@ -5,6 +5,10 @@
 const std = @import("std");
 const simd = @import("../util/simd.zig");
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Encode a single u32 value to VByte format
 /// Returns the number of bytes written
 pub inline fn encode(value: u32, out: []u8) usize {
@@ -111,14 +115,14 @@ inline fn encodedSizeScalar(value: u32) usize {
 
 /// VByte encoder with buffer
 pub const Encoder = struct {
-    buffer: std.ArrayList(u8),
+    buffer: ManagedArrayList(u8),
     last_value: u32,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
-            .buffer = std.ArrayList(u8).init(allocator),
+            .buffer = ManagedArrayList(u8).init(allocator),
             .last_value = 0,
         };
     }
@@ -138,9 +142,9 @@ pub const Encoder = struct {
 
         var buf: [5]u8 = undefined;
         const delta = value - self.last_value;
-        const len = encode(delta, &buf);
+        const enc_len = encode(delta, &buf);
 
-        try self.buffer.appendSlice(buf[0..len]);
+        try self.buffer.appendSlice(buf[0..enc_len]);
         self.last_value = value;
     }
 

@@ -71,12 +71,17 @@ pub const ByteTokenizer = struct {
                 continue;
             }
 
+            // If not in a token and first char is not a delimiter, start a token
+            if (!in_token and (delim_mask & 1) == 0) {
+                token_start = i;
+                in_token = true;
+            }
+
             // Process each byte position with a delimiter
             var mask = delim_mask;
-            var local_offset: usize = 0;
 
             while (mask != 0) {
-                const pos = @ctz(mask);
+                const pos: usize = @ctz(mask);
                 const abs_pos = i + pos;
 
                 if (in_token and abs_pos > token_start) {
@@ -96,18 +101,18 @@ pub const ByteTokenizer = struct {
                     in_token = false;
                 }
 
+                // Check if next position (after this delimiter) starts a new token
+                const next_in_chunk = pos + 1;
+                if (next_in_chunk < 32) {
+                    const next_abs = i + next_in_chunk;
+                    if (next_abs < text.len and !isDelimiter(text[next_abs])) {
+                        token_start = next_abs;
+                        in_token = true;
+                    }
+                }
+
                 // Clear this bit and continue
                 mask &= mask - 1;
-                local_offset = pos + 1;
-            }
-
-            // Check if we're starting a new token after last delimiter
-            if (local_offset < 32) {
-                const next_pos = i + local_offset;
-                if (!in_token and next_pos < text.len and !isDelimiter(text[next_pos])) {
-                    token_start = next_pos;
-                    in_token = true;
-                }
             }
 
             i += 32;

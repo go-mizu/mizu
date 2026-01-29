@@ -5,6 +5,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const mmap = @import("../util/mmap.zig");
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Segment header (stored at start of segment file)
 pub const SegmentHeader = extern struct {
     magic: [4]u8 = .{ 'F', 'T', 'S', 'Z' },
@@ -243,7 +247,7 @@ pub const SegmentReader = struct {
 pub const SegmentManager = struct {
     allocator: Allocator,
     base_path: []const u8,
-    segments: std.ArrayList(*SegmentReader),
+    segments: ManagedArrayList(*SegmentReader),
     next_generation: u32,
     next_sequence: [4]u32, // Per-level sequence numbers
 
@@ -253,7 +257,7 @@ pub const SegmentManager = struct {
         return .{
             .allocator = allocator,
             .base_path = base_path,
-            .segments = std.ArrayList(*SegmentReader).init(allocator),
+            .segments = ManagedArrayList(*SegmentReader).init(allocator),
             .next_generation = 0,
             .next_sequence = .{ 0, 0, 0, 0 },
         };

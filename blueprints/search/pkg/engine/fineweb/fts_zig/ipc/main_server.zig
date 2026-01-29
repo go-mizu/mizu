@@ -148,7 +148,12 @@ const Server = struct {
             if (payload_len > 0) {
                 payload = try self.allocator.alloc(u8, payload_len);
                 defer self.allocator.free(payload);
-                _ = try stream.readAll(payload);
+                var total_read: usize = 0;
+                while (total_read < payload_len) {
+                    const n = try stream.read(payload[total_read..]);
+                    if (n == 0) break;
+                    total_read += n;
+                }
             }
 
             // Handle message
@@ -210,7 +215,7 @@ const Server = struct {
         return "ok";
     }
 
-    fn handleSearch(self: *Self, payload: []const u8) []const u8 {
+    fn handleSearch(_: *Self, payload: []const u8) []const u8 {
         if (payload.len < 4) return "";
 
         const limit = std.mem.readInt(u32, payload[0..4], .little);
@@ -223,14 +228,12 @@ const Server = struct {
         return "";
     }
 
-    fn handleStats(self: *Self) []const u8 {
-        _ = self;
+    fn handleStats(_: *Self) []const u8 {
         // TODO: Return serialized stats
         return "";
     }
 
-    fn sendResponse(self: *Self, stream: std.net.Stream, data: []const u8) !void {
-        _ = self;
+    fn sendResponse(_: *Self, stream: std.net.Stream, data: []const u8) !void {
         var header: [5]u8 = undefined;
         header[0] = MSG_RESPONSE;
         std.mem.writeInt(u32, header[1..5], @intCast(data.len), .little);

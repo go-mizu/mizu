@@ -4,12 +4,16 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Block size for arena chunks (2MB for good TLB behavior)
 const BLOCK_SIZE: usize = 2 * 1024 * 1024;
 
 /// Arena allocator that allocates from large blocks
 pub const Arena = struct {
-    blocks: std.ArrayList([]align(std.mem.page_size) u8),
+    blocks: ManagedArrayList([]u8),
     current: []u8,
     offset: usize,
     backing_allocator: Allocator,
@@ -19,7 +23,7 @@ pub const Arena = struct {
 
     pub fn init(backing_allocator: Allocator) Self {
         return .{
-            .blocks = std.ArrayList([]align(std.mem.page_size) u8).init(backing_allocator),
+            .blocks = ManagedArrayList([]u8).init(backing_allocator),
             .current = &[_]u8{},
             .offset = 0,
             .backing_allocator = backing_allocator,
@@ -87,7 +91,7 @@ pub const Arena = struct {
 
     fn allocateNewBlock(self: *Self, min_size: usize) !void {
         const size = @max(BLOCK_SIZE, min_size);
-        const block = try self.backing_allocator.alignedAlloc(u8, std.mem.page_size, size);
+        const block = try self.backing_allocator.alloc(u8, size);
         try self.blocks.append(block);
         self.current = block;
         self.offset = 0;

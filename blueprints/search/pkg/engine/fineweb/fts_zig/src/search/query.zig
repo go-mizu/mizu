@@ -5,6 +5,10 @@ const std = @import("std");
 const hash = @import("../util/hash.zig");
 const byte_tokenizer = @import("../tokenizer/byte.zig");
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Query term with hash
 pub const QueryTerm = struct {
     hash: u64,
@@ -78,14 +82,14 @@ pub fn parse(allocator: std.mem.Allocator, query_text: []const u8) !Query {
 
 /// Simple query builder for programmatic construction
 pub const QueryBuilder = struct {
-    terms: std.ArrayList(QueryTerm),
+    terms: ManagedArrayList(QueryTerm),
     is_phrase: bool,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
-            .terms = std.ArrayList(QueryTerm).init(allocator),
+            .terms = ManagedArrayList(QueryTerm).init(allocator),
             .is_phrase = false,
         };
     }
@@ -115,7 +119,14 @@ pub const QueryBuilder = struct {
     }
 
     pub fn build(self: *Self) Query {
-        const terms = self.terms.toOwnedSlice() catch &[_]QueryTerm{};
+        const terms = self.terms.toOwnedSlice() catch {
+            // Return empty query on allocation failure
+            return Query{
+                .terms = &[_]QueryTerm{},
+                .is_phrase = self.is_phrase,
+                .allocator = self.terms.allocator,
+            };
+        };
         return Query{
             .terms = terms,
             .is_phrase = self.is_phrase,

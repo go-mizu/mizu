@@ -9,6 +9,10 @@ const segment = @import("segment.zig");
 const byte_tokenizer = @import("../tokenizer/byte.zig");
 const arena_mod = @import("../util/arena.zig");
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Configuration for index writer
 pub const WriterConfig = struct {
     /// Max documents before flushing to segment
@@ -32,9 +36,9 @@ pub const IndexWriter = struct {
     allocator: Allocator,
     config: WriterConfig,
     /// Current buffer: term hash -> postings
-    term_postings: std.AutoHashMap(u64, std.ArrayList(TempPosting)),
+    term_postings: std.AutoHashMap(u64, ManagedArrayList(TempPosting)),
     /// Document lengths
-    doc_lengths: std.ArrayList(u32),
+    doc_lengths: ManagedArrayList(u32),
     /// Total tokens in buffer
     total_tokens: u64,
     /// Segment manager
@@ -50,8 +54,8 @@ pub const IndexWriter = struct {
         return .{
             .allocator = allocator,
             .config = config,
-            .term_postings = std.AutoHashMap(u64, std.ArrayList(TempPosting)).init(allocator),
-            .doc_lengths = std.ArrayList(u32).init(allocator),
+            .term_postings = std.AutoHashMap(u64, ManagedArrayList(TempPosting)).init(allocator),
+            .doc_lengths = ManagedArrayList(u32).init(allocator),
             .total_tokens = 0,
             .segment_manager = segment.SegmentManager.init(allocator, config.base_path),
             .global_doc_id = 0,
@@ -91,7 +95,7 @@ pub const IndexWriter = struct {
         for (result.tokens) |token| {
             const entry = try self.term_postings.getOrPut(token.hash);
             if (!entry.found_existing) {
-                entry.value_ptr.* = std.ArrayList(TempPosting).init(self.allocator);
+                entry.value_ptr.* = ManagedArrayList(TempPosting).init(self.allocator);
             }
             try entry.value_ptr.append(.{
                 .doc_id = doc_id,
@@ -144,7 +148,7 @@ pub const IndexWriter = struct {
         );
 
         // Sort terms by hash for binary search
-        var term_hashes = std.ArrayList(u64).init(self.allocator);
+        var term_hashes = ManagedArrayList(u64).init(self.allocator);
         defer term_hashes.deinit();
 
         var iter = self.term_postings.iterator();
