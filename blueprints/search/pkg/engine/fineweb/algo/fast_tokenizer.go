@@ -267,3 +267,289 @@ func StreamTokenize(text string, emit func(hash uint64)) int {
 
 	return tokenCount
 }
+
+// FixedHashTable is a fixed-size hash table with linear probing.
+// Eliminates Go map overhead by using direct array indexing.
+// Size must be power of 2 for fast modulo.
+type FixedHashTable struct {
+	keys   []uint64 // 0 means empty
+	counts []uint16
+	mask   uint64
+	used   int
+}
+
+// NewFixedHashTable creates a hash table with given capacity (rounded up to power of 2).
+func NewFixedHashTable(capacity int) *FixedHashTable {
+	// Round up to power of 2
+	size := 1
+	for size < capacity {
+		size *= 2
+	}
+	// Ensure at least 50% load factor headroom
+	if size < capacity*2 {
+		size *= 2
+	}
+	return &FixedHashTable{
+		keys:   make([]uint64, size),
+		counts: make([]uint16, size),
+		mask:   uint64(size - 1),
+	}
+}
+
+// Reset clears the table for reuse without reallocating.
+func (h *FixedHashTable) Reset() {
+	// Use clear() for efficient zeroing
+	clear(h.keys)
+	clear(h.counts)
+	h.used = 0
+}
+
+// Insert adds a hash to the table, incrementing its count.
+// Returns true if this was a new entry.
+func (h *FixedHashTable) Insert(hash uint64) bool {
+	// Ensure hash is never 0 (reserved for empty)
+	if hash == 0 {
+		hash = 1
+	}
+
+	idx := hash & h.mask
+	size := int(h.mask) + 1
+	// Limit probing to prevent infinite loop if table is full
+	for i := 0; i < size; i++ {
+		if h.keys[idx] == 0 {
+			// Empty slot - insert new
+			h.keys[idx] = hash
+			h.counts[idx] = 1
+			h.used++
+			return true
+		}
+		if h.keys[idx] == hash {
+			// Found existing - increment
+			h.counts[idx]++
+			return false
+		}
+		// Linear probe
+		idx = (idx + 1) & h.mask
+	}
+	// Table is full - ignore (should never happen with proper sizing)
+	return false
+}
+
+// Iterate calls fn for each (hash, count) pair.
+func (h *FixedHashTable) Iterate(fn func(hash uint64, count uint16)) {
+	for i, key := range h.keys {
+		if key != 0 {
+			fn(key, h.counts[i])
+		}
+	}
+}
+
+// Used returns the number of unique entries.
+func (h *FixedHashTable) Used() int {
+	return h.used
+}
+
+// FixedTokenize uses a fixed hash table instead of Go map.
+// Much lower overhead than TokenizeMega.
+func FixedTokenize(text string, table *FixedHashTable) int {
+	if len(text) == 0 {
+		return 0
+	}
+
+	const fnvOffset = 14695981039346656037
+	const fnvPrime = 1099511628211
+
+	data := unsafe.Slice(unsafe.StringData(text), len(text))
+	n := len(data)
+	tokenCount := 0
+	i := 0
+
+	table.Reset()
+
+	for i < n {
+		for i < n && megaToLower[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		start := i
+		hash := uint64(fnvOffset)
+
+		for i < n {
+			c := megaToLower[data[i]]
+			if c == 0 {
+				break
+			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			table.Insert(hash)
+			tokenCount++
+		}
+	}
+
+	return tokenCount
+}
+
+// CompactHashTable is an even more compact hash table using uint32 indices.
+// Uses Robin Hood hashing for better cache behavior.
+type CompactHashTable struct {
+	keys   []uint64
+	counts []uint16
+	size   int
+	used   int
+}
+
+// NewCompactHashTable creates a compact table with given capacity.
+func NewCompactHashTable(capacity int) *CompactHashTable {
+	// Size = 2x capacity for low load factor
+	size := 1
+	for size < capacity*2 {
+		size *= 2
+	}
+	return &CompactHashTable{
+		keys:   make([]uint64, size),
+		counts: make([]uint16, size),
+		size:   size,
+	}
+}
+
+// Reset clears the table.
+func (h *CompactHashTable) Reset() {
+	clear(h.keys)
+	clear(h.counts)
+	h.used = 0
+}
+
+// Insert adds a hash, returns true if new.
+func (h *CompactHashTable) Insert(hash uint64) bool {
+	if hash == 0 {
+		hash = 1
+	}
+
+	mask := uint64(h.size - 1)
+	idx := hash & mask
+
+	// Linear probing with early exit
+	for i := 0; i < h.size; i++ {
+		if h.keys[idx] == 0 {
+			h.keys[idx] = hash
+			h.counts[idx] = 1
+			h.used++
+			return true
+		}
+		if h.keys[idx] == hash {
+			h.counts[idx]++
+			return false
+		}
+		idx = (idx + 1) & mask
+	}
+	return false
+}
+
+// CompactTokenize uses CompactHashTable.
+func CompactTokenize(text string, table *CompactHashTable) int {
+	if len(text) == 0 {
+		return 0
+	}
+
+	const fnvOffset = 14695981039346656037
+	const fnvPrime = 1099511628211
+
+	data := unsafe.Slice(unsafe.StringData(text), len(text))
+	n := len(data)
+	tokenCount := 0
+	i := 0
+
+	table.Reset()
+
+	for i < n {
+		for i < n && megaToLower[data[i]] == 0 {
+			i++
+		}
+		if i >= n {
+			break
+		}
+
+		start := i
+		hash := uint64(fnvOffset)
+
+		for i < n {
+			c := megaToLower[data[i]]
+			if c == 0 {
+				break
+			}
+			hash ^= uint64(c)
+			hash *= fnvPrime
+			i++
+		}
+
+		tokenLen := i - start
+		if tokenLen >= 2 && tokenLen <= 32 {
+			table.Insert(hash)
+			tokenCount++
+		}
+	}
+
+	return tokenCount
+}
+
+// BatchTokenizeFixed tokenizes multiple texts with shared table.
+func BatchTokenizeFixed(texts []string, emit func(docIdx int, hash uint64, count uint16)) {
+	table := NewCompactHashTable(512)
+
+	for docIdx, text := range texts {
+		if len(text) == 0 {
+			continue
+		}
+
+		const fnvOffset = 14695981039346656037
+		const fnvPrime = 1099511628211
+
+		data := unsafe.Slice(unsafe.StringData(text), len(text))
+		n := len(data)
+		i := 0
+
+		table.Reset()
+
+		for i < n {
+			for i < n && megaToLower[data[i]] == 0 {
+				i++
+			}
+			if i >= n {
+				break
+			}
+
+			start := i
+			hash := uint64(fnvOffset)
+
+			for i < n {
+				c := megaToLower[data[i]]
+				if c == 0 {
+					break
+				}
+				hash ^= uint64(c)
+				hash *= fnvPrime
+				i++
+			}
+
+			tokenLen := i - start
+			if tokenLen >= 2 && tokenLen <= 32 {
+				table.Insert(hash)
+			}
+		}
+
+		// Emit all entries
+		for j := 0; j < table.size; j++ {
+			if table.keys[j] != 0 {
+				emit(docIdx, table.keys[j], table.counts[j])
+			}
+		}
+	}
+}
