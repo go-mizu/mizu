@@ -120,11 +120,6 @@ pub const ScoreAccumulator = struct {
         const n = @min(k, self.count);
         if (n == 0) return &[_]Result{};
 
-        // Partial sort to get top-k
-        // For simplicity, just sort everything
-        var results: []Result = @as([*]Result, @ptrCast(self.doc_ids.ptr))[0..self.count];
-        _ = results;
-
         // Sort by score descending
         const indices = self.doc_ids[0..self.count];
         const scores = self.scores[0..self.count];

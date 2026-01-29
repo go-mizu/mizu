@@ -4,6 +4,10 @@
 const std = @import("std");
 const scorer = @import("scorer.zig");
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Search result
 pub const SearchResult = struct {
     doc_id: u32,
@@ -151,14 +155,14 @@ pub fn TopKCollector(comptime K: usize) type {
 
 /// Simple collector that stores all results (for small result sets)
 pub const AllResultsCollector = struct {
-    results_buf: std.ArrayList(SearchResult),
+    results_buf: ManagedArrayList(SearchResult),
     max_results: usize,
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator, max_results: usize) Self {
         return .{
-            .results_buf = std.ArrayList(SearchResult).init(allocator),
+            .results_buf = ManagedArrayList(SearchResult).init(allocator),
             .max_results = max_results,
         };
     }

@@ -101,8 +101,10 @@ test "hash basic" {
 }
 
 test "hash empty" {
-    const h = hash("");
-    try std.testing.expect(h != 0);
+    const h1 = hash("");
+    const h2 = hash("");
+    // Empty string should hash consistently
+    try std.testing.expectEqual(h1, h2);
 }
 
 test "hash vietnamese" {

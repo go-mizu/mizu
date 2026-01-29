@@ -28,7 +28,7 @@ pub const CharClass = struct {
         const tab = v == @as(Vec32u8, @splat('\t'));
         const newline = v == @as(Vec32u8, @splat('\n'));
         const cr = v == @as(Vec32u8, @splat('\r'));
-        return space or tab or newline or cr;
+        return @select(bool, space, space, @select(bool, tab, tab, @select(bool, newline, newline, cr)));
     }
 
     /// Check if bytes are ASCII punctuation (common delimiters)
@@ -41,12 +41,21 @@ pub const CharClass = struct {
         const exclaim = v == @as(Vec32u8, @splat('!'));
         const lparen = v == @as(Vec32u8, @splat('('));
         const rparen = v == @as(Vec32u8, @splat(')'));
-        return period or comma or semicolon or colon or question or exclaim or lparen or rparen;
+        // Combine using @select since or doesn't work with bool vectors
+        const p1 = @select(bool, period, period, comma);
+        const p2 = @select(bool, semicolon, semicolon, colon);
+        const p3 = @select(bool, question, question, exclaim);
+        const p4 = @select(bool, lparen, lparen, rparen);
+        const r1 = @select(bool, p1, p1, p2);
+        const r2 = @select(bool, p3, p3, p4);
+        return @select(bool, r1, r1, r2);
     }
 
     /// Check if bytes are token delimiters (whitespace or punctuation)
     pub inline fn isDelimiter(v: Vec32u8) @Vector(32, bool) {
-        return isWhitespace(v) or isPunctuation(v);
+        const ws = isWhitespace(v);
+        const punct = isPunctuation(v);
+        return @select(bool, ws, ws, punct);
     }
 
     /// Convert bool vector to bitmask
@@ -171,7 +180,7 @@ pub const BM25SIMD = struct {
 };
 
 test "simd delimiter detection" {
-    const chunk: [32]u8 = "hello world, this is a test!   ".*;
+    const chunk: [32]u8 = "hello world, this is a test!   !".*;
     const mask = findDelimiters32(&chunk);
 
     // Positions 5 (space), 11 (,), 12 (space), 17 (space), 20 (space), 22 (space), 27 (!), 28-31 (spaces)

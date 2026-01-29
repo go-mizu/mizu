@@ -7,6 +7,11 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+
+// Use managed array list (stores allocator internally)
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
 const eliasfano = @import("../codec/eliasfano.zig");
 const byte_tokenizer = @import("../tokenizer/byte.zig");
 const scorer = @import("../search/scorer.zig");
@@ -36,7 +41,7 @@ pub const CompactIndex = struct {
     /// Term hash -> term data
     terms: std.AutoHashMap(u64, TermData),
     /// Document metadata
-    docs: std.ArrayList(DocMeta),
+    docs: ManagedArrayList(DocMeta),
     /// BM25 scorer
     bm25: scorer.BM25Scorer,
     /// Total tokens
@@ -48,7 +53,7 @@ pub const CompactIndex = struct {
         return .{
             .allocator = allocator,
             .terms = std.AutoHashMap(u64, TermData).init(allocator),
-            .docs = std.ArrayList(DocMeta).init(allocator),
+            .docs = ManagedArrayList(DocMeta).init(allocator),
             .bm25 = scorer.BM25Scorer.init(.{}, 0, 0),
             .total_tokens = 0,
         };
@@ -197,8 +202,8 @@ pub const CompactIndex = struct {
 /// Builder for compact profile index
 pub const CompactIndexBuilder = struct {
     allocator: Allocator,
-    term_postings: std.AutoHashMap(u64, std.ArrayList(TempPosting)),
-    doc_lengths: std.ArrayList(u32),
+    term_postings: std.AutoHashMap(u64, ManagedArrayList(TempPosting)),
+    doc_lengths: ManagedArrayList(u32),
     total_tokens: u64,
 
     const Self = @This();
@@ -211,8 +216,8 @@ pub const CompactIndexBuilder = struct {
     pub fn init(allocator: Allocator) Self {
         return .{
             .allocator = allocator,
-            .term_postings = std.AutoHashMap(u64, std.ArrayList(TempPosting)).init(allocator),
-            .doc_lengths = std.ArrayList(u32).init(allocator),
+            .term_postings = std.AutoHashMap(u64, ManagedArrayList(TempPosting)).init(allocator),
+            .doc_lengths = ManagedArrayList(u32).init(allocator),
             .total_tokens = 0,
         };
     }
@@ -242,7 +247,7 @@ pub const CompactIndexBuilder = struct {
         for (result.tokens) |token| {
             const entry = try self.term_postings.getOrPut(token.hash);
             if (!entry.found_existing) {
-                entry.value_ptr.* = std.ArrayList(TempPosting).init(self.allocator);
+                entry.value_ptr.* = ManagedArrayList(TempPosting).init(self.allocator);
             }
             try entry.value_ptr.append(.{
                 .doc_id = doc_id,

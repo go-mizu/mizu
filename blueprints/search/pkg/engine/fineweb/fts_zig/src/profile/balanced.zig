@@ -8,6 +8,11 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+
+// Use managed array list (stores allocator internally)
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
 const vbyte = @import("../codec/vbyte.zig");
 const fst_mod = @import("../codec/fst.zig");
 const byte_tokenizer = @import("../tokenizer/byte.zig");
@@ -53,7 +58,7 @@ pub const BalancedIndex = struct {
     /// Term hash -> term data
     terms: std.AutoHashMap(u64, TermData),
     /// Document metadata
-    docs: std.ArrayList(DocMeta),
+    docs: ManagedArrayList(DocMeta),
     /// BM25 scorer
     bm25: scorer.BM25Scorer,
     /// Total tokens
@@ -65,7 +70,7 @@ pub const BalancedIndex = struct {
         return .{
             .allocator = allocator,
             .terms = std.AutoHashMap(u64, TermData).init(allocator),
-            .docs = std.ArrayList(DocMeta).init(allocator),
+            .docs = ManagedArrayList(DocMeta).init(allocator),
             .bm25 = scorer.BM25Scorer.init(.{}, 0, 0),
             .total_tokens = 0,
         };
@@ -151,7 +156,7 @@ pub const BalancedIndex = struct {
     /// Block-Max WAND algorithm for multi-term queries
     fn searchBlockMaxWAND(self: *Self, terms: []const query_mod.QueryTerm, limit: usize) ![]collector_mod.SearchResult {
         // Gather term data
-        var term_list = std.ArrayList(TermWithCursor).init(self.allocator);
+        var term_list = ManagedArrayList(TermWithCursor).init(self.allocator);
         defer term_list.deinit();
 
         for (terms) |term| {
@@ -250,9 +255,9 @@ pub const BalancedIndex = struct {
 pub const BalancedIndexBuilder = struct {
     allocator: Allocator,
     /// Temporary: term hash -> list of (doc_id, freq)
-    term_postings: std.AutoHashMap(u64, std.ArrayList(TempPosting)),
+    term_postings: std.AutoHashMap(u64, ManagedArrayList(TempPosting)),
     /// Document lengths
-    doc_lengths: std.ArrayList(u32),
+    doc_lengths: ManagedArrayList(u32),
     /// Total tokens
     total_tokens: u64,
 
@@ -266,8 +271,8 @@ pub const BalancedIndexBuilder = struct {
     pub fn init(allocator: Allocator) Self {
         return .{
             .allocator = allocator,
-            .term_postings = std.AutoHashMap(u64, std.ArrayList(TempPosting)).init(allocator),
-            .doc_lengths = std.ArrayList(u32).init(allocator),
+            .term_postings = std.AutoHashMap(u64, ManagedArrayList(TempPosting)).init(allocator),
+            .doc_lengths = ManagedArrayList(u32).init(allocator),
             .total_tokens = 0,
         };
     }
@@ -297,7 +302,7 @@ pub const BalancedIndexBuilder = struct {
         for (result.tokens) |token| {
             const entry = try self.term_postings.getOrPut(token.hash);
             if (!entry.found_existing) {
-                entry.value_ptr.* = std.ArrayList(TempPosting).init(self.allocator);
+                entry.value_ptr.* = ManagedArrayList(TempPosting).init(self.allocator);
             }
             try entry.value_ptr.append(.{
                 .doc_id = doc_id,

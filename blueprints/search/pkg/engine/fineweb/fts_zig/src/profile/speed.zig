@@ -8,6 +8,11 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+
+// Use managed array list (stores allocator internally)
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
 const simd = @import("../util/simd.zig");
 const hash_util = @import("../util/hash.zig");
 const arena_mod = @import("../util/arena.zig");
@@ -42,7 +47,7 @@ pub const SpeedIndex = struct {
     /// Term hash -> posting list
     terms: std.AutoHashMap(u64, TermData),
     /// Document metadata
-    docs: std.ArrayList(DocMeta),
+    docs: ManagedArrayList(DocMeta),
     /// BM25 scorer
     bm25: scorer.BM25Scorer,
     /// Total tokens across all docs
@@ -56,7 +61,7 @@ pub const SpeedIndex = struct {
         return .{
             .allocator = allocator,
             .terms = std.AutoHashMap(u64, TermData).init(allocator),
-            .docs = std.ArrayList(DocMeta).init(allocator),
+            .docs = ManagedArrayList(DocMeta).init(allocator),
             .bm25 = scorer.BM25Scorer.init(.{}, 0, 0),
             .total_tokens = 0,
             .finalized = false,
@@ -185,9 +190,9 @@ pub const SpeedIndex = struct {
 pub const SpeedIndexBuilder = struct {
     allocator: Allocator,
     /// Temporary storage: term hash -> list of (doc_id, freq)
-    term_postings: std.AutoHashMap(u64, std.ArrayList(Posting)),
+    term_postings: std.AutoHashMap(u64, ManagedArrayList(Posting)),
     /// Document lengths
-    doc_lengths: std.ArrayList(u32),
+    doc_lengths: ManagedArrayList(u32),
     /// Total tokens
     total_tokens: u64,
 
@@ -196,8 +201,8 @@ pub const SpeedIndexBuilder = struct {
     pub fn init(allocator: Allocator) Self {
         return .{
             .allocator = allocator,
-            .term_postings = std.AutoHashMap(u64, std.ArrayList(Posting)).init(allocator),
-            .doc_lengths = std.ArrayList(u32).init(allocator),
+            .term_postings = std.AutoHashMap(u64, ManagedArrayList(Posting)).init(allocator),
+            .doc_lengths = ManagedArrayList(u32).init(allocator),
             .total_tokens = 0,
         };
     }
@@ -230,7 +235,7 @@ pub const SpeedIndexBuilder = struct {
         for (result.tokens) |token| {
             const entry = try self.term_postings.getOrPut(token.hash);
             if (!entry.found_existing) {
-                entry.value_ptr.* = std.ArrayList(Posting).init(self.allocator);
+                entry.value_ptr.* = ManagedArrayList(Posting).init(self.allocator);
             }
             try entry.value_ptr.append(.{
                 .doc_id = doc_id,

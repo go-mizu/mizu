@@ -6,6 +6,10 @@ const Allocator = std.mem.Allocator;
 const Thread = std.Thread;
 const segment = @import("segment.zig");
 
+fn ManagedArrayList(comptime T: type) type {
+    return std.array_list.AlignedManaged(T, null);
+}
+
 /// Merge policy configuration
 pub const MergePolicy = struct {
     /// Number of segments at each level before merging
@@ -88,10 +92,10 @@ pub const Merger = struct {
 
         // Count segments per level
         var level_counts: [4]u32 = .{ 0, 0, 0, 0 };
-        var level_segments: [4]std.ArrayList(segment.SegmentId) = undefined;
+        var level_segments: [4]ManagedArrayList(segment.SegmentId) = undefined;
 
         for (&level_segments) |*ls| {
-            ls.* = std.ArrayList(segment.SegmentId).init(self.allocator);
+            ls.* = ManagedArrayList(segment.SegmentId).init(self.allocator);
         }
         defer for (&level_segments) |*ls| {
             ls.deinit();
@@ -128,7 +132,7 @@ pub const Merger = struct {
         for (0..self.policy.max_levels) |level| {
             if (level_counts[level] >= self.policy.segments_per_level) {
                 const segs = level_segments[level].items;
-                var task_segs = try self.allocator.alloc(segment.SegmentId, self.policy.segments_per_level);
+                const task_segs = try self.allocator.alloc(segment.SegmentId, self.policy.segments_per_level);
                 @memcpy(task_segs, segs[0..self.policy.segments_per_level]);
 
                 return MergeTask{
