@@ -448,6 +448,128 @@ type TextOnlyParquet struct {
 	Text string `parquet:"text"`
 }
 
+// PureTextParquet reads only the text column for maximum speed.
+type PureTextParquet struct {
+	Text string `parquet:"text"`
+}
+
+// ReadPureTextsParallel reads only text content with maximum parallelism.
+// Skips ID extraction for faster reading. Use when you don't need document IDs.
+func (r *ParquetReader) ReadPureTextsParallel(ctx context.Context, numWorkers int) iter.Seq2[[]string, error] {
+	return func(yield func([]string, error) bool) {
+		files, err := r.ListParquetFiles()
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		for _, file := range files {
+			select {
+			case <-ctx.Done():
+				yield(nil, ctx.Err())
+				return
+			default:
+			}
+
+			if !r.readFilePureTextsParallel(ctx, file, numWorkers, yield) {
+				return
+			}
+		}
+	}
+}
+
+func (r *ParquetReader) readFilePureTextsParallel(ctx context.Context, file string, numWorkers int, yield func([]string, error) bool) bool {
+	f, err := os.Open(file)
+	if err != nil {
+		return yield(nil, fmt.Errorf("opening %s: %w", file, err))
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return yield(nil, fmt.Errorf("stat %s: %w", file, err))
+	}
+
+	pf, err := parquet.OpenFile(f, stat.Size())
+	if err != nil {
+		return yield(nil, fmt.Errorf("opening parquet %s: %w", file, err))
+	}
+
+	rowGroups := pf.RowGroups()
+	numRowGroups := len(rowGroups)
+	if numRowGroups == 0 {
+		return true
+	}
+
+	if numWorkers > numRowGroups {
+		numWorkers = numRowGroups
+	}
+	if numWorkers < 1 {
+		numWorkers = 1
+	}
+
+	type rowGroupResult struct {
+		idx   int
+		texts []string
+		err   error
+	}
+
+	for startIdx := 0; startIdx < numRowGroups; startIdx += numWorkers {
+		endIdx := startIdx + numWorkers
+		if endIdx > numRowGroups {
+			endIdx = numRowGroups
+		}
+
+		select {
+		case <-ctx.Done():
+			return yield(nil, ctx.Err())
+		default:
+		}
+
+		results := make(chan rowGroupResult, endIdx-startIdx)
+		for rgIdx := startIdx; rgIdx < endIdx; rgIdx++ {
+			go func(idx int) {
+				rg := rowGroups[idx]
+				reader := parquet.NewGenericRowGroupReader[PureTextParquet](rg)
+				defer reader.Close()
+
+				batch := make([]PureTextParquet, rg.NumRows())
+				n, err := reader.Read(batch)
+				if err != nil && err != io.EOF {
+					results <- rowGroupResult{idx: idx, err: err}
+					return
+				}
+
+				texts := make([]string, n)
+				for i := 0; i < n; i++ {
+					texts[i] = batch[i].Text
+				}
+				results <- rowGroupResult{idx: idx, texts: texts}
+			}(rgIdx)
+		}
+
+		resultsMap := make(map[int]rowGroupResult)
+		for i := startIdx; i < endIdx; i++ {
+			res := <-results
+			resultsMap[res.idx] = res
+		}
+
+		for rgIdx := startIdx; rgIdx < endIdx; rgIdx++ {
+			res := resultsMap[rgIdx]
+			if res.err != nil {
+				return yield(nil, fmt.Errorf("reading row group %d: %w", rgIdx, res.err))
+			}
+			if len(res.texts) > 0 {
+				if !yield(res.texts, nil) {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
+}
+
 func (r *ParquetReader) readFileTextsOnly(ctx context.Context, file string, yield func([]TextOnlyDoc, error) bool) bool {
 	f, err := os.Open(file)
 	if err != nil {
