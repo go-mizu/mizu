@@ -116,4 +116,30 @@ pub fn build(b: *std.Build) void {
 
     const bench_step = b.step("bench", "Run benchmarks");
     bench_step.dependOn(&run_bench.step);
+
+    // =========================================================================
+    // Throughput Benchmark (1M docs/sec target)
+    // =========================================================================
+    const throughput_mod = b.createModule(.{
+        .root_source_file = b.path("benchmark/bench_throughput.zig"),
+        .target = target,
+        .optimize = .ReleaseFast, // Always optimize for speed
+    });
+    throughput_mod.addImport("fts_zig", main_mod);
+    throughput_mod.addOptions("build_options", options);
+
+    const throughput_bench = b.addExecutable(.{
+        .name = "fts_zig_throughput",
+        .root_module = throughput_mod,
+    });
+    throughput_bench.linkLibC();
+    b.installArtifact(throughput_bench);
+
+    const run_throughput = b.addRunArtifact(throughput_bench);
+    if (b.args) |args| {
+        run_throughput.addArgs(args);
+    }
+
+    const throughput_step = b.step("throughput", "Run throughput benchmark (1M docs/sec target)");
+    throughput_step.dependOn(&run_throughput.step);
 }

@@ -247,7 +247,8 @@ fn generateSampleDocs(allocator: Allocator, limit: u32) ![][]u8 {
                 offset += 1;
             }
         }
-        docs[i] = doc[0..offset];
+        // Store full allocation so we can free it correctly
+        docs[i] = doc;
     }
 
     return docs;
