@@ -1,10 +1,15 @@
 //! High-Throughput Indexing Benchmark
 //! Target: 1M docs/sec
-//! Focus: Measure pure indexing throughput without I/O overhead
+//! Focus: Measure pure indexing throughput with real Vietnamese FineWeb data
+//!
+//! Usage:
+//!   zig build throughput -- --input ~/data/fineweb-2/vie_Latn/train_texts.bin
+//!   zig build throughput -- --docs 100000  (fallback to synthetic data)
 
 const std = @import("std");
 const time = std.time;
 const builtin = @import("builtin");
+const fs = std.fs;
 
 // Import tokenizer and hash utilities
 const byte_tokenizer = @import("fts_zig").tokenizer.byte;
@@ -19,6 +24,7 @@ const BenchConfig = struct {
     num_workers: u32 = 0, // 0 = auto-detect
     warmup_docs: u32 = 10_000,
     iterations: u32 = 3,
+    input_file: ?[]const u8 = null, // Binary file with real data
 };
 
 /// Result from a single benchmark run
@@ -84,6 +90,70 @@ fn freeDocs(allocator: Allocator, docs: [][]const u8) void {
         allocator.free(doc);
     }
     allocator.free(docs);
+}
+
+/// Binary file header
+/// Format: [4 bytes: num_docs] [8 bytes: total_bytes]
+const BinaryHeader = struct {
+    num_docs: u32,
+    total_bytes: u64,
+};
+
+/// Read documents from binary file (extracted from parquet)
+/// Format: header + per doc [4 bytes: length][text bytes]
+fn readBinaryDocs(allocator: Allocator, path: []const u8, limit: u32) ![][]const u8 {
+    const file = try fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    // Read header
+    var header_buf: [12]u8 = undefined;
+    _ = try file.readAll(&header_buf);
+
+    const num_docs_in_file = std.mem.readInt(u32, header_buf[0..4], .little);
+    const total_bytes_in_file = std.mem.readInt(u64, header_buf[4..12], .little);
+
+    const actual_docs = if (limit > 0 and limit < num_docs_in_file) limit else num_docs_in_file;
+
+    std.debug.print("Binary file: {d} docs, {d:.2} MB total\n", .{
+        num_docs_in_file,
+        @as(f64, @floatFromInt(total_bytes_in_file)) / (1024 * 1024),
+    });
+    std.debug.print("Loading {d} documents...\n", .{actual_docs});
+
+    var docs = try allocator.alloc([]u8, actual_docs);
+    var docs_read: usize = 0;
+    var len_buf: [4]u8 = undefined;
+
+    while (docs_read < actual_docs) {
+        // Read length prefix
+        const bytes_read = try file.readAll(&len_buf);
+        if (bytes_read < 4) break;
+
+        const doc_len = std.mem.readInt(u32, &len_buf, .little);
+
+        // Read document text
+        const doc = try allocator.alloc(u8, doc_len);
+        const text_read = try file.readAll(doc);
+        if (text_read < doc_len) {
+            allocator.free(doc);
+            break;
+        }
+
+        docs[docs_read] = doc;
+        docs_read += 1;
+
+        if (docs_read % 100000 == 0) {
+            std.debug.print("  Loaded {d} documents...\n", .{docs_read});
+        }
+    }
+
+    if (docs_read < actual_docs) {
+        // Shrink allocation if we read fewer docs
+        const result = try allocator.realloc(docs, docs_read);
+        return @as([][]const u8, @ptrCast(result));
+    }
+
+    return @as([][]const u8, @ptrCast(docs));
 }
 
 /// Phase 1: Pure tokenization benchmark (no indexing)
@@ -246,49 +316,55 @@ fn benchTokenizeSIMD(docs: [][]const u8) BenchResult {
 }
 
 /// Fixed-size hash table for term frequency counting (like Go's FixedHashTable)
+/// Optimized with usedSlots tracking for O(n) clear instead of O(capacity)
 const FixedHashTable = struct {
-    keys: [1024]u64,
-    values: [1024]u16,
-    used: [1024]bool,
-    count: u32,
+    keys: [CAPACITY]u64,
+    values: [CAPACITY]u16,
+    used_slots: [MAX_SLOTS]u16, // Track which slots are used
+    num_used: u32,
 
     const Self = @This();
-    const CAPACITY = 1024;
+    const CAPACITY = 2048; // Increased for better load factor
     const MASK = CAPACITY - 1;
+    const MAX_SLOTS = 512; // Max unique tokens per doc
 
     fn init() Self {
         return .{
             .keys = [_]u64{0} ** CAPACITY,
             .values = [_]u16{0} ** CAPACITY,
-            .used = [_]bool{false} ** CAPACITY,
-            .count = 0,
+            .used_slots = undefined,
+            .num_used = 0,
         };
     }
 
     fn clear(self: *Self) void {
-        for (0..CAPACITY) |i| {
-            if (self.used[i]) {
-                self.used[i] = false;
-                self.keys[i] = 0;
-                self.values[i] = 0;
-            }
+        // O(n) clear - only touch used slots
+        for (self.used_slots[0..self.num_used]) |idx| {
+            self.keys[idx] = 0;
+            self.values[idx] = 0;
         }
-        self.count = 0;
+        self.num_used = 0;
     }
 
     fn increment(self: *Self, key: u64) void {
-        var idx = key & MASK;
+        // Ensure key is never 0 (reserved for empty)
+        const k = if (key == 0) 1 else key;
+        var idx: usize = k & MASK;
         var probes: u32 = 0;
 
         while (probes < CAPACITY) {
-            if (!self.used[idx]) {
-                self.used[idx] = true;
-                self.keys[idx] = key;
+            if (self.keys[idx] == 0) {
+                // New entry
+                self.keys[idx] = k;
                 self.values[idx] = 1;
-                self.count += 1;
+                if (self.num_used < MAX_SLOTS) {
+                    self.used_slots[self.num_used] = @intCast(idx);
+                    self.num_used += 1;
+                }
                 return;
             }
-            if (self.keys[idx] == key) {
+            if (self.keys[idx] == k) {
+                // Existing entry
                 self.values[idx] +|= 1;
                 return;
             }
@@ -485,6 +561,9 @@ pub fn main() !void {
         if (std.mem.eql(u8, args[i], "--docs") and i + 1 < args.len) {
             config.num_docs = std.fmt.parseInt(u32, args[i + 1], 10) catch 100_000;
             i += 1;
+        } else if (std.mem.eql(u8, args[i], "--input") and i + 1 < args.len) {
+            config.input_file = args[i + 1];
+            i += 1;
         }
     }
 
@@ -500,13 +579,29 @@ pub fn main() !void {
         @tagName(builtin.cpu.arch),
         @tagName(builtin.os.tag),
     });
+    if (config.input_file) |path| {
+        std.debug.print("Input: {s}\n", .{path});
+    }
     std.debug.print("Documents: {d}\n", .{config.num_docs});
     std.debug.print("\n", .{});
 
-    // Generate test data
-    std.debug.print("Generating {d} documents...\n", .{config.num_docs});
-    const docs = try generateDocs(allocator, config.num_docs);
+    // Load or generate test data
+    var docs: [][]const u8 = undefined;
+    var data_source: []const u8 = "synthetic";
+
+    if (config.input_file) |input_path| {
+        std.debug.print("Loading from binary file: {s}\n", .{input_path});
+        docs = try readBinaryDocs(allocator, input_path, config.num_docs);
+        data_source = "FineWeb Vietnamese (real)";
+    } else {
+        std.debug.print("Generating {d} synthetic documents...\n", .{config.num_docs});
+        docs = try generateDocs(allocator, config.num_docs);
+        data_source = "synthetic";
+    }
     defer freeDocs(allocator, docs);
+
+    std.debug.print("Data source: {s}\n", .{data_source});
+    std.debug.print("Actual documents loaded: {d}\n", .{docs.len});
 
     var total_bytes: u64 = 0;
     for (docs) |doc| {
