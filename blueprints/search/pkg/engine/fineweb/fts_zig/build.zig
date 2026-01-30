@@ -126,6 +126,15 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseFast, // Always optimize for speed
     });
     throughput_mod.addImport("fts_zig", main_mod);
+    const parquet_mod = b.createModule(.{
+        .root_source_file = b.path("benchmark/parquet_reader.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    parquet_mod.linkSystemLibrary("zstd", .{});
+    parquet_mod.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include" });
+    parquet_mod.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/lib" });
+    throughput_mod.addImport("parquet_reader", parquet_mod);
     throughput_mod.addOptions("build_options", options);
 
     const throughput_bench = b.addExecutable(.{
