@@ -11,8 +11,8 @@
 //!   Phase 12:  Ultra MT — all optimizations, multi-threaded
 //!
 //! Usage:
-//!   zig build throughput -- --input ~/data/fineweb-2/vie_Latn/train_texts.bin
-//!   zig build throughput -- --input ~/data/fineweb-2/vie_Latn/train_texts.bin --docs 200000
+//!   zig build throughput -- --parquet ~/data/fineweb-2/vie_Latn/train
+//!   zig build throughput -- --parquet ~/data/fineweb-2/vie_Latn/train --fast
 
 const std = @import("std");
 const time = std.time;
@@ -22,6 +22,7 @@ const fs = std.fs;
 const byte_tokenizer = @import("fts_zig").tokenizer.byte;
 const hash_util = @import("fts_zig").util.hash;
 const simd = @import("fts_zig").util.simd;
+const parquet_reader = @import("parquet_reader");
 
 const Allocator = std.mem.Allocator;
 
@@ -57,11 +58,11 @@ const BATCH_DOC_LIMIT: u32 = 8;
 
 /// Benchmark configuration
 const BenchConfig = struct {
-    num_docs: u32 = 100_000,
+    num_docs: u32 = 0, // 0 = all docs
     num_workers: u32 = 0,
     warmup_docs: u32 = 10_000,
     iterations: u32 = 3,
-    input_file: ?[]const u8 = null,
+    parquet_path: ?[]const u8 = null,
 };
 
 /// Result from a single benchmark run
@@ -71,107 +72,6 @@ const BenchResult = struct {
     total_tokens: u64,
     elapsed_ns: u64,
 };
-
-fn freeDocs(allocator: Allocator, docs: [][]const u8) void {
-    for (docs) |doc| allocator.free(doc);
-    allocator.free(docs);
-}
-
-/// Binary file header: [4 bytes: num_docs] [8 bytes: total_bytes]
-fn readBinaryDocs(allocator: Allocator, path: []const u8, limit: u32) ![][]const u8 {
-    const file = try fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    var header_buf: [12]u8 = undefined;
-    _ = try file.readAll(&header_buf);
-
-    const num_docs_in_file = std.mem.readInt(u32, header_buf[0..4], .little);
-    const total_bytes_in_file = std.mem.readInt(u64, header_buf[4..12], .little);
-    const actual_docs = if (limit > 0 and limit < num_docs_in_file) limit else num_docs_in_file;
-
-    std.debug.print("Binary file: {d} docs, {d:.2} MB total\n", .{
-        num_docs_in_file,
-        @as(f64, @floatFromInt(total_bytes_in_file)) / (1024 * 1024),
-    });
-    std.debug.print("Loading {d} documents...\n", .{actual_docs});
-
-    var docs = try allocator.alloc([]u8, actual_docs);
-    var docs_read: usize = 0;
-    var len_buf: [4]u8 = undefined;
-
-    while (docs_read < actual_docs) {
-        const bytes_read = try file.readAll(&len_buf);
-        if (bytes_read < 4) break;
-
-        const doc_len = std.mem.readInt(u32, &len_buf, .little);
-        const doc = try allocator.alloc(u8, doc_len);
-        const text_read = try file.readAll(doc);
-        if (text_read < doc_len) {
-            allocator.free(doc);
-            break;
-        }
-
-        docs[docs_read] = doc;
-        docs_read += 1;
-
-        if (docs_read % 100000 == 0)
-            std.debug.print("  Loaded {d} documents...\n", .{docs_read});
-    }
-
-    if (docs_read < actual_docs) {
-        const result = try allocator.realloc(docs, docs_read);
-        return @as([][]const u8, @ptrCast(result));
-    }
-    return @as([][]const u8, @ptrCast(docs));
-}
-
-/// Read binary docs into contiguous memory (zero-copy slicing).
-/// All doc data lives in a single buffer for cache-friendly sequential access.
-/// This dramatically improves prefetch and TLB efficiency vs 200k+ scattered heap allocations.
-fn readBinaryDocsPacked(allocator: Allocator, path: []const u8, limit: u32) !struct { docs: [][]const u8, buffer: []u8 } {
-    const file = try fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-    const file_size: usize = @intCast(stat.size);
-
-    // Use page_allocator for the large file buffer (avoids GPA metadata overhead for multi-GB alloc)
-    const buffer = try std.heap.page_allocator.alloc(u8, file_size);
-    errdefer std.heap.page_allocator.free(buffer);
-    _ = try file.readAll(buffer);
-
-    if (file_size < 12) return error.InvalidFormat;
-    const num_docs_in_file = std.mem.readInt(u32, buffer[0..4], .little);
-    const total_bytes_in_file = std.mem.readInt(u64, buffer[4..12], .little);
-    const actual_docs = if (limit > 0 and limit < num_docs_in_file) limit else num_docs_in_file;
-
-    std.debug.print("Binary file: {d} docs, {d:.2} MB total\n", .{
-        num_docs_in_file,
-        @as(f64, @floatFromInt(total_bytes_in_file)) / (1024 * 1024),
-    });
-    std.debug.print("Loading {d} documents (packed, zero-copy)...\n", .{actual_docs});
-
-    // Zero-copy: doc slices point directly into buffer (docs are nearly contiguous)
-    const docs = try allocator.alloc([]const u8, actual_docs);
-    errdefer allocator.free(docs);
-    var offset: usize = 12; // skip header
-    var docs_read: usize = 0;
-
-    while (docs_read < actual_docs and offset + 4 <= file_size) {
-        const doc_len: usize = std.mem.readInt(u32, buffer[offset..][0..4], .little);
-        offset += 4;
-        if (offset + doc_len > file_size) break;
-        docs[docs_read] = buffer[offset..offset + doc_len];
-        offset += doc_len;
-        docs_read += 1;
-        if (docs_read % 100000 == 0)
-            std.debug.print("  Parsed {d} documents...\n", .{docs_read});
-    }
-
-    std.debug.print("Actual documents loaded: {d}\n", .{docs_read});
-
-    return .{ .docs = docs[0..docs_read], .buffer = buffer };
-}
 
 // ============================================================================
 // Hash Tables
@@ -1951,10 +1851,10 @@ pub fn main() !void {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--docs") and i + 1 < args.len) {
-            config.num_docs = std.fmt.parseInt(u32, args[i + 1], 10) catch 100_000;
+            config.num_docs = std.fmt.parseInt(u32, args[i + 1], 10) catch 0;
             i += 1;
-        } else if (std.mem.eql(u8, args[i], "--input") and i + 1 < args.len) {
-            config.input_file = args[i + 1];
+        } else if (std.mem.eql(u8, args[i], "--parquet") and i + 1 < args.len) {
+            config.parquet_path = args[i + 1];
             i += 1;
         } else if (std.mem.eql(u8, args[i], "--fast")) {
             fast_mode = true;
@@ -1973,26 +1873,29 @@ pub fn main() !void {
         @tagName(builtin.cpu.arch),
         @tagName(builtin.os.tag),
     });
-    if (config.input_file) |path| {
-        std.debug.print("Input: {s}\n", .{path});
+    if (config.parquet_path) |path| {
+        std.debug.print("Parquet: {s}\n", .{path});
     }
-    std.debug.print("Documents: {d}\n", .{config.num_docs});
+    if (config.num_docs > 0) {
+        std.debug.print("Documents: {d}\n", .{config.num_docs});
+    } else {
+        std.debug.print("Documents: all\n", .{});
+    }
     std.debug.print("\n", .{});
 
-    // Load data — requires --input (no synthetic mode)
-    const input_path = config.input_file orelse {
-        std.debug.print("ERROR: --input <path> is required.\n", .{});
-        std.debug.print("Usage: zig build throughput -- --input ~/data/fineweb-2/vie_Latn/train_texts.bin\n", .{});
-        std.debug.print("       zig build throughput -- --input ~/data/.../train_texts.bin --fast\n", .{});
+    // Load data — requires --parquet
+    const parquet_path = config.parquet_path orelse {
+        std.debug.print("ERROR: --parquet <path> is required.\n", .{});
+        std.debug.print("Usage: zig build throughput -- --parquet ~/data/fineweb-2/vie_Latn/train\n", .{});
+        std.debug.print("       zig build throughput -- --parquet ~/data/.../train --fast\n", .{});
         return;
     };
 
-    // Packed reading: single file read, zero-copy slicing → contiguous memory layout
-    std.debug.print("Loading from binary file: {s}\n", .{input_path});
-    const loaded = try readBinaryDocsPacked(allocator, input_path, config.num_docs);
-    defer std.heap.page_allocator.free(loaded.buffer);
-    defer allocator.free(loaded.docs);
-    const docs = loaded.docs;
+    std.debug.print("Loading from parquet: {s}\n", .{parquet_path});
+    var parquet_result = try parquet_reader.readTexts(allocator, parquet_path, config.num_docs);
+    defer parquet_result.deinit(allocator);
+
+    const docs = parquet_result.docs;
 
     var total_bytes: u64 = 0;
     for (docs) |doc| total_bytes += doc.len;
