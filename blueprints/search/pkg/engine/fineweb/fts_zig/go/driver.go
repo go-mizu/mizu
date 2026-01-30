@@ -9,6 +9,7 @@ package fts_zig
 
 import (
 	"errors"
+	"iter"
 )
 
 // Profile represents the search profile to use.
@@ -112,4 +113,37 @@ func NewIPCDriver(cfg Config) (Driver, error) {
 // This reads segments directly from disk without CGO.
 func NewMmapDriver(cfg Config) (Driver, error) {
 	return newMmapDriver(cfg)
+}
+
+// ImportFromParquet indexes all documents from a pre-loaded text slice.
+// Returns the number of documents indexed.
+func ImportFromParquet(driver Driver, texts []string) (int, error) {
+	if err := driver.AddDocuments(texts); err != nil {
+		return 0, err
+	}
+	return len(texts), nil
+}
+
+// ImportFromParquetIter indexes documents streamed from a batch iterator.
+// This is the preferred method for large datasets — it avoids loading all texts
+// into memory at once. The iterator should yield batches of text strings, e.g.
+// from ParquetReader.ReadPureTextsParallel().
+//
+// Usage:
+//
+//	reader := fineweb.NewParquetReader(parquetDir)
+//	n, err := fts_zig.ImportFromParquetIter(driver,
+//	    reader.ReadPureTextsParallel(ctx, runtime.NumCPU()))
+func ImportFromParquetIter(driver Driver, batches iter.Seq2[[]string, error]) (int, error) {
+	total := 0
+	for batch, err := range batches {
+		if err != nil {
+			return total, err
+		}
+		if err := driver.AddDocuments(batch); err != nil {
+			return total, err
+		}
+		total += len(batch)
+	}
+	return total, nil
 }

@@ -166,7 +166,8 @@ pub const ByteTokenizer = struct {
         };
     }
 
-    /// Hash a token with optional lowercase conversion
+    /// Hash a token with optional lowercase conversion.
+    /// Uses LUT-based lowercase for short tokens to avoid branch mispredictions.
     inline fn hashToken(self: Self, text: []const u8) u64 {
         if (self.config.lowercase) {
             return hashLowercase(text);
@@ -174,71 +175,143 @@ pub const ByteTokenizer = struct {
         return hash.hash(text);
     }
 
-    /// Hash with inline ASCII lowercase conversion
+    /// Hash with inline ASCII lowercase conversion using comptime LUT.
+    /// The to_lower_lut converts uppercase to lowercase in a single array lookup
+    /// (no branches), then hashes the lowercased buffer with wyhash.
     fn hashLowercase(text: []const u8) u64 {
-        // For short tokens, lowercase inline
-        if (text.len <= 32) {
-            var buf: [32]u8 = undefined;
+        if (text.len <= 64) {
+            var buf: [64]u8 = undefined;
             for (text, 0..) |c, j| {
-                buf[j] = if (c >= 'A' and c <= 'Z') c + 32 else c;
+                buf[j] = to_lower_lut[c];
             }
             return hash.hash(buf[0..text.len]);
         }
 
-        // For longer tokens, hash directly (rare case)
-        return hash.hash(text);
+        // For longer tokens (rare), use simple branch
+        var buf2: [256]u8 = undefined;
+        const len = @min(text.len, 256);
+        for (text[0..len], 0..) |c, j| {
+            buf2[j] = to_lower_lut[c];
+        }
+        return hash.hash(buf2[0..len]);
     }
 };
 
-/// Check if a byte is a delimiter
+// ============================================================================
+// Comptime LUTs: Character classification + lowercase (single array lookup)
+// ============================================================================
+
+/// Delimiter detection LUT: 1 = delimiter, 0 = alphanumeric.
+/// Single array lookup replaces 30+ branch comparisons.
+const delimiter_lut = blk: {
+    var table: [256]u8 = [_]u8{0} ** 256;
+    // Control characters and space
+    for (0..33) |c| table[c] = 1;
+    // Punctuation and symbols
+    const delims = ".,;:?!()[]{}\"'<>/\\|@#$%^&*-+=~`";
+    for (delims) |c| table[c] = 1;
+    break :blk table;
+};
+
+/// Combined lowercase + classification LUT.
+/// 0 = delimiter, otherwise lowercase byte value.
+/// Used for single-pass tokenize+hash without separate lowercase step.
+const to_lower_lut = blk: {
+    var table: [256]u8 = [_]u8{0} ** 256;
+    for ('a'..'z' + 1) |c| table[c] = @intCast(c);
+    for ('A'..'Z' + 1) |c| table[c] = @intCast(c | 0x20); // lowercase
+    for ('0'..'9' + 1) |c| table[c] = @intCast(c);
+    for (128..256) |c| table[c] = @intCast(c); // UTF-8 continuation bytes
+    break :blk table;
+};
+
+/// Check if a byte is a delimiter (single array lookup)
 inline fn isDelimiter(c: u8) bool {
-    return switch (c) {
-        ' ', '\t', '\n', '\r', '.', ',', ';', ':', '?', '!', '(', ')', '[', ']', '{', '}', '"', '\'', '<', '>', '/', '\\', '|', '@', '#', '$', '%', '^', '&', '*', '-', '+', '=', '~', '`' => true,
-        else => false,
-    };
+    return delimiter_lut[c] != 0;
 }
 
-/// Aggregate tokens by hash, counting frequencies
-/// Returns unique tokens with updated freq fields
+// ============================================================================
+// Hash-table-based aggregation with usedSlots tracking — O(n) vs O(n log n)
+// ============================================================================
+
+const AGG_CAPACITY: usize = 2048; // Must be power of 2
+const AGG_MASK: u64 = AGG_CAPACITY - 1;
+const AGG_MAX_USED: usize = AGG_CAPACITY; // Can fill entire table in worst case
+
+/// Aggregation hash table: open-addressing with linear probing.
+/// Uses usedSlots tracking for O(n) clear instead of O(CAPACITY) memset.
+const AggTable = struct {
+    hashes: [AGG_CAPACITY]u64,
+    tokens: [AGG_CAPACITY]Token, // Stores first occurrence + accumulated freq
+    used_slots: [AGG_MAX_USED]u16,
+    num_used: u16,
+
+    const Self = @This();
+
+    fn init() Self {
+        return .{
+            .hashes = [_]u64{0} ** AGG_CAPACITY,
+            .tokens = undefined,
+            .used_slots = undefined,
+            .num_used = 0,
+        };
+    }
+
+    /// Insert a token, incrementing frequency if already present.
+    inline fn insert(self: *Self, token: Token) void {
+        const key = if (token.hash == 0) 1 else token.hash;
+        var idx: usize = @intCast(key & AGG_MASK);
+
+        while (true) {
+            if (self.hashes[idx] == 0) {
+                // Empty slot: insert new
+                self.hashes[idx] = key;
+                self.tokens[idx] = token;
+                if (self.num_used < AGG_MAX_USED) {
+                    self.used_slots[self.num_used] = @intCast(idx);
+                    self.num_used += 1;
+                }
+                return;
+            }
+            if (self.hashes[idx] == key) {
+                // Existing: increment frequency
+                self.tokens[idx].freq +|= 1;
+                return;
+            }
+            idx = (idx + 1) & @as(usize, @intCast(AGG_MASK));
+        }
+    }
+
+    /// Copy unique tokens to output buffer and clear the table.
+    fn drainTo(self: *Self, out: []Token) []Token {
+        const count = @min(self.num_used, out.len);
+        for (self.used_slots[0..count], 0..) |slot_idx, i| {
+            out[i] = self.tokens[slot_idx];
+        }
+        // Clear only used slots
+        for (self.used_slots[0..self.num_used]) |slot_idx| {
+            self.hashes[slot_idx] = 0;
+        }
+        self.num_used = 0;
+        return out[0..count];
+    }
+};
+
+/// Thread-local aggregation table (avoids repeated init overhead)
+threadlocal var tl_agg_table: AggTable = AggTable.init();
+
+/// Aggregate tokens by hash, counting frequencies — O(n) with hash table.
+/// Returns unique tokens with updated freq fields.
 pub fn aggregateTokens(tokens: []Token, out: []Token) []Token {
     if (tokens.len == 0) return out[0..0];
 
-    // Sort by hash
-    std.mem.sort(Token, tokens, {}, struct {
-        fn lessThan(_: void, a: Token, b: Token) bool {
-            return a.hash < b.hash;
-        }
-    }.lessThan);
-
-    // Aggregate
-    var out_idx: usize = 0;
-    var current_hash = tokens[0].hash;
-    var current_freq: u16 = 0;
-    var first_token = tokens[0];
+    const table = &tl_agg_table;
 
     for (tokens) |t| {
-        if (t.hash == current_hash) {
-            current_freq += 1;
-        } else {
-            if (out_idx < out.len) {
-                out[out_idx] = first_token;
-                out[out_idx].freq = current_freq;
-                out_idx += 1;
-            }
-            current_hash = t.hash;
-            current_freq = 1;
-            first_token = t;
-        }
+        table.insert(t);
     }
 
-    // Final token
-    if (out_idx < out.len) {
-        out[out_idx] = first_token;
-        out[out_idx].freq = current_freq;
-        out_idx += 1;
-    }
-
-    return out[0..out_idx];
+    return table.drainTo(out);
 }
 
 /// Tokenize and aggregate in one pass (convenience function)
