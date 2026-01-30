@@ -449,6 +449,26 @@ inline fn wyhash(data: []const u8) u64 {
 // Character classification helpers
 // ============================================================================
 
+const Vec32u8 = @Vector(32, u8);
+
+/// Fast SIMD delimiter detection using range checks (12 ops vs 22 for individual char checks).
+/// Token chars: [a-z, A-Z, 0-9, >=128 (UTF-8)]. Everything else is a delimiter.
+/// Matches to_lower_lut semantics exactly.
+inline fn findDelimitersFast32(chunk: *const [32]u8) u32 {
+    const v: Vec32u8 = chunk.*;
+    // Range checks using wrapping subtraction: (x - lo) <= (hi - lo) iff lo <= x <= hi
+    const low_alpha: @Vector(32, bool) = v -% @as(Vec32u8, @splat('a')) <= @as(Vec32u8, @splat('z' - 'a'));
+    const up_alpha: @Vector(32, bool) = v -% @as(Vec32u8, @splat('A')) <= @as(Vec32u8, @splat('Z' - 'A'));
+    const digit: @Vector(32, bool) = v -% @as(Vec32u8, @splat('0')) <= @as(Vec32u8, @splat('9' - '0'));
+    const utf8: @Vector(32, bool) = v >= @as(Vec32u8, @splat(128));
+    // Combine: is_token = low_alpha | up_alpha | digit | utf8
+    const t1 = @select(bool, low_alpha, low_alpha, up_alpha);
+    const t2 = @select(bool, digit, digit, utf8);
+    const is_token = @select(bool, t1, t1, t2);
+    // Delimiter = NOT token
+    return ~@as(u32, @bitCast(is_token));
+}
+
 inline fn isDelimiterLUT(c: u8) bool {
     return to_lower_lut[c] == 0;
 }
@@ -1551,7 +1571,7 @@ inline fn tokenizeDocSIMDWyhashAny(doc: []const u8, table: anytype, total_tokens
 
     while (i + 32 <= doc.len) {
         const chunk: *const [32]u8 = @ptrCast(doc.ptr + i);
-        const delim_mask = simd.findDelimiters32(chunk);
+        const delim_mask = findDelimitersFast32(chunk);
 
         if (delim_mask == 0) {
             if (!in_token) { token_start = i; in_token = true; }
@@ -1599,6 +1619,106 @@ inline fn tokenizeDocSIMDWyhashAny(doc: []const u8, table: anytype, total_tokens
         i += 1;
     }
 
+    if (in_token and i > token_start) {
+        const h = wyhash(doc[token_start..i]);
+        table.insert(h);
+        total_tokens.* += 1;
+    }
+}
+
+/// 64-byte SIMD tokenizer — processes two 32-byte chunks per loop iteration.
+/// Halves loop overhead for long-token text (avg token ~8 bytes in Vietnamese).
+inline fn tokenizeDocSIMD64WyhashAny(doc: []const u8, table: anytype, total_tokens: *u64) void {
+    var i: usize = 0;
+    var in_token = false;
+    var token_start: usize = 0;
+
+    // Process 64 bytes at a time (two 32-byte SIMD operations)
+    while (i + 64 <= doc.len) {
+        const mask_lo: u32 = findDelimitersFast32(@ptrCast(doc.ptr + i));
+        const mask_hi: u32 = findDelimitersFast32(@ptrCast(doc.ptr + i + 32));
+        const mask64: u64 = @as(u64, mask_hi) << 32 | mask_lo;
+
+        if (mask64 == 0) {
+            if (!in_token) { token_start = i; in_token = true; }
+            i += 64;
+            continue;
+        }
+
+        if (!in_token and (mask64 & 1) == 0) {
+            token_start = i;
+            in_token = true;
+        }
+
+        var mask = mask64;
+        while (mask != 0) {
+            const pos: usize = @ctz(mask);
+            const abs_pos = i + pos;
+            if (in_token and abs_pos > token_start) {
+                const h = wyhash(doc[token_start..abs_pos]);
+                table.insert(h);
+                total_tokens.* += 1;
+                in_token = false;
+            }
+            const next = pos + 1;
+            if (next < 64 and i + next < doc.len and to_lower_lut[doc[i + next]] != 0) {
+                token_start = i + next;
+                in_token = true;
+            }
+            mask &= mask - 1;
+        }
+        i += 64;
+    }
+
+    // 32-byte remainder
+    while (i + 32 <= doc.len) {
+        const chunk: *const [32]u8 = @ptrCast(doc.ptr + i);
+        const delim_mask = findDelimitersFast32(chunk);
+
+        if (delim_mask == 0) {
+            if (!in_token) { token_start = i; in_token = true; }
+            i += 32;
+            continue;
+        }
+        if (!in_token and (delim_mask & 1) == 0) {
+            token_start = i;
+            in_token = true;
+        }
+        var mask = delim_mask;
+        while (mask != 0) {
+            const pos: usize = @ctz(mask);
+            const abs_pos = i + pos;
+            if (in_token and abs_pos > token_start) {
+                const h = wyhash(doc[token_start..abs_pos]);
+                table.insert(h);
+                total_tokens.* += 1;
+                in_token = false;
+            }
+            const next = pos + 1;
+            if (next < 32 and i + next < doc.len and to_lower_lut[doc[i + next]] != 0) {
+                token_start = i + next;
+                in_token = true;
+            }
+            mask &= mask - 1;
+        }
+        i += 32;
+    }
+
+    // Scalar remainder
+    while (i < doc.len) {
+        if (to_lower_lut[doc[i]] == 0) {
+            if (in_token and i > token_start) {
+                const h = wyhash(doc[token_start..i]);
+                table.insert(h);
+                total_tokens.* += 1;
+                in_token = false;
+            }
+        } else if (!in_token) {
+            token_start = i;
+            in_token = true;
+        }
+        i += 1;
+    }
     if (in_token and i > token_start) {
         const h = wyhash(doc[token_start..i]);
         table.insert(h);
@@ -1752,9 +1872,6 @@ fn benchUltraV5MT(allocator: Allocator, docs: [][]const u8, num_threads: u32) Be
                 local_bytes += doc.len;
                 batch_count += 1;
 
-                // Larger batch: 12 docs or 2000 unique tokens before clear.
-                // 12 × ~700 unique/doc with overlap → ~3000-4000 actual unique.
-                // 4000/8192 = 49% load factor — boundary of good linear probing.
                 if (batch_count >= 12 or table.num_used >= 2000) {
                     table.clear();
                     batch_count = 0;
@@ -1785,6 +1902,437 @@ fn benchUltraV5MT(allocator: Allocator, docs: [][]const u8, num_threads: u32) Be
         total_tokens += ctx.tokens;
         total_bytes += ctx.bytes;
     }
+
+    return makeResult(docs.len, total_tokens, total_bytes, start, end);
+}
+
+// ============================================================================
+// Ultra v8 Multi-threaded — Work-stealing for heterogeneous cores (P+E)
+// Apple M4: 4 P-cores (fast) + 6 E-cores (slow). Equal work division
+// wastes P-core capacity. Work-stealing via atomic counter auto-balances.
+// ============================================================================
+
+fn benchUltraV8MT(allocator: Allocator, docs: [][]const u8, num_threads: u32) BenchResult {
+    return benchUltraV8MTWithSteal(allocator, docs, num_threads, 128);
+}
+
+fn benchUltraV8MTWithSteal(allocator: Allocator, docs: [][]const u8, num_threads: u32, steal_batch: usize) BenchResult {
+    const Thread = std.Thread;
+
+    const SharedState = struct {
+        next_doc: std.atomic.Value(usize),
+        total_docs: usize,
+        docs: [][]const u8,
+        steal_size: usize,
+    };
+
+    const WorkerContext = struct {
+        shared: *SharedState,
+        tokens: u64 align(128),
+        bytes: u64,
+    };
+
+    var shared = SharedState{
+        .next_doc = std.atomic.Value(usize).init(0),
+        .total_docs = docs.len,
+        .docs = docs,
+        .steal_size = steal_batch,
+    };
+
+    var contexts = allocator.alloc(WorkerContext, num_threads) catch return zeroResult();
+    defer allocator.free(contexts);
+
+    for (0..num_threads) |i| {
+        contexts[i] = .{
+            .shared = &shared,
+            .tokens = 0,
+            .bytes = 0,
+        };
+    }
+
+    const worker_fn = struct {
+        fn run(ctx: *WorkerContext) void {
+            var table = SmallKeyHashTable.init();
+            var batch_count: u32 = 0;
+            var local_tokens: u64 = 0;
+            var local_bytes: u64 = 0;
+            const sb = ctx.shared.steal_size;
+
+            while (true) {
+                const start = ctx.shared.next_doc.fetchAdd(sb, .monotonic);
+                if (start >= ctx.shared.total_docs) break;
+                const end = @min(start + sb, ctx.shared.total_docs);
+
+                // Prefetch first doc data of this batch
+                @prefetch(ctx.shared.docs[start].ptr, .{ .rw = .read, .locality = 3, .cache = .data });
+
+                for (start..end) |doc_idx| {
+                    const doc = ctx.shared.docs[doc_idx];
+
+                    if (doc_idx + 1 < end) {
+                        const next = ctx.shared.docs[doc_idx + 1];
+                        @prefetch(next.ptr, .{ .rw = .read, .locality = 3, .cache = .data });
+                        if (next.len > 128)
+                            @prefetch(next.ptr + 128, .{ .rw = .read, .locality = 2, .cache = .data });
+                    }
+                    if (doc_idx + 2 < end) {
+                        @prefetch(ctx.shared.docs[doc_idx + 2].ptr, .{ .rw = .read, .locality = 1, .cache = .data });
+                    }
+
+                    tokenizeDocSIMDWyhashAny(doc, &table, &local_tokens);
+                    local_bytes += doc.len;
+                    batch_count += 1;
+
+                    if (batch_count >= 12 or table.num_used >= 2000) {
+                        table.clear();
+                        batch_count = 0;
+                    }
+                }
+            }
+            ctx.tokens = local_tokens;
+            ctx.bytes = local_bytes;
+        }
+    }.run;
+
+    std.debug.print("    Starting {d} v8 workers (steal={d})...\n", .{ num_threads, steal_batch });
+    const start = time.nanoTimestamp();
+
+    var threads = allocator.alloc(Thread, num_threads) catch return zeroResult();
+    defer allocator.free(threads);
+
+    for (0..num_threads) |i| {
+        threads[i] = Thread.spawn(.{}, worker_fn, .{&contexts[i]}) catch continue;
+    }
+    for (threads) |t| t.join();
+
+    std.debug.print("                                                                    \r", .{});
+    const end = time.nanoTimestamp();
+
+    var total_tokens: u64 = 0;
+    var total_bytes: u64 = 0;
+    for (contexts) |ctx| {
+        total_tokens += ctx.tokens;
+        total_bytes += ctx.bytes;
+    }
+
+    return makeResult(docs.len, total_tokens, total_bytes, start, end);
+}
+
+// ============================================================================
+// Ultra v9 Multi-threaded — v8 work-stealing + 64-byte SIMD tokenizer
+// Halves SIMD loop iterations for long-token Vietnamese text
+// ============================================================================
+
+fn benchUltraV9MT(allocator: Allocator, docs: [][]const u8, num_threads: u32, steal_batch: usize) BenchResult {
+    const Thread = std.Thread;
+
+    const SharedState = struct {
+        next_doc: std.atomic.Value(usize),
+        total_docs: usize,
+        docs: [][]const u8,
+        steal_size: usize,
+    };
+
+    const WorkerContext = struct {
+        shared: *SharedState,
+        tokens: u64 align(128),
+        bytes: u64,
+    };
+
+    var shared = SharedState{
+        .next_doc = std.atomic.Value(usize).init(0),
+        .total_docs = docs.len,
+        .docs = docs,
+        .steal_size = steal_batch,
+    };
+
+    var contexts = allocator.alloc(WorkerContext, num_threads) catch return zeroResult();
+    defer allocator.free(contexts);
+
+    for (0..num_threads) |i| {
+        contexts[i] = .{
+            .shared = &shared,
+            .tokens = 0,
+            .bytes = 0,
+        };
+    }
+
+    const worker_fn = struct {
+        fn run(ctx: *WorkerContext) void {
+            var table = SmallKeyHashTable.init();
+            var batch_count: u32 = 0;
+            var local_tokens: u64 = 0;
+            var local_bytes: u64 = 0;
+            const sb = ctx.shared.steal_size;
+
+            while (true) {
+                const start = ctx.shared.next_doc.fetchAdd(sb, .monotonic);
+                if (start >= ctx.shared.total_docs) break;
+                const end = @min(start + sb, ctx.shared.total_docs);
+
+                @prefetch(ctx.shared.docs[start].ptr, .{ .rw = .read, .locality = 3, .cache = .data });
+
+                for (start..end) |doc_idx| {
+                    const doc = ctx.shared.docs[doc_idx];
+
+                    if (doc_idx + 1 < end) {
+                        const next = ctx.shared.docs[doc_idx + 1];
+                        @prefetch(next.ptr, .{ .rw = .read, .locality = 3, .cache = .data });
+                        if (next.len > 128)
+                            @prefetch(next.ptr + 128, .{ .rw = .read, .locality = 2, .cache = .data });
+                    }
+                    if (doc_idx + 2 < end) {
+                        @prefetch(ctx.shared.docs[doc_idx + 2].ptr, .{ .rw = .read, .locality = 1, .cache = .data });
+                    }
+
+                    // 64-byte SIMD tokenizer
+                    tokenizeDocSIMD64WyhashAny(doc, &table, &local_tokens);
+                    local_bytes += doc.len;
+                    batch_count += 1;
+
+                    if (batch_count >= 12 or table.num_used >= 2000) {
+                        table.clear();
+                        batch_count = 0;
+                    }
+                }
+            }
+            ctx.tokens = local_tokens;
+            ctx.bytes = local_bytes;
+        }
+    }.run;
+
+    std.debug.print("    Starting {d} v9 workers (64B SIMD, steal={d})...\n", .{ num_threads, steal_batch });
+    const start = time.nanoTimestamp();
+
+    var threads = allocator.alloc(Thread, num_threads) catch return zeroResult();
+    defer allocator.free(threads);
+
+    for (0..num_threads) |i| {
+        threads[i] = Thread.spawn(.{}, worker_fn, .{&contexts[i]}) catch continue;
+    }
+    for (threads) |t| t.join();
+
+    std.debug.print("                                                                    \r", .{});
+    const end = time.nanoTimestamp();
+
+    var total_tokens: u64 = 0;
+    var total_bytes: u64 = 0;
+    for (contexts) |ctx| {
+        total_tokens += ctx.tokens;
+        total_bytes += ctx.bytes;
+    }
+
+    return makeResult(docs.len, total_tokens, total_bytes, start, end);
+}
+
+// ============================================================================
+// Ultra v6 Multi-threaded — SmallKeyHashTable + aggressive batches (20/3500)
+// For large datasets: fewer clears + deeper prefetch to hide cold cache misses
+// ============================================================================
+
+fn benchUltraV6MT(allocator: Allocator, docs: [][]const u8, num_threads: u32) BenchResult {
+    const Thread = std.Thread;
+
+    const WorkerContext = struct {
+        docs: [][]const u8,
+        start_idx: usize,
+        end_idx: usize,
+        tokens: u64 align(128),
+        bytes: u64,
+    };
+
+    var contexts = allocator.alloc(WorkerContext, num_threads) catch return zeroResult();
+    defer allocator.free(contexts);
+
+    const docs_per_worker = docs.len / num_threads;
+    for (0..num_threads) |i| {
+        contexts[i] = .{
+            .docs = docs,
+            .start_idx = i * docs_per_worker,
+            .end_idx = if (i == num_threads - 1) docs.len else (i + 1) * docs_per_worker,
+            .tokens = 0,
+            .bytes = 0,
+        };
+    }
+
+    const worker_fn = struct {
+        fn run(ctx: *WorkerContext) void {
+            var table = SmallKeyHashTable.init();
+            var batch_count: u32 = 0;
+            var local_tokens: u64 = 0;
+            var local_bytes: u64 = 0;
+
+            for (ctx.start_idx..ctx.end_idx) |doc_idx| {
+                const doc = ctx.docs[doc_idx];
+
+                // Deeper prefetch: 3 docs ahead for cold cache misses
+                if (doc_idx + 1 < ctx.end_idx) {
+                    const next = ctx.docs[doc_idx + 1];
+                    @prefetch(next.ptr, .{ .rw = .read, .locality = 3, .cache = .data });
+                    if (next.len > 64)
+                        @prefetch(next.ptr + 64, .{ .rw = .read, .locality = 3, .cache = .data });
+                    if (next.len > 128)
+                        @prefetch(next.ptr + 128, .{ .rw = .read, .locality = 3, .cache = .data });
+                    if (next.len > 192)
+                        @prefetch(next.ptr + 192, .{ .rw = .read, .locality = 2, .cache = .data });
+                }
+                if (doc_idx + 2 < ctx.end_idx) {
+                    const next2 = ctx.docs[doc_idx + 2];
+                    @prefetch(next2.ptr, .{ .rw = .read, .locality = 2, .cache = .data });
+                    if (next2.len > 64)
+                        @prefetch(next2.ptr + 64, .{ .rw = .read, .locality = 1, .cache = .data });
+                }
+                if (doc_idx + 3 < ctx.end_idx) {
+                    @prefetch(ctx.docs[doc_idx + 3].ptr, .{ .rw = .read, .locality = 1, .cache = .data });
+                }
+
+                tokenizeDocSIMDWyhashAny(doc, &table, &local_tokens);
+                local_bytes += doc.len;
+                batch_count += 1;
+
+                // Aggressive batch: 20 docs or 3500 unique tokens before clear.
+                // 3500/8192 = 42.7% load factor.
+                // Fewer clears amortize the overhead for large working sets.
+                if (batch_count >= 20 or table.num_used >= 3500) {
+                    table.clear();
+                    batch_count = 0;
+                }
+            }
+            ctx.tokens = local_tokens;
+            ctx.bytes = local_bytes;
+        }
+    }.run;
+
+    std.debug.print("    Starting {d} v6 workers...\n", .{num_threads});
+    const start = time.nanoTimestamp();
+
+    var threads = allocator.alloc(Thread, num_threads) catch return zeroResult();
+    defer allocator.free(threads);
+
+    for (0..num_threads) |i| {
+        threads[i] = Thread.spawn(.{}, worker_fn, .{&contexts[i]}) catch continue;
+    }
+    for (threads) |t| t.join();
+
+    std.debug.print("                                                                    \r", .{});
+    const end = time.nanoTimestamp();
+
+    var total_tokens: u64 = 0;
+    var total_bytes: u64 = 0;
+    for (contexts) |ctx| {
+        total_tokens += ctx.tokens;
+        total_bytes += ctx.bytes;
+    }
+
+    return makeResult(docs.len, total_tokens, total_bytes, start, end);
+}
+
+// ============================================================================
+// Ultra v7 Multi-threaded — Chunked processing for large datasets
+// All threads work on the same data chunk for cache friendliness,
+// combined with thread oversubscription to hide memory latency.
+// ============================================================================
+
+fn benchUltraV7MT(allocator: Allocator, docs: [][]const u8, num_threads: u32) BenchResult {
+    const Thread = std.Thread;
+
+    // Chunk size: 30K docs ≈ 165 MB. Fits in SLC with headroom.
+    const CHUNK_SIZE: usize = 30_000;
+
+    const WorkerContext = struct {
+        docs: [][]const u8,
+        start_idx: usize,
+        end_idx: usize,
+        tokens: u64 align(128),
+        bytes: u64,
+        done: std.atomic.Value(bool),
+    };
+
+    var contexts = allocator.alloc(WorkerContext, num_threads) catch return zeroResult();
+    defer allocator.free(contexts);
+    var threads = allocator.alloc(Thread, num_threads) catch return zeroResult();
+    defer allocator.free(threads);
+
+    var total_tokens: u64 = 0;
+    var total_bytes: u64 = 0;
+
+    std.debug.print("    Starting {d} v7 workers (chunked, {d} docs/chunk)...\n", .{ num_threads, CHUNK_SIZE });
+    const start = time.nanoTimestamp();
+
+    var chunk_start: usize = 0;
+    while (chunk_start < docs.len) {
+        const chunk_end = @min(chunk_start + CHUNK_SIZE, docs.len);
+        const chunk_docs = docs[chunk_start..chunk_end];
+        const docs_per_worker = chunk_docs.len / num_threads;
+        if (docs_per_worker == 0) break;
+
+        // Assign chunk slices to workers
+        for (0..num_threads) |i| {
+            const w_start = i * docs_per_worker;
+            const w_end = if (i == num_threads - 1) chunk_docs.len else (i + 1) * docs_per_worker;
+            contexts[i] = .{
+                .docs = chunk_docs,
+                .start_idx = w_start,
+                .end_idx = w_end,
+                .tokens = 0,
+                .bytes = 0,
+                .done = std.atomic.Value(bool).init(false),
+            };
+        }
+
+        // Spawn workers for this chunk
+        const worker_fn = struct {
+            fn run(ctx: *WorkerContext) void {
+                var table = SmallKeyHashTable.init();
+                var batch_count: u32 = 0;
+                var local_tokens: u64 = 0;
+                var local_bytes: u64 = 0;
+
+                for (ctx.start_idx..ctx.end_idx) |doc_idx| {
+                    const doc = ctx.docs[doc_idx];
+
+                    if (doc_idx + 1 < ctx.end_idx) {
+                        const next = ctx.docs[doc_idx + 1];
+                        @prefetch(next.ptr, .{ .rw = .read, .locality = 3, .cache = .data });
+                        if (next.len > 64)
+                            @prefetch(next.ptr + 64, .{ .rw = .read, .locality = 3, .cache = .data });
+                        if (next.len > 128)
+                            @prefetch(next.ptr + 128, .{ .rw = .read, .locality = 2, .cache = .data });
+                    }
+                    if (doc_idx + 2 < ctx.end_idx) {
+                        @prefetch(ctx.docs[doc_idx + 2].ptr, .{ .rw = .read, .locality = 1, .cache = .data });
+                    }
+
+                    tokenizeDocSIMDWyhashAny(doc, &table, &local_tokens);
+                    local_bytes += doc.len;
+                    batch_count += 1;
+
+                    if (batch_count >= 12 or table.num_used >= 2000) {
+                        table.clear();
+                        batch_count = 0;
+                    }
+                }
+                ctx.tokens = local_tokens;
+                ctx.bytes = local_bytes;
+            }
+        }.run;
+
+        for (0..num_threads) |i| {
+            threads[i] = Thread.spawn(.{}, worker_fn, .{&contexts[i]}) catch continue;
+        }
+        for (0..num_threads) |i| threads[i].join();
+
+        // Collect results from this chunk
+        for (contexts[0..num_threads]) |ctx| {
+            total_tokens += ctx.tokens;
+            total_bytes += ctx.bytes;
+        }
+
+        chunk_start = chunk_end;
+    }
+
+    std.debug.print("                                                                    \r", .{});
+    const end = time.nanoTimestamp();
 
     return makeResult(docs.len, total_tokens, total_bytes, start, end);
 }
@@ -1895,6 +2443,17 @@ pub fn main() !void {
     var parquet_result = try parquet_reader.readTexts(allocator, parquet_path, config.num_docs);
     defer parquet_result.deinit(allocator);
 
+    // Skip repack on full dataset — 12GB data + 12GB copy = 24GB peak on 24GB machine
+    // Repack only if dataset is small enough (< 4 GB)
+    if (parquet_result.total_bytes < 4 * 1024 * 1024 * 1024) {
+        try parquet_result.repack(allocator);
+    } else {
+        std.debug.print("Skipping repack ({d:.1} GB dataset, {d} buffers)\n", .{
+            @as(f64, @floatFromInt(parquet_result.total_bytes)) / (1024 * 1024 * 1024),
+            parquet_result.buffers.len,
+        });
+    }
+
     const docs = parquet_result.docs;
 
     var total_bytes: u64 = 0;
@@ -1905,6 +2464,23 @@ pub fn main() !void {
         avg_doc_size,
     });
     std.debug.print("Memory layout: packed contiguous (zero-copy)\n", .{});
+
+    // Pre-fault all data pages into physical memory
+    // Touch every 16KB page to force demand-paging before benchmark starts
+    std.debug.print("Pre-faulting {d} data buffers ({d:.1} GB)...\n", .{
+        parquet_result.buffers.len,
+        @as(f64, @floatFromInt(total_bytes)) / (1024 * 1024 * 1024),
+    });
+    {
+        var prefault_sum: u64 = 0;
+        for (parquet_result.buffers) |buf| {
+            var off: usize = 0;
+            while (off < buf.len) : (off += 16384) { // 16KB pages on Apple Silicon
+                prefault_sum +%= buf[off];
+            }
+        }
+        std.mem.doNotOptimizeAway(prefault_sum);
+    }
 
     const TARGET: f64 = 1_000_000.0;
 
@@ -2003,8 +2579,8 @@ pub fn main() !void {
     std.debug.print("  Section 3: Multi-Threaded\n", .{});
     std.debug.print("==================================================================\n", .{});
 
-    const extended_thread_counts = [_]u32{ 8, 12, 16, 20, 24, 28, 32, 36, 40, 48 };
-    const focused_thread_counts = [_]u32{ 24, 28, 32, 36, 40, 48 };
+    const extended_thread_counts = [_]u32{ 8, 10, 12, 16, 20, 24, 28, 32, 36, 40, 48 };
+    const focused_thread_counts = [_]u32{ 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48 };
 
     // Run v5 FIRST (fresh CPU, no thermal throttling from previous variants)
     // v5 = SmallKeyHT + larger batch (12/2000) — our best variant
@@ -2012,17 +2588,67 @@ pub fn main() !void {
     var best_v5_mt = zeroResult();
     var best_v5_threads: u32 = 0;
 
-    std.debug.print("  --- Ultra v5 (SmallKeyHT+SIMD+wyh, batch=12/2000, 56KB/thread) ---\n", .{});
-    std.debug.print("  (10 iterations per thread count, reporting best)\n", .{});
-    for (focused_thread_counts) |threads| {
+    const best_v7_mt = zeroResult();
+    const best_v7_threads: u32 = 0;
+
+    // v8 — work-stealing for P+E core load balancing (Apple M4: 4P + 6E)
+    var best_v8_mt = zeroResult();
+    var best_v8_threads: u32 = 0;
+
+    // v9 — v8 + 64-byte SIMD (run FIRST on cold CPU for best results)
+    var best_v9_mt = zeroResult();
+    var best_v9_threads: u32 = 0;
+
+    std.debug.print("  --- Ultra v9 (64B SIMD + work-stealing, steal=128, 3 iters + 5s cooling) ---\n", .{});
+    for ([_]u32{ 10, 12, 14, 16, 20 }) |threads| {
         var best_iter = zeroResult();
-        for (0..10) |_| {
+        for (0..3) |iter| {
+            const r_mt = benchUltraV9MT(allocator, docs, threads, 128);
+            if (r_mt.docs_per_sec > best_iter.docs_per_sec)
+                best_iter = r_mt;
+            if (iter < 2) std.Thread.sleep(5 * time.ns_per_s);
+        }
+        var name_buf: [48]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buf, "v9 {d}T (64B SIMD, best/3)", .{threads}) catch "MT";
+        printResult(name, best_iter, TARGET);
+        if (best_iter.docs_per_sec > best_v9_mt.docs_per_sec) {
+            best_v9_mt = best_iter;
+            best_v9_threads = threads;
+        }
+    }
+
+    // v8 work-stealing: focused sweep at best thread counts with cooling
+    std.debug.print("\n  --- Ultra v8 (steal=128, 3 iters with 5s cooling) ---\n", .{});
+    for ([_]u32{ 10, 12, 14, 16 }) |threads| {
+        var best_iter = zeroResult();
+        for (0..3) |iter| {
+            const r_mt = benchUltraV8MTWithSteal(allocator, docs, threads, 128);
+            if (r_mt.docs_per_sec > best_iter.docs_per_sec)
+                best_iter = r_mt;
+            if (iter < 2) std.Thread.sleep(5 * time.ns_per_s);
+        }
+        var name_buf: [48]u8 = undefined;
+        const name = std.fmt.bufPrint(&name_buf, "v8 {d}T steal=128 (best/3)", .{threads}) catch "MT";
+        printResult(name, best_iter, TARGET);
+        if (best_iter.docs_per_sec > best_v8_mt.docs_per_sec) {
+            best_v8_mt = best_iter;
+            best_v8_threads = threads;
+        }
+    }
+
+    const v5_iters: u32 = if (fast_mode) 5 else 10;
+    const v5_thread_counts = if (fast_mode) &[_]u32{ 10, 12, 24, 48 } else &focused_thread_counts;
+    std.debug.print("\n  --- Ultra v5 (SmallKeyHT+fastSIMD+wyh, batch=12/2000, 56KB/thread) ---\n", .{});
+    std.debug.print("  ({d} iterations per thread count, reporting best)\n", .{v5_iters});
+    for (v5_thread_counts) |threads| {
+        var best_iter = zeroResult();
+        for (0..v5_iters) |_| {
             const r_mt = benchUltraV5MT(allocator, docs, threads);
             if (r_mt.docs_per_sec > best_iter.docs_per_sec)
                 best_iter = r_mt;
         }
         var name_buf: [40]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "Ultra-v5 {d}T (best/10)", .{threads}) catch "MT";
+        const name = std.fmt.bufPrint(&name_buf, "Ultra-v5 {d}T (best/{d})", .{ threads, v5_iters }) catch "MT";
         printResult(name, best_iter, TARGET);
         if (best_iter.docs_per_sec > best_v5_mt.docs_per_sec) {
             best_v5_mt = best_iter;
@@ -2030,73 +2656,93 @@ pub fn main() !void {
         }
     }
 
-    // v4 for comparison (batch=8/1400)
+    // v6 — aggressive batch (20/3500) + deeper prefetch for large datasets
+    var best_v6_mt = zeroResult();
+    var best_v6_threads: u32 = 0;
+
     var best_v4_mt = zeroResult();
     var best_v4_threads: u32 = 0;
-
-    std.debug.print("\n  --- Ultra v4 (SmallKeyHT u32+SIMD+wyh, batch=8/1400, 56KB/thread) ---\n", .{});
-    std.debug.print("  (5 iterations per thread count, reporting best)\n", .{});
-    for (extended_thread_counts) |threads| {
-        var best_iter = zeroResult();
-        for (0..5) |_| {
-            const r_mt = benchUltraV4MT(allocator, docs, threads);
-            if (r_mt.docs_per_sec > best_iter.docs_per_sec)
-                best_iter = r_mt;
-        }
-        var name_buf: [40]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "Ultra-v4 {d}T (best/5)", .{threads}) catch "MT";
-        printResult(name, best_iter, TARGET);
-        if (best_iter.docs_per_sec > best_v4_mt.docs_per_sec) {
-            best_v4_mt = best_iter;
-            best_v4_threads = threads;
-        }
-    }
-
     var best_ultra_mt = zeroResult();
     var best_ultra_threads: u32 = 0;
-
-    std.debug.print("\n  --- Ultra (RobinHood+SIMD+wyh, batch=8/1400) ---\n", .{});
-    for (extended_thread_counts) |threads| {
-        std.debug.print("  Running {d}-thread Ultra...\n", .{threads});
-        const r_mt = benchUltraMultiThreaded(allocator, docs, threads);
-        var name_buf: [40]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "Ultra {d}T", .{threads}) catch "MT";
-        printResult(name, r_mt, TARGET);
-        if (r_mt.docs_per_sec > best_ultra_mt.docs_per_sec) {
-            best_ultra_mt = r_mt;
-            best_ultra_threads = threads;
-        }
-    }
-
     var best_v2_mt = zeroResult();
     var best_v2_threads: u32 = 0;
-
-    std.debug.print("\n  --- Ultra v2 (OptHT+SIMD+wyh, batch=6/2500) ---\n", .{});
-    for (extended_thread_counts) |threads| {
-        std.debug.print("  Running {d}-thread Ultra v2...\n", .{threads});
-        const r_mt = benchUltraV2MT(allocator, docs, threads);
-        var name_buf: [40]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "Ultra-v2 {d}T", .{threads}) catch "MT";
-        printResult(name, r_mt, TARGET);
-        if (r_mt.docs_per_sec > best_v2_mt.docs_per_sec) {
-            best_v2_mt = r_mt;
-            best_v2_threads = threads;
-        }
-    }
-
     var best_v3_mt = zeroResult();
     var best_v3_threads: u32 = 0;
 
-    std.debug.print("\n  --- Ultra v3 (CompactHT+SIMD+wyh, batch=5/1800, L1-friendly) ---\n", .{});
-    for (extended_thread_counts) |threads| {
-        std.debug.print("  Running {d}-thread Ultra v3...\n", .{threads});
-        const r_mt = benchUltraV3MT(allocator, docs, threads);
-        var name_buf: [40]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "Ultra-v3 {d}T", .{threads}) catch "MT";
-        printResult(name, r_mt, TARGET);
-        if (r_mt.docs_per_sec > best_v3_mt.docs_per_sec) {
-            best_v3_mt = r_mt;
-            best_v3_threads = threads;
+    if (!fast_mode) {
+        std.debug.print("\n  --- Ultra v6 (SmallKeyHT+SIMD+wyh, batch=20/3500, deep prefetch) ---\n", .{});
+        std.debug.print("  (10 iterations per thread count, reporting best)\n", .{});
+        for (focused_thread_counts) |threads| {
+            var best_iter = zeroResult();
+            for (0..10) |_| {
+                const r_mt = benchUltraV6MT(allocator, docs, threads);
+                if (r_mt.docs_per_sec > best_iter.docs_per_sec)
+                    best_iter = r_mt;
+            }
+            var name_buf: [40]u8 = undefined;
+            const name = std.fmt.bufPrint(&name_buf, "Ultra-v6 {d}T (best/10)", .{threads}) catch "MT";
+            printResult(name, best_iter, TARGET);
+            if (best_iter.docs_per_sec > best_v6_mt.docs_per_sec) {
+                best_v6_mt = best_iter;
+                best_v6_threads = threads;
+            }
+        }
+
+        std.debug.print("\n  --- Ultra v4 (SmallKeyHT u32+SIMD+wyh, batch=8/1400, 56KB/thread) ---\n", .{});
+        std.debug.print("  (5 iterations per thread count, reporting best)\n", .{});
+        for (extended_thread_counts) |threads| {
+            var best_iter = zeroResult();
+            for (0..5) |_| {
+                const r_mt = benchUltraV4MT(allocator, docs, threads);
+                if (r_mt.docs_per_sec > best_iter.docs_per_sec)
+                    best_iter = r_mt;
+            }
+            var name_buf: [40]u8 = undefined;
+            const name = std.fmt.bufPrint(&name_buf, "Ultra-v4 {d}T (best/5)", .{threads}) catch "MT";
+            printResult(name, best_iter, TARGET);
+            if (best_iter.docs_per_sec > best_v4_mt.docs_per_sec) {
+                best_v4_mt = best_iter;
+                best_v4_threads = threads;
+            }
+        }
+
+        std.debug.print("\n  --- Ultra (RobinHood+SIMD+wyh, batch=8/1400) ---\n", .{});
+        for (extended_thread_counts) |threads| {
+            std.debug.print("  Running {d}-thread Ultra...\n", .{threads});
+            const r_mt = benchUltraMultiThreaded(allocator, docs, threads);
+            var name_buf: [40]u8 = undefined;
+            const name = std.fmt.bufPrint(&name_buf, "Ultra {d}T", .{threads}) catch "MT";
+            printResult(name, r_mt, TARGET);
+            if (r_mt.docs_per_sec > best_ultra_mt.docs_per_sec) {
+                best_ultra_mt = r_mt;
+                best_ultra_threads = threads;
+            }
+        }
+
+        std.debug.print("\n  --- Ultra v2 (OptHT+SIMD+wyh, batch=6/2500) ---\n", .{});
+        for (extended_thread_counts) |threads| {
+            std.debug.print("  Running {d}-thread Ultra v2...\n", .{threads});
+            const r_mt = benchUltraV2MT(allocator, docs, threads);
+            var name_buf: [40]u8 = undefined;
+            const name = std.fmt.bufPrint(&name_buf, "Ultra-v2 {d}T", .{threads}) catch "MT";
+            printResult(name, r_mt, TARGET);
+            if (r_mt.docs_per_sec > best_v2_mt.docs_per_sec) {
+                best_v2_mt = r_mt;
+                best_v2_threads = threads;
+            }
+        }
+
+        std.debug.print("\n  --- Ultra v3 (CompactHT+SIMD+wyh, batch=5/1800, L1-friendly) ---\n", .{});
+        for (extended_thread_counts) |threads| {
+            std.debug.print("  Running {d}-thread Ultra v3...\n", .{threads});
+            const r_mt = benchUltraV3MT(allocator, docs, threads);
+            var name_buf: [40]u8 = undefined;
+            const name = std.fmt.bufPrint(&name_buf, "Ultra-v3 {d}T", .{threads}) catch "MT";
+            printResult(name, r_mt, TARGET);
+            if (r_mt.docs_per_sec > best_v3_mt.docs_per_sec) {
+                best_v3_mt = r_mt;
+                best_v3_threads = threads;
+            }
         }
     }
 
@@ -2140,6 +2786,22 @@ pub fn main() !void {
         best_v5_threads,
         best_v5_mt.docs_per_sec,
     });
+    std.debug.print("  Best Ultra v6:       {d}T @ {d:.0} docs/sec\n", .{
+        best_v6_threads,
+        best_v6_mt.docs_per_sec,
+    });
+    std.debug.print("  Best Ultra v7:       {d}T @ {d:.0} docs/sec\n", .{
+        best_v7_threads,
+        best_v7_mt.docs_per_sec,
+    });
+    std.debug.print("  Best Ultra v8:       {d}T @ {d:.0} docs/sec\n", .{
+        best_v8_threads,
+        best_v8_mt.docs_per_sec,
+    });
+    std.debug.print("  Best Ultra v9:       {d}T @ {d:.0} docs/sec\n", .{
+        best_v9_threads,
+        best_v9_mt.docs_per_sec,
+    });
 
     // Find the absolute best
     var best_mt = best_ultra_mt;
@@ -2164,6 +2826,26 @@ pub fn main() !void {
         best_mt = best_v5_mt;
         best_mt_name = "Ultra-v5";
         best_mt_threads = best_v5_threads;
+    }
+    if (best_v6_mt.docs_per_sec > best_mt.docs_per_sec) {
+        best_mt = best_v6_mt;
+        best_mt_name = "Ultra-v6";
+        best_mt_threads = best_v6_threads;
+    }
+    if (best_v7_mt.docs_per_sec > best_mt.docs_per_sec) {
+        best_mt = best_v7_mt;
+        best_mt_name = "Ultra-v7";
+        best_mt_threads = best_v7_threads;
+    }
+    if (best_v8_mt.docs_per_sec > best_mt.docs_per_sec) {
+        best_mt = best_v8_mt;
+        best_mt_name = "Ultra-v8";
+        best_mt_threads = best_v8_threads;
+    }
+    if (best_v9_mt.docs_per_sec > best_mt.docs_per_sec) {
+        best_mt = best_v9_mt;
+        best_mt_name = "Ultra-v9";
+        best_mt_threads = best_v9_threads;
     }
 
     std.debug.print("\n  Overall Best:        {s} {d}T @ {d:.0} docs/sec\n", .{
