@@ -19,16 +19,55 @@ fn ManagedArrayList(comptime T: type) type {
 
 pub const ReadResult = struct {
     docs: [][]const u8,
-    buffer: []u8, // backing storage — all doc slices point into this
+    buffers: [][]u8, // backing storage chunks — doc slices point into these
     total_bytes: u64,
 
     pub fn deinit(self: *ReadResult, allocator: Allocator) void {
         allocator.free(self.docs);
-        std.heap.page_allocator.free(self.buffer);
+        for (self.buffers) |buf| std.heap.page_allocator.free(buf);
+        allocator.free(self.buffers);
+    }
+
+    /// Repack fragmented worker buffers into a single contiguous buffer.
+    /// Frees each old buffer after copying to minimize peak memory.
+    /// This improves cache locality and TLB efficiency for benchmarking.
+    pub fn repack(self: *ReadResult, allocator: Allocator) !void {
+        if (self.buffers.len <= 1) return; // already contiguous
+
+        const num_old_buffers = self.buffers.len;
+        const buffer = try std.heap.page_allocator.alloc(u8, self.total_bytes);
+        var offset: usize = 0;
+
+        // Copy docs from each worker buffer, then free it
+        for (self.buffers) |old_buf| {
+            const buf_start = @intFromPtr(old_buf.ptr);
+            const buf_end = buf_start + old_buf.len;
+            // Find docs that point into this buffer
+            for (self.docs) |*doc| {
+                const doc_start = @intFromPtr(doc.ptr);
+                if (doc_start >= buf_start and doc_start < buf_end) {
+                    @memcpy(buffer[offset..][0..doc.len], doc.*);
+                    doc.* = buffer[offset..][0..doc.len];
+                    offset += doc.len;
+                }
+            }
+            std.heap.page_allocator.free(old_buf);
+        }
+
+        // Replace buffers array with single buffer
+        allocator.free(self.buffers);
+        self.buffers = try allocator.alloc([]u8, 1);
+        self.buffers[0] = buffer;
+
+        std.debug.print("Repacked {d} buffers into 1 contiguous buffer ({d:.1} MB)\n", .{
+            num_old_buffers,
+            @as(f64, @floatFromInt(self.total_bytes)) / (1024 * 1024),
+        });
     }
 };
 
 /// Read text column from parquet files in a directory (or a single file).
+/// Uses parallel row group decoding for high throughput.
 /// Returns packed contiguous slices suitable for benchmarking.
 pub fn readTexts(allocator: Allocator, path: []const u8, max_docs: u32) !ReadResult {
     // Determine if path is a file or directory
@@ -49,7 +88,6 @@ pub fn readTexts(allocator: Allocator, path: []const u8, max_docs: u32) !ReadRes
             const full = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ path, entry.name });
             try files.append(full);
         }
-        // Sort for deterministic order
         std.mem.sort([]const u8, files.items, {}, struct {
             fn lessThan(_: void, a: []const u8, b: []const u8) bool {
                 return std.mem.order(u8, a, b) == .lt;
@@ -63,66 +101,71 @@ pub fn readTexts(allocator: Allocator, path: []const u8, max_docs: u32) !ReadRes
 
     std.debug.print("Found {d} parquet file(s)\n", .{files.items.len});
 
-    // Phase 1: Read all texts into a temporary list
-    var text_list = ManagedArrayList([]const u8).init(allocator);
-    defer text_list.deinit();
-    // We'll collect owned text copies, then pack them
-    var temp_texts = ManagedArrayList([]u8).init(allocator);
-    defer {
-        for (temp_texts.items) |t| allocator.free(t);
-        temp_texts.deinit();
-    }
-
-    var total_text_bytes: u64 = 0;
+    // Process each parquet file (parallel within each file)
+    var all_results = ManagedArrayList(FileTexts).init(allocator);
+    defer all_results.deinit();
+    var total_docs: usize = 0;
+    var total_bytes: u64 = 0;
 
     for (files.items) |file_path| {
-        if (max_docs > 0 and temp_texts.items.len >= max_docs) break;
+        if (max_docs > 0 and total_docs >= max_docs) break;
 
-        const remaining = if (max_docs > 0) max_docs - @as(u32, @intCast(temp_texts.items.len)) else 0;
+        const remaining: u32 = if (max_docs > 0) max_docs - @as(u32, @intCast(total_docs)) else 0;
         const file_texts = readParquetFile(allocator, file_path, remaining) catch |err| {
             std.debug.print("Warning: skipping {s}: {s}\n", .{ file_path, @errorName(err) });
             continue;
         };
-        defer allocator.free(file_texts.doc_slices);
-        defer std.heap.page_allocator.free(file_texts.raw_buffer);
 
-        for (file_texts.doc_slices) |text| {
-            if (max_docs > 0 and temp_texts.items.len >= max_docs) break;
-            const copy = try allocator.dupe(u8, text);
-            try temp_texts.append(copy);
-            total_text_bytes += text.len;
-        }
+        for (file_texts.doc_slices) |text| total_bytes += text.len;
+        total_docs += file_texts.doc_slices.len;
+        try all_results.append(file_texts);
 
         std.debug.print("  {s}: {d} docs, {d:.1} MB text\n", .{
             file_path,
             file_texts.doc_slices.len,
-            @as(f64, @floatFromInt(total_text_bytes)) / (1024 * 1024),
+            @as(f64, @floatFromInt(total_bytes)) / (1024 * 1024),
         });
     }
 
-    const doc_count = temp_texts.items.len;
-    if (doc_count == 0) return error.NoDocuments;
+    if (total_docs == 0) return error.NoDocuments;
 
-    // Phase 2: Pack into contiguous buffer
-    const buffer = try std.heap.page_allocator.alloc(u8, total_text_bytes);
-    const docs = try allocator.alloc([]const u8, doc_count);
+    // Single file: return directly (zero extra copy)
+    if (all_results.items.len == 1) {
+        const ft = all_results.items[0];
+        std.debug.print("Loaded {d} documents, {d:.1} MB total (packed contiguous)\n", .{
+            ft.doc_slices.len,
+            @as(f64, @floatFromInt(total_bytes)) / (1024 * 1024),
+        });
+        return ReadResult{
+            .docs = ft.doc_slices,
+            .buffers = ft.buffers,
+            .total_bytes = total_bytes,
+        };
+    }
 
-    var offset: usize = 0;
-    for (temp_texts.items, 0..) |text, i| {
-        @memcpy(buffer[offset..][0..text.len], text);
-        docs[i] = buffer[offset..][0..text.len];
-        offset += text.len;
+    // Multiple files: merge doc_slices, collect all buffers
+    const docs = try allocator.alloc([]const u8, total_docs);
+    var all_buffers = ManagedArrayList([]u8).init(allocator);
+    var doc_idx: usize = 0;
+    for (all_results.items) |ft| {
+        for (ft.doc_slices) |text| {
+            docs[doc_idx] = text;
+            doc_idx += 1;
+        }
+        allocator.free(ft.doc_slices);
+        for (ft.buffers) |buf| try all_buffers.append(buf);
+        allocator.free(ft.buffers);
     }
 
     std.debug.print("Loaded {d} documents, {d:.1} MB total (packed contiguous)\n", .{
-        doc_count,
-        @as(f64, @floatFromInt(total_text_bytes)) / (1024 * 1024),
+        total_docs,
+        @as(f64, @floatFromInt(total_bytes)) / (1024 * 1024),
     });
 
     return ReadResult{
         .docs = docs,
-        .buffer = buffer,
-        .total_bytes = total_text_bytes,
+        .buffers = try all_buffers.toOwnedSlice(),
+        .total_bytes = total_bytes,
     };
 }
 
@@ -132,10 +175,102 @@ pub fn readTexts(allocator: Allocator, path: []const u8, max_docs: u32) !ReadRes
 
 const FileTexts = struct {
     doc_slices: [][]const u8,
-    raw_buffer: []u8, // backing buffer for doc_slices
+    buffers: [][]u8, // backing buffers for doc_slices (one per worker)
 };
 
+// ============================================================================
+// Parallel row group processing
+// ============================================================================
+
+const RGWorkerResult = struct {
+    buffer: []u8 = &.{}, // packed text buffer (page_allocator)
+    doc_lengths: []u32 = &.{}, // length of each doc in buffer
+    doc_count: usize = 0,
+    total_bytes: usize = 0,
+    err_val: ?anyerror = null,
+};
+
+const RGWorkerCtx = struct {
+    allocator: Allocator,
+    path: []const u8,
+    row_groups: []const RowGroupMeta,
+    text_col_idx: usize,
+    result: *RGWorkerResult,
+};
+
+fn rgWorkerFn(ctx: *const RGWorkerCtx) void {
+    decodeRowGroupBatch(ctx) catch |e| {
+        ctx.result.err_val = e;
+    };
+}
+
+fn decodeRowGroupBatch(ctx: *const RGWorkerCtx) !void {
+    const file = try std.fs.cwd().openFile(ctx.path, .{});
+    defer file.close();
+
+    // Pre-estimate total text bytes from column metadata (upper bound)
+    var estimated_bytes: usize = 0;
+    for (ctx.row_groups) |rg| {
+        if (ctx.text_col_idx < rg.columns.len) {
+            estimated_bytes += @intCast(rg.columns[ctx.text_col_idx].total_uncompressed_size);
+        }
+    }
+    // Add 10% margin
+    estimated_bytes = estimated_bytes + estimated_bytes / 10;
+    if (estimated_bytes == 0) estimated_bytes = 1024 * 1024; // 1MB minimum
+
+    // Allocate packed buffer upfront (page_allocator for large alloc)
+    var packed_buf = try std.heap.page_allocator.alloc(u8, estimated_bytes);
+    errdefer std.heap.page_allocator.free(packed_buf);
+    var write_pos: usize = 0;
+
+    // Track doc lengths
+    var doc_lengths = ManagedArrayList(u32).init(ctx.allocator);
+    errdefer doc_lengths.deinit();
+
+    for (ctx.row_groups) |rg| {
+        if (ctx.text_col_idx >= rg.columns.len) continue;
+        const col = rg.columns[ctx.text_col_idx];
+
+        const chunk_offset: usize = @intCast(col.dictionary_page_offset orelse col.data_page_offset);
+        const chunk_end: usize = @intCast(col.data_page_offset + col.total_compressed_size);
+        const chunk_size = chunk_end - chunk_offset;
+
+        try file.seekTo(chunk_offset);
+        const chunk_data = try ctx.allocator.alloc(u8, chunk_size);
+        defer ctx.allocator.free(chunk_data);
+        _ = try file.readAll(chunk_data);
+
+        const texts = try decodeColumnChunk(ctx.allocator, chunk_data, col, 0);
+        defer ctx.allocator.free(texts);
+
+        // Pack immediately into buffer, free individual texts
+        for (texts) |text| {
+            // Grow buffer if needed
+            if (write_pos + text.len > packed_buf.len) {
+                const new_size = @max(packed_buf.len * 2, write_pos + text.len + 1024 * 1024);
+                const new_buf = try std.heap.page_allocator.alloc(u8, new_size);
+                @memcpy(new_buf[0..write_pos], packed_buf[0..write_pos]);
+                std.heap.page_allocator.free(packed_buf);
+                packed_buf = new_buf;
+            }
+
+            @memcpy(packed_buf[write_pos..][0..text.len], text);
+            try doc_lengths.append(@intCast(text.len));
+            write_pos += text.len;
+            ctx.allocator.free(text);
+        }
+    }
+
+    ctx.result.buffer = packed_buf;
+    ctx.result.doc_lengths = try doc_lengths.toOwnedSlice();
+    ctx.result.doc_count = ctx.result.doc_lengths.len;
+    ctx.result.total_bytes = write_pos;
+    ctx.result.err_val = null;
+}
+
 fn readParquetFile(allocator: Allocator, path: []const u8, max_docs: u32) !FileTexts {
+    // 1. Parse metadata (sequential)
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -143,7 +278,6 @@ fn readParquetFile(allocator: Allocator, path: []const u8, max_docs: u32) !FileT
     const file_size: usize = @intCast(file_stat.size);
     if (file_size < 12) return error.FileTooSmall;
 
-    // Read footer: last 8 bytes = [4 bytes footer_len LE] [4 bytes "PAR1"]
     try file.seekTo(file_size - 8);
     var tail: [8]u8 = undefined;
     _ = try file.readAll(&tail);
@@ -152,14 +286,12 @@ fn readParquetFile(allocator: Allocator, path: []const u8, max_docs: u32) !FileT
     const footer_len: usize = std.mem.readInt(u32, tail[0..4], .little);
     if (footer_len + 8 > file_size) return error.InvalidFooter;
 
-    // Read footer (Thrift-encoded FileMetaData)
     const footer_offset = file_size - 8 - footer_len;
     try file.seekTo(footer_offset);
     const footer_buf = try allocator.alloc(u8, footer_len);
     defer allocator.free(footer_buf);
     _ = try file.readAll(footer_buf);
 
-    // Parse FileMetaData
     const metadata = try parseFileMetaData(allocator, footer_buf);
     defer {
         for (metadata.row_groups) |rg| allocator.free(rg.columns);
@@ -168,62 +300,104 @@ fn readParquetFile(allocator: Allocator, path: []const u8, max_docs: u32) !FileT
         allocator.free(metadata.schema);
     }
 
-    // Find text column index
     const text_col_idx = findColumnIndex(metadata.schema, "text") orelse return error.NoTextColumn;
 
-    // Collect all texts from row groups
-    var all_texts = ManagedArrayList([]u8).init(allocator);
-    defer {
-        // Only free if we error — on success, caller owns via raw_buffer
+    // 2. Determine row groups to process
+    var num_rgs = metadata.row_groups.len;
+    if (max_docs > 0) {
+        num_rgs = @min(num_rgs, @as(usize, (max_docs + 999) / 1000));
     }
-    var total_bytes: usize = 0;
 
-    for (metadata.row_groups) |rg| {
-        if (max_docs > 0 and all_texts.items.len >= max_docs) break;
-        if (text_col_idx >= rg.columns.len) continue;
+    // 3. Parallel decode
+    const cpu_count: usize = std.Thread.getCpuCount() catch 4;
+    const num_workers: usize = @max(1, @min(@min(num_rgs, cpu_count), 16));
+    const rgs_per_worker = (num_rgs + num_workers - 1) / num_workers;
 
-        const col = rg.columns[text_col_idx];
+    std.debug.print("  Parallel decode: {d} row groups, {d} workers\n", .{ num_rgs, num_workers });
 
-        // Read column chunk data (dictionary page + data pages)
-        const chunk_offset: usize = @intCast(col.dictionary_page_offset orelse col.data_page_offset);
-        const chunk_end: usize = @intCast(col.data_page_offset + col.total_compressed_size);
-        const chunk_size = chunk_end - chunk_offset;
+    var worker_results = try allocator.alloc(RGWorkerResult, num_workers);
+    defer allocator.free(worker_results);
+    for (worker_results) |*r| r.* = RGWorkerResult{};
 
-        try file.seekTo(chunk_offset);
-        const chunk_data = try allocator.alloc(u8, chunk_size);
-        defer allocator.free(chunk_data);
-        _ = try file.readAll(chunk_data);
+    var contexts = try allocator.alloc(RGWorkerCtx, num_workers);
+    defer allocator.free(contexts);
 
-        // Decode pages within this column chunk
-        const remaining = if (max_docs > 0) max_docs - @as(u32, @intCast(all_texts.items.len)) else 0;
-        const texts = try decodeColumnChunk(allocator, chunk_data, col, remaining);
-        defer allocator.free(texts);
+    // Set up contexts
+    var actual_workers: usize = 0;
+    for (0..num_workers) |w| {
+        const start = w * rgs_per_worker;
+        const end = @min((w + 1) * rgs_per_worker, num_rgs);
+        if (start >= end) continue;
 
-        for (texts) |text| {
-            if (max_docs > 0 and all_texts.items.len >= max_docs) {
-                allocator.free(text);
-                continue;
+        contexts[actual_workers] = RGWorkerCtx{
+            .allocator = allocator,
+            .path = path,
+            .row_groups = metadata.row_groups[start..end],
+            .text_col_idx = text_col_idx,
+            .result = &worker_results[actual_workers],
+        };
+        actual_workers += 1;
+    }
+
+    if (actual_workers <= 1) {
+        // Single worker: run on main thread
+        if (actual_workers == 1) rgWorkerFn(&contexts[0]);
+    } else {
+        // Spawn N-1 threads, run last batch on main thread
+        var threads = try allocator.alloc(std.Thread, actual_workers - 1);
+        defer allocator.free(threads);
+
+        for (0..actual_workers - 1) |i| {
+            threads[i] = try std.Thread.spawn(.{}, rgWorkerFn, .{&contexts[i]});
+        }
+        // Main thread handles last batch
+        rgWorkerFn(&contexts[actual_workers - 1]);
+
+        // Join all spawned threads
+        for (threads) |t| t.join();
+    }
+
+    // Check for errors
+    for (worker_results[0..actual_workers]) |r| {
+        if (r.err_val) |e| {
+            // Clean up all workers' buffers
+            for (worker_results[0..actual_workers]) |*wr| {
+                if (wr.buffer.len > 0) std.heap.page_allocator.free(wr.buffer);
+                if (wr.doc_lengths.len > 0) allocator.free(wr.doc_lengths);
             }
-            try all_texts.append(text);
-            total_bytes += text.len;
+            return e;
         }
     }
 
-    // Pack into contiguous buffer
-    const buffer = try std.heap.page_allocator.alloc(u8, total_bytes);
-    const doc_slices = try allocator.alloc([]const u8, all_texts.items.len);
+    // 4. Assemble doc_slices pointing into worker buffers (zero copy)
+    var total_docs: usize = 0;
+    for (worker_results[0..actual_workers]) |r| {
+        total_docs += r.doc_count;
+    }
 
-    var offset: usize = 0;
-    for (all_texts.items, 0..) |text, i| {
-        @memcpy(buffer[offset..][0..text.len], text);
-        doc_slices[i] = buffer[offset..][0..text.len];
-        offset += text.len;
-        allocator.free(text);
+    const doc_slices = try allocator.alloc([]const u8, total_docs);
+    errdefer allocator.free(doc_slices);
+
+    // Collect worker buffers
+    var buffers = try allocator.alloc([]u8, actual_workers);
+    errdefer allocator.free(buffers);
+
+    var doc_idx: usize = 0;
+    for (worker_results[0..actual_workers], 0..) |*r, w| {
+        var offset: usize = 0;
+        for (r.doc_lengths) |len| {
+            doc_slices[doc_idx] = r.buffer[offset..][0..len];
+            offset += len;
+            doc_idx += 1;
+        }
+        buffers[w] = r.buffer;
+        allocator.free(r.doc_lengths);
+        r.doc_lengths = &.{};
     }
 
     return FileTexts{
         .doc_slices = doc_slices,
-        .raw_buffer = buffer,
+        .buffers = buffers,
     };
 }
 
