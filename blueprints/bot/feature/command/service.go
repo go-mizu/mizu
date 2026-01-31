@@ -24,7 +24,8 @@ func (s *Service) Commands() []types.Command {
 		{Name: "/model", Description: "Switch the AI model", Usage: "/model <model-name>"},
 		{Name: "/help", Description: "Show available commands", Usage: "/help"},
 		{Name: "/compact", Description: "Summarize older context to free space", Usage: "/compact"},
-		{Name: "/context", Description: "Show current system prompt and context", Usage: "/context"},
+		{Name: "/context", Description: "Show enriched system prompt (workspace + skills + memory)", Usage: "/context"},
+		{Name: "/memory", Description: "Search the agent's memory index", Usage: "/memory <query>"},
 	}
 }
 

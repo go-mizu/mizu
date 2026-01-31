@@ -61,6 +61,7 @@ func runServe(ctx context.Context, port int, devMode bool) error {
 
 	// Create server
 	srv := web.NewServer(store, devMode)
+	defer srv.Close()
 
 	// Create HTTP server
 	httpServer := &http.Server{
