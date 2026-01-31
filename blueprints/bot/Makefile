@@ -7,6 +7,9 @@ BINARY  ?= $(HOME)/bin/bot
 CMD     ?= ./cmd/bot
 DATA_DIR ?= $(HOME)/data/blueprint/bot
 
+OPENBOT_BINARY ?= $(HOME)/bin/openbot
+OPENBOT_CMD    ?= ./cmd/openbot
+
 CGO_ENABLED ?= 0
 
 VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
@@ -44,6 +47,16 @@ test: ## Run all Go tests
 .PHONY: test-v
 test-v: ## Run all tests with verbose output
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) test -v $(PKG)
+
+.PHONY: openbot
+openbot: ## Build openbot binary to $$HOME/bin/openbot
+	@mkdir -p $(dir $(OPENBOT_BINARY))
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(OPENBOT_BINARY) $(OPENBOT_CMD)
+	@echo "Built: $(OPENBOT_BINARY)"
+
+.PHONY: run-openbot
+run-openbot: ## Run openbot (standalone Telegram bot)
+	@GOWORK=off $(GO) run $(OPENBOT_CMD)
 
 .PHONY: clean
 clean: ## Remove binary and data directory
