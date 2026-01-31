@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/channel"
@@ -63,16 +64,71 @@ func (d *Driver) Disconnect(_ context.Context) error {
 	return nil
 }
 
+const telegramMaxLength = 4096
+
 // Send sends a text message via Telegram Bot API.
+// It prefers ChannelID (chat ID) over PeerID for targeting, and splits
+// messages that exceed Telegram's 4096-character limit.
 func (d *Driver) Send(ctx context.Context, msg *types.OutboundMessage) error {
-	chatID, err := strconv.ParseInt(msg.PeerID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid telegram peer ID %q: %w", msg.PeerID, err)
+	target := msg.ChannelID
+	if target == "" {
+		target = msg.PeerID
 	}
 
+	chatID, err := strconv.ParseInt(target, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid telegram chat ID %q: %w", target, err)
+	}
+
+	chunks := splitMessage(msg.Content)
+	for _, chunk := range chunks {
+		if err := d.sendText(ctx, chatID, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sendText sends a single text chunk with Markdown parse mode.
+// If the Telegram API rejects the Markdown, it retries as plain text.
+func (d *Driver) sendText(ctx context.Context, chatID int64, text string) error {
+	payload := map[string]any{
+		"chat_id":    chatID,
+		"text":       text,
+		"parse_mode": "Markdown",
+	}
+
+	body, _ := json.Marshal(payload)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", d.config.BotToken)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram sendMessage: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		// If Markdown parse fails, retry without parse_mode.
+		if resp.StatusCode == 400 && bytes.Contains(respBody, []byte("parse")) {
+			return d.sendPlain(ctx, chatID, text)
+		}
+		return fmt.Errorf("telegram sendMessage %d: %s", resp.StatusCode, respBody)
+	}
+	return nil
+}
+
+// sendPlain sends a single text chunk without any parse mode.
+func (d *Driver) sendPlain(ctx context.Context, chatID int64, text string) error {
 	payload := map[string]any{
 		"chat_id": chatID,
-		"text":    msg.Content,
+		"text":    text,
 	}
 
 	body, _ := json.Marshal(payload)
@@ -95,6 +151,31 @@ func (d *Driver) Send(ctx context.Context, msg *types.OutboundMessage) error {
 		return fmt.Errorf("telegram sendMessage %d: %s", resp.StatusCode, respBody)
 	}
 	return nil
+}
+
+// splitMessage splits content into chunks that fit within Telegram's limit.
+func splitMessage(content string) []string {
+	if len(content) <= telegramMaxLength {
+		return []string{content}
+	}
+
+	var chunks []string
+	for len(content) > 0 {
+		if len(content) <= telegramMaxLength {
+			chunks = append(chunks, content)
+			break
+		}
+		// Find a good split point (newline, space, or hard limit).
+		splitAt := telegramMaxLength
+		if idx := strings.LastIndex(content[:splitAt], "\n"); idx > telegramMaxLength/2 {
+			splitAt = idx + 1
+		} else if idx := strings.LastIndex(content[:splitAt], " "); idx > telegramMaxLength/2 {
+			splitAt = idx + 1
+		}
+		chunks = append(chunks, content[:splitAt])
+		content = content[splitAt:]
+	}
+	return chunks
 }
 
 func (d *Driver) poll(ctx context.Context) {
@@ -161,12 +242,19 @@ func (d *Driver) poll(ctx context.Context) {
 				peerName = update.Message.From.Username
 			}
 
+			var groupID string
+			if origin == "group" {
+				groupID = strconv.FormatInt(update.Message.Chat.ID, 10)
+			}
+
 			msg := &types.InboundMessage{
 				ChannelType: types.ChannelTelegram,
+				ChannelID:   strconv.FormatInt(update.Message.Chat.ID, 10),
 				PeerID:      strconv.FormatInt(update.Message.From.ID, 10),
 				PeerName:    peerName,
 				Content:     update.Message.Text,
 				Origin:      origin,
+				GroupID:     groupID,
 			}
 
 			d.handler(ctx, msg)

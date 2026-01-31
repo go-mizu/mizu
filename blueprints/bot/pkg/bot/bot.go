@@ -3,15 +3,18 @@ package bot
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/feature/command"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/compact"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/config"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
+	filesession "github.com/go-mizu/mizu/blueprints/bot/pkg/session"
 	bottools "github.com/go-mizu/mizu/blueprints/bot/pkg/tools"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 	"github.com/go-mizu/mizu/blueprints/bot/store/sqlite"
@@ -22,14 +25,15 @@ import (
 // It wires together the store, LLM provider, command service, prompt builder,
 // and memory manager to process inbound messages end-to-end.
 type Bot struct {
-	cfg      *config.Config
-	store    store.Store
-	llm      llm.Provider
-	commands *command.Service
-	prompt   *PromptBuilder
-	memory   *memory.MemoryManager
-	tools    *bottools.Registry
-	allowSet map[string]bool
+	cfg       *config.Config
+	store     store.Store
+	llm       llm.Provider
+	commands  *command.Service
+	prompt    *PromptBuilder
+	memory    *memory.MemoryManager
+	tools     *bottools.Registry
+	allowSet  map[string]bool
+	fileStore *filesession.FileStore // OpenClaw-compatible file session store
 }
 
 // New creates a new Bot, opening the SQLite database and initialising all
@@ -92,6 +96,16 @@ func New(cfg *config.Config, provider llm.Provider) (*Bot, error) {
 		// If memory init fails, just proceed without it.
 	}
 
+	// Initialize file-based session store (OpenClaw-compatible).
+	sessDir := filepath.Join(cfg.DataDir, "agents", "default", "sessions")
+	fs, err := filesession.NewFileStore(sessDir)
+	if err != nil {
+		// Non-fatal: log and continue without file store.
+		log.Printf("File session store init: %v", err)
+	} else {
+		b.fileStore = fs
+	}
+
 	return b, nil
 }
 
@@ -103,6 +117,11 @@ func (b *Bot) Close() {
 	if b.store != nil {
 		b.store.Close()
 	}
+}
+
+// FileStore returns the file-based session store (may be nil).
+func (b *Bot) FileStore() *filesession.FileStore {
+	return b.fileStore
 }
 
 // HandleMessage processes an inbound message through the full pipeline:
@@ -135,6 +154,26 @@ func (b *Bot) HandleMessage(ctx context.Context, msg *types.InboundMessage) (str
 		return "", fmt.Errorf("get session: %w", err)
 	}
 
+	// 3b. Sync to file-based session store.
+	var fsKey string
+	if b.fileStore != nil {
+		chatType := "direct"
+		if msg.Origin == "group" {
+			chatType = "group"
+		}
+		fsKey = filesession.SessionKey(agent.ID, string(msg.ChannelType), msg.PeerID, msg.GroupID)
+		fsEntry, isNew, fsErr := b.fileStore.GetOrCreate(fsKey, msg.PeerName, chatType, string(msg.ChannelType))
+		if fsErr != nil {
+			log.Printf("File store sync: %v", fsErr)
+		} else if isNew {
+			// Write model info on new session.
+			fsEntry.Model = agent.Model
+			fsEntry.ModelProvider = "anthropic"
+			fsEntry.ContextTokens = 200000
+			b.fileStore.UpdateEntry(fsKey, fsEntry)
+		}
+	}
+
 	// 4. Check for slash commands.
 	cmd, args, isCommand := b.commands.Parse(msg.Content)
 	if isCommand {
@@ -152,6 +191,22 @@ func (b *Bot) HandleMessage(ctx context.Context, msg *types.InboundMessage) (str
 	}
 	if err := b.store.CreateMessage(ctx, userMsg); err != nil {
 		return "", fmt.Errorf("store user message: %w", err)
+	}
+
+	// 5b. Append user message to JSONL transcript.
+	if b.fileStore != nil {
+		fsEntry, _, _ := b.fileStore.GetOrCreate(fsKey, msg.PeerName, "", string(msg.ChannelType))
+		if fsEntry != nil {
+			b.fileStore.AppendTranscript(fsEntry.SessionID, &filesession.TranscriptEntry{
+				Type:      "message",
+				ID:        userMsg.ID,
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Message: &filesession.TranscriptMessage{
+					Role:    "user",
+					Content: msg.Content,
+				},
+			})
+		}
 	}
 
 	// 6. Build conversation history from stored messages.
@@ -260,6 +315,22 @@ func (b *Bot) HandleMessage(ctx context.Context, msg *types.InboundMessage) (str
 		return "", fmt.Errorf("store assistant message: %w", err)
 	}
 
+	// 11b. Append assistant response to JSONL transcript and update tokens.
+	if b.fileStore != nil {
+		fsEntry, _, _ := b.fileStore.GetOrCreate(fsKey, msg.PeerName, "", string(msg.ChannelType))
+		if fsEntry != nil {
+			b.fileStore.AppendTranscript(fsEntry.SessionID, &filesession.TranscriptEntry{
+				Type:      "message",
+				ID:        assistantMsg.ID,
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Message: &filesession.TranscriptMessage{
+					Role:    "assistant",
+					Content: responseText,
+				},
+			})
+		}
+	}
+
 	return responseText, nil
 }
 
@@ -302,6 +373,13 @@ func (b *Bot) handleCommand(ctx context.Context, cmd, args string, agent *types.
 		// Expire the current session.
 		session.Status = "expired"
 		b.store.UpdateSession(ctx, session)
+		// Reset file-based session too.
+		if b.fileStore != nil {
+			key := filesession.SessionKey(agent.ID, session.ChannelType, session.PeerID, "")
+			if _, err := b.fileStore.ResetSession(key); err != nil {
+				log.Printf("File store reset: %v", err)
+			}
+		}
 		return b.commands.Execute(cmd, args, agent)
 
 	case "/memory":
