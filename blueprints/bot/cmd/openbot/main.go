@@ -24,6 +24,11 @@ func main() {
 	// Subcommand dispatch.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "agent":
+			if err := runAgent(); err != nil {
+				log.Fatal(err)
+			}
+			return
 		case "sessions":
 			if err := runSessions(); err != nil {
 				log.Fatal(err)
@@ -38,17 +43,29 @@ func main() {
 				log.Fatal(err)
 			}
 			return
-		case "send":
-			if len(os.Args) < 3 {
-				log.Fatal("Usage: openbot send <message>")
+		case "message":
+			if len(os.Args) > 2 && os.Args[2] == "send" {
+				if err := runMessageSend(); err != nil {
+					log.Fatal(err)
+				}
+				return
 			}
-			message := strings.Join(os.Args[2:], " ")
-			if err := runSend(message); err != nil {
-				log.Fatal(err)
-			}
+			printUsage()
 			return
 		case "status":
 			if err := runStatus(); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "send":
+			// Legacy compat: redirect to agent command.
+			if len(os.Args) < 3 {
+				log.Fatal("Usage: openbot send <message>")
+			}
+			msg := strings.Join(os.Args[2:], " ")
+			// Rewrite args for agent command.
+			os.Args = []string{os.Args[0], "agent", "-m", msg}
+			if err := runAgent(); err != nil {
 				log.Fatal(err)
 			}
 			return
@@ -114,6 +131,7 @@ func main() {
 		// Send response back via Telegram.
 		outMsg := &types.OutboundMessage{
 			ChannelType: types.ChannelTelegram,
+			ChannelID:   msg.ChannelID,
 			PeerID:      msg.PeerID,
 			Content:     resp,
 		}
@@ -158,13 +176,29 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("OpenBot - Telegram Bot with Tool Execution")
+	fmt.Println("OpenBot - Telegram Bot with AI Agent")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  openbot              Run the Telegram bot (default)")
-	fmt.Println("  openbot sessions     List active sessions")
-	fmt.Println("  openbot history [id] Show messages for a session")
-	fmt.Println("  openbot send <msg>   Send a message through the bot engine")
-	fmt.Println("  openbot status       Show bot status")
-	fmt.Println("  openbot help         Show this help")
+	fmt.Println("  openbot                     Run the Telegram bot (default)")
+	fmt.Println("  openbot agent -m <msg>      Send a message through the AI agent")
+	fmt.Println("  openbot sessions            List stored conversation sessions")
+	fmt.Println("  openbot history [id]        Show session transcript")
+	fmt.Println("  openbot message send        Send a message to a channel")
+	fmt.Println("  openbot status              Show bot status")
+	fmt.Println("  openbot help                Show this help")
+	fmt.Println()
+	fmt.Println("Agent flags:")
+	fmt.Println("  -m, --message <text>  Message body (required)")
+	fmt.Println("  -t, --to <id>         Peer ID for session routing")
+	fmt.Println("  --agent <id>          Agent ID (default: default)")
+	fmt.Println("  --json                Output as JSON")
+	fmt.Println()
+	fmt.Println("Sessions flags:")
+	fmt.Println("  --json                Output as JSON")
+	fmt.Println("  --active <minutes>    Filter by recent activity")
+	fmt.Println()
+	fmt.Println("Message send flags:")
+	fmt.Println("  -t, --target <dest>   Delivery target (required)")
+	fmt.Println("  -m, --message <text>  Message body (required)")
+	fmt.Println("  --channel <channel>   Channel type (default: telegram)")
 }
