@@ -128,3 +128,72 @@ func TestLoadConfig_DefaultWorkspace(t *testing.T) {
 		t.Errorf("expected default workspace %s, got %s", expected, cfg.Workspace)
 	}
 }
+
+func TestEnsureConfig_ClonesFromOpenClaw(t *testing.T) {
+	// Simulate ~/.openclaw with config and workspace.
+	openclawDir := t.TempDir()
+	openclawCfg := `{
+		"channels": {
+			"telegram": {
+				"enabled": true,
+				"botToken": "original-token",
+				"allowFrom": ["999"]
+			}
+		},
+		"agents": {
+			"defaults": {
+				"workspace": "` + openclawDir + `/workspace"
+			}
+		}
+	}`
+	os.WriteFile(filepath.Join(openclawDir, "openclaw.json"), []byte(openclawCfg), 0o644)
+
+	// Create workspace files.
+	wsDir := filepath.Join(openclawDir, "workspace")
+	os.MkdirAll(wsDir, 0o755)
+	os.WriteFile(filepath.Join(wsDir, "SOUL.md"), []byte("# Soul\nTest soul"), 0o644)
+	os.WriteFile(filepath.Join(wsDir, "AGENTS.md"), []byte("# Agents\nTest agents"), 0o644)
+
+	// Target openbot dir (should not exist yet).
+	openbotDir := filepath.Join(t.TempDir(), ".openbot")
+
+	err := EnsureConfig(openbotDir, openclawDir)
+	if err != nil {
+		t.Fatalf("EnsureConfig: %v", err)
+	}
+
+	// Config file should exist.
+	if _, err := os.Stat(filepath.Join(openbotDir, "openbot.json")); err != nil {
+		t.Errorf("expected openbot.json to exist: %v", err)
+	}
+
+	// Workspace files should be copied.
+	soul, err := os.ReadFile(filepath.Join(openbotDir, "workspace", "SOUL.md"))
+	if err != nil {
+		t.Fatalf("read SOUL.md: %v", err)
+	}
+	if string(soul) != "# Soul\nTest soul" {
+		t.Errorf("SOUL.md content mismatch: %s", soul)
+	}
+}
+
+func TestEnsureConfig_SkipsIfExists(t *testing.T) {
+	openbotDir := t.TempDir()
+	// Pre-create config.
+	os.WriteFile(filepath.Join(openbotDir, "openbot.json"), []byte(`{"channels":{}}`), 0o644)
+
+	// Should not error even if openclaw dir doesn't exist.
+	err := EnsureConfig(openbotDir, "/nonexistent/openclaw")
+	if err != nil {
+		t.Fatalf("EnsureConfig should skip existing: %v", err)
+	}
+}
+
+func TestEnsureConfig_NoOpenClaw(t *testing.T) {
+	openbotDir := filepath.Join(t.TempDir(), ".openbot")
+
+	err := EnsureConfig(openbotDir, "/nonexistent/openclaw")
+	if err == nil {
+		t.Error("expected error when no source exists")
+	}
+}
