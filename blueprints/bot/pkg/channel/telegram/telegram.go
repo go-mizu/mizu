@@ -16,12 +16,17 @@ import (
 
 func init() {
 	channel.Register(types.ChannelTelegram, func(config string, handler channel.MessageHandler) (channel.Driver, error) {
-		var cfg types.TelegramConfig
-		if err := json.Unmarshal([]byte(config), &cfg); err != nil {
-			return nil, fmt.Errorf("parse telegram config: %w", err)
-		}
-		return &Driver{config: cfg, handler: handler, client: &http.Client{Timeout: 30 * time.Second}}, nil
+		return NewDriver(config, handler)
 	})
+}
+
+// NewDriver creates a Telegram driver directly (for standalone use).
+func NewDriver(config string, handler channel.MessageHandler) (*Driver, error) {
+	var cfg types.TelegramConfig
+	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+		return nil, fmt.Errorf("parse telegram config: %w", err)
+	}
+	return &Driver{config: cfg, handler: handler, client: &http.Client{Timeout: 30 * time.Second}}, nil
 }
 
 // Driver implements channel.Driver for Telegram via Bot API.
