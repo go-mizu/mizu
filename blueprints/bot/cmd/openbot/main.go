@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/bot"
@@ -19,6 +20,45 @@ import (
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	// Subcommand dispatch.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "sessions":
+			if err := runSessions(); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "history":
+			sessionID := ""
+			if len(os.Args) > 2 {
+				sessionID = os.Args[2]
+			}
+			if err := runHistory(sessionID); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "send":
+			if len(os.Args) < 3 {
+				log.Fatal("Usage: openbot send <message>")
+			}
+			message := strings.Join(os.Args[2:], " ")
+			if err := runSend(message); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "status":
+			if err := runStatus(); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "help":
+			printUsage()
+			return
+		}
+	}
+
+	// Default: run the Telegram bot.
 
 	// 1. Ensure config exists (clone from OpenClaw if needed).
 	openbotDir := config.DefaultConfigDir()
@@ -115,4 +155,16 @@ func main() {
 	cancel()
 	drv.Disconnect(context.Background())
 	fmt.Println("OpenBot stopped.")
+}
+
+func printUsage() {
+	fmt.Println("OpenBot - Telegram Bot with Tool Execution")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  openbot              Run the Telegram bot (default)")
+	fmt.Println("  openbot sessions     List active sessions")
+	fmt.Println("  openbot history [id] Show messages for a session")
+	fmt.Println("  openbot send <msg>   Send a message through the bot engine")
+	fmt.Println("  openbot status       Show bot status")
+	fmt.Println("  openbot help         Show this help")
 }
