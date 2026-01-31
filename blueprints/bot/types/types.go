@@ -190,3 +190,68 @@ type LLMResponse struct {
 	InputTokens  int    `json:"inputTokens"`
 	OutputTokens int    `json:"outputTokens"`
 }
+
+// ToolDefinition is the Anthropic API tool definition format.
+type ToolDefinition struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+// ContentBlock is a content block in an Anthropic API response.
+type ContentBlock struct {
+	Type  string         `json:"type"`            // "text" or "tool_use"
+	Text  string         `json:"text,omitempty"`
+	ID    string         `json:"id,omitempty"`    // tool_use block ID
+	Name  string         `json:"name,omitempty"`  // tool name
+	Input map[string]any `json:"input,omitempty"` // tool input parameters
+}
+
+// ToolResultBlock is a tool result sent back to the API as user message content.
+type ToolResultBlock struct {
+	Type      string `json:"type"`        // always "tool_result"
+	ToolUseID string `json:"tool_use_id"`
+	Content   string `json:"content"`
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+// LLMToolRequest extends LLMRequest with tool definitions.
+type LLMToolRequest struct {
+	Model        string           `json:"model"`
+	SystemPrompt string           `json:"systemPrompt"`
+	Messages     []any            `json:"messages"`    // mix of LLMMsg and tool result messages
+	MaxTokens    int              `json:"maxTokens"`
+	Temperature  float64          `json:"temperature"`
+	Tools        []ToolDefinition `json:"tools,omitempty"`
+}
+
+// LLMToolResponse contains the full Anthropic response with content blocks.
+type LLMToolResponse struct {
+	Content      []ContentBlock `json:"content"`
+	Model        string         `json:"model"`
+	StopReason   string         `json:"stopReason"` // "end_turn" or "tool_use"
+	InputTokens  int            `json:"inputTokens"`
+	OutputTokens int            `json:"outputTokens"`
+}
+
+// TextContent extracts all text from the content blocks.
+func (r *LLMToolResponse) TextContent() string {
+	var text string
+	for _, block := range r.Content {
+		if block.Type == "text" {
+			text += block.Text
+		}
+	}
+	return text
+}
+
+// ToolUses extracts all tool_use blocks from the response.
+func (r *LLMToolResponse) ToolUses() []ContentBlock {
+	var uses []ContentBlock
+	for _, block := range r.Content {
+		if block.Type == "tool_use" {
+			uses = append(uses, block)
+		}
+	}
+	return uses
+}
