@@ -1,6 +1,8 @@
 package web
 
 import (
+	"net/http"
+
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/bot/app/web/handler/api"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/agent"
@@ -10,8 +12,26 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 )
 
+// Server wraps the HTTP router and services that need cleanup on shutdown.
+type Server struct {
+	Router  *mizu.Router
+	gateway *gateway.Service
+}
+
+// ServeHTTP delegates to the underlying router.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.Router.ServeHTTP(w, r)
+}
+
+// Close releases resources held by the server's services.
+func (s *Server) Close() {
+	if s.gateway != nil {
+		s.gateway.Close()
+	}
+}
+
 // NewServer creates the HTTP server with all routes.
-func NewServer(s store.Store, devMode bool) *mizu.Router {
+func NewServer(s store.Store, devMode bool) *Server {
 	// Create services
 	agentSvc := agent.NewService(s)
 	sessionSvc := session.NewService(s)
@@ -69,5 +89,8 @@ func NewServer(s store.Store, devMode bool) *mizu.Router {
 	// Gateway message send (direct send via API)
 	r.Post("/api/gateway/send", gatewayHandler.Send)
 
-	return r
+	return &Server{
+		Router:  r,
+		gateway: gatewaySvc,
+	}
 }

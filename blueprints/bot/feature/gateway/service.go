@@ -7,40 +7,60 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/feature/command"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/compact"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
 
+// DefaultContextWindow is the default context window size for Claude models.
+const DefaultContextWindow = 200000
+
 // Service is the core message routing engine.
 // It receives inbound messages, resolves the target agent via bindings,
 // manages sessions, invokes the LLM, and stores conversation history.
+// It integrates workspace bootstrap, skills, memory search, and context
+// pruning/compaction matching OpenClaw's behavior.
 type Service struct {
-	store    store.Store
-	llm      llm.Provider
-	commands *command.Service
-	startAt  time.Time
+	store      store.Store
+	llm        llm.Provider
+	commands   *command.Service
+	memReg     *memoryRegistry
+	ctxBuilder *contextBuilder
+	startAt    time.Time
 }
 
-// NewService creates a gateway service.
+// NewService creates a gateway service with memory and context management.
 func NewService(s store.Store, provider llm.Provider) *Service {
+	memReg := newMemoryRegistry()
 	return &Service{
-		store:    s,
-		llm:      provider,
-		commands: command.NewService(),
-		startAt:  time.Now(),
+		store:      s,
+		llm:        provider,
+		commands:   command.NewService(),
+		memReg:     memReg,
+		ctxBuilder: newContextBuilder(memReg),
+		startAt:    time.Now(),
+	}
+}
+
+// Close releases resources held by the gateway service.
+func (g *Service) Close() {
+	if g.memReg != nil {
+		g.memReg.closeAll()
 	}
 }
 
 // ProcessMessage handles an inbound message end-to-end:
-// 1. Resolve agent via bindings
-// 2. Get or create session
-// 3. Check for slash commands
-// 4. Store user message
-// 5. Build conversation history
-// 6. Call LLM
-// 7. Store assistant response
-// 8. Return response
+//  1. Resolve agent via bindings
+//  2. Get or create session
+//  3. Check for slash commands
+//  4. Store user message
+//  5. Build conversation history with pruning
+//  6. Build enriched system prompt (workspace + skills + memory)
+//  7. Check for memory flush trigger
+//  8. Call LLM
+//  9. Store assistant response
+//  10. Return response
 func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage) (string, error) {
 	channelType := string(msg.ChannelType)
 	channelID := msg.ChannelID
@@ -88,10 +108,41 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		llmMessages[i] = types.LLMMsg{Role: m.Role, Content: m.Content}
 	}
 
-	// 6. Call LLM
+	// 5a. Apply context pruning to keep conversation within budget.
+	contextWindow := DefaultContextWindow
+	totalTokens := compact.EstimateMessagesTokens(llmMessages)
+
+	llmMessages = compact.PruneMessages(
+		llmMessages,
+		totalTokens,
+		contextWindow,
+		compact.DefaultPruneConfig(),
+	)
+
+	// 5b. If still over budget, drop oldest messages.
+	totalTokens = compact.EstimateMessagesTokens(llmMessages)
+	historyBudget := float64(contextWindow-compact.DefaultReserveTokensFloor) / float64(contextWindow)
+	pruneResult := compact.PruneHistoryForContextShare(llmMessages, contextWindow, historyBudget)
+	llmMessages = pruneResult.Messages
+
+	// 6. Build enriched system prompt (workspace + skills + memory search).
+	systemPrompt := g.ctxBuilder.buildSystemPrompt(ctx, agent, msg.Origin, msg.Content)
+
+	// 7. Check for memory flush trigger.
+	totalTokens = compact.EstimateMessagesTokens(llmMessages)
+	flushCfg := compact.DefaultFlushConfig()
+	if compact.ShouldRunMemoryFlush(totalTokens, contextWindow, flushCfg) {
+		flushPrompt := compact.BuildFlushPrompt(flushCfg)
+		llmMessages = append(llmMessages, types.LLMMsg{
+			Role:    types.RoleUser,
+			Content: flushPrompt,
+		})
+	}
+
+	// 8. Call LLM
 	llmReq := &types.LLMRequest{
 		Model:        agent.Model,
-		SystemPrompt: agent.SystemPrompt,
+		SystemPrompt: systemPrompt,
 		Messages:     llmMessages,
 		MaxTokens:    agent.MaxTokens,
 		Temperature:  agent.Temperature,
@@ -103,7 +154,7 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		return "", fmt.Errorf("LLM chat: %w", err)
 	}
 
-	// 7. Store assistant response
+	// 9. Store assistant response
 	assistantMsg := &types.Message{
 		SessionID: session.ID,
 		AgentID:   agent.ID,
@@ -122,13 +173,42 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 func (g *Service) handleCommand(ctx context.Context, cmd, args string, agent *types.Agent, session *types.Session) string {
 	switch cmd {
 	case "/new", "/reset":
-		// Expire current session so a new one is created next message
+		// Expire current session so a new one is created next message.
 		session.Status = "expired"
 		g.store.UpdateSession(ctx, session)
 		return g.commands.Execute(cmd, args, agent)
+	case "/context":
+		// Show enriched system prompt.
+		prompt := g.ctxBuilder.buildSystemPrompt(context.Background(), agent, session.Origin, "")
+		if prompt == "" {
+			return "No system prompt configured."
+		}
+		return fmt.Sprintf("System prompt:\n%s", prompt)
 	default:
 		return g.commands.Execute(cmd, args, agent)
 	}
+}
+
+// MemorySearch exposes memory search for the /memory command.
+func (g *Service) MemorySearch(ctx context.Context, workspaceDir, query string) (string, error) {
+	if g.memReg == nil || workspaceDir == "" || query == "" {
+		return "No memory index available.", nil
+	}
+
+	mgr, err := g.memReg.get(workspaceDir)
+	if err != nil || mgr == nil {
+		return "No memory index available.", nil
+	}
+
+	results, err := mgr.Search(ctx, query, 0, 0)
+	if err != nil {
+		return "", fmt.Errorf("memory search: %w", err)
+	}
+	if len(results) == 0 {
+		return "No relevant results found.", nil
+	}
+
+	return formatMemoryResults(results), nil
 }
 
 // Status returns the current gateway status.
