@@ -12,6 +12,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/config"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
+	bottools "github.com/go-mizu/mizu/blueprints/bot/pkg/tools"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 	"github.com/go-mizu/mizu/blueprints/bot/store/sqlite"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
@@ -27,6 +28,7 @@ type Bot struct {
 	commands *command.Service
 	prompt   *PromptBuilder
 	memory   *memory.MemoryManager
+	tools    *bottools.Registry
 	allowSet map[string]bool
 }
 
@@ -66,6 +68,9 @@ func New(cfg *config.Config, provider llm.Provider) (*Bot, error) {
 		prompt:   NewPromptBuilder(cfg.Workspace),
 		allowSet: allowSet,
 	}
+
+	b.tools = bottools.NewRegistry()
+	bottools.RegisterBuiltins(b.tools)
 
 	// Create default agent and binding.
 	if err := b.ensureDefaultAgent(ctx); err != nil {
@@ -188,18 +193,58 @@ func (b *Bot) HandleMessage(ctx context.Context, msg *types.InboundMessage) (str
 		}
 	}
 
-	// 10. Call the LLM provider.
-	llmReq := &types.LLMRequest{
-		Model:        agent.Model,
-		SystemPrompt: systemPrompt,
-		Messages:     llmMsgs,
-		MaxTokens:    agent.MaxTokens,
-		Temperature:  agent.Temperature,
-	}
+	// 10. Call the LLM provider (with tool loop if supported).
+	var responseText string
 
-	llmResp, err := b.llm.Chat(ctx, llmReq)
-	if err != nil {
-		return "", fmt.Errorf("llm chat: %w", err)
+	toolProvider, hasTools := b.llm.(llm.ToolProvider)
+	if hasTools && len(b.tools.All()) > 0 {
+		// Convert history to []any for the tool request.
+		msgs := make([]any, len(llmMsgs))
+		for i, m := range llmMsgs {
+			msgs[i] = map[string]any{
+				"role":    m.Role,
+				"content": m.Content,
+			}
+		}
+
+		// Build tool definitions.
+		toolDefs := make([]types.ToolDefinition, 0, len(b.tools.All()))
+		for _, t := range b.tools.All() {
+			toolDefs = append(toolDefs, types.ToolDefinition{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: t.InputSchema,
+			})
+		}
+
+		toolReq := &types.LLMToolRequest{
+			Model:        agent.Model,
+			SystemPrompt: systemPrompt,
+			Messages:     msgs,
+			MaxTokens:    agent.MaxTokens,
+			Temperature:  agent.Temperature,
+			Tools:        toolDefs,
+		}
+
+		toolResp, err := runToolLoop(ctx, toolProvider, b.tools, toolReq)
+		if err != nil {
+			return "", fmt.Errorf("tool loop: %w", err)
+		}
+		responseText = toolResp.TextContent()
+	} else {
+		// Fallback to simple chat (no tools).
+		llmReq := &types.LLMRequest{
+			Model:        agent.Model,
+			SystemPrompt: systemPrompt,
+			Messages:     llmMsgs,
+			MaxTokens:    agent.MaxTokens,
+			Temperature:  agent.Temperature,
+		}
+		llmResp, err := b.llm.Chat(ctx, llmReq)
+		if err != nil {
+			return "", fmt.Errorf("llm chat: %w", err)
+		}
+		responseText = llmResp.Content
 	}
 
 	// 11. Store the assistant response.
@@ -209,13 +254,13 @@ func (b *Bot) HandleMessage(ctx context.Context, msg *types.InboundMessage) (str
 		ChannelID: msg.ChannelID,
 		PeerID:    msg.PeerID,
 		Role:      types.RoleAssistant,
-		Content:   llmResp.Content,
+		Content:   responseText,
 	}
 	if err := b.store.CreateMessage(ctx, assistantMsg); err != nil {
 		return "", fmt.Errorf("store assistant message: %w", err)
 	}
 
-	return llmResp.Content, nil
+	return responseText, nil
 }
 
 // checkPolicy enforces the DM allowlist policy. An empty allowlist means
