@@ -12,12 +12,13 @@ import (
 // EnsureConfig ensures ~/.openbot exists with a valid config.
 // If openbotDir doesn't exist, it clones from openclawDir.
 // If openbotDir already has openbot.json, it does nothing.
+// Creates the full OpenClaw-compatible directory structure.
 func EnsureConfig(openbotDir, openclawDir string) error {
 	cfgPath := filepath.Join(openbotDir, "openbot.json")
 
-	// If config already exists, nothing to do.
+	// If config already exists, ensure directory structure and return.
 	if _, err := os.Stat(cfgPath); err == nil {
-		return nil
+		return ensureDirectoryStructure(openbotDir)
 	}
 
 	// Check that source (openclaw) exists.
@@ -43,9 +44,69 @@ func EnsureConfig(openbotDir, openclawDir string) error {
 		return fmt.Errorf("clone workspace: %w", err)
 	}
 
-	// Create data directory.
-	if err := os.MkdirAll(filepath.Join(openbotDir, "data"), 0o700); err != nil {
-		return fmt.Errorf("create data dir: %w", err)
+	// Create full directory structure.
+	if err := ensureDirectoryStructure(openbotDir); err != nil {
+		return fmt.Errorf("create directory structure: %w", err)
+	}
+
+	return nil
+}
+
+// ensureDirectoryStructure creates all OpenClaw-compatible subdirectories.
+func ensureDirectoryStructure(baseDir string) error {
+	dirs := []string{
+		filepath.Join(baseDir, "agents", "main", "agent"),
+		filepath.Join(baseDir, "agents", "main", "sessions"),
+		filepath.Join(baseDir, "memory"),
+		filepath.Join(baseDir, "identity"),
+		filepath.Join(baseDir, "logs"),
+		filepath.Join(baseDir, "telegram"),
+		filepath.Join(baseDir, "cron"),
+		filepath.Join(baseDir, "devices"),
+		filepath.Join(baseDir, "credentials"),
+		filepath.Join(baseDir, "canvas"),
+		filepath.Join(baseDir, "workspace", "memory"),
+	}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return fmt.Errorf("create dir %s: %w", d, err)
+		}
+	}
+
+	// Create default agent files if missing.
+	modelsPath := filepath.Join(baseDir, "agents", "main", "agent", "models.json")
+	if _, err := os.Stat(modelsPath); os.IsNotExist(err) {
+		os.WriteFile(modelsPath, []byte("{}\n"), 0o600)
+	}
+	authPath := filepath.Join(baseDir, "agents", "main", "agent", "auth-profiles.json")
+	if _, err := os.Stat(authPath); os.IsNotExist(err) {
+		os.WriteFile(authPath, []byte("{}\n"), 0o600)
+	}
+
+	// Create default device/identity files if missing.
+	devicePath := filepath.Join(baseDir, "identity", "device.json")
+	if _, err := os.Stat(devicePath); os.IsNotExist(err) {
+		os.WriteFile(devicePath, []byte("{}\n"), 0o600)
+	}
+	deviceAuthPath := filepath.Join(baseDir, "identity", "device-auth.json")
+	if _, err := os.Stat(deviceAuthPath); os.IsNotExist(err) {
+		os.WriteFile(deviceAuthPath, []byte("{}\n"), 0o600)
+	}
+
+	// Create default cron jobs file if missing.
+	cronPath := filepath.Join(baseDir, "cron", "jobs.json")
+	if _, err := os.Stat(cronPath); os.IsNotExist(err) {
+		os.WriteFile(cronPath, []byte("{\"jobs\":[]}\n"), 0o600)
+	}
+
+	// Create default devices files if missing.
+	pairedPath := filepath.Join(baseDir, "devices", "paired.json")
+	if _, err := os.Stat(pairedPath); os.IsNotExist(err) {
+		os.WriteFile(pairedPath, []byte("{}\n"), 0o600)
+	}
+	pendingPath := filepath.Join(baseDir, "devices", "pending.json")
+	if _, err := os.Stat(pendingPath); os.IsNotExist(err) {
+		os.WriteFile(pendingPath, []byte("{}\n"), 0o600)
 	}
 
 	return nil

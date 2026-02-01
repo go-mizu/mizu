@@ -10,10 +10,49 @@ import (
 )
 
 // RegisterBuiltins adds all built-in tools to the registry.
+// Tool names match OpenClaw's tool naming convention.
 func RegisterBuiltins(r *Registry) {
-	r.Register(ListFilesTool())
-	r.Register(ReadFileTool())
-	r.Register(RunCommandTool())
+	// File tools (OpenClaw: read, edit, write).
+	r.Register(ReadFileTool())   // "read_file" — also covers OpenClaw's "read"
+	r.Register(ListFilesTool())  // "list_files"
+	r.Register(EditFileTool())   // "edit"
+	r.Register(WriteFileTool())  // "write"
+
+	// System tools (OpenClaw: exec, process).
+	r.Register(RunCommandTool()) // "run_command" — covers OpenClaw's "exec"
+	r.Register(ProcessTool())    // "process"
+
+	// Web tools (OpenClaw: web_search, web_fetch).
+	r.Register(WebSearchTool()) // "web_search"
+	r.Register(WebFetchTool())  // "web_fetch"
+
+	// Session tools (OpenClaw: sessions_list, sessions_history, session_status, sessions_send, sessions_spawn).
+	r.Register(SessionsListTool())    // "sessions_list"
+	r.Register(SessionsHistoryTool()) // "sessions_history"
+	r.Register(SessionStatusTool())   // "session_status"
+	r.Register(SessionsSendTool())    // "sessions_send"
+	r.Register(SessionsSpawnTool())   // "sessions_spawn"
+
+	// Memory tools (OpenClaw: memory_search, memory_get).
+	r.Register(MemorySearchTool()) // "memory_search"
+	r.Register(MemoryGetTool())    // "memory_get"
+
+	// Communication tools (OpenClaw: message, tts).
+	r.Register(MessageTool()) // "message"
+	r.Register(TTSTool())     // "tts"
+
+	// Agent management (OpenClaw: agents_list).
+	r.Register(AgentsListTool()) // "agents_list"
+
+	// Infrastructure tools (OpenClaw: gateway, cron, browser, canvas, nodes).
+	r.Register(GatewayTool()) // "gateway"
+	r.Register(CronTool())    // "cron"
+	r.Register(BrowserTool()) // "browser"
+	r.Register(CanvasTool())  // "canvas"
+	r.Register(NodesTool())   // "nodes"
+
+	// Media tools (OpenClaw: image).
+	r.Register(ImageTool()) // "image"
 }
 
 // getStringParam extracts a string parameter from the input map.

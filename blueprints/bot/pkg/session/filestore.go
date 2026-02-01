@@ -44,26 +44,112 @@ func SessionKey(agentID, channelType, peerID, groupID string) string {
 type Entry struct {
 	SessionID       string         `json:"sessionId"`
 	UpdatedAt       int64          `json:"updatedAt"`                 // ms since epoch
+	SystemSent      bool           `json:"systemSent,omitempty"`      // whether system prompt was sent
+	AbortedLastRun  bool           `json:"abortedLastRun,omitempty"`  // whether last run was aborted
 	ChatType        string         `json:"chatType,omitempty"`        // direct, group
 	Channel         string         `json:"channel,omitempty"`
 	DisplayName     string         `json:"displayName,omitempty"`
-	Model           string         `json:"model,omitempty"`
-	ModelProvider   string         `json:"modelProvider,omitempty"`
-	ContextTokens   int            `json:"contextTokens,omitempty"`
-	InputTokens     int            `json:"inputTokens,omitempty"`
-	OutputTokens    int            `json:"outputTokens,omitempty"`
-	TotalTokens     int            `json:"totalTokens,omitempty"`
-	CompactionCount int            `json:"compactionCount,omitempty"`
-	Status          string         `json:"status,omitempty"`          // active, expired
-	Label           string         `json:"label,omitempty"`
+	DeliveryContext *DeliveryCtx   `json:"deliveryContext,omitempty"` // channel/to/accountId for delivery
+	LastChannel     string         `json:"lastChannel,omitempty"`     // last channel used
 	Origin          *SessionOrigin `json:"origin,omitempty"`
+	SessionFile     string         `json:"sessionFile,omitempty"`     // path to JSONL transcript
+	CompactionCount int            `json:"compactionCount,omitempty"`
+	SkillsSnapshot  *SkillsSnap   `json:"skillsSnapshot,omitempty"`  // skills at session creation
+
+	// Auth profile tracking.
+	AuthProfileOverride                string `json:"authProfileOverride,omitempty"`
+	AuthProfileOverrideSource          string `json:"authProfileOverrideSource,omitempty"`
+	AuthProfileOverrideCompactionCount int    `json:"authProfileOverrideCompactionCount,omitempty"`
+
+	// Delivery tracking.
+	LastTo        string `json:"lastTo,omitempty"`
+	LastAccountId string `json:"lastAccountId,omitempty"`
+
+	// Token usage.
+	InputTokens  int `json:"inputTokens,omitempty"`
+	OutputTokens int `json:"outputTokens,omitempty"`
+	TotalTokens  int `json:"totalTokens,omitempty"`
+
+	// Model info.
+	ModelProvider string `json:"modelProvider,omitempty"`
+	Model         string `json:"model,omitempty"`
+	ContextTokens int    `json:"contextTokens,omitempty"`
+
+	// Diagnostic report.
+	SystemPromptReport *SystemPromptReport `json:"systemPromptReport,omitempty"`
+
+	// Display.
+	Status string `json:"status,omitempty"` // active, expired
+	Label  string `json:"label,omitempty"`
+}
+
+// DeliveryCtx describes how messages are delivered for a session.
+type DeliveryCtx struct {
+	Channel   string `json:"channel,omitempty"`
+	To        string `json:"to,omitempty"`
+	AccountId string `json:"accountId,omitempty"`
 }
 
 // SessionOrigin describes how a session was created.
 type SessionOrigin struct {
-	Label    string `json:"label,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Surface  string `json:"surface,omitempty"`
+	Label     string `json:"label,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	Surface   string `json:"surface,omitempty"`
+	ChatType  string `json:"chatType,omitempty"`
+	From      string `json:"from,omitempty"`
+	To        string `json:"to,omitempty"`
+	AccountId string `json:"accountId,omitempty"`
+}
+
+// SkillsSnap is a snapshot of available skills at session creation.
+type SkillsSnap struct {
+	Prompt   string       `json:"prompt,omitempty"`
+	Skills   []SkillRef   `json:"skills,omitempty"`
+	Version  int          `json:"version,omitempty"`
+}
+
+// SkillRef is a reference to a skill in the snapshot.
+type SkillRef struct {
+	Name       string `json:"name"`
+	PrimaryEnv string `json:"primaryEnv,omitempty"`
+}
+
+// SystemPromptReport is diagnostic metadata about the system prompt.
+type SystemPromptReport struct {
+	Source                string             `json:"source,omitempty"`
+	GeneratedAt          int64              `json:"generatedAt,omitempty"`
+	SessionID            string             `json:"sessionId,omitempty"`
+	SessionKey           string             `json:"sessionKey,omitempty"`
+	Provider             string             `json:"provider,omitempty"`
+	Model                string             `json:"model,omitempty"`
+	WorkspaceDir         string             `json:"workspaceDir,omitempty"`
+	BootstrapMaxChars    int                `json:"bootstrapMaxChars,omitempty"`
+	Sandbox              *SandboxInfo       `json:"sandbox,omitempty"`
+	SystemPrompt         *PromptStats       `json:"systemPrompt,omitempty"`
+	InjectedWorkspaceFiles []WorkspaceFileInfo `json:"injectedWorkspaceFiles,omitempty"`
+}
+
+// SandboxInfo describes sandbox state.
+type SandboxInfo struct {
+	Mode      string `json:"mode"`
+	Sandboxed bool   `json:"sandboxed"`
+}
+
+// PromptStats holds system prompt size statistics.
+type PromptStats struct {
+	Chars                 int `json:"chars,omitempty"`
+	ProjectContextChars   int `json:"projectContextChars,omitempty"`
+	NonProjectContextChars int `json:"nonProjectContextChars,omitempty"`
+}
+
+// WorkspaceFileInfo describes an injected workspace file.
+type WorkspaceFileInfo struct {
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	Missing       bool   `json:"missing"`
+	RawChars      int    `json:"rawChars,omitempty"`
+	InjectedChars int    `json:"injectedChars,omitempty"`
+	Truncated     bool   `json:"truncated,omitempty"`
 }
 
 // TranscriptEntry is a single line in a JSONL transcript file.
