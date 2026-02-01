@@ -237,6 +237,28 @@ func (m *mockStore) Stats(_ context.Context) (*store.Stats, error) {
 	}, nil
 }
 
+// --- CronStore ---
+
+func (m *mockStore) ListCronJobs(_ context.Context) ([]types.CronJob, error)          { return nil, nil }
+func (m *mockStore) GetCronJob(_ context.Context, _ string) (*types.CronJob, error)    { return nil, nil }
+func (m *mockStore) CreateCronJob(_ context.Context, _ *types.CronJob) error           { return nil }
+func (m *mockStore) UpdateCronJob(_ context.Context, _ *types.CronJob) error           { return nil }
+func (m *mockStore) DeleteCronJob(_ context.Context, _ string) error                   { return nil }
+func (m *mockStore) CreateCronRun(_ context.Context, _ *types.CronRun) error           { return nil }
+func (m *mockStore) UpdateCronRun(_ context.Context, _ *types.CronRun) error           { return nil }
+func (m *mockStore) ListCronRuns(_ context.Context, _ string, _ int) ([]types.CronRun, error) {
+	return nil, nil
+}
+
+// --- ConfigStore ---
+
+func (m *mockStore) GetConfigVal(_ context.Context, _ string) (string, error) { return "", nil }
+func (m *mockStore) SetConfigVal(_ context.Context, _, _ string) error        { return nil }
+func (m *mockStore) DeleteConfigVal(_ context.Context, _ string) error        { return nil }
+func (m *mockStore) ListConfigVals(_ context.Context) (map[string]string, error) {
+	return nil, nil
+}
+
 // Compile-time interface check.
 var _ store.Store = (*mockStore)(nil)
 

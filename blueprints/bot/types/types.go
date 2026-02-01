@@ -168,6 +168,86 @@ type WebhookConfig struct {
 	Endpoint string `json:"endpoint"`
 }
 
+// CronJob represents a scheduled job.
+type CronJob struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	AgentID       string    `json:"agentId"`
+	Enabled       bool      `json:"enabled"`
+	Schedule      string    `json:"schedule"`      // JSON: {kind, interval, unit, at, cron, tz}
+	SessionTarget string    `json:"sessionTarget"` // main, isolated
+	WakeMode      string    `json:"wakeMode"`      // next-heartbeat, now
+	Payload       string    `json:"payload"`        // JSON: {kind, text, message, ...}
+	LastRunAt     time.Time `json:"lastRunAt"`
+	LastStatus    string    `json:"lastStatus"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+// CronRun represents a single execution of a cron job.
+type CronRun struct {
+	ID         string    `json:"id"`
+	JobID      string    `json:"jobId"`
+	Status     string    `json:"status"` // running, success, failed
+	StartedAt  time.Time `json:"startedAt"`
+	EndedAt    time.Time `json:"endedAt"`
+	DurationMs int64     `json:"durationMs"`
+	Summary    string    `json:"summary"`
+	Error      string    `json:"error"`
+}
+
+// CronStatus holds scheduler status.
+type CronStatus struct {
+	Enabled      bool  `json:"enabled"`
+	Jobs         int   `json:"jobs"`
+	NextWakeAtMs int64 `json:"nextWakeAtMs,omitempty"`
+}
+
+// LogEntry represents a structured log entry.
+type LogEntry struct {
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level"`
+	Subsystem string `json:"subsystem"`
+	Message   string `json:"message"`
+	Raw       string `json:"raw,omitempty"`
+}
+
+// Instance represents a connected dashboard client.
+type Instance struct {
+	ID          string `json:"id"`
+	Host        string `json:"host"`
+	RemoteAddr  string `json:"remoteAddr"`
+	ConnectedAt int64  `json:"connectedAt"`
+	LastPingAt  int64  `json:"lastPingAt"`
+	Role        string `json:"role"`
+	UserAgent   string `json:"userAgent"`
+}
+
+// SkillEntry represents a skill's status for the dashboard.
+type SkillEntry struct {
+	Key          string   `json:"key"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Emoji        string   `json:"emoji"`
+	Source       string   `json:"source"` // bundled, workspace, user
+	Eligible     bool     `json:"eligible"`
+	Enabled      bool     `json:"enabled"`
+	MissingBins  []string `json:"missingBins,omitempty"`
+	MissingEnv   []string `json:"missingEnv,omitempty"`
+	UserInvocable bool   `json:"userInvocable"`
+}
+
+// HealthSnapshot is a health check result.
+type HealthSnapshot struct {
+	Status    string         `json:"status"`
+	Uptime    string         `json:"uptime"`
+	Database  string         `json:"database"`
+	Memory    map[string]any `json:"memory"`
+	Stats     *GatewayStatus `json:"stats"`
+	Timestamp string         `json:"timestamp"`
+}
+
 // LLMRequest is a request to the LLM provider.
 type LLMRequest struct {
 	Model        string    `json:"model"`

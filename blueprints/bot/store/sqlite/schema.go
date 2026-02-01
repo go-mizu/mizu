@@ -90,6 +90,37 @@ func (s *Store) createSchema(ctx context.Context) error {
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		)`,
+
+		// Cron jobs table
+		`CREATE TABLE IF NOT EXISTS cron_jobs (
+			id             TEXT PRIMARY KEY,
+			name           TEXT NOT NULL,
+			description    TEXT NOT NULL DEFAULT '',
+			agent_id       TEXT NOT NULL DEFAULT '',
+			enabled        INTEGER NOT NULL DEFAULT 1,
+			schedule       TEXT NOT NULL DEFAULT '{}',
+			session_target TEXT NOT NULL DEFAULT 'main',
+			wake_mode      TEXT NOT NULL DEFAULT 'next-heartbeat',
+			payload        TEXT NOT NULL DEFAULT '{}',
+			last_run_at    DATETIME,
+			last_status    TEXT NOT NULL DEFAULT '',
+			created_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at     DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+
+		// Cron run history
+		`CREATE TABLE IF NOT EXISTS cron_runs (
+			id          TEXT PRIMARY KEY,
+			job_id      TEXT NOT NULL REFERENCES cron_jobs(id) ON DELETE CASCADE,
+			status      TEXT NOT NULL DEFAULT 'running',
+			started_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			ended_at    DATETIME,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			summary     TEXT NOT NULL DEFAULT '',
+			error       TEXT NOT NULL DEFAULT ''
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id, started_at DESC)`,
 	}
 
 	for _, q := range queries {

@@ -2,13 +2,17 @@ package web
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/bot/app/web/handler/api"
+	db "github.com/go-mizu/mizu/blueprints/bot/app/web/handler/dashboard"
+	"github.com/go-mizu/mizu/blueprints/bot/app/web/rpc"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/agent"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/gateway"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/session"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/logring"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 )
 
@@ -16,6 +20,8 @@ import (
 type Server struct {
 	Router  *mizu.Router
 	gateway *gateway.Service
+	Logs    *logring.Ring
+	Hub     *db.Hub
 }
 
 // ServeHTTP delegates to the underlying router.
@@ -32,13 +38,19 @@ func (s *Server) Close() {
 
 // NewServer creates the HTTP server with all routes.
 func NewServer(s store.Store, devMode bool) *Server {
+	startTime := time.Now()
+
+	// Create log ring buffer
+	logs := logring.New(5000)
+	logs.Info("gateway", "Server starting")
+
 	// Create services
 	agentSvc := agent.NewService(s)
 	sessionSvc := session.NewService(s)
 	provider := llm.NewClaude()
 	gatewaySvc := gateway.NewService(s, provider)
 
-	// Create handlers
+	// Create API handlers
 	agentHandler := api.NewAgentHandler(agentSvc)
 	channelHandler := api.NewChannelHandler(s)
 	sessionHandler := api.NewSessionHandler(sessionSvc)
@@ -46,8 +58,23 @@ func NewServer(s store.Store, devMode bool) *Server {
 	gatewayHandler := api.NewGatewayHandler(gatewaySvc, s)
 	webhookHandler := api.NewWebhookHandler(gatewaySvc)
 
+	// Create WebSocket hub for dashboard
+	hub := db.NewHub("") // empty token = no auth required (dev-friendly)
+
+	// Register all RPC methods
+	rpc.RegisterAll(hub, s, gatewaySvc, logs, startTime)
+
 	// Create router
 	r := mizu.NewRouter()
+
+	// Dashboard routes
+	r.Get("/", db.Page)
+	r.Get("/ui", db.Page)
+	r.Get("/ui/", db.Page)
+	r.Get("/dashboard", db.Page)
+
+	// WebSocket endpoint for dashboard real-time communication
+	r.Get("/ws", hub.WSHandler())
 
 	// API routes
 	r.Get("/api/status", gatewayHandler.Status)
@@ -89,8 +116,12 @@ func NewServer(s store.Store, devMode bool) *Server {
 	// Gateway message send (direct send via API)
 	r.Post("/api/gateway/send", gatewayHandler.Send)
 
+	logs.Info("gateway", "Server initialized (dev=%v)", devMode)
+
 	return &Server{
 		Router:  r,
 		gateway: gatewaySvc,
+		Logs:    logs,
+		Hub:     hub,
 	}
 }

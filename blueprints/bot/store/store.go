@@ -13,6 +13,8 @@ type Store interface {
 	SessionStore
 	MessageStore
 	BindingStore
+	CronStore
+	ConfigStore
 
 	// Ensure creates all tables and runs migrations.
 	Ensure(ctx context.Context) error
@@ -80,4 +82,24 @@ type BindingStore interface {
 	// ResolveAgent finds the best-matching agent for an inbound message
 	// using most-specific-wins priority: peer > channel > channelType > default.
 	ResolveAgent(ctx context.Context, channelType, channelID, peerID string) (*types.Agent, error)
+}
+
+// CronStore manages cron jobs and their run history.
+type CronStore interface {
+	ListCronJobs(ctx context.Context) ([]types.CronJob, error)
+	GetCronJob(ctx context.Context, id string) (*types.CronJob, error)
+	CreateCronJob(ctx context.Context, job *types.CronJob) error
+	UpdateCronJob(ctx context.Context, job *types.CronJob) error
+	DeleteCronJob(ctx context.Context, id string) error
+	CreateCronRun(ctx context.Context, run *types.CronRun) error
+	UpdateCronRun(ctx context.Context, run *types.CronRun) error
+	ListCronRuns(ctx context.Context, jobID string, limit int) ([]types.CronRun, error)
+}
+
+// ConfigStore manages key-value configuration.
+type ConfigStore interface {
+	GetConfigVal(ctx context.Context, key string) (string, error)
+	SetConfigVal(ctx context.Context, key, value string) error
+	DeleteConfigVal(ctx context.Context, key string) error
+	ListConfigVals(ctx context.Context) (map[string]string, error)
 }
