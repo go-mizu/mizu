@@ -2,6 +2,8 @@ package bot
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -34,14 +36,21 @@ func (pb *PromptBuilder) Build(origin, query string) string {
 		}
 	}
 
-	// 3. Skills.
+	// 3. Memory recall (MEMORY.md + daily logs).
+	if pb.workspaceDir != "" {
+		if mem := pb.memoryRecallSection(); mem != "" {
+			sections = append(sections, mem)
+		}
+	}
+
+	// 4. Skills.
 	if pb.workspaceDir != "" {
 		if sk := pb.skillsSection(); sk != "" {
 			sections = append(sections, sk)
 		}
 	}
 
-	// 4. Runtime info.
+	// 5. Runtime info.
 	sections = append(sections, pb.runtimeSection())
 
 	return strings.Join(sections, "\n\n")
@@ -95,6 +104,45 @@ func (pb *PromptBuilder) skillsSection() string {
 	}
 
 	return skill.BuildSkillsPrompt(skills)
+}
+
+// memoryRecallSection loads MEMORY.md and recent daily memory logs.
+func (pb *PromptBuilder) memoryRecallSection() string {
+	var sections []string
+
+	// Load curated MEMORY.md.
+	memoryPath := filepath.Join(pb.workspaceDir, "MEMORY.md")
+	if data, err := os.ReadFile(memoryPath); err == nil {
+		content := strings.TrimSpace(string(data))
+		if content != "" && content != "# Memory" {
+			sections = append(sections, "## Long-Term Memory\n"+content)
+		}
+	}
+
+	// Load recent daily memory logs (last 3 days).
+	memDir := filepath.Join(pb.workspaceDir, "memory")
+	entries, err := os.ReadDir(memDir)
+	if err == nil {
+		var recent []string
+		for i := len(entries) - 1; i >= 0 && len(recent) < 3; i-- {
+			e := entries[i]
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(memDir, e.Name()))
+			if err == nil {
+				recent = append(recent, strings.TrimSpace(string(data)))
+			}
+		}
+		if len(recent) > 0 {
+			sections = append(sections, "## Recent Memory\n"+strings.Join(recent, "\n\n"))
+		}
+	}
+
+	if len(sections) == 0 {
+		return ""
+	}
+	return strings.Join(sections, "\n\n")
 }
 
 // runtimeSection returns current date/time and runtime info.

@@ -76,3 +76,28 @@ func TestBuildSystemPrompt_EmptyWorkspace(t *testing.T) {
 		t.Error("prompt should contain identity even without workspace")
 	}
 }
+
+func TestPromptBuilder_IncludesMemoryRecall(t *testing.T) {
+	ws := t.TempDir()
+
+	// Create workspace/MEMORY.md.
+	os.WriteFile(filepath.Join(ws, "MEMORY.md"), []byte("# Memory\n\n- User prefers dark mode\n"), 0o644)
+
+	// Create workspace/memory/2026-01-31.md.
+	memDir := filepath.Join(ws, "memory")
+	os.MkdirAll(memDir, 0o755)
+	os.WriteFile(filepath.Join(memDir, "2026-01-31.md"), []byte("# 2026-01-31\n\n- Met the user\n"), 0o644)
+
+	pb := NewPromptBuilder(ws)
+	prompt := pb.Build("dm", "hello")
+
+	if !strings.Contains(prompt, "Memory") {
+		t.Error("prompt should contain Memory section from MEMORY.md")
+	}
+	if !strings.Contains(prompt, "dark mode") {
+		t.Error("prompt should contain content from MEMORY.md")
+	}
+	if !strings.Contains(prompt, "Met the user") {
+		t.Error("prompt should contain content from daily memory log")
+	}
+}
