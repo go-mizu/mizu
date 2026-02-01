@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -19,6 +20,7 @@ type Skill struct {
 	Dir         string   // directory containing SKILL.md
 	Content     string   // full SKILL.md content (after frontmatter)
 	Ready       bool     // all requirements met
+	Always      bool     // always included in prompt (not on-demand)
 	Requires    Requires `yaml:"requires"`
 }
 
@@ -26,6 +28,7 @@ type Skill struct {
 type Requires struct {
 	Binaries []string `yaml:"binaries"`
 	Config   []string `yaml:"config"`
+	OS       []string `yaml:"os"` // e.g. ["darwin", "linux"]
 }
 
 // LoadSkill loads a skill from a directory containing a SKILL.md file.
@@ -121,6 +124,8 @@ func parseFrontmatter(sk *Skill, fm string) {
 				sk.Requires.Binaries = append(sk.Requires.Binaries, val)
 			case "config":
 				sk.Requires.Config = append(sk.Requires.Config, val)
+			case "os":
+				sk.Requires.OS = append(sk.Requires.OS, val)
 			}
 			continue
 		}
@@ -151,6 +156,8 @@ func parseFrontmatter(sk *Skill, fm string) {
 			sk.Description = val
 		case "emoji":
 			sk.Emoji = val
+		case "always":
+			sk.Always = val == "true" || val == "yes"
 		case "requires":
 			section = "requires"
 			subsection = ""
@@ -163,9 +170,24 @@ func parseFrontmatter(sk *Skill, fm string) {
 }
 
 // CheckEligibility checks if a skill's requirements are met.
-// Returns true when all required binaries are in PATH and all required
-// config environment variables are set.
+// Returns true when all required binaries are in PATH, all required
+// config environment variables are set, and the OS matches (if specified).
 func CheckEligibility(s *Skill) bool {
+	// Check OS requirement.
+	if len(s.Requires.OS) > 0 {
+		currentOS := runtime.GOOS
+		osMatch := false
+		for _, o := range s.Requires.OS {
+			if o == currentOS {
+				osMatch = true
+				break
+			}
+		}
+		if !osMatch {
+			return false
+		}
+	}
+
 	for _, bin := range s.Requires.Binaries {
 		if _, err := exec.LookPath(bin); err != nil {
 			return false
@@ -186,13 +208,24 @@ func LoadWorkspaceSkills(workspaceDir string) ([]*Skill, error) {
 	return loadSkillsFromDir(skillsDir, "workspace")
 }
 
-// LoadAllSkills loads skills from the workspace and any number of bundled directories.
-// Workspace skills take precedence over bundled skills with the same name.
+// LoadUserSkills loads skills from the user's ~/.openbot/skills/ directory.
+// These are user-installed skills that take precedence over bundled but not workspace.
+func LoadUserSkills() ([]*Skill, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, nil // non-fatal
+	}
+	userSkillsDir := filepath.Join(home, ".openbot", "skills")
+	return loadSkillsFromDir(userSkillsDir, "user")
+}
+
+// LoadAllSkills loads skills from workspace, user-installed, and bundled directories.
+// Precedence: workspace > user-installed > bundled.
 func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error) {
 	seen := make(map[string]bool)
 	var all []*Skill
 
-	// Workspace skills have highest precedence.
+	// 1. Workspace skills have highest precedence.
 	ws, err := LoadWorkspaceSkills(workspaceDir)
 	if err != nil {
 		return nil, err
@@ -203,7 +236,21 @@ func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error)
 		all = append(all, s)
 	}
 
-	// Bundled skills fill in the rest.
+	// 2. User-installed skills (from ~/.openbot/skills/).
+	userSkills, err := LoadUserSkills()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range userSkills {
+		if seen[s.Name] {
+			continue // workspace override wins
+		}
+		s.Source = "user"
+		seen[s.Name] = true
+		all = append(all, s)
+	}
+
+	// 3. Bundled skills fill in the rest.
 	for _, dir := range bundledDirs {
 		bundled, err := loadSkillsFromDir(dir, "bundled")
 		if err != nil {
@@ -211,7 +258,7 @@ func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error)
 		}
 		for _, s := range bundled {
 			if seen[s.Name] {
-				continue // workspace override wins
+				continue // workspace/user override wins
 			}
 			s.Source = "bundled"
 			seen[s.Name] = true
@@ -255,37 +302,35 @@ func loadSkillsFromDir(dir, source string) ([]*Skill, error) {
 }
 
 // BuildSkillsPrompt builds the skills section for system prompt injection.
-// Format per skill: "- <emoji> **<name>**: <description>"
+// Uses OpenClaw's XML <available_skills> format for compatibility.
 // Only ready (eligible) skills are included.
 func BuildSkillsPrompt(skills []*Skill) string {
 	var b strings.Builder
-	b.WriteString("# Available Skills\n\n")
+	b.WriteString("\n\nThe following skills provide specialized instructions for specific tasks.\n")
+	b.WriteString("Use the read tool to load a skill's file when the task matches its description.\n\n")
+	b.WriteString("<available_skills>\n")
 
-	any := false
+	hasReady := false
 	for _, s := range skills {
 		if !s.Ready {
 			continue
 		}
-		any = true
+		hasReady = true
 
-		b.WriteString("- ")
-		if s.Emoji != "" {
-			b.WriteString(s.Emoji)
-			b.WriteString(" ")
-		}
-		b.WriteString("**")
-		b.WriteString(s.Name)
-		b.WriteString("**")
+		b.WriteString("  <skill>\n")
+		b.WriteString(fmt.Sprintf("    <name>%s</name>\n", s.Name))
 		if s.Description != "" {
-			b.WriteString(": ")
-			b.WriteString(s.Description)
+			b.WriteString(fmt.Sprintf("    <description>%s</description>\n", s.Description))
 		}
-		b.WriteString("\n")
+		skillPath := filepath.Join(s.Dir, skillFileName)
+		b.WriteString(fmt.Sprintf("    <location>%s</location>\n", skillPath))
+		b.WriteString("  </skill>\n")
 	}
 
-	if !any {
-		b.WriteString("No skills available.\n")
+	if !hasReady {
+		b.WriteString("  <!-- No skills available -->\n")
 	}
 
+	b.WriteString("</available_skills>\n")
 	return b.String()
 }

@@ -27,7 +27,7 @@ func runAgent() error {
 	messageLong := fs.String("message", "", "Message body (required)")
 	to := fs.String("t", "", "Peer ID to derive session key")
 	fs.String("to", "", "Peer ID")
-	fs.String("agent", "default", "Agent ID")
+	fs.String("agent", "main", "Agent ID")
 	jsonOut := fs.Bool("json", false, "Output as JSON")
 	fs.Bool("local", true, "Run locally (default)")
 	fs.Parse(os.Args[2:])
@@ -104,7 +104,7 @@ func runSessions() error {
 	}
 
 	// Try file-based session store first.
-	sessDir := filepath.Join(cfg.DataDir, "agents", "default", "sessions")
+	sessDir := filepath.Join(cfg.DataDir, "agents", "main", "sessions")
 	store, err := session.NewFileStore(sessDir)
 	if err != nil {
 		// Fallback to SQLite.
@@ -215,7 +215,7 @@ func runHistory(sessionID string) error {
 		return err
 	}
 
-	sessDir := filepath.Join(cfg.DataDir, "agents", "default", "sessions")
+	sessDir := filepath.Join(cfg.DataDir, "agents", "main", "sessions")
 	store, err := session.NewFileStore(sessDir)
 	if err != nil {
 		return fmt.Errorf("open session store: %w", err)
@@ -345,7 +345,7 @@ func runStatus() error {
 	}
 
 	// Count sessions from file store.
-	sessDir := filepath.Join(cfg.DataDir, "agents", "default", "sessions")
+	sessDir := filepath.Join(cfg.DataDir, "agents", "main", "sessions")
 	store, _ := session.NewFileStore(sessDir)
 	var sessionCount int
 	if store != nil {
@@ -368,7 +368,7 @@ func runStatus() error {
 		result := map[string]any{
 			"config":       config.DefaultConfigPath(),
 			"database":     filepath.Join(cfg.DataDir, "bot.db"),
-			"sessions":     filepath.Join(cfg.DataDir, "agents", "default", "sessions"),
+			"sessions":     filepath.Join(cfg.DataDir, "agents", "main", "sessions"),
 			"workspace":    cfg.Workspace,
 			"sessionCount": sessionCount,
 			"messageCount": msgCount,
@@ -382,7 +382,7 @@ func runStatus() error {
 	fmt.Println("OpenBot Status:")
 	fmt.Printf("  Config:    %s\n", config.DefaultConfigPath())
 	fmt.Printf("  Database:  %s\n", filepath.Join(cfg.DataDir, "bot.db"))
-	fmt.Printf("  Sessions:  %s\n", filepath.Join(cfg.DataDir, "agents", "default", "sessions"))
+	fmt.Printf("  Sessions:  %s\n", filepath.Join(cfg.DataDir, "agents", "main", "sessions"))
 	fmt.Printf("  Workspace: %s\n", cfg.Workspace)
 	fmt.Printf("  Sessions:  %d\n", sessionCount)
 	fmt.Printf("  Messages:  %d\n", msgCount)

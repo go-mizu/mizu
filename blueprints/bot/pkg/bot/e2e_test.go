@@ -51,7 +51,7 @@ func TestE2E_FileSessionCreation(t *testing.T) {
 	}
 
 	// Verify sessions.json was created with the correct session key.
-	sessionsPath := filepath.Join(cfg.DataDir, "agents", "default", "sessions", "sessions.json")
+	sessionsPath := filepath.Join(cfg.DataDir, "agents", "main", "sessions", "sessions.json")
 	if _, err := os.Stat(sessionsPath); os.IsNotExist(err) {
 		t.Fatal("sessions.json was not created")
 	}
@@ -66,8 +66,8 @@ func TestE2E_FileSessionCreation(t *testing.T) {
 		t.Fatalf("parse sessions.json: %v", err)
 	}
 
-	// DM key should be "agent:default:<peerID>".
-	expectedKey := "agent:default:user-1"
+	// DM key should be "agent:main:<peerID>".
+	expectedKey := "agent:main:user-1"
 	entry, ok := index[expectedKey]
 	if !ok {
 		t.Fatalf("sessions.json missing key %q; keys: %v", expectedKey, keys(index))
@@ -81,7 +81,7 @@ func TestE2E_FileSessionCreation(t *testing.T) {
 	}
 
 	// Verify a JSONL transcript file was created.
-	transcriptPath := filepath.Join(cfg.DataDir, "agents", "default", "sessions", entry.SessionID+".jsonl")
+	transcriptPath := filepath.Join(cfg.DataDir, "agents", "main", "sessions", entry.SessionID+".jsonl")
 	if _, err := os.Stat(transcriptPath); os.IsNotExist(err) {
 		t.Fatal("JSONL transcript file was not created")
 	}
@@ -137,7 +137,7 @@ func TestE2E_SessionKeyDerivation(t *testing.T) {
 		t.Fatalf("HandleMessage DM: %v", err)
 	}
 
-	// Verify DM session key is "agent:default:user-123".
+	// Verify DM session key is "agent:main:user-123".
 	sessions, err := fs.ListSessions()
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)
@@ -145,13 +145,13 @@ func TestE2E_SessionKeyDerivation(t *testing.T) {
 
 	dmKeyFound := false
 	for _, s := range sessions {
-		if s.Key == "agent:default:user-123" {
+		if s.Key == "agent:main:user-123" {
 			dmKeyFound = true
 			break
 		}
 	}
 	if !dmKeyFound {
-		t.Errorf("expected DM session key 'agent:default:user-123', keys found: %v", sessionKeys(sessions))
+		t.Errorf("expected DM session key 'agent:main:user-123', keys found: %v", sessionKeys(sessions))
 	}
 
 	// Send a group message (Origin: "group", GroupID: "group-456").
@@ -169,7 +169,7 @@ func TestE2E_SessionKeyDerivation(t *testing.T) {
 		t.Fatalf("HandleMessage group: %v", err)
 	}
 
-	// Verify group session key is "agent:default:telegram:group:group-456".
+	// Verify group session key is "agent:main:telegram:group:group-456".
 	sessions, err = fs.ListSessions()
 	if err != nil {
 		t.Fatalf("ListSessions after group: %v", err)
@@ -177,13 +177,13 @@ func TestE2E_SessionKeyDerivation(t *testing.T) {
 
 	groupKeyFound := false
 	for _, s := range sessions {
-		if s.Key == "agent:default:telegram:group:group-456" {
+		if s.Key == "agent:main:telegram:group:group-456" {
 			groupKeyFound = true
 			break
 		}
 	}
 	if !groupKeyFound {
-		t.Errorf("expected group session key 'agent:default:telegram:group:group-456', keys found: %v", sessionKeys(sessions))
+		t.Errorf("expected group session key 'agent:main:telegram:group:group-456', keys found: %v", sessionKeys(sessions))
 	}
 }
 
@@ -209,7 +209,7 @@ func TestE2E_SessionTranscript(t *testing.T) {
 	}
 
 	// Look up the session by the DM key.
-	expectedKey := "agent:default:user-1"
+	expectedKey := "agent:main:user-1"
 	index, err := fs.LoadIndex()
 	if err != nil {
 		t.Fatalf("LoadIndex: %v", err)
@@ -324,7 +324,7 @@ func TestE2E_MultiMessageSession(t *testing.T) {
 		t.Fatalf("ListSessions: %v", err)
 	}
 
-	expectedKey := "agent:default:user-1"
+	expectedKey := "agent:main:user-1"
 	var matchingCount int
 	for _, s := range fsSessions {
 		if s.Key == expectedKey {
@@ -398,7 +398,7 @@ func TestE2E_SessionReset(t *testing.T) {
 	}
 
 	// Capture the initial session ID from the file store.
-	expectedKey := "agent:default:user-1"
+	expectedKey := "agent:main:user-1"
 	index, err := fs.LoadIndex()
 	if err != nil {
 		t.Fatalf("LoadIndex: %v", err)
@@ -475,9 +475,9 @@ func TestE2E_CLISessionsList(t *testing.T) {
 		chatType    string
 		channel     string
 	}{
-		{"agent:default:alice", "Alice", "direct", "telegram"},
-		{"agent:default:bob", "Bob", "direct", "telegram"},
-		{"agent:default:telegram:group:devs", "DevGroup", "group", "telegram"},
+		{"agent:main:alice", "Alice", "direct", "telegram"},
+		{"agent:main:bob", "Bob", "direct", "telegram"},
+		{"agent:main:telegram:group:devs", "DevGroup", "group", "telegram"},
 	}
 
 	for _, k := range keys {
@@ -525,15 +525,15 @@ func TestE2E_CLISessionsList(t *testing.T) {
 	// Verify display names.
 	for _, s := range sessions {
 		switch s.Key {
-		case "agent:default:alice":
+		case "agent:main:alice":
 			if s.Entry.DisplayName != "Alice" {
 				t.Errorf("expected displayName 'Alice', got %q", s.Entry.DisplayName)
 			}
-		case "agent:default:bob":
+		case "agent:main:bob":
 			if s.Entry.DisplayName != "Bob" {
 				t.Errorf("expected displayName 'Bob', got %q", s.Entry.DisplayName)
 			}
-		case "agent:default:telegram:group:devs":
+		case "agent:main:telegram:group:devs":
 			if s.Entry.DisplayName != "DevGroup" {
 				t.Errorf("expected displayName 'DevGroup', got %q", s.Entry.DisplayName)
 			}
@@ -553,7 +553,7 @@ func TestE2E_TokenUsageTracking(t *testing.T) {
 		t.Fatalf("NewFileStore: %v", err)
 	}
 
-	key := "agent:default:user-tokens"
+	key := "agent:main:user-tokens"
 	entry, isNew, err := fs.GetOrCreate(key, "TokenUser", "direct", "telegram")
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
@@ -670,7 +670,7 @@ func TestE2E_TelegramChatIDPropagation(t *testing.T) {
 	}
 
 	// Verify the file store session has the correct channel set.
-	expectedKey := "agent:default:tg-user-42"
+	expectedKey := "agent:main:tg-user-42"
 	index, err := fs.LoadIndex()
 	if err != nil {
 		t.Fatalf("LoadIndex: %v", err)

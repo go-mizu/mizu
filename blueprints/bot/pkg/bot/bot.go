@@ -97,7 +97,7 @@ func New(cfg *config.Config, provider llm.Provider) (*Bot, error) {
 	}
 
 	// Initialize file-based session store (OpenClaw-compatible).
-	sessDir := filepath.Join(cfg.DataDir, "agents", "default", "sessions")
+	sessDir := filepath.Join(cfg.DataDir, "agents", "main", "sessions")
 	fs, err := filesession.NewFileStore(sessDir)
 	if err != nil {
 		// Non-fatal: log and continue without file store.
@@ -162,14 +162,42 @@ func (b *Bot) HandleMessage(ctx context.Context, msg *types.InboundMessage) (str
 			chatType = "group"
 		}
 		fsKey = filesession.SessionKey(agent.ID, string(msg.ChannelType), msg.PeerID, msg.GroupID)
+		channelAddr := fmt.Sprintf("%s:%s", msg.ChannelType, msg.PeerID)
 		fsEntry, isNew, fsErr := b.fileStore.GetOrCreate(fsKey, msg.PeerName, chatType, string(msg.ChannelType))
 		if fsErr != nil {
 			log.Printf("File store sync: %v", fsErr)
 		} else if isNew {
-			// Write model info on new session.
+			// Write model info and delivery context on new session.
 			fsEntry.Model = agent.Model
 			fsEntry.ModelProvider = "anthropic"
 			fsEntry.ContextTokens = 200000
+			fsEntry.SystemSent = true
+			fsEntry.DeliveryContext = &filesession.DeliveryCtx{
+				Channel:   string(msg.ChannelType),
+				To:        channelAddr,
+				AccountId: "default",
+			}
+			fsEntry.LastChannel = string(msg.ChannelType)
+			fsEntry.LastTo = channelAddr
+			fsEntry.LastAccountId = "default"
+			fsEntry.AuthProfileOverride = "anthropic:default"
+			fsEntry.AuthProfileOverrideSource = "auto"
+			fsEntry.Origin = &filesession.SessionOrigin{
+				Label:     fmt.Sprintf("%s id:%s", msg.PeerName, msg.PeerID),
+				Provider:  string(msg.ChannelType),
+				Surface:   string(msg.ChannelType),
+				ChatType:  chatType,
+				From:      channelAddr,
+				To:        channelAddr,
+				AccountId: "default",
+			}
+			fsEntry.SessionFile = filepath.Join(b.cfg.DataDir, "agents", "main", "sessions", fsEntry.SessionID+".jsonl")
+			b.fileStore.UpdateEntry(fsKey, fsEntry)
+		} else {
+			// Update delivery tracking on existing session.
+			fsEntry.LastChannel = string(msg.ChannelType)
+			fsEntry.LastTo = channelAddr
+			fsEntry.LastAccountId = "default"
 			b.fileStore.UpdateEntry(fsKey, fsEntry)
 		}
 	}
@@ -406,16 +434,22 @@ func (b *Bot) handleCommand(ctx context.Context, cmd, args string, agent *types.
 // ensureDefaultAgent creates the default agent and wildcard binding if they
 // do not already exist.
 func (b *Bot) ensureDefaultAgent(ctx context.Context) error {
-	// Check if default agent already exists.
-	_, err := b.store.GetAgent(ctx, "default")
+	// Check if default agent already exists (try "main" first, then legacy "default").
+	_, err := b.store.GetAgent(ctx, "main")
+	if err != nil {
+		// Check for legacy "default" agent — if it exists, we're already set up.
+		if _, legacyErr := b.store.GetAgent(ctx, "default"); legacyErr == nil {
+			return nil
+		}
+	}
 	if err == nil {
 		return nil // Already exists.
 	}
 
-	// Create the default agent.
+	// Create the default agent (named "main" to match OpenClaw).
 	agent := &types.Agent{
-		ID:          "default",
-		Name:        "Default Assistant",
+		ID:          "main",
+		Name:        "Main Assistant",
 		Model:       "claude-sonnet-4-20250514",
 		Workspace:   b.cfg.Workspace,
 		MaxTokens:   4096,
@@ -426,9 +460,9 @@ func (b *Bot) ensureDefaultAgent(ctx context.Context) error {
 		return fmt.Errorf("create default agent: %w", err)
 	}
 
-	// Create wildcard binding so all messages route to the default agent.
+	// Create wildcard binding so all messages route to the main agent.
 	binding := &types.Binding{
-		AgentID:     "default",
+		AgentID:     "main",
 		ChannelType: "*",
 		ChannelID:   "*",
 		PeerID:      "*",

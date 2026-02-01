@@ -23,56 +23,85 @@ func main() {
 
 	// Subcommand dispatch.
 	if len(os.Args) > 1 {
+		var err error
 		switch os.Args[1] {
 		case "agent":
-			if err := runAgent(); err != nil {
-				log.Fatal(err)
-			}
-			return
+			err = runAgent()
 		case "sessions":
-			if err := runSessions(); err != nil {
-				log.Fatal(err)
-			}
-			return
+			err = runSessions()
 		case "history":
 			sessionID := ""
 			if len(os.Args) > 2 {
 				sessionID = os.Args[2]
 			}
-			if err := runHistory(sessionID); err != nil {
-				log.Fatal(err)
-			}
-			return
+			err = runHistory(sessionID)
 		case "message":
 			if len(os.Args) > 2 && os.Args[2] == "send" {
-				if err := runMessageSend(); err != nil {
-					log.Fatal(err)
-				}
-				return
+				err = runMessageSend()
+			} else {
+				printUsage()
 			}
-			printUsage()
-			return
 		case "status":
-			if err := runStatus(); err != nil {
-				log.Fatal(err)
-			}
-			return
+			err = runStatus()
 		case "send":
 			// Legacy compat: redirect to agent command.
 			if len(os.Args) < 3 {
 				log.Fatal("Usage: openbot send <message>")
 			}
 			msg := strings.Join(os.Args[2:], " ")
-			// Rewrite args for agent command.
 			os.Args = []string{os.Args[0], "agent", "-m", msg}
-			if err := runAgent(); err != nil {
-				log.Fatal(err)
+			err = runAgent()
+
+		// --- OpenClaw-compatible commands ---
+		case "config":
+			if len(os.Args) > 2 {
+				switch os.Args[2] {
+				case "get":
+					err = runConfigGet()
+				case "set":
+					err = runConfigSet()
+				case "unset":
+					err = runConfigUnset()
+				default:
+					fmt.Println("Usage: openbot config <get|set|unset>")
+				}
+			} else {
+				fmt.Println("Usage: openbot config <get|set|unset>")
 			}
-			return
-		case "help":
+		case "doctor":
+			err = runDoctor()
+		case "memory":
+			err = runMemory()
+		case "skills":
+			err = runSkills()
+		case "agents":
+			err = runAgents()
+		case "models":
+			err = runModels()
+		case "channels":
+			err = runChannels()
+		case "gateway":
+			err = runGatewayCmd()
+		case "cron":
+			err = runCronCmd()
+		case "plugins":
+			err = runPlugins()
+		case "hooks":
+			err = runHooks()
+		case "logs":
+			err = runLogs()
+
+		case "help", "--help", "-h":
 			printUsage()
-			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
+			printUsage()
+			os.Exit(1)
 		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	// Default: run the Telegram bot.
@@ -176,21 +205,50 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("OpenBot - Telegram Bot with AI Agent")
+	fmt.Println("OpenBot - Telegram Bot with AI Agent (OpenClaw-compatible)")
 	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  openbot                     Run the Telegram bot (default)")
-	fmt.Println("  openbot agent -m <msg>      Send a message through the AI agent")
-	fmt.Println("  openbot sessions            List stored conversation sessions")
-	fmt.Println("  openbot history [id]        Show session transcript")
-	fmt.Println("  openbot message send        Send a message to a channel")
-	fmt.Println("  openbot status              Show bot status")
-	fmt.Println("  openbot help                Show this help")
+	fmt.Println("Usage: openbot [command]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  (default)                   Run the Telegram bot")
+	fmt.Println()
+	fmt.Println("  agent -m <msg>              Send a message through the AI agent")
+	fmt.Println("  sessions                    List stored conversation sessions")
+	fmt.Println("  history [id]                Show session transcript")
+	fmt.Println("  message send                Send a message to a channel")
+	fmt.Println("  status                      Show bot status")
+	fmt.Println()
+	fmt.Println("  config get <path>           Get a config value by dot path")
+	fmt.Println("  config set <path> <value>   Set a config value by dot path")
+	fmt.Println("  config unset <path>         Remove a config value by dot path")
+	fmt.Println("  doctor                      Health checks + quick fixes")
+	fmt.Println()
+	fmt.Println("  memory status               Show memory search index status")
+	fmt.Println("  memory index                Reindex memory files")
+	fmt.Println("  memory search -q <query>    Search memory files")
+	fmt.Println()
+	fmt.Println("  skills list                 List available skills")
+	fmt.Println("  skills info <name>          Show skill details")
+	fmt.Println("  skills check                Check skill requirements")
+	fmt.Println()
+	fmt.Println("  agents list                 List configured agents")
+	fmt.Println("  models list                 List supported models")
+	fmt.Println("  models status               Show current model")
+	fmt.Println("  models set <model>          Set default model")
+	fmt.Println()
+	fmt.Println("  channels list               List configured channels")
+	fmt.Println("  gateway                     Gateway control (stub)")
+	fmt.Println("  cron                        Cron scheduler (stub)")
+	fmt.Println("  plugins list                List plugins")
+	fmt.Println("  hooks                       List hooks")
+	fmt.Println("  logs                        Show gateway logs")
+	fmt.Println()
+	fmt.Println("  help                        Show this help")
 	fmt.Println()
 	fmt.Println("Agent flags:")
 	fmt.Println("  -m, --message <text>  Message body (required)")
 	fmt.Println("  -t, --to <id>         Peer ID for session routing")
-	fmt.Println("  --agent <id>          Agent ID (default: default)")
+	fmt.Println("  --agent <id>          Agent ID (default: main)")
 	fmt.Println("  --json                Output as JSON")
 	fmt.Println()
 	fmt.Println("Sessions flags:")

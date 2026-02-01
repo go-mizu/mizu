@@ -378,14 +378,14 @@ func TestBuildSystemPrompt_WithSkills(t *testing.T) {
 
 	prompt := cb.buildSystemPrompt(context.Background(), agent, "dm", "")
 
-	// Should contain skills section.
-	if !strings.Contains(prompt, "# Available Skills") {
+	// Should contain skills section (XML format).
+	if !strings.Contains(prompt, "<available_skills>") {
 		t.Error("prompt should contain available skills section")
 	}
-	if !strings.Contains(prompt, "test-skill") {
+	if !strings.Contains(prompt, "<name>test-skill</name>") {
 		t.Error("prompt should contain test-skill name")
 	}
-	if !strings.Contains(prompt, "A test skill for integration tests") {
+	if !strings.Contains(prompt, "<description>A test skill for integration tests</description>") {
 		t.Error("prompt should contain test skill description")
 	}
 }
@@ -705,7 +705,7 @@ func TestProcessMessage_EnrichedSystemPrompt(t *testing.T) {
 	if !strings.Contains(capturedSystemPrompt, "# Project Context") {
 		t.Error("system prompt should contain workspace context")
 	}
-	if !strings.Contains(capturedSystemPrompt, "# Available Skills") {
+	if !strings.Contains(capturedSystemPrompt, "<available_skills>") {
 		t.Error("system prompt should contain skills section")
 	}
 }

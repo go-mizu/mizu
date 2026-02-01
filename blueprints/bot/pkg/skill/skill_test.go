@@ -703,14 +703,14 @@ func TestBuildSkillsPrompt_ReadySkillsWithEmoji(t *testing.T) {
 	}
 	got := BuildSkillsPrompt(skills)
 
-	if !strings.HasPrefix(got, "# Available Skills\n\n") {
-		t.Errorf("prompt should start with header; got:\n%s", got)
+	if !strings.Contains(got, "<available_skills>") {
+		t.Errorf("prompt should contain <available_skills> tag; got:\n%s", got)
 	}
-	if !strings.Contains(got, "- E **weather**: Get weather\n") {
-		t.Errorf("missing weather line in:\n%s", got)
+	if !strings.Contains(got, "<name>weather</name>") {
+		t.Errorf("missing weather skill in:\n%s", got)
 	}
-	if !strings.Contains(got, "- D **deploy**: Deploy app\n") {
-		t.Errorf("missing deploy line in:\n%s", got)
+	if !strings.Contains(got, "<name>deploy</name>") {
+		t.Errorf("missing deploy skill in:\n%s", got)
 	}
 }
 
@@ -720,8 +720,11 @@ func TestBuildSkillsPrompt_NoEmoji(t *testing.T) {
 	}
 	got := BuildSkillsPrompt(skills)
 
-	if !strings.Contains(got, "- **plain**: No emoji skill\n") {
+	if !strings.Contains(got, "<name>plain</name>") {
 		t.Errorf("unexpected format for skill without emoji:\n%s", got)
+	}
+	if !strings.Contains(got, "<description>No emoji skill</description>") {
+		t.Errorf("missing description:\n%s", got)
 	}
 }
 
@@ -731,12 +734,12 @@ func TestBuildSkillsPrompt_NoDescription(t *testing.T) {
 	}
 	got := BuildSkillsPrompt(skills)
 
-	if !strings.Contains(got, "- **nodesc**\n") {
-		t.Errorf("unexpected format for skill without description:\n%s", got)
+	if !strings.Contains(got, "<name>nodesc</name>") {
+		t.Errorf("missing skill name:\n%s", got)
 	}
-	// Should NOT contain ": " after the name since there is no description.
-	if strings.Contains(got, "- **nodesc**:") {
-		t.Errorf("should not have colon when no description:\n%s", got)
+	// Should NOT contain description tag when there is no description.
+	if strings.Contains(got, "<description></description>") {
+		t.Errorf("should not have empty description tag:\n%s", got)
 	}
 }
 
@@ -747,10 +750,10 @@ func TestBuildSkillsPrompt_SkipsNotReadySkills(t *testing.T) {
 	}
 	got := BuildSkillsPrompt(skills)
 
-	if !strings.Contains(got, "**ready**") {
+	if !strings.Contains(got, "<name>ready</name>") {
 		t.Errorf("ready skill should be included in:\n%s", got)
 	}
-	if strings.Contains(got, "**notready**") {
+	if strings.Contains(got, "<name>notready</name>") {
 		t.Errorf("not-ready skill should be excluded from:\n%s", got)
 	}
 }
@@ -762,27 +765,24 @@ func TestBuildSkillsPrompt_NoReadySkills(t *testing.T) {
 	}
 	got := BuildSkillsPrompt(skills)
 
-	want := "# Available Skills\n\nNo skills available.\n"
-	if got != want {
-		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	if !strings.Contains(got, "<!-- No skills available -->") {
+		t.Errorf("should contain no-skills comment; got:\n%s", got)
 	}
 }
 
 func TestBuildSkillsPrompt_NilSlice(t *testing.T) {
 	got := BuildSkillsPrompt(nil)
 
-	want := "# Available Skills\n\nNo skills available.\n"
-	if got != want {
-		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	if !strings.Contains(got, "<!-- No skills available -->") {
+		t.Errorf("should contain no-skills comment; got:\n%s", got)
 	}
 }
 
 func TestBuildSkillsPrompt_EmptySlice(t *testing.T) {
 	got := BuildSkillsPrompt([]*Skill{})
 
-	want := "# Available Skills\n\nNo skills available.\n"
-	if got != want {
-		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	if !strings.Contains(got, "<!-- No skills available -->") {
+		t.Errorf("should contain no-skills comment; got:\n%s", got)
 	}
 }
 
@@ -795,16 +795,16 @@ func TestBuildSkillsPrompt_MixedReadyAndNotReady(t *testing.T) {
 	}
 	got := BuildSkillsPrompt(skills)
 
-	if !strings.Contains(got, "- 1 **first**: Desc 1\n") {
+	if !strings.Contains(got, "<name>first</name>") {
 		t.Errorf("missing first in:\n%s", got)
 	}
-	if !strings.Contains(got, "- **third**: Desc 3\n") {
+	if !strings.Contains(got, "<name>third</name>") {
 		t.Errorf("missing third in:\n%s", got)
 	}
-	if strings.Contains(got, "**second**") {
+	if strings.Contains(got, "<name>second</name>") {
 		t.Errorf("second (not ready) should not appear in:\n%s", got)
 	}
-	if strings.Contains(got, "**fourth**") {
+	if strings.Contains(got, "<name>fourth</name>") {
 		t.Errorf("fourth (not ready) should not appear in:\n%s", got)
 	}
 	if strings.Contains(got, "No skills available") {
