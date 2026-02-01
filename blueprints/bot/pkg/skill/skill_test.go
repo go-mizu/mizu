@@ -811,3 +811,366 @@ func TestBuildSkillsPrompt_MixedReadyAndNotReady(t *testing.T) {
 		t.Errorf("should not say 'No skills available' when some are ready:\n%s", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// OpenClaw Metadata JSON Parsing
+// ---------------------------------------------------------------------------
+
+func TestParseSkillMD_MetadataJSON_Weather(t *testing.T) {
+	// Real OpenClaw weather SKILL.md frontmatter.
+	input := `---
+name: weather
+description: Get current weather and forecasts (no API key required).
+homepage: https://wttr.in/:help
+metadata: {"openclaw":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
+---
+# Weather
+
+Two free services, no API keys needed.
+`
+	sk, body, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.Name != "weather" {
+		t.Errorf("Name = %q; want %q", sk.Name, "weather")
+	}
+	if sk.Description != "Get current weather and forecasts (no API key required)." {
+		t.Errorf("Description = %q", sk.Description)
+	}
+	if sk.Homepage != "https://wttr.in/:help" {
+		t.Errorf("Homepage = %q; want %q", sk.Homepage, "https://wttr.in/:help")
+	}
+	if sk.Emoji != "🌤️" {
+		t.Errorf("Emoji = %q; want %q", sk.Emoji, "🌤️")
+	}
+	if len(sk.Requires.Binaries) != 1 || sk.Requires.Binaries[0] != "curl" {
+		t.Errorf("Requires.Binaries = %v; want [curl]", sk.Requires.Binaries)
+	}
+	if !strings.HasPrefix(body, "# Weather") {
+		t.Errorf("body should start with '# Weather'; got %q", body[:30])
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_GitHub(t *testing.T) {
+	// Real OpenClaw github SKILL.md frontmatter.
+	input := `---
+name: github
+description: "Interact with GitHub using the ` + "`gh`" + ` CLI. Use ` + "`gh issue`" + `, ` + "`gh pr`" + `, ` + "`gh run`" + `, and ` + "`gh api`" + ` for issues, PRs, CI runs, and advanced queries."
+metadata: {"openclaw":{"emoji":"🐙","requires":{"bins":["gh"]},"install":[{"id":"brew","kind":"brew","formula":"gh","bins":["gh"],"label":"Install GitHub CLI (brew)"}]}}
+---
+# GitHub Skill
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.Name != "github" {
+		t.Errorf("Name = %q; want %q", sk.Name, "github")
+	}
+	if sk.Emoji != "🐙" {
+		t.Errorf("Emoji = %q; want %q", sk.Emoji, "🐙")
+	}
+	if len(sk.Requires.Binaries) != 1 || sk.Requires.Binaries[0] != "gh" {
+		t.Errorf("Requires.Binaries = %v; want [gh]", sk.Requires.Binaries)
+	}
+	// Description should have quotes stripped.
+	if !strings.HasPrefix(sk.Description, "Interact with GitHub") {
+		t.Errorf("Description = %q; should start with 'Interact with GitHub'", sk.Description)
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_CodingAgent_AnyBins(t *testing.T) {
+	// Real OpenClaw coding-agent SKILL.md uses anyBins.
+	input := `---
+name: coding-agent
+description: Run coding agents via background process.
+metadata: {"openclaw":{"emoji":"🧩","requires":{"anyBins":["claude","codex","opencode","pi"]}}}
+---
+# Coding Agent
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.Name != "coding-agent" {
+		t.Errorf("Name = %q; want %q", sk.Name, "coding-agent")
+	}
+	if sk.Emoji != "🧩" {
+		t.Errorf("Emoji = %q; want %q", sk.Emoji, "🧩")
+	}
+	wantAnyBins := []string{"claude", "codex", "opencode", "pi"}
+	if len(sk.Requires.AnyBins) != len(wantAnyBins) {
+		t.Fatalf("Requires.AnyBins length = %d; want %d", len(sk.Requires.AnyBins), len(wantAnyBins))
+	}
+	for i, b := range wantAnyBins {
+		if sk.Requires.AnyBins[i] != b {
+			t.Errorf("Requires.AnyBins[%d] = %q; want %q", i, sk.Requires.AnyBins[i], b)
+		}
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_Slack_ConfigPaths(t *testing.T) {
+	// Real OpenClaw slack SKILL.md uses config path requirements.
+	input := `---
+name: slack
+description: Slack integration.
+metadata: {"openclaw":{"emoji":"💬","requires":{"config":["channels.slack"]}}}
+---
+# Slack
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.Name != "slack" {
+		t.Errorf("Name = %q; want %q", sk.Name, "slack")
+	}
+	if sk.Emoji != "💬" {
+		t.Errorf("Emoji = %q; want %q", sk.Emoji, "💬")
+	}
+	if len(sk.Requires.CfgPaths) != 1 || sk.Requires.CfgPaths[0] != "channels.slack" {
+		t.Errorf("Requires.CfgPaths = %v; want [channels.slack]", sk.Requires.CfgPaths)
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_EnvVar(t *testing.T) {
+	// Test skill with env requirement and primaryEnv.
+	input := `---
+name: test-api
+description: Test API skill
+metadata: {"openclaw":{"emoji":"♊","primaryEnv":"TEST_API_KEY","requires":{"env":["TEST_API_KEY"]}}}
+---
+# Test API
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.PrimaryEnv != "TEST_API_KEY" {
+		t.Errorf("PrimaryEnv = %q; want %q", sk.PrimaryEnv, "TEST_API_KEY")
+	}
+	if len(sk.Requires.Config) != 1 || sk.Requires.Config[0] != "TEST_API_KEY" {
+		t.Errorf("Requires.Config = %v; want [TEST_API_KEY]", sk.Requires.Config)
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_SessionLogs_Always(t *testing.T) {
+	input := `---
+name: session-logs
+description: Session logging.
+metadata: {"openclaw":{"always":true}}
+---
+# Session Logs
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !sk.Always {
+		t.Error("Always = false; want true")
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_OS_Darwin(t *testing.T) {
+	input := `---
+name: apple-notes
+description: Apple Notes via AppleScript
+metadata: {"openclaw":{"emoji":"📝","os":["darwin"]}}
+---
+# Apple Notes
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(sk.Requires.OS) != 1 || sk.Requires.OS[0] != "darwin" {
+		t.Errorf("Requires.OS = %v; want [darwin]", sk.Requires.OS)
+	}
+}
+
+func TestParseSkillMD_MetadataJSON_OverridesSimpleYAML(t *testing.T) {
+	// Simple YAML emoji vs metadata emoji -- metadata should win.
+	input := `---
+name: test
+emoji: old-emoji
+metadata: {"openclaw":{"emoji":"new-emoji"}}
+---
+Body.
+`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.Emoji != "new-emoji" {
+		t.Errorf("Emoji = %q; want %q (metadata should override YAML)", sk.Emoji, "new-emoji")
+	}
+}
+
+func TestParseSkillMD_UserInvocable_Default(t *testing.T) {
+	input := "---\nname: test\n---\nBody."
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !sk.UserInvocable {
+		t.Error("UserInvocable should default to true")
+	}
+	if sk.DisableModelInvocation {
+		t.Error("DisableModelInvocation should default to false")
+	}
+}
+
+func TestParseSkillMD_UserInvocable_False(t *testing.T) {
+	input := "---\nname: test\nuser-invocable: false\n---\nBody."
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.UserInvocable {
+		t.Error("UserInvocable = true; want false")
+	}
+}
+
+func TestParseSkillMD_DisableModelInvocation_True(t *testing.T) {
+	input := "---\nname: test\ndisable-model-invocation: true\n---\nBody."
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !sk.DisableModelInvocation {
+		t.Error("DisableModelInvocation = false; want true")
+	}
+}
+
+func TestParseSkillMD_Homepage(t *testing.T) {
+	input := "---\nname: test\nhomepage: https://example.com\n---\nBody."
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if sk.Homepage != "https://example.com" {
+		t.Errorf("Homepage = %q; want %q", sk.Homepage, "https://example.com")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CheckEligibility - AnyBins (OR logic)
+// ---------------------------------------------------------------------------
+
+func TestCheckEligibility_AnyBins_OneExists(t *testing.T) {
+	sk := &Skill{
+		Requires: Requires{AnyBins: []string{"ls", "nonexistent_xyz_123"}},
+	}
+	if !CheckEligibility(sk) {
+		t.Error("expected true when at least one anyBin exists")
+	}
+}
+
+func TestCheckEligibility_AnyBins_NoneExist(t *testing.T) {
+	sk := &Skill{
+		Requires: Requires{AnyBins: []string{"nonexistent_xyz_1", "nonexistent_xyz_2"}},
+	}
+	if CheckEligibility(sk) {
+		t.Error("expected false when no anyBins exist")
+	}
+}
+
+func TestCheckEligibility_AnyBins_Empty(t *testing.T) {
+	sk := &Skill{
+		Requires: Requires{AnyBins: []string{}},
+	}
+	if !CheckEligibility(sk) {
+		t.Error("expected true when anyBins is empty")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CheckEligibility - Always bypass
+// ---------------------------------------------------------------------------
+
+func TestCheckEligibility_AlwaysBypassesBinaries(t *testing.T) {
+	sk := &Skill{
+		Always:   true,
+		Requires: Requires{Binaries: []string{"nonexistent_binary_xyz"}},
+	}
+	if !CheckEligibility(sk) {
+		t.Error("expected true: always=true should bypass binary check")
+	}
+}
+
+func TestCheckEligibility_AlwaysBypassesConfig(t *testing.T) {
+	sk := &Skill{
+		Always:   true,
+		Requires: Requires{Config: []string{"MISSING_CONFIG_VAR_XYZ"}},
+	}
+	if !CheckEligibility(sk) {
+		t.Error("expected true: always=true should bypass config check")
+	}
+}
+
+func TestCheckEligibility_AlwaysStillRespectsOS(t *testing.T) {
+	sk := &Skill{
+		Always:   true,
+		Requires: Requires{OS: []string{"impossible_os_xyz"}},
+	}
+	if CheckEligibility(sk) {
+		t.Error("expected false: always=true should still respect OS check")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BuildSkillsPrompt - DisableModelInvocation
+// ---------------------------------------------------------------------------
+
+func TestBuildSkillsPrompt_ExcludesDisableModelInvocation(t *testing.T) {
+	skills := []*Skill{
+		{Name: "visible", Description: "I am visible", Ready: true},
+		{Name: "hidden", Description: "I am hidden", Ready: true, DisableModelInvocation: true},
+	}
+	got := BuildSkillsPrompt(skills)
+
+	if !strings.Contains(got, "<name>visible</name>") {
+		t.Errorf("visible skill should be included in:\n%s", got)
+	}
+	if strings.Contains(got, "<name>hidden</name>") {
+		t.Errorf("hidden (DisableModelInvocation) skill should be excluded from:\n%s", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// BundledSkillsDir
+// ---------------------------------------------------------------------------
+
+func TestBundledSkillsDir_EnvVar(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OPENBOT_BUNDLED_SKILLS_DIR", dir)
+
+	got := BundledSkillsDir()
+	if got != dir {
+		t.Errorf("BundledSkillsDir() = %q; want %q", got, dir)
+	}
+}
+
+func TestBundledSkillsDir_InvalidEnvVar(t *testing.T) {
+	t.Setenv("OPENBOT_BUNDLED_SKILLS_DIR", "/nonexistent/path/xyz123")
+
+	got := BundledSkillsDir()
+	// Should fall through to binary sibling check, which likely also doesn't exist.
+	// Just verify it doesn't return the invalid path.
+	if got == "/nonexistent/path/xyz123" {
+		t.Error("should not return invalid path from env var")
+	}
+}

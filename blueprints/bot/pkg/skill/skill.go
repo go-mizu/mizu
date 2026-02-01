@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,22 +14,29 @@ const skillFileName = "SKILL.md"
 
 // Skill represents a loaded skill from SKILL.md.
 type Skill struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Emoji       string   `yaml:"emoji"`
-	Source      string   // "bundled", "workspace", "user"
-	Dir         string   // directory containing SKILL.md
-	Content     string   // full SKILL.md content (after frontmatter)
-	Ready       bool     // all requirements met
-	Always      bool     // always included in prompt (not on-demand)
-	Requires    Requires `yaml:"requires"`
+	Name                   string   // skill identifier
+	Description            string   // trigger text for AI
+	Emoji                  string   // visual indicator
+	Homepage               string   // documentation URL
+	Source                 string   // "bundled", "workspace", "user"
+	Dir                    string   // directory containing SKILL.md
+	Content                string   // full SKILL.md content (after frontmatter)
+	Ready                  bool     // all requirements met
+	Always                 bool     // always included in prompt (not on-demand)
+	UserInvocable          bool     // can user /command invoke (default true)
+	DisableModelInvocation bool     // prevent AI auto-trigger (default false)
+	PrimaryEnv             string   // main env var for API key
+	SkillKey               string   // override key for config lookup
+	Requires               Requires // dependency requirements
 }
 
 // Requires declares what a skill needs to be eligible.
 type Requires struct {
-	Binaries []string `yaml:"binaries"`
-	Config   []string `yaml:"config"`
-	OS       []string `yaml:"os"` // e.g. ["darwin", "linux"]
+	Binaries []string // AND: all must exist in PATH
+	AnyBins  []string // OR: at least one must exist
+	Config   []string // env vars (AND: all must be non-empty)
+	OS       []string // platform filter (e.g. ["darwin", "linux"])
+	CfgPaths []string // JSON config path requirements
 }
 
 // LoadSkill loads a skill from a directory containing a SKILL.md file.
@@ -56,12 +64,135 @@ func LoadSkill(dir string) (*Skill, error) {
 	return sk, nil
 }
 
+// openclawMetadata mirrors the JSON structure inside metadata: {"openclaw":{...}}.
+type openclawMetadata struct {
+	Emoji      string `json:"emoji"`
+	Homepage   string `json:"homepage"`
+	SkillKey   string `json:"skillKey"`
+	PrimaryEnv string `json:"primaryEnv"`
+	Always     *bool  `json:"always"`
+	OS         any    `json:"os"` // string or []string
+	Requires   *struct {
+		Bins    any `json:"bins"`    // string or []string
+		AnyBins any `json:"anyBins"` // string or []string
+		Env     any `json:"env"`     // string or []string
+		Config  any `json:"config"`  // string or []string
+	} `json:"requires"`
+	Install json.RawMessage `json:"install"` // preserved but not parsed
+}
+
+// resolveStringList normalises a JSON value that may be a single string or
+// an array of strings into a []string.
+func resolveStringList(v any) []string {
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case string:
+		parts := strings.Split(val, ",")
+		var out []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	case []any:
+		var out []string
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// parseMetadataJSON parses the OpenClaw metadata JSON blob and merges
+// its fields into the Skill. Fields from metadata override simple YAML
+// equivalents when present.
+func parseMetadataJSON(sk *Skill, raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+
+	// The metadata value is JSON: {"openclaw": {...}} or legacy keys.
+	var outer map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &outer); err != nil {
+		return
+	}
+
+	// Try "openclaw" key, then legacy keys.
+	keys := []string{"openclaw", "clawdbot", "moltbot"}
+	var inner json.RawMessage
+	for _, k := range keys {
+		if v, ok := outer[k]; ok {
+			inner = v
+			break
+		}
+	}
+	if inner == nil {
+		return
+	}
+
+	var meta openclawMetadata
+	if err := json.Unmarshal(inner, &meta); err != nil {
+		return
+	}
+
+	// Merge fields - metadata overrides YAML equivalents when non-empty.
+	if meta.Emoji != "" {
+		sk.Emoji = meta.Emoji
+	}
+	if meta.Homepage != "" {
+		sk.Homepage = meta.Homepage
+	}
+	if meta.SkillKey != "" {
+		sk.SkillKey = meta.SkillKey
+	}
+	if meta.PrimaryEnv != "" {
+		sk.PrimaryEnv = meta.PrimaryEnv
+	}
+	if meta.Always != nil {
+		sk.Always = *meta.Always
+	}
+
+	// OS list.
+	if osList := resolveStringList(meta.OS); len(osList) > 0 {
+		sk.Requires.OS = osList
+	}
+
+	// Requirements.
+	if meta.Requires != nil {
+		if bins := resolveStringList(meta.Requires.Bins); len(bins) > 0 {
+			sk.Requires.Binaries = bins
+		}
+		if anyBins := resolveStringList(meta.Requires.AnyBins); len(anyBins) > 0 {
+			sk.Requires.AnyBins = anyBins
+		}
+		if env := resolveStringList(meta.Requires.Env); len(env) > 0 {
+			sk.Requires.Config = env
+		}
+		if cfgPaths := resolveStringList(meta.Requires.Config); len(cfgPaths) > 0 {
+			sk.Requires.CfgPaths = cfgPaths
+		}
+	}
+}
+
 // ParseSkillMD parses SKILL.md with YAML frontmatter (--- delimited).
 // Returns the parsed Skill metadata, the body content after frontmatter, and any error.
 // Frontmatter is parsed manually to avoid a YAML dependency -- it handles
-// simple key: value pairs and the list syntax for requires.binaries and requires.config.
+// simple key: value pairs, list syntax, and OpenClaw's metadata JSON blob.
 func ParseSkillMD(content string) (*Skill, string, error) {
-	sk := &Skill{}
+	sk := &Skill{
+		UserInvocable: true, // default per OpenClaw spec
+	}
 
 	// No frontmatter: entire content is body.
 	if !strings.HasPrefix(content, "---") {
@@ -88,21 +219,14 @@ func ParseSkillMD(content string) (*Skill, string, error) {
 }
 
 // parseFrontmatter handles the simple YAML subset used in SKILL.md frontmatter.
-// Supports:
-//
-//	name: value
-//	description: value
-//	emoji: value
-//	requires:
-//	  binaries:
-//	    - git
-//	  config:
-//	    - SOME_KEY
+// Supports simple key: value pairs, nested requires lists, and OpenClaw's
+// metadata JSON blob, homepage, user-invocable, and disable-model-invocation.
 func parseFrontmatter(sk *Skill, fm string) {
 	lines := strings.Split(fm, "\n")
 
 	var section string    // current top-level key being parsed ("requires")
 	var subsection string // current sub-key under requires ("binaries", "config")
+	var metadataRaw string
 
 	for _, raw := range lines {
 		line := strings.TrimRight(raw, "\r")
@@ -153,11 +277,20 @@ func parseFrontmatter(sk *Skill, fm string) {
 		case "name":
 			sk.Name = val
 		case "description":
-			sk.Description = val
+			// Handle quoted descriptions (common in OpenClaw SKILL.md).
+			sk.Description = unquoteValue(val)
 		case "emoji":
 			sk.Emoji = val
+		case "homepage":
+			sk.Homepage = val
 		case "always":
 			sk.Always = val == "true" || val == "yes"
+		case "user-invocable":
+			sk.UserInvocable = val != "false" && val != "no"
+		case "disable-model-invocation":
+			sk.DisableModelInvocation = val == "true" || val == "yes"
+		case "metadata":
+			metadataRaw = val
 		case "requires":
 			section = "requires"
 			subsection = ""
@@ -167,13 +300,28 @@ func parseFrontmatter(sk *Skill, fm string) {
 			subsection = ""
 		}
 	}
+
+	// Parse OpenClaw metadata JSON blob (overrides simple YAML fields).
+	if metadataRaw != "" {
+		parseMetadataJSON(sk, metadataRaw)
+	}
+}
+
+// unquoteValue strips surrounding double quotes from a YAML value.
+func unquoteValue(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
 }
 
 // CheckEligibility checks if a skill's requirements are met.
 // Returns true when all required binaries are in PATH, all required
-// config environment variables are set, and the OS matches (if specified).
+// config environment variables are set, the OS matches (if specified),
+// and anyBins has at least one match. Skills with always=true bypass
+// binary/config checks but still respect OS filtering.
 func CheckEligibility(s *Skill) bool {
-	// Check OS requirement.
+	// Check OS requirement first (always applies, even for "always" skills).
 	if len(s.Requires.OS) > 0 {
 		currentOS := runtime.GOOS
 		osMatch := false
@@ -188,16 +336,39 @@ func CheckEligibility(s *Skill) bool {
 		}
 	}
 
+	// Skills with always=true skip binary/config checks.
+	if s.Always {
+		return true
+	}
+
+	// AND: all required binaries must exist.
 	for _, bin := range s.Requires.Binaries {
 		if _, err := exec.LookPath(bin); err != nil {
 			return false
 		}
 	}
+
+	// OR: at least one of anyBins must exist.
+	if len(s.Requires.AnyBins) > 0 {
+		found := false
+		for _, bin := range s.Requires.AnyBins {
+			if _, err := exec.LookPath(bin); err == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	// AND: all config env vars must be non-empty.
 	for _, key := range s.Requires.Config {
 		if os.Getenv(key) == "" {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -303,7 +474,7 @@ func loadSkillsFromDir(dir, source string) ([]*Skill, error) {
 
 // BuildSkillsPrompt builds the skills section for system prompt injection.
 // Uses OpenClaw's XML <available_skills> format for compatibility.
-// Only ready (eligible) skills are included.
+// Only ready (eligible) skills that allow model invocation are included.
 func BuildSkillsPrompt(skills []*Skill) string {
 	var b strings.Builder
 	b.WriteString("\n\nThe following skills provide specialized instructions for specific tasks.\n")
@@ -313,6 +484,9 @@ func BuildSkillsPrompt(skills []*Skill) string {
 	hasReady := false
 	for _, s := range skills {
 		if !s.Ready {
+			continue
+		}
+		if s.DisableModelInvocation {
 			continue
 		}
 		hasReady = true
@@ -333,4 +507,28 @@ func BuildSkillsPrompt(skills []*Skill) string {
 
 	b.WriteString("</available_skills>\n")
 	return b.String()
+}
+
+// BundledSkillsDir returns the path to bundled skills.
+// Checks in order:
+// 1. OPENBOT_BUNDLED_SKILLS_DIR env var
+// 2. "skills" directory sibling to the running binary
+// 3. Empty string (no bundled skills)
+func BundledSkillsDir() string {
+	if dir := os.Getenv("OPENBOT_BUNDLED_SKILLS_DIR"); dir != "" {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+
+	// Check sibling to binary.
+	exe, err := os.Executable()
+	if err == nil {
+		dir := filepath.Join(filepath.Dir(exe), "skills")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+
+	return ""
 }
