@@ -440,6 +440,270 @@ func itoa(n int) string {
 }
 
 // ---------------------------------------------------------------------------
+// Additional File Tests
+// ---------------------------------------------------------------------------
+
+func TestMissingFiles(t *testing.T) {
+	openbotDir := filepath.Join(os.Getenv("HOME"), ".openbot")
+	if _, err := os.Stat(openbotDir); os.IsNotExist(err) {
+		t.Skip("~/.openbot does not exist, skipping")
+	}
+
+	requiredFiles := []string{
+		"update-check.json",
+		"canvas/index.html",
+		"workspace/MEMORY.md",
+	}
+
+	for _, f := range requiredFiles {
+		t.Run(f, func(t *testing.T) {
+			path := filepath.Join(openbotDir, f)
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				t.Errorf("missing file %s", f)
+			}
+		})
+	}
+}
+
+func TestUpdateCheckFile(t *testing.T) {
+	openbotDir := filepath.Join(os.Getenv("HOME"), ".openbot")
+	if _, err := os.Stat(openbotDir); os.IsNotExist(err) {
+		t.Skip("~/.openbot does not exist")
+	}
+
+	path := filepath.Join(openbotDir, "update-check.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("cannot read update-check.json: %v", err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if _, ok := m["lastCheckedAt"]; !ok {
+		t.Error("update-check.json missing lastCheckedAt field")
+	}
+}
+
+func TestCanvasFile(t *testing.T) {
+	openbotDir := filepath.Join(os.Getenv("HOME"), ".openbot")
+	if _, err := os.Stat(openbotDir); os.IsNotExist(err) {
+		t.Skip("~/.openbot does not exist")
+	}
+
+	path := filepath.Join(openbotDir, "canvas", "index.html")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("cannot read canvas/index.html: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "<html") {
+		t.Error("canvas/index.html missing HTML tag")
+	}
+}
+
+func TestWorkspaceMemoryMD(t *testing.T) {
+	openbotDir := filepath.Join(os.Getenv("HOME"), ".openbot")
+	if _, err := os.Stat(openbotDir); os.IsNotExist(err) {
+		t.Skip("~/.openbot does not exist")
+	}
+
+	path := filepath.Join(openbotDir, "workspace", "MEMORY.md")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("workspace/MEMORY.md does not exist")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CLI Comparison Tests
+// ---------------------------------------------------------------------------
+
+func TestDoctorOutput(t *testing.T) {
+	skipIfNoCLI(t, "openbot")
+
+	out, _, exit := runCLI(t, "openbot", "doctor")
+	if exit != 0 {
+		t.Errorf("openbot doctor failed (exit %d)", exit)
+		return
+	}
+
+	checks := []string{"Config", "Workspace", "Sessions", "Memory", "Skills"}
+	for _, check := range checks {
+		if !strings.Contains(out, check) {
+			t.Errorf("doctor output missing check for %q", check)
+		}
+	}
+}
+
+func TestConfigGetComparison(t *testing.T) {
+	skipIfNoCLI(t, "openclaw")
+	skipIfNoCLI(t, "openbot")
+
+	paths := []string{
+		"agents.defaults.workspace",
+		"channels.telegram.enabled",
+		"gateway.port",
+		"messages.ackReactionScope",
+	}
+
+	for _, p := range paths {
+		t.Run(p, func(t *testing.T) {
+			ocOut, _, ocExit := runCLI(t, "openclaw", "config", "get", p)
+			obOut, _, obExit := runCLI(t, "openbot", "config", "get", p)
+
+			if ocExit != 0 {
+				t.Skipf("openclaw config get %s failed", p)
+			}
+			if obExit != 0 {
+				t.Errorf("openbot config get %s failed (exit %d)", p, obExit)
+				return
+			}
+
+			ocOut = strings.TrimSpace(ocOut)
+			obOut = strings.TrimSpace(obOut)
+			if obOut == "" && ocOut != "" {
+				t.Errorf("openbot returned empty for %s, openclaw returned %q", p, ocOut)
+			}
+		})
+	}
+}
+
+func TestMemoryStatusComparison(t *testing.T) {
+	skipIfNoCLI(t, "openbot")
+
+	out, _, exit := runCLI(t, "openbot", "memory", "status")
+	if exit != 0 {
+		t.Errorf("openbot memory status failed (exit %d)", exit)
+		return
+	}
+
+	if !strings.Contains(out, "Memory") {
+		t.Error("memory status missing 'Memory' line")
+	}
+}
+
+func TestSkillsListComparison(t *testing.T) {
+	skipIfNoCLI(t, "openbot")
+
+	out, _, exit := runCLI(t, "openbot", "skills", "list")
+	if exit != 0 {
+		t.Errorf("openbot skills list failed (exit %d)", exit)
+		return
+	}
+
+	// Output should be either "No skills found." (no bundled dir) or have table headers.
+	if !strings.Contains(out, "NAME") && !strings.Contains(out, "No skills found") {
+		t.Error("skills list missing table headers or 'No skills found' message")
+	}
+}
+
+func TestModelsListComparison(t *testing.T) {
+	skipIfNoCLI(t, "openbot")
+
+	out, _, exit := runCLI(t, "openbot", "models", "list")
+	if exit != 0 {
+		t.Errorf("openbot models list failed (exit %d)", exit)
+		return
+	}
+
+	// Should output something about models.
+	if out == "" {
+		t.Error("models list produced empty output")
+	}
+}
+
+func TestChannelsListComparison(t *testing.T) {
+	skipIfNoCLI(t, "openbot")
+
+	out, _, exit := runCLI(t, "openbot", "channels", "list")
+	if exit != 0 {
+		t.Errorf("openbot channels list failed (exit %d)", exit)
+		return
+	}
+
+	if !strings.Contains(out, "telegram") {
+		t.Error("channels list missing telegram")
+	}
+}
+
+func TestAgentsListComparison(t *testing.T) {
+	skipIfNoCLI(t, "openbot")
+
+	out, _, exit := runCLI(t, "openbot", "agents", "list")
+	if exit != 0 {
+		t.Errorf("openbot agents list failed (exit %d)", exit)
+		return
+	}
+
+	if !strings.Contains(out, "main") {
+		t.Error("agents list missing 'main' agent")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Directory File Comparison Tests
+// ---------------------------------------------------------------------------
+
+func TestDirectoryFileCountComparison(t *testing.T) {
+	openclawDir := filepath.Join(os.Getenv("HOME"), ".openclaw")
+	openbotDir := filepath.Join(os.Getenv("HOME"), ".openbot")
+
+	if _, err := os.Stat(openclawDir); os.IsNotExist(err) {
+		t.Skip("~/.openclaw does not exist")
+	}
+	if _, err := os.Stat(openbotDir); os.IsNotExist(err) {
+		t.Skip("~/.openbot does not exist")
+	}
+
+	// Compare identity files.
+	t.Run("identity/device.json", func(t *testing.T) {
+		obPath := filepath.Join(openbotDir, "identity", "device.json")
+		data, err := os.ReadFile(obPath)
+		if err != nil {
+			t.Errorf("cannot read %s: %v", obPath, err)
+			return
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Errorf("invalid JSON in %s: %v", obPath, err)
+		}
+	})
+
+	// Compare cron/jobs.json structure.
+	t.Run("cron/jobs.json", func(t *testing.T) {
+		obPath := filepath.Join(openbotDir, "cron", "jobs.json")
+		data, err := os.ReadFile(obPath)
+		if err != nil {
+			t.Errorf("cannot read %s: %v", obPath, err)
+			return
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Errorf("invalid JSON in %s: %v", obPath, err)
+		}
+	})
+
+	// Compare devices files.
+	for _, f := range []string{"devices/paired.json", "devices/pending.json"} {
+		t.Run(f, func(t *testing.T) {
+			obPath := filepath.Join(openbotDir, f)
+			data, err := os.ReadFile(obPath)
+			if err != nil {
+				t.Errorf("cannot read %s: %v", obPath, err)
+				return
+			}
+			var m map[string]any
+			if err := json.Unmarshal(data, &m); err != nil {
+				t.Errorf("invalid JSON in %s: %v", obPath, err)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // LLM Tools Count Test
 // ---------------------------------------------------------------------------
 

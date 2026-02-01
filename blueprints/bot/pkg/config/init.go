@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // EnsureConfig ensures ~/.openbot exists with a valid config.
@@ -107,6 +108,27 @@ func ensureDirectoryStructure(baseDir string) error {
 	pendingPath := filepath.Join(baseDir, "devices", "pending.json")
 	if _, err := os.Stat(pendingPath); os.IsNotExist(err) {
 		os.WriteFile(pendingPath, []byte("{}\n"), 0o600)
+	}
+
+	// Create update-check.json if missing.
+	updateCheckPath := filepath.Join(baseDir, "update-check.json")
+	if _, err := os.Stat(updateCheckPath); os.IsNotExist(err) {
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		content := fmt.Sprintf("{\"lastCheckedAt\":\"%s\"}\n", now)
+		os.WriteFile(updateCheckPath, []byte(content), 0o600)
+	}
+
+	// Create canvas/index.html if missing.
+	canvasPath := filepath.Join(baseDir, "canvas", "index.html")
+	if _, err := os.Stat(canvasPath); os.IsNotExist(err) {
+		html := "<!DOCTYPE html>\n<html><head><title>OpenBot Canvas</title></head>\n<body><h1>OpenBot Canvas</h1><p>Canvas UI placeholder.</p></body>\n</html>\n"
+		os.WriteFile(canvasPath, []byte(html), 0o644)
+	}
+
+	// Create workspace/MEMORY.md if missing.
+	memoryMdPath := filepath.Join(baseDir, "workspace", "MEMORY.md")
+	if _, err := os.Stat(memoryMdPath); os.IsNotExist(err) {
+		os.WriteFile(memoryMdPath, []byte("# Memory\n\nLong-term curated memories.\n"), 0o644)
 	}
 
 	return nil

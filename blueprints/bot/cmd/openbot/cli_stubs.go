@@ -8,15 +8,53 @@ import (
 	"text/tabwriter"
 
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/config"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 )
 
 // Stub commands that print "not yet implemented" messages for OpenClaw CLI parity.
 
 func runDoctor() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Println("  Config: FAIL -", err)
+		return nil
+	}
 	fmt.Println("Running health checks...")
-	fmt.Println("  Config: OK")
-	fmt.Println("  Database: OK")
-	fmt.Println("  Workspace: OK")
+	fmt.Printf("  Config: OK (%s)\n", config.DefaultConfigPath())
+
+	// Check workspace.
+	if _, err := os.Stat(cfg.Workspace); err != nil {
+		fmt.Printf("  Workspace: MISSING (%s)\n", cfg.Workspace)
+	} else {
+		fmt.Printf("  Workspace: OK (%s)\n", cfg.Workspace)
+	}
+
+	// Check sessions directory.
+	sessDir := filepath.Join(cfg.DataDir, "agents", "main", "sessions")
+	if _, err := os.Stat(sessDir); err != nil {
+		fmt.Printf("  Sessions: MISSING (%s)\n", sessDir)
+	} else {
+		fmt.Printf("  Sessions: OK (%s)\n", sessDir)
+	}
+
+	// Check memory DB.
+	memDB := filepath.Join(cfg.DataDir, "memory.db")
+	if info, err := os.Stat(memDB); err != nil {
+		fmt.Println("  Memory: not indexed")
+	} else {
+		fmt.Printf("  Memory: OK (%d bytes)\n", info.Size())
+	}
+
+	// Check skills.
+	skills, _ := skill.LoadAllSkills(cfg.Workspace)
+	readyCount := 0
+	for _, s := range skills {
+		if s.Ready {
+			readyCount++
+		}
+	}
+	fmt.Printf("  Skills: %d loaded, %d ready\n", len(skills), readyCount)
+
 	fmt.Println("  All checks passed.")
 	return nil
 }
@@ -105,5 +143,3 @@ func runLogs() error {
 	return nil
 }
 
-// Ensure config import is used.
-var _ = config.DefaultConfigDir
