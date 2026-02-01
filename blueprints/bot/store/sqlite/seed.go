@@ -160,5 +160,67 @@ func (s *Store) SeedData(ctx context.Context) error {
 		}
 	}
 
+	// Seed cron jobs
+	fmt.Println("  Creating cron jobs...")
+
+	cronJobs := []types.CronJob{
+		{
+			ID:            "cron-daily-summary",
+			Name:          "Daily Summary",
+			Description:   "Generate a daily summary of conversations and activity",
+			AgentID:       "main",
+			Enabled:       true,
+			Schedule:      `{"kind":"every","interval":24,"unit":"hours"}`,
+			SessionTarget: "main",
+			WakeMode:      "next-heartbeat",
+			Payload:       `{"kind":"systemEvent","text":"Generate daily activity summary"}`,
+		},
+		{
+			ID:            "cron-health-check",
+			Name:          "Health Monitor",
+			Description:   "Periodic health check and system status report",
+			AgentID:       "main",
+			Enabled:       true,
+			Schedule:      `{"kind":"every","interval":30,"unit":"minutes"}`,
+			SessionTarget: "isolated",
+			WakeMode:      "now",
+			Payload:       `{"kind":"systemEvent","text":"Run health check"}`,
+		},
+		{
+			ID:            "cron-weekly-digest",
+			Name:          "Weekly Digest",
+			Description:   "Compile weekly conversation highlights and insights",
+			AgentID:       "writer",
+			Enabled:       false,
+			Schedule:      `{"kind":"cron","cron":"0 9 * * 1","tz":"UTC"}`,
+			SessionTarget: "main",
+			WakeMode:      "next-heartbeat",
+			Payload:       `{"kind":"agentTurn","message":"Generate weekly digest of all conversations"}`,
+		},
+	}
+
+	for _, j := range cronJobs {
+		if err := s.CreateCronJob(ctx, &j); err != nil {
+			return fmt.Errorf("create cron job %s: %w", j.ID, err)
+		}
+	}
+
+	// Seed cron runs for the health check job
+	fmt.Println("  Creating sample cron runs...")
+
+	cronRuns := []types.CronRun{
+		{ID: "run-1", JobID: "cron-health-check", Status: "success", DurationMs: 120, Summary: "All systems healthy"},
+		{ID: "run-2", JobID: "cron-health-check", Status: "success", DurationMs: 98, Summary: "All systems healthy"},
+		{ID: "run-3", JobID: "cron-daily-summary", Status: "success", DurationMs: 3400, Summary: "Summary generated: 12 conversations, 47 messages"},
+	}
+
+	for _, r := range cronRuns {
+		if err := s.CreateCronRun(ctx, &r); err != nil {
+			return fmt.Errorf("create cron run %s: %w", r.ID, err)
+		}
+		r.Status = "success"
+		_ = s.UpdateCronRun(ctx, &r)
+	}
+
 	return nil
 }
