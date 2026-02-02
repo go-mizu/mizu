@@ -302,6 +302,11 @@ func (m *MemoryManager) GetLines(path string, from, count int) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// Stats returns the number of indexed files and chunks.
+func (m *MemoryManager) Stats() (fileCount int, chunkCount int, err error) {
+	return m.store.Stats()
+}
+
 // Close releases all resources held by the MemoryManager.
 func (m *MemoryManager) Close() error {
 	if m.store != nil {

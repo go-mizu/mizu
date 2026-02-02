@@ -63,6 +63,8 @@ type SessionStore interface {
 	GetOrCreateSession(ctx context.Context, agentID, channelID, channelType, peerID, displayName, origin string) (*types.Session, error)
 	UpdateSession(ctx context.Context, s *types.Session) error
 	DeleteSession(ctx context.Context, id string) error
+	PatchSession(ctx context.Context, id string, updates map[string]any) error
+	CreateSession(ctx context.Context, s *types.Session) error
 	ExpireSessions(ctx context.Context, mode string, idleMinutes int) (int, error)
 }
 

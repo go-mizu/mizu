@@ -129,5 +129,25 @@ func (s *Store) createSchema(ctx context.Context) error {
 		}
 	}
 
+	// Run migrations: add new session columns if they don't already exist.
+	// SQLite ignores ALTER TABLE ADD COLUMN if the column already exists when
+	// we catch the error, so we attempt each one individually.
+	migrations := []string{
+		`ALTER TABLE sessions ADD COLUMN thinking_level TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN verbose_level TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN reasoning_level TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN model_override TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN memory_flush_at INTEGER DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN memory_flush_compaction_count INTEGER DEFAULT 0`,
+		`ALTER TABLE sessions ADD COLUMN send_policy TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN response_usage TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN model TEXT DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN compaction_count INTEGER DEFAULT 0`,
+	}
+	for _, m := range migrations {
+		// Ignore "duplicate column" errors for idempotent migrations.
+		s.db.ExecContext(ctx, m)
+	}
+
 	return nil
 }

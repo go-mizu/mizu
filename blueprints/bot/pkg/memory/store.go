@@ -356,6 +356,19 @@ func (s *MemoryStore) SetCachedEmbedding(hash, model string, embedding []float64
 	return nil
 }
 
+// Stats returns aggregate counts of indexed files and chunks.
+func (s *MemoryStore) Stats() (fileCount int, chunkCount int, err error) {
+	row := s.db.QueryRow("SELECT COUNT(*) FROM files")
+	if err := row.Scan(&fileCount); err != nil {
+		return 0, 0, err
+	}
+	row = s.db.QueryRow("SELECT COUNT(*) FROM chunks")
+	if err := row.Scan(&chunkCount); err != nil {
+		return 0, 0, err
+	}
+	return fileCount, chunkCount, nil
+}
+
 // Close releases database resources.
 func (s *MemoryStore) Close() error {
 	return s.db.Close()

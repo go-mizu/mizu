@@ -163,6 +163,26 @@ func (m *mockStore) DeleteSession(_ context.Context, id string) error {
 	return nil
 }
 
+func (m *mockStore) PatchSession(_ context.Context, id string, updates map[string]any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// no-op for tests
+	return nil
+}
+
+func (m *mockStore) CreateSession(_ context.Context, s *types.Session) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s.ID == "" {
+		s.ID = m.nextID()
+	}
+	now := time.Now().UTC()
+	s.CreatedAt = now
+	s.UpdatedAt = now
+	m.sessions[s.ID] = s
+	return nil
+}
+
 func (m *mockStore) ExpireSessions(_ context.Context, _ string, _ int) (int, error) {
 	return 0, nil
 }
