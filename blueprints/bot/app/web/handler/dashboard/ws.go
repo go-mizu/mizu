@@ -305,7 +305,8 @@ func (h *Hub) WSHandler() mizu.Handler {
 			if err != nil {
 				return nil // connection closed
 			}
-			if opcode == 8 { // close frame
+			if opcode == 8 { // close frame — echo it back per RFC 6455
+				_ = ws.writeFrame(8, data)
 				return nil
 			}
 			if opcode == 9 { // ping
@@ -360,7 +361,7 @@ func (h *Hub) handleHello(client *Client, req *RPCRequest) {
 	}
 	h.mu.RUnlock()
 
-	// Build snapshot for hello-ok (OpenClaw compatibility)
+	// Build snapshot for hello-ok
 	snapshot := map[string]any{
 		"presence": h.Instances(),
 	}
@@ -370,7 +371,7 @@ func (h *Hub) handleHello(client *Client, req *RPCRequest) {
 		"protocol": 1,
 		"features": map[string]any{
 			"methods": methods,
-			"events":  []string{"session.updated", "cron.updated", "channel.updated", "log.entry", "chat", "presence", "health"},
+			"events":  []string{"session.updated", "cron.updated", "channel.updated", "log.entry", "chat.message", "chat.typing", "chat.done", "presence", "health"},
 		},
 		"snapshot": snapshot,
 	}

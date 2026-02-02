@@ -1,4 +1,4 @@
-/* === OpenClaw Design System === */
+/* === OpenBot Design System === */
 :root {
   --bg: #12141a;
   --bg-accent: #14161d;
@@ -309,6 +309,7 @@ button, input, textarea, select { font: inherit; color: inherit }
 .chat-compose .row { justify-content: flex-end }
 .chat-session-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-accent) }
 .chat-session-bar select { flex: 1; max-width: 300px }
+.chat-new-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; font-size: 12px; white-space: nowrap }
 
 /* Config layout */
 .config-layout { display: grid; grid-template-columns: 260px minmax(0,1fr); gap: 0; height: calc(100vh - 160px); margin: -16px; border-radius: var(--radius-xl); overflow: hidden; border: 1px solid var(--border); background: var(--panel) }

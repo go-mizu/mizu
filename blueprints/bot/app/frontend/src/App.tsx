@@ -59,9 +59,11 @@ export function App() {
         });
     }
     connect();
-    const unsub = gw.on('disconnected', () => {
+    const unsub = gw.on('disconnected', (data?: unknown) => {
       if (!cancelled) {
         setConnected(false);
+        const info = data as { code?: number; reason?: string } | undefined;
+        if (info?.reason) setError(info.reason);
         setTimeout(() => {
           if (!cancelled) setRetry((r) => r + 1);
         }, 3000);

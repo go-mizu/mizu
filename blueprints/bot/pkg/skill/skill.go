@@ -509,6 +509,67 @@ func BuildSkillsPrompt(skills []*Skill) string {
 	return b.String()
 }
 
+// BuildAlwaysSkillsPrompt returns the body content of all always-mode skills
+// that are ready, concatenated for system prompt injection.
+// In OpenClaw, always-skills have their content injected directly into the
+// prompt (not just listed in <available_skills>).
+func BuildAlwaysSkillsPrompt(skills []*Skill) string {
+	var parts []string
+	for _, s := range skills {
+		if !s.Ready || !s.Always {
+			continue
+		}
+		if s.Content != "" {
+			parts = append(parts, fmt.Sprintf("### %s\n%s", s.Name, s.Content))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// CheckEligibilityWithConfig checks eligibility including config path requirements.
+// Standard eligibility is checked first, then config paths are verified against
+// the loaded JSON config.
+func CheckEligibilityWithConfig(s *Skill, cfg map[string]any) bool {
+	if !CheckEligibility(s) {
+		return false
+	}
+	for _, path := range s.Requires.CfgPaths {
+		if !ConfigPathTruthy(cfg, path) {
+			return false
+		}
+	}
+	return true
+}
+
+// ConfigPathTruthy checks if a dot-separated config path resolves to a truthy value.
+func ConfigPathTruthy(cfg map[string]any, path string) bool {
+	parts := strings.Split(path, ".")
+	var current any = cfg
+	for _, part := range parts {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return false
+		}
+		current, ok = m[part]
+		if !ok {
+			return false
+		}
+	}
+	switch v := current.(type) {
+	case bool:
+		return v
+	case string:
+		return v != ""
+	case nil:
+		return false
+	default:
+		return true
+	}
+}
+
 // BundledSkillsDir returns the path to bundled skills.
 // Checks in order:
 // 1. OPENBOT_BUNDLED_SKILLS_DIR env var

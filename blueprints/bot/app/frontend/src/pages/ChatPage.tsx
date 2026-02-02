@@ -7,14 +7,19 @@ import { Icon } from '../components/Icon';
 import { useToast } from '../components/Toast';
 
 interface Message {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
+  createdAt?: string;
+  agentId?: string;
 }
 
 interface Session {
   id: string;
   title?: string;
   displayName?: string;
+  channelType?: string;
+  updatedAt?: string;
 }
 
 interface MessageGroup {
@@ -37,6 +42,15 @@ function groupMessages(messages: Message[]): MessageGroup[] {
     }
   }
   return groups;
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
 }
 
 export function ChatPage({ gw }: ChatPageProps) {
@@ -86,21 +100,74 @@ export function ChatPage({ gw }: ChatPageProps) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending, streaming]);
 
+  // Real-time event listeners
+  useEffect(() => {
+    const unsubMessage = gw.on('event:chat.message', (payload: unknown) => {
+      const data = payload as { sessionId?: string; message?: Message };
+      if (!data?.message) return;
+      if (data.sessionId === sessionId || !sessionId) {
+        setMessages((prev) => {
+          // Deduplicate by message ID
+          if (data.message!.id && prev.some((m) => m.id === data.message!.id)) return prev;
+          return [...prev, data.message!];
+        });
+      }
+    });
+
+    const unsubTyping = gw.on('event:chat.typing', (payload: unknown) => {
+      const data = payload as { sessionId?: string };
+      if (data?.sessionId === sessionId || !sessionId) {
+        setStreaming(true);
+      }
+    });
+
+    const unsubDone = gw.on('event:chat.done', (payload: unknown) => {
+      const data = payload as { sessionId?: string };
+      if (data?.sessionId === sessionId || !sessionId) {
+        setStreaming(false);
+      }
+    });
+
+    return () => {
+      unsubMessage();
+      unsubTyping();
+      unsubDone();
+    };
+  }, [gw, sessionId]);
+
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
 
-    const userMsg: Message = { role: 'user', content: trimmed };
-    setMessages((prev) => [...prev, userMsg]);
+    // Don't add user message locally — the broadcast will deliver it
     setText('');
     setSending(true);
     setStreaming(true);
 
     try {
-      const res = await gw.rpc('chat.send', { sessionId, message: trimmed });
-      const reply = (res.content ?? res.message ?? res.response ?? '') as string;
-      const assistantMsg: Message = { role: 'assistant', content: reply };
-      setMessages((prev) => [...prev, assistantMsg]);
+      const res = await gw.rpc('chat.send', { sessionId, message: trimmed, agentId: 'main' });
+
+      // Capture session ID from first response
+      if (res.sessionId && !sessionId) {
+        setSessionId(res.sessionId as string);
+        // Reload session list to show the new session
+        loadSessions();
+      }
+
+      // The broadcast events handle adding messages, but as a fallback
+      // ensure the assistant response is shown if broadcast didn't fire
+      const reply = (res.content ?? '') as string;
+      if (reply) {
+        setMessages((prev) => {
+          // Don't add if broadcast already delivered it
+          if (res.messageId && prev.some((m) => m.id === res.messageId)) return prev;
+          return [...prev, {
+            id: res.messageId as string | undefined,
+            role: 'assistant' as const,
+            content: reply,
+          }];
+        });
+      }
     } catch (err) {
       const errorMsg: Message = {
         role: 'assistant',
@@ -112,17 +179,29 @@ export function ChatPage({ gw }: ChatPageProps) {
       setStreaming(false);
       textareaRef.current?.focus();
     }
-  }, [text, sending, gw, sessionId]);
+  }, [text, sending, gw, sessionId, loadSessions]);
 
   const handleAbort = useCallback(async () => {
     try {
-      await gw.rpc('chat.abort');
+      await gw.rpc('chat.abort', { sessionId });
     } catch {
       // ignore abort errors
     }
     setStreaming(false);
     setSending(false);
-  }, [gw]);
+  }, [gw, sessionId]);
+
+  const handleNewConversation = useCallback(async () => {
+    try {
+      await gw.rpc('chat.new', { agentId: 'main' });
+    } catch {
+      // ignore errors
+    }
+    setSessionId('');
+    setMessages([]);
+    loadSessions();
+    textareaRef.current?.focus();
+  }, [gw, loadSessions]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -170,9 +249,18 @@ export function ChatPage({ gw }: ChatPageProps) {
           {sessions.map((s) => (
             <option key={s.id} value={s.id}>
               {s.displayName || s.title || s.id}
+              {s.channelType && s.channelType !== 'webhook' ? ` [${s.channelType}]` : ''}
             </option>
           ))}
         </select>
+        <button
+          className="btn btn--sm chat-new-btn"
+          onClick={handleNewConversation}
+          title="Start a new conversation"
+        >
+          <Icon name="plus" size={14} />
+          <span>New</span>
+        </button>
       </div>
 
       <div className="chat-messages">
@@ -195,7 +283,7 @@ export function ChatPage({ gw }: ChatPageProps) {
                 gi === groups.length - 1 &&
                 mi === group.messages.length - 1;
               return (
-                <div key={`${gi}-${mi}`} className="chat-bubble-wrapper">
+                <div key={msg.id || `${gi}-${mi}`} className="chat-bubble-wrapper">
                   <div
                     className={`chat-bubble chat-bubble--${msg.role}${isLastAssistant ? ' streaming' : ''}`}
                   >
@@ -214,6 +302,9 @@ export function ChatPage({ gw }: ChatPageProps) {
                       <Icon name="copy" size={14} />
                     </button>
                   </div>
+                  {msg.createdAt && (
+                    <div className="chat-stamp">{formatTime(msg.createdAt)}</div>
+                  )}
                 </div>
               );
             })}

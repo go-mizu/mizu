@@ -238,6 +238,64 @@ type SkillEntry struct {
 	UserInvocable bool   `json:"userInvocable"`
 }
 
+// SkillsSnapshot stores the skills state at session creation time.
+type SkillsSnapshot struct {
+	Prompt  string               `json:"prompt"`
+	Skills  []SkillsSnapshotItem `json:"skills"`
+	Version int                  `json:"version"`
+}
+
+// SkillsSnapshotItem records one skill in a snapshot.
+type SkillsSnapshotItem struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Location    string `json:"location"`
+	Ready       bool   `json:"ready"`
+	Source      string `json:"source"`
+}
+
+// SystemPromptReport captures diagnostic metadata about the built prompt.
+type SystemPromptReport struct {
+	Source            string              `json:"source"`
+	GeneratedAt       int64               `json:"generatedAt"`
+	SessionID         string              `json:"sessionId"`
+	SessionKey        string              `json:"sessionKey"`
+	Provider          string              `json:"provider"`
+	Model             string              `json:"model"`
+	WorkspaceDir      string              `json:"workspaceDir"`
+	BootstrapMaxChars int                 `json:"bootstrapMaxChars"`
+	SystemPrompt      SystemPromptStats   `json:"systemPrompt"`
+	InjectedFiles     []InjectedFileStats `json:"injectedWorkspaceFiles"`
+	Skills            SkillsReportStats   `json:"skills"`
+	Tools             ToolsReportStats    `json:"tools"`
+}
+
+// SystemPromptStats holds character counts for the system prompt.
+type SystemPromptStats struct {
+	Chars               int `json:"chars"`
+	ProjectContextChars int `json:"projectContextChars"`
+	NonProjectChars     int `json:"nonProjectContextChars"`
+}
+
+// InjectedFileStats records a single injected workspace file.
+type InjectedFileStats struct {
+	Path  string `json:"path"`
+	Chars int    `json:"chars"`
+}
+
+// SkillsReportStats holds skills metadata for the prompt report.
+type SkillsReportStats struct {
+	Count int      `json:"count"`
+	Chars int      `json:"chars"`
+	Names []string `json:"names"`
+}
+
+// ToolsReportStats holds tools metadata for the prompt report.
+type ToolsReportStats struct {
+	Count int      `json:"count"`
+	Names []string `json:"names"`
+}
+
 // HealthSnapshot is a health check result.
 type HealthSnapshot struct {
 	Status    string         `json:"status"`
