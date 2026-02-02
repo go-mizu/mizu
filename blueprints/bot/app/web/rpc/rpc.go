@@ -1,5 +1,5 @@
 // Package rpc implements all WebSocket RPC method handlers for the Control Dashboard.
-// Each method matches the OpenClaw gateway protocol for 100% feature compatibility.
+// Each method matches the OpenBot gateway protocol for full feature compatibility.
 package rpc
 
 import (
@@ -387,6 +387,7 @@ func registerSkillMethods(hub *dashboard.Hub) {
 		if err := config.SaveRawConfig(cfgPath, data); err != nil {
 			return nil, fmt.Errorf("save config: %w", err)
 		}
+		hub.Broadcast("skills.updated", nil)
 		return map[string]bool{"ok": true}, nil
 	})
 }
@@ -723,6 +724,7 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			SessionID string `json:"sessionId"`
 			Message   string `json:"message"`
 			AgentID   string `json:"agentId"`
+			PeerName  string `json:"peerName"`
 		}
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
@@ -730,24 +732,33 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 		if req.Message == "" {
 			return nil, fmt.Errorf("message is required")
 		}
+		if req.AgentID == "" {
+			req.AgentID = "main"
+		}
+		peerName := req.PeerName
+		if peerName == "" {
+			peerName = "Dashboard"
+		}
 
 		msg := &types.InboundMessage{
 			ChannelType: types.ChannelWebhook,
 			ChannelID:   "dashboard",
 			PeerID:      "dashboard-user",
-			PeerName:    "Dashboard",
+			PeerName:    peerName,
 			Content:     req.Message,
 			Origin:      "dm",
 		}
 
-		response, err := gw.ProcessMessage(context.Background(), msg)
+		result, err := gw.ProcessMessage(context.Background(), msg)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{
-			"response": response,
-			"content":  response,
-			"message":  response,
+			"sessionId": result.SessionID,
+			"messageId": result.MessageID,
+			"content":   result.Content,
+			"agentId":   result.AgentID,
+			"model":     result.Model,
 		}, nil
 	})
 
@@ -763,7 +774,7 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			req.Limit = 50
 		}
 		if req.SessionID == "" {
-			req.SessionID = "dashboard"
+			return nil, fmt.Errorf("sessionId is required")
 		}
 		messages, err := s.ListMessages(context.Background(), req.SessionID, req.Limit)
 		if err != nil {
@@ -776,8 +787,43 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 	})
 
 	hub.Register("chat.abort", func(params json.RawMessage) (any, error) {
-		// Placeholder: abort current in-flight chat request
-		return map[string]bool{"ok": true}, nil
+		var req struct {
+			SessionID string `json:"sessionId"`
+		}
+		if params != nil {
+			_ = json.Unmarshal(params, &req)
+		}
+		aborted := gw.Abort(req.SessionID)
+		return map[string]any{"ok": true, "aborted": aborted}, nil
+	})
+
+	hub.Register("chat.new", func(params json.RawMessage) (any, error) {
+		var req struct {
+			AgentID string `json:"agentId"`
+		}
+		if params != nil {
+			_ = json.Unmarshal(params, &req)
+		}
+		if req.AgentID == "" {
+			req.AgentID = "main"
+		}
+		// Expire any active dashboard session for this agent.
+		sessions, err := s.ListSessions(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		for i := range sessions {
+			sess := &sessions[i]
+			if sess.AgentID == req.AgentID &&
+				sess.ChannelType == "webhook" &&
+				sess.PeerID == "dashboard-user" &&
+				sess.Status == "active" {
+				sess.Status = "expired"
+				_ = s.UpdateSession(context.Background(), sess)
+			}
+		}
+		hub.Broadcast("session.updated", nil)
+		return map[string]any{"ok": true}, nil
 	})
 }
 

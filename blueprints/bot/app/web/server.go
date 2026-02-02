@@ -1,8 +1,11 @@
 package web
 
 import (
+	"context"
 	"io/fs"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-mizu/mizu"
@@ -13,9 +16,12 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/feature/agent"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/gateway"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/session"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/channel"
+	_ "github.com/go-mizu/mizu/blueprints/bot/pkg/channel/telegram" // register telegram driver
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/logring"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
+	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
 
 // Server wraps the HTTP router and services that need cleanup on shutdown.
@@ -24,6 +30,7 @@ type Server struct {
 	gateway *gateway.Service
 	Logs    *logring.Ring
 	Hub     *db.Hub
+	drivers []channel.Driver
 }
 
 // ServeHTTP delegates to the underlying router.
@@ -33,6 +40,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Close releases resources held by the server's services.
 func (s *Server) Close() {
+	ctx := context.Background()
+	for _, d := range s.drivers {
+		_ = d.Disconnect(ctx)
+	}
 	if s.gateway != nil {
 		s.gateway.Close()
 	}
@@ -61,7 +72,11 @@ func NewServer(s store.Store, devMode bool) *Server {
 	webhookHandler := api.NewWebhookHandler(gatewaySvc)
 
 	// Create WebSocket hub for dashboard
-	hub := db.NewHub("") // empty token = no auth required (dev-friendly)
+	// Use GATEWAY_TOKEN env var when set; empty = no auth required (dev-friendly)
+	hub := db.NewHub(os.Getenv("GATEWAY_TOKEN"))
+
+	// Wire broadcaster for real-time chat events
+	gatewaySvc.SetBroadcaster(hub)
 
 	// Register all RPC methods
 	rpc.RegisterAll(hub, s, gatewaySvc, logs, startTime)
@@ -137,10 +152,51 @@ func NewServer(s store.Store, devMode bool) *Server {
 
 	logs.Info("gateway", "Server initialized (dev=%v)", devMode)
 
+	// Start channel drivers (Telegram, etc.)
+	var drivers []channel.Driver
+	channels, err := s.ListChannels(context.Background())
+	if err != nil {
+		logs.Warn("gateway", "Failed to list channels: %v", err)
+	}
+	for _, ch := range channels {
+		if ch.Status == "disabled" || ch.Config == "" {
+			continue
+		}
+		// Use a holder so the handler closure can reference the driver
+		// after it's created (the closure captures the pointer, not the value).
+		var driverRef channel.Driver
+		driver, err := channel.New(ch.Type, ch.Config, func(ctx context.Context, msg *types.InboundMessage) error {
+			result, err := gatewaySvc.ProcessMessage(ctx, msg)
+			if err != nil {
+				log.Printf("channel %s message error: %v", ch.Type, err)
+				return err
+			}
+			outMsg := &types.OutboundMessage{
+				ChannelType: msg.ChannelType,
+				ChannelID:   msg.ChannelID,
+				PeerID:      msg.PeerID,
+				Content:     result.Content,
+			}
+			return driverRef.Send(ctx, outMsg)
+		})
+		if err != nil {
+			logs.Warn("gateway", "Failed to create %s driver: %v", ch.Type, err)
+			continue
+		}
+		driverRef = driver
+		if err := driver.Connect(context.Background()); err != nil {
+			logs.Warn("gateway", "Failed to connect %s driver: %v", ch.Type, err)
+			continue
+		}
+		drivers = append(drivers, driver)
+		logs.Info("gateway", "Started %s channel driver (%s)", ch.Type, ch.Name)
+	}
+
 	return &Server{
 		Router:  r,
 		gateway: gatewaySvc,
 		Logs:    logs,
 		Hub:     hub,
+		drivers: drivers,
 	}
 }

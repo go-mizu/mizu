@@ -49,10 +49,10 @@ func (h *WebhookHandler) Receive(c *mizu.Ctx) error {
 		Origin:      body.Origin,
 	}
 
-	response, err := h.gateway.ProcessMessage(c.Request().Context(), msg)
+	result, err := h.gateway.ProcessMessage(c.Request().Context(), msg)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	return c.JSON(200, map[string]string{"response": response})
+	return c.JSON(200, map[string]string{"response": result.Content})
 }

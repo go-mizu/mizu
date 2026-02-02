@@ -1,6 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 
+function BrandLogo({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+      {/* Head */}
+      <rect x="4" y="6" width="24" height="20" rx="4" stroke="currentColor" strokeWidth="1.8" fill="var(--accent-subtle)" />
+      {/* Antenna */}
+      <line x1="16" y1="6" x2="16" y2="2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="16" cy="2" r="1.5" fill="var(--accent)" />
+      {/* Eyes */}
+      <circle cx="11" cy="15" r="2.5" fill="var(--accent)" />
+      <circle cx="21" cy="15" r="2.5" fill="var(--accent)" />
+      {/* Mouth */}
+      <path d="M11 21h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      {/* Ear left */}
+      <rect x="1" y="12" width="3" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="var(--bg-elevated)" />
+      {/* Ear right */}
+      <rect x="28" y="12" width="3" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="var(--bg-elevated)" />
+    </svg>
+  );
+}
+
 interface TopbarProps {
   connected: boolean;
   collapsed: boolean;
@@ -38,6 +59,7 @@ export function Topbar({ connected, collapsed, onToggleCollapse }: TopbarProps) 
           <Icon name="panelLeft" size={16} />
         </button>
         <div className="brand">
+          <BrandLogo size={28} />
           <div className="brand-text">
             <div className="brand-title">OpenBot</div>
             <div className="brand-sub">Control Dashboard</div>

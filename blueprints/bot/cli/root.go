@@ -30,7 +30,7 @@ func Execute(ctx context.Context) error {
 	root := &cobra.Command{
 		Use:   "bot",
 		Short: "Bot - Multi-Channel Chat Gateway",
-		Long: `Bot is a multi-channel chat orchestration gateway inspired by OpenClaw.
+		Long: `Bot is a multi-channel chat orchestration gateway powered by OpenBot.
 
 It connects AI agents to messaging platforms like Telegram, Discord,
 Mattermost, and generic webhooks with unified session management,

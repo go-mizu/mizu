@@ -30,7 +30,7 @@ func NewServe() *cobra.Command {
   - Webhook endpoints
   - Web dashboard
 
-The server runs on port 18789 by default (matching OpenClaw convention).`,
+The server runs on port 18789 by default.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServe(cmd.Context(), port, devMode)
 		},

@@ -20,7 +20,7 @@ export class Gateway {
   private _pending: Record<string, PendingRPC> = {};
   private _handlers: Record<string, EventHandler[]> = {};
 
-  connect(url: string): Promise<HelloOK> {
+  connect(url: string, token?: string): Promise<HelloOK> {
     return new Promise((resolve, reject) => {
       try {
         this.ws = new WebSocket(url);
@@ -29,7 +29,14 @@ export class Gateway {
         return;
       }
       this.ws.onopen = () => {
-        this.ws!.send(JSON.stringify({ type: 'hello', token: '' }));
+        // Resolve token: explicit param > URL ?token= param > localStorage > empty
+        const resolved =
+          token ??
+          new URLSearchParams(window.location.search).get('token') ??
+          localStorage.getItem('openbot-gateway-token') ??
+          '';
+        if (resolved) localStorage.setItem('openbot-gateway-token', resolved);
+        this.ws!.send(JSON.stringify({ type: 'hello', token: resolved }));
       };
       this.ws.onmessage = (evt) => {
         let msg: Record<string, unknown>;
@@ -61,9 +68,10 @@ export class Gateway {
           else res(msg.result as RPCResult);
         }
       };
-      this.ws.onclose = () => {
+      this.ws.onclose = (evt) => {
         this.connected = false;
-        this._emit('disconnected');
+        const reason = evt.reason || (evt.code === 1008 ? 'unauthorized: check gateway token' : '');
+        this._emit('disconnected', reason ? { code: evt.code, reason } : undefined);
       };
       this.ws.onerror = () => {
         this.connected = false;

@@ -357,9 +357,13 @@ func TestBuildSystemPrompt_BasePromptOnly(t *testing.T) {
 	defer memReg.closeAll()
 	cb := newContextBuilder(memReg)
 
-	prompt := cb.buildSystemPrompt(context.Background(), agent, "dm", "")
-	if prompt != "You are a helpful assistant." {
-		t.Errorf("expected base prompt only, got: %s", prompt)
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:  agent,
+		Origin: "dm",
+	})
+	// Should contain the base prompt plus always-included sections (CLI, datetime, runtime).
+	if !strings.Contains(result.Prompt, "You are a helpful assistant.") {
+		t.Errorf("expected base prompt, got: %s", result.Prompt)
 	}
 }
 
@@ -371,22 +375,45 @@ func TestBuildSystemPrompt_WithWorkspaceBootstrap(t *testing.T) {
 	defer memReg.closeAll()
 	cb := newContextBuilder(memReg)
 
-	prompt := cb.buildSystemPrompt(context.Background(), agent, "dm", "")
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:        agent,
+		WorkspaceDir: dir,
+		Origin:       "dm",
+	})
 
 	// Should contain base prompt.
-	if !strings.Contains(prompt, "You are a helpful test assistant.") {
+	if !strings.Contains(result.Prompt, "You are a helpful test assistant.") {
 		t.Error("prompt should contain base system prompt")
 	}
 
 	// Should contain bootstrap content (EnsureWorkspace creates AGENTS.md, SOUL.md, etc.).
-	if !strings.Contains(prompt, "# Project Context") {
+	if !strings.Contains(result.Prompt, "# Project Context") {
 		t.Error("prompt should contain workspace project context section")
 	}
-	if !strings.Contains(prompt, "AGENTS.md") {
+	if !strings.Contains(result.Prompt, "AGENTS.md") {
 		t.Error("prompt should reference AGENTS.md")
 	}
-	if !strings.Contains(prompt, "SOUL.md") {
+	if !strings.Contains(result.Prompt, "SOUL.md") {
 		t.Error("prompt should reference SOUL.md")
+	}
+
+	// Should contain SOUL.md guidance since workspace has SOUL.md.
+	if !result.HasSOUL {
+		t.Error("BuildResult.HasSOUL should be true when SOUL.md is present")
+	}
+	if !strings.Contains(result.Prompt, "embody its persona") {
+		t.Error("prompt should contain SOUL.md guidance text")
+	}
+
+	// Should contain new always-included sections.
+	if !strings.Contains(result.Prompt, "## OpenBot CLI Quick Reference") {
+		t.Error("prompt should contain CLI Quick Reference section")
+	}
+	if !strings.Contains(result.Prompt, "## Current Date & Time") {
+		t.Error("prompt should contain Date & Time section")
+	}
+	if !strings.Contains(result.Prompt, "## Runtime") {
+		t.Error("prompt should contain Runtime section")
 	}
 }
 
@@ -398,17 +425,29 @@ func TestBuildSystemPrompt_WithSkills(t *testing.T) {
 	defer memReg.closeAll()
 	cb := newContextBuilder(memReg)
 
-	prompt := cb.buildSystemPrompt(context.Background(), agent, "dm", "")
+	// Build skills prompt separately (as service.go does).
+	skillsPrompt, _ := cb.buildSkillsSection(dir)
+
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:        agent,
+		WorkspaceDir: dir,
+		Origin:       "dm",
+		SkillsPrompt: skillsPrompt,
+	})
 
 	// Should contain skills section (XML format).
-	if !strings.Contains(prompt, "<available_skills>") {
+	if !strings.Contains(result.Prompt, "<available_skills>") {
 		t.Error("prompt should contain available skills section")
 	}
-	if !strings.Contains(prompt, "<name>test-skill</name>") {
+	if !strings.Contains(result.Prompt, "<name>test-skill</name>") {
 		t.Error("prompt should contain test-skill name")
 	}
-	if !strings.Contains(prompt, "<description>A test skill for integration tests</description>") {
+	if !strings.Contains(result.Prompt, "<description>A test skill for integration tests</description>") {
 		t.Error("prompt should contain test skill description")
+	}
+	// Should contain skills guidance.
+	if !strings.Contains(result.Prompt, "## Skills") {
+		t.Error("prompt should contain Skills guidance header")
 	}
 }
 
@@ -421,13 +460,18 @@ func TestBuildSystemPrompt_WithMemorySearch(t *testing.T) {
 	cb := newContextBuilder(memReg)
 
 	// Use a query that matches the Go file content.
-	prompt := cb.buildSystemPrompt(context.Background(), agent, "dm", "GreetUser function")
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:        agent,
+		WorkspaceDir: dir,
+		Origin:       "dm",
+		Query:        "GreetUser function",
+	})
 
 	// Should contain memory results because the workspace has indexable files.
-	if !strings.Contains(prompt, "# Relevant Context") {
+	if !strings.Contains(result.Prompt, "# Relevant Context") {
 		t.Error("prompt should contain relevant context section from memory search")
 	}
-	if !strings.Contains(prompt, "GreetUser") {
+	if !strings.Contains(result.Prompt, "GreetUser") {
 		t.Error("prompt should contain matching memory result for GreetUser")
 	}
 }
@@ -441,11 +485,18 @@ func TestBuildSystemPrompt_NoWorkspace(t *testing.T) {
 	defer memReg.closeAll()
 	cb := newContextBuilder(memReg)
 
-	prompt := cb.buildSystemPrompt(context.Background(), agent, "dm", "query")
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:  agent,
+		Origin: "dm",
+		Query:  "query",
+	})
 
-	// With no workspace, should only have the base prompt.
-	if prompt != "Base only." {
-		t.Errorf("expected only base prompt, got: %s", prompt)
+	// With no workspace, should still have the base prompt and always-included sections.
+	if !strings.Contains(result.Prompt, "Base only.") {
+		t.Errorf("expected base prompt in output, got: %s", result.Prompt)
+	}
+	if len(result.InjectedFiles) != 0 {
+		t.Error("expected no injected files with empty workspace")
 	}
 }
 
@@ -457,21 +508,138 @@ func TestBuildSystemPrompt_SubagentOrigin(t *testing.T) {
 	defer memReg.closeAll()
 	cb := newContextBuilder(memReg)
 
-	prompt := cb.buildSystemPrompt(context.Background(), agent, "subagent", "")
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:        agent,
+		WorkspaceDir: dir,
+		Origin:       "subagent",
+	})
 
 	// Subagent sessions only load AGENTS.md and TOOLS.md.
-	if !strings.Contains(prompt, "AGENTS.md") {
+	if !strings.Contains(result.Prompt, "AGENTS.md") {
 		t.Error("subagent prompt should contain AGENTS.md")
 	}
-	if !strings.Contains(prompt, "TOOLS.md") {
+	if !strings.Contains(result.Prompt, "TOOLS.md") {
 		t.Error("subagent prompt should contain TOOLS.md")
 	}
 	// Should NOT contain SOUL.md or USER.md for subagent.
-	if strings.Contains(prompt, "## SOUL.md") {
+	if strings.Contains(result.Prompt, "## SOUL.md") {
 		t.Error("subagent prompt should not contain SOUL.md section")
 	}
-	if strings.Contains(prompt, "## USER.md") {
+	if strings.Contains(result.Prompt, "## USER.md") {
 		t.Error("subagent prompt should not contain USER.md section")
+	}
+}
+
+func TestBuildSystemPrompt_RuntimeSection(t *testing.T) {
+	agent := &types.Agent{
+		ID:    "test-agent",
+		Model: "claude-sonnet-4",
+	}
+
+	memReg := newMemoryRegistry()
+	defer memReg.closeAll()
+	cb := newContextBuilder(memReg)
+
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:         agent,
+		Origin:        "dm",
+		Channel:       "telegram",
+		Capabilities:  []string{"text", "image"},
+		ThinkingLevel: "medium",
+	})
+
+	if !strings.Contains(result.Prompt, "agent=test-agent") {
+		t.Error("runtime should contain agent ID")
+	}
+	if !strings.Contains(result.Prompt, "model=claude-sonnet-4") {
+		t.Error("runtime should contain model")
+	}
+	if !strings.Contains(result.Prompt, "channel=telegram") {
+		t.Error("runtime should contain channel")
+	}
+	if !strings.Contains(result.Prompt, "capabilities=text,image") {
+		t.Error("runtime should contain capabilities")
+	}
+	if !strings.Contains(result.Prompt, "thinking=medium") {
+		t.Error("runtime should contain thinking level")
+	}
+}
+
+func TestBuildSystemPrompt_UserIdentity(t *testing.T) {
+	agent := &types.Agent{SystemPrompt: "Test."}
+
+	memReg := newMemoryRegistry()
+	defer memReg.closeAll()
+	cb := newContextBuilder(memReg)
+
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:        agent,
+		Origin:       "dm",
+		OwnerNumbers: []string{"+1234567890", "+0987654321"},
+	})
+
+	if !strings.Contains(result.Prompt, "## User Identity") {
+		t.Error("prompt should contain User Identity section")
+	}
+	if !strings.Contains(result.Prompt, "+1234567890") {
+		t.Error("prompt should contain owner number")
+	}
+}
+
+func TestBuildSystemPrompt_MessagingSection(t *testing.T) {
+	agent := &types.Agent{SystemPrompt: "Test."}
+
+	memReg := newMemoryRegistry()
+	defer memReg.closeAll()
+	cb := newContextBuilder(memReg)
+
+	// With message tool.
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:     agent,
+		Origin:    "dm",
+		ToolNames: []string{"message", "read"},
+	})
+
+	if !strings.Contains(result.Prompt, "## Messaging") {
+		t.Error("prompt should contain Messaging section when message tool available")
+	}
+	if !strings.Contains(result.Prompt, "NO_REPLY") {
+		t.Error("prompt should contain NO_REPLY instruction")
+	}
+
+	// Without message tool.
+	result2 := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:     agent,
+		Origin:    "dm",
+		ToolNames: []string{"read"},
+	})
+
+	if strings.Contains(result2.Prompt, "## Messaging") {
+		t.Error("prompt should NOT contain Messaging section without message tool")
+	}
+}
+
+func TestBuildSystemPrompt_ToolAvailability(t *testing.T) {
+	agent := &types.Agent{SystemPrompt: "Test."}
+
+	memReg := newMemoryRegistry()
+	defer memReg.closeAll()
+	cb := newContextBuilder(memReg)
+
+	result := cb.buildSystemPrompt(context.Background(), &SystemPromptParams{
+		Agent:     agent,
+		Origin:    "dm",
+		ToolNames: []string{"read", "exec", "message"},
+	})
+
+	if !strings.Contains(result.Prompt, "Tool availability") {
+		t.Error("prompt should contain tool availability section")
+	}
+	if !strings.Contains(result.Prompt, "- read: Read file contents") {
+		t.Error("prompt should list read tool with description")
+	}
+	if !strings.Contains(result.Prompt, "- exec: Run shell commands") {
+		t.Error("prompt should list exec tool with description")
 	}
 }
 
@@ -593,11 +761,11 @@ func TestProcessMessage_BasicFlow(t *testing.T) {
 	}
 
 	// Echo provider returns "[Echo] You said: <last message>".
-	if !strings.Contains(resp, "[Echo]") {
-		t.Errorf("expected echo response, got: %s", resp)
+	if !strings.Contains(resp.Content,"[Echo]") {
+		t.Errorf("expected echo response, got: %s", resp.Content)
 	}
-	if !strings.Contains(resp, "Hello, bot!") {
-		t.Errorf("expected echo of user message, got: %s", resp)
+	if !strings.Contains(resp.Content,"Hello, bot!") {
+		t.Errorf("expected echo of user message, got: %s", resp.Content)
 	}
 
 	// Verify messages were stored: 1 user + 1 assistant = 2.
@@ -792,13 +960,13 @@ func TestCommand_Context(t *testing.T) {
 	}
 
 	// /context should return the enriched system prompt.
-	if !strings.HasPrefix(resp, "System prompt:") {
-		t.Errorf("expected system prompt response, got: %s", resp)
+	if !strings.HasPrefix(resp.Content,"System prompt:") {
+		t.Errorf("expected system prompt response, got: %s", resp.Content)
 	}
-	if !strings.Contains(resp, "You are a helpful test assistant.") {
+	if !strings.Contains(resp.Content,"You are a helpful test assistant.") {
 		t.Error("/context response should contain base system prompt")
 	}
-	if !strings.Contains(resp, "# Project Context") {
+	if !strings.Contains(resp.Content,"# Project Context") {
 		t.Error("/context response should contain workspace context")
 	}
 }
@@ -824,8 +992,8 @@ func TestCommand_New(t *testing.T) {
 		t.Fatalf("/new: %v", err)
 	}
 
-	if !strings.Contains(resp, "New session started") {
-		t.Errorf("expected new session response, got: %s", resp)
+	if !strings.Contains(resp.Content,"New session started") {
+		t.Errorf("expected new session response, got: %s", resp.Content)
 	}
 
 	// The session should be expired.
@@ -864,8 +1032,8 @@ func TestCommand_Reset(t *testing.T) {
 		t.Fatalf("/reset: %v", err)
 	}
 
-	if !strings.Contains(resp, "Session reset") {
-		t.Errorf("expected reset response, got: %s", resp)
+	if !strings.Contains(resp.Content,"Session reset") {
+		t.Errorf("expected reset response, got: %s", resp.Content)
 	}
 
 	// Verify session was expired.
@@ -896,13 +1064,13 @@ func TestCommand_Help(t *testing.T) {
 		t.Fatalf("/help: %v", err)
 	}
 
-	if !strings.Contains(resp, "Available commands") {
-		t.Errorf("expected help listing, got: %s", resp)
+	if !strings.Contains(resp.Content,"Available commands") {
+		t.Errorf("expected help listing, got: %s", resp.Content)
 	}
-	if !strings.Contains(resp, "/new") {
+	if !strings.Contains(resp.Content,"/new") {
 		t.Error("help should list /new command")
 	}
-	if !strings.Contains(resp, "/context") {
+	if !strings.Contains(resp.Content,"/context") {
 		t.Error("help should list /context command")
 	}
 }

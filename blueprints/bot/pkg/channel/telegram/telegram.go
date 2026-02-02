@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/channel"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
 
@@ -176,6 +178,70 @@ func splitMessage(content string) []string {
 		content = content[splitAt:]
 	}
 	return chunks
+}
+
+// RegisterSkillCommands sets bot commands from user-invocable skills via
+// Telegram's setMyCommands API. Built-in commands are always included first,
+// followed by eligible user-invocable skills (up to Telegram's 100-command limit).
+func (d *Driver) RegisterSkillCommands(ctx context.Context, skills []*skill.Skill) error {
+	type botCommand struct {
+		Command     string `json:"command"`
+		Description string `json:"description"`
+	}
+
+	// Built-in commands always present.
+	commands := []botCommand{
+		{Command: "new", Description: "Start a new conversation"},
+		{Command: "status", Description: "Show bot status"},
+		{Command: "help", Description: "Show available commands"},
+	}
+
+	// Add skill commands.
+	for _, s := range skills {
+		if !s.Ready || !s.UserInvocable || s.DisableModelInvocation {
+			continue
+		}
+		desc := s.Description
+		if desc == "" {
+			desc = s.Name
+		}
+		if len(desc) > 256 {
+			desc = desc[:253] + "..."
+		}
+		commands = append(commands, botCommand{
+			Command:     s.Name,
+			Description: desc,
+		})
+		if len(commands) >= 100 {
+			break
+		}
+	}
+
+	payload := map[string]any{
+		"commands": commands,
+	}
+	body, _ := json.Marshal(payload)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/setMyCommands", d.config.BotToken)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build setMyCommands request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram setMyCommands: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("telegram setMyCommands %d: %s", resp.StatusCode, respBody)
+	}
+
+	log.Printf("Registered %d Telegram commands (%d skills)", len(commands), len(commands)-3)
+	return nil
 }
 
 func (d *Driver) poll(ctx context.Context) {
