@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/app/web/handler/api"
 	db "github.com/go-mizu/mizu/blueprints/bot/app/web/handler/dashboard"
 	"github.com/go-mizu/mizu/blueprints/bot/app/web/rpc"
+	"github.com/go-mizu/mizu/blueprints/bot/assets"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/agent"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/gateway"
 	"github.com/go-mizu/mizu/blueprints/bot/feature/session"
@@ -67,12 +69,6 @@ func NewServer(s store.Store, devMode bool) *Server {
 	// Create router
 	r := mizu.NewRouter()
 
-	// Dashboard routes
-	r.Get("/", db.Page)
-	r.Get("/ui", db.Page)
-	r.Get("/ui/", db.Page)
-	r.Get("/dashboard", db.Page)
-
 	// WebSocket endpoint for dashboard real-time communication
 	r.Get("/ws", hub.WSHandler())
 
@@ -115,6 +111,29 @@ func NewServer(s store.Store, devMode bool) *Server {
 
 	// Gateway message send (direct send via API)
 	r.Post("/api/gateway/send", gatewayHandler.Send)
+
+	// Serve frontend
+	if devMode {
+		r.Get("/{path...}", func(c *mizu.Ctx) error {
+			return c.Text(200, "Frontend dev server at http://localhost:5174")
+		})
+	} else {
+		staticContent, _ := fs.Sub(assets.StaticFS, "static")
+		indexHTML, _ := fs.ReadFile(staticContent, "index.html")
+		fileServer := http.FileServer(http.FS(staticContent))
+		r.Get("/{path...}", func(c *mizu.Ctx) error {
+			path := c.Request().URL.Path
+			if path == "/" {
+				path = "/index.html"
+			}
+			if info, err := fs.Stat(staticContent, path[1:]); err == nil && !info.IsDir() {
+				fileServer.ServeHTTP(c.Writer(), c.Request())
+				return nil
+			}
+			c.Header().Set("Content-Type", "text/html; charset=utf-8")
+			return c.HTML(200, string(indexHTML))
+		})
+	}
 
 	logs.Info("gateway", "Server initialized (dev=%v)", devMode)
 

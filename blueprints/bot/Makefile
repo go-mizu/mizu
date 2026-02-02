@@ -19,8 +19,33 @@ TIME    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDVARS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -X main.BuildTime=$(TIME)
 GO_LDFLAGS ?= -s -w $(LDVARS)
 
+# Frontend configuration
+FRONTEND_DIR := app/frontend
+
+.PHONY: frontend-install
+frontend-install: ## Install frontend dependencies
+	@cd $(FRONTEND_DIR) && pnpm install
+
+.PHONY: frontend-build
+frontend-build: ## Build frontend for production
+	@cd $(FRONTEND_DIR) && pnpm run build
+
+.PHONY: frontend-dev
+frontend-dev: ## Start frontend dev server
+	@cd $(FRONTEND_DIR) && pnpm run dev
+
+.PHONY: frontend-test
+frontend-test: ## Run frontend tests
+	@cd $(FRONTEND_DIR) && pnpm run test:run
+
 .PHONY: build
-build: ## Build bot binary to $$HOME/bin/bot
+build: frontend-build ## Build bot binary (includes frontend build)
+	@mkdir -p $(dir $(BINARY))
+	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
+	@echo "Built: $(BINARY) ($(VERSION))"
+
+.PHONY: build-quick
+build-quick: ## Build binary without frontend (faster for development)
 	@mkdir -p $(dir $(BINARY))
 	@CGO_ENABLED=$(CGO_ENABLED) GOWORK=off $(GO) build -trimpath -ldflags "$(GO_LDFLAGS)" -o $(BINARY) $(CMD)
 	@echo "Built: $(BINARY) ($(VERSION))"
@@ -85,6 +110,16 @@ quickstart: ## Quick start: initialize, seed, and run
 	@make init
 	@make seed
 	@make run
+
+.PHONY: dev-all
+dev-all: ## Run backend and frontend in development mode
+	@echo "Starting development servers..."
+	@echo "Backend: http://localhost:8080"
+	@echo "Frontend: http://localhost:5174"
+	@echo ""
+	@trap 'kill %1 %2 2>/dev/null' EXIT; \
+	(cd $(FRONTEND_DIR) && pnpm run dev) & \
+	GOWORK=off $(GO) run $(CMD) serve --dev
 
 .PHONY: help
 help: ## Show available commands
