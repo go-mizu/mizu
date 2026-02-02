@@ -10,6 +10,7 @@ const OverviewPage = lazy(() => import('./pages/OverviewPage').then((m) => ({ de
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage').then((m) => ({ default: m.ChannelsPage })));
 const InstancesPage = lazy(() => import('./pages/InstancesPage').then((m) => ({ default: m.InstancesPage })));
 const SessionsPage = lazy(() => import('./pages/SessionsPage').then((m) => ({ default: m.SessionsPage })));
+const MemoryPage = lazy(() => import('./pages/MemoryPage').then((m) => ({ default: m.MemoryPage })));
 const CronPage = lazy(() => import('./pages/CronPage').then((m) => ({ default: m.CronPage })));
 const SkillsPage = lazy(() => import('./pages/SkillsPage').then((m) => ({ default: m.SkillsPage })));
 const NodesPage = lazy(() => import('./pages/NodesPage').then((m) => ({ default: m.NodesPage })));
@@ -115,6 +116,7 @@ export function App() {
       case 'channels': return <ChannelsPage {...props} />;
       case 'instances': return <InstancesPage {...props} />;
       case 'sessions': return <SessionsPage {...props} />;
+      case 'memory': return <MemoryPage {...props} />;
       case 'cron': return <CronPage {...props} />;
       case 'skills': return <SkillsPage {...props} />;
       case 'nodes': return <NodesPage {...props} />;

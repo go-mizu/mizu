@@ -25,9 +25,10 @@ type Skill struct {
 	Always                 bool     // always included in prompt (not on-demand)
 	UserInvocable          bool     // can user /command invoke (default true)
 	DisableModelInvocation bool     // prevent AI auto-trigger (default false)
-	PrimaryEnv             string   // main env var for API key
-	SkillKey               string   // override key for config lookup
-	Requires               Requires // dependency requirements
+	PrimaryEnv             string            // main env var for API key
+	SkillKey               string            // override key for config lookup
+	Requires               Requires          // dependency requirements
+	InstallRaw             json.RawMessage   // raw install JSON from metadata
 }
 
 // Requires declares what a skill needs to be eligible.
@@ -182,6 +183,11 @@ func parseMetadataJSON(sk *Skill, raw string) {
 		if cfgPaths := resolveStringList(meta.Requires.Config); len(cfgPaths) > 0 {
 			sk.Requires.CfgPaths = cfgPaths
 		}
+	}
+
+	// Preserve raw install JSON for later parsing by ParseInstallSpecs.
+	if len(meta.Install) > 0 {
+		sk.InstallRaw = meta.Install
 	}
 }
 

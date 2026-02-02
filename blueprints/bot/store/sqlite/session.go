@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/types"
@@ -100,6 +101,66 @@ func (s *Store) UpdateSession(ctx context.Context, ss *types.Session) error {
 
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	return err
+}
+
+// PatchSession updates specific fields of a session by ID.
+func (s *Store) PatchSession(ctx context.Context, id string, updates map[string]any) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	// Map JSON field names to database column names.
+	colMap := map[string]string{
+		"label":                         "display_name",
+		"display_name":                  "display_name",
+		"thinking_level":                "thinking_level",
+		"verbose_level":                 "verbose_level",
+		"reasoning_level":               "reasoning_level",
+		"model":                         "model",
+		"model_override":                "model_override",
+		"response_usage":                "response_usage",
+		"send_policy":                   "send_policy",
+		"memory_flush_at":               "memory_flush_at",
+		"memory_flush_compaction_count": "memory_flush_compaction_count",
+		"metadata":                      "metadata",
+		"status":                        "status",
+	}
+
+	var setClauses []string
+	var args []any
+	for field, val := range updates {
+		col, ok := colMap[field]
+		if !ok {
+			col = field // use field name directly as column name
+		}
+		setClauses = append(setClauses, col+" = ?")
+		args = append(args, val)
+	}
+	args = append(args, id)
+
+	query := fmt.Sprintf(
+		"UPDATE sessions SET %s, updated_at = datetime('now') WHERE id = ?",
+		strings.Join(setClauses, ", "),
+	)
+
+	_, err := s.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+// CreateSession inserts a new session into the database.
+func (s *Store) CreateSession(ctx context.Context, ss *types.Session) error {
+	if ss.Metadata == "" {
+		ss.Metadata = "{}"
+	}
+	now := time.Now().UTC()
+	ss.CreatedAt = now
+	ss.UpdatedAt = now
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sessions (id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ss.ID, ss.AgentID, ss.ChannelID, ss.ChannelType, ss.PeerID, ss.DisplayName, ss.Origin, ss.Status, ss.Metadata, ss.CreatedAt, ss.UpdatedAt,
+	)
 	return err
 }
 

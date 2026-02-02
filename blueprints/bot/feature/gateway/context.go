@@ -3,7 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
@@ -69,11 +72,11 @@ func (cb *contextBuilder) buildSystemPrompt(ctx context.Context, params *SystemP
 		}
 	}
 
-	// 3. Memory Recall.
+	// 3. Memory Recall (MEMORY.md + daily logs + search).
 	if params.MemoryPrompt != "" {
 		sections = append(sections, "## Memory Recall\n"+params.MemoryPrompt)
-	} else if params.WorkspaceDir != "" && params.Query != "" {
-		if memSection := cb.buildMemorySection(ctx, params.WorkspaceDir, params.Query); memSection != "" {
+	} else if params.WorkspaceDir != "" {
+		if memSection := cb.buildMemoryRecallSection(ctx, params); memSection != "" {
 			sections = append(sections, memSection)
 		}
 	}
@@ -198,6 +201,52 @@ func (cb *contextBuilder) buildMemorySection(ctx context.Context, workspaceDir, 
 	}
 
 	return formatMemoryResults(results)
+}
+
+// buildMemoryRecallSection combines MEMORY.md, daily logs, and search results.
+// Matches OpenClaw's memory recall behavior.
+func (cb *contextBuilder) buildMemoryRecallSection(ctx context.Context, params *SystemPromptParams) string {
+	var parts []string
+
+	// 1. MEMORY.md (main sessions only — security: don't leak to group/subagent).
+	if params.Origin != "group" && params.Origin != "subagent" {
+		memoryMdPath := filepath.Join(params.WorkspaceDir, "MEMORY.md")
+		if content, err := os.ReadFile(memoryMdPath); err == nil && len(content) > 0 {
+			// Truncate at 4000 chars to avoid bloating the prompt.
+			text := string(content)
+			if len(text) > 4000 {
+				text = text[:4000] + "\n... [truncated]"
+			}
+			parts = append(parts, "### Long-term Memory\n"+text)
+		}
+	}
+
+	// 2. Daily logs (today + yesterday).
+	now := time.Now()
+	for _, offset := range []int{0, -1} {
+		day := now.AddDate(0, 0, offset)
+		logPath := filepath.Join(params.WorkspaceDir, "memory", day.Format("2006-01-02")+".md")
+		if content, err := os.ReadFile(logPath); err == nil && len(content) > 0 {
+			text := string(content)
+			if len(text) > 2000 {
+				text = text[:2000] + "\n... [truncated]"
+			}
+			parts = append(parts, fmt.Sprintf("### Daily Log (%s)\n%s", day.Format("2006-01-02"), text))
+		}
+	}
+
+	// 3. Search results from the current query.
+	if params.Query != "" {
+		if searchSection := cb.buildMemorySection(ctx, params.WorkspaceDir, params.Query); searchSection != "" {
+			parts = append(parts, searchSection)
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return "## Memory Recall\n\n" + strings.Join(parts, "\n\n")
 }
 
 // formatMemoryResults formats search results for system prompt injection.

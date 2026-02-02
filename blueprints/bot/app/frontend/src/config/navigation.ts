@@ -11,7 +11,7 @@ export interface TabGroup {
 
 export const TAB_GROUPS: TabGroup[] = [
   { label: 'Chat', tabs: ['chat'] },
-  { label: 'Control', tabs: ['overview', 'channels', 'instances', 'sessions', 'cron'] },
+  { label: 'Control', tabs: ['overview', 'channels', 'instances', 'sessions', 'memory', 'cron'] },
   { label: 'Agent', tabs: ['skills', 'nodes'] },
   { label: 'Settings', tabs: ['config', 'debug', 'logs'] },
 ];
@@ -22,6 +22,7 @@ export const TAB_META: Record<string, TabMeta> = {
   channels:  { title: 'Channels',   sub: 'Manage channels and settings.',                         icon: 'link' },
   instances: { title: 'Instances',  sub: 'Presence beacons from connected clients and nodes.',     icon: 'radio' },
   sessions:  { title: 'Sessions',   sub: 'Inspect active sessions and adjust per-session defaults.', icon: 'fileText' },
+  memory:    { title: 'Memory',    sub: 'Search indexed workspace files and session transcripts.', icon: 'database' },
   cron:      { title: 'Cron Jobs',  sub: 'Schedule wakeups and recurring agent runs.',             icon: 'loader' },
   skills:    { title: 'Skills',     sub: 'Manage skill availability and API key injection.',       icon: 'zap' },
   nodes:     { title: 'Nodes',      sub: 'Paired devices, capabilities, and command exposure.',    icon: 'monitor' },

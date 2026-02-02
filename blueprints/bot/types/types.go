@@ -49,17 +49,19 @@ const (
 
 // Session represents a conversation session between a peer and an agent.
 type Session struct {
-	ID          string    `json:"id"`
-	AgentID     string    `json:"agentId"`
-	ChannelID   string    `json:"channelId"`
-	ChannelType string    `json:"channelType"`
-	PeerID      string    `json:"peerId"`
-	DisplayName string    `json:"displayName"`
-	Origin      string    `json:"origin"` // dm, group, webhook, cron
-	Status      string    `json:"status"` // active, expired, closed
-	Metadata    string    `json:"metadata"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID              string    `json:"id"`
+	AgentID         string    `json:"agentId"`
+	ChannelID       string    `json:"channelId"`
+	ChannelType     string    `json:"channelType"`
+	PeerID          string    `json:"peerId"`
+	DisplayName     string    `json:"displayName"`
+	Origin          string    `json:"origin"` // dm, group, webhook, cron
+	Status          string    `json:"status"` // active, expired, closed
+	Metadata        string    `json:"metadata"`
+	Model           string    `json:"model,omitempty"`
+	CompactionCount int       `json:"compactionCount,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // Message role constants.
@@ -224,18 +226,54 @@ type Instance struct {
 	UserAgent   string `json:"userAgent"`
 }
 
-// SkillEntry represents a skill's status for the dashboard.
+// SkillEntry represents a skill's full status for the dashboard.
+// Matches OpenClaw's SkillStatus schema for protocol compatibility.
 type SkillEntry struct {
-	Key          string   `json:"key"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Emoji        string   `json:"emoji"`
-	Source       string   `json:"source"` // bundled, workspace, user
-	Eligible     bool     `json:"eligible"`
-	Enabled      bool     `json:"enabled"`
-	MissingBins  []string `json:"missingBins,omitempty"`
-	MissingEnv   []string `json:"missingEnv,omitempty"`
-	UserInvocable bool   `json:"userInvocable"`
+	Key            string            `json:"key"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Emoji          string            `json:"emoji"`
+	Source         string            `json:"source"`
+	FilePath       string            `json:"filePath,omitempty"`
+	BaseDir        string            `json:"baseDir,omitempty"`
+	SkillKey       string            `json:"skillKey"`
+	PrimaryEnv     string            `json:"primaryEnv,omitempty"`
+	Homepage       string            `json:"homepage,omitempty"`
+	Always         bool              `json:"always"`
+	Disabled       bool              `json:"disabled"`
+	BlockedByAllow bool              `json:"blockedByAllowlist"`
+	Eligible       bool              `json:"eligible"`
+	Enabled        bool              `json:"enabled"`
+	UserInvocable  bool              `json:"userInvocable"`
+	Requirements   SkillRequirements `json:"requirements"`
+	Missing        SkillMissing      `json:"missing"`
+	Install        []SkillInstallOpt `json:"install"`
+}
+
+// SkillRequirements lists what a skill needs to be eligible.
+type SkillRequirements struct {
+	Bins    []string `json:"bins"`
+	AnyBins []string `json:"anyBins"`
+	Env     []string `json:"env"`
+	Config  []string `json:"config"`
+	OS      []string `json:"os"`
+}
+
+// SkillMissing lists unsatisfied requirements.
+type SkillMissing struct {
+	Bins    []string `json:"bins"`
+	AnyBins []string `json:"anyBins"`
+	Env     []string `json:"env"`
+	Config  []string `json:"config"`
+	OS      []string `json:"os"`
+}
+
+// SkillInstallOpt represents an install option for a missing dependency.
+type SkillInstallOpt struct {
+	ID    string   `json:"id"`
+	Kind  string   `json:"kind"`
+	Label string   `json:"label"`
+	Bins  []string `json:"bins"`
 }
 
 // SkillsSnapshot stores the skills state at session creation time.

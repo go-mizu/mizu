@@ -30,6 +30,7 @@ func RegisterAll(hub *dashboard.Hub, s store.Store, gw *gateway.Service, logs *l
 	registerLogMethods(hub, logs)
 	registerDebugMethods(hub, s, gw, logs, startTime)
 	registerChatMethods(hub, gw, s)
+	registerMemoryMethods(hub, gw)
 	registerAgentMethods(hub, s)
 }
 
@@ -219,28 +220,161 @@ func registerSessionMethods(hub *dashboard.Hub, s store.Store) {
 
 	hub.Register("sessions.patch", func(params json.RawMessage) (any, error) {
 		var req struct {
-			Key      string  `json:"key"`
-			Label    *string `json:"label"`
-			Metadata *string `json:"metadata"`
+			Key            string  `json:"key"`
+			SessionID      string  `json:"sessionId"`
+			Label          *string `json:"label"`
+			ThinkingLevel  *string `json:"thinkingLevel"`
+			VerboseLevel   *string `json:"verboseLevel"`
+			ReasoningLevel *string `json:"reasoningLevel"`
+			Model          *string `json:"model"`
+			ResponseUsage  *string `json:"responseUsage"`
+			SendPolicy     *string `json:"sendPolicy"`
+			Metadata       *string `json:"metadata"`
 		}
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
 		}
-		session, err := s.GetSession(context.Background(), req.Key)
-		if err != nil {
-			return nil, err
+
+		// Resolve session ID.
+		sessionID := req.SessionID
+		if sessionID == "" {
+			sessionID = req.Key
 		}
+		if sessionID == "" {
+			return nil, fmt.Errorf("sessionId or key required")
+		}
+
+		// Build updates map.
+		updates := make(map[string]any)
 		if req.Label != nil {
-			session.DisplayName = *req.Label
+			updates["label"] = *req.Label
+		}
+		if req.ThinkingLevel != nil {
+			updates["thinking_level"] = *req.ThinkingLevel
+		}
+		if req.VerboseLevel != nil {
+			updates["verbose_level"] = *req.VerboseLevel
+		}
+		if req.ReasoningLevel != nil {
+			updates["reasoning_level"] = *req.ReasoningLevel
+		}
+		if req.Model != nil {
+			updates["model"] = *req.Model
+		}
+		if req.ResponseUsage != nil {
+			updates["response_usage"] = *req.ResponseUsage
+		}
+		if req.SendPolicy != nil {
+			updates["send_policy"] = *req.SendPolicy
 		}
 		if req.Metadata != nil {
-			session.Metadata = *req.Metadata
+			updates["metadata"] = *req.Metadata
 		}
-		if err := s.UpdateSession(context.Background(), session); err != nil {
+
+		if len(updates) == 0 {
+			return map[string]bool{"ok": true}, nil
+		}
+
+		if err := s.PatchSession(context.Background(), sessionID, updates); err != nil {
 			return nil, err
 		}
 		hub.Broadcast("session.updated", nil)
 		return map[string]bool{"ok": true}, nil
+	})
+
+	hub.Register("sessions.reset", func(params json.RawMessage) (any, error) {
+		var req struct {
+			Key       string `json:"key"`
+			SessionID string `json:"sessionId"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+
+		sessionID := req.SessionID
+		if sessionID == "" {
+			sessionID = req.Key
+		}
+		if sessionID == "" {
+			return nil, fmt.Errorf("sessionId or key required")
+		}
+
+		// Get existing session to preserve metadata.
+		session, err := s.GetSession(context.Background(), sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("session not found: %w", err)
+		}
+
+		// Generate new session ID.
+		newID := fmt.Sprintf("%s-reset-%d", sessionID[:8], time.Now().UnixMilli())
+
+		// Create new session with same metadata.
+		newSession := &types.Session{
+			ID:          newID,
+			AgentID:     session.AgentID,
+			ChannelID:   session.ChannelID,
+			ChannelType: session.ChannelType,
+			PeerID:      session.PeerID,
+			DisplayName: session.DisplayName,
+			Origin:      session.Origin,
+			Status:      "active",
+			Model:       session.Model,
+		}
+		// Mark old session as expired.
+		session.Status = "expired"
+		_ = s.UpdateSession(context.Background(), session)
+
+		if err := s.CreateSession(context.Background(), newSession); err != nil {
+			return nil, err
+		}
+
+		hub.Broadcast("session.updated", nil)
+		return map[string]any{
+			"ok":        true,
+			"sessionId": newID,
+		}, nil
+	})
+
+	hub.Register("sessions.compact", func(params json.RawMessage) (any, error) {
+		var req struct {
+			Key       string `json:"key"`
+			SessionID string `json:"sessionId"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+
+		sessionID := req.SessionID
+		if sessionID == "" {
+			sessionID = req.Key
+		}
+		if sessionID == "" {
+			return nil, fmt.Errorf("sessionId or key required")
+		}
+
+		// Get session and increment compaction count.
+		session, err := s.GetSession(context.Background(), sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("session not found: %w", err)
+		}
+
+		session.CompactionCount++
+		if err := s.UpdateSession(context.Background(), session); err != nil {
+			return nil, err
+		}
+
+		// Set memory flush timestamp.
+		updates := map[string]any{
+			"memory_flush_at":               time.Now().UnixMilli(),
+			"memory_flush_compaction_count": session.CompactionCount,
+		}
+		_ = s.PatchSession(context.Background(), sessionID, updates)
+
+		hub.Broadcast("session.updated", nil)
+		return map[string]any{
+			"ok":              true,
+			"compactionCount": session.CompactionCount,
+		}, nil
 	})
 
 	hub.Register("sessions.preview", func(params json.RawMessage) (any, error) {
@@ -319,46 +453,78 @@ func registerChannelMethods(hub *dashboard.Hub, s store.Store) {
 
 // --- Skills Methods ---
 
+// loadSkillsWithConfig loads all skills and the raw config, returning both.
+func loadSkillsWithConfig() ([]*skill.Skill, map[string]any, error) {
+	workspaceDir := filepath.Join(config.DefaultConfigDir(), "workspace")
+	bundledDir := skill.BundledSkillsDir()
+	loaded, _ := skill.LoadAllSkills(workspaceDir, bundledDir)
+
+	cfgPath := config.DefaultConfigPath()
+	data, err := config.LoadRawConfig(cfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			data = make(map[string]any)
+		} else {
+			return loaded, nil, err
+		}
+	}
+	return loaded, data, nil
+}
+
 func registerSkillMethods(hub *dashboard.Hub) {
+	// skills.status - Full skill status report matching OpenClaw schema.
 	hub.Register("skills.status", func(params json.RawMessage) (any, error) {
+		loaded, data, err := loadSkillsWithConfig()
+		if err != nil {
+			return nil, fmt.Errorf("load config: %w", err)
+		}
+
 		var allSkills []types.SkillEntry
-
-		// Load skills from all available sources
-		workspaceDir := filepath.Join(config.DefaultConfigDir(), "workspace")
-		bundledDir := skill.BundledSkillsDir()
-		loaded, _ := skill.LoadAllSkills(workspaceDir, bundledDir)
-
 		for _, s := range loaded {
-			entry := types.SkillEntry{
-				Key:           s.Name,
-				Name:          s.Name,
-				Description:   s.Description,
-				Source:        s.Source,
-				Eligible:      skill.CheckEligibility(s),
-				Enabled:       true,
-				UserInvocable: s.UserInvocable,
+			skillCfg := config.ResolveSkillConfig(data, s.Name)
+			if skillCfg == nil {
+				skillCfg = map[string]any{}
 			}
-			if s.Emoji != "" {
-				entry.Emoji = s.Emoji
+			entry := skill.BuildSkillStatus(s, data, skillCfg)
+
+			// Attach install options.
+			specs := skill.ParseInstallSpecs(s)
+			if opts := skill.ToInstallOpts(specs); len(opts) > 0 {
+				entry.Install = opts
 			}
+
 			allSkills = append(allSkills, entry)
 		}
 
 		if allSkills == nil {
 			allSkills = []types.SkillEntry{}
 		}
-		return map[string]any{"skills": allSkills}, nil
+
+		workspaceDir := filepath.Join(config.DefaultConfigDir(), "workspace")
+		managedSkillsDir := filepath.Join(config.DefaultConfigDir(), "skills")
+		return map[string]any{
+			"workspaceDir":     workspaceDir,
+			"managedSkillsDir": managedSkillsDir,
+			"skills":           allSkills,
+		}, nil
 	})
 
-	hub.Register("skills.toggle", func(params json.RawMessage) (any, error) {
+	// skills.update - Update per-skill config (enabled, apiKey, env).
+	// Replaces the old skills.toggle with full OpenClaw-compatible update.
+	hub.Register("skills.update", func(params json.RawMessage) (any, error) {
 		var req struct {
-			Key     string `json:"key"`
-			Enabled bool   `json:"enabled"`
+			SkillKey string            `json:"skillKey"`
+			Enabled  *bool             `json:"enabled"`
+			ApiKey   *string           `json:"apiKey"`
+			Env      map[string]string `json:"env"`
 		}
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
 		}
-		// Toggle skill enabled state in config
+		if req.SkillKey == "" {
+			return nil, fmt.Errorf("skillKey is required")
+		}
+
 		cfgPath := config.DefaultConfigPath()
 		data, err := config.LoadRawConfig(cfgPath)
 		if err != nil {
@@ -368,27 +534,113 @@ func registerSkillMethods(hub *dashboard.Hub) {
 				return nil, fmt.Errorf("load config: %w", err)
 			}
 		}
-		// Store in skills.disabled map
-		skillsCfg, ok := data["skills"].(map[string]any)
-		if !ok {
-			skillsCfg = make(map[string]any)
-			data["skills"] = skillsCfg
+
+		config.UpdateSkillConfig(data, req.SkillKey, req.Enabled, req.ApiKey, req.Env)
+
+		if err := config.SaveRawConfig(cfgPath, data); err != nil {
+			return nil, fmt.Errorf("save config: %w", err)
 		}
-		disabledMap, ok := skillsCfg["disabled"].(map[string]any)
-		if !ok {
-			disabledMap = make(map[string]any)
-			skillsCfg["disabled"] = disabledMap
+
+		hub.Broadcast("skills.updated", nil)
+		return map[string]any{
+			"ok":       true,
+			"skillKey": req.SkillKey,
+			"config":   config.ResolveSkillConfig(data, req.SkillKey),
+		}, nil
+	})
+
+	// skills.toggle - Legacy toggle, delegates to skills.update.
+	hub.Register("skills.toggle", func(params json.RawMessage) (any, error) {
+		var req struct {
+			Key     string `json:"key"`
+			Enabled bool   `json:"enabled"`
 		}
-		if req.Enabled {
-			delete(disabledMap, req.Key)
-		} else {
-			disabledMap[req.Key] = true
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
 		}
+
+		cfgPath := config.DefaultConfigPath()
+		data, err := config.LoadRawConfig(cfgPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				data = make(map[string]any)
+			} else {
+				return nil, fmt.Errorf("load config: %w", err)
+			}
+		}
+
+		enabled := req.Enabled
+		config.UpdateSkillConfig(data, req.Key, &enabled, nil, nil)
+
 		if err := config.SaveRawConfig(cfgPath, data); err != nil {
 			return nil, fmt.Errorf("save config: %w", err)
 		}
 		hub.Broadcast("skills.updated", nil)
 		return map[string]bool{"ok": true}, nil
+	})
+
+	// skills.bins - Returns all required binaries across all loaded skills.
+	hub.Register("skills.bins", func(params json.RawMessage) (any, error) {
+		loaded, _, err := loadSkillsWithConfig()
+		if err != nil {
+			return nil, fmt.Errorf("load skills: %w", err)
+		}
+
+		seen := map[string]bool{}
+		var bins []string
+		for _, s := range loaded {
+			for _, bin := range s.Requires.Binaries {
+				if !seen[bin] {
+					seen[bin] = true
+					bins = append(bins, bin)
+				}
+			}
+			for _, bin := range s.Requires.AnyBins {
+				if !seen[bin] {
+					seen[bin] = true
+					bins = append(bins, bin)
+				}
+			}
+		}
+		if bins == nil {
+			bins = []string{}
+		}
+		return map[string]any{"bins": bins}, nil
+	})
+
+	// skills.install - Install a skill's dependency.
+	hub.Register("skills.install", func(params json.RawMessage) (any, error) {
+		var req struct {
+			Name      string `json:"name"`
+			InstallID string `json:"installId"`
+			TimeoutMs int    `json:"timeoutMs"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+		if req.Name == "" || req.InstallID == "" {
+			return nil, fmt.Errorf("name and installId are required")
+		}
+
+		loaded, _, err := loadSkillsWithConfig()
+		if err != nil {
+			return nil, fmt.Errorf("load skills: %w", err)
+		}
+
+		// Load install preferences from config.
+		prefs := skill.DefaultInstallPrefs()
+		rawCfg, cfgErr := config.LoadRawConfig(config.DefaultConfigPath())
+		if cfgErr == nil {
+			prefs = skill.ParseInstallPrefs(rawCfg)
+		}
+
+		result, err := skill.InstallSkillDep(loaded, req.Name, req.InstallID, req.TimeoutMs, prefs)
+		if err != nil {
+			return nil, err
+		}
+
+		hub.Broadcast("skills.updated", nil)
+		return result, nil
 	})
 }
 
@@ -824,6 +1076,94 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 		}
 		hub.Broadcast("session.updated", nil)
 		return map[string]any{"ok": true}, nil
+	})
+}
+
+// --- Memory Methods ---
+
+func registerMemoryMethods(hub *dashboard.Hub, gw *gateway.Service) {
+	hub.Register("memory.search", func(params json.RawMessage) (any, error) {
+		var req struct {
+			Query        string `json:"query"`
+			WorkspaceDir string `json:"workspaceDir"`
+			Limit        int    `json:"limit"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+		if req.Query == "" {
+			return nil, fmt.Errorf("query is required")
+		}
+
+		// Use default workspace if not specified
+		wsDir := req.WorkspaceDir
+		if wsDir == "" {
+			wsDir = os.Getenv("OPENBOT_WORKSPACE")
+			if wsDir == "" {
+				home, _ := os.UserHomeDir()
+				wsDir = filepath.Join(home, ".openbot", "workspace")
+			}
+		}
+
+		results, err := gw.SearchMemory(context.Background(), wsDir, req.Query, req.Limit)
+		if err != nil {
+			return nil, err
+		}
+
+		type memResult struct {
+			Path      string  `json:"path"`
+			Source    string  `json:"source"`
+			StartLine int     `json:"startLine"`
+			EndLine   int     `json:"endLine"`
+			Score     float64 `json:"score"`
+			Snippet   string  `json:"snippet"`
+		}
+		var out []memResult
+		for _, r := range results {
+			src := r.Source
+			if src == "" {
+				src = "memory"
+			}
+			out = append(out, memResult{
+				Path:      r.Path,
+				Source:    src,
+				StartLine: r.StartLine,
+				EndLine:   r.EndLine,
+				Score:     r.Score,
+				Snippet:   r.Snippet,
+			})
+		}
+		if out == nil {
+			out = []memResult{}
+		}
+		return map[string]any{"results": out}, nil
+	})
+
+	hub.Register("memory.stats", func(params json.RawMessage) (any, error) {
+		var req struct {
+			WorkspaceDir string `json:"workspaceDir"`
+		}
+		if params != nil {
+			_ = json.Unmarshal(params, &req)
+		}
+
+		wsDir := req.WorkspaceDir
+		if wsDir == "" {
+			wsDir = os.Getenv("OPENBOT_WORKSPACE")
+			if wsDir == "" {
+				home, _ := os.UserHomeDir()
+				wsDir = filepath.Join(home, ".openbot", "workspace")
+			}
+		}
+
+		files, chunks, err := gw.MemoryStats(wsDir)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"files":  files,
+			"chunks": chunks,
+		}, nil
 	})
 }
 

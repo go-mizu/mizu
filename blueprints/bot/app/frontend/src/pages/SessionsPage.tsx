@@ -17,6 +17,9 @@ interface Session {
   inputTokens?: number;
   outputTokens?: number;
   metadata?: string;
+  model?: string;
+  thinkingLevel?: string;
+  compactionCount?: number;
 }
 
 interface Message {
@@ -118,6 +121,29 @@ export function SessionsPage({ gw }: SessionsPageProps) {
       })
       .catch((err) => {
         toast('Delete failed: ' + err.message, 'error');
+      });
+  }
+
+  function resetSession(id: string) {
+    if (!confirm('Reset this session? A new session will be created with the same settings.')) return;
+    gw.rpc('sessions.reset', { key: id })
+      .then((res) => {
+        toast('Session reset. New ID: ' + (res.sessionId || 'created'), 'success');
+        load();
+      })
+      .catch((err) => {
+        toast('Reset failed: ' + err.message, 'error');
+      });
+  }
+
+  function compactSession(id: string) {
+    gw.rpc('sessions.compact', { key: id })
+      .then((res) => {
+        toast('Session compacted. Count: ' + (res.compactionCount || 0), 'success');
+        load();
+      })
+      .catch((err) => {
+        toast('Compact failed: ' + err.message, 'error');
       });
   }
 
@@ -296,6 +322,12 @@ export function SessionsPage({ gw }: SessionsPageProps) {
                   >
                     <Icon name="trash" />
                   </button>
+                  <button className="btn btn--sm" onClick={() => resetSession(s.id)} title="Reset session">
+                    <Icon name="refresh" />
+                  </button>
+                  <button className="btn btn--sm" onClick={() => compactSession(s.id)} title="Compact session">
+                    <Icon name="minus" />
+                  </button>
                 </div>
               </div>
               );
@@ -334,6 +366,16 @@ export function SessionsPage({ gw }: SessionsPageProps) {
                 <span className="chip">{preview.agentId}</span>
               )}
             </div>
+
+            {(preview.model || preview.thinkingLevel) && (
+              <div className="chip-row" style={{ marginBottom: 8 }}>
+                {preview.model && <span className="chip">Model: {preview.model}</span>}
+                {preview.thinkingLevel && <span className="chip">Thinking: {preview.thinkingLevel}</span>}
+                {preview.compactionCount != null && preview.compactionCount > 0 && (
+                  <span className="chip">Compactions: {preview.compactionCount}</span>
+                )}
+              </div>
+            )}
 
             {(() => {
               const pt = getTokenUsage(preview);

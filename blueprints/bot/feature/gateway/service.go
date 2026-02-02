@@ -10,6 +10,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/feature/command"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/compact"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
@@ -87,6 +88,35 @@ func (g *Service) Close() {
 	if g.memReg != nil {
 		g.memReg.closeAll()
 	}
+}
+
+// SearchMemory searches indexed memory for the given workspace directory.
+// Returns formatted search results for the dashboard. If workspaceDir is empty,
+// it tries to find the default agent's workspace.
+func (g *Service) SearchMemory(ctx context.Context, workspaceDir, query string, limit int) ([]memory.SearchResult, error) {
+	if g.memReg == nil {
+		return nil, nil
+	}
+	mgr, err := g.memReg.get(workspaceDir)
+	if err != nil || mgr == nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	return mgr.Search(ctx, query, limit, 0)
+}
+
+// MemoryStats returns the stats for a workspace's memory index.
+func (g *Service) MemoryStats(workspaceDir string) (fileCount int, chunkCount int, err error) {
+	if g.memReg == nil {
+		return 0, 0, nil
+	}
+	mgr, err := g.memReg.get(workspaceDir)
+	if err != nil || mgr == nil {
+		return 0, 0, err
+	}
+	return mgr.Stats()
 }
 
 // ProcessMessage handles an inbound message end-to-end:
@@ -192,6 +222,11 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 			alwaysPrompt = skill.BuildAlwaysSkillsPrompt(loadedSkills)
 		}
 	}
+
+	// 6a-ii. Apply skill env overrides (apiKey → primaryEnv, custom env vars).
+	// Scoped to this request; cleanup restores original values.
+	cleanupEnv := applySkillEnvOverrides(loadedSkills, agent.Workspace)
+	defer cleanupEnv()
 
 	// 6b. Build system prompt with all OpenClaw-compatible sections.
 	promptParams := &SystemPromptParams{
