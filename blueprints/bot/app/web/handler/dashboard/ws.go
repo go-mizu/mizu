@@ -360,13 +360,19 @@ func (h *Hub) handleHello(client *Client, req *RPCRequest) {
 	}
 	h.mu.RUnlock()
 
-	resp := HelloOK{
-		Type:     "hello-ok",
-		Protocol: 1,
-		Features: RPCFeatures{
-			Methods: methods,
-			Events:  []string{"session.updated", "cron.updated", "channel.updated", "log.entry"},
+	// Build snapshot for hello-ok (OpenClaw compatibility)
+	snapshot := map[string]any{
+		"presence": h.Instances(),
+	}
+
+	resp := map[string]any{
+		"type":     "hello-ok",
+		"protocol": 1,
+		"features": map[string]any{
+			"methods": methods,
+			"events":  []string{"session.updated", "cron.updated", "channel.updated", "log.entry", "chat", "presence", "health"},
 		},
+		"snapshot": snapshot,
 	}
 
 	data, _ := json.Marshal(resp)

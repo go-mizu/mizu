@@ -29,7 +29,7 @@ func RegisterAll(hub *dashboard.Hub, s store.Store, gw *gateway.Service, logs *l
 	registerConfigMethods(hub)
 	registerLogMethods(hub, logs)
 	registerDebugMethods(hub, s, gw, logs, startTime)
-	registerChatMethods(hub, gw)
+	registerChatMethods(hub, gw, s)
 	registerAgentMethods(hub, s)
 }
 
@@ -358,7 +358,35 @@ func registerSkillMethods(hub *dashboard.Hub) {
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
 		}
-		// Toggle is stored in config - for now acknowledge
+		// Toggle skill enabled state in config
+		cfgPath := config.DefaultConfigPath()
+		data, err := config.LoadRawConfig(cfgPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				data = make(map[string]any)
+			} else {
+				return nil, fmt.Errorf("load config: %w", err)
+			}
+		}
+		// Store in skills.disabled map
+		skillsCfg, ok := data["skills"].(map[string]any)
+		if !ok {
+			skillsCfg = make(map[string]any)
+			data["skills"] = skillsCfg
+		}
+		disabledMap, ok := skillsCfg["disabled"].(map[string]any)
+		if !ok {
+			disabledMap = make(map[string]any)
+			skillsCfg["disabled"] = disabledMap
+		}
+		if req.Enabled {
+			delete(disabledMap, req.Key)
+		} else {
+			disabledMap[req.Key] = true
+		}
+		if err := config.SaveRawConfig(cfgPath, data); err != nil {
+			return nil, fmt.Errorf("save config: %w", err)
+		}
 		return map[string]bool{"ok": true}, nil
 	})
 }
@@ -403,20 +431,182 @@ func registerConfigMethods(hub *dashboard.Hub) {
 		return map[string]bool{"ok": true}, nil
 	})
 
+	hub.Register("config.apply", func(params json.RawMessage) (any, error) {
+		// Re-read config from disk to pick up any external changes
+		cfgPath := config.DefaultConfigPath()
+		_, err := config.LoadFromFile(cfgPath)
+		if err != nil {
+			return nil, fmt.Errorf("apply config: %w", err)
+		}
+		return map[string]bool{"ok": true}, nil
+	})
+
+	hub.Register("config.patch", func(params json.RawMessage) (any, error) {
+		var req struct {
+			Path  string `json:"path"`
+			Value any    `json:"value"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+		if req.Path == "" {
+			return nil, fmt.Errorf("path is required")
+		}
+		cfgPath := config.DefaultConfigPath()
+		data, err := config.LoadRawConfig(cfgPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				data = make(map[string]any)
+			} else {
+				return nil, fmt.Errorf("load config: %w", err)
+			}
+		}
+		config.ConfigSet(req.Path, req.Value, data)
+		if err := config.SaveRawConfig(cfgPath, data); err != nil {
+			return nil, fmt.Errorf("save config: %w", err)
+		}
+		return map[string]bool{"ok": true}, nil
+	})
+
 	hub.Register("config.schema", func(params json.RawMessage) (any, error) {
-		// Return a basic schema describing the config sections
 		schema := map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"meta":     map[string]string{"type": "object", "description": "Version metadata"},
-				"wizard":   map[string]string{"type": "object", "description": "Setup wizard state"},
-				"auth":     map[string]string{"type": "object", "description": "Authentication profiles"},
-				"agents":   map[string]string{"type": "object", "description": "Agent defaults"},
-				"messages": map[string]string{"type": "object", "description": "Messaging behavior"},
-				"commands": map[string]string{"type": "object", "description": "Slash command config"},
-				"channels": map[string]string{"type": "object", "description": "Channel configurations"},
-				"gateway":  map[string]string{"type": "object", "description": "Gateway settings"},
-				"plugins":  map[string]string{"type": "object", "description": "Plugin settings"},
+				"meta": map[string]any{
+					"type":        "object",
+					"description": "Version metadata",
+					"properties": map[string]any{
+						"lastTouchedVersion": map[string]string{"type": "string", "description": "Last config editor version"},
+						"lastTouchedAt":      map[string]string{"type": "string", "description": "Last config edit timestamp"},
+					},
+				},
+				"wizard": map[string]any{
+					"type":        "object",
+					"description": "Setup wizard state",
+					"properties": map[string]any{
+						"lastRunAt":      map[string]string{"type": "string", "description": "When the wizard last ran"},
+						"lastRunVersion": map[string]string{"type": "string", "description": "Version that ran the wizard"},
+						"lastRunCommand": map[string]string{"type": "string", "description": "Command that triggered the wizard"},
+						"lastRunMode":    map[string]string{"type": "string", "description": "Wizard run mode"},
+					},
+				},
+				"auth": map[string]any{
+					"type":        "object",
+					"description": "Authentication profiles",
+					"properties": map[string]any{
+						"profiles": map[string]string{"type": "object", "description": "Named auth profiles (provider + mode)"},
+					},
+				},
+				"agents": map[string]any{
+					"type":        "object",
+					"description": "Agent defaults and behavior",
+					"properties": map[string]any{
+						"defaults": map[string]any{
+							"type":        "object",
+							"description": "Default settings for all agents",
+							"properties": map[string]any{
+								"workspace":      map[string]string{"type": "string", "description": "Path to agent workspace directory"},
+								"maxConcurrent":  map[string]string{"type": "number", "description": "Maximum concurrent agent requests"},
+								"contextPruning": map[string]any{
+									"type":        "object",
+									"description": "Context pruning behavior",
+									"properties": map[string]any{
+										"mode": map[string]string{"type": "string", "description": "Pruning mode: cache-ttl, none"},
+										"ttl":  map[string]string{"type": "string", "description": "Time-to-live for cached context (e.g. 1h)"},
+									},
+								},
+								"compaction": map[string]any{
+									"type":        "object",
+									"description": "Conversation compaction settings",
+									"properties": map[string]any{
+										"mode": map[string]string{"type": "string", "description": "Compaction mode: safeguard, aggressive, off"},
+									},
+								},
+								"heartbeat": map[string]any{
+									"type":        "object",
+									"description": "Periodic heartbeat messages",
+									"properties": map[string]any{
+										"every": map[string]string{"type": "string", "description": "Heartbeat interval (e.g. 30m)"},
+									},
+								},
+								"subagents": map[string]any{
+									"type":        "object",
+									"description": "Subagent concurrency settings",
+									"properties": map[string]any{
+										"maxConcurrent": map[string]string{"type": "number", "description": "Maximum concurrent subagent requests"},
+									},
+								},
+							},
+						},
+					},
+				},
+				"messages": map[string]any{
+					"type":        "object",
+					"description": "Messaging behavior",
+					"properties": map[string]any{
+						"ackReactionScope": map[string]string{"type": "string", "description": "Ack reaction scope: group-mentions, all, none"},
+					},
+				},
+				"commands": map[string]any{
+					"type":        "object",
+					"description": "Slash command configuration",
+					"properties": map[string]any{
+						"native":       map[string]string{"type": "string", "description": "Native commands: auto, on, off"},
+						"nativeSkills": map[string]string{"type": "string", "description": "Native skill commands: auto, on, off"},
+					},
+				},
+				"channels": map[string]any{
+					"type":        "object",
+					"description": "Channel configurations",
+					"properties": map[string]any{
+						"telegram": map[string]any{
+							"type":        "object",
+							"description": "Telegram channel settings",
+							"properties": map[string]any{
+								"enabled":     map[string]string{"type": "boolean", "description": "Whether the Telegram channel is enabled"},
+								"botToken":    map[string]string{"type": "string", "description": "Telegram Bot API token"},
+								"dmPolicy":    map[string]string{"type": "string", "description": "DM policy: allowlist, open, disabled"},
+								"allowFrom":   map[string]string{"type": "array", "description": "Allowed Telegram user IDs for DMs"},
+								"groupPolicy": map[string]string{"type": "string", "description": "Group chat policy"},
+								"streamMode":  map[string]string{"type": "string", "description": "Stream mode for responses"},
+							},
+						},
+					},
+				},
+				"gateway": map[string]any{
+					"type":        "object",
+					"description": "Gateway server settings",
+					"properties": map[string]any{
+						"port": map[string]string{"type": "number", "description": "Gateway listen port"},
+						"mode": map[string]string{"type": "string", "description": "Gateway mode: local"},
+						"bind": map[string]string{"type": "string", "description": "Bind mode: loopback, lan, tailnet, auto"},
+						"auth": map[string]any{
+							"type":        "object",
+							"description": "Gateway authentication settings",
+							"properties": map[string]any{
+								"mode":           map[string]string{"type": "string", "description": "Auth mode: token, password"},
+								"token":          map[string]string{"type": "string", "description": "Auth token value"},
+								"password":       map[string]string{"type": "string", "description": "Auth password value"},
+								"allowTailscale": map[string]string{"type": "boolean", "description": "Allow Tailscale authentication"},
+							},
+						},
+						"tailscale": map[string]any{
+							"type":        "object",
+							"description": "Tailscale integration settings",
+							"properties": map[string]any{
+								"mode":        map[string]string{"type": "string", "description": "Tailscale mode: off, serve, funnel"},
+								"resetOnExit": map[string]string{"type": "boolean", "description": "Reset Tailscale config on exit"},
+							},
+						},
+					},
+				},
+				"plugins": map[string]any{
+					"type":        "object",
+					"description": "Plugin settings",
+					"properties": map[string]any{
+						"entries": map[string]string{"type": "object", "description": "Named plugin entries with enabled flag"},
+					},
+				},
 			},
 		}
 		return schema, nil
@@ -490,12 +680,17 @@ func registerDebugMethods(hub *dashboard.Hub, s store.Store, gw *gateway.Service
 			return nil, err
 		}
 		return map[string]any{
-			"status":  status,
-			"uptime":  time.Since(startTime).Truncate(time.Second).String(),
-			"startAt": startTime.Format(time.RFC3339),
-			"go":      runtime.Version(),
-			"os":      runtime.GOOS,
-			"arch":    runtime.GOARCH,
+			"ok":        true,
+			"status":    status,
+			"uptime":    time.Since(startTime).Truncate(time.Second).String(),
+			"startAt":   startTime.Format(time.RFC3339),
+			"go":        runtime.Version(),
+			"goVersion": runtime.Version(),
+			"os":        runtime.GOOS,
+			"arch":      runtime.GOARCH,
+			"database":  "sqlite",
+			"sessions":  status.Sessions,
+			"messages":  status.Messages,
 		}, nil
 	})
 
@@ -522,7 +717,7 @@ func registerDebugMethods(hub *dashboard.Hub, s store.Store, gw *gateway.Service
 
 // --- Chat Methods ---
 
-func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service) {
+func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store) {
 	hub.Register("chat.send", func(params json.RawMessage) (any, error) {
 		var req struct {
 			SessionID string `json:"sessionId"`
@@ -549,7 +744,11 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]string{"response": response}, nil
+		return map[string]any{
+			"response": response,
+			"content":  response,
+			"message":  response,
+		}, nil
 	})
 
 	hub.Register("chat.history", func(params json.RawMessage) (any, error) {
@@ -560,8 +759,25 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service) {
 		if params != nil {
 			_ = json.Unmarshal(params, &req)
 		}
-		// Return empty for now - chat history comes through sessions.preview
-		return map[string]any{"messages": []any{}}, nil
+		if req.Limit <= 0 {
+			req.Limit = 50
+		}
+		if req.SessionID == "" {
+			req.SessionID = "dashboard"
+		}
+		messages, err := s.ListMessages(context.Background(), req.SessionID, req.Limit)
+		if err != nil {
+			return nil, err
+		}
+		if messages == nil {
+			messages = []types.Message{}
+		}
+		return map[string]any{"messages": messages}, nil
+	})
+
+	hub.Register("chat.abort", func(params json.RawMessage) (any, error) {
+		// Placeholder: abort current in-flight chat request
+		return map[string]bool{"ok": true}, nil
 	})
 }
 
@@ -591,5 +807,36 @@ func registerAgentMethods(hub *dashboard.Hub, s store.Store) {
 			return nil, err
 		}
 		return agent, nil
+	})
+
+	hub.Register("agent.identity.get", func(params json.RawMessage) (any, error) {
+		var req struct {
+			ID string `json:"id"`
+		}
+		if params != nil {
+			_ = json.Unmarshal(params, &req)
+		}
+		// Load identity from workspace files
+		workspaceDir := filepath.Join(config.DefaultConfigDir(), "workspace")
+		identity := map[string]any{
+			"name":  "OpenBot",
+			"emoji": "\U0001f916",
+		}
+		// Try to read IDENTITY.md
+		identityPath := filepath.Join(workspaceDir, "IDENTITY.md")
+		if data, err := os.ReadFile(identityPath); err == nil {
+			content := string(data)
+			identity["raw"] = content
+		}
+		return identity, nil
+	})
+
+	hub.Register("models.list", func(params json.RawMessage) (any, error) {
+		models := []map[string]any{
+			{"id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic"},
+			{"id": "claude-opus-4-20250514", "name": "Claude Opus 4", "provider": "anthropic"},
+			{"id": "claude-haiku-3-5-20241022", "name": "Claude 3.5 Haiku", "provider": "anthropic"},
+		}
+		return map[string]any{"models": models}, nil
 	})
 }
