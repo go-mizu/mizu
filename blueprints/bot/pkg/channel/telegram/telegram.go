@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,20 @@ func NewDriver(config string, handler channel.MessageHandler) (*Driver, error) {
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return nil, fmt.Errorf("parse telegram config: %w", err)
 	}
+
+	// Env var override — TELEGRAM_API_KEY takes precedence over the JSON
+	// config value.  This bridges the gap when the gateway loads channel
+	// configs from the database (which may contain a placeholder token)
+	// while the real token is provided via the environment.
+	if envToken := os.Getenv("TELEGRAM_API_KEY"); envToken != "" {
+		cfg.BotToken = envToken
+	}
+
+	// Sanitise token: trim whitespace and strip accidental "bot" prefix
+	// (Telegram tokens look like "123456:ABC-DEF…"; the URL already adds "bot").
+	cfg.BotToken = strings.TrimSpace(cfg.BotToken)
+	cfg.BotToken = strings.TrimPrefix(cfg.BotToken, "bot")
+
 	if cfg.BotToken == "" {
 		return nil, fmt.Errorf("telegram config: botToken is required")
 	}
