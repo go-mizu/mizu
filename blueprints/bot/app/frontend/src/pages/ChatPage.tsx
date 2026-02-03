@@ -12,10 +12,17 @@ interface Message {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
+  thinking?: string;
   createdAt?: string;
   timestamp?: number;
   agentId?: string;
   stopReason?: string;
+  usage?: number;
+}
+
+interface ActiveTool {
+  name: string;
+  startedAt: number;
 }
 
 interface Session {
@@ -47,6 +54,29 @@ function extractText(message?: Record<string, unknown>): string {
       .join('');
   }
   return '';
+}
+
+/** Extract thinking text from content block arrays. */
+function extractThinking(message?: Record<string, unknown>): string {
+  if (!message) return '';
+  const content = message.content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: Record<string, unknown>) => b.type === 'thinking')
+      .map((b: Record<string, unknown>) => (b.thinking as string) || (b.text as string) || '')
+      .join('');
+  }
+  return '';
+}
+
+/** Extract total token usage from message or response data. */
+function extractUsage(data?: Record<string, unknown>): number | undefined {
+  if (!data) return undefined;
+  const usage = data.usage as Record<string, unknown> | undefined;
+  if (!usage) return undefined;
+  // Try common token count fields
+  const total = usage.total_tokens ?? usage.totalTokens ?? usage.output_tokens ?? usage.outputTokens;
+  return typeof total === 'number' ? total : undefined;
 }
 
 function groupMessages(messages: Message[]): MessageGroup[] {
@@ -84,6 +114,10 @@ export function ChatPage({ gw }: ChatPageProps) {
   const [streamingText, setStreamingText] = useState('');
   const [focusMode, setFocusMode] = useState(() => localStorage.getItem('openbot-chat-focus') === 'true');
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('default');
+  const [streamingThinking, setStreamingThinking] = useState('');
+  const [activeTools, setActiveTools] = useState<ActiveTool[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting'>('connected');
+  const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -187,10 +221,15 @@ export function ChatPage({ gw }: ChatPageProps) {
 
       switch (data.state) {
         case 'delta': {
-          const text = extractText(data.message as Record<string, unknown>);
+          const msg = data.message as Record<string, unknown>;
+          const text = extractText(msg);
+          const thinking = extractThinking(msg);
           if (text) {
             setStreamingText(text);
             setStreaming(true);
+          }
+          if (thinking) {
+            setStreamingThinking(thinking);
           }
           break;
         }
@@ -198,7 +237,10 @@ export function ChatPage({ gw }: ChatPageProps) {
           const message = data.message as Record<string, unknown> | undefined;
           if (message) {
             const content = extractText(message);
+            const thinking = extractThinking(message);
             const role = (message.role as string) || 'assistant';
+            const usage = extractUsage(data as Record<string, unknown>)
+              ?? extractUsage(message);
             if (content) {
               setMessages(prev => {
                 // Deduplicate: check if we already have this content as last message
@@ -207,23 +249,31 @@ export function ChatPage({ gw }: ChatPageProps) {
                 return [...prev, {
                   role: role as 'user' | 'assistant',
                   content,
+                  thinking: thinking || undefined,
                   timestamp: message.timestamp as number | undefined,
                   stopReason: message.stopReason as string | undefined,
+                  usage,
                 }];
               });
             }
           }
           setStreamingText('');
+          setStreamingThinking('');
           setStreaming(false);
+          setActiveTools([]);
           break;
         }
         case 'aborted':
           setStreamingText('');
+          setStreamingThinking('');
           setStreaming(false);
+          setActiveTools([]);
           break;
         case 'error': {
           setStreamingText('');
+          setStreamingThinking('');
           setStreaming(false);
+          setActiveTools([]);
           const errMsg = (data.errorMessage as string) || 'Chat request failed';
           setMessages(prev => [...prev, {
             role: 'assistant' as const,
@@ -260,11 +310,44 @@ export function ChatPage({ gw }: ChatPageProps) {
       }
     });
 
+    // Agent event listener for tool call indicators
+    const unsubAgent = gw.on('event:agent', (payload: unknown) => {
+      const data = payload as Record<string, unknown>;
+      if (!data) return;
+      if (data.sessionKey && data.sessionKey !== currentSessionKey) return;
+
+      if (data.type === 'tool_start') {
+        const toolName = (data.tool as string) || (data.name as string) || 'tool';
+        setActiveTools(prev => {
+          if (prev.some(t => t.name === toolName)) return prev;
+          return [...prev, { name: toolName, startedAt: Date.now() }];
+        });
+      } else if (data.type === 'tool_end') {
+        const toolName = (data.tool as string) || (data.name as string) || 'tool';
+        setActiveTools(prev => prev.filter(t => t.name !== toolName));
+      }
+    });
+
+    // Connection status listeners
+    const unsubDisconnected = gw.on('disconnected', () => {
+      setConnectionStatus('reconnecting');
+    });
+    const unsubReconnected = gw.on('reconnected', () => {
+      setConnectionStatus('connected');
+    });
+    const unsubConnected = gw.on('connected', () => {
+      setConnectionStatus('connected');
+    });
+
     return () => {
       unsubChat();
       unsubMessage();
       unsubTyping();
       unsubDone();
+      unsubAgent();
+      unsubDisconnected();
+      unsubReconnected();
+      unsubConnected();
     };
   }, [gw, sessionId, currentSessionKey]);
 
@@ -305,22 +388,9 @@ export function ChatPage({ gw }: ChatPageProps) {
         loadSessions();
       }
 
-      // The broadcast events handle adding messages, but as a fallback
-      // ensure the assistant response is shown if broadcast didn't fire
-      const reply = (res.content ?? '') as string;
-      if (reply) {
-        setMessages((prev) => {
-          if (res.messageId && prev.some((m) => m.id === res.messageId)) return prev;
-          // Also check if content already present from event
-          const last = prev[prev.length - 1];
-          if (last && last.role === 'assistant' && last.content === reply) return prev;
-          return [...prev, {
-            id: res.messageId as string | undefined,
-            role: 'assistant' as const,
-            content: reply,
-          }];
-        });
-      }
+      // chat.send now returns {runId, status: "started"} without content.
+      // Assistant messages arrive via event:chat events (delta/final), so
+      // we do NOT try to display content from the RPC response.
     } catch (err) {
       const errorMsg: Message = {
         role: 'assistant',
@@ -329,8 +399,8 @@ export function ChatPage({ gw }: ChatPageProps) {
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setSending(false);
-      setStreaming(false);
-      setStreamingText('');
+      // Note: streaming/streamingText are cleared by the 'final' event,
+      // but we clear sending here so the input re-enables immediately.
       textareaRef.current?.focus();
     }
   }, [text, sending, gw, sessionId, currentSessionKey, loadSessions, thinkingLevel]);
@@ -344,6 +414,8 @@ export function ChatPage({ gw }: ChatPageProps) {
     setStreaming(false);
     setSending(false);
     setStreamingText('');
+    setStreamingThinking('');
+    setActiveTools([]);
   }, [gw, currentSessionKey]);
 
   const handleNewConversation = useCallback(async () => {
@@ -381,6 +453,10 @@ export function ChatPage({ gw }: ChatPageProps) {
     },
     [toast],
   );
+
+  const toggleThinking = useCallback((key: string) => {
+    setExpandedThinking(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   const handleSessionChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -446,6 +522,19 @@ export function ChatPage({ gw }: ChatPageProps) {
         </button>
       </div>
 
+      {connectionStatus === 'reconnecting' && (
+        <div style={{
+          padding: '4px 12px',
+          background: '#fef3cd',
+          color: '#856404',
+          fontSize: '12px',
+          textAlign: 'center',
+          borderBottom: '1px solid #ffc107',
+        }}>
+          Reconnecting...
+        </div>
+      )}
+
       <div className="chat-messages">
         {groups.length === 0 && !sending && !streamingText && (
           <div className="chat-empty">
@@ -471,8 +560,47 @@ export function ChatPage({ gw }: ChatPageProps) {
                     msg.role === 'assistant' &&
                     gi === groups.length - 1 &&
                     mi === group.messages.length - 1;
+                  const thinkingKey = `${gi}-${mi}`;
+                  const isThinkingExpanded = expandedThinking[thinkingKey] ?? false;
                   return (
                     <div key={msg.id || `${gi}-${mi}`} className="chat-bubble-wrapper">
+                      {/* Thinking block (collapsible) */}
+                      {msg.thinking && (
+                        <div style={{ marginBottom: '4px' }}>
+                          <button
+                            onClick={() => toggleThinking(thinkingKey)}
+                            style={{
+                              background: 'none',
+                              border: '1px solid var(--color-border, #ddd)',
+                              borderRadius: '4px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              color: 'var(--color-text-muted, #888)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {isThinkingExpanded
+                              ? 'Hide thinking'
+                              : `Show thinking (${msg.thinking.length} chars)`}
+                          </button>
+                          {isThinkingExpanded && (
+                            <div style={{
+                              marginTop: '4px',
+                              padding: '8px',
+                              background: 'var(--color-bg-subtle, #f6f6f6)',
+                              border: '1px solid var(--color-border, #ddd)',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              color: 'var(--color-text-muted, #888)',
+                              whiteSpace: 'pre-wrap',
+                              maxHeight: '300px',
+                              overflow: 'auto',
+                            }}>
+                              {msg.thinking}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div
                         className={`chat-bubble chat-bubble--${msg.role}${isLastAssistant ? ' streaming' : ''}`}
                       >
@@ -491,9 +619,22 @@ export function ChatPage({ gw }: ChatPageProps) {
                           <Icon name="copy" size={14} />
                         </button>
                       </div>
-                      {(msg.createdAt || msg.timestamp) && (
-                        <div className="chat-stamp">{formatTime(msg.createdAt, msg.timestamp)}</div>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        {(msg.createdAt || msg.timestamp) && (
+                          <div className="chat-stamp">{formatTime(msg.createdAt, msg.timestamp)}</div>
+                        )}
+                        {msg.usage != null && (
+                          <span style={{
+                            fontSize: '10px',
+                            color: 'var(--color-text-muted, #999)',
+                            background: 'var(--color-bg-subtle, #f0f0f0)',
+                            padding: '1px 6px',
+                            borderRadius: '8px',
+                          }}>
+                            {msg.usage} tokens
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -509,12 +650,80 @@ export function ChatPage({ gw }: ChatPageProps) {
             <div className="chat-group-row">
               <div className="chat-avatar assistant">AI</div>
               <div className="chat-group-content">
+                {/* Streaming thinking indicator */}
+                {streamingThinking && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <button
+                      onClick={() => toggleThinking('streaming')}
+                      style={{
+                        background: 'none',
+                        border: '1px solid var(--color-border, #ddd)',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        color: 'var(--color-text-muted, #888)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {expandedThinking['streaming']
+                        ? 'Hide thinking'
+                        : `Show thinking (${streamingThinking.length} chars)`}
+                    </button>
+                    {expandedThinking['streaming'] && (
+                      <div style={{
+                        marginTop: '4px',
+                        padding: '8px',
+                        background: 'var(--color-bg-subtle, #f6f6f6)',
+                        border: '1px solid var(--color-border, #ddd)',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        color: 'var(--color-text-muted, #888)',
+                        whiteSpace: 'pre-wrap',
+                        maxHeight: '200px',
+                        overflow: 'auto',
+                      }}>
+                        {streamingThinking}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="chat-bubble-wrapper">
                   <div className="chat-bubble chat-bubble--assistant streaming">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {streamingText}
                     </ReactMarkdown>
                   </div>
+                  {/* Active tool badges */}
+                  {activeTools.length > 0 && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '4px',
+                      flexWrap: 'wrap',
+                      marginTop: '4px',
+                    }}>
+                      {activeTools.map(tool => (
+                        <span key={tool.name} style={{
+                          fontSize: '10px',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          background: 'var(--color-accent, #4f46e5)',
+                          color: '#fff',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}>
+                          <span style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: '#4ade80',
+                            display: 'inline-block',
+                          }} />
+                          {tool.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -536,6 +745,37 @@ export function ChatPage({ gw }: ChatPageProps) {
                       <span />
                     </span>
                   </div>
+                  {/* Active tool badges during typing */}
+                  {activeTools.length > 0 && (
+                    <div style={{
+                      display: 'flex',
+                      gap: '4px',
+                      flexWrap: 'wrap',
+                      marginTop: '4px',
+                    }}>
+                      {activeTools.map(tool => (
+                        <span key={tool.name} style={{
+                          fontSize: '10px',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          background: 'var(--color-accent, #4f46e5)',
+                          color: '#fff',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}>
+                          <span style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: '#4ade80',
+                            display: 'inline-block',
+                          }} />
+                          {tool.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
