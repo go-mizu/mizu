@@ -113,7 +113,9 @@ export function ChannelsPage({ gw }: ChannelsPageProps) {
 
   useEffect(() => {
     load();
-  }, [load]);
+    const unsub = gw.on('event:channel.updated', () => { load(); });
+    return unsub;
+  }, [gw, load]);
 
   return (
     <div className="card">

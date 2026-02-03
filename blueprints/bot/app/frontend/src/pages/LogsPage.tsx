@@ -46,6 +46,17 @@ export function LogsPage({ gw }: LogsPageProps) {
     loadLogs();
   }, [loadLogs]);
 
+  // Subscribe to real-time log entries
+  useEffect(() => {
+    const unsub = gw.on('event:log.entry', (data?: unknown) => {
+      const entry = data as LogEntry | undefined;
+      if (entry && entry.message) {
+        setEntries((prev) => [...prev, entry]);
+      }
+    });
+    return unsub;
+  }, [gw]);
+
   useEffect(() => {
     if (autoFollow && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -129,6 +140,7 @@ export function LogsPage({ gw }: LogsPageProps) {
           <span className="logs-count">
             {filteredEntries.length} / {entries.length} entries
           </span>
+          <span className="chip chip-ok">{entries.length}</span>
           <button className="btn btn-sm" onClick={handleExport}>
             <Icon name="download" size={14} />
             Export
