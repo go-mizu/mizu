@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // MemoryManager coordinates file indexing and hybrid search across a
@@ -74,10 +76,17 @@ func NewMemoryManager(dbPath, workspaceDir string, cfg MemoryConfig) (*MemoryMan
 	return m, nil
 }
 
-// IndexFile indexes (or re-indexes) a single file. It reads the file,
-// computes a content hash, and skips processing if the hash has not changed.
-// The file is chunked and each chunk is stored with optional embeddings.
+// IndexFile indexes (or re-indexes) a single file with source="memory".
+// It reads the file, computes a content hash, and skips processing if the
+// hash has not changed.
 func (m *MemoryManager) IndexFile(path string) error {
+	return m.IndexFileWithSource(path, "memory")
+}
+
+// IndexFileWithSource indexes a single file with the given source tag.
+// The source should be "memory" for workspace files or "sessions" for
+// session transcripts, matching OpenClaw's convention.
+func (m *MemoryManager) IndexFileWithSource(path, source string) error {
 	absPath := path
 	if !filepath.IsAbs(path) {
 		absPath = filepath.Join(m.workspaceDir, path)
@@ -142,7 +151,7 @@ func (m *MemoryManager) IndexFile(path string) error {
 		}
 
 		if err := m.store.UpsertChunk(
-			chunkID, path, "file", c.StartLine, c.EndLine,
+			chunkID, path, source, c.StartLine, c.EndLine,
 			c.Hash, modelName, c.Text, emb,
 		); err != nil {
 			return fmt.Errorf("upsert chunk %s: %w", chunkID, err)
@@ -150,7 +159,7 @@ func (m *MemoryManager) IndexFile(path string) error {
 	}
 
 	// Update file record.
-	if err := m.store.UpsertFile(path, "file", hash, info.ModTime().Unix(), info.Size()); err != nil {
+	if err := m.store.UpsertFile(path, source, hash, info.ModTime().Unix(), info.Size()); err != nil {
 		return fmt.Errorf("upsert file %s: %w", path, err)
 	}
 
@@ -196,7 +205,7 @@ func (m *MemoryManager) IndexAll() error {
 			relPath = path
 		}
 
-		if err := m.IndexFile(relPath); err != nil {
+		if err := m.IndexFileWithSource(relPath, "memory"); err != nil {
 			// Log but continue indexing other files.
 			return nil
 		}
@@ -313,6 +322,225 @@ func (m *MemoryManager) Close() error {
 		return m.store.Close()
 	}
 	return nil
+}
+
+// ReIndex re-indexes all workspace files. This is called after compaction
+// or other events that may have updated workspace files (e.g. MEMORY.md).
+func (m *MemoryManager) ReIndex() error {
+	return m.IndexAll()
+}
+
+// EnsureDailyLog creates today's daily memory log file if it doesn't exist.
+// The log is created at workspace/memory/YYYY-MM-DD.md matching OpenClaw's
+// daily log convention.
+func (m *MemoryManager) EnsureDailyLog() error {
+	if m.workspaceDir == "" {
+		return nil
+	}
+
+	memDir := filepath.Join(m.workspaceDir, "memory")
+	if err := os.MkdirAll(memDir, 0o755); err != nil {
+		return fmt.Errorf("create memory dir: %w", err)
+	}
+
+	today := time.Now().Format("2006-01-02")
+	logPath := filepath.Join(memDir, today+".md")
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		header := fmt.Sprintf("# %s\n\n", today)
+		return os.WriteFile(logPath, []byte(header), 0o644)
+	}
+	return nil
+}
+
+// IndexSessionTranscript indexes a single JSONL session transcript file.
+// It extracts assistant messages and indexes them with source="sessions".
+func (m *MemoryManager) IndexSessionTranscript(transcriptPath string) error {
+	absPath := transcriptPath
+	if !filepath.IsAbs(transcriptPath) {
+		absPath = filepath.Join(m.workspaceDir, transcriptPath)
+	}
+
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("read transcript %s: %w", transcriptPath, err)
+	}
+
+	// Compute hash for change detection.
+	hash := fmt.Sprintf("%x", sha256.Sum256(content))
+	existingHash, err := m.store.GetFileHash(transcriptPath)
+	if err != nil {
+		return fmt.Errorf("get file hash %s: %w", transcriptPath, err)
+	}
+	if existingHash == hash {
+		return nil // unchanged
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", transcriptPath, err)
+	}
+
+	// Delete old chunks.
+	if err := m.store.DeleteChunksByPath(transcriptPath); err != nil {
+		return fmt.Errorf("delete old chunks %s: %w", transcriptPath, err)
+	}
+
+	// Parse JSONL and extract assistant messages.
+	var assistantTexts []string
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry.Role == "assistant" && entry.Content != "" {
+			assistantTexts = append(assistantTexts, entry.Content)
+		}
+	}
+
+	if len(assistantTexts) == 0 {
+		// Still record the file so we don't re-process it.
+		return m.store.UpsertFile(transcriptPath, "sessions", hash, info.ModTime().Unix(), info.Size())
+	}
+
+	// Chunk all assistant text together.
+	combined := strings.Join(assistantTexts, "\n\n")
+	chunkCfg := ChunkConfig{
+		MaxTokens:     m.config.ChunkTokens,
+		OverlapTokens: m.config.ChunkOverlap,
+	}
+	chunks := ChunkMarkdown(combined, chunkCfg)
+
+	// Generate embeddings if available.
+	var embeddings [][]float64
+	if m.embedder != nil && len(chunks) > 0 {
+		embeddings, err = m.embedChunks(chunks)
+		if err != nil {
+			embeddings = nil
+		}
+	}
+
+	modelName := ""
+	if m.embedder != nil {
+		modelName = m.embedder.Model()
+	}
+
+	for i, c := range chunks {
+		chunkID := fmt.Sprintf("%s:%d", transcriptPath, c.StartLine)
+		var emb []float64
+		if embeddings != nil && i < len(embeddings) {
+			emb = embeddings[i]
+		}
+		if err := m.store.UpsertChunk(
+			chunkID, transcriptPath, "sessions", c.StartLine, c.EndLine,
+			c.Hash, modelName, c.Text, emb,
+		); err != nil {
+			return fmt.Errorf("upsert chunk %s: %w", chunkID, err)
+		}
+	}
+
+	return m.store.UpsertFile(transcriptPath, "sessions", hash, info.ModTime().Unix(), info.Size())
+}
+
+// IndexSessionTranscripts walks a sessions directory and indexes all JSONL
+// transcript files with source="sessions".
+func (m *MemoryManager) IndexSessionTranscripts(sessionsDir string) error {
+	if sessionsDir == "" {
+		return nil
+	}
+
+	absDir := sessionsDir
+	if !filepath.IsAbs(sessionsDir) {
+		absDir = filepath.Join(m.workspaceDir, sessionsDir)
+	}
+
+	return filepath.WalkDir(absDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".jsonl" {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(m.workspaceDir, path)
+		if err != nil {
+			relPath = path
+		}
+
+		if err := m.IndexSessionTranscript(relPath); err != nil {
+			// Log but continue indexing other files.
+			return nil
+		}
+		return nil
+	})
+}
+
+// SearchWithSource performs hybrid search filtered by source.
+// If source is empty or "all", all sources are searched.
+func (m *MemoryManager) SearchWithSource(ctx context.Context, query, source string, maxResults int, minScore float64) ([]SearchResult, error) {
+	if query == "" {
+		return nil, nil
+	}
+	if maxResults <= 0 {
+		maxResults = m.config.MaxResults
+	}
+	if minScore <= 0 {
+		minScore = m.config.MinScore
+	}
+
+	// If no source filter, delegate to normal search.
+	if source == "" || source == "all" {
+		return m.Search(ctx, query, maxResults, minScore)
+	}
+
+	hybridCfg := HybridConfig{
+		VectorWeight:        m.config.VectorWeight,
+		TextWeight:          m.config.TextWeight,
+		MinScore:            minScore,
+		MaxResults:          maxResults,
+		CandidateMultiplier: 4,
+	}
+
+	candidateLimit := maxResults * hybridCfg.CandidateMultiplier
+
+	// FTS5 keyword search with source filter.
+	keywordResults, err := m.store.SearchFTSWithSource(query, source, candidateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("FTS search: %w", err)
+	}
+
+	// Vector search with source filter.
+	var vectorResults []VectorResult
+	if m.embedder != nil {
+		queryEmbs, err := m.embedder.Embed(ctx, []string{query})
+		if err == nil && len(queryEmbs) > 0 {
+			vectorResults, err = m.store.SearchVectorWithSource(queryEmbs[0], source, candidateLimit)
+			if err != nil {
+				vectorResults = nil
+			}
+		}
+	}
+
+	if len(vectorResults) == 0 {
+		hybridCfg.VectorWeight = 0
+		hybridCfg.TextWeight = 1.0
+		hybridCfg.MinScore = minScore * 0.5
+	}
+
+	return MergeHybridResults(vectorResults, keywordResults, hybridCfg), nil
 }
 
 // embedChunks generates embeddings for chunks, using the embedding cache

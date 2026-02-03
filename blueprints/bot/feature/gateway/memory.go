@@ -65,6 +65,11 @@ func (r *memoryRegistry) get(workspaceDir string) (*memory.MemoryManager, error)
 		return nil, fmt.Errorf("create memory manager for %s: %w", workspaceDir, err)
 	}
 
+	// Ensure today's daily memory log exists.
+	if err := m.EnsureDailyLog(); err != nil {
+		fmt.Fprintf(os.Stderr, "memory: daily log error for %s: %v\n", workspaceDir, err)
+	}
+
 	// Index workspace files in background-safe manner.
 	// Errors are logged but don't prevent the manager from being usable.
 	if err := m.IndexAll(); err != nil {

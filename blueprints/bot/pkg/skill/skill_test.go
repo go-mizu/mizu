@@ -692,6 +692,191 @@ func TestLoadAllSkills_NoWorkspaceNoBundle(t *testing.T) {
 	}
 }
 
+// createSkillDir creates a skill subdirectory with a SKILL.md file.
+func createSkillDir(t *testing.T, parentDir, name, content string) {
+	t.Helper()
+	dir := filepath.Join(parentDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ParseExtraDirs
+// ---------------------------------------------------------------------------
+
+func TestParseExtraDirs_Empty(t *testing.T) {
+	dirs := ParseExtraDirs(map[string]any{})
+	if len(dirs) != 0 {
+		t.Errorf("got %d dirs; want 0", len(dirs))
+	}
+}
+
+func TestParseExtraDirs_NoLoadSection(t *testing.T) {
+	cfg := map[string]any{
+		"skills": map[string]any{},
+	}
+	dirs := ParseExtraDirs(cfg)
+	if len(dirs) != 0 {
+		t.Errorf("got %d dirs; want 0", len(dirs))
+	}
+}
+
+func TestParseExtraDirs_ValidDirs(t *testing.T) {
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"load": map[string]any{
+				"extraDirs": []any{"/opt/skills", "/usr/local/skills"},
+			},
+		},
+	}
+	dirs := ParseExtraDirs(cfg)
+	if len(dirs) != 2 {
+		t.Fatalf("got %d dirs; want 2", len(dirs))
+	}
+	if dirs[0] != "/opt/skills" || dirs[1] != "/usr/local/skills" {
+		t.Errorf("dirs = %v; want [/opt/skills /usr/local/skills]", dirs)
+	}
+}
+
+func TestParseExtraDirs_ExpandsTilde(t *testing.T) {
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"load": map[string]any{
+				"extraDirs": []any{"~/my-skills"},
+			},
+		},
+	}
+	dirs := ParseExtraDirs(cfg)
+	if len(dirs) != 1 {
+		t.Fatalf("got %d dirs; want 1", len(dirs))
+	}
+	if strings.HasPrefix(dirs[0], "~") {
+		t.Errorf("dirs[0] = %q; should have expanded ~", dirs[0])
+	}
+}
+
+func TestParseExtraDirs_SkipsEmptyStrings(t *testing.T) {
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"load": map[string]any{
+				"extraDirs": []any{"", "/valid/dir", ""},
+			},
+		},
+	}
+	dirs := ParseExtraDirs(cfg)
+	if len(dirs) != 1 {
+		t.Fatalf("got %d dirs; want 1 (empty strings skipped)", len(dirs))
+	}
+	if dirs[0] != "/valid/dir" {
+		t.Errorf("dirs[0] = %q; want /valid/dir", dirs[0])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// LoadAllSkillsWithExtras
+// ---------------------------------------------------------------------------
+
+func TestLoadAllSkillsWithExtras_ExtraDirsLoaded(t *testing.T) {
+	ws := t.TempDir()
+	extraDir := t.TempDir()
+	bundledDir := t.TempDir()
+
+	// Create a skill in extra dir.
+	createSkillDir(t, extraDir, "extra-skill", "---\nname: extra-skill\ndescription: From extra dir\n---\nExtra skill")
+
+	// Create a different skill in bundled dir.
+	createSkillDir(t, bundledDir, "bundled-skill", "---\nname: bundled-skill\ndescription: From bundled\n---\nBundled skill")
+
+	all, err := LoadAllSkillsWithExtras(ws, []string{extraDir}, bundledDir)
+	if err != nil {
+		t.Fatalf("LoadAllSkillsWithExtras error: %v", err)
+	}
+
+	if len(all) != 2 {
+		t.Fatalf("got %d skills; want 2", len(all))
+	}
+
+	// Find the extra skill.
+	var extraSkill *Skill
+	for _, s := range all {
+		if s.Name == "extra-skill" {
+			extraSkill = s
+		}
+	}
+	if extraSkill == nil {
+		t.Fatal("extra-skill not found")
+	}
+	if extraSkill.Source != "extra" {
+		t.Errorf("extra-skill.Source = %q; want %q", extraSkill.Source, "extra")
+	}
+}
+
+func TestLoadAllSkillsWithExtras_ExtraPrecedenceOverBundled(t *testing.T) {
+	ws := t.TempDir()
+	extraDir := t.TempDir()
+	bundledDir := t.TempDir()
+
+	// Same skill name in both extra and bundled.
+	createSkillDir(t, extraDir, "conflict", "---\nname: conflict\ndescription: Extra version\n---\nExtra version")
+	createSkillDir(t, bundledDir, "conflict", "---\nname: conflict\ndescription: Bundled version\n---\nBundled version")
+
+	all, err := LoadAllSkillsWithExtras(ws, []string{extraDir}, bundledDir)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if len(all) != 1 {
+		t.Fatalf("got %d skills; want 1 (extra wins over bundled)", len(all))
+	}
+	if all[0].Source != "extra" {
+		t.Errorf("Source = %q; want %q (extra has precedence over bundled)", all[0].Source, "extra")
+	}
+	if all[0].Description != "Extra version" {
+		t.Errorf("Description = %q; want %q", all[0].Description, "Extra version")
+	}
+}
+
+func TestLoadAllSkillsWithExtras_WorkspacePrecedenceOverExtra(t *testing.T) {
+	ws := t.TempDir()
+	extraDir := t.TempDir()
+
+	// Same skill in workspace and extra.
+	wsSkillsDir := filepath.Join(ws, "skills")
+	os.MkdirAll(wsSkillsDir, 0o755)
+	createSkillDir(t, wsSkillsDir, "my-skill", "---\nname: my-skill\ndescription: Workspace version\n---\nWS")
+	createSkillDir(t, extraDir, "my-skill", "---\nname: my-skill\ndescription: Extra version\n---\nExtra")
+
+	all, err := LoadAllSkillsWithExtras(ws, []string{extraDir})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if len(all) != 1 {
+		t.Fatalf("got %d skills; want 1", len(all))
+	}
+	if all[0].Source != "workspace" {
+		t.Errorf("Source = %q; want %q (workspace wins over extra)", all[0].Source, "workspace")
+	}
+}
+
+func TestLoadAllSkillsWithExtras_NilExtraDirs(t *testing.T) {
+	ws := t.TempDir()
+	bundledDir := t.TempDir()
+	createSkillDir(t, bundledDir, "test-skill", "---\nname: test-skill\ndescription: Test\n---\nTest")
+
+	all, err := LoadAllSkillsWithExtras(ws, nil, bundledDir)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("got %d skills; want 1", len(all))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // BuildSkillsPrompt
 // ---------------------------------------------------------------------------
@@ -1172,5 +1357,103 @@ func TestBundledSkillsDir_InvalidEnvVar(t *testing.T) {
 	// Just verify it doesn't return the invalid path.
 	if got == "/nonexistent/path/xyz123" {
 		t.Error("should not return invalid path from env var")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MatchSkillCommand
+// ---------------------------------------------------------------------------
+
+func TestMatchSkillCommand_MatchesReadyUserInvocable(t *testing.T) {
+	skills := []*Skill{
+		{Name: "weather", Ready: true, UserInvocable: true},
+		{Name: "deploy", Ready: true, UserInvocable: true},
+	}
+	s, ok := MatchSkillCommand("/weather", skills)
+	if !ok {
+		t.Fatal("expected match for /weather")
+	}
+	if s.Name != "weather" {
+		t.Errorf("Name = %q; want %q", s.Name, "weather")
+	}
+}
+
+func TestMatchSkillCommand_NoMatchNotReady(t *testing.T) {
+	skills := []*Skill{
+		{Name: "weather", Ready: false, UserInvocable: true},
+	}
+	_, ok := MatchSkillCommand("/weather", skills)
+	if ok {
+		t.Error("should not match skill that is not ready")
+	}
+}
+
+func TestMatchSkillCommand_NoMatchNotUserInvocable(t *testing.T) {
+	skills := []*Skill{
+		{Name: "internal", Ready: true, UserInvocable: false},
+	}
+	_, ok := MatchSkillCommand("/internal", skills)
+	if ok {
+		t.Error("should not match skill that is not user-invocable")
+	}
+}
+
+func TestMatchSkillCommand_NoMatchUnknown(t *testing.T) {
+	skills := []*Skill{
+		{Name: "weather", Ready: true, UserInvocable: true},
+	}
+	_, ok := MatchSkillCommand("/unknown", skills)
+	if ok {
+		t.Error("should not match unknown command")
+	}
+}
+
+func TestMatchSkillCommand_EmptyCommand(t *testing.T) {
+	skills := []*Skill{
+		{Name: "weather", Ready: true, UserInvocable: true},
+	}
+	_, ok := MatchSkillCommand("/", skills)
+	if ok {
+		t.Error("should not match empty command")
+	}
+}
+
+func TestMatchSkillCommand_NilSkills(t *testing.T) {
+	_, ok := MatchSkillCommand("/weather", nil)
+	if ok {
+		t.Error("should not match with nil skills")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SkillCommandList
+// ---------------------------------------------------------------------------
+
+func TestSkillCommandList_ReturnsReadyUserInvocable(t *testing.T) {
+	skills := []*Skill{
+		{Name: "weather", Description: "Get weather", Emoji: "W", Ready: true, UserInvocable: true},
+		{Name: "deploy", Description: "Deploy app", Emoji: "D", Ready: true, UserInvocable: true},
+		{Name: "internal", Description: "Internal only", Ready: true, UserInvocable: false},
+		{Name: "broken", Description: "Not ready", Ready: false, UserInvocable: true},
+	}
+	cmds := SkillCommandList(skills)
+	if len(cmds) != 2 {
+		t.Fatalf("got %d commands; want 2 (only ready+user-invocable)", len(cmds))
+	}
+	if cmds[0].Name != "/weather" {
+		t.Errorf("cmds[0].Name = %q; want %q", cmds[0].Name, "/weather")
+	}
+	if cmds[0].SkillName != "weather" {
+		t.Errorf("cmds[0].SkillName = %q; want %q", cmds[0].SkillName, "weather")
+	}
+	if cmds[1].Name != "/deploy" {
+		t.Errorf("cmds[1].Name = %q; want %q", cmds[1].Name, "/deploy")
+	}
+}
+
+func TestSkillCommandList_EmptySkills(t *testing.T) {
+	cmds := SkillCommandList(nil)
+	if len(cmds) != 0 {
+		t.Errorf("got %d commands; want 0 for nil skills", len(cmds))
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/config"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/workspace"
@@ -164,8 +165,14 @@ func (cb *contextBuilder) buildWorkspaceSection(workspaceDir, origin string) (st
 }
 
 // buildSkillsSection loads skills and returns the XML prompt and loaded skills.
+// It respects skills.load.extraDirs from the config.
 func (cb *contextBuilder) buildSkillsSection(workspaceDir string) (string, []*skill.Skill) {
-	skills, err := skill.LoadAllSkills(workspaceDir, skill.BundledSkillsDir())
+	// Load extra dirs from config if available.
+	var extraDirs []string
+	if rawCfg, err := config.LoadRawConfig(config.DefaultConfigPath()); err == nil {
+		extraDirs = skill.ParseExtraDirs(rawCfg)
+	}
+	skills, err := skill.LoadAllSkillsWithExtras(workspaceDir, extraDirs, skill.BundledSkillsDir())
 	if err != nil || len(skills) == 0 {
 		return "", nil
 	}

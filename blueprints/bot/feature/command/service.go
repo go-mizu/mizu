@@ -4,15 +4,23 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
 
 // Service handles in-chat slash commands.
-type Service struct{}
+type Service struct {
+	skills []*skill.Skill // loaded skills for command dispatch
+}
 
 // NewService creates a command service.
 func NewService() *Service {
 	return &Service{}
+}
+
+// SetSkills updates the loaded skills for skill command dispatch.
+func (s *Service) SetSkills(skills []*skill.Skill) {
+	s.skills = skills
 }
 
 // Commands returns the list of available slash commands.
@@ -44,6 +52,17 @@ func (s *Service) Parse(content string) (cmd string, args string, isCommand bool
 	return cmd, args, true
 }
 
+// IsSkillCommand checks if the command matches a user-invocable skill.
+// Returns the matched skill and true if found.
+func (s *Service) IsSkillCommand(cmd string) (*skill.Skill, bool) {
+	return skill.MatchSkillCommand(cmd, s.skills)
+}
+
+// SkillCommands returns slash commands derived from user-invocable skills.
+func (s *Service) SkillCommands() []skill.SkillCommand {
+	return skill.SkillCommandList(s.skills)
+}
+
 // Execute handles a slash command and returns the response text.
 func (s *Service) Execute(cmd, args string, agent *types.Agent) string {
 	switch cmd {
@@ -52,6 +71,18 @@ func (s *Service) Execute(cmd, args string, agent *types.Agent) string {
 		sb.WriteString("Available commands:\n\n")
 		for _, c := range s.Commands() {
 			sb.WriteString(fmt.Sprintf("  %s - %s\n", c.Usage, c.Description))
+		}
+		// Append skill commands if any.
+		skillCmds := s.SkillCommands()
+		if len(skillCmds) > 0 {
+			sb.WriteString("\nSkill commands:\n\n")
+			for _, sc := range skillCmds {
+				prefix := ""
+				if sc.Emoji != "" {
+					prefix = sc.Emoji + " "
+				}
+				sb.WriteString(fmt.Sprintf("  %s%s - %s\n", prefix, sc.Name, sc.Description))
+			}
 		}
 		return sb.String()
 
@@ -79,6 +110,14 @@ func (s *Service) Execute(cmd, args string, agent *types.Agent) string {
 
 	case "/compact":
 		return "Context compacted. Older messages have been summarized."
+
+	case "/memory":
+		if args == "" {
+			return "Usage: /memory <query>\nSearches the agent's memory index for relevant context."
+		}
+		// Memory search requires gateway access; return a marker that the
+		// gateway's handleCommand will intercept and dispatch properly.
+		return fmt.Sprintf("__memory_search:%s", args)
 
 	default:
 		return fmt.Sprintf("Unknown command: %s\nType /help for available commands.", cmd)

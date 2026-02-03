@@ -398,7 +398,15 @@ func LoadUserSkills() ([]*Skill, error) {
 
 // LoadAllSkills loads skills from workspace, user-installed, and bundled directories.
 // Precedence: workspace > user-installed > bundled.
+// For extra directory support, use LoadAllSkillsWithExtras.
 func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error) {
+	return LoadAllSkillsWithExtras(workspaceDir, nil, bundledDirs...)
+}
+
+// LoadAllSkillsWithExtras loads skills from workspace, user-installed, extra directories,
+// and bundled directories. Precedence: workspace > user > extra > bundled.
+// extraDirs supports the OpenClaw skills.load.extraDirs config.
+func LoadAllSkillsWithExtras(workspaceDir string, extraDirs []string, bundledDirs ...string) ([]*Skill, error) {
 	seen := make(map[string]bool)
 	var all []*Skill
 
@@ -427,7 +435,23 @@ func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error)
 		all = append(all, s)
 	}
 
-	// 3. Bundled skills fill in the rest.
+	// 3. Extra directories from config (skills.load.extraDirs).
+	for _, dir := range extraDirs {
+		extra, err := loadSkillsFromDir(dir, "extra")
+		if err != nil {
+			continue // non-fatal for extra dirs
+		}
+		for _, s := range extra {
+			if seen[s.Name] {
+				continue // workspace/user override wins
+			}
+			s.Source = "extra"
+			seen[s.Name] = true
+			all = append(all, s)
+		}
+	}
+
+	// 4. Bundled skills fill in the rest.
 	for _, dir := range bundledDirs {
 		bundled, err := loadSkillsFromDir(dir, "bundled")
 		if err != nil {
@@ -435,7 +459,7 @@ func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error)
 		}
 		for _, s := range bundled {
 			if seen[s.Name] {
-				continue // workspace/user override wins
+				continue // workspace/user/extra override wins
 			}
 			s.Source = "bundled"
 			seen[s.Name] = true
@@ -444,6 +468,35 @@ func LoadAllSkills(workspaceDir string, bundledDirs ...string) ([]*Skill, error)
 	}
 
 	return all, nil
+}
+
+// ParseExtraDirs extracts extra skill directories from config.
+// Reads from cfg["skills"]["load"]["extraDirs"] as a string array.
+// Expands ~ in paths to the user's home directory.
+func ParseExtraDirs(cfg map[string]any) []string {
+	skills, ok := cfg["skills"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	load, ok := skills["load"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	raw, ok := load["extraDirs"]
+	if !ok {
+		return nil
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	var dirs []string
+	for _, v := range arr {
+		if sv, ok := v.(string); ok && sv != "" {
+			dirs = append(dirs, expandHome(sv))
+		}
+	}
+	return dirs
 }
 
 // loadSkillsFromDir loads all skills from subdirectories of the given path.
@@ -574,6 +627,53 @@ func ConfigPathTruthy(cfg map[string]any, path string) bool {
 	default:
 		return true
 	}
+}
+
+// MatchSkillCommand checks if a slash command (e.g. "/weather") matches a
+// user-invocable, ready skill. Returns the skill and true if matched.
+// The cmd should include the "/" prefix (e.g. "/weather").
+func MatchSkillCommand(cmd string, skills []*Skill) (*Skill, bool) {
+	// Strip leading "/" to get the skill name.
+	name := strings.TrimPrefix(cmd, "/")
+	if name == "" {
+		return nil, false
+	}
+	for _, s := range skills {
+		if !s.Ready || !s.UserInvocable {
+			continue
+		}
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+// SkillCommandList returns the available slash commands derived from
+// user-invocable, ready skills. Each command is the skill name prefixed
+// with "/" and includes the skill's description and emoji.
+func SkillCommandList(skills []*Skill) []SkillCommand {
+	var cmds []SkillCommand
+	for _, s := range skills {
+		if !s.Ready || !s.UserInvocable {
+			continue
+		}
+		cmds = append(cmds, SkillCommand{
+			Name:        "/" + s.Name,
+			Description: s.Description,
+			Emoji:       s.Emoji,
+			SkillName:   s.Name,
+		})
+	}
+	return cmds
+}
+
+// SkillCommand represents a slash command generated from a user-invocable skill.
+type SkillCommand struct {
+	Name        string `json:"name"`        // e.g. "/weather"
+	Description string `json:"description"` // skill description
+	Emoji       string `json:"emoji"`       // visual indicator
+	SkillName   string `json:"skillName"`   // underlying skill name
 }
 
 // BundledSkillsDir returns the path to bundled skills.

@@ -461,3 +461,381 @@ func TestShouldSkipDir(t *testing.T) {
 		}
 	}
 }
+
+// --- New tests for memory/sessions feature parity ---
+
+func TestIndexFileWithSource_UsesMemorySource(t *testing.T) {
+	dir := t.TempDir()
+	content := "# My Memory\n\nSome important facts.\n"
+	filePath := filepath.Join(dir, "MEMORY.md")
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	mgr := newTestManager(t, dir)
+
+	if err := mgr.IndexFileWithSource("MEMORY.md", "memory"); err != nil {
+		t.Fatalf("IndexFileWithSource: %v", err)
+	}
+
+	// Verify chunks have source="memory".
+	var source string
+	err := mgr.store.db.QueryRow(`SELECT source FROM chunks WHERE path = ? LIMIT 1`, "MEMORY.md").Scan(&source)
+	if err != nil {
+		t.Fatalf("query chunk source: %v", err)
+	}
+	if source != "memory" {
+		t.Errorf("chunk source = %q, want %q", source, "memory")
+	}
+
+	// Verify file record has source="memory".
+	err = mgr.store.db.QueryRow(`SELECT source FROM files WHERE path = ?`, "MEMORY.md").Scan(&source)
+	if err != nil {
+		t.Fatalf("query file source: %v", err)
+	}
+	if source != "memory" {
+		t.Errorf("file source = %q, want %q", source, "memory")
+	}
+}
+
+func TestIndexFile_DefaultsToMemorySource(t *testing.T) {
+	dir := t.TempDir()
+	content := "package main\n"
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	mgr := newTestManager(t, dir)
+	if err := mgr.IndexFile("main.go"); err != nil {
+		t.Fatalf("IndexFile: %v", err)
+	}
+
+	// IndexFile should now default to "memory" source.
+	var source string
+	err := mgr.store.db.QueryRow(`SELECT source FROM chunks WHERE path = ? LIMIT 1`, "main.go").Scan(&source)
+	if err != nil {
+		t.Fatalf("query chunk source: %v", err)
+	}
+	if source != "memory" {
+		t.Errorf("IndexFile default source = %q, want %q", source, "memory")
+	}
+}
+
+func TestIndexAll_UsesMemorySource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "readme.md"), []byte("# Readme\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	mgr := newTestManager(t, dir)
+	if err := mgr.IndexAll(); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	var source string
+	err := mgr.store.db.QueryRow(`SELECT source FROM files WHERE path = ?`, "readme.md").Scan(&source)
+	if err != nil {
+		t.Fatalf("query file source: %v", err)
+	}
+	if source != "memory" {
+		t.Errorf("IndexAll source = %q, want %q", source, "memory")
+	}
+}
+
+func TestIndexSessionTranscript_ExtractsAssistantMessages(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a JSONL transcript with mixed roles.
+	lines := []string{
+		`{"role":"user","content":"Hello, how are you?"}`,
+		`{"role":"assistant","content":"I am doing well, thank you for asking!"}`,
+		`{"role":"user","content":"Tell me about Go programming."}`,
+		`{"role":"assistant","content":"Go is a statically typed language designed at Google. It is known for its simplicity and concurrency support."}`,
+		`{"role":"system","content":"You are a helpful assistant."}`,
+	}
+	transcriptContent := strings.Join(lines, "\n") + "\n"
+
+	sessDir := filepath.Join(dir, "sessions")
+	if err := os.MkdirAll(sessDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	transcriptPath := filepath.Join(sessDir, "abc123.jsonl")
+	if err := os.WriteFile(transcriptPath, []byte(transcriptContent), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	mgr := newTestManager(t, dir)
+
+	relPath := filepath.Join("sessions", "abc123.jsonl")
+	if err := mgr.IndexSessionTranscript(relPath); err != nil {
+		t.Fatalf("IndexSessionTranscript: %v", err)
+	}
+
+	// Verify chunks exist with source="sessions".
+	var count int
+	err := mgr.store.db.QueryRow(`SELECT COUNT(*) FROM chunks WHERE path = ? AND source = ?`,
+		relPath, "sessions").Scan(&count)
+	if err != nil {
+		t.Fatalf("count chunks: %v", err)
+	}
+	if count == 0 {
+		t.Error("expected at least 1 chunk from session transcript")
+	}
+
+	// Verify chunk text contains assistant content, not user/system.
+	var text string
+	err = mgr.store.db.QueryRow(`SELECT text FROM chunks WHERE path = ? LIMIT 1`, relPath).Scan(&text)
+	if err != nil {
+		t.Fatalf("query chunk text: %v", err)
+	}
+	if !strings.Contains(text, "doing well") {
+		t.Error("expected assistant message content in chunks")
+	}
+	if strings.Contains(text, "Hello, how are you") {
+		t.Error("user messages should not be in session transcript chunks")
+	}
+
+	// Verify file record.
+	var source string
+	err = mgr.store.db.QueryRow(`SELECT source FROM files WHERE path = ?`, relPath).Scan(&source)
+	if err != nil {
+		t.Fatalf("query file source: %v", err)
+	}
+	if source != "sessions" {
+		t.Errorf("file source = %q, want %q", source, "sessions")
+	}
+}
+
+func TestIndexSessionTranscript_SkipsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"role":"assistant","content":"Hello world"}` + "\n"
+	sessDir := filepath.Join(dir, "sessions")
+	os.MkdirAll(sessDir, 0755)
+	fpath := filepath.Join(sessDir, "test.jsonl")
+	os.WriteFile(fpath, []byte(content), 0644)
+
+	mgr := newTestManager(t, dir)
+	relPath := filepath.Join("sessions", "test.jsonl")
+
+	// Index first time.
+	if err := mgr.IndexSessionTranscript(relPath); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+	hash1, _ := mgr.store.GetFileHash(relPath)
+
+	// Index again without changes.
+	if err := mgr.IndexSessionTranscript(relPath); err != nil {
+		t.Fatalf("second index: %v", err)
+	}
+	hash2, _ := mgr.store.GetFileHash(relPath)
+
+	if hash1 != hash2 {
+		t.Error("hash should not change on re-index of unchanged transcript")
+	}
+}
+
+func TestIndexSessionTranscripts_WalksDirectory(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a sessions directory with multiple JSONL files.
+	sessDir := filepath.Join(dir, "agents", "main", "sessions")
+	if err := os.MkdirAll(sessDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	for _, name := range []string{"sess1.jsonl", "sess2.jsonl"} {
+		content := `{"role":"assistant","content":"Reply from ` + name + `"}` + "\n"
+		if err := os.WriteFile(filepath.Join(sessDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
+	// Also create a non-JSONL file that should be skipped.
+	os.WriteFile(filepath.Join(sessDir, "sessions.json"), []byte("{}"), 0644)
+
+	mgr := newTestManager(t, dir)
+
+	if err := mgr.IndexSessionTranscripts(filepath.Join("agents", "main", "sessions")); err != nil {
+		t.Fatalf("IndexSessionTranscripts: %v", err)
+	}
+
+	// Both JSONL files should be indexed.
+	for _, name := range []string{"sess1.jsonl", "sess2.jsonl"} {
+		relPath := filepath.Join("agents", "main", "sessions", name)
+		hash, err := mgr.store.GetFileHash(relPath)
+		if err != nil {
+			t.Fatalf("GetFileHash(%s): %v", relPath, err)
+		}
+		if hash == "" {
+			t.Errorf("transcript %s was not indexed", name)
+		}
+	}
+
+	// sessions.json should NOT be indexed (not .jsonl).
+	jsonPath := filepath.Join("agents", "main", "sessions", "sessions.json")
+	hash, _ := mgr.store.GetFileHash(jsonPath)
+	if hash != "" {
+		t.Error("sessions.json should not be indexed by IndexSessionTranscripts")
+	}
+}
+
+func TestEnsureDailyLog_CreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	mgr := newTestManager(t, dir)
+
+	if err := mgr.EnsureDailyLog(); err != nil {
+		t.Fatalf("EnsureDailyLog: %v", err)
+	}
+
+	// Check that the memory directory and today's log file exist.
+	memDir := filepath.Join(dir, "memory")
+	entries, err := os.ReadDir(memDir)
+	if err != nil {
+		t.Fatalf("read memory dir: %v", err)
+	}
+
+	found := false
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".md") {
+			found = true
+			// Verify the file has a header.
+			content, err := os.ReadFile(filepath.Join(memDir, e.Name()))
+			if err != nil {
+				t.Fatalf("read log: %v", err)
+			}
+			if !strings.HasPrefix(string(content), "# ") {
+				t.Error("daily log should start with a date header")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("EnsureDailyLog did not create a .md file in workspace/memory/")
+	}
+}
+
+func TestEnsureDailyLog_DoesNotOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	mgr := newTestManager(t, dir)
+
+	// Create the log first with custom content.
+	memDir := filepath.Join(dir, "memory")
+	os.MkdirAll(memDir, 0755)
+
+	// We need to know today's date to create the file.
+	if err := mgr.EnsureDailyLog(); err != nil {
+		t.Fatalf("first EnsureDailyLog: %v", err)
+	}
+
+	// Find the created file and modify it.
+	entries, _ := os.ReadDir(memDir)
+	if len(entries) == 0 {
+		t.Fatal("no log file created")
+	}
+
+	logPath := filepath.Join(memDir, entries[0].Name())
+	os.WriteFile(logPath, []byte("# Custom Content\n\nImportant note.\n"), 0644)
+
+	// Call again - should not overwrite.
+	if err := mgr.EnsureDailyLog(); err != nil {
+		t.Fatalf("second EnsureDailyLog: %v", err)
+	}
+
+	content, _ := os.ReadFile(logPath)
+	if !strings.Contains(string(content), "Important note") {
+		t.Error("EnsureDailyLog overwrote existing content")
+	}
+}
+
+func TestReIndex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Original\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	mgr := newTestManager(t, dir)
+	if err := mgr.IndexAll(); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	// Verify doc.md is indexed.
+	hash1, _ := mgr.store.GetFileHash("doc.md")
+	if hash1 == "" {
+		t.Fatal("doc.md not indexed")
+	}
+
+	// Modify the file.
+	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("# Updated Content\n\nNew stuff.\n"), 0644)
+
+	// ReIndex should pick up the change.
+	if err := mgr.ReIndex(); err != nil {
+		t.Fatalf("ReIndex: %v", err)
+	}
+
+	hash2, _ := mgr.store.GetFileHash("doc.md")
+	if hash2 == hash1 {
+		t.Error("ReIndex did not detect file change")
+	}
+}
+
+func TestSearchWithSource_FiltersBySource(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a workspace file.
+	os.WriteFile(filepath.Join(dir, "notes.md"), []byte("Important workspace notes about authentication.\n"), 0644)
+
+	// Create a session transcript.
+	sessDir := filepath.Join(dir, "sessions")
+	os.MkdirAll(sessDir, 0755)
+	os.WriteFile(filepath.Join(sessDir, "sess.jsonl"),
+		[]byte(`{"role":"assistant","content":"We discussed authentication patterns and OAuth2 flows."}`+"\n"), 0644)
+
+	mgr := newTestManager(t, dir)
+
+	// Index workspace files.
+	if err := mgr.IndexAll(); err != nil {
+		t.Fatalf("IndexAll: %v", err)
+	}
+
+	// Index session transcript.
+	if err := mgr.IndexSessionTranscript(filepath.Join("sessions", "sess.jsonl")); err != nil {
+		t.Fatalf("IndexSessionTranscript: %v", err)
+	}
+
+	// Search all sources.
+	allResults, err := mgr.SearchWithSource(context.Background(), "authentication", "all", 10, 0)
+	if err != nil {
+		t.Fatalf("SearchWithSource all: %v", err)
+	}
+
+	// Search memory only.
+	memResults, err := mgr.SearchWithSource(context.Background(), "authentication", "memory", 10, 0)
+	if err != nil {
+		t.Fatalf("SearchWithSource memory: %v", err)
+	}
+
+	// Search sessions only.
+	sessResults, err := mgr.SearchWithSource(context.Background(), "authentication", "sessions", 10, 0)
+	if err != nil {
+		t.Fatalf("SearchWithSource sessions: %v", err)
+	}
+
+	// All results should include both sources.
+	if len(allResults) == 0 {
+		t.Fatal("expected results for 'authentication' across all sources")
+	}
+
+	// Memory results should only have memory source.
+	for _, r := range memResults {
+		if r.Source != "memory" {
+			t.Errorf("memory filter returned source=%q", r.Source)
+		}
+	}
+
+	// Session results should only have sessions source.
+	for _, r := range sessResults {
+		if r.Source != "sessions" {
+			t.Errorf("sessions filter returned source=%q", r.Source)
+		}
+	}
+}

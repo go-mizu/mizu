@@ -114,15 +114,17 @@ type GatewayStatus struct {
 
 // InboundMessage is a message received from a channel driver.
 type InboundMessage struct {
-	ChannelType ChannelType `json:"channelType"`
-	ChannelID   string      `json:"channelId"`
-	PeerID      string      `json:"peerId"`
-	PeerName    string      `json:"peerName"`
-	Content     string      `json:"content"`
-	Origin      string      `json:"origin"` // dm, group
-	GroupID     string      `json:"groupId,omitempty"`
-	ReplyTo     string      `json:"replyTo,omitempty"`
-	Metadata    string      `json:"metadata,omitempty"`
+	ChannelType  ChannelType `json:"channelType"`
+	ChannelID    string      `json:"channelId"`
+	PeerID       string      `json:"peerId"`
+	PeerName     string      `json:"peerName"`
+	Content      string      `json:"content"`
+	Origin       string      `json:"origin"` // dm, group
+	GroupID      string      `json:"groupId,omitempty"`
+	ReplyTo      string      `json:"replyTo,omitempty"`
+	Metadata     string      `json:"metadata,omitempty"`
+	SkillContext string      `json:"-"` // injected skill content for skill commands (internal)
+	SkillName    string      `json:"-"` // matched skill name (internal)
 }
 
 // OutboundMessage is a message to send via a channel driver.
