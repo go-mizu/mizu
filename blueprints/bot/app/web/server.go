@@ -182,6 +182,8 @@ func NewServer(s store.Store, devMode bool) *Server {
 				ChannelID:   msg.ChannelID,
 				PeerID:      msg.PeerID,
 				Content:     result.Content,
+				ReplyTo:     msg.ReplyTo,
+				ThreadID:    msg.ThreadID,
 			}
 			return driverRef.Send(ctx, outMsg)
 		})

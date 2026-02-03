@@ -127,6 +127,27 @@ type InboundMessage struct {
 	SkillName    string      `json:"-"` // matched skill name (internal)
 	RunID        string      `json:"-"` // run ID for OpenClaw chat event tracking (internal)
 	SessionKey   string      `json:"-"` // OpenClaw session key (internal)
+
+	// Media fields (populated by channel drivers that support media).
+	MediaType    string `json:"-"` // image, video, audio, document, sticker, location
+	MediaFileID  string `json:"-"` // platform file ID for downloading
+	MediaURL     string `json:"-"` // resolved download URL (if available)
+	MediaCaption string `json:"-"` // caption text (separate from Content)
+
+	// Threading context (populated by drivers with thread/topic support).
+	ThreadID    string `json:"-"` // forum topic or thread ID
+	IsForum     bool   `json:"-"` // true if message is from a forum topic
+
+	// Reply/forward context (serialized JSON for structured data).
+	ReplyContext   string `json:"-"` // JSON: {"id","sender","body","kind"}
+	ForwardContext string `json:"-"` // JSON: {"from","date","fromType","fromID"}
+
+	// Mention and bot interaction flags.
+	MentionsBot bool   `json:"-"` // true if message @mentions the bot
+	BotUsername string `json:"-"` // the bot's own username (for mention stripping)
+
+	// Platform-specific raw data for drivers that need it.
+	RawMessage string `json:"-"` // raw platform message JSON (for callback queries etc.)
 }
 
 // OutboundMessage is a message to send via a channel driver.
@@ -137,6 +158,23 @@ type OutboundMessage struct {
 	Content     string      `json:"content"`
 	ReplyTo     string      `json:"replyTo,omitempty"`
 	Metadata    string      `json:"metadata,omitempty"`
+
+	// Parse mode for formatting (HTML, Markdown, MarkdownV2).
+	ParseMode string `json:"parseMode,omitempty"`
+
+	// Threading support.
+	ThreadID string `json:"threadId,omitempty"` // reply within a specific thread/topic
+
+	// Inline keyboard buttons (JSON-serialized).
+	ReplyMarkup string `json:"replyMarkup,omitempty"` // JSON inline keyboard markup
+
+	// Message edit/delete operations.
+	EditMessageID   string `json:"editMessageId,omitempty"`   // edit this message instead of sending new
+	DeleteMessageID string `json:"deleteMessageId,omitempty"` // delete this message
+
+	// Reaction support.
+	ReactionEmoji     string `json:"reactionEmoji,omitempty"`     // emoji to react with
+	ReactionMessageID string `json:"reactionMessageId,omitempty"` // message to react to
 }
 
 // SessionConfig holds session-related configuration.
