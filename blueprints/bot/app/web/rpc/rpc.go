@@ -23,7 +23,7 @@ import (
 // RegisterAll registers all RPC methods on the hub.
 func RegisterAll(hub *dashboard.Hub, s store.Store, gw *gateway.Service, logs *logring.Ring, startTime time.Time) {
 	registerCronMethods(hub, s)
-	registerSessionMethods(hub, s)
+	registerSessionMethods(hub, s, gw)
 	registerChannelMethods(hub, s)
 	registerSkillMethods(hub)
 	registerConfigMethods(hub)
@@ -181,7 +181,7 @@ func registerCronMethods(hub *dashboard.Hub, s store.Store) {
 
 // --- Session Methods ---
 
-func registerSessionMethods(hub *dashboard.Hub, s store.Store) {
+func registerSessionMethods(hub *dashboard.Hub, s store.Store, gw *gateway.Service) {
 	hub.Register("sessions.list", func(params json.RawMessage) (any, error) {
 		var req struct {
 			ActiveMinutes int `json:"activeMinutes"`
@@ -370,6 +370,15 @@ func registerSessionMethods(hub *dashboard.Hub, s store.Store) {
 		}
 		_ = s.PatchSession(context.Background(), sessionID, updates)
 
+		// Trigger memory re-index after compaction to keep search current.
+		if agent, err := s.GetAgent(context.Background(), session.AgentID); err == nil && agent.Workspace != "" {
+			go func() {
+				if err := gw.ReIndex(agent.Workspace); err != nil {
+					fmt.Fprintf(os.Stderr, "memory re-index after compact: %v\n", err)
+				}
+			}()
+		}
+
 		hub.Broadcast("session.updated", nil)
 		return map[string]any{
 			"ok":              true,
@@ -454,20 +463,25 @@ func registerChannelMethods(hub *dashboard.Hub, s store.Store) {
 // --- Skills Methods ---
 
 // loadSkillsWithConfig loads all skills and the raw config, returning both.
+// It respects skills.load.extraDirs from the config.
 func loadSkillsWithConfig() ([]*skill.Skill, map[string]any, error) {
 	workspaceDir := filepath.Join(config.DefaultConfigDir(), "workspace")
 	bundledDir := skill.BundledSkillsDir()
-	loaded, _ := skill.LoadAllSkills(workspaceDir, bundledDir)
 
+	// Load config first so we can extract extra dirs.
 	cfgPath := config.DefaultConfigPath()
 	data, err := config.LoadRawConfig(cfgPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			data = make(map[string]any)
 		} else {
-			return loaded, nil, err
+			return nil, nil, err
 		}
 	}
+
+	extraDirs := skill.ParseExtraDirs(data)
+	loaded, _ := skill.LoadAllSkillsWithExtras(workspaceDir, extraDirs, bundledDir)
+
 	return loaded, data, nil
 }
 
@@ -481,7 +495,11 @@ func registerSkillMethods(hub *dashboard.Hub) {
 
 		var allSkills []types.SkillEntry
 		for _, s := range loaded {
-			skillCfg := config.ResolveSkillConfig(data, s.Name)
+			skillKey := s.SkillKey
+			if skillKey == "" {
+				skillKey = s.Name
+			}
+			skillCfg := config.ResolveSkillConfig(data, skillKey)
 			if skillCfg == nil {
 				skillCfg = map[string]any{}
 			}

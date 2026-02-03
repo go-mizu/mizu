@@ -147,15 +147,34 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 	}
 
 	// 3. Check for slash commands
-	cmd, args, isCommand := g.commands.Parse(msg.Content)
+	cmd, cmdArgs, isCommand := g.commands.Parse(msg.Content)
 	if isCommand {
-		response := g.handleCommand(ctx, cmd, args, agent, session)
-		return &ProcessMessageResult{
-			SessionID: session.ID,
-			AgentID:   agent.ID,
-			Content:   response,
-			Model:     agent.Model,
-		}, nil
+		// Load skills for skill command dispatch.
+		if agent.Workspace != "" {
+			earlySkills, _ := skill.LoadAllSkills(agent.Workspace, skill.BundledSkillsDir())
+			g.commands.SetSkills(earlySkills)
+		}
+
+		// Check if it's a skill command first.
+		if matchedSkill, ok := g.commands.IsSkillCommand(cmd); ok {
+			// Skill commands flow through the LLM with skill content injected.
+			// Rewrite the message content: use args as the user query,
+			// and the skill content will be injected as additional context.
+			msg.Content = cmdArgs
+			if msg.Content == "" {
+				msg.Content = matchedSkill.Description
+			}
+			msg.SkillContext = matchedSkill.Content
+			msg.SkillName = matchedSkill.Name
+		} else {
+			response := g.handleCommand(ctx, cmd, cmdArgs, agent, session)
+			return &ProcessMessageResult{
+				SessionID: session.ID,
+				AgentID:   agent.ID,
+				Content:   response,
+				Model:     agent.Model,
+			}, nil
+		}
 	}
 
 	// 4. Store user message
@@ -220,6 +239,8 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		skillsPrompt, loadedSkills = g.ctxBuilder.buildSkillsSection(agent.Workspace)
 		if len(loadedSkills) > 0 {
 			alwaysPrompt = skill.BuildAlwaysSkillsPrompt(loadedSkills)
+			// Update command service with loaded skills for command dispatch.
+			g.commands.SetSkills(loadedSkills)
 		}
 	}
 
@@ -241,6 +262,11 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 	}
 	buildResult := g.ctxBuilder.buildSystemPrompt(ctx, promptParams)
 	systemPrompt := buildResult.Prompt
+
+	// 6b-ii. Inject skill command context if a skill was triggered via /command.
+	if msg.SkillContext != "" {
+		systemPrompt += fmt.Sprintf("\n\n<skill-context name=%q>\n%s\n</skill-context>", msg.SkillName, msg.SkillContext)
+	}
 
 	// 6c. Collect skill names for reporting.
 	var skillNames []string
@@ -368,6 +394,15 @@ func (g *Service) handleCommand(ctx context.Context, cmd, args string, agent *ty
 			return "No system prompt configured."
 		}
 		return fmt.Sprintf("System prompt:\n%s", result.Prompt)
+	case "/memory":
+		if args == "" {
+			return "Usage: /memory <query>\nSearches the agent's memory index for relevant context."
+		}
+		result, err := g.MemorySearch(ctx, agent.Workspace, args)
+		if err != nil {
+			return fmt.Sprintf("Memory search error: %v", err)
+		}
+		return result
 	default:
 		return g.commands.Execute(cmd, args, agent)
 	}
@@ -423,6 +458,19 @@ func (g *Service) Status(ctx context.Context, port int) (*types.GatewayStatus, e
 		Sessions:     stats.Sessions,
 		Messages:     stats.Messages,
 	}, nil
+}
+
+// ReIndex triggers a re-index of the memory for the given workspace directory.
+// This is called after session compaction to ensure memory search stays current.
+func (g *Service) ReIndex(workspaceDir string) error {
+	if g.memReg == nil || workspaceDir == "" {
+		return nil
+	}
+	mgr, err := g.memReg.get(workspaceDir)
+	if err != nil || mgr == nil {
+		return err
+	}
+	return mgr.ReIndex()
 }
 
 // Commands returns available slash commands.

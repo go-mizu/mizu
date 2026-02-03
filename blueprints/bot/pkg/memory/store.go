@@ -241,6 +241,138 @@ func (s *MemoryStore) SearchFTS(query string, limit int) ([]KeywordResult, error
 	return results, nil
 }
 
+// SearchFTSWithSource performs a source-filtered full-text search using FTS5.
+func (s *MemoryStore) SearchFTSWithSource(query, source string, limit int) ([]KeywordResult, error) {
+	if source == "" {
+		return s.SearchFTS(query, limit)
+	}
+	if query == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	ftsQuery := BuildFTSQuery(query)
+	if ftsQuery == "" {
+		return nil, nil
+	}
+
+	rows, err := s.db.Query(`
+		SELECT
+			c.path,
+			c.start_line,
+			c.end_line,
+			c.text,
+			c.source,
+			bm25(chunks_fts) AS rank
+		FROM chunks_fts f
+		JOIN chunks c ON c.id = f.id
+		WHERE chunks_fts MATCH ? AND c.source = ?
+		ORDER BY rank
+		LIMIT ?
+	`, ftsQuery, source, limit)
+	if err != nil {
+		return nil, fmt.Errorf("FTS search with source: %w", err)
+	}
+	defer rows.Close()
+
+	var results []KeywordResult
+	for rows.Next() {
+		var r KeywordResult
+		if err := rows.Scan(&r.Path, &r.StartLine, &r.EndLine, &r.Snippet, &r.Source, &r.Rank); err != nil {
+			return nil, fmt.Errorf("scan FTS result: %w", err)
+		}
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate FTS results: %w", err)
+	}
+
+	return results, nil
+}
+
+// SearchVectorWithSource performs a source-filtered vector similarity search.
+func (s *MemoryStore) SearchVectorWithSource(queryVec []float64, source string, limit int) ([]VectorResult, error) {
+	if source == "" {
+		return s.SearchVector(queryVec, limit)
+	}
+	if len(queryVec) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := s.db.Query(`
+		SELECT id, path, source, start_line, end_line, text, embedding
+		FROM chunks
+		WHERE embedding != '' AND source = ?
+	`, source)
+	if err != nil {
+		return nil, fmt.Errorf("vector search query: %w", err)
+	}
+	defer rows.Close()
+
+	type scored struct {
+		result VectorResult
+		score  float64
+	}
+
+	var candidates []scored
+	for rows.Next() {
+		var (
+			id, path, src, text, embJSON string
+			startLine, endLine           int
+		)
+		if err := rows.Scan(&id, &path, &src, &startLine, &endLine, &text, &embJSON); err != nil {
+			return nil, fmt.Errorf("scan vector row: %w", err)
+		}
+
+		emb, err := decodeEmbedding(embJSON)
+		if err != nil || len(emb) == 0 {
+			continue
+		}
+
+		sim := cosineSimilarity(queryVec, emb)
+		if sim > 0 {
+			candidates = append(candidates, scored{
+				result: VectorResult{
+					Path:      path,
+					StartLine: startLine,
+					EndLine:   endLine,
+					Score:     sim,
+					Snippet:   text,
+					Source:    src,
+				},
+				score: sim,
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate vector rows: %w", err)
+	}
+
+	// Sort by descending similarity.
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			if candidates[j].score > candidates[i].score {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			}
+		}
+	}
+
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	results := make([]VectorResult, len(candidates))
+	for i, c := range candidates {
+		results[i] = c.result
+	}
+	return results, nil
+}
+
 // SearchVector performs a brute-force cosine similarity search across all
 // stored embeddings. This is suitable for small-to-medium corpora (< 100k
 // chunks). For larger datasets, consider a dedicated vector store.

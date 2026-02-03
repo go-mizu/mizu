@@ -399,6 +399,103 @@ func assertNonNilSlice(t *testing.T, name string, s []string) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// isBundledSkillBlocked (bundled allowlist)
+// ---------------------------------------------------------------------------
+
+func TestIsBundledSkillBlocked_NoBundledSource(t *testing.T) {
+	// Workspace and user skills are never blocked.
+	for _, src := range []string{"workspace", "user"} {
+		s := &Skill{Name: "test", Source: src}
+		cfg := map[string]any{
+			"skills": map[string]any{
+				"allowBundled": []any{"other-skill"},
+			},
+		}
+		if isBundledSkillBlocked(s, cfg) {
+			t.Errorf("source=%q: should not be blocked (only bundled skills are blocked)", src)
+		}
+	}
+}
+
+func TestIsBundledSkillBlocked_NoAllowlistAllowed(t *testing.T) {
+	// When no allowBundled is configured, all bundled skills are allowed.
+	s := &Skill{Name: "my-skill", Source: "bundled"}
+	cfg := map[string]any{}
+	if isBundledSkillBlocked(s, cfg) {
+		t.Error("should not be blocked when no allowBundled configured")
+	}
+}
+
+func TestIsBundledSkillBlocked_EmptyAllowlistAllowed(t *testing.T) {
+	s := &Skill{Name: "my-skill", Source: "bundled"}
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"allowBundled": []any{},
+		},
+	}
+	if isBundledSkillBlocked(s, cfg) {
+		t.Error("should not be blocked when allowBundled is empty")
+	}
+}
+
+func TestIsBundledSkillBlocked_MatchByName(t *testing.T) {
+	s := &Skill{Name: "allowed-skill", Source: "bundled"}
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"allowBundled": []any{"allowed-skill", "other"},
+		},
+	}
+	if isBundledSkillBlocked(s, cfg) {
+		t.Error("should not be blocked when name is in allowBundled")
+	}
+}
+
+func TestIsBundledSkillBlocked_MatchBySkillKey(t *testing.T) {
+	s := &Skill{Name: "my-skill", SkillKey: "custom-key", Source: "bundled"}
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"allowBundled": []any{"custom-key"},
+		},
+	}
+	if isBundledSkillBlocked(s, cfg) {
+		t.Error("should not be blocked when skillKey is in allowBundled")
+	}
+}
+
+func TestIsBundledSkillBlocked_NotInAllowlist(t *testing.T) {
+	s := &Skill{Name: "unlisted-skill", Source: "bundled"}
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"allowBundled": []any{"other-skill"},
+		},
+	}
+	if !isBundledSkillBlocked(s, cfg) {
+		t.Error("should be blocked when skill is not in allowBundled list")
+	}
+}
+
+func TestBuildSkillStatus_BlockedByAllow(t *testing.T) {
+	s := &Skill{
+		Name:   "blocked-skill",
+		Source: "bundled",
+		Dir:    "/skills/blocked-skill",
+	}
+	cfg := map[string]any{
+		"skills": map[string]any{
+			"allowBundled": []any{"other-skill"},
+		},
+	}
+	entry := BuildSkillStatus(s, cfg, map[string]any{})
+
+	if !entry.BlockedByAllow {
+		t.Error("BlockedByAllow = false; want true when skill not in allowBundled")
+	}
+	if entry.Eligible {
+		t.Error("Eligible = true; want false when blocked by allowBundled")
+	}
+}
+
 // Verify the entry type matches the expected types package struct.
 func TestBuildSkillStatus_ReturnType(t *testing.T) {
 	s := &Skill{Name: "type-check", Dir: "/tmp"}
