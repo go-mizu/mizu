@@ -18,19 +18,22 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/feature/session"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/channel"
 	_ "github.com/go-mizu/mizu/blueprints/bot/pkg/channel/telegram" // register telegram driver
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/config"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/logring"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
 
 // Server wraps the HTTP router and services that need cleanup on shutdown.
 type Server struct {
-	Router  *mizu.Router
-	gateway *gateway.Service
-	Logs    *logring.Ring
-	Hub     *db.Hub
-	drivers []channel.Driver
+	Router       *mizu.Router
+	gateway      *gateway.Service
+	Logs         *logring.Ring
+	Hub          *db.Hub
+	drivers      []channel.Driver
+	skillWatcher *skill.Watcher
 }
 
 // ServeHTTP delegates to the underlying router.
@@ -43,6 +46,9 @@ func (s *Server) Close() {
 	ctx := context.Background()
 	for _, d := range s.drivers {
 		_ = d.Disconnect(ctx)
+	}
+	if s.skillWatcher != nil {
+		s.skillWatcher.Stop()
 	}
 	if s.gateway != nil {
 		s.gateway.Close()
@@ -192,11 +198,30 @@ func NewServer(s store.Store, devMode bool) *Server {
 		logs.Info("gateway", "Started %s channel driver (%s)", ch.Type, ch.Name)
 	}
 
+	// Start skill file watcher — monitors skill directories for changes and
+	// broadcasts "skills.updated" to connected dashboard clients.
+	// Matches OpenClaw's refresh.ts ensureSkillsWatcher behaviour.
+	var watchDirs []string
+	watchDirs = append(watchDirs, skill.BundledSkillsDir())
+	if home, err := os.UserHomeDir(); err == nil {
+		watchDirs = append(watchDirs, home+"/.openbot/skills")
+	}
+	if rawCfg, err := config.LoadRawConfig(""); err == nil {
+		watchDirs = append(watchDirs, skill.ParseExtraDirs(rawCfg)...)
+	}
+	skillWatcher := skill.StartWatcher(watchDirs, func() {
+		logs.Info("skills", "Skill files changed, version=%d", skill.CurrentVersion())
+		hub.Broadcast("skills.updated", map[string]any{
+			"version": skill.CurrentVersion(),
+		})
+	})
+
 	return &Server{
-		Router:  r,
-		gateway: gatewaySvc,
-		Logs:    logs,
-		Hub:     hub,
-		drivers: drivers,
+		Router:       r,
+		gateway:      gatewaySvc,
+		Logs:         logs,
+		Hub:          hub,
+		drivers:      drivers,
+		skillWatcher: skillWatcher,
 	}
 }

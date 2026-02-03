@@ -1457,3 +1457,157 @@ func TestSkillCommandList_EmptySkills(t *testing.T) {
 		t.Errorf("got %d commands; want 0 for nil skills", len(cmds))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// sanitizeCommandName
+// ---------------------------------------------------------------------------
+
+func TestSanitizeCommandName_Lowercase(t *testing.T) {
+	if got := sanitizeCommandName("MySkill"); got != "myskill" {
+		t.Errorf("got %q; want %q", got, "myskill")
+	}
+}
+
+func TestSanitizeCommandName_KeepsHyphenUnderscore(t *testing.T) {
+	if got := sanitizeCommandName("my-skill_v2"); got != "my-skill_v2" {
+		t.Errorf("got %q; want %q", got, "my-skill_v2")
+	}
+}
+
+func TestSanitizeCommandName_StripsInvalid(t *testing.T) {
+	if got := sanitizeCommandName("my.skill@v2!"); got != "myskillv2" {
+		t.Errorf("got %q; want %q", got, "myskillv2")
+	}
+}
+
+func TestSanitizeCommandName_TrimsHyphens(t *testing.T) {
+	if got := sanitizeCommandName("--my-skill--"); got != "my-skill" {
+		t.Errorf("got %q; want %q", got, "my-skill")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SkillCommandList (sanitization + dedup + truncation)
+// ---------------------------------------------------------------------------
+
+func TestSkillCommandList_SanitizedNames(t *testing.T) {
+	skills := []*Skill{
+		{Name: "My.Skill", Description: "test", Ready: true, UserInvocable: true},
+	}
+	cmds := SkillCommandList(skills)
+	if len(cmds) != 1 {
+		t.Fatalf("got %d; want 1", len(cmds))
+	}
+	if cmds[0].Name != "/myskill" {
+		t.Errorf("Name = %q; want %q", cmds[0].Name, "/myskill")
+	}
+	// SkillName preserves original for lookup.
+	if cmds[0].SkillName != "My.Skill" {
+		t.Errorf("SkillName = %q; want %q", cmds[0].SkillName, "My.Skill")
+	}
+}
+
+func TestSkillCommandList_Dedup(t *testing.T) {
+	skills := []*Skill{
+		{Name: "my-skill", Description: "first", Ready: true, UserInvocable: true},
+		{Name: "my-skill", Description: "second", Ready: true, UserInvocable: true},
+	}
+	cmds := SkillCommandList(skills)
+	if len(cmds) != 1 {
+		t.Fatalf("got %d; want 1 (dedup)", len(cmds))
+	}
+	if cmds[0].Description != "first" {
+		t.Errorf("Description = %q; want %q (first wins)", cmds[0].Description, "first")
+	}
+}
+
+func TestSkillCommandList_TruncatesDescription(t *testing.T) {
+	long := strings.Repeat("a", 150)
+	skills := []*Skill{
+		{Name: "test", Description: long, Ready: true, UserInvocable: true},
+	}
+	cmds := SkillCommandList(skills)
+	if len(cmds) != 1 {
+		t.Fatalf("got %d; want 1", len(cmds))
+	}
+	if len(cmds[0].Description) != 100 {
+		t.Errorf("Description len = %d; want 100 (truncated)", len(cmds[0].Description))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Command Dispatch Spec parsing
+// ---------------------------------------------------------------------------
+
+func TestParseSkillMD_CommandDispatch(t *testing.T) {
+	input := `---
+name: exec-skill
+command-dispatch: {"kind":"tool","argMode":"raw"}
+command-tool: exec
+---
+Body content`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sk.CommandDispatch == nil {
+		t.Fatal("CommandDispatch is nil; want non-nil")
+	}
+	if sk.CommandDispatch.Kind != "tool" {
+		t.Errorf("Kind = %q; want %q", sk.CommandDispatch.Kind, "tool")
+	}
+	if sk.CommandDispatch.ArgMode != "raw" {
+		t.Errorf("ArgMode = %q; want %q", sk.CommandDispatch.ArgMode, "raw")
+	}
+	if sk.CommandTool != "exec" {
+		t.Errorf("CommandTool = %q; want %q", sk.CommandTool, "exec")
+	}
+}
+
+func TestParseSkillMD_CommandDispatch_InvalidJSON(t *testing.T) {
+	input := `---
+name: bad-dispatch
+command-dispatch: not-json
+---
+Body`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sk.CommandDispatch != nil {
+		t.Error("CommandDispatch should be nil for invalid JSON")
+	}
+}
+
+func TestParseSkillMD_CommandDispatch_EmptyKind(t *testing.T) {
+	input := `---
+name: empty-kind
+command-dispatch: {"kind":"","argMode":"raw"}
+---
+Body`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sk.CommandDispatch != nil {
+		t.Error("CommandDispatch should be nil when kind is empty")
+	}
+}
+
+func TestParseSkillMD_CommandTool_Only(t *testing.T) {
+	input := `---
+name: tool-only
+command-tool: browser
+---
+Body`
+	sk, _, err := ParseSkillMD(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sk.CommandTool != "browser" {
+		t.Errorf("CommandTool = %q; want %q", sk.CommandTool, "browser")
+	}
+	if sk.CommandDispatch != nil {
+		t.Error("CommandDispatch should be nil when only command-tool is set")
+	}
+}
