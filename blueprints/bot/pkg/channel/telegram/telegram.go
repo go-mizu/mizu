@@ -37,8 +37,10 @@ func NewDriver(config string, handler channel.MessageHandler) (*Driver, error) {
 	// config value.  This bridges the gap when the gateway loads channel
 	// configs from the database (which may contain a placeholder token)
 	// while the real token is provided via the environment.
+	tokenSource := "config"
 	if envToken := os.Getenv("TELEGRAM_API_KEY"); envToken != "" {
 		cfg.BotToken = envToken
+		tokenSource = "TELEGRAM_API_KEY"
 	}
 
 	// Sanitise token: trim whitespace and strip accidental "bot" prefix
@@ -49,6 +51,13 @@ func NewDriver(config string, handler channel.MessageHandler) (*Driver, error) {
 	if cfg.BotToken == "" {
 		return nil, fmt.Errorf("telegram config: botToken is required")
 	}
+
+	// Log token source and masked value for troubleshooting.
+	masked := cfg.BotToken
+	if len(masked) > 8 {
+		masked = masked[:4] + "…" + masked[len(masked)-4:]
+	}
+	log.Printf("telegram: token source=%s, value=%s (len=%d)", tokenSource, masked, len(cfg.BotToken))
 
 	// Defaults.
 	if cfg.DMPolicy == "" {
