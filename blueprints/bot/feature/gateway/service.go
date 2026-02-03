@@ -13,6 +13,7 @@ import (
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
+	bottools "github.com/go-mizu/mizu/blueprints/bot/pkg/tools"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
 	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
@@ -70,6 +71,7 @@ type dedupeEntry struct {
 type Service struct {
 	store       store.Store
 	llm         llm.Provider
+	tools       *bottools.Registry
 	commands    *command.Service
 	memReg      *memoryRegistry
 	ctxBuilder  *contextBuilder
@@ -84,9 +86,15 @@ type Service struct {
 // NewService creates a gateway service with memory and context management.
 func NewService(s store.Store, provider llm.Provider) *Service {
 	memReg := newMemoryRegistry()
+
+	// Initialize tool registry with all built-in tools.
+	toolRegistry := bottools.NewRegistry()
+	bottools.RegisterBuiltins(toolRegistry)
+
 	return &Service{
 		store:       s,
 		llm:         provider,
+		tools:       toolRegistry,
 		commands:    command.NewService(),
 		memReg:      memReg,
 		ctxBuilder:  newContextBuilder(memReg),
@@ -445,32 +453,90 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		cancel()
 	}()
 
-	// 8b. Call LLM
-	llmReq := &types.LLMRequest{
-		Model:        agent.Model,
-		SystemPrompt: systemPrompt,
-		Messages:     llmMessages,
-		MaxTokens:    agent.MaxTokens,
-		Temperature:  agent.Temperature,
-	}
+	// 8b. Call LLM — use tool loop if the provider supports tools.
+	var responseText string
+	var inputTokens, outputTokens int
 
-	llmResp, err := g.llm.Chat(llmCtx, llmReq)
-	if err != nil {
-		log.Printf("LLM error for agent %s: %v", agent.ID, err)
-		if g.broadcaster != nil {
-			// OpenClaw-format error event
-			g.broadcaster.Broadcast("chat", map[string]any{
-				"runId": runID, "sessionKey": sessionKey,
-				"seq": 1, "state": "error",
-				"errorMessage": err.Error(),
-			})
-			// Legacy events
-			g.broadcaster.Broadcast("chat.done", map[string]any{
-				"sessionId": session.ID,
-				"agentId":   agent.ID,
-			})
+	toolProvider, hasTools := g.llm.(llm.ToolProvider)
+	if hasTools && g.tools != nil && len(g.tools.All()) > 0 {
+		// Convert history to []any for the tool request.
+		msgs := make([]any, len(llmMessages))
+		for i, m := range llmMessages {
+			msgs[i] = map[string]any{
+				"role":    m.Role,
+				"content": m.Content,
+			}
 		}
-		return nil, fmt.Errorf("LLM chat: %w", err)
+
+		// Build tool definitions.
+		toolDefs := make([]types.ToolDefinition, 0, len(g.tools.All()))
+		var toolNames []string
+		for _, t := range g.tools.All() {
+			toolDefs = append(toolDefs, types.ToolDefinition{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: t.InputSchema,
+			})
+			toolNames = append(toolNames, t.Name)
+		}
+
+		toolReq := &types.LLMToolRequest{
+			Model:        agent.Model,
+			SystemPrompt: systemPrompt,
+			Messages:     msgs,
+			MaxTokens:    agent.MaxTokens,
+			Temperature:  agent.Temperature,
+			Tools:        toolDefs,
+		}
+
+		toolResp, err := bottools.RunToolLoop(llmCtx, toolProvider, g.tools, toolReq)
+		if err != nil {
+			log.Printf("LLM tool loop error for agent %s: %v", agent.ID, err)
+			if g.broadcaster != nil {
+				g.broadcaster.Broadcast("chat", map[string]any{
+					"runId": runID, "sessionKey": sessionKey,
+					"seq": 1, "state": "error",
+					"errorMessage": err.Error(),
+				})
+				g.broadcaster.Broadcast("chat.done", map[string]any{
+					"sessionId": session.ID,
+					"agentId":   agent.ID,
+				})
+			}
+			return nil, fmt.Errorf("LLM tool loop: %w", err)
+		}
+		responseText = toolResp.TextContent()
+		inputTokens = toolResp.InputTokens
+		outputTokens = toolResp.OutputTokens
+	} else {
+		// Fallback to simple chat (no tools).
+		llmReq := &types.LLMRequest{
+			Model:        agent.Model,
+			SystemPrompt: systemPrompt,
+			Messages:     llmMessages,
+			MaxTokens:    agent.MaxTokens,
+			Temperature:  agent.Temperature,
+		}
+
+		llmResp, err := g.llm.Chat(llmCtx, llmReq)
+		if err != nil {
+			log.Printf("LLM error for agent %s: %v", agent.ID, err)
+			if g.broadcaster != nil {
+				g.broadcaster.Broadcast("chat", map[string]any{
+					"runId": runID, "sessionKey": sessionKey,
+					"seq": 1, "state": "error",
+					"errorMessage": err.Error(),
+				})
+				g.broadcaster.Broadcast("chat.done", map[string]any{
+					"sessionId": session.ID,
+					"agentId":   agent.ID,
+				})
+			}
+			return nil, fmt.Errorf("LLM chat: %w", err)
+		}
+		responseText = llmResp.Content
+		inputTokens = llmResp.InputTokens
+		outputTokens = llmResp.OutputTokens
 	}
 
 	// 9. Store assistant response
@@ -480,7 +546,7 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		ChannelID: channelID,
 		PeerID:    msg.PeerID,
 		Role:      types.RoleAssistant,
-		Content:   llmResp.Content,
+		Content:   responseText,
 	}
 	if err := g.store.CreateMessage(ctx, assistantMsg); err != nil {
 		return nil, fmt.Errorf("store assistant message: %w", err)
@@ -488,9 +554,9 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 
 	// 9a. Build usage info
 	usage := &TokenUsage{
-		Input:       llmResp.InputTokens,
-		Output:      llmResp.OutputTokens,
-		TotalTokens: llmResp.InputTokens + llmResp.OutputTokens,
+		Input:       inputTokens,
+		Output:      outputTokens,
+		TotalTokens: inputTokens + outputTokens,
 	}
 
 	// 9b. Broadcast OpenClaw-format final event
@@ -500,7 +566,7 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 			"seq": 1, "state": "final",
 			"message": map[string]any{
 				"role":       "assistant",
-				"content":    []any{map[string]string{"type": "text", "text": assistantMsg.Content}},
+				"content":    []any{map[string]string{"type": "text", "text": responseText}},
 				"timestamp":  assistantMsg.CreatedAt.UnixMilli(),
 				"stopReason": "end_turn",
 				"usage":      usage,
@@ -512,7 +578,7 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 			"message": map[string]any{
 				"id":        assistantMsg.ID,
 				"role":      assistantMsg.Role,
-				"content":   assistantMsg.Content,
+				"content":   responseText,
 				"createdAt": assistantMsg.CreatedAt.Format(time.RFC3339),
 			},
 		})
@@ -526,7 +592,7 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		SessionID:  session.ID,
 		SessionKey: sessionKey,
 		AgentID:    agent.ID,
-		Content:    llmResp.Content,
+		Content:    responseText,
 		Model:      agent.Model,
 		MessageID:  assistantMsg.ID,
 		RunID:      runID,
