@@ -25,10 +25,21 @@ type Skill struct {
 	Always                 bool     // always included in prompt (not on-demand)
 	UserInvocable          bool     // can user /command invoke (default true)
 	DisableModelInvocation bool     // prevent AI auto-trigger (default false)
-	PrimaryEnv             string            // main env var for API key
-	SkillKey               string            // override key for config lookup
-	Requires               Requires          // dependency requirements
-	InstallRaw             json.RawMessage   // raw install JSON from metadata
+	PrimaryEnv             string               // main env var for API key
+	SkillKey               string               // override key for config lookup
+	Requires               Requires             // dependency requirements
+	InstallRaw             json.RawMessage      // raw install JSON from metadata
+	CommandDispatch        *CommandDispatchSpec  // deterministic tool routing (OpenClaw command-dispatch)
+	CommandTool            string               // target tool name (OpenClaw command-tool)
+}
+
+// CommandDispatchSpec defines deterministic command routing to a named tool.
+// Parsed from the "command-dispatch" frontmatter field in SKILL.md.
+// OpenClaw uses this to route skill commands directly to tools without going
+// through the LLM.
+type CommandDispatchSpec struct {
+	Kind    string `json:"kind"`    // "tool" — route to a named tool
+	ArgMode string `json:"argMode"` // "raw" — pass args without parsing
 }
 
 // Requires declares what a skill needs to be eligible.
@@ -295,6 +306,16 @@ func parseFrontmatter(sk *Skill, fm string) {
 			sk.UserInvocable = val != "false" && val != "no"
 		case "disable-model-invocation":
 			sk.DisableModelInvocation = val == "true" || val == "yes"
+		case "command-dispatch":
+			// OpenClaw command-dispatch: JSON spec for deterministic tool routing.
+			if val != "" {
+				var spec CommandDispatchSpec
+				if err := json.Unmarshal([]byte(val), &spec); err == nil && spec.Kind != "" {
+					sk.CommandDispatch = &spec
+				}
+			}
+		case "command-tool":
+			sk.CommandTool = val
 		case "metadata":
 			metadataRaw = val
 		case "requires":
@@ -649,18 +670,49 @@ func MatchSkillCommand(cmd string, skills []*Skill) (*Skill, bool) {
 	return nil, false
 }
 
+// sanitizeCommandName normalises a skill name for use as a slash command.
+// Matches OpenClaw's buildWorkspaceSkillCommandSpecs behaviour:
+// lowercase, keep only [a-z0-9_-], strip leading/trailing hyphens.
+func sanitizeCommandName(name string) string {
+	name = strings.ToLower(name)
+	var b strings.Builder
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+			b.WriteRune(c)
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// truncateDescription limits a description to maxLen characters for platform
+// limits (e.g. Discord's 100-char command description limit).
+func truncateDescription(desc string, maxLen int) string {
+	if len(desc) <= maxLen {
+		return desc
+	}
+	return desc[:maxLen]
+}
+
 // SkillCommandList returns the available slash commands derived from
 // user-invocable, ready skills. Each command is the skill name prefixed
 // with "/" and includes the skill's description and emoji.
+// Names are sanitised (lowercase, alphanumeric + underscore/hyphen) and
+// deduplicated (first skill wins). Descriptions are truncated to 100 chars.
 func SkillCommandList(skills []*Skill) []SkillCommand {
+	seen := make(map[string]bool)
 	var cmds []SkillCommand
 	for _, s := range skills {
 		if !s.Ready || !s.UserInvocable {
 			continue
 		}
+		cmdName := sanitizeCommandName(s.Name)
+		if cmdName == "" || seen[cmdName] {
+			continue // skip empty or duplicate command names
+		}
+		seen[cmdName] = true
 		cmds = append(cmds, SkillCommand{
-			Name:        "/" + s.Name,
-			Description: s.Description,
+			Name:        "/" + cmdName,
+			Description: truncateDescription(s.Description, 100),
 			Emoji:       s.Emoji,
 			SkillName:   s.Name,
 		})
