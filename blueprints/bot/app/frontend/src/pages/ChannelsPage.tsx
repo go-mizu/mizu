@@ -51,17 +51,20 @@ export function ChannelsPage({ gw }: ChannelsPageProps) {
       .finally(() => setLoading(false));
   }, [gw, toast]);
 
-  const handleToggle = useCallback((id: string) => {
-    setEnabledMap((prev) => {
-      const next = { ...prev, [id]: !prev[id] };
-      const ch = channels.find((c) => c.id === id);
-      toast(
-        (ch?.name || id) + (next[id] ? ' enabled' : ' disabled'),
-        'success',
-      );
-      return next;
-    });
-  }, [channels, toast]);
+  const handleToggle = useCallback(async (id: string) => {
+    const ch = channels.find((c) => c.id === id);
+    const wasEnabled = enabledMap[id] ?? ch?.status === 'connected';
+    const newStatus = wasEnabled ? 'disconnected' : 'connected';
+    setEnabledMap((prev) => ({ ...prev, [id]: !wasEnabled }));
+    try {
+      await gw.rpc('channels.update', { id, status: newStatus });
+      toast((ch?.name || id) + (newStatus === 'connected' ? ' enabled' : ' disabled'), 'success');
+      load();
+    } catch (err) {
+      setEnabledMap((prev) => ({ ...prev, [id]: wasEnabled }));
+      toast('Failed to toggle: ' + (err instanceof Error ? err.message : 'unknown'), 'error');
+    }
+  }, [channels, enabledMap, gw, toast, load]);
 
   const handleDelete = useCallback(async (id: string, name: string) => {
     if (!confirm(`Delete channel "${name || id}"? This cannot be undone.`)) return;

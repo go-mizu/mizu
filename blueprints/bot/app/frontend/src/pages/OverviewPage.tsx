@@ -32,6 +32,17 @@ interface AgentSummary {
   count: number;
 }
 
+interface SkillsSummary {
+  total: number;
+  enabled: number;
+  eligible: number;
+}
+
+interface MemorySummary {
+  files: number;
+  chunks: number;
+}
+
 interface AgentIdentity {
   name: string;
   emoji: string;
@@ -50,6 +61,8 @@ interface OverviewData {
   cron: CronStatus;
   channels: ChannelSummary;
   agents: AgentSummary;
+  skills: SkillsSummary;
+  memory: MemorySummary;
 }
 
 interface OverviewPageProps {
@@ -69,7 +82,13 @@ const EMPTY_DATA: OverviewData = {
   cron: { enabled: false, jobs: 0, enabledJobs: 0 },
   channels: { total: 0, connected: 0 },
   agents: { count: 0 },
+  skills: { total: 0, enabled: 0, eligible: 0 },
+  memory: { files: 0, chunks: 0 },
 };
+
+function navigateTo(tab: string) {
+  window.location.hash = tab;
+}
 
 export function OverviewPage({ gw }: OverviewPageProps) {
   const [data, setData] = useState<OverviewData>(EMPTY_DATA);
@@ -82,13 +101,15 @@ export function OverviewPage({ gw }: OverviewPageProps) {
     setLoading(true);
     setError('');
     try {
-      const [systemRes, healthRes, cronRes, channelsRes, agentsRes, cronListRes] = await Promise.all([
+      const [systemRes, healthRes, cronRes, channelsRes, agentsRes, cronListRes, skillsRes, memoryRes] = await Promise.all([
         gw.rpc('system.status'),
         gw.rpc('health.check'),
         gw.rpc('cron.status'),
         gw.rpc('channels.status'),
         gw.rpc('agents.list'),
         gw.rpc('cron.list').catch(() => ({ jobs: [] })),
+        gw.rpc('skills.status').catch(() => ({ skills: [] })),
+        gw.rpc('memory.stats').catch(() => ({ files: 0, chunks: 0 })),
       ]);
 
       // Load agent identity separately (non-blocking)
@@ -151,7 +172,21 @@ export function OverviewPage({ gw }: OverviewPageProps) {
         count: (agentsRes.total ?? agentList.length ?? 0) as number,
       };
 
-      setData({ system, health, cron, channels, agents });
+      // Parse skills summary
+      const skillList = Array.isArray(skillsRes.skills) ? skillsRes.skills as Record<string, unknown>[] : [];
+      const skills: SkillsSummary = {
+        total: skillList.length,
+        enabled: skillList.filter((s) => s.enabled === true).length,
+        eligible: skillList.filter((s) => s.eligible === true || s.eligible === undefined).length,
+      };
+
+      // Parse memory stats
+      const memory: MemorySummary = {
+        files: (memoryRes.files ?? 0) as number,
+        chunks: (memoryRes.chunks ?? 0) as number,
+      };
+
+      setData({ system, health, cron, channels, agents, skills, memory });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load status');
     } finally {
@@ -163,7 +198,7 @@ export function OverviewPage({ gw }: OverviewPageProps) {
     load();
   }, [load]);
 
-  const { system, health, cron, channels, agents } = data;
+  const { system, health, cron, channels, agents, skills, memory } = data;
 
   return (
     <div className="overview-page">
@@ -201,7 +236,11 @@ export function OverviewPage({ gw }: OverviewPageProps) {
           <div className="stat-label">GO VERSION</div>
           <div className="stat-value">{system.goVersion}</div>
         </div>
-        <div className="stat-card">
+        <div
+          className="stat-card stat-card--link"
+          onClick={() => navigateTo('sessions')}
+          title="View Sessions"
+        >
           <div className="stat-label">SESSIONS</div>
           <div className="stat-value">{system.sessions}</div>
         </div>
@@ -209,7 +248,11 @@ export function OverviewPage({ gw }: OverviewPageProps) {
           <div className="stat-label">MESSAGES</div>
           <div className="stat-value">{system.messages}</div>
         </div>
-        <div className="stat-card">
+        <div
+          className="stat-card stat-card--link"
+          onClick={() => navigateTo('channels')}
+          title="View Channels"
+        >
           <div className="stat-label">CHANNELS</div>
           <div className={`stat-value ${channels.connected === channels.total && channels.total > 0 ? 'ok' : ''}`}>
             {channels.connected}/{channels.total}
@@ -219,6 +262,44 @@ export function OverviewPage({ gw }: OverviewPageProps) {
         <div className="stat-card">
           <div className="stat-label">AGENTS</div>
           <div className="stat-value">{agents.count}</div>
+        </div>
+        <div
+          className="stat-card stat-card--link"
+          onClick={() => navigateTo('skills')}
+          title="View Skills"
+        >
+          <div className="stat-label">SKILLS</div>
+          <div className="stat-value">{skills.enabled}/{skills.total}</div>
+          <div className="stat-sub">enabled</div>
+        </div>
+        <div
+          className="stat-card stat-card--link"
+          onClick={() => navigateTo('memory')}
+          title="View Memory"
+        >
+          <div className="stat-label">MEMORY</div>
+          <div className="stat-value">{memory.files}</div>
+          <div className="stat-sub">{memory.chunks} chunks</div>
+        </div>
+        <div
+          className="stat-card stat-card--link"
+          onClick={() => navigateTo('cron')}
+          title="View Cron Jobs"
+        >
+          <div className="stat-label">CRON JOBS</div>
+          <div className="stat-value">{cron.enabledJobs}/{cron.jobs}</div>
+          <div className="stat-sub">active</div>
+        </div>
+        <div
+          className="stat-card stat-card--link"
+          onClick={() => navigateTo('instances')}
+          title="View Instances"
+        >
+          <div className="stat-label">INSTANCES</div>
+          <div className="stat-value">
+            <Icon name="radio" size={14} />
+          </div>
+          <div className="stat-sub">live</div>
         </div>
       </div>
 
@@ -291,6 +372,52 @@ export function OverviewPage({ gw }: OverviewPageProps) {
             </tbody>
           </table>
         </div>
+
+        {skills.total > 0 && (
+          <div className="detail-card">
+            <h3>
+              <Icon name="activity" size={16} />
+              <span>Skills</span>
+            </h3>
+            <table className="detail-table">
+              <tbody>
+                <tr>
+                  <td className="detail-key">Total</td>
+                  <td className="detail-val">{skills.total}</td>
+                </tr>
+                <tr>
+                  <td className="detail-key">Enabled</td>
+                  <td className="detail-val">{skills.enabled}</td>
+                </tr>
+                <tr>
+                  <td className="detail-key">Eligible</td>
+                  <td className="detail-val">{skills.eligible}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {(memory.files > 0 || memory.chunks > 0) && (
+          <div className="detail-card">
+            <h3>
+              <Icon name="database" size={16} />
+              <span>Memory Index</span>
+            </h3>
+            <table className="detail-table">
+              <tbody>
+                <tr>
+                  <td className="detail-key">Indexed Files</td>
+                  <td className="detail-val">{memory.files}</td>
+                </tr>
+                <tr>
+                  <td className="detail-key">Chunks</td>
+                  <td className="detail-val">{memory.chunks}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {channelList.length > 0 && (
           <div className="detail-card">

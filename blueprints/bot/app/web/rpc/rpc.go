@@ -445,6 +445,39 @@ func registerChannelMethods(hub *dashboard.Hub, s store.Store) {
 		return ch, nil
 	})
 
+	hub.Register("channels.update", func(params json.RawMessage) (any, error) {
+		var req struct {
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Status string `json:"status"`
+			Config string `json:"config"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+		if req.ID == "" {
+			return nil, fmt.Errorf("id is required")
+		}
+		existing, err := s.GetChannel(context.Background(), req.ID)
+		if err != nil {
+			return nil, err
+		}
+		if req.Name != "" {
+			existing.Name = req.Name
+		}
+		if req.Status != "" {
+			existing.Status = req.Status
+		}
+		if req.Config != "" {
+			existing.Config = req.Config
+		}
+		if err := s.UpdateChannel(context.Background(), existing); err != nil {
+			return nil, err
+		}
+		hub.Broadcast("channel.updated", nil)
+		return existing, nil
+	})
+
 	hub.Register("channels.delete", func(params json.RawMessage) (any, error) {
 		var req struct {
 			ID string `json:"id"`

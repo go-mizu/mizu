@@ -170,6 +170,8 @@ button, input, textarea, select { font: inherit; color: inherit }
 /* Stats */
 .stat, .stat-card { background: var(--card); border-radius: var(--radius-md); padding: 14px 16px; border: 1px solid var(--border); box-shadow: inset 0 1px 0 var(--card-highlight); transition: border-color var(--duration-normal) var(--ease-out) }
 .stat:hover, .stat-card:hover { border-color: var(--border-strong) }
+.stat-card--link { cursor: pointer; transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out) }
+.stat-card--link:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--card)) }
 .stat-label { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em }
 .stat-value { font-size: 24px; font-weight: 700; margin-top: 6px; letter-spacing: -0.03em; line-height: 1.1 }
 .stat-value.ok { color: var(--ok) }
