@@ -371,7 +371,7 @@ func (h *Hub) handleHello(client *Client, req *RPCRequest) {
 		"protocol": 1,
 		"features": map[string]any{
 			"methods": methods,
-			"events":  []string{"session.updated", "cron.updated", "channel.updated", "log.entry", "chat.message", "chat.typing", "chat.done", "presence", "health"},
+			"events":  []string{"session.updated", "cron.updated", "channel.updated", "log.entry", "chat", "chat.message", "chat.typing", "chat.done", "presence", "health"},
 		},
 		"snapshot": snapshot,
 	}

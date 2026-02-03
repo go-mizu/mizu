@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,15 +24,43 @@ type Broadcaster interface {
 
 // ProcessMessageResult contains the full result of processing a message.
 type ProcessMessageResult struct {
-	SessionID string `json:"sessionId"`
-	AgentID   string `json:"agentId"`
-	Content   string `json:"content"`
-	Model     string `json:"model"`
-	MessageID string `json:"messageId"`
+	SessionID  string      `json:"sessionId"`
+	SessionKey string      `json:"sessionKey,omitempty"`
+	AgentID    string      `json:"agentId"`
+	Content    string      `json:"content"`
+	Model      string      `json:"model"`
+	MessageID  string      `json:"messageId"`
+	RunID      string      `json:"runId,omitempty"`
+	Usage      *TokenUsage `json:"usage,omitempty"`
+}
+
+// TokenUsage tracks LLM token consumption for a request.
+type TokenUsage struct {
+	Input       int `json:"input"`
+	Output      int `json:"output"`
+	TotalTokens int `json:"totalTokens"`
 }
 
 // DefaultContextWindow is the default context window size for Claude models.
 const DefaultContextWindow = 200000
+
+// dedupeTTL is the idempotency cache TTL matching OpenClaw's behavior.
+const dedupeTTL = 5 * time.Minute
+
+// chatAbortEntry tracks an in-flight chat run for abort support.
+type chatAbortEntry struct {
+	cancel     context.CancelFunc
+	sessionID  string
+	sessionKey string
+	startedAt  time.Time
+}
+
+// dedupeEntry caches a chat.send response for idempotency.
+type dedupeEntry struct {
+	ts      time.Time
+	payload any
+	err     error
+}
 
 // Service is the core message routing engine.
 // It receives inbound messages, resolves the target agent via bindings,
@@ -47,21 +76,23 @@ type Service struct {
 	broadcaster Broadcaster
 	startAt     time.Time
 
-	mu       sync.Mutex
-	inflight map[string]context.CancelFunc // session ID → cancel
+	mu          sync.Mutex
+	inflight    map[string]*chatAbortEntry // runId → entry
+	dedupeCache map[string]*dedupeEntry    // idempotencyKey → cached response
 }
 
 // NewService creates a gateway service with memory and context management.
 func NewService(s store.Store, provider llm.Provider) *Service {
 	memReg := newMemoryRegistry()
 	return &Service{
-		store:      s,
-		llm:        provider,
-		commands:   command.NewService(),
-		memReg:     memReg,
-		ctxBuilder: newContextBuilder(memReg),
-		startAt:    time.Now(),
-		inflight:   make(map[string]context.CancelFunc),
+		store:       s,
+		llm:         provider,
+		commands:    command.NewService(),
+		memReg:      memReg,
+		ctxBuilder:  newContextBuilder(memReg),
+		startAt:     time.Now(),
+		inflight:    make(map[string]*chatAbortEntry),
+		dedupeCache: make(map[string]*dedupeEntry),
 	}
 }
 
@@ -70,17 +101,113 @@ func (g *Service) SetBroadcaster(b Broadcaster) {
 	g.broadcaster = b
 }
 
-// Abort cancels an in-flight LLM request for the given session.
+// Abort cancels an in-flight LLM request for the given session (legacy).
 // Returns true if a request was actually cancelled.
 func (g *Service) Abort(sessionID string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if cancel, ok := g.inflight[sessionID]; ok {
-		cancel()
-		delete(g.inflight, sessionID)
-		return true
+	for runID, entry := range g.inflight {
+		if entry.sessionID == sessionID {
+			entry.cancel()
+			delete(g.inflight, runID)
+			return true
+		}
 	}
 	return false
+}
+
+// AbortByRunID aborts a specific run, verifying the sessionKey matches.
+func (g *Service) AbortByRunID(runID, sessionKey string) (bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	entry, ok := g.inflight[runID]
+	if !ok {
+		return false, nil
+	}
+	if sessionKey != "" && entry.sessionKey != sessionKey {
+		return false, fmt.Errorf("runId does not match sessionKey")
+	}
+	entry.cancel()
+	delete(g.inflight, runID)
+	if g.broadcaster != nil {
+		g.broadcaster.Broadcast("chat", map[string]any{
+			"runId": runID, "sessionKey": entry.sessionKey,
+			"seq": 1, "state": "aborted", "stopReason": "rpc",
+		})
+	}
+	return true, nil
+}
+
+// AbortBySessionKey aborts all runs for a session key.
+func (g *Service) AbortBySessionKey(sessionKey string) ([]string, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var aborted []string
+	for runID, entry := range g.inflight {
+		if entry.sessionKey == sessionKey {
+			entry.cancel()
+			delete(g.inflight, runID)
+			aborted = append(aborted, runID)
+			if g.broadcaster != nil {
+				g.broadcaster.Broadcast("chat", map[string]any{
+					"runId": runID, "sessionKey": sessionKey,
+					"seq": 1, "state": "aborted", "stopReason": "rpc",
+				})
+			}
+		}
+	}
+	return aborted, len(aborted) > 0
+}
+
+// CheckDedupe checks the idempotency cache for a previous response.
+// Returns the cached payload and true if found, nil and false otherwise.
+func (g *Service) CheckDedupe(key string) (any, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.cleanDedupe()
+	entry, ok := g.dedupeCache[key]
+	if !ok {
+		return nil, false
+	}
+	return entry.payload, true
+}
+
+// SetDedupe stores a response in the idempotency cache.
+func (g *Service) SetDedupe(key string, payload any) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.dedupeCache[key] = &dedupeEntry{ts: time.Now(), payload: payload}
+}
+
+// cleanDedupe removes expired entries. Must be called with mu held.
+func (g *Service) cleanDedupe() {
+	cutoff := time.Now().Add(-dedupeTTL)
+	for k, v := range g.dedupeCache {
+		if v.ts.Before(cutoff) {
+			delete(g.dedupeCache, k)
+		}
+	}
+}
+
+// SessionKeyToQuery resolves an OpenClaw session key to store query params.
+func SessionKeyToQuery(key string) (agentID, channelType, peerID string) {
+	parts := strings.Split(key, ":")
+	if len(parts) < 3 || parts[0] != "agent" {
+		return "main", "webhook", "dashboard-user"
+	}
+	agentID = parts[1]
+	if len(parts) == 3 {
+		return agentID, "webhook", "dashboard-user"
+	}
+	return agentID, parts[2], parts[3]
+}
+
+// BuildSessionKey constructs a session key from components.
+func BuildSessionKey(agentID, channelType, peerID string) string {
+	if channelType == "webhook" && peerID == "dashboard-user" {
+		return "agent:" + agentID + ":main"
+	}
+	return "agent:" + agentID + ":" + channelType + ":" + peerID
 }
 
 // Close releases resources held by the gateway service.
@@ -289,6 +416,7 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 	}
 
 	// 8. Broadcast typing indicator
+	sessionKey := BuildSessionKey(agent.ID, channelType, msg.PeerID)
 	if g.broadcaster != nil {
 		g.broadcaster.Broadcast("chat.typing", map[string]any{
 			"sessionId": session.ID,
@@ -296,14 +424,23 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		})
 	}
 
-	// 8a. Register cancellable context for abort support
+	// 8a. Register cancellable context for abort support (run-based)
+	runID := msg.RunID
+	if runID == "" {
+		runID = fmt.Sprintf("run-%d", time.Now().UnixNano())
+	}
 	llmCtx, cancel := context.WithCancel(ctx)
 	g.mu.Lock()
-	g.inflight[session.ID] = cancel
+	g.inflight[runID] = &chatAbortEntry{
+		cancel:     cancel,
+		sessionID:  session.ID,
+		sessionKey: sessionKey,
+		startedAt:  time.Now(),
+	}
 	g.mu.Unlock()
 	defer func() {
 		g.mu.Lock()
-		delete(g.inflight, session.ID)
+		delete(g.inflight, runID)
 		g.mu.Unlock()
 		cancel()
 	}()
@@ -321,6 +458,13 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 	if err != nil {
 		log.Printf("LLM error for agent %s: %v", agent.ID, err)
 		if g.broadcaster != nil {
+			// OpenClaw-format error event
+			g.broadcaster.Broadcast("chat", map[string]any{
+				"runId": runID, "sessionKey": sessionKey,
+				"seq": 1, "state": "error",
+				"errorMessage": err.Error(),
+			})
+			// Legacy events
 			g.broadcaster.Broadcast("chat.done", map[string]any{
 				"sessionId": session.ID,
 				"agentId":   agent.ID,
@@ -342,8 +486,27 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		return nil, fmt.Errorf("store assistant message: %w", err)
 	}
 
-	// 9a. Broadcast assistant message and done
+	// 9a. Build usage info
+	usage := &TokenUsage{
+		Input:       llmResp.InputTokens,
+		Output:      llmResp.OutputTokens,
+		TotalTokens: llmResp.InputTokens + llmResp.OutputTokens,
+	}
+
+	// 9b. Broadcast OpenClaw-format final event
 	if g.broadcaster != nil {
+		g.broadcaster.Broadcast("chat", map[string]any{
+			"runId": runID, "sessionKey": sessionKey,
+			"seq": 1, "state": "final",
+			"message": map[string]any{
+				"role":       "assistant",
+				"content":    []any{map[string]string{"type": "text", "text": assistantMsg.Content}},
+				"timestamp":  assistantMsg.CreatedAt.UnixMilli(),
+				"stopReason": "end_turn",
+				"usage":      usage,
+			},
+		})
+		// Legacy events for backward compat
 		g.broadcaster.Broadcast("chat.message", map[string]any{
 			"sessionId": session.ID,
 			"message": map[string]any{
@@ -360,11 +523,14 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 	}
 
 	return &ProcessMessageResult{
-		SessionID: session.ID,
-		AgentID:   agent.ID,
-		Content:   llmResp.Content,
-		Model:     agent.Model,
-		MessageID: assistantMsg.ID,
+		SessionID:  session.ID,
+		SessionKey: sessionKey,
+		AgentID:    agent.ID,
+		Content:    llmResp.Content,
+		Model:      agent.Model,
+		MessageID:  assistantMsg.ID,
+		RunID:      runID,
+		Usage:      usage,
 	}, nil
 }
 

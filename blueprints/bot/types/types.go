@@ -125,6 +125,8 @@ type InboundMessage struct {
 	Metadata     string      `json:"metadata,omitempty"`
 	SkillContext string      `json:"-"` // injected skill content for skill commands (internal)
 	SkillName    string      `json:"-"` // matched skill name (internal)
+	RunID        string      `json:"-"` // run ID for OpenClaw chat event tracking (internal)
+	SessionKey   string      `json:"-"` // OpenClaw session key (internal)
 }
 
 // OutboundMessage is a message to send via a channel driver.

@@ -11,7 +11,9 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   createdAt?: string;
+  timestamp?: number;
   agentId?: string;
+  stopReason?: string;
 }
 
 interface Session {
@@ -31,6 +33,20 @@ interface ChatPageProps {
   gw: Gateway;
 }
 
+/** Extract text from OpenClaw content format (array of {type, text} blocks or plain string). */
+function extractText(message?: Record<string, unknown>): string {
+  if (!message) return '';
+  const content = message.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: Record<string, unknown>) => b.type === 'text')
+      .map((b: Record<string, unknown>) => b.text as string)
+      .join('');
+  }
+  return '';
+}
+
 function groupMessages(messages: Message[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
   for (const msg of messages) {
@@ -44,10 +60,11 @@ function groupMessages(messages: Message[]): MessageGroup[] {
   return groups;
 }
 
-function formatTime(iso?: string): string {
-  if (!iso) return '';
+function formatTime(iso?: string, ts?: number): string {
+  const date = ts ? new Date(ts) : iso ? new Date(iso) : null;
+  if (!date) return '';
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
   }
@@ -57,10 +74,12 @@ export function ChatPage({ gw }: ChatPageProps) {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionId, setSessionId] = useState('');
+  const [currentSessionKey, setCurrentSessionKey] = useState('agent:main:main');
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -74,15 +93,36 @@ export function ChatPage({ gw }: ChatPageProps) {
     }
   }, [gw]);
 
-  const loadMessages = useCallback(async (sid: string) => {
-    if (!sid) {
+  const loadMessages = useCallback(async (sid: string, skey: string) => {
+    if (!sid && !skey) {
       setMessages([]);
       return;
     }
     try {
-      const res = await gw.rpc('chat.history', { sessionId: sid, limit: 50 });
-      const list = (res.messages ?? []) as Message[];
-      setMessages(list);
+      // Use sessionKey if available (OpenClaw compat), fall back to sessionId
+      const params: Record<string, unknown> = { limit: 200 };
+      if (skey) params.sessionKey = skey;
+      if (sid) params.sessionId = sid;
+      const res = await gw.rpc('chat.history', params);
+      const rawList = (res.messages ?? []) as Record<string, unknown>[];
+      // Convert OpenClaw format messages to local format
+      const normalized: Message[] = rawList.map((m) => {
+        const content = typeof m.content === 'string'
+          ? m.content as string
+          : extractText(m);
+        return {
+          role: m.role as 'user' | 'assistant',
+          content,
+          timestamp: m.timestamp as number | undefined,
+          createdAt: m.createdAt as string | undefined,
+          stopReason: m.stopReason as string | undefined,
+        };
+      });
+      setMessages(normalized);
+      // Capture sessionId from response if we used sessionKey
+      if (res.sessionId && !sid) {
+        setSessionId(res.sessionId as string);
+      }
     } catch {
       setMessages([]);
     }
@@ -93,21 +133,76 @@ export function ChatPage({ gw }: ChatPageProps) {
   }, [loadSessions]);
 
   useEffect(() => {
-    loadMessages(sessionId);
-  }, [sessionId, loadMessages]);
+    loadMessages(sessionId, currentSessionKey);
+  }, [sessionId, currentSessionKey, loadMessages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, sending, streaming]);
+  }, [messages, sending, streaming, streamingText]);
 
-  // Real-time event listeners
+  // OpenClaw-format event listener (single 'chat' event with state discriminator)
   useEffect(() => {
+    const unsubChat = gw.on('event:chat', (payload: unknown) => {
+      const data = payload as Record<string, unknown>;
+      if (!data) return;
+      // Only process events for current session
+      if (data.sessionKey && data.sessionKey !== currentSessionKey) return;
+
+      switch (data.state) {
+        case 'delta': {
+          const text = extractText(data.message as Record<string, unknown>);
+          if (text) {
+            setStreamingText(text);
+            setStreaming(true);
+          }
+          break;
+        }
+        case 'final': {
+          const message = data.message as Record<string, unknown> | undefined;
+          if (message) {
+            const content = extractText(message);
+            const role = (message.role as string) || 'assistant';
+            if (content) {
+              setMessages(prev => {
+                // Deduplicate: check if we already have this content as last message
+                const last = prev[prev.length - 1];
+                if (last && last.role === role && last.content === content) return prev;
+                return [...prev, {
+                  role: role as 'user' | 'assistant',
+                  content,
+                  timestamp: message.timestamp as number | undefined,
+                  stopReason: message.stopReason as string | undefined,
+                }];
+              });
+            }
+          }
+          setStreamingText('');
+          setStreaming(false);
+          break;
+        }
+        case 'aborted':
+          setStreamingText('');
+          setStreaming(false);
+          break;
+        case 'error': {
+          setStreamingText('');
+          setStreaming(false);
+          const errMsg = (data.errorMessage as string) || 'Chat request failed';
+          setMessages(prev => [...prev, {
+            role: 'assistant' as const,
+            content: `Error: ${errMsg}`,
+          }]);
+          break;
+        }
+      }
+    });
+
+    // Legacy event listeners (backward compat during transition)
     const unsubMessage = gw.on('event:chat.message', (payload: unknown) => {
       const data = payload as { sessionId?: string; message?: Message };
       if (!data?.message) return;
       if (data.sessionId === sessionId || !sessionId) {
         setMessages((prev) => {
-          // Deduplicate by message ID
           if (data.message!.id && prev.some((m) => m.id === data.message!.id)) return prev;
           return [...prev, data.message!];
         });
@@ -129,28 +224,38 @@ export function ChatPage({ gw }: ChatPageProps) {
     });
 
     return () => {
+      unsubChat();
       unsubMessage();
       unsubTyping();
       unsubDone();
     };
-  }, [gw, sessionId]);
+  }, [gw, sessionId, currentSessionKey]);
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
 
-    // Don't add user message locally — the broadcast will deliver it
+    // Add user message locally for immediate feedback
+    const userMsg: Message = { role: 'user', content: trimmed, timestamp: Date.now() };
+    setMessages(prev => [...prev, userMsg]);
     setText('');
     setSending(true);
     setStreaming(true);
 
+    // Generate idempotency key (OpenClaw compat)
+    const idempotencyKey = crypto.randomUUID();
+
     try {
-      const res = await gw.rpc('chat.send', { sessionId, message: trimmed, agentId: 'main' });
+      const res = await gw.rpc('chat.send', {
+        sessionKey: currentSessionKey,
+        message: trimmed,
+        idempotencyKey,
+        agentId: 'main',
+      });
 
       // Capture session ID from first response
       if (res.sessionId && !sessionId) {
         setSessionId(res.sessionId as string);
-        // Reload session list to show the new session
         loadSessions();
       }
 
@@ -159,8 +264,10 @@ export function ChatPage({ gw }: ChatPageProps) {
       const reply = (res.content ?? '') as string;
       if (reply) {
         setMessages((prev) => {
-          // Don't add if broadcast already delivered it
           if (res.messageId && prev.some((m) => m.id === res.messageId)) return prev;
+          // Also check if content already present from event
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.content === reply) return prev;
           return [...prev, {
             id: res.messageId as string | undefined,
             role: 'assistant' as const,
@@ -177,19 +284,21 @@ export function ChatPage({ gw }: ChatPageProps) {
     } finally {
       setSending(false);
       setStreaming(false);
+      setStreamingText('');
       textareaRef.current?.focus();
     }
-  }, [text, sending, gw, sessionId, loadSessions]);
+  }, [text, sending, gw, sessionId, currentSessionKey, loadSessions]);
 
   const handleAbort = useCallback(async () => {
     try {
-      await gw.rpc('chat.abort', { sessionId });
+      await gw.rpc('chat.abort', { sessionKey: currentSessionKey });
     } catch {
       // ignore abort errors
     }
     setStreaming(false);
     setSending(false);
-  }, [gw, sessionId]);
+    setStreamingText('');
+  }, [gw, currentSessionKey]);
 
   const handleNewConversation = useCallback(async () => {
     try {
@@ -198,7 +307,9 @@ export function ChatPage({ gw }: ChatPageProps) {
       // ignore errors
     }
     setSessionId('');
+    setCurrentSessionKey('agent:main:main');
     setMessages([]);
+    setStreamingText('');
     loadSessions();
     textareaRef.current?.focus();
   }, [gw, loadSessions]);
@@ -229,7 +340,14 @@ export function ChatPage({ gw }: ChatPageProps) {
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const newSid = e.target.value;
       setMessages([]);
+      setStreamingText('');
       setSessionId(newSid);
+      // Build sessionKey from session ID for OpenClaw compat
+      if (newSid) {
+        setCurrentSessionKey('agent:main:' + newSid);
+      } else {
+        setCurrentSessionKey('agent:main:main');
+      }
     },
     [],
   );
@@ -264,7 +382,7 @@ export function ChatPage({ gw }: ChatPageProps) {
       </div>
 
       <div className="chat-messages">
-        {groups.length === 0 && !sending && (
+        {groups.length === 0 && !sending && !streamingText && (
           <div className="chat-empty">
             <Icon name="messageSquare" size={48} />
             <p>No messages yet. Start a conversation below.</p>
@@ -279,6 +397,7 @@ export function ChatPage({ gw }: ChatPageProps) {
             {group.messages.map((msg, mi) => {
               const isLastAssistant =
                 streaming &&
+                !streamingText &&
                 msg.role === 'assistant' &&
                 gi === groups.length - 1 &&
                 mi === group.messages.length - 1;
@@ -302,8 +421,8 @@ export function ChatPage({ gw }: ChatPageProps) {
                       <Icon name="copy" size={14} />
                     </button>
                   </div>
-                  {msg.createdAt && (
-                    <div className="chat-stamp">{formatTime(msg.createdAt)}</div>
+                  {(msg.createdAt || msg.timestamp) && (
+                    <div className="chat-stamp">{formatTime(msg.createdAt, msg.timestamp)}</div>
                   )}
                 </div>
               );
@@ -311,7 +430,22 @@ export function ChatPage({ gw }: ChatPageProps) {
           </div>
         ))}
 
-        {streaming && (
+        {/* Streaming delta text display */}
+        {streaming && streamingText && (
+          <div className="chat-group chat-group--assistant">
+            <div className="chat-group-label">Assistant</div>
+            <div className="chat-bubble-wrapper">
+              <div className="chat-bubble chat-bubble--assistant streaming">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {streamingText}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Typing indicator (no delta text yet) */}
+        {streaming && !streamingText && messages.length > 0 && (
           <div className="chat-group chat-group--assistant">
             <div className="chat-group-label">Assistant</div>
             <div className="chat-bubble-wrapper">
