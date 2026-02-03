@@ -67,6 +67,7 @@ func (s *MemoryStore) EnsureSchema() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_hash ON chunks(hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source)`,
 
 		// chunks_fts: FTS5 virtual table for keyword search over chunk text.
 		`CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
