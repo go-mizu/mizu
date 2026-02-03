@@ -434,9 +434,35 @@ func registerChannelMethods(hub *dashboard.Hub, s store.Store) {
 	})
 
 	hub.Register("channels.create", func(params json.RawMessage) (any, error) {
-		var ch types.Channel
-		if err := json.Unmarshal(params, &ch); err != nil {
+		var req struct {
+			ID     string          `json:"id"`
+			Type   string          `json:"type"`
+			Name   string          `json:"name"`
+			Config json.RawMessage `json:"config"`
+			Status string          `json:"status"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+		// Config can be a JSON string or an object; normalize to string
+		configStr := ""
+		if len(req.Config) > 0 {
+			if req.Config[0] == '"' {
+				_ = json.Unmarshal(req.Config, &configStr)
+			} else {
+				configStr = string(req.Config)
+			}
+		}
+		id := req.ID
+		if id == "" {
+			id = "ch-" + generateID()
+		}
+		ch := types.Channel{
+			ID:     id,
+			Type:   types.ChannelType(req.Type),
+			Name:   req.Name,
+			Config: configStr,
+			Status: req.Status,
 		}
 		if err := s.CreateChannel(context.Background(), &ch); err != nil {
 			return nil, err
@@ -447,10 +473,10 @@ func registerChannelMethods(hub *dashboard.Hub, s store.Store) {
 
 	hub.Register("channels.update", func(params json.RawMessage) (any, error) {
 		var req struct {
-			ID     string `json:"id"`
-			Name   string `json:"name"`
-			Status string `json:"status"`
-			Config string `json:"config"`
+			ID     string          `json:"id"`
+			Name   string          `json:"name"`
+			Status string          `json:"status"`
+			Config json.RawMessage `json:"config"`
 		}
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, fmt.Errorf("invalid params: %w", err)
@@ -468,8 +494,14 @@ func registerChannelMethods(hub *dashboard.Hub, s store.Store) {
 		if req.Status != "" {
 			existing.Status = req.Status
 		}
-		if req.Config != "" {
-			existing.Config = req.Config
+		if len(req.Config) > 0 {
+			if req.Config[0] == '"' {
+				var cs string
+				_ = json.Unmarshal(req.Config, &cs)
+				existing.Config = cs
+			} else {
+				existing.Config = string(req.Config)
+			}
 		}
 		if err := s.UpdateChannel(context.Background(), existing); err != nil {
 			return nil, err
