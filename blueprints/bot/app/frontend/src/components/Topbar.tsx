@@ -28,28 +28,64 @@ interface TopbarProps {
   onToggleCollapse: () => void;
 }
 
-function getTheme(): string {
-  return document.documentElement.getAttribute('data-theme') || 'dark';
+type ThemePreference = 'system' | 'light' | 'dark';
+
+function getSystemTheme(): 'light' | 'dark' {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function resolveTheme(pref: ThemePreference): 'light' | 'dark' {
+  return pref === 'system' ? getSystemTheme() : pref;
+}
+
+function applyTheme(pref: ThemePreference) {
+  document.documentElement.setAttribute('data-theme', resolveTheme(pref));
+}
+
+function loadPreference(): ThemePreference {
+  const saved = localStorage.getItem('openbot-theme');
+  if (saved === 'system' || saved === 'light' || saved === 'dark') return saved;
+  return 'system';
+}
+
+const THEME_CYCLE: ThemePreference[] = ['system', 'light', 'dark'];
+
+function themeIcon(pref: ThemePreference): string {
+  if (pref === 'system') return 'monitor';
+  return pref === 'dark' ? 'moon' : 'sun';
+}
+
+function themeLabel(pref: ThemePreference): string {
+  if (pref === 'system') return 'System';
+  return pref === 'dark' ? 'Dark' : 'Light';
 }
 
 export function Topbar({ connected, collapsed, onToggleCollapse }: TopbarProps) {
-  const [theme, setTheme] = useState(getTheme);
+  const [preference, setPreference] = useState<ThemePreference>(loadPreference);
 
+  // Apply theme to <html> whenever preference changes
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('openbot-theme', theme);
-  }, [theme]);
+    applyTheme(preference);
+    localStorage.setItem('openbot-theme', preference);
+  }, [preference]);
 
+  // Listen for OS theme changes when preference is "system"
   useEffect(() => {
-    const saved = localStorage.getItem('openbot-theme');
-    if (saved) {
-      setTheme(saved);
-      document.documentElement.setAttribute('data-theme', saved);
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    function onChange() {
+      if (preference === 'system') {
+        applyTheme('system');
+      }
     }
-  }, []);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, [preference]);
 
   function toggleTheme() {
-    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+    setPreference((cur) => {
+      const idx = THEME_CYCLE.indexOf(cur);
+      return THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
+    });
   }
 
   return (
@@ -68,8 +104,8 @@ export function Topbar({ connected, collapsed, onToggleCollapse }: TopbarProps) 
       </div>
       <div className="topbar-right">
         <button className="theme-btn" onClick={toggleTheme}>
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
-          <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          <Icon name={themeIcon(preference)} size={14} />
+          <span>{themeLabel(preference)}</span>
         </button>
         <div className="pill">
           <span className={'statusDot' + (connected ? ' ok' : '')} />

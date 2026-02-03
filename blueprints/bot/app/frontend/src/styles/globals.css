@@ -139,6 +139,11 @@ button, input, textarea, select { font: inherit; color: inherit }
 .nav-group:last-child { margin-bottom: 0 }
 .nav-group__items { display: grid; gap: 1px }
 .nav-label { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; font-size: 11px; font-weight: 500; color: var(--muted); margin-bottom: 4px; background: transparent; border: none; cursor: default; text-align: left; border-radius: var(--radius-sm) }
+.nav-label--collapsible { cursor: pointer; user-select: none; transition: color var(--duration-fast) ease, background var(--duration-fast) ease }
+.nav-label--collapsible:hover { color: var(--text); background: var(--bg-hover) }
+.nav-label__chevron { display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; transition: transform var(--duration-normal) var(--ease-out) }
+.nav-label__chevron svg { width: 12px; height: 12px }
+.nav-group--collapsed .nav-group__items { display: none }
 .nav-item { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-md); border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; text-decoration: none; transition: border-color var(--duration-fast) ease, background var(--duration-fast) ease, color var(--duration-fast) ease; width: 100%; text-align: left; font-size: 13px; font-weight: 500 }
 .nav-item:hover { color: var(--text); background: var(--bg-hover); text-decoration: none }
 .nav-item.active { color: var(--text-strong); background: var(--accent-subtle) }
@@ -150,6 +155,7 @@ button, input, textarea, select { font: inherit; color: inherit }
 /* Collapsed nav */
 .shell--collapsed .nav { padding: 16px 4px }
 .shell--collapsed .nav-label span { display: none }
+.shell--collapsed .nav-label__chevron { display: none }
 .shell--collapsed .nav-item span:not(.nav-icon) { display: none }
 .shell--collapsed .nav-item { justify-content: center; padding: 8px }
 
@@ -279,7 +285,7 @@ button, input, textarea, select { font: inherit; color: inherit }
 /* Chat */
 .chat { display: flex; flex-direction: column; min-height: 0; flex: 1 }
 .chat-thread { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 16px 12px; min-width: 0 }
-.chat-group { display: flex; flex-direction: column; gap: 4px }
+.chat-group { display: flex; flex-direction: column; gap: 4px; max-width: 100% }
 .chat-group-label { font-size: 11px; color: var(--muted); font-weight: 500; margin-bottom: 4px }
 .chat-group.user .chat-group-label { text-align: right }
 .chat-line { display: flex }
@@ -310,7 +316,7 @@ button, input, textarea, select { font: inherit; color: inherit }
 .chat-compose textarea:focus { border-color: var(--ring); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring) }
 .chat-compose .row { justify-content: flex-end }
 .chat-session-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-accent) }
-.chat-session-bar select { flex: 1; max-width: 300px }
+.chat-session-bar > select#session-select { flex: 1; max-width: 300px }
 .chat-new-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; font-size: 12px; white-space: nowrap }
 
 /* Config layout */
@@ -427,7 +433,7 @@ textarea.input { font-family: var(--mono); min-height: 72px; resize: vertical; w
 .chat-bubble:hover .chat-copy-btn { opacity: 1 }
 .chat-copy-btn:hover { background: var(--bg-hover) }
 .chat-input-bar { display: flex; align-items: flex-end; gap: 10px; padding: 12px; border-top: 1px solid var(--border); background: var(--bg-accent) }
-.chat-textarea { flex: 1; min-height: 48px; max-height: 120px; padding: 10px 14px; border-radius: var(--radius-lg); resize: none; font-family: var(--font-body); line-height: 1.5; border: 1px solid var(--input); background: var(--card); outline: none; transition: border-color var(--duration-fast) ease }
+.chat-textarea { flex: 1; min-height: 40px; max-height: 150px; padding: 10px 14px; border-radius: var(--radius-lg); resize: none; font-family: var(--font-body); line-height: 1.5; border: 1px solid var(--input); background: var(--card); outline: none; transition: border-color var(--duration-fast) ease; overflow-y: auto }
 .chat-textarea:focus { border-color: var(--ring) }
 .chat-textarea:disabled { opacity: 0.5 }
 .chat-send-btn { padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--accent); background: var(--accent); color: var(--primary-foreground); cursor: pointer; display: flex; align-items: center; transition: background var(--duration-fast) ease }
@@ -437,6 +443,27 @@ textarea.input { font-family: var(--mono); min-height: 72px; resize: vertical; w
 .chat-abort-btn { background: var(--destructive, #e53e3e); border-color: var(--destructive, #e53e3e); gap: 6px }
 .chat-abort-btn:hover { background: var(--destructive-hover, #c53030); border-color: var(--destructive-hover, #c53030) }
 .chat-abort-btn span { font-size: 13px; font-weight: 500 }
+
+/* Chat avatars */
+.chat-avatar { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; font-weight: 600; font-size: 13px; flex-shrink: 0; align-self: flex-end; margin-bottom: 4px }
+.chat-avatar.user { background: var(--accent-subtle); color: var(--accent) }
+.chat-avatar.assistant { background: var(--secondary); color: var(--muted) }
+.chat-group-row { display: flex; gap: 10px }
+.chat-group--user .chat-group-row { flex-direction: row-reverse }
+.chat-group-content { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0 }
+
+/* Focus mode */
+.shell--chat-focus .nav { display: none }
+.shell--chat-focus .content-header { display: none }
+.shell--chat-focus { grid-template-columns: 0 minmax(0, 1fr) }
+.chat-focus-btn { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; font-size: 12px; white-space: nowrap; border: 1px solid var(--border); background: var(--bg-elevated); border-radius: var(--radius-md); cursor: pointer; color: var(--muted); transition: background var(--duration-fast) ease, color var(--duration-fast) ease }
+.chat-focus-btn:hover { background: var(--bg-hover); color: var(--text) }
+.chat-focus-btn.active { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent) }
+
+/* Thinking level */
+.chat-thinking-select { padding: 5px 10px; font-size: 12px; border: 1px solid var(--border); background: var(--bg-elevated); border-radius: var(--radius-md); color: var(--muted); cursor: pointer; appearance: none; padding-right: 24px; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2371717a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease }
+.chat-thinking-select:hover { border-color: var(--border-strong); color: var(--text) }
+.chat-thinking-select:focus { border-color: var(--ring); outline: none }
 
 /* --- OverviewPage --- */
 .overview-page { display: grid; gap: 24px }

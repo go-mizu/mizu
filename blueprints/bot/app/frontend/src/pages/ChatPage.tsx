@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, useCallback, KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, KeyboardEvent, ChangeEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Gateway } from '../lib/gateway';
 import { copyToClipboard } from '../lib/utils';
 import { Icon } from '../components/Icon';
 import { useToast } from '../components/Toast';
+
+type ThinkingLevel = 'default' | 'low' | 'medium' | 'high';
 
 interface Message {
   id?: string;
@@ -80,6 +82,8 @@ export function ChatPage({ gw }: ChatPageProps) {
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState('');
+  const [focusMode, setFocusMode] = useState(() => localStorage.getItem('openbot-chat-focus') === 'true');
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>('default');
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -139,6 +143,39 @@ export function ChatPage({ gw }: ChatPageProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending, streaming, streamingText]);
+
+  // Focus mode: toggle shell class and persist preference
+  useEffect(() => {
+    const shell = document.querySelector('.shell');
+    if (shell) {
+      if (focusMode) {
+        shell.classList.add('shell--chat-focus');
+      } else {
+        shell.classList.remove('shell--chat-focus');
+      }
+    }
+    localStorage.setItem('openbot-chat-focus', String(focusMode));
+    return () => {
+      const el = document.querySelector('.shell');
+      if (el) el.classList.remove('shell--chat-focus');
+    };
+  }, [focusMode]);
+
+  // Auto-resize textarea
+  const handleTextareaInput = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    const ta = e.target;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 150) + 'px';
+  }, []);
+
+  const toggleFocus = useCallback(() => {
+    setFocusMode(prev => !prev);
+  }, []);
+
+  const handleThinkingChange = useCallback((e: ChangeEvent<HTMLSelectElement>) => {
+    setThinkingLevel(e.target.value as ThinkingLevel);
+  }, []);
 
   // OpenClaw-format event listener (single 'chat' event with state discriminator)
   useEffect(() => {
@@ -242,16 +279,25 @@ export function ChatPage({ gw }: ChatPageProps) {
     setSending(true);
     setStreaming(true);
 
+    // Reset textarea height after clearing
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
     // Generate idempotency key (OpenClaw compat)
     const idempotencyKey = crypto.randomUUID();
 
     try {
-      const res = await gw.rpc('chat.send', {
+      const sendParams: Record<string, unknown> = {
         sessionKey: currentSessionKey,
         message: trimmed,
         idempotencyKey,
         agentId: 'main',
-      });
+      };
+      if (thinkingLevel !== 'default') {
+        sendParams.thinkingLevel = thinkingLevel;
+      }
+      const res = await gw.rpc('chat.send', sendParams);
 
       // Capture session ID from first response
       if (res.sessionId && !sessionId) {
@@ -287,7 +333,7 @@ export function ChatPage({ gw }: ChatPageProps) {
       setStreamingText('');
       textareaRef.current?.focus();
     }
-  }, [text, sending, gw, sessionId, currentSessionKey, loadSessions]);
+  }, [text, sending, gw, sessionId, currentSessionKey, loadSessions, thinkingLevel]);
 
   const handleAbort = useCallback(async () => {
     try {
@@ -379,6 +425,25 @@ export function ChatPage({ gw }: ChatPageProps) {
           <Icon name="plus" size={14} />
           <span>New</span>
         </button>
+        <select
+          className="chat-thinking-select"
+          value={thinkingLevel}
+          onChange={handleThinkingChange}
+          title="Thinking level"
+        >
+          <option value="default">Thinking: Default</option>
+          <option value="low">Thinking: Low</option>
+          <option value="medium">Thinking: Medium</option>
+          <option value="high">Thinking: High</option>
+        </select>
+        <button
+          className={`chat-focus-btn${focusMode ? ' active' : ''}`}
+          onClick={toggleFocus}
+          title={focusMode ? 'Exit focus mode' : 'Enter focus mode'}
+        >
+          <Icon name={focusMode ? 'minimize' : 'maximize'} size={14} />
+          <span>{focusMode ? 'Unfocus' : 'Focus'}</span>
+        </button>
       </div>
 
       <div className="chat-messages">
@@ -394,39 +459,46 @@ export function ChatPage({ gw }: ChatPageProps) {
             <div className="chat-group-label">
               {group.role === 'user' ? 'You' : 'Assistant'}
             </div>
-            {group.messages.map((msg, mi) => {
-              const isLastAssistant =
-                streaming &&
-                !streamingText &&
-                msg.role === 'assistant' &&
-                gi === groups.length - 1 &&
-                mi === group.messages.length - 1;
-              return (
-                <div key={msg.id || `${gi}-${mi}`} className="chat-bubble-wrapper">
-                  <div
-                    className={`chat-bubble chat-bubble--${msg.role}${isLastAssistant ? ' streaming' : ''}`}
-                  >
-                    {msg.role === 'assistant' ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
-                      </ReactMarkdown>
-                    ) : (
-                      <span>{msg.content}</span>
-                    )}
-                    <button
-                      className="chat-copy-btn"
-                      onClick={() => handleCopy(msg.content)}
-                      title="Copy to clipboard"
-                    >
-                      <Icon name="copy" size={14} />
-                    </button>
-                  </div>
-                  {(msg.createdAt || msg.timestamp) && (
-                    <div className="chat-stamp">{formatTime(msg.createdAt, msg.timestamp)}</div>
-                  )}
-                </div>
-              );
-            })}
+            <div className="chat-group-row">
+              <div className={`chat-avatar ${group.role}`}>
+                {group.role === 'user' ? 'Y' : 'AI'}
+              </div>
+              <div className="chat-group-content">
+                {group.messages.map((msg, mi) => {
+                  const isLastAssistant =
+                    streaming &&
+                    !streamingText &&
+                    msg.role === 'assistant' &&
+                    gi === groups.length - 1 &&
+                    mi === group.messages.length - 1;
+                  return (
+                    <div key={msg.id || `${gi}-${mi}`} className="chat-bubble-wrapper">
+                      <div
+                        className={`chat-bubble chat-bubble--${msg.role}${isLastAssistant ? ' streaming' : ''}`}
+                      >
+                        {msg.role === 'assistant' ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        ) : (
+                          <span>{msg.content}</span>
+                        )}
+                        <button
+                          className="chat-copy-btn"
+                          onClick={() => handleCopy(msg.content)}
+                          title="Copy to clipboard"
+                        >
+                          <Icon name="copy" size={14} />
+                        </button>
+                      </div>
+                      {(msg.createdAt || msg.timestamp) && (
+                        <div className="chat-stamp">{formatTime(msg.createdAt, msg.timestamp)}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         ))}
 
@@ -434,11 +506,16 @@ export function ChatPage({ gw }: ChatPageProps) {
         {streaming && streamingText && (
           <div className="chat-group chat-group--assistant">
             <div className="chat-group-label">Assistant</div>
-            <div className="chat-bubble-wrapper">
-              <div className="chat-bubble chat-bubble--assistant streaming">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {streamingText}
-                </ReactMarkdown>
+            <div className="chat-group-row">
+              <div className="chat-avatar assistant">AI</div>
+              <div className="chat-group-content">
+                <div className="chat-bubble-wrapper">
+                  <div className="chat-bubble chat-bubble--assistant streaming">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {streamingText}
+                    </ReactMarkdown>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -448,13 +525,18 @@ export function ChatPage({ gw }: ChatPageProps) {
         {streaming && !streamingText && messages.length > 0 && (
           <div className="chat-group chat-group--assistant">
             <div className="chat-group-label">Assistant</div>
-            <div className="chat-bubble-wrapper">
-              <div className="chat-bubble streaming">
-                <span className="chat-reading-dots">
-                  <span />
-                  <span />
-                  <span />
-                </span>
+            <div className="chat-group-row">
+              <div className="chat-avatar assistant">AI</div>
+              <div className="chat-group-content">
+                <div className="chat-bubble-wrapper">
+                  <div className="chat-bubble streaming">
+                    <span className="chat-reading-dots">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -468,10 +550,10 @@ export function ChatPage({ gw }: ChatPageProps) {
           ref={textareaRef}
           className="chat-textarea"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleTextareaInput}
           onKeyDown={handleKeyDown}
           placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
-          rows={2}
+          rows={1}
           disabled={sending}
         />
         {streaming ? (

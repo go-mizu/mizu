@@ -15,6 +15,13 @@ interface EventEntry {
   payload: string;
 }
 
+interface ModelInfo {
+  id: string;
+  name?: string;
+  provider?: string;
+  [key: string]: unknown;
+}
+
 export function DebugPage({ gw }: DebugPageProps) {
   const { toast } = useToast();
   const [statusData, setStatusData] = useState('');
@@ -27,6 +34,10 @@ export function DebugPage({ gw }: DebugPageProps) {
   const [rpcError, setRpcError] = useState('');
   const [rpcCalling, setRpcCalling] = useState(false);
   const [rpcDuration, setRpcDuration] = useState<number | null>(null);
+
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsDuration, setModelsDuration] = useState<number | null>(null);
 
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [lastEventTime, setLastEventTime] = useState<string | null>(null);
@@ -50,9 +61,27 @@ export function DebugPage({ gw }: DebugPageProps) {
     }
   }, [gw, toast]);
 
+  const loadModels = useCallback(async () => {
+    setModelsLoading(true);
+    setModelsDuration(null);
+    const start = Date.now();
+    try {
+      const res = await gw.rpc('models.list');
+      setModelsDuration(Date.now() - start);
+      const list = Array.isArray(res.models) ? (res.models as ModelInfo[]) : [];
+      setModels(list);
+    } catch {
+      setModelsDuration(Date.now() - start);
+      setModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  }, [gw]);
+
   useEffect(() => {
     loadSnapshots();
-  }, [loadSnapshots]);
+    loadModels();
+  }, [loadSnapshots, loadModels]);
 
   useEffect(() => {
     const unsubscribe = gw.on('event', (data?: unknown) => {
@@ -147,6 +176,45 @@ export function DebugPage({ gw }: DebugPageProps) {
                   <pre className="code-block">{healthData || 'No data'}</pre>
                 </div>
               </>
+            )}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card__header">
+            <h3>Models</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {modelsDuration != null && (
+                <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+                  {modelsDuration}ms
+                </span>
+              )}
+              <button
+                className="btn btn-sm"
+                onClick={loadModels}
+                disabled={modelsLoading}
+              >
+                <Icon name="refresh" size={14} />
+                Refresh
+              </button>
+            </div>
+          </div>
+          <div className="card__body">
+            {modelsLoading ? (
+              <div className="debug-loading">
+                <Icon name="loader" size={20} />
+                Loading...
+              </div>
+            ) : models.length === 0 ? (
+              <div className="debug-events-empty">No models available.</div>
+            ) : (
+              <div className="debug-methods__chips">
+                {models.map((model) => (
+                  <span key={model.id} className="chip" title={model.provider || ''}>
+                    {model.name || model.id}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
