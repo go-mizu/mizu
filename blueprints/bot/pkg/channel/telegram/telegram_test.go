@@ -1,8 +1,14 @@
 package telegram
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/go-mizu/mizu/blueprints/bot/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -1184,5 +1190,190 @@ func TestStripBotMention_OnlyMention(t *testing.T) {
 	got := stripBotMention("@TestBot", "TestBot")
 	if got != "" {
 		t.Errorf("got %q, want empty string", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 16. NewDriver token resolution
+// ---------------------------------------------------------------------------
+
+// driverConfig is a helper that marshals a TelegramDriverConfig to JSON.
+func driverConfig(token string) string {
+	cfg := TelegramDriverConfig{BotToken: token}
+	b, _ := json.Marshal(cfg)
+	return string(b)
+}
+
+// noopHandler satisfies the channel.MessageHandler signature.
+var noopHandler = func(_ context.Context, _ *types.InboundMessage) error { return nil }
+
+func TestNewDriver_EnvVarOverridesConfig(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", "111:env-token")
+
+	d, err := NewDriver(driverConfig("999:json-token"), noopHandler)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	if d.sender.token != "111:env-token" {
+		t.Errorf("token = %q, want %q", d.sender.token, "111:env-token")
+	}
+}
+
+func TestNewDriver_EnvVarOverridesPlaceholder(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", "111:real-token")
+
+	d, err := NewDriver(driverConfig("YOUR_TELEGRAM_BOT_TOKEN"), noopHandler)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	if d.sender.token != "111:real-token" {
+		t.Errorf("token = %q, want %q", d.sender.token, "111:real-token")
+	}
+}
+
+func TestNewDriver_FallsBackToConfigToken(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", "") // explicitly unset
+
+	d, err := NewDriver(driverConfig("222:cfg-token"), noopHandler)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	if d.sender.token != "222:cfg-token" {
+		t.Errorf("token = %q, want %q", d.sender.token, "222:cfg-token")
+	}
+}
+
+func TestNewDriver_TrimsWhitespace(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", "")
+
+	d, err := NewDriver(driverConfig("  333:padded-token\n"), noopHandler)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	if d.sender.token != "333:padded-token" {
+		t.Errorf("token = %q, want %q", d.sender.token, "333:padded-token")
+	}
+}
+
+func TestNewDriver_StripsBotPrefix(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", "")
+
+	d, err := NewDriver(driverConfig("bot444:prefixed-token"), noopHandler)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	if d.sender.token != "444:prefixed-token" {
+		t.Errorf("token = %q, want %q", d.sender.token, "444:prefixed-token")
+	}
+}
+
+func TestNewDriver_EnvVarTrimmedAndStripped(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", " bot555:env-messy \n")
+
+	d, err := NewDriver(driverConfig("placeholder"), noopHandler)
+	if err != nil {
+		t.Fatalf("NewDriver: %v", err)
+	}
+	if d.sender.token != "555:env-messy" {
+		t.Errorf("token = %q, want %q", d.sender.token, "555:env-messy")
+	}
+}
+
+func TestNewDriver_EmptyTokenError(t *testing.T) {
+	t.Setenv("TELEGRAM_API_KEY", "")
+
+	_, err := NewDriver(driverConfig(""), noopHandler)
+	if err == nil {
+		t.Fatal("expected error for empty token")
+	}
+	if !strings.Contains(err.Error(), "botToken is required") {
+		t.Errorf("error = %q, want it to mention botToken", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 17. getMe error handling
+// ---------------------------------------------------------------------------
+
+// fakeTransport returns a canned HTTP response for any request.
+type fakeTransport struct {
+	statusCode int
+	body       string
+}
+
+func (f *fakeTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: f.statusCode,
+		Body:       io.NopCloser(strings.NewReader(f.body)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func TestGetMe_404ReturnsTokenHint(t *testing.T) {
+	s := sender{
+		token: "bad-token",
+		client: &http.Client{
+			Transport: &fakeTransport{
+				statusCode: 404,
+				body:       `{"ok":false,"error_code":404,"description":"Not Found"}`,
+			},
+		},
+	}
+
+	_, err := s.getMe(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+	if !strings.Contains(err.Error(), "invalid bot token") {
+		t.Errorf("error = %q, want it to mention invalid bot token", err)
+	}
+}
+
+func TestGetMe_Success(t *testing.T) {
+	resp, _ := json.Marshal(map[string]any{
+		"ok": true,
+		"result": map[string]any{
+			"id":       123,
+			"is_bot":   true,
+			"username": "TestBot",
+		},
+	})
+	s := sender{
+		token: "good-token",
+		client: &http.Client{
+			Transport: &fakeTransport{statusCode: 200, body: string(resp)},
+		},
+	}
+
+	user, err := s.getMe(context.Background())
+	if err != nil {
+		t.Fatalf("getMe: %v", err)
+	}
+	if user.Username != "TestBot" {
+		t.Errorf("username = %q, want %q", user.Username, "TestBot")
+	}
+}
+
+func TestGetMe_NonOKResponse(t *testing.T) {
+	s := sender{
+		token: "bad-token",
+		client: &http.Client{
+			Transport: &fakeTransport{
+				statusCode: 401,
+				body:       `{"ok":false,"error_code":401,"description":"Unauthorized"}`,
+			},
+		},
+	}
+
+	_, err := s.getMe(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	// 401 should NOT mention "invalid bot token" (that's specific to 404).
+	if strings.Contains(err.Error(), "invalid bot token") {
+		t.Errorf("error = %q, should not mention invalid bot token for 401", err)
+	}
+	if !strings.Contains(err.Error(), "getMe failed") {
+		t.Errorf("error = %q, want it to contain 'getMe failed'", err)
 	}
 }

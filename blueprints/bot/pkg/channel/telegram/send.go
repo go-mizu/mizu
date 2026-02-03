@@ -274,6 +274,9 @@ func (s *sender) getMe(ctx context.Context) (*TelegramUser, error) {
 		return nil, fmt.Errorf("parse getMe response: %w", err)
 	}
 	if !apiResp.OK {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("getMe failed (invalid bot token — verify TELEGRAM_API_KEY or botToken in config): %s", string(body))
+		}
 		return nil, fmt.Errorf("getMe failed: %s", string(body))
 	}
 
