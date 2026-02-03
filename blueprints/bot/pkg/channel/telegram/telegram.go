@@ -96,6 +96,17 @@ type Driver struct {
 }
 
 func (d *Driver) Type() types.ChannelType { return types.ChannelTelegram }
+
+// SendTypingAction sends a "typing" indicator to the given chat.
+// chatID should be the numeric chat ID as a string.
+func (d *Driver) SendTypingAction(ctx context.Context, chatID string) error {
+	var id int64
+	if _, err := fmt.Sscanf(chatID, "%d", &id); err != nil {
+		return fmt.Errorf("invalid chat ID: %s", chatID)
+	}
+	return d.sender.sendChatAction(ctx, id, "typing")
+}
+
 func (d *Driver) Status() string {
 	if d.status == "" {
 		return "disconnected"

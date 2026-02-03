@@ -1059,9 +1059,9 @@ func generateID() string {
 }
 
 func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store) {
-	// chat.send — OpenClaw-compatible: accepts sessionKey, idempotencyKey, thinking.
-	// Returns {runId, status} immediately. Processing happens synchronously for Phase 1
-	// but the response format matches OpenClaw's async ACK protocol.
+	// chat.send — OpenClaw-compatible: async processing with streaming.
+	// Returns {runId, status:"started"} immediately. LLM response arrives
+	// via WebSocket chat events (delta → final).
 	hub.Register("chat.send", func(params json.RawMessage) (any, error) {
 		var req struct {
 			// OpenClaw params
@@ -1070,6 +1070,7 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			IdempotencyKey string `json:"idempotencyKey"`
 			Thinking       string `json:"thinking"`
 			TimeoutMs      int    `json:"timeoutMs"`
+			Deliver        bool   `json:"deliver"`
 			// Legacy params
 			SessionID string `json:"sessionId"`
 			AgentID   string `json:"agentId"`
@@ -1082,7 +1083,7 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			return nil, fmt.Errorf("message is required")
 		}
 
-		// Resolve sessionKey: prefer OpenClaw sessionKey, fall back to legacy sessionId
+		// Resolve sessionKey
 		sessionKey := req.SessionKey
 		if sessionKey == "" && req.SessionID != "" {
 			sessionKey = "agent:main:" + req.SessionID
@@ -1095,7 +1096,6 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			sessionKey = "agent:" + agentID + ":main"
 		}
 
-		// Resolve runId from idempotencyKey
 		runID := req.IdempotencyKey
 		if runID == "" {
 			runID = generateID()
@@ -1112,19 +1112,22 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 		}
 
 		msg := &types.InboundMessage{
-			ChannelType: types.ChannelWebhook,
-			ChannelID:   "dashboard",
-			PeerID:      "dashboard-user",
-			PeerName:    peerName,
-			Content:     req.Message,
-			Origin:      "dm",
-			RunID:       runID,
-			SessionKey:  sessionKey,
+			ChannelType:   types.ChannelWebhook,
+			ChannelID:     "dashboard",
+			PeerID:        "dashboard-user",
+			PeerName:      peerName,
+			Content:       req.Message,
+			Origin:        "dm",
+			RunID:         runID,
+			SessionKey:    sessionKey,
+			Async:         true,
+			Deliver:       req.Deliver,
+			TimeoutMs:     req.TimeoutMs,
+			ThinkingLevel: req.Thinking,
 		}
 
 		result, err := gw.ProcessMessage(context.Background(), msg)
 		if err != nil {
-			// Broadcast error in OpenClaw format
 			hub.Broadcast("chat", map[string]any{
 				"runId": runID, "sessionKey": sessionKey,
 				"seq": 1, "state": "error",
@@ -1133,20 +1136,15 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			return nil, err
 		}
 
-		// Build OpenClaw-compatible response
+		// Return immediate ACK (async: result has runId but no content yet)
 		resp := map[string]any{
 			"runId":     runID,
-			"status":    "ok",
+			"status":    "started",
 			"sessionId": result.SessionID,
-			"messageId": result.MessageID,
-			"content":   result.Content,
 			"agentId":   result.AgentID,
-			"model":     result.Model,
 		}
 
-		// Cache for idempotency
 		gw.SetDedupe("chat:"+runID, resp)
-
 		return resp, nil
 	})
 

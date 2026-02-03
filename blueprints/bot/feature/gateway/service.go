@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -9,9 +10,11 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/bot/feature/command"
+	"github.com/go-mizu/mizu/blueprints/bot/pkg/channel"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/compact"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/llm"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/memory"
+	filesession "github.com/go-mizu/mizu/blueprints/bot/pkg/session"
 	"github.com/go-mizu/mizu/blueprints/bot/pkg/skill"
 	bottools "github.com/go-mizu/mizu/blueprints/bot/pkg/tools"
 	"github.com/go-mizu/mizu/blueprints/bot/store"
@@ -63,6 +66,11 @@ type dedupeEntry struct {
 	err     error
 }
 
+// ChannelTyper provides Send and typing actions for a channel driver.
+type ChannelTyper interface {
+	SendTypingAction(ctx context.Context, chatID string) error
+}
+
 // Service is the core message routing engine.
 // It receives inbound messages, resolves the target agent via bindings,
 // manages sessions, invokes the LLM, and stores conversation history.
@@ -78,6 +86,12 @@ type Service struct {
 	broadcaster Broadcaster
 	startAt     time.Time
 
+	// File-based session store (OpenClaw-compatible JSONL transcripts).
+	fileStore *filesession.FileStore
+
+	// Channel drivers for deliver routing and typing indicators.
+	channelDrivers map[string]channel.Driver
+
 	mu          sync.Mutex
 	inflight    map[string]*chatAbortEntry // runId → entry
 	dedupeCache map[string]*dedupeEntry    // idempotencyKey → cached response
@@ -92,21 +106,32 @@ func NewService(s store.Store, provider llm.Provider) *Service {
 	bottools.RegisterBuiltins(toolRegistry)
 
 	return &Service{
-		store:       s,
-		llm:         provider,
-		tools:       toolRegistry,
-		commands:    command.NewService(),
-		memReg:      memReg,
-		ctxBuilder:  newContextBuilder(memReg),
-		startAt:     time.Now(),
-		inflight:    make(map[string]*chatAbortEntry),
-		dedupeCache: make(map[string]*dedupeEntry),
+		store:          s,
+		llm:            provider,
+		tools:          toolRegistry,
+		commands:       command.NewService(),
+		memReg:         memReg,
+		ctxBuilder:     newContextBuilder(memReg),
+		startAt:        time.Now(),
+		inflight:       make(map[string]*chatAbortEntry),
+		dedupeCache:    make(map[string]*dedupeEntry),
+		channelDrivers: make(map[string]channel.Driver),
 	}
 }
 
 // SetBroadcaster sets the event broadcaster for real-time dashboard updates.
 func (g *Service) SetBroadcaster(b Broadcaster) {
 	g.broadcaster = b
+}
+
+// RegisterChannelDriver registers a channel driver for deliver routing.
+func (g *Service) RegisterChannelDriver(name string, driver channel.Driver) {
+	g.channelDrivers[name] = driver
+}
+
+// SetFileStore sets the OpenClaw-compatible file session store for JSONL transcripts.
+func (g *Service) SetFileStore(fs *filesession.FileStore) {
+	g.fileStore = fs
 }
 
 // Abort cancels an in-flight LLM request for the given session (legacy).
@@ -254,17 +279,9 @@ func (g *Service) MemoryStats(workspaceDir string) (fileCount int, chunkCount in
 	return mgr.Stats()
 }
 
-// ProcessMessage handles an inbound message end-to-end:
-//  1. Resolve agent via bindings
-//  2. Get or create session
-//  3. Check for slash commands
-//  4. Store user message
-//  5. Build conversation history with pruning
-//  6. Build enriched system prompt (workspace + skills + memory)
-//  7. Check for memory flush trigger
-//  8. Call LLM
-//  9. Store assistant response
-//  10. Return response
+// ProcessMessage handles an inbound message end-to-end.
+// When msg.Async is true, returns immediately with {runId, status} and
+// processes in a background goroutine with streaming delta events.
 func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage) (*ProcessMessageResult, error) {
 	channelType := string(msg.ChannelType)
 	channelID := msg.ChannelID
@@ -281,20 +298,20 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		return nil, fmt.Errorf("get/create session: %w", err)
 	}
 
+	sessionKey := BuildSessionKey(agent.ID, channelType, msg.PeerID)
+	runID := msg.RunID
+	if runID == "" {
+		runID = fmt.Sprintf("run-%d", time.Now().UnixNano())
+	}
+
 	// 3. Check for slash commands
 	cmd, cmdArgs, isCommand := g.commands.Parse(msg.Content)
 	if isCommand {
-		// Load skills for skill command dispatch.
 		if agent.Workspace != "" {
 			earlySkills, _ := skill.LoadAllSkills(agent.Workspace, skill.BundledSkillsDir())
 			g.commands.SetSkills(earlySkills)
 		}
-
-		// Check if it's a skill command first.
 		if matchedSkill, ok := g.commands.IsSkillCommand(cmd); ok {
-			// Skill commands flow through the LLM with skill content injected.
-			// Rewrite the message content: use args as the user query,
-			// and the skill content will be injected as additional context.
 			msg.Content = cmdArgs
 			if msg.Content == "" {
 				msg.Content = matchedSkill.Description
@@ -325,7 +342,10 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		return nil, fmt.Errorf("store user message: %w", err)
 	}
 
-	// 4a. Broadcast user message
+	// 4a. Append to JSONL transcript
+	g.appendTranscript(sessionKey, session.ID, "user", msg.Content, nil)
+
+	// 4b. Broadcast user message
 	if g.broadcaster != nil {
 		g.broadcaster.Broadcast("chat.message", map[string]any{
 			"sessionId": session.ID,
@@ -338,6 +358,34 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		})
 	}
 
+	// For async mode, dispatch to goroutine and return immediately.
+	if msg.Async {
+		go g.processLLM(context.Background(), msg, agent, session, sessionKey, runID)
+		return &ProcessMessageResult{
+			SessionID:  session.ID,
+			SessionKey: sessionKey,
+			AgentID:    agent.ID,
+			RunID:      runID,
+		}, nil
+	}
+
+	// Synchronous processing (legacy / channel drivers).
+	return g.processLLM(ctx, msg, agent, session, sessionKey, runID)
+}
+
+// processLLM runs the LLM pipeline: history, prompt, streaming call, store, broadcast.
+func (g *Service) processLLM(ctx context.Context, msg *types.InboundMessage, agent *types.Agent, session *types.Session, sessionKey, runID string) (*ProcessMessageResult, error) {
+	channelType := string(msg.ChannelType)
+	channelID := msg.ChannelID
+
+	// Apply timeout.
+	timeout := 120 * time.Second
+	if msg.TimeoutMs > 0 {
+		timeout = time.Duration(msg.TimeoutMs) * time.Millisecond
+	}
+	ctx, timeoutCancel := context.WithTimeout(ctx, timeout)
+	defer timeoutCancel()
+
 	// 5. Build conversation history
 	history, err := g.store.ListMessages(ctx, session.ID, 50)
 	if err != nil {
@@ -349,42 +397,30 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		llmMessages[i] = types.LLMMsg{Role: m.Role, Content: m.Content}
 	}
 
-	// 5a. Apply context pruning to keep conversation within budget.
+	// 5a. Context pruning.
 	contextWindow := DefaultContextWindow
 	totalTokens := compact.EstimateMessagesTokens(llmMessages)
+	llmMessages = compact.PruneMessages(llmMessages, totalTokens, contextWindow, compact.DefaultPruneConfig())
 
-	llmMessages = compact.PruneMessages(
-		llmMessages,
-		totalTokens,
-		contextWindow,
-		compact.DefaultPruneConfig(),
-	)
-
-	// 5b. If still over budget, drop oldest messages.
 	totalTokens = compact.EstimateMessagesTokens(llmMessages)
 	historyBudget := float64(contextWindow-compact.DefaultReserveTokensFloor) / float64(contextWindow)
 	pruneResult := compact.PruneHistoryForContextShare(llmMessages, contextWindow, historyBudget)
 	llmMessages = pruneResult.Messages
 
-	// 6. Build enriched system prompt (workspace + skills + memory search).
-	// 6a. Load skills and build prompts.
+	// 6. Build enriched system prompt.
 	var skillsPrompt, alwaysPrompt string
 	var loadedSkills []*skill.Skill
 	if agent.Workspace != "" {
 		skillsPrompt, loadedSkills = g.ctxBuilder.buildSkillsSection(agent.Workspace)
 		if len(loadedSkills) > 0 {
 			alwaysPrompt = skill.BuildAlwaysSkillsPrompt(loadedSkills)
-			// Update command service with loaded skills for command dispatch.
 			g.commands.SetSkills(loadedSkills)
 		}
 	}
 
-	// 6a-ii. Apply skill env overrides (apiKey → primaryEnv, custom env vars).
-	// Scoped to this request; cleanup restores original values.
 	cleanupEnv := applySkillEnvOverrides(loadedSkills, agent.Workspace)
 	defer cleanupEnv()
 
-	// 6b. Build system prompt with all OpenClaw-compatible sections.
 	promptParams := &SystemPromptParams{
 		Agent:        agent,
 		WorkspaceDir: agent.Workspace,
@@ -398,52 +434,36 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 	buildResult := g.ctxBuilder.buildSystemPrompt(ctx, promptParams)
 	systemPrompt := buildResult.Prompt
 
-	// 6b-ii. Inject skill command context if a skill was triggered via /command.
 	if msg.SkillContext != "" {
 		systemPrompt += fmt.Sprintf("\n\n<skill-context name=%q>\n%s\n</skill-context>", msg.SkillName, msg.SkillContext)
 	}
 
-	// 6c. Collect skill names for reporting.
-	var skillNames []string
-	for _, s := range loadedSkills {
-		if s.Ready {
-			skillNames = append(skillNames, s.Name)
-		}
-	}
-	buildResult.SkillNames = skillNames
-
-	// 7. Check for memory flush trigger.
+	// 7. Memory flush check.
 	totalTokens = compact.EstimateMessagesTokens(llmMessages)
 	flushCfg := compact.DefaultFlushConfig()
 	if compact.ShouldRunMemoryFlush(totalTokens, contextWindow, flushCfg) {
-		flushPrompt := compact.BuildFlushPrompt(flushCfg)
 		llmMessages = append(llmMessages, types.LLMMsg{
 			Role:    types.RoleUser,
-			Content: flushPrompt,
+			Content: compact.BuildFlushPrompt(flushCfg),
 		})
 	}
 
-	// 8. Broadcast typing indicator
-	sessionKey := BuildSessionKey(agent.ID, channelType, msg.PeerID)
+	// 8. Broadcast typing + start typing indicator for Telegram.
 	if g.broadcaster != nil {
 		g.broadcaster.Broadcast("chat.typing", map[string]any{
 			"sessionId": session.ID,
 			"agentId":   agent.ID,
 		})
 	}
+	typingCancel := g.startTypingIndicator(ctx, msg)
+	defer typingCancel()
 
-	// 8a. Register cancellable context for abort support (run-based)
-	runID := msg.RunID
-	if runID == "" {
-		runID = fmt.Sprintf("run-%d", time.Now().UnixNano())
-	}
+	// 8a. Register abort context.
 	llmCtx, cancel := context.WithCancel(ctx)
 	g.mu.Lock()
 	g.inflight[runID] = &chatAbortEntry{
-		cancel:     cancel,
-		sessionID:  session.ID,
-		sessionKey: sessionKey,
-		startedAt:  time.Now(),
+		cancel: cancel, sessionID: session.ID,
+		sessionKey: sessionKey, startedAt: time.Now(),
 	}
 	g.mu.Unlock()
 	defer func() {
@@ -453,93 +473,132 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		cancel()
 	}()
 
-	// 8b. Call LLM — use tool loop if the provider supports tools.
+	// Resolve thinking level: message > session > default.
+	thinkingLevel := msg.ThinkingLevel
+
+	// 8b. Call LLM with streaming if available.
 	var responseText string
+	var contentBlocks []types.ContentBlock
 	var inputTokens, outputTokens int
+	var stopReason string
+
+	// Create delta accumulator for streaming.
+	delta := NewDeltaAccumulator(runID, sessionKey, g.broadcaster)
 
 	toolProvider, hasTools := g.llm.(llm.ToolProvider)
 	if hasTools && g.tools != nil && len(g.tools.All()) > 0 {
-		// Convert history to []any for the tool request.
 		msgs := make([]any, len(llmMessages))
 		for i, m := range llmMessages {
-			msgs[i] = map[string]any{
-				"role":    m.Role,
-				"content": m.Content,
-			}
+			msgs[i] = map[string]any{"role": m.Role, "content": m.Content}
 		}
 
-		// Build tool definitions.
 		toolDefs := make([]types.ToolDefinition, 0, len(g.tools.All()))
-		var toolNames []string
 		for _, t := range g.tools.All() {
 			toolDefs = append(toolDefs, types.ToolDefinition{
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: t.InputSchema,
+				Name: t.Name, Description: t.Description, InputSchema: t.InputSchema,
 			})
-			toolNames = append(toolNames, t.Name)
 		}
 
 		toolReq := &types.LLMToolRequest{
-			Model:        agent.Model,
-			SystemPrompt: systemPrompt,
-			Messages:     msgs,
-			MaxTokens:    agent.MaxTokens,
-			Temperature:  agent.Temperature,
-			Tools:        toolDefs,
+			Model: agent.Model, SystemPrompt: systemPrompt,
+			Messages: msgs, MaxTokens: agent.MaxTokens,
+			Temperature: agent.Temperature, Tools: toolDefs,
+			ThinkingLevel: thinkingLevel,
 		}
 
-		toolResp, err := bottools.RunToolLoop(llmCtx, toolProvider, g.tools, toolReq)
+		// Try streaming tool loop first.
+		var toolResp *types.LLMToolResponse
+		if streamProvider, ok := g.llm.(llm.ToolStreamProvider); ok {
+			delta.Start()
+			streamCB := func(event *llm.StreamEvent) error {
+				if event.Delta != nil {
+					if event.Delta.Text != "" {
+						delta.OnTextDelta(event.Delta.Text)
+					}
+					if event.Delta.Thinking != "" {
+						delta.OnThinkingDelta(event.Delta.Thinking)
+					}
+				}
+				return nil
+			}
+			toolResp, err = bottools.RunToolLoopStream(llmCtx, streamProvider, g.tools, toolReq, streamCB, g.broadcaster, runID, sessionKey)
+			delta.Stop()
+		} else {
+			toolResp, err = bottools.RunToolLoop(llmCtx, toolProvider, g.tools, toolReq)
+		}
+
 		if err != nil {
 			log.Printf("LLM tool loop error for agent %s: %v", agent.ID, err)
+			delta.EmitError(err)
 			if g.broadcaster != nil {
-				g.broadcaster.Broadcast("chat", map[string]any{
-					"runId": runID, "sessionKey": sessionKey,
-					"seq": 1, "state": "error",
-					"errorMessage": err.Error(),
-				})
 				g.broadcaster.Broadcast("chat.done", map[string]any{
-					"sessionId": session.ID,
-					"agentId":   agent.ID,
+					"sessionId": session.ID, "agentId": agent.ID,
 				})
 			}
 			return nil, fmt.Errorf("LLM tool loop: %w", err)
 		}
 		responseText = toolResp.TextContent()
+		contentBlocks = toolResp.Content
 		inputTokens = toolResp.InputTokens
 		outputTokens = toolResp.OutputTokens
+		stopReason = toolResp.StopReason
 	} else {
-		// Fallback to simple chat (no tools).
+		// No tools -- try streaming simple chat.
 		llmReq := &types.LLMRequest{
-			Model:        agent.Model,
-			SystemPrompt: systemPrompt,
-			Messages:     llmMessages,
-			MaxTokens:    agent.MaxTokens,
-			Temperature:  agent.Temperature,
+			Model: agent.Model, SystemPrompt: systemPrompt,
+			Messages: llmMessages, MaxTokens: agent.MaxTokens,
+			Temperature: agent.Temperature,
 		}
 
-		llmResp, err := g.llm.Chat(llmCtx, llmReq)
-		if err != nil {
-			log.Printf("LLM error for agent %s: %v", agent.ID, err)
-			if g.broadcaster != nil {
-				g.broadcaster.Broadcast("chat", map[string]any{
-					"runId": runID, "sessionKey": sessionKey,
-					"seq": 1, "state": "error",
-					"errorMessage": err.Error(),
-				})
-				g.broadcaster.Broadcast("chat.done", map[string]any{
-					"sessionId": session.ID,
-					"agentId":   agent.ID,
-				})
+		if streamProvider, ok := g.llm.(llm.StreamProvider); ok {
+			delta.Start()
+			streamCB := func(event *llm.StreamEvent) error {
+				if event.Delta != nil && event.Delta.Text != "" {
+					delta.OnTextDelta(event.Delta.Text)
+				}
+				return nil
 			}
-			return nil, fmt.Errorf("LLM chat: %w", err)
+			llmResp, llmErr := streamProvider.ChatStream(llmCtx, llmReq, streamCB)
+			delta.Stop()
+			if llmErr != nil {
+				log.Printf("LLM stream error for agent %s: %v", agent.ID, llmErr)
+				delta.EmitError(llmErr)
+				return nil, fmt.Errorf("LLM stream: %w", llmErr)
+			}
+			responseText = llmResp.Content
+			inputTokens = llmResp.InputTokens
+			outputTokens = llmResp.OutputTokens
+		} else {
+			llmResp, llmErr := g.llm.Chat(llmCtx, llmReq)
+			if llmErr != nil {
+				log.Printf("LLM error for agent %s: %v", agent.ID, llmErr)
+				delta.EmitError(llmErr)
+				return nil, fmt.Errorf("LLM chat: %w", llmErr)
+			}
+			responseText = llmResp.Content
+			inputTokens = llmResp.InputTokens
+			outputTokens = llmResp.OutputTokens
 		}
-		responseText = llmResp.Content
-		inputTokens = llmResp.InputTokens
-		outputTokens = llmResp.OutputTokens
+		contentBlocks = []types.ContentBlock{{Type: "text", Text: responseText}}
 	}
 
-	// 9. Store assistant response
+	if stopReason == "" {
+		stopReason = "end_turn"
+	}
+
+	// 9. Store assistant response with metadata.
+	usage := &TokenUsage{
+		Input: inputTokens, Output: outputTokens,
+		TotalTokens: inputTokens + outputTokens,
+	}
+	metadata := map[string]any{
+		"stopReason": stopReason,
+		"usage":      usage,
+		"timestamp":  time.Now().UnixMilli(),
+		"model":      agent.Model,
+	}
+	metadataJSON, _ := json.Marshal(metadata)
+
 	assistantMsg := &types.Message{
 		SessionID: session.ID,
 		AgentID:   agent.ID,
@@ -547,57 +606,150 @@ func (g *Service) ProcessMessage(ctx context.Context, msg *types.InboundMessage)
 		PeerID:    msg.PeerID,
 		Role:      types.RoleAssistant,
 		Content:   responseText,
+		Metadata:  string(metadataJSON),
 	}
 	if err := g.store.CreateMessage(ctx, assistantMsg); err != nil {
-		return nil, fmt.Errorf("store assistant message: %w", err)
+		log.Printf("Error storing assistant message: %v", err)
 	}
 
-	// 9a. Build usage info
-	usage := &TokenUsage{
-		Input:       inputTokens,
-		Output:      outputTokens,
-		TotalTokens: inputTokens + outputTokens,
+	// 9a. Append to JSONL transcript.
+	g.appendTranscript(sessionKey, session.ID, "assistant", contentBlocks, &filesession.TokenUsage{
+		Input: inputTokens, Output: outputTokens,
+	})
+
+	// 9b. Update file session token usage.
+	if g.fileStore != nil {
+		_ = g.fileStore.UpdateTokenUsage(sessionKey, inputTokens, outputTokens)
 	}
 
-	// 9b. Broadcast OpenClaw-format final event
+	// 9c. Broadcast OpenClaw-format final event.
+	wireContent := contentBlocksToWire(contentBlocks)
 	if g.broadcaster != nil {
-		g.broadcaster.Broadcast("chat", map[string]any{
-			"runId": runID, "sessionKey": sessionKey,
-			"seq": 1, "state": "final",
-			"message": map[string]any{
-				"role":       "assistant",
-				"content":    []any{map[string]string{"type": "text", "text": responseText}},
-				"timestamp":  assistantMsg.CreatedAt.UnixMilli(),
-				"stopReason": "end_turn",
-				"usage":      usage,
-			},
-		})
-		// Legacy events for backward compat
+		delta.EmitFinal(contentBlocks, stopReason, usage)
+		// Legacy events
 		g.broadcaster.Broadcast("chat.message", map[string]any{
 			"sessionId": session.ID,
 			"message": map[string]any{
-				"id":        assistantMsg.ID,
-				"role":      assistantMsg.Role,
+				"id": assistantMsg.ID, "role": assistantMsg.Role,
 				"content":   responseText,
 				"createdAt": assistantMsg.CreatedAt.Format(time.RFC3339),
 			},
 		})
 		g.broadcaster.Broadcast("chat.done", map[string]any{
-			"sessionId": session.ID,
-			"agentId":   agent.ID,
+			"sessionId": session.ID, "agentId": agent.ID,
 		})
+	}
+	_ = wireContent // used by EmitFinal internally
+
+	// 10. Deliver to channel if requested.
+	if msg.Deliver && session.ChannelType != "" && session.ChannelType != string(types.ChannelWebhook) {
+		g.deliverToChannel(ctx, session, responseText)
 	}
 
 	return &ProcessMessageResult{
-		SessionID:  session.ID,
-		SessionKey: sessionKey,
-		AgentID:    agent.ID,
-		Content:    responseText,
-		Model:      agent.Model,
-		MessageID:  assistantMsg.ID,
-		RunID:      runID,
-		Usage:      usage,
+		SessionID: session.ID, SessionKey: sessionKey,
+		AgentID: agent.ID, Content: responseText,
+		Model: agent.Model, MessageID: assistantMsg.ID,
+		RunID: runID, Usage: usage,
 	}, nil
+}
+
+// appendTranscript writes a message to the JSONL transcript file.
+func (g *Service) appendTranscript(sessionKey, sessionID, role string, content any, usage *filesession.TokenUsage) {
+	if g.fileStore == nil {
+		return
+	}
+	// Ensure session exists in file store.
+	_, _, _ = g.fileStore.GetOrCreate(sessionKey, "", "", "")
+
+	entry := &filesession.TranscriptEntry{
+		Type: "message",
+		ID:   fmt.Sprintf("%d", time.Now().UnixNano()),
+		Message: &filesession.TranscriptMessage{
+			Role:    role,
+			Content: content,
+		},
+		Usage: usage,
+	}
+	_ = g.fileStore.AppendTranscript(sessionID, entry)
+}
+
+// startTypingIndicator sends periodic typing actions for Telegram channels.
+// Returns a cancel function to stop the indicator.
+func (g *Service) startTypingIndicator(ctx context.Context, msg *types.InboundMessage) context.CancelFunc {
+	if msg.ChannelType != types.ChannelTelegram {
+		return func() {}
+	}
+	driver, ok := g.channelDrivers["telegram"]
+	if !ok {
+		return func() {}
+	}
+	typer, ok := driver.(ChannelTyper)
+	if !ok {
+		return func() {}
+	}
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	chatID := msg.PeerID
+	if msg.GroupID != "" {
+		chatID = msg.GroupID
+	}
+
+	// Send initial typing action.
+	go typer.SendTypingAction(typingCtx, chatID)
+
+	// Repeat every 5 seconds.
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				typer.SendTypingAction(typingCtx, chatID)
+			}
+		}
+	}()
+
+	return cancel
+}
+
+// deliverToChannel routes a response to the session's originating channel.
+func (g *Service) deliverToChannel(ctx context.Context, session *types.Session, content string) {
+	driver, ok := g.channelDrivers[session.ChannelType]
+	if !ok {
+		log.Printf("Deliver: no driver for channel type %s", session.ChannelType)
+		return
+	}
+	outMsg := &types.OutboundMessage{
+		ChannelType: types.ChannelType(session.ChannelType),
+		ChannelID:   session.ChannelID,
+		PeerID:      session.PeerID,
+		Content:     content,
+		ParseMode:   "markdown",
+	}
+	if err := driver.Send(ctx, outMsg); err != nil {
+		log.Printf("Deliver error to %s/%s: %v", session.ChannelType, session.PeerID, err)
+	}
+}
+
+// contentBlocksToWire converts ContentBlock slice to wire format for events.
+func contentBlocksToWire(blocks []types.ContentBlock) []any {
+	wire := make([]any, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Type {
+		case "thinking":
+			wire = append(wire, map[string]any{"type": "thinking", "thinking": b.Thinking})
+		case "tool_use":
+			wire = append(wire, map[string]any{
+				"type": "tool_use", "id": b.ID, "name": b.Name, "input": b.Input,
+			})
+		default:
+			wire = append(wire, map[string]any{"type": "text", "text": b.Text})
+		}
+	}
+	return wire
 }
 
 func (g *Service) handleCommand(ctx context.Context, cmd, args string, agent *types.Agent, session *types.Session) string {

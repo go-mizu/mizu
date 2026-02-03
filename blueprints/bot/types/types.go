@@ -148,6 +148,12 @@ type InboundMessage struct {
 
 	// Platform-specific raw data for drivers that need it.
 	RawMessage string `json:"-"` // raw platform message JSON (for callback queries etc.)
+
+	// Async processing control (set by RPC layer).
+	Async         bool   `json:"-"` // true = return immediately, process in goroutine
+	Deliver       bool   `json:"-"` // true = route LLM response to originating channel
+	TimeoutMs     int    `json:"-"` // LLM timeout override in milliseconds (0 = default 120s)
+	ThinkingLevel string `json:"-"` // off, short, extended — forwarded to LLM API
 }
 
 // OutboundMessage is a message to send via a channel driver.
@@ -418,11 +424,12 @@ type ToolDefinition struct {
 
 // ContentBlock is a content block in an Anthropic API response.
 type ContentBlock struct {
-	Type  string         `json:"type"`            // "text" or "tool_use"
-	Text  string         `json:"text,omitempty"`
-	ID    string         `json:"id,omitempty"`    // tool_use block ID
-	Name  string         `json:"name,omitempty"`  // tool name
-	Input map[string]any `json:"input,omitempty"` // tool input parameters
+	Type     string         `json:"type"`               // "text", "tool_use", or "thinking"
+	Text     string         `json:"text,omitempty"`
+	Thinking string         `json:"thinking,omitempty"` // thinking block content
+	ID       string         `json:"id,omitempty"`       // tool_use block ID
+	Name     string         `json:"name,omitempty"`     // tool name
+	Input    map[string]any `json:"input,omitempty"`    // tool input parameters
 }
 
 // ToolResultBlock is a tool result sent back to the API as user message content.
@@ -435,12 +442,13 @@ type ToolResultBlock struct {
 
 // LLMToolRequest extends LLMRequest with tool definitions.
 type LLMToolRequest struct {
-	Model        string           `json:"model"`
-	SystemPrompt string           `json:"systemPrompt"`
-	Messages     []any            `json:"messages"`    // mix of LLMMsg and tool result messages
-	MaxTokens    int              `json:"maxTokens"`
-	Temperature  float64          `json:"temperature"`
-	Tools        []ToolDefinition `json:"tools,omitempty"`
+	Model         string           `json:"model"`
+	SystemPrompt  string           `json:"systemPrompt"`
+	Messages      []any            `json:"messages"`    // mix of LLMMsg and tool result messages
+	MaxTokens     int              `json:"maxTokens"`
+	Temperature   float64          `json:"temperature"`
+	Tools         []ToolDefinition `json:"tools,omitempty"`
+	ThinkingLevel string           `json:"thinkingLevel,omitempty"` // off, short, extended
 }
 
 // LLMToolResponse contains the full Anthropic response with content blocks.
