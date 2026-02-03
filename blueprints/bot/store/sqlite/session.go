@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Store) ListSessions(ctx context.Context) ([]types.Session, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, created_at, updated_at FROM sessions ORDER BY updated_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, COALESCE(model,''), COALESCE(compaction_count,0), created_at, updated_at FROM sessions ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,7 @@ func (s *Store) ListSessions(ctx context.Context) ([]types.Session, error) {
 	var sessions []types.Session
 	for rows.Next() {
 		var ss types.Session
-		if err := rows.Scan(&ss.ID, &ss.AgentID, &ss.ChannelID, &ss.ChannelType, &ss.PeerID, &ss.DisplayName, &ss.Origin, &ss.Status, &ss.Metadata, &ss.CreatedAt, &ss.UpdatedAt); err != nil {
+		if err := rows.Scan(&ss.ID, &ss.AgentID, &ss.ChannelID, &ss.ChannelType, &ss.PeerID, &ss.DisplayName, &ss.Origin, &ss.Status, &ss.Metadata, &ss.Model, &ss.CompactionCount, &ss.CreatedAt, &ss.UpdatedAt); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, ss)
@@ -32,8 +32,8 @@ func (s *Store) ListSessions(ctx context.Context) ([]types.Session, error) {
 
 func (s *Store) GetSession(ctx context.Context, id string) (*types.Session, error) {
 	var ss types.Session
-	err := s.db.QueryRowContext(ctx, `SELECT id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, created_at, updated_at FROM sessions WHERE id = ?`, id).
-		Scan(&ss.ID, &ss.AgentID, &ss.ChannelID, &ss.ChannelType, &ss.PeerID, &ss.DisplayName, &ss.Origin, &ss.Status, &ss.Metadata, &ss.CreatedAt, &ss.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, COALESCE(model,''), COALESCE(compaction_count,0), created_at, updated_at FROM sessions WHERE id = ?`, id).
+		Scan(&ss.ID, &ss.AgentID, &ss.ChannelID, &ss.ChannelType, &ss.PeerID, &ss.DisplayName, &ss.Origin, &ss.Status, &ss.Metadata, &ss.Model, &ss.CompactionCount, &ss.CreatedAt, &ss.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -47,12 +47,12 @@ func (s *Store) GetOrCreateSession(ctx context.Context, agentID, channelID, chan
 	// Look for existing active session
 	var ss types.Session
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, created_at, updated_at
+		`SELECT id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, COALESCE(model,''), COALESCE(compaction_count,0), created_at, updated_at
 		 FROM sessions
 		 WHERE agent_id = ? AND channel_type = ? AND peer_id = ? AND status = 'active'
 		 ORDER BY updated_at DESC LIMIT 1`,
 		agentID, channelType, peerID,
-	).Scan(&ss.ID, &ss.AgentID, &ss.ChannelID, &ss.ChannelType, &ss.PeerID, &ss.DisplayName, &ss.Origin, &ss.Status, &ss.Metadata, &ss.CreatedAt, &ss.UpdatedAt)
+	).Scan(&ss.ID, &ss.AgentID, &ss.ChannelID, &ss.ChannelType, &ss.PeerID, &ss.DisplayName, &ss.Origin, &ss.Status, &ss.Metadata, &ss.Model, &ss.CompactionCount, &ss.CreatedAt, &ss.UpdatedAt)
 
 	if err == nil {
 		// Touch the session
@@ -94,8 +94,8 @@ func (s *Store) GetOrCreateSession(ctx context.Context, agentID, channelID, chan
 
 func (s *Store) UpdateSession(ctx context.Context, ss *types.Session) error {
 	ss.UpdatedAt = time.Now().UTC()
-	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET display_name=?, status=?, metadata=?, updated_at=? WHERE id=?`,
-		ss.DisplayName, ss.Status, ss.Metadata, ss.UpdatedAt, ss.ID)
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET display_name=?, status=?, metadata=?, model=?, compaction_count=?, updated_at=? WHERE id=?`,
+		ss.DisplayName, ss.Status, ss.Metadata, ss.Model, ss.CompactionCount, ss.UpdatedAt, ss.ID)
 	return err
 }
 
@@ -158,8 +158,8 @@ func (s *Store) CreateSession(ctx context.Context, ss *types.Session) error {
 	ss.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ss.ID, ss.AgentID, ss.ChannelID, ss.ChannelType, ss.PeerID, ss.DisplayName, ss.Origin, ss.Status, ss.Metadata, ss.CreatedAt, ss.UpdatedAt,
+		`INSERT INTO sessions (id, agent_id, channel_id, channel_type, peer_id, display_name, origin, status, metadata, model, compaction_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ss.ID, ss.AgentID, ss.ChannelID, ss.ChannelType, ss.PeerID, ss.DisplayName, ss.Origin, ss.Status, ss.Metadata, ss.Model, ss.CompactionCount, ss.CreatedAt, ss.UpdatedAt,
 	)
 	return err
 }
