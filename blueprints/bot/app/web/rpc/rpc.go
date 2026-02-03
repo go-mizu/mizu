@@ -988,11 +988,25 @@ func registerDebugMethods(hub *dashboard.Hub, s store.Store, gw *gateway.Service
 
 // --- Chat Methods ---
 
+// generateID produces a short unique ID for runs and messages.
+func generateID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
 func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store) {
+	// chat.send — OpenClaw-compatible: accepts sessionKey, idempotencyKey, thinking.
+	// Returns {runId, status} immediately. Processing happens synchronously for Phase 1
+	// but the response format matches OpenClaw's async ACK protocol.
 	hub.Register("chat.send", func(params json.RawMessage) (any, error) {
 		var req struct {
+			// OpenClaw params
+			SessionKey     string `json:"sessionKey"`
+			Message        string `json:"message"`
+			IdempotencyKey string `json:"idempotencyKey"`
+			Thinking       string `json:"thinking"`
+			TimeoutMs      int    `json:"timeoutMs"`
+			// Legacy params
 			SessionID string `json:"sessionId"`
-			Message   string `json:"message"`
 			AgentID   string `json:"agentId"`
 			PeerName  string `json:"peerName"`
 		}
@@ -1002,9 +1016,31 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 		if req.Message == "" {
 			return nil, fmt.Errorf("message is required")
 		}
-		if req.AgentID == "" {
-			req.AgentID = "main"
+
+		// Resolve sessionKey: prefer OpenClaw sessionKey, fall back to legacy sessionId
+		sessionKey := req.SessionKey
+		if sessionKey == "" && req.SessionID != "" {
+			sessionKey = "agent:main:" + req.SessionID
 		}
+		if sessionKey == "" {
+			agentID := req.AgentID
+			if agentID == "" {
+				agentID = "main"
+			}
+			sessionKey = "agent:" + agentID + ":main"
+		}
+
+		// Resolve runId from idempotencyKey
+		runID := req.IdempotencyKey
+		if runID == "" {
+			runID = generateID()
+		}
+
+		// Check idempotency cache
+		if cached, ok := gw.CheckDedupe("chat:" + runID); ok {
+			return cached, nil
+		}
+
 		peerName := req.PeerName
 		if peerName == "" {
 			peerName = "Dashboard"
@@ -1017,56 +1053,223 @@ func registerChatMethods(hub *dashboard.Hub, gw *gateway.Service, s store.Store)
 			PeerName:    peerName,
 			Content:     req.Message,
 			Origin:      "dm",
+			RunID:       runID,
+			SessionKey:  sessionKey,
 		}
 
 		result, err := gw.ProcessMessage(context.Background(), msg)
 		if err != nil {
+			// Broadcast error in OpenClaw format
+			hub.Broadcast("chat", map[string]any{
+				"runId": runID, "sessionKey": sessionKey,
+				"seq": 1, "state": "error",
+				"errorMessage": err.Error(),
+			})
 			return nil, err
 		}
-		return map[string]any{
+
+		// Build OpenClaw-compatible response
+		resp := map[string]any{
+			"runId":     runID,
+			"status":    "ok",
 			"sessionId": result.SessionID,
 			"messageId": result.MessageID,
 			"content":   result.Content,
 			"agentId":   result.AgentID,
 			"model":     result.Model,
-		}, nil
+		}
+
+		// Cache for idempotency
+		gw.SetDedupe("chat:"+runID, resp)
+
+		return resp, nil
 	})
 
+	// chat.history — OpenClaw-compatible: accepts sessionKey or sessionId.
+	// Returns messages in OpenClaw format with thinkingLevel and timestamps.
 	hub.Register("chat.history", func(params json.RawMessage) (any, error) {
 		var req struct {
-			SessionID string `json:"sessionId"`
-			Limit     int    `json:"limit"`
+			SessionKey string `json:"sessionKey"`
+			SessionID  string `json:"sessionId"`
+			Limit      int    `json:"limit"`
 		}
 		if params != nil {
 			_ = json.Unmarshal(params, &req)
 		}
 		if req.Limit <= 0 {
-			req.Limit = 50
+			req.Limit = 200
 		}
-		if req.SessionID == "" {
-			return nil, fmt.Errorf("sessionId is required")
+		if req.Limit > 1000 {
+			req.Limit = 1000
 		}
-		messages, err := s.ListMessages(context.Background(), req.SessionID, req.Limit)
+
+		// Resolve session: prefer sessionKey, fall back to sessionId
+		sessionID := req.SessionID
+		sessionKey := req.SessionKey
+		if sessionKey != "" {
+			// Resolve sessionKey to internal session
+			agentID, channelType, peerID := gateway.SessionKeyToQuery(sessionKey)
+			session, err := s.GetOrCreateSession(context.Background(), agentID, "dashboard", channelType, peerID, "", "dm")
+			if err == nil && session != nil {
+				sessionID = session.ID
+			}
+		}
+		if sessionID == "" && sessionKey == "" {
+			return nil, fmt.Errorf("sessionKey or sessionId is required")
+		}
+
+		messages, err := s.ListMessages(context.Background(), sessionID, req.Limit)
 		if err != nil {
 			return nil, err
 		}
 		if messages == nil {
 			messages = []types.Message{}
 		}
-		return map[string]any{"messages": messages}, nil
+
+		// Convert to OpenClaw message format
+		ocMessages := make([]map[string]any, len(messages))
+		for i, m := range messages {
+			msg := map[string]any{
+				"role":      m.Role,
+				"timestamp": m.CreatedAt.UnixMilli(),
+			}
+			if m.Role == types.RoleAssistant {
+				msg["content"] = []any{map[string]string{"type": "text", "text": m.Content}}
+				msg["stopReason"] = "end_turn"
+			} else {
+				msg["content"] = m.Content
+			}
+			ocMessages[i] = msg
+		}
+
+		resp := map[string]any{
+			"messages":      ocMessages,
+			"sessionId":     sessionID,
+			"sessionKey":    sessionKey,
+			"thinkingLevel": "off",
+		}
+		return resp, nil
 	})
 
+	// chat.abort — OpenClaw-compatible: accepts runId and/or sessionKey.
+	// Returns {ok, aborted, runIds}.
 	hub.Register("chat.abort", func(params json.RawMessage) (any, error) {
 		var req struct {
-			SessionID string `json:"sessionId"`
+			SessionKey string `json:"sessionKey"`
+			SessionID  string `json:"sessionId"`
+			RunID      string `json:"runId"`
 		}
 		if params != nil {
 			_ = json.Unmarshal(params, &req)
 		}
-		aborted := gw.Abort(req.SessionID)
-		return map[string]any{"ok": true, "aborted": aborted}, nil
+
+		// If runId specified, abort that specific run
+		if req.RunID != "" {
+			aborted, err := gw.AbortByRunID(req.RunID, req.SessionKey)
+			if err != nil {
+				return nil, err
+			}
+			runIDs := []string{}
+			if aborted {
+				runIDs = []string{req.RunID}
+			}
+			return map[string]any{"ok": true, "aborted": aborted, "runIds": runIDs}, nil
+		}
+
+		// If sessionKey specified, abort all runs for that session
+		if req.SessionKey != "" {
+			runIDs, aborted := gw.AbortBySessionKey(req.SessionKey)
+			if runIDs == nil {
+				runIDs = []string{}
+			}
+			return map[string]any{"ok": true, "aborted": aborted, "runIds": runIDs}, nil
+		}
+
+		// Legacy: abort by sessionId
+		if req.SessionID != "" {
+			aborted := gw.Abort(req.SessionID)
+			return map[string]any{"ok": true, "aborted": aborted, "runIds": []string{}}, nil
+		}
+
+		return map[string]any{"ok": true, "aborted": false, "runIds": []string{}}, nil
 	})
 
+	// chat.inject — NEW: OpenClaw-compatible. Injects an assistant message
+	// into a session without invoking the LLM.
+	hub.Register("chat.inject", func(params json.RawMessage) (any, error) {
+		var req struct {
+			SessionKey string `json:"sessionKey"`
+			SessionID  string `json:"sessionId"`
+			Message    string `json:"message"`
+			Label      string `json:"label"`
+		}
+		if err := json.Unmarshal(params, &req); err != nil {
+			return nil, fmt.Errorf("invalid params: %w", err)
+		}
+		if req.Message == "" {
+			return nil, fmt.Errorf("message is required")
+		}
+
+		// Resolve session
+		sessionID := req.SessionID
+		sessionKey := req.SessionKey
+		if sessionKey != "" && sessionID == "" {
+			agentID, channelType, peerID := gateway.SessionKeyToQuery(sessionKey)
+			session, err := s.GetOrCreateSession(context.Background(), agentID, "dashboard", channelType, peerID, "", "dm")
+			if err == nil && session != nil {
+				sessionID = session.ID
+			}
+		}
+		if sessionID == "" {
+			return nil, fmt.Errorf("sessionKey or sessionId is required")
+		}
+
+		content := req.Message
+		if req.Label != "" {
+			content = "[" + req.Label + "] " + content
+		}
+
+		// Store as assistant message with stopReason "injected"
+		assistantMsg := &types.Message{
+			SessionID: sessionID,
+			AgentID:   "main",
+			Role:      types.RoleAssistant,
+			Content:   content,
+		}
+		if err := s.CreateMessage(context.Background(), assistantMsg); err != nil {
+			return nil, err
+		}
+
+		// Broadcast OpenClaw-format final event
+		if sessionKey == "" {
+			sessionKey = "agent:main:main"
+		}
+		runID := generateID()
+		hub.Broadcast("chat", map[string]any{
+			"runId": runID, "sessionKey": sessionKey,
+			"seq": 1, "state": "final",
+			"message": map[string]any{
+				"role":       "assistant",
+				"content":    []any{map[string]string{"type": "text", "text": content}},
+				"timestamp":  assistantMsg.CreatedAt.UnixMilli(),
+				"stopReason": "injected",
+				"usage":      map[string]int{"input": 0, "output": 0, "totalTokens": 0},
+			},
+		})
+		// Legacy compat
+		hub.Broadcast("chat.message", map[string]any{
+			"sessionId": sessionID,
+			"message": map[string]any{
+				"id":      assistantMsg.ID,
+				"role":    assistantMsg.Role,
+				"content": assistantMsg.Content,
+			},
+		})
+
+		return map[string]any{"ok": true, "messageId": assistantMsg.ID}, nil
+	})
+
+	// chat.new — Create a new chat session (convenience method).
 	hub.Register("chat.new", func(params json.RawMessage) (any, error) {
 		var req struct {
 			AgentID string `json:"agentId"`
