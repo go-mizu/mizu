@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { Menu, Settings as SettingsIcon } from "lucide-react";
 import Sidebar from "./Sidebar";
 import SearchBar from "./SearchBar";
-import ComposeModal from "./ComposeModal";
 import ToastContainer from "./Toast";
 import { useEmailStore, useSettingsStore } from "../store";
+
+const ComposeModal = lazy(() => import("./ComposeModal"));
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -133,7 +134,7 @@ export default function Layout() {
       </div>
 
       {/* ---- Compose Modal ---- */}
-      {composeOpen && <ComposeModal />}
+      {composeOpen && <Suspense><ComposeModal /></Suspense>}
 
       {/* ---- Toast Notifications ---- */}
       <ToastContainer />

@@ -27,6 +27,17 @@ export default defineConfig({
         manualChunks: {
           "react-vendor": ["react", "react-dom", "react-router-dom"],
           ui: ["lucide-react"],
+          editor: [
+            "@tiptap/react",
+            "@tiptap/starter-kit",
+            "@tiptap/extension-underline",
+            "@tiptap/extension-link",
+            "@tiptap/extension-text-align",
+            "@tiptap/extension-text-style",
+            "@tiptap/extension-color",
+            "@tiptap/extension-placeholder",
+          ],
+          sanitizer: ["dompurify"],
         },
       },
     },
