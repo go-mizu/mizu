@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gmail-red: #EA4335;
+  --color-gmail-blue: #1A73E8;
+  --color-gmail-blue-hover: #1765CC;
+  --color-gmail-bg: #F6F8FC;
+  --color-gmail-sidebar-hover: #E8EAED;
+  --color-gmail-sidebar-active: #D3E3FD;
+  --color-gmail-sidebar-active-text: #001D35;
+  --color-gmail-border: #E0E0E0;
+  --color-gmail-row-hover: #F2F2F2;
+  --color-gmail-unread-bg: #FFFFFF;
+  --color-gmail-read-bg: #F2F6FC;
+  --color-gmail-star: #F4B400;
+  --color-gmail-important: #F4B400;
+  --color-gmail-text-primary: #202124;
+  --color-gmail-text-secondary: #5F6368;
+  --color-gmail-text-snippet: #5F6368;
+  --color-gmail-compose-bg: #FFFFFF;
+  --color-gmail-compose-header: #404040;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Roboto", "Google Sans", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: var(--color-gmail-text-primary);
+  background-color: var(--color-gmail-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+}
+
+.compose-shadow {
+  box-shadow:
+    0 8px 10px 1px rgba(0, 0, 0, 0.14),
+    0 3px 14px 2px rgba(0, 0, 0, 0.12),
+    0 5px 5px -3px rgba(0, 0, 0, 0.2);
+}
+
+.email-row-hover:hover .email-row-actions {
+  opacity: 1;
+}
+
+.email-row-hover:hover .email-row-date {
+  opacity: 0;
+}
+
+.sidebar-label-item {
+  transition: background-color 0.15s ease;
+}
+
+.header-shadow {
+  box-shadow: inset 0 -1px 0 0 #dadce0;
+}
+
+.search-bar-shadow {
+  box-shadow: 0 1px 1px 0 rgba(65, 69, 73, 0.3),
+    0 1px 3px 1px rgba(65, 69, 73, 0.15);
+}
+
+.search-bar-focus-shadow {
+  box-shadow: 0 1px 3px 0 rgba(65, 69, 73, 0.3),
+    0 4px 8px 3px rgba(65, 69, 73, 0.15);
+}
+
+.toolbar-shadow {
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.compose-animate {
+  animation: slideUp 0.2s ease-out;
+}
+
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  line-height: 18px;
+  white-space: nowrap;
+}
