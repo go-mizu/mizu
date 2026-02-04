@@ -41,10 +41,18 @@ export default function Toolbar() {
   const labelDropdownRef = useRef<HTMLDivElement>(null);
   const moreDropdownRef = useRef<HTMLDivElement>(null);
 
+  const currentLabel = useEmailStore((s) => s.currentLabel);
+
   const hasSelected = selectedEmails.size > 0;
   const allSelected =
     emails.length > 0 && selectedEmails.size === emails.length;
   const someSelected = selectedEmails.size > 0 && !allSelected;
+  const [selectAllBanner, setSelectAllBanner] = useState(false);
+
+  // Reset banner when selection changes
+  useEffect(() => {
+    if (!allSelected) setSelectAllBanner(false);
+  }, [allSelected]);
 
   const start = total > 0 ? (page - 1) * perPage + 1 : 0;
   const end = Math.min(page * perPage, total);
@@ -215,7 +223,7 @@ export default function Toolbar() {
   const visibleLabels = labels.filter((l) => l.visible);
 
   return (
-    <div className="toolbar-shadow flex h-10 items-center justify-between border-b border-gmail-border px-2">
+    <div className="toolbar-shadow relative flex h-10 items-center justify-between border-b border-gmail-border px-2">
       {/* Left side */}
       <div className="flex items-center gap-0.5">
         {/* Checkbox + dropdown arrow */}
@@ -437,6 +445,33 @@ export default function Toolbar() {
           >
             <ChevronRight className="h-[18px] w-[18px] text-gmail-text-secondary" />
           </button>
+        </div>
+      )}
+
+      {/* Select all banner */}
+      {allSelected && total > emails.length && (
+        <div className="absolute left-0 right-0 top-full z-40 border-b border-gmail-border bg-gmail-blue-surface px-4 py-2 text-center text-sm text-gmail-text-primary">
+          {selectAllBanner ? (
+            <>
+              All {total} conversations in {currentLabel} are selected.{" "}
+              <button
+                onClick={() => setSelectAllBanner(false)}
+                className="font-medium text-gmail-blue hover:underline"
+              >
+                Clear selection
+              </button>
+            </>
+          ) : (
+            <>
+              All {emails.length} conversations on this page are selected.{" "}
+              <button
+                onClick={() => setSelectAllBanner(true)}
+                className="font-medium text-gmail-blue hover:underline"
+              >
+                Select all {total} conversations in {currentLabel}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

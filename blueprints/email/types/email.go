@@ -84,8 +84,13 @@ type ComposeRequest struct {
 // BatchAction represents a batch operation on multiple emails.
 type BatchAction struct {
 	IDs     []string `json:"ids"`
-	Action  string   `json:"action"`   // archive, trash, delete, read, unread, star, unstar, important, unimportant
+	Action  string   `json:"action"`   // archive, trash, delete, read, unread, star, unstar, important, unimportant, mute, unmute
 	LabelID string   `json:"label_id,omitempty"`
+}
+
+// ScheduleRequest represents a request to schedule an email for later sending.
+type ScheduleRequest struct {
+	SendAt time.Time `json:"send_at"`
 }
 
 // EmailListResponse represents a paginated list of emails.

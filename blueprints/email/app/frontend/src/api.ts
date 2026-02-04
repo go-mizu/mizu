@@ -64,7 +64,7 @@ export async function updateEmail(
   data: Partial<Email>
 ): Promise<Email> {
   return request<Email>(`/emails/${id}`, {
-    method: "PATCH",
+    method: "PUT",
     body: JSON.stringify(data),
   });
 }
@@ -153,7 +153,7 @@ export async function updateLabel(
   data: Partial<Label>
 ): Promise<Label> {
   return request<Label>(`/labels/${id}`, {
-    method: "PATCH",
+    method: "PUT",
     body: JSON.stringify(data),
   });
 }
@@ -184,7 +184,7 @@ export async function updateContact(
   data: Partial<Contact>
 ): Promise<Contact> {
   return request<Contact>(`/contacts/${id}`, {
-    method: "PATCH",
+    method: "PUT",
     body: JSON.stringify(data),
   });
 }
@@ -218,9 +218,9 @@ export async function updateDraft(
   id: string,
   data: Partial<ComposeRequest>
 ): Promise<Email> {
-  return request<Email>(`/emails/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ ...data, is_draft: true }),
+  return request<Email>(`/drafts/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
   });
 }
 
@@ -229,7 +229,7 @@ export async function deleteDraft(id: string): Promise<void> {
 }
 
 export async function sendDraft(id: string): Promise<Email> {
-  return request<Email>(`/emails/${id}/send`, {
+  return request<Email>(`/drafts/${id}/send`, {
     method: "POST",
   });
 }
@@ -286,5 +286,32 @@ export async function downloadAttachment(id: string): Promise<Response> {
 export async function deleteAttachment(id: string): Promise<{ message: string }> {
   return request<{ message: string }>(`/attachments/${id}`, {
     method: "DELETE",
+  });
+}
+
+// Schedule send
+export async function scheduleEmail(id: string, sendAt: string): Promise<Email> {
+  return request<Email>(`/emails/${id}/schedule`, {
+    method: "POST",
+    body: JSON.stringify({ send_at: sendAt }),
+  });
+}
+
+export async function unscheduleEmail(id: string): Promise<Email> {
+  return request<Email>(`/emails/${id}/schedule`, {
+    method: "DELETE",
+  });
+}
+
+// Mute/Unmute
+export async function muteEmail(id: string): Promise<Email> {
+  return request<Email>(`/emails/${id}/mute`, {
+    method: "POST",
+  });
+}
+
+export async function unmuteEmail(id: string): Promise<Email> {
+  return request<Email>(`/emails/${id}/unmute`, {
+    method: "POST",
   });
 }

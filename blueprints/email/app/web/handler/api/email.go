@@ -471,11 +471,14 @@ func (h *EmailHandler) Batch(c *mizu.Ctx) error {
 	}
 
 	validActions := map[string]bool{
-		"archive": true, "trash": true, "delete": true,
+		"archive": true, "unarchive": true,
+		"trash": true, "untrash": true,
+		"delete": true,
 		"read": true, "unread": true,
 		"star": true, "unstar": true,
 		"important": true, "unimportant": true,
 		"add_label": true, "remove_label": true,
+		"mute": true, "unmute": true,
 	}
 	if !validActions[action.Action] {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid action: " + action.Action})
@@ -569,6 +572,111 @@ func (h *EmailHandler) Unsnooze(c *mizu.Ctx) error {
 	// Move back to inbox
 	h.store.RemoveEmailLabel(c.Context(), id, "snoozed")
 	h.store.AddEmailLabel(c.Context(), id, "inbox")
+
+	email, _ := h.store.GetEmail(c.Context(), id)
+	return c.JSON(http.StatusOK, email)
+}
+
+// Schedule sets a scheduled send time on an email.
+func (h *EmailHandler) Schedule(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	if _, err := h.store.GetEmail(c.Context(), id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "email not found"})
+	}
+
+	var req types.ScheduleRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	if req.SendAt.IsZero() {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "send_at time is required"})
+	}
+
+	updates := map[string]any{
+		"scheduled_at": req.SendAt,
+	}
+	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to schedule email"})
+	}
+
+	// Move to scheduled label
+	h.store.RemoveEmailLabel(c.Context(), id, "drafts")
+	h.store.AddEmailLabel(c.Context(), id, "scheduled")
+
+	email, _ := h.store.GetEmail(c.Context(), id)
+	return c.JSON(http.StatusOK, email)
+}
+
+// Unschedule cancels a scheduled send on an email.
+func (h *EmailHandler) Unschedule(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	if _, err := h.store.GetEmail(c.Context(), id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "email not found"})
+	}
+
+	updates := map[string]any{
+		"scheduled_at": (*time.Time)(nil),
+	}
+	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to unschedule email"})
+	}
+
+	// Move back to drafts
+	h.store.RemoveEmailLabel(c.Context(), id, "scheduled")
+	h.store.AddEmailLabel(c.Context(), id, "drafts")
+
+	email, _ := h.store.GetEmail(c.Context(), id)
+	return c.JSON(http.StatusOK, email)
+}
+
+// Mute sets is_muted=true on an email.
+func (h *EmailHandler) Mute(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	if _, err := h.store.GetEmail(c.Context(), id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "email not found"})
+	}
+
+	updates := map[string]any{
+		"is_muted": true,
+	}
+	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to mute email"})
+	}
+
+	email, _ := h.store.GetEmail(c.Context(), id)
+	return c.JSON(http.StatusOK, email)
+}
+
+// Unmute sets is_muted=false on an email.
+func (h *EmailHandler) Unmute(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	if _, err := h.store.GetEmail(c.Context(), id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "email not found"})
+	}
+
+	updates := map[string]any{
+		"is_muted": false,
+	}
+	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to unmute email"})
+	}
 
 	email, _ := h.store.GetEmail(c.Context(), id)
 	return c.JSON(http.StatusOK, email)

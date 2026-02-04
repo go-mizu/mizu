@@ -385,10 +385,17 @@ func (s *Store) BatchUpdateEmails(ctx context.Context, action *types.BatchAction
 		case "archive":
 			// Remove inbox label
 			tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ? AND label_id = 'inbox'", id)
+		case "unarchive":
+			// Re-add inbox label
+			tx.ExecContext(ctx, "INSERT OR IGNORE INTO email_labels (email_id, label_id) VALUES (?, 'inbox')", id)
 		case "trash":
 			// Remove inbox label, add trash label
 			tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ? AND label_id = 'inbox'", id)
 			tx.ExecContext(ctx, "INSERT OR IGNORE INTO email_labels (email_id, label_id) VALUES (?, 'trash')", id)
+		case "untrash":
+			// Remove trash label, re-add inbox label
+			tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ? AND label_id = 'trash'", id)
+			tx.ExecContext(ctx, "INSERT OR IGNORE INTO email_labels (email_id, label_id) VALUES (?, 'inbox')", id)
 		case "delete":
 			tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ?", id)
 			tx.ExecContext(ctx, "DELETE FROM emails WHERE id = ?", id)
@@ -420,13 +427,123 @@ func (s *Store) BatchUpdateEmails(ctx context.Context, action *types.BatchAction
 			if action.LabelID != "" {
 				tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ? AND label_id = ?", id, action.LabelID)
 			}
+		case "mute":
+			tx.ExecContext(ctx, "UPDATE emails SET is_muted = 1, updated_at = ? WHERE id = ?", time.Now().Format(time.RFC3339), id)
+		case "unmute":
+			tx.ExecContext(ctx, "UPDATE emails SET is_muted = 0, updated_at = ? WHERE id = ?", time.Now().Format(time.RFC3339), id)
 		}
 	}
 
 	return tx.Commit()
 }
 
-// SearchEmails searches emails using FTS5 full-text search.
+// searchFilter holds parsed components of a Gmail-style search query.
+type searchFilter struct {
+	from          string
+	to            string
+	subject       string
+	hasAttachment bool
+	isUnread      *bool
+	isStarred     *bool
+	isImportant   *bool
+	before        string // RFC3339
+	after         string // RFC3339
+	label         string
+	freeText      string
+}
+
+// parseSearchQuery extracts Gmail-style operators from a query string.
+// Supported: from:, to:, subject:, has:attachment, is:unread, is:starred,
+// is:important, before:YYYY/MM/DD, after:YYYY/MM/DD, label:
+func parseSearchQuery(query string) searchFilter {
+	var sf searchFilter
+	var freeWords []string
+
+	tokens := tokenizeSearch(query)
+	for _, tok := range tokens {
+		colonIdx := strings.Index(tok, ":")
+		if colonIdx <= 0 {
+			freeWords = append(freeWords, tok)
+			continue
+		}
+		op := strings.ToLower(tok[:colonIdx])
+		val := tok[colonIdx+1:]
+		switch op {
+		case "from":
+			sf.from = val
+		case "to":
+			sf.to = val
+		case "subject":
+			sf.subject = val
+		case "has":
+			if strings.EqualFold(val, "attachment") {
+				sf.hasAttachment = true
+			}
+		case "is":
+			switch strings.ToLower(val) {
+			case "unread":
+				b := true
+				sf.isUnread = &b
+			case "read":
+				b := false
+				sf.isUnread = &b
+			case "starred":
+				b := true
+				sf.isStarred = &b
+			case "important":
+				b := true
+				sf.isImportant = &b
+			}
+		case "before":
+			sf.before = parseDateOperator(val)
+		case "after":
+			sf.after = parseDateOperator(val)
+		case "label":
+			sf.label = val
+		default:
+			freeWords = append(freeWords, tok)
+		}
+	}
+	sf.freeText = strings.TrimSpace(strings.Join(freeWords, " "))
+	return sf
+}
+
+// tokenizeSearch splits a search query respecting quoted strings.
+func tokenizeSearch(query string) []string {
+	var tokens []string
+	var current strings.Builder
+	inQuote := false
+	for _, ch := range query {
+		switch {
+		case ch == '"':
+			inQuote = !inQuote
+		case ch == ' ' && !inQuote:
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(ch)
+		}
+	}
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+	return tokens
+}
+
+// parseDateOperator converts YYYY/MM/DD or YYYY-MM-DD to RFC3339.
+func parseDateOperator(val string) string {
+	val = strings.ReplaceAll(val, "/", "-")
+	for _, layout := range []string{"2006-01-02", "2006-1-2"} {
+		if t, err := time.Parse(layout, val); err == nil {
+			return t.Format(time.RFC3339)
+		}
+	}
+	return ""
+}
+
+// SearchEmails searches emails using Gmail-style operators and FTS5 full-text search.
 func (s *Store) SearchEmails(ctx context.Context, query string, page, perPage int) (*types.EmailListResponse, error) {
 	if page < 1 {
 		page = 1
@@ -435,21 +552,87 @@ func (s *Store) SearchEmails(ctx context.Context, query string, page, perPage in
 		perPage = 25
 	}
 
+	sf := parseSearchQuery(query)
+
+	var conditions []string
+	var args []any
+
+	if sf.from != "" {
+		conditions = append(conditions, "(e.from_address LIKE ? OR e.from_name LIKE ?)")
+		q := "%" + sf.from + "%"
+		args = append(args, q, q)
+	}
+	if sf.to != "" {
+		conditions = append(conditions, "e.to_addresses LIKE ?")
+		args = append(args, "%"+sf.to+"%")
+	}
+	if sf.subject != "" {
+		conditions = append(conditions, "e.subject LIKE ?")
+		args = append(args, "%"+sf.subject+"%")
+	}
+	if sf.hasAttachment {
+		conditions = append(conditions, "e.has_attachments = 1")
+	}
+	if sf.isUnread != nil {
+		if *sf.isUnread {
+			conditions = append(conditions, "e.is_read = 0")
+		} else {
+			conditions = append(conditions, "e.is_read = 1")
+		}
+	}
+	if sf.isStarred != nil {
+		if *sf.isStarred {
+			conditions = append(conditions, "e.is_starred = 1")
+		}
+	}
+	if sf.isImportant != nil {
+		if *sf.isImportant {
+			conditions = append(conditions, "e.is_important = 1")
+		}
+	}
+	if sf.before != "" {
+		conditions = append(conditions, "e.received_at < ?")
+		args = append(args, sf.before)
+	}
+	if sf.after != "" {
+		conditions = append(conditions, "e.received_at > ?")
+		args = append(args, sf.after)
+	}
+	if sf.label != "" {
+		conditions = append(conditions, "e.id IN (SELECT email_id FROM email_labels WHERE label_id = ?)")
+		args = append(args, sf.label)
+	}
+
+	// Use FTS5 for remaining free-text
+	useFTS := sf.freeText != ""
+	joinClause := ""
+	if useFTS {
+		joinClause = "JOIN emails_fts ON emails_fts.rowid = e.rowid"
+		conditions = append(conditions, "emails_fts MATCH ?")
+		args = append(args, sf.freeText)
+	}
+
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
 	// Count total matches
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM emails e %s %s", joinClause, whereClause)
 	var total int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM emails e
-		JOIN emails_fts ON emails_fts.rowid = e.rowid
-		WHERE emails_fts MATCH ?
-	`, query).Scan(&total)
-	if err != nil {
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count search results: %w", err)
 	}
 
 	totalPages := (total + perPage - 1) / perPage
 	offset := (page - 1) * perPage
 
-	rows, err := s.db.QueryContext(ctx, `
+	orderClause := "ORDER BY e.received_at DESC"
+	if useFTS {
+		orderClause = "ORDER BY rank"
+	}
+
+	selectQuery := fmt.Sprintf(`
 		SELECT e.id, e.thread_id, e.message_id, e.in_reply_to, e.reference_ids,
 			e.from_address, e.from_name, e.to_addresses, e.cc_addresses, e.bcc_addresses,
 			e.subject, e.body_text, e.body_html, e.snippet,
@@ -457,11 +640,12 @@ func (s *Store) SearchEmails(ctx context.Context, query string, page, perPage in
 			e.has_attachments, e.size_bytes, e.sent_at, e.received_at, e.created_at, e.updated_at,
 			e.snoozed_until, e.scheduled_at, e.is_muted
 		FROM emails e
-		JOIN emails_fts ON emails_fts.rowid = e.rowid
-		WHERE emails_fts MATCH ?
-		ORDER BY rank
+		%s %s %s
 		LIMIT ? OFFSET ?
-	`, query, perPage, offset)
+	`, joinClause, whereClause, orderClause)
+
+	listArgs := append(args, perPage, offset)
+	rows, err := s.db.QueryContext(ctx, selectQuery, listArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search emails: %w", err)
 	}

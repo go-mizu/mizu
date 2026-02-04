@@ -46,6 +46,10 @@ func NewServer(st store.Store, driver email.Driver, fromAddr string, devMode boo
 		r.Post("/emails/{id}/forward", emailHandler.Forward)
 		r.Post("/emails/{id}/snooze", emailHandler.Snooze)
 		r.Post("/emails/{id}/unsnooze", emailHandler.Unsnooze)
+		r.Post("/emails/{id}/schedule", emailHandler.Schedule)
+		r.Delete("/emails/{id}/schedule", emailHandler.Unschedule)
+		r.Post("/emails/{id}/mute", emailHandler.Mute)
+		r.Post("/emails/{id}/unmute", emailHandler.Unmute)
 		r.Post("/emails/batch", emailHandler.Batch)
 
 		// Attachments
