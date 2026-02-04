@@ -8,6 +8,7 @@ import type {
   Settings,
   ComposeRequest,
   BatchAction,
+  Attachment,
 } from "./types";
 
 const API_BASE = "/api";
@@ -230,5 +231,60 @@ export async function deleteDraft(id: string): Promise<void> {
 export async function sendDraft(id: string): Promise<Email> {
   return request<Email>(`/emails/${id}/send`, {
     method: "POST",
+  });
+}
+
+// Send (alias for createEmail with is_draft=false)
+export async function sendEmail(data: ComposeRequest): Promise<Email> {
+  return createEmail({ ...data, is_draft: false });
+}
+
+// Reply All
+export async function replyAllEmail(id: string, data: ComposeRequest): Promise<Email> {
+  return request<Email>(`/emails/${id}/reply-all`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Snooze
+export async function snoozeEmail(id: string, until: string): Promise<Email> {
+  return request<Email>(`/emails/${id}/snooze`, {
+    method: "POST",
+    body: JSON.stringify({ until }),
+  });
+}
+
+export async function unsnoozeEmail(id: string): Promise<Email> {
+  return request<Email>(`/emails/${id}/unsnooze`, {
+    method: "POST",
+  });
+}
+
+// Attachments
+export async function uploadAttachment(emailId: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const resp = await fetch(`${API_BASE}/emails/${emailId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!resp.ok) throw new Error("Upload failed");
+  return resp.json();
+}
+
+export async function listAttachments(emailId: string): Promise<Attachment[]> {
+  return request<Attachment[]>(`/emails/${emailId}/attachments`);
+}
+
+export async function downloadAttachment(id: string): Promise<Response> {
+  const resp = await fetch(`${API_BASE}/attachments/${id}`);
+  if (!resp.ok) throw new Error("Download failed");
+  return resp;
+}
+
+export async function deleteAttachment(id: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/attachments/${id}`, {
+    method: "DELETE",
   });
 }

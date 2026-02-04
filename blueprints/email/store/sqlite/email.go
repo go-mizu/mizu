@@ -80,7 +80,8 @@ func (s *Store) ListEmails(ctx context.Context, filter store.EmailFilter) (*type
 			e.from_address, e.from_name, e.to_addresses, e.cc_addresses, e.bcc_addresses,
 			e.subject, e.body_text, e.body_html, e.snippet,
 			e.is_read, e.is_starred, e.is_important, e.is_draft, e.is_sent,
-			e.has_attachments, e.size_bytes, e.sent_at, e.received_at, e.created_at, e.updated_at
+			e.has_attachments, e.size_bytes, e.sent_at, e.received_at, e.created_at, e.updated_at,
+			e.snoozed_until, e.scheduled_at, e.is_muted
 		FROM emails e
 		%s
 		ORDER BY e.received_at DESC
@@ -133,7 +134,8 @@ func (s *Store) GetEmail(ctx context.Context, id string) (*types.Email, error) {
 			from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
 			subject, body_text, body_html, snippet,
 			is_read, is_starred, is_important, is_draft, is_sent,
-			has_attachments, size_bytes, sent_at, received_at, created_at, updated_at
+			has_attachments, size_bytes, sent_at, received_at, created_at, updated_at,
+			snoozed_until, scheduled_at, is_muted
 		FROM emails
 		WHERE id = ?
 	`, id)
@@ -201,13 +203,26 @@ func (s *Store) CreateEmail(ctx context.Context, email *types.Email) error {
 		sentAt = &s
 	}
 
+	var snoozedUntil *string
+	if email.SnoozedUntil != nil {
+		s := email.SnoozedUntil.Format(time.RFC3339)
+		snoozedUntil = &s
+	}
+
+	var scheduledAt *string
+	if email.ScheduledAt != nil {
+		s := email.ScheduledAt.Format(time.RFC3339)
+		scheduledAt = &s
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO emails (id, thread_id, message_id, in_reply_to, reference_ids,
 			from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
 			subject, body_text, body_html, snippet,
 			is_read, is_starred, is_important, is_draft, is_sent,
-			has_attachments, size_bytes, sent_at, received_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			has_attachments, size_bytes, sent_at, received_at, created_at, updated_at,
+			snoozed_until, scheduled_at, is_muted)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING
 	`,
 		email.ID, email.ThreadID, email.MessageID, email.InReplyTo, string(refsJSON),
@@ -218,6 +233,7 @@ func (s *Store) CreateEmail(ctx context.Context, email *types.Email) error {
 		boolToInt(email.HasAttachments), email.SizeBytes,
 		sentAt, email.ReceivedAt.Format(time.RFC3339),
 		email.CreatedAt.Format(time.RFC3339), email.UpdatedAt.Format(time.RFC3339),
+		snoozedUntil, scheduledAt, boolToInt(email.IsMuted),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create email: %w", err)
@@ -234,20 +250,34 @@ func (s *Store) CreateEmail(ctx context.Context, email *types.Email) error {
 	return nil
 }
 
+// isJSONField returns true if the field should be JSON-encoded before storage.
+func isJSONField(field string) bool {
+	return field == "to_addresses" || field == "cc_addresses" || field == "bcc_addresses"
+}
+
 // UpdateEmail updates specific fields of an email.
 func (s *Store) UpdateEmail(ctx context.Context, id string, updates map[string]any) error {
 	var setClauses []string
 	var args []any
 
 	allowedFields := map[string]string{
-		"is_read":      "is_read",
-		"is_starred":   "is_starred",
-		"is_important": "is_important",
-		"is_draft":     "is_draft",
-		"subject":      "subject",
-		"body_text":    "body_text",
-		"body_html":    "body_html",
-		"snippet":      "snippet",
+		"is_read":         "is_read",
+		"is_starred":      "is_starred",
+		"is_important":    "is_important",
+		"is_draft":        "is_draft",
+		"is_sent":         "is_sent",
+		"is_muted":        "is_muted",
+		"subject":         "subject",
+		"body_text":       "body_text",
+		"body_html":       "body_html",
+		"snippet":         "snippet",
+		"sent_at":         "sent_at",
+		"to_addresses":    "to_addresses",
+		"cc_addresses":    "cc_addresses",
+		"bcc_addresses":   "bcc_addresses",
+		"has_attachments":  "has_attachments",
+		"snoozed_until":   "snoozed_until",
+		"scheduled_at":    "scheduled_at",
 	}
 
 	for key, col := range allowedFields {
@@ -256,13 +286,42 @@ func (s *Store) UpdateEmail(ctx context.Context, id string, updates map[string]a
 			switch v := val.(type) {
 			case bool:
 				args = append(args, boolToInt(v))
+			case time.Time:
+				args = append(args, v.Format(time.RFC3339))
+			case *time.Time:
+				if v != nil {
+					args = append(args, v.Format(time.RFC3339))
+				} else {
+					args = append(args, nil)
+				}
 			default:
-				args = append(args, v)
+				if isJSONField(key) {
+					jsonBytes, _ := json.Marshal(v)
+					args = append(args, string(jsonBytes))
+				} else {
+					args = append(args, v)
+				}
 			}
 		}
 	}
 
 	if len(setClauses) == 0 {
+		// Still handle labels even if no column updates
+		if labels, ok := updates["labels"]; ok {
+			s.db.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ?", id)
+			if labelList, ok := labels.([]string); ok {
+				for _, labelID := range labelList {
+					s.AddEmailLabel(ctx, id, labelID)
+				}
+			}
+			if labelList, ok := labels.([]any); ok {
+				for _, l := range labelList {
+					if labelID, ok := l.(string); ok {
+						s.AddEmailLabel(ctx, id, labelID)
+					}
+				}
+			}
+		}
 		return nil
 	}
 
@@ -274,6 +333,23 @@ func (s *Store) UpdateEmail(ctx context.Context, id string, updates map[string]a
 	_, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update email: %w", err)
+	}
+
+	// Handle label updates
+	if labels, ok := updates["labels"]; ok {
+		s.db.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ?", id)
+		if labelList, ok := labels.([]string); ok {
+			for _, labelID := range labelList {
+				s.AddEmailLabel(ctx, id, labelID)
+			}
+		}
+		if labelList, ok := labels.([]any); ok {
+			for _, l := range labelList {
+				if labelID, ok := l.(string); ok {
+					s.AddEmailLabel(ctx, id, labelID)
+				}
+			}
+		}
 	}
 
 	return nil
@@ -336,6 +412,14 @@ func (s *Store) BatchUpdateEmails(ctx context.Context, action *types.BatchAction
 			if action.LabelID != "" {
 				tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ? AND label_id = ?", id, action.LabelID)
 			}
+		case "add_label":
+			if action.LabelID != "" {
+				tx.ExecContext(ctx, "INSERT OR IGNORE INTO email_labels (email_id, label_id) VALUES (?, ?)", id, action.LabelID)
+			}
+		case "remove_label":
+			if action.LabelID != "" {
+				tx.ExecContext(ctx, "DELETE FROM email_labels WHERE email_id = ? AND label_id = ?", id, action.LabelID)
+			}
 		}
 	}
 
@@ -370,7 +454,8 @@ func (s *Store) SearchEmails(ctx context.Context, query string, page, perPage in
 			e.from_address, e.from_name, e.to_addresses, e.cc_addresses, e.bcc_addresses,
 			e.subject, e.body_text, e.body_html, e.snippet,
 			e.is_read, e.is_starred, e.is_important, e.is_draft, e.is_sent,
-			e.has_attachments, e.size_bytes, e.sent_at, e.received_at, e.created_at, e.updated_at
+			e.has_attachments, e.size_bytes, e.sent_at, e.received_at, e.created_at, e.updated_at,
+			e.snoozed_until, e.scheduled_at, e.is_muted
 		FROM emails e
 		JOIN emails_fts ON emails_fts.rowid = e.rowid
 		WHERE emails_fts MATCH ?
@@ -504,7 +589,8 @@ func (s *Store) GetThread(ctx context.Context, id string) (*types.Thread, error)
 			from_address, from_name, to_addresses, cc_addresses, bcc_addresses,
 			subject, body_text, body_html, snippet,
 			is_read, is_starred, is_important, is_draft, is_sent,
-			has_attachments, size_bytes, sent_at, received_at, created_at, updated_at
+			has_attachments, size_bytes, sent_at, received_at, created_at, updated_at,
+			snoozed_until, scheduled_at, is_muted
 		FROM emails
 		WHERE thread_id = ?
 		ORDER BY received_at ASC
@@ -613,9 +699,9 @@ func (s *Store) upsertContactFromEmail(ctx context.Context, address, name string
 func scanEmail(rows *sql.Rows) (*types.Email, error) {
 	var e types.Email
 	var refsJSON, toJSON, ccJSON, bccJSON string
-	var sentAt sql.NullString
+	var sentAt, snoozedUntil, scheduledAt sql.NullString
 	var receivedAt, createdAt, updatedAt string
-	var isRead, isStarred, isImportant, isDraft, isSent, hasAttachments int
+	var isRead, isStarred, isImportant, isDraft, isSent, hasAttachments, isMuted int
 
 	if err := rows.Scan(
 		&e.ID, &e.ThreadID, &e.MessageID, &e.InReplyTo, &refsJSON,
@@ -623,6 +709,7 @@ func scanEmail(rows *sql.Rows) (*types.Email, error) {
 		&e.Subject, &e.BodyText, &e.BodyHTML, &e.Snippet,
 		&isRead, &isStarred, &isImportant, &isDraft, &isSent,
 		&hasAttachments, &e.SizeBytes, &sentAt, &receivedAt, &createdAt, &updatedAt,
+		&snoozedUntil, &scheduledAt, &isMuted,
 	); err != nil {
 		return nil, fmt.Errorf("failed to scan email: %w", err)
 	}
@@ -633,6 +720,7 @@ func scanEmail(rows *sql.Rows) (*types.Email, error) {
 	e.IsDraft = isDraft == 1
 	e.IsSent = isSent == 1
 	e.HasAttachments = hasAttachments == 1
+	e.IsMuted = isMuted == 1
 
 	json.Unmarshal([]byte(refsJSON), &e.References)
 	json.Unmarshal([]byte(toJSON), &e.ToAddresses)
@@ -642,6 +730,14 @@ func scanEmail(rows *sql.Rows) (*types.Email, error) {
 	if sentAt.Valid {
 		t, _ := time.Parse(time.RFC3339, sentAt.String)
 		e.SentAt = &t
+	}
+	if snoozedUntil.Valid {
+		t, _ := time.Parse(time.RFC3339, snoozedUntil.String)
+		e.SnoozedUntil = &t
+	}
+	if scheduledAt.Valid {
+		t, _ := time.Parse(time.RFC3339, scheduledAt.String)
+		e.ScheduledAt = &t
 	}
 	e.ReceivedAt, _ = time.Parse(time.RFC3339, receivedAt)
 	e.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
@@ -654,9 +750,9 @@ func scanEmail(rows *sql.Rows) (*types.Email, error) {
 func scanEmailRow(row *sql.Row) (*types.Email, error) {
 	var e types.Email
 	var refsJSON, toJSON, ccJSON, bccJSON string
-	var sentAt sql.NullString
+	var sentAt, snoozedUntil, scheduledAt sql.NullString
 	var receivedAt, createdAt, updatedAt string
-	var isRead, isStarred, isImportant, isDraft, isSent, hasAttachments int
+	var isRead, isStarred, isImportant, isDraft, isSent, hasAttachments, isMuted int
 
 	if err := row.Scan(
 		&e.ID, &e.ThreadID, &e.MessageID, &e.InReplyTo, &refsJSON,
@@ -664,6 +760,7 @@ func scanEmailRow(row *sql.Row) (*types.Email, error) {
 		&e.Subject, &e.BodyText, &e.BodyHTML, &e.Snippet,
 		&isRead, &isStarred, &isImportant, &isDraft, &isSent,
 		&hasAttachments, &e.SizeBytes, &sentAt, &receivedAt, &createdAt, &updatedAt,
+		&snoozedUntil, &scheduledAt, &isMuted,
 	); err != nil {
 		return nil, fmt.Errorf("failed to scan email: %w", err)
 	}
@@ -674,6 +771,7 @@ func scanEmailRow(row *sql.Row) (*types.Email, error) {
 	e.IsDraft = isDraft == 1
 	e.IsSent = isSent == 1
 	e.HasAttachments = hasAttachments == 1
+	e.IsMuted = isMuted == 1
 
 	json.Unmarshal([]byte(refsJSON), &e.References)
 	json.Unmarshal([]byte(toJSON), &e.ToAddresses)
@@ -683,6 +781,14 @@ func scanEmailRow(row *sql.Row) (*types.Email, error) {
 	if sentAt.Valid {
 		t, _ := time.Parse(time.RFC3339, sentAt.String)
 		e.SentAt = &t
+	}
+	if snoozedUntil.Valid {
+		t, _ := time.Parse(time.RFC3339, snoozedUntil.String)
+		e.SnoozedUntil = &t
+	}
+	if scheduledAt.Valid {
+		t, _ := time.Parse(time.RFC3339, scheduledAt.String)
+		e.ScheduledAt = &t
 	}
 	e.ReceivedAt, _ = time.Parse(time.RFC3339, receivedAt)
 	e.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/email/pkg/email"
 	"github.com/go-mizu/mizu/blueprints/email/store"
 	"github.com/go-mizu/mizu/blueprints/email/types"
 	"github.com/google/uuid"
@@ -12,12 +13,14 @@ import (
 
 // DraftHandler handles draft-specific API endpoints.
 type DraftHandler struct {
-	store store.Store
+	store    store.Store
+	driver   email.Driver
+	fromAddr string
 }
 
 // NewDraftHandler creates a new draft handler.
-func NewDraftHandler(st store.Store) *DraftHandler {
-	return &DraftHandler{store: st}
+func NewDraftHandler(st store.Store, driver email.Driver, fromAddr string) *DraftHandler {
+	return &DraftHandler{store: st, driver: driver, fromAddr: fromAddr}
 }
 
 // Save creates a new draft email.
@@ -142,56 +145,63 @@ func (h *DraftHandler) Delete(c *mizu.Ctx) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "draft deleted"})
 }
 
-// Send converts a draft into a sent email.
+// Send converts a draft into a sent email, delivering via the configured driver.
 func (h *DraftHandler) Send(c *mizu.Ctx) error {
 	id := c.Param("id")
 	if id == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "draft id is required"})
 	}
 
-	email, err := h.store.GetEmail(c.Context(), id)
+	draft, err := h.store.GetEmail(c.Context(), id)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "draft not found"})
 	}
-	if !email.IsDraft {
+	if !draft.IsDraft {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email is not a draft"})
 	}
 
-	if len(email.ToAddresses) == 0 {
+	if len(draft.ToAddresses) == 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "draft has no recipients"})
+	}
+
+	// Build the message for the email driver
+	from := h.resolveFrom(c)
+	msg := &email.Message{
+		From:     from,
+		To:       recipientAddresses(draft.ToAddresses),
+		CC:       recipientAddresses(draft.CCAddresses),
+		BCC:      recipientAddresses(draft.BCCAddresses),
+		Subject:  draft.Subject,
+		HTMLBody: draft.BodyHTML,
+		TextBody: draft.BodyText,
+		Headers:  map[string]string{"Message-ID": draft.MessageID},
+	}
+	if draft.InReplyTo != "" {
+		msg.Headers["In-Reply-To"] = draft.InReplyTo
+	}
+
+	// Send via driver
+	result, err := h.driver.Send(c.Context(), msg)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to send: " + err.Error()})
 	}
 
 	now := time.Now().UTC()
 
-	// Remove drafts label and add sent label
-	newLabels := make([]string, 0, len(email.Labels)+1)
-	for _, l := range email.Labels {
-		if l != "drafts" {
-			newLabels = append(newLabels, l)
-		}
-	}
-	hasSent := false
-	for _, l := range newLabels {
-		if l == "sent" {
-			hasSent = true
-			break
-		}
-	}
-	if !hasSent {
-		newLabels = append(newLabels, "sent")
-	}
-
+	// Update email fields
 	updates := map[string]any{
-		"is_draft":   false,
-		"is_sent":    true,
-		"sent_at":    now,
-		"labels":     newLabels,
-		"updated_at": now,
+		"is_draft": false,
+		"is_sent":  true,
+		"sent_at":  now,
 	}
 
 	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to send draft"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update draft"})
 	}
+
+	// Swap labels: remove drafts, add sent
+	h.store.RemoveEmailLabel(c.Context(), id, "drafts")
+	h.store.AddEmailLabel(c.Context(), id, "sent")
 
 	sent, err := h.store.GetEmail(c.Context(), id)
 	if err != nil {
@@ -199,7 +209,7 @@ func (h *DraftHandler) Send(c *mizu.Ctx) error {
 	}
 
 	// Create contacts for recipients
-	for _, rcpt := range email.ToAddresses {
+	for _, rcpt := range draft.ToAddresses {
 		if rcpt.Address != "" {
 			contacts, listErr := h.store.ListContacts(c.Context(), rcpt.Address)
 			if listErr != nil || len(contacts) == 0 {
@@ -214,5 +224,35 @@ func (h *DraftHandler) Send(c *mizu.Ctx) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, sent)
+	return c.JSON(http.StatusOK, map[string]any{
+		"email":              sent,
+		"provider_message_id": result.MessageID,
+	})
+}
+
+// resolveFrom returns the from address, preferring settings over the CLI flag.
+func (h *DraftHandler) resolveFrom(c *mizu.Ctx) string {
+	settings, _ := h.store.GetSettings(c.Context())
+	if settings != nil && settings.EmailAddress != "" {
+		name := settings.DisplayName
+		if name != "" {
+			return name + " <" + settings.EmailAddress + ">"
+		}
+		return settings.EmailAddress
+	}
+	if h.fromAddr != "" {
+		return h.fromAddr
+	}
+	return "me@email.local"
+}
+
+// recipientAddresses extracts email addresses from a slice of Recipients.
+func recipientAddresses(recipients []types.Recipient) []string {
+	addrs := make([]string, 0, len(recipients))
+	for _, r := range recipients {
+		if r.Address != "" {
+			addrs = append(addrs, r.Address)
+		}
+	}
+	return addrs
 }

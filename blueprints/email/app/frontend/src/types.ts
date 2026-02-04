@@ -26,6 +26,9 @@ export interface Email {
   has_attachments: boolean;
   size_bytes: number;
   labels?: string[];
+  snoozed_until?: string;
+  scheduled_at?: string;
+  is_muted: boolean;
   sent_at?: string;
   received_at: string;
   created_at: string;

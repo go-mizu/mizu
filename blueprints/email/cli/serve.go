@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/email/app/web"
+	"github.com/go-mizu/mizu/blueprints/email/pkg/email"
+	"github.com/go-mizu/mizu/blueprints/email/pkg/email/resend"
 	"github.com/go-mizu/mizu/blueprints/email/store/sqlite"
 	"github.com/spf13/cobra"
 )
@@ -17,8 +19,10 @@ import (
 // NewServe creates the serve command
 func NewServe() *cobra.Command {
 	var (
-		port    int
-		devMode bool
+		port       int
+		devMode    bool
+		driverName string
+		fromAddr   string
 	)
 
 	cmd := &cobra.Command{
@@ -31,19 +35,32 @@ func NewServe() *cobra.Command {
   - Settings management
   - Dashboard UI
 
-The server runs on port 8080 by default.`,
+The server runs on port 8080 by default.
+
+Email drivers:
+  noop    - Accept sends without delivering (default)
+  resend  - Send via Resend API (requires RESEND_API_KEY)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(cmd.Context(), port, devMode)
+			return runServe(cmd.Context(), port, devMode, driverName, fromAddr)
 		},
 	}
 
 	cmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on")
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Enable development mode")
+	cmd.Flags().StringVar(&driverName, "driver", envOrDefault("EMAIL_DRIVER", "noop"), "Email driver (noop, resend)")
+	cmd.Flags().StringVar(&fromAddr, "from", os.Getenv("EMAIL_FROM"), "Default from address for outbound email")
 
 	return cmd
 }
 
-func runServe(ctx context.Context, port int, devMode bool) error {
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func runServe(ctx context.Context, port int, devMode bool, driverName, fromAddr string) error {
 	fmt.Println(Banner())
 
 	// Connect to database
@@ -60,8 +77,23 @@ func runServe(ctx context.Context, port int, devMode bool) error {
 	}
 	fmt.Println(successStyle.Render("  Connected"))
 
+	// Initialize email driver
+	var emailDriver email.Driver
+	switch driverName {
+	case "resend":
+		d, err := resend.New(resend.Config{})
+		if err != nil {
+			return fmt.Errorf("failed to create resend driver: %w", err)
+		}
+		emailDriver = d
+		fmt.Println(successStyle.Render("  Email driver: resend"))
+	default:
+		emailDriver = email.Noop()
+		fmt.Println(infoStyle.Render("  Email driver: noop (emails won't be delivered)"))
+	}
+
 	// Create server
-	srv, err := web.NewServer(store, devMode)
+	srv, err := web.NewServer(store, emailDriver, fromAddr, devMode)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}

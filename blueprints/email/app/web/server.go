@@ -10,13 +10,14 @@ import (
 	"github.com/go-mizu/mizu"
 	"github.com/go-mizu/mizu/blueprints/email/app/web/handler/api"
 	"github.com/go-mizu/mizu/blueprints/email/assets"
+	"github.com/go-mizu/mizu/blueprints/email/pkg/email"
 	"github.com/go-mizu/mizu/blueprints/email/store"
 )
 
 // NewServer creates an HTTP handler for the email application.
 // In dev mode the frontend shows a text message; in production
 // it serves embedded static files with SPA fallback.
-func NewServer(st store.Store, devMode bool) (http.Handler, error) {
+func NewServer(st store.Store, driver email.Driver, fromAddr string, devMode bool) (http.Handler, error) {
 	app := mizu.New()
 
 	// Health check
@@ -25,11 +26,12 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 	})
 
 	// Create handlers
-	emailHandler := api.NewEmailHandler(st)
+	emailHandler := api.NewEmailHandler(st, driver, fromAddr)
 	labelHandler := api.NewLabelHandler(st)
 	contactHandler := api.NewContactHandler(st)
 	settingsHandler := api.NewSettingsHandler(st)
-	draftHandler := api.NewDraftHandler(st)
+	draftHandler := api.NewDraftHandler(st, driver, fromAddr)
+	attachmentHandler := api.NewAttachmentHandler(st)
 
 	// Register API routes
 	app.Group("/api", func(r *mizu.Router) {
@@ -40,8 +42,17 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		r.Put("/emails/{id}", emailHandler.Update)
 		r.Delete("/emails/{id}", emailHandler.Delete)
 		r.Post("/emails/{id}/reply", emailHandler.Reply)
+		r.Post("/emails/{id}/reply-all", emailHandler.ReplyAll)
 		r.Post("/emails/{id}/forward", emailHandler.Forward)
+		r.Post("/emails/{id}/snooze", emailHandler.Snooze)
+		r.Post("/emails/{id}/unsnooze", emailHandler.Unsnooze)
 		r.Post("/emails/batch", emailHandler.Batch)
+
+		// Attachments
+		r.Get("/emails/{id}/attachments", attachmentHandler.List)
+		r.Post("/emails/{id}/attachments", attachmentHandler.Upload)
+		r.Get("/attachments/{id}", attachmentHandler.Download)
+		r.Delete("/attachments/{id}", attachmentHandler.Delete)
 
 		// Threads
 		r.Get("/threads", threadList(st))
@@ -71,6 +82,15 @@ func NewServer(st store.Store, devMode bool) (http.Handler, error) {
 		r.Put("/drafts/{id}", draftHandler.Update)
 		r.Delete("/drafts/{id}", draftHandler.Delete)
 		r.Post("/drafts/{id}/send", draftHandler.Send)
+
+		// Driver status
+		r.Get("/driver/status", func(c *mizu.Ctx) error {
+			return c.JSON(http.StatusOK, map[string]any{
+				"driver":     driver.Name(),
+				"configured": driver.Name() != "noop",
+				"from":       fromAddr,
+			})
+		})
 	})
 
 	// Serve frontend

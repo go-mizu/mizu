@@ -1,428 +1,325 @@
-import { useState, useRef, useCallback, useEffect } from "react";
-import {
-  X,
-  Minus,
-  Maximize2,
-  Minimize2,
-  Trash2,
-  Paperclip,
-  MoreVertical,
-  Send,
-  Type,
-} from "lucide-react";
-import { useEmailStore } from "../store";
-import * as api from "../api";
-import type { Recipient } from "../types";
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { X, Minus, Maximize2, Minimize2, Trash2, Paperclip, Send } from 'lucide-react';
+import { useEmailStore, useLabelStore } from '../store';
+import { sendEmail, replyEmail, replyAllEmail, forwardEmail, saveDraft, fetchContacts } from '../api';
+import { showToast } from './Toast';
+import RichTextEditor from './RichTextEditor';
+import type { Recipient, Contact, Attachment } from '../types';
 
-type ComposeState = "normal" | "minimized" | "maximized";
+type ComposeState = 'normal' | 'minimized' | 'maximized';
+
+interface ComposeData {
+  mode?: 'new' | 'reply' | 'reply-all' | 'forward';
+  email_id?: string;
+  to?: Recipient[];
+  cc?: Recipient[];
+  bcc?: Recipient[];
+  subject?: string;
+  body_html?: string;
+  body_text?: string;
+  in_reply_to?: string;
+  thread_id?: string;
+}
 
 export default function ComposeModal() {
-  const closeCompose = useEmailStore((s) => s.closeCompose);
-  const composeData = useEmailStore((s) => s.composeData);
   const composeMode = useEmailStore((s) => s.composeMode);
-  const refreshEmails = useEmailStore((s) => s.refreshEmails);
+  const composeData = useEmailStore((s) => s.composeData) as ComposeData | null;
+  const closeCompose = useEmailStore((s) => s.closeCompose);
+  const fetchEmails = useEmailStore((s) => s.fetchEmails);
+  const { fetchLabels } = useLabelStore();
 
-  const [state, setState] = useState<ComposeState>("normal");
-  const [to, setTo] = useState<Recipient[]>(composeData?.to ?? []);
-  const [cc, setCc] = useState<Recipient[]>(composeData?.cc ?? []);
-  const [bcc, setBcc] = useState<Recipient[]>(composeData?.bcc ?? []);
-  const [showCc, setShowCc] = useState((composeData?.cc?.length ?? 0) > 0);
-  const [showBcc, setShowBcc] = useState((composeData?.bcc?.length ?? 0) > 0);
-  const [subject, setSubject] = useState(composeData?.subject ?? "");
-  const [body, setBody] = useState(composeData?.body_html ?? composeData?.body_text ?? "");
-  const [toInput, setToInput] = useState("");
-  const [ccInput, setCcInput] = useState("");
-  const [bccInput, setBccInput] = useState("");
+  const [to, setTo] = useState<Recipient[]>([]);
+  const [cc, setCc] = useState<Recipient[]>([]);
+  const [bcc, setBcc] = useState<Recipient[]>([]);
+  const [subject, setSubject] = useState('');
+  const [bodyHtml, setBodyHtml] = useState('');
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
   const [sending, setSending] = useState(false);
+  const [state, setState] = useState<ComposeState>('normal');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [suggestions, setSuggestions] = useState<Contact[]>([]);
+  const [activeField, setActiveField] = useState<'to' | 'cc' | 'bcc' | null>(null);
+  const [inputValue, setInputValue] = useState('');
 
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const toInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Focus the To field on open, unless it's a reply/forward with pre-filled To
-    if (to.length === 0 && toInputRef.current) {
-      toInputRef.current.focus();
-    } else if (bodyRef.current) {
-      bodyRef.current.focus();
-    }
-  }, [to.length]);
+    if (composeMode && composeData) {
+      setTo(composeData.to || []);
+      setCc(composeData.cc || []);
+      setBcc(composeData.bcc || []);
+      setSubject(composeData.subject || '');
+      setBodyHtml(composeData.body_html || '');
+      setShowCc((composeData.cc || []).length > 0);
+      setShowBcc((composeData.bcc || []).length > 0);
+      setAttachments([]);
+      setState('normal');
 
-  const addRecipient = useCallback(
-    (
-      input: string,
-      setter: React.Dispatch<React.SetStateAction<Recipient[]>>,
-      inputSetter: React.Dispatch<React.SetStateAction<string>>
-    ) => {
-      const trimmed = input.trim();
-      if (!trimmed) return;
-
-      // Parse "Name <email>" format or plain email
-      const match = trimmed.match(/^(.+?)\s*<(.+?)>$/);
-      if (match) {
-        setter((prev) => [
-          ...prev,
-          { name: match[1]!.trim(), address: match[2]!.trim() },
-        ]);
-      } else {
-        setter((prev) => [...prev, { address: trimmed }]);
+      if ((composeData.to || []).length === 0) {
+        setTimeout(() => toInputRef.current?.focus(), 100);
       }
-      inputSetter("");
-    },
-    []
-  );
+    }
+  }, [composeMode, composeData]);
 
-  const removeRecipient = useCallback(
-    (
-      index: number,
-      setter: React.Dispatch<React.SetStateAction<Recipient[]>>
-    ) => {
-      setter((prev) => prev.filter((_, i) => i !== index));
-    },
-    []
-  );
+  const searchContacts = useCallback(async (query: string) => {
+    if (query.length < 1) { setSuggestions([]); return; }
+    try {
+      const contacts = await fetchContacts(query);
+      setSuggestions(contacts.filter(c =>
+        !to.some(r => r.address === c.email) &&
+        !cc.some(r => r.address === c.email) &&
+        !bcc.some(r => r.address === c.email)
+      ));
+    } catch { setSuggestions([]); }
+  }, [to, cc, bcc]);
 
-  const handleSend = useCallback(async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => { if (inputValue) searchContacts(inputValue); }, 200);
+    return () => clearTimeout(timer);
+  }, [inputValue, searchContacts]);
+
+  if (!composeMode) return null;
+
+  const addRecipient = (field: 'to' | 'cc' | 'bcc', value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const match = trimmed.match(/^(.+?)\s*<(.+?)>$/);
+    const recipient: Recipient = match && match[1] && match[2] ? { name: match[1].trim(), address: match[2].trim() } : { address: trimmed };
+    const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+    setter(prev => prev.some(r => r.address === recipient.address) ? prev : [...prev, recipient]);
+    setInputValue('');
+    setSuggestions([]);
+  };
+
+  const selectContact = (contact: Contact, field: 'to' | 'cc' | 'bcc') => {
+    const recipient: Recipient = { name: contact.name, address: contact.email };
+    const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+    setter(prev => prev.some(r => r.address === recipient.address) ? prev : [...prev, recipient]);
+    setInputValue('');
+    setSuggestions([]);
+  };
+
+  const removeRecipient = (field: 'to' | 'cc' | 'bcc', index: number) => {
+    const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+    setter(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, field: 'to' | 'cc' | 'bcc') => {
+    if (['Enter', 'Tab', ','].includes(e.key) && inputValue.trim()) {
+      e.preventDefault();
+      addRecipient(field, inputValue);
+    }
+  };
+
+  const handleAttach = () => fileInputRef.current?.click();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      try {
+        const attachment: Attachment = {
+          id: `local-${Date.now()}-${file.name}`,
+          email_id: '',
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+          size_bytes: file.size,
+          created_at: new Date().toISOString(),
+        };
+        setAttachments(prev => [...prev, attachment]);
+      } catch {
+        showToast('Failed to attach file');
+      }
+    }
+    e.target.value = '';
+  };
+
+  const handleSend = async () => {
     if (to.length === 0) return;
     setSending(true);
     try {
-      await api.createEmail({
+      const bodyText = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const data = {
         to,
-        cc: showCc ? cc : undefined,
-        bcc: showBcc ? bcc : undefined,
+        cc: showCc ? cc : [],
+        bcc: showBcc ? bcc : [],
         subject,
-        body_html: body,
-        body_text: body.replace(/<[^>]*>/g, ""),
-        in_reply_to: composeData?.in_reply_to,
-        thread_id: composeData?.thread_id,
+        body_html: bodyHtml,
+        body_text: bodyText,
         is_draft: false,
-      });
+        in_reply_to: composeData?.in_reply_to || '',
+        thread_id: composeData?.thread_id || '',
+      };
+
+      const mode = composeData?.mode || composeMode;
+      if (mode === 'reply' && composeData?.email_id) {
+        await replyEmail(composeData.email_id, data);
+      } else if (mode === 'reply-all' && composeData?.email_id) {
+        await replyAllEmail(composeData.email_id, data);
+      } else if (mode === 'forward' && composeData?.email_id) {
+        await forwardEmail(composeData.email_id, data);
+      } else {
+        await sendEmail(data);
+      }
+      showToast('Message sent', { action: { label: 'Undo', onClick: () => showToast('Undo not available for this message') } });
       closeCompose();
-      refreshEmails();
+      fetchEmails();
+      fetchLabels();
     } catch {
+      showToast('Failed to send message');
+    } finally {
       setSending(false);
     }
-  }, [
-    to,
-    cc,
-    bcc,
-    showCc,
-    showBcc,
-    subject,
-    body,
-    composeData,
-    closeCompose,
-    refreshEmails,
-  ]);
+  };
 
-  const handleDiscard = useCallback(() => {
+  const handleDiscard = () => {
     closeCompose();
-  }, [closeCompose]);
+    showToast('Draft discarded');
+  };
 
-  const handleSaveDraft = useCallback(async () => {
+  const handleSaveDraft = async () => {
     try {
-      await api.saveDraft({
+      const bodyText = bodyHtml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      await saveDraft({
         to,
-        cc: showCc ? cc : undefined,
-        bcc: showBcc ? bcc : undefined,
+        cc,
+        bcc,
         subject,
-        body_html: body,
-        body_text: body.replace(/<[^>]*>/g, ""),
-        in_reply_to: composeData?.in_reply_to,
-        thread_id: composeData?.thread_id,
+        body_html: bodyHtml,
+        body_text: bodyText,
         is_draft: true,
+        in_reply_to: composeData?.in_reply_to || '',
+        thread_id: composeData?.thread_id || '',
       });
-    } catch {
-      // Handle error silently
-    }
+      showToast('Draft saved');
+    } catch { /* ignore */ }
     closeCompose();
-  }, [to, cc, bcc, showCc, showBcc, subject, body, composeData, closeCompose]);
+  };
 
-  const handleKeyDown = useCallback(
-    (
-      e: React.KeyboardEvent<HTMLInputElement>,
-      input: string,
-      setter: React.Dispatch<React.SetStateAction<Recipient[]>>,
-      inputSetter: React.Dispatch<React.SetStateAction<string>>
-    ) => {
-      if (e.key === "Enter" || e.key === "Tab" || e.key === ",") {
-        e.preventDefault();
-        addRecipient(input, setter, inputSetter);
-      }
-    },
-    [addRecipient]
-  );
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
-  const title =
-    composeMode === "reply"
-      ? "Reply"
-      : composeMode === "forward"
-        ? "Forward"
-        : "New Message";
-
-  if (state === "minimized") {
+  const RecipientField = ({ label, field, recipients, show }: { label: string; field: 'to' | 'cc' | 'bcc'; recipients: Recipient[]; show?: boolean }) => {
+    if (show === false) return null;
     return (
-      <div className="fixed bottom-0 right-20 z-50 w-[280px]">
-        <div
-          className="compose-shadow flex h-10 cursor-pointer items-center justify-between rounded-t-lg bg-[#404040] px-3"
-          onClick={() => setState("normal")}
-        >
-          <span className="text-sm font-medium text-white">{title}</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setState("normal");
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600"
-            >
-              <Maximize2 className="h-3.5 w-3.5 text-gray-300" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSaveDraft();
-              }}
-              className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600"
-            >
-              <X className="h-3.5 w-3.5 text-gray-300" />
-            </button>
+      <div className="flex items-start gap-2 px-4 py-1.5 border-b border-gray-100">
+        <span className="text-sm text-gray-500 pt-1 w-8">{label}</span>
+        <div className="flex-1 flex flex-wrap items-center gap-1">
+          {recipients.map((r, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 rounded-full text-sm">
+              <span>{r.name || r.address}</span>
+              <button onClick={() => removeRecipient(field, i)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+            </span>
+          ))}
+          <div className="relative flex-1 min-w-[120px]">
+            <input
+              ref={field === 'to' ? toInputRef : undefined}
+              type="text"
+              value={activeField === field ? inputValue : ''}
+              onChange={e => { setInputValue(e.target.value); setActiveField(field); }}
+              onKeyDown={e => handleKeyDown(e, field)}
+              onFocus={() => setActiveField(field)}
+              onBlur={() => { setTimeout(() => { if (inputValue.trim()) addRecipient(field, inputValue); setSuggestions([]); setActiveField(null); }, 200); }}
+              className="w-full text-sm outline-none bg-transparent py-1"
+              placeholder=""
+            />
+            {activeField === field && suggestions.length > 0 && (
+              <div className="absolute top-full left-0 w-64 bg-white shadow-lg rounded-lg border border-gray-200 z-50 max-h-48 overflow-y-auto">
+                {suggestions.map(contact => (
+                  <button key={contact.id} onMouseDown={e => { e.preventDefault(); selectContact(contact, field); }} className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-medium">
+                      {(contact.name || contact.email)[0]?.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{contact.name || contact.email}</div>
+                      {contact.name && <div className="text-xs text-gray-500 truncate">{contact.email}</div>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
+        {field === 'to' && (
+          <div className="flex gap-1 text-sm text-gray-500 pt-1">
+            {!showCc && <button onClick={() => setShowCc(true)} className="hover:text-gray-700">Cc</button>}
+            {!showBcc && <button onClick={() => setShowBcc(true)} className="hover:text-gray-700">Bcc</button>}
+          </div>
+        )}
       </div>
     );
-  }
+  };
 
-  const isMaximized = state === "maximized";
+  const title = composeData?.mode === 'reply' || composeMode === 'reply' ? 'Reply'
+    : composeData?.mode === 'reply-all' ? 'Reply All'
+    : composeData?.mode === 'forward' || composeMode === 'forward' ? 'Forward'
+    : 'New Message';
+
+  const widthClass = state === 'maximized' ? 'inset-4' : 'bottom-0 right-4 w-[560px]';
+  const heightClass = state === 'maximized' ? '' : state === 'minimized' ? '' : 'h-[520px]';
 
   return (
-    <div
-      className={`fixed z-50 flex flex-col compose-shadow compose-animate ${
-        isMaximized
-          ? "bottom-0 left-[10%] right-[10%] top-[5%] rounded-t-lg"
-          : "bottom-0 right-4 w-[560px] rounded-t-lg"
-      }`}
-      style={isMaximized ? undefined : { height: "520px" }}
-    >
-      {/* Header bar */}
-      <div className="flex h-10 flex-shrink-0 items-center justify-between rounded-t-lg bg-[#404040] px-3">
+    <div className={`fixed ${widthClass} z-50 flex flex-col bg-white rounded-t-lg compose-shadow compose-animate ${heightClass}`} style={state === 'minimized' ? { height: 'auto' } : undefined}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-[#404040] rounded-t-lg cursor-pointer" onClick={() => state === 'minimized' && setState('normal')}>
         <span className="text-sm font-medium text-white">{title}</span>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => setState("minimized")}
-            className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600"
-            title="Minimize"
-          >
-            <Minus className="h-4 w-4 text-gray-300" />
-          </button>
-          <button
-            onClick={() =>
-              setState(isMaximized ? "normal" : "maximized")
-            }
-            className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600"
-            title={isMaximized ? "Restore" : "Full screen"}
-          >
-            {isMaximized ? (
-              <Minimize2 className="h-3.5 w-3.5 text-gray-300" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5 text-gray-300" />
-            )}
-          </button>
-          <button
-            onClick={handleSaveDraft}
-            className="flex h-6 w-6 items-center justify-center rounded hover:bg-gray-600"
-            title="Save & close"
-          >
-            <X className="h-4 w-4 text-gray-300" />
-          </button>
+        <div className="flex items-center gap-1">
+          <button onClick={e => { e.stopPropagation(); setState(state === 'minimized' ? 'normal' : 'minimized'); }} className="p-1 hover:bg-white/10 rounded text-white"><Minus size={16} /></button>
+          <button onClick={e => { e.stopPropagation(); setState(state === 'maximized' ? 'normal' : 'maximized'); }} className="p-1 hover:bg-white/10 rounded text-white">{state === 'maximized' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
+          <button onClick={e => { e.stopPropagation(); handleSaveDraft(); }} className="p-1 hover:bg-white/10 rounded text-white"><X size={16} /></button>
         </div>
       </div>
 
-      {/* Form body */}
-      <div className="flex flex-1 flex-col overflow-hidden bg-white">
-        {/* To field */}
-        <div className="flex items-center border-b border-gray-200 px-4 py-1">
-          <span className="mr-2 text-sm text-gmail-text-secondary">To</span>
-          <div className="flex flex-1 flex-wrap items-center gap-1">
-            {to.map((r, i) => (
-              <span
-                key={i}
-                className="flex items-center gap-1 rounded-full bg-[#E8EAED] px-2 py-0.5 text-sm"
-              >
-                {r.name || r.address}
-                <button
-                  onClick={() => removeRecipient(i, setTo)}
-                  className="ml-0.5 text-gmail-text-secondary hover:text-gmail-text-primary"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
-            <input
-              ref={toInputRef}
-              type="text"
-              value={toInput}
-              onChange={(e) => setToInput(e.target.value)}
-              onKeyDown={(e) =>
-                handleKeyDown(e, toInput, setTo, setToInput)
-              }
-              onBlur={() => addRecipient(toInput, setTo, setToInput)}
-              className="min-w-[120px] flex-1 bg-transparent py-1 text-sm outline-none"
-              placeholder={to.length === 0 ? "Recipients" : ""}
+      {state !== 'minimized' && (
+        <>
+          <RecipientField label="To" field="to" recipients={to} />
+          <RecipientField label="Cc" field="cc" recipients={cc} show={showCc} />
+          <RecipientField label="Bcc" field="bcc" recipients={bcc} show={showBcc} />
+          <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" className="px-4 py-2 text-sm border-b border-gray-100 outline-none" />
+
+          <div className="flex-1 overflow-y-auto">
+            <RichTextEditor
+              content={bodyHtml}
+              onChange={setBodyHtml}
+              placeholder="Compose your email..."
+              autoFocus={to.length > 0}
             />
           </div>
-          <div className="flex items-center gap-1 text-xs">
-            {!showCc && (
-              <button
-                onClick={() => setShowCc(true)}
-                className="text-gmail-text-secondary hover:text-gmail-text-primary"
-              >
-                Cc
-              </button>
-            )}
-            {!showBcc && (
-              <button
-                onClick={() => setShowBcc(true)}
-                className="text-gmail-text-secondary hover:text-gmail-text-primary"
-              >
-                Bcc
-              </button>
-            )}
-          </div>
-        </div>
 
-        {/* CC field */}
-        {showCc && (
-          <div className="flex items-center border-b border-gray-200 px-4 py-1">
-            <span className="mr-2 text-sm text-gmail-text-secondary">Cc</span>
-            <div className="flex flex-1 flex-wrap items-center gap-1">
-              {cc.map((r, i) => (
-                <span
-                  key={i}
-                  className="flex items-center gap-1 rounded-full bg-[#E8EAED] px-2 py-0.5 text-sm"
-                >
-                  {r.name || r.address}
-                  <button
-                    onClick={() => removeRecipient(i, setCc)}
-                    className="ml-0.5 text-gmail-text-secondary hover:text-gmail-text-primary"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <div className="px-4 py-2 border-t border-gray-100 flex flex-wrap gap-2">
+              {attachments.map(a => (
+                <div key={a.id} className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+                  <Paperclip size={14} className="text-gray-400" />
+                  <span className="truncate max-w-[150px]">{a.filename}</span>
+                  <span className="text-gray-400 text-xs">{formatSize(a.size_bytes)}</span>
+                  <button onClick={() => setAttachments(prev => prev.filter(at => at.id !== a.id))} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                </div>
               ))}
-              <input
-                type="text"
-                value={ccInput}
-                onChange={(e) => setCcInput(e.target.value)}
-                onKeyDown={(e) =>
-                  handleKeyDown(e, ccInput, setCc, setCcInput)
-                }
-                onBlur={() => addRecipient(ccInput, setCc, setCcInput)}
-                className="min-w-[120px] flex-1 bg-transparent py-1 text-sm outline-none"
-              />
             </div>
-          </div>
-        )}
+          )}
 
-        {/* BCC field */}
-        {showBcc && (
-          <div className="flex items-center border-b border-gray-200 px-4 py-1">
-            <span className="mr-2 text-sm text-gmail-text-secondary">
-              Bcc
-            </span>
-            <div className="flex flex-1 flex-wrap items-center gap-1">
-              {bcc.map((r, i) => (
-                <span
-                  key={i}
-                  className="flex items-center gap-1 rounded-full bg-[#E8EAED] px-2 py-0.5 text-sm"
-                >
-                  {r.name || r.address}
-                  <button
-                    onClick={() => removeRecipient(i, setBcc)}
-                    className="ml-0.5 text-gmail-text-secondary hover:text-gmail-text-primary"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-              <input
-                type="text"
-                value={bccInput}
-                onChange={(e) => setBccInput(e.target.value)}
-                onKeyDown={(e) =>
-                  handleKeyDown(e, bccInput, setBcc, setBccInput)
-                }
-                onBlur={() => addRecipient(bccInput, setBcc, setBccInput)}
-                className="min-w-[120px] flex-1 bg-transparent py-1 text-sm outline-none"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Subject field */}
-        <div className="border-b border-gray-200 px-4 py-1">
-          <input
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="Subject"
-            className="w-full bg-transparent py-1 text-sm outline-none"
-          />
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-4 pt-2">
-          <textarea
-            ref={bodyRef}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            className="h-full w-full resize-none bg-transparent text-sm outline-none"
-            placeholder="Compose email"
-          />
-        </div>
-
-        {/* Bottom toolbar */}
-        <div className="flex items-center justify-between border-t border-gray-200 px-2 py-1.5">
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={handleSend}
-              disabled={to.length === 0 || sending}
-              className="flex items-center gap-2 rounded-full bg-gmail-blue px-6 py-2 text-sm font-medium text-white hover:bg-gmail-blue-hover hover:shadow-sm disabled:opacity-50"
-            >
-              {sending ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
+          {/* Footer */}
+          <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-100">
+            <button onClick={handleSend} disabled={sending || to.length === 0} className="px-6 py-2 bg-[#1a73e8] text-white text-sm font-medium rounded-full hover:bg-[#1765cc] hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+              {sending ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send size={16} />}
               Send
             </button>
-            <button
-              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
-              title="Formatting options"
-            >
-              <Type className="h-4 w-4 text-gmail-text-secondary" />
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
+            <button onClick={handleAttach} className="p-2 hover:bg-gray-100 rounded-full text-gray-600" title="Attach files">
+              <Paperclip size={20} />
             </button>
-            <button
-              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
-              title="Attach files"
-            >
-              <Paperclip className="h-4 w-4 text-gmail-text-secondary" />
-            </button>
-            <button
-              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
-              title="More options"
-            >
-              <MoreVertical className="h-4 w-4 text-gmail-text-secondary" />
-            </button>
+            <div className="flex-1" />
+            <button onClick={handleDiscard} className="p-2 hover:bg-gray-100 rounded-full text-gray-600" title="Discard"><Trash2 size={20} /></button>
           </div>
-          <button
-            onClick={handleDiscard}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
-            title="Discard draft"
-          >
-            <Trash2 className="h-4 w-4 text-gmail-text-secondary" />
-          </button>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

@@ -34,7 +34,10 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			sent_at DATETIME,
 			received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			snoozed_until DATETIME,
+			scheduled_at DATETIME,
+			is_muted INTEGER DEFAULT 0
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails(thread_id);
@@ -46,6 +49,9 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_emails_is_sent ON emails(is_sent);
 		CREATE INDEX IF NOT EXISTS idx_emails_received_at ON emails(received_at);
 		CREATE INDEX IF NOT EXISTS idx_emails_sent_at ON emails(sent_at);
+		CREATE INDEX IF NOT EXISTS idx_emails_snoozed_until ON emails(snoozed_until);
+		CREATE INDEX IF NOT EXISTS idx_emails_scheduled_at ON emails(scheduled_at);
+		CREATE INDEX IF NOT EXISTS idx_emails_is_muted ON emails(is_muted);
 
 		-- FTS5 virtual table for full-text email search
 		CREATE VIRTUAL TABLE IF NOT EXISTS emails_fts USING fts5(
@@ -152,6 +158,7 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 			filename TEXT NOT NULL,
 			content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
 			size_bytes INTEGER DEFAULT 0,
+			data BLOB,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE
 		);

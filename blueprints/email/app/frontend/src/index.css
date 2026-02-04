@@ -130,3 +130,31 @@ button {
   line-height: 18px;
   white-space: nowrap;
 }
+
+/* TipTap Editor Styles */
+.tiptap {
+  outline: none;
+}
+.tiptap p {
+  margin: 0.25em 0;
+}
+.tiptap ul, .tiptap ol {
+  padding-left: 1.5em;
+}
+.tiptap blockquote {
+  border-left: 3px solid #ccc;
+  margin-left: 0;
+  padding-left: 1em;
+  color: #5f6368;
+}
+.tiptap a {
+  color: #1a73e8;
+  text-decoration: underline;
+}
+.tiptap .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
