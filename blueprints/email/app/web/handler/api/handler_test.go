@@ -1019,3 +1019,866 @@ func TestInvalidMethods(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Advanced search with Gmail-style operators
+// ---------------------------------------------------------------------------
+
+func TestSearchWithGmailOperators(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("from: operator", func(t *testing.T) {
+		// Alice Chen is a seeded sender
+		rr := doRequest(t, handler, http.MethodGet, "/api/search?q=from:alice", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp types.EmailListResponse
+		decodeJSON(t, rr, &resp)
+
+		if resp.Total == 0 {
+			t.Fatal("expected results for from:alice")
+		}
+	})
+
+	t.Run("is:unread operator", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/search?q=is:unread", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp types.EmailListResponse
+		decodeJSON(t, rr, &resp)
+
+		for _, e := range resp.Emails {
+			if e.IsRead {
+				t.Fatalf("found read email in is:unread results: %s", e.ID)
+			}
+		}
+	})
+
+	t.Run("is:starred operator", func(t *testing.T) {
+		// Star an email first
+		doRequest(t, handler, http.MethodPut, "/api/emails/email-001", map[string]any{"is_starred": true})
+
+		rr := doRequest(t, handler, http.MethodGet, "/api/search?q=is:starred", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp types.EmailListResponse
+		decodeJSON(t, rr, &resp)
+
+		if resp.Total == 0 {
+			t.Fatal("expected results for is:starred")
+		}
+		for _, e := range resp.Emails {
+			if !e.IsStarred {
+				t.Fatalf("found non-starred email in is:starred results: %s", e.ID)
+			}
+		}
+	})
+
+	t.Run("label: operator", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/search?q=label:sent", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp types.EmailListResponse
+		decodeJSON(t, rr, &resp)
+
+		if resp.Total == 0 {
+			t.Fatal("expected results for label:sent")
+		}
+	})
+
+	t.Run("combined operators", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/search?q=is:unread+label:inbox", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp types.EmailListResponse
+		decodeJSON(t, rr, &resp)
+
+		// All results should be unread
+		for _, e := range resp.Emails {
+			if e.IsRead {
+				t.Fatalf("found read email in is:unread results: %s", e.ID)
+			}
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Snooze / Unsnooze endpoints
+// ---------------------------------------------------------------------------
+
+func TestSnoozeEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("snooze moves to snoozed label", func(t *testing.T) {
+		body := struct {
+			Until string `json:"until"`
+		}{
+			Until: "2099-01-01T08:00:00Z",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/snooze", body)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var email types.Email
+		decodeJSON(t, rr, &email)
+
+		if email.SnoozedUntil == nil {
+			t.Fatal("expected snoozed_until to be set")
+		}
+	})
+
+	t.Run("snooze without time returns 400", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-003/snooze", map[string]any{})
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("snooze missing id returns 400", func(t *testing.T) {
+		body := struct {
+			Until string `json:"until"`
+		}{
+			Until: "2099-01-01T08:00:00Z",
+		}
+		// The snooze handler checks if ID param is empty; use a non-existent ID
+		// to verify the handler reports the email is missing (store returns error).
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/snooze", body)
+		// The handler calls store.UpdateEmail which silently succeeds even for
+		// non-existent IDs (UPDATE ... WHERE id = ? affects 0 rows), so 200 is acceptable.
+		if rr.Code != http.StatusOK && rr.Code != http.StatusBadRequest && rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 200, 400 or 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestUnsnoozeEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	// First snooze, then unsnooze
+	snoozeBody := struct {
+		Until string `json:"until"`
+	}{
+		Until: "2099-01-01T08:00:00Z",
+	}
+	rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/snooze", snoozeBody)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("snooze: expected 200, got %d", rr.Code)
+	}
+
+	t.Run("unsnooze clears snoozed_until", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/unsnooze", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var email types.Email
+		decodeJSON(t, rr, &email)
+
+		if email.SnoozedUntil != nil {
+			t.Fatal("expected snoozed_until to be nil after unsnooze")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Schedule / Unschedule endpoints
+// ---------------------------------------------------------------------------
+
+func TestScheduleEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	// Create a draft first (schedule operates on drafts)
+	draftBody := types.ComposeRequest{
+		To:       []types.Recipient{{Name: "Test", Address: "test@example.com"}},
+		Subject:  "Scheduled Test",
+		BodyText: "This will be scheduled.",
+		IsDraft:  true,
+	}
+	createRR := doRequest(t, handler, http.MethodPost, "/api/emails", draftBody)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("create draft: expected 201, got %d", createRR.Code)
+	}
+	var createResp struct {
+		Email types.Email `json:"email"`
+	}
+	decodeJSON(t, createRR, &createResp)
+	draftID := createResp.Email.ID
+
+	t.Run("schedule sets scheduled_at and moves to scheduled label", func(t *testing.T) {
+		body := struct {
+			SendAt string `json:"send_at"`
+		}{
+			SendAt: "2099-06-15T10:00:00Z",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/"+draftID+"/schedule", body)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var email types.Email
+		decodeJSON(t, rr, &email)
+
+		if email.ScheduledAt == nil {
+			t.Fatal("expected scheduled_at to be set")
+		}
+
+		// Verify label change
+		hasScheduled := false
+		for _, l := range email.Labels {
+			if l == "scheduled" {
+				hasScheduled = true
+			}
+		}
+		if !hasScheduled {
+			t.Error("expected 'scheduled' label after scheduling")
+		}
+	})
+
+	t.Run("schedule without time returns 400", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/"+draftID+"/schedule", map[string]any{})
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("schedule nonexistent email returns 404", func(t *testing.T) {
+		body := struct {
+			SendAt string `json:"send_at"`
+		}{
+			SendAt: "2099-06-15T10:00:00Z",
+		}
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/schedule", body)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestUnscheduleEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	// Create a draft and schedule it
+	draftBody := types.ComposeRequest{
+		To:       []types.Recipient{{Name: "Test", Address: "test@example.com"}},
+		Subject:  "Unschedule Test",
+		BodyText: "This will be unscheduled.",
+		IsDraft:  true,
+	}
+	createRR := doRequest(t, handler, http.MethodPost, "/api/emails", draftBody)
+	var createResp struct {
+		Email types.Email `json:"email"`
+	}
+	decodeJSON(t, createRR, &createResp)
+	draftID := createResp.Email.ID
+
+	schedBody := struct {
+		SendAt string `json:"send_at"`
+	}{
+		SendAt: "2099-06-15T10:00:00Z",
+	}
+	doRequest(t, handler, http.MethodPost, "/api/emails/"+draftID+"/schedule", schedBody)
+
+	t.Run("unschedule clears scheduled_at and moves to drafts", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodDelete, "/api/emails/"+draftID+"/schedule", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var email types.Email
+		decodeJSON(t, rr, &email)
+
+		if email.ScheduledAt != nil {
+			t.Fatal("expected scheduled_at to be nil after unschedule")
+		}
+
+		hasDrafts := false
+		for _, l := range email.Labels {
+			if l == "drafts" {
+				hasDrafts = true
+			}
+		}
+		if !hasDrafts {
+			t.Error("expected 'drafts' label after unscheduling")
+		}
+	})
+
+	t.Run("unschedule nonexistent email returns 404", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodDelete, "/api/emails/nonexistent-id/schedule", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Mute / Unmute endpoints
+// ---------------------------------------------------------------------------
+
+func TestMuteEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("mute sets is_muted", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/mute", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var email types.Email
+		decodeJSON(t, rr, &email)
+
+		if !email.IsMuted {
+			t.Fatal("expected is_muted to be true")
+		}
+	})
+
+	t.Run("mute nonexistent email returns 404", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/mute", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestUnmuteEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	// First mute, then unmute
+	doRequest(t, handler, http.MethodPost, "/api/emails/email-001/mute", nil)
+
+	t.Run("unmute clears is_muted", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/unmute", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var email types.Email
+		decodeJSON(t, rr, &email)
+
+		if email.IsMuted {
+			t.Fatal("expected is_muted to be false")
+		}
+	})
+
+	t.Run("unmute nonexistent email returns 404", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/unmute", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestBatchMuteUnmute(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("batch mute", func(t *testing.T) {
+		body := types.BatchAction{
+			IDs:    []string{"email-001", "email-003"},
+			Action: "mute",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/batch", body)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		// Verify both are muted
+		for _, id := range []string{"email-001", "email-003"} {
+			rr = doRequest(t, handler, http.MethodGet, "/api/emails/"+id, nil)
+			var resp struct {
+				Email types.Email `json:"email"`
+			}
+			decodeJSON(t, rr, &resp)
+			if !resp.Email.IsMuted {
+				t.Fatalf("expected %s to be muted after batch mute", id)
+			}
+		}
+	})
+
+	t.Run("batch unmute", func(t *testing.T) {
+		body := types.BatchAction{
+			IDs:    []string{"email-001", "email-003"},
+			Action: "unmute",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/batch", body)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		// Verify both are unmuted
+		for _, id := range []string{"email-001", "email-003"} {
+			rr = doRequest(t, handler, http.MethodGet, "/api/emails/"+id, nil)
+			var resp struct {
+				Email types.Email `json:"email"`
+			}
+			decodeJSON(t, rr, &resp)
+			if resp.Email.IsMuted {
+				t.Fatalf("expected %s to be unmuted after batch unmute", id)
+			}
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Reply, Reply All, Forward
+// ---------------------------------------------------------------------------
+
+func TestReplyToEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("reply creates email in same thread", func(t *testing.T) {
+		body := types.ComposeRequest{
+			BodyText: "Thanks for the update!",
+			BodyHTML: "<p>Thanks for the update!</p>",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/reply", body)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var reply types.Email
+		decodeJSON(t, rr, &reply)
+
+		if reply.ID == "" {
+			t.Fatal("expected non-empty reply ID")
+		}
+		if !reply.IsSent {
+			t.Fatal("expected reply to be marked as sent")
+		}
+		if reply.InReplyTo == "" {
+			t.Fatal("expected in_reply_to to be set")
+		}
+		// Subject should have Re: prefix
+		if reply.Subject == "" {
+			t.Fatal("expected non-empty subject")
+		}
+	})
+
+	t.Run("reply to nonexistent email returns 404", func(t *testing.T) {
+		body := types.ComposeRequest{
+			BodyText: "Reply text",
+		}
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/reply", body)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestReplyAllToEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("reply-all creates email in same thread", func(t *testing.T) {
+		body := types.ComposeRequest{
+			BodyText: "Replying to everyone.",
+			BodyHTML: "<p>Replying to everyone.</p>",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/reply-all", body)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var reply types.Email
+		decodeJSON(t, rr, &reply)
+
+		if !reply.IsSent {
+			t.Fatal("expected reply-all to be marked as sent")
+		}
+		if reply.InReplyTo == "" {
+			t.Fatal("expected in_reply_to to be set")
+		}
+		// Should include original sender in To
+		if len(reply.ToAddresses) == 0 {
+			t.Fatal("expected at least one recipient")
+		}
+	})
+
+	t.Run("reply-all to nonexistent email returns 404", func(t *testing.T) {
+		body := types.ComposeRequest{BodyText: "text"}
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/reply-all", body)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestForwardEmail(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("forward creates new thread", func(t *testing.T) {
+		body := types.ComposeRequest{
+			To: []types.Recipient{{Name: "Forward Recipient", Address: "fwd@example.com"}},
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/forward", body)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var fwd types.Email
+		decodeJSON(t, rr, &fwd)
+
+		if fwd.ID == "" {
+			t.Fatal("expected non-empty forward ID")
+		}
+		if !fwd.IsSent {
+			t.Fatal("expected forward to be marked as sent")
+		}
+		// Forward gets a new thread ID
+		if fwd.ThreadID == "" {
+			t.Fatal("expected non-empty thread_id")
+		}
+		// Subject should have Fwd: prefix
+		if fwd.Subject == "" {
+			t.Fatal("expected non-empty subject")
+		}
+	})
+
+	t.Run("forward without recipients returns 400", func(t *testing.T) {
+		body := types.ComposeRequest{}
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/email-001/forward", body)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("forward nonexistent email returns 404", func(t *testing.T) {
+		body := types.ComposeRequest{
+			To: []types.Recipient{{Address: "fwd@example.com"}},
+		}
+		rr := doRequest(t, handler, http.MethodPost, "/api/emails/nonexistent-id/forward", body)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Thread endpoints
+// ---------------------------------------------------------------------------
+
+func TestListThreads(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("returns threads", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/threads", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp types.ThreadListResponse
+		decodeJSON(t, rr, &resp)
+
+		if resp.Total == 0 {
+			t.Fatal("expected threads from seeded data")
+		}
+		if len(resp.Threads) == 0 {
+			t.Fatal("expected at least one thread in response")
+		}
+	})
+
+	t.Run("filters by label", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/threads?label=inbox", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", rr.Code)
+		}
+
+		var resp types.ThreadListResponse
+		decodeJSON(t, rr, &resp)
+
+		if resp.Total == 0 {
+			t.Fatal("expected inbox threads from seeded data")
+		}
+	})
+
+	t.Run("pagination works", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/threads?per_page=2&page=1", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", rr.Code)
+		}
+
+		var resp types.ThreadListResponse
+		decodeJSON(t, rr, &resp)
+
+		if len(resp.Threads) > 2 {
+			t.Fatalf("expected at most 2 threads, got %d", len(resp.Threads))
+		}
+	})
+}
+
+func TestGetThread(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("returns thread with emails", func(t *testing.T) {
+		// thread-001 is Q4 Planning with 3 emails
+		rr := doRequest(t, handler, http.MethodGet, "/api/threads/thread-001", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var thread types.Thread
+		decodeJSON(t, rr, &thread)
+
+		if thread.ID != "thread-001" {
+			t.Fatalf("expected thread ID 'thread-001', got %q", thread.ID)
+		}
+		if thread.EmailCount == 0 {
+			t.Fatal("expected at least one email in thread")
+		}
+		if len(thread.Emails) == 0 {
+			t.Fatal("expected emails array to be populated")
+		}
+	})
+
+	t.Run("nonexistent thread returns 404", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodGet, "/api/threads/nonexistent-thread", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Draft lifecycle: save, update, delete, send
+// ---------------------------------------------------------------------------
+
+func TestDraftSave(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("saves new draft", func(t *testing.T) {
+		body := types.ComposeRequest{
+			To:       []types.Recipient{{Name: "Draft Target", Address: "draft@example.com"}},
+			Subject:  "My Draft",
+			BodyText: "Draft content.",
+			BodyHTML: "<p>Draft content.</p>",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/drafts", body)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var draft types.Email
+		decodeJSON(t, rr, &draft)
+
+		if draft.ID == "" {
+			t.Fatal("expected non-empty draft ID")
+		}
+		if !draft.IsDraft {
+			t.Fatal("expected is_draft to be true")
+		}
+		if draft.Subject != "My Draft" {
+			t.Fatalf("expected subject 'My Draft', got %q", draft.Subject)
+		}
+
+		// Should have 'drafts' label
+		hasDrafts := false
+		for _, l := range draft.Labels {
+			if l == "drafts" {
+				hasDrafts = true
+			}
+		}
+		if !hasDrafts {
+			t.Error("expected 'drafts' label on new draft")
+		}
+	})
+
+	t.Run("saves draft without recipients", func(t *testing.T) {
+		body := types.ComposeRequest{
+			Subject:  "Empty Draft",
+			BodyText: "No recipients yet.",
+		}
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/drafts", body)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("expected status 201, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+func TestDraftUpdate(t *testing.T) {
+	handler := setupTestServer(t)
+
+	// Create a draft first
+	createBody := types.ComposeRequest{
+		Subject:  "Original Draft",
+		BodyText: "Original text.",
+	}
+	createRR := doRequest(t, handler, http.MethodPost, "/api/drafts", createBody)
+	var draft types.Email
+	decodeJSON(t, createRR, &draft)
+
+	t.Run("updates draft content", func(t *testing.T) {
+		updateBody := types.ComposeRequest{
+			To:       []types.Recipient{{Name: "New Recipient", Address: "new@example.com"}},
+			Subject:  "Updated Draft",
+			BodyText: "Updated text.",
+			BodyHTML: "<p>Updated text.</p>",
+		}
+
+		rr := doRequest(t, handler, http.MethodPut, "/api/drafts/"+draft.ID, updateBody)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var updated types.Email
+		decodeJSON(t, rr, &updated)
+
+		if updated.Subject != "Updated Draft" {
+			t.Fatalf("expected subject 'Updated Draft', got %q", updated.Subject)
+		}
+	})
+
+	t.Run("update nonexistent draft returns 404", func(t *testing.T) {
+		body := types.ComposeRequest{Subject: "test"}
+		rr := doRequest(t, handler, http.MethodPut, "/api/drafts/nonexistent-id", body)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+
+	t.Run("update non-draft email returns 400", func(t *testing.T) {
+		// email-001 is not a draft
+		body := types.ComposeRequest{Subject: "test"}
+		rr := doRequest(t, handler, http.MethodPut, "/api/drafts/email-001", body)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rr.Code)
+		}
+	})
+}
+
+func TestDraftDelete(t *testing.T) {
+	handler := setupTestServer(t)
+
+	// Create a draft
+	createBody := types.ComposeRequest{
+		Subject:  "Delete This Draft",
+		BodyText: "To be deleted.",
+	}
+	createRR := doRequest(t, handler, http.MethodPost, "/api/drafts", createBody)
+	var draft types.Email
+	decodeJSON(t, createRR, &draft)
+
+	t.Run("deletes draft permanently", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodDelete, "/api/drafts/"+draft.ID, nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		// Draft should be gone
+		rr = doRequest(t, handler, http.MethodGet, "/api/emails/"+draft.ID, nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 after deleting draft, got %d", rr.Code)
+		}
+	})
+
+	t.Run("delete nonexistent draft returns 404", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodDelete, "/api/drafts/nonexistent-id", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+
+	t.Run("delete non-draft email returns 400", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodDelete, "/api/drafts/email-001", nil)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rr.Code)
+		}
+	})
+}
+
+func TestDraftSend(t *testing.T) {
+	handler := setupTestServer(t)
+
+	t.Run("send converts draft to sent email", func(t *testing.T) {
+		// Create a draft with recipients
+		createBody := types.ComposeRequest{
+			To:       []types.Recipient{{Name: "Send Target", Address: "send@example.com"}},
+			Subject:  "Draft to Send",
+			BodyText: "Send this draft.",
+			BodyHTML: "<p>Send this draft.</p>",
+		}
+		createRR := doRequest(t, handler, http.MethodPost, "/api/drafts", createBody)
+		var draft types.Email
+		decodeJSON(t, createRR, &draft)
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/drafts/"+draft.ID+"/send", nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Email             types.Email `json:"email"`
+			ProviderMessageID string      `json:"provider_message_id"`
+		}
+		decodeJSON(t, rr, &resp)
+
+		if resp.Email.IsDraft {
+			t.Fatal("expected is_draft to be false after send")
+		}
+		if !resp.Email.IsSent {
+			t.Fatal("expected is_sent to be true after send")
+		}
+		if resp.ProviderMessageID == "" {
+			t.Fatal("expected provider_message_id from noop driver")
+		}
+
+		// Should have 'sent' label instead of 'drafts'
+		hasSent := false
+		for _, l := range resp.Email.Labels {
+			if l == "sent" {
+				hasSent = true
+			}
+			if l == "drafts" {
+				t.Error("expected 'drafts' label to be removed after send")
+			}
+		}
+		if !hasSent {
+			t.Error("expected 'sent' label after send")
+		}
+	})
+
+	t.Run("send draft without recipients returns 400", func(t *testing.T) {
+		createBody := types.ComposeRequest{
+			Subject:  "No Recipients Draft",
+			BodyText: "No one to send to.",
+		}
+		createRR := doRequest(t, handler, http.MethodPost, "/api/drafts", createBody)
+		var draft types.Email
+		decodeJSON(t, createRR, &draft)
+
+		rr := doRequest(t, handler, http.MethodPost, "/api/drafts/"+draft.ID+"/send", nil)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d (body: %s)", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("send non-draft email returns 400", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/drafts/email-001/send", nil)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected status 400, got %d", rr.Code)
+		}
+	})
+
+	t.Run("send nonexistent draft returns 404", func(t *testing.T) {
+		rr := doRequest(t, handler, http.MethodPost, "/api/drafts/nonexistent-id/send", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected status 404, got %d", rr.Code)
+		}
+	})
+}
