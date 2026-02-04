@@ -7,6 +7,8 @@ import {
   Trash2,
   Paperclip,
   Send,
+  Clock,
+  ChevronDown,
 } from "lucide-react";
 import { useEmailStore, useLabelStore, useSettingsStore } from "../store";
 import {
@@ -16,6 +18,7 @@ import {
   forwardEmail,
   saveDraft,
   fetchContacts,
+  scheduleEmail,
 } from "../api";
 import { showToast } from "./Toast";
 import RichTextEditor from "./RichTextEditor";
@@ -207,8 +210,11 @@ export default function ComposeModal() {
   >(null);
   const [inputValue, setInputValue] = useState("");
 
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+
   const toInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scheduleRef = useRef<HTMLDivElement>(null);
 
   // ---- Populate fields when compose opens ----
   useEffect(() => {
@@ -415,6 +421,70 @@ export default function ComposeModal() {
       fetchLabels();
     } catch {
       showToast("Failed to send message");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ---- Schedule send ----
+
+  const handleScheduleSend = async (option: string) => {
+    setScheduleOpen(false);
+    if (to.length === 0) return;
+    setSending(true);
+    try {
+      const bodyText = bodyHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      const data = {
+        to,
+        cc: showCc ? cc : [],
+        bcc: showBcc ? bcc : [],
+        subject,
+        body_html: bodyHtml,
+        body_text: bodyText,
+        is_draft: true,
+        in_reply_to: composeData?.in_reply_to || "",
+        thread_id: composeData?.thread_id || "",
+      };
+
+      const result = await saveDraft(data);
+
+      const now = new Date();
+      let sendAt: Date;
+      switch (option) {
+        case "tomorrow_morning":
+          sendAt = new Date(now);
+          sendAt.setDate(sendAt.getDate() + 1);
+          sendAt.setHours(8, 0, 0, 0);
+          break;
+        case "tomorrow_afternoon":
+          sendAt = new Date(now);
+          sendAt.setDate(sendAt.getDate() + 1);
+          sendAt.setHours(13, 0, 0, 0);
+          break;
+        case "monday_morning": {
+          sendAt = new Date(now);
+          const dow = sendAt.getDay();
+          const daysUntilMon = (1 - dow + 7) % 7 || 7;
+          sendAt.setDate(sendAt.getDate() + daysUntilMon);
+          sendAt.setHours(8, 0, 0, 0);
+          break;
+        }
+        default:
+          return;
+      }
+
+      const emailResult = result as { email?: { id: string }; id?: string };
+      const draftId = emailResult?.email?.id || emailResult?.id;
+      if (draftId) {
+        await scheduleEmail(draftId, sendAt.toISOString());
+      }
+
+      showToast(`Send scheduled for ${sendAt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} at ${sendAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`);
+      closeCompose();
+      fetchEmails();
+      fetchLabels();
+    } catch {
+      showToast("Failed to schedule send");
     } finally {
       setSending(false);
     }
@@ -649,18 +719,50 @@ export default function ComposeModal() {
              Footer: Send, Attach, Discard
              ============================================================ */}
           <div className="flex items-center gap-2 border-t border-gray-100 px-4 py-2">
-            <button
-              onClick={handleSend}
-              disabled={sending || to.length === 0}
-              className="flex items-center gap-2 rounded-full bg-[#1A73E8] px-6 py-2 text-sm font-medium text-white hover:bg-[#1765CC] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {sending ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : (
-                <Send size={16} />
+            <div className="relative flex" ref={scheduleRef}>
+              <button
+                onClick={handleSend}
+                disabled={sending || to.length === 0}
+                className="flex items-center gap-2 rounded-l-full bg-[#1A73E8] px-5 py-2 text-sm font-medium text-white hover:bg-[#1765CC] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {sending ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                ) : (
+                  <Send size={16} />
+                )}
+                Send
+              </button>
+              <button
+                onClick={() => setScheduleOpen((v) => !v)}
+                disabled={sending || to.length === 0}
+                className="flex items-center rounded-r-full border-l border-blue-400/30 bg-[#1A73E8] px-2 py-2 text-white hover:bg-[#1765CC] disabled:cursor-not-allowed disabled:opacity-50"
+                title="Schedule send"
+              >
+                <ChevronDown size={14} />
+              </button>
+              {scheduleOpen && (
+                <div className="absolute bottom-full left-0 z-50 mb-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500">
+                    <Clock size={12} className="mr-1 inline" />
+                    Schedule send
+                  </div>
+                  {([
+                    { key: "tomorrow_morning", label: "Tomorrow morning", sub: "8:00 AM" },
+                    { key: "tomorrow_afternoon", label: "Tomorrow afternoon", sub: "1:00 PM" },
+                    { key: "monday_morning", label: "Monday morning", sub: "8:00 AM" },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => handleScheduleSend(opt.key)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-gray-50"
+                    >
+                      <span>{opt.label}</span>
+                      <span className="text-xs text-gray-400">{opt.sub}</span>
+                    </button>
+                  ))}
+                </div>
               )}
-              Send
-            </button>
+            </div>
 
             <input
               ref={fileInputRef}

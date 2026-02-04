@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -124,6 +124,26 @@ interface EmailMessageProps {
   onReplyAll: (email: Email) => void;
 }
 
+// Split HTML body into main content and quoted text
+function splitQuotedContent(html: string): { main: string; quoted: string | null } {
+  // Look for Gmail-style quoted divs or blockquote
+  const patterns = [
+    /<div[^>]*class="gmail_quote"[^>]*>[\s\S]*$/i,
+    /<blockquote[^>]*>[\s\S]*$/i,
+    /<div[^>]*style="[^"]*border-left[^"]*"[^>]*>[\s\S]*$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match && match.index !== undefined) {
+      return {
+        main: html.slice(0, match.index),
+        quoted: match[0],
+      };
+    }
+  }
+  return { main: html, quoted: null };
+}
+
 function EmailMessage({
   email,
   isExpanded,
@@ -136,6 +156,12 @@ function EmailMessage({
   const openReply = useEmailStore((s) => s.openReply);
   const openForward = useEmailStore((s) => s.openForward);
   const refreshEmails = useEmailStore((s) => s.refreshEmails);
+  const [quotedVisible, setQuotedVisible] = useState(false);
+
+  const { main: mainBody, quoted: quotedBody } = useMemo(
+    () => email.body_html ? splitQuotedContent(email.body_html) : { main: "", quoted: null },
+    [email.body_html]
+  );
 
   const handleStarClick = useCallback(async () => {
     try {
@@ -260,14 +286,35 @@ function EmailMessage({
       {/* Body + Attachments + Reply buttons */}
       <div className="px-6 pb-4">
         <div className="pl-[52px]">
-          {/* Rendered HTML body */}
+          {/* Rendered HTML body with collapsible quotes */}
           {email.body_html ? (
-            <div
-              className="prose prose-sm max-w-none text-sm text-gmail-text-primary"
-              dangerouslySetInnerHTML={{
-                __html: sanitizeHtml(email.body_html),
-              }}
-            />
+            <>
+              <div
+                className="prose prose-sm max-w-none text-sm text-gmail-text-primary"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHtml(quotedBody ? mainBody : email.body_html),
+                }}
+              />
+              {quotedBody && (
+                <>
+                  <button
+                    onClick={() => setQuotedVisible((v) => !v)}
+                    className="my-2 rounded border border-gray-300 px-2 py-0.5 text-xs text-gmail-text-secondary hover:bg-gray-50"
+                    title={quotedVisible ? "Hide quoted text" : "Show quoted text"}
+                  >
+                    {quotedVisible ? "Hide" : "..."}
+                  </button>
+                  {quotedVisible && (
+                    <div
+                      className="prose prose-sm max-w-none text-sm text-gmail-text-secondary"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeHtml(quotedBody),
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </>
           ) : (
             <div className="whitespace-pre-wrap text-sm text-gmail-text-primary">
               {email.body_text}

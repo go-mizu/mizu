@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { Menu, Settings as SettingsIcon } from "lucide-react";
 import Sidebar from "./Sidebar";
@@ -16,6 +16,12 @@ export default function Layout() {
 
   const displayName = settings?.display_name ?? "User";
   const initial = displayName.charAt(0).toUpperCase();
+
+  // Apply dark mode class based on settings theme
+  useEffect(() => {
+    const isDark = settings?.theme === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+  }, [settings?.theme]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gmail-bg">
