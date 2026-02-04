@@ -9,6 +9,7 @@ export default function App() {
   const fetchLabels = useLabelStore((s) => s.fetchLabels);
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
 
+  // Fetch labels and settings on mount
   useEffect(() => {
     fetchLabels();
     fetchSettings();

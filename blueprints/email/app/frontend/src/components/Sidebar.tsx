@@ -34,6 +34,8 @@ const SYSTEM_LABELS = [
   { id: "trash", name: "Trash", icon: Trash2 },
 ];
 
+const DEFAULT_VISIBLE_COUNT = 6;
+
 export default function Sidebar({ collapsed }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -50,7 +52,9 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const systemLabels = labels.filter((l) => l.type === "system");
   const userLabels = labels.filter((l) => l.type === "user");
 
-  const displayLabels = showMore ? SYSTEM_LABELS : SYSTEM_LABELS.slice(0, 6);
+  const displayLabels = showMore
+    ? SYSTEM_LABELS
+    : SYSTEM_LABELS.slice(0, DEFAULT_VISIBLE_COUNT);
 
   function getUnread(labelId: string): number {
     const found = systemLabels.find((l) => l.id === labelId);
@@ -93,44 +97,43 @@ export default function Sidebar({ collapsed }: SidebarProps) {
 
   return (
     <div className="flex h-full flex-col py-2">
-      {/* Compose Button */}
-      <div className={`px-3 pb-3 ${collapsed ? "flex justify-center" : ""}`}>
+      {/* ---- Compose FAB Button ---- */}
+      <div className={`px-3 pb-4 ${collapsed ? "flex justify-center" : ""}`}>
         {collapsed ? (
           <button
             onClick={() => openCompose()}
-            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#C2E7FF] shadow-md transition-shadow hover:shadow-lg"
+            className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gmail-compose-fab shadow-md transition-all hover:shadow-lg hover:brightness-95 focus-ring"
             aria-label="Compose"
+            title="Compose"
           >
-            <Pencil className="h-5 w-5 text-gmail-sidebar-active-text" />
+            <Pencil className="h-6 w-6 text-gmail-sidebar-active-text" />
           </button>
         ) : (
           <button
             onClick={() => openCompose()}
-            className="flex h-14 items-center gap-3 rounded-2xl bg-[#C2E7FF] px-6 shadow-md transition-shadow hover:shadow-lg"
+            className="flex h-14 items-center gap-3 rounded-2xl bg-gmail-compose-fab px-6 shadow-md transition-all hover:shadow-lg hover:brightness-95 focus-ring"
           >
-            <Pencil className="h-5 w-5 text-gmail-sidebar-active-text" />
-            <span
-              className="text-sm font-medium tracking-wide text-gmail-sidebar-active-text"
-              style={{ fontFamily: "'Google Sans', sans-serif" }}
-            >
+            <Pencil className="h-6 w-6 text-gmail-sidebar-active-text" />
+            <span className="font-google-sans text-sm font-medium tracking-wide text-gmail-sidebar-active-text">
               Compose
             </span>
           </button>
         )}
       </div>
 
-      {/* System Labels */}
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
+      {/* ---- System Labels ---- */}
+      <nav className="flex-1 space-y-px overflow-y-auto px-2">
         {displayLabels.map((item) => {
           const active = isActive(item.id);
           const Icon = item.icon;
           const unread = getUnread(item.id);
+
           return (
             <button
               key={item.id}
               onClick={() => handleLabelClick(item.id)}
-              className={`sidebar-label-item flex w-full items-center rounded-r-full py-1 pr-3 text-sm ${
-                collapsed ? "justify-center px-3" : "pl-6"
+              className={`sidebar-label-item flex w-full items-center rounded-r-full text-sm focus-ring ${
+                collapsed ? "justify-center rounded-l-full px-0" : "pl-6 pr-3"
               } ${
                 active
                   ? "bg-gmail-sidebar-active font-bold text-gmail-sidebar-active-text"
@@ -139,14 +142,21 @@ export default function Sidebar({ collapsed }: SidebarProps) {
               style={{ height: "32px" }}
               title={collapsed ? item.name : undefined}
             >
-              <Icon className={`h-5 w-5 flex-shrink-0 ${active ? "text-gmail-sidebar-active-text" : ""}`} />
+              <Icon
+                className={`h-5 w-5 flex-shrink-0 ${
+                  active ? "text-gmail-sidebar-active-text" : ""
+                }`}
+                strokeWidth={active ? 2.2 : 1.8}
+              />
               {!collapsed && (
                 <>
-                  <span className="ml-4 flex-1 truncate text-left">
+                  <span className="ml-4 flex-1 truncate text-left text-[13px]">
                     {item.name}
                   </span>
                   {unread > 0 && (
-                    <span className="text-xs font-bold">{unread}</span>
+                    <span className="ml-auto text-xs font-bold tabular-nums">
+                      {unread}
+                    </span>
                   )}
                 </>
               )}
@@ -154,44 +164,62 @@ export default function Sidebar({ collapsed }: SidebarProps) {
           );
         })}
 
+        {/* More / Less Toggle */}
         {!collapsed && (
           <button
             onClick={() => setShowMore(!showMore)}
-            className="sidebar-label-item flex w-full items-center rounded-r-full py-1 pl-6 pr-3 text-sm text-gmail-text-secondary hover:bg-gmail-sidebar-hover"
+            className="sidebar-label-item flex w-full items-center rounded-r-full py-1 pl-6 pr-3 text-sm text-gmail-text-secondary hover:bg-gmail-sidebar-hover focus-ring"
             style={{ height: "32px" }}
           >
             {showMore ? (
-              <ChevronUp className="h-5 w-5" />
+              <ChevronUp className="h-5 w-5 flex-shrink-0" />
             ) : (
-              <ChevronDown className="h-5 w-5" />
+              <ChevronDown className="h-5 w-5 flex-shrink-0" />
             )}
-            <span className="ml-4">{showMore ? "Less" : "More"}</span>
+            <span className="ml-4 text-[13px]">
+              {showMore ? "Less" : "More"}
+            </span>
           </button>
         )}
 
-        {/* Separator */}
-        {!collapsed && (
-          <div className="my-3 border-t border-gmail-border" />
+        {/* Collapsed: just show a More dot indicator */}
+        {collapsed && !showMore && SYSTEM_LABELS.length > DEFAULT_VISIBLE_COUNT && (
+          <button
+            onClick={() => setShowMore(!showMore)}
+            className="sidebar-label-item flex w-full items-center justify-center rounded-full py-1 text-gmail-text-secondary hover:bg-gmail-sidebar-hover focus-ring"
+            style={{ height: "32px" }}
+            title={showMore ? "Less" : "More"}
+          >
+            <ChevronDown className="h-5 w-5" />
+          </button>
         )}
 
-        {/* Custom Labels */}
+        {/* ---- Divider ---- */}
+        {!collapsed && (
+          <div className="mx-4 my-3 border-t border-gmail-divider" />
+        )}
+
+        {/* ---- Custom Labels Section ---- */}
         {!collapsed && (
           <>
+            {/* Labels Header */}
             <div className="flex items-center justify-between px-6 py-2">
               <span className="text-[13px] font-medium text-gmail-text-secondary">
                 Labels
               </span>
               <button
                 onClick={() => setCreatingLabel(true)}
-                className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-gmail-sidebar-hover"
+                className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-gmail-sidebar-hover focus-ring"
                 aria-label="Create new label"
+                title="Create new label"
               >
                 <Plus className="h-4 w-4 text-gmail-text-secondary" />
               </button>
             </div>
 
+            {/* Inline Label Creation */}
             {creatingLabel && (
-              <div className="flex items-center gap-2 px-4 py-1">
+              <div className="flex items-center gap-2 px-4 py-1.5">
                 <input
                   type="text"
                   value={newLabelName}
@@ -204,41 +232,50 @@ export default function Sidebar({ collapsed }: SidebarProps) {
                     }
                   }}
                   placeholder="Label name"
-                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-gmail-blue"
+                  className="flex-1 rounded-md border border-gmail-border bg-white px-2.5 py-1.5 text-sm outline-none transition-colors focus:border-gmail-blue focus:ring-1 focus:ring-gmail-blue"
                   autoFocus
                 />
                 <button
                   onClick={handleCreateLabel}
-                  className="text-xs font-medium text-gmail-blue"
+                  className="rounded-md px-3 py-1.5 text-xs font-medium text-gmail-blue hover:bg-gmail-blue-surface focus-ring"
                 >
                   Save
                 </button>
               </div>
             )}
 
-            {userLabels.map((label) => (
-              <button
-                key={label.id}
-                onClick={() => handleLabelClick(label.id)}
-                className={`sidebar-label-item flex w-full items-center rounded-r-full py-1 pl-6 pr-3 text-sm ${
-                  isActive(label.id)
-                    ? "bg-gmail-sidebar-active font-bold text-gmail-sidebar-active-text"
-                    : "text-gmail-text-secondary hover:bg-gmail-sidebar-hover"
-                }`}
-                style={{ height: "32px" }}
-              >
-                <span
-                  className="mr-4 inline-block h-3 w-3 flex-shrink-0 rounded-full"
-                  style={{
-                    backgroundColor: label.color || "#5F6368",
-                  }}
-                />
-                <span className="flex-1 truncate text-left">{label.name}</span>
-                {label.unread_count > 0 && (
-                  <span className="text-xs font-bold">{label.unread_count}</span>
-                )}
-              </button>
-            ))}
+            {/* User-Created Labels */}
+            {userLabels.map((label) => {
+              const active = isActive(label.id);
+
+              return (
+                <button
+                  key={label.id}
+                  onClick={() => handleLabelClick(label.id)}
+                  className={`sidebar-label-item flex w-full items-center rounded-r-full py-1 pl-6 pr-3 text-sm focus-ring ${
+                    active
+                      ? "bg-gmail-sidebar-active font-bold text-gmail-sidebar-active-text"
+                      : "text-gmail-text-secondary hover:bg-gmail-sidebar-hover"
+                  }`}
+                  style={{ height: "32px" }}
+                >
+                  <span
+                    className="mr-4 inline-block h-3 w-3 flex-shrink-0 rounded-full ring-1 ring-black/5"
+                    style={{
+                      backgroundColor: label.color || "#5F6368",
+                    }}
+                  />
+                  <span className="flex-1 truncate text-left text-[13px]">
+                    {label.name}
+                  </span>
+                  {label.unread_count > 0 && (
+                    <span className="ml-auto text-xs font-bold tabular-nums">
+                      {label.unread_count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </>
         )}
       </nav>

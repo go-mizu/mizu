@@ -192,7 +192,7 @@ export default function SettingsPage() {
         </h1>
       </div>
 
-      {/* Tabs */}
+      {/* Tab bar */}
       <div className="flex border-b border-gmail-border">
         {tabs.map((t) => (
           <button
@@ -212,6 +212,7 @@ export default function SettingsPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-2xl">
+          {/* General tab */}
           {tab === "general" && (
             <div className="space-y-6">
               {/* Display Name */}
@@ -254,7 +255,7 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* Conversation View */}
+              {/* Conversation View toggle */}
               <div className="flex items-center justify-between rounded-lg border border-gray-200 p-4">
                 <div>
                   <p className="text-sm font-medium text-gmail-text-primary">
@@ -278,7 +279,7 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {/* Density */}
+              {/* Display Density selector */}
               <div>
                 <label className="mb-2 block text-sm font-medium text-gmail-text-primary">
                   Display density
@@ -300,7 +301,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Auto-advance */}
+              {/* Auto-advance radio buttons */}
               <div>
                 <label className="mb-2 block text-sm font-medium text-gmail-text-primary">
                   Auto-advance
@@ -331,7 +332,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Undo Send */}
+              {/* Undo Send seconds selector */}
               <div>
                 <label className="mb-2 block text-sm font-medium text-gmail-text-primary">
                   Undo Send
@@ -356,7 +357,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Save button */}
+              {/* Save button (blue pill) */}
               <div className="flex items-center gap-3 pt-2">
                 <button
                   onClick={handleSave}
@@ -369,6 +370,7 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* Labels tab */}
           {tab === "labels" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -384,6 +386,7 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+              {/* Inline creation form */}
               {addingLabel && (
                 <div className="flex items-end gap-3 rounded-lg border border-gmail-blue bg-blue-50 p-4">
                   <div className="flex-1">
@@ -436,7 +439,7 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* System Labels */}
+              {/* System labels list */}
               <div>
                 <h3 className="mb-2 text-sm font-medium text-gmail-text-secondary">
                   System labels
@@ -476,7 +479,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Custom Labels */}
+              {/* Custom labels list */}
               <div>
                 <h3 className="mb-2 text-sm font-medium text-gmail-text-secondary">
                   Custom labels
@@ -492,7 +495,7 @@ export default function SettingsPage() {
                       .map((label) => (
                         <div
                           key={label.id}
-                          className="flex items-center justify-between px-4 py-3"
+                          className="relative flex items-center justify-between px-4 py-3"
                         >
                           <div className="flex items-center gap-3">
                             <button
@@ -544,7 +547,7 @@ export default function SettingsPage() {
                           </div>
                           {/* Color picker dropdown */}
                           {editingLabelId === label.id && (
-                            <div className="absolute mt-16 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+                            <div className="absolute right-4 top-full z-10 mt-1 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
                               <p className="mb-2 text-xs font-medium text-gmail-text-secondary">
                                 Choose color
                               </p>
@@ -574,6 +577,7 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* Theme tab */}
           {tab === "theme" && (
             <div className="space-y-6">
               <div>

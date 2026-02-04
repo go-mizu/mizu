@@ -26,7 +26,7 @@ export default function MailPage() {
   const page = useEmailStore((s) => s.page);
   const searchQuery = useEmailStore((s) => s.searchQuery);
 
-  // Update label from URL
+  // Update label from URL param
   useEffect(() => {
     const newLabel = labelId ?? "inbox";
     if (newLabel !== currentLabel) {
@@ -42,7 +42,7 @@ export default function MailPage() {
   // Keyboard shortcuts
   const handleKeyboard = useCallback(
     (e: KeyboardEvent) => {
-      // Skip if user is typing in an input
+      // Skip if user is typing in an input, textarea, or contenteditable
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||
@@ -57,48 +57,62 @@ export default function MailPage() {
           e.preventDefault();
           openCompose();
           break;
+
         case "r":
           if (selectedEmail) {
             e.preventDefault();
             openReply(selectedEmail);
           }
           break;
+
         case "f":
           if (selectedEmail) {
             e.preventDefault();
             openForward(selectedEmail);
           }
           break;
+
         case "e":
           if (selectedEmail) {
             e.preventDefault();
-            api.batchEmails({ ids: [selectedEmail.id], action: "archive" }).then(() => {
-              showToast("Conversation archived");
-              selectEmail(null);
-              navigate(-1);
-              fetchEmails();
-            });
+            api
+              .batchEmails({ ids: [selectedEmail.id], action: "archive" })
+              .then(() => {
+                showToast("Conversation archived");
+                selectEmail(null);
+                navigate(-1);
+                fetchEmails();
+              });
           }
           break;
+
         case "#":
           if (selectedEmail) {
             e.preventDefault();
-            api.batchEmails({ ids: [selectedEmail.id], action: "trash" }).then(() => {
-              showToast("Conversation moved to Trash");
-              selectEmail(null);
-              navigate(-1);
-              fetchEmails();
-            });
+            api
+              .batchEmails({ ids: [selectedEmail.id], action: "trash" })
+              .then(() => {
+                showToast("Conversation moved to Trash");
+                selectEmail(null);
+                navigate(-1);
+                fetchEmails();
+              });
           }
           break;
+
         case "s":
           if (selectedEmail) {
             e.preventDefault();
-            api.updateEmail(selectedEmail.id, { is_starred: !selectedEmail.is_starred }).then(() => {
-              fetchEmails();
-            });
+            api
+              .updateEmail(selectedEmail.id, {
+                is_starred: !selectedEmail.is_starred,
+              })
+              .then(() => {
+                fetchEmails();
+              });
           }
           break;
+
         case "j": {
           // Move to next email in list
           e.preventDefault();
@@ -110,11 +124,11 @@ export default function MailPage() {
             const nextEmail = emails[nextIdx];
             if (nextEmail) {
               selectEmail(nextEmail);
-              navigate(`/label/${currentLabel}/${nextEmail.id}`);
             }
           }
           break;
         }
+
         case "k": {
           // Move to previous email in list
           e.preventDefault();
@@ -126,16 +140,17 @@ export default function MailPage() {
             const prevEmail = emails[prevIdx];
             if (prevEmail) {
               selectEmail(prevEmail);
-              navigate(`/label/${currentLabel}/${prevEmail.id}`);
             }
           }
           break;
         }
+
         case "Escape":
           if (selectedEmail) {
             selectEmail(null);
           }
           break;
+
         case "/":
           e.preventDefault();
           const searchInput = document.querySelector(
@@ -145,7 +160,18 @@ export default function MailPage() {
           break;
       }
     },
-    [openCompose, selectedEmail, openReply, openForward, selectEmail, emails, emailId, currentLabel, navigate, fetchEmails]
+    [
+      openCompose,
+      selectedEmail,
+      openReply,
+      openForward,
+      selectEmail,
+      emails,
+      emailId,
+      currentLabel,
+      navigate,
+      fetchEmails,
+    ]
   );
 
   useEffect(() => {
@@ -153,7 +179,7 @@ export default function MailPage() {
     return () => document.removeEventListener("keydown", handleKeyboard);
   }, [handleKeyboard]);
 
-  // If viewing a specific email
+  // If URL has emailId param, show full EmailDetail view
   if (emailId) {
     return (
       <div className="flex h-full flex-col">
@@ -162,6 +188,7 @@ export default function MailPage() {
     );
   }
 
+  // Otherwise show Toolbar + EmailList
   return (
     <div className="flex h-full flex-col">
       <Toolbar />

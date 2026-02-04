@@ -46,9 +46,6 @@ var (
 			Padding(1, 2)
 )
 
-// Ensure warningStyle is used (prevent lint errors)
-var _ = warningStyle
-
 // Banner returns the ASCII art banner
 func Banner() string {
 	banner := `

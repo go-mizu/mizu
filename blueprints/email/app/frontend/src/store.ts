@@ -14,7 +14,9 @@ interface EmailStore {
   totalPages: number;
   loading: boolean;
   composeOpen: boolean;
-  composeData: (Partial<ComposeRequest> & { mode?: string; email_id?: string }) | null;
+  composeData:
+    | (Partial<ComposeRequest> & { mode?: string; email_id?: string })
+    | null;
   composeMode: "new" | "reply" | "reply-all" | "forward";
 
   fetchEmails: () => Promise<void>;
@@ -26,7 +28,9 @@ interface EmailStore {
   setSearch: (query: string) => void;
   nextPage: () => void;
   prevPage: () => void;
-  openCompose: (data?: Partial<ComposeRequest> & { mode?: string; email_id?: string }) => void;
+  openCompose: (
+    data?: Partial<ComposeRequest> & { mode?: string; email_id?: string }
+  ) => void;
   closeCompose: () => void;
   openReply: (email: Email) => void;
   openForward: (email: Email) => void;
@@ -89,7 +93,12 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   deselectAll: () => set({ selectedEmails: new Set() }),
 
   setLabel: (label) =>
-    set({ currentLabel: label, page: 1, searchQuery: "", selectedEmail: null }),
+    set({
+      currentLabel: label,
+      page: 1,
+      searchQuery: "",
+      selectedEmail: null,
+    }),
 
   setSearch: (query) =>
     set({ searchQuery: query, page: 1, selectedEmail: null }),
@@ -121,6 +130,9 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   openReply: (email) => {
     const replyTo = email.from_address;
     const replyName = email.from_name;
+    const dateStr = new Date(email.received_at).toLocaleDateString();
+    const quotedBody = email.body_html ?? email.body_text ?? "";
+
     set({
       composeOpen: true,
       composeMode: "reply",
@@ -133,13 +145,17 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
           : `Re: ${email.subject}`,
         in_reply_to: email.message_id,
         thread_id: email.thread_id,
-        body_html: `<br/><br/><div style="border-left:1px solid #ccc;padding-left:12px;margin-left:0;color:#666"><p>On ${new Date(email.received_at).toLocaleDateString()}, ${email.from_name} &lt;${email.from_address}&gt; wrote:</p>${email.body_html ?? email.body_text ?? ""}</div>`,
+        body_html: `<br/><br/><div style="border-left:1px solid #ccc;padding-left:12px;margin-left:0;color:#666"><p>On ${dateStr}, ${email.from_name} &lt;${email.from_address}&gt; wrote:</p>${quotedBody}</div>`,
         body_text: "",
       },
     });
   },
 
   openForward: (email) => {
+    const dateStr = new Date(email.received_at).toLocaleDateString();
+    const toList = email.to_addresses.map((r) => r.address).join(", ");
+    const forwardedBody = email.body_html ?? email.body_text ?? "";
+
     set({
       composeOpen: true,
       composeMode: "forward",
@@ -150,7 +166,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
         subject: email.subject.startsWith("Fwd:")
           ? email.subject
           : `Fwd: ${email.subject}`,
-        body_html: `<br/><br/><div style="border-left:1px solid #ccc;padding-left:12px;margin-left:0;color:#666"><p>---------- Forwarded message ----------</p><p>From: ${email.from_name} &lt;${email.from_address}&gt;</p><p>Date: ${new Date(email.received_at).toLocaleDateString()}</p><p>Subject: ${email.subject}</p><p>To: ${email.to_addresses.map((r) => r.address).join(", ")}</p><br/>${email.body_html ?? email.body_text ?? ""}</div>`,
+        body_html: `<br/><br/><div style="border-left:1px solid #ccc;padding-left:12px;margin-left:0;color:#666"><p>---------- Forwarded message ----------</p><p>From: ${email.from_name} &lt;${email.from_address}&gt;</p><p>Date: ${dateStr}</p><p>Subject: ${email.subject}</p><p>To: ${toList}</p><br/>${forwardedBody}</div>`,
         body_text: "",
       },
     });
