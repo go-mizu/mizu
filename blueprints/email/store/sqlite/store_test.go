@@ -2198,3 +2198,635 @@ func TestSeedEmails(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Search query parser (unit tests for unexported parseSearchQuery)
+// ---------------------------------------------------------------------------
+
+func TestParseSearchQuery(t *testing.T) {
+	t.Run("parses from: operator", func(t *testing.T) {
+		sf := parseSearchQuery("from:alice")
+		if sf.from != "alice" {
+			t.Errorf("from: want 'alice', got %q", sf.from)
+		}
+		if sf.freeText != "" {
+			t.Errorf("freeText: want empty, got %q", sf.freeText)
+		}
+	})
+
+	t.Run("parses to: operator", func(t *testing.T) {
+		sf := parseSearchQuery("to:bob@corp.com")
+		if sf.to != "bob@corp.com" {
+			t.Errorf("to: want 'bob@corp.com', got %q", sf.to)
+		}
+	})
+
+	t.Run("parses subject: operator", func(t *testing.T) {
+		sf := parseSearchQuery("subject:migration")
+		if sf.subject != "migration" {
+			t.Errorf("subject: want 'migration', got %q", sf.subject)
+		}
+	})
+
+	t.Run("parses has:attachment", func(t *testing.T) {
+		sf := parseSearchQuery("has:attachment")
+		if !sf.hasAttachment {
+			t.Error("expected hasAttachment to be true")
+		}
+	})
+
+	t.Run("parses is:unread", func(t *testing.T) {
+		sf := parseSearchQuery("is:unread")
+		if sf.isUnread == nil || !*sf.isUnread {
+			t.Error("expected isUnread to be true")
+		}
+	})
+
+	t.Run("parses is:read", func(t *testing.T) {
+		sf := parseSearchQuery("is:read")
+		if sf.isUnread == nil || *sf.isUnread {
+			t.Error("expected isUnread to be false for is:read")
+		}
+	})
+
+	t.Run("parses is:starred", func(t *testing.T) {
+		sf := parseSearchQuery("is:starred")
+		if sf.isStarred == nil || !*sf.isStarred {
+			t.Error("expected isStarred to be true")
+		}
+	})
+
+	t.Run("parses is:important", func(t *testing.T) {
+		sf := parseSearchQuery("is:important")
+		if sf.isImportant == nil || !*sf.isImportant {
+			t.Error("expected isImportant to be true")
+		}
+	})
+
+	t.Run("parses before: date", func(t *testing.T) {
+		sf := parseSearchQuery("before:2024/07/01")
+		if sf.before == "" {
+			t.Fatal("expected non-empty before value")
+		}
+		// Should parse to RFC3339 for 2024-07-01
+		expected := "2024-07-01T00:00:00Z"
+		if sf.before != expected {
+			t.Errorf("before: want %q, got %q", expected, sf.before)
+		}
+	})
+
+	t.Run("parses after: date with dashes", func(t *testing.T) {
+		sf := parseSearchQuery("after:2024-06-15")
+		if sf.after == "" {
+			t.Fatal("expected non-empty after value")
+		}
+		expected := "2024-06-15T00:00:00Z"
+		if sf.after != expected {
+			t.Errorf("after: want %q, got %q", expected, sf.after)
+		}
+	})
+
+	t.Run("parses label: operator", func(t *testing.T) {
+		sf := parseSearchQuery("label:work")
+		if sf.label != "work" {
+			t.Errorf("label: want 'work', got %q", sf.label)
+		}
+	})
+
+	t.Run("extracts free text alongside operators", func(t *testing.T) {
+		sf := parseSearchQuery("from:alice budget report")
+		if sf.from != "alice" {
+			t.Errorf("from: want 'alice', got %q", sf.from)
+		}
+		if sf.freeText != "budget report" {
+			t.Errorf("freeText: want 'budget report', got %q", sf.freeText)
+		}
+	})
+
+	t.Run("handles quoted subject", func(t *testing.T) {
+		sf := parseSearchQuery(`subject:"Budget Report"`)
+		if sf.subject != "Budget Report" {
+			t.Errorf("subject: want 'Budget Report', got %q", sf.subject)
+		}
+	})
+
+	t.Run("handles multiple operators", func(t *testing.T) {
+		sf := parseSearchQuery("from:alice is:unread has:attachment")
+		if sf.from != "alice" {
+			t.Errorf("from: want 'alice', got %q", sf.from)
+		}
+		if sf.isUnread == nil || !*sf.isUnread {
+			t.Error("expected isUnread to be true")
+		}
+		if !sf.hasAttachment {
+			t.Error("expected hasAttachment to be true")
+		}
+		if sf.freeText != "" {
+			t.Errorf("freeText: want empty, got %q", sf.freeText)
+		}
+	})
+
+	t.Run("unknown operator treated as free text", func(t *testing.T) {
+		sf := parseSearchQuery("unknown:value plaintext")
+		if sf.freeText != "unknown:value plaintext" {
+			t.Errorf("freeText: want 'unknown:value plaintext', got %q", sf.freeText)
+		}
+	})
+
+	t.Run("empty query returns empty filter", func(t *testing.T) {
+		sf := parseSearchQuery("")
+		if sf.from != "" || sf.to != "" || sf.subject != "" || sf.label != "" || sf.freeText != "" {
+			t.Error("expected all fields empty for empty query")
+		}
+		if sf.hasAttachment || sf.isUnread != nil || sf.isStarred != nil || sf.isImportant != nil {
+			t.Error("expected all boolean filters unset for empty query")
+		}
+	})
+}
+
+func TestTokenizeSearch(t *testing.T) {
+	t.Run("splits on spaces", func(t *testing.T) {
+		tokens := tokenizeSearch("hello world")
+		if len(tokens) != 2 || tokens[0] != "hello" || tokens[1] != "world" {
+			t.Errorf("want [hello world], got %v", tokens)
+		}
+	})
+
+	t.Run("respects quoted strings", func(t *testing.T) {
+		tokens := tokenizeSearch(`subject:"hello world" from:alice`)
+		if len(tokens) != 2 {
+			t.Fatalf("want 2 tokens, got %d: %v", len(tokens), tokens)
+		}
+		if tokens[0] != "subject:hello world" {
+			t.Errorf("token[0]: want 'subject:hello world', got %q", tokens[0])
+		}
+		if tokens[1] != "from:alice" {
+			t.Errorf("token[1]: want 'from:alice', got %q", tokens[1])
+		}
+	})
+
+	t.Run("handles empty input", func(t *testing.T) {
+		tokens := tokenizeSearch("")
+		if len(tokens) != 0 {
+			t.Errorf("want 0 tokens, got %d", len(tokens))
+		}
+	})
+
+	t.Run("collapses multiple spaces", func(t *testing.T) {
+		tokens := tokenizeSearch("hello   world")
+		if len(tokens) != 2 {
+			t.Errorf("want 2 tokens, got %d: %v", len(tokens), tokens)
+		}
+	})
+}
+
+func TestParseDateOperator(t *testing.T) {
+	t.Run("parses YYYY/MM/DD format", func(t *testing.T) {
+		result := parseDateOperator("2024/07/15")
+		if result != "2024-07-15T00:00:00Z" {
+			t.Errorf("want '2024-07-15T00:00:00Z', got %q", result)
+		}
+	})
+
+	t.Run("parses YYYY-MM-DD format", func(t *testing.T) {
+		result := parseDateOperator("2024-07-15")
+		if result != "2024-07-15T00:00:00Z" {
+			t.Errorf("want '2024-07-15T00:00:00Z', got %q", result)
+		}
+	})
+
+	t.Run("parses single-digit month/day", func(t *testing.T) {
+		result := parseDateOperator("2024-1-5")
+		if result != "2024-01-05T00:00:00Z" {
+			t.Errorf("want '2024-01-05T00:00:00Z', got %q", result)
+		}
+	})
+
+	t.Run("returns empty for invalid date", func(t *testing.T) {
+		result := parseDateOperator("not-a-date")
+		if result != "" {
+			t.Errorf("want empty, got %q", result)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Advanced search integration (through SearchEmails)
+// ---------------------------------------------------------------------------
+
+func TestSearchEmailsWithOperators(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+	seedSystemLabels(t, s)
+
+	workLabel := &types.Label{ID: "work", Name: "Work", Type: types.LabelTypeUser, Visible: true}
+	if err := s.CreateLabel(ctx, workLabel); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create test emails with specific characteristics
+	alice := makeTestEmail("Budget Report Q3")
+	alice.FromAddress = "alice@corp.com"
+	alice.FromName = "Alice Johnson"
+	alice.ToAddresses = []types.Recipient{{Address: "bob@corp.com", Name: "Bob Smith"}}
+	alice.IsStarred = true
+	alice.IsRead = true
+	alice.HasAttachments = true
+	alice.ReceivedAt = time.Date(2024, 6, 15, 10, 0, 0, 0, time.UTC)
+	alice.Labels = []string{"inbox", "work"}
+
+	bob := makeTestEmail("Team Standup Notes")
+	bob.FromAddress = "bob@corp.com"
+	bob.FromName = "Bob Smith"
+	bob.ToAddresses = []types.Recipient{{Address: "alice@corp.com", Name: "Alice Johnson"}}
+	bob.IsImportant = true
+	bob.ReceivedAt = time.Date(2024, 7, 20, 14, 0, 0, 0, time.UTC)
+	bob.Labels = []string{"inbox"}
+
+	carol := makeTestEmail("Database Migration Plan")
+	carol.FromAddress = "carol@corp.com"
+	carol.FromName = "Carol Williams"
+	carol.ToAddresses = []types.Recipient{{Address: "team@corp.com", Name: "Team"}}
+	carol.ReceivedAt = time.Date(2024, 8, 1, 9, 0, 0, 0, time.UTC)
+	carol.Labels = []string{"inbox", "work"}
+
+	for _, email := range []*types.Email{alice, bob, carol} {
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("from: operator filters by sender", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "from:alice", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for from:alice, got %d", result.Total)
+		}
+		if result.Total > 0 && result.Emails[0].FromAddress != "alice@corp.com" {
+			t.Errorf("expected email from alice, got from %s", result.Emails[0].FromAddress)
+		}
+	})
+
+	t.Run("to: operator filters by recipient", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "to:team", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for to:team, got %d", result.Total)
+		}
+	})
+
+	t.Run("subject: operator filters by subject", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "subject:Migration", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for subject:Migration, got %d", result.Total)
+		}
+	})
+
+	t.Run("has:attachment filters emails with attachments", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "has:attachment", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for has:attachment, got %d", result.Total)
+		}
+	})
+
+	t.Run("is:unread filters unread emails", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "is:unread", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 2 {
+			t.Errorf("expected 2 results for is:unread, got %d", result.Total)
+		}
+	})
+
+	t.Run("is:read filters read emails", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "is:read", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for is:read, got %d", result.Total)
+		}
+	})
+
+	t.Run("is:starred filters starred emails", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "is:starred", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for is:starred, got %d", result.Total)
+		}
+	})
+
+	t.Run("is:important filters important emails", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "is:important", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for is:important, got %d", result.Total)
+		}
+	})
+
+	t.Run("before: filters by date", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "before:2024/07/01", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for before:2024/07/01, got %d", result.Total)
+		}
+	})
+
+	t.Run("after: filters by date", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "after:2024/07/01", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 2 {
+			t.Errorf("expected 2 results for after:2024/07/01, got %d", result.Total)
+		}
+	})
+
+	t.Run("label: filters by label", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "label:work", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 2 {
+			t.Errorf("expected 2 results for label:work, got %d", result.Total)
+		}
+	})
+
+	t.Run("combined operators narrow results", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "from:alice is:starred", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for from:alice is:starred, got %d", result.Total)
+		}
+	})
+
+	t.Run("operator with free text", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "from:carol migration", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 1 {
+			t.Errorf("expected 1 result for 'from:carol migration', got %d", result.Total)
+		}
+	})
+
+	t.Run("no results for non-matching operator", func(t *testing.T) {
+		result, err := s.SearchEmails(ctx, "from:nobody", 1, 25)
+		if err != nil {
+			t.Fatalf("SearchEmails failed: %v", err)
+		}
+		if result.Total != 0 {
+			t.Errorf("expected 0 results for from:nobody, got %d", result.Total)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Mute via UpdateEmail and Batch
+// ---------------------------------------------------------------------------
+
+func TestUpdateEmailMute(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	t.Run("mute email", func(t *testing.T) {
+		email := makeTestEmail("Mute Test")
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.UpdateEmail(ctx, email.ID, map[string]any{"is_muted": true})
+		if err != nil {
+			t.Fatalf("UpdateEmail failed: %v", err)
+		}
+
+		got, err := s.GetEmail(ctx, email.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.IsMuted {
+			t.Error("expected is_muted to be true")
+		}
+	})
+
+	t.Run("unmute email", func(t *testing.T) {
+		email := makeTestEmail("Unmute Test")
+		email.IsMuted = true
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.UpdateEmail(ctx, email.ID, map[string]any{"is_muted": false})
+		if err != nil {
+			t.Fatalf("UpdateEmail failed: %v", err)
+		}
+
+		got, err := s.GetEmail(ctx, email.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.IsMuted {
+			t.Error("expected is_muted to be false")
+		}
+	})
+}
+
+func TestBatchMuteUnmute(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	t.Run("batch mute marks emails as muted", func(t *testing.T) {
+		var ids []string
+		for i := range 3 {
+			email := makeTestEmail(fmt.Sprintf("Mute Batch %d", i))
+			if err := s.CreateEmail(ctx, email); err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, email.ID)
+		}
+
+		err := s.BatchUpdateEmails(ctx, &types.BatchAction{
+			IDs:    ids,
+			Action: "mute",
+		})
+		if err != nil {
+			t.Fatalf("BatchUpdateEmails (mute) failed: %v", err)
+		}
+
+		for _, id := range ids {
+			got, err := s.GetEmail(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.IsMuted {
+				t.Errorf("email %s is not muted after batch mute", id)
+			}
+		}
+	})
+
+	t.Run("batch unmute clears muted flag", func(t *testing.T) {
+		var ids []string
+		for i := range 2 {
+			email := makeTestEmail(fmt.Sprintf("Unmute Batch %d", i))
+			email.IsMuted = true
+			if err := s.CreateEmail(ctx, email); err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, email.ID)
+		}
+
+		err := s.BatchUpdateEmails(ctx, &types.BatchAction{
+			IDs:    ids,
+			Action: "unmute",
+		})
+		if err != nil {
+			t.Fatalf("BatchUpdateEmails (unmute) failed: %v", err)
+		}
+
+		for _, id := range ids {
+			got, err := s.GetEmail(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.IsMuted {
+				t.Errorf("email %s is still muted after batch unmute", id)
+			}
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Snooze and Schedule via UpdateEmail
+// ---------------------------------------------------------------------------
+
+func TestUpdateEmailSnooze(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	t.Run("set snoozed_until", func(t *testing.T) {
+		email := makeTestEmail("Snooze Test")
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+
+		snoozeTime := time.Now().Add(24 * time.Hour)
+		err := s.UpdateEmail(ctx, email.ID, map[string]any{
+			"snoozed_until": snoozeTime,
+		})
+		if err != nil {
+			t.Fatalf("UpdateEmail failed: %v", err)
+		}
+
+		got, err := s.GetEmail(ctx, email.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SnoozedUntil == nil {
+			t.Fatal("expected snoozed_until to be set")
+		}
+		// Compare to second precision since SQLite stores RFC3339
+		if got.SnoozedUntil.Unix() != snoozeTime.Unix() {
+			t.Errorf("snoozed_until: want %v, got %v", snoozeTime, *got.SnoozedUntil)
+		}
+	})
+
+	t.Run("clear snoozed_until", func(t *testing.T) {
+		email := makeTestEmail("Unsnooze Test")
+		snoozeTime := time.Now().Add(24 * time.Hour)
+		email.SnoozedUntil = &snoozeTime
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.UpdateEmail(ctx, email.ID, map[string]any{
+			"snoozed_until": (*time.Time)(nil),
+		})
+		if err != nil {
+			t.Fatalf("UpdateEmail failed: %v", err)
+		}
+
+		got, err := s.GetEmail(ctx, email.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SnoozedUntil != nil {
+			t.Errorf("expected snoozed_until to be nil, got %v", *got.SnoozedUntil)
+		}
+	})
+}
+
+func TestUpdateEmailSchedule(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	t.Run("set scheduled_at", func(t *testing.T) {
+		email := makeTestEmail("Schedule Test")
+		email.IsDraft = true
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+
+		schedTime := time.Now().Add(48 * time.Hour)
+		err := s.UpdateEmail(ctx, email.ID, map[string]any{
+			"scheduled_at": schedTime,
+		})
+		if err != nil {
+			t.Fatalf("UpdateEmail failed: %v", err)
+		}
+
+		got, err := s.GetEmail(ctx, email.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ScheduledAt == nil {
+			t.Fatal("expected scheduled_at to be set")
+		}
+		if got.ScheduledAt.Unix() != schedTime.Unix() {
+			t.Errorf("scheduled_at: want %v, got %v", schedTime, *got.ScheduledAt)
+		}
+	})
+
+	t.Run("clear scheduled_at", func(t *testing.T) {
+		email := makeTestEmail("Unschedule Test")
+		email.IsDraft = true
+		schedTime := time.Now().Add(48 * time.Hour)
+		email.ScheduledAt = &schedTime
+		if err := s.CreateEmail(ctx, email); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.UpdateEmail(ctx, email.ID, map[string]any{
+			"scheduled_at": (*time.Time)(nil),
+		})
+		if err != nil {
+			t.Fatalf("UpdateEmail failed: %v", err)
+		}
+
+		got, err := s.GetEmail(ctx, email.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ScheduledAt != nil {
+			t.Errorf("expected scheduled_at to be nil, got %v", *got.ScheduledAt)
+		}
+	})
+}
