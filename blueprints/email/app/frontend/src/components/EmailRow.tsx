@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   Star,
   ChevronRight,
@@ -6,6 +6,7 @@ import {
   Archive,
   Trash2,
   MailOpen,
+  Mail,
   Clock,
 } from "lucide-react";
 import type { Email } from "../types";
@@ -55,7 +56,10 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
   const refreshEmails = useEmailStore((s) => s.refreshEmails);
   const labels = useLabelStore((s) => s.labels);
 
+  const [starAnimating, setStarAnimating] = useState(false);
+
   const isSelected = selectedEmails.has(email.id);
+  const hasAnySelected = selectedEmails.size > 0;
   const isUnread = !email.is_read;
 
   const handleCheckboxClick = useCallback(
@@ -69,11 +73,13 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
   const handleStarClick = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
+      setStarAnimating(true);
+      setTimeout(() => setStarAnimating(false), 300);
       try {
         await api.updateEmail(email.id, { is_starred: !email.is_starred });
         refreshEmails();
       } catch {
-        // Handle error silently
+        showToast("Failed to update star");
       }
     },
     [email.id, email.is_starred, refreshEmails]
@@ -88,7 +94,7 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
         });
         refreshEmails();
       } catch {
-        // Handle error silently
+        showToast("Failed to update importance");
       }
     },
     [email.id, email.is_important, refreshEmails]
@@ -99,9 +105,19 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
       e.stopPropagation();
       try {
         await api.batchEmails({ ids: [email.id], action: "archive" });
+        showToast("Conversation archived", {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              api
+                .batchEmails({ ids: [email.id], action: "unarchive" })
+                .then(() => refreshEmails());
+            },
+          },
+        });
         refreshEmails();
       } catch {
-        // Handle error silently
+        showToast("Failed to archive");
       }
     },
     [email.id, refreshEmails]
@@ -112,22 +128,32 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
       e.stopPropagation();
       try {
         await api.batchEmails({ ids: [email.id], action: "trash" });
+        showToast("Conversation moved to Trash", {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              api
+                .batchEmails({ ids: [email.id], action: "untrash" })
+                .then(() => refreshEmails());
+            },
+          },
+        });
         refreshEmails();
       } catch {
-        // Handle error silently
+        showToast("Failed to delete");
       }
     },
     [email.id, refreshEmails]
   );
 
-  const handleMarkRead = useCallback(
+  const handleToggleRead = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
       try {
         await api.updateEmail(email.id, { is_read: !email.is_read });
         refreshEmails();
       } catch {
-        // Handle error silently
+        showToast("Failed to update read status");
       }
     },
     [email.id, email.is_read, refreshEmails]
@@ -137,12 +163,11 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
     async (e: React.MouseEvent) => {
       e.stopPropagation();
       try {
-        // Snooze until tomorrow 8am
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(8, 0, 0, 0);
         await api.snoozeEmail(email.id, tomorrow.toISOString());
-        showToast("Snoozed until tomorrow");
+        showToast("Snoozed until tomorrow, 8:00 AM");
         refreshEmails();
       } catch {
         showToast("Failed to snooze");
@@ -151,31 +176,35 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
     [email.id, refreshEmails]
   );
 
+  // Resolve label objects from IDs
   const emailLabels = (email.labels ?? [])
     .map((id) => labels.find((l) => l.id === id))
     .filter((l) => l && l.type === "user");
 
   const senderDisplay = email.from_name || email.from_address;
 
+  // Row background color
+  const bgClass = isSelected
+    ? "bg-[#C2DBFF]"
+    : isUnread
+      ? "bg-white"
+      : "bg-[#F2F6FC]";
+
   return (
     <div
       onClick={onClick}
-      className={`email-row-hover group flex cursor-pointer items-center border-b border-gray-100 px-2 ${
-        isSelected
-          ? "bg-[#C2DBFF]"
-          : isUnread
-            ? "bg-white"
-            : "bg-[#F2F6FC]"
-      } hover:shadow-[inset_1px_0_0_#dadce0,inset_-1px_0_0_#dadce0,0_1px_2px_0_rgba(60,64,67,.3),0_1px_3px_1px_rgba(60,64,67,.15)]`}
+      className={`email-row-hover group relative flex cursor-pointer items-center border-b border-gray-100 px-2 ${bgClass} hover:shadow-[inset_1px_0_0_#dadce0,inset_-1px_0_0_#dadce0,0_1px_2px_0_rgba(60,64,67,.3),0_1px_3px_1px_rgba(60,64,67,.15)]`}
       style={{ height: "40px" }}
     >
-      {/* Checkbox */}
+      {/* Checkbox - hidden by default, visible on hover or when any emails are selected */}
       <div
         onClick={handleCheckboxClick}
-        className="flex h-10 w-10 flex-shrink-0 items-center justify-center"
+        className={`flex h-10 w-10 flex-shrink-0 items-center justify-center ${
+          hasAnySelected ? "visible" : "invisible group-hover:visible"
+        }`}
       >
         <div
-          className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm border ${
+          className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm border transition-colors ${
             isSelected
               ? "border-gmail-blue bg-gmail-blue"
               : "border-gray-400 bg-white"
@@ -201,11 +230,14 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
         className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full hover:bg-gray-200"
       >
         <Star
-          className={`h-[18px] w-[18px] ${
+          className={`h-[18px] w-[18px] transition-transform ${
+            starAnimating ? "scale-125" : "scale-100"
+          } ${
             email.is_starred
               ? "fill-gmail-star text-gmail-star"
               : "text-gray-400"
           }`}
+          style={{ transitionDuration: "150ms" }}
         />
       </button>
 
@@ -215,7 +247,7 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
         className="flex h-8 w-5 flex-shrink-0 items-center justify-center"
       >
         <ChevronRight
-          className={`h-4 w-4 ${
+          className={`h-4 w-4 transition-colors ${
             email.is_important
               ? "fill-gmail-important text-gmail-important"
               : "text-transparent group-hover:text-gray-400"
@@ -226,10 +258,13 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
       {/* Sender */}
       <div
         className={`w-[200px] flex-shrink-0 truncate pr-4 text-sm ${
-          isUnread ? "font-bold text-gmail-text-primary" : "text-gmail-text-primary"
+          isUnread
+            ? "font-bold text-gmail-text-primary"
+            : "text-gmail-text-primary"
         }`}
       >
         {senderDisplay}
+        {/* Thread count slot (visual placeholder for future thread grouping) */}
       </div>
 
       {/* Subject + Snippet + Labels */}
@@ -255,21 +290,22 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
 
         <span
           className={`truncate text-sm ${
-            isUnread ? "font-bold text-gmail-text-primary" : "text-gmail-text-primary"
+            isUnread
+              ? "font-bold text-gmail-text-primary"
+              : "text-gmail-text-primary"
           }`}
         >
           {email.subject || "(no subject)"}
         </span>
         {email.snippet && (
           <span className="truncate text-sm text-gmail-text-snippet">
-            {" "}
-            - {email.snippet}
+            &nbsp;-&nbsp;{email.snippet}
           </span>
         )}
       </div>
 
-      {/* Inline actions (shown on hover) */}
-      <div className="email-row-actions flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity">
+      {/* Hover actions - absolutely positioned, replace date on hover */}
+      <div className="email-row-actions absolute right-2 flex flex-shrink-0 items-center gap-0.5 bg-inherit opacity-0 transition-opacity">
         <button
           onClick={handleArchive}
           className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-200"
@@ -285,11 +321,15 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
           <Trash2 className="h-[18px] w-[18px] text-gmail-text-secondary" />
         </button>
         <button
-          onClick={handleMarkRead}
+          onClick={handleToggleRead}
           className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-200"
           title={isUnread ? "Mark as read" : "Mark as unread"}
         >
-          <MailOpen className="h-[18px] w-[18px] text-gmail-text-secondary" />
+          {isUnread ? (
+            <MailOpen className="h-[18px] w-[18px] text-gmail-text-secondary" />
+          ) : (
+            <Mail className="h-[18px] w-[18px] text-gmail-text-secondary" />
+          )}
         </button>
         <button
           onClick={handleSnooze}
@@ -305,10 +345,12 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
         <Paperclip className="mr-2 h-4 w-4 flex-shrink-0 text-gmail-text-secondary" />
       )}
 
-      {/* Date */}
+      {/* Date - hidden on hover when actions appear */}
       <div
         className={`email-row-date w-[80px] flex-shrink-0 text-right text-xs transition-opacity ${
-          isUnread ? "font-bold text-gmail-text-primary" : "text-gmail-text-secondary"
+          isUnread
+            ? "font-bold text-gmail-text-primary"
+            : "text-gmail-text-secondary"
         }`}
       >
         {formatDate(email.received_at)}

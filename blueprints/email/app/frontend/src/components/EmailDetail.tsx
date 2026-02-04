@@ -17,7 +17,6 @@ import {
   Paperclip,
   Download,
   Printer,
-  ExternalLink,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import Avatar from "./Avatar";
@@ -25,6 +24,10 @@ import { useEmailStore, useLabelStore, useSettingsStore } from "../store";
 import * as api from "../api";
 import { showToast } from "./Toast";
 import type { Email, Attachment } from "../types";
+
+// ---------------------------------------------------------------------------
+// Helper utilities
+// ---------------------------------------------------------------------------
 
 interface EmailDetailProps {
   emailId: string;
@@ -46,15 +49,56 @@ function formatFullDate(dateStr: string): string {
 function sanitizeHtml(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
-      "p", "br", "b", "i", "u", "strong", "em", "a", "ul", "ol", "li",
-      "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
-      "span", "div", "table", "tr", "td", "th", "thead", "tbody", "img",
-      "hr", "sub", "sup",
+      "p",
+      "br",
+      "b",
+      "i",
+      "u",
+      "strong",
+      "em",
+      "a",
+      "ul",
+      "ol",
+      "li",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "blockquote",
+      "pre",
+      "code",
+      "span",
+      "div",
+      "table",
+      "tr",
+      "td",
+      "th",
+      "thead",
+      "tbody",
+      "img",
+      "hr",
+      "sub",
+      "sup",
     ],
     ALLOWED_ATTR: [
-      "href", "target", "rel", "style", "class", "src", "alt", "width",
-      "height", "align", "valign", "border", "cellpadding", "cellspacing",
-      "colspan", "rowspan",
+      "href",
+      "target",
+      "rel",
+      "style",
+      "class",
+      "src",
+      "alt",
+      "width",
+      "height",
+      "align",
+      "valign",
+      "border",
+      "cellpadding",
+      "cellspacing",
+      "colspan",
+      "rowspan",
     ],
     ALLOW_DATA_ATTR: false,
   });
@@ -65,6 +109,10 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+// ---------------------------------------------------------------------------
+// EmailMessage sub-component (single message within a thread)
+// ---------------------------------------------------------------------------
 
 interface EmailMessageProps {
   email: Email;
@@ -94,7 +142,7 @@ function EmailMessage({
       await api.updateEmail(email.id, { is_starred: !email.is_starred });
       refreshEmails();
     } catch {
-      // Handle error silently
+      // silent
     }
   }, [email.id, email.is_starred, refreshEmails]);
 
@@ -106,9 +154,41 @@ function EmailMessage({
     .map((r) => r.name || r.address)
     .join(", ");
 
+  // ---- Collapsed row ----
+  if (!isExpanded) {
+    return (
+      <div
+        className={`flex cursor-pointer items-center gap-3 px-6 py-3 hover:bg-gray-50 ${
+          !isLast ? "border-b border-gray-200" : ""
+        }`}
+        onClick={onToggle}
+      >
+        <Avatar name={email.from_name} email={email.from_address} size={40} />
+
+        <span className="w-[140px] flex-shrink-0 truncate text-sm font-medium text-gmail-text-primary">
+          {email.from_name || email.from_address}
+        </span>
+
+        <p className="min-w-0 flex-1 truncate text-sm text-gmail-text-secondary">
+          {email.snippet}
+        </p>
+
+        <div className="flex flex-shrink-0 items-center gap-1">
+          {email.has_attachments && (
+            <Paperclip className="h-3.5 w-3.5 text-gmail-text-secondary" />
+          )}
+          <span className="whitespace-nowrap text-xs text-gmail-text-secondary">
+            {formatFullDate(email.received_at)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Expanded view ----
   return (
-    <div className={`${!isLast ? "border-b border-gray-200" : ""}`}>
-      {/* Message header */}
+    <div className={!isLast ? "border-b border-gray-200" : ""}>
+      {/* Header */}
       <div
         className="flex cursor-pointer items-start gap-3 px-6 py-3 hover:bg-gray-50"
         onClick={onToggle}
@@ -121,12 +201,11 @@ function EmailMessage({
               <span className="text-sm font-medium text-gmail-text-primary">
                 {email.from_name || email.from_address}
               </span>
-              {isExpanded && (
-                <span className="text-xs text-gmail-text-secondary">
-                  &lt;{email.from_address}&gt;
-                </span>
-              )}
+              <span className="text-xs text-gmail-text-secondary">
+                &lt;{email.from_address}&gt;
+              </span>
             </div>
+
             <div className="flex items-center gap-1">
               {email.has_attachments && (
                 <Paperclip className="h-3.5 w-3.5 text-gmail-text-secondary" />
@@ -167,101 +246,97 @@ function EmailMessage({
             </div>
           </div>
 
-          {isExpanded && (
-            <div className="mt-0.5 text-xs text-gmail-text-secondary">
-              to {recipients}
-              {ccRecipients && <span>, cc: {ccRecipients}</span>}
-              <button className="ml-1 inline-flex items-center">
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-
-          {!isExpanded && (
-            <p className="mt-0.5 truncate text-sm text-gmail-text-secondary">
-              {email.snippet}
-            </p>
-          )}
+          {/* Recipients line */}
+          <div className="mt-0.5 text-xs text-gmail-text-secondary">
+            to {recipients}
+            {ccRecipients && <span>, cc: {ccRecipients}</span>}
+            <button className="ml-1 inline-flex items-center">
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Message body */}
-      {isExpanded && (
-        <div className="px-6 pb-4">
-          <div className="pl-[52px]">
-            {email.body_html ? (
-              <div
-                className="prose prose-sm max-w-none text-sm text-gmail-text-primary"
-                dangerouslySetInnerHTML={{
-                  __html: sanitizeHtml(email.body_html),
-                }}
-              />
-            ) : (
-              <div className="whitespace-pre-wrap text-sm text-gmail-text-primary">
-                {email.body_text}
-              </div>
-            )}
+      {/* Body + Attachments + Reply buttons */}
+      <div className="px-6 pb-4">
+        <div className="pl-[52px]">
+          {/* Rendered HTML body */}
+          {email.body_html ? (
+            <div
+              className="prose prose-sm max-w-none text-sm text-gmail-text-primary"
+              dangerouslySetInnerHTML={{
+                __html: sanitizeHtml(email.body_html),
+              }}
+            />
+          ) : (
+            <div className="whitespace-pre-wrap text-sm text-gmail-text-primary">
+              {email.body_text}
+            </div>
+          )}
 
-            {/* Attachments */}
-            {attachments.length > 0 && (
-              <div className="mt-4 border-t border-gray-200 pt-3">
-                <div className="flex flex-wrap gap-2">
-                  {attachments.map((a) => (
-                    <div
-                      key={a.id}
-                      className="flex items-center gap-2 rounded-2xl border border-gray-300 px-4 py-2 hover:bg-gray-50 cursor-pointer group"
-                      onClick={() => onDownload(a)}
-                    >
-                      <Paperclip className="h-4 w-4 text-gmail-text-secondary" />
-                      <div>
-                        <span className="text-sm text-gmail-text-primary group-hover:text-blue-600">
-                          {a.filename}
-                        </span>
-                        <span className="text-xs text-gmail-text-secondary ml-2">
-                          {formatSize(a.size_bytes)}
-                        </span>
-                      </div>
-                      <button className="ml-2 flex h-6 w-6 items-center justify-center rounded-full hover:bg-gray-200">
-                        <Download className="h-3.5 w-3.5 text-gmail-text-secondary group-hover:text-blue-600" />
-                      </button>
+          {/* Attachment cards */}
+          {attachments.length > 0 && (
+            <div className="mt-4 border-t border-gray-200 pt-3">
+              <div className="flex flex-wrap gap-2">
+                {attachments.map((a) => (
+                  <div
+                    key={a.id}
+                    className="group flex cursor-pointer items-center gap-2 rounded-2xl border border-gray-300 px-4 py-2 hover:bg-gray-50"
+                    onClick={() => onDownload(a)}
+                  >
+                    <Paperclip className="h-4 w-4 text-gmail-text-secondary" />
+                    <div>
+                      <span className="text-sm text-gmail-text-primary group-hover:text-blue-600">
+                        {a.filename}
+                      </span>
+                      <span className="ml-2 text-xs text-gmail-text-secondary">
+                        {formatSize(a.size_bytes)}
+                      </span>
                     </div>
-                  ))}
-                </div>
+                    <button className="ml-2 flex h-6 w-6 items-center justify-center rounded-full hover:bg-gray-200">
+                      <Download className="h-3.5 w-3.5 text-gmail-text-secondary group-hover:text-blue-600" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Reply/Forward buttons at bottom of last expanded message */}
-            {isLast && (
-              <div className="mt-6 flex gap-2">
-                <button
-                  onClick={() => openReply(email)}
-                  className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gmail-text-primary hover:bg-gray-100 hover:shadow-sm"
-                >
-                  <Reply className="h-4 w-4" />
-                  Reply
-                </button>
-                <button
-                  onClick={() => onReplyAll(email)}
-                  className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gmail-text-primary hover:bg-gray-100 hover:shadow-sm"
-                >
-                  <ReplyAll className="h-4 w-4" />
-                  Reply All
-                </button>
-                <button
-                  onClick={() => openForward(email)}
-                  className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gmail-text-primary hover:bg-gray-100 hover:shadow-sm"
-                >
-                  <Forward className="h-4 w-4" />
-                  Forward
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Reply / Reply All / Forward at bottom of last expanded message */}
+          {isLast && (
+            <div className="mt-6 flex gap-2">
+              <button
+                onClick={() => openReply(email)}
+                className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gmail-text-primary hover:bg-gray-100 hover:shadow-sm"
+              >
+                <Reply className="h-4 w-4" />
+                Reply
+              </button>
+              <button
+                onClick={() => onReplyAll(email)}
+                className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gmail-text-primary hover:bg-gray-100 hover:shadow-sm"
+              >
+                <ReplyAll className="h-4 w-4" />
+                Reply All
+              </button>
+              <button
+                onClick={() => openForward(email)}
+                className="flex items-center gap-2 rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gmail-text-primary hover:bg-gray-100 hover:shadow-sm"
+              >
+                <Forward className="h-4 w-4" />
+                Forward
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Main EmailDetail component
+// ---------------------------------------------------------------------------
 
 export default function EmailDetail({ emailId }: EmailDetailProps) {
   const navigate = useNavigate();
@@ -271,65 +346,88 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
   const openCompose = useEmailStore((s) => s.openCompose);
   const labels = useLabelStore((s) => s.labels);
   const settings = useSettingsStore((s) => s.settings);
+
   const [email, setEmail] = useState<Email | null>(selectedEmail);
   const [threadEmails, setThreadEmails] = useState<Email[]>([]);
-  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(
+    new Set()
+  );
   const [loading, setLoading] = useState(false);
-  const [attachmentMap, setAttachmentMap] = useState<Record<string, Attachment[]>>({});
+  const [attachmentMap, setAttachmentMap] = useState<
+    Record<string, Attachment[]>
+  >({});
   const [showLabelMenu, setShowLabelMenu] = useState(false);
 
+  // ---- Load email + thread ----
   useEffect(() => {
+    let cancelled = false;
+
     async function loadEmail() {
       setLoading(true);
       try {
         const fetched = await api.getEmail(emailId);
+        if (cancelled) return;
+
         setEmail(fetched);
         selectEmail(fetched);
 
-        // Mark as read
+        // Auto-mark as read
         if (!fetched.is_read) {
-          await api.updateEmail(emailId, { is_read: true });
+          api.updateEmail(emailId, { is_read: true }).catch(() => {});
         }
 
-        // Try to load thread
+        // Load thread
         if (fetched.thread_id) {
           try {
             const thread = await api.getThread(fetched.thread_id);
-            setThreadEmails(thread.emails ?? [fetched]);
-            // Expand the last email by default
-            const lastEmail = thread.emails?.[thread.emails.length - 1];
+            if (cancelled) return;
+
+            const emails = thread.emails ?? [fetched];
+            setThreadEmails(emails);
+
+            // Expand only the last message by default
+            const lastEmail = emails[emails.length - 1];
             if (lastEmail) {
               setExpandedEmails(new Set([lastEmail.id]));
             }
           } catch {
-            setThreadEmails([fetched]);
-            setExpandedEmails(new Set([fetched.id]));
+            if (!cancelled) {
+              setThreadEmails([fetched]);
+              setExpandedEmails(new Set([fetched.id]));
+            }
           }
         } else {
           setThreadEmails([fetched]);
           setExpandedEmails(new Set([fetched.id]));
         }
       } catch {
-        // Handle error silently
+        // silent
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     loadEmail();
+    return () => {
+      cancelled = true;
+    };
   }, [emailId, selectEmail]);
 
-  // Fetch attachments for emails that have them
+  // ---- Fetch attachments for messages that have them ----
   useEffect(() => {
-    threadEmails.filter((e) => e.has_attachments).forEach(async (threadEmail) => {
-      try {
-        const atts = await api.listAttachments(threadEmail.id);
-        setAttachmentMap((prev) => ({ ...prev, [threadEmail.id]: atts }));
-      } catch {
-        // ignore
-      }
-    });
+    threadEmails
+      .filter((e) => e.has_attachments)
+      .forEach(async (threadEmail) => {
+        try {
+          const atts = await api.listAttachments(threadEmail.id);
+          setAttachmentMap((prev) => ({ ...prev, [threadEmail.id]: atts }));
+        } catch {
+          // ignore
+        }
+      });
   }, [threadEmails]);
+
+  // ---- Action handlers ----
 
   const handleBack = useCallback(() => {
     selectEmail(null);
@@ -345,7 +443,11 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
           label: "Undo",
           onClick: () =>
             api
-              .batchEmails({ ids: [email.id], action: "add_label", label_id: "inbox" })
+              .batchEmails({
+                ids: [email.id],
+                action: "add_label",
+                label_id: "inbox",
+              })
               .then(refreshEmails),
         },
       });
@@ -375,7 +477,7 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
       refreshEmails();
       handleBack();
     } catch {
-      // Handle error silently
+      // silent
     }
   }, [email, refreshEmails, handleBack]);
 
@@ -386,7 +488,11 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
   const handleAddLabel = useCallback(
     async (labelId: string) => {
       if (!email) return;
-      await api.batchEmails({ ids: [email.id], action: "add_label", label_id: labelId });
+      await api.batchEmails({
+        ids: [email.id],
+        action: "add_label",
+        label_id: labelId,
+      });
       showToast("Label added");
       setShowLabelMenu(false);
       refreshEmails();
@@ -399,10 +505,10 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
       const resp = await api.downloadAttachment(attachment.id);
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = attachment.filename;
-      a.click();
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = attachment.filename;
+      anchor.click();
       URL.revokeObjectURL(url);
     } catch {
       showToast("Failed to download attachment");
@@ -427,10 +533,13 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
 
       const quoted = replyEmail.body_html || replyEmail.body_text || "";
       const body = `<br/><div style="border-left:1px solid #ccc;padding-left:12px;margin-left:0;color:#5f6368"><p>On ${new Date(replyEmail.received_at).toLocaleString()}, ${replyEmail.from_name || replyEmail.from_address} wrote:</p>${quoted}</div>`;
+
       let subj = replyEmail.subject;
       if (!subj.toLowerCase().startsWith("re:")) subj = "Re: " + subj;
 
       openCompose({
+        mode: "reply-all",
+        email_id: replyEmail.id,
         to: toRecipients,
         cc: ccRecipients,
         subject: subj,
@@ -454,6 +563,18 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
     });
   }, []);
 
+  const toggleExpandAll = useCallback(() => {
+    if (expandedEmails.size === threadEmails.length) {
+      // Collapse all except last
+      const last = threadEmails[threadEmails.length - 1];
+      setExpandedEmails(new Set(last ? [last.id] : []));
+    } else {
+      // Expand all
+      setExpandedEmails(new Set(threadEmails.map((e) => e.id)));
+    }
+  }, [expandedEmails.size, threadEmails]);
+
+  // ---- Loading state ----
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -462,6 +583,7 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
     );
   }
 
+  // ---- Not found ----
   if (!email) {
     return (
       <div className="flex items-center justify-center py-20 text-gmail-text-secondary">
@@ -470,15 +592,19 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
     );
   }
 
+  // ---- Derived data ----
   const emailLabels = (email.labels ?? [])
     .map((id) => labels.find((l) => l.id === id))
     .filter(Boolean);
 
   const userLabels = labels.filter((l) => l.type === "user");
 
+  // ---- Render ----
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Actions toolbar */}
+      {/* ============================================================
+         Top action bar (40px)
+         ============================================================ */}
       <div className="flex h-10 flex-shrink-0 items-center gap-0.5 border-b border-gmail-border px-2">
         <button
           onClick={handleBack}
@@ -512,6 +638,8 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
             <Mail className="h-[18px] w-[18px] text-gmail-text-secondary" />
           )}
         </button>
+
+        {/* Label dropdown */}
         <div className="relative">
           <button
             onClick={() => setShowLabelMenu(!showLabelMenu)}
@@ -521,28 +649,36 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
             <Tag className="h-[18px] w-[18px] text-gmail-text-secondary" />
           </button>
           {showLabelMenu && (
-            <div className="absolute top-full left-0 mt-1 w-48 bg-white shadow-lg rounded-lg border border-gray-200 z-50">
+            <div className="absolute left-0 top-full z-50 mt-1 w-48 rounded-lg border border-gray-200 bg-white shadow-lg">
               <div className="py-1">
-                <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase">
+                <div className="px-3 py-1.5 text-xs font-medium uppercase text-gray-500">
                   Label as
                 </div>
                 {userLabels.map((label) => (
                   <button
                     key={label.id}
                     onClick={() => handleAddLabel(label.id)}
-                    className="w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 flex items-center gap-2"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50"
                   >
                     <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: label.color || "#9AA0A6" }}
+                      className="h-3 w-3 rounded-full"
+                      style={{
+                        backgroundColor: label.color || "#9AA0A6",
+                      }}
                     />
                     {label.name}
                   </button>
                 ))}
+                {userLabels.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-gray-400">
+                    No custom labels
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
+
         <button
           onClick={handlePrint}
           className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
@@ -552,39 +688,29 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
         </button>
         <button
           className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
-          title="Open in new window"
-        >
-          <ExternalLink className="h-[18px] w-[18px] text-gmail-text-secondary" />
-        </button>
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100"
           title="More"
         >
           <MoreVertical className="h-[18px] w-[18px] text-gmail-text-secondary" />
         </button>
       </div>
 
-      {/* Email content */}
+      {/* ============================================================
+         Scrollable content
+         ============================================================ */}
       <div className="flex-1 overflow-y-auto">
         {/* Subject line */}
         <div className="flex items-center gap-2 px-6 py-4">
           <h1
             className="flex-1 text-xl text-gmail-text-primary"
-            style={{ fontFamily: "'Google Sans', sans-serif" }}
+            style={{ fontFamily: "'Google Sans', sans-serif", fontSize: 20 }}
           >
             {email.subject || "(no subject)"}
           </h1>
+
           {threadEmails.length > 1 && (
             <button
-              className="flex-shrink-0 text-xs text-gmail-text-secondary hover:text-gmail-text-primary flex items-center gap-1"
-              onClick={() => {
-                if (expandedEmails.size === threadEmails.length) {
-                  const last = threadEmails[threadEmails.length - 1];
-                  setExpandedEmails(new Set(last ? [last.id] : []));
-                } else {
-                  setExpandedEmails(new Set(threadEmails.map((e) => e.id)));
-                }
-              }}
+              className="flex flex-shrink-0 items-center gap-1 text-xs text-gmail-text-secondary hover:text-gmail-text-primary"
+              onClick={toggleExpandAll}
             >
               {expandedEmails.size === threadEmails.length ? (
                 <ChevronUp className="h-4 w-4" />
@@ -596,7 +722,7 @@ export default function EmailDetail({ emailId }: EmailDetailProps) {
           )}
         </div>
 
-        {/* Label chips */}
+        {/* Label chips below subject */}
         {emailLabels.length > 0 && (
           <div className="flex flex-wrap gap-1 px-6 pb-2">
             {emailLabels.map(

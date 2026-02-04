@@ -26,19 +26,24 @@ export default function SearchBar() {
   return (
     <form
       onSubmit={handleSubmit}
-      className={`relative flex h-12 items-center rounded-full transition-all ${
+      className={`relative flex h-12 items-center rounded-full transition-all duration-200 ${
         focused
-          ? "bg-white search-bar-focus-shadow"
-          : "bg-[#EAF1FB] hover:bg-[#dfe6f0] search-bar-shadow"
+          ? "bg-white search-bar-focus-shadow ring-1 ring-gmail-border"
+          : "bg-gmail-blue-surface hover:bg-[#dfe6f0] search-bar-shadow"
       }`}
     >
       <button
         type="submit"
-        className="flex h-10 w-12 flex-shrink-0 items-center justify-center rounded-full"
+        className="flex h-10 w-12 flex-shrink-0 items-center justify-center rounded-full focus-ring"
         aria-label="Search"
       >
-        <Search className="h-5 w-5 text-gmail-text-secondary" />
+        <Search
+          className={`h-5 w-5 transition-colors ${
+            focused ? "text-gmail-blue" : "text-gmail-text-secondary"
+          }`}
+        />
       </button>
+
       <input
         ref={inputRef}
         type="text"
@@ -47,13 +52,14 @@ export default function SearchBar() {
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder="Search mail"
-        className="flex-1 bg-transparent text-base outline-none placeholder:text-gmail-text-secondary"
+        className="flex-1 bg-transparent text-base text-gmail-text-primary outline-none placeholder:text-gmail-text-secondary"
       />
+
       {value && (
         <button
           type="button"
           onClick={handleClear}
-          className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full hover:bg-gray-200"
+          className="mr-2 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full hover:bg-gmail-surface-variant focus-ring"
           aria-label="Clear search"
         >
           <X className="h-5 w-5 text-gmail-text-secondary" />

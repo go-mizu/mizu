@@ -56,6 +56,7 @@ export default function Avatar({
         backgroundColor: bgColor,
         fontSize,
         fontFamily: "'Google Sans', 'Roboto', sans-serif",
+        lineHeight: 1,
       }}
       aria-label={displayStr}
     >

@@ -1,27 +1,90 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Gmail Material Design 3 - Design System
+   ============================================================ */
+
 @theme {
-  --color-gmail-red: #EA4335;
+  /* Primary */
   --color-gmail-blue: #1A73E8;
   --color-gmail-blue-hover: #1765CC;
+  --color-gmail-blue-light: #D3E3FD;
+  --color-gmail-blue-surface: #EAF1FB;
+  --color-gmail-red: #EA4335;
+  --color-gmail-red-light: #FCE8E6;
+
+  /* Surfaces */
   --color-gmail-bg: #F6F8FC;
+  --color-gmail-surface: #FFFFFF;
+  --color-gmail-surface-dim: #F9FAFB;
+  --color-gmail-surface-bright: #FFFFFF;
+  --color-gmail-surface-container: #F3F4F6;
+  --color-gmail-surface-variant: #E8EAED;
+
+  /* Sidebar */
   --color-gmail-sidebar-hover: #E8EAED;
   --color-gmail-sidebar-active: #D3E3FD;
   --color-gmail-sidebar-active-text: #001D35;
+
+  /* Compose */
+  --color-gmail-compose-bg: #FFFFFF;
+  --color-gmail-compose-header: #404040;
+  --color-gmail-compose-fab: #C2E7FF;
+
+  /* Borders */
   --color-gmail-border: #E0E0E0;
+  --color-gmail-border-light: #ECEEF1;
+  --color-gmail-divider: #DADCE0;
+
+  /* Email rows */
   --color-gmail-row-hover: #F2F2F2;
   --color-gmail-unread-bg: #FFFFFF;
   --color-gmail-read-bg: #F2F6FC;
+
+  /* Accents */
   --color-gmail-star: #F4B400;
   --color-gmail-important: #F4B400;
-  --color-gmail-text-primary: #202124;
+  --color-gmail-success: #188038;
+  --color-gmail-warning: #F9AB00;
+
+  /* Text */
+  --color-gmail-text-primary: #1F1F1F;
   --color-gmail-text-secondary: #5F6368;
   --color-gmail-text-snippet: #5F6368;
-  --color-gmail-compose-bg: #FFFFFF;
-  --color-gmail-compose-header: #404040;
+  --color-gmail-text-disabled: #9AA0A6;
+  --color-gmail-text-inverse: #FFFFFF;
+  --color-gmail-text-link: #1A73E8;
 }
 
-* {
+/* ============================================================
+   CSS Custom Properties
+   ============================================================ */
+:root {
+  --gmail-header-height: 64px;
+  --gmail-sidebar-width: 256px;
+  --gmail-sidebar-collapsed-width: 72px;
+  --gmail-compose-width: 560px;
+  --gmail-compose-min-height: 480px;
+  --gmail-search-max-width: 720px;
+  --gmail-transition-fast: 150ms;
+  --gmail-transition-normal: 200ms;
+  --gmail-transition-slow: 300ms;
+  --gmail-radius-sm: 8px;
+  --gmail-radius-md: 12px;
+  --gmail-radius-lg: 16px;
+  --gmail-radius-xl: 20px;
+  --gmail-radius-full: 9999px;
+  --gmail-shadow-1: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --gmail-shadow-2: 0 1px 3px 0 rgba(60, 64, 67, 0.3), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
+  --gmail-shadow-3: 0 4px 8px 0 rgba(60, 64, 67, 0.3), 0 8px 16px 4px rgba(60, 64, 67, 0.15);
+}
+
+/* ============================================================
+   Base Resets & Typography
+   ============================================================ */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -35,29 +98,14 @@ body,
 
 body {
   font-family: "Roboto", "Google Sans", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    "Segoe UI", Helvetica, Arial, sans-serif;
   color: var(--color-gmail-text-primary);
   background-color: var(--color-gmail-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1;
+  line-height: 1.5;
 }
 
 input,
@@ -67,6 +115,46 @@ button {
   font-family: inherit;
 }
 
+/* ============================================================
+   Scrollbar Styling
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background var(--gmail-transition-normal) ease;
+}
+
+*:hover > ::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:hover {
+  background: #c1c1c1;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #a8a8a8;
+}
+
+/* Firefox thin scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: #c1c1c1 transparent;
+}
+
+/* ============================================================
+   Shadow Utilities
+   ============================================================ */
 .compose-shadow {
   box-shadow:
     0 8px 10px 1px rgba(0, 0, 0, 0.14),
@@ -74,25 +162,12 @@ button {
     0 5px 5px -3px rgba(0, 0, 0, 0.2);
 }
 
-.email-row-hover:hover .email-row-actions {
-  opacity: 1;
-}
-
-.email-row-hover:hover .email-row-date {
-  opacity: 0;
-}
-
-.sidebar-label-item {
-  transition: background-color 0.15s ease;
-}
-
 .header-shadow {
   box-shadow: inset 0 -1px 0 0 #dadce0;
 }
 
 .search-bar-shadow {
-  box-shadow: 0 1px 1px 0 rgba(65, 69, 73, 0.3),
-    0 1px 3px 1px rgba(65, 69, 73, 0.15);
+  box-shadow: none;
 }
 
 .search-bar-focus-shadow {
@@ -101,60 +176,363 @@ button {
 }
 
 .toolbar-shadow {
-  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--color-gmail-border-light);
 }
 
-@keyframes slideUp {
-  from {
+.toolbar-border {
+  border-bottom: 1px solid var(--color-gmail-border-light);
+}
+
+/* ============================================================
+   Email Row Hover Effects
+   ============================================================ */
+.email-row-hover {
+  transition: background-color var(--gmail-transition-fast) ease;
+}
+
+.email-row-hover .email-row-actions {
+  opacity: 0;
+  transition: opacity var(--gmail-transition-fast) ease;
+}
+
+.email-row-hover:hover .email-row-actions {
+  opacity: 1;
+}
+
+.email-row-hover .email-row-date {
+  opacity: 1;
+  transition: opacity var(--gmail-transition-fast) ease;
+}
+
+.email-row-hover:hover .email-row-date {
+  opacity: 0;
+}
+
+/* ============================================================
+   Sidebar Label Transitions
+   ============================================================ */
+.sidebar-label-item {
+  transition:
+    background-color var(--gmail-transition-fast) ease,
+    color var(--gmail-transition-fast) ease,
+    padding var(--gmail-transition-normal) ease;
+  user-select: none;
+}
+
+.sidebar-label-item:active {
+  background-color: var(--color-gmail-sidebar-active) !important;
+}
+
+/* ============================================================
+   Compose Animation (Slide Up)
+   ============================================================ */
+@keyframes composeSlideUp {
+  0% {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(100%) scale(0.95);
   }
-  to {
+  60% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(-4px) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
 .compose-animate {
-  animation: slideUp 0.2s ease-out;
+  animation: composeSlideUp 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
+/* ============================================================
+   Label Chips
+   ============================================================ */
 .label-chip {
   display: inline-flex;
   align-items: center;
-  padding: 0 6px;
-  height: 18px;
+  padding: 0 8px;
+  height: 20px;
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
-  line-height: 18px;
+  line-height: 20px;
   white-space: nowrap;
+  letter-spacing: 0.01em;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* TipTap Editor Styles */
+/* ============================================================
+   TipTap Rich Text Editor
+   ============================================================ */
 .tiptap {
   outline: none;
+  min-height: 200px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-gmail-text-primary);
 }
+
 .tiptap p {
   margin: 0.25em 0;
 }
-.tiptap ul, .tiptap ol {
-  padding-left: 1.5em;
-}
-.tiptap blockquote {
-  border-left: 3px solid #ccc;
-  margin-left: 0;
-  padding-left: 1em;
-  color: #5f6368;
-}
-.tiptap a {
-  color: #1a73e8;
-  text-decoration: underline;
-}
-.tiptap .is-editor-empty:first-child::before {
+
+.tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
-  color: #9ca3af;
+  color: var(--color-gmail-text-disabled);
   pointer-events: none;
   height: 0;
+  font-style: normal;
+}
+
+.tiptap a {
+  color: var(--color-gmail-text-link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tiptap a:hover {
+  color: var(--color-gmail-blue-hover);
+}
+
+.tiptap blockquote {
+  border-left: 3px solid var(--color-gmail-border);
+  margin: 0.5em 0;
+  margin-left: 0;
+  padding-left: 1em;
+  color: var(--color-gmail-text-secondary);
+}
+
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tiptap ul {
+  list-style-type: disc;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+}
+
+.tiptap li {
+  margin: 0.15em 0;
+}
+
+.tiptap h1,
+.tiptap h2,
+.tiptap h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.75em 0 0.25em;
+}
+
+.tiptap h1 {
+  font-size: 1.5em;
+}
+
+.tiptap h2 {
+  font-size: 1.25em;
+}
+
+.tiptap h3 {
+  font-size: 1.1em;
+}
+
+.tiptap code {
+  background-color: var(--color-gmail-surface-container);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+  font-family: "Roboto Mono", ui-monospace, monospace;
+}
+
+.tiptap pre {
+  background-color: var(--color-gmail-surface-container);
+  border-radius: 8px;
+  padding: 0.75em 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+
+.tiptap pre code {
+  background: none;
+  padding: 0;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid var(--color-gmail-border);
+  margin: 1em 0;
+}
+
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* ============================================================
+   Loading Skeleton Animation
+   ============================================================ */
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e0e0e0 37%,
+    #f0f0f0 63%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+.skeleton-text {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.skeleton-text-sm {
+  height: 10px;
+  border-radius: 5px;
+}
+
+.skeleton-circle {
+  border-radius: 50%;
+}
+
+/* ============================================================
+   Star Toggle Animation
+   ============================================================ */
+@keyframes starPop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.35);
+  }
+  50% {
+    transform: scale(0.9);
+  }
+  70% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.star-toggle {
+  transition: color var(--gmail-transition-fast) ease;
+}
+
+.star-toggle.active {
+  animation: starPop 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--color-gmail-star);
+}
+
+/* ============================================================
+   Focus Ring Utility
+   ============================================================ */
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-gmail-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   Selection Highlight
+   ============================================================ */
+::selection {
+  background-color: var(--color-gmail-blue-light);
+  color: var(--color-gmail-text-primary);
+}
+
+::-moz-selection {
+  background-color: var(--color-gmail-blue-light);
+  color: var(--color-gmail-text-primary);
+}
+
+/* ============================================================
+   Button Transitions
+   ============================================================ */
+button {
+  transition:
+    background-color var(--gmail-transition-fast) ease,
+    box-shadow var(--gmail-transition-fast) ease,
+    opacity var(--gmail-transition-fast) ease,
+    transform var(--gmail-transition-fast) ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* ============================================================
+   Toolbar Border
+   ============================================================ */
+.toolbar-border-bottom {
+  position: relative;
+}
+
+.toolbar-border-bottom::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: var(--color-gmail-border-light);
+}
+
+/* ============================================================
+   Ripple-like feedback for clickable elements
+   ============================================================ */
+.ripple-hover {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-hover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--gmail-transition-fast) ease;
+  pointer-events: none;
+}
+
+.ripple-hover:hover::after {
+  opacity: 0.04;
+}
+
+.ripple-hover:active::after {
+  opacity: 0.08;
+}
+
+/* ============================================================
+   Google Sans font-family helper
+   ============================================================ */
+.font-google-sans {
+  font-family: "Google Sans", "Product Sans", "Roboto", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
 }

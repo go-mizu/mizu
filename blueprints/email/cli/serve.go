@@ -38,8 +38,8 @@ func NewServe() *cobra.Command {
 The server runs on port 8080 by default.
 
 Email drivers:
-  noop    - Accept sends without delivering (default)
-  resend  - Send via Resend API (requires RESEND_API_KEY)`,
+  resend  - Send via Resend API (requires RESEND_API_KEY, default)
+  noop    - Accept sends without delivering (fallback if no API key)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runServe(cmd.Context(), port, devMode, driverName, fromAddr)
 		},
@@ -47,7 +47,7 @@ Email drivers:
 
 	cmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on")
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Enable development mode")
-	cmd.Flags().StringVar(&driverName, "driver", envOrDefault("EMAIL_DRIVER", "noop"), "Email driver (noop, resend)")
+	cmd.Flags().StringVar(&driverName, "driver", envOrDefault("EMAIL_DRIVER", "resend"), "Email driver (resend, noop)")
 	cmd.Flags().StringVar(&fromAddr, "from", os.Getenv("EMAIL_FROM"), "Default from address for outbound email")
 
 	return cmd
@@ -80,13 +80,19 @@ func runServe(ctx context.Context, port int, devMode bool, driverName, fromAddr 
 	// Initialize email driver
 	var emailDriver email.Driver
 	switch driverName {
+	case "noop":
+		emailDriver = email.Noop()
+		fmt.Println(infoStyle.Render("  Email driver: noop (emails won't be delivered)"))
 	case "resend":
 		d, err := resend.New(resend.Config{})
 		if err != nil {
-			return fmt.Errorf("failed to create resend driver: %w", err)
+			// Gracefully fall back to noop if no API key is set
+			emailDriver = email.Noop()
+			fmt.Println(warningStyle.Render("  Email driver: noop (resend requires RESEND_API_KEY)"))
+		} else {
+			emailDriver = d
+			fmt.Println(successStyle.Render("  Email driver: resend"))
 		}
-		emailDriver = d
-		fmt.Println(successStyle.Render("  Email driver: resend"))
 	default:
 		emailDriver = email.Noop()
 		fmt.Println(infoStyle.Render("  Email driver: noop (emails won't be delivered)"))
