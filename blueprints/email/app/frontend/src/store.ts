@@ -14,8 +14,8 @@ interface EmailStore {
   totalPages: number;
   loading: boolean;
   composeOpen: boolean;
-  composeData: Partial<ComposeRequest> | null;
-  composeMode: "new" | "reply" | "forward";
+  composeData: (Partial<ComposeRequest> & { mode?: string; email_id?: string }) | null;
+  composeMode: "new" | "reply" | "reply-all" | "forward";
 
   fetchEmails: () => Promise<void>;
   selectEmail: (email: Email | null) => void;
@@ -26,7 +26,7 @@ interface EmailStore {
   setSearch: (query: string) => void;
   nextPage: () => void;
   prevPage: () => void;
-  openCompose: (data?: Partial<ComposeRequest>) => void;
+  openCompose: (data?: Partial<ComposeRequest> & { mode?: string; email_id?: string }) => void;
   closeCompose: () => void;
   openReply: (email: Email) => void;
   openForward: (email: Email) => void;
@@ -125,6 +125,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
       composeOpen: true,
       composeMode: "reply",
       composeData: {
+        mode: "reply",
+        email_id: email.id,
         to: [{ address: replyTo, name: replyName }],
         subject: email.subject.startsWith("Re:")
           ? email.subject
@@ -142,6 +144,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
       composeOpen: true,
       composeMode: "forward",
       composeData: {
+        mode: "forward",
+        email_id: email.id,
         to: [],
         subject: email.subject.startsWith("Fwd:")
           ? email.subject

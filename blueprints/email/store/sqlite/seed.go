@@ -14,11 +14,13 @@ func (s *Store) SeedLabels(ctx context.Context) error {
 		{ID: "inbox", Name: "Inbox", Type: types.LabelTypeSystem, Visible: true, Position: 0},
 		{ID: "starred", Name: "Starred", Type: types.LabelTypeSystem, Visible: true, Position: 1},
 		{ID: "important", Name: "Important", Type: types.LabelTypeSystem, Visible: true, Position: 2},
-		{ID: "sent", Name: "Sent", Type: types.LabelTypeSystem, Visible: true, Position: 3},
-		{ID: "drafts", Name: "Drafts", Type: types.LabelTypeSystem, Visible: true, Position: 4},
-		{ID: "all", Name: "All Mail", Type: types.LabelTypeSystem, Visible: true, Position: 5},
-		{ID: "spam", Name: "Spam", Type: types.LabelTypeSystem, Visible: true, Position: 6},
-		{ID: "trash", Name: "Trash", Type: types.LabelTypeSystem, Visible: true, Position: 7},
+		{ID: "snoozed", Name: "Snoozed", Type: types.LabelTypeSystem, Color: "#F4B400", Visible: true, Position: 3},
+		{ID: "sent", Name: "Sent", Type: types.LabelTypeSystem, Visible: true, Position: 4},
+		{ID: "drafts", Name: "Drafts", Type: types.LabelTypeSystem, Visible: true, Position: 5},
+		{ID: "all", Name: "All Mail", Type: types.LabelTypeSystem, Visible: true, Position: 6},
+		{ID: "spam", Name: "Spam", Type: types.LabelTypeSystem, Visible: true, Position: 7},
+		{ID: "trash", Name: "Trash", Type: types.LabelTypeSystem, Visible: true, Position: 8},
+		{ID: "scheduled", Name: "Scheduled", Type: types.LabelTypeSystem, Color: "#34A853", Visible: true, Position: 9},
 	}
 
 	for _, label := range systemLabels {

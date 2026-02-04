@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu"
+	"github.com/go-mizu/mizu/blueprints/email/pkg/email"
 	"github.com/go-mizu/mizu/blueprints/email/store"
 	"github.com/go-mizu/mizu/blueprints/email/types"
 	"github.com/google/uuid"
@@ -15,12 +16,14 @@ import (
 
 // EmailHandler handles email API endpoints.
 type EmailHandler struct {
-	store store.Store
+	store    store.Store
+	driver   email.Driver
+	fromAddr string
 }
 
 // NewEmailHandler creates a new email handler.
-func NewEmailHandler(st store.Store) *EmailHandler {
-	return &EmailHandler{store: st}
+func NewEmailHandler(st store.Store, driver email.Driver, fromAddr string) *EmailHandler {
+	return &EmailHandler{store: st, driver: driver, fromAddr: fromAddr}
 }
 
 // List returns a paginated list of emails filtered by label, query, read/starred status.
@@ -113,7 +116,7 @@ func (h *EmailHandler) Create(c *mizu.Ctx) error {
 		}
 	}
 
-	email := &types.Email{
+	newEmail := &types.Email{
 		ID:           emailID,
 		ThreadID:     threadID,
 		MessageID:    messageID,
@@ -137,14 +140,33 @@ func (h *EmailHandler) Create(c *mizu.Ctx) error {
 		UpdatedAt:    now,
 	}
 
+	var providerMsgID string
 	if !req.IsDraft {
-		email.Labels = append(email.Labels, "sent")
+		newEmail.Labels = append(newEmail.Labels, "sent")
+
+		// Send via driver
+		from := h.resolveFrom(c)
+		msg := &email.Message{
+			From:     from,
+			To:       recipientAddresses(newEmail.ToAddresses),
+			CC:       recipientAddresses(newEmail.CCAddresses),
+			BCC:      recipientAddresses(newEmail.BCCAddresses),
+			Subject:  newEmail.Subject,
+			HTMLBody: newEmail.BodyHTML,
+			TextBody: newEmail.BodyText,
+			Headers:  map[string]string{"Message-ID": newEmail.MessageID},
+		}
+		result, sendErr := h.driver.Send(c.Context(), msg)
+		if sendErr != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to send: " + sendErr.Error()})
+		}
+		providerMsgID = result.MessageID
 	} else {
-		email.Labels = append(email.Labels, "drafts")
-		email.SentAt = nil
+		newEmail.Labels = append(newEmail.Labels, "drafts")
+		newEmail.SentAt = nil
 	}
 
-	if err := h.store.CreateEmail(c.Context(), email); err != nil {
+	if err := h.store.CreateEmail(c.Context(), newEmail); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create email"})
 	}
 
@@ -156,7 +178,11 @@ func (h *EmailHandler) Create(c *mizu.Ctx) error {
 		h.ensureContact(c, rcpt)
 	}
 
-	return c.JSON(http.StatusCreated, email)
+	resp := map[string]any{"email": newEmail}
+	if providerMsgID != "" {
+		resp["provider_message_id"] = providerMsgID
+	}
+	return c.JSON(http.StatusCreated, resp)
 }
 
 // Update partially updates an email's metadata (read, starred, important, labels).
@@ -297,6 +323,25 @@ func (h *EmailHandler) Reply(c *mizu.Ctx) error {
 		UpdatedAt:    now,
 	}
 
+	// Send via driver
+	from := h.resolveFrom(c)
+	msg := &email.Message{
+		From:     from,
+		To:       recipientAddresses(req.To),
+		CC:       recipientAddresses(req.CC),
+		BCC:      recipientAddresses(req.BCC),
+		Subject:  subject,
+		HTMLBody: req.BodyHTML,
+		TextBody: req.BodyText,
+		Headers: map[string]string{
+			"Message-ID": messageID,
+			"In-Reply-To": original.MessageID,
+		},
+	}
+	if _, sendErr := h.driver.Send(c.Context(), msg); sendErr != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to send reply: " + sendErr.Error()})
+	}
+
 	if err := h.store.CreateEmail(c.Context(), reply); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create reply"})
 	}
@@ -384,6 +429,22 @@ func (h *EmailHandler) Forward(c *mizu.Ctx) error {
 		UpdatedAt:    now,
 	}
 
+	// Send via driver
+	from := h.resolveFrom(c)
+	msg := &email.Message{
+		From:     from,
+		To:       recipientAddresses(req.To),
+		CC:       recipientAddresses(req.CC),
+		BCC:      recipientAddresses(req.BCC),
+		Subject:  subject,
+		HTMLBody: bodyHTML,
+		TextBody: bodyText,
+		Headers:  map[string]string{"Message-ID": messageID},
+	}
+	if _, sendErr := h.driver.Send(c.Context(), msg); sendErr != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to send forward: " + sendErr.Error()})
+	}
+
 	if err := h.store.CreateEmail(c.Context(), fwd); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to forward email"})
 	}
@@ -456,6 +517,195 @@ func (h *EmailHandler) Search(c *mizu.Ctx) error {
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// Snooze snoozes an email until a specified time.
+func (h *EmailHandler) Snooze(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	var req struct {
+		Until time.Time `json:"until"`
+	}
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	if req.Until.IsZero() {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "snooze time is required"})
+	}
+
+	updates := map[string]any{
+		"snoozed_until": req.Until,
+	}
+	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to snooze email"})
+	}
+
+	// Move from inbox to snoozed
+	h.store.RemoveEmailLabel(c.Context(), id, "inbox")
+	h.store.AddEmailLabel(c.Context(), id, "snoozed")
+
+	email, _ := h.store.GetEmail(c.Context(), id)
+	return c.JSON(http.StatusOK, email)
+}
+
+// Unsnooze removes the snooze from an email.
+func (h *EmailHandler) Unsnooze(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	updates := map[string]any{
+		"snoozed_until": (*time.Time)(nil),
+	}
+	if err := h.store.UpdateEmail(c.Context(), id, updates); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to unsnooze email"})
+	}
+
+	// Move back to inbox
+	h.store.RemoveEmailLabel(c.Context(), id, "snoozed")
+	h.store.AddEmailLabel(c.Context(), id, "inbox")
+
+	email, _ := h.store.GetEmail(c.Context(), id)
+	return c.JSON(http.StatusOK, email)
+}
+
+// ReplyAll creates a reply to all recipients.
+func (h *EmailHandler) ReplyAll(c *mizu.Ctx) error {
+	id := c.Param("id")
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email id is required"})
+	}
+
+	original, err := h.store.GetEmail(c.Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "original email not found"})
+	}
+
+	var req types.ComposeRequest
+	if err := c.BindJSON(&req, 1<<20); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	settings, _ := h.store.GetSettings(c.Context())
+	fromName := "Me"
+	fromAddress := "me@email.local"
+	if settings != nil {
+		if settings.DisplayName != "" {
+			fromName = settings.DisplayName
+		}
+		if settings.EmailAddress != "" {
+			fromAddress = settings.EmailAddress
+		}
+	}
+
+	// Build To: original sender + all original To (minus current user)
+	if len(req.To) == 0 {
+		toRecipients := []types.Recipient{{Name: original.FromName, Address: original.FromAddress}}
+		for _, r := range original.ToAddresses {
+			if !strings.EqualFold(r.Address, fromAddress) {
+				toRecipients = append(toRecipients, r)
+			}
+		}
+		req.To = toRecipients
+	}
+	// Build CC: original CC (minus current user)
+	if len(req.CC) == 0 {
+		for _, r := range original.CCAddresses {
+			if !strings.EqualFold(r.Address, fromAddress) {
+				req.CC = append(req.CC, r)
+			}
+		}
+	}
+
+	now := time.Now().UTC()
+	emailID := uuid.New().String()
+	messageID := generateMessageID()
+
+	subject := req.Subject
+	if subject == "" {
+		subject = original.Subject
+		if !strings.HasPrefix(strings.ToLower(subject), "re:") {
+			subject = "Re: " + subject
+		}
+	}
+
+	refs := make([]string, 0, len(original.References)+1)
+	refs = append(refs, original.References...)
+	refs = append(refs, original.MessageID)
+
+	reply := &types.Email{
+		ID:           emailID,
+		ThreadID:     original.ThreadID,
+		MessageID:    messageID,
+		InReplyTo:    original.MessageID,
+		References:   refs,
+		FromAddress:  fromAddress,
+		FromName:     fromName,
+		ToAddresses:  req.To,
+		CCAddresses:  req.CC,
+		BCCAddresses: req.BCC,
+		Subject:      subject,
+		BodyHTML:     req.BodyHTML,
+		BodyText:     req.BodyText,
+		Snippet:      generateSnippet(req.BodyText),
+		IsSent:       true,
+		IsRead:       true,
+		Labels:       []string{"all", "sent"},
+		SentAt:       &now,
+		ReceivedAt:   now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	// Send via driver
+	from := h.resolveFrom(c)
+	replyMsg := &email.Message{
+		From:     from,
+		To:       recipientAddresses(req.To),
+		CC:       recipientAddresses(req.CC),
+		BCC:      recipientAddresses(req.BCC),
+		Subject:  subject,
+		HTMLBody: req.BodyHTML,
+		TextBody: req.BodyText,
+		Headers: map[string]string{
+			"Message-ID":  messageID,
+			"In-Reply-To": original.MessageID,
+		},
+	}
+	if _, sendErr := h.driver.Send(c.Context(), replyMsg); sendErr != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to send reply-all: " + sendErr.Error()})
+	}
+
+	if err := h.store.CreateEmail(c.Context(), reply); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create reply"})
+	}
+
+	for _, rcpt := range req.To {
+		h.ensureContact(c, rcpt)
+	}
+
+	return c.JSON(http.StatusCreated, reply)
+}
+
+// resolveFrom returns the from address, preferring settings over the CLI flag.
+func (h *EmailHandler) resolveFrom(c *mizu.Ctx) string {
+	settings, _ := h.store.GetSettings(c.Context())
+	if settings != nil && settings.EmailAddress != "" {
+		name := settings.DisplayName
+		if name != "" {
+			return name + " <" + settings.EmailAddress + ">"
+		}
+		return settings.EmailAddress
+	}
+	if h.fromAddr != "" {
+		return h.fromAddr
+	}
+	return "me@email.local"
 }
 
 // ensureContact creates a contact entry if one does not already exist for the given recipient.

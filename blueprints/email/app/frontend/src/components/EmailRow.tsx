@@ -11,6 +11,7 @@ import {
 import type { Email } from "../types";
 import { useEmailStore, useLabelStore } from "../store";
 import * as api from "../api";
+import { showToast } from "./Toast";
 
 interface EmailRowProps {
   email: Email;
@@ -130,6 +131,24 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
       }
     },
     [email.id, email.is_read, refreshEmails]
+  );
+
+  const handleSnooze = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+        // Snooze until tomorrow 8am
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(8, 0, 0, 0);
+        await api.snoozeEmail(email.id, tomorrow.toISOString());
+        showToast("Snoozed until tomorrow");
+        refreshEmails();
+      } catch {
+        showToast("Failed to snooze");
+      }
+    },
+    [email.id, refreshEmails]
   );
 
   const emailLabels = (email.labels ?? [])
@@ -273,6 +292,7 @@ export default function EmailRow({ email, onClick }: EmailRowProps) {
           <MailOpen className="h-[18px] w-[18px] text-gmail-text-secondary" />
         </button>
         <button
+          onClick={handleSnooze}
           className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-200"
           title="Snooze"
         >

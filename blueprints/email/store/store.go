@@ -50,6 +50,12 @@ type Store interface {
 	UpdateContact(ctx context.Context, id string, updates map[string]any) error
 	DeleteContact(ctx context.Context, id string) error
 
+	// Attachments
+	ListAttachments(ctx context.Context, emailID string) ([]types.Attachment, error)
+	GetAttachment(ctx context.Context, id string) (*types.Attachment, []byte, error)
+	CreateAttachment(ctx context.Context, attachment *types.Attachment, data []byte) error
+	DeleteAttachment(ctx context.Context, id string) error
+
 	// Settings
 	GetSettings(ctx context.Context) (*types.Settings, error)
 	UpdateSettings(ctx context.Context, settings *types.Settings) error

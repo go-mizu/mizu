@@ -4,6 +4,7 @@ import { Menu, Settings as SettingsIcon } from "lucide-react";
 import Sidebar from "./Sidebar";
 import SearchBar from "./SearchBar";
 import ComposeModal from "./ComposeModal";
+import ToastContainer from "./Toast";
 import { useEmailStore, useSettingsStore } from "../store";
 
 export default function Layout() {
@@ -106,6 +107,9 @@ export default function Layout() {
 
       {/* Compose Modal */}
       {composeOpen && <ComposeModal />}
+
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }

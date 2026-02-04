@@ -33,6 +33,9 @@ type Email struct {
 	ReceivedAt     time.Time   `json:"received_at"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
+	SnoozedUntil   *time.Time  `json:"snoozed_until,omitempty"`
+	ScheduledAt    *time.Time  `json:"scheduled_at,omitempty"`
+	IsMuted        bool        `json:"is_muted"`
 }
 
 // Recipient represents an email address with an optional display name.

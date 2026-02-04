@@ -1,15 +1,18 @@
 import { useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import Toolbar from "../components/Toolbar";
 import EmailList from "../components/EmailList";
 import EmailDetail from "../components/EmailDetail";
 import { useEmailStore } from "../store";
+import * as api from "../api";
+import { showToast } from "../components/Toast";
 
 export default function MailPage() {
   const { labelId, emailId } = useParams<{
     labelId?: string;
     emailId?: string;
   }>();
+  const navigate = useNavigate();
 
   const fetchEmails = useEmailStore((s) => s.fetchEmails);
   const setLabel = useEmailStore((s) => s.setLabel);
@@ -18,6 +21,8 @@ export default function MailPage() {
   const selectedEmail = useEmailStore((s) => s.selectedEmail);
   const selectEmail = useEmailStore((s) => s.selectEmail);
   const openReply = useEmailStore((s) => s.openReply);
+  const openForward = useEmailStore((s) => s.openForward);
+  const emails = useEmailStore((s) => s.emails);
   const page = useEmailStore((s) => s.page);
   const searchQuery = useEmailStore((s) => s.searchQuery);
 
@@ -58,12 +63,74 @@ export default function MailPage() {
             openReply(selectedEmail);
           }
           break;
+        case "f":
+          if (selectedEmail) {
+            e.preventDefault();
+            openForward(selectedEmail);
+          }
+          break;
         case "e":
-          // Archive shortcut handled by toolbar
+          if (selectedEmail) {
+            e.preventDefault();
+            api.batchEmails({ ids: [selectedEmail.id], action: "archive" }).then(() => {
+              showToast("Conversation archived");
+              selectEmail(null);
+              navigate(-1);
+              fetchEmails();
+            });
+          }
           break;
         case "#":
-          // Delete shortcut handled by toolbar
+          if (selectedEmail) {
+            e.preventDefault();
+            api.batchEmails({ ids: [selectedEmail.id], action: "trash" }).then(() => {
+              showToast("Conversation moved to Trash");
+              selectEmail(null);
+              navigate(-1);
+              fetchEmails();
+            });
+          }
           break;
+        case "s":
+          if (selectedEmail) {
+            e.preventDefault();
+            api.updateEmail(selectedEmail.id, { is_starred: !selectedEmail.is_starred }).then(() => {
+              fetchEmails();
+            });
+          }
+          break;
+        case "j": {
+          // Move to next email in list
+          e.preventDefault();
+          if (!emailId && emails.length > 0) {
+            const currentIdx = selectedEmail
+              ? emails.findIndex((em) => em.id === selectedEmail.id)
+              : -1;
+            const nextIdx = Math.min(currentIdx + 1, emails.length - 1);
+            const nextEmail = emails[nextIdx];
+            if (nextEmail) {
+              selectEmail(nextEmail);
+              navigate(`/label/${currentLabel}/${nextEmail.id}`);
+            }
+          }
+          break;
+        }
+        case "k": {
+          // Move to previous email in list
+          e.preventDefault();
+          if (!emailId && emails.length > 0) {
+            const currentIdx = selectedEmail
+              ? emails.findIndex((em) => em.id === selectedEmail.id)
+              : emails.length;
+            const prevIdx = Math.max(currentIdx - 1, 0);
+            const prevEmail = emails[prevIdx];
+            if (prevEmail) {
+              selectEmail(prevEmail);
+              navigate(`/label/${currentLabel}/${prevEmail.id}`);
+            }
+          }
+          break;
+        }
         case "Escape":
           if (selectedEmail) {
             selectEmail(null);
@@ -78,7 +145,7 @@ export default function MailPage() {
           break;
       }
     },
-    [openCompose, selectedEmail, openReply, selectEmail]
+    [openCompose, selectedEmail, openReply, openForward, selectEmail, emails, emailId, currentLabel, navigate, fetchEmails]
   );
 
   useEffect(() => {
