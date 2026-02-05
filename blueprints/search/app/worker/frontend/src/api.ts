@@ -369,6 +369,26 @@ export const api = {
     return get('/search/news', searchParams(query, options));
   },
 
+  searchMusic(query: string, options?: SearchOptions): Promise<SearchResponse> {
+    const params = new URLSearchParams({ q: query });
+    if (options?.page) params.set('page', String(options.page));
+    return get(`/search/music?${params}`);
+  },
+
+  searchScience(query: string, options?: SearchOptions): Promise<SearchResponse> {
+    const params = new URLSearchParams({ q: query });
+    if (options?.page) params.set('page', String(options.page));
+    if (options?.per_page) params.set('per_page', String(options.per_page));
+    return get(`/search/science?${params}`);
+  },
+
+  searchCode(query: string, options?: SearchOptions): Promise<SearchResponse> {
+    const params = new URLSearchParams({ q: query });
+    if (options?.page) params.set('page', String(options.page));
+    if (options?.per_page) params.set('per_page', String(options.per_page));
+    return get(`/search/code?${params}`);
+  },
+
   suggest(query: string): Promise<Suggestion[]> {
     return get<Suggestion[]>('/suggest', { q: query });
   },
