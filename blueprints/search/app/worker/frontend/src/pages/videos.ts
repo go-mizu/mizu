@@ -12,7 +12,7 @@ export function renderVideosPage(query: string): string {
     <div class="min-h-screen flex flex-col">
       <!-- Header -->
       <header class="sticky top-0 bg-white z-20 border-b border-border">
-        <div class="flex items-center gap-4 px-4 py-3 max-w-[1200px]">
+        <div class="flex items-center gap-4 px-4 lg:px-8 py-3">
           <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
             <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
           </a>
@@ -23,14 +23,14 @@ export function renderVideosPage(query: string): string {
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="max-w-[1200px] pl-[170px]">
+        <div class="px-4 lg:px-8 pl-[170px]">
           ${renderTabs({ query, active: 'videos' })}
         </div>
       </header>
 
       <!-- Content -->
       <main class="flex-1">
-        <div id="videos-content" class="max-w-[1200px] mx-auto px-4 py-6">
+        <div id="videos-content" class="px-4 lg:px-8 py-6">
           <div class="flex items-center justify-center py-16">
             <div class="spinner"></div>
           </div>
@@ -73,7 +73,7 @@ async function fetchAndRenderVideos(query: string): Promise<void> {
       <div class="text-xs text-tertiary mb-4">
         About ${response.total_results.toLocaleString()} video results (${(response.search_time_ms / 1000).toFixed(2)} seconds)
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         ${results.map((video) => renderVideoCard(video)).join('')}
       </div>
     `;
