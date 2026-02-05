@@ -31,7 +31,7 @@ router.addRoute('search', (params, query) => {
 router.addRoute('images', (params, query) => {
   const q = query.q || '';
   app.innerHTML = renderImagesPage(q);
-  initImagesPage(router, q);
+  initImagesPage(router, q, query);
 });
 
 // Videos

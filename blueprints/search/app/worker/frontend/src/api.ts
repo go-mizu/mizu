@@ -357,6 +357,10 @@ export const api = {
     return post('/search/images/reverse', { url });
   },
 
+  reverseImageSearchByUpload(imageData: string): Promise<ReverseImageSearchResponse> {
+    return post('/search/images/reverse', { image_data: imageData });
+  },
+
   searchVideos(query: string, options?: SearchOptions): Promise<SearchResponse & { results: VideoResult[] }> {
     return get('/search/videos', searchParams(query, options));
   },
