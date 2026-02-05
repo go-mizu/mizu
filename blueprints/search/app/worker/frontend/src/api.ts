@@ -384,11 +384,22 @@ export const api = {
     return get(`/search/science?${params}`);
   },
 
+  searchMaps(query: string): Promise<SearchResponse> {
+    const params = new URLSearchParams({ q: query });
+    return get(`/search/maps?${params}`);
+  },
+
   searchCode(query: string, options?: SearchOptions): Promise<SearchResponse> {
     const params = new URLSearchParams({ q: query });
     if (options?.page) params.set('page', String(options.page));
     if (options?.per_page) params.set('per_page', String(options.per_page));
     return get(`/search/code?${params}`);
+  },
+
+  searchSocial(query: string, options?: SearchOptions): Promise<SearchResponse> {
+    const params = new URLSearchParams({ q: query });
+    if (options?.page) params.set('page', String(options.page));
+    return get(`/search/social?${params}`);
   },
 
   suggest(query: string): Promise<Suggestion[]> {
