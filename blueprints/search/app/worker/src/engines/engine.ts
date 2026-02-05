@@ -18,6 +18,28 @@ export type TimeRange = '' | 'day' | 'week' | 'month' | 'year';
 
 export type SafeSearch = 0 | 1 | 2; // 0=off, 1=moderate, 2=strict
 
+// ========== Image Filter Types ==========
+
+export type ImageSize = 'any' | 'large' | 'medium' | 'small' | 'icon';
+export type ImageColor = 'any' | 'color' | 'gray' | 'transparent' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'blue' | 'purple' | 'pink' | 'white' | 'black' | 'brown';
+export type ImageType = 'any' | 'face' | 'photo' | 'clipart' | 'lineart' | 'animated';
+export type ImageAspect = 'any' | 'tall' | 'square' | 'wide' | 'panoramic';
+export type ImageRights = 'any' | 'creative_commons' | 'commercial';
+export type ImageFileType = 'any' | 'jpg' | 'png' | 'gif' | 'webp' | 'svg' | 'bmp' | 'ico';
+
+export interface ImageFilters {
+  size?: ImageSize;
+  color?: ImageColor;
+  type?: ImageType;
+  aspect?: ImageAspect;
+  rights?: ImageRights;
+  filetype?: ImageFileType;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+}
+
 // ========== Engine Parameters ==========
 
 export interface EngineParams {
@@ -26,6 +48,7 @@ export interface EngineParams {
   safeSearch: SafeSearch;
   timeRange: TimeRange;
   engineData: Record<string, string>;
+  imageFilters?: ImageFilters;
 }
 
 // ========== Engine Result ==========

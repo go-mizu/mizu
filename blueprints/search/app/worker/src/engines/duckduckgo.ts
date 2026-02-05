@@ -124,6 +124,99 @@ const secFetchHeaders: Record<string, string> = {
   'Upgrade-Insecure-Requests': '1',
 };
 
+// ========== DDG Image Filter Mappings ==========
+
+const ddgSizeMap: Record<string, string> = {
+  large: 'Large',
+  medium: 'Medium',
+  small: 'Small',
+};
+
+const ddgColorMap: Record<string, string> = {
+  color: 'color',
+  gray: 'Monochrome',
+  transparent: 'Transparent',
+  red: 'Red',
+  orange: 'Orange',
+  yellow: 'Yellow',
+  green: 'Green',
+  teal: 'Teal',
+  blue: 'Blue',
+  purple: 'Purple',
+  pink: 'Pink',
+  white: 'White',
+  black: 'Black',
+  brown: 'Brown',
+};
+
+const ddgTypeMap: Record<string, string> = {
+  photo: 'photo',
+  clipart: 'clipart',
+  animated: 'gif',
+};
+
+const ddgAspectMap: Record<string, string> = {
+  tall: 'Tall',
+  square: 'Square',
+  wide: 'Wide',
+};
+
+const ddgTimeMap: Record<string, string> = {
+  day: 'd',
+  week: 'w',
+  month: 'm',
+};
+
+function buildDdgImageFilter(params: EngineParams): string {
+  const parts: string[] = [];
+  const filters = params.imageFilters;
+
+  if (!filters) {
+    // Default filter string: size,type,layout,color,license
+    return ',,,,,';
+  }
+
+  // Size
+  if (filters.size && filters.size !== 'any' && ddgSizeMap[filters.size]) {
+    parts.push(ddgSizeMap[filters.size]);
+  } else {
+    parts.push('');
+  }
+
+  // Type
+  if (filters.type && filters.type !== 'any' && ddgTypeMap[filters.type]) {
+    parts.push(ddgTypeMap[filters.type]);
+  } else {
+    parts.push('');
+  }
+
+  // Aspect/Layout
+  if (filters.aspect && filters.aspect !== 'any' && ddgAspectMap[filters.aspect]) {
+    parts.push(ddgAspectMap[filters.aspect]);
+  } else {
+    parts.push('');
+  }
+
+  // Color
+  if (filters.color && filters.color !== 'any' && ddgColorMap[filters.color]) {
+    parts.push(ddgColorMap[filters.color]);
+  } else {
+    parts.push('');
+  }
+
+  // License (rights)
+  if (filters.rights && filters.rights !== 'any') {
+    parts.push(filters.rights === 'creative_commons' ? 'Any' : 'Share');
+  } else {
+    parts.push('');
+  }
+
+  // Padding for the filter string format
+  parts.push('');
+
+  return parts.join(',');
+}
+
 // ========== DuckDuckGoImagesEngine ==========
 
 export class DuckDuckGoImagesEngine implements OnlineEngine {
@@ -145,16 +238,22 @@ export class DuckDuckGoImagesEngine implements OnlineEngine {
   buildRequest(query: string, params: EngineParams): RequestConfig {
     const region = getDdgRegion(params.locale);
     const vqd = params.engineData['vqd'] || '';
+    const filters = params.imageFilters;
 
     const searchParams = new URLSearchParams();
     searchParams.set('q', query);
     searchParams.set('o', 'json');
     searchParams.set('l', region);
-    searchParams.set('f', ',,,,,');
+    searchParams.set('f', buildDdgImageFilter(params));
     searchParams.set('vqd', vqd);
 
     if (params.page > 1) {
       searchParams.set('s', ((params.page - 1) * 100).toString());
+    }
+
+    // Time filter (df parameter)
+    if (params.timeRange && ddgTimeMap[params.timeRange]) {
+      searchParams.set('df', ddgTimeMap[params.timeRange]);
     }
 
     // SafeSearch
@@ -162,6 +261,11 @@ export class DuckDuckGoImagesEngine implements OnlineEngine {
       searchParams.set('p', '-1');
     } else if (params.safeSearch === 2) {
       searchParams.set('p', '1');
+    }
+
+    // File type filter via query modification
+    if (filters?.filetype && filters.filetype !== 'any') {
+      searchParams.set('q', `${query} filetype:${filters.filetype}`);
     }
 
     return {
@@ -178,8 +282,9 @@ export class DuckDuckGoImagesEngine implements OnlineEngine {
     };
   }
 
-  parseResponse(body: string, _params: EngineParams): EngineResults {
+  parseResponse(body: string, params: EngineParams): EngineResults {
     const results = newEngineResults();
+    const filters = params.imageFilters;
 
     const jsonStart = body.indexOf('{');
     if (jsonStart === -1) return results;
@@ -200,6 +305,15 @@ export class DuckDuckGoImagesEngine implements OnlineEngine {
       if (data.results) {
         for (const item of data.results) {
           if (item.image) {
+            const width = item.width || 0;
+            const height = item.height || 0;
+
+            // Client-side filtering for custom dimensions
+            if (filters?.minWidth && width < filters.minWidth) continue;
+            if (filters?.minHeight && height < filters.minHeight) continue;
+            if (filters?.maxWidth && width > filters.maxWidth) continue;
+            if (filters?.maxHeight && height > filters.maxHeight) continue;
+
             results.results.push({
               url: item.url || '',
               title: item.title || '',
@@ -211,7 +325,7 @@ export class DuckDuckGoImagesEngine implements OnlineEngine {
               imageUrl: item.image,
               thumbnailUrl: item.thumbnail || '',
               source: item.source || '',
-              resolution: `${item.width || 0}x${item.height || 0}`,
+              resolution: `${width}x${height}`,
             });
           }
         }

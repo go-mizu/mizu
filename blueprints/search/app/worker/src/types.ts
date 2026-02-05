@@ -50,7 +50,70 @@ export interface ImageResult {
   height: number;
   file_size: number;
   format: string;
+  color_dominant?: string;
+  aspect_ratio?: string;
+  license?: string;
   engine?: string;
+  score?: number;
+}
+
+// ========== Image Search Filter Types ==========
+
+export type ImageSize = 'any' | 'large' | 'medium' | 'small' | 'icon';
+export type ImageColor = 'any' | 'color' | 'gray' | 'transparent' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'blue' | 'purple' | 'pink' | 'white' | 'black' | 'brown';
+export type ImageType = 'any' | 'face' | 'photo' | 'clipart' | 'lineart' | 'animated';
+export type ImageAspect = 'any' | 'tall' | 'square' | 'wide' | 'panoramic';
+export type ImageTime = 'any' | 'day' | 'week' | 'month' | 'year';
+export type ImageRights = 'any' | 'creative_commons' | 'commercial';
+export type ImageFileType = 'any' | 'jpg' | 'png' | 'gif' | 'webp' | 'svg' | 'bmp' | 'ico';
+export type SafeSearchLevel = 'off' | 'moderate' | 'strict';
+
+export interface ImageSearchFilters {
+  size?: ImageSize;
+  color?: ImageColor;
+  type?: ImageType;
+  aspect?: ImageAspect;
+  time?: ImageTime;
+  rights?: ImageRights;
+  filetype?: ImageFileType;
+  safe?: SafeSearchLevel;
+  min_width?: number;
+  min_height?: number;
+  max_width?: number;
+  max_height?: number;
+}
+
+export interface ImageSearchOptions extends SearchOptions {
+  filters?: ImageSearchFilters;
+}
+
+export interface ImageSearchResponse {
+  query: string;
+  filters?: ImageSearchFilters;
+  total_results: number;
+  results: ImageResult[];
+  related_searches?: string[];
+  search_time_ms: number;
+  page: number;
+  per_page: number;
+  has_more: boolean;
+}
+
+export interface ReverseImageSearchRequest {
+  url?: string;
+  image_data?: string; // base64 encoded image
+}
+
+export interface ReverseImageSearchResponse {
+  query_image: {
+    url: string;
+    width?: number;
+    height?: number;
+  };
+  exact_matches: ImageResult[];
+  similar_images: ImageResult[];
+  pages_with_image: SearchResult[];
+  search_time_ms: number;
 }
 
 export interface VideoResult {

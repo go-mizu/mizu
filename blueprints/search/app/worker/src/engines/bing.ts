@@ -208,6 +208,99 @@ export class BingEngine implements OnlineEngine {
   }
 }
 
+// ========== Bing Image Filter Mappings ==========
+
+const bingSizeMap: Record<string, string> = {
+  large: 'filterui:imagesize-large',
+  medium: 'filterui:imagesize-medium',
+  small: 'filterui:imagesize-small',
+};
+
+const bingColorMap: Record<string, string> = {
+  color: 'filterui:color2-color',
+  gray: 'filterui:color2-bw',
+  red: 'filterui:color2-FGcls_RED',
+  orange: 'filterui:color2-FGcls_ORANGE',
+  yellow: 'filterui:color2-FGcls_YELLOW',
+  green: 'filterui:color2-FGcls_GREEN',
+  teal: 'filterui:color2-FGcls_TEAL',
+  blue: 'filterui:color2-FGcls_BLUE',
+  purple: 'filterui:color2-FGcls_PURPLE',
+  pink: 'filterui:color2-FGcls_PINK',
+  white: 'filterui:color2-FGcls_WHITE',
+  black: 'filterui:color2-FGcls_BLACK',
+  brown: 'filterui:color2-FGcls_BROWN',
+};
+
+const bingTypeMap: Record<string, string> = {
+  photo: 'filterui:photo-photo',
+  clipart: 'filterui:photo-clipart',
+  lineart: 'filterui:photo-linedrawing',
+  animated: 'filterui:photo-animatedgif',
+  face: 'filterui:face-face',
+};
+
+const bingAspectMap: Record<string, string> = {
+  tall: 'filterui:aspect-tall',
+  square: 'filterui:aspect-square',
+  wide: 'filterui:aspect-wide',
+};
+
+const bingRightsMap: Record<string, string> = {
+  creative_commons: 'filterui:license-L2_L3_L4_L5_L6_L7',
+  commercial: 'filterui:license-L1',
+};
+
+function buildBingImageQft(params: EngineParams): string {
+  const qft: string[] = [];
+  const filters = params.imageFilters;
+
+  if (!filters) {
+    // Only time range
+    if (params.timeRange && imagesTimeRange[params.timeRange]) {
+      return `filterui:age-lt${imagesTimeRange[params.timeRange]}`;
+    }
+    return '';
+  }
+
+  // Size filter
+  if (filters.size && filters.size !== 'any' && bingSizeMap[filters.size]) {
+    qft.push(bingSizeMap[filters.size]);
+  }
+
+  // Custom size
+  if (filters.minWidth && filters.minHeight) {
+    qft.push(`filterui:imagesize-custom_${filters.minWidth}_${filters.minHeight}`);
+  }
+
+  // Color filter
+  if (filters.color && filters.color !== 'any' && bingColorMap[filters.color]) {
+    qft.push(bingColorMap[filters.color]);
+  }
+
+  // Type filter
+  if (filters.type && filters.type !== 'any' && bingTypeMap[filters.type]) {
+    qft.push(bingTypeMap[filters.type]);
+  }
+
+  // Aspect ratio filter
+  if (filters.aspect && filters.aspect !== 'any' && bingAspectMap[filters.aspect]) {
+    qft.push(bingAspectMap[filters.aspect]);
+  }
+
+  // Usage rights filter
+  if (filters.rights && filters.rights !== 'any' && bingRightsMap[filters.rights]) {
+    qft.push(bingRightsMap[filters.rights]);
+  }
+
+  // Time range filter
+  if (params.timeRange && imagesTimeRange[params.timeRange]) {
+    qft.push(`filterui:age-lt${imagesTimeRange[params.timeRange]}`);
+  }
+
+  return qft.join('+');
+}
+
 // ========== BingImagesEngine ==========
 
 export class BingImagesEngine implements OnlineEngine {
@@ -232,12 +325,25 @@ export class BingImagesEngine implements OnlineEngine {
     }
     searchParams.set('first', first.toString());
 
-    // Time range filter
-    if (params.timeRange && imagesTimeRange[params.timeRange]) {
-      searchParams.set(
-        'qft',
-        `filterui:age-lt${imagesTimeRange[params.timeRange]}`
-      );
+    // Build qft parameter for filters
+    const qft = buildBingImageQft(params);
+    if (qft) {
+      searchParams.set('qft', qft);
+    }
+
+    // File type filter
+    if (params.imageFilters?.filetype && params.imageFilters.filetype !== 'any') {
+      const ft = params.imageFilters.filetype;
+      searchParams.set('qft', (qft ? qft + '+' : '') + `filterui:photo-${ft}`);
+    }
+
+    // Safe search
+    if (params.safeSearch === 0) {
+      searchParams.set('adlt', 'off');
+    } else if (params.safeSearch === 2) {
+      searchParams.set('adlt', 'strict');
+    } else {
+      searchParams.set('adlt', 'moderate');
     }
 
     return {
@@ -251,8 +357,9 @@ export class BingImagesEngine implements OnlineEngine {
     };
   }
 
-  parseResponse(body: string, _params: EngineParams): EngineResults {
+  parseResponse(body: string, params: EngineParams): EngineResults {
     const results = newEngineResults();
+    const filters = params.imageFilters;
 
     // Parse image metadata from JSON in HTML "m" attribute
     const iuscPattern = /class="iusc"[^>]*m="([^"]+)"/g;
@@ -273,9 +380,18 @@ export class BingImagesEngine implements OnlineEngine {
           turl?: string;
           desc?: string;
           t?: string;
+          mw?: number;
+          mh?: number;
         };
 
         if (metadata.murl) {
+          const width = metadata.mw || 0;
+          const height = metadata.mh || 0;
+
+          // Client-side max dimension filtering
+          if (filters?.maxWidth && width > filters.maxWidth) continue;
+          if (filters?.maxHeight && height > filters.maxHeight) continue;
+
           results.results.push({
             url: metadata.purl || '',
             title: metadata.t || '',
@@ -286,6 +402,7 @@ export class BingImagesEngine implements OnlineEngine {
             template: 'images',
             imageUrl: metadata.murl,
             thumbnailUrl: metadata.turl || '',
+            resolution: width && height ? `${width}x${height}` : undefined,
           });
         }
       } catch {
@@ -311,6 +428,80 @@ export class BingImagesEngine implements OnlineEngine {
             imageUrl: imgUrl,
           });
         }
+      }
+    }
+
+    return results;
+  }
+}
+
+// ========== BingReverseImageEngine ==========
+
+export class BingReverseImageEngine implements OnlineEngine {
+  name = 'bing reverse';
+  shortcut = 'bri';
+  categories: Category[] = ['images'];
+  supportsPaging = false;
+  maxPage = 1;
+  timeout = 15_000;
+  weight = 1.0;
+  disabled = false;
+
+  buildRequest(query: string, _params: EngineParams): RequestConfig {
+    // query is the image URL for reverse search
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', 'imgurl:' + query);
+    searchParams.set('view', 'detailv2');
+    searchParams.set('iss', 'sbi');
+
+    return {
+      url: `https://www.bing.com/images/search?${searchParams.toString()}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': BING_USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      cookies: [],
+    };
+  }
+
+  parseResponse(body: string, _params: EngineParams): EngineResults {
+    const results = newEngineResults();
+
+    // Parse similar images from the response
+    const iuscPattern = /class="iusc"[^>]*m="([^"]+)"/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = iuscPattern.exec(body)) !== null) {
+      let jsonStr = match[1]
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+
+      try {
+        const metadata = JSON.parse(jsonStr) as {
+          purl?: string;
+          murl?: string;
+          turl?: string;
+          t?: string;
+        };
+
+        if (metadata.murl) {
+          results.results.push({
+            url: metadata.purl || metadata.murl,
+            title: metadata.t || 'Similar image',
+            content: '',
+            engine: this.name,
+            score: this.weight,
+            category: 'images',
+            template: 'images',
+            imageUrl: metadata.murl,
+            thumbnailUrl: metadata.turl || '',
+          });
+        }
+      } catch {
+        // Skip
       }
     }
 

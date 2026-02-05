@@ -114,3 +114,8 @@ coverage.out
 CLAUDE.md
 
 node_modules/
+
+# ------------------------------
+# Cloudflare Wrangler
+# ------------------------------
+.wrangler/

@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { timing } from 'hono/timing'
+import { getAssetFromKV } from '@cloudflare/kv-asset-handler'
+// @ts-expect-error - __STATIC_CONTENT_MANIFEST is injected by wrangler
+import manifestJSON from '__STATIC_CONTENT_MANIFEST'
 
 import healthRoutes from './routes/health'
 import searchRoutes from './routes/search'
@@ -19,9 +22,12 @@ import {
   relatedRoutes,
 } from './routes/widgets'
 
+const assetManifest = JSON.parse(manifestJSON)
+
 type Env = {
   Bindings: {
     SEARCH_KV: KVNamespace
+    __STATIC_CONTENT: KVNamespace
     ENVIRONMENT: string
   }
 }
@@ -51,12 +57,43 @@ app.route('/api/cheatsheets', cheatsheetsListRoutes)
 app.route('/api/related', relatedRoutes)
 
 // Serve static frontend files for all other routes
-// Cloudflare Workers serves static assets from wrangler.toml [site] config
-// The index.html is served for all non-API routes (SPA fallback)
 app.get('*', async (c) => {
-  // In production, static files are served by Cloudflare automatically
-  // This is just a fallback that returns the index page content-type hint
-  return c.html('<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/"></head><body></body></html>')
+  try {
+    const asset = await getAssetFromKV(
+      {
+        request: c.req.raw,
+        waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+      },
+      {
+        ASSET_NAMESPACE: c.env.__STATIC_CONTENT,
+        ASSET_MANIFEST: assetManifest,
+      }
+    )
+    return new Response(asset.body, asset)
+  } catch {
+    // For SPA routing, return index.html for non-asset requests
+    try {
+      const notFoundRequest = new Request(new URL('/index.html', c.req.url).toString(), {
+        method: 'GET',
+      })
+      const asset = await getAssetFromKV(
+        {
+          request: notFoundRequest,
+          waitUntil: (promise) => c.executionCtx.waitUntil(promise),
+        },
+        {
+          ASSET_NAMESPACE: c.env.__STATIC_CONTENT,
+          ASSET_MANIFEST: assetManifest,
+        }
+      )
+      return new Response(asset.body, {
+        ...asset,
+        status: 200,
+      })
+    } catch {
+      return c.text('Not found', 404)
+    }
+  }
 })
 
 export default app
