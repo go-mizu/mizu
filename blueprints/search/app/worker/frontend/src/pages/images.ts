@@ -762,13 +762,19 @@ async function fetchAndRenderImages(query: string, filters: ImageSearchFilters):
 }
 
 function renderImageCard(img: ImageResult, index: number): string {
+  // Generate a placeholder color based on the image URL hash for visual consistency
+  const placeholderColor = '#e0e0e0';
+
   return `
     <div class="image-card" data-image-index="${index}">
       <div class="image-card-img">
+        <div class="image-placeholder" style="background: ${placeholderColor};"></div>
         <img
           src="${escapeAttr(img.thumbnail_url || img.url)}"
           alt="${escapeAttr(img.title)}"
           loading="lazy"
+          class="image-lazy"
+          onload="this.classList.add('loaded'); this.previousElementSibling.style.display='none';"
           onerror="this.closest('.image-card').style.display='none'"
         />
       </div>
