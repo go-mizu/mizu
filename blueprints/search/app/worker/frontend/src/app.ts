@@ -127,3 +127,115 @@ window.addEventListener('router:navigate', (e: Event) => {
 
 // Start the router
 router.start();
+
+// ========== Global Keyboard Shortcuts ==========
+
+function initKeyboardShortcuts(): void {
+  document.addEventListener('keydown', (e) => {
+    // Skip if user is typing in an input or textarea
+    const target = e.target as HTMLElement;
+    const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+    // "/" to focus search - works even in inputs if they're not the search box
+    if (e.key === '/' && !isInput) {
+      e.preventDefault();
+      const searchInput = document.getElementById('search-input') as HTMLInputElement;
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+    }
+
+    // "Escape" to close modals and overlays
+    if (e.key === 'Escape') {
+      // Close any visible modals
+      const modals = document.querySelectorAll('.modal:not(.hidden), .preview-panel:not(.hidden), .lightbox:not(.hidden)');
+      modals.forEach(modal => {
+        modal.classList.add('hidden');
+      });
+
+      // Close dropdowns
+      const dropdowns = document.querySelectorAll('.autocomplete-dropdown:not(.hidden), .filter-dropdown:not(.hidden), .filter-pill-dropdown:not(.hidden), .more-tabs-dropdown:not(.hidden), .time-filter-dropdown:not(.hidden)');
+      dropdowns.forEach(dropdown => {
+        dropdown.classList.add('hidden');
+      });
+
+      // Restore body scroll if it was hidden
+      document.body.style.overflow = '';
+
+      // Blur search input if focused
+      if (document.activeElement?.id === 'search-input') {
+        (document.activeElement as HTMLElement).blur();
+      }
+    }
+
+    // "?" to show keyboard shortcuts help (optional)
+    if (e.key === '?' && !isInput) {
+      showKeyboardShortcutsHelp();
+    }
+  });
+}
+
+function showKeyboardShortcutsHelp(): void {
+  // Check if help is already shown
+  let helpModal = document.getElementById('keyboard-shortcuts-help');
+  if (helpModal) {
+    helpModal.classList.toggle('hidden');
+    return;
+  }
+
+  // Create help modal
+  helpModal = document.createElement('div');
+  helpModal.id = 'keyboard-shortcuts-help';
+  helpModal.className = 'modal';
+  helpModal.innerHTML = `
+    <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Keyboard Shortcuts</h2>
+        <button class="modal-close" id="shortcuts-close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="shortcuts-list">
+          <div class="shortcut-item">
+            <kbd>/</kbd>
+            <span>Focus search box</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Escape</kbd>
+            <span>Close modal / unfocus</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>?</kbd>
+            <span>Show this help</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>&#8593;</kbd> <kbd>&#8595;</kbd>
+            <span>Navigate suggestions</span>
+          </div>
+          <div class="shortcut-item">
+            <kbd>Enter</kbd>
+            <span>Select / submit</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(helpModal);
+
+  // Close handlers
+  helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) {
+      helpModal.classList.add('hidden');
+    }
+  });
+
+  document.getElementById('shortcuts-close')?.addEventListener('click', () => {
+    helpModal!.classList.add('hidden');
+  });
+}
+
+// Initialize shortcuts when app starts
+initKeyboardShortcuts();
