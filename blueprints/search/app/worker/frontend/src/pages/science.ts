@@ -121,9 +121,9 @@ function renderPaperCard(paper: SearchResult): string {
         <a href="${escapeAttr(paper.url)}" target="_blank" rel="noopener" class="hover:text-blue hover:underline">${escapeHtml(paper.title)}</a>
       </h3>
       ${authors ? `<p class="text-sm text-secondary mb-2">${escapeHtml(authors)}</p>` : ''}
-      <p class="text-sm text-snippet line-clamp-3 mb-3">${paper.snippet || ''}</p>
+      <p class="text-sm text-snippet line-clamp-3 mb-3">${escapeHtml(paper.snippet ?? '')}</p>
       <div class="flex items-center gap-4 text-xs">
-        ${citations !== undefined ? `<span class="flex items-center gap-1 text-tertiary">${ICON_CITE} ${citations} citations</span>` : ''}
+        ${citations !== undefined && citations !== null ? `<span class="flex items-center gap-1 text-tertiary">${ICON_CITE} ${escapeHtml(String(citations))} citations</span>` : ''}
         ${doi ? `<a href="https://doi.org/${escapeAttr(doi)}" target="_blank" rel="noopener" class="text-tertiary hover:text-blue">DOI: ${escapeHtml(doi)}</a>` : ''}
         ${pdfUrl ? `<a href="${escapeAttr(pdfUrl)}" target="_blank" rel="noopener" class="flex items-center gap-1 text-blue hover:underline">${ICON_PDF} PDF</a>` : ''}
       </div>
@@ -139,10 +139,12 @@ function extractDomain(url: string): string {
   }
 }
 
-function escapeHtml(str: string): string {
+function escapeHtml(value: unknown): string {
+  const str = value === null || value === undefined ? '' : String(value);
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function escapeAttr(str: string): string {
+function escapeAttr(value: unknown): string {
+  const str = value === null || value === undefined ? '' : String(value);
   return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
