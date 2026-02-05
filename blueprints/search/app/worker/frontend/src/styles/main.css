@@ -3155,3 +3155,124 @@
   margin-bottom: 4px;
   line-height: 1.5;
 }
+
+/* ========== Toast Notifications ========== */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 12px;
+  max-width: 400px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+  position: relative;
+}
+
+.toast-visible {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.toast-hiding {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.toast-icon {
+  flex-shrink: 0;
+}
+
+.toast-success .toast-icon { color: var(--color-green); }
+.toast-error .toast-icon { color: var(--color-red); }
+.toast-info .toast-icon { color: var(--color-blue); }
+.toast-warning .toast-icon { color: var(--color-yellow); }
+
+.toast-message {
+  flex: 1;
+  font-size: 14px;
+  color: var(--color-primary);
+  line-height: 1.4;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--color-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--color-blue);
+  animation: toast-progress linear forwards;
+}
+
+.toast-success .toast-progress { background: var(--color-green); }
+.toast-error .toast-progress { background: var(--color-red); }
+.toast-warning .toast-progress { background: var(--color-yellow); }
+
+@keyframes toast-progress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+@media (max-width: 480px) {
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: none;
+  }
+}
+
+/* ========== Optimized Image Loading ========== */
+.image-placeholder {
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface);
+  animation: placeholder-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes placeholder-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.image-lazy {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.image-lazy.loaded {
+  opacity: 1;
+}
