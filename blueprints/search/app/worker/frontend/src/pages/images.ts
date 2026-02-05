@@ -1,6 +1,6 @@
 import { Router } from '../lib/router';
 import { api } from '../api';
-import type { ImageResult, ImageSearchFilters } from '../api';
+import type { ImageResult, ImageSearchFilters, ReverseImageSearchResponse } from '../api';
 import { addRecentSearch } from '../lib/state';
 import { renderSearchBox, initSearchBox } from '../components/search-box';
 import { renderTabs, initTabs } from '../components/tabs';
@@ -167,7 +167,7 @@ function formatFilterOption(filterId: string, option: string): string {
   return option.charAt(0).toUpperCase() + option.slice(1).replace('_', ' ');
 }
 
-export function initImagesPage(router: Router, query: string): void {
+export function initImagesPage(router: Router, query: string, queryParams?: Record<string, string>): void {
   currentQuery = query;
   currentFilters = {};
   currentPage = 1;
@@ -191,6 +191,14 @@ export function initImagesPage(router: Router, query: string): void {
   initReverseSearch(router);
   initPreviewPanel();
   initRelatedSearches(router);
+
+  // Auto-open reverse image search modal if reverse=1 param is present
+  if (queryParams?.reverse === '1') {
+    const modal = document.getElementById('reverse-modal');
+    if (modal) {
+      modal.classList.remove('hidden');
+    }
+  }
 
   fetchAndRenderImages(query, currentFilters);
 }
@@ -429,8 +437,101 @@ function initReverseSearch(router: Router): void {
   }
 }
 
-async function handleImageFile(_file: File, _router: Router): Promise<void> {
-  alert('Image upload coming soon. Please use the URL option for now.');
+async function handleImageFile(file: File, _router: Router): Promise<void> {
+  const content = document.getElementById('images-content');
+  if (!content) return;
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    alert('Please select an image file');
+    return;
+  }
+
+  // Validate file size (max 10MB)
+  if (file.size > 10 * 1024 * 1024) {
+    alert('Image must be smaller than 10MB');
+    return;
+  }
+
+  // Show loading state
+  content.innerHTML = `
+    <div class="flex flex-col items-center justify-center py-16">
+      <div class="spinner"></div>
+      <span class="mt-3 text-secondary">Uploading and searching...</span>
+      <div class="w-48 mt-4 h-1 bg-border rounded-full overflow-hidden">
+        <div id="upload-progress" class="h-full bg-blue transition-all duration-300" style="width: 0%"></div>
+      </div>
+    </div>
+  `;
+
+  try {
+    // Convert file to base64
+    const base64 = await fileToBase64(file);
+
+    // Update progress
+    const progressBar = document.getElementById('upload-progress');
+    if (progressBar) progressBar.style.width = '50%';
+
+    // Call API
+    const response = await api.reverseImageSearchByUpload(base64);
+
+    if (progressBar) progressBar.style.width = '100%';
+
+    // Render results
+    renderReverseResults(content, base64, response);
+  } catch (err) {
+    content.innerHTML = `
+      <div class="py-8">
+        <p class="text-red text-sm">Failed to search by image. Please try again.</p>
+        <p class="text-tertiary text-xs mt-2">${escapeHtml(String(err))}</p>
+      </div>
+    `;
+  }
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove the data:image/...;base64, prefix
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderReverseResults(container: HTMLElement, queryImage: string, response: ReverseImageSearchResponse): void {
+  // Determine if queryImage is base64 or URL
+  const isBase64 = !queryImage.startsWith('http');
+  const queryImageSrc = isBase64 ? `data:image/jpeg;base64,${queryImage}` : queryImage;
+
+  container.innerHTML = `
+    <div class="reverse-results">
+      <div class="query-image-section">
+        <h3>Search image</h3>
+        <img src="${queryImageSrc}" alt="Query image" class="query-image" />
+      </div>
+      ${response.similar_images.length > 0 ? `
+        <div class="similar-images-section">
+          <h3>Similar images (${response.similar_images.length})</h3>
+          <div class="image-grid">
+            ${response.similar_images.map((img, i) => renderImageCard(img, i)).join('')}
+          </div>
+        </div>
+      ` : `<div class="py-8 text-secondary">No similar images found.</div>`}
+    </div>
+  `;
+
+  // Add click handlers for preview
+  container.querySelectorAll('.image-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const idx = parseInt((card as HTMLElement).dataset.imageIndex || '0', 10);
+      openPreview(response.similar_images[idx]);
+    });
+  });
 }
 
 async function searchByImageUrl(url: string, _router: Router): Promise<void> {

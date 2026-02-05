@@ -37,10 +37,10 @@ export function renderSearchBox(options: SearchBoxOptions): string {
           ${ICON_CLEAR}
         </button>
         <span class="mx-1 w-px h-5 bg-border flex-shrink-0"></span>
-        <button class="text-light hover:text-secondary p-1 flex-shrink-0" type="button" aria-label="Voice search">
+        <button id="voice-search-btn" class="text-light hover:text-secondary p-1 flex-shrink-0" type="button" aria-label="Voice search">
           ${ICON_MIC}
         </button>
-        <button class="text-light hover:text-secondary p-1 flex-shrink-0" type="button" aria-label="Image search">
+        <button id="camera-search-btn" class="text-light hover:text-secondary p-1 flex-shrink-0" type="button" aria-label="Image search">
           ${ICON_CAMERA}
         </button>
       </div>
@@ -277,6 +277,123 @@ export function initSearchBox(onSearch: (query: string) => void): void {
     input!.focus();
     showRecentSearches();
   });
+
+  // Get voice button and initialize voice search
+  const voiceBtn = document.getElementById('voice-search-btn') as HTMLElement | null;
+
+  if (voiceBtn) {
+    initVoiceSearch(voiceBtn, input, (text) => {
+      input!.value = text;
+      clearBtn!.classList.remove('hidden');
+      doSearch(text);
+    });
+  }
+
+  // Get camera button and initialize image search
+  const cameraBtn = document.getElementById('camera-search-btn') as HTMLElement | null;
+
+  if (cameraBtn) {
+    cameraBtn.addEventListener('click', () => {
+      // Check if we're already on the images page (reverse-modal exists)
+      const modal = document.getElementById('reverse-modal');
+      if (modal) {
+        // Already on images page, just open the modal
+        modal.classList.remove('hidden');
+      } else {
+        // Navigate to images page with reverse param to auto-open modal
+        window.dispatchEvent(new CustomEvent('router:navigate', {
+          detail: { path: '/images?reverse=1' }
+        }));
+      }
+    });
+  }
+}
+
+function initVoiceSearch(
+  button: HTMLElement,
+  input: HTMLInputElement,
+  onResult: (text: string) => void
+): void {
+  // Check for browser support
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    button.style.display = 'none'; // Hide if not supported
+    return;
+  }
+
+  let isListening = false;
+  let recognition: any = null;
+
+  button.addEventListener('click', () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  });
+
+  function startListening(): void {
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      isListening = true;
+      button.classList.add('listening');
+      button.style.color = '#ea4335'; // Red color while listening
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0].transcript)
+        .join('');
+
+      input.value = transcript;
+
+      // If final result, trigger search
+      if (event.results[0].isFinal) {
+        stopListening();
+        onResult(transcript);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      stopListening();
+
+      if (event.error === 'not-allowed') {
+        alert('Microphone access denied. Please allow microphone access to use voice search.');
+      }
+    };
+
+    recognition.onend = () => {
+      stopListening();
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error('Failed to start speech recognition:', e);
+      stopListening();
+    }
+  }
+
+  function stopListening(): void {
+    isListening = false;
+    button.classList.remove('listening');
+    button.style.color = '';
+
+    if (recognition) {
+      try {
+        recognition.stop();
+      } catch (e) {
+        // Ignore errors when stopping
+      }
+      recognition = null;
+    }
+  }
 }
 
 function escapeHtml(str: string): string {
