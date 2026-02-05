@@ -12,24 +12,24 @@ const ICON_COMMENT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none
 export function renderSocialPage(query: string): string {
   return `
     <div class="min-h-screen flex flex-col">
-      <header class="sticky top-0 bg-white z-20 border-b border-border">
-        <div class="flex items-center gap-4 px-4 lg:px-8 py-3">
-          <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
-            <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
+      <header class="search-header">
+        <div class="search-header-row">
+          <a href="/" data-link class="search-logo">
+            <span style="color: #2563eb">M</span><span style="color: #ef4444">i</span><span style="color: #f59e0b">z</span><span style="color: #22c55e">u</span>
           </a>
-          <div class="flex-1 max-w-[692px]">
+          <div class="search-header-box">
             ${renderSearchBox({ size: 'sm', initialValue: query })}
           </div>
-          <a href="/settings" data-link class="flex-shrink-0 text-tertiary hover:text-primary p-2 rounded-full hover:bg-surface-hover transition-colors">
+          <a href="/settings" data-link class="search-box-btn" aria-label="Settings">
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="px-4 lg:px-8 pl-[170px]">
+        <div class="search-tabs-row">
           ${renderTabs({ query, active: 'social' })}
         </div>
       </header>
       <main class="flex-1">
-        <div id="social-content" class="px-4 lg:px-8 py-6">
+        <div id="social-content" class="search-content-area">
           <div class="flex items-center justify-center py-16">
             <div class="spinner"></div>
           </div>
@@ -63,7 +63,7 @@ async function fetchAndRenderSocial(query: string): Promise<void> {
       <div class="text-xs text-tertiary mb-4">
         About ${response.total_results.toLocaleString()} results (${(response.search_time_ms / 1000).toFixed(2)} seconds)
       </div>
-      <div class="max-w-[800px] space-y-4">
+      <div class="w-full space-y-4">
         ${results.map(renderSocialCard).join('')}
       </div>
     `;

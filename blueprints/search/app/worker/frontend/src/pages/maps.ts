@@ -11,19 +11,19 @@ const ICON_EXTERNAL = `<svg width="14" height="14" viewBox="0 0 24 24" fill="non
 export function renderMapsPage(query: string): string {
   return `
     <div class="min-h-screen flex flex-col">
-      <header class="sticky top-0 bg-white z-20 border-b border-border">
-        <div class="flex items-center gap-4 px-4 lg:px-8 py-3">
-          <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
-            <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
+      <header class="search-header">
+        <div class="search-header-row">
+          <a href="/" data-link class="search-logo">
+            <span style="color: #2563eb">M</span><span style="color: #ef4444">i</span><span style="color: #f59e0b">z</span><span style="color: #22c55e">u</span>
           </a>
-          <div class="flex-1 max-w-[692px]">
+          <div class="search-header-box">
             ${renderSearchBox({ size: 'sm', initialValue: query })}
           </div>
-          <a href="/settings" data-link class="flex-shrink-0 text-tertiary hover:text-primary p-2 rounded-full hover:bg-surface-hover transition-colors">
+          <a href="/settings" data-link class="search-box-btn" aria-label="Settings">
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="px-4 lg:px-8">
+        <div class="search-tabs-row">
           ${renderTabs({ query, active: 'maps' })}
         </div>
       </header>

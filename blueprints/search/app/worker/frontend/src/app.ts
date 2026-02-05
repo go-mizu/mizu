@@ -245,16 +245,20 @@ function showKeyboardShortcutsHelp(): void {
 // Initialize shortcuts when app starts
 initKeyboardShortcuts();
 
-// ========== Service Worker Registration (PWA Support) ==========
+// ========== Unregister Service Workers (Clean Cache) ==========
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => {
-        console.log('Service Worker registered:', reg.scope);
-      })
-      .catch((err) => {
-        console.log('Service Worker registration failed:', err);
-      });
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
   });
+  // Clear all caches
+  if ('caches' in window) {
+    caches.keys().then((names) => {
+      for (const name of names) {
+        caches.delete(name);
+      }
+    });
+  }
 }

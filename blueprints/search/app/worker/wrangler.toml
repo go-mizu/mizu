@@ -4,7 +4,7 @@ compatibility_date = "2026-02-05"
 compatibility_flags = ["nodejs_compat"]
 
 [site]
-bucket = "../../assets/static"
+bucket = "./static"
 
 [[kv_namespaces]]
 binding = "SEARCH_KV"

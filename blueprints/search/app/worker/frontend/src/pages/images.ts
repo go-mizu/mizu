@@ -34,28 +34,27 @@ let scrollObserver: IntersectionObserver | null = null;
 
 export function renderImagesPage(query: string): string {
   return `
-    <div class="min-h-screen flex flex-col bg-white">
-      <!-- Header -->
-      <header class="sticky top-0 bg-white z-20 shadow-sm">
-        <div class="flex items-center gap-4 px-4 py-2">
-          <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
-            <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
+    <div class="min-h-screen flex flex-col">
+      <header class="search-header">
+        <div class="search-header-row">
+          <a href="/" data-link class="search-logo">
+            <span style="color: #2563eb">M</span><span style="color: #ef4444">i</span><span style="color: #f59e0b">z</span><span style="color: #22c55e">u</span>
           </a>
-          <div class="flex-1 max-w-[600px] flex items-center gap-2">
+          <div class="search-header-box flex items-center gap-2">
             ${renderSearchBox({ size: 'sm', initialValue: query })}
-            <button id="reverse-search-btn" class="flex-shrink-0 p-2 text-tertiary hover:text-primary hover:bg-surface-hover rounded-full transition-colors" title="Search by image">
+            <button id="reverse-search-btn" class="search-box-btn" title="Search by image">
               ${ICON_CAMERA}
             </button>
           </div>
-          <a href="/settings" data-link class="flex-shrink-0 text-tertiary hover:text-primary p-2 rounded-full hover:bg-surface-hover transition-colors" aria-label="Settings">
+          <a href="/settings" data-link class="search-box-btn" aria-label="Settings">
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="pl-[56px] flex items-center gap-1">
+        <div class="search-tabs-row flex items-center gap-1">
           ${renderTabs({ query, active: 'images' })}
-          <button id="tools-btn" class="tools-btn ml-4">
+          <button id="tools-btn" class="filter-btn ml-4">
             ${ICON_FILTER}
-            <span>Tools</span>
+            <span class="hidden sm:inline">Tools</span>
             ${ICON_CHEVRON_DOWN}
           </button>
         </div>
@@ -74,9 +73,9 @@ export function renderImagesPage(query: string): string {
         </div>
       </div>
 
-      <!-- Content -->
+      <!-- Content - Full width -->
       <main class="flex-1 flex">
-        <div id="images-content" class="flex-1 px-2">
+        <div id="images-content" class="flex-1 px-2 sm:px-4 lg:px-6 xl:px-8 py-4">
           <div class="flex items-center justify-center py-16">
             <div class="spinner"></div>
           </div>

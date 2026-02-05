@@ -1,6 +1,6 @@
 import { Router } from '../lib/router';
 import { api } from '../api';
-import type { SearchResponse } from '../api';
+import type { SearchResponse, ImageResult } from '../api';
 import { addRecentSearch, appState } from '../lib/state';
 import { renderSearchBox, initSearchBox } from '../components/search-box';
 import { renderSearchResult, initSearchResults } from '../components/search-result';
@@ -11,21 +11,24 @@ import { renderTabs, initTabs } from '../components/tabs';
 import { renderPeopleAlsoAsk, initPeopleAlsoAsk } from '../components/people-also-ask';
 import { renderSearchTools, initSearchTools, type SearchFilters } from '../components/search-tools';
 
+const ICON_IMAGES = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
+const ICON_ARROW_RIGHT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
+
 const ICON_SETTINGS = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
 
 export function renderSearchPage(query: string, filters: SearchFilters = {}): string {
   return `
     <div class="min-h-screen flex flex-col">
       <!-- Header -->
-      <header class="sticky top-0 bg-white z-20 border-b border-border">
+      <header class="search-header">
         <div class="search-header-row">
           <a href="/" data-link class="search-logo">
-            <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
+            <span style="color: #2563eb">M</span><span style="color: #ef4444">i</span><span style="color: #f59e0b">z</span><span style="color: #22c55e">u</span>
           </a>
           <div class="search-header-box">
             ${renderSearchBox({ size: 'sm', initialValue: query })}
           </div>
-          <a href="/settings" data-link class="flex-shrink-0 text-tertiary hover:text-primary p-2 rounded-full hover:bg-surface-hover transition-colors" aria-label="Settings">
+          <a href="/settings" data-link class="search-box-btn" aria-label="Settings">
             ${ICON_SETTINGS}
           </a>
         </div>
@@ -176,20 +179,36 @@ function renderResults(
   })) || [];
   const paaHtml = paaQuestions.length > 0 ? renderPeopleAlsoAsk(paaQuestions) : '';
 
-  const resultsHtml = response.results.length > 0
-    ? response.results.map((r, i) => renderSearchResult(r, i)).join('')
-    : `<div class="py-8 text-secondary">No results found for "<strong>${escapeHtml(query)}</strong>"</div>`;
+  // Split results to insert image carousel after first 3 results
+  const firstResults = response.results.slice(0, 3);
+  const remainingResults = response.results.slice(3);
 
+  const firstResultsHtml = firstResults.length > 0
+    ? firstResults.map((r, i) => renderSearchResult(r, i)).join('')
+    : '';
+
+  const remainingResultsHtml = remainingResults.length > 0
+    ? remainingResults.map((r, i) => renderSearchResult(r, i + 3)).join('')
+    : '';
+
+  const noResultsHtml = response.results.length === 0
+    ? `<div class="py-8 text-secondary">No results found for "<strong>${escapeHtml(query)}</strong>"</div>`
+    : '';
+
+  // Enhanced related searches with icons
   const relatedHtml =
     response.related_searches && response.related_searches.length > 0
       ? `
-      <div class="mt-8 mb-4">
-        <h3 class="text-lg font-medium text-primary mb-3">Related searches</h3>
-        <div class="related-searches-pills">
+      <div class="related-searches-section">
+        <h3 class="related-title">Related searches</h3>
+        <div class="related-grid">
           ${response.related_searches
             .map(
               (r) => `
-            <a href="/search?q=${encodeURIComponent(r)}" data-link class="related-pill">${escapeHtml(r)}</a>
+            <a href="/search?q=${encodeURIComponent(r)}" data-link class="related-item">
+              <span class="related-icon">${ICON_SEARCH}</span>
+              <span class="related-text">${escapeHtml(r)}</span>
+            </a>
           `
             )
             .join('')}
@@ -215,8 +234,11 @@ function renderResults(
         ${correctedHtml}
         ${statsHtml}
         ${instantHtml}
+        ${noResultsHtml}
+        ${firstResultsHtml}
+        <div id="images-carousel-slot"></div>
         ${paaHtml}
-        ${resultsHtml}
+        ${remainingResultsHtml}
         ${relatedHtml}
         ${paginationHtml}
       </div>
@@ -232,6 +254,60 @@ function renderResults(
     const url = buildSearchUrl(query, filters, newPage);
     router.navigate(url);
   });
+
+  // Load image carousel asynchronously
+  if (page === 1 && response.results.length > 0) {
+    loadImageCarousel(query, router);
+  }
+}
+
+const ICON_SEARCH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`;
+
+async function loadImageCarousel(query: string, router: Router): Promise<void> {
+  const slot = document.getElementById('images-carousel-slot');
+  if (!slot) return;
+
+  try {
+    const imageResponse = await api.searchImages(query, { per_page: 8 });
+    const images = imageResponse.results as ImageResult[];
+
+    if (images.length < 4) {
+      slot.remove();
+      return;
+    }
+
+    slot.innerHTML = `
+      <div class="image-preview-carousel">
+        <div class="carousel-header">
+          <div class="carousel-title">
+            ${ICON_IMAGES}
+            <span>Images for "${escapeHtml(query)}"</span>
+          </div>
+          <a href="/images?q=${encodeURIComponent(query)}" data-link class="carousel-more">
+            View all ${ICON_ARROW_RIGHT}
+          </a>
+        </div>
+        <div class="carousel-images">
+          ${images.map((img, i) => `
+            <a href="/images?q=${encodeURIComponent(query)}" data-link class="carousel-image" data-index="${i}">
+              <img src="${escapeAttr(img.thumbnail_url || img.url)}" alt="${escapeAttr(img.title)}" loading="lazy" />
+            </a>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    // Add click handlers for images
+    slot.querySelectorAll('.carousel-image').forEach((img) => {
+      img.addEventListener('click', (e) => {
+        e.preventDefault();
+        router.navigate(`/images?q=${encodeURIComponent(query)}`);
+      });
+    });
+  } catch {
+    // Silently fail - image carousel is optional
+    slot.remove();
+  }
 }
 
 function formatNumber(n: number): string {
@@ -240,4 +316,8 @@ function formatNumber(n: number): string {
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escapeAttr(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
