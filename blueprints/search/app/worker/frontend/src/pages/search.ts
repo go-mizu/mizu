@@ -8,6 +8,7 @@ import { renderInstantAnswer } from '../components/instant-answer';
 import { renderKnowledgePanel, initKnowledgePanel } from '../components/knowledge-panel';
 import { renderPagination, initPagination } from '../components/pagination';
 import { renderTabs, initTabs } from '../components/tabs';
+import { renderPeopleAlsoAsk, initPeopleAlsoAsk } from '../components/people-also-ask';
 
 const ICON_SETTINGS = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const ICON_CHEVRON_DOWN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
@@ -184,6 +185,13 @@ function renderResults(
 
   const instantHtml = response.instant_answer ? renderInstantAnswer(response.instant_answer) : '';
 
+  // Generate People Also Ask section from related searches
+  const paaQuestions = response.related_searches?.slice(0, 4).map((q) => ({
+    question: q,
+    answer: undefined, // Would be fetched on demand
+  })) || [];
+  const paaHtml = paaQuestions.length > 0 ? renderPeopleAlsoAsk(paaQuestions) : '';
+
   const resultsHtml = response.results.length > 0
     ? response.results.map((r, i) => renderSearchResult(r, i)).join('')
     : `<div class="py-8 text-secondary">No results found for "<strong>${escapeHtml(query)}</strong>"</div>`;
@@ -226,6 +234,7 @@ function renderResults(
         ${correctedHtml}
         ${statsHtml}
         ${instantHtml}
+        ${paaHtml}
         ${resultsHtml}
         ${relatedHtml}
         ${paginationHtml}
@@ -237,6 +246,7 @@ function renderResults(
   // Init interactive components
   initSearchResults();
   initKnowledgePanel();
+  initPeopleAlsoAsk();
   initPagination((newPage) => {
     let url = `/search?q=${encodeURIComponent(query)}&page=${newPage}`;
     if (timeRange) url += `&time_range=${timeRange}`;
