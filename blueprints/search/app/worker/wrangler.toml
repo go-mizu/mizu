@@ -1,0 +1,15 @@
+name = "mizu-search"
+main = "src/index.ts"
+compatibility_date = "2026-02-05"
+compatibility_flags = ["nodejs_compat"]
+
+[site]
+bucket = "./static"
+
+[[kv_namespaces]]
+binding = "SEARCH_KV"
+id = "placeholder_id"
+preview_id = "placeholder_preview_id"
+
+[vars]
+ENVIRONMENT = "production"

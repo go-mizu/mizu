@@ -1,0 +1,75 @@
+import type {
+  SearchResponse,
+  Suggestion,
+  KnowledgePanel,
+  InstantAnswer,
+} from '../types';
+
+const TTL_SEARCH = 300;       // 5 minutes
+const TTL_SUGGEST = 60;       // 1 minute
+const TTL_KNOWLEDGE = 3600;   // 1 hour
+const TTL_INSTANT = 600;      // 10 minutes
+
+export class CacheStore {
+  private kv: KVNamespace;
+
+  constructor(kv: KVNamespace) {
+    this.kv = kv;
+  }
+
+  // --- Search results cache ---
+
+  async getSearch(hash: string): Promise<SearchResponse | null> {
+    const raw = await this.kv.get(`cache:search:${hash}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as SearchResponse;
+  }
+
+  async setSearch(hash: string, response: SearchResponse): Promise<void> {
+    await this.kv.put(`cache:search:${hash}`, JSON.stringify(response), {
+      expirationTtl: TTL_SEARCH,
+    });
+  }
+
+  // --- Suggestions cache ---
+
+  async getSuggest(hash: string): Promise<Suggestion[] | null> {
+    const raw = await this.kv.get(`cache:suggest:${hash}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as Suggestion[];
+  }
+
+  async setSuggest(hash: string, suggestions: Suggestion[]): Promise<void> {
+    await this.kv.put(`cache:suggest:${hash}`, JSON.stringify(suggestions), {
+      expirationTtl: TTL_SUGGEST,
+    });
+  }
+
+  // --- Knowledge panel cache ---
+
+  async getKnowledge(query: string): Promise<KnowledgePanel | null> {
+    const raw = await this.kv.get(`cache:knowledge:${query}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as KnowledgePanel;
+  }
+
+  async setKnowledge(query: string, panel: KnowledgePanel): Promise<void> {
+    await this.kv.put(`cache:knowledge:${query}`, JSON.stringify(panel), {
+      expirationTtl: TTL_KNOWLEDGE,
+    });
+  }
+
+  // --- Instant answer cache ---
+
+  async getInstant(hash: string): Promise<InstantAnswer | null> {
+    const raw = await this.kv.get(`cache:instant:${hash}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as InstantAnswer;
+  }
+
+  async setInstant(hash: string, answer: InstantAnswer): Promise<void> {
+    await this.kv.put(`cache:instant:${hash}`, JSON.stringify(answer), {
+      expirationTtl: TTL_INSTANT,
+    });
+  }
+}
