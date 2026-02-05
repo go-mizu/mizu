@@ -27,8 +27,13 @@ router.addRoute('', (params, query) => {
 // Search results
 router.addRoute('search', (params, query) => {
   const q = query.q || '';
-  const timeRange = query.time_range || '';
-  app.innerHTML = renderSearchPage(q, timeRange);
+  const filters = {
+    timeRange: query.time_range || '',
+    region: query.region || '',
+    verbatim: query.verbatim === '1',
+    site: query.site || '',
+  };
+  app.innerHTML = renderSearchPage(q, filters);
   initSearchPage(router, q, query);
 });
 
@@ -155,7 +160,7 @@ function initKeyboardShortcuts(): void {
       });
 
       // Close dropdowns
-      const dropdowns = document.querySelectorAll('.autocomplete-dropdown:not(.hidden), .filter-dropdown:not(.hidden), .filter-pill-dropdown:not(.hidden), .more-tabs-dropdown:not(.hidden), .time-filter-dropdown:not(.hidden)');
+      const dropdowns = document.querySelectorAll('.autocomplete-dropdown:not(.hidden), .filter-dropdown:not(.hidden), .filter-pill-dropdown:not(.hidden), .more-tabs-dropdown:not(.hidden), .time-filter-dropdown:not(.hidden), .search-tool-menu:not(.hidden)');
       dropdowns.forEach(dropdown => {
         dropdown.classList.add('hidden');
       });

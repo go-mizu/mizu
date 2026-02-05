@@ -10,6 +10,7 @@ interface SearchOptions {
   site?: string;
   exclude_site?: string;
   lens?: string;
+  verbatim?: boolean;
 }
 
 interface SearchResponse {
@@ -329,6 +330,7 @@ function searchParams(query: string, options?: SearchOptions): Record<string, st
     if (options.site) params.site = options.site;
     if (options.exclude_site) params.exclude_site = options.exclude_site;
     if (options.lens) params.lens = options.lens;
+    if (options.verbatim) params.verbatim = '1';
   }
   return params;
 }
