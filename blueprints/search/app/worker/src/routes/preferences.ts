@@ -1,16 +1,9 @@
 import { Hono } from 'hono'
 import { KVStore } from '../store/kv'
 import { generateId } from '../lib/utils'
-import type { UserPreference } from '../types'
+import type { UserPreference, HonoEnv } from '../types'
 
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace
-    ENVIRONMENT: string
-  }
-}
-
-const app = new Hono<Env>()
+const app = new Hono<HonoEnv>()
 
 app.get('/', async (c) => {
   const kvStore = new KVStore(c.env.SEARCH_KV)

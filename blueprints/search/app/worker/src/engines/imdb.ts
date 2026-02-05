@@ -262,8 +262,8 @@ export class IMDbAdvancedEngine implements OnlineEngine {
 
     if (jsonLdMatch) {
       try {
-        const jsonLd = JSON.parse(jsonLdMatch[1]);
-        // Process JSON-LD data if needed
+        JSON.parse(jsonLdMatch[1]);
+        // JSON-LD data available for future structured data extraction
       } catch {
         // Continue with HTML parsing
       }

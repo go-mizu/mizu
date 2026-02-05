@@ -13,7 +13,7 @@ import type {
   Category,
 } from './engine';
 import { newEngineResults } from './engine';
-import { decodeHtmlEntities, extractText, findElements } from '../lib/html-parser';
+import { decodeHtmlEntities, findElements } from '../lib/html-parser';
 
 // ========== Bandcamp Search Types ==========
 

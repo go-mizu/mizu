@@ -92,7 +92,8 @@ export class PubMedEngine implements OnlineEngine {
   disabled = false;
 
   // Store search IDs for two-phase lookup
-  private lastSearchIds: string[] = [];
+  // Note: Currently unused as fetch happens inline in parseResponse
+  // private lastSearchIds: string[] = [];
 
   buildRequest(query: string, params: EngineParams): RequestConfig {
     // Phase 1: Search for article IDs
@@ -137,9 +138,7 @@ export class PubMedEngine implements OnlineEngine {
 
       // Store IDs for the two-phase lookup pattern
       // The actual summaries need to be fetched in a second request
-      // For simplicity in this implementation, we store the IDs
-      // and the caller will need to make a second call to fetch summaries
-      this.lastSearchIds = data.esearchresult.idlist;
+      // IDs are stored in engineData for the orchestrator to handle
 
       // Store the IDs in engineData for the orchestrator to handle
       results.engineData['pubmed_ids'] = data.esearchresult.idlist.join(',');

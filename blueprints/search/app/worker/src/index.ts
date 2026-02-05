@@ -23,25 +23,33 @@ import {
   relatedRoutes,
 } from './routes/widgets'
 import { sessionMiddleware } from './middleware/session'
+import { errorHandler } from './middleware/error-handler'
+import { securityHeaders } from './middleware/security'
+import { rateLimit } from './middleware/rate-limit'
+import { contextMiddleware } from './middleware/context'
+import type { HonoEnv } from './types'
 
 const assetManifest = JSON.parse(manifestJSON)
 
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace
-    __STATIC_CONTENT: KVNamespace
-    ENVIRONMENT: string
-  }
-}
-
-const app = new Hono<Env>()
+const app = new Hono<HonoEnv>()
 
 // Global middleware
+app.use('*', errorHandler)       // Error handler must be first to catch all errors
+app.use('*', securityHeaders())  // Security headers on all responses
 app.use('*', cors())
 app.use('*', timing())
 app.use('*', sessionMiddleware())
 
-// Health check
+// Rate limiting for API routes
+app.use('/api/*', rateLimit({
+  windowMs: 60_000,    // 1 minute
+  maxRequests: 100,    // 100 requests per minute
+}))
+
+// Inject service container into all API requests
+app.use('/api/*', contextMiddleware)
+
+// Health check (no rate limiting, no service injection needed)
 app.route('/health', healthRoutes)
 
 // API route groups

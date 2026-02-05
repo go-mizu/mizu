@@ -21,12 +21,13 @@ const USER_AGENT =
 const RESULTS_PER_PAGE = 10;
 
 // Time range mapping for year filter
-const timeRangeYears: Record<string, number> = {
-  day: 0, // Not really applicable for academic papers
-  week: 0,
-  month: 0,
-  year: 1,
-};
+// Reserved for future time-based filtering
+// const timeRangeYears: Record<string, number> = {
+//   day: 0, // Not really applicable for academic papers
+//   week: 0,
+//   month: 0,
+//   year: 1,
+// };
 
 // Semantic Scholar API response types
 interface S2Author {

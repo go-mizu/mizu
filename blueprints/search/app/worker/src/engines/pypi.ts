@@ -87,7 +87,7 @@ export class PyPIEngine implements OnlineEngine {
   weight = 0.9;
   disabled = false;
 
-  private resultsPerPage = 20;
+  // Reserved for pagination calculation: private resultsPerPage = 20;
 
   buildRequest(query: string, params: EngineParams): RequestConfig {
     // Use PyPI search page (HTML)

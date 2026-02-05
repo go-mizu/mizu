@@ -4,10 +4,51 @@
 
 // ========== Cloudflare Bindings ==========
 
+/**
+ * Environment bindings for Cloudflare Workers.
+ * This is the single source of truth for Env type across the application.
+ */
 export interface Env {
+  /** KV namespace for search data (cache, settings, history, etc.) */
   SEARCH_KV: KVNamespace;
-  ENVIRONMENT?: string;
+  /** KV namespace for static assets (frontend files) */
+  __STATIC_CONTENT: KVNamespace;
+  /** Environment name: development, staging, or production */
+  ENVIRONMENT: 'development' | 'staging' | 'production';
 }
+
+// Forward declaration for ServiceContainer to avoid circular imports
+// These imports are type-only and don't create runtime circular dependencies
+import type { CacheStore } from './store/cache';
+import type { KVStore } from './store/kv';
+import type { MetaSearch } from './engines/metasearch';
+import type { SearchService } from './services/search';
+import type { BangService } from './services/bang';
+import type { InstantService } from './services/instant';
+import type { KnowledgeService } from './services/knowledge';
+import type { SuggestService } from './services/suggest';
+
+export interface ServiceContainer {
+  readonly cache: CacheStore;
+  readonly kv: KVStore;
+  readonly metasearch: MetaSearch;
+  readonly search: SearchService;
+  readonly bang: BangService;
+  readonly instant: InstantService;
+  readonly knowledge: KnowledgeService;
+  readonly suggest: SuggestService;
+}
+
+/**
+ * Hono app type with environment bindings.
+ */
+export type HonoEnv = {
+  Bindings: Env;
+  Variables: {
+    sessionId?: string;
+    services?: ServiceContainer;
+  };
+};
 
 // ========== Document Types ==========
 

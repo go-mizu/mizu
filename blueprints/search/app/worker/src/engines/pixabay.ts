@@ -13,7 +13,7 @@ import type {
   Category,
 } from './engine';
 import { newEngineResults } from './engine';
-import { extractText, findElements, decodeHtmlEntities } from '../lib/html-parser';
+import { findElements, decodeHtmlEntities } from '../lib/html-parser';
 
 // ========== Size Filter Mapping ==========
 
@@ -335,7 +335,7 @@ export class PixabayEngine implements OnlineEngine {
   private extractFromImageLinks(
     body: string,
     results: EngineResults,
-    filters?: EngineParams['imageFilters']
+    _filters?: EngineParams['imageFilters']
   ): void {
     // Fallback: look for image links directly
     const imgRegex = /<a[^>]+href="(\/photos\/[^"]+)"[^>]*>\s*<img[^>]+src="([^"]+)"[^>]*alt="([^"]*)"[^>]*>/g;

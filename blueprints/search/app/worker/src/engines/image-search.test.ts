@@ -7,7 +7,7 @@ import { GoogleImagesEngine, GoogleReverseImageEngine } from './google';
 import { BingImagesEngine, BingReverseImageEngine } from './bing';
 import { DuckDuckGoImagesEngine, prepareVqd } from './duckduckgo';
 import { executeEngine } from './engine';
-import type { EngineParams, ImageFilters } from './engine';
+import type { EngineParams } from './engine';
 
 // Base params for testing
 function createParams(overrides?: Partial<EngineParams>): EngineParams {

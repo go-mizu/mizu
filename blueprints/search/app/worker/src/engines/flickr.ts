@@ -57,13 +57,13 @@ interface FlickrSearchResponse {
 }
 
 // ========== Size Filter Mapping ==========
-
-const flickrSizeMap: Record<string, string> = {
-  large: 'l', // 1024 on longest side
-  medium: 'm', // 500 on longest side
-  small: 's', // 240 on longest side
-  icon: 't', // 100 on longest side
-};
+// Reserved for future advanced filter support
+// const flickrSizeMap: Record<string, string> = {
+//   large: 'l', // 1024 on longest side
+//   medium: 'm', // 500 on longest side
+//   small: 's', // 240 on longest side
+//   icon: 't', // 100 on longest side
+// };
 
 // ========== Aspect Filter Mapping ==========
 

@@ -6,18 +6,9 @@
 import { Hono } from 'hono';
 import { NewsService } from '../services/news';
 import { getSessionId } from '../middleware/session';
-import type { NewsCategory, UserLocation } from '../types';
+import type { NewsCategory, UserLocation, HonoEnv } from '../types';
 
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace;
-  };
-  Variables: {
-    sessionId: string;
-  };
-};
-
-const newsRoutes = new Hono<Env>();
+const newsRoutes = new Hono<HonoEnv>();
 
 // Lazy-init news service per request (uses KV from env)
 function getNewsService(kv: KVNamespace): NewsService {

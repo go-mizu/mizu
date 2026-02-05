@@ -2,13 +2,7 @@ import { Hono } from 'hono'
 import { KVStore } from '../store/kv'
 import { SuggestService } from '../services/suggest'
 import { CacheStore } from '../store/cache'
-
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace
-    ENVIRONMENT: string
-  }
-}
+import type { HonoEnv } from '../types'
 
 interface CheatsheetItem {
   syntax: string
@@ -535,7 +529,7 @@ const DEFAULT_WIDGET_SETTINGS = {
 }
 
 // Widget settings sub-app (mounted at /api/widgets)
-const widgetSettingsApp = new Hono<Env>()
+const widgetSettingsApp = new Hono<HonoEnv>()
 
 widgetSettingsApp.get('/', async (c) => {
   const kvStore = new KVStore(c.env.SEARCH_KV)
@@ -551,7 +545,7 @@ widgetSettingsApp.put('/', async (c) => {
 })
 
 // Cheatsheet sub-app (mounted at /api/cheatsheet)
-const cheatsheetApp = new Hono<Env>()
+const cheatsheetApp = new Hono<HonoEnv>()
 
 cheatsheetApp.get('/:language', (c) => {
   const language = c.req.param('language').toLowerCase()
@@ -568,7 +562,7 @@ cheatsheetApp.get('/:language', (c) => {
 })
 
 // Cheatsheets list sub-app (mounted at /api/cheatsheets)
-const cheatsheetsListApp = new Hono<Env>()
+const cheatsheetsListApp = new Hono<HonoEnv>()
 
 cheatsheetsListApp.get('/', (c) => {
   const list = AVAILABLE_LANGUAGES.map((lang) => ({
@@ -579,7 +573,7 @@ cheatsheetsListApp.get('/', (c) => {
 })
 
 // Related searches sub-app (mounted at /api/related)
-const relatedApp = new Hono<Env>()
+const relatedApp = new Hono<HonoEnv>()
 
 relatedApp.get('/', async (c) => {
   const q = c.req.query('q') ?? ''
