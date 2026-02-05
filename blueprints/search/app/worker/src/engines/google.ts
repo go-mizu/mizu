@@ -582,7 +582,46 @@ export class GoogleImagesEngine implements OnlineEngine {
       }
     }
 
+    // Extract related searches from various patterns in the response
+    results.suggestions = this.extractRelatedSearches(body);
+
     return results;
+  }
+
+  private extractRelatedSearches(body: string): string[] {
+    const searches: string[] = [];
+    const seen = new Set<string>();
+
+    // Pattern 1: Google related searches in "suggest" or "related_searches" JSON fields
+    const relatedPatterns = [
+      /"related_searches?":\s*\[([^\]]+)\]/gi,
+      /"q":"([^"]{2,50})"/gi,
+      /data-query="([^"]{2,50})"/gi,
+      /chip"[^>]*>([^<]{2,40})</gi,
+    ];
+
+    for (const pattern of relatedPatterns) {
+      let m: RegExpExecArray | null;
+      while ((m = pattern.exec(body)) !== null) {
+        const term = decodeHtmlEntities(m[1]).trim();
+        // Filter out obvious non-search terms
+        if (term &&
+            term.length > 1 &&
+            term.length < 60 &&
+            !term.includes('http') &&
+            !term.includes('{') &&
+            !term.includes(':') &&
+            !/^\d+$/.test(term) &&
+            !seen.has(term.toLowerCase())) {
+          seen.add(term.toLowerCase());
+          searches.push(term);
+        }
+        if (searches.length >= 10) break;
+      }
+      if (searches.length >= 10) break;
+    }
+
+    return searches;
   }
 }
 

@@ -15,12 +15,14 @@ import lensesRoutes from './routes/lenses'
 import historyRoutes from './routes/history'
 import settingsRoutes from './routes/settings'
 import bangsRoutes from './routes/bangs'
+import newsRoutes from './routes/news'
 import {
   widgetsRoutes,
   cheatsheetRoutes,
   cheatsheetsListRoutes,
   relatedRoutes,
 } from './routes/widgets'
+import { sessionMiddleware } from './middleware/session'
 
 const assetManifest = JSON.parse(manifestJSON)
 
@@ -37,6 +39,7 @@ const app = new Hono<Env>()
 // Global middleware
 app.use('*', cors())
 app.use('*', timing())
+app.use('*', sessionMiddleware())
 
 // Health check
 app.route('/health', healthRoutes)
@@ -55,6 +58,7 @@ app.route('/api/widgets', widgetsRoutes)
 app.route('/api/cheatsheet', cheatsheetRoutes)
 app.route('/api/cheatsheets', cheatsheetsListRoutes)
 app.route('/api/related', relatedRoutes)
+app.route('/api/news', newsRoutes)
 
 // Serve static frontend files for all other routes
 app.get('*', async (c) => {

@@ -109,6 +109,71 @@ interface NewsResult extends SearchResult {
   published_date: string;
 }
 
+// News Home Types
+type NewsCategory = 'top' | 'world' | 'nation' | 'business' | 'technology' | 'science' | 'health' | 'sports' | 'entertainment';
+
+interface NewsArticle {
+  id: string;
+  url: string;
+  title: string;
+  snippet: string;
+  source: string;
+  sourceUrl: string;
+  sourceIcon?: string;
+  imageUrl?: string;
+  publishedAt: string;
+  category: NewsCategory;
+  engines: string[];
+  score: number;
+  isBreaking?: boolean;
+  clusterId?: string;
+}
+
+interface NewsHomeResponse {
+  topStories: NewsArticle[];
+  forYou: NewsArticle[];
+  localNews: NewsArticle[];
+  categories: Partial<Record<NewsCategory, NewsArticle[]>>;
+  searchTimeMs: number;
+}
+
+interface NewsCategoryResponse {
+  category: NewsCategory;
+  articles: NewsArticle[];
+  hasMore: boolean;
+  page: number;
+  searchTimeMs: number;
+}
+
+interface NewsSearchResponse {
+  query: string;
+  results: NewsArticle[];
+  totalResults: number;
+  searchTimeMs: number;
+  page: number;
+  hasMore: boolean;
+}
+
+interface StoryCluster {
+  id: string;
+  title: string;
+  summary: string;
+  articles: NewsArticle[];
+  perspectives?: { label: string; articles: NewsArticle[] }[];
+  updatedAt: string;
+}
+
+interface NewsUserPreferences {
+  userId: string;
+  location?: { city: string; state?: string; country: string };
+  followedTopics: string[];
+  followedSources: string[];
+  hiddenSources: string[];
+  interests: string[];
+  language: string;
+  region: string;
+}
+
 interface InstantAnswer {
   type: string;
   query: string;
@@ -238,8 +303,12 @@ async function put<T>(path: string, body: any): Promise<T> {
   return res.json();
 }
 
-async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+async function del<T>(path: string, body?: any): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
@@ -387,6 +456,69 @@ export const api = {
   getRelated(query: string): Promise<string[]> {
     return get<string[]>('/related', { q: query });
   },
+
+  // News Home API
+  newsHome(): Promise<NewsHomeResponse> {
+    return get<NewsHomeResponse>('/news/home');
+  },
+
+  newsCategory(category: NewsCategory, page = 1): Promise<NewsCategoryResponse> {
+    return get<NewsCategoryResponse>(`/news/category/${category}`, { page: String(page) });
+  },
+
+  newsSearch(query: string, options?: { page?: number; time?: string; source?: string }): Promise<NewsSearchResponse> {
+    const params: Record<string, string> = { q: query };
+    if (options?.page) params.page = String(options.page);
+    if (options?.time) params.time = options.time;
+    if (options?.source) params.source = options.source;
+    return get<NewsSearchResponse>('/news/search', params);
+  },
+
+  newsStory(storyId: string): Promise<StoryCluster> {
+    return get<StoryCluster>(`/news/story/${storyId}`);
+  },
+
+  newsLocal(location?: { city: string; state?: string; country: string }): Promise<{ articles: NewsArticle[] }> {
+    const params: Record<string, string> = {};
+    if (location) {
+      params.city = location.city;
+      if (location.state) params.state = location.state;
+      params.country = location.country;
+    }
+    return get<{ articles: NewsArticle[] }>('/news/local', params);
+  },
+
+  newsFollowing(): Promise<{ articles: NewsArticle[] }> {
+    return get<{ articles: NewsArticle[] }>('/news/following');
+  },
+
+  newsPreferences(): Promise<NewsUserPreferences> {
+    return get<NewsUserPreferences>('/news/preferences');
+  },
+
+  updateNewsPreferences(updates: Partial<NewsUserPreferences>): Promise<NewsUserPreferences> {
+    return put<NewsUserPreferences>('/news/preferences', updates);
+  },
+
+  followNews(type: 'topic' | 'source', id: string): Promise<{ success: boolean }> {
+    return post<{ success: boolean }>('/news/follow', { type, id });
+  },
+
+  unfollowNews(type: 'topic' | 'source', id: string): Promise<{ success: boolean }> {
+    return del<{ success: boolean }>('/news/follow', { type, id });
+  },
+
+  hideNewsSource(source: string): Promise<{ success: boolean }> {
+    return post<{ success: boolean }>('/news/hide', { source });
+  },
+
+  setNewsLocation(location: { city: string; state?: string; country: string }): Promise<{ success: boolean }> {
+    return post<{ success: boolean }>('/news/location', location);
+  },
+
+  recordNewsRead(article: NewsArticle, duration?: number): Promise<{ success: boolean }> {
+    return post<{ success: boolean }>('/news/read', { article, duration });
+  },
 };
 
 export type {
@@ -409,4 +541,11 @@ export type {
   SearchSettings,
   Bang,
   BangParseResult,
+  NewsCategory,
+  NewsArticle,
+  NewsHomeResponse,
+  NewsCategoryResponse,
+  NewsSearchResponse,
+  StoryCluster,
+  NewsUserPreferences,
 };
