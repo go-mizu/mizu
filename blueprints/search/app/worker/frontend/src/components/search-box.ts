@@ -2,47 +2,52 @@ import { api } from '../api';
 import type { Suggestion, Bang } from '../api';
 import { appState } from '../lib/state';
 
-const ICON_SEARCH = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`;
+// Icons
+const ICON_SEARCH = `<svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`;
 const ICON_CLEAR = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 const ICON_MIC = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`;
 const ICON_CAMERA = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
 const ICON_HISTORY = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>`;
 const ICON_BANG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
+const ICON_SUGGESTION = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`;
 
 export interface SearchBoxOptions {
   size: 'lg' | 'sm';
   initialValue?: string;
   autofocus?: boolean;
+  placeholder?: string;
 }
 
 export function renderSearchBox(options: SearchBoxOptions): string {
   const sizeClass = options.size === 'lg' ? 'search-box-lg' : 'search-box-sm';
   const value = options.initialValue ? escapeAttr(options.initialValue) : '';
-  const clearDisplay = options.initialValue ? '' : 'hidden';
+  const clearHidden = options.initialValue ? '' : 'hidden';
+  const placeholder = options.placeholder || 'Search the web...';
 
   return `
-    <div id="search-box-wrapper" class="relative w-full flex justify-center">
-      <div id="search-box" class="search-box ${sizeClass}">
-        <span class="text-light mr-3 flex-shrink-0">${ICON_SEARCH}</span>
+    <div class="search-box-wrapper" id="search-box-wrapper">
+      <div class="search-box ${sizeClass}" id="search-box">
+        ${ICON_SEARCH}
         <input
           id="search-input"
           type="text"
           value="${value}"
-          placeholder="Search the web"
+          placeholder="${escapeAttr(placeholder)}"
           autocomplete="off"
           spellcheck="false"
           ${options.autofocus ? 'autofocus' : ''}
         />
-        <button id="search-clear-btn" class="text-secondary hover:text-primary p-1 flex-shrink-0 ${clearDisplay}" type="button" aria-label="Clear">
-          ${ICON_CLEAR}
-        </button>
-        <span class="mx-1 w-px h-5 bg-border flex-shrink-0"></span>
-        <button id="voice-search-btn" class="text-light hover:text-secondary p-1 flex-shrink-0" type="button" aria-label="Voice search">
-          ${ICON_MIC}
-        </button>
-        <button id="camera-search-btn" class="text-light hover:text-secondary p-1 flex-shrink-0" type="button" aria-label="Image search">
-          ${ICON_CAMERA}
-        </button>
+        <div class="search-box-actions">
+          <button id="search-clear-btn" class="search-box-btn ${clearHidden}" type="button" aria-label="Clear search">
+            ${ICON_CLEAR}
+          </button>
+          <button id="voice-search-btn" class="search-box-btn" type="button" aria-label="Voice search">
+            ${ICON_MIC}
+          </button>
+          <button id="camera-search-btn" class="search-box-btn" type="button" aria-label="Search by image">
+            ${ICON_CAMERA}
+          </button>
+        </div>
       </div>
       <div id="autocomplete-dropdown" class="autocomplete-dropdown hidden"></div>
     </div>
@@ -77,19 +82,36 @@ export function initSearchBox(onSearch: (query: string) => void): void {
       return;
     }
     isOpen = true;
-    dropdown!.innerHTML = items
-      .map(
-        (item, i) => `
-        <div class="autocomplete-item ${i === activeIndex ? 'active' : ''}" data-index="${i}">
-          <span class="suggestion-icon">${item.icon}</span>
-          ${item.prefix ? `<span class="bang-trigger">${escapeHtml(item.prefix)}</span>` : ''}
-          <span>${escapeHtml(item.text)}</span>
-        </div>
-      `
-      )
-      .join('');
+
+    // Group items by type for better organization
+    const recentItems = items.filter(i => i.type === 'recent');
+    const suggestionItems = items.filter(i => i.type === 'suggestion');
+    const bangItems = items.filter(i => i.type === 'bang');
+
+    let html = '';
+
+    if (recentItems.length > 0) {
+      html += `<div class="autocomplete-section">`;
+      html += `<div class="autocomplete-section-title">Recent</div>`;
+      html += recentItems.map((item, i) => renderItem(item, i)).join('');
+      html += `</div>`;
+    }
+
+    if (suggestionItems.length > 0) {
+      const startIdx = recentItems.length;
+      html += suggestionItems.map((item, i) => renderItem(item, startIdx + i)).join('');
+    }
+
+    if (bangItems.length > 0) {
+      const startIdx = recentItems.length + suggestionItems.length;
+      html += `<div class="autocomplete-section">`;
+      html += `<div class="autocomplete-section-title">Quick Actions</div>`;
+      html += bangItems.map((item, i) => renderItem(item, startIdx + i)).join('');
+      html += `</div>`;
+    }
+
+    dropdown!.innerHTML = html;
     dropdown!.classList.remove('hidden');
-    dropdown!.classList.add('has-items');
 
     dropdown!.querySelectorAll('.autocomplete-item').forEach((el) => {
       el.addEventListener('mousedown', (e) => {
@@ -104,10 +126,19 @@ export function initSearchBox(onSearch: (query: string) => void): void {
     });
   }
 
+  function renderItem(item: SuggestionItem, index: number): string {
+    return `
+      <div class="autocomplete-item" data-index="${index}">
+        <span class="item-icon">${item.icon}</span>
+        ${item.prefix ? `<span class="bang-trigger">${escapeHtml(item.prefix)}</span>` : ''}
+        <span>${escapeHtml(item.text)}</span>
+      </div>
+    `;
+  }
+
   function hideDropdown(): void {
     isOpen = false;
     dropdown!.classList.add('hidden');
-    dropdown!.classList.remove('has-items');
     dropdown!.innerHTML = '';
     suggestions = [];
     activeIndex = -1;
@@ -178,7 +209,7 @@ export function initSearchBox(onSearch: (query: string) => void): void {
       const items: SuggestionItem[] = results.map((s: Suggestion) => ({
         text: s.text,
         type: 'suggestion' as const,
-        icon: ICON_SEARCH,
+        icon: ICON_SUGGESTION,
       }));
 
       if (items.length === 0) {
@@ -278,9 +309,8 @@ export function initSearchBox(onSearch: (query: string) => void): void {
     showRecentSearches();
   });
 
-  // Get voice button and initialize voice search
+  // Voice search
   const voiceBtn = document.getElementById('voice-search-btn') as HTMLElement | null;
-
   if (voiceBtn) {
     initVoiceSearch(voiceBtn, input, (text) => {
       input!.value = text;
@@ -289,18 +319,14 @@ export function initSearchBox(onSearch: (query: string) => void): void {
     });
   }
 
-  // Get camera button and initialize image search
+  // Camera/image search
   const cameraBtn = document.getElementById('camera-search-btn') as HTMLElement | null;
-
   if (cameraBtn) {
     cameraBtn.addEventListener('click', () => {
-      // Check if we're already on the images page (reverse-modal exists)
       const modal = document.getElementById('reverse-modal');
       if (modal) {
-        // Already on images page, just open the modal
         modal.classList.remove('hidden');
       } else {
-        // Navigate to images page with reverse param to auto-open modal
         window.dispatchEvent(new CustomEvent('router:navigate', {
           detail: { path: '/images?reverse=1' }
         }));
@@ -314,11 +340,10 @@ function initVoiceSearch(
   input: HTMLInputElement,
   onResult: (text: string) => void
 ): void {
-  // Check for browser support
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
   if (!SpeechRecognition) {
-    button.style.display = 'none'; // Hide if not supported
+    button.style.display = 'none';
     return;
   }
 
@@ -342,7 +367,6 @@ function initVoiceSearch(
     recognition.onstart = () => {
       isListening = true;
       button.classList.add('listening');
-      button.style.color = '#ea4335'; // Red color while listening
     };
 
     recognition.onresult = (event: any) => {
@@ -352,7 +376,6 @@ function initVoiceSearch(
 
       input.value = transcript;
 
-      // If final result, trigger search
       if (event.results[0].isFinal) {
         stopListening();
         onResult(transcript);
@@ -383,12 +406,11 @@ function initVoiceSearch(
   function stopListening(): void {
     isListening = false;
     button.classList.remove('listening');
-    button.style.color = '';
 
     if (recognition) {
       try {
         recognition.stop();
-      } catch (e) {
+      } catch {
         // Ignore errors when stopping
       }
       recognition = null;
