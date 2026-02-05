@@ -9,6 +9,11 @@ import type {
   ImageSearchResponse,
   ImageResult,
   ReverseImageSearchResponse,
+  VideoSearchOptions,
+  VideoSearchResponse,
+  VideoResult,
+  VideoSourceInfo,
+  VideoDuration,
 } from '../types';
 import type { CacheStore } from '../store/cache';
 import type { KVStore } from '../store/kv';
@@ -159,6 +164,73 @@ function extractDomain(url: string): string {
   } catch {
     return '';
   }
+}
+
+function toVideoResult(r: EngineResult, index: number): VideoResult {
+  const durationSeconds = parseDurationToSeconds(r.duration);
+  return {
+    id: `${Date.now().toString(36)}-${index}`,
+    url: r.url,
+    title: r.title,
+    description: r.content,
+    thumbnail_url: r.thumbnailUrl || '',
+    duration: r.duration || '',
+    duration_seconds: durationSeconds,
+    channel: r.channel || '',
+    views: r.views,
+    views_formatted: r.views ? formatViews(r.views) : undefined,
+    published_at: r.publishedAt,
+    published_formatted: r.publishedAt ? formatTimeAgo(r.publishedAt) : undefined,
+    embed_url: r.embedUrl,
+    source: r.engine,
+    source_icon: getSourceIcon(r.engine),
+    score: r.score,
+    engines: [r.engine],
+    engine: r.engine,
+  };
+}
+
+function parseDurationToSeconds(duration?: string): number {
+  if (!duration) return 0;
+  const parts = duration.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
+function formatViews(views: number): string {
+  if (views >= 1_000_000_000) return `${(views / 1_000_000_000).toFixed(1)}B views`;
+  if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
+  if (views >= 1_000) return `${(views / 1_000).toFixed(1)}K views`;
+  return `${views} views`;
+}
+
+function formatTimeAgo(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 1) return 'Today';
+  if (diffDays === 1) return '1 day ago';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+  return `${Math.floor(diffDays / 365)} years ago`;
+}
+
+function getSourceIcon(engine: string): string {
+  const icons: Record<string, string> = {
+    youtube: 'https://www.youtube.com/favicon.ico',
+    vimeo: 'https://vimeo.com/favicon.ico',
+    dailymotion: 'https://www.dailymotion.com/favicon.ico',
+    google_videos: 'https://www.google.com/favicon.ico',
+    bing_videos: 'https://www.bing.com/favicon.ico',
+    peertube: 'https://joinpeertube.org/favicon.ico',
+    '360search': 'https://www.360.cn/favicon.ico',
+    sogou: 'https://www.sogou.com/favicon.ico',
+    duckduckgo_videos: 'https://duckduckgo.com/favicon.ico',
+  };
+  return icons[engine] || '';
 }
 
 // Instant answer detection patterns
@@ -411,38 +483,125 @@ export class SearchService {
   }
 
   /**
-   * Search for videos.
+   * Search for videos with full filter and sort support.
    */
-  async searchVideos(query: string, options: SearchOptions): Promise<SearchResponse> {
+  async searchVideos(query: string, options: VideoSearchOptions): Promise<VideoSearchResponse> {
     const startTime = Date.now();
-    const videoOptions: SearchOptions = { ...options, file_type: 'video' };
-    const cacheHash = hashSearchKey(`vid:${query}`, videoOptions);
+    const cacheHash = hashSearchKey(`vid:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
+    const cachedResponse = await this.cache.getVideoSearch(cacheHash);
     if (cachedResponse) {
       return cachedResponse;
     }
 
-    const { params } = toEngineParams(videoOptions);
+    // Build engine params
+    const safeLevel = options.filters?.safe;
+    let safeSearch: 0 | 1 | 2 = 1;
+    if (safeLevel === 'strict') safeSearch = 2;
+    else if (safeLevel === 'off') safeSearch = 0;
+
+    const params: EngineParams = {
+      page: options.page,
+      locale: options.language ?? 'en',
+      timeRange: parseTimeRange(options.filters?.time ?? options.time_range),
+      safeSearch,
+      engineData: {},
+    };
+
     const metaResult = await this.metasearch.search(query, 'videos', params);
-    const allResults = metaResult.results.map(toSearchResult);
-    const startIndex = (options.page - 1) * options.per_page;
-    const endIndex = startIndex + options.per_page;
+    let allResults = metaResult.results.map(toVideoResult);
+
+    // Apply duration filter (client-side)
+    const durationFilter = options.filters?.duration as VideoDuration | undefined;
+    if (durationFilter && durationFilter !== 'any') {
+      allResults = allResults.filter((r) => {
+        const seconds = r.duration_seconds ?? 0;
+        switch (durationFilter) {
+          case 'short':
+            return seconds > 0 && seconds < 240; // < 4 minutes
+          case 'medium':
+            return seconds >= 240 && seconds <= 1200; // 4-20 minutes
+          case 'long':
+            return seconds > 1200; // > 20 minutes
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply source filter (client-side)
+    const sourceFilter = options.filters?.source;
+    if (sourceFilter) {
+      allResults = allResults.filter((r) => r.source === sourceFilter || r.engine === sourceFilter);
+    }
+
+    // Apply sorting
+    const sortBy = options.sort ?? 'relevance';
+    switch (sortBy) {
+      case 'date':
+        allResults.sort((a, b) => {
+          const dateA = a.published_at ? new Date(a.published_at).getTime() : 0;
+          const dateB = b.published_at ? new Date(b.published_at).getTime() : 0;
+          return dateB - dateA; // newest first
+        });
+        break;
+      case 'views':
+        allResults.sort((a, b) => (b.views ?? 0) - (a.views ?? 0)); // most views first
+        break;
+      case 'duration':
+        allResults.sort((a, b) => (b.duration_seconds ?? 0) - (a.duration_seconds ?? 0)); // longest first
+        break;
+      // 'relevance' - keep original order (by score)
+    }
+
+    // Calculate available sources with result counts
+    const sourceCounts = new Map<string, number>();
+    for (const r of metaResult.results) {
+      const engine = r.engine;
+      sourceCounts.set(engine, (sourceCounts.get(engine) || 0) + 1);
+    }
+
+    const sourceDisplayNames: Record<string, string> = {
+      youtube: 'YouTube',
+      vimeo: 'Vimeo',
+      dailymotion: 'Dailymotion',
+      google_videos: 'Google Videos',
+      bing_videos: 'Bing Videos',
+      peertube: 'PeerTube',
+      '360search': '360 Search',
+      sogou: 'Sogou',
+      duckduckgo_videos: 'DuckDuckGo',
+    };
+
+    const availableSources: VideoSourceInfo[] = Array.from(sourceCounts.entries()).map(([name, count]) => ({
+      name,
+      display_name: sourceDisplayNames[name] || name,
+      icon: getSourceIcon(name),
+      result_count: count,
+      enabled: !sourceFilter || sourceFilter === name,
+    }));
+
+    // Paginate results
+    const perPage = options.per_page || 20;
+    const startIndex = (options.page - 1) * perPage;
+    const endIndex = startIndex + perPage;
     const paginatedResults = allResults.slice(startIndex, endIndex);
     const totalResults = allResults.length;
     const hasMore = endIndex < totalResults;
 
-    const response: SearchResponse = {
+    const response: VideoSearchResponse = {
       query,
       total_results: totalResults,
       results: paginatedResults,
+      filters: options.filters,
+      available_sources: availableSources,
       search_time_ms: Date.now() - startTime,
       page: options.page,
-      per_page: options.per_page,
+      per_page: perPage,
       has_more: hasMore,
     };
 
-    await this.cache.setSearch(cacheHash, response);
+    await this.cache.setVideoSearch(cacheHash, response);
     return response;
   }
 

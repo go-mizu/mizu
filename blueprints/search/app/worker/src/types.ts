@@ -116,18 +116,72 @@ export interface ReverseImageSearchResponse {
   search_time_ms: number;
 }
 
+// ========== Video Search Filter Types ==========
+
+export type VideoDuration = 'any' | 'short' | 'medium' | 'long';
+export type VideoQuality = 'any' | 'hd' | '4k';
+export type VideoSort = 'relevance' | 'date' | 'views' | 'duration';
+
+export interface VideoSearchFilters {
+  duration?: VideoDuration;
+  quality?: VideoQuality;
+  time?: ImageTime;
+  source?: string;
+  cc?: boolean;
+  safe?: SafeSearchLevel;
+}
+
+export interface VideoSearchOptions extends SearchOptions {
+  filters?: VideoSearchFilters;
+  sort?: VideoSort;
+}
+
 export interface VideoResult {
   id: string;
   url: string;
-  thumbnail_url: string;
   title: string;
   description: string;
-  duration_seconds: number;
+  thumbnail_url: string;
+  thumbnail_width?: number;
+  thumbnail_height?: number;
+  duration: string;
+  duration_seconds?: number;
   channel: string;
-  views: number;
-  published_at: string;
+  channel_url?: string;
+  views?: number;
+  views_formatted?: string;
+  published_at?: string;
+  published_formatted?: string;
   embed_url?: string;
+  embed_html?: string;
+  source: string;
+  source_icon?: string;
+  quality?: string;
+  has_cc?: boolean;
+  is_live?: boolean;
+  score: number;
+  engines: string[];
   engine?: string;
+}
+
+export interface VideoSearchResponse {
+  query: string;
+  total_results: number;
+  results: VideoResult[];
+  filters?: VideoSearchFilters;
+  available_sources: VideoSourceInfo[];
+  search_time_ms: number;
+  page: number;
+  per_page: number;
+  has_more: boolean;
+}
+
+export interface VideoSourceInfo {
+  name: string;
+  display_name: string;
+  icon: string;
+  result_count: number;
+  enabled: boolean;
 }
 
 export interface NewsResult {
