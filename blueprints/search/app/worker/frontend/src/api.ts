@@ -558,6 +558,24 @@ export const api = {
   },
 };
 
+// Standalone function for fetching trending searches (used by home page)
+export async function fetchTrending(): Promise<string[]> {
+  try {
+    const res = await fetch('/api/suggest/trending');
+    if (!res.ok) return [];
+    const data = await res.json();
+    // Handle both array of strings and array of Suggestion objects
+    if (Array.isArray(data)) {
+      return data.map((item: string | Suggestion) =>
+        typeof item === 'string' ? item : item.text
+      );
+    }
+    return data.suggestions || [];
+  } catch {
+    return [];
+  }
+}
+
 export type {
   SearchOptions,
   SearchResponse,

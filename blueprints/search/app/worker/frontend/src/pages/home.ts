@@ -1,5 +1,6 @@
 import { Router } from '../lib/router';
 import { renderSearchBox, initSearchBox } from '../components/search-box';
+import { fetchTrending } from '../api';
 
 const BANG_SHORTCUTS = [
   { trigger: '!g', label: 'Google', color: '#4285F4' },
@@ -43,6 +44,14 @@ export function renderHomePage(): string {
           <button id="home-lucky-btn" class="px-5 py-2 bg-surface hover:bg-surface-hover border border-border rounded text-sm text-primary cursor-pointer">
             I'm Feeling Lucky
           </button>
+        </div>
+
+        <!-- Trending Searches -->
+        <div class="trending-section mb-8 hidden" id="trending-container">
+          <p class="text-center text-xs text-light mb-3 uppercase tracking-wider">Trending Searches</p>
+          <div class="trending-chips flex flex-wrap justify-center gap-2" id="trending-chips">
+            <!-- Populated by JS -->
+          </div>
         </div>
 
         <!-- Bang Shortcuts -->
@@ -147,6 +156,24 @@ export function initHomePage(router: Router): void {
       }
     });
   });
+
+  // Load and render trending searches
+  async function loadTrending() {
+    const trending = await fetchTrending();
+    const container = document.getElementById('trending-container');
+    const chipsContainer = document.getElementById('trending-chips');
+    if (container && chipsContainer && trending.length > 0) {
+      chipsContainer.innerHTML = trending.slice(0, 10).map(term => `
+        <a href="/search?q=${encodeURIComponent(term)}" data-link
+           class="trending-chip px-3 py-1.5 bg-secondary hover:bg-accent rounded-full text-xs font-medium text-secondary-foreground hover:text-accent-foreground transition-colors cursor-pointer no-underline">
+          ${trendingIcon()}
+          ${escapeHtml(term)}
+        </a>
+      `).join('');
+      container.classList.remove('hidden');
+    }
+  }
+  loadTrending();
 }
 
 function escapeHtml(str: string): string {
@@ -187,4 +214,8 @@ function imageIcon(): string {
 
 function newsIcon(): string {
   return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>`;
+}
+
+function trendingIcon(): string {
+  return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline-block mr-1"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`;
 }
