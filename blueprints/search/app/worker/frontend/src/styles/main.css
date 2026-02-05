@@ -3024,3 +3024,134 @@
 .shortcut-item span {
   color: var(--color-secondary);
 }
+
+/* ========== Error States ========== */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.error-icon {
+  margin-bottom: 16px;
+}
+
+.error-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0 0 8px;
+}
+
+.error-description {
+  font-size: 14px;
+  color: var(--color-secondary);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.error-retry-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  background: var(--color-blue);
+  border: none;
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.error-retry-btn:hover {
+  background: #3367d6;
+}
+
+/* ========== Empty States ========== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.empty-icon {
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0 0 8px;
+}
+
+.empty-description {
+  font-size: 14px;
+  color: var(--color-secondary);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.empty-suggestions {
+  margin-bottom: 24px;
+}
+
+.empty-suggestions p {
+  font-size: 13px;
+  color: var(--color-tertiary);
+  margin: 0 0 12px;
+}
+
+.empty-suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.empty-suggestion-chip {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.empty-suggestion-chip:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-secondary);
+}
+
+.empty-tips {
+  text-align: left;
+  font-size: 13px;
+  color: var(--color-secondary);
+}
+
+.empty-tips p {
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+.empty-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.empty-tips li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
