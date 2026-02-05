@@ -86,6 +86,9 @@ export interface EngineResult {
   stars?: number;
   language?: string;
   topics?: string[];
+
+  // Custom metadata (for engine-specific data)
+  metadata?: Record<string, unknown>;
 }
 
 // ========== Engine Results Collection ==========

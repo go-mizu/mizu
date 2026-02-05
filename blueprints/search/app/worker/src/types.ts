@@ -141,6 +141,114 @@ export interface NewsResult {
   engine?: string;
 }
 
+// ========== News Types (Google News Clone) ==========
+
+export type NewsCategory =
+  | 'top'
+  | 'world'
+  | 'nation'
+  | 'business'
+  | 'technology'
+  | 'science'
+  | 'health'
+  | 'sports'
+  | 'entertainment';
+
+export interface NewsArticle {
+  id: string;
+  url: string;
+  title: string;
+  snippet: string;
+  source: string;
+  sourceUrl: string;
+  sourceIcon?: string;
+  imageUrl?: string;
+  publishedAt: string;
+  category: NewsCategory;
+  engines: string[];
+  score: number;
+  isBreaking?: boolean;
+  relatedArticles?: string[];
+  clusterId?: string;
+}
+
+export interface UserLocation {
+  city: string;
+  state?: string;
+  country: string;
+  lat?: number;
+  lng?: number;
+}
+
+export interface NewsUserPreferences {
+  userId: string;
+  location?: UserLocation;
+  locations?: UserLocation[];
+  followedTopics: string[];
+  followedSources: string[];
+  hiddenSources: string[];
+  interests: string[];
+  language: string;
+  region: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReadingHistoryEntry {
+  articleId: string;
+  url: string;
+  category: NewsCategory;
+  source: string;
+  timestamp: string;
+  duration?: number;
+}
+
+export interface StoryCluster {
+  id: string;
+  title: string;
+  summary: string;
+  articles: NewsArticle[];
+  timeline?: TimelineEvent[];
+  perspectives?: Perspective[];
+  updatedAt: string;
+}
+
+export interface TimelineEvent {
+  timestamp: string;
+  title: string;
+  description?: string;
+}
+
+export interface Perspective {
+  label: string;
+  articles: NewsArticle[];
+}
+
+export interface NewsHomeResponse {
+  topStories: NewsArticle[];
+  forYou: NewsArticle[];
+  localNews: NewsArticle[];
+  categories: Partial<Record<NewsCategory, NewsArticle[]>>;
+  searchTimeMs: number;
+}
+
+export interface NewsCategoryResponse {
+  category: NewsCategory;
+  articles: NewsArticle[];
+  hasMore: boolean;
+  page: number;
+  searchTimeMs: number;
+}
+
+export interface NewsSearchResponse {
+  query: string;
+  results: NewsArticle[];
+  totalResults: number;
+  searchTimeMs: number;
+  page: number;
+  hasMore: boolean;
+}
+
 // ========== Search Options & Response ==========
 
 export interface SearchOptions {

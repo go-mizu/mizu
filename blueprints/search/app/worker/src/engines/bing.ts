@@ -431,7 +431,44 @@ export class BingImagesEngine implements OnlineEngine {
       }
     }
 
+    // Extract related searches (Bing shows these as suggestion pills)
+    results.suggestions = this.extractRelatedSearches(body);
+
     return results;
+  }
+
+  private extractRelatedSearches(body: string): string[] {
+    const searches: string[] = [];
+    const seen = new Set<string>();
+
+    // Pattern 1: Related search links with class "relsrch" or in related section
+    const relatedPatterns = [
+      // Bing related search suggestions in data attribute
+      /data-query="([^"]+)"/gi,
+      // Related search links
+      /<a[^>]*class="[^"]*relsrch[^"]*"[^>]*>([^<]+)<\/a>/gi,
+      // Suggestion pills
+      /class="sugpill"[^>]*>([^<]+)</gi,
+      // Related queries in dgControl
+      /"RelatedSearches"[^}]*"Query"\s*:\s*"([^"]+)"/gi,
+      // Image search related queries
+      /<span[^>]*class="[^"]*b_hList[^"]*"[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/gi,
+    ];
+
+    for (const pattern of relatedPatterns) {
+      let m: RegExpExecArray | null;
+      while ((m = pattern.exec(body)) !== null) {
+        const term = decodeHtmlEntities(m[1]).trim();
+        if (term && term.length > 1 && term.length < 100 && !seen.has(term.toLowerCase())) {
+          seen.add(term.toLowerCase());
+          searches.push(term);
+        }
+        if (searches.length >= 10) break;
+      }
+      if (searches.length >= 10) break;
+    }
+
+    return searches;
   }
 }
 

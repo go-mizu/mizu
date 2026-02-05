@@ -4,6 +4,7 @@ import { renderSearchPage, initSearchPage } from './pages/search';
 import { renderImagesPage, initImagesPage } from './pages/images';
 import { renderVideosPage, initVideosPage } from './pages/videos';
 import { renderNewsPage, initNewsPage } from './pages/news';
+import { renderNewsHomePage, initNewsHomePage } from './pages/news-home';
 import { renderSettingsPage, initSettingsPage } from './pages/settings';
 import { renderHistoryPage, initHistoryPage } from './pages/history';
 
@@ -40,11 +41,17 @@ router.addRoute('videos', (params, query) => {
   initVideosPage(router, q);
 });
 
-// News
+// News Search
 router.addRoute('news', (params, query) => {
   const q = query.q || '';
   app.innerHTML = renderNewsPage(q);
   initNewsPage(router, q);
+});
+
+// News Home (Google News clone)
+router.addRoute('news-home', (params, query) => {
+  app.innerHTML = renderNewsHomePage();
+  initNewsHomePage(router, query);
 });
 
 // Settings
