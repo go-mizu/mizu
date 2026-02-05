@@ -12,7 +12,7 @@ export function renderNewsPage(query: string): string {
     <div class="min-h-screen flex flex-col">
       <!-- Header -->
       <header class="sticky top-0 bg-white z-20 border-b border-border">
-        <div class="flex items-center gap-4 px-4 py-3 max-w-[1200px]">
+        <div class="flex items-center gap-4 px-4 lg:px-8 py-3">
           <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
             <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
           </a>
@@ -23,16 +23,18 @@ export function renderNewsPage(query: string): string {
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="max-w-[1200px] pl-[170px]">
+        <div class="px-4 lg:px-8 pl-[170px]">
           ${renderTabs({ query, active: 'news' })}
         </div>
       </header>
 
       <!-- Content -->
       <main class="flex-1">
-        <div id="news-content" class="max-w-[800px] pl-[170px] pr-4 py-6">
-          <div class="flex items-center justify-center py-16">
-            <div class="spinner"></div>
+        <div id="news-content" class="px-4 lg:px-8 py-6">
+          <div class="max-w-[900px]">
+            <div class="flex items-center justify-center py-16">
+              <div class="spinner"></div>
+            </div>
           </div>
         </div>
       </main>
@@ -64,24 +66,30 @@ async function fetchAndRenderNews(query: string): Promise<void> {
 
     if (results.length === 0) {
       content.innerHTML = `
-        <div class="py-8 text-secondary">No news results found for "<strong>${escapeHtml(query)}</strong>"</div>
+        <div class="max-w-[900px]">
+          <div class="py-8 text-secondary">No news results found for "<strong>${escapeHtml(query)}</strong>"</div>
+        </div>
       `;
       return;
     }
 
     content.innerHTML = `
-      <div class="text-xs text-tertiary mb-4">
-        About ${response.total_results.toLocaleString()} news results (${(response.search_time_ms / 1000).toFixed(2)} seconds)
-      </div>
-      <div>
-        ${results.map((article) => renderNewsCard(article)).join('')}
+      <div class="max-w-[900px]">
+        <div class="text-xs text-tertiary mb-6">
+          About ${response.total_results.toLocaleString()} news results (${(response.search_time_ms / 1000).toFixed(2)} seconds)
+        </div>
+        <div class="space-y-4">
+          ${results.map((article) => renderNewsCard(article)).join('')}
+        </div>
       </div>
     `;
   } catch (err) {
     content.innerHTML = `
-      <div class="py-8">
-        <p class="text-red text-sm">Failed to load news results. Please try again.</p>
-        <p class="text-tertiary text-xs mt-2">${escapeHtml(String(err))}</p>
+      <div class="max-w-[900px]">
+        <div class="py-8">
+          <p class="text-red text-sm">Failed to load news results. Please try again.</p>
+          <p class="text-tertiary text-xs mt-2">${escapeHtml(String(err))}</p>
+        </div>
       </div>
     `;
   }
