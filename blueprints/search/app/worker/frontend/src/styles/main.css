@@ -800,41 +800,126 @@
   display: none !important;
 }
 
+/* Tools button (Google-style) */
+.tools-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--color-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tools-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.tools-btn.active {
+  color: var(--color-blue);
+}
+
 /* Filter toolbar */
-.filter-select {
+.filter-toolbar {
+  padding: 8px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-chip-wrapper {
+  position: relative;
+}
+
+.filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 6px 12px;
   font-size: 13px;
+  color: var(--color-primary);
+  background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: 18px;
-  background: var(--color-card);
-  color: var(--color-primary);
   cursor: pointer;
-  outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.filter-select:hover {
+.filter-chip:hover {
   background: var(--color-surface-hover);
 }
 
-.filter-select:focus {
-  border-color: var(--color-blue);
+.filter-chip.has-value {
+  background: #e8f0fe;
+  border-color: #d2e3fc;
+  color: var(--color-blue);
 }
 
-.filter-clear {
+.filter-chip-label {
+  white-space: nowrap;
+}
+
+.filter-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 160px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 50;
+}
+
+.filter-option {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.filter-option:hover {
+  background: var(--color-surface-hover);
+}
+
+.filter-option.active {
+  color: var(--color-blue);
+  background: #e8f0fe;
+}
+
+.clear-filters-btn {
   padding: 6px 12px;
   font-size: 13px;
-  border: 1px solid var(--color-blue);
-  border-radius: 18px;
-  background: #e8f0fe;
   color: var(--color-blue);
+  background: none;
+  border: none;
   cursor: pointer;
   font-weight: 500;
   transition: background 0.15s ease;
+  border-radius: 18px;
 }
 
-.filter-clear:hover {
-  background: #d2e3fc;
+.clear-filters-btn:hover {
+  background: #e8f0fe;
 }
 
 /* Modal */
