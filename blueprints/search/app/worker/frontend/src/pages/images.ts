@@ -13,6 +13,10 @@ const ICON_CLOSE = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" 
 
 const ICON_EXTERNAL = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>`;
 
+const ICON_FILTER = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>`;
+
+const ICON_CHEVRON_DOWN = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`;
+
 // Current state
 let currentQuery = '';
 let currentFilters: ImageSearchFilters = {};
@@ -20,13 +24,14 @@ let currentPage = 1;
 let isLoading = false;
 let hasMore = true;
 let allImages: ImageResult[] = [];
+let filtersVisible = false;
 
 export function renderImagesPage(query: string): string {
   return `
-    <div class="min-h-screen flex flex-col">
+    <div class="min-h-screen flex flex-col bg-white">
       <!-- Header -->
-      <header class="sticky top-0 bg-white z-20 border-b border-border">
-        <div class="flex items-center gap-4 px-4 py-3 max-w-[1400px]">
+      <header class="sticky top-0 bg-white z-20">
+        <div class="flex items-center gap-4 px-4 py-3">
           <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
             <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
           </a>
@@ -40,18 +45,23 @@ export function renderImagesPage(query: string): string {
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="max-w-[1400px] pl-[170px]">
+        <div class="pl-[56px] flex items-center gap-1 border-b border-border">
           ${renderTabs({ query, active: 'images' })}
+          <button id="tools-btn" class="tools-btn ml-4">
+            ${ICON_FILTER}
+            <span>Tools</span>
+            ${ICON_CHEVRON_DOWN}
+          </button>
         </div>
-        <!-- Filter toolbar -->
-        <div id="filter-toolbar" class="max-w-[1400px] px-4 py-2 flex flex-wrap gap-2 items-center border-t border-border/50">
+        <!-- Filter toolbar (hidden by default) -->
+        <div id="filter-toolbar" class="filter-toolbar hidden">
           ${renderFilterToolbar()}
         </div>
       </header>
 
       <!-- Content -->
       <main class="flex-1 flex">
-        <div id="images-content" class="flex-1 max-w-[1400px] mx-auto px-4 py-6">
+        <div id="images-content" class="flex-1 px-4 py-4">
           <div class="flex items-center justify-center py-16">
             <div class="spinner"></div>
           </div>
@@ -105,15 +115,28 @@ function renderFilterToolbar(): string {
     { id: 'type', label: 'Type', options: ['any', 'photo', 'clipart', 'lineart', 'animated', 'face'] },
     { id: 'aspect', label: 'Aspect', options: ['any', 'tall', 'square', 'wide', 'panoramic'] },
     { id: 'time', label: 'Time', options: ['any', 'day', 'week', 'month', 'year'] },
-    { id: 'rights', label: 'Rights', options: ['any', 'creative_commons', 'commercial'] },
+    { id: 'rights', label: 'Usage rights', options: ['any', 'creative_commons', 'commercial'] },
   ];
 
-  return filters.map(f => `
-    <select id="filter-${f.id}" class="filter-select" data-filter="${f.id}">
-      ${f.options.map(opt => `<option value="${opt}">${formatFilterOption(f.id, opt)}</option>`).join('')}
-    </select>
-  `).join('') + `
-    <button id="clear-filters" class="filter-clear hidden">Clear filters</button>
+  return `
+    <div class="filter-chips">
+      ${filters.map(f => `
+        <div class="filter-chip-wrapper">
+          <button class="filter-chip" data-filter="${f.id}" data-value="any">
+            <span class="filter-chip-label">${f.label}</span>
+            ${ICON_CHEVRON_DOWN}
+          </button>
+          <div class="filter-dropdown hidden" data-dropdown="${f.id}">
+            ${f.options.map(opt => `
+              <button class="filter-option${opt === 'any' ? ' active' : ''}" data-value="${opt}">
+                ${formatFilterOption(f.id, opt)}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+      <button id="clear-filters" class="clear-filters-btn hidden">Clear</button>
+    </div>
   `;
 }
 
@@ -130,6 +153,7 @@ export function initImagesPage(router: Router, query: string): void {
   currentPage = 1;
   allImages = [];
   hasMore = true;
+  filtersVisible = false;
 
   initSearchBox((q) => {
     router.navigate(`/images?q=${encodeURIComponent(q)}`);
@@ -141,6 +165,7 @@ export function initImagesPage(router: Router, query: string): void {
     addRecentSearch(query);
   }
 
+  initToolsButton();
   initFilters(router);
   initReverseSearch(router);
   initPreviewPanel();
@@ -149,30 +174,84 @@ export function initImagesPage(router: Router, query: string): void {
   fetchAndRenderImages(query, currentFilters);
 }
 
-function initFilters(router: Router): void {
+function initToolsButton(): void {
+  const btn = document.getElementById('tools-btn');
+  const toolbar = document.getElementById('filter-toolbar');
+
+  if (!btn || !toolbar) return;
+
+  btn.addEventListener('click', () => {
+    filtersVisible = !filtersVisible;
+    toolbar.classList.toggle('hidden', !filtersVisible);
+    btn.classList.toggle('active', filtersVisible);
+  });
+}
+
+function initFilters(_router: Router): void {
   const toolbar = document.getElementById('filter-toolbar');
   if (!toolbar) return;
 
-  toolbar.querySelectorAll('.filter-select').forEach(select => {
-    select.addEventListener('change', () => {
-      const filterId = (select as HTMLSelectElement).dataset.filter;
-      const value = (select as HTMLSelectElement).value;
+  // Handle filter chip clicks to show dropdowns
+  toolbar.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const filterId = (chip as HTMLElement).dataset.filter;
+      const dropdown = toolbar.querySelector(`[data-dropdown="${filterId}"]`);
 
+      // Close other dropdowns
+      toolbar.querySelectorAll('.filter-dropdown').forEach(d => {
+        if (d !== dropdown) d.classList.add('hidden');
+      });
+
+      dropdown?.classList.toggle('hidden');
+    });
+  });
+
+  // Handle filter option clicks
+  toolbar.querySelectorAll('.filter-option').forEach(option => {
+    option.addEventListener('click', () => {
+      const dropdown = option.closest('.filter-dropdown') as HTMLElement;
+      const filterId = dropdown?.dataset.dropdown;
+      const value = (option as HTMLElement).dataset.value;
+      const chip = toolbar.querySelector(`[data-filter="${filterId}"]`) as HTMLElement;
+
+      if (!filterId || !value || !chip) return;
+
+      // Update active state
+      dropdown.querySelectorAll('.filter-option').forEach(o => o.classList.remove('active'));
+      option.classList.add('active');
+
+      // Update chip appearance
       if (value === 'any') {
-        delete (currentFilters as Record<string, string>)[filterId!];
+        delete (currentFilters as Record<string, string>)[filterId];
+        chip.classList.remove('has-value');
+        chip.querySelector('.filter-chip-label')!.textContent = formatFilterOption(filterId, 'any').replace('Any ', '');
       } else {
-        (currentFilters as Record<string, string>)[filterId!] = value;
+        (currentFilters as Record<string, string>)[filterId] = value;
+        chip.classList.add('has-value');
+        chip.querySelector('.filter-chip-label')!.textContent = formatFilterOption(filterId, value);
       }
 
-      // Reset and refetch
+      // Close dropdown
+      dropdown.classList.add('hidden');
+
+      // Update clear button
+      updateClearButton();
+
+      // Refetch
       currentPage = 1;
       allImages = [];
       hasMore = true;
-      updateClearButton();
       fetchAndRenderImages(currentQuery, currentFilters);
     });
   });
 
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', () => {
+    toolbar.querySelectorAll('.filter-dropdown').forEach(d => d.classList.add('hidden'));
+  });
+
+  // Clear filters button
   const clearBtn = document.getElementById('clear-filters');
   if (clearBtn) {
     clearBtn.addEventListener('click', () => {
@@ -181,9 +260,19 @@ function initFilters(router: Router): void {
       allImages = [];
       hasMore = true;
 
-      // Reset all selects
-      toolbar.querySelectorAll('.filter-select').forEach(select => {
-        (select as HTMLSelectElement).value = 'any';
+      // Reset all chips
+      toolbar.querySelectorAll('.filter-chip').forEach(chip => {
+        const filterId = (chip as HTMLElement).dataset.filter;
+        chip.classList.remove('has-value');
+        (chip.querySelector('.filter-chip-label') as HTMLElement).textContent =
+          formatFilterOption(filterId!, 'any').replace('Any ', '');
+      });
+
+      // Reset all dropdown options
+      toolbar.querySelectorAll('.filter-dropdown').forEach(dropdown => {
+        dropdown.querySelectorAll('.filter-option').forEach((opt, i) => {
+          opt.classList.toggle('active', i === 0);
+        });
       });
 
       updateClearButton();
@@ -279,7 +368,6 @@ function initReverseSearch(router: Router): void {
 }
 
 async function handleImageFile(_file: File, _router: Router): Promise<void> {
-  // For now, show a message that file upload requires URL
   alert('Image upload coming soon. Please use the URL option for now.');
 }
 
@@ -357,9 +445,15 @@ function openPreview(image: ImageResult): void {
   imgEl.src = image.url;
   imgEl.alt = image.title;
 
+  // Only show dimensions if they exist and are not 0
+  const hasDimensions = image.width && image.height && image.width > 0 && image.height > 0;
+  const dimensionText = hasDimensions
+    ? `${image.width} × ${image.height}${image.format ? ` · ${image.format.toUpperCase()}` : ''}`
+    : (image.format ? image.format.toUpperCase() : '');
+
   details.innerHTML = `
     <h3 class="preview-title">${escapeHtml(image.title || 'Untitled')}</h3>
-    <p class="preview-dimensions">${image.width} x ${image.height} ${image.format ? `- ${image.format.toUpperCase()}` : ''}</p>
+    ${dimensionText ? `<p class="preview-dimensions">${dimensionText}</p>` : ''}
     <p class="preview-source">${escapeHtml(image.source_domain)}</p>
     <div class="preview-actions">
       <a href="${escapeAttr(image.url)}" target="_blank" class="preview-btn">View image ${ICON_EXTERNAL}</a>
@@ -390,7 +484,6 @@ function initInfiniteScroll(): void {
     }
   }, { rootMargin: '200px' });
 
-  // Will be added after initial render
   setTimeout(() => {
     const content = document.getElementById('images-content');
     if (content) {
@@ -415,14 +508,12 @@ async function loadMoreImages(): Promise<void> {
     hasMore = response.has_more;
     allImages = [...allImages, ...newImages];
 
-    // Append new images to grid
     const grid = document.querySelector('.image-grid');
     if (grid && newImages.length > 0) {
       const startIdx = allImages.length - newImages.length;
       const html = newImages.map((img, i) => renderImageCard(img, startIdx + i)).join('');
       grid.insertAdjacentHTML('beforeend', html);
 
-      // Attach click handlers to new cards
       const newCards = grid.querySelectorAll('.image-card:not([data-initialized])');
       newCards.forEach((card) => {
         card.setAttribute('data-initialized', 'true');
@@ -453,7 +544,7 @@ async function fetchAndRenderImages(query: string, filters: ImageSearchFilters):
   isLoading = true;
 
   try {
-    const response = await api.searchImages(query, { ...filters, page: 1, per_page: 30 });
+    const response = await api.searchImages(query, { ...filters, page: 1, per_page: 40 });
     const results = response.results as ImageResult[];
 
     hasMore = response.has_more;
@@ -466,22 +557,12 @@ async function fetchAndRenderImages(query: string, filters: ImageSearchFilters):
       return;
     }
 
-    const activeFilters = Object.entries(filters)
-      .filter(([_, v]) => v && v !== 'any')
-      .map(([k, v]) => `${k}: ${v}`)
-      .join(', ');
-
     content.innerHTML = `
-      <div class="text-xs text-tertiary mb-4">
-        About ${response.total_results.toLocaleString()} image results (${(response.search_time_ms / 1000).toFixed(2)} seconds)
-        ${activeFilters ? `<span class="ml-2 text-blue">Filters: ${escapeHtml(activeFilters)}</span>` : ''}
-      </div>
       <div class="image-grid">
         ${results.map((img, i) => renderImageCard(img, i)).join('')}
       </div>
     `;
 
-    // Attach click handlers to image cards
     content.querySelectorAll('.image-card').forEach((card) => {
       card.setAttribute('data-initialized', 'true');
       card.addEventListener('click', () => {
@@ -502,8 +583,11 @@ async function fetchAndRenderImages(query: string, filters: ImageSearchFilters):
 }
 
 function renderImageCard(img: ImageResult, index: number): string {
+  // Only show dimensions if they exist and are not 0
+  const hasDimensions = img.width && img.height && img.width > 0 && img.height > 0;
+
   return `
-    <div class="image-card" data-image-index="${index}" data-full-url="${escapeAttr(img.url)}" data-source-url="${escapeAttr(img.source_url)}">
+    <div class="image-card" data-image-index="${index}">
       <img
         src="${escapeAttr(img.thumbnail_url || img.url)}"
         alt="${escapeAttr(img.title)}"
@@ -513,7 +597,7 @@ function renderImageCard(img: ImageResult, index: number): string {
       <div class="image-info">
         <div class="image-title">${escapeHtml(img.title || '')}</div>
         <div class="image-source">${escapeHtml(img.source_domain)}</div>
-        ${img.width && img.height ? `<div class="image-dimensions">${img.width} x ${img.height}</div>` : ''}
+        ${hasDimensions ? `<div class="image-dimensions">${img.width} × ${img.height}</div>` : ''}
       </div>
     </div>
   `;
