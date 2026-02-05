@@ -34,12 +34,13 @@ function renderCalculator(answer: InstantAnswer): string {
   const result = data.formatted || data.result || answer.result || '';
 
   return `
-    <div class="instant-card border-l-4 border-l-blue">
-      <div class="flex items-center gap-2 mb-2 text-tertiary">
+    <div class="instant-card calculator">
+      <div class="flex items-center gap-2 text-tertiary">
         ${ICON_CALC}
         <span class="instant-type">Calculator</span>
       </div>
-      <div class="instant-result">${escapeHtml(expression)} = ${escapeHtml(String(result))}</div>
+      <div class="instant-result">${escapeHtml(String(result))}</div>
+      <div class="instant-sub">${escapeHtml(expression)}</div>
     </div>
   `;
 }
@@ -53,13 +54,13 @@ function renderConversion(answer: InstantAnswer): string {
   const category = data.category ?? '';
 
   return `
-    <div class="instant-card border-l-4 border-l-green">
-      <div class="flex items-center gap-2 mb-2 text-tertiary">
+    <div class="instant-card conversion">
+      <div class="flex items-center gap-2 text-tertiary">
         ${ICON_CONVERT}
-        <span class="instant-type">Unit Conversion${category ? ` -- ${escapeHtml(category)}` : ''}</span>
+        <span class="instant-type">Unit Conversion${category ? ` - ${escapeHtml(category)}` : ''}</span>
       </div>
-      <div class="instant-result">${escapeHtml(String(fromVal))} ${escapeHtml(fromUnit)} = ${escapeHtml(String(toVal))} ${escapeHtml(toUnit)}</div>
-      ${data.formatted ? `<div class="instant-sub">${escapeHtml(data.formatted)}</div>` : ''}
+      <div class="instant-result">${escapeHtml(String(toVal))} ${escapeHtml(toUnit)}</div>
+      <div class="instant-sub">${escapeHtml(String(fromVal))} ${escapeHtml(fromUnit)}</div>
     </div>
   `;
 }
@@ -73,13 +74,14 @@ function renderCurrency(answer: InstantAnswer): string {
   const rate = data.rate ?? '';
 
   return `
-    <div class="instant-card border-l-4 border-l-yellow">
-      <div class="flex items-center gap-2 mb-2 text-tertiary">
+    <div class="instant-card currency">
+      <div class="flex items-center gap-2 text-tertiary">
         ${ICON_CURRENCY}
         <span class="instant-type">Currency</span>
       </div>
-      <div class="instant-result">${escapeHtml(String(fromVal))} ${escapeHtml(fromCur)} = ${escapeHtml(String(toVal))} ${escapeHtml(toCur)}</div>
-      ${rate ? `<div class="instant-sub">1 ${escapeHtml(fromCur)} = ${escapeHtml(String(rate))} ${escapeHtml(toCur)}</div>` : ''}
+      <div class="instant-result">${escapeHtml(String(toVal))} ${escapeHtml(toCur)}</div>
+      ${rate ? `<div class="currency-rate">1 ${escapeHtml(fromCur)} = ${escapeHtml(String(rate))} ${escapeHtml(toCur)}</div>` : ''}
+      <div class="currency-updated">${escapeHtml(String(fromVal))} ${escapeHtml(fromCur)}</div>
     </div>
   `;
 }
@@ -99,20 +101,21 @@ function renderWeather(answer: InstantAnswer): string {
     weatherIcon = ICON_WEATHER_RAIN;
   }
 
+  // Build meta items
+  const metaItems: string[] = [];
+  if (humidity) metaItems.push(`Humidity: ${escapeHtml(humidity)}`);
+  if (wind) metaItems.push(`Wind: ${escapeHtml(wind)}`);
+
   return `
-    <div class="instant-card border-l-4 border-l-blue">
-      <div class="instant-type mb-2">Weather</div>
-      <div class="flex items-center gap-4 mb-3">
-        <div>${weatherIcon}</div>
-        <div>
-          <div class="text-2xl font-semibold text-primary">${escapeHtml(String(temp))}&deg;</div>
-          <div class="text-secondary capitalize">${escapeHtml(data.condition || '')}</div>
-        </div>
+    <div class="instant-card weather">
+      <div class="weather-main">
+        <div class="weather-icon">${weatherIcon}</div>
+        <div class="weather-temp">${escapeHtml(String(temp))}<sup>°</sup></div>
       </div>
-      <div class="text-sm font-medium text-primary mb-2">${escapeHtml(location)}</div>
-      <div class="flex gap-6 text-sm text-tertiary">
-        ${humidity ? `<span>Humidity: ${escapeHtml(humidity)}</span>` : ''}
-        ${wind ? `<span>Wind: ${escapeHtml(wind)}</span>` : ''}
+      <div class="weather-details">
+        <div class="weather-condition">${escapeHtml(data.condition || '')}</div>
+        <div class="weather-location">${escapeHtml(location)}</div>
+        ${metaItems.length > 0 ? `<div class="weather-meta">${metaItems.join(' · ')}</div>` : ''}
       </div>
     </div>
   `;
@@ -125,28 +128,34 @@ function renderDefinition(answer: InstantAnswer): string {
   const pos = data.part_of_speech || '';
   const definitions: string[] = data.definitions || [];
   const synonyms: string[] = data.synonyms || [];
+  const example = data.example || '';
+
+  // Speaker icon for pronunciation button
+  const ICON_SPEAKER = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
 
   return `
-    <div class="instant-card border-l-4 border-l-red">
-      <div class="flex items-center gap-2 mb-2 text-tertiary">
+    <div class="instant-card definition">
+      <div class="flex items-center gap-2 text-tertiary">
         ${ICON_BOOK}
         <span class="instant-type">Definition</span>
       </div>
-      <div class="flex items-baseline gap-3 mb-1">
-        <span class="text-xl font-semibold text-primary">${escapeHtml(word)}</span>
-        ${phonetic ? `<span class="text-tertiary text-sm">${escapeHtml(phonetic)}</span>` : ''}
+      <div class="word">
+        <span>${escapeHtml(word)}</span>
+        <button class="pronunciation-btn" title="Listen to pronunciation" aria-label="Listen to pronunciation">
+          ${ICON_SPEAKER}
+        </button>
       </div>
-      ${pos ? `<div class="text-sm italic text-secondary mb-2">${escapeHtml(pos)}</div>` : ''}
+      ${phonetic ? `<div class="phonetic">${escapeHtml(phonetic)}</div>` : ''}
+      ${pos ? `<div class="part-of-speech">${escapeHtml(pos)}</div>` : ''}
       ${
         definitions.length > 0
-          ? `<ol class="list-decimal list-inside space-y-1 text-sm text-snippet mb-3">
-              ${definitions.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}
-             </ol>`
+          ? definitions.map((d, i) => `<div class="definition-text">${i + 1}. ${escapeHtml(d)}</div>`).join('')
           : ''
       }
+      ${example ? `<div class="definition-example">"${escapeHtml(example)}"</div>` : ''}
       ${
         synonyms.length > 0
-          ? `<div class="text-sm">
+          ? `<div class="mt-3 text-sm">
               <span class="text-tertiary">Synonyms: </span>
               <span class="text-secondary">${synonyms.map((s) => escapeHtml(s)).join(', ')}</span>
              </div>`
@@ -164,23 +173,23 @@ function renderTime(answer: InstantAnswer): string {
   const timezone = data.timezone || '';
 
   return `
-    <div class="instant-card border-l-4 border-l-green">
-      <div class="flex items-center gap-2 mb-2 text-tertiary">
+    <div class="instant-card time">
+      <div class="flex items-center gap-2 text-tertiary">
         ${ICON_CLOCK}
         <span class="instant-type">Time</span>
       </div>
-      <div class="text-sm font-medium text-secondary mb-1">${escapeHtml(location)}</div>
-      <div class="text-4xl font-semibold text-primary mb-1">${escapeHtml(time)}</div>
-      <div class="text-sm text-tertiary">${escapeHtml(date)}</div>
-      ${timezone ? `<div class="text-xs text-light mt-1">${escapeHtml(timezone)}</div>` : ''}
+      <div class="time-display">${escapeHtml(time)}</div>
+      <div class="time-location">${escapeHtml(location)}</div>
+      <div class="time-date">${escapeHtml(date)}</div>
+      ${timezone ? `<div class="time-timezone">${escapeHtml(timezone)}</div>` : ''}
     </div>
   `;
 }
 
 function renderGeneric(answer: InstantAnswer): string {
   return `
-    <div class="instant-card border-l-4 border-l-blue">
-      <div class="instant-type mb-2">${escapeHtml(answer.type)}</div>
+    <div class="instant-card">
+      <div class="instant-type">${escapeHtml(answer.type)}</div>
       <div class="instant-result">${escapeHtml(answer.result)}</div>
     </div>
   `;
