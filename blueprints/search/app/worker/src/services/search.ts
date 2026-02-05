@@ -27,8 +27,13 @@ import type { Category, EngineParams, EngineResult, TimeRange, ImageFilters } fr
 
 /**
  * Convert time range string to TimeRange type.
+ * Note: 'hour' is not a standard TimeRange, so we map it to 'day' for engine compatibility.
  */
 function parseTimeRange(tr: string | undefined): TimeRange {
+  if (tr === 'hour') {
+    // 'hour' is not a standard TimeRange, map to 'day' for engines that don't support it
+    return 'day';
+  }
   if (tr === 'day' || tr === 'week' || tr === 'month' || tr === 'year') {
     return tr;
   }
@@ -506,6 +511,12 @@ export class SearchService {
       timeRange: parseTimeRange(options.filters?.time ?? options.time_range),
       safeSearch,
       engineData: {},
+      videoFilters: options.filters ? {
+        duration: options.filters.duration,
+        quality: options.filters.quality,
+        source: options.filters.source,
+        cc: options.filters.cc,
+      } : undefined,
     };
 
     const metaResult = await this.metasearch.search(query, 'videos', params);

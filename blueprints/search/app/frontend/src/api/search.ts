@@ -36,6 +36,13 @@ export interface SearchOptions {
   filetype?: string
 }
 
+export interface VideoSearchOptions extends SearchOptions {
+  duration?: string // short, medium, long
+  source?: string // youtube, vimeo, dailymotion, etc.
+  quality?: string // hd
+  cc?: boolean // closed captions
+}
+
 export const searchApi = {
   // Main search
   search: (query: string, options: SearchOptions = {}): Promise<SearchResponse> => {
@@ -64,11 +71,16 @@ export const searchApi = {
   },
 
   // Video search
-  searchVideos: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: VideoResult[]; total_results?: number }> => {
+  searchVideos: (query: string, options: VideoSearchOptions = {}): Promise<{ query: string; results: VideoResult[]; total_results?: number }> => {
     const params = new URLSearchParams({ q: query })
     if (options.page) params.set('page', String(options.page))
     if (options.per_page) params.set('per_page', String(options.per_page))
     if (options.refetch) params.set('refetch', 'true')
+    if (options.duration) params.set('duration', options.duration)
+    if (options.source) params.set('source', options.source)
+    if (options.time) params.set('time', options.time)
+    if (options.quality) params.set('quality', options.quality)
+    if (options.cc) params.set('cc', 'true')
     return api.get(`/api/search/videos?${params}`)
   },
 
