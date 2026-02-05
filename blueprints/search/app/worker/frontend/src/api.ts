@@ -13,6 +13,15 @@ interface SearchOptions {
   verbatim?: boolean;
 }
 
+interface VideoSearchOptions extends SearchOptions {
+  duration?: string;
+  quality?: string;
+  time?: string;
+  source?: string;
+  sort?: string;
+  cc?: boolean;
+}
+
 interface SearchResponse {
   query: string;
   corrected_query?: string;
@@ -365,8 +374,27 @@ export const api = {
     return post('/search/images/reverse', { image_data: imageData });
   },
 
-  searchVideos(query: string, options?: SearchOptions): Promise<SearchResponse & { results: VideoResult[] }> {
-    return get('/search/videos', searchParams(query, options));
+  searchVideos(query: string, options?: VideoSearchOptions): Promise<SearchResponse & { results: VideoResult[] }> {
+    const params: Record<string, string> = { q: query };
+    if (options) {
+      if (options.page !== undefined) params.page = String(options.page);
+      if (options.per_page !== undefined) params.per_page = String(options.per_page);
+      const time = options.time ?? options.time_range;
+      if (time) params.time = time;
+      if (options.duration) params.duration = options.duration;
+      if (options.quality) params.quality = options.quality;
+      if (options.source) params.source = options.source;
+      if (options.sort) params.sort = options.sort;
+      if (options.cc !== undefined) params.cc = options.cc ? '1' : '0';
+      if (options.region) params.region = options.region;
+      if (options.language) params.language = options.language;
+      if (options.safe_search) params.safe_search = options.safe_search;
+      if (options.site) params.site = options.site;
+      if (options.exclude_site) params.exclude_site = options.exclude_site;
+      if (options.lens) params.lens = options.lens;
+      if (options.verbatim) params.verbatim = '1';
+    }
+    return get('/search/videos', params);
   },
 
   searchNews(query: string, options?: SearchOptions): Promise<SearchResponse & { results: NewsResult[] }> {
@@ -580,6 +608,7 @@ export async function fetchTrending(): Promise<string[]> {
 
 export type {
   SearchOptions,
+  VideoSearchOptions,
   SearchResponse,
   SearchResult,
   ImageResult,

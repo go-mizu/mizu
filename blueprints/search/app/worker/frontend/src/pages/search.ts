@@ -130,6 +130,7 @@ async function fetchAndRenderResults(
       time_range: filters.timeRange || undefined,
       region: filters.region || undefined,
       verbatim: filters.verbatim || undefined,
+      site: filters.site || undefined,
     });
 
     // Handle bang redirect

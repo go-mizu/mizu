@@ -153,9 +153,13 @@ export class MetaSearch {
   async search(
     query: string,
     category: Category,
-    params: EngineParams
+    params: EngineParams,
+    options?: { engines?: string[] }
   ): Promise<MetaSearchResult> {
-    const engines = this.getByCategory(category);
+    const engines = this.getByCategory(category).filter((engine) => {
+      if (!options?.engines || options.engines.length === 0) return true;
+      return options.engines.includes(engine.name);
+    });
 
     if (engines.length === 0) {
       return {

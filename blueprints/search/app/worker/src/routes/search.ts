@@ -20,13 +20,22 @@ import type {
 } from '../types'
 
 function extractSearchOptions(c: { req: { query: (key: string) => string | undefined } }): SearchOptions {
+  const timeRange = c.req.query('time_range') ?? c.req.query('time') ?? '';
+  const language = c.req.query('language') ?? c.req.query('lang') ?? 'en';
+  const safeSearch = c.req.query('safe_search') ?? c.req.query('safe') ?? 'moderate';
+  const verbatim = c.req.query('verbatim');
+
   return {
     page: parseInt(c.req.query('page') ?? '1', 10),
     per_page: parseInt(c.req.query('per_page') ?? '10', 10),
-    time_range: c.req.query('time') ?? '',
+    time_range: timeRange,
     region: c.req.query('region') ?? '',
-    language: c.req.query('lang') ?? 'en',
-    safe_search: c.req.query('safe') ?? 'moderate',
+    language,
+    safe_search: safeSearch,
+    site: c.req.query('site') ?? '',
+    exclude_site: c.req.query('exclude_site') ?? '',
+    lens: c.req.query('lens') ?? '',
+    verbatim: verbatim === '1' || verbatim === 'true',
   }
 }
 
@@ -98,10 +107,10 @@ const validVideoSorts: VideoSort[] = ['relevance', 'date', 'views', 'duration']
 function extractVideoFilters(c: { req: { query: (key: string) => string | undefined } }): VideoSearchFilters {
   const duration = c.req.query('duration')
   const quality = c.req.query('quality')
-  const time = c.req.query('time')
+  const time = c.req.query('time') ?? c.req.query('time_range')
   const source = c.req.query('source')
   const cc = c.req.query('cc')
-  const safe = c.req.query('safe') as SafeSearchLevel | undefined
+  const safe = (c.req.query('safe') ?? c.req.query('safe_search')) as SafeSearchLevel | undefined
 
   const filters: VideoSearchFilters = {}
 
@@ -206,6 +215,66 @@ app.get('/news', async (c) => {
   const options = extractSearchOptions(c)
   const searchService = c.get('services')!.search
   const results = await searchService.searchNews(q, options)
+  return c.json(results)
+})
+
+app.get('/science', async (c) => {
+  const q = c.req.query('q') ?? ''
+  if (!q) {
+    return c.json({ error: 'Missing required parameter: q' }, 400)
+  }
+
+  const options = extractSearchOptions(c)
+  const searchService = c.get('services')!.search
+  const results = await searchService.searchScience(q, options)
+  return c.json(results)
+})
+
+app.get('/code', async (c) => {
+  const q = c.req.query('q') ?? ''
+  if (!q) {
+    return c.json({ error: 'Missing required parameter: q' }, 400)
+  }
+
+  const options = extractSearchOptions(c)
+  const searchService = c.get('services')!.search
+  const results = await searchService.searchCode(q, options)
+  return c.json(results)
+})
+
+app.get('/social', async (c) => {
+  const q = c.req.query('q') ?? ''
+  if (!q) {
+    return c.json({ error: 'Missing required parameter: q' }, 400)
+  }
+
+  const options = extractSearchOptions(c)
+  const searchService = c.get('services')!.search
+  const results = await searchService.searchSocial(q, options)
+  return c.json(results)
+})
+
+app.get('/music', async (c) => {
+  const q = c.req.query('q') ?? ''
+  if (!q) {
+    return c.json({ error: 'Missing required parameter: q' }, 400)
+  }
+
+  const options = extractSearchOptions(c)
+  const searchService = c.get('services')!.search
+  const results = await searchService.searchMusic(q, options)
+  return c.json(results)
+})
+
+app.get('/maps', async (c) => {
+  const q = c.req.query('q') ?? ''
+  if (!q) {
+    return c.json({ error: 'Missing required parameter: q' }, 400)
+  }
+
+  const options = extractSearchOptions(c)
+  const searchService = c.get('services')!.search
+  const results = await searchService.searchMaps(q, options)
   return c.json(results)
 })
 
