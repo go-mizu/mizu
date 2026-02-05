@@ -4,6 +4,11 @@ import type {
   SearchOptions,
   SearchHistory,
   InstantAnswer,
+  ImageSearchOptions,
+  ImageSearchFilters,
+  ImageSearchResponse,
+  ImageResult,
+  ReverseImageSearchResponse,
 } from '../types';
 import type { CacheStore } from '../store/cache';
 import type { KVStore } from '../store/kv';
@@ -11,7 +16,9 @@ import type { BangService } from './bang';
 import type { InstantService } from './instant';
 import type { KnowledgeService } from './knowledge';
 import type { MetaSearch } from '../engines/metasearch';
-import type { Category, EngineParams, EngineResult, TimeRange } from '../engines/engine';
+import { getReverseImageEngines } from '../engines/metasearch';
+import { executeEngine } from '../engines/engine';
+import type { Category, EngineParams, EngineResult, TimeRange, ImageFilters } from '../engines/engine';
 
 /**
  * Convert time range string to TimeRange type.
@@ -21,6 +28,25 @@ function parseTimeRange(tr: string | undefined): TimeRange {
     return tr;
   }
   return '';
+}
+
+/**
+ * Convert ImageSearchFilters to engine ImageFilters.
+ */
+function toImageFilters(filters?: ImageSearchFilters): ImageFilters | undefined {
+  if (!filters) return undefined;
+  return {
+    size: filters.size,
+    color: filters.color,
+    type: filters.type,
+    aspect: filters.aspect,
+    rights: filters.rights,
+    filetype: filters.filetype,
+    minWidth: filters.min_width,
+    minHeight: filters.min_height,
+    maxWidth: filters.max_width,
+    maxHeight: filters.max_height,
+  };
 }
 
 /**
@@ -49,6 +75,25 @@ function toEngineParams(options: SearchOptions): { category: Category; params: E
 }
 
 /**
+ * Convert ImageSearchOptions to EngineParams for image search.
+ */
+function toImageEngineParams(options: ImageSearchOptions): EngineParams {
+  const safeLevel = options.filters?.safe;
+  let safeSearch: 0 | 1 | 2 = 1;
+  if (safeLevel === 'strict') safeSearch = 2;
+  else if (safeLevel === 'off') safeSearch = 0;
+
+  return {
+    page: options.page,
+    locale: options.language ?? 'en',
+    timeRange: parseTimeRange(options.filters?.time ?? options.time_range),
+    safeSearch,
+    engineData: {},
+    imageFilters: toImageFilters(options.filters),
+  };
+}
+
+/**
  * Convert EngineResult to SearchResult format.
  */
 function toSearchResult(r: EngineResult, index: number): SearchResult {
@@ -65,6 +110,47 @@ function toSearchResult(r: EngineResult, index: number): SearchResult {
     engine: r.engine,
     engines: [r.engine],
   };
+}
+
+/**
+ * Convert EngineResult to ImageResult format.
+ */
+function toImageResult(r: EngineResult, index: number): ImageResult {
+  const [width, height] = parseResolution(r.resolution);
+  return {
+    id: `${Date.now().toString(36)}-${index}`,
+    url: r.imageUrl || r.url,
+    thumbnail_url: r.thumbnailUrl || '',
+    title: r.title,
+    source_url: r.url,
+    source_domain: extractDomain(r.url),
+    width,
+    height,
+    file_size: 0,
+    format: extractFormat(r.imageUrl || r.url),
+    engine: r.engine,
+    score: r.score,
+  };
+}
+
+function parseResolution(resolution?: string): [number, number] {
+  if (!resolution) return [0, 0];
+  const match = resolution.match(/(\d+)x(\d+)/);
+  if (match) {
+    return [parseInt(match[1], 10), parseInt(match[2], 10)];
+  }
+  return [0, 0];
+}
+
+function extractFormat(url: string): string {
+  const match = url.match(/\.(\w+)(?:\?|$)/i);
+  if (match) {
+    const ext = match[1].toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
+      return ext === 'jpeg' ? 'jpg' : ext;
+    }
+  }
+  return 'unknown';
 }
 
 function extractDomain(url: string): string {
@@ -90,8 +176,12 @@ function generateId(): string {
   return `${timestamp}-${random}`;
 }
 
-function hashSearchKey(query: string, options: SearchOptions): string {
-  const key = `${query}|${options.page}|${options.per_page}|${options.time_range ?? ''}|${options.region ?? ''}|${options.language ?? ''}|${options.safe_search ?? ''}|${options.site ?? ''}|${options.lens ?? ''}`;
+function hashSearchKey(query: string, options: SearchOptions | ImageSearchOptions): string {
+  const imageFilters = (options as ImageSearchOptions).filters;
+  const filterStr = imageFilters
+    ? `|${imageFilters.size ?? ''}|${imageFilters.color ?? ''}|${imageFilters.type ?? ''}|${imageFilters.aspect ?? ''}|${imageFilters.time ?? ''}|${imageFilters.rights ?? ''}|${imageFilters.filetype ?? ''}|${imageFilters.safe ?? ''}`
+    : '';
+  const key = `${query}|${options.page}|${options.per_page}|${options.time_range ?? ''}|${options.region ?? ''}|${options.language ?? ''}|${options.safe_search ?? ''}|${options.site ?? ''}|${options.lens ?? ''}${filterStr}`;
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     const char = key.charCodeAt(i);
@@ -198,39 +288,126 @@ export class SearchService {
   }
 
   /**
-   * Search for images.
+   * Search for images with full filter support.
    */
-  async searchImages(query: string, options: SearchOptions): Promise<SearchResponse> {
+  async searchImages(query: string, options: ImageSearchOptions): Promise<ImageSearchResponse> {
     const startTime = Date.now();
-    const imageOptions: SearchOptions = { ...options, file_type: 'image' };
-    const cacheHash = hashSearchKey(`img:${query}`, imageOptions);
+    const cacheHash = hashSearchKey(`img:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
+    const cachedResponse = await this.cache.getImageSearch(cacheHash);
     if (cachedResponse) {
       return cachedResponse;
     }
 
-    const { params } = toEngineParams(imageOptions);
+    const params = toImageEngineParams(options);
     const metaResult = await this.metasearch.search(query, 'images', params);
-    const allResults = metaResult.results.map(toSearchResult);
-    const startIndex = (options.page - 1) * options.per_page;
-    const endIndex = startIndex + options.per_page;
+    const allResults = metaResult.results.map(toImageResult);
+
+    // Default to 30 results per page for images
+    const perPage = options.per_page || 30;
+    const startIndex = (options.page - 1) * perPage;
+    const endIndex = startIndex + perPage;
     const paginatedResults = allResults.slice(startIndex, endIndex);
     const totalResults = allResults.length;
     const hasMore = endIndex < totalResults;
 
-    const response: SearchResponse = {
+    const response: ImageSearchResponse = {
       query,
+      filters: options.filters,
       total_results: totalResults,
       results: paginatedResults,
+      related_searches: metaResult.suggestions,
       search_time_ms: Date.now() - startTime,
       page: options.page,
-      per_page: options.per_page,
+      per_page: perPage,
       has_more: hasMore,
     };
 
-    await this.cache.setSearch(cacheHash, response);
+    await this.cache.setImageSearch(cacheHash, response);
     return response;
+  }
+
+  /**
+   * Reverse image search by URL or base64 image data.
+   */
+  async reverseImageSearch(
+    imageUrl?: string,
+    imageData?: string
+  ): Promise<ReverseImageSearchResponse> {
+    const startTime = Date.now();
+
+    if (!imageUrl && !imageData) {
+      throw new Error('Either imageUrl or imageData is required');
+    }
+
+    // Use URL if provided, otherwise we'd need to upload the image
+    const searchUrl = imageUrl || '';
+    if (!searchUrl) {
+      // For now, return empty results for base64 uploads
+      // Full implementation would upload to a temporary URL
+      return {
+        query_image: { url: '' },
+        exact_matches: [],
+        similar_images: [],
+        pages_with_image: [],
+        search_time_ms: Date.now() - startTime,
+      };
+    }
+
+    // Get reverse image search engines
+    const reverseEngines = getReverseImageEngines();
+
+    // Execute all reverse image engines in parallel
+    const params: EngineParams = {
+      page: 1,
+      locale: 'en',
+      safeSearch: 1,
+      timeRange: '',
+      engineData: {},
+    };
+
+    const promises = reverseEngines.map((engine) =>
+      executeEngine(engine, searchUrl, params).catch(() => null)
+    );
+
+    const results = await Promise.all(promises);
+
+    // Aggregate results
+    const similarImages: ImageResult[] = [];
+    const exactMatches: ImageResult[] = [];
+    const pagesWithImage: SearchResult[] = [];
+
+    let idx = 0;
+    for (const result of results) {
+      if (!result) continue;
+
+      for (const r of result.results) {
+        if (r.imageUrl) {
+          const imgResult = toImageResult(r, idx++);
+          // Heuristic: if URL matches exactly, it's an exact match
+          if (r.imageUrl === searchUrl || r.url === searchUrl) {
+            exactMatches.push(imgResult);
+          } else {
+            similarImages.push(imgResult);
+          }
+        }
+
+        // Pages that contain the image
+        if (r.url && !r.imageUrl) {
+          pagesWithImage.push(toSearchResult(r, idx++));
+        }
+      }
+    }
+
+    return {
+      query_image: {
+        url: searchUrl,
+      },
+      exact_matches: exactMatches.slice(0, 10),
+      similar_images: similarImages.slice(0, 50),
+      pages_with_image: pagesWithImage.slice(0, 20),
+      search_time_ms: Date.now() - startTime,
+    };
   }
 
   /**

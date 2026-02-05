@@ -13,12 +13,13 @@
     "preview": "wrangler dev --local"
   },
   "dependencies": {
+    "@cloudflare/kv-asset-handler": "^0.4.2",
     "hono": "^4.11.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260205.0",
-    "vitest": "^4.0.18",
     "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
     "wrangler": "^4.62.0"
   }
 }

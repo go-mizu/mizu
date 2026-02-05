@@ -13,8 +13,8 @@ import type {
   Category,
 } from './engine';
 import { executeEngine } from './engine';
-import { GoogleEngine, GoogleImagesEngine } from './google';
-import { BingEngine, BingImagesEngine, BingNewsEngine } from './bing';
+import { GoogleEngine, GoogleImagesEngine, GoogleReverseImageEngine } from './google';
+import { BingEngine, BingImagesEngine, BingNewsEngine, BingReverseImageEngine } from './bing';
 import {
   DuckDuckGoImagesEngine,
   DuckDuckGoVideosEngine,
@@ -248,6 +248,10 @@ export function createDefaultMetaSearch(): MetaSearch {
   ms.register(new BingImagesEngine());
   ms.register(new DuckDuckGoImagesEngine());
 
+  // Reverse image search engines
+  ms.register(new GoogleReverseImageEngine());
+  ms.register(new BingReverseImageEngine());
+
   // Video search engines
   ms.register(new YouTubeEngine());
   ms.register(new DuckDuckGoVideosEngine());
@@ -262,4 +266,14 @@ export function createDefaultMetaSearch(): MetaSearch {
   ms.register(new RedditEngine());
 
   return ms;
+}
+
+/**
+ * Get the reverse image search engines.
+ */
+export function getReverseImageEngines(): OnlineEngine[] {
+  return [
+    new GoogleReverseImageEngine(),
+    new BingReverseImageEngine(),
+  ];
 }

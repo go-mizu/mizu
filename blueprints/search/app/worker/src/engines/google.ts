@@ -345,6 +345,102 @@ export class GoogleEngine implements OnlineEngine {
   }
 }
 
+// ========== Google Image Filter Mappings ==========
+
+const googleSizeMap: Record<string, string> = {
+  large: 'l',
+  medium: 'm',
+  small: 's',
+  icon: 'i',
+};
+
+const googleColorMap: Record<string, string> = {
+  color: 'color',
+  gray: 'gray',
+  transparent: 'trans',
+  red: 'red',
+  orange: 'orange',
+  yellow: 'yellow',
+  green: 'green',
+  teal: 'teal',
+  blue: 'blue',
+  purple: 'purple',
+  pink: 'pink',
+  white: 'white',
+  black: 'black',
+  brown: 'brown',
+};
+
+const googleTypeMap: Record<string, string> = {
+  face: 'face',
+  photo: 'photo',
+  clipart: 'clipart',
+  lineart: 'lineart',
+  animated: 'animated',
+};
+
+const googleAspectMap: Record<string, string> = {
+  tall: 't',
+  square: 's',
+  wide: 'w',
+  panoramic: 'xw',
+};
+
+const googleRightsMap: Record<string, string> = {
+  creative_commons: 'cl',
+  commercial: 'ol',
+};
+
+function buildGoogleImageTbs(params: EngineParams): string {
+  const tbs: string[] = [];
+  const filters = params.imageFilters;
+
+  if (!filters) return '';
+
+  // Size filter
+  if (filters.size && filters.size !== 'any' && googleSizeMap[filters.size]) {
+    tbs.push(`isz:${googleSizeMap[filters.size]}`);
+  }
+
+  // Custom size
+  if (filters.minWidth || filters.minHeight) {
+    const w = filters.minWidth || 0;
+    const h = filters.minHeight || 0;
+    tbs.push(`isz:ex,iszw:${w},iszh:${h}`);
+  }
+
+  // Color filter
+  if (filters.color && filters.color !== 'any') {
+    if (filters.color === 'color' || filters.color === 'gray' || filters.color === 'transparent') {
+      tbs.push(`ic:${googleColorMap[filters.color]}`);
+    } else if (googleColorMap[filters.color]) {
+      tbs.push(`ic:specific,isc:${googleColorMap[filters.color]}`);
+    }
+  }
+
+  // Type filter
+  if (filters.type && filters.type !== 'any' && googleTypeMap[filters.type]) {
+    tbs.push(`itp:${googleTypeMap[filters.type]}`);
+  }
+
+  // Aspect ratio filter
+  if (filters.aspect && filters.aspect !== 'any' && googleAspectMap[filters.aspect]) {
+    tbs.push(`iar:${googleAspectMap[filters.aspect]}`);
+  }
+
+  // Usage rights filter
+  if (filters.rights && filters.rights !== 'any' && googleRightsMap[filters.rights]) {
+    tbs.push(`sur:${googleRightsMap[filters.rights]}`);
+  }
+
+  // Time range
+  if (params.timeRange && timeRangeMap[params.timeRange]) {
+    tbs.push(`qdr:${timeRangeMap[params.timeRange]}`);
+  }
+
+  return tbs.join(',');
+}
+
 // ========== GoogleImagesEngine ==========
 
 export class GoogleImagesEngine implements OnlineEngine {
@@ -363,7 +459,25 @@ export class GoogleImagesEngine implements OnlineEngine {
     searchParams.set('tbm', 'isch');
     searchParams.set('asearch', 'isch');
     searchParams.set('hl', 'en');
-    searchParams.set('safe', 'off');
+
+    // Safe search
+    const safeValue = safeSearchMap[params.safeSearch];
+    if (safeValue) {
+      searchParams.set('safe', safeValue);
+    } else {
+      searchParams.set('safe', 'off');
+    }
+
+    // Build tbs parameter for filters
+    const tbs = buildGoogleImageTbs(params);
+    if (tbs) {
+      searchParams.set('tbs', tbs);
+    }
+
+    // File type filter
+    if (params.imageFilters?.filetype && params.imageFilters.filetype !== 'any') {
+      searchParams.set('as_filetype', params.imageFilters.filetype);
+    }
 
     // Zero-based pagination for images
     const ijn = params.page - 1;
@@ -380,8 +494,9 @@ export class GoogleImagesEngine implements OnlineEngine {
     };
   }
 
-  parseResponse(body: string, _params: EngineParams): EngineResults {
+  parseResponse(body: string, params: EngineParams): EngineResults {
     const results = newEngineResults();
+    const filters = params.imageFilters;
 
     // Try to find ischj JSON in the response
     const jsonStart = body.indexOf('{"ischj"');
@@ -412,6 +527,13 @@ export class GoogleImagesEngine implements OnlineEngine {
         if (data.ischj?.metadata) {
           for (const item of data.ischj.metadata) {
             if (item.original_image?.url) {
+              const width = item.original_image.width || 0;
+              const height = item.original_image.height || 0;
+
+              // Client-side size filtering for custom dimensions
+              if (filters?.maxWidth && width > filters.maxWidth) continue;
+              if (filters?.maxHeight && height > filters.maxHeight) continue;
+
               results.results.push({
                 url: item.result?.referrer_url || '',
                 title: item.result?.page_title || '',
@@ -423,7 +545,7 @@ export class GoogleImagesEngine implements OnlineEngine {
                 imageUrl: item.original_image.url,
                 thumbnailUrl: item.thumbnail?.url || '',
                 source: item.result?.site_title || '',
-                resolution: `${item.original_image.width || 0}x${item.original_image.height || 0}`,
+                resolution: `${width}x${height}`,
               });
             }
           }
@@ -439,6 +561,13 @@ export class GoogleImagesEngine implements OnlineEngine {
         /\["(https:\/\/[^"]+\.(?:jpg|jpeg|png|gif|webp)[^"]*)",(\d+),(\d+)\]/g;
       let match: RegExpExecArray | null;
       while ((match = re.exec(body)) !== null) {
+        const width = parseInt(match[2], 10);
+        const height = parseInt(match[3], 10);
+
+        // Client-side size filtering
+        if (filters?.maxWidth && width > filters.maxWidth) continue;
+        if (filters?.maxHeight && height > filters.maxHeight) continue;
+
         results.results.push({
           url: match[1],
           title: '',
@@ -448,8 +577,71 @@ export class GoogleImagesEngine implements OnlineEngine {
           category: 'images',
           template: 'images',
           imageUrl: match[1],
-          resolution: `${match[2]}x${match[3]}`,
+          resolution: `${width}x${height}`,
         });
+      }
+    }
+
+    return results;
+  }
+}
+
+// ========== GoogleReverseImageEngine ==========
+
+export class GoogleReverseImageEngine implements OnlineEngine {
+  name = 'google reverse';
+  shortcut = 'gri';
+  categories: Category[] = ['images'];
+  supportsPaging = false;
+  maxPage = 1;
+  timeout = 15_000;
+  weight = 1.0;
+  disabled = false;
+
+  buildRequest(query: string, _params: EngineParams): RequestConfig {
+    // query is the image URL for reverse search
+    return {
+      url: `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(query)}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': getRandomGSAUserAgent(),
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      cookies: ['CONSENT=YES+'],
+    };
+  }
+
+  parseResponse(body: string, _params: EngineParams): EngineResults {
+    const results = newEngineResults();
+
+    // Parse visual matches from Lens response
+    // The response contains JSON data embedded in the HTML
+    const dataMatch = body.match(/AF_initDataCallback\(\{[^}]*data:(\[[\s\S]*?\])\s*,\s*sideChannel/);
+    if (dataMatch) {
+      try {
+        // Extract image results from the nested structure
+        const imgPattern = /"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|gif|webp)[^"]*)"/gi;
+        let match: RegExpExecArray | null;
+        const seen = new Set<string>();
+
+        while ((match = imgPattern.exec(body)) !== null) {
+          const url = match[1];
+          if (!seen.has(url) && !url.includes('google.com') && !url.includes('gstatic.com')) {
+            seen.add(url);
+            results.results.push({
+              url,
+              title: 'Visual match',
+              content: '',
+              engine: this.name,
+              score: this.weight,
+              category: 'images',
+              template: 'images',
+              imageUrl: url,
+            });
+          }
+        }
+      } catch {
+        // Parse failed
       }
     }
 

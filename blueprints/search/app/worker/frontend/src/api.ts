@@ -47,11 +47,54 @@ interface SearchResult {
   engines?: string[];
 }
 
-interface ImageResult extends SearchResult {
+interface ImageResult {
+  id: string;
+  url: string;
+  thumbnail_url: string;
+  title: string;
+  source_url: string;
+  source_domain: string;
   width: number;
   height: number;
-  format?: string;
-  source_url: string;
+  file_size: number;
+  format: string;
+  engine?: string;
+  score?: number;
+  thumbnail?: { url: string };
+  domain: string;
+}
+
+interface ImageSearchFilters {
+  size?: 'any' | 'large' | 'medium' | 'small' | 'icon';
+  color?: 'any' | 'color' | 'gray' | 'transparent' | 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'blue' | 'purple' | 'pink' | 'white' | 'black' | 'brown';
+  type?: 'any' | 'face' | 'photo' | 'clipart' | 'lineart' | 'animated';
+  aspect?: 'any' | 'tall' | 'square' | 'wide' | 'panoramic';
+  time?: 'any' | 'day' | 'week' | 'month' | 'year';
+  rights?: 'any' | 'creative_commons' | 'commercial';
+  filetype?: 'any' | 'jpg' | 'png' | 'gif' | 'webp' | 'svg' | 'bmp' | 'ico';
+  safe?: 'off' | 'moderate' | 'strict';
+  page?: number;
+  per_page?: number;
+}
+
+interface ImageSearchResponse {
+  query: string;
+  filters?: ImageSearchFilters;
+  total_results: number;
+  results: ImageResult[];
+  related_searches?: string[];
+  search_time_ms: number;
+  page: number;
+  per_page: number;
+  has_more: boolean;
+}
+
+interface ReverseImageSearchResponse {
+  query_image: { url: string; width?: number; height?: number };
+  exact_matches: ImageResult[];
+  similar_images: ImageResult[];
+  pages_with_image: SearchResult[];
+  search_time_ms: number;
 }
 
 interface VideoResult extends SearchResult {
@@ -224,8 +267,25 @@ export const api = {
     return get<SearchResponse>('/search', searchParams(query, options));
   },
 
-  searchImages(query: string, options?: SearchOptions): Promise<SearchResponse & { results: ImageResult[] }> {
-    return get('/search/images', searchParams(query, options));
+  searchImages(query: string, options?: ImageSearchFilters): Promise<ImageSearchResponse> {
+    const params: Record<string, string> = { q: query };
+    if (options) {
+      if (options.page !== undefined) params.page = String(options.page);
+      if (options.per_page !== undefined) params.per_page = String(options.per_page);
+      if (options.size && options.size !== 'any') params.size = options.size;
+      if (options.color && options.color !== 'any') params.color = options.color;
+      if (options.type && options.type !== 'any') params.type = options.type;
+      if (options.aspect && options.aspect !== 'any') params.aspect = options.aspect;
+      if (options.time && options.time !== 'any') params.time = options.time;
+      if (options.rights && options.rights !== 'any') params.rights = options.rights;
+      if (options.filetype && options.filetype !== 'any') params.filetype = options.filetype;
+      if (options.safe) params.safe = options.safe;
+    }
+    return get('/search/images', params);
+  },
+
+  reverseImageSearch(url: string): Promise<ReverseImageSearchResponse> {
+    return post('/search/images/reverse', { url });
   },
 
   searchVideos(query: string, options?: SearchOptions): Promise<SearchResponse & { results: VideoResult[] }> {
@@ -334,6 +394,9 @@ export type {
   SearchResponse,
   SearchResult,
   ImageResult,
+  ImageSearchFilters,
+  ImageSearchResponse,
+  ReverseImageSearchResponse,
   VideoResult,
   NewsResult,
   InstantAnswer,

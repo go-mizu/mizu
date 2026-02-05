@@ -8,8 +8,8 @@ bucket = "./static"
 
 [[kv_namespaces]]
 binding = "SEARCH_KV"
-id = "placeholder_id"
-preview_id = "placeholder_preview_id"
+id = "3550c0440b6f4f30a49797935234965a"
+preview_id = "c08cc94eb29c4dbfb5ef2d5f20654405"
 
 [vars]
 ENVIRONMENT = "production"

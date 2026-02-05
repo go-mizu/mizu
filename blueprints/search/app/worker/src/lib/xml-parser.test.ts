@@ -98,32 +98,35 @@ describe('xml-parser', () => {
   describe('getElementAttribute', () => {
     it('extracts attribute value', () => {
       const xml = '<root><link href="https://example.com"/></root>';
-      const value = getElementAttribute(xml, 'link', 'href');
-      expect(value).toBe('https://example.com');
+      const values = getElementAttribute(xml, 'link', 'href');
+      expect(values).toHaveLength(1);
+      expect(values[0]).toBe('https://example.com');
     });
 
     it('handles double quotes', () => {
       const xml = '<root><item id="test-id">Content</item></root>';
-      const value = getElementAttribute(xml, 'item', 'id');
-      expect(value).toBe('test-id');
+      const values = getElementAttribute(xml, 'item', 'id');
+      expect(values).toHaveLength(1);
+      expect(values[0]).toBe('test-id');
     });
 
     it('handles single quotes', () => {
       const xml = "<root><item id='test-id'>Content</item></root>";
-      const value = getElementAttribute(xml, 'item', 'id');
-      expect(value).toBe('test-id');
+      const values = getElementAttribute(xml, 'item', 'id');
+      expect(values).toHaveLength(1);
+      expect(values[0]).toBe('test-id');
     });
 
-    it('returns empty string when attribute not found', () => {
+    it('returns empty array when attribute not found', () => {
       const xml = '<root><item id="test">Content</item></root>';
-      const value = getElementAttribute(xml, 'item', 'missing');
-      expect(value).toBe('');
+      const values = getElementAttribute(xml, 'item', 'missing');
+      expect(values).toHaveLength(0);
     });
 
-    it('returns empty string when element not found', () => {
+    it('returns empty array when element not found', () => {
       const xml = '<root><other>Content</other></root>';
-      const value = getElementAttribute(xml, 'item', 'id');
-      expect(value).toBe('');
+      const values = getElementAttribute(xml, 'item', 'id');
+      expect(values).toHaveLength(0);
     });
   });
 
