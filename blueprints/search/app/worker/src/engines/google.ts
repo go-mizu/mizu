@@ -395,7 +395,12 @@ function buildGoogleImageTbs(params: EngineParams): string {
   const tbs: string[] = [];
   const filters = params.imageFilters;
 
-  if (!filters) return '';
+  // Time range (checked first, works even without imageFilters)
+  if (params.timeRange && timeRangeMap[params.timeRange]) {
+    tbs.push(`qdr:${timeRangeMap[params.timeRange]}`);
+  }
+
+  if (!filters) return tbs.join(',');
 
   // Size filter
   if (filters.size && filters.size !== 'any' && googleSizeMap[filters.size]) {
@@ -431,11 +436,6 @@ function buildGoogleImageTbs(params: EngineParams): string {
   // Usage rights filter
   if (filters.rights && filters.rights !== 'any' && googleRightsMap[filters.rights]) {
     tbs.push(`sur:${googleRightsMap[filters.rights]}`);
-  }
-
-  // Time range
-  if (params.timeRange && timeRangeMap[params.timeRange]) {
-    tbs.push(`qdr:${timeRangeMap[params.timeRange]}`);
   }
 
   return tbs.join(',');

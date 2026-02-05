@@ -794,3 +794,332 @@
   border-color: var(--color-blue);
   box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
 }
+
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
+/* Filter toolbar */
+.filter-select {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-card);
+  color: var(--color-primary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.filter-select:hover {
+  background: var(--color-surface-hover);
+}
+
+.filter-select:focus {
+  border-color: var(--color-blue);
+}
+
+.filter-clear {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--color-blue);
+  border-radius: 18px;
+  background: #e8f0fe;
+  color: var(--color-blue);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+.filter-clear:hover {
+  background: #d2e3fc;
+}
+
+/* Modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-content {
+  background: var(--color-card);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--color-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--color-tertiary);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.drop-zone.drag-over {
+  border-color: var(--color-blue);
+  background: #e8f0fe;
+}
+
+.drop-zone p {
+  margin-bottom: 12px;
+}
+
+.file-upload-btn {
+  display: inline-block;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  background: var(--color-blue);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.file-upload-btn:hover {
+  background: #3367d6;
+}
+
+.url-input-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.url-input-section p {
+  font-size: 14px;
+  color: var(--color-tertiary);
+  margin-bottom: 12px;
+}
+
+.url-input-container {
+  display: flex;
+  gap: 8px;
+}
+
+.url-input-container input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  outline: none;
+  color: var(--color-primary);
+}
+
+.url-input-container input:focus {
+  border-color: var(--color-blue);
+}
+
+.url-input-container button {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  background: var(--color-blue);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.url-input-container button:hover {
+  background: #3367d6;
+}
+
+/* Preview panel */
+.preview-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100vh;
+  background: var(--color-card);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.preview-panel-content {
+  position: relative;
+  padding: 20px;
+}
+
+.preview-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--color-tertiary);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.preview-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-primary);
+}
+
+.preview-image-container {
+  margin-bottom: 20px;
+  background: var(--color-surface);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-image-container img {
+  width: 100%;
+  display: block;
+}
+
+.preview-details {
+  padding-top: 16px;
+}
+
+.preview-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+  word-wrap: break-word;
+}
+
+.preview-dimensions {
+  font-size: 13px;
+  color: var(--color-tertiary);
+  margin-bottom: 4px;
+}
+
+.preview-source {
+  font-size: 13px;
+  color: var(--color-secondary);
+  margin-bottom: 16px;
+}
+
+.preview-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-decoration: none;
+  text-align: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.preview-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.preview-btn-primary {
+  background: var(--color-blue);
+  color: white;
+  border-color: var(--color-blue);
+}
+
+.preview-btn-primary:hover {
+  background: #3367d6;
+}
+
+/* Reverse image search results */
+.reverse-results {
+  padding: 20px 0;
+}
+
+.query-image-section {
+  margin-bottom: 32px;
+}
+
+.query-image-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 12px;
+}
+
+.query-image {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.similar-images-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 16px;
+}
+
+/* Image card dimensions */
+.image-card .image-dimensions {
+  font-size: 10px;
+  color: var(--color-light);
+  margin-top: 2px;
+}
