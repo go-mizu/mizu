@@ -4,6 +4,7 @@ import type {
   SearchOptions,
   SearchHistory,
   InstantAnswer,
+  SearchLens,
   ImageSearchOptions,
   ImageSearchFilters,
   ImageSearchResponse,
@@ -106,12 +107,98 @@ function toImageEngineParams(options: ImageSearchOptions): EngineParams {
 /**
  * Convert EngineResult to SearchResult format.
  */
+function buildMetadata(r: EngineResult): Record<string, unknown> | undefined {
+  const metadata: Record<string, unknown> = { ...(r.metadata ?? {}) };
+
+  if (r.authors && r.authors.length > 0) {
+    metadata.authors = r.authors.join(', ');
+  }
+  if (r.doi) {
+    metadata.doi = r.doi;
+  }
+  if (r.journal) {
+    metadata.journal = r.journal;
+  }
+
+  if (r.publishedAt) {
+    const year = new Date(r.publishedAt).getFullYear();
+    if (!isNaN(year) && !metadata.year) {
+      metadata.year = year;
+    }
+  }
+
+  if (r.category === 'science') {
+    if (!metadata.source) metadata.source = r.engine;
+    const citations =
+      (metadata.citationCount as number | undefined) ??
+      (metadata.citations as number | undefined) ??
+      (metadata.pmcrefcount as number | undefined);
+    if (citations !== undefined) metadata.citations = citations;
+
+    const pdfUrl =
+      (metadata.pdf_url as string | undefined) ??
+      (metadata.openAccessPdfUrl as string | undefined);
+    if (pdfUrl) metadata.pdf_url = pdfUrl;
+  }
+
+  if (r.category === 'it') {
+    if (r.stars !== undefined) metadata.stars = r.stars;
+    if (r.language) metadata.language = r.language;
+    if (r.topics && r.topics.length > 0) metadata.topics = r.topics;
+    if (!metadata.source) metadata.source = r.engine;
+  }
+
+  if (r.category === 'videos' && ['soundcloud', 'bandcamp', 'genius'].includes(r.engine)) {
+    if (!metadata.source) metadata.source = r.engine;
+    const artist =
+      (metadata.artistName as string | undefined) ??
+      (metadata.artist as string | undefined) ??
+      (r.channel || undefined);
+    if (artist) metadata.artist = artist;
+    const album =
+      (metadata.albumName as string | undefined) ??
+      (metadata.album as string | undefined);
+    if (album) metadata.album = album;
+    if (r.duration) metadata.duration = r.duration;
+  }
+
+  if (r.category === 'social') {
+    if (!metadata.source) metadata.source = r.engine;
+    if (r.source && !metadata.subreddit && r.source.startsWith('r/')) {
+      metadata.subreddit = r.source.replace(/^r\//, '');
+    }
+    if (r.source && !metadata.source_label) {
+      metadata.source_label = r.source;
+    }
+    if (!metadata.author && r.channel) metadata.author = r.channel;
+    if (!metadata.published && r.publishedAt) metadata.published = r.publishedAt;
+  }
+
+  if (r.engine === 'openstreetmap') {
+    const latRaw = (metadata.lat as number | string | undefined) ?? (metadata.latitude as number | string | undefined);
+    const lonRaw = (metadata.lon as number | string | undefined) ?? (metadata.longitude as number | string | undefined);
+    const lat = typeof latRaw === 'string' ? parseFloat(latRaw) : latRaw;
+    const lon = typeof lonRaw === 'string' ? parseFloat(lonRaw) : lonRaw;
+    if (lat !== undefined && !isNaN(lat)) metadata.lat = lat;
+    if (lon !== undefined && !isNaN(lon)) metadata.lon = lon;
+    if (!metadata.type && metadata['type']) metadata.type = metadata['type'];
+  }
+
+  if (!metadata.pdf_url && r.content) {
+    const match = r.content.match(/\[PDF:\s*(https?:\/\/[^\]]+)\]/i);
+    if (match?.[1]) metadata.pdf_url = match[1];
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
 function toSearchResult(r: EngineResult, index: number): SearchResult {
   return {
     id: `${Date.now().toString(36)}-${index}`,
     url: r.url,
     title: r.title,
     snippet: r.content,
+    content: r.content,
     domain: extractDomain(r.url),
     thumbnail: r.thumbnailUrl ? { url: r.thumbnailUrl } : undefined,
     published: r.publishedAt,
@@ -119,6 +206,7 @@ function toSearchResult(r: EngineResult, index: number): SearchResult {
     crawled_at: new Date().toISOString(),
     engine: r.engine,
     engines: [r.engine],
+    metadata: buildMetadata(r),
   };
 }
 
@@ -169,6 +257,27 @@ function extractDomain(url: string): string {
   } catch {
     return '';
   }
+}
+
+function normalizeHost(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const withoutProtocol = trimmed.replace(/^https?:\/\//i, '');
+  return withoutProtocol.split('/')[0].replace(/^www\./i, '').toLowerCase();
+}
+
+function matchesDomain(url: string, domain: string): boolean {
+  const host = normalizeHost(url);
+  const target = normalizeHost(domain);
+  if (!host || !target) return false;
+  return host === target || host.endsWith(`.${target}`);
+}
+
+function matchesKeywords(result: SearchResult, keywords: string[], mode: 'include' | 'exclude'): boolean {
+  if (keywords.length === 0) return mode === 'include';
+  const haystack = `${result.title} ${result.snippet} ${result.content ?? ''}`.toLowerCase();
+  const matched = keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
+  return mode === 'include' ? matched : !matched;
 }
 
 function toVideoResult(r: EngineResult, index: number): VideoResult {
@@ -333,10 +442,11 @@ export class SearchService {
 
     // 4. Convert and paginate results
     const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
     const startIndex = (options.page - 1) * options.per_page;
     const endIndex = startIndex + options.per_page;
-    const paginatedResults = allResults.slice(startIndex, endIndex);
-    const totalResults = allResults.length;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
     const hasMore = endIndex < totalResults;
 
     const response: SearchResponse = {
@@ -345,6 +455,7 @@ export class SearchService {
       total_results: totalResults,
       results: paginatedResults,
       suggestions: metaResult.suggestions,
+      related_searches: metaResult.suggestions,
       instant_answer: instantAnswer ?? undefined,
       knowledge_panel: knowledgePanel ?? undefined,
       search_time_ms: Date.now() - startTime,
@@ -361,6 +472,230 @@ export class SearchService {
       // Silently ignore history errors
     });
 
+    return response;
+  }
+
+  /**
+   * Search for science/academic results.
+   */
+  async searchScience(query: string, options: SearchOptions): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const cacheHash = hashSearchKey(`science:${query}`, options);
+
+    const cachedResponse = await this.cache.getSearch(cacheHash);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    const params: EngineParams = {
+      page: options.page,
+      locale: options.language ?? 'en',
+      timeRange: parseTimeRange(options.time_range),
+      safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
+      engineData: {},
+    };
+
+    const metaResult = await this.metasearch.search(query, 'science', params);
+    const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
+    const startIndex = (options.page - 1) * options.per_page;
+    const endIndex = startIndex + options.per_page;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
+    const hasMore = endIndex < totalResults;
+
+    const response: SearchResponse = {
+      query,
+      total_results: totalResults,
+      results: paginatedResults,
+      suggestions: metaResult.suggestions,
+      search_time_ms: Date.now() - startTime,
+      page: options.page,
+      per_page: options.per_page,
+      has_more: hasMore,
+    };
+
+    await this.cache.setSearch(cacheHash, response);
+    return response;
+  }
+
+  /**
+   * Search for code/IT results.
+   */
+  async searchCode(query: string, options: SearchOptions): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const cacheHash = hashSearchKey(`code:${query}`, options);
+
+    const cachedResponse = await this.cache.getSearch(cacheHash);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    const params: EngineParams = {
+      page: options.page,
+      locale: options.language ?? 'en',
+      timeRange: parseTimeRange(options.time_range),
+      safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
+      engineData: {},
+    };
+
+    const metaResult = await this.metasearch.search(query, 'it', params);
+    const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
+    const startIndex = (options.page - 1) * options.per_page;
+    const endIndex = startIndex + options.per_page;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
+    const hasMore = endIndex < totalResults;
+
+    const response: SearchResponse = {
+      query,
+      total_results: totalResults,
+      results: paginatedResults,
+      suggestions: metaResult.suggestions,
+      search_time_ms: Date.now() - startTime,
+      page: options.page,
+      per_page: options.per_page,
+      has_more: hasMore,
+    };
+
+    await this.cache.setSearch(cacheHash, response);
+    return response;
+  }
+
+  /**
+   * Search for social results.
+   */
+  async searchSocial(query: string, options: SearchOptions): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const cacheHash = hashSearchKey(`social:${query}`, options);
+
+    const cachedResponse = await this.cache.getSearch(cacheHash);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    const params: EngineParams = {
+      page: options.page,
+      locale: options.language ?? 'en',
+      timeRange: parseTimeRange(options.time_range),
+      safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
+      engineData: {},
+    };
+
+    const metaResult = await this.metasearch.search(query, 'social', params);
+    const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
+    const startIndex = (options.page - 1) * options.per_page;
+    const endIndex = startIndex + options.per_page;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
+    const hasMore = endIndex < totalResults;
+
+    const response: SearchResponse = {
+      query,
+      total_results: totalResults,
+      results: paginatedResults,
+      suggestions: metaResult.suggestions,
+      search_time_ms: Date.now() - startTime,
+      page: options.page,
+      per_page: options.per_page,
+      has_more: hasMore,
+    };
+
+    await this.cache.setSearch(cacheHash, response);
+    return response;
+  }
+
+  /**
+   * Search for music results (music-only engines).
+   */
+  async searchMusic(query: string, options: SearchOptions): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const cacheHash = hashSearchKey(`music:${query}`, options);
+
+    const cachedResponse = await this.cache.getSearch(cacheHash);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    const params: EngineParams = {
+      page: options.page,
+      locale: options.language ?? 'en',
+      timeRange: parseTimeRange(options.time_range),
+      safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
+      engineData: {},
+    };
+
+    const metaResult = await this.metasearch.search(query, 'videos', params, {
+      engines: ['soundcloud', 'bandcamp', 'genius'],
+    });
+    const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
+    const startIndex = (options.page - 1) * options.per_page;
+    const endIndex = startIndex + options.per_page;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
+    const hasMore = endIndex < totalResults;
+
+    const response: SearchResponse = {
+      query,
+      total_results: totalResults,
+      results: paginatedResults,
+      suggestions: metaResult.suggestions,
+      search_time_ms: Date.now() - startTime,
+      page: options.page,
+      per_page: options.per_page,
+      has_more: hasMore,
+    };
+
+    await this.cache.setSearch(cacheHash, response);
+    return response;
+  }
+
+  /**
+   * Search for map/location results (OpenStreetMap only).
+   */
+  async searchMaps(query: string, options: SearchOptions): Promise<SearchResponse> {
+    const startTime = Date.now();
+    const cacheHash = hashSearchKey(`maps:${query}`, options);
+
+    const cachedResponse = await this.cache.getSearch(cacheHash);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    const params: EngineParams = {
+      page: options.page,
+      locale: options.language ?? 'en',
+      timeRange: '',
+      safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
+      engineData: {},
+    };
+
+    const metaResult = await this.metasearch.search(query, 'general', params, {
+      engines: ['openstreetmap'],
+    });
+    const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
+    const startIndex = (options.page - 1) * options.per_page;
+    const endIndex = startIndex + options.per_page;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
+    const hasMore = endIndex < totalResults;
+
+    const response: SearchResponse = {
+      query,
+      total_results: totalResults,
+      results: paginatedResults,
+      suggestions: metaResult.suggestions,
+      search_time_ms: Date.now() - startTime,
+      page: options.page,
+      per_page: options.per_page,
+      has_more: hasMore,
+    };
+
+    await this.cache.setSearch(cacheHash, response);
     return response;
   }
 
@@ -500,7 +835,7 @@ export class SearchService {
     }
 
     // Build engine params
-    const safeLevel = options.filters?.safe;
+    const safeLevel = options.filters?.safe ?? options.safe_search;
     let safeSearch: 0 | 1 | 2 = 1;
     if (safeLevel === 'strict') safeSearch = 2;
     else if (safeLevel === 'off') safeSearch = 0;
@@ -632,10 +967,11 @@ export class SearchService {
     const { params } = toEngineParams(newsOptions);
     const metaResult = await this.metasearch.search(query, 'news', params);
     const allResults = metaResult.results.map(toSearchResult);
+    const filteredResults = await this.applyPostFilters(allResults, options);
     const startIndex = (options.page - 1) * options.per_page;
     const endIndex = startIndex + options.per_page;
-    const paginatedResults = allResults.slice(startIndex, endIndex);
-    const totalResults = allResults.length;
+    const paginatedResults = filteredResults.slice(startIndex, endIndex);
+    const totalResults = filteredResults.length;
     const hasMore = endIndex < totalResults;
 
     const response: SearchResponse = {
@@ -650,6 +986,49 @@ export class SearchService {
 
     await this.cache.setSearch(cacheHash, response);
     return response;
+  }
+
+  /**
+   * Apply site and lens filters to results.
+   */
+  private async applyPostFilters(results: SearchResult[], options: SearchOptions): Promise<SearchResult[]> {
+    let filtered = results;
+
+    if (options.site) {
+      filtered = filtered.filter((r) => matchesDomain(r.url, options.site!));
+    }
+    if (options.exclude_site) {
+      filtered = filtered.filter((r) => !matchesDomain(r.url, options.exclude_site!));
+    }
+
+    if (options.lens) {
+      const lens = await this.kvStore.getLens(options.lens);
+      if (lens) {
+        filtered = this.applyLensFilters(filtered, lens);
+      }
+    }
+
+    return filtered;
+  }
+
+  private applyLensFilters(results: SearchResult[], lens: SearchLens): SearchResult[] {
+    let filtered = results;
+
+    if (lens.domains && lens.domains.length > 0) {
+      filtered = filtered.filter((r) => lens.domains!.some((domain) => matchesDomain(r.url, domain)));
+    }
+    if (lens.exclude && lens.exclude.length > 0) {
+      filtered = filtered.filter((r) => !lens.exclude!.some((domain) => matchesDomain(r.url, domain)));
+    }
+
+    if (lens.include_keywords && lens.include_keywords.length > 0) {
+      filtered = filtered.filter((r) => matchesKeywords(r, lens.include_keywords!, 'include'));
+    }
+    if (lens.exclude_keywords && lens.exclude_keywords.length > 0) {
+      filtered = filtered.filter((r) => matchesKeywords(r, lens.exclude_keywords!, 'exclude'));
+    }
+
+    return filtered;
   }
 
   /**

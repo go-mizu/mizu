@@ -123,6 +123,13 @@ export class RedditEngine implements OnlineEngine {
           template: thumbnailUrl ? 'images' : undefined,
           source: post.subreddit ? `r/${post.subreddit}` : undefined,
           channel: post.author || undefined,
+          metadata: {
+            upvotes: post.score ?? 0,
+            comments: post.num_comments ?? 0,
+            author: post.author,
+            subreddit: post.subreddit,
+            published: publishedAt,
+          },
         });
       }
     } catch {

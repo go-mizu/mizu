@@ -68,6 +68,7 @@ export interface SearchResult {
   url: string;
   title: string;
   snippet: string;
+  content?: string;
   domain: string;
   favicon?: string;
   thumbnail?: Thumbnail;
@@ -78,6 +79,7 @@ export interface SearchResult {
   crawled_at: string;
   engine?: string;
   engines?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface ImageResult {

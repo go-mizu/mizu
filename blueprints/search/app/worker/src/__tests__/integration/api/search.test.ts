@@ -61,6 +61,14 @@ describe('GET /api/search', () => {
     expect(body.query).toBe('test');
   });
 
+  it('supports time_range alias', async () => {
+    const res = await testApp.request('/api/search?q=test&time_range=month');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<SearchResponse>(res);
+    expect(body.query).toBe('test');
+  });
+
   it('supports region filter', async () => {
     const res = await testApp.request('/api/search?q=test&region=us');
 
@@ -77,8 +85,24 @@ describe('GET /api/search', () => {
     expect(body.query).toBe('test');
   });
 
+  it('supports language alias', async () => {
+    const res = await testApp.request('/api/search?q=test&language=en');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<SearchResponse>(res);
+    expect(body.query).toBe('test');
+  });
+
   it('supports safe search filter', async () => {
     const res = await testApp.request('/api/search?q=test&safe=strict');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<SearchResponse>(res);
+    expect(body.query).toBe('test');
+  });
+
+  it('supports safe_search alias', async () => {
+    const res = await testApp.request('/api/search?q=test&safe_search=moderate');
 
     expect(res.status).toBe(200);
     const body = await parseJsonResponse<SearchResponse>(res);
@@ -198,6 +222,146 @@ describe('GET /api/search/news', () => {
 
     expect(body).toMatchObject({
       query: 'technology',
+      results: expect.any(Array),
+    });
+  });
+});
+
+describe('GET /api/search/science', () => {
+  let testApp: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    testApp = createTestApp();
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 for missing query', async () => {
+    const res = await testApp.request('/api/search/science');
+
+    expect(res.status).toBe(400);
+    const body = await parseJsonResponse<{ error: string }>(res);
+    expect(body.error).toBe('Missing required parameter: q');
+  });
+
+  it('returns science results for valid query', async () => {
+    const res = await testApp.request('/api/search/science?q=quantum');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<{ query: string; results: unknown[] }>(res);
+    expect(body).toMatchObject({
+      query: 'quantum',
+      results: expect.any(Array),
+    });
+  });
+});
+
+describe('GET /api/search/code', () => {
+  let testApp: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    testApp = createTestApp();
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 for missing query', async () => {
+    const res = await testApp.request('/api/search/code');
+
+    expect(res.status).toBe(400);
+    const body = await parseJsonResponse<{ error: string }>(res);
+    expect(body.error).toBe('Missing required parameter: q');
+  });
+
+  it('returns code results for valid query', async () => {
+    const res = await testApp.request('/api/search/code?q=react');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<{ query: string; results: unknown[] }>(res);
+    expect(body).toMatchObject({
+      query: 'react',
+      results: expect.any(Array),
+    });
+  });
+});
+
+describe('GET /api/search/social', () => {
+  let testApp: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    testApp = createTestApp();
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 for missing query', async () => {
+    const res = await testApp.request('/api/search/social');
+
+    expect(res.status).toBe(400);
+    const body = await parseJsonResponse<{ error: string }>(res);
+    expect(body.error).toBe('Missing required parameter: q');
+  });
+
+  it('returns social results for valid query', async () => {
+    const res = await testApp.request('/api/search/social?q=opensource');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<{ query: string; results: unknown[] }>(res);
+    expect(body).toMatchObject({
+      query: 'opensource',
+      results: expect.any(Array),
+    });
+  });
+});
+
+describe('GET /api/search/music', () => {
+  let testApp: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    testApp = createTestApp();
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 for missing query', async () => {
+    const res = await testApp.request('/api/search/music');
+
+    expect(res.status).toBe(400);
+    const body = await parseJsonResponse<{ error: string }>(res);
+    expect(body.error).toBe('Missing required parameter: q');
+  });
+
+  it('returns music results for valid query', async () => {
+    const res = await testApp.request('/api/search/music?q=jazz');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<{ query: string; results: unknown[] }>(res);
+    expect(body).toMatchObject({
+      query: 'jazz',
+      results: expect.any(Array),
+    });
+  });
+});
+
+describe('GET /api/search/maps', () => {
+  let testApp: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    testApp = createTestApp();
+    vi.clearAllMocks();
+  });
+
+  it('returns 400 for missing query', async () => {
+    const res = await testApp.request('/api/search/maps');
+
+    expect(res.status).toBe(400);
+    const body = await parseJsonResponse<{ error: string }>(res);
+    expect(body.error).toBe('Missing required parameter: q');
+  });
+
+  it('returns map results for valid query', async () => {
+    const res = await testApp.request('/api/search/maps?q=tokyo');
+
+    expect(res.status).toBe(200);
+    const body = await parseJsonResponse<{ query: string; results: unknown[] }>(res);
+    expect(body).toMatchObject({
+      query: 'tokyo',
       results: expect.any(Array),
     });
   });
