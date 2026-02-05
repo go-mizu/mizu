@@ -69,12 +69,12 @@ interface ImgurSearchResponse {
 }
 
 // ========== Sort Mapping ==========
-
-const imgurSortMap: Record<string, string> = {
-  relevance: 'top',
-  newest: 'time',
-  viral: 'viral',
-};
+// Reserved for future sort parameter support
+// const imgurSortMap: Record<string, string> = {
+//   relevance: 'top',
+//   newest: 'time',
+//   viral: 'viral',
+// };
 
 // ========== Time Window Mapping ==========
 

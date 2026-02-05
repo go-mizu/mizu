@@ -1,13 +1,7 @@
 import { Hono } from 'hono'
+import type { HonoEnv } from '../types'
 
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace
-    ENVIRONMENT: string
-  }
-}
-
-const app = new Hono<Env>()
+const app = new Hono<HonoEnv>()
 
 app.get('/', (c) => {
   return c.json({ status: 'ok' })

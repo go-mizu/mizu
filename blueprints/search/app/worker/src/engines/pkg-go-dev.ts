@@ -41,7 +41,7 @@ export class PkgGoDevEngine implements OnlineEngine {
   weight = 0.9;
   disabled = false;
 
-  private resultsPerPage = 25; // pkg.go.dev default
+  // Reserved for pagination calculation: private resultsPerPage = 25;
 
   buildRequest(query: string, params: EngineParams): RequestConfig {
     const searchParams = new URLSearchParams();

@@ -1,11 +1,4 @@
 import { Hono } from 'hono'
-import { createDefaultMetaSearch } from '../engines/metasearch'
-import { CacheStore } from '../store/cache'
-import { KVStore } from '../store/kv'
-import { SearchService } from '../services/search'
-import { BangService } from '../services/bang'
-import { InstantService } from '../services/instant'
-import { KnowledgeService } from '../services/knowledge'
 import type {
   SearchOptions,
   ImageSearchFilters,
@@ -23,14 +16,8 @@ import type {
   VideoDuration,
   VideoQuality,
   VideoSort,
+  HonoEnv,
 } from '../types'
-
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace
-    ENVIRONMENT: string
-  }
-}
 
 function extractSearchOptions(c: { req: { query: (key: string) => string | undefined } }): SearchOptions {
   return {
@@ -152,18 +139,10 @@ function extractVideoSearchOptions(c: { req: { query: (key: string) => string | 
   }
 }
 
-function createServices(kv: KVNamespace) {
-  const cache = new CacheStore(kv)
-  const kvStore = new KVStore(kv)
-  const metaSearch = createDefaultMetaSearch()
-  const bangService = new BangService(kvStore)
-  const instantService = new InstantService(cache)
-  const knowledgeService = new KnowledgeService(cache)
-  const searchService = new SearchService(metaSearch, cache, kvStore, bangService, instantService, knowledgeService)
-  return { searchService }
-}
+// Services are now injected via contextMiddleware in index.ts
+// Access via c.get('services').search
 
-const app = new Hono<Env>()
+const app = new Hono<HonoEnv>()
 
 app.get('/', async (c) => {
   const q = c.req.query('q') ?? ''
@@ -172,7 +151,7 @@ app.get('/', async (c) => {
   }
 
   const options = extractSearchOptions(c)
-  const { searchService } = createServices(c.env.SEARCH_KV)
+  const searchService = c.get('services')!.search
   const results = await searchService.search(q, options)
   return c.json(results)
 })
@@ -184,7 +163,7 @@ app.get('/images', async (c) => {
   }
 
   const options = extractImageSearchOptions(c)
-  const { searchService } = createServices(c.env.SEARCH_KV)
+  const searchService = c.get('services')!.search
   const results = await searchService.searchImages(q, options)
   return c.json(results)
 })
@@ -201,7 +180,7 @@ app.post('/images/reverse', async (c) => {
     return c.json({ error: 'Either url or image_data is required' }, 400)
   }
 
-  const { searchService } = createServices(c.env.SEARCH_KV)
+  const searchService = c.get('services')!.search
   const results = await searchService.reverseImageSearch(body.url, body.image_data)
   return c.json(results)
 })
@@ -213,7 +192,7 @@ app.get('/videos', async (c) => {
   }
 
   const options = extractVideoSearchOptions(c)
-  const { searchService } = createServices(c.env.SEARCH_KV)
+  const searchService = c.get('services')!.search
   const results = await searchService.searchVideos(q, options)
   return c.json(results)
 })
@@ -225,7 +204,7 @@ app.get('/news', async (c) => {
   }
 
   const options = extractSearchOptions(c)
-  const { searchService } = createServices(c.env.SEARCH_KV)
+  const searchService = c.get('services')!.search
   const results = await searchService.searchNews(q, options)
   return c.json(results)
 })

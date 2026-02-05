@@ -15,26 +15,26 @@ import type {
 import { newEngineResults } from './engine';
 
 // ========== Rumble JSON Types ==========
-
-interface RumbleVideo {
-  id?: number;
-  vid?: string;
-  url?: string;
-  title?: string;
-  description?: string;
-  duration?: number;
-  durationString?: string;
-  views?: number;
-  thumbnail?: string;
-  channelName?: string;
-  channelUrl?: string;
-  pubDate?: string;
-}
-
-interface RumbleSearchResult {
-  videos?: RumbleVideo[];
-  num_results?: number;
-}
+// Reserved for typed API response handling
+// interface RumbleVideo {
+//   id?: number;
+//   vid?: string;
+//   url?: string;
+//   title?: string;
+//   description?: string;
+//   duration?: number;
+//   durationString?: string;
+//   views?: number;
+//   thumbnail?: string;
+//   channelName?: string;
+//   channelUrl?: string;
+//   pubDate?: string;
+// }
+//
+// interface RumbleSearchResult {
+//   videos?: RumbleVideo[];
+//   num_results?: number;
+// }
 
 export class RumbleEngine implements OnlineEngine {
   name = 'rumble';

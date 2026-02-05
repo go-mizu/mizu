@@ -56,11 +56,12 @@ interface OdyseeClaim {
   signing_channel?: OdyseeChannel;
 }
 
-interface OdyseeSearchResponse {
-  // Lighthouse API returns array directly
-  [index: number]: OdyseeClaim;
-  length?: number;
-}
+// Reserved for typed API response handling
+// interface OdyseeSearchResponse {
+//   // Lighthouse API returns array directly
+//   [index: number]: OdyseeClaim;
+//   length?: number;
+// }
 
 // Time range calculation (Unix timestamps)
 function calculateReleaseTime(timeRange: string): number | null {

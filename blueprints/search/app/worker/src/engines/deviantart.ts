@@ -50,19 +50,21 @@ interface DeviantArtDeviation {
   };
 }
 
-interface DeviantArtSearchResult {
-  results?: DeviantArtDeviation[];
-  hasMore?: boolean;
-  nextOffset?: number;
-}
+// Note: DeviantArt API types reserved for future OAuth implementation
+// interface DeviantArtSearchResult {
+//   results?: DeviantArtDeviation[];
+//   hasMore?: boolean;
+//   nextOffset?: number;
+// }
 
 // ========== Order/Sort Mapping ==========
 
-const deviantartOrderMap: Record<string, string> = {
-  relevance: 'most-relevant',
-  newest: 'newest',
-  popular: 'popular-all-time',
-};
+// Reserved for future authenticated API access
+// const deviantartOrderMap: Record<string, string> = {
+//   relevance: 'most-relevant',
+//   newest: 'newest',
+//   popular: 'popular-all-time',
+// };
 
 export class DeviantArtEngine implements OnlineEngine {
   name = 'deviantart';
@@ -307,7 +309,7 @@ export class DeviantArtEngine implements OnlineEngine {
   private extractFromHtml(
     body: string,
     results: EngineResults,
-    filters?: EngineParams['imageFilters']
+    _filters?: EngineParams['imageFilters']
   ): void {
     // Look for deviation links and images in HTML
     const deviationRegex = /<a[^>]+href="(https:\/\/www\.deviantart\.com\/[^\/]+\/art\/[^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]*>/g;

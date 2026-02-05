@@ -1,15 +1,9 @@
 import { Hono } from 'hono'
 import { SuggestService } from '../services/suggest'
 import { CacheStore } from '../store/cache'
+import type { HonoEnv } from '../types'
 
-type Env = {
-  Bindings: {
-    SEARCH_KV: KVNamespace
-    ENVIRONMENT: string
-  }
-}
-
-const app = new Hono<Env>()
+const app = new Hono<HonoEnv>()
 
 app.get('/', async (c) => {
   const q = c.req.query('q') ?? ''
