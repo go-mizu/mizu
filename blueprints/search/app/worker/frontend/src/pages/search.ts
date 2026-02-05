@@ -9,22 +9,11 @@ import { renderKnowledgePanel, initKnowledgePanel } from '../components/knowledg
 import { renderPagination, initPagination } from '../components/pagination';
 import { renderTabs, initTabs } from '../components/tabs';
 import { renderPeopleAlsoAsk, initPeopleAlsoAsk } from '../components/people-also-ask';
+import { renderSearchTools, initSearchTools, type SearchFilters } from '../components/search-tools';
 
 const ICON_SETTINGS = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
-const ICON_CHEVRON_DOWN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
 
-const TIME_RANGES = [
-  { value: '', label: 'Any time' },
-  { value: 'day', label: 'Past 24 hours' },
-  { value: 'week', label: 'Past week' },
-  { value: 'month', label: 'Past month' },
-  { value: 'year', label: 'Past year' },
-];
-
-export function renderSearchPage(query: string, timeRange: string): string {
-  const activeTimeLabel = TIME_RANGES.find((t) => t.value === timeRange)?.label || 'Any time';
-  const hasTimeFilter = timeRange !== '';
-
+export function renderSearchPage(query: string, filters: SearchFilters = {}): string {
   return `
     <div class="min-h-screen flex flex-col">
       <!-- Header -->
@@ -41,25 +30,10 @@ export function renderSearchPage(query: string, timeRange: string): string {
           </a>
         </div>
         <div class="search-tabs-row">
-          <div class="flex items-center gap-2">
-            ${renderTabs({ query, active: 'all' })}
-            <div class="time-filter ml-2" id="time-filter-wrapper">
-              <button class="time-filter-btn ${hasTimeFilter ? 'active-filter' : ''}" id="time-filter-btn" type="button">
-                <span id="time-filter-label">${escapeHtml(activeTimeLabel)}</span>
-                ${ICON_CHEVRON_DOWN}
-              </button>
-              <div class="time-filter-dropdown hidden" id="time-filter-dropdown">
-                ${TIME_RANGES.map(
-                  (t) => `
-                  <button class="time-filter-option ${t.value === timeRange ? 'active' : ''}" data-time-range="${t.value}">
-                    ${escapeHtml(t.label)}
-                  </button>
-                `
-                ).join('')}
-              </div>
-            </div>
-          </div>
+          ${renderTabs({ query, active: 'all' })}
         </div>
+        <!-- Search Tools Bar -->
+        ${renderSearchTools(filters)}
       </header>
 
       <!-- Content -->
@@ -76,7 +50,12 @@ export function renderSearchPage(query: string, timeRange: string): string {
 
 export function initSearchPage(router: Router, query: string, queryParams: Record<string, string>): void {
   const page = parseInt(queryParams.page || '1');
-  const timeRange = queryParams.time_range || '';
+  const filters: SearchFilters = {
+    timeRange: queryParams.time_range || '',
+    region: queryParams.region || '',
+    verbatim: queryParams.verbatim === '1',
+    site: queryParams.site || '',
+  };
   const settings = appState.get().settings;
 
   // Init search box
@@ -87,8 +66,11 @@ export function initSearchPage(router: Router, query: string, queryParams: Recor
   // Init tabs
   initTabs();
 
-  // Init time filter
-  initTimeFilter(router, query, timeRange);
+  // Init search tools
+  initSearchTools((newFilters) => {
+    const url = buildSearchUrl(query, newFilters);
+    router.navigate(url);
+  });
 
   // Record search
   if (query) {
@@ -96,53 +78,55 @@ export function initSearchPage(router: Router, query: string, queryParams: Recor
   }
 
   // Fetch results
-  fetchAndRenderResults(router, query, page, timeRange, settings.results_per_page);
+  fetchAndRenderResults(router, query, page, filters, settings.results_per_page);
 }
 
-function initTimeFilter(router: Router, query: string, currentTimeRange: string): void {
-  const btn = document.getElementById('time-filter-btn');
-  const dropdown = document.getElementById('time-filter-dropdown');
+function buildSearchUrl(query: string, filters: SearchFilters, page?: number): string {
+  const params = new URLSearchParams();
+  params.set('q', query);
 
-  if (!btn || !dropdown) return;
+  if (page && page > 1) {
+    params.set('page', String(page));
+  }
+  if (filters.timeRange) {
+    params.set('time_range', filters.timeRange);
+  }
+  if (filters.region) {
+    params.set('region', filters.region);
+  }
+  if (filters.verbatim) {
+    params.set('verbatim', '1');
+  }
+  if (filters.site) {
+    params.set('site', filters.site);
+  }
 
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    dropdown.classList.toggle('hidden');
-  });
-
-  dropdown.querySelectorAll('.time-filter-option').forEach((opt) => {
-    opt.addEventListener('click', () => {
-      const range = (opt as HTMLElement).dataset.timeRange || '';
-      dropdown.classList.add('hidden');
-      let url = `/search?q=${encodeURIComponent(query)}`;
-      if (range) url += `&time_range=${range}`;
-      router.navigate(url);
-    });
-  });
-
-  // Close on outside click
-  document.addEventListener('click', (e) => {
-    if (!dropdown.contains(e.target as Node) && e.target !== btn) {
-      dropdown.classList.add('hidden');
-    }
-  });
+  return `/search?${params.toString()}`;
 }
 
 async function fetchAndRenderResults(
   router: Router,
   query: string,
   page: number,
-  timeRange: string,
+  filters: SearchFilters,
   perPage: number
 ): Promise<void> {
   const content = document.getElementById('search-content');
   if (!content || !query) return;
 
+  // Build the effective query with site filter
+  let effectiveQuery = query;
+  if (filters.site) {
+    effectiveQuery = `site:${filters.site} ${query}`;
+  }
+
   try {
-    const response = await api.search(query, {
+    const response = await api.search(effectiveQuery, {
       page,
       per_page: perPage,
-      time_range: timeRange || undefined,
+      time_range: filters.timeRange || undefined,
+      region: filters.region || undefined,
+      verbatim: filters.verbatim || undefined,
     });
 
     // Handle bang redirect
@@ -151,7 +135,7 @@ async function fetchAndRenderResults(
       return;
     }
 
-    renderResults(content, router, response, query, page, timeRange);
+    renderResults(content, router, response, query, page, filters);
   } catch (err) {
     content.innerHTML = `
       <div class="py-8">
@@ -168,7 +152,7 @@ function renderResults(
   response: SearchResponse,
   query: string,
   page: number,
-  timeRange: string
+  filters: SearchFilters
 ): void {
   const correctedHtml = response.corrected_query
     ? `<p class="text-sm text-secondary mb-4">
@@ -245,8 +229,7 @@ function renderResults(
   initKnowledgePanel();
   initPeopleAlsoAsk();
   initPagination((newPage) => {
-    let url = `/search?q=${encodeURIComponent(query)}&page=${newPage}`;
-    if (timeRange) url += `&time_range=${timeRange}`;
+    const url = buildSearchUrl(query, filters, newPage);
     router.navigate(url);
   });
 }

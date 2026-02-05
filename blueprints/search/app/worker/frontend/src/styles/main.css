@@ -3798,6 +3798,63 @@
     color: var(--color-blue);
   }
 
+  /* Search tools */
+  .search-tools {
+    background: #202124;
+    border-color: var(--color-border);
+  }
+
+  .search-tool-btn,
+  .search-tool-toggle {
+    background: #303134;
+    border-color: #5f6368;
+    color: var(--color-primary);
+  }
+
+  .search-tool-btn:hover,
+  .search-tool-toggle:hover {
+    background: #3c4043;
+  }
+
+  .search-tool-btn.active,
+  .search-tool-toggle.active {
+    background: rgba(138, 180, 248, 0.15);
+    border-color: rgba(138, 180, 248, 0.3);
+    color: var(--color-blue);
+  }
+
+  .search-tool-menu {
+    background: #303134;
+    border-color: #5f6368;
+  }
+
+  .search-tool-option:hover {
+    background: #3c4043;
+  }
+
+  .search-tool-option.selected {
+    background: rgba(138, 180, 248, 0.15);
+    color: var(--color-blue);
+  }
+
+  .search-tool-site-input {
+    background: #303134;
+    border-color: #5f6368;
+  }
+
+  .search-tool-site-input.has-value {
+    background: rgba(138, 180, 248, 0.15);
+    border-color: rgba(138, 180, 248, 0.3);
+  }
+
+  .search-tool-site-clear:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .search-tool-clear:hover {
+    background: rgba(138, 180, 248, 0.15);
+  }
+
   /* Filter toolbar */
   .filter-toolbar {
     background: #202124;
