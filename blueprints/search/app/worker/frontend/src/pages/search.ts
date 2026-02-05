@@ -201,14 +201,11 @@ function renderResults(
       ? `
       <div class="mt-8 mb-4">
         <h3 class="text-lg font-medium text-primary mb-3">Related searches</h3>
-        <div class="grid grid-cols-2 gap-2 max-w-[600px]">
+        <div class="related-searches-pills">
           ${response.related_searches
             .map(
               (r) => `
-            <a href="/search?q=${encodeURIComponent(r)}" data-link class="flex items-center gap-2 p-3 rounded-lg bg-surface hover:bg-surface-hover text-sm text-primary transition-colors">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9aa0a6" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-              ${escapeHtml(r)}
-            </a>
+            <a href="/search?q=${encodeURIComponent(r)}" data-link class="related-pill">${escapeHtml(r)}</a>
           `
             )
             .join('')}
