@@ -5,6 +5,8 @@ import { renderImagesPage, initImagesPage } from './pages/images';
 import { renderVideosPage, initVideosPage } from './pages/videos';
 import { renderNewsPage, initNewsPage } from './pages/news';
 import { renderNewsHomePage, initNewsHomePage } from './pages/news-home';
+import { renderSciencePage, initSciencePage } from './pages/science';
+import { renderCodePage, initCodePage } from './pages/code';
 import { renderSettingsPage, initSettingsPage } from './pages/settings';
 import { renderHistoryPage, initHistoryPage } from './pages/history';
 
@@ -52,6 +54,20 @@ router.addRoute('news', (params, query) => {
 router.addRoute('news-home', (params, query) => {
   app.innerHTML = renderNewsHomePage();
   initNewsHomePage(router, query);
+});
+
+// Science/Academic Search
+router.addRoute('science', (params, query) => {
+  const q = query.q || '';
+  app.innerHTML = renderSciencePage(q);
+  initSciencePage(router, q);
+});
+
+// Code/IT Search
+router.addRoute('code', (params, query) => {
+  const q = query.q || '';
+  app.innerHTML = renderCodePage(q);
+  initCodePage(router, q);
 });
 
 // Settings
