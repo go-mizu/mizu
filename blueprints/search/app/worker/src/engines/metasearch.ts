@@ -13,6 +13,8 @@ import type {
   Category,
 } from './engine';
 import { executeEngine } from './engine';
+
+// === Web Search Engines ===
 import { GoogleEngine, GoogleImagesEngine, GoogleReverseImageEngine } from './google';
 import { BingEngine, BingImagesEngine, BingNewsEngine, BingReverseImageEngine } from './bing';
 import {
@@ -21,11 +23,16 @@ import {
   DuckDuckGoNewsEngine,
 } from './duckduckgo';
 import { BraveEngine } from './brave';
+import { YahooEngine } from './yahoo';
+import { YandexEngine } from './yandex';
+import { MojeekEngine } from './mojeek';
+import { StartpageEngine } from './startpage';
+
+// === Reference Engines ===
 import { WikipediaEngine } from './wikipedia';
+
+// === Video Engines ===
 import { YouTubeEngine } from './youtube';
-import { RedditEngine } from './reddit';
-import { ArxivEngine } from './arxiv';
-import { GitHubEngine } from './github';
 import { VimeoEngine } from './vimeo';
 import { DailymotionEngine } from './dailymotion';
 import { GoogleVideosEngine } from './google-videos';
@@ -33,6 +40,53 @@ import { BingVideosEngine } from './bing-videos';
 import { PeerTubeEngine } from './peertube';
 import { Search360VideosEngine } from './360search-videos';
 import { SogouVideosEngine } from './sogou-videos';
+import { RumbleEngine } from './rumble';
+import { OdyseeEngine } from './odysee';
+import { BilibiliEngine } from './bilibili';
+
+// === Image Engines ===
+import { FlickrEngine } from './flickr';
+import { UnsplashEngine } from './unsplash';
+import { PixabayEngine } from './pixabay';
+import { DeviantArtEngine } from './deviantart';
+import { ImgurEngine } from './imgur';
+
+// === News Engines ===
+import { YahooNewsEngine } from './yahoo-news';
+import { ReutersEngine } from './reuters';
+import { HackerNewsEngine } from './hackernews';
+
+// === Academic Engines ===
+import { ArxivEngine } from './arxiv';
+import { PubMedEngine } from './pubmed';
+import { SemanticScholarEngine } from './semantic-scholar';
+import { CrossrefEngine } from './crossref';
+import { OpenLibraryEngine } from './openlibrary';
+
+// === Code/IT Engines ===
+import { GitHubEngine } from './github';
+import { GitLabEngine } from './gitlab';
+import { StackOverflowEngine } from './stackoverflow';
+import { NpmEngine } from './npm';
+import { PyPIEngine } from './pypi';
+import { CratesEngine } from './crates';
+import { PkgGoDevEngine } from './pkg-go-dev';
+
+// === Social Engines ===
+import { RedditEngine } from './reddit';
+import { MastodonEngine } from './mastodon';
+import { LemmyEngine } from './lemmy';
+
+// === Music Engines ===
+import { SoundCloudEngine } from './soundcloud';
+import { BandcampEngine } from './bandcamp';
+import { GeniusEngine } from './genius';
+
+// === Maps Engines ===
+import { OpenStreetMapEngine } from './openstreetmap';
+
+// === Entertainment Engines ===
+import { IMDbEngine } from './imdb';
 
 // ========== MetaSearch Result ==========
 
@@ -244,22 +298,31 @@ export class MetaSearch {
 export function createDefaultMetaSearch(): MetaSearch {
   const ms = new MetaSearch();
 
-  // General search engines
+  // === General/Web Search Engines ===
   ms.register(new GoogleEngine());
   ms.register(new BingEngine());
   ms.register(new BraveEngine());
+  ms.register(new YahooEngine());
+  ms.register(new YandexEngine());
+  ms.register(new MojeekEngine());
+  ms.register(new StartpageEngine());
   ms.register(new WikipediaEngine());
 
-  // Image search engines
+  // === Image Search Engines ===
   ms.register(new GoogleImagesEngine());
   ms.register(new BingImagesEngine());
   ms.register(new DuckDuckGoImagesEngine());
+  ms.register(new FlickrEngine());
+  ms.register(new UnsplashEngine());
+  ms.register(new PixabayEngine());
+  ms.register(new DeviantArtEngine());
+  ms.register(new ImgurEngine());
 
-  // Reverse image search engines
+  // === Reverse Image Search Engines ===
   ms.register(new GoogleReverseImageEngine());
   ms.register(new BingReverseImageEngine());
 
-  // Video search engines
+  // === Video Search Engines ===
   ms.register(new YouTubeEngine());
   ms.register(new DuckDuckGoVideosEngine());
   ms.register(new VimeoEngine());
@@ -269,15 +332,48 @@ export function createDefaultMetaSearch(): MetaSearch {
   ms.register(new PeerTubeEngine());
   ms.register(new Search360VideosEngine());
   ms.register(new SogouVideosEngine());
+  ms.register(new RumbleEngine());
+  ms.register(new OdyseeEngine());
+  ms.register(new BilibiliEngine());
 
-  // News search engines
+  // === News Search Engines ===
   ms.register(new BingNewsEngine());
   ms.register(new DuckDuckGoNewsEngine());
+  ms.register(new YahooNewsEngine());
+  ms.register(new ReutersEngine());
+  ms.register(new HackerNewsEngine());
 
-  // Specialized engines
+  // === Academic/Science Engines ===
   ms.register(new ArxivEngine());
+  ms.register(new PubMedEngine());
+  ms.register(new SemanticScholarEngine());
+  ms.register(new CrossrefEngine());
+  ms.register(new OpenLibraryEngine());
+
+  // === Code/IT Engines ===
   ms.register(new GitHubEngine());
+  ms.register(new GitLabEngine());
+  ms.register(new StackOverflowEngine());
+  ms.register(new NpmEngine());
+  ms.register(new PyPIEngine());
+  ms.register(new CratesEngine());
+  ms.register(new PkgGoDevEngine());
+
+  // === Social Engines ===
   ms.register(new RedditEngine());
+  ms.register(new MastodonEngine());
+  ms.register(new LemmyEngine());
+
+  // === Music Engines ===
+  ms.register(new SoundCloudEngine());
+  ms.register(new BandcampEngine());
+  ms.register(new GeniusEngine());
+
+  // === Maps Engines ===
+  ms.register(new OpenStreetMapEngine());
+
+  // === Entertainment Engines ===
+  ms.register(new IMDbEngine());
 
   return ms;
 }
