@@ -7,6 +7,7 @@ import { renderNewsPage, initNewsPage } from './pages/news';
 import { renderNewsHomePage, initNewsHomePage } from './pages/news-home';
 import { renderSciencePage, initSciencePage } from './pages/science';
 import { renderCodePage, initCodePage } from './pages/code';
+import { renderMusicPage, initMusicPage } from './pages/music';
 import { renderSettingsPage, initSettingsPage } from './pages/settings';
 import { renderHistoryPage, initHistoryPage } from './pages/history';
 
@@ -68,6 +69,13 @@ router.addRoute('code', (params, query) => {
   const q = query.q || '';
   app.innerHTML = renderCodePage(q);
   initCodePage(router, q);
+});
+
+// Music Search
+router.addRoute('music', (params, query) => {
+  const q = query.q || '';
+  app.innerHTML = renderMusicPage(q);
+  initMusicPage(router, q);
 });
 
 // Settings

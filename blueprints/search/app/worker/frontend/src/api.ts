@@ -36,6 +36,7 @@ interface SearchResult {
   url: string;
   title: string;
   snippet: string;
+  content?: string;
   domain: string;
   favicon?: string;
   thumbnail?: { url: string; width?: number; height?: number };
@@ -45,6 +46,7 @@ interface SearchResult {
   sitelinks?: { title: string; url: string }[];
   engine?: string;
   engines?: string[];
+  metadata?: Record<string, any>;
 }
 
 interface ImageResult {
