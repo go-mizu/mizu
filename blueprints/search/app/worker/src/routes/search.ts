@@ -18,6 +18,11 @@ import type {
   ImageRights,
   ImageFileType,
   SafeSearchLevel,
+  VideoSearchFilters,
+  VideoSearchOptions,
+  VideoDuration,
+  VideoQuality,
+  VideoSort,
 } from '../types'
 
 type Env = {
@@ -99,6 +104,54 @@ function extractImageSearchOptions(c: { req: { query: (key: string) => string | 
   return { ...base, filters }
 }
 
+const validVideoDurations: VideoDuration[] = ['any', 'short', 'medium', 'long']
+const validVideoQualities: VideoQuality[] = ['any', 'hd', '4k']
+const validVideoSorts: VideoSort[] = ['relevance', 'date', 'views', 'duration']
+
+function extractVideoFilters(c: { req: { query: (key: string) => string | undefined } }): VideoSearchFilters {
+  const duration = c.req.query('duration')
+  const quality = c.req.query('quality')
+  const time = c.req.query('time')
+  const source = c.req.query('source')
+  const cc = c.req.query('cc')
+  const safe = c.req.query('safe') as SafeSearchLevel | undefined
+
+  const filters: VideoSearchFilters = {}
+
+  if (duration && validVideoDurations.includes(duration as VideoDuration)) {
+    filters.duration = duration as VideoDuration
+  }
+  if (quality && validVideoQualities.includes(quality as VideoQuality)) {
+    filters.quality = quality as VideoQuality
+  }
+  if (time && validImageTimes.includes(time as ImageTime)) {
+    filters.time = time as ImageTime
+  }
+  if (source) {
+    filters.source = source
+  }
+  if (cc === 'true' || cc === '1') {
+    filters.cc = true
+  }
+  if (safe && validSafeSearch.includes(safe)) {
+    filters.safe = safe
+  }
+
+  return filters
+}
+
+function extractVideoSearchOptions(c: { req: { query: (key: string) => string | undefined } }): VideoSearchOptions {
+  const base = extractSearchOptions(c)
+  const filters = extractVideoFilters(c)
+  const sort = c.req.query('sort')
+
+  return {
+    ...base,
+    filters,
+    sort: sort && validVideoSorts.includes(sort as VideoSort) ? sort as VideoSort : undefined,
+  }
+}
+
 function createServices(kv: KVNamespace) {
   const cache = new CacheStore(kv)
   const kvStore = new KVStore(kv)
@@ -159,7 +212,7 @@ app.get('/videos', async (c) => {
     return c.json({ error: 'Missing required parameter: q' }, 400)
   }
 
-  const options = extractSearchOptions(c)
+  const options = extractVideoSearchOptions(c)
   const { searchService } = createServices(c.env.SEARCH_KV)
   const results = await searchService.searchVideos(q, options)
   return c.json(results)
