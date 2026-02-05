@@ -76,7 +76,7 @@ export function renderImagesPage(query: string): string {
 
       <!-- Content -->
       <main class="flex-1 flex">
-        <div id="images-content" class="flex-1 p-3">
+        <div id="images-content" class="flex-1 px-2">
           <div class="flex items-center justify-center py-16">
             <div class="spinner"></div>
           </div>

@@ -1346,13 +1346,17 @@
   margin-top: 2px;
 }
 
-/* Image grid with comfortable spacing */
+/* Image grid with edge-to-edge layout */
 .image-grid {
-  columns: 5;
-  column-gap: 16px;
+  columns: 6;
+  column-gap: 12px;
 }
 
-@media (max-width: 1400px) {
+@media (max-width: 1600px) {
+  .image-grid { columns: 5; }
+}
+
+@media (max-width: 1280px) {
   .image-grid { columns: 4; }
 }
 
@@ -1361,15 +1365,15 @@
 }
 
 @media (max-width: 768px) {
-  .image-grid { columns: 2; column-gap: 12px; }
-}
-
-@media (max-width: 480px) {
   .image-grid { columns: 2; column-gap: 8px; }
 }
 
+@media (max-width: 480px) {
+  .image-grid { columns: 2; column-gap: 6px; }
+}
+
 .image-card {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   border-radius: 12px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
