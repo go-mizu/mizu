@@ -26,6 +26,13 @@ import { YouTubeEngine } from './youtube';
 import { RedditEngine } from './reddit';
 import { ArxivEngine } from './arxiv';
 import { GitHubEngine } from './github';
+import { VimeoEngine } from './vimeo';
+import { DailymotionEngine } from './dailymotion';
+import { GoogleVideosEngine } from './google-videos';
+import { BingVideosEngine } from './bing-videos';
+import { PeerTubeEngine } from './peertube';
+import { Search360VideosEngine } from './360search-videos';
+import { SogouVideosEngine } from './sogou-videos';
 
 // ========== MetaSearch Result ==========
 
@@ -255,6 +262,13 @@ export function createDefaultMetaSearch(): MetaSearch {
   // Video search engines
   ms.register(new YouTubeEngine());
   ms.register(new DuckDuckGoVideosEngine());
+  ms.register(new VimeoEngine());
+  ms.register(new DailymotionEngine());
+  ms.register(new GoogleVideosEngine());
+  ms.register(new BingVideosEngine());
+  ms.register(new PeerTubeEngine());
+  ms.register(new Search360VideosEngine());
+  ms.register(new SogouVideosEngine());
 
   // News search engines
   ms.register(new BingNewsEngine());

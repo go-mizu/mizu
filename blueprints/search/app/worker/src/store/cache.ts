@@ -4,10 +4,12 @@ import type {
   KnowledgePanel,
   InstantAnswer,
   ImageSearchResponse,
+  VideoSearchResponse,
 } from '../types';
 
 const TTL_SEARCH = 300;       // 5 minutes
 const TTL_IMAGE_SEARCH = 600; // 10 minutes (images cached longer)
+const TTL_VIDEO_SEARCH = 600; // 10 minutes (videos cached longer)
 const TTL_SUGGEST = 60;       // 1 minute
 const TTL_KNOWLEDGE = 3600;   // 1 hour
 const TTL_INSTANT = 600;      // 10 minutes
@@ -44,6 +46,20 @@ export class CacheStore {
   async setImageSearch(hash: string, response: ImageSearchResponse): Promise<void> {
     await this.kv.put(`cache:imgsearch:${hash}`, JSON.stringify(response), {
       expirationTtl: TTL_IMAGE_SEARCH,
+    });
+  }
+
+  // --- Video search results cache ---
+
+  async getVideoSearch(hash: string): Promise<VideoSearchResponse | null> {
+    const raw = await this.kv.get(`cache:vidsearch:${hash}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as VideoSearchResponse;
+  }
+
+  async setVideoSearch(hash: string, response: VideoSearchResponse): Promise<void> {
+    await this.kv.put(`cache:vidsearch:${hash}`, JSON.stringify(response), {
+      expirationTtl: TTL_VIDEO_SEARCH,
     });
   }
 

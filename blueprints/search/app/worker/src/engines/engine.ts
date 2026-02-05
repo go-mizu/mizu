@@ -40,6 +40,19 @@ export interface ImageFilters {
   maxHeight?: number;
 }
 
+// ========== Video Filter Types ==========
+
+export type VideoDuration = 'any' | 'short' | 'medium' | 'long';
+export type VideoQuality = 'any' | 'hd' | '4k';
+export type VideoSort = 'relevance' | 'date' | 'views' | 'duration';
+
+export interface VideoFilters {
+  duration?: VideoDuration;
+  quality?: VideoQuality;
+  source?: string;
+  cc?: boolean;
+}
+
 // ========== Engine Parameters ==========
 
 export interface EngineParams {
@@ -49,6 +62,7 @@ export interface EngineParams {
   timeRange: TimeRange;
   engineData: Record<string, string>;
   imageFilters?: ImageFilters;
+  videoFilters?: VideoFilters;
 }
 
 // ========== Engine Result ==========
