@@ -28,18 +28,18 @@ export function renderSearchPage(query: string, timeRange: string): string {
     <div class="min-h-screen flex flex-col">
       <!-- Header -->
       <header class="sticky top-0 bg-white z-20 border-b border-border">
-        <div class="flex items-center gap-4 px-4 py-3 max-w-[1200px]">
-          <a href="/" data-link class="flex-shrink-0 text-2xl font-semibold select-none">
+        <div class="search-header-row">
+          <a href="/" data-link class="search-logo">
             <span style="color: #4285F4">M</span><span style="color: #EA4335">i</span><span style="color: #FBBC05">z</span><span style="color: #34A853">u</span>
           </a>
-          <div class="flex-1 max-w-[692px]">
+          <div class="search-header-box">
             ${renderSearchBox({ size: 'sm', initialValue: query })}
           </div>
           <a href="/settings" data-link class="flex-shrink-0 text-tertiary hover:text-primary p-2 rounded-full hover:bg-surface-hover transition-colors" aria-label="Settings">
             ${ICON_SETTINGS}
           </a>
         </div>
-        <div class="max-w-[1200px] pl-[170px]">
+        <div class="search-tabs-row">
           <div class="flex items-center gap-2">
             ${renderTabs({ query, active: 'all' })}
             <div class="time-filter ml-2" id="time-filter-wrapper">
@@ -63,7 +63,7 @@ export function renderSearchPage(query: string, timeRange: string): string {
 
       <!-- Content -->
       <main class="flex-1">
-        <div id="search-content" class="max-w-[1200px] pl-[170px] pr-4 py-4">
+        <div id="search-content" class="search-content-area">
           <div class="flex items-center justify-center py-16">
             <div class="spinner"></div>
           </div>
@@ -221,8 +221,8 @@ function renderResults(
     : '';
 
   container.innerHTML = `
-    <div class="flex gap-8">
-      <div class="flex-1 min-w-0">
+    <div class="search-results-layout">
+      <div class="search-results-main">
         ${correctedHtml}
         ${statsHtml}
         ${instantHtml}
@@ -230,7 +230,7 @@ function renderResults(
         ${relatedHtml}
         ${paginationHtml}
       </div>
-      ${knowledgePanelHtml ? `<aside class="hidden lg:block flex-shrink-0 w-[360px] pt-2">${knowledgePanelHtml}</aside>` : ''}
+      ${knowledgePanelHtml ? `<aside class="search-results-sidebar">${knowledgePanelHtml}</aside>` : ''}
     </div>
   `;
 
