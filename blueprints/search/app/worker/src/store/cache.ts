@@ -7,13 +7,6 @@ import type {
   VideoSearchResponse,
 } from '../types';
 
-const TTL_SEARCH = 300;       // 5 minutes
-const TTL_IMAGE_SEARCH = 600; // 10 minutes (images cached longer)
-const TTL_VIDEO_SEARCH = 600; // 10 minutes (videos cached longer)
-const TTL_SUGGEST = 60;       // 1 minute
-const TTL_KNOWLEDGE = 3600;   // 1 hour
-const TTL_INSTANT = 600;      // 10 minutes
-
 export class CacheStore {
   private kv: KVNamespace;
 
@@ -21,7 +14,7 @@ export class CacheStore {
     this.kv = kv;
   }
 
-  // --- Search results cache ---
+  // --- Search results cache (permanent) ---
 
   async getSearch(hash: string): Promise<SearchResponse | null> {
     const raw = await this.kv.get(`cache:search:${hash}`);
@@ -30,12 +23,10 @@ export class CacheStore {
   }
 
   async setSearch(hash: string, response: SearchResponse): Promise<void> {
-    await this.kv.put(`cache:search:${hash}`, JSON.stringify(response), {
-      expirationTtl: TTL_SEARCH,
-    });
+    await this.kv.put(`cache:search:${hash}`, JSON.stringify(response));
   }
 
-  // --- Image search results cache ---
+  // --- Image search results cache (permanent) ---
 
   async getImageSearch(hash: string): Promise<ImageSearchResponse | null> {
     const raw = await this.kv.get(`cache:imgsearch:${hash}`);
@@ -44,12 +35,10 @@ export class CacheStore {
   }
 
   async setImageSearch(hash: string, response: ImageSearchResponse): Promise<void> {
-    await this.kv.put(`cache:imgsearch:${hash}`, JSON.stringify(response), {
-      expirationTtl: TTL_IMAGE_SEARCH,
-    });
+    await this.kv.put(`cache:imgsearch:${hash}`, JSON.stringify(response));
   }
 
-  // --- Video search results cache ---
+  // --- Video search results cache (permanent) ---
 
   async getVideoSearch(hash: string): Promise<VideoSearchResponse | null> {
     const raw = await this.kv.get(`cache:vidsearch:${hash}`);
@@ -58,12 +47,10 @@ export class CacheStore {
   }
 
   async setVideoSearch(hash: string, response: VideoSearchResponse): Promise<void> {
-    await this.kv.put(`cache:vidsearch:${hash}`, JSON.stringify(response), {
-      expirationTtl: TTL_VIDEO_SEARCH,
-    });
+    await this.kv.put(`cache:vidsearch:${hash}`, JSON.stringify(response));
   }
 
-  // --- Suggestions cache ---
+  // --- Suggestions cache (permanent) ---
 
   async getSuggest(hash: string): Promise<Suggestion[] | null> {
     const raw = await this.kv.get(`cache:suggest:${hash}`);
@@ -72,12 +59,10 @@ export class CacheStore {
   }
 
   async setSuggest(hash: string, suggestions: Suggestion[]): Promise<void> {
-    await this.kv.put(`cache:suggest:${hash}`, JSON.stringify(suggestions), {
-      expirationTtl: TTL_SUGGEST,
-    });
+    await this.kv.put(`cache:suggest:${hash}`, JSON.stringify(suggestions));
   }
 
-  // --- Knowledge panel cache ---
+  // --- Knowledge panel cache (permanent) ---
 
   async getKnowledge(query: string): Promise<KnowledgePanel | null> {
     const raw = await this.kv.get(`cache:knowledge:${query}`);
@@ -86,12 +71,10 @@ export class CacheStore {
   }
 
   async setKnowledge(query: string, panel: KnowledgePanel): Promise<void> {
-    await this.kv.put(`cache:knowledge:${query}`, JSON.stringify(panel), {
-      expirationTtl: TTL_KNOWLEDGE,
-    });
+    await this.kv.put(`cache:knowledge:${query}`, JSON.stringify(panel));
   }
 
-  // --- Instant answer cache ---
+  // --- Instant answer cache (permanent) ---
 
   async getInstant(hash: string): Promise<InstantAnswer | null> {
     const raw = await this.kv.get(`cache:instant:${hash}`);
@@ -100,8 +83,6 @@ export class CacheStore {
   }
 
   async setInstant(hash: string, answer: InstantAnswer): Promise<void> {
-    await this.kv.put(`cache:instant:${hash}`, JSON.stringify(answer), {
-      expirationTtl: TTL_INSTANT,
-    });
+    await this.kv.put(`cache:instant:${hash}`, JSON.stringify(answer));
   }
 }

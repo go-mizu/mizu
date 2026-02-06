@@ -50,7 +50,13 @@ export default function ImagesPage() {
     if (!query || isLoading) return
     const nextPage = page + 1
     try {
-      const response = await searchApi.searchImages(query, { page: nextPage, per_page: PER_PAGE })
+      const response = await searchApi.searchImages(query, {
+        page: nextPage,
+        per_page: PER_PAGE,
+        ...(sizeFilter && { size: sizeFilter }),
+        ...(colorFilter && { color: colorFilter }),
+        ...(typeFilter && { type: typeFilter }),
+      })
       if (response.results.length === 0) {
         setHasMore(false)
       } else {
@@ -81,7 +87,12 @@ export default function ImagesPage() {
       setPage(1)
 
       try {
-        const response = await searchApi.searchImages(query, { per_page: PER_PAGE })
+        const response = await searchApi.searchImages(query, {
+          per_page: PER_PAGE,
+          ...(sizeFilter && { size: sizeFilter }),
+          ...(colorFilter && { color: colorFilter }),
+          ...(typeFilter && { type: typeFilter }),
+        })
         setImages(response.results || [])
         setHasMore((response.results?.length || 0) >= PER_PAGE)
       } catch (err) {
@@ -92,7 +103,7 @@ export default function ImagesPage() {
     }
 
     searchImages()
-  }, [query])
+  }, [query, sizeFilter, colorFilter, typeFilter])
 
   // Scroll position tracking for back to top button
   useEffect(() => {
@@ -210,7 +221,7 @@ export default function ImagesPage() {
 
       {/* Main content */}
       <main>
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="mx-auto px-4 py-4">
           {isLoading && images.length === 0 ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />

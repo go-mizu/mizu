@@ -34,6 +34,10 @@ export interface SearchOptions {
   before?: string // date filter YYYY-MM-DD
   after?: string // date filter YYYY-MM-DD
   filetype?: string
+  // Image filters
+  size?: string
+  color?: string
+  type?: string
 }
 
 export interface VideoSearchOptions extends SearchOptions {
@@ -67,6 +71,9 @@ export const searchApi = {
     if (options.page) params.set('page', String(options.page))
     if (options.per_page) params.set('per_page', String(options.per_page))
     if (options.refetch) params.set('refetch', 'true')
+    if (options.size) params.set('size', options.size)
+    if (options.color) params.set('color', options.color)
+    if (options.type) params.set('type', options.type)
     return api.get(`/api/search/images?${params}`)
   },
 
@@ -82,6 +89,55 @@ export const searchApi = {
     if (options.quality) params.set('quality', options.quality)
     if (options.cc) params.set('cc', 'true')
     return api.get(`/api/search/videos?${params}`)
+  },
+
+  // Code search
+  searchCode: (query: string, options: SearchOptions = {}): Promise<SearchResponse> => {
+    const params = new URLSearchParams({ q: query })
+    if (options.page) params.set('page', String(options.page))
+    if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.time) params.set('time', options.time)
+    if (options.refetch) params.set('refetch', 'true')
+    return api.get(`/api/search/code?${params}`)
+  },
+
+  // Science search
+  searchScience: (query: string, options: SearchOptions = {}): Promise<SearchResponse> => {
+    const params = new URLSearchParams({ q: query })
+    if (options.page) params.set('page', String(options.page))
+    if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.time) params.set('time', options.time)
+    if (options.refetch) params.set('refetch', 'true')
+    return api.get(`/api/search/science?${params}`)
+  },
+
+  // Social search
+  searchSocial: (query: string, options: SearchOptions = {}): Promise<SearchResponse> => {
+    const params = new URLSearchParams({ q: query })
+    if (options.page) params.set('page', String(options.page))
+    if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.time) params.set('time', options.time)
+    if (options.refetch) params.set('refetch', 'true')
+    return api.get(`/api/search/social?${params}`)
+  },
+
+  // Music search
+  searchMusic: (query: string, options: SearchOptions = {}): Promise<SearchResponse> => {
+    const params = new URLSearchParams({ q: query })
+    if (options.page) params.set('page', String(options.page))
+    if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.time) params.set('time', options.time)
+    if (options.refetch) params.set('refetch', 'true')
+    return api.get(`/api/search/music?${params}`)
+  },
+
+  // Maps search
+  searchMaps: (query: string, options: SearchOptions = {}): Promise<SearchResponse> => {
+    const params = new URLSearchParams({ q: query })
+    if (options.page) params.set('page', String(options.page))
+    if (options.per_page) params.set('per_page', String(options.per_page))
+    if (options.refetch) params.set('refetch', 'true')
+    return api.get(`/api/search/maps?${params}`)
   },
 
   // News search

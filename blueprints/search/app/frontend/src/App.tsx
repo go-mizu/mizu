@@ -10,6 +10,11 @@ const AIPage = lazy(() => import('./pages/AIPage'))
 const ImagesPage = lazy(() => import('./pages/ImagesPage'))
 const VideosPage = lazy(() => import('./pages/VideosPage'))
 const NewsPage = lazy(() => import('./pages/NewsPage'))
+const CodePage = lazy(() => import('./pages/CodePage'))
+const SciencePage = lazy(() => import('./pages/SciencePage'))
+const SocialPage = lazy(() => import('./pages/SocialPage'))
+const MusicPage = lazy(() => import('./pages/MusicPage'))
+const MapsPage = lazy(() => import('./pages/MapsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const HistoryPage = lazy(() => import('./pages/HistoryPage'))
 const AISessionsPage = lazy(() => import('./pages/AISessionsPage'))
@@ -53,6 +58,11 @@ function App() {
           <Route path="/images" element={<ImagesPage />} />
           <Route path="/videos" element={<VideosPage />} />
           <Route path="/news" element={<NewsPage />} />
+          <Route path="/code" element={<CodePage />} />
+          <Route path="/science" element={<SciencePage />} />
+          <Route path="/social" element={<SocialPage />} />
+          <Route path="/music" element={<MusicPage />} />
+          <Route path="/maps" element={<MapsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/ai/sessions" element={<AISessionsPage />} />

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { ChevronDown, ExternalLink } from 'lucide-react'
+import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
 import { SearchHeader } from '../components/SearchHeader'
 import { Pagination } from '../components/Pagination'
 import { SearchResult } from '../components/SearchResult'
@@ -34,6 +34,7 @@ export default function SearchPage() {
   const [showTimeDropdown, setShowTimeDropdown] = useState(false)
   const [bangRedirect, setBangRedirect] = useState<{ url: string; name: string } | null>(null)
   const [readerUrl, setReaderUrl] = useState<string | null>(null)
+  const [isRefetching, setIsRefetching] = useState(false)
   const timeDropdownRef = useRef<HTMLDivElement>(null)
 
   const { settings, addRecentSearch } = useSearchStore()
@@ -49,23 +50,22 @@ export default function SearchPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  useEffect(() => {
-    if (!query) return
+  const doSearch = async (refetch = false) => {
+    setIsLoading(!refetch)
+    if (refetch) setIsRefetching(true)
+    setError(null)
+    setBangRedirect(null)
 
-    const performSearch = async () => {
-      setIsLoading(true)
-      setError(null)
-      setBangRedirect(null)
-
-      try {
-        const response = await searchApi.search(query, {
-          page,
-          per_page: settings.results_per_page,
-          time: timeFilter,
-          safe: settings.safe_search,
-          region: settings.region,
-          lang: settings.language,
-        })
+    try {
+      const response = await searchApi.search(query, {
+        page,
+        per_page: settings.results_per_page,
+        time: timeFilter,
+        safe: settings.safe_search,
+        region: settings.region,
+        lang: settings.language,
+        refetch,
+      })
 
         // Check for bang redirect
         if (response.redirect) {
@@ -93,10 +93,13 @@ export default function SearchPage() {
         setError(err instanceof Error ? err.message : 'Search failed')
       } finally {
         setIsLoading(false)
+        setIsRefetching(false)
       }
     }
 
-    performSearch()
+  useEffect(() => {
+    if (!query) return
+    doSearch()
   }, [query, page, timeFilter, settings])
 
   const handleSearch = (newQuery: string) => {
@@ -196,9 +199,25 @@ export default function SearchPage() {
               ) : results ? (
                 <div>
                   {/* Stats */}
-                  <p className="text-xs text-[#70757a] mb-4">
-                    About {(results.total_results ?? 0).toLocaleString()} results ({(results.search_time_ms ?? 0).toFixed(2)} ms)
-                  </p>
+                  <div className="flex items-center gap-2 text-xs text-[#70757a] mb-4">
+                    <span>
+                      About {(results.total_results ?? 0).toLocaleString()} results ({(results.search_time_ms ?? 0).toFixed(2)} ms)
+                      {results.cached && (
+                        <span className="ml-1 text-[#188038]" title="Served from cache">
+                          - cached
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => doSearch(true)}
+                      disabled={isRefetching}
+                      className="p-1 text-[#5f6368] hover:text-[#1a73e8] hover:bg-[#f1f3f4] rounded transition-colors disabled:opacity-50"
+                      title="Refresh results (bypass cache)"
+                    >
+                      <RefreshCw size={14} className={isRefetching ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
 
                   {/* Corrected query */}
                   {results.corrected_query && (

@@ -140,6 +140,7 @@ export interface ImageSearchResponse {
   page: number;
   per_page: number;
   has_more: boolean;
+  cached?: boolean;
 }
 
 export interface ReverseImageSearchRequest {
@@ -217,6 +218,7 @@ export interface VideoSearchResponse {
   page: number;
   per_page: number;
   has_more: boolean;
+  cached?: boolean;
 }
 
 export interface VideoSourceInfo {
@@ -384,6 +386,7 @@ export interface SearchResponse {
   redirect?: string;
   bang?: string;
   category?: string;
+  cached?: boolean;
 }
 
 // ========== Suggestion Types ==========

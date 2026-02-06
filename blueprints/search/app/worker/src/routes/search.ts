@@ -25,6 +25,8 @@ function extractSearchOptions(c: { req: { query: (key: string) => string | undef
   const safeSearch = c.req.query('safe_search') ?? c.req.query('safe') ?? 'moderate';
   const verbatim = c.req.query('verbatim');
 
+  const refetch = c.req.query('refetch');
+
   return {
     page: parseInt(c.req.query('page') ?? '1', 10),
     per_page: parseInt(c.req.query('per_page') ?? '10', 10),
@@ -36,6 +38,7 @@ function extractSearchOptions(c: { req: { query: (key: string) => string | undef
     exclude_site: c.req.query('exclude_site') ?? '',
     lens: c.req.query('lens') ?? '',
     verbatim: verbatim === '1' || verbatim === 'true',
+    refetch: refetch === '1' || refetch === 'true',
   }
 }
 
