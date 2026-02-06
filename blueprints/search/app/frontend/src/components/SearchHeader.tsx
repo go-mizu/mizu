@@ -18,7 +18,6 @@ interface SearchHeaderProps {
 
 const MORE_TABS: { tab: SearchTab; label: string; icon: React.ElementType }[] = [
   { tab: 'science', label: 'Science', icon: FlaskConical },
-  { tab: 'social', label: 'Social', icon: Users },
   { tab: 'music', label: 'Music', icon: Music },
   { tab: 'maps', label: 'Maps', icon: MapPin },
 ]
@@ -184,6 +183,14 @@ export function SearchHeader({
             >
               <Code size={16} />
               Code
+            </button>
+            <button
+              type="button"
+              className={`search-tab ${activeTab === 'social' ? 'active' : ''}`}
+              onClick={() => handleTabClick('social')}
+            >
+              <Users size={16} />
+              Social
             </button>
 
             {/* More dropdown */}

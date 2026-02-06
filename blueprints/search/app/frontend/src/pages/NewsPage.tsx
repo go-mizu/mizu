@@ -116,7 +116,7 @@ export default function NewsPage() {
       <SearchHeader query={query} activeTab="news" onSearch={handleSearch} />
 
       <main>
-        <div className="max-w-3xl mx-auto px-4 py-4">
+        <div className="max-w-5xl mx-auto px-4 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-[3px] border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
