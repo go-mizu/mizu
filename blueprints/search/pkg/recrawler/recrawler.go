@@ -117,45 +117,14 @@ func (r *Recrawler) markDomainDead(domain string) {
 	r.deadDomainsMu.Unlock()
 }
 
-// orderByDomainRoundRobin arranges URLs so that the first URL from each domain
-// comes first (shuffled), then the second URL from each domain, etc.
-// This ensures: (1) every domain gets probed in the first wave, (2) when a domain
-// dies, its remaining URLs haven't been dispatched yet, enabling instant skip.
-func orderByDomainRoundRobin(urls []SeedURL) []SeedURL {
-	// Group by domain
-	domainIdx := make(map[string]int, len(urls)/4)
-	var buckets [][]SeedURL
-	for _, u := range urls {
-		idx, exists := domainIdx[u.Domain]
-		if !exists {
-			idx = len(buckets)
-			domainIdx[u.Domain] = idx
-			buckets = append(buckets, nil)
-		}
-		buckets[idx] = append(buckets[idx], u)
-	}
-
-	// Shuffle bucket order for domain distribution
-	rand.Shuffle(len(buckets), func(i, j int) {
-		buckets[i], buckets[j] = buckets[j], buckets[i]
+// shuffleURLs randomizes URL order using Fisher-Yates shuffle.
+// O(N) time, O(1) extra memory, excellent cache performance.
+// Random distribution naturally staggers domain access across workers,
+// avoiding thundering-herd on any single domain.
+func shuffleURLs(urls []SeedURL) {
+	rand.Shuffle(len(urls), func(i, j int) {
+		urls[i], urls[j] = urls[j], urls[i]
 	})
-
-	// Flatten: all first URLs, then all second URLs, etc.
-	// With avg ~9 URLs/domain, this is ~9 passes over the bucket list.
-	result := make([]SeedURL, 0, len(urls))
-	for pass := 0; len(result) < len(urls); pass++ {
-		added := false
-		for _, b := range buckets {
-			if pass < len(b) {
-				result = append(result, b[pass])
-				added = true
-			}
-		}
-		if !added {
-			break
-		}
-	}
-	return result
 }
 
 // Run executes the recrawl on the given URL set.
@@ -189,10 +158,8 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 		return nil
 	}
 
-	// Order URLs: first URL from each domain first (shuffled), then second, etc.
-	// This ensures every domain gets probed in the first wave, and when a domain
-	// dies, its remaining URLs haven't been dispatched yet.
-	liveURLs = orderByDomainRoundRobin(liveURLs)
+	// Shuffle live URLs for domain distribution — O(N) in-place
+	shuffleURLs(liveURLs)
 
 	// Feed URLs into a channel — large buffer to keep workers fed
 	urlCh := make(chan SeedURL, min(len(liveURLs), r.config.Workers*4))
