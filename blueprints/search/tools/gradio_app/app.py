@@ -588,6 +588,7 @@ class FineWebAnalytics:
 def export_pdf(data_dir: str, lang: str, split: str, output: str | None = None) -> str:
     """Export all charts to a multi-page PDF report."""
     from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
 
     analytics = FineWebAnalytics(data_dir, lang)
 
@@ -614,45 +615,48 @@ def export_pdf(data_dir: str, lang: str, split: str, output: str | None = None) 
     # Assemble PDF (landscape A4)
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
+    NL = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 
     # ── Title page ──
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 32)
-    pdf.cell(0, 50, "", ln=True)
-    pdf.cell(0, 16, "FineWeb-2 Analytics Report", ln=True, align="C")
+    pdf.cell(0, 50, "", **NL)
+    pdf.cell(0, 16, "FineWeb-2 Analytics Report", align="C", **NL)
     pdf.set_font("Helvetica", "", 18)
-    pdf.cell(0, 14, f"Language: {lang}  |  Split: {split}", ln=True, align="C")
+    pdf.cell(0, 14, f"Language: {lang}  |  Split: {split}", align="C", **NL)
     pdf.set_font("Helvetica", "", 14)
-    pdf.cell(0, 10, f"Generated: {datetime.now():%Y-%m-%d %H:%M}", ln=True, align="C")
+    pdf.cell(0, 10, f"Generated: {datetime.now():%Y-%m-%d %H:%M}", align="C", **NL)
 
     pdf.ln(12)
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Dataset Overview", ln=True, align="C")
+    pdf.cell(0, 10, "Dataset Overview", align="C", **NL)
     pdf.set_font("Helvetica", "", 12)
 
     for col in overview_df.columns:
         val = overview_df[col].iloc[0]
-        if isinstance(val, float):
-            display = f"{val:,.2f}"
-        elif isinstance(val, int):
-            display = f"{val:,}"
+        if isinstance(val, (int, float)):
+            # Format as integer if whole number, otherwise 2 decimal places
+            if val == int(val):
+                display = f"{int(val):,}"
+            else:
+                display = f"{val:,.6f}".rstrip("0").rstrip(".")
         else:
             display = str(val)
-        pdf.cell(0, 8, f"{col}: {display}", ln=True, align="C")
+        pdf.cell(0, 8, f"{col}: {display}", align="C", **NL)
 
     # Percentiles
     pdf.ln(6)
     pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Text Length Percentiles", ln=True, align="C")
+    pdf.cell(0, 10, "Text Length Percentiles", align="C", **NL)
     pdf.set_font("Helvetica", "", 11)
     pct_vals = [f"P{p}: {int(percentile_df[f'P{p}'].iloc[0]):,}" for p in [1, 5, 25, 50, 75, 95, 99]]
-    pdf.cell(0, 8, "   |   ".join(pct_vals), ln=True, align="C")
+    pdf.cell(0, 8, "   |   ".join(pct_vals), align="C", **NL)
 
     # ── Chart pages ──
     for title, path in chart_paths:
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 18)
-        pdf.cell(0, 12, title, ln=True, align="C")
+        pdf.cell(0, 12, title, align="C", **NL)
         pdf.ln(2)
         img_w = 255
         x = (297 - img_w) / 2
