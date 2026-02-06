@@ -141,7 +141,7 @@ export const searchApi = {
   },
 
   // News search
-  searchNews: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: NewsResult[]; total_results?: number }> => {
+  searchNews: (query: string, options: SearchOptions = {}): Promise<{ query: string; results: NewsResult[]; total_results: number; has_more: boolean; page: number; per_page: number; search_time_ms: number; cached?: boolean }> => {
     const params = new URLSearchParams({ q: query })
     if (options.page) params.set('page', String(options.page))
     if (options.per_page) params.set('per_page', String(options.per_page))

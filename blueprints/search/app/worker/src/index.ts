@@ -25,55 +25,28 @@ import {
 } from './routes/widgets'
 import { sessionMiddleware } from './middleware/session'
 import { errorHandler } from './middleware/error-handler'
-import { securityHeaders } from './middleware/security'
 import { rateLimit } from './middleware/rate-limit'
 import { contextMiddleware } from './middleware/context'
 import type { HonoEnv } from './types'
 
 const assetManifest = JSON.parse(manifestJSON)
 
-const MIME_TYPES: Record<string, string> = {
-  html: 'text/html; charset=utf-8',
-  js: 'application/javascript; charset=utf-8',
-  css: 'text/css; charset=utf-8',
-  json: 'application/json; charset=utf-8',
-  svg: 'image/svg+xml',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  ico: 'image/x-icon',
-  woff: 'font/woff',
-  woff2: 'font/woff2',
-  ttf: 'font/ttf',
-  txt: 'text/plain; charset=utf-8',
-  xml: 'application/xml',
-  webmanifest: 'application/manifest+json',
-}
-
-function getMimeType(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  return MIME_TYPES[ext] || 'application/octet-stream'
-}
-
 const app = new Hono<HonoEnv>()
 
-// Global middleware (lightweight - no security headers on static assets)
+// Global middleware
 app.use('*', errorHandler)
 app.use('*', cors())
 app.use('*', timing())
 app.use('*', sessionMiddleware())
 
-// API-specific middleware: security headers, rate limiting, service injection
-app.use('/api/*', securityHeaders())
+// API middleware: rate limiting + service injection
 app.use('/api/*', rateLimit({
-  windowMs: 60_000,    // 1 minute
-  maxRequests: 100,    // 100 requests per minute
+  windowMs: 60_000,
+  maxRequests: 100,
 }))
 app.use('/api/*', contextMiddleware)
 
-// Health check (no rate limiting, no service injection needed)
+// Health check
 app.route('/health', healthRoutes)
 
 // API route groups
@@ -96,6 +69,7 @@ app.route('/api/read', readRoutes)
 // Serve static frontend files for all other routes
 app.get('*', async (c) => {
   try {
+    // Try to serve the exact static file
     const asset = await getAssetFromKV(
       {
         request: c.req.raw,
@@ -106,13 +80,9 @@ app.get('*', async (c) => {
         ASSET_MANIFEST: assetManifest,
       }
     )
-    // Explicitly set Content-Type based on requested path
-    const contentType = getMimeType(new URL(c.req.url).pathname)
-    const headers = new Headers(asset.headers)
-    headers.set('Content-Type', contentType)
-    return new Response(asset.body, { headers, status: asset.status })
+    return new Response(asset.body, asset)
   } catch {
-    // SPA fallback: serve index.html for all non-asset routes
+    // SPA fallback: serve index.html for client-side routes
     try {
       const notFoundRequest = new Request(new URL('/index.html', c.req.url).toString(), {
         method: 'GET',
@@ -127,9 +97,7 @@ app.get('*', async (c) => {
           ASSET_MANIFEST: assetManifest,
         }
       )
-      const headers = new Headers(asset.headers)
-      headers.set('Content-Type', 'text/html; charset=utf-8')
-      return new Response(asset.body, { headers, status: 200 })
+      return new Response(asset.body, asset)
     } catch {
       return c.text('Not found', 404)
     }

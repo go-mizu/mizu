@@ -90,6 +90,7 @@ export interface EngineResult {
   // News/social fields
   source?: string;
   publishedAt?: string;
+  author?: string;
 
   // Science fields
   authors?: string[];

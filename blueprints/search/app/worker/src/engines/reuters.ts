@@ -137,6 +137,10 @@ export class ReutersEngine implements OnlineEngine {
         // Get source - typically Reuters, but can have kicker/category
         const source = article.kicker?.name || 'Reuters';
 
+        // Extract author names
+        const authorNames = article.authors?.map(a => a.name).filter(Boolean) as string[] | undefined;
+        const author = authorNames?.join(', ') || undefined;
+
         results.results.push({
           url,
           title: decodeHtmlEntities(article.title),
@@ -148,9 +152,10 @@ export class ReutersEngine implements OnlineEngine {
           source,
           thumbnailUrl,
           publishedAt,
+          author,
           metadata: {
             articleId: article.id,
-            authors: article.authors?.map(a => a.name).filter(Boolean),
+            authors: authorNames,
             updatedAt: article.updated_time,
           },
         });
