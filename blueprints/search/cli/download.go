@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	fwdownloader "github.com/go-mizu/mizu/blueprints/search/pkg/fineweb"
+	fw "github.com/go-mizu/mizu/blueprints/search/pkg/fineweb"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +20,7 @@ func NewDownload() *cobra.Command {
 		Long: `Download and manage FineWeb-2 dataset files from HuggingFace.
 
 Subcommands:
-  langs    List all available languages
+  langs    List all available languages with size info
   files    List parquet files for a language
   info     Show dataset size and statistics
   get      Download parquet files with progress
@@ -36,12 +36,157 @@ Examples:
 		},
 	}
 
+	cmd.PersistentFlags().Bool("no-cache", false, "Bypass API cache and fetch fresh data")
+
 	cmd.AddCommand(newDownloadLangs())
 	cmd.AddCommand(newDownloadFiles())
 	cmd.AddCommand(newDownloadInfo())
 	cmd.AddCommand(newDownloadGet())
 
 	return cmd
+}
+
+// ── cache helpers ──────────────────────────────────────────────
+
+func useCache(cmd *cobra.Command) bool {
+	noCache, _ := cmd.Flags().GetBool("no-cache")
+	return !noCache
+}
+
+// loadOrFetchConfigs returns configs+sizes, using cache when available.
+func loadOrFetchConfigs(cmd *cobra.Command, client *fw.Client) ([]fw.DatasetConfig, *fw.DatasetSizeInfo, *fw.Cache, error) {
+	ctx := cmd.Context()
+	cache := fw.NewCache()
+
+	if useCache(cmd) {
+		if cd := cache.Load(); cd != nil && cd.Configs != nil && cd.Sizes != nil {
+			return cd.Configs, cd.Sizes, cache, nil
+		}
+	}
+
+	// Fetch both configs and sizes in sequence (both are single fast API calls)
+	fmt.Print(mutedStyle.Render("  Fetching language list..."))
+	t0 := time.Now()
+
+	configs, err := client.ListConfigs(ctx)
+	if err != nil {
+		fmt.Println()
+		return nil, nil, cache, fmt.Errorf("listing configs: %w", err)
+	}
+
+	sizes, err := client.GetDatasetSize(ctx, "")
+	if err != nil {
+		fmt.Println()
+		return nil, nil, cache, fmt.Errorf("getting sizes: %w", err)
+	}
+
+	elapsed := time.Since(t0)
+	fmt.Printf("\r\033[K  %s  Fetched in %s\n", successStyle.Render("OK"), elapsed.Round(time.Millisecond))
+
+	// Update cache
+	cd := cache.Load()
+	if cd == nil {
+		cd = &fw.CacheData{}
+	}
+	cd.Configs = configs
+	cd.Sizes = sizes
+	_ = cache.Save(cd)
+
+	return configs, sizes, cache, nil
+}
+
+// loadOrFetchFiles returns file list for a lang/split, using cache when available.
+func loadOrFetchFiles(cmd *cobra.Command, client *fw.Client, lang, split string) ([]fw.FileInfo, error) {
+	ctx := cmd.Context()
+	cache := fw.NewCache()
+	key := lang + "/" + split
+
+	if useCache(cmd) {
+		if cd := cache.Load(); cd != nil && cd.Files != nil {
+			if files, ok := cd.Files[key]; ok && len(files) > 0 {
+				return files, nil
+			}
+		}
+	}
+
+	fmt.Print(mutedStyle.Render("  Fetching file list..."))
+	t0 := time.Now()
+
+	files, err := client.ListSplitFiles(ctx, lang, split)
+	if err != nil {
+		fmt.Println()
+		return nil, fmt.Errorf("listing files: %w", err)
+	}
+
+	elapsed := time.Since(t0)
+	fmt.Printf("\r\033[K  %s  Found %d files in %s\n",
+		successStyle.Render("OK"), len(files), elapsed.Round(time.Millisecond))
+
+	// Update cache
+	cd := cache.Load()
+	if cd == nil {
+		cd = &fw.CacheData{}
+	}
+	if cd.Files == nil {
+		cd.Files = make(map[string][]fw.FileInfo)
+	}
+	cd.Files[key] = files
+	_ = cache.Save(cd)
+
+	return files, nil
+}
+
+func cacheAgeLabel(cache *fw.Cache) string {
+	age := cache.Age()
+	if age == 0 {
+		return ""
+	}
+	if age < time.Minute {
+		return " (cached just now)"
+	}
+	if age < time.Hour {
+		return fmt.Sprintf(" (cached %dm ago)", int(age.Minutes()))
+	}
+	if age < 24*time.Hour {
+		return fmt.Sprintf(" (cached %dh ago)", int(age.Hours()))
+	}
+	return fmt.Sprintf(" (cached %dd ago)", int(age.Hours()/24))
+}
+
+// ── local disk helpers ─────────────────────────────────────────
+
+type localStatus struct {
+	files     int
+	totalSize int64
+}
+
+func scanLocalDir(lang, split string) localStatus {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, "data", "fineweb-2", lang, split)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return localStatus{}
+	}
+	var ls localStatus
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".parquet") {
+			ls.files++
+			if info, err := e.Info(); err == nil {
+				ls.totalSize += info.Size()
+			}
+		}
+	}
+	return ls
+}
+
+func scanLocalLang(lang string) localStatus {
+	var total localStatus
+	for _, split := range []string{"train", "test"} {
+		s := scanLocalDir(lang, split)
+		total.files += s.files
+		total.totalSize += s.totalSize
+	}
+	return total
 }
 
 // ── download langs ─────────────────────────────────────────────
@@ -51,7 +196,8 @@ func newDownloadLangs() *cobra.Command {
 		Use:   "langs",
 		Short: "List all available languages in FineWeb-2",
 		Long: `Fetches the full list of language configs from HuggingFace API.
-Shows language code, split count, and matches against a search filter.
+Shows language code, human name, row count, size, and local download status.
+Results are cached for 24 hours (use --no-cache to refresh).
 
 Examples:
   search download langs
@@ -61,75 +207,181 @@ Examples:
 	}
 
 	cmd.Flags().String("search", "", "Filter languages by substring match")
+	cmd.Flags().Bool("sort-size", false, "Sort by dataset size (largest first)")
 
 	return cmd
 }
 
 func runDownloadLangs(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
 	search, _ := cmd.Flags().GetString("search")
+	sortSize, _ := cmd.Flags().GetBool("sort-size")
 
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("FineWeb-2 — Available Languages"))
 	fmt.Println()
 
-	client := fwdownloader.NewClient()
-
-	fmt.Print(mutedStyle.Render("  Fetching language list from HuggingFace..."))
-	t0 := time.Now()
-
-	configs, err := client.ListConfigs(ctx)
+	client := fw.NewClient()
+	configs, sizes, cache, err := loadOrFetchConfigs(cmd, client)
 	if err != nil {
-		fmt.Println()
-		return fmt.Errorf("listing configs: %w", err)
+		return err
 	}
 
-	elapsed := time.Since(t0)
-	fmt.Printf("\r\033[K  %s  Fetched in %s\n\n", successStyle.Render("OK"), elapsed.Round(time.Millisecond))
-
-	// Deduplicate configs to get unique languages
+	// Build lang → splits map
 	langSplits := make(map[string][]string)
 	for _, c := range configs {
 		langSplits[c.Config] = append(langSplits[c.Config], c.Split)
 	}
 
-	// Sort language codes
-	langs := make([]string, 0, len(langSplits))
-	for lang := range langSplits {
-		langs = append(langs, lang)
-	}
-	sort.Strings(langs)
-
-	// Filter
-	searchLower := strings.ToLower(search)
-	var filtered []string
-	for _, lang := range langs {
-		if search == "" || strings.Contains(strings.ToLower(lang), searchLower) {
-			filtered = append(filtered, lang)
+	// Build lang → size map from sizes
+	sizeMap := make(map[string]*fw.ConfigSize)
+	if sizes != nil {
+		for i := range sizes.Configs {
+			sizeMap[sizes.Configs[i].Config] = &sizes.Configs[i]
 		}
 	}
 
-	// Print table header
-	fmt.Printf("  %-30s %s\n", titleStyle.Render("Language"), titleStyle.Render("Splits"))
-	fmt.Printf("  %-30s %s\n", "─────────────────────────────", "──────────────")
-
-	for _, lang := range filtered {
-		splits := langSplits[lang]
-		sort.Strings(splits)
-		fmt.Printf("  %-30s %s\n", lang, mutedStyle.Render(strings.Join(splits, ", ")))
+	// Collect languages
+	type langRow struct {
+		code     string
+		name     string
+		splits   []string
+		rows     int64
+		size     int64
+		local    localStatus
 	}
+
+	var rows []langRow
+	searchLower := strings.ToLower(search)
+
+	for lang, splits := range langSplits {
+		if search != "" && !strings.Contains(strings.ToLower(lang), searchLower) {
+			// Also search by human name
+			if l, ok := fw.GetLanguage(lang); ok {
+				if !strings.Contains(strings.ToLower(l.Name), searchLower) {
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		sort.Strings(splits)
+
+		var name string
+		if l, ok := fw.GetLanguage(lang); ok {
+			name = l.Name
+		}
+
+		var numRows, numBytes int64
+		if cs, ok := sizeMap[lang]; ok {
+			numRows = cs.NumRows
+			numBytes = cs.NumBytes
+		}
+
+		rows = append(rows, langRow{
+			code:   lang,
+			name:   name,
+			splits: splits,
+			rows:   numRows,
+			size:   numBytes,
+			local:  scanLocalLang(lang),
+		})
+	}
+
+	// Sort
+	if sortSize {
+		sort.Slice(rows, func(i, j int) bool { return rows[i].size > rows[j].size })
+	} else {
+		sort.Slice(rows, func(i, j int) bool { return rows[i].code < rows[j].code })
+	}
+
+	// Print table
+	ageLabel := cacheAgeLabel(cache)
+	if ageLabel != "" {
+		fmt.Printf("  %s\n\n", mutedStyle.Render(ageLabel[1:]))
+	}
+
+	fmt.Printf("  %-4s %-18s %-14s %-7s %10s %10s  %s\n",
+		titleStyle.Render("#"),
+		titleStyle.Render("Language"),
+		titleStyle.Render("Name"),
+		titleStyle.Render("Splits"),
+		titleStyle.Render("Rows"),
+		titleStyle.Render("Size"),
+		titleStyle.Render("Local"))
+	fmt.Printf("  %-4s %-18s %-14s %-7s %10s %10s  %s\n",
+		"──", "──────────────────", "──────────────", "──────", "──────────", "──────────", "──────────────")
+
+	var totalRows, totalSize int64
+	var totalLocalFiles int
+	var totalLocalSize int64
+
+	for i, r := range rows {
+		totalRows += r.rows
+		totalSize += r.size
+		totalLocalFiles += r.local.files
+		totalLocalSize += r.local.totalSize
+
+		localStr := mutedStyle.Render("—")
+		if r.local.files > 0 {
+			localStr = successStyle.Render(fmt.Sprintf("%d files, %s", r.local.files, formatBytes(r.local.totalSize)))
+		}
+
+		nameStr := mutedStyle.Render("—")
+		if r.name != "" {
+			nameStr = r.name
+		}
+
+		rowsStr := mutedStyle.Render("—")
+		if r.rows > 0 {
+			rowsStr = formatLargeNumber(r.rows)
+		}
+
+		sizeStr := mutedStyle.Render("—")
+		if r.size > 0 {
+			sizeStr = formatBytes(r.size)
+		}
+
+		fmt.Printf("  %-4d %-18s %-14s %-7d %10s %10s  %s\n",
+			i+1, r.code, nameStr, len(r.splits), rowsStr, sizeStr, localStr)
+	}
+
+	// Footer
+	fmt.Printf("  %-4s %-18s %-14s %-7s %10s %10s  %s\n",
+		"──", "──────────────────", "──────────────", "──────", "──────────", "──────────", "──────────────")
+
+	localSummary := mutedStyle.Render("—")
+	if totalLocalFiles > 0 {
+		localSummary = successStyle.Render(fmt.Sprintf("%d files, %s", totalLocalFiles, formatBytes(totalLocalSize)))
+	}
+
+	totalRowsStr := ""
+	if totalRows > 0 {
+		totalRowsStr = formatLargeNumber(totalRows)
+	}
+	totalSizeStr := ""
+	if totalSize > 0 {
+		totalSizeStr = formatBytes(totalSize)
+	}
+
+	fmt.Printf("  %-4s %-18s %-14s %-7d %10s %10s  %s\n",
+		"", titleStyle.Render("Total"),
+		"",
+		len(rows),
+		titleStyle.Render(totalRowsStr),
+		titleStyle.Render(totalSizeStr),
+		localSummary)
 
 	fmt.Println()
 	if search != "" {
 		fmt.Printf("  %s matching %q: %s\n",
 			infoStyle.Render("Found"),
 			search,
-			titleStyle.Render(fmt.Sprintf("%d", len(filtered))))
-	} else {
-		fmt.Printf("  %s: %s\n",
-			infoStyle.Render("Total languages"),
-			titleStyle.Render(fmt.Sprintf("%d", len(filtered))))
+			titleStyle.Render(fmt.Sprintf("%d", len(rows))))
+		fmt.Println()
 	}
+
+	fmt.Printf("  %s\n", mutedStyle.Render("Use --no-cache to refresh • --sort-size to sort by size"))
 	fmt.Println()
 
 	return nil
@@ -142,7 +394,7 @@ func newDownloadInfo() *cobra.Command {
 		Use:   "info",
 		Short: "Show dataset size and statistics",
 		Long: `Queries HuggingFace API for dataset size information.
-Shows total rows, file sizes, and per-split breakdown.
+Shows total rows, file sizes, per-split breakdown, and local download progress.
 
 Examples:
   search download info
@@ -163,19 +415,45 @@ func runDownloadInfo(cmd *cobra.Command, args []string) error {
 	fmt.Println(subtitleStyle.Render("FineWeb-2 — Dataset Info"))
 	fmt.Println()
 
-	client := fwdownloader.NewClient()
+	client := fw.NewClient()
+	cache := fw.NewCache()
 
-	fmt.Print(mutedStyle.Render("  Fetching size info from HuggingFace..."))
-	t0 := time.Now()
-
-	info, err := client.GetDatasetSize(ctx, lang)
-	if err != nil {
-		fmt.Println()
-		return fmt.Errorf("getting dataset size: %w", err)
+	// Try cache for non-lang-specific requests
+	var info *fw.DatasetSizeInfo
+	if useCache(cmd) && lang == "" {
+		if cd := cache.Load(); cd != nil && cd.Sizes != nil {
+			info = cd.Sizes
+			age := cacheAgeLabel(cache)
+			if age != "" {
+				fmt.Printf("  %s\n\n", mutedStyle.Render(age[1:]))
+			}
+		}
 	}
 
-	elapsed := time.Since(t0)
-	fmt.Printf("\r\033[K  %s  Fetched in %s\n\n", successStyle.Render("OK"), elapsed.Round(time.Millisecond))
+	if info == nil {
+		fmt.Print(mutedStyle.Render("  Fetching size info from HuggingFace..."))
+		t0 := time.Now()
+
+		var err error
+		info, err = client.GetDatasetSize(ctx, lang)
+		if err != nil {
+			fmt.Println()
+			return fmt.Errorf("getting dataset size: %w", err)
+		}
+
+		elapsed := time.Since(t0)
+		fmt.Printf("\r\033[K  %s  Fetched in %s\n\n", successStyle.Render("OK"), elapsed.Round(time.Millisecond))
+
+		// Cache full-dataset sizes
+		if lang == "" {
+			cd := cache.Load()
+			if cd == nil {
+				cd = &fw.CacheData{}
+			}
+			cd.Sizes = info
+			_ = cache.Save(cd)
+		}
+	}
 
 	// Dataset summary
 	fmt.Println(titleStyle.Render("  Dataset Summary"))
@@ -186,27 +464,26 @@ func runDownloadInfo(cmd *cobra.Command, args []string) error {
 	fmt.Printf("    %-25s %s\n", "Configs:", titleStyle.Render(fmt.Sprintf("%d", len(info.Configs))))
 	fmt.Println()
 
-	if len(info.Configs) <= 20 {
-		// Per-config breakdown
+	if len(info.Configs) <= 30 {
 		fmt.Println(titleStyle.Render("  Per-Language Breakdown"))
 		fmt.Println()
-		fmt.Printf("    %-25s %12s %12s %12s\n",
+		fmt.Printf("    %-24s %12s %12s %12s\n",
 			titleStyle.Render("Language"),
 			titleStyle.Render("Rows"),
 			titleStyle.Render("Size"),
 			titleStyle.Render("Memory"))
-		fmt.Printf("    %-25s %12s %12s %12s\n",
+		fmt.Printf("    %-24s %12s %12s %12s\n",
 			"────────────────────────", "────────────", "────────────", "────────────")
 
 		for _, c := range info.Configs {
-			fmt.Printf("    %-25s %12s %12s %12s\n",
+			fmt.Printf("    %-24s %12s %12s %12s\n",
 				c.Config,
 				formatLargeNumber(c.NumRows),
 				formatBytes(c.NumBytes),
 				formatBytes(c.NumBytesMemory))
 
 			for _, s := range c.Splits {
-				fmt.Printf("      %-23s %12s %12s %12s\n",
+				fmt.Printf("      %-22s %12s %12s %12s\n",
 					mutedStyle.Render(s.Split),
 					mutedStyle.Render(formatLargeNumber(s.NumRows)),
 					mutedStyle.Render(formatBytes(s.NumBytes)),
@@ -216,53 +493,26 @@ func runDownloadInfo(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	// Local download status
+	// Local download status with percentages
 	fmt.Println(titleStyle.Render("  Local Downloads"))
 	fmt.Println()
-	showLocalStatus(lang)
+
+	langFilter := lang
+	if langFilter == "" {
+		// Show all downloaded languages
+		showLocalStatusEnhanced(info)
+	} else {
+		showLocalStatusForLang(langFilter, info)
+	}
 	fmt.Println()
 
 	return nil
 }
 
-func showLocalStatus(lang string) {
+func showLocalStatusEnhanced(sizes *fw.DatasetSizeInfo) {
 	home, _ := os.UserHomeDir()
 	dataDir := filepath.Join(home, "data", "fineweb-2")
 
-	if lang != "" {
-		// Show status for specific language
-		for _, split := range []string{"train", "test"} {
-			splitDir := filepath.Join(dataDir, lang, split)
-			entries, err := os.ReadDir(splitDir)
-			if os.IsNotExist(err) {
-				fmt.Printf("    %s/%s: %s\n", lang, split, mutedStyle.Render("not downloaded"))
-				continue
-			}
-			if err != nil {
-				fmt.Printf("    %s/%s: %s\n", lang, split, errorStyle.Render(err.Error()))
-				continue
-			}
-
-			var count int
-			var totalSize int64
-			for _, e := range entries {
-				if strings.HasSuffix(e.Name(), ".parquet") {
-					count++
-					info, _ := e.Info()
-					if info != nil {
-						totalSize += info.Size()
-					}
-				}
-			}
-			fmt.Printf("    %s/%s: %s files, %s\n",
-				lang, split,
-				successStyle.Render(fmt.Sprintf("%d", count)),
-				formatBytes(totalSize))
-		}
-		return
-	}
-
-	// Show all downloaded languages
 	entries, err := os.ReadDir(dataDir)
 	if os.IsNotExist(err) {
 		fmt.Printf("    %s\n", mutedStyle.Render("No data downloaded yet"))
@@ -274,42 +524,115 @@ func showLocalStatus(lang string) {
 		return
 	}
 
+	// Build size map for percentage calculation
+	sizeMap := make(map[string]int64) // "lang/split" → bytes
+	if sizes != nil {
+		for _, c := range sizes.Configs {
+			for _, s := range c.Splits {
+				sizeMap[c.Config+"/"+s.Split] = s.NumBytes
+			}
+		}
+	}
+
 	found := false
+	var grandLocalSize int64
+	var grandRemoteSize int64
+	var grandLocalFiles int
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		langDir := entry.Name()
 		for _, split := range []string{"train", "test"} {
-			splitDir := filepath.Join(dataDir, langDir, split)
-			splitEntries, err := os.ReadDir(splitDir)
-			if err != nil {
+			ls := scanLocalDir(langDir, split)
+			if ls.files == 0 {
 				continue
 			}
-			var count int
-			var totalSize int64
-			for _, e := range splitEntries {
-				if strings.HasSuffix(e.Name(), ".parquet") {
-					count++
-					info, _ := e.Info()
-					if info != nil {
-						totalSize += info.Size()
-					}
+			found = true
+			grandLocalFiles += ls.files
+			grandLocalSize += ls.totalSize
+
+			remoteSize := sizeMap[langDir+"/"+split]
+			grandRemoteSize += remoteSize
+
+			pctStr := ""
+			if remoteSize > 0 {
+				pct := float64(ls.totalSize) / float64(remoteSize) * 100
+				if pct >= 99.9 {
+					pctStr = successStyle.Render(" (100%)")
+				} else {
+					pctStr = warningStyle.Render(fmt.Sprintf(" (%.1f%%)", pct))
 				}
 			}
-			if count > 0 {
-				found = true
-				fmt.Printf("    %s/%s: %s files, %s\n",
-					langDir, split,
-					successStyle.Render(fmt.Sprintf("%d", count)),
-					formatBytes(totalSize))
-			}
+
+			fmt.Printf("    %s/%s: %s files, %s%s\n",
+				langDir, split,
+				successStyle.Render(fmt.Sprintf("%d", ls.files)),
+				formatBytes(ls.totalSize),
+				pctStr)
 		}
 	}
 
 	if !found {
 		fmt.Printf("    %s\n", mutedStyle.Render("No data downloaded yet"))
 		fmt.Printf("    %s\n", mutedStyle.Render("Use: search download get --lang vie_Latn"))
+		return
+	}
+
+	// Grand total
+	fmt.Printf("    %s\n", strings.Repeat("─", 45))
+	pctTotal := ""
+	if grandRemoteSize > 0 {
+		pct := float64(grandLocalSize) / float64(grandRemoteSize) * 100
+		pctTotal = fmt.Sprintf(" of %s (%.1f%%)", formatBytes(grandRemoteSize), pct)
+	}
+	fmt.Printf("    Total: %s files, %s%s\n",
+		titleStyle.Render(fmt.Sprintf("%d", grandLocalFiles)),
+		titleStyle.Render(formatBytes(grandLocalSize)),
+		pctTotal)
+}
+
+func showLocalStatusForLang(lang string, sizes *fw.DatasetSizeInfo) {
+	sizeMap := make(map[string]int64)
+	if sizes != nil {
+		for _, c := range sizes.Configs {
+			if c.Config == lang {
+				for _, s := range c.Splits {
+					sizeMap[s.Split] = s.NumBytes
+				}
+			}
+		}
+	}
+
+	for _, split := range []string{"train", "test"} {
+		ls := scanLocalDir(lang, split)
+		remoteSize := sizeMap[split]
+
+		if ls.files == 0 {
+			fmt.Printf("    %s/%s: %s", lang, split, mutedStyle.Render("not downloaded"))
+			if remoteSize > 0 {
+				fmt.Printf(" (%s available)", formatBytes(remoteSize))
+			}
+			fmt.Println()
+			continue
+		}
+
+		pctStr := ""
+		if remoteSize > 0 {
+			pct := float64(ls.totalSize) / float64(remoteSize) * 100
+			if pct >= 99.9 {
+				pctStr = successStyle.Render(" (100%)")
+			} else {
+				pctStr = warningStyle.Render(fmt.Sprintf(" (%.1f%%)", pct))
+			}
+		}
+
+		fmt.Printf("    %s/%s: %s files, %s%s\n",
+			lang, split,
+			successStyle.Render(fmt.Sprintf("%d", ls.files)),
+			formatBytes(ls.totalSize),
+			pctStr)
 	}
 }
 
@@ -320,7 +643,8 @@ func newDownloadFiles() *cobra.Command {
 		Use:   "files",
 		Short: "List parquet files for a language",
 		Long: `Lists all parquet files available on HuggingFace for a language and split.
-Shows filename, size, and whether the file is downloaded locally.
+Shows filename, size, percentage of total, and local download status.
+Results are cached for 24 hours.
 
 Examples:
   search download files --lang vie_Latn
@@ -336,71 +660,99 @@ Examples:
 }
 
 func runDownloadFiles(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
 	lang, _ := cmd.Flags().GetString("lang")
 	split, _ := cmd.Flags().GetString("split")
 
-	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render(fmt.Sprintf("FineWeb-2 — Files for %s/%s", lang, split)))
-	fmt.Println()
-
-	client := fwdownloader.NewClient()
-
-	fmt.Print(mutedStyle.Render("  Fetching file list..."))
-	t0 := time.Now()
-
-	files, err := client.ListSplitFiles(ctx, lang, split)
-	if err != nil {
-		fmt.Println()
-		return fmt.Errorf("listing files: %w", err)
+	// Resolve language name
+	langLabel := lang
+	if l, ok := fw.GetLanguage(lang); ok {
+		langLabel = fmt.Sprintf("%s (%s)", lang, l.Name)
 	}
 
-	elapsed := time.Since(t0)
-	fmt.Printf("\r\033[K  %s  Found %d files in %s\n\n",
-		successStyle.Render("OK"),
-		len(files),
-		elapsed.Round(time.Millisecond))
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render(fmt.Sprintf("FineWeb-2 — Files for %s/%s", langLabel, split)))
+	fmt.Println()
+
+	client := fw.NewClient()
+	files, err := loadOrFetchFiles(cmd, client, lang, split)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
 
 	// Check local status
 	home, _ := os.UserHomeDir()
 	localDir := filepath.Join(home, "data", "fineweb-2", lang, split)
 
+	// Compute total size
+	var totalSize int64
+	for _, f := range files {
+		totalSize += f.Size
+	}
+
 	// Print table
-	fmt.Printf("  %-4s %-25s %12s %s\n",
+	fmt.Printf("  %-4s %-28s %10s %7s  %s\n",
 		titleStyle.Render("#"),
 		titleStyle.Render("Filename"),
 		titleStyle.Render("Size"),
+		titleStyle.Render("% Tot"),
 		titleStyle.Render("Status"))
-	fmt.Printf("  %-4s %-25s %12s %s\n",
-		"───", "─────────────────────────", "────────────", "──────────")
+	fmt.Printf("  %-4s %-28s %10s %7s  %s\n",
+		"───", "────────────────────────────", "──────────", "──────", "──────────────")
 
-	var totalSize int64
 	var downloadedCount int
+	var downloadedSize int64
 	for i, f := range files {
-		totalSize += f.Size
+		pct := float64(0)
+		if totalSize > 0 {
+			pct = float64(f.Size) / float64(totalSize) * 100
+		}
 
 		// Check if locally available
 		localPath := filepath.Join(localDir, f.Name)
-		status := mutedStyle.Render("not downloaded")
+		status := mutedStyle.Render("—")
 		if info, err := os.Stat(localPath); err == nil {
 			if info.Size() == f.Size {
-				status = successStyle.Render("downloaded")
+				status = successStyle.Render("✓ downloaded")
 				downloadedCount++
+				downloadedSize += f.Size
 			} else {
-				status = warningStyle.Render(fmt.Sprintf("partial (%s)", formatBytes(info.Size())))
+				status = warningStyle.Render(fmt.Sprintf("⚠ partial (%s)", formatBytes(info.Size())))
 			}
 		}
 
-		fmt.Printf("  %-4d %-25s %12s %s\n",
-			i+1, f.Name, formatBytes(f.Size), status)
+		fmt.Printf("  %-4d %-28s %10s %6.1f%%  %s\n",
+			i+1, f.Name, formatBytes(f.Size), pct, status)
 	}
 
+	// Summary
 	fmt.Println()
-	fmt.Printf("  Total: %s files, %s (downloaded: %d/%d)\n",
+	fmt.Printf("  %s\n", strings.Repeat("─", 70))
+	fmt.Printf("  Total: %s files, %s\n",
 		titleStyle.Render(fmt.Sprintf("%d", len(files))),
-		titleStyle.Render(formatBytes(totalSize)),
-		downloadedCount,
-		len(files))
+		titleStyle.Render(formatBytes(totalSize)))
+
+	if downloadedCount > 0 {
+		dlPct := float64(downloadedSize) / float64(totalSize) * 100
+		fmt.Printf("  Downloaded: %s/%d files (%s / %s = %.1f%%)\n",
+			successStyle.Render(fmt.Sprintf("%d", downloadedCount)),
+			len(files),
+			successStyle.Render(formatBytes(downloadedSize)),
+			formatBytes(totalSize),
+			dlPct)
+	} else {
+		fmt.Printf("  Downloaded: %s\n", mutedStyle.Render("none"))
+	}
+
+	remaining := len(files) - downloadedCount
+	if remaining > 0 {
+		fmt.Printf("  Remaining: %d files (%s)\n",
+			remaining,
+			formatBytes(totalSize-downloadedSize))
+		fmt.Printf("\n  %s\n",
+			mutedStyle.Render(fmt.Sprintf("Run: search download get --lang %s --split %s", lang, split)))
+	}
 	fmt.Println()
 
 	return nil
@@ -439,17 +791,19 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 	split, _ := cmd.Flags().GetString("split")
 	shards, _ := cmd.Flags().GetInt("shards")
 
+	langLabel := lang
+	if l, ok := fw.GetLanguage(lang); ok {
+		langLabel = fmt.Sprintf("%s (%s)", lang, l.Name)
+	}
+
 	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render(fmt.Sprintf("FineWeb-2 — Downloading %s/%s", lang, split)))
+	fmt.Println(subtitleStyle.Render(fmt.Sprintf("FineWeb-2 — Downloading %s/%s", langLabel, split)))
 	fmt.Println()
 
-	client := fwdownloader.NewClient()
-
-	fmt.Print(mutedStyle.Render("  Fetching file list..."))
-	files, err := client.ListSplitFiles(ctx, lang, split)
+	client := fw.NewClient()
+	files, err := loadOrFetchFiles(cmd, client, lang, split)
 	if err != nil {
-		fmt.Println()
-		return fmt.Errorf("listing files: %w", err)
+		return err
 	}
 
 	// Sort by name
@@ -462,50 +816,83 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 		files = files[:shards]
 	}
 
-	fmt.Printf("\r\033[K  %s  Found %d files to download\n\n",
-		infoStyle.Render("OK"), len(files))
+	// Calculate totals
+	var totalSize int64
+	for _, f := range files {
+		totalSize += f.Size
+	}
+
+	fmt.Println()
 
 	home, _ := os.UserHomeDir()
 	destDir := filepath.Join(home, "data", "fineweb-2", lang, split)
 
-	var totalDownloaded int64
+	// First pass: figure out what needs downloading
+	var toDownload []fw.FileInfo
 	var skippedCount int
-	pipelineStart := time.Now()
-
-	for i, file := range files {
+	var skippedSize int64
+	for _, file := range files {
 		destPath := filepath.Join(destDir, file.Name)
-
-		// Check if already downloaded
 		if info, err := os.Stat(destPath); err == nil && info.Size() == file.Size {
 			skippedCount++
-			fmt.Printf("  [%d/%d] %s %s (%s) %s\n",
-				i+1, len(files),
-				successStyle.Render("SKIP"),
-				file.Name,
-				formatBytes(file.Size),
-				mutedStyle.Render("already downloaded"))
-			continue
+			skippedSize += file.Size
+		} else {
+			toDownload = append(toDownload, file)
 		}
+	}
 
-		fmt.Printf("  [%d/%d] Downloading %s (%s)\n",
-			i+1, len(files), file.Name, formatBytes(file.Size))
+	needSize := totalSize - skippedSize
+
+	if skippedCount > 0 {
+		fmt.Printf("  %s %d/%d files already downloaded (%s)\n",
+			successStyle.Render("SKIP"),
+			skippedCount, len(files),
+			formatBytes(skippedSize))
+	}
+
+	if len(toDownload) == 0 {
+		fmt.Printf("\n  %s All %d files are already downloaded!\n\n",
+			successStyle.Render("✓"),
+			len(files))
+		fmt.Printf("  Location: %s\n\n", destDir)
+		return nil
+	}
+
+	fmt.Printf("  %s %d files to download (%s)\n\n",
+		infoStyle.Render("GET"),
+		len(toDownload),
+		formatBytes(needSize))
+
+	// Download
+	var totalDownloaded int64
+	pipelineStart := time.Now()
+
+	for i, file := range toDownload {
+		destPath := filepath.Join(destDir, file.Name)
+
+		// Overall progress header
+		overallPct := float64(0)
+		if needSize > 0 {
+			overallPct = float64(totalDownloaded) / float64(needSize) * 100
+		}
+		fmt.Printf("  [%d/%d] %s (%s) — overall %s\n",
+			i+1, len(toDownload),
+			file.Name, formatBytes(file.Size),
+			mutedStyle.Render(fmt.Sprintf("%.0f%%", overallPct)))
 
 		startTime := time.Now()
 		var lastPrint time.Time
-		var lastBytes int64
 
 		progressFn := func(downloaded, total int64) {
 			now := time.Now()
 			if now.Sub(lastPrint) < 200*time.Millisecond && downloaded < total {
-				return // throttle updates
+				return
 			}
 			lastPrint = now
 
 			elapsed := now.Sub(startTime).Seconds()
 			var speed float64
 			if elapsed > 0 {
-				speed = float64(downloaded-lastBytes) / now.Sub(startTime).Seconds()
-				// Use overall speed instead
 				speed = float64(downloaded) / elapsed
 			}
 
@@ -524,7 +911,6 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 					formatBytes(downloaded),
 					formatBytes(int64(speed)))
 			}
-			lastBytes = downloaded
 		}
 
 		err := client.DownloadFileWithProgress(ctx, file, destPath, progressFn)
@@ -545,16 +931,20 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 	}
 
 	totalElapsed := time.Since(pipelineStart)
+	avgSpeed := float64(totalDownloaded) / totalElapsed.Seconds()
 	fmt.Println()
 	fmt.Printf("  %s\n", strings.Repeat("─", 55))
-	fmt.Printf("  Downloaded: %s in %s\n",
+	fmt.Printf("  %s  Downloaded %s in %s (%s/s avg)\n",
+		successStyle.Render("✓"),
 		titleStyle.Render(formatBytes(totalDownloaded)),
-		totalElapsed.Round(time.Second))
+		totalElapsed.Round(time.Second),
+		formatBytes(int64(avgSpeed)))
 	if skippedCount > 0 {
-		fmt.Printf("  Skipped:    %s files (already downloaded)\n",
-			mutedStyle.Render(fmt.Sprintf("%d", skippedCount)))
+		fmt.Printf("     Skipped %s files (%s already on disk)\n",
+			mutedStyle.Render(fmt.Sprintf("%d", skippedCount)),
+			formatBytes(skippedSize))
 	}
-	fmt.Printf("  Location:   %s\n", destDir)
+	fmt.Printf("     Location: %s\n", destDir)
 	fmt.Println()
 
 	return nil
