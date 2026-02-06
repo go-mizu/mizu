@@ -1,5 +1,5 @@
-// Package fineweb provides a downloader for HuggingFace's FineWeb-2 dataset.
-package fineweb
+// Package fw2 provides a downloader for HuggingFace's FineWeb-2 dataset.
+package fw2
 
 // Language represents a FineWeb-2 language configuration.
 type Language struct {

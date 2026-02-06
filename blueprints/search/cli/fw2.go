@@ -8,16 +8,16 @@ import (
 	"strings"
 	"time"
 
-	fw "github.com/go-mizu/mizu/blueprints/search/pkg/fineweb"
+	fw "github.com/go-mizu/mizu/blueprints/search/pkg/fw2"
 	"github.com/spf13/cobra"
 )
 
-// NewDownload creates the download command with subcommands.
-func NewDownload() *cobra.Command {
+// NewFW2 creates the fw2 command with subcommands for FineWeb-2 dataset.
+func NewFW2() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "download",
-		Short: "Download datasets from HuggingFace",
-		Long: `Download and manage FineWeb-2 dataset files from HuggingFace.
+		Use:   "fw2",
+		Short: "Download FineWeb-2 dataset from HuggingFace",
+		Long: `Download and manage FineWeb-2 (multilingual) dataset files from HuggingFace.
 
 Subcommands:
   langs    List all available languages with size info
@@ -26,11 +26,11 @@ Subcommands:
   get      Download parquet files with progress
 
 Examples:
-  search download langs
-  search download langs --search vie
-  search download info --lang vie_Latn
-  search download files --lang vie_Latn --split train
-  search download get --lang vie_Latn --split train --shards 2`,
+  search fw2 langs
+  search fw2 langs --search vie
+  search fw2 info --lang vie_Latn
+  search fw2 files --lang vie_Latn --split train
+  search fw2 get --lang vie_Latn --split train --shards 2`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
