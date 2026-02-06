@@ -1,7 +1,7 @@
 /**
  * Context middleware for dependency injection.
  * Initializes services once per worker instance using lazy singleton pattern.
- * Engine secrets are resolved from both env vars and KV storage.
+ * Engine secrets are resolved from env vars.
  */
 
 import { createMiddleware } from 'hono/factory';
@@ -35,11 +35,6 @@ export interface ServiceContainer {
 const containerCache = new WeakMap<KVNamespace, ServiceContainer>();
 
 /**
- * Whether KV secrets have been loaded into the container.
- */
-const kvSecretsLoaded = new WeakSet<KVNamespace>();
-
-/**
  * Extract engine secrets from Cloudflare env bindings.
  */
 function extractEngineSecrets(env: Record<string, unknown>): Record<string, string> {
@@ -47,29 +42,6 @@ function extractEngineSecrets(env: Record<string, unknown>): Record<string, stri
   if (typeof env.JINA_API_KEY === 'string' && env.JINA_API_KEY) {
     secrets['jina_api_key'] = env.JINA_API_KEY;
   }
-  return secrets;
-}
-
-/**
- * Resolve engine secrets from KV storage (for keys stored via key rotation API).
- */
-async function resolveKVSecrets(kv: KVNamespace): Promise<Record<string, string>> {
-  const secrets: Record<string, string> = {};
-
-  try {
-    const jinaRaw = await kv.get('secrets:jina_api_key');
-    if (jinaRaw) {
-      try {
-        const data = JSON.parse(jinaRaw) as { key: string };
-        if (data.key) secrets['jina_api_key'] = data.key;
-      } catch {
-        if (jinaRaw.startsWith('jina_')) secrets['jina_api_key'] = jinaRaw;
-      }
-    }
-  } catch {
-    // KV read failed, skip
-  }
-
   return secrets;
 }
 
@@ -116,29 +88,13 @@ export function getServiceContainer(kv: KVNamespace, engineSecrets: Record<strin
 
 /**
  * Context middleware that injects the service container into the request context.
- * On first invocation, resolves engine secrets from both env and KV.
  */
 export const contextMiddleware = createMiddleware<{
   Bindings: Env;
   Variables: { services: ServiceContainer };
 }>(async (c, next) => {
-  // Extract env secrets
   const envSecrets = extractEngineSecrets(c.env as unknown as Record<string, unknown>);
-
-  // Get or create the container
   const services = getServiceContainer(c.env.SEARCH_KV, envSecrets);
-
-  // On first request, also resolve KV-stored secrets (async)
-  if (!kvSecretsLoaded.has(c.env.SEARCH_KV)) {
-    kvSecretsLoaded.add(c.env.SEARCH_KV);
-    const kvSecrets = await resolveKVSecrets(c.env.SEARCH_KV);
-    // KV secrets override env secrets
-    if (Object.keys(kvSecrets).length > 0) {
-      const merged = { ...envSecrets, ...kvSecrets };
-      services.search.updateEngineSecrets(merged);
-    }
-  }
-
   c.set('services', services);
   return next();
 });
