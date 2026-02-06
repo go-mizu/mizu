@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, Image, Video, Newspaper, ChevronDown, ArrowUp, Grid, List, Play, X, Check, ChevronLeft, ChevronRight, ExternalLink, Volume2, VolumeX } from 'lucide-react'
-import { SearchBox } from '../components/SearchBox'
+import { useSearchParams } from 'react-router-dom'
+import { Video, ChevronDown, ArrowUp, Grid, List, Play, X, Check, ChevronLeft, ChevronRight, ExternalLink, Volume2, VolumeX } from 'lucide-react'
+import { SearchHeader } from '../components/SearchHeader'
 import { searchApi } from '../api/search'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import type { VideoResult } from '../types'
@@ -500,7 +500,6 @@ function VideoPlayer({ video, onClose, onPrevious, onNext, hasPrevious, hasNext 
 
 export default function VideosPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
   const query = searchParams.get('q') || ''
 
   const [videos, setVideos] = useState<VideoResult[]>([])
@@ -636,162 +635,97 @@ export default function VideosPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 bg-white z-40 border-b border-[#e8eaed]">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-6">
-            <Link to="/">
-              <span
-                className="text-3xl font-bold"
-                style={{
-                  background: 'linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Search
-              </span>
-            </Link>
-
-            <div className="flex-1 max-w-xl">
-              <SearchBox
-                initialValue={query}
-                size="sm"
-                onSearch={handleSearch}
-              />
-            </div>
-
-            <Link
-              to="/settings"
-              className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
+      <SearchHeader
+        query={query}
+        activeTab="videos"
+        onSearch={handleSearch}
+        tabsRight={
+          <div className="flex items-center border border-[#dadce0] rounded-full overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
+              title="List view"
             >
-              <Settings size={20} />
-            </Link>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex items-center justify-between mt-2">
-            <div className="search-tabs" style={{ paddingLeft: 0 }}>
-              <button
-                type="button"
-                className="search-tab"
-                onClick={() => navigate(`/search?q=${encodeURIComponent(query)}`)}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                className="search-tab"
-                onClick={() => navigate(`/images?q=${encodeURIComponent(query)}`)}
-              >
-                <Image size={16} />
-                Images
-              </button>
-              <button
-                type="button"
-                className="search-tab active"
-              >
-                <Video size={16} />
-                Videos
-              </button>
-              <button
-                type="button"
-                className="search-tab"
-                onClick={() => navigate(`/news?q=${encodeURIComponent(query)}`)}
-              >
-                <Newspaper size={16} />
-                News
-              </button>
-            </div>
-
-            {/* View toggle */}
-            <div className="flex items-center border border-[#dadce0] rounded-full overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
-                title="List view"
-              >
-                <List size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('grid')}
-                className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
-                title="Grid view"
-              >
-                <Grid size={18} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Chips - Horizontally scrollable */}
-        <div className="border-t border-[#e8eaed] bg-[#f8f9fa]">
-          <div className="max-w-7xl mx-auto px-4 py-2">
-            <div
-              ref={filterScrollRef}
-              className="flex items-center gap-2 overflow-x-auto scrollbar-hide"
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              <List size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
+              title="Grid view"
             >
-              {/* Duration filter */}
-              <FilterChip
-                label="Any duration"
-                value={durationFilter}
-                options={DURATION_OPTIONS}
-                onChange={setDurationFilter}
-                isActive={!!durationFilter}
-              />
+              <Grid size={18} />
+            </button>
+          </div>
+        }
+        belowTabs={
+          <div className="border-t border-[#e8eaed] bg-[#f8f9fa]">
+            <div className="max-w-7xl mx-auto px-4 py-2">
+              <div
+                ref={filterScrollRef}
+                className="flex items-center gap-2 overflow-x-auto scrollbar-hide"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              >
+                {/* Duration filter */}
+                <FilterChip
+                  label="Any duration"
+                  value={durationFilter}
+                  options={DURATION_OPTIONS}
+                  onChange={setDurationFilter}
+                  isActive={!!durationFilter}
+                />
 
-              {/* Time filter */}
-              <FilterChip
-                label="Any time"
-                value={timeFilter}
-                options={TIME_OPTIONS}
-                onChange={setTimeFilter}
-                isActive={!!timeFilter}
-              />
+                {/* Time filter */}
+                <FilterChip
+                  label="Any time"
+                  value={timeFilter}
+                  options={TIME_OPTIONS}
+                  onChange={setTimeFilter}
+                  isActive={!!timeFilter}
+                />
 
-              {/* Source filter */}
-              <FilterChip
-                label="All sources"
-                value={sourceFilter}
-                options={SOURCE_OPTIONS}
-                onChange={setSourceFilter}
-                isActive={!!sourceFilter}
-              />
+                {/* Source filter */}
+                <FilterChip
+                  label="All sources"
+                  value={sourceFilter}
+                  options={SOURCE_OPTIONS}
+                  onChange={setSourceFilter}
+                  isActive={!!sourceFilter}
+                />
 
-              {/* Quality filter */}
-              <FilterChip
-                label="Any quality"
-                value={qualityFilter}
-                options={QUALITY_OPTIONS}
-                onChange={setQualityFilter}
-                isActive={!!qualityFilter}
-              />
+                {/* Quality filter */}
+                <FilterChip
+                  label="Any quality"
+                  value={qualityFilter}
+                  options={QUALITY_OPTIONS}
+                  onChange={setQualityFilter}
+                  isActive={!!qualityFilter}
+                />
 
-              {/* CC toggle */}
-              <ToggleChip
-                label="CC"
-                isActive={ccFilter}
-                onToggle={() => setCcFilter(!ccFilter)}
-              />
+                {/* CC toggle */}
+                <ToggleChip
+                  label="CC"
+                  isActive={ccFilter}
+                  onToggle={() => setCcFilter(!ccFilter)}
+                />
 
-              {/* Clear all filters button */}
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm text-[#1a73e8] hover:bg-[#e8f0fe] rounded-full transition-colors whitespace-nowrap flex-shrink-0"
-                >
-                  <X size={14} />
-                  Clear all
-                </button>
-              )}
+                {/* Clear all filters button */}
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-[#1a73e8] hover:bg-[#e8f0fe] rounded-full transition-colors whitespace-nowrap flex-shrink-0"
+                  >
+                    <X size={14} />
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Main content */}
       <main>
@@ -955,7 +889,7 @@ export default function VideosPage() {
               {/* Loading more indicator */}
               {scrollLoading && (
                 <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-3 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
 

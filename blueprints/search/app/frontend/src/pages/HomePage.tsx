@@ -69,13 +69,13 @@ export default function HomePage() {
       <main className="flex-1 flex items-center justify-center -mt-16">
         <div className="w-full max-w-2xl px-4">
           <div className="flex flex-col items-center gap-6">
-            {/* Logo - Kagi-style clean text */}
+            {/* Logo */}
             <div className="text-center mb-2">
               <h1 className="text-6xl font-semibold text-[#202124] tracking-tight">
                 Mizu
               </h1>
               <p className="text-sm text-[#70757a] mt-2">
-                Privacy-first search with AI
+                Private search, powered by you
               </p>
             </div>
 
@@ -107,7 +107,7 @@ export default function HomePage() {
                   <button
                     key={item.query}
                     onClick={() => handleSuggestionClick(item.query)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#f8f9fa] hover:bg-[#e8f0fe] border border-transparent hover:border-[#c2dbff] rounded-lg transition-all text-[#202124]"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-[#f8f9fa] hover:bg-[#e8f0fe] border border-[#e8eaed] hover:border-[#c2dbff] rounded-lg transition-all text-[#202124]"
                   >
                     <span className="text-base">{item.icon}</span>
                     <span>{item.label}</span>

@@ -213,4 +213,9 @@ export const searchApi = {
   getRelated: (query: string): Promise<{ query: string; related: string[] }> => {
     return api.get(`/api/related?q=${encodeURIComponent(query)}`)
   },
+
+  // Page reader (Jina)
+  readPage: (url: string): Promise<{ title: string; url: string; description: string; content: string; images?: string[] }> => {
+    return api.get(`/api/read?url=${encodeURIComponent(url)}`)
+  },
 }

@@ -1,6 +1,5 @@
-import { ArrowLeft } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { useSearchStore } from '../stores/searchStore'
+import { PageHeader } from '../components/PageHeader'
 
 const REGIONS = [
   { value: 'us', label: 'United States' },
@@ -45,27 +44,12 @@ export default function SettingsPage() {
   const { settings, updateSettings, clearRecentSearches } = useSearchStore()
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
-      {/* Header */}
-      <header className="bg-white border-b border-[#dadce0]">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link
-              to="/"
-              className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
-            >
-              <ArrowLeft size={20} />
-            </Link>
-            <h1 className="text-xl font-semibold text-[#202124]">
-              Search Settings
-            </h1>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-white">
+      <PageHeader title="Settings" />
 
       {/* Main content */}
       <main>
-        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
           {/* Search preferences */}
           <div className="bg-white rounded-lg border border-[#dadce0] p-6">
             <h2 className="font-semibold text-[#202124] mb-4">
@@ -239,7 +223,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={clearRecentSearches}
-                  className="px-4 py-2 text-sm font-medium text-[#d93025] border border-[#d93025] rounded hover:bg-[#d93025]/5 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-[#d93025] border border-[#d93025]/30 rounded-lg hover:bg-[#d93025]/5 transition-colors"
                 >
                   Clear search history
                 </button>
