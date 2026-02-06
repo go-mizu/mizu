@@ -18,14 +18,18 @@ import (
 
 // Recrawler performs high-throughput recrawling of known URL sets.
 type Recrawler struct {
-	config Config
-	client *http.Client
-	stats  *Stats
-	rdb    *ResultDB
+	config  Config
+	clients []*http.Client // sharded HTTP clients for reduced lock contention
+	stats   *Stats
+	rdb     *ResultDB
 
 	// Per-domain failure tracking: once a domain fails, skip remaining URLs
 	deadDomainsMu sync.RWMutex
 	deadDomains   map[string]bool
+
+	// Cached DNS: pre-resolved domain → IP for direct dialing
+	dnsCache   map[string][]string
+	dnsCacheMu sync.RWMutex
 }
 
 // New creates a recrawler optimized for maximum throughput.
@@ -45,35 +49,81 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 	if cfg.DomainFailThreshold == 0 {
 		cfg.DomainFailThreshold = 1
 	}
+	if cfg.TransportShards < 1 {
+		cfg.TransportShards = 1
+	}
 
-	// Tight sub-timeouts: dial and TLS are the most time-sensitive phases.
-	// Keep them short so we fail fast on unreachable hosts.
+	r := &Recrawler{
+		config:      cfg,
+		deadDomains: make(map[string]bool),
+		stats:       stats,
+		rdb:         rdb,
+		dnsCache:    make(map[string][]string),
+	}
+
+	// Create sharded HTTP clients — each shard has its own transport+connection pool.
+	// Workers hash to a shard, spreading lock contention across N pools.
+	r.clients = make([]*http.Client, cfg.TransportShards)
+	for i := range cfg.TransportShards {
+		r.clients[i] = r.buildClient(i)
+	}
+
+	return r
+}
+
+func (r *Recrawler) buildClient(shardID int) *http.Client {
+	cfg := r.config
+
 	dialTimeout := min(cfg.Timeout/2, 2*time.Second)
 	tlsTimeout := min(cfg.Timeout/2, 2*time.Second)
 
-	// Cap idle conns to avoid memory bloat with very high worker counts
-	maxIdle := min(cfg.Workers*2, 100000)
+	// Divide idle conns across shards
+	maxIdlePerShard := min(cfg.Workers*2/max(cfg.TransportShards, 1), 100000)
 
-	// Build a high-throughput HTTP transport
-	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   dialTimeout,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
-		MaxIdleConns:          maxIdle,
-		MaxIdleConnsPerHost:   100,
-		MaxConnsPerHost:       0, // unlimited — let workers saturate
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:  tlsTimeout,
-		ResponseHeaderTimeout: cfg.Timeout,
-		DisableCompression:    true, // skip decompression overhead; we drain body anyway
-		ForceAttemptHTTP2:     true, // multiplex on single TCP conn
-		WriteBufferSize:       4 * 1024,
-		ReadBufferSize:        8 * 1024,
+	// Custom dialer that uses cached DNS IPs when available.
+	// This eliminates runtime DNS lookups entirely for pre-resolved domains.
+	baseDialer := &net.Dialer{
+		Timeout:       dialTimeout,
+		KeepAlive:     15 * time.Second,
+		FallbackDelay: -1, // disable happy-eyeballs delay
 	}
 
-	client := &http.Client{
+	dialFunc := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return baseDialer.DialContext(ctx, network, addr)
+		}
+
+		// Try cached DNS first
+		r.dnsCacheMu.RLock()
+		ips := r.dnsCache[host]
+		r.dnsCacheMu.RUnlock()
+
+		if len(ips) > 0 {
+			// Round-robin across IPs using shard ID for distribution
+			ip := ips[shardID%len(ips)]
+			return baseDialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+		}
+
+		return baseDialer.DialContext(ctx, network, addr)
+	}
+
+	transport := &http.Transport{
+		DialContext:           dialFunc,
+		TLSClientConfig:      &tls.Config{InsecureSkipVerify: false},
+		MaxIdleConns:         maxIdlePerShard,
+		MaxIdleConnsPerHost:  50,
+		MaxConnsPerHost:      0,
+		IdleConnTimeout:      30 * time.Second,
+		TLSHandshakeTimeout: tlsTimeout,
+		ResponseHeaderTimeout: cfg.Timeout,
+		DisableCompression:   true,
+		ForceAttemptHTTP2:    false, // HTTP/1.1 is faster for many-host one-shot fetches
+		WriteBufferSize:      4 * 1024,
+		ReadBufferSize:       8 * 1024,
+	}
+
+	return &http.Client{
 		Transport: transport,
 		Timeout:   cfg.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -82,14 +132,6 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 			}
 			return nil
 		},
-	}
-
-	return &Recrawler{
-		config:      cfg,
-		client:      client,
-		stats:       stats,
-		rdb:         rdb,
-		deadDomains: make(map[string]bool),
 	}
 }
 
@@ -102,7 +144,15 @@ func (r *Recrawler) SetDeadDomains(domains map[string]bool) {
 	r.deadDomainsMu.Unlock()
 }
 
-// isDomainDead checks if a domain has been marked dead.
+// SetDNSCache populates the cached DNS map for direct-IP dialing.
+func (r *Recrawler) SetDNSCache(resolved map[string][]string) {
+	r.dnsCacheMu.Lock()
+	for domain, ips := range resolved {
+		r.dnsCache[domain] = ips
+	}
+	r.dnsCacheMu.Unlock()
+}
+
 func (r *Recrawler) isDomainDead(domain string) bool {
 	r.deadDomainsMu.RLock()
 	dead := r.deadDomains[domain]
@@ -110,7 +160,6 @@ func (r *Recrawler) isDomainDead(domain string) bool {
 	return dead
 }
 
-// markDomainDead marks a domain as dead after a fetch failure.
 func (r *Recrawler) markDomainDead(domain string) {
 	r.deadDomainsMu.Lock()
 	r.deadDomains[domain] = true
@@ -118,18 +167,19 @@ func (r *Recrawler) markDomainDead(domain string) {
 }
 
 // shuffleURLs randomizes URL order using Fisher-Yates shuffle.
-// O(N) time, O(1) extra memory, excellent cache performance.
-// Random distribution naturally staggers domain access across workers,
-// avoiding thundering-herd on any single domain.
 func shuffleURLs(urls []SeedURL) {
 	rand.Shuffle(len(urls), func(i, j int) {
 		urls[i], urls[j] = urls[j], urls[i]
 	})
 }
 
+// clientForWorker returns the HTTP client for a worker ID (sharded).
+func (r *Recrawler) clientForWorker(workerID int) *http.Client {
+	return r.clients[workerID%len(r.clients)]
+}
+
 // Run executes the recrawl on the given URL set.
 func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bool) error {
-	// Filter out already-crawled URLs
 	var urls []SeedURL
 	for _, s := range seeds {
 		if skip != nil && skip[s.URL] {
@@ -143,8 +193,7 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 		return nil
 	}
 
-	// Pre-filter dead-domain URLs before entering the worker pipeline.
-	// This avoids millions of channel sends and goroutine wakeups.
+	// Pre-filter dead-domain URLs before entering the worker pipeline
 	var liveURLs []SeedURL
 	for _, u := range urls {
 		if r.isDomainDead(u.Domain) {
@@ -158,10 +207,8 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 		return nil
 	}
 
-	// Shuffle live URLs for domain distribution — O(N) in-place
 	shuffleURLs(liveURLs)
 
-	// Feed URLs into a channel — large buffer to keep workers fed
 	urlCh := make(chan SeedURL, min(len(liveURLs), r.config.Workers*4))
 	go func() {
 		defer close(urlCh)
@@ -174,19 +221,19 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 		}
 	}()
 
-	// Launch workers — cap at URL count (no point having idle workers)
 	nWorkers := min(r.config.Workers, len(liveURLs))
 	g, ctx := errgroup.WithContext(ctx)
-	for range nWorkers {
+	for workerID := range nWorkers {
+		client := r.clientForWorker(workerID)
 		g.Go(func() error {
-			return r.worker(ctx, urlCh)
+			return r.worker(ctx, client, urlCh)
 		})
 	}
 
 	return g.Wait()
 }
 
-func (r *Recrawler) worker(ctx context.Context, urls <-chan SeedURL) error {
+func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan SeedURL) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -195,17 +242,16 @@ func (r *Recrawler) worker(ctx context.Context, urls <-chan SeedURL) error {
 			if !ok {
 				return nil
 			}
-			// Runtime domain-death check: domains discovered dead during crawl
 			if r.isDomainDead(seed.Domain) {
 				r.stats.RecordDomainSkip()
 				continue
 			}
-			r.fetchOne(ctx, seed)
+			r.fetchOne(ctx, client, seed)
 		}
 	}
 }
 
-func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
+func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed SeedURL) {
 	start := time.Now()
 
 	method := http.MethodGet
@@ -221,27 +267,54 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 	req.Header.Set("User-Agent", r.config.UserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
 
-	resp, err := r.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		isTimeout := isTimeoutError(err)
 		isFatal := isTimeout || isConnectionRefused(err) || isDNSError(err)
 		r.stats.RecordFailure(0, seed.Domain, isTimeout)
-		errStr := truncateStr(err.Error(), 200)
 		r.rdb.Add(Result{
 			URL:         seed.URL,
 			Domain:      seed.Domain,
 			FetchTimeMs: time.Since(start).Milliseconds(),
 			CrawledAt:   time.Now(),
-			Error:       errStr,
+			Error:       truncateStr(err.Error(), 200),
 		})
-		// Mark domain as dead if this is a connection-level failure
 		if isFatal {
 			r.markDomainDead(seed.Domain)
 		}
 		return
 	}
 
-	// Read/discard body to enable connection reuse
+	// StatusOnly mode: close body immediately, only record status code
+	if r.config.StatusOnly {
+		resp.Body.Close()
+		fetchMs := time.Since(start).Milliseconds()
+		bodySize := resp.ContentLength
+
+		redirectURL := ""
+		if resp.Request != nil && resp.Request.URL.String() != seed.URL {
+			redirectURL = resp.Request.URL.String()
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+			r.stats.RecordSuccess(resp.StatusCode, seed.Domain, max(bodySize, 0), fetchMs)
+		} else {
+			r.stats.RecordFailure(resp.StatusCode, seed.Domain, false)
+		}
+		r.rdb.Add(Result{
+			URL:           seed.URL,
+			StatusCode:    resp.StatusCode,
+			ContentType:   resp.Header.Get("Content-Type"),
+			ContentLength: max(bodySize, 0),
+			Domain:        seed.Domain,
+			RedirectURL:   redirectURL,
+			FetchTimeMs:   fetchMs,
+			CrawledAt:     time.Now(),
+		})
+		return
+	}
+
+	// Full fetch mode: extract metadata and drain body
 	var (
 		title       string
 		description string
@@ -253,7 +326,6 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 	isHTML := strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
 
 	if !r.config.HeadOnly && resp.StatusCode == 200 && isHTML {
-		// Extract basic metadata from body (limit read to 128KB for speed)
 		limited := io.LimitReader(resp.Body, 128*1024)
 		extracted := crawler.Extract(limited, seed.URL)
 		title = extracted.Title
@@ -261,9 +333,6 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 		language = extracted.Language
 	}
 
-	// Fast body drain: limit to 256KB to avoid wasting time on large responses.
-	// Connection reuse only works if we drain fully, but for large responses
-	// it's faster to close and open a new connection.
 	n, _ := io.CopyN(io.Discard, resp.Body, 256*1024)
 	resp.Body.Close()
 
@@ -275,20 +344,17 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 
 	fetchMs := time.Since(start).Milliseconds()
 
-	// Determine redirect
 	redirectURL := ""
 	if resp.Request != nil && resp.Request.URL.String() != seed.URL {
 		redirectURL = resp.Request.URL.String()
 	}
 
-	// Record stats
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		r.stats.RecordSuccess(resp.StatusCode, seed.Domain, bodySize, fetchMs)
 	} else {
 		r.stats.RecordFailure(resp.StatusCode, seed.Domain, false)
 	}
 
-	// Store result
 	r.rdb.Add(Result{
 		URL:           seed.URL,
 		StatusCode:    resp.StatusCode,
@@ -307,13 +373,12 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 func (r *Recrawler) recordError(seed SeedURL, statusCode int, start time.Time, err error) {
 	isTimeout := isTimeoutError(err)
 	r.stats.RecordFailure(statusCode, seed.Domain, isTimeout)
-	errStr := truncateStr(err.Error(), 200)
 	r.rdb.Add(Result{
 		URL:         seed.URL,
 		Domain:      seed.Domain,
 		FetchTimeMs: time.Since(start).Milliseconds(),
 		CrawledAt:   time.Now(),
-		Error:       errStr,
+		Error:       truncateStr(err.Error(), 200),
 	})
 }
 
@@ -321,29 +386,29 @@ func isTimeoutError(err error) bool {
 	if err == nil {
 		return false
 	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "timeout") ||
-		strings.Contains(errStr, "deadline exceeded") ||
-		strings.Contains(errStr, "context deadline")
+	s := err.Error()
+	return strings.Contains(s, "timeout") ||
+		strings.Contains(s, "deadline exceeded") ||
+		strings.Contains(s, "context deadline")
 }
 
 func isConnectionRefused(err error) bool {
 	if err == nil {
 		return false
 	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "connection refused") ||
-		strings.Contains(errStr, "connection reset") ||
-		strings.Contains(errStr, "no route to host")
+	s := err.Error()
+	return strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "no route to host")
 }
 
 func isDNSError(err error) bool {
 	if err == nil {
 		return false
 	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "no such host") ||
-		strings.Contains(errStr, "dial tcp: lookup")
+	s := err.Error()
+	return strings.Contains(s, "no such host") ||
+		strings.Contains(s, "dial tcp: lookup")
 }
 
 func truncateStr(s string, maxLen int) string {
@@ -355,7 +420,6 @@ func truncateStr(s string, maxLen int) string {
 
 // RunWithDisplay runs the recrawl with live terminal display updates.
 func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map[string]bool, stats *Stats) error {
-	// Track display lines for ANSI cursor movement
 	var displayLines int
 	var displayMu sync.Mutex
 
@@ -379,9 +443,7 @@ func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map
 				displayLines = strings.Count(output, "\n")
 				displayMu.Unlock()
 
-				// Stop when all URLs are accounted for
 				if stats.Done() >= int64(stats.TotalURLs) {
-					// Freeze stats at this moment for accurate elapsed time
 					stats.Freeze()
 					return
 				}
@@ -389,16 +451,11 @@ func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map
 		}
 	}()
 
-	// Run recrawl (may take longer than display due to pending flushes)
 	err := r.Run(ctx, seeds, skip)
 
-	// Wait for display to finish
 	<-displayDone
-
-	// Ensure frozen (in case Run finished before display noticed 100%)
 	stats.Freeze()
 
-	// Print final frozen stats
 	displayMu.Lock()
 	if displayLines > 0 {
 		fmt.Printf("\033[%dA\033[J", displayLines)

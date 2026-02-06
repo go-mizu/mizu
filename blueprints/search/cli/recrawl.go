@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,14 +16,18 @@ import (
 // NewRecrawl creates the top-level recrawl command.
 func NewRecrawl() *cobra.Command {
 	var (
-		dbPath      string
-		workers     int
-		timeout     int
-		headOnly    bool
-		batchSize   int
-		resume      bool
-		userAgent   string
-		dnsPrefetch bool
+		dbPath          string
+		dirPath         string
+		latest          bool
+		workers         int
+		timeout         int
+		headOnly        bool
+		statusOnly      bool
+		batchSize       int
+		resume          bool
+		userAgent       string
+		dnsPrefetch     bool
+		transportShards int
 	)
 
 	cmd := &cobra.Command{
@@ -32,40 +38,89 @@ func NewRecrawl() *cobra.Command {
 Seeds URLs from a DuckDB file (e.g. test.duckdb with a 'docs' table),
 stores state in <name>.state.duckdb and results in <name>.result.duckdb.
 
-DNS prefetch resolves all domains upfront, skipping dead domains instantly.
-Results are cached in <name>.dns.duckdb for instant reuse across runs.
-Per-domain failure tracking skips remaining URLs for domains that fail.
+Performance flags:
+  --status-only       Only check HTTP status, close body immediately (fastest mode)
+  --transport-shards  Shard HTTP transport pools to reduce lock contention
+  --workers           Concurrent workers (default: 100000)
+
+Directory mode:
+  --dir + --latest    Auto-select the highest-index DuckDB file in a directory
 
 Examples:
   search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb
-  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --workers 50000 --timeout 2 --dns-prefetch
+  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --status-only --transport-shards 16
+  search recrawl --dir ~/data/fineweb-1/CC-MAIN-2024-51/ --latest --status-only
   search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --resume`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Resolve --dir + --latest to --db
+			if dirPath != "" && latest {
+				resolved, err := findLatestDuckDB(dirPath)
+				if err != nil {
+					return err
+				}
+				dbPath = resolved
+			}
 			if dbPath == "" {
-				return fmt.Errorf("--db is required")
+				return fmt.Errorf("--db is required (or use --dir with --latest)")
 			}
 			return runRecrawl(cmd.Context(), dbPath, recrawler.Config{
-				Workers:     workers,
-				Timeout:     time.Duration(timeout) * time.Millisecond,
-				UserAgent:   userAgent,
-				HeadOnly:    headOnly,
-				BatchSize:   batchSize,
-				Resume:      resume,
-				DNSPrefetch: dnsPrefetch,
+				Workers:         workers,
+				Timeout:         time.Duration(timeout) * time.Millisecond,
+				UserAgent:       userAgent,
+				HeadOnly:        headOnly,
+				StatusOnly:      statusOnly,
+				BatchSize:       batchSize,
+				Resume:          resume,
+				DNSPrefetch:     dnsPrefetch,
+				TransportShards: transportShards,
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Path to seed DuckDB file (required)")
-	cmd.Flags().IntVar(&workers, "workers", 50000, "Number of concurrent workers")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Path to seed DuckDB file")
+	cmd.Flags().StringVar(&dirPath, "dir", "", "Directory containing DuckDB files (use with --latest)")
+	cmd.Flags().BoolVar(&latest, "latest", false, "Auto-select highest-index DuckDB in --dir")
+	cmd.Flags().IntVar(&workers, "workers", 100000, "Number of concurrent workers")
 	cmd.Flags().IntVar(&timeout, "timeout", 1000, "Per-request timeout in milliseconds")
 	cmd.Flags().BoolVar(&headOnly, "head-only", false, "Only fetch headers, skip body")
+	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-crawled URLs")
 	cmd.Flags().StringVar(&userAgent, "user-agent", "MizuCrawler/1.0", "User-Agent header")
 	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Pre-resolve DNS for all domains")
+	cmd.Flags().IntVar(&transportShards, "transport-shards", 16, "Number of HTTP transport shards")
 
 	return cmd
+}
+
+// findLatestDuckDB finds the DuckDB file with the highest filename index in a directory.
+// Looks for *.parquet.duckdb or *.duckdb (excluding state/result/dns files).
+func findLatestDuckDB(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("reading directory %s: %w", dir, err)
+	}
+
+	var candidates []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".parquet.duckdb") {
+			candidates = append(candidates, name)
+		} else if strings.HasSuffix(name, ".duckdb") &&
+			!strings.HasSuffix(name, ".state.duckdb") &&
+			!strings.HasSuffix(name, ".result.duckdb") &&
+			!strings.HasSuffix(name, ".dns.duckdb") &&
+			name != "dns.duckdb" {
+			candidates = append(candidates, name)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no DuckDB files found in %s", dir)
+	}
+
+	sort.Strings(candidates)
+	return filepath.Join(dir, candidates[len(candidates)-1]), nil
 }
 
 func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error {
@@ -92,16 +147,13 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 
 	// Derive state/result/dns paths from seed DB path
 	base := strings.TrimSuffix(dbPath, ".duckdb")
+	// Also strip .parquet suffix if present (e.g. foo.parquet.duckdb → foo.parquet)
+	base = strings.TrimSuffix(base, ".parquet")
 	statePath := base + ".state.duckdb"
 	resultPath := base + ".result.duckdb"
 
-	// DNS cache: use split-level cache (e.g., train/dns.duckdb) for sharing
-	// across per-parquet files, fall back to file-specific cache
+	// DNS cache: use directory-level cache for sharing across per-parquet files
 	dnsPath := filepath.Join(filepath.Dir(dbPath), "dns.duckdb")
-	if filepath.Base(dbPath) == filepath.Base(filepath.Dir(dbPath))+".duckdb" {
-		// This IS the split-level file (e.g., train.duckdb), use file-specific cache
-		dnsPath = base + ".dns.duckdb"
-	}
 
 	// Check for resume
 	var skip map[string]bool
@@ -144,7 +196,7 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead (%s)",
 			live, dead, dnsResolver.Duration().Truncate(time.Millisecond))))
 
-		// Save DNS cache for next run (skip if all entries came from cache)
+		// Save DNS cache for next run
 		newEntries := live + dead - int(dnsResolver.CachedCount())
 		if newEntries > 0 {
 			fmt.Print(infoStyle.Render("  Saving DNS cache..."))
@@ -191,17 +243,24 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	stats := recrawler.NewStats(seedStats.TotalURLs, seedStats.UniqueDomains, label)
 
 	// Print config summary
+	mode := "full"
+	if cfg.StatusOnly {
+		mode = "status-only"
+	} else if cfg.HeadOnly {
+		mode = "head-only"
+	}
 	fmt.Println()
-	fmt.Println(infoStyle.Render(fmt.Sprintf("Starting recrawl: %d workers, %v timeout, head-only=%v, dns-prefetch=%v",
-		cfg.Workers, cfg.Timeout, cfg.HeadOnly, cfg.DNSPrefetch)))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("Starting recrawl: %d workers, %v timeout, mode=%s, shards=%d",
+		cfg.Workers, cfg.Timeout, mode, cfg.TransportShards)))
 	fmt.Println()
 
 	// Create and run recrawler with live display
 	r := recrawler.New(cfg, stats, rdb)
 
-	// Apply DNS-dead domains
+	// Apply DNS-dead domains and cached IPs for direct dialing
 	if dnsResolver != nil {
 		r.SetDeadDomains(dnsResolver.DeadDomains())
+		r.SetDNSCache(dnsResolver.ResolvedIPs())
 	}
 
 	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
