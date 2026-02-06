@@ -1,0 +1,7 @@
+gradio>=5.0
+plotly>=5.18
+pandas>=2.0
+pyarrow>=14.0
+duckdb>=1.0
+kaleido>=0.2
+fpdf2>=2.8
