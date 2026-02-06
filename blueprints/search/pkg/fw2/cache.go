@@ -33,7 +33,8 @@ func NewCache() *Cache {
 	}
 }
 
-// Load reads the cache from disk. Returns nil if missing, expired, or corrupt.
+// Load reads the cache from disk. Returns nil if missing or corrupt.
+// Configs/Sizes respect TTL, but Files are permanent (file lists never change).
 func (c *Cache) Load() *CacheData {
 	data, err := os.ReadFile(c.path)
 	if err != nil {
@@ -44,7 +45,8 @@ func (c *Cache) Load() *CacheData {
 		return nil
 	}
 	if time.Since(cd.FetchedAt) > c.ttl {
-		return nil
+		cd.Configs = nil
+		cd.Sizes = nil
 	}
 	return &cd
 }
