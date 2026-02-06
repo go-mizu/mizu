@@ -1,4 +1,4 @@
-package crawler
+package recrawler
 
 import (
 	"fmt"
@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// RecrawlStats tracks live statistics for the recrawl.
-type RecrawlStats struct {
+// Stats tracks live statistics for the recrawl.
+type Stats struct {
 	// Counters (atomic for lock-free reads)
 	success  atomic.Int64
 	failed   atomic.Int64
@@ -24,16 +24,16 @@ type RecrawlStats struct {
 	statuses map[int]int
 
 	// Domain tracking
-	domainMu       sync.Mutex
-	domainsOK      map[string]bool
-	domainsFail    map[string]bool
+	domainMu    sync.Mutex
+	domainsOK   map[string]bool
+	domainsFail map[string]bool
 
 	// Config
-	totalURLs     int
-	uniqueDomains int
+	TotalURLs     int
+	UniqueDomains int
 	startTime     time.Time
 	peakSpeed     float64
-	label         string
+	Label         string
 
 	// Speed tracking (rolling window)
 	speedMu    sync.Mutex
@@ -45,21 +45,21 @@ type speedTick struct {
 	count int64
 }
 
-// NewRecrawlStats creates a new stats tracker.
-func NewRecrawlStats(totalURLs, uniqueDomains int, label string) *RecrawlStats {
-	return &RecrawlStats{
+// NewStats creates a new stats tracker.
+func NewStats(totalURLs, uniqueDomains int, label string) *Stats {
+	return &Stats{
 		statuses:      make(map[int]int),
 		domainsOK:     make(map[string]bool),
 		domainsFail:   make(map[string]bool),
-		totalURLs:     totalURLs,
-		uniqueDomains: uniqueDomains,
+		TotalURLs:     totalURLs,
+		UniqueDomains: uniqueDomains,
 		startTime:     time.Now(),
-		label:         label,
+		Label:         label,
 	}
 }
 
 // RecordSuccess records a successful fetch.
-func (s *RecrawlStats) RecordSuccess(statusCode int, domain string, bytesRecv int64, fetchMs int64) {
+func (s *Stats) RecordSuccess(statusCode int, domain string, bytesRecv int64, fetchMs int64) {
 	s.success.Add(1)
 	s.bytes.Add(bytesRecv)
 	s.fetchMs.Add(fetchMs)
@@ -74,7 +74,7 @@ func (s *RecrawlStats) RecordSuccess(statusCode int, domain string, bytesRecv in
 }
 
 // RecordFailure records a failed fetch.
-func (s *RecrawlStats) RecordFailure(statusCode int, domain string, isTimeout bool) {
+func (s *Stats) RecordFailure(statusCode int, domain string, isTimeout bool) {
 	if isTimeout {
 		s.timeout.Add(1)
 	} else {
@@ -93,17 +93,17 @@ func (s *RecrawlStats) RecordFailure(statusCode int, domain string, isTimeout bo
 }
 
 // RecordSkip records a skipped URL.
-func (s *RecrawlStats) RecordSkip() {
+func (s *Stats) RecordSkip() {
 	s.skipped.Add(1)
 }
 
 // Done returns the total number of processed URLs.
-func (s *RecrawlStats) Done() int64 {
+func (s *Stats) Done() int64 {
 	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.skipped.Load()
 }
 
 // Speed returns the current URLs/sec (rolling 5-second window).
-func (s *RecrawlStats) Speed() float64 {
+func (s *Stats) Speed() float64 {
 	done := s.Done()
 	now := time.Now()
 
@@ -138,7 +138,7 @@ func (s *RecrawlStats) Speed() float64 {
 }
 
 // AvgSpeed returns the overall average speed.
-func (s *RecrawlStats) AvgSpeed() float64 {
+func (s *Stats) AvgSpeed() float64 {
 	elapsed := time.Since(s.startTime).Seconds()
 	if elapsed <= 0 {
 		return 0
@@ -147,7 +147,7 @@ func (s *RecrawlStats) AvgSpeed() float64 {
 }
 
 // AvgFetchMs returns average fetch time in milliseconds.
-func (s *RecrawlStats) AvgFetchMs() float64 {
+func (s *Stats) AvgFetchMs() float64 {
 	succ := s.success.Load()
 	if succ == 0 {
 		return 0
@@ -156,9 +156,9 @@ func (s *RecrawlStats) AvgFetchMs() float64 {
 }
 
 // Render returns a formatted stats display string.
-func (s *RecrawlStats) Render() string {
+func (s *Stats) Render() string {
 	done := s.Done()
-	total := int64(s.totalURLs)
+	total := int64(s.TotalURLs)
 	succ := s.success.Load()
 	fail := s.failed.Load()
 	tout := s.timeout.Load()
@@ -205,9 +205,9 @@ func (s *RecrawlStats) Render() string {
 	// Build output
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("  Recrawl: %s  │  %s URLs  │  %s domains\n",
-		s.label, fmtInt(s.totalURLs), fmtInt(s.uniqueDomains)))
+		s.Label, fmtInt(s.TotalURLs), fmtInt(s.UniqueDomains)))
 	b.WriteString(fmt.Sprintf("  %s  %5.1f%%  %s/%s\n",
-		bar, pct, fmtInt64(done), fmtInt(s.totalURLs)))
+		bar, pct, fmtInt64(done), fmtInt(s.TotalURLs)))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  Speed     %s/s  │  Peak %s/s  │  Avg %s/s\n",
 		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(avgSpeed))))
@@ -229,7 +229,7 @@ func (s *RecrawlStats) Render() string {
 	return b.String()
 }
 
-func (s *RecrawlStats) statusLine() string {
+func (s *Stats) statusLine() string {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
 

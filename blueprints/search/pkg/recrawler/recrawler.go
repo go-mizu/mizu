@@ -1,4 +1,4 @@
-package crawler
+package recrawler
 
 import (
 	"context"
@@ -11,40 +11,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/crawler"
 	"golang.org/x/sync/errgroup"
 )
 
-// RecrawlConfig holds configuration for high-throughput recrawling.
-type RecrawlConfig struct {
-	Workers   int           // Concurrent workers (default: 500)
-	Timeout   time.Duration // Per-request timeout (default: 10s)
-	UserAgent string        // User-Agent header
-	HeadOnly  bool          // Only fetch headers, skip body
-	BatchSize int           // DB write batch size (default: 1000)
-	Resume    bool          // Skip already-crawled URLs
-}
-
-// DefaultRecrawlConfig returns optimal defaults for high throughput.
-func DefaultRecrawlConfig() RecrawlConfig {
-	return RecrawlConfig{
-		Workers:   500,
-		Timeout:   10 * time.Second,
-		UserAgent: "MizuCrawler/1.0",
-		HeadOnly:  false,
-		BatchSize: 1000,
-	}
-}
-
 // Recrawler performs high-throughput recrawling of known URL sets.
 type Recrawler struct {
-	config RecrawlConfig
+	config Config
 	client *http.Client
-	stats  *RecrawlStats
+	stats  *Stats
 	rdb    *ResultDB
 }
 
-// NewRecrawler creates a recrawler optimized for maximum throughput.
-func NewRecrawler(cfg RecrawlConfig, stats *RecrawlStats, rdb *ResultDB) *Recrawler {
+// New creates a recrawler optimized for maximum throughput.
+func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 	if cfg.Workers == 0 {
 		cfg.Workers = 500
 	}
@@ -58,21 +38,31 @@ func NewRecrawler(cfg RecrawlConfig, stats *RecrawlStats, rdb *ResultDB) *Recraw
 		cfg.BatchSize = 1000
 	}
 
+	// Scale sub-timeouts: dial and TLS should be fractions of the total timeout
+	dialTimeout := cfg.Timeout / 2
+	if dialTimeout > 3*time.Second {
+		dialTimeout = 3 * time.Second
+	}
+	tlsTimeout := cfg.Timeout / 2
+	if tlsTimeout > 3*time.Second {
+		tlsTimeout = 3 * time.Second
+	}
+
 	// Build a high-throughput HTTP transport
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
+			Timeout:   dialTimeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
-		MaxIdleConns:         cfg.Workers * 2,
-		MaxIdleConnsPerHost:  10,
-		MaxConnsPerHost:      20,
-		IdleConnTimeout:      90 * time.Second,
-		TLSHandshakeTimeout:  5 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: false},
+		MaxIdleConns:           cfg.Workers * 2,
+		MaxIdleConnsPerHost:    10,
+		MaxConnsPerHost:        20,
+		IdleConnTimeout:        60 * time.Second,
+		TLSHandshakeTimeout:   tlsTimeout,
 		ResponseHeaderTimeout: cfg.Timeout,
-		DisableCompression:   true, // avoid gzip overhead for speed
-		ForceAttemptHTTP2:    false, // HTTP/1.1 is faster for many small requests
+		DisableCompression:    true,
+		ForceAttemptHTTP2:     false,
 	}
 
 	client := &http.Client{
@@ -168,12 +158,8 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 	if err != nil {
 		isTimeout := isTimeoutError(err)
 		r.stats.RecordFailure(0, seed.Domain, isTimeout)
-		errStr := err.Error()
-		// Truncate long error messages
-		if len(errStr) > 200 {
-			errStr = errStr[:200]
-		}
-		r.rdb.Add(RecrawlResult{
+		errStr := truncateStr(err.Error(), 200)
+		r.rdb.Add(Result{
 			URL:         seed.URL,
 			Domain:      seed.Domain,
 			FetchTimeMs: time.Since(start).Milliseconds(),
@@ -196,7 +182,7 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 			strings.Contains(resp.Header.Get("Content-Type"), "application/xhtml")) {
 		// Extract basic metadata from body
 		limited := io.LimitReader(resp.Body, 512*1024) // 512KB max for metadata
-		extracted := Extract(limited, seed.URL)
+		extracted := crawler.Extract(limited, seed.URL)
 		title = extracted.Title
 		description = extracted.Description
 		language = extracted.Language
@@ -227,7 +213,7 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 	}
 
 	// Store result
-	r.rdb.Add(RecrawlResult{
+	r.rdb.Add(Result{
 		URL:           seed.URL,
 		StatusCode:    resp.StatusCode,
 		ContentType:   resp.Header.Get("Content-Type"),
@@ -245,11 +231,8 @@ func (r *Recrawler) fetchOne(ctx context.Context, seed SeedURL) {
 func (r *Recrawler) recordError(seed SeedURL, statusCode int, start time.Time, err error) {
 	isTimeout := isTimeoutError(err)
 	r.stats.RecordFailure(statusCode, seed.Domain, isTimeout)
-	errStr := err.Error()
-	if len(errStr) > 200 {
-		errStr = errStr[:200]
-	}
-	r.rdb.Add(RecrawlResult{
+	errStr := truncateStr(err.Error(), 200)
+	r.rdb.Add(Result{
 		URL:         seed.URL,
 		Domain:      seed.Domain,
 		FetchTimeMs: time.Since(start).Milliseconds(),
@@ -268,8 +251,15 @@ func isTimeoutError(err error) bool {
 		strings.Contains(errStr, "context deadline")
 }
 
+func truncateStr(s string, maxLen int) string {
+	if len(s) > maxLen {
+		return s[:maxLen]
+	}
+	return s
+}
+
 // RunWithDisplay runs the recrawl with live terminal display updates.
-func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map[string]bool, stats *RecrawlStats) error {
+func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map[string]bool, stats *Stats) error {
 	// Start display goroutine
 	displayDone := make(chan struct{})
 	var displayOnce sync.Once
@@ -293,7 +283,7 @@ func RunWithDisplay(ctx context.Context, r *Recrawler, seeds []SeedURL, skip map
 				lines = strings.Count(output, "\n")
 
 				// Stop if all done
-				if stats.Done() >= int64(stats.totalURLs) {
+				if stats.Done() >= int64(stats.TotalURLs) {
 					return
 				}
 			}
