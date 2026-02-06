@@ -4,7 +4,8 @@
  * JinaSearchEngine - Web search via s.jina.ai (search API)
  * JinaReaderEngine - Page reading/extraction via r.jina.ai (reader API)
  *
- * Both require a JINA_API_KEY for authentication.
+ * Both work without an API key at reduced rate limits (20 RPM reader, 100 RPM search).
+ * Set JINA_API_KEY env var for higher limits.
  */
 
 import type {
@@ -81,6 +82,7 @@ export class JinaSearchEngine extends BaseEngine {
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'X-No-Cache': 'true',
+      'X-Respond-With': 'no-content',
     };
 
     if (apiKey) {

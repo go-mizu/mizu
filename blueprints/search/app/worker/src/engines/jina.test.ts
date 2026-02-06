@@ -46,6 +46,11 @@ describe('JinaSearchEngine', () => {
     expect(config.headers['Authorization']).toBeUndefined();
   });
 
+  it('should include X-Respond-With: no-content header for fast mode', () => {
+    const config = engine.buildRequest('test', defaultParams);
+    expect(config.headers['X-Respond-With']).toBe('no-content');
+  });
+
   it('should URL-encode the query', () => {
     const config = engine.buildRequest('hello world & more', defaultParams);
     expect(config.url).toBe('https://s.jina.ai/hello%20world%20%26%20more');
