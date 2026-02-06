@@ -6,16 +6,10 @@ package recrawler
 import "time"
 
 // SeedURL represents a URL loaded from the seed database.
+// Only url and domain are loaded for crawling performance.
 type SeedURL struct {
-	URL         string
-	Domain      string
-	Host        string
-	ContentType string
-	Language    string
-	TextLen     int64
-	WordCount   int64
-	TLD         string
-	Protocol    string
+	URL    string
+	Domain string
 }
 
 // SeedStats holds aggregate stats about the seed database.
@@ -45,21 +39,23 @@ type Result struct {
 
 // Config holds configuration for high-throughput recrawling.
 type Config struct {
-	Workers   int           // Concurrent workers (default: 500)
-	Timeout   time.Duration // Per-request timeout (default: 10s)
-	UserAgent string        // User-Agent header
-	HeadOnly  bool          // Only fetch headers, skip body
-	BatchSize int           // DB write batch size (default: 1000)
-	Resume    bool          // Skip already-crawled URLs
+	Workers              int           // Concurrent workers (default: 500)
+	Timeout              time.Duration // Per-request timeout (default: 10s)
+	UserAgent            string        // User-Agent header
+	HeadOnly             bool          // Only fetch headers, skip body
+	BatchSize            int           // DB write batch size (default: 1000)
+	Resume               bool          // Skip already-crawled URLs
+	DNSPrefetch          bool          // Pre-resolve DNS for all domains
+	DomainFailThreshold  int           // Failures before marking domain dead (default: 1)
 }
 
 // DefaultConfig returns optimal defaults for high throughput.
 func DefaultConfig() Config {
 	return Config{
-		Workers:   500,
-		Timeout:   10 * time.Second,
+		Workers:   2000,
+		Timeout:   3 * time.Second,
 		UserAgent: "MizuCrawler/1.0",
 		HeadOnly:  false,
-		BatchSize: 1000,
+		BatchSize: 5000,
 	}
 }

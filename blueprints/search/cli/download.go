@@ -767,20 +767,29 @@ func newDownloadGet() *cobra.Command {
 		Long: `Downloads parquet files from HuggingFace with a progress bar showing
 download speed, percentage, and ETA.
 
-Skips already downloaded files. Use --shards to limit the number of
-files to download (useful for large languages like English).
+Skips already downloaded files. After each download, automatically imports
+the parquet file into a per-file DuckDB (e.g. 000_00000.duckdb) with
+derived columns (domain, host, tld, text_len, etc.) for use with recrawl.
+
+Use --shards to limit first N files, --last for last N files (newest),
+or --file to download a specific file by name.
 
 Examples:
   search download get --lang vie_Latn
   search download get --lang vie_Latn --split test
   search download get --lang vie_Latn --split train --shards 2
-  search download get --lang eng_Latn --split train --shards 1`,
+  search download get --lang vie_Latn --split train --last 1
+  search download get --lang vie_Latn --split train --file 004_00005.parquet
+  search download get --lang vie_Latn --no-import`,
 		RunE: runDownloadGet,
 	}
 
 	cmd.Flags().String("lang", "vie_Latn", "Language code")
 	cmd.Flags().String("split", "train", "Dataset split (train or test)")
-	cmd.Flags().Int("shards", 0, "Max number of files to download (0 = all)")
+	cmd.Flags().Int("shards", 0, "Max number of files to download from start (0 = all)")
+	cmd.Flags().Int("last", 0, "Download last N files (highest index, likely newest)")
+	cmd.Flags().String("file", "", "Download a specific file by name (e.g. 004_00005.parquet)")
+	cmd.Flags().Bool("no-import", false, "Skip auto-import to DuckDB after download")
 
 	return cmd
 }
@@ -790,6 +799,9 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 	lang, _ := cmd.Flags().GetString("lang")
 	split, _ := cmd.Flags().GetString("split")
 	shards, _ := cmd.Flags().GetInt("shards")
+	last, _ := cmd.Flags().GetInt("last")
+	fileFilter, _ := cmd.Flags().GetString("file")
+	noImport, _ := cmd.Flags().GetBool("no-import")
 
 	langLabel := lang
 	if l, ok := fw.GetLanguage(lang); ok {
@@ -811,8 +823,24 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 		return files[i].Name < files[j].Name
 	})
 
-	// Limit shards
-	if shards > 0 && shards < len(files) {
+	// Filter by specific file name
+	if fileFilter != "" {
+		var filtered []fw.FileInfo
+		for _, f := range files {
+			if f.Name == fileFilter {
+				filtered = append(filtered, f)
+				break
+			}
+		}
+		if len(filtered) == 0 {
+			return fmt.Errorf("file %q not found in %s/%s (%d files available)", fileFilter, lang, split, len(files))
+		}
+		files = filtered
+	} else if last > 0 && last < len(files) {
+		// Take last N files (highest index = newest)
+		files = files[len(files)-last:]
+	} else if shards > 0 && shards < len(files) {
+		// Take first N files
 		files = files[:shards]
 	}
 
@@ -831,11 +859,19 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 	var toDownload []fw.FileInfo
 	var skippedCount int
 	var skippedSize int64
+	var importOnlyFiles []fw.FileInfo // already downloaded but missing DuckDB
 	for _, file := range files {
 		destPath := filepath.Join(destDir, file.Name)
 		if info, err := os.Stat(destPath); err == nil && info.Size() == file.Size {
 			skippedCount++
 			skippedSize += file.Size
+			// Check if DuckDB needs to be created
+			if !noImport {
+				dbPath := strings.TrimSuffix(destPath, ".parquet") + ".duckdb"
+				if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+					importOnlyFiles = append(importOnlyFiles, file)
+				}
+			}
 		} else {
 			toDownload = append(toDownload, file)
 		}
@@ -848,6 +884,29 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 			successStyle.Render("SKIP"),
 			skippedCount, len(files),
 			formatBytes(skippedSize))
+	}
+
+	// Import existing parquet files that are missing DuckDB
+	if len(importOnlyFiles) > 0 {
+		fmt.Printf("  %s %d files need DuckDB import\n",
+			infoStyle.Render("IMPORT"),
+			len(importOnlyFiles))
+		for _, file := range importOnlyFiles {
+			destPath := filepath.Join(destDir, file.Name)
+			dbPath := strings.TrimSuffix(destPath, ".parquet") + ".duckdb"
+			fmt.Printf("    %s", mutedStyle.Render(fmt.Sprintf("Importing %s...", file.Name)))
+			rows, importDur, importErr := fw.ImportParquetToDuckDB(destPath, dbPath)
+			if importErr != nil {
+				fmt.Printf("\r\033[K    %s %s: %v\n", warningStyle.Render("WARN"), file.Name, importErr)
+			} else {
+				fmt.Printf("\r\033[K    %s %s → %s rows (%s)\n",
+					successStyle.Render("DB"),
+					filepath.Base(dbPath),
+					formatLargeNumber(rows),
+					importDur.Round(time.Millisecond))
+			}
+		}
+		fmt.Println()
 	}
 
 	if len(toDownload) == 0 {
@@ -928,6 +987,22 @@ func runDownloadGet(cmd *cobra.Command, args []string) error {
 			formatBytes(file.Size),
 			elapsed.Round(time.Millisecond),
 			formatBytes(int64(avgSpeed)))
+
+		// Auto-import: create per-file DuckDB
+		if !noImport {
+			dbPath := strings.TrimSuffix(destPath, ".parquet") + ".duckdb"
+			fmt.Printf("    %s", mutedStyle.Render("Importing to DuckDB..."))
+			rows, importDur, importErr := fw.ImportParquetToDuckDB(destPath, dbPath)
+			if importErr != nil {
+				fmt.Printf("\r\033[K    %s import: %v\n", warningStyle.Render("WARN"), importErr)
+			} else {
+				fmt.Printf("\r\033[K    %s %s rows → %s (%s)\n",
+					successStyle.Render("DB"),
+					formatLargeNumber(rows),
+					filepath.Base(dbPath),
+					importDur.Round(time.Millisecond))
+			}
+		}
 	}
 
 	totalElapsed := time.Since(pipelineStart)

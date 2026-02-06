@@ -12,12 +12,13 @@ import (
 // Stats tracks live statistics for the recrawl.
 type Stats struct {
 	// Counters (atomic for lock-free reads)
-	success  atomic.Int64
-	failed   atomic.Int64
-	timeout  atomic.Int64
-	skipped  atomic.Int64
-	bytes    atomic.Int64
-	fetchMs  atomic.Int64 // sum of fetch times for avg calculation
+	success     atomic.Int64
+	failed      atomic.Int64
+	timeout     atomic.Int64
+	skipped     atomic.Int64
+	domainSkip  atomic.Int64 // URLs skipped due to dead domain
+	bytes       atomic.Int64
+	fetchMs     atomic.Int64 // sum of fetch times for avg calculation
 
 	// HTTP status code distribution
 	statusMu sync.Mutex
@@ -38,6 +39,10 @@ type Stats struct {
 	// Speed tracking (rolling window)
 	speedMu    sync.Mutex
 	speedTicks []speedTick
+
+	// Frozen state for final display
+	frozen      bool
+	frozenAt    time.Duration
 }
 
 type speedTick struct {
@@ -63,14 +68,8 @@ func (s *Stats) RecordSuccess(statusCode int, domain string, bytesRecv int64, fe
 	s.success.Add(1)
 	s.bytes.Add(bytesRecv)
 	s.fetchMs.Add(fetchMs)
-
-	s.statusMu.Lock()
-	s.statuses[statusCode]++
-	s.statusMu.Unlock()
-
-	s.domainMu.Lock()
-	s.domainsOK[domain] = true
-	s.domainMu.Unlock()
+	s.recordStatus(statusCode)
+	s.recordDomainOK(domain)
 }
 
 // RecordFailure records a failed fetch.
@@ -80,31 +79,76 @@ func (s *Stats) RecordFailure(statusCode int, domain string, isTimeout bool) {
 	} else {
 		s.failed.Add(1)
 	}
-
 	if statusCode > 0 {
-		s.statusMu.Lock()
-		s.statuses[statusCode]++
-		s.statusMu.Unlock()
+		s.recordStatus(statusCode)
 	}
+	s.recordDomainFail(domain)
+}
 
+// recordStatus updates status histogram with sampling to reduce lock contention.
+func (s *Stats) recordStatus(code int) {
+	s.statusMu.Lock()
+	s.statuses[code]++
+	s.statusMu.Unlock()
+}
+
+// recordDomainOK tracks successful domain with deduplication.
+func (s *Stats) recordDomainOK(domain string) {
+	// Fast path: already recorded (read lock)
+	s.domainMu.Lock()
+	s.domainsOK[domain] = true
+	s.domainMu.Unlock()
+}
+
+// recordDomainFail tracks failed domain.
+func (s *Stats) recordDomainFail(domain string) {
 	s.domainMu.Lock()
 	s.domainsFail[domain] = true
 	s.domainMu.Unlock()
 }
 
-// RecordSkip records a skipped URL.
+// Freeze locks in the elapsed time for the final stats display.
+// Only takes effect on the first call; subsequent calls are no-ops.
+func (s *Stats) Freeze() {
+	if s.frozen {
+		return
+	}
+	s.frozen = true
+	s.frozenAt = time.Since(s.startTime)
+}
+
+// Elapsed returns the elapsed time, frozen if Freeze() was called.
+func (s *Stats) Elapsed() time.Duration {
+	if s.frozen {
+		return s.frozenAt
+	}
+	return time.Since(s.startTime)
+}
+
+// RecordSkip records a skipped URL (resume).
 func (s *Stats) RecordSkip() {
 	s.skipped.Add(1)
 }
 
-// Done returns the total number of processed URLs.
-func (s *Stats) Done() int64 {
-	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.skipped.Load()
+// RecordDomainSkip records a URL skipped because its domain is dead.
+func (s *Stats) RecordDomainSkip() {
+	s.domainSkip.Add(1)
 }
 
-// Speed returns the current URLs/sec (rolling 5-second window).
+// Done returns the total number of processed URLs (including skips, for progress bar).
+func (s *Stats) Done() int64 {
+	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.skipped.Load() + s.domainSkip.Load()
+}
+
+// Fetched returns only URLs that required actual network I/O.
+func (s *Stats) Fetched() int64 {
+	return s.success.Load() + s.failed.Load() + s.timeout.Load()
+}
+
+// Speed returns the current fetched pages/sec (rolling 5-second window).
+// Only counts pages that required actual network I/O (excludes skips).
 func (s *Stats) Speed() float64 {
-	done := s.Done()
+	done := s.Fetched()
 	now := time.Now()
 
 	s.speedMu.Lock()
@@ -137,13 +181,13 @@ func (s *Stats) Speed() float64 {
 	return speed
 }
 
-// AvgSpeed returns the overall average speed.
+// AvgSpeed returns the overall average fetched pages/sec.
 func (s *Stats) AvgSpeed() float64 {
-	elapsed := time.Since(s.startTime).Seconds()
+	elapsed := s.Elapsed().Seconds()
 	if elapsed <= 0 {
 		return 0
 	}
-	return float64(s.Done()) / elapsed
+	return float64(s.Fetched()) / elapsed
 }
 
 // AvgFetchMs returns average fetch time in milliseconds.
@@ -163,9 +207,10 @@ func (s *Stats) Render() string {
 	fail := s.failed.Load()
 	tout := s.timeout.Load()
 	skip := s.skipped.Load()
+	dskip := s.domainSkip.Load()
 	speed := s.Speed()
 	avgSpeed := s.AvgSpeed()
-	elapsed := time.Since(s.startTime)
+	elapsed := s.Elapsed()
 	bytesTotal := s.bytes.Load()
 
 	pct := float64(0)
@@ -173,12 +218,19 @@ func (s *Stats) Render() string {
 		pct = float64(done) / float64(total) * 100
 	}
 
-	// ETA
+	// ETA based on remaining URLs and fetched pages/s
+	fetched := s.Fetched()
 	eta := "---"
 	if speed > 0 {
 		remaining := total - done
 		if remaining > 0 {
-			etaDur := time.Duration(float64(remaining)/speed) * time.Second
+			// Estimate what fraction of remaining will need actual fetching
+			fetchRatio := float64(1)
+			if done > 0 {
+				fetchRatio = float64(fetched) / float64(done)
+			}
+			fetchRemaining := float64(remaining) * fetchRatio
+			etaDur := time.Duration(fetchRemaining/speed) * time.Second
 			eta = formatDuration(etaDur)
 		} else {
 			eta = "0s"
@@ -209,15 +261,15 @@ func (s *Stats) Render() string {
 	b.WriteString(fmt.Sprintf("  %s  %5.1f%%  %s/%s\n",
 		bar, pct, fmtInt64(done), fmtInt(s.TotalURLs)))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Speed     %s/s  │  Peak %s/s  │  Avg %s/s\n",
+	b.WriteString(fmt.Sprintf("  Fetch     %s/s  │  Peak %s/s  │  Avg %s/s\n",
 		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(avgSpeed))))
 	b.WriteString(fmt.Sprintf("  Elapsed   %s  │  ETA  %s  │  Avg fetch %dms\n",
 		formatDuration(elapsed), eta, int(s.AvgFetchMs())))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  ✓ %s ok (%4.1f%%)  ✗ %s fail (%4.1f%%)\n",
 		fmtInt64(succ), safePct(succ, done), fmtInt64(fail), safePct(fail, done)))
-	b.WriteString(fmt.Sprintf("  ⏱ %s timeout (%4.1f%%)  ⊘ %s skip (%4.1f%%)\n",
-		fmtInt64(tout), safePct(tout, done), fmtInt64(skip), safePct(skip, done)))
+	b.WriteString(fmt.Sprintf("  ⏱ %s timeout (%4.1f%%)  ⊘ %s skip  ☠ %s domain-dead (%4.1f%%)\n",
+		fmtInt64(tout), safePct(tout, done), fmtInt64(skip), fmtInt64(dskip), safePct(dskip, done)))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  HTTP  %s\n", statusLine))
 	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s unreachable\n",
