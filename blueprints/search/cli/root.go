@@ -69,6 +69,7 @@ Get started:
 	root.AddCommand(NewSeed())
 	root.AddCommand(NewCrawl())
 	root.AddCommand(NewAnalytics())
+	root.AddCommand(NewDownload())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),

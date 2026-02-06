@@ -46,3 +46,37 @@ type ImportProgress struct {
 
 // ImportProgressFn callback for import progress updates.
 type ImportProgressFn func(ImportProgress)
+
+// DatasetConfig represents a language config in the dataset.
+type DatasetConfig struct {
+	Config string // e.g. "vie_Latn"
+	Split  string // e.g. "train" or "test"
+}
+
+// SplitSize holds size info for a single split.
+type SplitSize struct {
+	Config       string
+	Split        string
+	NumRows      int64
+	NumBytes     int64 // parquet file size
+	NumBytesMemory int64 // in-memory size
+	NumColumns   int
+}
+
+// DatasetSizeInfo holds aggregated size info.
+type DatasetSizeInfo struct {
+	TotalRows       int64
+	TotalBytes      int64
+	TotalBytesMemory int64
+	Configs         []ConfigSize
+}
+
+// ConfigSize holds per-config size info.
+type ConfigSize struct {
+	Config         string
+	NumRows        int64
+	NumBytes       int64
+	NumBytesMemory int64
+	NumColumns     int
+	Splits         []SplitSize
+}
