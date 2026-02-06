@@ -7,7 +7,7 @@ BINARY  ?= $(HOME)/bin/search
 CMD     ?= ./cmd/search
 DATA_DIR ?= $(HOME)/data/blueprint/search
 
-CGO_ENABLED ?= 0
+CGO_ENABLED ?= 1
 
 VERSION ?= $(shell git describe --tags --dirty --match "v*" 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
