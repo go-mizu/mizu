@@ -39,23 +39,26 @@ type Result struct {
 
 // Config holds configuration for high-throughput recrawling.
 type Config struct {
-	Workers              int           // Concurrent workers (default: 500)
-	Timeout              time.Duration // Per-request timeout (default: 10s)
+	Workers              int           // Concurrent workers (default: 2000)
+	Timeout              time.Duration // Per-request timeout (default: 3s)
 	UserAgent            string        // User-Agent header
 	HeadOnly             bool          // Only fetch headers, skip body
-	BatchSize            int           // DB write batch size (default: 1000)
+	StatusOnly           bool          // Only check HTTP status, close body immediately (fastest)
+	BatchSize            int           // DB write batch size (default: 5000)
 	Resume               bool          // Skip already-crawled URLs
 	DNSPrefetch          bool          // Pre-resolve DNS for all domains
 	DomainFailThreshold  int           // Failures before marking domain dead (default: 1)
+	TransportShards      int           // Number of HTTP transport shards (default: 1)
 }
 
 // DefaultConfig returns optimal defaults for high throughput.
 func DefaultConfig() Config {
 	return Config{
-		Workers:   2000,
-		Timeout:   3 * time.Second,
-		UserAgent: "MizuCrawler/1.0",
-		HeadOnly:  false,
-		BatchSize: 5000,
+		Workers:         2000,
+		Timeout:         3 * time.Second,
+		UserAgent:       "MizuCrawler/1.0",
+		HeadOnly:        false,
+		BatchSize:       5000,
+		TransportShards: 1,
 	}
 }
