@@ -15,6 +15,8 @@ import (
 const (
 	// HuggingFace API base URL
 	hfAPIBase = "https://huggingface.co/api/datasets"
+	// Dataset Viewer API base URL
+	hfViewerAPI = "https://datasets-server.huggingface.co"
 	// Dataset repository
 	datasetRepo = "HuggingFaceFW/fineweb-2"
 	// Download base URL
@@ -147,6 +149,204 @@ func (c *Client) listFilesAtPath(ctx context.Context, pathPrefix string) ([]File
 	return files, nil
 }
 
+// ListConfigs returns all language configs available in the dataset.
+func (c *Client) ListConfigs(ctx context.Context) ([]DatasetConfig, error) {
+	apiURL := fmt.Sprintf("%s/splits?dataset=%s", hfViewerAPI, datasetRepo)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching configs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Splits []struct {
+			Config string `json:"config"`
+			Split  string `json:"split"`
+		} `json:"splits"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	configs := make([]DatasetConfig, len(result.Splits))
+	for i, s := range result.Splits {
+		configs[i] = DatasetConfig{Config: s.Config, Split: s.Split}
+	}
+	return configs, nil
+}
+
+// GetDatasetSize returns size info for the dataset (optionally filtered by lang).
+func (c *Client) GetDatasetSize(ctx context.Context, lang string) (*DatasetSizeInfo, error) {
+	apiURL := fmt.Sprintf("%s/size?dataset=%s", hfViewerAPI, datasetRepo)
+	if lang != "" {
+		apiURL += "&config=" + lang
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching size info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	// The HF API returns different shapes depending on whether config= is specified:
+	//   Without config: { size: { dataset: {...}, configs: [...], splits: [...] } }
+	//   With config:    { size: { config: {...}, splits: [...] } }
+	var raw json.RawMessage
+	var wrapper struct {
+		Size json.RawMessage `json:"size"`
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	if err := json.Unmarshal(body, &wrapper); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	raw = wrapper.Size
+
+	// Try to detect which shape we got
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil, fmt.Errorf("decoding size object: %w", err)
+	}
+
+	info := &DatasetSizeInfo{}
+
+	if _, hasConfig := probe["config"]; hasConfig {
+		// Single-config response: { config: {...}, splits: [...] }
+		var result struct {
+			Config struct {
+				Config          string `json:"config"`
+				NumRows         int64  `json:"num_rows"`
+				NumBytesParquet int64  `json:"num_bytes_parquet_files"`
+				NumBytesMemory  int64  `json:"num_bytes_memory"`
+				NumColumns      int    `json:"num_columns"`
+			} `json:"config"`
+			Splits []struct {
+				Config          string `json:"config"`
+				Split           string `json:"split"`
+				NumRows         int64  `json:"num_rows"`
+				NumBytesParquet int64  `json:"num_bytes_parquet_files"`
+				NumBytesMemory  int64  `json:"num_bytes_memory"`
+				NumColumns      int    `json:"num_columns"`
+			} `json:"splits"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return nil, fmt.Errorf("decoding config response: %w", err)
+		}
+
+		info.TotalRows = result.Config.NumRows
+		info.TotalBytes = result.Config.NumBytesParquet
+		info.TotalBytesMemory = result.Config.NumBytesMemory
+
+		var splits []SplitSize
+		for _, s := range result.Splits {
+			splits = append(splits, SplitSize{
+				Config:         s.Config,
+				Split:          s.Split,
+				NumRows:        s.NumRows,
+				NumBytes:       s.NumBytesParquet,
+				NumBytesMemory: s.NumBytesMemory,
+				NumColumns:     s.NumColumns,
+			})
+		}
+
+		info.Configs = []ConfigSize{{
+			Config:         result.Config.Config,
+			NumRows:        result.Config.NumRows,
+			NumBytes:       result.Config.NumBytesParquet,
+			NumBytesMemory: result.Config.NumBytesMemory,
+			NumColumns:     result.Config.NumColumns,
+			Splits:         splits,
+		}}
+	} else {
+		// Full-dataset response: { dataset: {...}, configs: [...], splits: [...] }
+		var result struct {
+			Dataset struct {
+				NumRows         int64 `json:"num_rows"`
+				NumBytesParquet int64 `json:"num_bytes_parquet_files"`
+				NumBytesMemory  int64 `json:"num_bytes_memory"`
+			} `json:"dataset"`
+			Configs []struct {
+				Config          string `json:"config"`
+				NumRows         int64  `json:"num_rows"`
+				NumBytesParquet int64  `json:"num_bytes_parquet_files"`
+				NumBytesMemory  int64  `json:"num_bytes_memory"`
+				NumColumns      int    `json:"num_columns"`
+			} `json:"configs"`
+			Splits []struct {
+				Config          string `json:"config"`
+				Split           string `json:"split"`
+				NumRows         int64  `json:"num_rows"`
+				NumBytesParquet int64  `json:"num_bytes_parquet_files"`
+				NumBytesMemory  int64  `json:"num_bytes_memory"`
+				NumColumns      int    `json:"num_columns"`
+			} `json:"splits"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return nil, fmt.Errorf("decoding dataset response: %w", err)
+		}
+
+		info.TotalRows = result.Dataset.NumRows
+		info.TotalBytes = result.Dataset.NumBytesParquet
+		info.TotalBytesMemory = result.Dataset.NumBytesMemory
+
+		splitMap := make(map[string][]SplitSize)
+		for _, s := range result.Splits {
+			splitMap[s.Config] = append(splitMap[s.Config], SplitSize{
+				Config:         s.Config,
+				Split:          s.Split,
+				NumRows:        s.NumRows,
+				NumBytes:       s.NumBytesParquet,
+				NumBytesMemory: s.NumBytesMemory,
+				NumColumns:     s.NumColumns,
+			})
+		}
+
+		for _, cfg := range result.Configs {
+			info.Configs = append(info.Configs, ConfigSize{
+				Config:         cfg.Config,
+				NumRows:        cfg.NumRows,
+				NumBytes:       cfg.NumBytesParquet,
+				NumBytesMemory: cfg.NumBytesMemory,
+				NumColumns:     cfg.NumColumns,
+				Splits:         splitMap[cfg.Config],
+			})
+		}
+	}
+
+	return info, nil
+}
+
+// ListSplitFiles returns parquet files for a specific language and split.
+func (c *Client) ListSplitFiles(ctx context.Context, lang, split string) ([]FileInfo, error) {
+	pathPrefix := fmt.Sprintf("data/%s/%s", lang, split)
+	return c.listFilesAtPath(ctx, pathPrefix)
+}
+
 // DownloadFile downloads a single file to the destination path.
 func (c *Client) DownloadFile(ctx context.Context, file FileInfo, destPath string) error {
 	// Ensure directory exists
@@ -212,4 +412,95 @@ func (c *Client) DownloadFile(ctx context.Context, file FileInfo, destPath strin
 	}
 
 	return nil
+}
+
+// ByteProgressFn is called periodically during download with bytes downloaded so far.
+type ByteProgressFn func(bytesDownloaded, totalBytes int64)
+
+// DownloadFileWithProgress downloads a file with byte-level progress reporting.
+func (c *Client) DownloadFileWithProgress(ctx context.Context, file FileInfo, destPath string, progress ByteProgressFn) error {
+	dir := filepath.Dir(destPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	// Check if already downloaded
+	if info, err := os.Stat(destPath); err == nil && info.Size() == file.Size {
+		if progress != nil {
+			progress(file.Size, file.Size)
+		}
+		return nil
+	}
+
+	tmpPath := destPath + ".tmp"
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	defer func() {
+		out.Close()
+		os.Remove(tmpPath)
+	}()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", file.URL, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+	if token := os.Getenv("HF_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := c.downloadHTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("downloading file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download error %d", resp.StatusCode)
+	}
+
+	totalBytes := file.Size
+	if totalBytes == 0 && resp.ContentLength > 0 {
+		totalBytes = resp.ContentLength
+	}
+
+	buf := make([]byte, 64*1024) // 64KB buffer
+	var written int64
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			_, writeErr := out.Write(buf[:n])
+			if writeErr != nil {
+				return fmt.Errorf("writing file: %w", writeErr)
+			}
+			written += int64(n)
+			if progress != nil {
+				progress(written, totalBytes)
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return fmt.Errorf("reading response: %w", readErr)
+		}
+	}
+
+	if file.Size > 0 && written != file.Size {
+		return fmt.Errorf("size mismatch: expected %d, got %d", file.Size, written)
+	}
+
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("closing file: %w", err)
+	}
+
+	return os.Rename(tmpPath, destPath)
 }

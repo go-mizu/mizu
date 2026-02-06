@@ -119,3 +119,12 @@ node_modules/
 # Cloudflare Wrangler
 # ------------------------------
 .wrangler/
+
+# ------------------------------
+# Python
+# ------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
