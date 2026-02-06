@@ -157,7 +157,7 @@ export default function NewsPage() {
                           href={article.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-shrink-0 w-80 bg-white rounded-lg shadow-sm border border-[#e8eaed] overflow-hidden hover:shadow-md transition-shadow"
+                          className="flex-shrink-0 w-80 bg-white rounded-lg shadow-sm border border-[#dadce0] overflow-hidden hover:shadow-md transition-shadow"
                         >
                           {(article.image_url || article.thumbnail_url) && (
                             <div className="h-40 bg-[#f1f3f4]">
@@ -208,7 +208,7 @@ export default function NewsPage() {
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block bg-white rounded-lg shadow-sm border border-[#e8eaed] overflow-hidden hover:shadow-md transition-shadow"
+                    className="block bg-white rounded-lg shadow-sm border border-[#dadce0] overflow-hidden hover:shadow-md transition-shadow"
                   >
                     <div className="flex">
                       <div className="flex-1 p-5">

@@ -50,7 +50,7 @@ export default function HistoryPage() {
               </p>
               <Link
                 to="/"
-                className="inline-block mt-6 px-4 py-2 text-sm font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-[#d2e3fc] rounded transition-colors"
+                className="inline-block mt-6 px-4 py-2 text-sm font-medium text-[#1a73e8] bg-[#e8f0fe] hover:bg-[#d2e3fc] rounded-lg transition-colors"
               >
                 Start searching
               </Link>

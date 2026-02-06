@@ -68,7 +68,7 @@ export class JinaSearchEngine extends BaseEngine {
       categories: ['general'] as Category[],
       supportsPaging: false,
       maxPage: 1,
-      timeout: 15_000,
+      timeout: 10_000,
       weight: 1.5,
     });
   }
@@ -139,6 +139,7 @@ export class JinaReaderEngine {
    * @param url - The URL of the page to read
    * @param apiKey - Jina API key for authentication
    * @returns Extracted page content as a JinaReaderResult
+   * @throws JinaKeyError when the API key is expired/rate-limited (401/429)
    */
   async readPage(url: string, apiKey: string): Promise<JinaReaderResult> {
     const readerUrl = `https://r.jina.ai/${url}`;
@@ -156,6 +157,13 @@ export class JinaReaderEngine {
       method: 'GET',
       headers,
     });
+
+    if (response.status === 401 || response.status === 429) {
+      throw new JinaKeyError(
+        `Jina Reader: HTTP ${response.status} ${response.statusText}`,
+        response.status
+      );
+    }
 
     if (!response.ok) {
       throw new Error(
@@ -177,5 +185,18 @@ export class JinaReaderEngine {
       description: data.data.description ?? '',
       images: data.data.images,
     };
+  }
+}
+
+/**
+ * Specialized error for Jina API key issues (expired, rate-limited, over quota).
+ * Routes can catch this to mark the key as limited in KV.
+ */
+export class JinaKeyError extends Error {
+  readonly statusCode: number;
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = 'JinaKeyError';
+    this.statusCode = statusCode;
   }
 }

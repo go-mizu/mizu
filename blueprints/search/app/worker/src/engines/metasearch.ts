@@ -88,6 +88,9 @@ import { OpenStreetMapEngine } from './openstreetmap';
 // === Entertainment Engines ===
 import { IMDbEngine } from './imdb';
 
+// === AI-powered Engines ===
+import { JinaSearchEngine } from './jina';
+
 // ========== MetaSearch Result ==========
 
 export interface MetaSearchResult {
@@ -154,7 +157,7 @@ export class MetaSearch {
     query: string,
     category: Category,
     params: EngineParams,
-    options?: { engines?: string[] }
+    options?: { engines?: string[]; maxWait?: number }
   ): Promise<MetaSearchResult> {
     const engines = this.getByCategory(category).filter((engine) => {
       if (!options?.engines || options.engines.length === 0) return true;
@@ -172,43 +175,64 @@ export class MetaSearch {
       };
     }
 
+    // Default deadline: 8 seconds. Fast engines return quickly;
+    // slow engines (e.g., Jina) are included only if they respond in time.
+    const maxWait = options?.maxWait ?? 8_000;
+
+    type EngineOutcome = {
+      engine: string;
+      result: EngineResults | null;
+      error: string | null;
+    };
+
     // Execute all engines in parallel
     const promises = engines.map((engine) =>
       executeEngine(engine, query, params).then(
-        (result) => ({ engine: engine.name, result, error: null }),
-        (error) => ({
+        (result): EngineOutcome => ({ engine: engine.name, result, error: null }),
+        (error): EngineOutcome => ({
           engine: engine.name,
-          result: null as EngineResults | null,
+          result: null,
           error: error instanceof Error ? error.message : String(error),
         })
       )
     );
 
-    const settled = await Promise.allSettled(promises);
+    // Race: collect results as they arrive, stop after deadline
+    const outcomes: EngineOutcome[] = [];
+    const remaining = new Set(promises);
 
-    // Collect results
+    await Promise.race([
+      // Resolve when all engines complete
+      (async () => {
+        for (const p of promises) {
+          p.then((outcome) => {
+            outcomes.push(outcome);
+            remaining.delete(p);
+          });
+        }
+        await Promise.allSettled(promises);
+      })(),
+      // Or stop collecting after the deadline
+      new Promise<void>((resolve) => setTimeout(resolve, maxWait)),
+    ]);
+
+    // Collect results from engines that completed in time
     const allResults: EngineResult[] = [];
     const allSuggestions: string[] = [];
     const allCorrections: string[] = [];
     const failedEngines: string[] = [];
     let successfulEngines = 0;
 
-    for (const outcome of settled) {
-      if (outcome.status === 'rejected') {
-        continue;
-      }
-
-      const { engine: engineName, result, error } = outcome.value;
-
-      if (error || !result) {
-        failedEngines.push(engineName);
+    for (const outcome of outcomes) {
+      if (outcome.error || !outcome.result) {
+        failedEngines.push(outcome.engine);
         continue;
       }
 
       successfulEngines++;
-      allResults.push(...result.results);
-      allSuggestions.push(...result.suggestions);
-      allCorrections.push(...result.corrections);
+      allResults.push(...outcome.result.results);
+      allSuggestions.push(...outcome.result.suggestions);
+      allCorrections.push(...outcome.result.corrections);
     }
 
     // Deduplicate by URL (merge scores when duplicate)
@@ -378,6 +402,9 @@ export function createDefaultMetaSearch(): MetaSearch {
 
   // === Entertainment Engines ===
   ms.register(new IMDbEngine());
+
+  // === AI-powered Engines ===
+  ms.register(new JinaSearchEngine());
 
   return ms;
 }

@@ -372,7 +372,7 @@ function VideoPlayer({ video, onClose, onPrevious, onNext, hasPrevious, hasNext 
     <div
       ref={modalRef}
       onClick={handleBackdropClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
     >
       {/* Close button */}
       <button
@@ -826,7 +826,7 @@ export default function VideosPage() {
                       key={`${video.id}-${index}`}
                       type="button"
                       onClick={() => setSelectedVideoIndex(index)}
-                      className="block rounded-lg overflow-hidden hover:shadow-lg transition-shadow bg-white border border-[#e8eaed] text-left cursor-pointer"
+                      className="block rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white border border-[#dadce0] text-left cursor-pointer"
                       onMouseEnter={() => handleVideoHover(index)}
                       onMouseLeave={() => handleVideoHover(null)}
                     >

@@ -63,7 +63,7 @@ function toImageFilters(filters?: ImageSearchFilters): ImageFilters | undefined 
 /**
  * Convert SearchOptions to EngineParams and Category for metasearch.
  */
-function toEngineParams(options: SearchOptions): { category: Category; params: EngineParams } {
+function toEngineParams(options: SearchOptions, engineSecrets: Record<string, string> = {}): { category: Category; params: EngineParams } {
   let category: Category = 'general';
   if (options.file_type === 'image') {
     category = 'images';
@@ -80,7 +80,7 @@ function toEngineParams(options: SearchOptions): { category: Category; params: E
       locale: options.language ?? 'en',
       timeRange: parseTimeRange(options.time_range),
       safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
-      engineData: {},
+      engineData: engineSecrets,
     },
   };
 }
@@ -88,7 +88,7 @@ function toEngineParams(options: SearchOptions): { category: Category; params: E
 /**
  * Convert ImageSearchOptions to EngineParams for image search.
  */
-function toImageEngineParams(options: ImageSearchOptions): EngineParams {
+function toImageEngineParams(options: ImageSearchOptions, engineSecrets: Record<string, string> = {}): EngineParams {
   const safeLevel = options.filters?.safe;
   let safeSearch: 0 | 1 | 2 = 1;
   if (safeLevel === 'strict') safeSearch = 2;
@@ -99,7 +99,7 @@ function toImageEngineParams(options: ImageSearchOptions): EngineParams {
     locale: options.language ?? 'en',
     timeRange: parseTimeRange(options.filters?.time ?? options.time_range),
     safeSearch,
-    engineData: {},
+    engineData: engineSecrets,
     imageFilters: toImageFilters(options.filters),
   };
 }
@@ -383,6 +383,7 @@ export class SearchService {
   private bangService: BangService;
   private instantService: InstantService;
   private knowledgeService: KnowledgeService;
+  private engineSecrets: Record<string, string>;
 
   constructor(
     metasearch: MetaSearch,
@@ -391,6 +392,7 @@ export class SearchService {
     bangService: BangService,
     instantService: InstantService,
     knowledgeService: KnowledgeService,
+    engineSecrets?: Record<string, string>,
   ) {
     this.metasearch = metasearch;
     this.cache = cache;
@@ -398,6 +400,14 @@ export class SearchService {
     this.bangService = bangService;
     this.instantService = instantService;
     this.knowledgeService = knowledgeService;
+    this.engineSecrets = engineSecrets ?? {};
+  }
+
+  /**
+   * Update engine secrets at runtime (e.g. after resolving KV-stored keys).
+   */
+  updateEngineSecrets(secrets: Record<string, string>): void {
+    this.engineSecrets = secrets;
   }
 
   /**
@@ -433,7 +443,7 @@ export class SearchService {
     }
 
     // 3. Run instant answer detection and metasearch in parallel
-    const { category, params } = toEngineParams(options);
+    const { category, params } = toEngineParams(options, this.engineSecrets);
     const [instantAnswer, knowledgePanel, metaResult] = await Promise.all([
       this.detectInstantAnswer(searchQuery),
       options.page === 1 ? this.knowledgeService.getPanel(searchQuery) : Promise.resolve(null),
@@ -492,7 +502,7 @@ export class SearchService {
       locale: options.language ?? 'en',
       timeRange: parseTimeRange(options.time_range),
       safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
-      engineData: {},
+      engineData: this.engineSecrets,
     };
 
     const metaResult = await this.metasearch.search(query, 'science', params);
@@ -536,7 +546,7 @@ export class SearchService {
       locale: options.language ?? 'en',
       timeRange: parseTimeRange(options.time_range),
       safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
-      engineData: {},
+      engineData: this.engineSecrets,
     };
 
     const metaResult = await this.metasearch.search(query, 'it', params);
@@ -580,7 +590,7 @@ export class SearchService {
       locale: options.language ?? 'en',
       timeRange: parseTimeRange(options.time_range),
       safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
-      engineData: {},
+      engineData: this.engineSecrets,
     };
 
     const metaResult = await this.metasearch.search(query, 'social', params);
@@ -624,7 +634,7 @@ export class SearchService {
       locale: options.language ?? 'en',
       timeRange: parseTimeRange(options.time_range),
       safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
-      engineData: {},
+      engineData: this.engineSecrets,
     };
 
     const metaResult = await this.metasearch.search(query, 'videos', params, {
@@ -670,7 +680,7 @@ export class SearchService {
       locale: options.language ?? 'en',
       timeRange: '',
       safeSearch: options.safe_search === 'strict' ? 2 : (options.safe_search === 'off' ? 0 : 1),
-      engineData: {},
+      engineData: this.engineSecrets,
     };
 
     const metaResult = await this.metasearch.search(query, 'general', params, {
@@ -711,7 +721,7 @@ export class SearchService {
       return cachedResponse;
     }
 
-    const params = toImageEngineParams(options);
+    const params = toImageEngineParams(options, this.engineSecrets);
     const metaResult = await this.metasearch.search(query, 'images', params);
     const allResults = metaResult.results.map(toImageResult);
 
@@ -775,7 +785,7 @@ export class SearchService {
       locale: 'en',
       safeSearch: 1,
       timeRange: '',
-      engineData: {},
+      engineData: this.engineSecrets,
     };
 
     const promises = reverseEngines.map((engine) =>
@@ -845,7 +855,7 @@ export class SearchService {
       locale: options.language ?? 'en',
       timeRange: parseTimeRange(options.filters?.time ?? options.time_range),
       safeSearch,
-      engineData: {},
+      engineData: this.engineSecrets,
       videoFilters: options.filters ? {
         duration: options.filters.duration,
         quality: options.filters.quality,
@@ -964,7 +974,7 @@ export class SearchService {
       return cachedResponse;
     }
 
-    const { params } = toEngineParams(newsOptions);
+    const { params } = toEngineParams(newsOptions, this.engineSecrets);
     const metaResult = await this.metasearch.search(query, 'news', params);
     const allResults = metaResult.results.map(toSearchResult);
     const filteredResults = await this.applyPostFilters(allResults, options);
