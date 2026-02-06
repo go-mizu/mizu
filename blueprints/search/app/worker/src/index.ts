@@ -16,6 +16,7 @@ import historyRoutes from './routes/history'
 import settingsRoutes from './routes/settings'
 import bangsRoutes from './routes/bangs'
 import newsRoutes from './routes/news'
+import readRoutes from './routes/read'
 import {
   widgetsRoutes,
   cheatsheetRoutes,
@@ -67,6 +68,7 @@ app.route('/api/cheatsheet', cheatsheetRoutes)
 app.route('/api/cheatsheets', cheatsheetsListRoutes)
 app.route('/api/related', relatedRoutes)
 app.route('/api/news', newsRoutes)
+app.route('/api/read', readRoutes)
 
 // Serve static frontend files for all other routes
 app.get('*', async (c) => {

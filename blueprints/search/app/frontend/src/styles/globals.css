@@ -5,9 +5,12 @@
   --search-green: #006621;
   --search-gray: #4d5156;
   --search-light-gray: #70757a;
-  --search-border: #dadce0;
+  --search-border: #e8eaed;
   --search-bg: #f8f9fa;
   --search-hover: #f1f3f4;
+  --search-primary: #1a73e8;
+  --search-text: #202124;
+  --search-text-secondary: #5f6368;
 }
 
 * {
@@ -15,12 +18,15 @@
 }
 
 body {
-  font-family: arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
   padding: 0;
   background-color: #fff;
+  color: #202124;
+  font-size: 14px;
+  line-height: 1.58;
 }
 
 /* Focus visible for accessibility */

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, X, Image, Video, Newspaper, ChevronLeft, ChevronRight, ChevronDown, ArrowUp } from 'lucide-react'
-import { SearchBox } from '../components/SearchBox'
+import { useSearchParams } from 'react-router-dom'
+import { X, ChevronLeft, ChevronRight, ChevronDown, ArrowUp } from 'lucide-react'
+import { SearchHeader } from '../components/SearchHeader'
 import { searchApi } from '../api/search'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll'
 import type { ImageResult } from '../types'
@@ -28,7 +28,6 @@ const TYPE_OPTIONS = [
 
 export default function ImagesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
   const query = searchParams.get('q') || ''
 
   const [images, setImages] = useState<ImageResult[]>([])
@@ -149,131 +148,65 @@ export default function ImagesPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 bg-white z-40 border-b border-[#e8eaed]">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-6">
-            <Link to="/">
-              <span
-                className="text-3xl font-bold"
-                style={{
-                  background: 'linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Search
-              </span>
-            </Link>
-
-            <div className="flex-1 max-w-xl">
-              <SearchBox
-                initialValue={query}
-                size="sm"
-                onSearch={handleSearch}
-              />
-            </div>
-
-            <Link
-              to="/settings"
-              className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
+      <SearchHeader
+        query={query}
+        activeTab="images"
+        onSearch={handleSearch}
+        tabsRight={
+          <div className="relative" ref={filterRef}>
+            <button
+              type="button"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
+              onClick={() => setShowFilters(!showFilters)}
             >
-              <Settings size={20} />
-            </Link>
-          </div>
-
-          {/* Tabs and Filters */}
-          <div className="flex items-center justify-between mt-2">
-            <div className="search-tabs" style={{ paddingLeft: 0 }}>
-              <button
-                type="button"
-                className="search-tab"
-                onClick={() => navigate(`/search?q=${encodeURIComponent(query)}`)}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                className="search-tab active"
-              >
-                <Image size={16} />
-                Images
-              </button>
-              <button
-                type="button"
-                className="search-tab"
-                onClick={() => navigate(`/videos?q=${encodeURIComponent(query)}`)}
-              >
-                <Video size={16} />
-                Videos
-              </button>
-              <button
-                type="button"
-                className="search-tab"
-                onClick={() => navigate(`/news?q=${encodeURIComponent(query)}`)}
-              >
-                <Newspaper size={16} />
-                News
-              </button>
-            </div>
-
-            {/* Filters */}
-            <div className="relative" ref={filterRef}>
-              <button
-                type="button"
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
-                onClick={() => setShowFilters(!showFilters)}
-              >
-                Filters
-                <ChevronDown size={16} />
-              </button>
-
-              {showFilters && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-[#e8eaed] p-4 z-50">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-[#202124] mb-2">Size</label>
-                      <select
-                        value={sizeFilter}
-                        onChange={(e) => setSizeFilter(e.target.value)}
-                        className="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-sm focus:outline-none focus:border-[#1a73e8]"
-                      >
-                        {SIZE_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[#202124] mb-2">Color</label>
-                      <select
-                        value={colorFilter}
-                        onChange={(e) => setColorFilter(e.target.value)}
-                        className="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-sm focus:outline-none focus:border-[#1a73e8]"
-                      >
-                        {COLOR_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[#202124] mb-2">Type</label>
-                      <select
-                        value={typeFilter}
-                        onChange={(e) => setTypeFilter(e.target.value)}
-                        className="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-sm focus:outline-none focus:border-[#1a73e8]"
-                      >
-                        {TYPE_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
+              Filters
+              <ChevronDown size={16} />
+            </button>
+            {showFilters && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-[#e8eaed] p-4 z-50">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#202124] mb-2">Size</label>
+                    <select
+                      value={sizeFilter}
+                      onChange={(e) => setSizeFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-sm focus:outline-none focus:border-[#1a73e8]"
+                    >
+                      {SIZE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#202124] mb-2">Color</label>
+                    <select
+                      value={colorFilter}
+                      onChange={(e) => setColorFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-sm focus:outline-none focus:border-[#1a73e8]"
+                    >
+                      {COLOR_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#202124] mb-2">Type</label>
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-[#dadce0] rounded-lg text-sm focus:outline-none focus:border-[#1a73e8]"
+                    >
+                      {TYPE_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Main content */}
       <main>
@@ -329,7 +262,7 @@ export default function ImagesPage() {
               {/* Loading more indicator */}
               {scrollLoading && (
                 <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-3 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
 

@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
-import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, Image, Video, Newspaper, ChevronLeft, ChevronRight, Clock, ExternalLink } from 'lucide-react'
-import { SearchBox } from '../components/SearchBox'
+import { useSearchParams } from 'react-router-dom'
+import { Newspaper, ChevronLeft, ChevronRight, Clock, ExternalLink } from 'lucide-react'
+import { SearchHeader } from '../components/SearchHeader'
+import { Pagination } from '../components/Pagination'
 import { searchApi } from '../api/search'
 import type { NewsResult } from '../types'
 
@@ -39,7 +40,6 @@ function getSourceInitial(source: string | undefined): string {
 
 export default function NewsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
   const query = searchParams.get('q') || ''
   const page = parseInt(searchParams.get('page') || '1', 10)
 
@@ -104,97 +104,13 @@ export default function NewsPage() {
 
   const totalPages = Math.ceil(totalResults / PER_PAGE)
 
-  // Generate pagination numbers with sliding window
-  const getPaginationNumbers = () => {
-    const numbers: number[] = []
-    const windowSize = 5
-    let start = Math.max(1, page - Math.floor(windowSize / 2))
-    const end = Math.min(totalPages, start + windowSize - 1)
-
-    if (end - start + 1 < windowSize) {
-      start = Math.max(1, end - windowSize + 1)
-    }
-
-    for (let i = start; i <= end; i++) {
-      numbers.push(i)
-    }
-    return numbers
-  }
-
   return (
-    <div className="min-h-screen bg-[#f8f9fa]">
-      {/* Header */}
-      <header className="sticky top-0 bg-white z-50 border-b border-[#e8eaed]">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-6">
-            <Link to="/">
-              <span
-                className="text-3xl font-bold"
-                style={{
-                  background: 'linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Search
-              </span>
-            </Link>
-
-            <div className="flex-1 max-w-xl">
-              <SearchBox
-                initialValue={query}
-                size="sm"
-                onSearch={handleSearch}
-              />
-            </div>
-
-            <Link
-              to="/settings"
-              className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
-            >
-              <Settings size={20} />
-            </Link>
-          </div>
-
-          {/* Tabs */}
-          <div className="search-tabs mt-2" style={{ paddingLeft: 0 }}>
-            <button
-              type="button"
-              className="search-tab"
-              onClick={() => navigate(`/search?q=${encodeURIComponent(query)}`)}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              className="search-tab"
-              onClick={() => navigate(`/images?q=${encodeURIComponent(query)}`)}
-            >
-              <Image size={16} />
-              Images
-            </button>
-            <button
-              type="button"
-              className="search-tab"
-              onClick={() => navigate(`/videos?q=${encodeURIComponent(query)}`)}
-            >
-              <Video size={16} />
-              Videos
-            </button>
-            <button
-              type="button"
-              className="search-tab active"
-            >
-              <Newspaper size={16} />
-              News
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-white">
+      <SearchHeader query={query} activeTab="news" onSearch={handleSearch} />
 
       {/* Main content */}
       <main>
-        <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
@@ -241,7 +157,7 @@ export default function NewsPage() {
                           href={article.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-shrink-0 w-80 bg-white rounded-xl shadow-sm border border-[#e8eaed] overflow-hidden hover:shadow-md transition-shadow"
+                          className="flex-shrink-0 w-80 bg-white rounded-lg shadow-sm border border-[#e8eaed] overflow-hidden hover:shadow-md transition-shadow"
                         >
                           {(article.image_url || article.thumbnail_url) && (
                             <div className="h-40 bg-[#f1f3f4]">
@@ -292,7 +208,7 @@ export default function NewsPage() {
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block bg-white rounded-xl shadow-sm border border-[#e8eaed] overflow-hidden hover:shadow-md transition-shadow"
+                    className="block bg-white rounded-lg shadow-sm border border-[#e8eaed] overflow-hidden hover:shadow-md transition-shadow"
                   >
                     <div className="flex">
                       <div className="flex-1 p-5">
@@ -363,80 +279,7 @@ export default function NewsPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-8 py-4">
-                  {/* Previous */}
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange(page - 1)}
-                    disabled={page <= 1}
-                    className="flex items-center gap-1 px-4 py-2 text-sm text-[#1a73e8] hover:bg-[#e8f0fe] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft size={18} />
-                    Previous
-                  </button>
-
-                  {/* First page */}
-                  {getPaginationNumbers()[0] > 1 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => handlePageChange(1)}
-                        className="w-10 h-10 text-sm text-[#1a73e8] hover:bg-[#e8f0fe] rounded-lg transition-colors"
-                      >
-                        1
-                      </button>
-                      {getPaginationNumbers()[0] > 2 && (
-                        <span className="text-[#70757a]">...</span>
-                      )}
-                    </>
-                  )}
-
-                  {/* Page numbers */}
-                  {getPaginationNumbers().map(pageNum => (
-                    <button
-                      key={pageNum}
-                      type="button"
-                      onClick={() => handlePageChange(pageNum)}
-                      className={`w-10 h-10 text-sm rounded-lg transition-colors ${
-                        page === pageNum
-                          ? 'bg-[#1a73e8] text-white'
-                          : 'text-[#1a73e8] hover:bg-[#e8f0fe]'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  ))}
-
-                  {/* Last page */}
-                  {getPaginationNumbers()[getPaginationNumbers().length - 1] < totalPages && (
-                    <>
-                      {getPaginationNumbers()[getPaginationNumbers().length - 1] < totalPages - 1 && (
-                        <span className="text-[#70757a]">...</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handlePageChange(totalPages)}
-                        className="w-10 h-10 text-sm text-[#1a73e8] hover:bg-[#e8f0fe] rounded-lg transition-colors"
-                      >
-                        {totalPages}
-                      </button>
-                    </>
-                  )}
-
-                  {/* Next */}
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange(page + 1)}
-                    disabled={page >= totalPages}
-                    className="flex items-center gap-1 px-4 py-2 text-sm text-[#1a73e8] hover:bg-[#e8f0fe] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-              )}
+              <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
             </>
           ) : query ? (
             <div className="py-12 text-center">

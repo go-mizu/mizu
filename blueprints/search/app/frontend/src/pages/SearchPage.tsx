@@ -1,18 +1,18 @@
 import { useEffect, useState, useRef } from 'react'
-import { useSearchParams, Link, useNavigate } from 'react-router-dom'
-import { Settings, Image, Video, Newspaper, ChevronDown, Sparkles, ExternalLink } from 'lucide-react'
-import { SearchBox } from '../components/SearchBox'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { ChevronDown, ExternalLink } from 'lucide-react'
+import { SearchHeader } from '../components/SearchHeader'
+import { Pagination } from '../components/Pagination'
 import { SearchResult } from '../components/SearchResult'
 import { InstantAnswer } from '../components/InstantAnswer'
 import { KnowledgePanel } from '../components/KnowledgePanel'
 import { AISummary } from '../components/ai'
 import { CheatSheetWidget, RelatedSearchesWidget } from '../components/widgets'
+import { ReaderView } from '../components/ReaderView'
 import { searchApi } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
 import { useAIStore } from '../stores/aiStore'
 import type { SearchResponse, CheatSheet } from '../types'
-
-type SearchTab = 'all' | 'ai' | 'images' | 'videos' | 'news'
 
 const TIME_OPTIONS = [
   { value: '', label: 'Any time' },
@@ -28,13 +28,12 @@ export default function SearchPage() {
   const query = searchParams.get('q') || ''
   const page = parseInt(searchParams.get('page') || '1', 10)
   const timeFilter = searchParams.get('time') || ''
-  const [activeTab] = useState<SearchTab>('all')
-
   const [results, setResults] = useState<SearchResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showTimeDropdown, setShowTimeDropdown] = useState(false)
   const [bangRedirect, setBangRedirect] = useState<{ url: string; name: string } | null>(null)
+  const [readerUrl, setReaderUrl] = useState<string | null>(null)
   const timeDropdownRef = useRef<HTMLDivElement>(null)
 
   const { settings, addRecentSearch } = useSearchStore()
@@ -123,126 +122,28 @@ export default function SearchPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="sticky top-0 bg-white z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center gap-6">
-            {/* Logo */}
-            <Link to="/">
-              <span
-                className="text-3xl font-bold"
-                style={{
-                  background: 'linear-gradient(90deg, #4285F4, #EA4335, #FBBC05, #34A853)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Search
-              </span>
-            </Link>
-
-            {/* Search box */}
-            <div className="flex-1 max-w-xl">
-              <SearchBox
-                initialValue={query}
-                size="sm"
-                onSearch={handleSearch}
-              />
-            </div>
-
-            {/* AI Sessions */}
-            {aiAvailable && (
-              <Link
-                to="/ai/sessions"
-                className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
-                title="AI Research Sessions"
-              >
-                <Sparkles size={20} />
-              </Link>
+      <SearchHeader
+        query={query}
+        activeTab="all"
+        onSearch={handleSearch}
+        tabsRight={
+          <div className="time-filter" ref={timeDropdownRef}>
+            <button type="button" className="time-filter-button" onClick={() => setShowTimeDropdown(!showTimeDropdown)}>
+              {currentTimeLabel}
+              <ChevronDown size={16} />
+            </button>
+            {showTimeDropdown && (
+              <div className="time-filter-dropdown">
+                {TIME_OPTIONS.map(option => (
+                  <button key={option.value} type="button" className={`time-filter-option ${timeFilter === option.value ? 'active' : ''}`} onClick={() => handleTimeFilter(option.value)}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             )}
-
-            {/* Settings */}
-            <Link
-              to="/settings"
-              className="p-2 text-[#5f6368] hover:bg-[#f1f3f4] rounded-full transition-colors"
-            >
-              <Settings size={20} />
-            </Link>
           </div>
-
-          {/* Tabs */}
-          <div className="search-tabs mt-2" style={{ paddingLeft: 0 }}>
-            <button
-              type="button"
-              className={`search-tab ${activeTab === 'all' ? 'active' : ''}`}
-              onClick={() => navigate(`/search?q=${encodeURIComponent(query)}`)}
-            >
-              All
-            </button>
-            {aiAvailable && (
-              <button
-                type="button"
-                className={`search-tab ${activeTab === 'ai' ? 'active' : ''}`}
-                onClick={() => navigate(`/ai?q=${encodeURIComponent(query)}`)}
-              >
-                <Sparkles size={16} />
-                AI
-              </button>
-            )}
-            <button
-              type="button"
-              className={`search-tab ${activeTab === 'images' ? 'active' : ''}`}
-              onClick={() => navigate(`/images?q=${encodeURIComponent(query)}`)}
-            >
-              <Image size={16} />
-              Images
-            </button>
-            <button
-              type="button"
-              className={`search-tab ${activeTab === 'videos' ? 'active' : ''}`}
-              onClick={() => navigate(`/videos?q=${encodeURIComponent(query)}`)}
-            >
-              <Video size={16} />
-              Videos
-            </button>
-            <button
-              type="button"
-              className={`search-tab ${activeTab === 'news' ? 'active' : ''}`}
-              onClick={() => navigate(`/news?q=${encodeURIComponent(query)}`)}
-            >
-              <Newspaper size={16} />
-              News
-            </button>
-
-            {/* Time filter */}
-            <div className="time-filter ml-auto" ref={timeDropdownRef}>
-              <button
-                type="button"
-                className="time-filter-button"
-                onClick={() => setShowTimeDropdown(!showTimeDropdown)}
-              >
-                {currentTimeLabel}
-                <ChevronDown size={16} />
-              </button>
-
-              {showTimeDropdown && (
-                <div className="time-filter-dropdown">
-                  {TIME_OPTIONS.map(option => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`time-filter-option ${timeFilter === option.value ? 'active' : ''}`}
-                      onClick={() => handleTimeFilter(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Main content */}
       <main>
@@ -337,7 +238,7 @@ export default function SearchPage() {
 
                   {/* Results list */}
                   {(results.results || []).map((result) => (
-                    <SearchResult key={result.id} result={result} />
+                    <SearchResult key={result.id} result={result} onRead={setReaderUrl} />
                   ))}
 
                   {/* Related searches - from widgets or response */}
@@ -359,47 +260,7 @@ export default function SearchPage() {
                   })()}
 
                   {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="pagination">
-                      {page > 1 && (
-                        <button
-                          type="button"
-                          className="pagination-item"
-                          onClick={() => handlePageChange(page - 1)}
-                        >
-                          &lt;
-                        </button>
-                      )}
-                      {(() => {
-                        // Sliding window pagination
-                        const windowSize = 10
-                        let start = Math.max(1, page - Math.floor(windowSize / 2))
-                        const end = Math.min(totalPages, start + windowSize - 1)
-                        if (end - start + 1 < windowSize) {
-                          start = Math.max(1, end - windowSize + 1)
-                        }
-                        return Array.from({ length: end - start + 1 }, (_, i) => start + i).map(pageNum => (
-                          <button
-                            key={pageNum}
-                            type="button"
-                            className={`pagination-item ${page === pageNum ? 'active' : ''}`}
-                            onClick={() => handlePageChange(pageNum)}
-                          >
-                            {pageNum}
-                          </button>
-                        ))
-                      })()}
-                      {page < totalPages && (
-                        <button
-                          type="button"
-                          className="pagination-item"
-                          onClick={() => handlePageChange(page + 1)}
-                        >
-                          &gt;
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
                 </div>
               ) : (
                 <div className="py-12 text-center">
@@ -417,6 +278,11 @@ export default function SearchPage() {
           </div>
         </div>
       </main>
+
+      {/* Reader panel */}
+      {readerUrl && (
+        <ReaderView url={readerUrl} onClose={() => setReaderUrl(null)} />
+      )}
     </div>
   )
 }

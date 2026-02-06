@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
-import { MoreVertical, ThumbsUp, ThumbsDown, Ban } from 'lucide-react'
+import { MoreVertical, ThumbsUp, ThumbsDown, Ban, BookOpen } from 'lucide-react'
 import type { SearchResult as SearchResultType } from '../types'
 import { searchApi } from '../api/search'
 import { useSearchStore } from '../stores/searchStore'
 
 interface SearchResultProps {
   result: SearchResultType
+  onRead?: (url: string) => void
 }
 
-export function SearchResult({ result }: SearchResultProps) {
+export function SearchResult({ result, onRead }: SearchResultProps) {
   const { settings } = useSearchStore()
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -62,6 +63,21 @@ export function SearchResult({ result }: SearchResultProps) {
         <span>{displayUrl.domain}</span>
         {displayUrl.path && (
           <span className="search-result-breadcrumb">› {displayUrl.path}</span>
+        )}
+
+        {/* Read button */}
+        {onRead && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              onRead(result.url)
+            }}
+            className="opacity-0 group-hover:opacity-100 ml-2 p-1 text-[#70757a] hover:text-[#1a73e8] hover:bg-[#e8f0fe] rounded-full transition-all"
+            title="Read page"
+          >
+            <BookOpen size={14} />
+          </button>
         )}
 
         {/* Actions menu */}
