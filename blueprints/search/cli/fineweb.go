@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/engine/fineweb"
-	fwdownloader "github.com/go-mizu/mizu/blueprints/search/pkg/fineweb"
+	fwdownloader "github.com/go-mizu/mizu/blueprints/search/pkg/fw2"
 	"github.com/spf13/cobra"
 )
 

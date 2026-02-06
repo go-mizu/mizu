@@ -1,4 +1,4 @@
-package fineweb
+package fw2
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package fineweb
+package fw1
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 type CacheData struct {
 	Configs   []DatasetConfig          `json:"configs,omitempty"`
 	Sizes     *DatasetSizeInfo         `json:"sizes,omitempty"`
-	Files     map[string][]FileInfo    `json:"files,omitempty"`    // key: "lang/split"
+	Files     map[string][]FileInfo    `json:"files,omitempty"` // key: dump name
 	FetchedAt time.Time               `json:"fetched_at"`
 }
 
@@ -21,15 +21,14 @@ type Cache struct {
 	ttl  time.Duration
 }
 
-// DefaultCacheTTL is how long cached data remains valid.
-const DefaultCacheTTL = 24 * time.Hour
+const defaultCacheTTL = 24 * time.Hour
 
-// NewCache creates a cache at ~/.cache/search/fineweb.json.
+// NewCache creates a cache at ~/.cache/search/fw1.json.
 func NewCache() *Cache {
 	home, _ := os.UserHomeDir()
 	return &Cache{
-		path: filepath.Join(home, ".cache", "search", "fineweb.json"),
-		ttl:  DefaultCacheTTL,
+		path: filepath.Join(home, ".cache", "search", "fw1.json"),
+		ttl:  defaultCacheTTL,
 	}
 }
 
@@ -62,7 +61,7 @@ func (c *Cache) Save(cd *CacheData) error {
 	return os.WriteFile(c.path, data, 0644)
 }
 
-// Age returns how long ago the cache was written. Returns 0 if no cache.
+// Age returns how long ago the cache was written.
 func (c *Cache) Age() time.Duration {
 	cd := c.Load()
 	if cd == nil {

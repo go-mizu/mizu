@@ -70,7 +70,7 @@ Get started:
 	root.AddCommand(NewCrawl())
 	root.AddCommand(NewRecrawl())
 	root.AddCommand(NewAnalytics())
-	root.AddCommand(NewDownload())
+	root.AddCommand(NewFW2())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
