@@ -55,6 +55,7 @@ import { ImgurEngine } from './imgur';
 import { YahooNewsEngine } from './yahoo-news';
 import { ReutersEngine } from './reuters';
 import { HackerNewsEngine } from './hackernews';
+import { GoogleNewsRSSEngine } from './google-news-rss';
 
 // === Academic Engines ===
 import { ArxivEngine } from './arxiv';
@@ -370,6 +371,7 @@ export function createDefaultMetaSearch(): MetaSearch {
   ms.register(new YahooNewsEngine());
   ms.register(new ReutersEngine());
   ms.register(new HackerNewsEngine());
+  ms.register(new GoogleNewsRSSEngine());
 
   // === Academic/Science Engines ===
   ms.register(new ArxivEngine());

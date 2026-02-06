@@ -159,12 +159,14 @@ export interface NewsResult {
   title: string
   snippet: string
   source: string
-  source_name?: string
   source_domain?: string
+  author?: string
   image_url?: string
   thumbnail_url?: string
   published_at: string
   engine?: string
+  engines?: string[]
+  metadata?: Record<string, unknown>
 }
 
 export interface SearchHistory {

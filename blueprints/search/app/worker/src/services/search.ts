@@ -15,6 +15,8 @@ import type {
   VideoResult,
   VideoSourceInfo,
   VideoDuration,
+  NewsResult,
+  NewsTabResponse,
 } from '../types';
 import type { CacheStore } from '../store/cache';
 import type { KVStore } from '../store/kv';
@@ -207,6 +209,28 @@ function toSearchResult(r: EngineResult, index: number): SearchResult {
     engine: r.engine,
     engines: [r.engine],
     metadata: buildMetadata(r),
+  };
+}
+
+/**
+ * Convert EngineResult to NewsResult format with proper field mapping.
+ */
+function toNewsResult(r: EngineResult, index: number): NewsResult {
+  const domain = extractDomain(r.url);
+  return {
+    id: `${Date.now().toString(36)}-${index}`,
+    url: r.url,
+    title: r.title,
+    snippet: r.content,
+    source: r.source || domain,
+    source_domain: domain,
+    author: r.author || (r.metadata?.authors as string[])?.join(', ') || undefined,
+    image_url: r.thumbnailUrl || undefined,
+    thumbnail_url: r.thumbnailUrl || undefined,
+    published_at: r.publishedAt || new Date().toISOString(),
+    engine: r.engine,
+    engines: [r.engine],
+    metadata: r.metadata,
   };
 }
 
@@ -440,7 +464,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -498,7 +522,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -545,7 +569,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -592,7 +616,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -639,7 +663,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -688,7 +712,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -737,7 +761,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getImageSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -863,7 +887,7 @@ export class SearchService {
     if (!options.refetch) {
       const cachedResponse = await this.cache.getVideoSearch(cacheHash);
       if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+        return { ...cachedResponse, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
@@ -986,42 +1010,60 @@ export class SearchService {
   }
 
   /**
-   * Search for news.
+   * Search for news. Returns NewsTabResponse with properly mapped NewsResult fields.
    */
-  async searchNews(query: string, options: SearchOptions): Promise<SearchResponse> {
+  async searchNews(query: string, options: SearchOptions): Promise<NewsTabResponse> {
     const startTime = Date.now();
     const newsOptions: SearchOptions = { ...options, file_type: 'news' };
     const cacheHash = hashSearchKey(`news:${query}`, newsOptions);
 
     if (!options.refetch) {
-      const cachedResponse = await this.cache.getSearch(cacheHash);
-      if (cachedResponse) {
-        return { ...cachedResponse, cached: true };
+      const cached = await this.cache.getNewsSearch(cacheHash);
+      if (cached) {
+        return { ...cached, cached: true, search_time_ms: Date.now() - startTime };
       }
     }
 
     const { params } = toEngineParams(newsOptions, this.engineSecrets);
     const metaResult = await this.metasearch.search(query, 'news', params);
-    const allResults = metaResult.results.map(toSearchResult);
-    const filteredResults = await this.applyPostFilters(allResults, options);
-    const startIndex = (options.page - 1) * options.per_page;
-    const endIndex = startIndex + options.per_page;
-    const paginatedResults = filteredResults.slice(startIndex, endIndex);
-    const totalResults = filteredResults.length;
+
+    // Convert to NewsResult with proper field names
+    let allResults = metaResult.results.map(toNewsResult);
+
+    // Apply domain filters
+    if (options.site) {
+      allResults = allResults.filter((r) => matchesDomain(r.url, options.site!));
+    }
+    if (options.exclude_site) {
+      allResults = allResults.filter((r) => !matchesDomain(r.url, options.exclude_site!));
+    }
+
+    // Sort by published date (newest first)
+    allResults.sort((a, b) => {
+      const dateA = new Date(a.published_at).getTime();
+      const dateB = new Date(b.published_at).getTime();
+      return dateB - dateA;
+    });
+
+    const perPage = options.per_page || 20;
+    const startIndex = (options.page - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginatedResults = allResults.slice(startIndex, endIndex);
+    const totalResults = allResults.length;
     const hasMore = endIndex < totalResults;
 
-    const response: SearchResponse = {
+    const response: NewsTabResponse = {
       query,
       total_results: totalResults,
       results: paginatedResults,
       search_time_ms: Date.now() - startTime,
       page: options.page,
-      per_page: options.per_page,
+      per_page: perPage,
       has_more: hasMore,
       cached: false,
     };
 
-    await this.cache.setSearch(cacheHash, response);
+    await this.cache.setNewsSearch(cacheHash, response);
     return response;
   }
 

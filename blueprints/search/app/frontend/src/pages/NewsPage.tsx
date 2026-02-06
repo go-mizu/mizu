@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Newspaper, ChevronLeft, ChevronRight, Clock, ExternalLink } from 'lucide-react'
+import { Newspaper, ChevronLeft, ChevronRight, Clock, User } from 'lucide-react'
 import { SearchHeader } from '../components/SearchHeader'
 import { Pagination } from '../components/Pagination'
 import { searchApi } from '../api/search'
@@ -10,6 +10,7 @@ const PER_PAGE = 20
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
+  if (isNaN(date.getTime())) return ''
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / (1000 * 60))
@@ -17,18 +18,26 @@ function formatRelativeTime(dateString: string): string {
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
   if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
-  return date.toLocaleDateString()
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  if (diffDays < 7) return `${diffDays}d ago`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+}
+
+function isBreaking(dateString: string): boolean {
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return false
+  return Date.now() - date.getTime() < 3600000
 }
 
 function getSourceFavicon(source: string | undefined, url: string): string {
   if (!source && !url) return ''
   try {
-    const domain = source || new URL(url).hostname
+    const domain = new URL(url).hostname
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
   } catch {
+    if (source) return `https://www.google.com/s2/favicons?domain=${source}&sz=32`
     return ''
   }
 }
@@ -65,7 +74,6 @@ export default function NewsPage() {
         const response = await searchApi.searchNews(query, { page, per_page: PER_PAGE })
         const results = response.results || []
 
-        // First 5 results are "top stories" (only on page 1)
         if (page === 1 && results.length > 5) {
           setTopStories(results.slice(0, 5))
           setNews(results.slice(5))
@@ -74,7 +82,6 @@ export default function NewsPage() {
           setNews(results)
         }
 
-        // Estimate total (SearXNG doesn't always provide this)
         setTotalResults(response.total_results || results.length * 10)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Search failed')
@@ -108,12 +115,11 @@ export default function NewsPage() {
     <div className="min-h-screen bg-white">
       <SearchHeader query={query} activeTab="news" onSearch={handleSearch} />
 
-      {/* Main content */}
       <main>
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="max-w-3xl mx-auto px-4 py-4">
           {isLoading ? (
             <div className="flex justify-center py-12">
-              <div className="w-8 h-8 border-4 border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
+              <div className="w-8 h-8 border-[3px] border-[#1a73e8] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : error ? (
             <div className="py-12 text-center">
@@ -123,32 +129,30 @@ export default function NewsPage() {
             <>
               {/* Top Stories Carousel */}
               {topStories.length > 0 && (
-                <div className="mb-8">
-                  <h2 className="text-lg font-medium text-[#202124] mb-4 flex items-center gap-2">
-                    <Newspaper size={20} className="text-[#1a73e8]" />
+                <div className="mb-6">
+                  <h2 className="text-base font-medium text-[#202124] mb-3 flex items-center gap-2">
+                    <Newspaper size={18} className="text-[#1a73e8]" />
                     Top Stories
                   </h2>
                   <div className="relative">
-                    {/* Carousel navigation */}
                     <button
                       type="button"
                       onClick={() => scrollCarousel('left')}
-                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 z-10 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-[#5f6368] hover:text-[#202124] transition-colors"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 z-10 w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center text-[#5f6368] hover:text-[#202124] transition-colors border border-[#dadce0]"
                     >
-                      <ChevronLeft size={24} />
+                      <ChevronLeft size={18} />
                     </button>
                     <button
                       type="button"
                       onClick={() => scrollCarousel('right')}
-                      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 z-10 w-10 h-10 bg-white rounded-full shadow-lg flex items-center justify-center text-[#5f6368] hover:text-[#202124] transition-colors"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 z-10 w-8 h-8 bg-white rounded-full shadow-md flex items-center justify-center text-[#5f6368] hover:text-[#202124] transition-colors border border-[#dadce0]"
                     >
-                      <ChevronRight size={24} />
+                      <ChevronRight size={18} />
                     </button>
 
-                    {/* Carousel container */}
                     <div
                       ref={carouselRef}
-                      className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth pb-2"
+                      className="flex gap-3 overflow-x-auto scroll-smooth pb-1"
                       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                     >
                       {topStories.map((article, index) => (
@@ -157,40 +161,55 @@ export default function NewsPage() {
                           href={article.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-shrink-0 w-80 bg-white rounded-lg shadow-sm border border-[#dadce0] overflow-hidden hover:shadow-md transition-shadow"
+                          className="flex-shrink-0 w-[260px] bg-white rounded-lg border border-[#dadce0] overflow-hidden hover:shadow-md transition-shadow group"
                         >
-                          {(article.image_url || article.thumbnail_url) && (
-                            <div className="h-40 bg-[#f1f3f4]">
+                          {(article.image_url || article.thumbnail_url) ? (
+                            <div className="h-[140px] bg-[#f8f9fa] overflow-hidden">
                               <img
                                 src={article.image_url || article.thumbnail_url}
                                 alt=""
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                loading="lazy"
                                 onError={(e) => {
                                   e.currentTarget.parentElement!.style.display = 'none'
                                 }}
                               />
                             </div>
+                          ) : (
+                            <div className="h-[140px] bg-gradient-to-br from-[#e8f0fe] to-[#f8f9fa] flex items-center justify-center">
+                              <Newspaper size={32} className="text-[#dadce0]" />
+                            </div>
                           )}
-                          <div className="p-4">
-                            <div className="flex items-center gap-2 mb-2">
+                          <div className="p-3">
+                            <div className="flex items-center gap-1.5 mb-1.5">
                               <img
-                                src={getSourceFavicon(article.source || article.source_name, article.url)}
+                                src={getSourceFavicon(article.source, article.url)}
                                 alt=""
-                                className="w-4 h-4 rounded"
+                                className="w-4 h-4 rounded-sm"
+                                loading="lazy"
                                 onError={(e) => {
                                   e.currentTarget.style.display = 'none'
+                                  const parent = e.currentTarget.parentElement
+                                  if (parent) {
+                                    const span = document.createElement('span')
+                                    span.className = 'w-4 h-4 rounded-sm bg-[#e8eaed] flex items-center justify-center text-[8px] font-bold text-[#5f6368]'
+                                    span.textContent = getSourceInitial(article.source)
+                                    parent.insertBefore(span, parent.firstChild)
+                                  }
                                 }}
                               />
-                              <span className="text-xs text-[#70757a]">
-                                {article.source || article.source_name || article.source_domain}
+                              <span className="text-xs text-[#70757a] truncate">
+                                {article.source || article.source_domain}
                               </span>
                             </div>
-                            <h3 className="text-sm font-medium text-[#202124] line-clamp-2">
+                            <h3 className="text-[13px] font-medium text-[#202124] line-clamp-2 leading-tight">
                               {article.title}
                             </h3>
-                            <div className="flex items-center gap-1 mt-2 text-xs text-[#70757a]">
-                              <Clock size={12} />
-                              <span>{article.published_at ? formatRelativeTime(article.published_at) : ''}</span>
+                            <div className="flex items-center gap-1 mt-2 text-[11px] text-[#70757a]">
+                              <Clock size={10} />
+                              <span className={isBreaking(article.published_at) ? 'text-[#1a73e8] font-medium' : ''}>
+                                {formatRelativeTime(article.published_at)}
+                              </span>
                             </div>
                           </div>
                         </a>
@@ -200,81 +219,84 @@ export default function NewsPage() {
                 </div>
               )}
 
-              {/* News Cards */}
-              <div className="space-y-4">
+              {/* News Cards List */}
+              <div className="space-y-0 divide-y divide-[#e8eaed]">
                 {news.map((article, index) => (
                   <a
                     key={`news-${article.id}-${index}`}
                     href={article.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block bg-white rounded-lg shadow-sm border border-[#dadce0] overflow-hidden hover:shadow-md transition-shadow"
+                    className="flex gap-4 py-5 group"
                   >
-                    <div className="flex">
-                      <div className="flex-1 p-5">
-                        {/* Source with favicon */}
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="w-6 h-6 rounded-full bg-[#f1f3f4] flex items-center justify-center overflow-hidden">
-                            <img
-                              src={getSourceFavicon(article.source || article.source_name, article.url)}
-                              alt=""
-                              className="w-5 h-5"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none'
-                                const parent = e.currentTarget.parentElement
-                                if (parent) {
-                                  parent.innerHTML = `<span class="text-xs font-medium text-[#5f6368]">${getSourceInitial(article.source || article.source_name)}</span>`
-                                }
-                              }}
-                            />
-                          </div>
-                          <span className="text-sm font-medium text-[#202124]">
-                            {article.source || article.source_name || article.source_domain}
-                          </span>
-                          <span className="text-[#70757a]">•</span>
-                          <span className={`text-sm flex items-center gap-1 ${
-                            article.published_at && new Date(article.published_at).getTime() > Date.now() - 3600000
-                              ? 'text-[#1a73e8] font-medium'
-                              : 'text-[#70757a]'
-                          }`}>
-                            <Clock size={14} />
-                            {article.published_at ? formatRelativeTime(article.published_at) : ''}
-                          </span>
-                        </div>
-
-                        {/* Title */}
-                        <h3 className="text-lg font-medium text-[#202124] line-clamp-2 hover:text-[#1a73e8] transition-colors">
-                          {article.title}
-                        </h3>
-
-                        {/* Snippet */}
-                        {article.snippet && (
-                          <p className="text-sm text-[#4d5156] mt-2 line-clamp-2">
-                            {article.snippet}
-                          </p>
-                        )}
-
-                        {/* External link indicator */}
-                        <div className="mt-3 flex items-center gap-1 text-xs text-[#70757a]">
-                          <ExternalLink size={12} />
-                          <span>Opens in new tab</span>
-                        </div>
-                      </div>
-
-                      {/* Image */}
-                      {(article.image_url || article.thumbnail_url) && (
-                        <div className="flex-shrink-0 w-48 bg-[#f1f3f4]">
+                    {/* Text content */}
+                    <div className="flex-1 min-w-0">
+                      {/* Source line: favicon + source + author + time */}
+                      <div className="flex items-center gap-1.5 mb-2 text-xs">
+                        <div className="w-5 h-5 rounded-full bg-[#f1f3f4] flex items-center justify-center overflow-hidden flex-shrink-0">
                           <img
-                            src={article.image_url || article.thumbnail_url}
+                            src={getSourceFavicon(article.source, article.url)}
                             alt=""
-                            className="w-full h-full object-cover"
+                            className="w-4 h-4"
+                            loading="lazy"
                             onError={(e) => {
-                              e.currentTarget.parentElement!.style.display = 'none'
+                              e.currentTarget.style.display = 'none'
+                              const parent = e.currentTarget.parentElement
+                              if (parent) {
+                                parent.innerHTML = `<span class="text-[10px] font-bold text-[#5f6368]">${getSourceInitial(article.source)}</span>`
+                              }
                             }}
                           />
                         </div>
+                        <span className="font-medium text-[#202124] truncate">
+                          {article.source || article.source_domain}
+                        </span>
+                        {article.author && (
+                          <>
+                            <span className="text-[#bdc1c6]">/</span>
+                            <span className="text-[#5f6368] truncate flex items-center gap-0.5">
+                              <User size={10} className="flex-shrink-0" />
+                              {article.author}
+                            </span>
+                          </>
+                        )}
+                        <span className="text-[#bdc1c6]">&middot;</span>
+                        <span className={`flex-shrink-0 ${
+                          isBreaking(article.published_at)
+                            ? 'text-[#1a73e8] font-medium'
+                            : 'text-[#70757a]'
+                        }`}>
+                          {formatRelativeTime(article.published_at)}
+                        </span>
+                      </div>
+
+                      {/* Title */}
+                      <h3 className="text-base font-medium text-[#202124] line-clamp-2 leading-snug group-hover:text-[#1a73e8] transition-colors">
+                        {article.title}
+                      </h3>
+
+                      {/* Snippet */}
+                      {article.snippet && (
+                        <p className="text-sm text-[#4d5156] mt-1.5 line-clamp-2 leading-relaxed">
+                          {article.snippet}
+                        </p>
                       )}
                     </div>
+
+                    {/* Thumbnail */}
+                    {(article.image_url || article.thumbnail_url) && (
+                      <div className="flex-shrink-0 w-[120px] h-[120px] rounded-lg overflow-hidden bg-[#f8f9fa] self-center">
+                        <img
+                          src={article.image_url || article.thumbnail_url}
+                          alt=""
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.parentElement!.style.display = 'none'
+                          }}
+                        />
+                      </div>
+                    )}
                   </a>
                 ))}
               </div>
@@ -282,12 +304,15 @@ export default function NewsPage() {
               <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
             </>
           ) : query ? (
-            <div className="py-12 text-center">
-              <p className="text-[#70757a]">No news found</p>
+            <div className="py-16 text-center">
+              <Newspaper size={48} className="mx-auto text-[#dadce0] mb-4" />
+              <p className="text-[#5f6368] text-lg">No news articles found</p>
+              <p className="text-[#70757a] text-sm mt-1">Try a different search term</p>
             </div>
           ) : (
-            <div className="py-12 text-center">
-              <p className="text-[#70757a]">Search for news</p>
+            <div className="py-16 text-center">
+              <Newspaper size={48} className="mx-auto text-[#dadce0] mb-4" />
+              <p className="text-[#5f6368] text-lg">Search for news</p>
             </div>
           )}
         </div>

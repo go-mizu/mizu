@@ -235,9 +235,14 @@ export interface NewsResult {
   title: string;
   snippet: string;
   source: string;
+  source_domain: string;
+  author?: string;
   image_url?: string;
+  thumbnail_url?: string;
   published_at: string;
-  engine?: string;
+  engine: string;
+  engines: string[];
+  metadata?: Record<string, unknown>;
 }
 
 // ========== News Types (Google News Clone) ==========
@@ -339,6 +344,7 @@ export interface NewsCategoryResponse {
   searchTimeMs: number;
 }
 
+/** Used by the Google News clone service (services/news.ts) */
 export interface NewsSearchResponse {
   query: string;
   results: NewsArticle[];
@@ -346,6 +352,18 @@ export interface NewsSearchResponse {
   searchTimeMs: number;
   page: number;
   hasMore: boolean;
+}
+
+/** Used by the news tab search (services/search.ts searchNews) */
+export interface NewsTabResponse {
+  query: string;
+  results: NewsResult[];
+  total_results: number;
+  search_time_ms: number;
+  page: number;
+  per_page: number;
+  has_more: boolean;
+  cached?: boolean;
 }
 
 // ========== Search Options & Response ==========

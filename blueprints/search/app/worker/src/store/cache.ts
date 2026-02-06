@@ -5,6 +5,7 @@ import type {
   InstantAnswer,
   ImageSearchResponse,
   VideoSearchResponse,
+  NewsTabResponse,
 } from '../types';
 
 export class CacheStore {
@@ -48,6 +49,18 @@ export class CacheStore {
 
   async setVideoSearch(hash: string, response: VideoSearchResponse): Promise<void> {
     await this.kv.put(`cache:vidsearch:${hash}`, JSON.stringify(response));
+  }
+
+  // --- News search results cache (permanent) ---
+
+  async getNewsSearch(hash: string): Promise<NewsTabResponse | null> {
+    const raw = await this.kv.get(`cache:news:${hash}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as NewsTabResponse;
+  }
+
+  async setNewsSearch(hash: string, response: NewsTabResponse): Promise<void> {
+    await this.kv.put(`cache:news:${hash}`, JSON.stringify(response));
   }
 
   // --- Suggestions cache (permanent) ---

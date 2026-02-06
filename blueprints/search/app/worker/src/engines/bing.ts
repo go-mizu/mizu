@@ -626,6 +626,8 @@ export class BingNewsEngine implements OnlineEngine {
     let content = '';
     let source = '';
     let thumbnailUrl = '';
+    let publishedAt = '';
+    let author = '';
 
     // Find title link
     const linkPattern =
@@ -664,7 +666,31 @@ export class BingNewsEngine implements OnlineEngine {
     // Find source
     const sourceElements = findElements(html, 'div.source');
     if (sourceElements.length > 0) {
-      source = extractText(sourceElements[0]).trim();
+      const sourceText = extractText(sourceElements[0]).trim();
+      // Source element may contain "Source Name · Author · 2h" pattern
+      const parts = sourceText.split(/\s*[·•]\s*/);
+      source = parts[0] || '';
+      // Check for author in data-author attribute
+      const authorMatch = html.match(/data-author\s*=\s*"([^"]+)"/i);
+      if (authorMatch) {
+        author = decodeHtmlEntities(authorMatch[1]);
+      }
+    }
+
+    // Extract published time from various patterns
+    // Pattern 1: <span> with relative time like "5h", "2d", "3w"
+    const timePatterns = [
+      /<span[^>]*class="[^"]*time[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      /<span[^>]*aria-label="[^"]*ago[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      /(\d+)\s*(minute|hour|day|week|month|year)s?\s*ago/i,
+      /(\d+)\s*([mhdwMy])\b/,
+    ];
+    for (const pattern of timePatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        publishedAt = this.parseRelativeTime(match[0]);
+        if (publishedAt) break;
+      }
     }
 
     return {
@@ -677,6 +703,48 @@ export class BingNewsEngine implements OnlineEngine {
       template: 'news',
       thumbnailUrl,
       source,
+      publishedAt: publishedAt || undefined,
+      author: author || undefined,
     };
+  }
+
+  private parseRelativeTime(text: string): string {
+    const cleaned = extractText(text).trim().toLowerCase();
+    const now = new Date();
+
+    // Match "5 hours ago", "2 days ago", etc.
+    const longMatch = cleaned.match(/(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago/i);
+    if (longMatch) {
+      const value = parseInt(longMatch[1], 10);
+      const unit = longMatch[2].toLowerCase();
+      switch (unit) {
+        case 'second': now.setSeconds(now.getSeconds() - value); break;
+        case 'minute': now.setMinutes(now.getMinutes() - value); break;
+        case 'hour': now.setHours(now.getHours() - value); break;
+        case 'day': now.setDate(now.getDate() - value); break;
+        case 'week': now.setDate(now.getDate() - value * 7); break;
+        case 'month': now.setMonth(now.getMonth() - value); break;
+        case 'year': now.setFullYear(now.getFullYear() - value); break;
+      }
+      return now.toISOString();
+    }
+
+    // Match shorthand "5h", "2d", "3w", "1m"
+    const shortMatch = cleaned.match(/(\d+)\s*([smhdwMy])\b/);
+    if (shortMatch) {
+      const value = parseInt(shortMatch[1], 10);
+      switch (shortMatch[2]) {
+        case 's': now.setSeconds(now.getSeconds() - value); break;
+        case 'm': now.setMinutes(now.getMinutes() - value); break;
+        case 'h': now.setHours(now.getHours() - value); break;
+        case 'd': now.setDate(now.getDate() - value); break;
+        case 'w': now.setDate(now.getDate() - value * 7); break;
+        case 'M': now.setMonth(now.getMonth() - value); break;
+        case 'y': now.setFullYear(now.getFullYear() - value); break;
+      }
+      return now.toISOString();
+    }
+
+    return '';
   }
 }
