@@ -1,4 +1,4 @@
-package crawler
+package recrawler
 
 import (
 	"context"
@@ -7,28 +7,6 @@ import (
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
-
-// SeedURL represents a URL loaded from the seed database.
-type SeedURL struct {
-	URL         string
-	Domain      string
-	Host        string
-	ContentType string
-	Language    string
-	TextLen     int64
-	WordCount   int64
-	TLD         string
-	Protocol    string
-}
-
-// SeedStats holds aggregate stats about the seed database.
-type SeedStats struct {
-	TotalURLs     int
-	UniqueDomains int
-	Protocols     map[string]int // HTTP vs HTTPS
-	ContentTypes  map[string]int
-	TLDs          map[string]int
-}
 
 // LoadSeedURLs reads all URLs from a DuckDB seed database.
 // The database must have a `docs` table with at least a `url` column.

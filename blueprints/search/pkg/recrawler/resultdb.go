@@ -1,30 +1,13 @@
-package crawler
+package recrawler
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
 	"sync"
-	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
-
-// RecrawlResult holds the result of recrawling a single URL.
-type RecrawlResult struct {
-	URL           string
-	StatusCode    int
-	ContentType   string
-	ContentLength int64
-	Title         string
-	Description   string
-	Language      string
-	Domain        string
-	RedirectURL   string
-	FetchTimeMs   int64
-	CrawledAt     time.Time
-	Error         string
-}
 
 // ResultDB writes recrawl results and state to DuckDB.
 type ResultDB struct {
@@ -32,7 +15,7 @@ type ResultDB struct {
 	stateDB  *sql.DB
 
 	mu      sync.Mutex
-	batch   []RecrawlResult
+	batch   []Result
 	batchSz int
 	flushed int64
 }
@@ -113,7 +96,7 @@ func (rdb *ResultDB) initSchema() error {
 }
 
 // Add queues a result for batch writing.
-func (rdb *ResultDB) Add(r RecrawlResult) {
+func (rdb *ResultDB) Add(r Result) {
 	rdb.mu.Lock()
 	rdb.batch = append(rdb.batch, r)
 	shouldFlush := len(rdb.batch) >= rdb.batchSz
@@ -132,7 +115,7 @@ func (rdb *ResultDB) Flush(ctx context.Context) error {
 		return nil
 	}
 	batch := rdb.batch
-	rdb.batch = make([]RecrawlResult, 0, rdb.batchSz)
+	rdb.batch = make([]Result, 0, rdb.batchSz)
 	rdb.mu.Unlock()
 
 	// Write results
@@ -152,7 +135,7 @@ func (rdb *ResultDB) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (rdb *ResultDB) writeBatch(ctx context.Context, batch []RecrawlResult) error {
+func (rdb *ResultDB) writeBatch(ctx context.Context, batch []Result) error {
 	tx, err := rdb.resultDB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin result tx: %w", err)
@@ -183,7 +166,7 @@ func (rdb *ResultDB) writeBatch(ctx context.Context, batch []RecrawlResult) erro
 	return tx.Commit()
 }
 
-func (rdb *ResultDB) writeState(ctx context.Context, batch []RecrawlResult) error {
+func (rdb *ResultDB) writeState(ctx context.Context, batch []Result) error {
 	tx, err := rdb.stateDB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin state tx: %w", err)

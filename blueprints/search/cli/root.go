@@ -68,6 +68,7 @@ Get started:
 	root.AddCommand(NewInit())
 	root.AddCommand(NewSeed())
 	root.AddCommand(NewCrawl())
+	root.AddCommand(NewRecrawl())
 	root.AddCommand(NewAnalytics())
 	root.AddCommand(NewDownload())
 
