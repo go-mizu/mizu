@@ -92,16 +92,18 @@ func (c *Client) ListDumps(ctx context.Context) ([]DatasetConfig, error) {
 }
 
 // ListFiles returns parquet files for a specific CC dump.
-// Paginates automatically since the tree API returns at most ~100 items per page.
+// Uses limit=1000 to fetch all files in a single request (most dumps have <500 files).
+// Falls back to skip-based pagination for extremely large dumps.
 func (c *Client) ListFiles(ctx context.Context, dump string) ([]FileInfo, error) {
 	var allFiles []FileInfo
 	pathPrefix := fmt.Sprintf("data/%s", dump)
-	cursor := ""
+	skip := 0
+	const pageLimit = 1000
 
 	for {
-		apiURL := fmt.Sprintf("%s/%s/tree/main/%s", hfAPIBase, datasetRepo, pathPrefix)
-		if cursor != "" {
-			apiURL += "?cursor=" + cursor
+		apiURL := fmt.Sprintf("%s/%s/tree/main/%s?limit=%d", hfAPIBase, datasetRepo, pathPrefix, pageLimit)
+		if skip > 0 {
+			apiURL += fmt.Sprintf("&skip=%d", skip)
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
@@ -139,7 +141,6 @@ func (c *Client) ListFiles(ctx context.Context, dump string) ([]FileInfo, error)
 			break
 		}
 
-		lastEntry := ""
 		for _, entry := range entries {
 			if entry.Type != "file" || !strings.HasSuffix(entry.Path, ".parquet") {
 				continue
@@ -158,15 +159,13 @@ func (c *Client) ListFiles(ctx context.Context, dump string) ([]FileInfo, error)
 				file.OID = entry.OID
 			}
 			allFiles = append(allFiles, file)
-			lastEntry = filepath.Base(entry.Path)
 		}
 
-		// HF tree API returns up to 1000 entries per page.
-		// If fewer, we've reached the end.
-		if len(entries) < 50 || lastEntry == "" {
+		skip += len(entries)
+
+		if len(entries) < pageLimit {
 			break
 		}
-		cursor = lastEntry
 	}
 
 	return allFiles, nil

@@ -11,7 +11,7 @@ import (
 type CacheData struct {
 	Configs   []DatasetConfig          `json:"configs,omitempty"`
 	Sizes     *DatasetSizeInfo         `json:"sizes,omitempty"`
-	Files     map[string][]FileInfo    `json:"files,omitempty"` // key: dump name
+	Files     map[string][]FileInfo    `json:"files,omitempty"` // key: dump name (permanent — file lists never change)
 	FetchedAt time.Time               `json:"fetched_at"`
 }
 
@@ -32,7 +32,8 @@ func NewCache() *Cache {
 	}
 }
 
-// Load reads the cache from disk. Returns nil if missing, expired, or corrupt.
+// Load reads the cache from disk. Returns nil if missing or corrupt.
+// Configs/Sizes respect TTL, but Files are permanent (file lists never change).
 func (c *Cache) Load() *CacheData {
 	data, err := os.ReadFile(c.path)
 	if err != nil {
@@ -43,7 +44,9 @@ func (c *Cache) Load() *CacheData {
 		return nil
 	}
 	if time.Since(cd.FetchedAt) > c.ttl {
-		return nil
+		// TTL expired: clear volatile data but keep permanent file listings
+		cd.Configs = nil
+		cd.Sizes = nil
 	}
 	return &cd
 }

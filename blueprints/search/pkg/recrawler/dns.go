@@ -14,15 +14,21 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
-// DNSResolver performs parallel DNS pre-resolution for a set of domains.
-// Domains that fail DNS lookup are marked dead, allowing their URLs to be skipped.
-// Results can be persisted to a DuckDB cache for instant reuse across runs.
-type DNSResolver struct {
-	resolver *net.Resolver
+const dnsShardCount = 64 // must be power of 2
 
+// dnsShard is a single shard of the DNS cache, each with its own lock.
+type dnsShard struct {
 	mu       sync.RWMutex
 	resolved map[string][]string // domain → IPs
 	dead     map[string]string   // domain → error message
+}
+
+// DNSResolver performs parallel DNS pre-resolution for a set of domains.
+// Uses sharded maps (64 shards) to eliminate global mutex contention.
+// Results can be persisted to a DuckDB cache for instant reuse across runs.
+type DNSResolver struct {
+	resolver *net.Resolver
+	shards   [dnsShardCount]dnsShard
 
 	// Stats
 	total    int
@@ -30,11 +36,14 @@ type DNSResolver struct {
 	failed   atomic.Int64
 	cached   atomic.Int64 // loaded from cache
 	duration time.Duration
+
+	// Per-domain lookup timeout
+	lookupTimeout time.Duration
 }
 
 // NewDNSResolver creates a DNS resolver with a custom timeout.
 func NewDNSResolver(timeout time.Duration) *DNSResolver {
-	return &DNSResolver{
+	d := &DNSResolver{
 		resolver: &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -42,21 +51,33 @@ func NewDNSResolver(timeout time.Duration) *DNSResolver {
 				return d.DialContext(ctx, "udp", address)
 			},
 		},
-		resolved: make(map[string][]string),
-		dead:     make(map[string]string),
+		lookupTimeout: 5 * time.Second, // generous per-domain timeout
 	}
+	for i := range d.shards {
+		d.shards[i].resolved = make(map[string][]string)
+		d.shards[i].dead = make(map[string]string)
+	}
+	return d
+}
+
+// shardFor returns the shard index for a domain using FNV-1a hash.
+func shardFor(domain string) int {
+	h := uint32(2166136261)
+	for i := 0; i < len(domain); i++ {
+		h ^= uint32(domain[i])
+		h *= 16777619
+	}
+	return int(h & (dnsShardCount - 1))
 }
 
 // LoadCache loads previously resolved DNS data from a DuckDB file.
-// Returns (loaded, error). Domains already in cache are skipped during Resolve().
 func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
 	if err != nil {
-		return 0, nil // cache doesn't exist yet
+		return 0, nil
 	}
 	defer db.Close()
 
-	// Check if table exists
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'dns'").Scan(&count)
 	if err != nil || count == 0 {
@@ -70,30 +91,30 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 	defer rows.Close()
 
 	loaded := 0
-	d.mu.Lock()
 	for rows.Next() {
 		var domain, ips, errMsg string
 		var dead bool
 		if err := rows.Scan(&domain, &ips, &dead, &errMsg); err != nil {
 			continue
 		}
+		s := &d.shards[shardFor(domain)]
+		s.mu.Lock()
 		if dead {
-			d.dead[domain] = errMsg
+			s.dead[domain] = errMsg
 			d.failed.Add(1)
 		} else {
-			ipList := strings.Split(ips, ",")
-			d.resolved[domain] = ipList
+			s.resolved[domain] = strings.Split(ips, ",")
 			d.ok.Add(1)
 		}
+		s.mu.Unlock()
 		loaded++
 	}
-	d.mu.Unlock()
 	d.cached.Store(int64(loaded))
 	return loaded, nil
 }
 
 // SaveCache persists DNS resolution results to a DuckDB file.
-// Uses a single transaction for maximum speed.
+// Uses batch VALUES (1000 rows/statement) for fast bulk insert.
 func (d *DNSResolver) SaveCache(dbPath string) error {
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
@@ -101,7 +122,6 @@ func (d *DNSResolver) SaveCache(dbPath string) error {
 	}
 	defer db.Close()
 
-	// Drop and recreate without PRIMARY KEY for faster bulk insert
 	db.Exec("DROP TABLE IF EXISTS dns")
 	_, err = db.Exec(`
 		CREATE TABLE dns (
@@ -116,78 +136,98 @@ func (d *DNSResolver) SaveCache(dbPath string) error {
 		return fmt.Errorf("creating dns table: %w", err)
 	}
 
-	d.mu.RLock()
-	// Collect all entries
+	// Collect all entries from all shards
 	type entry struct {
 		domain string
 		ips    string
 		dead   bool
 		errMsg string
 	}
-	entries := make([]entry, 0, len(d.resolved)+len(d.dead))
-	for domain, ips := range d.resolved {
-		entries = append(entries, entry{domain, strings.Join(ips, ","), false, ""})
-	}
-	for domain, errMsg := range d.dead {
-		entries = append(entries, entry{domain, "", true, errMsg})
-	}
-	d.mu.RUnlock()
 
-	// Single transaction, prepared statement, all rows
+	totalSize := 0
+	for i := range d.shards {
+		d.shards[i].mu.RLock()
+		totalSize += len(d.shards[i].resolved) + len(d.shards[i].dead)
+		d.shards[i].mu.RUnlock()
+	}
+
+	entries := make([]entry, 0, totalSize)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain, ips := range s.resolved {
+			entries = append(entries, entry{domain, strings.Join(ips, ","), false, ""})
+		}
+		for domain, errMsg := range s.dead {
+			entries = append(entries, entry{domain, "", true, errMsg})
+		}
+		s.mu.RUnlock()
+	}
+
+	// Batch insert using multi-row VALUES (1000 rows per statement)
+	const batchSize = 1000
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO dns (domain, ips, dead, error) VALUES (?, ?, ?, ?)`)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
+	for i := 0; i < len(entries); i += batchSize {
+		end := min(i+batchSize, len(entries))
+		batch := entries[i:end]
 
-	for _, e := range entries {
-		if _, err := stmt.Exec(e.domain, e.ips, e.dead, e.errMsg); err != nil {
-			stmt.Close()
+		var b strings.Builder
+		b.WriteString("INSERT INTO dns (domain, ips, dead, error) VALUES ")
+		args := make([]any, 0, len(batch)*4)
+		for j, e := range batch {
+			if j > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString("(?,?,?,?)")
+			args = append(args, e.domain, e.ips, e.dead, e.errMsg)
+		}
+
+		if _, err := tx.Exec(b.String(), args...); err != nil {
 			tx.Rollback()
-			return err
+			return fmt.Errorf("batch insert at offset %d: %w", i, err)
 		}
 	}
-	stmt.Close()
 
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 // Resolve performs parallel DNS lookups for all unique domains.
 // Domains already loaded from cache are skipped.
-// Returns the number of live and dead domains.
+// Uses moderate concurrency (caps at 2000 workers) to avoid overwhelming
+// the system DNS resolver, which causes false "dead" timeouts.
 func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int) (live, dead int) {
 	// Filter out already-cached domains
 	var toResolve []string
-	d.mu.RLock()
 	for _, domain := range domains {
-		if _, ok := d.resolved[domain]; ok {
-			continue
+		s := &d.shards[shardFor(domain)]
+		s.mu.RLock()
+		_, inResolved := s.resolved[domain]
+		_, inDead := s.dead[domain]
+		s.mu.RUnlock()
+		if !inResolved && !inDead {
+			toResolve = append(toResolve, domain)
 		}
-		if _, ok := d.dead[domain]; ok {
-			continue
-		}
-		toResolve = append(toResolve, domain)
 	}
-	d.mu.RUnlock()
 
 	d.total = len(domains)
 	start := time.Now()
 
+	// Cap workers to avoid overwhelming system DNS.
+	// 10K workers on macOS causes massive DNS timeout storms.
+	maxWorkers := min(workers, 2000)
+	if maxWorkers > len(toResolve) {
+		maxWorkers = max(len(toResolve), 1)
+	}
+
 	if len(toResolve) > 0 {
-		ch := make(chan string, workers*4)
+		ch := make(chan string, maxWorkers*4)
 		var wg sync.WaitGroup
 
-		// Launch workers
-		for range workers {
+		for range maxWorkers {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -197,7 +237,6 @@ func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int
 			}()
 		}
 
-		// Feed domains
 		for _, domain := range toResolve {
 			select {
 			case ch <- domain:
@@ -215,39 +254,42 @@ func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int
 }
 
 func (d *DNSResolver) resolveOne(ctx context.Context, domain string) {
-	lookupCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	lookupCtx, cancel := context.WithTimeout(ctx, d.lookupTimeout)
 	defer cancel()
 
 	addrs, err := d.resolver.LookupHost(lookupCtx, domain)
 
-	d.mu.Lock()
+	s := &d.shards[shardFor(domain)]
+	s.mu.Lock()
 	if err != nil || len(addrs) == 0 {
 		errMsg := "no addresses"
 		if err != nil {
 			errMsg = truncateStr(err.Error(), 100)
 		}
-		d.dead[domain] = errMsg
+		s.dead[domain] = errMsg
 		d.failed.Add(1)
 	} else {
-		d.resolved[domain] = addrs
+		s.resolved[domain] = addrs
 		d.ok.Add(1)
 	}
-	d.mu.Unlock()
+	s.mu.Unlock()
 }
 
 // IsDead returns true if the domain failed DNS resolution.
 func (d *DNSResolver) IsDead(domain string) bool {
-	d.mu.RLock()
-	_, dead := d.dead[domain]
-	d.mu.RUnlock()
+	s := &d.shards[shardFor(domain)]
+	s.mu.RLock()
+	_, dead := s.dead[domain]
+	s.mu.RUnlock()
 	return dead
 }
 
 // IsResolved returns true if the domain passed DNS resolution.
 func (d *DNSResolver) IsResolved(domain string) bool {
-	d.mu.RLock()
-	_, ok := d.resolved[domain]
-	d.mu.RUnlock()
+	s := &d.shards[shardFor(domain)]
+	s.mu.RLock()
+	_, ok := s.resolved[domain]
+	s.mu.RUnlock()
 	return ok
 }
 
@@ -270,21 +312,27 @@ func (d *DNSResolver) Stats() string {
 
 // DeadDomains returns the set of dead domains.
 func (d *DNSResolver) DeadDomains() map[string]bool {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	result := make(map[string]bool, len(d.dead))
-	for domain := range d.dead {
-		result[domain] = true
+	result := make(map[string]bool)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain := range s.dead {
+			result[domain] = true
+		}
+		s.mu.RUnlock()
 	}
 	return result
 }
 
 // ResolvedIPs returns the map of domain to IPs.
 func (d *DNSResolver) ResolvedIPs() map[string][]string {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	result := make(map[string][]string, len(d.resolved))
-	maps.Copy(result, d.resolved)
+	result := make(map[string][]string)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		maps.Copy(result, s.resolved)
+		s.mu.RUnlock()
+	}
 	return result
 }
 
