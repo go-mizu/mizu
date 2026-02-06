@@ -20,7 +20,7 @@ describe('JinaSearchEngine', () => {
     expect(engine.shortcut).toBe('ji');
     expect(engine.categories).toContain('general');
     expect(engine.weight).toBe(1.5);
-    expect(engine.timeout).toBe(15_000);
+    expect(engine.timeout).toBe(10_000);
     expect(engine.supportsPaging).toBe(false);
     expect(engine.maxPage).toBe(1);
   });

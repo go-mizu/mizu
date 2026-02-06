@@ -236,6 +236,48 @@ export class KVStore {
     return merged;
   }
 
+  // --- Secrets/API Keys ---
+
+  async getSecret(name: string): Promise<string | null> {
+    const raw = await this.kv.get(`secrets:${name}`);
+    if (!raw) return null;
+    try {
+      const data = JSON.parse(raw) as { key: string; updatedAt: string };
+      return data.key;
+    } catch {
+      return raw; // Plain string fallback
+    }
+  }
+
+  async setSecret(name: string, key: string): Promise<void> {
+    await this.kv.put(`secrets:${name}`, JSON.stringify({
+      key,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  async getSecretStatus(name: string): Promise<{ limited: boolean; limitedAt: string } | null> {
+    const raw = await this.kv.get(`secrets:${name}:status`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as { limited: boolean; limitedAt: string };
+    } catch {
+      return null;
+    }
+  }
+
+  async markSecretLimited(name: string, ttlSeconds: number = 300): Promise<void> {
+    await this.kv.put(
+      `secrets:${name}:status`,
+      JSON.stringify({ limited: true, limitedAt: new Date().toISOString() }),
+      { expirationTtl: ttlSeconds }
+    );
+  }
+
+  async clearSecretStatus(name: string): Promise<void> {
+    await this.kv.delete(`secrets:${name}:status`);
+  }
+
   // --- Index helpers ---
 
   private async getIndex(key: string): Promise<string[]> {

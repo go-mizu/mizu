@@ -37,7 +37,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-white to-[#fafafa]">
+    <div className="min-h-screen flex flex-col bg-white">
       {/* Header */}
       <header className="flex justify-end p-4 gap-2">
         {aiAvailable && (

@@ -12,7 +12,7 @@ interface PageHeaderProps {
 export function PageHeader({ title, backTo = '/', actions }: PageHeaderProps) {
   return (
     <header className="sticky top-0 bg-white z-50 border-b border-[#e8eaed]">
-      <div className="max-w-2xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
