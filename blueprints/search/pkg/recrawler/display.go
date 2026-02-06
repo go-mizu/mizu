@@ -209,7 +209,6 @@ func (s *Stats) Render() string {
 	skip := s.skipped.Load()
 	dskip := s.domainSkip.Load()
 	speed := s.Speed()
-	avgSpeed := s.AvgSpeed()
 	elapsed := s.Elapsed()
 	bytesTotal := s.bytes.Load()
 
@@ -261,8 +260,12 @@ func (s *Stats) Render() string {
 	b.WriteString(fmt.Sprintf("  %s  %5.1f%%  %s/%s\n",
 		bar, pct, fmtInt64(done), fmtInt(s.TotalURLs)))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Fetch     %s/s  │  Peak %s/s  │  Avg %s/s\n",
-		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(avgSpeed))))
+	totalSpeed := float64(0)
+	if elapsed.Seconds() > 0 {
+		totalSpeed = float64(done) / elapsed.Seconds()
+	}
+	b.WriteString(fmt.Sprintf("  Fetch     %s/s  │  Peak %s/s  │  Total %s/s\n",
+		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(totalSpeed))))
 	b.WriteString(fmt.Sprintf("  Elapsed   %s  │  ETA  %s  │  Avg fetch %dms\n",
 		formatDuration(elapsed), eta, int(s.AvgFetchMs())))
 	b.WriteString("\n")
