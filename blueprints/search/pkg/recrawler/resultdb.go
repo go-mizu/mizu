@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
 // ResultDB writes recrawl results and state to DuckDB.
+// Uses an async flush goroutine so workers never block on DB I/O.
 type ResultDB struct {
 	resultDB *sql.DB
 	stateDB  *sql.DB
@@ -17,7 +19,11 @@ type ResultDB struct {
 	mu      sync.Mutex
 	batch   []Result
 	batchSz int
-	flushed int64
+	flushed atomic.Int64
+
+	// Async flush channel
+	flushCh chan []Result
+	done    chan struct{}
 }
 
 // NewResultDB opens (or creates) the result and state DuckDB files.
@@ -37,6 +43,8 @@ func NewResultDB(resultPath, statePath string, batchSize int) (*ResultDB, error)
 		resultDB: resultDB,
 		stateDB:  stateDB,
 		batchSz:  batchSize,
+		flushCh:  make(chan []Result, 16), // buffer up to 16 pending batches
+		done:     make(chan struct{}),
 	}
 
 	if err := rdb.initSchema(); err != nil {
@@ -44,6 +52,9 @@ func NewResultDB(resultPath, statePath string, batchSize int) (*ResultDB, error)
 		stateDB.Close()
 		return nil, err
 	}
+
+	// Start async flusher goroutine
+	go rdb.flusher()
 
 	return rdb, nil
 }
@@ -95,20 +106,32 @@ func (rdb *ResultDB) initSchema() error {
 	return nil
 }
 
-// Add queues a result for batch writing.
-func (rdb *ResultDB) Add(r Result) {
-	rdb.mu.Lock()
-	rdb.batch = append(rdb.batch, r)
-	shouldFlush := len(rdb.batch) >= rdb.batchSz
-	rdb.mu.Unlock()
-
-	if shouldFlush {
-		rdb.Flush(context.Background())
+// flusher runs as a goroutine, draining batches from flushCh and writing to DB.
+func (rdb *ResultDB) flusher() {
+	defer close(rdb.done)
+	for batch := range rdb.flushCh {
+		rdb.writeBatch(context.Background(), batch)
+		rdb.writeState(context.Background(), batch)
+		rdb.flushed.Add(int64(len(batch)))
 	}
 }
 
-// Flush writes all pending results to the database.
-func (rdb *ResultDB) Flush(ctx context.Context) error {
+// Add queues a result for batch writing. Never blocks on DB I/O.
+func (rdb *ResultDB) Add(r Result) {
+	rdb.mu.Lock()
+	rdb.batch = append(rdb.batch, r)
+	if len(rdb.batch) >= rdb.batchSz {
+		batch := rdb.batch
+		rdb.batch = make([]Result, 0, rdb.batchSz)
+		rdb.mu.Unlock()
+		rdb.flushCh <- batch // send to async flusher
+		return
+	}
+	rdb.mu.Unlock()
+}
+
+// Flush sends all pending results to the async flusher.
+func (rdb *ResultDB) Flush(_ context.Context) error {
 	rdb.mu.Lock()
 	if len(rdb.batch) == 0 {
 		rdb.mu.Unlock()
@@ -118,20 +141,7 @@ func (rdb *ResultDB) Flush(ctx context.Context) error {
 	rdb.batch = make([]Result, 0, rdb.batchSz)
 	rdb.mu.Unlock()
 
-	// Write results
-	if err := rdb.writeBatch(ctx, batch); err != nil {
-		return err
-	}
-
-	// Write state
-	if err := rdb.writeState(ctx, batch); err != nil {
-		return err
-	}
-
-	rdb.mu.Lock()
-	rdb.flushed += int64(len(batch))
-	rdb.mu.Unlock()
-
+	rdb.flushCh <- batch
 	return nil
 }
 
@@ -205,9 +215,7 @@ func (rdb *ResultDB) SetMeta(ctx context.Context, key, value string) error {
 
 // FlushedCount returns the number of results written to disk.
 func (rdb *ResultDB) FlushedCount() int64 {
-	rdb.mu.Lock()
-	defer rdb.mu.Unlock()
-	return rdb.flushed
+	return rdb.flushed.Load()
 }
 
 // PendingCount returns the number of results not yet flushed.
@@ -217,9 +225,11 @@ func (rdb *ResultDB) PendingCount() int {
 	return len(rdb.batch)
 }
 
-// Close flushes remaining results and closes databases.
+// Close flushes remaining results, waits for async flusher to finish, and closes databases.
 func (rdb *ResultDB) Close() error {
 	rdb.Flush(context.Background())
+	close(rdb.flushCh) // signal flusher to stop
+	<-rdb.done         // wait for all writes to complete
 	rdb.resultDB.Close()
 	rdb.stateDB.Close()
 	return nil
