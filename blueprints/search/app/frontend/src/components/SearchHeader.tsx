@@ -1,9 +1,10 @@
+import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Settings, Sparkles, Image, Video, Newspaper, Search as SearchIcon } from 'lucide-react'
+import { Settings, Sparkles, Image, Video, Newspaper, Search as SearchIcon, Code, ChevronDown, FlaskConical, Users, Music, MapPin } from 'lucide-react'
 import { SearchBox } from './SearchBox'
 import { useAIStore } from '../stores/aiStore'
 
-export type SearchTab = 'all' | 'ai' | 'images' | 'videos' | 'news'
+export type SearchTab = 'all' | 'ai' | 'images' | 'videos' | 'news' | 'code' | 'science' | 'social' | 'music' | 'maps'
 
 interface SearchHeaderProps {
   query: string
@@ -15,6 +16,13 @@ interface SearchHeaderProps {
   belowTabs?: React.ReactNode
 }
 
+const MORE_TABS: { tab: SearchTab; label: string; icon: React.ElementType }[] = [
+  { tab: 'science', label: 'Science', icon: FlaskConical },
+  { tab: 'social', label: 'Social', icon: Users },
+  { tab: 'music', label: 'Music', icon: Music },
+  { tab: 'maps', label: 'Maps', icon: MapPin },
+]
+
 export function SearchHeader({
   query,
   activeTab,
@@ -24,6 +32,18 @@ export function SearchHeader({
 }: SearchHeaderProps) {
   const navigate = useNavigate()
   const { aiAvailable } = useAIStore()
+  const [showMore, setShowMore] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setShowMore(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleSearch = (newQuery: string) => {
     if (onSearch) {
@@ -35,6 +55,7 @@ export function SearchHeader({
 
   const handleTabClick = (tab: SearchTab) => {
     const encoded = encodeURIComponent(query)
+    setShowMore(false)
     switch (tab) {
       case 'all':
         navigate(`/search?q=${encoded}`)
@@ -51,8 +72,26 @@ export function SearchHeader({
       case 'news':
         navigate(`/news?q=${encoded}`)
         break
+      case 'code':
+        navigate(`/code?q=${encoded}`)
+        break
+      case 'science':
+        navigate(`/science?q=${encoded}`)
+        break
+      case 'social':
+        navigate(`/social?q=${encoded}`)
+        break
+      case 'music':
+        navigate(`/music?q=${encoded}`)
+        break
+      case 'maps':
+        navigate(`/maps?q=${encoded}`)
+        break
     }
   }
+
+  const isMoreActive = MORE_TABS.some(t => t.tab === activeTab)
+  const activeMoreLabel = MORE_TABS.find(t => t.tab === activeTab)?.label
 
   return (
     <header className="sticky top-0 bg-white z-50 border-b border-[#e8eaed]">
@@ -138,6 +177,45 @@ export function SearchHeader({
               <Newspaper size={16} />
               News
             </button>
+            <button
+              type="button"
+              className={`search-tab ${activeTab === 'code' ? 'active' : ''}`}
+              onClick={() => handleTabClick('code')}
+            >
+              <Code size={16} />
+              Code
+            </button>
+
+            {/* More dropdown */}
+            <div className="relative inline-flex" ref={moreRef}>
+              <button
+                type="button"
+                className={`search-tab ${isMoreActive ? 'active' : ''}`}
+                onClick={() => setShowMore(!showMore)}
+              >
+                {isMoreActive ? activeMoreLabel : 'More'}
+                <ChevronDown size={14} className={`transition-transform ${showMore ? 'rotate-180' : ''}`} />
+              </button>
+              {showMore && (
+                <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-[#e8eaed] py-1 z-50 min-w-[160px]">
+                  {MORE_TABS.map(({ tab, label, icon: Icon }) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={`flex items-center gap-2 w-full px-4 py-2 text-sm transition-colors ${
+                        activeTab === tab
+                          ? 'text-[#1a73e8] bg-[#e8f0fe]'
+                          : 'text-[#5f6368] hover:bg-[#f1f3f4]'
+                      }`}
+                      onClick={() => handleTabClick(tab)}
+                    >
+                      <Icon size={16} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {tabsRight && <div className="flex items-center gap-2">{tabsRight}</div>}

@@ -83,6 +83,7 @@ export interface SearchResponse {
   search_time_ms: number
   page: number
   per_page: number
+  cached?: boolean
   // Bang redirect
   redirect?: string
   bang?: Bang

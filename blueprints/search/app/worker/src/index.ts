@@ -32,22 +32,45 @@ import type { HonoEnv } from './types'
 
 const assetManifest = JSON.parse(manifestJSON)
 
+const MIME_TYPES: Record<string, string> = {
+  html: 'text/html; charset=utf-8',
+  js: 'application/javascript; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  ico: 'image/x-icon',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  ttf: 'font/ttf',
+  txt: 'text/plain; charset=utf-8',
+  xml: 'application/xml',
+  webmanifest: 'application/manifest+json',
+}
+
+function getMimeType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return MIME_TYPES[ext] || 'application/octet-stream'
+}
+
 const app = new Hono<HonoEnv>()
 
-// Global middleware
-app.use('*', errorHandler)       // Error handler must be first to catch all errors
-app.use('*', securityHeaders())  // Security headers on all responses
+// Global middleware (lightweight - no security headers on static assets)
+app.use('*', errorHandler)
 app.use('*', cors())
 app.use('*', timing())
 app.use('*', sessionMiddleware())
 
-// Rate limiting for API routes
+// API-specific middleware: security headers, rate limiting, service injection
+app.use('/api/*', securityHeaders())
 app.use('/api/*', rateLimit({
   windowMs: 60_000,    // 1 minute
   maxRequests: 100,    // 100 requests per minute
 }))
-
-// Inject service container into all API requests
 app.use('/api/*', contextMiddleware)
 
 // Health check (no rate limiting, no service injection needed)
@@ -83,9 +106,13 @@ app.get('*', async (c) => {
         ASSET_MANIFEST: assetManifest,
       }
     )
-    return new Response(asset.body, asset)
+    // Explicitly set Content-Type based on requested path
+    const contentType = getMimeType(new URL(c.req.url).pathname)
+    const headers = new Headers(asset.headers)
+    headers.set('Content-Type', contentType)
+    return new Response(asset.body, { headers, status: asset.status })
   } catch {
-    // For SPA routing, return index.html for non-asset requests
+    // SPA fallback: serve index.html for all non-asset routes
     try {
       const notFoundRequest = new Request(new URL('/index.html', c.req.url).toString(), {
         method: 'GET',
@@ -100,10 +127,9 @@ app.get('*', async (c) => {
           ASSET_MANIFEST: assetManifest,
         }
       )
-      return new Response(asset.body, {
-        ...asset,
-        status: 200,
-      })
+      const headers = new Headers(asset.headers)
+      headers.set('Content-Type', 'text/html; charset=utf-8')
+      return new Response(asset.body, { headers, status: 200 })
     } catch {
       return c.text('Not found', 404)
     }

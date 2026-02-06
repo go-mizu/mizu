@@ -516,6 +516,7 @@ export default function VideosPage() {
   const [sourceFilter, setSourceFilter] = useState('')
   const [qualityFilter, setQualityFilter] = useState('')
   const [ccFilter, setCcFilter] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null) // Which video is showing preview (only one at a time)
@@ -640,26 +641,36 @@ export default function VideosPage() {
         activeTab="videos"
         onSearch={handleSearch}
         tabsRight={
-          <div className="flex items-center border border-[#dadce0] rounded-full overflow-hidden">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
-              title="List view"
+              className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-full transition-colors ${showFilters ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
+              onClick={() => setShowFilters(!showFilters)}
             >
-              <List size={18} />
+              Filters
+              <ChevronDown size={16} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
             </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
-              title="Grid view"
-            >
-              <Grid size={18} />
-            </button>
+            <div className="flex items-center border border-[#dadce0] rounded-full overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
+                title="List view"
+              >
+                <List size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-[#e8f0fe] text-[#1a73e8]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}
+                title="Grid view"
+              >
+                <Grid size={18} />
+              </button>
+            </div>
           </div>
         }
-        belowTabs={
+        belowTabs={showFilters ? (
           <div className="border-t border-[#e8eaed] bg-[#f8f9fa]">
             <div className="max-w-7xl mx-auto px-4 py-2">
               <div
@@ -724,7 +735,7 @@ export default function VideosPage() {
               </div>
             </div>
           </div>
-        }
+        ) : undefined}
       />
 
       {/* Main content */}

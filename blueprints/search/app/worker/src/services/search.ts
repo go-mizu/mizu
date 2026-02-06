@@ -436,10 +436,12 @@ export class SearchService {
     const searchQuery = bangResult.query;
     const cacheHash = hashSearchKey(searchQuery, options);
 
-    // 2. Check cache
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    // 2. Check cache (skip if refetch requested)
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     // 3. Run instant answer detection and metasearch in parallel
@@ -472,6 +474,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     // 5. Cache the result
@@ -492,9 +495,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`science:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const params: EngineParams = {
@@ -523,6 +528,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setSearch(cacheHash, response);
@@ -536,9 +542,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`code:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const params: EngineParams = {
@@ -567,6 +575,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setSearch(cacheHash, response);
@@ -580,9 +589,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`social:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const params: EngineParams = {
@@ -611,6 +622,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setSearch(cacheHash, response);
@@ -624,9 +636,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`music:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const params: EngineParams = {
@@ -657,6 +671,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setSearch(cacheHash, response);
@@ -670,9 +685,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`maps:${query}`, options);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const params: EngineParams = {
@@ -703,6 +720,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setSearch(cacheHash, response);
@@ -716,9 +734,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`img:${query}`, options);
 
-    const cachedResponse = await this.cache.getImageSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getImageSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const params = toImageEngineParams(options, this.engineSecrets);
@@ -743,6 +763,7 @@ export class SearchService {
       page: options.page,
       per_page: perPage,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setImageSearch(cacheHash, response);
@@ -839,9 +860,11 @@ export class SearchService {
     const startTime = Date.now();
     const cacheHash = hashSearchKey(`vid:${query}`, options);
 
-    const cachedResponse = await this.cache.getVideoSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getVideoSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     // Build engine params
@@ -955,6 +978,7 @@ export class SearchService {
       page: options.page,
       per_page: perPage,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setVideoSearch(cacheHash, response);
@@ -969,9 +993,11 @@ export class SearchService {
     const newsOptions: SearchOptions = { ...options, file_type: 'news' };
     const cacheHash = hashSearchKey(`news:${query}`, newsOptions);
 
-    const cachedResponse = await this.cache.getSearch(cacheHash);
-    if (cachedResponse) {
-      return cachedResponse;
+    if (!options.refetch) {
+      const cachedResponse = await this.cache.getSearch(cacheHash);
+      if (cachedResponse) {
+        return { ...cachedResponse, cached: true };
+      }
     }
 
     const { params } = toEngineParams(newsOptions, this.engineSecrets);
@@ -992,6 +1018,7 @@ export class SearchService {
       page: options.page,
       per_page: options.per_page,
       has_more: hasMore,
+      cached: false,
     };
 
     await this.cache.setSearch(cacheHash, response);
