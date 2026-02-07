@@ -72,6 +72,7 @@ Get started:
 	root.AddCommand(NewAnalytics())
 	root.AddCommand(NewFW1())
 	root.AddCommand(NewFW2())
+	root.AddCommand(NewCC())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
