@@ -73,6 +73,7 @@ Get started:
 	root.AddCommand(NewFW1())
 	root.AddCommand(NewFW2())
 	root.AddCommand(NewCC())
+	root.AddCommand(NewCrawlDomain())
 
 	if err := fang.Execute(ctx, root,
 		fang.WithVersion(Version),
