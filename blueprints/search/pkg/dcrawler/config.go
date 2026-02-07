@@ -33,6 +33,8 @@ type Config struct {
 	RateLimit        int
 	IncludeSubdomain bool
 	ForceHTTP1       bool
+	TransportShards  int
+	SeedFile         string
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.
@@ -52,8 +54,9 @@ func DefaultConfig() Config {
 		RespectRobots: true,
 		FollowSitemap: true,
 		FrontierSize:  4_000_000,
-		BloomCapacity: 50_000_000,
-		BloomFPR:      0.001,
+		BloomCapacity:   50_000_000,
+		BloomFPR:        0.001,
+		TransportShards: 16,
 	}
 }
 

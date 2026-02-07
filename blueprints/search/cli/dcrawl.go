@@ -17,6 +17,7 @@ func NewCrawlDomain() *cobra.Command {
 		maxPages         int
 		timeout          int
 		rateLimit        int
+		transportShards  int
 		storeBody        bool
 		noLinks          bool
 		noRobots         bool
@@ -26,6 +27,7 @@ func NewCrawlDomain() *cobra.Command {
 		http1            bool
 		crawlerDataDir   string
 		userAgent        string
+		seedFile         string
 	)
 
 	cmd := &cobra.Command{
@@ -60,6 +62,8 @@ Examples:
 			cfg.IncludeSubdomain = includeSubdomain
 			cfg.Resume = resume
 			cfg.ForceHTTP1 = http1
+			cfg.TransportShards = transportShards
+			cfg.SeedFile = seedFile
 			if crawlerDataDir != "" {
 				cfg.DataDir = crawlerDataDir
 			}
@@ -84,6 +88,8 @@ Examples:
 	cmd.Flags().BoolVar(&includeSubdomain, "include-subdomain", false, "Also crawl subdomains")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-crawled URLs")
 	cmd.Flags().BoolVar(&http1, "http1", false, "Force HTTP/1.1 (disable HTTP/2)")
+	cmd.Flags().IntVar(&transportShards, "transport-shards", 16, "Number of HTTP transport shards")
+	cmd.Flags().StringVar(&seedFile, "seed-file", "", "File with seed URLs (one per line)")
 	cmd.Flags().StringVar(&crawlerDataDir, "crawler-data", "", "Crawler data directory (default $HOME/data/crawler/)")
 	cmd.Flags().StringVar(&userAgent, "user-agent", "", "User-Agent header")
 
@@ -106,8 +112,8 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config) error {
 	}
 
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Target:   %s", cfg.Domain)))
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Workers:  %d  |  Max Conns: %d  |  HTTP/2: %s",
-		cfg.Workers, cfg.MaxConns, h2)))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  Workers:  %d  |  Max Conns: %d  |  Shards: %d  |  HTTP/2: %s",
+		cfg.Workers, cfg.MaxConns, cfg.TransportShards, h2)))
 
 	maxDepthStr := "unlimited"
 	if cfg.MaxDepth > 0 {
