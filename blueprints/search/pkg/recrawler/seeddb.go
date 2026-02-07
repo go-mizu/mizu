@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -103,37 +106,45 @@ func LoadSeedStats(ctx context.Context, dbPath string) (*SeedStats, error) {
 	return stats, nil
 }
 
-// LoadAlreadyCrawled loads URLs that were already crawled from the state DB.
-// Returns a set of URLs to skip.
-func LoadAlreadyCrawled(ctx context.Context, stateDBPath string) (map[string]bool, error) {
-	db, err := sql.Open("duckdb", stateDBPath+"?access_mode=READ_ONLY")
+// LoadAlreadyCrawledFromDir scans result shard files in a directory for already-crawled URLs.
+func LoadAlreadyCrawledFromDir(ctx context.Context, dir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		// State DB doesn't exist yet — nothing crawled
-		return nil, nil
+		return nil, nil // dir doesn't exist yet
 	}
-	defer db.Close()
-
-	// Check if table exists
-	var count int
-	err = db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'state'").
-		Scan(&count)
-	if err != nil || count == 0 {
-		return nil, nil
-	}
-
-	rows, err := db.QueryContext(ctx,
-		"SELECT url FROM state WHERE status IN ('done', 'failed')")
-	if err != nil {
-		return nil, nil
-	}
-	defer rows.Close()
 
 	done := make(map[string]bool)
-	for rows.Next() {
-		var u string
-		rows.Scan(&u)
-		done[u] = true
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "results_") || !strings.HasSuffix(e.Name(), ".duckdb") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		db, err := sql.Open("duckdb", path+"?access_mode=READ_ONLY")
+		if err != nil {
+			continue
+		}
+
+		var count int
+		err = db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'results'").
+			Scan(&count)
+		if err != nil || count == 0 {
+			db.Close()
+			continue
+		}
+
+		rows, err := db.QueryContext(ctx, "SELECT url FROM results")
+		if err != nil {
+			db.Close()
+			continue
+		}
+		for rows.Next() {
+			var u string
+			rows.Scan(&u)
+			done[u] = true
+		}
+		rows.Close()
+		db.Close()
 	}
 	return done, nil
 }

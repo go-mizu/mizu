@@ -145,21 +145,19 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	}
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Loaded %d URLs", len(seeds))))
 
-	// Derive state/result/dns paths from seed DB path
+	// Derive result dir and DNS path from seed DB path
 	base := strings.TrimSuffix(dbPath, ".duckdb")
-	// Also strip .parquet suffix if present (e.g. foo.parquet.duckdb → foo.parquet)
 	base = strings.TrimSuffix(base, ".parquet")
-	statePath := base + ".state.duckdb"
-	resultPath := base + ".result.duckdb"
+	resultDir := base + ".results"
 
 	// DNS cache: use directory-level cache for sharing across per-parquet files
 	dnsPath := filepath.Join(filepath.Dir(dbPath), "dns.duckdb")
 
-	// Check for resume
+	// Check for resume (scan existing result shards)
 	var skip map[string]bool
 	if cfg.Resume {
 		fmt.Println(infoStyle.Render("Checking for previous crawl state..."))
-		skip, err = recrawler.LoadAlreadyCrawled(ctx, statePath)
+		skip, err = recrawler.LoadAlreadyCrawledFromDir(ctx, resultDir)
 		if err != nil {
 			fmt.Println(warningStyle.Render(fmt.Sprintf("  Could not load state: %v", err)))
 		} else if len(skip) > 0 {
@@ -167,71 +165,24 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		}
 	}
 
-	// DNS pre-resolution with cache
+	// DNS resolver (if enabled, pipelined with fetch — no separate prefetch step)
 	var dnsResolver *recrawler.DNSResolver
 	if cfg.DNSPrefetch {
 		dnsResolver = recrawler.NewDNSResolver(2 * time.Second)
-
-		// Load DNS cache
 		cached, _ := dnsResolver.LoadCache(dnsPath)
 		if cached > 0 {
 			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS cache: loaded %d entries from %s", cached, filepath.Base(dnsPath))))
 		}
-
-		// Extract unique domains
-		domainSet := make(map[string]bool, seedStats.UniqueDomains)
-		for _, s := range seeds {
-			if s.Domain != "" {
-				domainSet[s.Domain] = true
-			}
-		}
-		domains := make([]string, 0, len(domainSet))
-		for d := range domainSet {
-			domains = append(domains, d)
-		}
-
-		fmt.Println(infoStyle.Render(fmt.Sprintf("Pre-resolving DNS for %d domains...", len(domains))))
-		dnsWorkers := min(len(domains), 10000)
-		live, dead := dnsResolver.Resolve(ctx, domains, dnsWorkers)
-		fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead (%s)",
-			live, dead, dnsResolver.Duration().Truncate(time.Millisecond))))
-
-		// Save DNS cache for next run
-		newEntries := live + dead - int(dnsResolver.CachedCount())
-		if newEntries > 0 {
-			fmt.Print(infoStyle.Render("  Saving DNS cache..."))
-			saveStart := time.Now()
-			if err := dnsResolver.SaveCache(dnsPath); err != nil {
-				fmt.Println(warningStyle.Render(fmt.Sprintf(" failed: %v", err)))
-			} else {
-				fmt.Println(successStyle.Render(fmt.Sprintf(" saved %d entries in %s → %s",
-					live+dead, time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath))))
-			}
-		}
-
-		// Count URLs that will be skipped due to dead domains
-		deadDomains := dnsResolver.DeadDomains()
-		urlsSkipped := 0
-		for _, s := range seeds {
-			if deadDomains[s.Domain] {
-				urlsSkipped++
-			}
-		}
-		if urlsSkipped > 0 {
-			fmt.Println(successStyle.Render(fmt.Sprintf("  Skipping %d URLs on dead domains (%.1f%%)",
-				urlsSkipped, float64(urlsSkipped)/float64(len(seeds))*100)))
-		}
 	}
 
-	// Open result/state databases
+	// Open sharded result databases
 	fmt.Println(infoStyle.Render("Opening result databases..."))
-	rdb, err := recrawler.NewResultDB(resultPath, statePath, cfg.BatchSize)
+	rdb, err := recrawler.NewResultDB(resultDir, 8, cfg.BatchSize)
 	if err != nil {
 		return fmt.Errorf("opening result db: %w", err)
 	}
 	defer rdb.Close()
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Results → %s", resultPath)))
-	fmt.Println(successStyle.Render(fmt.Sprintf("  State   → %s", statePath)))
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Results → %s/ (8 shards)", resultDir)))
 
 	// Store metadata
 	rdb.SetMeta(ctx, "seed_db", dbPath)
@@ -249,18 +200,21 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	} else if cfg.HeadOnly {
 		mode = "head-only"
 	}
+	pipelineMode := "direct"
+	if dnsResolver != nil {
+		pipelineMode = "dns-pipeline"
+	}
 	fmt.Println()
-	fmt.Println(infoStyle.Render(fmt.Sprintf("Starting recrawl: %d workers, %v timeout, mode=%s, shards=%d",
-		cfg.Workers, cfg.Timeout, mode, cfg.TransportShards)))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("Starting recrawl: %d workers, %v timeout, mode=%s, shards=%d, pipeline=%s",
+		cfg.Workers, cfg.Timeout, mode, cfg.TransportShards, pipelineMode)))
 	fmt.Println()
 
 	// Create and run recrawler with live display
 	r := recrawler.New(cfg, stats, rdb)
 
-	// Apply DNS-dead domains and cached IPs for direct dialing
+	// Enable pipelined DNS+fetch mode (resolve domain → immediately fetch URLs)
 	if dnsResolver != nil {
-		r.SetDeadDomains(dnsResolver.DeadDomains())
-		r.SetDNSCache(dnsResolver.ResolvedIPs())
+		r.SetDNSResolver(dnsResolver)
 	}
 
 	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
@@ -269,14 +223,25 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	rdb.Flush(ctx)
 	rdb.SetMeta(ctx, "finished_at", time.Now().Format(time.RFC3339))
 
+	// Save DNS cache for next run
+	if dnsResolver != nil {
+		fmt.Print(infoStyle.Render("  Saving DNS cache..."))
+		saveStart := time.Now()
+		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
+			fmt.Println(warningStyle.Render(fmt.Sprintf(" failed: %v", saveErr)))
+		} else {
+			fmt.Println(successStyle.Render(fmt.Sprintf(" saved in %s → %s",
+				time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath))))
+		}
+	}
+
 	fmt.Println()
 	if err != nil {
 		fmt.Println(warningStyle.Render(fmt.Sprintf("Recrawl finished with error: %v", err)))
 	} else {
 		fmt.Println(successStyle.Render("Recrawl complete!"))
 	}
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  Results: %s", resultPath)))
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  State:   %s", statePath)))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Results: %s/", resultDir)))
 	fmt.Println()
 
 	return err

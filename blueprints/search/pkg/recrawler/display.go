@@ -20,6 +20,10 @@ type Stats struct {
 	bytes       atomic.Int64
 	fetchMs     atomic.Int64 // sum of fetch times for avg calculation
 
+	// DNS pipeline counters (domain-level, not URL-level)
+	dnsLive atomic.Int64
+	dnsDead atomic.Int64
+
 	// HTTP status code distribution
 	statusMu sync.Mutex
 	statuses map[int]int
@@ -135,6 +139,16 @@ func (s *Stats) RecordDomainSkip() {
 	s.domainSkip.Add(1)
 }
 
+// RecordDNSLive records a domain resolved with live IPs.
+func (s *Stats) RecordDNSLive() {
+	s.dnsLive.Add(1)
+}
+
+// RecordDNSDead records a domain resolved as dead (NXDOMAIN).
+func (s *Stats) RecordDNSDead() {
+	s.dnsDead.Add(1)
+}
+
 // Done returns the total number of processed URLs (including skips, for progress bar).
 func (s *Stats) Done() int64 {
 	return s.success.Load() + s.failed.Load() + s.timeout.Load() + s.skipped.Load() + s.domainSkip.Load()
@@ -154,8 +168,8 @@ func (s *Stats) Speed() float64 {
 	s.speedMu.Lock()
 	s.speedTicks = append(s.speedTicks, speedTick{time: now, count: done})
 
-	// Keep only last 5 seconds
-	cutoff := now.Add(-5 * time.Second)
+	// Keep only last 10 seconds for stable speed reading
+	cutoff := now.Add(-10 * time.Second)
 	start := 0
 	for start < len(s.speedTicks) && s.speedTicks[start].time.Before(cutoff) {
 		start++
@@ -217,19 +231,13 @@ func (s *Stats) Render() string {
 		pct = float64(done) / float64(total) * 100
 	}
 
-	// ETA based on remaining URLs and fetched pages/s
-	fetched := s.Fetched()
+	// ETA based on overall average speed (stable, not jittery)
 	eta := "---"
-	if speed > 0 {
+	if elapsed.Seconds() > 2 && done > 0 {
+		avgSpeed := float64(done) / elapsed.Seconds()
 		remaining := total - done
 		if remaining > 0 {
-			// Estimate what fraction of remaining will need actual fetching
-			fetchRatio := float64(1)
-			if done > 0 {
-				fetchRatio = float64(fetched) / float64(done)
-			}
-			fetchRemaining := float64(remaining) * fetchRatio
-			etaDur := time.Duration(fetchRemaining/speed) * time.Second
+			etaDur := time.Duration(float64(remaining)/avgSpeed) * time.Second
 			eta = formatDuration(etaDur)
 		} else {
 			eta = "0s"
@@ -264,22 +272,33 @@ func (s *Stats) Render() string {
 	if elapsed.Seconds() > 0 {
 		totalSpeed = float64(done) / elapsed.Seconds()
 	}
-	b.WriteString(fmt.Sprintf("  Fetch     %s/s  │  Peak %s/s  │  Total %s/s\n",
-		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(totalSpeed))))
-	b.WriteString(fmt.Sprintf("  Elapsed   %s  │  ETA  %s  │  Avg fetch %dms\n",
-		formatDuration(elapsed), eta, int(s.AvgFetchMs())))
+	bytesPerSec := float64(0)
+	if elapsed.Seconds() > 0 {
+		bytesPerSec = float64(bytesTotal) / elapsed.Seconds()
+	}
+	b.WriteString(fmt.Sprintf("  Fetch     %s/s  │  Peak %s/s  │  Avg %s/s  │  %s/s\n",
+		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(totalSpeed)), fmtBytes(int64(bytesPerSec))))
+	b.WriteString(fmt.Sprintf("  Elapsed   %s  │  ETA  %s  │  Avg fetch %dms  │  Total %s\n",
+		formatDuration(elapsed), eta, int(s.AvgFetchMs()), fmtBytes(bytesTotal)))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  ✓ %s ok (%4.1f%%)  ✗ %s fail (%4.1f%%)\n",
-		fmtInt64(succ), safePct(succ, done), fmtInt64(fail), safePct(fail, done)))
-	b.WriteString(fmt.Sprintf("  ⏱ %s timeout (%4.1f%%)  ⊘ %s skip  ☠ %s domain-dead (%4.1f%%)\n",
-		fmtInt64(tout), safePct(tout, done), fmtInt64(skip), fmtInt64(dskip), safePct(dskip, done)))
+	b.WriteString(fmt.Sprintf("  ✓ %s ok (%4.1f%%)  ✗ %s fail (%4.1f%%)  ⏱ %s timeout (%4.1f%%)\n",
+		fmtInt64(succ), safePct(succ, done), fmtInt64(fail), safePct(fail, done),
+		fmtInt64(tout), safePct(tout, done)))
+	b.WriteString(fmt.Sprintf("  ⊘ %s skip  ☠ %s domain-dead (%4.1f%%)\n",
+		fmtInt64(skip), fmtInt64(dskip), safePct(dskip, done)))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  HTTP  %s\n", statusLine))
-	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s unreachable\n",
-		fmtInt(domainsReached), fmtInt(domainsFailed)))
-	b.WriteString(fmt.Sprintf("  Bytes  %s  │  %s avg  │  %s/s\n",
-		fmtBytes(bytesTotal), fmtBytes(avgBytes(bytesTotal, succ)),
-		fmtBytes(int64(float64(bytesTotal)/elapsed.Seconds()))))
+	dnsLiveCount := s.dnsLive.Load()
+	dnsDeadCount := s.dnsDead.Load()
+	dnsTotal := dnsLiveCount + dnsDeadCount
+	if dnsTotal > 0 {
+		b.WriteString(fmt.Sprintf("  DNS     %s/%s  │  %s live  │  %s dead (%4.1f%%)\n",
+			fmtInt64(dnsTotal), fmtInt(s.UniqueDomains),
+			fmtInt64(dnsLiveCount), fmtInt64(dnsDeadCount),
+			safePct(dnsDeadCount, dnsTotal)))
+	}
+	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s unreachable  │  %s avg/page\n",
+		fmtInt(domainsReached), fmtInt(domainsFailed), fmtBytes(avgBytes(bytesTotal, succ))))
 
 	return b.String()
 }
