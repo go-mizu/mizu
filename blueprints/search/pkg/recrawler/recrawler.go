@@ -24,8 +24,12 @@ type Recrawler struct {
 	stats   *Stats
 	rdb     *ResultDB
 
+	// Failed domain/URL logger (nil-safe: no-op if not set)
+	failedDB *FailedDB
+
 	// Dead domain tracking: sync.Map for lock-free reads in hot path (50K+ workers)
-	deadDomains sync.Map // domain → true
+	// Values are reason strings: dns_nxdomain, dns_timeout, probe_unreachable, http_timeout_killed, http_refused
+	deadDomains sync.Map // domain → reason (string)
 
 	// Cached DNS: pre-resolved domain → IP for direct dialing
 	dnsCache   map[string][]string
@@ -63,7 +67,7 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 		cfg.BatchSize = 5000
 	}
 	if cfg.DomainFailThreshold == 0 {
-		cfg.DomainFailThreshold = 3
+		cfg.DomainFailThreshold = 2
 	}
 	if cfg.TransportShards < 1 {
 		cfg.TransportShards = 1
@@ -94,7 +98,7 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 	cfg := r.config
 
 	dialTimeout := min(cfg.Timeout/2, 2*time.Second)
-	tlsTimeout := min(cfg.Timeout/2, 3*time.Second)
+	tlsTimeout := min(cfg.Timeout/2, 2*time.Second)
 
 	// Divide idle conns across shards
 	maxIdlePerShard := min(cfg.Workers*2/max(cfg.TransportShards, 1), 100000)
@@ -154,10 +158,16 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 	}
 }
 
-// SetDeadDomains pre-populates dead domains (e.g. from DNS pre-resolution).
-func (r *Recrawler) SetDeadDomains(domains map[string]bool) {
-	for d := range domains {
-		r.deadDomains.Store(d, true)
+// SetFailedDB sets the FailedDB for logging failed domains and URLs.
+func (r *Recrawler) SetFailedDB(fdb *FailedDB) {
+	r.failedDB = fdb
+}
+
+// SetDeadDomains pre-populates dead domains with failure reasons.
+// Values should be reason strings: dns_nxdomain, dns_timeout, etc.
+func (r *Recrawler) SetDeadDomains(domains map[string]string) {
+	for d, reason := range domains {
+		r.deadDomains.Store(d, reason)
 	}
 }
 
@@ -184,10 +194,12 @@ func (r *Recrawler) SetDNSResolver(dns *DNSResolver) {
 		}
 		r.dnsCacheMu.Unlock()
 	}
-	// Pre-populate dead domains from cached dead + timeout entries
-	deadOrTimeout := dns.DeadOrTimeoutDomains()
-	for d := range deadOrTimeout {
-		r.deadDomains.Store(d, true)
+	// Pre-populate dead domains with reasons
+	for d := range dns.DeadDomains() {
+		r.deadDomains.Store(d, "dns_nxdomain")
+	}
+	for d := range dns.TimeoutDomains() {
+		r.deadDomains.Store(d, "dns_timeout")
 	}
 }
 
@@ -196,8 +208,17 @@ func (r *Recrawler) isDomainDead(domain string) bool {
 	return dead
 }
 
-func (r *Recrawler) markDomainDead(domain string) {
-	r.deadDomains.Store(domain, true)
+// domainDeadReason returns the reason a domain was marked dead, or "".
+func (r *Recrawler) domainDeadReason(domain string) string {
+	v, ok := r.deadDomains.Load(domain)
+	if !ok {
+		return ""
+	}
+	return v.(string)
+}
+
+func (r *Recrawler) markDomainDead(domain, reason string) {
+	r.deadDomains.Store(domain, reason)
 }
 
 // recordDomainTimeout increments the failure counter for a domain.
@@ -210,7 +231,16 @@ func (r *Recrawler) recordDomainTimeout(domain string) {
 	counter, _ := r.domainFailCounts.LoadOrStore(domain, &atomic.Int32{})
 	fails := counter.(*atomic.Int32).Add(1)
 	if int(fails) >= r.config.DomainFailThreshold {
-		r.markDomainDead(domain)
+		r.markDomainDead(domain, "http_timeout_killed")
+		// Log to FailedDB
+		ips := r.cachedIPsFor(domain)
+		r.failedDB.AddDomain(FailedDomain{
+			Domain: domain,
+			Reason: "http_timeout_killed",
+			Error:  fmt.Sprintf("%d consecutive timeouts", fails),
+			IPs:    ips,
+			Stage:  "http_worker",
+		})
 	}
 }
 
@@ -218,6 +248,17 @@ func (r *Recrawler) recordDomainTimeout(domain string) {
 // Succeeding domains are immune to timeout-based killing.
 func (r *Recrawler) recordDomainSuccess(domain string) {
 	r.domainSucceeded.Store(domain, true)
+}
+
+// cachedIPsFor returns comma-separated cached IPs for a domain, or "".
+func (r *Recrawler) cachedIPsFor(domain string) string {
+	r.dnsCacheMu.RLock()
+	ips := r.dnsCache[domain]
+	r.dnsCacheMu.RUnlock()
+	if len(ips) == 0 {
+		return ""
+	}
+	return strings.Join(ips, ",")
 }
 
 // HTTPDeadDomains returns domains marked dead during HTTP fetching.
@@ -342,21 +383,23 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 				ips, dead, _ := r.dnsResolver.ResolveOne(ctx, domain)
 
 				if dead {
-					r.markDomainDead(domain)
+					r.markDomainDead(domain, "dns_nxdomain")
 					r.stats.RecordDNSDead()
 					for range urls {
 						r.stats.RecordDomainSkip()
 					}
+					r.failedDB.AddDomain(FailedDomain{Domain: domain, Reason: "dns_nxdomain", URLCount: len(urls), Stage: "dns_pipeline"})
 					continue
 				}
 
 				if len(ips) == 0 {
 					// DNS timeout on ALL resolvers — mark dead, skip URLs
-					r.markDomainDead(domain)
+					r.markDomainDead(domain, "dns_timeout")
 					r.stats.RecordDNSTimeout()
 					for range urls {
 						r.stats.RecordDomainSkip()
 					}
+					r.failedDB.AddDomain(FailedDomain{Domain: domain, Reason: "dns_timeout", URLCount: len(urls), Stage: "dns_pipeline"})
 					continue
 				}
 
@@ -370,10 +413,17 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 				if r.config.TwoPass {
 					if !r.probeDomain(ctx, domain, urls[0].URL) {
 						r.stats.RecordProbeUnreachable()
-						r.markDomainDead(domain)
+						r.markDomainDead(domain, "probe_unreachable")
 						for range urls {
 							r.stats.RecordDomainSkip()
 						}
+						r.failedDB.AddDomain(FailedDomain{
+							Domain:   domain,
+							Reason:   "probe_unreachable",
+							IPs:      strings.Join(ips, ","),
+							URLCount: len(urls),
+							Stage:    "probe",
+						})
 						continue
 					}
 					r.stats.RecordProbeReachable()
@@ -423,13 +473,11 @@ func (r *Recrawler) probeDomain(ctx context.Context, _, probeURL string) bool {
 	return true
 }
 
-// probeDomainStrict sends a HEAD request with a strict timeout matching config.
-// Unlike probeDomain, this returns false on timeout too — used by directFeed
-// to aggressively skip slow/dead domains before the main fetch phase.
-// shardID distributes probes across all transport shards (was shard 0 only).
+// probeDomainStrict sends a HEAD request to check domain reachability.
+// Conservative: returns true on timeout (server may be slow but alive).
+// Only returns false on definitive connection failure (refused/reset/no route/DNS error).
+// shardID distributes probes across all transport shards.
 func (r *Recrawler) probeDomainStrict(ctx context.Context, probeURL string, shardID int) bool {
-	// Use min(3s, config.Timeout) — aggressive enough to kill dead domains quickly,
-	// but not so short that slow-but-alive domains are killed.
 	probeTimeout := min(3*time.Second, r.config.Timeout)
 	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
@@ -440,10 +488,15 @@ func (r *Recrawler) probeDomainStrict(ctx context.Context, probeURL string, shar
 	}
 	req.Header.Set("User-Agent", r.config.UserAgent)
 
-	client := r.clientForWorker(shardID) // distribute across all transport shards
+	client := r.clientForWorker(shardID)
 	resp, err := client.Do(req)
 	if err != nil {
-		return false // timeout, refused, DNS error — all dead
+		// Timeout → conservative: domain may be slow but alive
+		if isTimeoutError(err) {
+			return true
+		}
+		// Connection refused/reset/no route/DNS error → definitively dead
+		return false
 	}
 	resp.Body.Close()
 	return true
@@ -487,6 +540,14 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 		}
 	}()
 
+	// Collect alive domains with their URLs (probe filters dead ones)
+	type aliveDomain struct {
+		domain string
+		urls   []SeedURL
+	}
+	var aliveMu sync.Mutex
+	var aliveList []aliveDomain
+
 	var probeWg sync.WaitGroup
 	for i := range probeWorkers {
 		probeWg.Add(1)
@@ -507,23 +568,48 @@ func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs
 				alive := r.probeDomainStrict(ctx, urls[0].URL, workerID)
 				if alive {
 					r.stats.RecordProbeReachable()
-					for _, u := range urls {
-						select {
-						case urlCh <- u:
-						case <-ctx.Done():
-							return
-						}
-					}
+					aliveMu.Lock()
+					aliveList = append(aliveList, aliveDomain{domain, urls})
+					aliveMu.Unlock()
 				} else {
 					r.stats.RecordProbeUnreachable()
-					r.markDomainDead(domain)
+					r.markDomainDead(domain, "probe_unreachable")
 					r.stats.RecordDomainSkipBatch(len(urls))
+					r.failedDB.AddDomain(FailedDomain{
+						Domain:   domain,
+						Reason:   "probe_unreachable",
+						IPs:      r.cachedIPsFor(domain),
+						URLCount: len(urls),
+						Stage:    "probe",
+					})
 				}
 			}
 		}(i)
 	}
 
 	probeWg.Wait()
+
+	// Interleave URLs across domains (round-robin) for even load distribution.
+	// Without interleaving, all URLs for domain A are sent before domain B,
+	// causing the per-domain semaphore (8 max) to serialize them.
+	cursors := make([]int, len(aliveList))
+	remaining := len(aliveList)
+	for remaining > 0 {
+		remaining = 0
+		for i, ad := range aliveList {
+			if cursors[i] < len(ad.urls) {
+				select {
+				case urlCh <- ad.urls[cursors[i]]:
+					cursors[i]++
+				case <-ctx.Done():
+					return
+				}
+				if cursors[i] < len(ad.urls) {
+					remaining++
+				}
+			}
+		}
+	}
 }
 
 func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan SeedURL) error {
@@ -595,15 +681,38 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 		// Timeouts are NOT fatal — server may be slow but alive.
 		isFatal := isConnectionRefused(err) || isDNSError(err)
 		r.stats.RecordFailure(0, seed.Domain, isTimeout)
+		fetchMs := time.Since(start).Milliseconds()
+		errStr := truncateStr(err.Error(), 200)
 		r.rdb.Add(Result{
 			URL:         seed.URL,
 			Domain:      seed.Domain,
-			FetchTimeMs: time.Since(start).Milliseconds(),
+			FetchTimeMs: fetchMs,
 			CrawledAt:   time.Now(),
-			Error:       truncateStr(err.Error(), 200),
+			Error:       errStr,
+		})
+		// Log to FailedDB
+		failReason := "http_error"
+		if isTimeout {
+			failReason = "http_timeout"
+		} else if isConnectionRefused(err) {
+			failReason = "http_refused"
+		} else if isDNSError(err) {
+			failReason = "http_dns_error"
+		}
+		r.failedDB.AddURL(FailedURL{
+			URL:         seed.URL,
+			Domain:      seed.Domain,
+			Reason:      failReason,
+			Error:       errStr,
+			FetchTimeMs: fetchMs,
 		})
 		if isFatal {
-			r.markDomainDead(seed.Domain)
+			reason := "http_refused"
+			if isDNSError(err) {
+				reason = "http_dns_error"
+			}
+			r.markDomainDead(seed.Domain, reason)
+			r.failedDB.AddDomain(FailedDomain{Domain: seed.Domain, Reason: reason, Error: truncateStr(err.Error(), 200), IPs: r.cachedIPsFor(seed.Domain), Stage: "http_worker"})
 		} else if isTimeout {
 			r.recordDomainTimeout(seed.Domain)
 		}
@@ -628,6 +737,15 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 			r.stats.RecordSuccess(resp.StatusCode, seed.Domain, max(bodySize, 0), fetchMs)
 		} else {
 			r.stats.RecordFailure(resp.StatusCode, seed.Domain, false)
+			r.failedDB.AddURL(FailedURL{
+				URL:         seed.URL,
+				Domain:      seed.Domain,
+				Reason:      fmt.Sprintf("http_%d", resp.StatusCode),
+				StatusCode:  resp.StatusCode,
+				FetchTimeMs: fetchMs,
+				ContentType: resp.Header.Get("Content-Type"),
+				RedirectURL: redirectURL,
+			})
 		}
 		r.rdb.Add(Result{
 			URL:           seed.URL,

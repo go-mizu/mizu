@@ -78,3 +78,13 @@ func (c Config) RecrawlDir() string {
 func (c Config) DNSCachePath() string {
 	return filepath.Join(c.CrawlDir(), "dns.duckdb")
 }
+
+// FailedDBPath returns the path to the failed domains/URLs database.
+func (c Config) FailedDBPath() string {
+	return filepath.Join(c.RecrawlDir(), "failed.duckdb")
+}
+
+// VerifyDBPath returns the path to the verification results database.
+func (c Config) VerifyDBPath() string {
+	return filepath.Join(c.RecrawlDir(), "verified.duckdb")
+}

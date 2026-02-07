@@ -154,6 +154,10 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 		s := &d.shards[shardFor(domain)]
 		s.mu.Lock()
 		if dead {
+			if errMsg == "http_dead" {
+				s.mu.Unlock()
+				continue // Re-resolve; HTTP failure != DNS dead
+			}
 			s.dead[domain] = errMsg
 			d.failed.Add(1)
 		} else if isTimeout {
@@ -358,46 +362,76 @@ func (d *DNSResolver) ResolveBatch(ctx context.Context, domains []string, worker
 	ch := make(chan string, maxWorkers*4)
 	var wg sync.WaitGroup
 
-	for i := range maxWorkers {
+	// Standard library fallback resolver — uses batchTimeout (not hardcoded 5s)
+	stdResolver := makeResolver("", batchTimeout)
+
+	for range maxWorkers {
 		wg.Add(1)
-		client := clients[i%len(clients)]
 		go func() {
 			defer wg.Done()
 			for domain := range ch {
-				lookupCtx, cancel := context.WithTimeout(ctx, batchTimeout)
-				ips, err := client.LookupNetIP(lookupCtx, "ip4", domain)
-				cancel()
+				var resolved bool
+				var lastErr error
 
-				if err == nil && len(ips) > 0 {
-					// Success — convert netip.Addr to strings, cache IPs
-					addrs := make([]string, len(ips))
-					for j, ip := range ips {
-						addrs[j] = ip.String()
+				// Try each fastdns client sequentially — success on any = done
+				for _, client := range clients {
+					lookupCtx, cancel := context.WithTimeout(ctx, batchTimeout)
+					ips, err := client.LookupNetIP(lookupCtx, "ip4", domain)
+					cancel()
+
+					if err == nil && len(ips) > 0 {
+						addrs := make([]string, len(ips))
+						for j, ip := range ips {
+							addrs[j] = ip.String()
+						}
+						s := &d.shards[shardFor(domain)]
+						s.mu.Lock()
+						s.resolved[domain] = addrs
+						s.mu.Unlock()
+						d.ok.Add(1)
+						resolved = true
+						break
 					}
+					if err != nil {
+						lastErr = err
+					}
+				}
+				if resolved {
+					continue
+				}
+
+				// Final fallback: Go standard net.Resolver
+				fallbackCtx, fallbackCancel := context.WithTimeout(ctx, batchTimeout)
+				addrs, fallbackErr := stdResolver.LookupHost(fallbackCtx, domain)
+				fallbackCancel()
+
+				if fallbackErr == nil && len(addrs) > 0 {
 					s := &d.shards[shardFor(domain)]
 					s.mu.Lock()
 					s.resolved[domain] = addrs
 					s.mu.Unlock()
 					d.ok.Add(1)
-				} else if err == nil {
-					// No IPs, no error = NXDOMAIN (fastdns returns nil for NXDOMAIN)
+					continue
+				}
+				if fallbackErr != nil {
+					lastErr = fallbackErr
+				}
+
+				// All three failed — classify
+				if lastErr != nil && isTimeoutErr(lastErr) {
 					s := &d.shards[shardFor(domain)]
 					s.mu.Lock()
-					s.dead[domain] = "NXDOMAIN"
-					s.mu.Unlock()
-					d.failed.Add(1)
-				} else if isTimeoutErr(err) {
-					// Timeout — mark as timeout for caching
-					s := &d.shards[shardFor(domain)]
-					s.mu.Lock()
-					s.timeout[domain] = truncateErr(err)
+					s.timeout[domain] = truncateErr(lastErr)
 					s.mu.Unlock()
 					d.timedOut.Add(1)
 				} else {
-					// Other error (server failure, etc.) — treat as dead
+					errMsg := "NXDOMAIN"
+					if lastErr != nil {
+						errMsg = truncateErr(lastErr)
+					}
 					s := &d.shards[shardFor(domain)]
 					s.mu.Lock()
-					s.dead[domain] = truncateErr(err)
+					s.dead[domain] = errMsg
 					s.mu.Unlock()
 					d.failed.Add(1)
 				}
@@ -635,6 +669,52 @@ func (d *DNSResolver) DeadOrTimeoutDomains() map[string]bool {
 	return result
 }
 
+// DeadOrTimeoutDomainsWithReasons returns domains with their failure reason.
+// Values: "dns_nxdomain" for dead, "dns_timeout" for timed out.
+func (d *DNSResolver) DeadOrTimeoutDomainsWithReasons() map[string]string {
+	result := make(map[string]string)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain := range s.dead {
+			result[domain] = "dns_nxdomain"
+		}
+		for domain := range s.timeout {
+			result[domain] = "dns_timeout"
+		}
+		s.mu.RUnlock()
+	}
+	return result
+}
+
+// DeadDomainsWithErrors returns dead domains with their error messages.
+func (d *DNSResolver) DeadDomainsWithErrors() map[string]string {
+	result := make(map[string]string)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain, errMsg := range s.dead {
+			result[domain] = errMsg
+		}
+		s.mu.RUnlock()
+	}
+	return result
+}
+
+// TimeoutDomainsWithErrors returns timed-out domains with their error messages.
+func (d *DNSResolver) TimeoutDomainsWithErrors() map[string]string {
+	result := make(map[string]string)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain, errMsg := range s.timeout {
+			result[domain] = errMsg
+		}
+		s.mu.RUnlock()
+	}
+	return result
+}
+
 // TimeoutDomains returns the set of timed-out domains.
 func (d *DNSResolver) TimeoutDomains() map[string]bool {
 	result := make(map[string]bool)
@@ -686,25 +766,9 @@ func (d *DNSResolver) TimeoutCount() int64 {
 	return d.timedOut.Load()
 }
 
-// MergeHTTPDead merges HTTP-level dead domains into the DNS cache.
-// These are domains where DNS resolved but HTTP connection was refused/reset.
-// Stored as "dead" in the cache with an "http_dead" error message so
-// subsequent runs skip them instantly.
+// MergeHTTPDead is a no-op. HTTP failures should NOT contaminate the DNS cache.
+// The directFeed probe phase already handles HTTP reachability separately.
+// Kept as a method stub so callers don't break.
 func (d *DNSResolver) MergeHTTPDead(httpDead map[string]bool) int {
-	merged := 0
-	for domain := range httpDead {
-		s := &d.shards[shardFor(domain)]
-		s.mu.Lock()
-		// Only mark as dead if not already resolved/dead/timeout
-		if _, ok := s.dead[domain]; !ok {
-			if _, ok := s.timeout[domain]; !ok {
-				// Move from resolved → dead (server has IP but doesn't respond)
-				delete(s.resolved, domain)
-				s.dead[domain] = "http_dead"
-				merged++
-			}
-		}
-		s.mu.Unlock()
-	}
-	return merged
+	return 0
 }

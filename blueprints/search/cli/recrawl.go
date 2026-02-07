@@ -264,7 +264,7 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	// uses directFeed instead of spawning another DNS pipeline.
 	if dnsResolver != nil {
 		r.SetDNSCache(dnsResolver.ResolvedIPs())
-		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomains())
+		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomainsWithReasons())
 	}
 
 	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
@@ -273,14 +273,7 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	rdb.Flush(ctx)
 	rdb.SetMeta(ctx, "finished_at", time.Now().Format(time.RFC3339))
 
-	// Merge HTTP dead domains into DNS cache (so next run skips them instantly)
 	if dnsResolver != nil {
-		httpDead := r.HTTPDeadDomains()
-		merged := dnsResolver.MergeHTTPDead(httpDead)
-		if merged > 0 {
-			fmt.Println(infoStyle.Render(fmt.Sprintf("  Merged %d HTTP-dead domains into DNS cache", merged)))
-		}
-
 		fmt.Print(infoStyle.Render("  Saving DNS cache..."))
 		saveStart := time.Now()
 		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
