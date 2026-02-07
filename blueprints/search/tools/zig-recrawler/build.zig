@@ -4,12 +4,20 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // Get zuckdb dependency
+    const zuckdb_dep = b.dependency("zuckdb", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zuckdb_mod = zuckdb_dep.module("zuckdb");
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
+    exe_mod.addImport("zuckdb", zuckdb_mod);
 
     const exe = b.addExecutable(.{
         .name = "zig-recrawler",
@@ -32,6 +40,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    test_mod.addImport("zuckdb", zuckdb_mod);
 
     const exe_unit_tests = b.addTest(.{
         .root_module = test_mod,

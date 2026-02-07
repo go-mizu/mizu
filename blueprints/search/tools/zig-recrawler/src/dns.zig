@@ -2,6 +2,7 @@ const std = @import("std");
 const posix = std.posix;
 const types = @import("types.zig");
 const stats_mod = @import("stats.zig");
+const zuckdb = @import("zuckdb");
 
 /// High-throughput DNS resolver.
 ///
@@ -560,6 +561,135 @@ fn parseIpv4(s: []const u8) ?[4]u8 {
     if (part_idx != 3 or current > 255) return null;
     parts[3] = @intCast(current);
     return parts;
+}
+
+/// Save DNS cache to DuckDB via zuckdb.
+/// Schema: domain, ips, dead, error, timeout
+pub fn saveDnsCacheDuckDB(allocator: std.mem.Allocator, domains: []const types.DomainInfo, db_path: []const u8) !void {
+    const db = zuckdb.DB.init(allocator, db_path, .{}) catch return;
+    defer db.deinit();
+    var conn = db.conn() catch return;
+    defer conn.deinit();
+
+    // Drop and recreate for clean state
+    _ = conn.exec("DROP TABLE IF EXISTS dns", .{}) catch {};
+    _ = conn.exec(
+        \\CREATE TABLE dns (
+        \\  domain VARCHAR,
+        \\  ips VARCHAR,
+        \\  dead BOOLEAN,
+        \\  error VARCHAR,
+        \\  timeout BOOLEAN
+        \\)
+    , .{}) catch return;
+
+    var appender = conn.appender(null, "dns") catch return;
+
+    for (domains) |d| {
+        const s = d.getStatus();
+
+        // Format IPs
+        var ip_buf: [64]u8 = undefined;
+        var ip_pos: usize = 0;
+        for (0..d.ip_count) |i| {
+            if (i > 0 and ip_pos < 63) {
+                ip_buf[ip_pos] = ',';
+                ip_pos += 1;
+            }
+            const ip_str = std.fmt.bufPrint(ip_buf[ip_pos..], "{d}.{d}.{d}.{d}", .{
+                d.ips[i][0], d.ips[i][1], d.ips[i][2], d.ips[i][3],
+            }) catch break;
+            ip_pos += ip_str.len;
+        }
+
+        const is_dead = (s == .dead_dns);
+        const is_timeout = (s == .dead_timeout);
+        const error_str: []const u8 = switch (s) {
+            .dead_dns => "dns_nxdomain",
+            .dead_timeout => "dns_timeout",
+            .dead_probe => "probe_unreachable",
+            .dead_http => "http_dead",
+            else => "",
+        };
+
+        appender.appendRow(.{
+            d.name,
+            ip_buf[0..ip_pos],
+            is_dead,
+            error_str,
+            is_timeout,
+        }) catch continue;
+    }
+
+    appender.flush() catch {};
+    appender.deinit();
+}
+
+/// Load DNS cache from DuckDB via zuckdb.
+/// Applies Go-compatible filters: skips http_dead entries, loads dead/timeout/resolved.
+pub fn loadDnsCacheDuckDB(allocator: std.mem.Allocator, domains: []types.DomainInfo, db_path: []const u8) !u32 {
+    // Check if DuckDB file exists
+    std.fs.cwd().access(db_path, .{}) catch return 0;
+
+    const db = zuckdb.DB.init(allocator, db_path, .{}) catch return 0;
+    defer db.deinit();
+    var conn = db.conn() catch return 0;
+    defer conn.deinit();
+
+    var rows = conn.query("SELECT domain, ips, dead, error, timeout FROM dns", .{}) catch return 0;
+    defer rows.deinit();
+
+    // Build name → index map
+    var name_map = std.StringHashMap(usize).init(allocator);
+    defer name_map.deinit();
+    for (domains, 0..) |d, i| {
+        name_map.put(d.name, i) catch continue;
+    }
+
+    var loaded: u32 = 0;
+
+    while (rows.next() catch null) |row| {
+        const name = row.get([]const u8, 0);
+        const ips_str = row.get([]const u8, 1);
+        const is_dead = row.get(bool, 2);
+        const error_str = row.get([]const u8, 3);
+        const is_timeout = row.get(bool, 4);
+
+        const idx = name_map.get(name) orelse continue;
+        const domain = &domains[idx];
+
+        if (is_dead) {
+            // Skip http_dead entries — HTTP failure != DNS dead (Go v2.0 fix)
+            if (std.mem.eql(u8, error_str, "http_dead")) continue;
+            domain.setStatus(.dead_dns);
+            loaded += 1;
+            continue;
+        }
+
+        if (is_timeout) {
+            // Timeout domains treated as dead for this run
+            domain.setStatus(.dead_timeout);
+            loaded += 1;
+            continue;
+        }
+
+        // Resolved — parse IPs
+        var ip_iter = std.mem.splitScalar(u8, ips_str, ',');
+        var ip_count: u8 = 0;
+        while (ip_iter.next()) |ip_str| {
+            if (ip_count >= 4) break;
+            if (ip_str.len == 0) continue;
+            if (parseIpv4(ip_str)) |ip_bytes| {
+                domain.ips[ip_count] = ip_bytes;
+                ip_count += 1;
+            }
+        }
+        domain.ip_count = ip_count;
+        if (ip_count > 0) domain.setStatus(.alive);
+        loaded += 1;
+    }
+
+    return loaded;
 }
 
 test "buildDnsQuery" {

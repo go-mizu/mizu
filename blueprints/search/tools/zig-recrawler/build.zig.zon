@@ -1,6 +1,12 @@
 .{
     .name = .zig_recrawler,
     .version = "0.1.0",
+    .dependencies = .{
+        .zuckdb = .{
+            .url = "git+https://github.com/karlseguin/zuckdb.zig#54a22ace9db98cd97fba7f2fdd8fe16de07335ca",
+            .hash = "zuckdb-0.0.0-DpSXVNc4BgBkAOzXQcNkOwctDLGlKtnLnIUepn2I_S-g",
+        },
+    },
     .fingerprint = 0x4c890973665792d,
     .minimum_zig_version = "0.15.0",
     .paths = .{

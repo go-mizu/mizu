@@ -6,6 +6,8 @@ const http_mod = @import("http.zig");
 const seeds_mod = @import("seeds.zig");
 const results_mod = @import("results.zig");
 const display_mod = @import("display.zig");
+const faileddb_mod = @import("faileddb.zig");
+const probe_mod = @import("probe.zig");
 
 const log = std.debug.print;
 
@@ -17,13 +19,16 @@ const Config = struct {
     // Output
     output_dir: []const u8 = "results",
     dns_cache: ?[]const u8 = null,
+    failed_db_path: ?[]const u8 = null,
     result_shards: u32 = 16,
 
     // Workers
     workers: u32 = 1024,
     dns_workers: u32 = 64,
+    probe_workers: u32 = 256,
     timeout_ms: u32 = 5000,
     dns_timeout_ms: u32 = 2000,
+    probe_timeout_ms: u32 = 3000,
 
     // Throttling
     max_conns_per_domain: u8 = 8,
@@ -32,9 +37,13 @@ const Config = struct {
     // Behavior
     status_only: bool = true,
     head_only: bool = false,
-    limit: u64 = 0, // 0 = no limit
+    limit: u64 = 0,
     status_filter: u16 = 200,
-    skip_done: bool = true, // skip already-crawled URLs
+    skip_done: bool = true,
+    enable_probe: bool = true,
+
+    // CC integration
+    crawl_id: ?[]const u8 = null,
 };
 
 pub fn main() !void {
@@ -54,10 +63,29 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
+    // Auto-configure CC paths if crawl-id is set
+    if (config.crawl_id) |crawl_id| {
+        configureCCPaths(allocator, &config, crawl_id);
+    }
+
     run(allocator, &config) catch |err| {
         log("Fatal error: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
+}
+
+fn configureCCPaths(allocator: std.mem.Allocator, config: *Config, crawl_id: []const u8) void {
+    // $HOME/data/common-crawl/{CrawlID}/recrawl/
+    const home = std.posix.getenv("HOME") orelse "/tmp";
+    if (config.output_dir.len == "results".len and std.mem.eql(u8, config.output_dir, "results")) {
+        config.output_dir = std.fmt.allocPrint(allocator, "{s}/data/common-crawl/{s}/recrawl", .{ home, crawl_id }) catch "results";
+    }
+    if (config.dns_cache == null) {
+        config.dns_cache = std.fmt.allocPrint(allocator, "{s}/data/common-crawl/{s}/dns.duckdb", .{ home, crawl_id }) catch null;
+    }
+    if (config.failed_db_path == null) {
+        config.failed_db_path = std.fmt.allocPrint(allocator, "{s}/data/common-crawl/{s}/recrawl/failed.duckdb", .{ home, crawl_id }) catch null;
+    }
 }
 
 fn run(allocator: std.mem.Allocator, config: *const Config) !void {
@@ -92,7 +120,6 @@ fn run(allocator: std.mem.Allocator, config: *const Config) !void {
         if (already_crawled) |*ac| {
             if (ac.count() > 0) {
                 log("  Resuming: {d} URLs already crawled\n", .{ac.count()});
-                // Filter out already-crawled URLs
                 var filtered = std.ArrayList(types.SeedUrl){};
                 for (seed_data.seeds) |seed| {
                     if (!ac.contains(seed.url)) {
@@ -126,15 +153,28 @@ fn run(allocator: std.mem.Allocator, config: *const Config) !void {
     // ── Initialize stats ──
     var stats = stats_mod.Stats.init(@intCast(active_seeds.len), @intCast(seed_data.domains.len));
 
+    // ── Initialize FailedDB ──
+    var failed_db: ?faileddb_mod.FailedDB = null;
+    if (config.failed_db_path) |fdb_path| {
+        // Ensure parent directory exists
+        if (std.mem.lastIndexOfScalar(u8, fdb_path, '/')) |slash| {
+            std.fs.cwd().makePath(fdb_path[0..slash]) catch {};
+        }
+        failed_db = faileddb_mod.FailedDB.init(allocator, fdb_path);
+    }
+    defer {
+        if (failed_db) |*fdb| fdb.close();
+    }
+
     // ── Phase 1: DNS Resolution ──
     log("  Phase 1: DNS Resolution\n", .{});
 
     var dns_resolver = dns_mod.DnsResolver.init(allocator, config.dns_timeout_ms);
     defer dns_resolver.deinit();
 
-    // Load DNS cache if available
+    // Load DNS cache
     if (config.dns_cache) |cache_path| {
-        const loaded = dns_mod.loadDnsCache(seed_data.domains, cache_path) catch 0;
+        const loaded = dns_mod.loadDnsCacheDuckDB(allocator, seed_data.domains, cache_path) catch 0;
         if (loaded > 0) {
             log("  Loaded DNS cache: {d} entries\n", .{loaded});
         }
@@ -152,9 +192,43 @@ fn run(allocator: std.mem.Allocator, config: *const Config) !void {
         dns_tout,
     });
 
+    // Log DNS-dead domains to FailedDB
+    if (failed_db) |*fdb| {
+        for (seed_data.domains) |*d| {
+            if (d.getStatus() == .dead_dns) {
+                fdb.addDNSDead(d, "dns_nxdomain");
+            }
+        }
+    }
+
     // Save DNS cache
     if (config.dns_cache) |cache_path| {
-        dns_mod.saveDnsCache(seed_data.domains, cache_path) catch {};
+        dns_mod.saveDnsCacheDuckDB(allocator, seed_data.domains, cache_path) catch {};
+    }
+
+    // ── Phase 1.5: Domain Probing ──
+    if (config.enable_probe) {
+        log("  Phase 1.5: Domain Probing\n", .{});
+        probe_mod.probeDomains(
+            allocator,
+            seed_data.domains,
+            &stats,
+            config.probe_workers,
+            config.probe_timeout_ms,
+        );
+
+        const probe_ok = stats.probe_reachable.load();
+        const probe_fail = stats.probe_unreachable.load();
+        log("  Probe complete: {d} reachable, {d} unreachable\n\n", .{ probe_ok, probe_fail });
+
+        // Log probe-dead domains to FailedDB
+        if (failed_db) |*fdb| {
+            for (seed_data.domains) |*d| {
+                if (d.getStatus() == .dead_probe) {
+                    fdb.addDNSDead(d, "probe_unreachable");
+                }
+            }
+        }
     }
 
     // Count live URLs (skip dead domains)
@@ -176,13 +250,16 @@ fn run(allocator: std.mem.Allocator, config: *const Config) !void {
     // ── Phase 2: HTTP Fetch ──
     log("  Phase 2: HTTP Fetch\n", .{});
 
-    var result_writer = try results_mod.ResultWriter.init(allocator, config.output_dir, config.result_shards);
-    defer result_writer.close();
+    // Ensure output directory exists
+    std.fs.cwd().makePath(config.output_dir) catch {};
+
+    var result_db = try results_mod.ResultDB.init(allocator, config.output_dir, config.result_shards);
 
     var fetcher = http_mod.HttpFetcher.init(
         seed_data.domains,
         &stats,
-        &result_writer,
+        &result_db,
+        if (failed_db) |*fdb| fdb else null,
         .{
             .workers = config.workers,
             .timeout_ms = config.timeout_ms,
@@ -217,22 +294,35 @@ fn run(allocator: std.mem.Allocator, config: *const Config) !void {
     display_running.store(false, .release);
     if (display_thread) |dt| dt.join();
 
-    // Flush results
-    result_writer.flush();
+    // Freeze stats
     stats.freeze();
 
-    // ── Final display ──
+    // Final display
     display.render(&stats);
+
+    // Close ResultDB (flush appenders)
+    log("\n  Flushing results to DuckDB...\n", .{});
+    result_db.close();
 
     // Summary
     const elapsed_s = @as(f64, @floatFromInt(stats.elapsedMs())) / 1000.0;
     const total_speed = if (elapsed_s > 0) @as(f64, @floatFromInt(stats.fetched())) / elapsed_s else 0;
-    log("\n  Done. {d} results written to {s}/\n", .{ result_writer.totalWritten(), config.output_dir });
-    log("  Total: {d} fetched in {d:.1}s ({d:.0} URLs/s)\n\n", .{
+    log("  Done. {d} results written to {s}/\n", .{ result_db.totalWritten(), config.output_dir });
+    log("  Total: {d} fetched in {d:.1}s ({d:.0} URLs/s)\n", .{
         stats.fetched(),
         elapsed_s,
         total_speed,
     });
+
+    if (failed_db) |*fdb| {
+        log("  Failed: {d} domains, {d} URLs logged to {s}\n", .{
+            fdb.domainCount(),
+            fdb.urlCount(),
+            config.failed_db_path orelse "unknown",
+        });
+    }
+
+    log("\n", .{});
 }
 
 fn displayLoop(ctx: anytype) void {
@@ -256,14 +346,22 @@ fn parseArgs(allocator: std.mem.Allocator, config: *Config) !void {
             config.output_dir = args.next() orelse return error.MissingValue;
         } else if (std.mem.eql(u8, arg, "--dns-cache")) {
             config.dns_cache = args.next() orelse return error.MissingValue;
+        } else if (std.mem.eql(u8, arg, "--failed-db")) {
+            config.failed_db_path = args.next() orelse return error.MissingValue;
+        } else if (std.mem.eql(u8, arg, "--crawl-id")) {
+            config.crawl_id = args.next() orelse return error.MissingValue;
         } else if (std.mem.eql(u8, arg, "--workers") or std.mem.eql(u8, arg, "-w")) {
             config.workers = try parseU32(args.next() orelse return error.MissingValue);
         } else if (std.mem.eql(u8, arg, "--dns-workers")) {
             config.dns_workers = try parseU32(args.next() orelse return error.MissingValue);
+        } else if (std.mem.eql(u8, arg, "--probe-workers")) {
+            config.probe_workers = try parseU32(args.next() orelse return error.MissingValue);
         } else if (std.mem.eql(u8, arg, "--timeout") or std.mem.eql(u8, arg, "-t")) {
             config.timeout_ms = try parseU32(args.next() orelse return error.MissingValue);
         } else if (std.mem.eql(u8, arg, "--dns-timeout")) {
             config.dns_timeout_ms = try parseU32(args.next() orelse return error.MissingValue);
+        } else if (std.mem.eql(u8, arg, "--probe-timeout")) {
+            config.probe_timeout_ms = try parseU32(args.next() orelse return error.MissingValue);
         } else if (std.mem.eql(u8, arg, "--max-conns-per-domain")) {
             config.max_conns_per_domain = @intCast(try parseU32(args.next() orelse return error.MissingValue));
         } else if (std.mem.eql(u8, arg, "--fail-threshold")) {
@@ -282,6 +380,8 @@ fn parseArgs(allocator: std.mem.Allocator, config: *Config) !void {
             config.head_only = true;
         } else if (std.mem.eql(u8, arg, "--no-resume")) {
             config.skip_done = false;
+        } else if (std.mem.eql(u8, arg, "--no-probe")) {
+            config.enable_probe = false;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             printUsage();
             std.process.exit(0);
@@ -300,7 +400,7 @@ fn parseU64(s: []const u8) !u64 {
 fn printUsage() void {
     log(
         \\
-        \\  zig-recrawler - High-throughput URL recrawler
+        \\  zig-recrawler - High-throughput URL recrawler with DuckDB storage
         \\
         \\  USAGE:
         \\    zig-recrawler --seeds <file.tsv>  [options]
@@ -316,12 +416,19 @@ fn printUsage() void {
         \\    --output, -o <dir>       Output directory (default: results)
         \\    --shards <n>             Number of result shards (default: 16)
         \\    --dns-cache <file>       DNS cache file (load/save)
+        \\    --failed-db <file>       Failed domains/URLs DuckDB path
+        \\
+        \\  CC INTEGRATION:
+        \\    --crawl-id <id>          Common Crawl ID (auto-configures paths)
+        \\                             Sets output to $HOME/data/common-crawl/<id>/recrawl/
         \\
         \\  WORKERS:
         \\    --workers, -w <n>        HTTP worker threads (default: 1024)
         \\    --dns-workers <n>        DNS worker threads (default: 64)
+        \\    --probe-workers <n>      Probe worker threads (default: 256)
         \\    --timeout, -t <ms>       HTTP timeout in ms (default: 5000)
         \\    --dns-timeout <ms>       DNS timeout in ms (default: 2000)
+        \\    --probe-timeout <ms>     Probe timeout in ms (default: 3000)
         \\
         \\  THROTTLING:
         \\    --max-conns-per-domain <n>  Max concurrent connections per domain (default: 8)
@@ -332,6 +439,7 @@ fn printUsage() void {
         \\    --full-body              Fetch full response body
         \\    --head                   Use HEAD requests
         \\    --no-resume              Don't skip already-crawled URLs
+        \\    --no-probe               Skip domain probing phase
         \\    --help, -h               Show this help
         \\
     , .{});
@@ -346,4 +454,6 @@ test {
     _ = @import("http.zig");
     _ = @import("results.zig");
     _ = @import("display.zig");
+    _ = @import("faileddb.zig");
+    _ = @import("probe.zig");
 }

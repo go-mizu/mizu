@@ -1,16 +1,30 @@
 const std = @import("std");
 const posix = std.posix;
+const tls = std.crypto.tls;
 const types = @import("types.zig");
 const stats_mod = @import("stats.zig");
 const results_mod = @import("results.zig");
+const faileddb_mod = @import("faileddb.zig");
 
-/// High-throughput HTTP fetcher.
-/// Uses std.http.Client for HTTPS (with TLS), raw TCP for plain HTTP.
-/// Each worker thread does blocking I/O on one connection at a time.
+/// High-throughput HTTP fetcher using raw TCP + TLS.
+///
+/// Architecture:
+///   - Raw TCP sockets with SO_RCVTIMEO/SO_SNDTIMEO for enforced timeouts
+///   - std.crypto.tls.Client over raw sockets (no std.http.Client)
+///   - Pre-resolved IPs from DNS phase (skip system DNS)
+///   - No CA verification (we only need status codes for recrawling)
+///   - Stack-allocated buffers per worker (no heap allocation per request)
+///
+/// Domain death logic (matches Go recrawler):
+///   - Only connection refused/reset kills domains immediately
+///   - Timeouts call recordTimeout (threshold-based, immune after success)
+///   - ANY valid HTTP response (even 4xx/5xx) records domain success
+///   - acquireConn blocks up to 5s to match Go's blocking semaphore
 pub const HttpFetcher = struct {
     domains: []types.DomainInfo,
     stats: *stats_mod.Stats,
-    writer: *results_mod.ResultWriter,
+    writer: *results_mod.ResultDB,
+    failed_db: ?*faileddb_mod.FailedDB,
     config: Config,
 
     pub const Config = struct {
@@ -26,13 +40,15 @@ pub const HttpFetcher = struct {
     pub fn init(
         domains: []types.DomainInfo,
         stats: *stats_mod.Stats,
-        writer: *results_mod.ResultWriter,
+        writer: *results_mod.ResultDB,
+        failed_db: ?*faileddb_mod.FailedDB,
         config: Config,
     ) HttpFetcher {
         return .{
             .domains = domains,
             .stats = stats,
             .writer = writer,
+            .failed_db = failed_db,
             .config = config,
         };
     }
@@ -62,9 +78,9 @@ pub const HttpFetcher = struct {
             work_idx: *std.atomic.Value(u64),
             total: u64,
             stats: *stats_mod.Stats,
-            writer: *results_mod.ResultWriter,
+            writer: *results_mod.ResultDB,
+            failed_db: ?*faileddb_mod.FailedDB,
             config: *const Config,
-            allocator: std.mem.Allocator,
         };
 
         var ctx = Context{
@@ -74,8 +90,8 @@ pub const HttpFetcher = struct {
             .total = total,
             .stats = self.stats,
             .writer = self.writer,
+            .failed_db = self.failed_db,
             .config = &self.config,
-            .allocator = allocator,
         };
 
         var threads = allocator.alloc(std.Thread, actual_workers) catch return;
@@ -155,10 +171,7 @@ pub const HttpFetcher = struct {
 };
 
 fn httpWorkerFn(ctx: anytype) void {
-    // Each worker creates its own http.Client for TLS support
-    var client = std.http.Client{ .allocator = ctx.allocator };
-    defer client.deinit();
-
+    // No per-worker std.http.Client — we use raw TCP + TLS with stack buffers
     while (true) {
         const idx = ctx.work_idx.fetchAdd(1, .monotonic);
         if (idx >= ctx.total) return;
@@ -173,15 +186,20 @@ fn httpWorkerFn(ctx: anytype) void {
                 continue;
             }
 
-            // Per-domain connection limit
+            // Per-domain connection limit with longer wait (5s, matching Go's blocking semaphore)
             if (!domain.acquireConn(ctx.config.max_conns_per_domain)) {
-                var retries: u8 = 0;
-                while (retries < 50) : (retries += 1) {
+                var retries: u16 = 0;
+                while (retries < 500) : (retries += 1) {
                     std.Thread.sleep(10 * std.time.ns_per_ms);
                     if (domain.acquireConn(ctx.config.max_conns_per_domain)) break;
                     if (domain.isDead()) break;
                 }
-                if (retries >= 50 or domain.isDead()) {
+                if (domain.isDead()) {
+                    ctx.stats.recordDomainSkip(1);
+                    continue;
+                }
+                if (retries >= 500) {
+                    // acquireConn timed out - just skip, don't mark domain dead
                     ctx.stats.recordDomainSkip(1);
                     continue;
                 }
@@ -189,20 +207,19 @@ fn httpWorkerFn(ctx: anytype) void {
 
             defer domain.releaseConn();
 
-            // Fetch the URL
-            fetchOne(&client, seed, domain, ctx.stats, ctx.writer, ctx.config, ctx.allocator);
+            // Fetch the URL using raw TCP (+ TLS for HTTPS)
+            fetchOne(seed, domain, ctx.stats, ctx.writer, ctx.failed_db, ctx.config);
         }
     }
 }
 
 fn fetchOne(
-    client: *std.http.Client,
     seed: types.SeedUrl,
     domain: *types.DomainInfo,
     stats: *stats_mod.Stats,
-    writer: *results_mod.ResultWriter,
+    writer: *results_mod.ResultDB,
+    failed_db: ?*faileddb_mod.FailedDB,
     config: *const HttpFetcher.Config,
-    allocator: std.mem.Allocator,
 ) void {
     const start = std.time.nanoTimestamp();
     var result = types.FetchResult{
@@ -223,37 +240,53 @@ fn fetchOne(
     @memset(&result.redirect_url, 0);
 
     const use_tls = types.isHttps(seed.url);
+    const port: u16 = if (use_tls) 443 else 80;
+
+    // Step 1: Connect raw TCP socket to pre-resolved IP
+    const sock = connectToDomain(domain, port, config.timeout_ms) catch |err| {
+        recordError(&result, start, err, domain, config.fail_threshold);
+        stats.recordFailure();
+        writer.addResult(&result);
+        if (failed_db) |fdb| {
+            fdb.addHTTPFailedURL(seed.url, seed.domain, classifyError(err), 0, result.fetch_time_ms);
+        }
+        return;
+    };
+    defer posix.close(sock);
+
+    // Build HTTP request
+    var req_buf: [2048]u8 = undefined;
+    const method = if (config.head_only) "HEAD" else "GET";
+    const path = types.extractPath(seed.url);
+    const host = types.extractDomain(seed.url);
+
+    const req_slice = std.fmt.bufPrint(&req_buf, "{s} {s} HTTP/1.1\r\nHost: {s}\r\nUser-Agent: {s}\r\nAccept: text/html,*/*;q=0.8\r\nConnection: close\r\n\r\n", .{ method, path, host, config.user_agent }) catch {
+        setError(&result, "request too large");
+        stats.recordFailure();
+        writer.addResult(&result);
+        return;
+    };
 
     if (use_tls) {
-        // Use std.http.Client for HTTPS (handles TLS)
-        fetchWithStdClient(client, seed, &result, config, allocator);
-    } else {
-        // Use raw TCP for plain HTTP (faster, no TLS overhead)
-        const port: u16 = 80;
-        const sock = connectToDomain(domain, port, config.timeout_ms) catch |err| {
+        // Step 2: TLS handshake + send/recv over raw socket
+        fetchWithRawTls(sock, host, req_slice, &result, domain, config) catch |err| {
             recordError(&result, start, err, domain, config.fail_threshold);
             stats.recordFailure();
             writer.addResult(&result);
+            if (failed_db) |fdb| {
+                fdb.addHTTPFailedURL(seed.url, seed.domain, classifyError(err), 0, result.fetch_time_ms);
+            }
             return;
         };
-        defer posix.close(sock);
-
-        var req_buf: [2048]u8 = undefined;
-        const method = if (config.head_only) "HEAD" else "GET";
-        const path = types.extractPath(seed.url);
-        const host = types.extractDomain(seed.url);
-
-        const req_slice = std.fmt.bufPrint(&req_buf, "{s} {s} HTTP/1.1\r\nHost: {s}\r\nUser-Agent: {s}\r\nAccept: text/html,*/*;q=0.8\r\nConnection: close\r\n\r\n", .{ method, path, host, config.user_agent }) catch {
-            setError(&result, "request too large");
-            stats.recordFailure();
-            writer.addResult(&result);
-            return;
-        };
-
+    } else {
+        // Plain HTTP: send/recv directly on TCP socket
         fetchPlain(sock, req_slice, &result, config.status_only) catch |err| {
             recordError(&result, start, err, domain, config.fail_threshold);
             stats.recordFailure();
             writer.addResult(&result);
+            if (failed_db) |fdb| {
+                fdb.addHTTPFailedURL(seed.url, seed.domain, classifyError(err), 0, result.fetch_time_ms);
+            }
             return;
         };
     }
@@ -262,72 +295,154 @@ fn fetchOne(
     const end = std.time.nanoTimestamp();
     result.fetch_time_ms = @intCast(@max(0, @divFloor(end - start, std.time.ns_per_ms)));
 
-    // Record stats
-    if (result.status_code >= 200 and result.status_code < 400) {
+    // Record stats — ANY valid HTTP response proves domain alive (matches Go behavior)
+    if (result.status_code > 0) {
         domain.recordSuccess();
-        const bytes: u64 = if (result.content_length >= 0) @intCast(result.content_length) else 0;
-        stats.recordSuccess(bytes, result.fetch_time_ms);
+        if (result.status_code >= 200 and result.status_code < 400) {
+            const bytes: u64 = if (result.content_length >= 0) @intCast(result.content_length) else 0;
+            stats.recordSuccess(bytes, result.fetch_time_ms);
+        } else {
+            // 4xx/5xx — domain is alive but URL failed
+            stats.recordFailure();
+            if (failed_db) |fdb| {
+                fdb.addHTTPFailedURL(seed.url, seed.domain, "http_error", result.status_code, result.fetch_time_ms);
+            }
+        }
     } else if (result.error_len > 0) {
-        // Already recorded as failure
-    } else {
         stats.recordFailure();
+        if (failed_db) |fdb| {
+            fdb.addHTTPFailedURL(seed.url, seed.domain, "http_error", result.status_code, result.fetch_time_ms);
+        }
     }
 
     writer.addResult(&result);
 }
 
-/// Fetch URL using std.http.Client (handles TLS)
-fn fetchWithStdClient(
-    client: *std.http.Client,
-    seed: types.SeedUrl,
+/// Fetch HTTPS URL using raw TCP socket + std.crypto.tls.Client.
+/// Uses stack-allocated buffers. Socket timeouts enforced via SO_RCVTIMEO/SO_SNDTIMEO.
+/// No CA verification — we only need status codes for recrawling.
+fn fetchWithRawTls(
+    sock: posix.socket_t,
+    hostname: []const u8,
+    request: []const u8,
     result: *types.FetchResult,
+    domain: *types.DomainInfo,
     config: *const HttpFetcher.Config,
-    allocator: std.mem.Allocator,
-) void {
-    _ = config;
-    _ = allocator;
-    const fetch_result = client.fetch(.{
-        .location = .{ .url = seed.url },
-        .method = .GET,
-        .keep_alive = false,
-        .redirect_behavior = .unhandled,
-    }) catch |err| {
-        const err_name = @errorName(err);
-        const copy_len = @min(err_name.len, result.error_msg.len);
-        @memcpy(result.error_msg[0..copy_len], err_name[0..copy_len]);
-        result.error_len = @intCast(copy_len);
-        return;
+) !void {
+    _ = domain;
+
+    // Create std.net.Stream over raw socket for TLS
+    const stream = std.net.Stream{ .handle = sock };
+
+    // Stack-allocated buffers for I/O (min_buffer_len = 16645 bytes each)
+    // 4 buffers × ~16KB = ~64KB on stack (well within 512KB stack)
+    var socket_read_buf: [tls.max_ciphertext_record_len]u8 = undefined;
+    var tls_write_buf: [tls.max_ciphertext_record_len]u8 = undefined;
+    var tls_read_buf: [tls.max_ciphertext_record_len]u8 = undefined;
+    var socket_write_buf: [tls.max_ciphertext_record_len]u8 = undefined;
+
+    // Create buffered Reader/Writer over socket
+    var stream_reader = stream.reader(&socket_read_buf);
+    var stream_writer = stream.writer(&tls_write_buf);
+
+    // TLS handshake — no CA verification, SNI set for hostname
+    var tls_client = tls.Client.init(
+        stream_reader.interface(),
+        &stream_writer.interface,
+        .{
+            .host = .{ .explicit = hostname },
+            .ca = .no_verification,
+            .read_buffer = &tls_read_buf,
+            .write_buffer = &socket_write_buf,
+            .allow_truncation_attacks = true,
+        },
+    ) catch {
+        // TLS handshake failed — don't kill domain (cert issues are per-URL)
+        return error.TlsInitializationFailed;
     };
 
-    result.status_code = @intFromEnum(fetch_result.status);
+    // After TLS handshake: bump recv timeout to 3x for response waiting.
+    // The connect/handshake used timeout_ms, but slow servers may need more time
+    // to generate responses. Go's net/http has no read timeout, so we use 3x.
+    const resp_timeout_ms = config.timeout_ms *| 3;
+    const resp_tv = posix.timeval{
+        .sec = @intCast(resp_timeout_ms / 1000),
+        .usec = @intCast((resp_timeout_ms % 1000) * 1000),
+    };
+    posix.setsockopt(sock, posix.SOL.SOCKET, posix.SO.RCVTIMEO, std.mem.asBytes(&resp_tv)) catch {};
+
+    // Send HTTP request over TLS
+    tls_client.writer.writeAll(request) catch {
+        return error.WriteFailed;
+    };
+    // Flush TLS buffer → encrypts and pushes to socket writer buffer
+    tls_client.writer.flush() catch {
+        return error.WriteFailed;
+    };
+    // Flush socket writer → sends encrypted data to the actual socket
+    stream_writer.interface.flush() catch {
+        return error.WriteFailed;
+    };
+
+    // Read HTTP response over TLS.
+    // Use a small buffer (1024) so readSliceShort fills it from a single TLS record
+    // without blocking for more data. HTTP status + essential headers fit in ~300 bytes.
+    var resp_buf: [1024]u8 = undefined;
+    const n = tls_client.reader.readSliceShort(&resp_buf) catch {
+        return error.ReadFailed;
+    };
+    if (n == 0) return error.ConnectionClosed;
+
+    parseHttpResponse(resp_buf[0..n], result, true);
 }
 
+/// Connect to domain's pre-resolved IP using non-blocking connect + poll.
+/// SO_SNDTIMEO does NOT enforce connect timeout on macOS — we must use poll().
+/// After connect, socket is set back to blocking with SO_RCVTIMEO/SO_SNDTIMEO for I/O.
 fn connectToDomain(domain: *const types.DomainInfo, port: u16, timeout_ms: u32) !posix.socket_t {
     const sock = try posix.socket(posix.AF.INET, posix.SOCK.STREAM, posix.IPPROTO.TCP);
     errdefer posix.close(sock);
 
-    // Use pre-resolved IP
-    var addr: posix.sockaddr.in = undefined;
-    if (domain.ip_count > 0) {
-        addr = .{
-            .family = posix.AF.INET,
-            .port = std.mem.nativeToBig(u16, port),
-            .addr = @bitCast(domain.ips[0]),
-            .zero = [_]u8{0} ** 8,
-        };
-    } else {
-        return error.NoDnsRecord;
-    }
+    if (domain.ip_count == 0) return error.NoDnsRecord;
 
-    // Set connect timeout
+    const addr = posix.sockaddr.in{
+        .family = posix.AF.INET,
+        .port = std.mem.nativeToBig(u16, port),
+        .addr = @bitCast(domain.ips[0]),
+        .zero = [_]u8{0} ** 8,
+    };
+
+    // Set non-blocking for connect
+    const fl_flags = try posix.fcntl(sock, posix.F.GETFL, 0);
+    _ = try posix.fcntl(sock, posix.F.SETFL, fl_flags | (1 << @bitOffsetOf(posix.O, "NONBLOCK")));
+
+    // Non-blocking connect — returns WouldBlock (EINPROGRESS)
+    posix.connect(sock, @ptrCast(&addr), @sizeOf(posix.sockaddr.in)) catch |err| {
+        if (err != error.WouldBlock) return err;
+
+        // Poll for connect completion with timeout
+        var pfds = [1]posix.pollfd{.{
+            .fd = sock,
+            .events = posix.POLL.OUT,
+            .revents = 0,
+        }};
+        const ready = posix.poll(&pfds, @intCast(timeout_ms)) catch return error.ConnectionTimedOut;
+        if (ready == 0) return error.ConnectionTimedOut;
+
+        // Check for connect error via SO_ERROR
+        try posix.getsockoptError(sock);
+    };
+
+    // Set back to blocking mode for TLS/recv
+    _ = posix.fcntl(sock, posix.F.SETFL, fl_flags) catch {};
+
+    // Set I/O timeouts for subsequent operations
     const tv = posix.timeval{
-        .sec = @intCast(@min(timeout_ms / 2000, 2)),
-        .usec = @intCast(if (timeout_ms < 2000) (timeout_ms % 1000) * 1000 else 0),
+        .sec = @intCast(timeout_ms / 1000),
+        .usec = @intCast((timeout_ms % 1000) * 1000),
     };
     posix.setsockopt(sock, posix.SOL.SOCKET, posix.SO.RCVTIMEO, std.mem.asBytes(&tv)) catch {};
     posix.setsockopt(sock, posix.SOL.SOCKET, posix.SO.SNDTIMEO, std.mem.asBytes(&tv)) catch {};
-
-    try posix.connect(sock, @ptrCast(&addr), @sizeOf(posix.sockaddr.in));
 
     return sock;
 }
@@ -421,7 +536,7 @@ fn recordError(result: *types.FetchResult, start: i128, err: anyerror, domain: *
     @memcpy(result.error_msg[0..copy_len], err_name[0..copy_len]);
     result.error_len = @intCast(copy_len);
 
-    // Classify error for domain tracking
+    // Classify error for domain tracking (conservative, matching Go)
     switch (err) {
         error.ConnectionRefused, error.ConnectionResetByPeer => {
             domain.setStatus(.dead_http);
@@ -431,6 +546,18 @@ fn recordError(result: *types.FetchResult, start: i128, err: anyerror, domain: *
         },
         else => {},
     }
+}
+
+fn classifyError(err: anyerror) []const u8 {
+    return switch (err) {
+        error.ConnectionRefused => "http_refused",
+        error.ConnectionResetByPeer => "http_reset",
+        error.WouldBlock, error.ConnectionTimedOut => "http_timeout",
+        error.TlsInitializationFailed => "tls_handshake",
+        error.WriteFailed => "tls_write",
+        error.ReadFailed => "tls_read",
+        else => "http_error",
+    };
 }
 
 fn setError(result: *types.FetchResult, msg: []const u8) void {
