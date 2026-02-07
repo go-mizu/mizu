@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const zuckdb = @import("zuckdb");
 
 /// Load seed URLs from a TSV file (url\tdomain per line).
 /// Returns owned slices - caller must free with the same allocator.
@@ -15,29 +16,35 @@ pub fn loadFromTsv(allocator: std.mem.Allocator, path: []const u8) !SeedData {
     return parseTsvContent(allocator, data);
 }
 
-/// Load seeds by running duckdb to extract from a parquet file.
+/// Load seeds from a parquet file via zuckdb (in-memory DuckDB).
 pub fn loadFromParquet(allocator: std.mem.Allocator, parquet_path: []const u8, status_filter: u16, limit: u64) !SeedData {
-    // Build the DuckDB query
+    const db = try zuckdb.DB.init(allocator, ":memory:", .{});
+    defer db.deinit();
+    var conn = try db.conn();
+    defer conn.deinit();
+
+    // Build query
     var query_buf: [2048]u8 = undefined;
     const query = if (limit > 0)
         std.fmt.bufPrint(&query_buf, "SELECT url, COALESCE(url_host_registered_domain,'') FROM read_parquet('{s}') WHERE fetch_status = {d} AND warc_filename IS NOT NULL LIMIT {d}", .{ parquet_path, status_filter, limit }) catch return error.QueryTooLong
     else
         std.fmt.bufPrint(&query_buf, "SELECT url, COALESCE(url_host_registered_domain,'') FROM read_parquet('{s}') WHERE fetch_status = {d} AND warc_filename IS NOT NULL", .{ parquet_path, status_filter }) catch return error.QueryTooLong;
 
-    const result = try std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "duckdb", "-csv", "-separator", "\t", "-noheader", ":memory:", query },
-        .max_output_bytes = 512 * 1024 * 1024, // 512MB max
-    });
-    defer allocator.free(result.stderr);
+    var rows = try conn.query(query, .{});
+    defer rows.deinit();
 
-    if (result.term.Exited != 0) {
-        std.debug.print("duckdb error: {s}\n", .{result.stderr});
-        allocator.free(result.stdout);
-        return error.DuckDBFailed;
+    // Collect results into TSV buffer for parseTsvContent
+    var buf = std.ArrayList(u8){};
+    while (try rows.next()) |row| {
+        const url = row.get([]const u8, 0);
+        const domain = row.get([]const u8, 1);
+        try buf.appendSlice(allocator, url);
+        try buf.append(allocator, '\t');
+        try buf.appendSlice(allocator, domain);
+        try buf.append(allocator, '\n');
     }
 
-    return parseTsvContent(allocator, result.stdout);
+    return parseTsvContent(allocator, try buf.toOwnedSlice(allocator));
 }
 
 pub const SeedData = struct {
@@ -116,7 +123,7 @@ fn parseTsvContent(allocator: std.mem.Allocator, data: []const u8) !SeedData {
     };
 }
 
-/// Load already-crawled URLs from result TSV files in a directory.
+/// Load already-crawled URLs from result DuckDB shard files in a directory.
 pub fn loadAlreadyCrawled(allocator: std.mem.Allocator, result_dir: []const u8) !std.StringHashMap(void) {
     var done = std.StringHashMap(void).init(allocator);
 
@@ -125,33 +132,24 @@ pub fn loadAlreadyCrawled(allocator: std.mem.Allocator, result_dir: []const u8) 
 
     var iter = dir.iterate();
     while (try iter.next()) |entry| {
-        if (!std.mem.startsWith(u8, entry.name, "results_") or !std.mem.endsWith(u8, entry.name, ".tsv")) continue;
+        if (!std.mem.startsWith(u8, entry.name, "results_") or !std.mem.endsWith(u8, entry.name, ".duckdb")) continue;
 
         var path_buf: [1024]u8 = undefined;
         const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ result_dir, entry.name }) catch continue;
 
-        const file = dir.openFile(entry.name, .{}) catch continue;
-        defer file.close();
+        const db = zuckdb.DB.init(allocator, path, .{}) catch continue;
+        defer db.deinit();
+        var conn = db.conn() catch continue;
+        defer conn.deinit();
 
-        const stat = file.stat() catch continue;
-        const content = allocator.alloc(u8, stat.size) catch continue;
-        defer allocator.free(content);
-        const bytes_read = file.readAll(content) catch continue;
-        const file_data = content[0..bytes_read];
+        var rows = conn.query("SELECT url FROM results", .{}) catch continue;
+        defer rows.deinit();
 
-        var line_iter = std.mem.splitScalar(u8, file_data, '\n');
-        // Skip header
-        _ = line_iter.next();
-
-        while (line_iter.next()) |line| {
-            if (line.len == 0) continue;
-            if (std.mem.indexOfScalar(u8, line, '\t')) |tab_pos| {
-                const url = line[0..tab_pos];
-                const url_copy = allocator.dupe(u8, url) catch continue;
-                done.put(url_copy, {}) catch continue;
-            }
+        while (rows.next() catch null) |row| {
+            const url_raw = row.get([]const u8, 0);
+            const url_copy = allocator.dupe(u8, url_raw) catch continue;
+            done.put(url_copy, {}) catch continue;
         }
-        _ = path;
     }
 
     return done;
