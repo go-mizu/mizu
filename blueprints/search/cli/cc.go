@@ -24,20 +24,26 @@ func NewCC() *cobra.Command {
 Supports the columnar index (parquet), CDXJ index, and WARC file extraction
 via byte-range requests for high-throughput page retrieval.
 
+Smart caching:
+  --sample N    Download only N parquet files (evenly spaced) instead of all ~900
+  --remote      Query parquet directly from S3 (zero disk, slower)
+  Manifests and crawl lists are cached for 24h in $HOME/data/common-crawl/cache.json
+
 Subcommands:
   crawls   List available Common Crawl datasets
   index    Download + import columnar index to DuckDB
   stats    Show index statistics
-  query    Query index for matching URLs
+  query    Query index for matching URLs (local or remote)
   fetch    High-throughput page extraction from WARC files
   warc     Fetch and display a single WARC record
   url      Lookup a URL via CDX API
 
 Examples:
   search cc crawls
-  search cc index --crawl CC-MAIN-2026-04
+  search cc index --crawl CC-MAIN-2026-04 --sample 5
   search cc stats --crawl CC-MAIN-2026-04
   search cc query --crawl CC-MAIN-2026-04 --lang eng --status 200 --limit 100
+  search cc query --crawl CC-MAIN-2026-04 --remote --domain example.com --limit 10
   search cc fetch --crawl CC-MAIN-2026-04 --lang eng --mime text/html --limit 1000000
   search cc warc --file crawl-data/CC-MAIN-2026-04/... --offset 12345 --length 6789
   search cc url --crawl CC-MAIN-2026-04 --url https://example.com`,
@@ -61,33 +67,59 @@ Examples:
 
 func newCCCrawls() *cobra.Command {
 	var (
-		search string
-		limit  int
+		search  string
+		limit   int
+		noCache bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "crawls",
 		Short: "List available Common Crawl datasets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCCrawls(cmd.Context(), search, limit)
+			return runCCCrawls(cmd.Context(), search, limit, noCache)
 		},
 	}
 
 	cmd.Flags().StringVar(&search, "search", "", "Filter crawls by ID")
 	cmd.Flags().IntVar(&limit, "limit", 20, "Max crawls to display")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass cache")
 
 	return cmd
 }
 
-func runCCCrawls(ctx context.Context, search string, limit int) error {
+func runCCCrawls(ctx context.Context, search string, limit int, noCache bool) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl Datasets"))
 	fmt.Println()
 
-	client := cc.NewClient("", 4)
-	crawls, err := client.ListCrawls(ctx)
-	if err != nil {
-		return fmt.Errorf("listing crawls: %w", err)
+	cfg := cc.DefaultConfig()
+	cache := cc.NewCache(cfg.DataDir)
+
+	// Try cache first
+	var crawls []cc.Crawl
+	if !noCache {
+		if cd := cache.Load(); cache.IsFresh(cd) && len(cd.Crawls) > 0 {
+			crawls = cd.Crawls
+			fmt.Println(labelStyle.Render("  (cached)"))
+		}
+	}
+
+	if len(crawls) == 0 {
+		client := cc.NewClient("", 4)
+		var err error
+		crawls, err = client.ListCrawls(ctx)
+		if err != nil {
+			return fmt.Errorf("listing crawls: %w", err)
+		}
+
+		// Update cache
+		cd := cache.Load()
+		if cd == nil {
+			cd = &cc.CacheData{}
+		}
+		cd.Crawls = crawls
+		cd.FetchedAt = time.Now()
+		cache.Save(cd)
 	}
 
 	// Filter
@@ -107,8 +139,7 @@ func runCCCrawls(ctx context.Context, search string, limit int) error {
 	}
 
 	// Check local data
-	home, _ := os.UserHomeDir()
-	dataDir := filepath.Join(home, "data", "common-crawl")
+	dataDir := cfg.DataDir
 
 	fmt.Printf("  %-20s %-30s %-12s %-12s %s\n",
 		"ID", "Name", "From", "To", "Local")
@@ -127,7 +158,6 @@ func runCCCrawls(ctx context.Context, search string, limit int) error {
 		localStatus := labelStyle.Render("---")
 		crawlDir := filepath.Join(dataDir, c.ID)
 		if fi, err := os.Stat(crawlDir); err == nil && fi.IsDir() {
-			// Check for index
 			if _, err := os.Stat(filepath.Join(crawlDir, "index.duckdb")); err == nil {
 				localStatus = successStyle.Render("indexed")
 			} else {
@@ -152,27 +182,38 @@ func runCCCrawls(ctx context.Context, search string, limit int) error {
 
 func newCCIndex() *cobra.Command {
 	var (
-		crawlID   string
+		crawlID    string
 		importOnly bool
-		workers   int
+		workers    int
+		sample     int
 	)
 
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Download + import columnar index to DuckDB",
+		Long: `Download columnar index parquet files and import to DuckDB.
+
+Use --sample N to download only N evenly-spaced parquet files instead of all ~900.
+Each file is ~220MB and contains ~2.5M records. For most queries, 1-10 files suffice.
+
+  --sample 1   ~220MB disk, ~2.5M records  (quick exploration)
+  --sample 5   ~1.1GB disk, ~12.5M records (representative sample)
+  --sample 20  ~4.4GB disk, ~50M records   (substantial coverage)
+  --sample 0   ~200GB disk, ~2.3B records  (full index)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCIndex(cmd.Context(), crawlID, importOnly, workers)
+			return runCCIndex(cmd.Context(), crawlID, importOnly, workers, sample)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
 	cmd.Flags().BoolVar(&importOnly, "import-only", false, "Skip download, import existing parquet files")
 	cmd.Flags().IntVar(&workers, "workers", 10, "Concurrent download workers")
+	cmd.Flags().IntVar(&sample, "sample", 5, "Download only N parquet files (0 = all ~900)")
 
 	return cmd
 }
 
-func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers int) error {
+func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers, sample int) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl Index"))
 	fmt.Println()
@@ -184,11 +225,18 @@ func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers in
 	client := cc.NewClient(cfg.BaseURL, cfg.TransportShards)
 
 	if !importOnly {
-		fmt.Println(infoStyle.Render(fmt.Sprintf("Downloading columnar index for %s...", crawlID)))
-		fmt.Println(labelStyle.Render(fmt.Sprintf("  → %s", cfg.IndexDir())))
+		if sample > 0 {
+			fmt.Printf("  %s\n", infoStyle.Render(fmt.Sprintf(
+				"Downloading %d sampled parquet files for %s (~%dMB)...",
+				sample, crawlID, sample*220)))
+		} else {
+			fmt.Printf("  %s\n", infoStyle.Render(fmt.Sprintf(
+				"Downloading full columnar index for %s (~200GB)...", crawlID)))
+		}
+		fmt.Println(labelStyle.Render(fmt.Sprintf("  -> %s", cfg.IndexDir())))
 
 		start := time.Now()
-		err := cc.DownloadIndex(ctx, client, cfg, func(p cc.DownloadProgress) {
+		err := cc.DownloadIndex(ctx, client, cfg, sample, func(p cc.DownloadProgress) {
 			if p.Error != nil {
 				fmt.Println(warningStyle.Render(fmt.Sprintf("  [%d/%d] %s — error: %v",
 					p.FileIndex, p.TotalFiles, p.File, p.Error)))
@@ -204,7 +252,7 @@ func runCCIndex(ctx context.Context, crawlID string, importOnly bool, workers in
 
 	// Import to DuckDB
 	fmt.Println(infoStyle.Render("Importing to DuckDB..."))
-	fmt.Println(labelStyle.Render(fmt.Sprintf("  → %s", cfg.IndexDBPath())))
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  -> %s", cfg.IndexDBPath())))
 
 	importStart := time.Now()
 	rowCount, err := cc.ImportIndex(ctx, cfg)
@@ -253,12 +301,12 @@ func runCCStats(ctx context.Context, crawlID string) error {
 		return fmt.Errorf("loading stats: %w", err)
 	}
 
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Crawl: %s", crawlID)))
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Index: %s", dbPath)))
+	fmt.Printf("  Crawl:           %s\n", infoStyle.Render(crawlID))
+	fmt.Printf("  Index:           %s\n", labelStyle.Render(dbPath))
 	fmt.Println()
-	fmt.Println(fmt.Sprintf("  Total records:   %s", ccFmtInt64(summary.TotalRecords)))
-	fmt.Println(fmt.Sprintf("  Unique hosts:    %s", ccFmtInt64(summary.UniqueHosts)))
-	fmt.Println(fmt.Sprintf("  Unique domains:  %s", ccFmtInt64(summary.UniqueDomains)))
+	fmt.Printf("  Total records:   %s\n", ccFmtInt64(summary.TotalRecords))
+	fmt.Printf("  Unique hosts:    %s\n", ccFmtInt64(summary.UniqueHosts))
+	fmt.Printf("  Unique domains:  %s\n", ccFmtInt64(summary.UniqueDomains))
 
 	// Status distribution
 	fmt.Println()
@@ -305,13 +353,24 @@ func newCCQuery() *cobra.Command {
 		tld     string
 		limit   int
 		count   bool
+		remote  bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "query",
 		Short: "Query index for matching URLs",
+		Long: `Query the columnar index for URLs matching your criteria.
+
+By default queries the local DuckDB index (requires 'cc index' first).
+Use --remote to query parquet files directly from S3 — no local download needed,
+but slower (network-bound). Ideal for quick lookups on limited disk.
+
+Examples:
+  search cc query --lang eng --status 200 --limit 100
+  search cc query --remote --domain example.com --limit 10
+  search cc query --tld com --mime text/html --count`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCQuery(cmd.Context(), crawlID, lang, mime, status, domain, tld, limit, count)
+			return runCCQuery(cmd.Context(), crawlID, lang, mime, status, domain, tld, limit, count, remote)
 		},
 	}
 
@@ -323,18 +382,14 @@ func newCCQuery() *cobra.Command {
 	cmd.Flags().StringVar(&tld, "tld", "", "TLD filter (e.g. com)")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Max results")
 	cmd.Flags().BoolVar(&count, "count", false, "Show count only")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Query S3 parquet directly (no local download needed)")
 
 	return cmd
 }
 
-func runCCQuery(ctx context.Context, crawlID, lang, mime string, status int, domain, tld string, limit int, countOnly bool) error {
+func runCCQuery(ctx context.Context, crawlID, lang, mime string, status int, domain, tld string, limit int, countOnly, remote bool) error {
 	cfg := cc.DefaultConfig()
 	cfg.CrawlID = crawlID
-	dbPath := cfg.IndexDBPath()
-
-	if _, err := os.Stat(dbPath); err != nil {
-		return fmt.Errorf("index not found — run 'cc index' first")
-	}
 
 	filter := cc.IndexFilter{Limit: limit}
 	if lang != "" {
@@ -353,6 +408,25 @@ func runCCQuery(ctx context.Context, crawlID, lang, mime string, status int, dom
 		filter.TLDs = strings.Split(tld, ",")
 	}
 
+	if remote {
+		fmt.Println(infoStyle.Render("Querying S3 parquet directly (no local index needed)..."))
+		pointers, err := cc.QueryRemoteParquet(ctx, cfg, filter)
+		if err != nil {
+			return fmt.Errorf("remote query: %w", err)
+		}
+		if countOnly {
+			fmt.Printf("  Matching records: %s\n", ccFmtInt64(int64(len(pointers))))
+			return nil
+		}
+		return displayQueryResults(pointers)
+	}
+
+	// Local query
+	dbPath := cfg.IndexDBPath()
+	if _, err := os.Stat(dbPath); err != nil {
+		return fmt.Errorf("index not found — run 'cc index' first (or use --remote)")
+	}
+
 	if countOnly {
 		n, err := cc.QueryIndexCount(ctx, dbPath, filter)
 		if err != nil {
@@ -366,9 +440,12 @@ func runCCQuery(ctx context.Context, crawlID, lang, mime string, status int, dom
 	if err != nil {
 		return err
 	}
+	return displayQueryResults(pointers)
+}
 
+func displayQueryResults(pointers []cc.WARCPointer) error {
 	fmt.Printf("  %-80s %-6s %-20s %s\n", "URL", "Status", "Content-Type", "Language")
-	fmt.Println(strings.Repeat("─", 140))
+	fmt.Println(strings.Repeat("-", 140))
 
 	for _, p := range pointers {
 		url := p.URL
@@ -404,6 +481,7 @@ func newCCFetch() *cobra.Command {
 		workers int
 		timeout int
 		resume  bool
+		remote  bool
 	)
 
 	cmd := &cobra.Command{
@@ -411,14 +489,17 @@ func newCCFetch() *cobra.Command {
 		Short: "High-throughput page extraction from WARC files",
 		Long: `Fetch pages from Common Crawl WARC files via byte-range requests.
 
-First queries the columnar index for matching URLs, then fetches WARC records
+First queries the index for matching URLs, then fetches WARC records
 in parallel from the CDN. Extracted pages are stored in sharded DuckDB files.
 
+Use --remote to query the index from S3 directly (no local parquet needed).
+
 Examples:
-  search cc fetch --crawl CC-MAIN-2026-04 --lang eng --mime text/html --limit 10000
-  search cc fetch --crawl CC-MAIN-2026-04 --status 200 --workers 5000 --limit 1000000`,
+  search cc fetch --lang eng --mime text/html --limit 10000
+  search cc fetch --remote --domain example.com --limit 100
+  search cc fetch --status 200 --workers 5000 --limit 1000000`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCCFetch(cmd.Context(), crawlID, lang, mime, status, domain, tld, limit, workers, timeout, resume)
+			return runCCFetch(cmd.Context(), crawlID, lang, mime, status, domain, tld, limit, workers, timeout, resume, remote)
 		},
 	}
 
@@ -432,12 +513,13 @@ Examples:
 	cmd.Flags().IntVar(&workers, "workers", 5000, "Concurrent fetch workers")
 	cmd.Flags().IntVar(&timeout, "timeout", 30000, "Per-request timeout in ms")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-fetched records")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Query S3 index directly (no local parquet needed)")
 
 	return cmd
 }
 
 func runCCFetch(ctx context.Context, crawlID, lang, mime string, status int, domain, tld string,
-	limit, workers, timeout int, resume bool) error {
+	limit, workers, timeout int, resume, remote bool) error {
 
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Common Crawl WARC Page Extraction"))
@@ -448,11 +530,6 @@ func runCCFetch(ctx context.Context, crawlID, lang, mime string, status int, dom
 	cfg.Workers = workers
 	cfg.Timeout = time.Duration(timeout) * time.Millisecond
 	cfg.Resume = resume
-
-	dbPath := cfg.IndexDBPath()
-	if _, err := os.Stat(dbPath); err != nil {
-		return fmt.Errorf("index not found — run 'cc index' first")
-	}
 
 	// Build filter
 	filter := cc.IndexFilter{Limit: limit}
@@ -472,18 +549,30 @@ func runCCFetch(ctx context.Context, crawlID, lang, mime string, status int, dom
 		filter.TLDs = strings.Split(tld, ",")
 	}
 
-	// Count matching records
-	fmt.Println(infoStyle.Render("Querying index..."))
-	totalCount, err := cc.QueryIndexCount(ctx, dbPath, filter)
-	if err != nil {
-		return fmt.Errorf("counting records: %w", err)
-	}
-	fmt.Println(successStyle.Render(fmt.Sprintf("  %s matching records (fetching up to %s)",
-		ccFmtInt64(totalCount), ccFmtInt64(int64(limit)))))
+	// Query WARC pointers (local or remote)
+	var pointers []cc.WARCPointer
+	var err error
 
-	// Query WARC pointers
-	fmt.Println(infoStyle.Render("Loading WARC pointers..."))
-	pointers, err := cc.QueryIndex(ctx, dbPath, filter)
+	if remote {
+		fmt.Println(infoStyle.Render("Querying S3 parquet index directly..."))
+		pointers, err = cc.QueryRemoteParquet(ctx, cfg, filter)
+	} else {
+		dbPath := cfg.IndexDBPath()
+		if _, err := os.Stat(dbPath); err != nil {
+			return fmt.Errorf("index not found — run 'cc index' first (or use --remote)")
+		}
+
+		fmt.Println(infoStyle.Render("Querying local index..."))
+		totalCount, err2 := cc.QueryIndexCount(ctx, dbPath, filter)
+		if err2 != nil {
+			return fmt.Errorf("counting records: %w", err2)
+		}
+		fmt.Println(successStyle.Render(fmt.Sprintf("  %s matching records (fetching up to %s)",
+			ccFmtInt64(totalCount), ccFmtInt64(int64(limit)))))
+
+		pointers, err = cc.QueryIndex(ctx, dbPath, filter)
+	}
+
 	if err != nil {
 		return fmt.Errorf("querying index: %w", err)
 	}
@@ -513,7 +602,7 @@ func runCCFetch(ctx context.Context, crawlID, lang, mime string, status int, dom
 		return fmt.Errorf("opening result db: %w", err)
 	}
 	defer rdb.Close()
-	fmt.Println(successStyle.Render(fmt.Sprintf("  Results → %s/ (8 shards)", cfg.ResultDir())))
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Results -> %s/ (8 shards)", cfg.ResultDir())))
 
 	rdb.SetMeta(ctx, "crawl_id", crawlID)
 	rdb.SetMeta(ctx, "started_at", time.Now().Format(time.RFC3339))
@@ -597,10 +686,10 @@ func runCCWarc(ctx context.Context, file string, offset, length int64) error {
 
 	fmt.Println()
 	fmt.Println(successStyle.Render("WARC Record:"))
-	fmt.Printf("  Type:       %s\n", resp.WARCType)
-	fmt.Printf("  Target URI: %s\n", resp.TargetURI)
-	fmt.Printf("  Date:       %s\n", resp.Date.Format(time.RFC3339))
-	fmt.Printf("  Record ID:  %s\n", resp.RecordID)
+	fmt.Printf("  Type:        %s\n", resp.WARCType)
+	fmt.Printf("  Target URI:  %s\n", resp.TargetURI)
+	fmt.Printf("  Date:        %s\n", resp.Date.Format(time.RFC3339))
+	fmt.Printf("  Record ID:   %s\n", resp.RecordID)
 	fmt.Printf("  HTTP Status: %d\n", resp.HTTPStatus)
 
 	fmt.Println()
@@ -610,7 +699,7 @@ func runCCWarc(ctx context.Context, file string, offset, length int64) error {
 	}
 
 	fmt.Println()
-	fmt.Println(infoStyle.Render(fmt.Sprintf("Body (%d bytes):", len(resp.Body))))
+	fmt.Printf("  %s\n", infoStyle.Render(fmt.Sprintf("Body (%d bytes):", len(resp.Body))))
 	body := string(resp.Body)
 	if len(body) > 2000 {
 		body = body[:2000] + "\n... (truncated)"
@@ -632,7 +721,13 @@ func newCCURL() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "url",
-		Short: "Lookup a URL via CDX API",
+		Short: "Lookup a URL via CDX API (zero disk, network-only)",
+		Long: `Lookup URLs in Common Crawl via the CDX API.
+This is the lightest-weight option: uses zero disk space, queries the CC API directly.
+
+Examples:
+  search cc url --url https://example.com
+  search cc url --domain example.com --limit 50`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCURL(cmd.Context(), crawlID, targetURL, domain, limit)
 		},
@@ -673,7 +768,7 @@ func runCCURL(ctx context.Context, crawlID, targetURL, domain string, limit int)
 
 	fmt.Println()
 	fmt.Printf("  %-80s %-6s %-20s %s\n", "URL", "Status", "MIME", "Timestamp")
-	fmt.Println(strings.Repeat("─", 130))
+	fmt.Println(strings.Repeat("-", 130))
 
 	for _, e := range entries {
 		url := e.URL
@@ -694,8 +789,6 @@ func ccFmtInt64(n int64) string {
 	if n < 1000 {
 		return s
 	}
-
-	// Add comma separators
 	var result []byte
 	for i, c := range s {
 		if i > 0 && (len(s)-i)%3 == 0 {

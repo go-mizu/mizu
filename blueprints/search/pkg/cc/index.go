@@ -13,13 +13,21 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
-// DownloadIndex downloads all columnar index parquet files for a crawl.
-// Uses the cc-index-table.paths.gz manifest to discover files.
-func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress ProgressFn) error {
-	// Download manifest
+// IndexManifest returns the list of parquet file paths for a crawl's columnar index.
+// Uses cache to avoid re-fetching the manifest.
+func IndexManifest(ctx context.Context, client *Client, cfg Config) ([]string, error) {
+	// Check cache first
+	cache := NewCache(cfg.DataDir)
+	cd := cache.Load()
+	if cd != nil {
+		if paths := cache.GetManifest(cd, cfg.CrawlID, "cc-index-table.paths.gz"); paths != nil {
+			return paths, nil
+		}
+	}
+
 	paths, err := client.DownloadManifest(ctx, cfg.CrawlID, "cc-index-table.paths.gz")
 	if err != nil {
-		return fmt.Errorf("downloading index manifest: %w", err)
+		return nil, fmt.Errorf("downloading index manifest: %w", err)
 	}
 
 	// Filter to subset=warc only
@@ -29,8 +37,42 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress Pro
 			warcPaths = append(warcPaths, p)
 		}
 	}
+
+	// Cache manifest
+	if cd == nil {
+		cd = &CacheData{}
+	}
+	cache.SetManifest(cd, cfg.CrawlID, "cc-index-table.paths.gz", warcPaths)
+	cache.Save(cd)
+
+	return warcPaths, nil
+}
+
+// DownloadIndex downloads columnar index parquet files for a crawl.
+// Uses the cc-index-table.paths.gz manifest to discover files.
+// If sampleSize > 0, only downloads that many files (evenly spaced for representative sample).
+// This is the key disk/network optimization: 1 file ≈ 220MB → ~2.5M records, enough for most queries.
+func DownloadIndex(ctx context.Context, client *Client, cfg Config, sampleSize int, progress ProgressFn) error {
+	warcPaths, err := IndexManifest(ctx, client, cfg)
+	if err != nil {
+		return err
+	}
 	if len(warcPaths) == 0 {
 		return fmt.Errorf("no warc subset parquet files found in manifest")
+	}
+
+	// Sample mode: pick evenly spaced files for representative coverage
+	if sampleSize > 0 && sampleSize < len(warcPaths) {
+		sampled := make([]string, 0, sampleSize)
+		step := float64(len(warcPaths)) / float64(sampleSize)
+		for i := 0; i < sampleSize; i++ {
+			idx := int(float64(i) * step)
+			if idx >= len(warcPaths) {
+				idx = len(warcPaths) - 1
+			}
+			sampled = append(sampled, warcPaths[idx])
+		}
+		warcPaths = sampled
 	}
 
 	indexDir := cfg.IndexDir()
@@ -38,7 +80,6 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress Pro
 		return fmt.Errorf("creating index dir: %w", err)
 	}
 
-	// Download parquet files concurrently
 	workers := cfg.IndexWorkers
 	if workers <= 0 {
 		workers = 10
@@ -50,12 +91,11 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress Pro
 	var mu sync.Mutex
 	var firstErr error
 
-	for i, remotePath := range warcPaths {
+	for _, remotePath := range warcPaths {
 		if ctx.Err() != nil {
 			break
 		}
 
-		// Local filename: use part number from the path
 		localName := filepath.Base(remotePath)
 		localPath := filepath.Join(indexDir, localName)
 
@@ -73,7 +113,6 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress Pro
 			continue
 		}
 
-		idx := i
 		path := remotePath
 		lPath := localPath
 		lName := localName
@@ -102,7 +141,6 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress Pro
 					Error:      err,
 				})
 			}
-			_ = idx
 		}()
 	}
 
@@ -115,6 +153,121 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, progress Pro
 		return firstErr
 	}
 	return nil
+}
+
+// QueryRemoteParquet queries parquet files directly from the CC S3 bucket via DuckDB's httpfs.
+// This avoids downloading any parquet files locally — ideal for quick lookups.
+// Note: slower than local queries but uses zero disk space.
+func QueryRemoteParquet(ctx context.Context, cfg Config, filter IndexFilter) ([]WARCPointer, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("opening duckdb: %w", err)
+	}
+	defer db.Close()
+
+	// Install and load httpfs for remote parquet access
+	db.ExecContext(ctx, "INSTALL httpfs")
+	db.ExecContext(ctx, "LOAD httpfs")
+	db.ExecContext(ctx, "SET s3_region='us-east-1'")
+
+	// Build remote glob URL
+	remoteGlob := fmt.Sprintf("s3://commoncrawl/cc-index/table/cc-main/warc/crawl=%s/subset=warc/*.parquet", cfg.CrawlID)
+
+	// Build query with filter
+	query, args := buildRemoteQuery(remoteGlob, filter)
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying remote parquet: %w", err)
+	}
+	defer rows.Close()
+
+	var pointers []WARCPointer
+	for rows.Next() {
+		var p WARCPointer
+		var offset, length int64
+		if err := rows.Scan(
+			&p.URL, &p.WARCFilename, &offset, &length,
+			&p.ContentType, &p.Language, &p.FetchStatus, &p.Domain,
+		); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+		p.RecordOffset = offset
+		p.RecordLength = length
+		pointers = append(pointers, p)
+	}
+	return pointers, rows.Err()
+}
+
+func buildRemoteQuery(parquetGlob string, f IndexFilter) (string, []any) {
+	var b strings.Builder
+	var args []any
+	var conditions []string
+
+	b.WriteString(fmt.Sprintf(`SELECT url, warc_filename, warc_record_offset, warc_record_length,
+		COALESCE(content_mime_detected, ''), COALESCE(content_languages, ''),
+		fetch_status, COALESCE(url_host_registered_domain, '')
+		FROM read_parquet('%s', hive_partitioning=true)`, parquetGlob))
+
+	if len(f.StatusCodes) > 0 {
+		placeholders := makeIntPlaceholders(f.StatusCodes)
+		conditions = append(conditions, fmt.Sprintf("fetch_status IN (%s)", placeholders))
+		for _, s := range f.StatusCodes {
+			args = append(args, s)
+		}
+	}
+
+	if len(f.MimeTypes) > 0 {
+		placeholders := makeStringPlaceholders(len(f.MimeTypes))
+		conditions = append(conditions, fmt.Sprintf("content_mime_detected IN (%s)", placeholders))
+		for _, m := range f.MimeTypes {
+			args = append(args, m)
+		}
+	}
+
+	if len(f.TLDs) > 0 {
+		placeholders := makeStringPlaceholders(len(f.TLDs))
+		conditions = append(conditions, fmt.Sprintf("url_host_tld IN (%s)", placeholders))
+		for _, t := range f.TLDs {
+			args = append(args, t)
+		}
+	}
+
+	if len(f.Domains) > 0 {
+		placeholders := makeStringPlaceholders(len(f.Domains))
+		conditions = append(conditions, fmt.Sprintf("url_host_registered_domain IN (%s)", placeholders))
+		for _, d := range f.Domains {
+			args = append(args, d)
+		}
+	}
+
+	if len(f.ExcludeDomains) > 0 {
+		placeholders := makeStringPlaceholders(len(f.ExcludeDomains))
+		conditions = append(conditions, fmt.Sprintf("url_host_registered_domain NOT IN (%s)", placeholders))
+		for _, d := range f.ExcludeDomains {
+			args = append(args, d)
+		}
+	}
+
+	for _, lang := range f.Languages {
+		conditions = append(conditions, "content_languages LIKE ?")
+		args = append(args, "%"+lang+"%")
+	}
+
+	conditions = append(conditions, "warc_filename IS NOT NULL")
+
+	if len(conditions) > 0 {
+		b.WriteString(" WHERE ")
+		b.WriteString(strings.Join(conditions, " AND "))
+	}
+
+	if f.Limit > 0 {
+		b.WriteString(fmt.Sprintf(" LIMIT %d", f.Limit))
+	}
+	if f.Offset > 0 {
+		b.WriteString(fmt.Sprintf(" OFFSET %d", f.Offset))
+	}
+
+	return b.String(), args
 }
 
 // ImportIndex imports downloaded parquet files into a DuckDB database.
