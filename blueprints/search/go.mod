@@ -113,6 +113,7 @@ require (
 	github.com/oapi-codegen/runtime v1.1.2 // indirect
 	github.com/parquet-go/bitpack v1.0.0 // indirect
 	github.com/parquet-go/jsonlite v1.2.1 // indirect
+	github.com/phuslu/fastdns v0.16.5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

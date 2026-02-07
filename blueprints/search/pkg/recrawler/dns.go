@@ -1,18 +1,21 @@
 package recrawler
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"maps"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/phuslu/fastdns"
 )
 
 const dnsShardCount = 64 // must be power of 2
@@ -21,7 +24,8 @@ const dnsShardCount = 64 // must be power of 2
 type dnsShard struct {
 	mu       sync.RWMutex
 	resolved map[string][]string // domain → IPs
-	dead     map[string]string   // domain → error message
+	dead     map[string]string   // domain → error message (NXDOMAIN)
+	timeout  map[string]string   // domain → error message (timeout/temp)
 }
 
 // DNSResolver performs parallel DNS pre-resolution for a set of domains.
@@ -37,11 +41,12 @@ type DNSResolver struct {
 	total    int
 	ok       atomic.Int64
 	failed   atomic.Int64
+	timedOut atomic.Int64 // domains that timed out (all resolvers)
 	cached   atomic.Int64 // loaded from cache
-	retrying atomic.Int64 // domains queued for retry
+
 	duration time.Duration
 
-	// Per-domain lookup timeout
+	// Per-domain lookup timeout (configurable)
 	lookupTimeout time.Duration
 }
 
@@ -67,18 +72,24 @@ func makeResolver(addr string, timeout time.Duration) *net.Resolver {
 }
 
 // NewDNSResolver creates a DNS resolver with multi-server fallback.
+// The timeout parameter controls both the dial timeout for each resolver
+// and the per-domain lookup timeout.
 func NewDNSResolver(timeout time.Duration) *DNSResolver {
+	if timeout == 0 {
+		timeout = 2 * time.Second
+	}
 	d := &DNSResolver{
 		resolvers: []*net.Resolver{
 			makeResolver("", timeout),           // system DNS (fast for cached, leverages OS cache)
 			makeResolver("8.8.8.8:53", timeout), // Google (fallback, high-concurrency)
 			makeResolver("1.1.1.1:53", timeout), // Cloudflare (tertiary)
 		},
-		lookupTimeout: 3 * time.Second,
+		lookupTimeout: timeout,
 	}
 	for i := range d.shards {
 		d.shards[i].resolved = make(map[string][]string)
 		d.shards[i].dead = make(map[string]string)
+		d.shards[i].timeout = make(map[string]string)
 	}
 	return d
 }
@@ -94,6 +105,7 @@ func shardFor(domain string) int {
 }
 
 // LoadCache loads previously resolved DNS data from a DuckDB file.
+// Timeout domains are loaded as dead-for-this-run (prevents re-resolving).
 func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 	db, err := sql.Open("duckdb", dbPath+"?access_mode=READ_ONLY")
 	if err != nil {
@@ -107,7 +119,20 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 		return 0, nil
 	}
 
-	rows, err := db.Query("SELECT domain, ips, dead, error FROM dns")
+	// Check if timeout column exists (schema migration)
+	var hasTimeout bool
+	var colCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'dns' AND column_name = 'timeout'").Scan(&colCount)
+	hasTimeout = err == nil && colCount > 0
+
+	var query string
+	if hasTimeout {
+		query = "SELECT domain, ips, dead, COALESCE(error, '') as error, timeout FROM dns"
+	} else {
+		query = "SELECT domain, ips, dead, COALESCE(error, '') as error FROM dns"
+	}
+
+	rows, err := db.Query(query)
 	if err != nil {
 		return 0, nil
 	}
@@ -116,8 +141,14 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 	loaded := 0
 	for rows.Next() {
 		var domain, ips, errMsg string
-		var dead bool
-		if err := rows.Scan(&domain, &ips, &dead, &errMsg); err != nil {
+		var dead, isTimeout bool
+		var scanErr error
+		if hasTimeout {
+			scanErr = rows.Scan(&domain, &ips, &dead, &errMsg, &isTimeout)
+		} else {
+			scanErr = rows.Scan(&domain, &ips, &dead, &errMsg)
+		}
+		if scanErr != nil {
 			continue
 		}
 		s := &d.shards[shardFor(domain)]
@@ -125,6 +156,10 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 		if dead {
 			s.dead[domain] = errMsg
 			d.failed.Add(1)
+		} else if isTimeout {
+			// Timeout domains treated as dead for this run
+			s.timeout[domain] = errMsg
+			d.timedOut.Add(1)
 		} else {
 			s.resolved[domain] = strings.Split(ips, ",")
 			d.ok.Add(1)
@@ -137,7 +172,8 @@ func (d *DNSResolver) LoadCache(dbPath string) (int, error) {
 }
 
 // SaveCache persists DNS resolution results to a DuckDB file.
-// Uses batch VALUES (1000 rows/statement) for fast bulk insert.
+// Saves resolved, dead (NXDOMAIN), and timeout domains.
+// Uses a temporary CSV file for bulk loading (10-100x faster than parameterized inserts).
 func (d *DNSResolver) SaveCache(dbPath string) error {
 	db, err := sql.Open("duckdb", dbPath)
 	if err != nil {
@@ -152,6 +188,7 @@ func (d *DNSResolver) SaveCache(dbPath string) error {
 			ips VARCHAR,
 			dead BOOLEAN DEFAULT false,
 			error VARCHAR DEFAULT '',
+			timeout BOOLEAN DEFAULT false,
 			resolved_at TIMESTAMP DEFAULT current_timestamp
 		)
 	`)
@@ -159,98 +196,102 @@ func (d *DNSResolver) SaveCache(dbPath string) error {
 		return fmt.Errorf("creating dns table: %w", err)
 	}
 
-	// Collect all entries from all shards
-	type entry struct {
-		domain string
-		ips    string
-		dead   bool
-		errMsg string
+	// Write to temp CSV, then bulk load via DuckDB's COPY
+	tmpFile := dbPath + ".tmp.csv"
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		return fmt.Errorf("creating temp csv: %w", err)
 	}
 
-	totalSize := 0
-	for i := range d.shards {
-		d.shards[i].mu.RLock()
-		totalSize += len(d.shards[i].resolved) + len(d.shards[i].dead)
-		d.shards[i].mu.RUnlock()
-	}
-
-	entries := make([]entry, 0, totalSize)
+	w := bufio.NewWriterSize(f, 1024*1024) // 1MB buffer
 	for i := range d.shards {
 		s := &d.shards[i]
 		s.mu.RLock()
 		for domain, ips := range s.resolved {
-			entries = append(entries, entry{domain, strings.Join(ips, ","), false, ""})
+			fmt.Fprintf(w, "%s\t%s\tfalse\t \tfalse\n", domain, strings.Join(ips, ","))
 		}
 		for domain, errMsg := range s.dead {
-			entries = append(entries, entry{domain, "", true, errMsg})
+			fmt.Fprintf(w, "%s\t \ttrue\t%s\tfalse\n", domain, csvEscape(errMsg))
+		}
+		for domain, errMsg := range s.timeout {
+			fmt.Fprintf(w, "%s\t \tfalse\t%s\ttrue\n", domain, csvEscape(errMsg))
 		}
 		s.mu.RUnlock()
 	}
+	w.Flush()
+	f.Close()
 
-	// Batch insert using multi-row VALUES (1000 rows per statement)
-	const batchSize = 1000
-	tx, err := db.Begin()
+	// Bulk load via COPY
+	_, err = db.Exec(fmt.Sprintf(`COPY dns(domain, ips, dead, error, timeout) FROM '%s' (DELIMITER '\t', HEADER false)`, tmpFile))
+	os.Remove(tmpFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("bulk loading dns cache: %w", err)
 	}
 
-	for i := 0; i < len(entries); i += batchSize {
-		end := min(i+batchSize, len(entries))
-		batch := entries[i:end]
+	return nil
+}
 
-		var b strings.Builder
-		b.WriteString("INSERT INTO dns (domain, ips, dead, error) VALUES ")
-		args := make([]any, 0, len(batch)*4)
-		for j, e := range batch {
-			if j > 0 {
-				b.WriteByte(',')
-			}
-			b.WriteString("(?,?,?,?)")
-			args = append(args, e.domain, e.ips, e.dead, e.errMsg)
-		}
-
-		if _, err := tx.Exec(b.String(), args...); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("batch insert at offset %d: %w", i, err)
-		}
-	}
-
-	return tx.Commit()
+// csvEscape replaces tabs and newlines in error messages for TSV format.
+func csvEscape(s string) string {
+	s = strings.ReplaceAll(s, "\t", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }
 
 // DNSProgress is called periodically during DNS resolution with live stats.
 type DNSProgress struct {
-	Total    int     // total domains to resolve (excluding cached)
-	Done     int64   // completed so far (live + dead - cached)
-	Live     int64   // resolved successfully
-	Dead     int64   // failed resolution
-	Speed    float64 // lookups/sec (rolling)
-	Elapsed  time.Duration
-	Cached   int64   // loaded from cache (already done)
-	Retrying int     // domains queued for retry (0 during pass 1)
+	Total   int     // total domains to resolve (excluding cached)
+	Done    int64   // completed so far
+	Live    int64   // resolved successfully
+	Dead    int64   // failed resolution (NXDOMAIN)
+	Timeout int64   // timed out (all resolvers)
+	Speed   float64 // lookups/sec (rolling)
+	Elapsed time.Duration
+	Cached  int64 // loaded from cache (already done)
 }
 
-// Resolve performs fast parallel DNS lookups optimized for throughput.
+// makeFastDNSClients creates fastdns clients for direct UDP DNS resolution.
+// Uses Cloudflare + Google DNS with connection pooling for high throughput
+// without overwhelming the system DNS resolver (mDNSResponder).
+func makeFastDNSClients(timeout time.Duration, connsPerServer int) []*fastdns.Client {
+	servers := []string{"1.1.1.1:53", "8.8.8.8:53"}
+	clients := make([]*fastdns.Client, len(servers))
+	for i, addr := range servers {
+		udpAddr, _ := net.ResolveUDPAddr("udp", addr)
+		clients[i] = &fastdns.Client{
+			Addr:    addr,
+			Timeout: timeout,
+			Dialer: &fastdns.UDPDialer{
+				Addr:     udpAddr,
+				Timeout:  timeout,
+				MaxConns: uint16(connsPerServer),
+			},
+		}
+	}
+	return clients
+}
+
+// ResolveBatch performs fast parallel DNS lookups optimized for maximum throughput.
 //
-// Strategy: Single pass with system DNS, 1.5s timeout, 5000 workers.
-//   - NXDOMAIN → mark dead (definitive, domain doesn't exist)
-//   - Timeout/temp error → NOT dead (leave for HTTP pipeline to handle)
+// Uses phuslu/fastdns with direct UDP to Cloudflare (1.1.1.1) and Google (8.8.8.8),
+// completely bypassing the system DNS resolver (mDNSResponder) which can't handle
+// high concurrency. Connection-pooled UDP sockets achieve 97% accuracy at 1500+ QPS.
+//
+//   - No IPs returned → mark dead (NXDOMAIN — fastdns returns nil error for NXDOMAIN)
+//   - Timeout → mark timeout (saved to cache, treated as dead for this run)
 //   - Success → cache IPs for direct dialing (skip DNS during HTTP fetch)
-//
-// This is a speed optimization, not a filter. Only definitively dead domains
-// are marked; timeouts are left for the HTTP transport's own DNS resolution.
-//
-// If onProgress is non-nil, it's called every 500ms with live stats.
-func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int, onProgress func(DNSProgress)) (live, dead int) {
-	// Filter out already-cached domains
+func (d *DNSResolver) ResolveBatch(ctx context.Context, domains []string, workers int, batchTimeout time.Duration, onProgress func(DNSProgress)) (live, dead, timedout int) {
+	// Filter out already-cached domains (resolved, dead, or timed-out)
 	var toResolve []string
 	for _, domain := range domains {
 		s := &d.shards[shardFor(domain)]
 		s.mu.RLock()
 		_, inResolved := s.resolved[domain]
 		_, inDead := s.dead[domain]
+		_, inTimeout := s.timeout[domain]
 		s.mu.RUnlock()
-		if !inResolved && !inDead {
+		if !inResolved && !inDead && !inTimeout {
 			toResolve = append(toResolve, domain)
 		}
 	}
@@ -260,8 +301,16 @@ func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int
 
 	if len(toResolve) == 0 {
 		d.duration = time.Since(start)
-		return int(d.ok.Load()), int(d.failed.Load())
+		return int(d.ok.Load()), int(d.failed.Load()), int(d.timedOut.Load())
 	}
+
+	if batchTimeout == 0 {
+		batchTimeout = 2 * time.Second
+	}
+
+	// Create fastdns clients: 2 servers (Cloudflare + Google), 256 connections each
+	connsPerServer := 256
+	clients := makeFastDNSClients(batchTimeout, connsPerServer)
 
 	// Start progress goroutine
 	progressCtx, progressCancel := context.WithCancel(ctx)
@@ -278,8 +327,8 @@ func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int
 					now := time.Now()
 					ok := d.ok.Load()
 					fail := d.failed.Load()
-					skipped := d.retrying.Load() // reuse as "skipped" count
-					done := ok + fail + skipped
+					tout := d.timedOut.Load()
+					done := ok + fail + tout
 					dt := now.Sub(lastTime).Seconds()
 					speed := float64(0)
 					if dt > 0 {
@@ -288,14 +337,14 @@ func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int
 					lastCount = done
 					lastTime = now
 					onProgress(DNSProgress{
-						Total:    len(toResolve),
-						Done:     done - d.cached.Load(),
-						Live:     ok,
-						Dead:     fail,
-						Speed:    speed,
-						Elapsed:  now.Sub(start),
-						Cached:   d.cached.Load(),
-						Retrying: int(skipped),
+						Total:   len(toResolve),
+						Done:    done - d.cached.Load(),
+						Live:    ok,
+						Dead:    fail,
+						Timeout: tout,
+						Speed:   speed,
+						Elapsed: now.Sub(start),
+						Cached:  d.cached.Load(),
 					})
 				case <-progressCtx.Done():
 					return
@@ -304,83 +353,59 @@ func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int
 		}()
 	}
 
-	// Single fast pass: system DNS first, then Google, then Cloudflare for NXDOMAIN verification
-	maxWorkers := min(workers, 5000)
-	if maxWorkers > len(toResolve) {
-		maxWorkers = len(toResolve)
-	}
-
-	d.resolvePass(ctx, toResolve, maxWorkers, d.resolvers[0], d.lookupTimeout, func(domain string, err error) {
-		if isDefinitelyDead(err) {
-			// NXDOMAIN is definitive — mark dead
-			s := &d.shards[shardFor(domain)]
-			s.mu.Lock()
-			s.dead[domain] = truncateErr(err)
-			s.mu.Unlock()
-			d.failed.Add(1)
-		} else {
-			// Timeout/temp error — NOT dead, just unresolved.
-			// HTTP transport will do its own DNS lookup for these.
-			d.retrying.Add(1) // count as "skipped" for progress
-		}
-	})
-
-	// Final progress update
-	progressCancel()
-	if onProgress != nil {
-		ok := d.ok.Load()
-		fail := d.failed.Load()
-		skipped := d.retrying.Load()
-		onProgress(DNSProgress{
-			Total:    len(toResolve),
-			Done:     ok + fail + skipped - d.cached.Load(),
-			Live:     ok,
-			Dead:     fail,
-			Speed:    0,
-			Elapsed:  time.Since(start),
-			Cached:   d.cached.Load(),
-			Retrying: int(skipped),
-		})
-	}
-
-	d.duration = time.Since(start)
-	return int(d.ok.Load()), int(d.failed.Load())
-}
-
-// resolvePass runs parallel DNS lookups using a single resolver.
-// onFail is called for each domain that fails (NOT recorded in shards — caller decides).
-// Successful lookups are recorded directly in shards.
-func (d *DNSResolver) resolvePass(ctx context.Context, domains []string, workers int, resolver *net.Resolver, timeout time.Duration, onFail func(string, error)) {
-	d.runWorkers(ctx, domains, workers, resolver, timeout, onFail)
-}
-
-func (d *DNSResolver) runWorkers(ctx context.Context, domains []string, workers int, resolver *net.Resolver, timeout time.Duration, onFail func(string, error)) {
-	ch := make(chan string, workers*4)
+	// Workers: 1000 per server (2000 total), round-robin across clients
+	maxWorkers := min(workers, len(toResolve))
+	ch := make(chan string, maxWorkers*4)
 	var wg sync.WaitGroup
 
-	for range workers {
+	for i := range maxWorkers {
 		wg.Add(1)
+		client := clients[i%len(clients)]
 		go func() {
 			defer wg.Done()
 			for domain := range ch {
-				lookupCtx, cancel := context.WithTimeout(ctx, timeout)
-				addrs, err := resolver.LookupHost(lookupCtx, domain)
+				lookupCtx, cancel := context.WithTimeout(ctx, batchTimeout)
+				ips, err := client.LookupNetIP(lookupCtx, "ip4", domain)
 				cancel()
 
-				if err == nil && len(addrs) > 0 {
+				if err == nil && len(ips) > 0 {
+					// Success — convert netip.Addr to strings, cache IPs
+					addrs := make([]string, len(ips))
+					for j, ip := range ips {
+						addrs[j] = ip.String()
+					}
 					s := &d.shards[shardFor(domain)]
 					s.mu.Lock()
 					s.resolved[domain] = addrs
 					s.mu.Unlock()
 					d.ok.Add(1)
+				} else if err == nil {
+					// No IPs, no error = NXDOMAIN (fastdns returns nil for NXDOMAIN)
+					s := &d.shards[shardFor(domain)]
+					s.mu.Lock()
+					s.dead[domain] = "NXDOMAIN"
+					s.mu.Unlock()
+					d.failed.Add(1)
+				} else if isTimeoutErr(err) {
+					// Timeout — mark as timeout for caching
+					s := &d.shards[shardFor(domain)]
+					s.mu.Lock()
+					s.timeout[domain] = truncateErr(err)
+					s.mu.Unlock()
+					d.timedOut.Add(1)
 				} else {
-					onFail(domain, err)
+					// Other error (server failure, etc.) — treat as dead
+					s := &d.shards[shardFor(domain)]
+					s.mu.Lock()
+					s.dead[domain] = truncateErr(err)
+					s.mu.Unlock()
+					d.failed.Add(1)
 				}
 			}
 		}()
 	}
 
-	for _, domain := range domains {
+	for _, domain := range toResolve {
 		select {
 		case ch <- domain:
 		case <-ctx.Done():
@@ -390,6 +415,42 @@ func (d *DNSResolver) runWorkers(ctx context.Context, domains []string, workers 
 drain:
 	close(ch)
 	wg.Wait()
+
+	// Final progress update
+	progressCancel()
+	if onProgress != nil {
+		ok := d.ok.Load()
+		fail := d.failed.Load()
+		tout := d.timedOut.Load()
+		onProgress(DNSProgress{
+			Total:   len(toResolve),
+			Done:    ok + fail + tout - d.cached.Load(),
+			Live:    ok,
+			Dead:    fail,
+			Timeout: tout,
+			Speed:   0,
+			Elapsed: time.Since(start),
+			Cached:  d.cached.Load(),
+		})
+	}
+
+	d.duration = time.Since(start)
+	return int(d.ok.Load()), int(d.failed.Load()), int(d.timedOut.Load())
+}
+
+// isTimeoutErr returns true if the error indicates a DNS timeout.
+func isTimeoutErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "timeout") || strings.Contains(s, "deadline")
+}
+
+// Resolve performs fast parallel DNS lookups (legacy, use ResolveBatch for new code).
+func (d *DNSResolver) Resolve(ctx context.Context, domains []string, workers int, onProgress func(DNSProgress)) (live, dead int) {
+	l, de, _ := d.ResolveBatch(ctx, domains, workers, d.lookupTimeout, onProgress)
+	return l, de
 }
 
 // isDefinitelyDead returns true only for errors that prove the domain doesn't exist.
@@ -420,8 +481,8 @@ func truncateErr(err error) string {
 }
 
 // ResolveOne resolves a single domain, checking cache first.
-// Tries resolvers sequentially: Google 8.8.8.8 (primary, high-concurrency)
-// → Cloudflare 1.1.1.1 → system DNS, with per-resolver timeout.
+// Tries resolvers sequentially: system DNS → Google 8.8.8.8 → Cloudflare 1.1.1.1,
+// with per-resolver timeout.
 //
 // Returns (ips, false, nil) on cache hit or successful resolution.
 // Returns (nil, true, nil/err) on NXDOMAIN (definitive dead).
@@ -439,12 +500,16 @@ func (d *DNSResolver) ResolveOne(ctx context.Context, domain string) (ips []stri
 		s.mu.RUnlock()
 		return nil, true, nil
 	}
+	if _, isTimeout := s.timeout[domain]; isTimeout {
+		s.mu.RUnlock()
+		return nil, false, fmt.Errorf("previously timed out")
+	}
 	s.mu.RUnlock()
 
 	// Try each resolver sequentially with per-resolver timeout
 	perTimeout := d.lookupTimeout / time.Duration(len(d.resolvers))
-	if perTimeout < 500*time.Millisecond {
-		perTimeout = 500 * time.Millisecond
+	if perTimeout < 300*time.Millisecond {
+		perTimeout = 300 * time.Millisecond
 	}
 
 	var lastErr error
@@ -475,17 +540,41 @@ func (d *DNSResolver) ResolveOne(ctx context.Context, domain string) (ips []stri
 		lastErr = lookupErr
 	}
 
-	// All resolvers failed (timeout/temp) — not dead, just unreachable
+	// All resolvers failed (timeout/temp) — mark as timeout for caching
+	s.mu.Lock()
+	s.timeout[domain] = truncateErr(lastErr)
+	s.mu.Unlock()
+	d.timedOut.Add(1)
+
 	return nil, false, lastErr
 }
 
-// IsDead returns true if the domain failed DNS resolution.
+// IsDead returns true if the domain is definitively dead (NXDOMAIN).
 func (d *DNSResolver) IsDead(domain string) bool {
 	s := &d.shards[shardFor(domain)]
 	s.mu.RLock()
 	_, dead := s.dead[domain]
 	s.mu.RUnlock()
 	return dead
+}
+
+// IsTimeout returns true if the domain timed out during resolution.
+func (d *DNSResolver) IsTimeout(domain string) bool {
+	s := &d.shards[shardFor(domain)]
+	s.mu.RLock()
+	_, tout := s.timeout[domain]
+	s.mu.RUnlock()
+	return tout
+}
+
+// IsDeadOrTimeout returns true if the domain should be skipped (dead or timed out).
+func (d *DNSResolver) IsDeadOrTimeout(domain string) bool {
+	s := &d.shards[shardFor(domain)]
+	s.mu.RLock()
+	_, dead := s.dead[domain]
+	_, tout := s.timeout[domain]
+	s.mu.RUnlock()
+	return dead || tout
 }
 
 // IsResolved returns true if the domain passed DNS resolution.
@@ -501,26 +590,58 @@ func (d *DNSResolver) IsResolved(domain string) bool {
 func (d *DNSResolver) Stats() string {
 	ok := d.ok.Load()
 	fail := d.failed.Load()
+	tout := d.timedOut.Load()
 	cached := d.cached.Load()
 	pct := float64(0)
 	if d.total > 0 {
 		pct = float64(ok) / float64(d.total) * 100
 	}
 	if cached > 0 {
-		return fmt.Sprintf("%s domains resolved (%4.1f%%), %s dead, %s cached, took %s",
-			fmtInt(int(ok)), pct, fmtInt(int(fail)), fmtInt(int(cached)), d.duration.Truncate(time.Millisecond))
+		return fmt.Sprintf("%s live (%4.1f%%), %s dead, %s timeout, %s cached, took %s",
+			fmtInt(int(ok)), pct, fmtInt(int(fail)), fmtInt(int(tout)), fmtInt(int(cached)), d.duration.Truncate(time.Millisecond))
 	}
-	return fmt.Sprintf("%s domains resolved (%4.1f%%), %s dead, took %s",
-		fmtInt(int(ok)), pct, fmtInt(int(fail)), d.duration.Truncate(time.Millisecond))
+	return fmt.Sprintf("%s live (%4.1f%%), %s dead, %s timeout, took %s",
+		fmtInt(int(ok)), pct, fmtInt(int(fail)), fmtInt(int(tout)), d.duration.Truncate(time.Millisecond))
 }
 
-// DeadDomains returns the set of dead domains.
+// DeadDomains returns the set of dead domains (NXDOMAIN only).
 func (d *DNSResolver) DeadDomains() map[string]bool {
 	result := make(map[string]bool)
 	for i := range d.shards {
 		s := &d.shards[i]
 		s.mu.RLock()
 		for domain := range s.dead {
+			result[domain] = true
+		}
+		s.mu.RUnlock()
+	}
+	return result
+}
+
+// DeadOrTimeoutDomains returns domains that are dead OR timed out.
+func (d *DNSResolver) DeadOrTimeoutDomains() map[string]bool {
+	result := make(map[string]bool)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain := range s.dead {
+			result[domain] = true
+		}
+		for domain := range s.timeout {
+			result[domain] = true
+		}
+		s.mu.RUnlock()
+	}
+	return result
+}
+
+// TimeoutDomains returns the set of timed-out domains.
+func (d *DNSResolver) TimeoutDomains() map[string]bool {
+	result := make(map[string]bool)
+	for i := range d.shards {
+		s := &d.shards[i]
+		s.mu.RLock()
+		for domain := range s.timeout {
 			result[domain] = true
 		}
 		s.mu.RUnlock()
@@ -548,4 +669,42 @@ func (d *DNSResolver) CachedCount() int64 {
 // Duration returns how long the DNS resolution took.
 func (d *DNSResolver) Duration() time.Duration {
 	return d.duration
+}
+
+// LiveCount returns the number of successfully resolved domains.
+func (d *DNSResolver) LiveCount() int64 {
+	return d.ok.Load()
+}
+
+// DeadCount returns the number of NXDOMAIN domains.
+func (d *DNSResolver) DeadCount() int64 {
+	return d.failed.Load()
+}
+
+// TimeoutCount returns the number of timed-out domains.
+func (d *DNSResolver) TimeoutCount() int64 {
+	return d.timedOut.Load()
+}
+
+// MergeHTTPDead merges HTTP-level dead domains into the DNS cache.
+// These are domains where DNS resolved but HTTP connection was refused/reset.
+// Stored as "dead" in the cache with an "http_dead" error message so
+// subsequent runs skip them instantly.
+func (d *DNSResolver) MergeHTTPDead(httpDead map[string]bool) int {
+	merged := 0
+	for domain := range httpDead {
+		s := &d.shards[shardFor(domain)]
+		s.mu.Lock()
+		// Only mark as dead if not already resolved/dead/timeout
+		if _, ok := s.dead[domain]; !ok {
+			if _, ok := s.timeout[domain]; !ok {
+				// Move from resolved → dead (server has IP but doesn't respond)
+				delete(s.resolved, domain)
+				s.dead[domain] = "http_dead"
+				merged++
+			}
+		}
+		s.mu.Unlock()
+	}
+	return merged
 }

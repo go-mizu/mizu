@@ -21,6 +21,7 @@ func NewRecrawl() *cobra.Command {
 		latest          bool
 		workers         int
 		dnsWorkers      int
+		dnsTimeout      int
 		timeout         int
 		headOnly        bool
 		statusOnly      bool
@@ -44,14 +45,16 @@ Performance flags:
   --status-only       Only check HTTP status, close body immediately (fastest mode)
   --transport-shards  Shard HTTP transport pools to reduce lock contention
   --workers           Concurrent workers (default: 100000)
+  --dns-workers       Concurrent DNS workers (default: 2000)
+  --dns-timeout       DNS lookup timeout in ms (default: 2000)
 
 Directory mode:
   --dir + --latest    Auto-select the highest-index DuckDB file in a directory
 
 Examples:
   search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb
-  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --status-only --transport-shards 16
-  search recrawl --dir ~/data/fineweb-1/CC-MAIN-2024-51/ --latest --status-only
+  search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --status-only --transport-shards 64
+  search recrawl --dir ~/data/fineweb-1/CC-MAIN-2025-26/ --latest --status-only
   search recrawl --db ~/data/fineweb-2/vie_Latn/test.duckdb --resume`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Resolve --dir + --latest to --db
@@ -68,6 +71,7 @@ Examples:
 			return runRecrawl(cmd.Context(), dbPath, recrawler.Config{
 				Workers:         workers,
 				DNSWorkers:      dnsWorkers,
+				DNSTimeout:      time.Duration(dnsTimeout) * time.Millisecond,
 				Timeout:         time.Duration(timeout) * time.Millisecond,
 				UserAgent:       userAgent,
 				HeadOnly:        headOnly,
@@ -76,7 +80,7 @@ Examples:
 				Resume:          resume,
 				DNSPrefetch:     dnsPrefetch,
 				TransportShards: transportShards,
-				TwoPass:        twoPass,
+				TwoPass:         twoPass,
 			})
 		},
 	}
@@ -84,16 +88,17 @@ Examples:
 	cmd.Flags().StringVar(&dbPath, "db", "", "Path to seed DuckDB file")
 	cmd.Flags().StringVar(&dirPath, "dir", "", "Directory containing DuckDB files (use with --latest)")
 	cmd.Flags().BoolVar(&latest, "latest", false, "Auto-select highest-index DuckDB in --dir")
-	cmd.Flags().IntVar(&workers, "workers", 100000, "Number of concurrent HTTP fetch workers")
-	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 5000, "Number of concurrent DNS pipeline workers")
-	cmd.Flags().IntVar(&timeout, "timeout", 1000, "Per-request timeout in milliseconds")
+	cmd.Flags().IntVar(&workers, "workers", 200, "Number of concurrent HTTP fetch workers")
+	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 2000, "Number of concurrent DNS workers")
+	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 2000, "DNS lookup timeout in milliseconds")
+	cmd.Flags().IntVar(&timeout, "timeout", 5000, "Per-request HTTP timeout in milliseconds")
 	cmd.Flags().BoolVar(&headOnly, "head-only", false, "Only fetch headers, skip body")
 	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 5000, "DB write batch size")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-crawled URLs")
 	cmd.Flags().StringVar(&userAgent, "user-agent", "MizuCrawler/1.0", "User-Agent header")
-	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Pre-resolve DNS for all domains")
-	cmd.Flags().IntVar(&transportShards, "transport-shards", 16, "Number of HTTP transport shards")
+	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Batch DNS pre-resolution for all domains")
+	cmd.Flags().IntVar(&transportShards, "transport-shards", 64, "Number of HTTP transport shards")
 	cmd.Flags().BoolVar(&twoPass, "two-pass", false, "Two-pass mode: probe domains before full fetch")
 
 	return cmd
@@ -171,14 +176,47 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		}
 	}
 
-	// DNS resolver (if enabled, pipelined with fetch — no separate prefetch step)
+	// DNS resolver
 	var dnsResolver *recrawler.DNSResolver
 	if cfg.DNSPrefetch {
-		dnsResolver = recrawler.NewDNSResolver(2 * time.Second)
+		dnsResolver = recrawler.NewDNSResolver(cfg.DNSTimeout)
 		cached, _ := dnsResolver.LoadCache(dnsPath)
 		if cached > 0 {
-			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS cache: loaded %d entries from %s", cached, filepath.Base(dnsPath))))
+			fmt.Println(successStyle.Render(fmt.Sprintf("  DNS cache: loaded %d entries (live=%d, dead=%d, timeout=%d)",
+				cached, dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
 		}
+
+		// Batch DNS pre-resolution: resolve all uncached domains upfront
+		// This is much faster than per-domain resolution in the pipeline
+		allDomains := make(map[string]bool, len(seeds))
+		for _, s := range seeds {
+			if skip == nil || !skip[s.URL] {
+				allDomains[s.Domain] = true
+			}
+		}
+		domainList := make([]string, 0, len(allDomains))
+		for d := range allDomains {
+			domainList = append(domainList, d)
+		}
+
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Batch DNS: resolving %d domains (%d workers, %v timeout)...",
+			len(domainList), cfg.DNSWorkers, cfg.DNSTimeout)))
+
+		var dnsDisplayLines int
+		live, dead, timeout := dnsResolver.ResolveBatch(ctx, domainList, cfg.DNSWorkers, cfg.DNSTimeout, func(p recrawler.DNSProgress) {
+			if dnsDisplayLines > 0 {
+				fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+			}
+			output := fmt.Sprintf("  DNS  %d/%d  │  %d live  │  %d dead  │  %d timeout  │  %.0f/s  │  %s\n",
+				p.Done, p.Total, p.Live, p.Dead, p.Timeout, p.Speed, p.Elapsed.Truncate(time.Millisecond))
+			fmt.Print(output)
+			dnsDisplayLines = 1
+		})
+		if dnsDisplayLines > 0 {
+			fmt.Printf("\033[%dA\033[J", dnsDisplayLines)
+		}
+		fmt.Println(successStyle.Render(fmt.Sprintf("  DNS: %d live, %d dead, %d timeout (%s)",
+			live, dead, timeout, dnsResolver.Duration().Truncate(time.Millisecond))))
 	}
 
 	// Open sharded result databases
@@ -208,7 +246,7 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	}
 	pipelineMode := "direct"
 	if dnsResolver != nil {
-		pipelineMode = "dns-pipeline"
+		pipelineMode = "batch-dns → direct"
 	}
 	if cfg.TwoPass {
 		pipelineMode = "two-pass"
@@ -218,12 +256,15 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 		cfg.Workers, cfg.Timeout, mode, cfg.TransportShards, pipelineMode)))
 	fmt.Println()
 
-	// Create and run recrawler with live display
+	// Create and run recrawler
 	r := recrawler.New(cfg, stats, rdb)
 
-	// Enable pipelined DNS+fetch mode (resolve domain → immediately fetch URLs)
+	// Pre-populate DNS cache and dead domains from batch resolution.
+	// Use SetDNSCache + SetDeadDomains (NOT SetDNSResolver) so that Run()
+	// uses directFeed instead of spawning another DNS pipeline.
 	if dnsResolver != nil {
-		r.SetDNSResolver(dnsResolver)
+		r.SetDNSCache(dnsResolver.ResolvedIPs())
+		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomains())
 	}
 
 	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
@@ -232,15 +273,22 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	rdb.Flush(ctx)
 	rdb.SetMeta(ctx, "finished_at", time.Now().Format(time.RFC3339))
 
-	// Save DNS cache for next run
+	// Merge HTTP dead domains into DNS cache (so next run skips them instantly)
 	if dnsResolver != nil {
+		httpDead := r.HTTPDeadDomains()
+		merged := dnsResolver.MergeHTTPDead(httpDead)
+		if merged > 0 {
+			fmt.Println(infoStyle.Render(fmt.Sprintf("  Merged %d HTTP-dead domains into DNS cache", merged)))
+		}
+
 		fmt.Print(infoStyle.Render("  Saving DNS cache..."))
 		saveStart := time.Now()
 		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
 			fmt.Println(warningStyle.Render(fmt.Sprintf(" failed: %v", saveErr)))
 		} else {
-			fmt.Println(successStyle.Render(fmt.Sprintf(" saved in %s → %s",
-				time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath))))
+			fmt.Println(successStyle.Render(fmt.Sprintf(" saved in %s → %s (live=%d, dead=%d, timeout=%d)",
+				time.Since(saveStart).Truncate(time.Millisecond), filepath.Base(dnsPath),
+				dnsResolver.LiveCount(), dnsResolver.DeadCount(), dnsResolver.TimeoutCount())))
 		}
 	}
 

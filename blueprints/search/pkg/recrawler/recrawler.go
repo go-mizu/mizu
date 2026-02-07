@@ -41,7 +41,7 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 		cfg.Workers = 2000
 	}
 	if cfg.DNSWorkers == 0 {
-		cfg.DNSWorkers = 5000
+		cfg.DNSWorkers = 2000
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 3 * time.Second
@@ -81,7 +81,7 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 	cfg := r.config
 
 	dialTimeout := min(cfg.Timeout/2, 2*time.Second)
-	tlsTimeout := min(cfg.Timeout/2, 2*time.Second)
+	tlsTimeout := min(cfg.Timeout/2, 3*time.Second)
 
 	// Divide idle conns across shards
 	maxIdlePerShard := min(cfg.Workers*2/max(cfg.TransportShards, 1), 100000)
@@ -173,11 +173,11 @@ func (r *Recrawler) SetDNSResolver(dns *DNSResolver) {
 		}
 		r.dnsCacheMu.Unlock()
 	}
-	// Pre-populate dead domains from cached dead entries
-	dead := dns.DeadDomains()
-	if len(dead) > 0 {
+	// Pre-populate dead domains from cached dead + timeout entries
+	deadOrTimeout := dns.DeadOrTimeoutDomains()
+	if len(deadOrTimeout) > 0 {
 		r.deadDomainsMu.Lock()
-		for d := range dead {
+		for d := range deadOrTimeout {
 			r.deadDomains[d] = true
 		}
 		r.deadDomainsMu.Unlock()
@@ -195,6 +195,19 @@ func (r *Recrawler) markDomainDead(domain string) {
 	r.deadDomainsMu.Lock()
 	r.deadDomains[domain] = true
 	r.deadDomainsMu.Unlock()
+}
+
+// HTTPDeadDomains returns domains marked dead during HTTP fetching.
+// These are domains where TCP connection was refused/reset (not timeouts).
+// Can be merged into DNS cache for reuse in subsequent runs.
+func (r *Recrawler) HTTPDeadDomains() map[string]bool {
+	r.deadDomainsMu.RLock()
+	result := make(map[string]bool, len(r.deadDomains))
+	for d := range r.deadDomains {
+		result[d] = true
+	}
+	r.deadDomainsMu.RUnlock()
+	return result
 }
 
 // shuffleURLs randomizes URL order using Fisher-Yates shuffle.
@@ -269,12 +282,10 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 
 // dnsPipeline resolves domains and pushes their URLs to the fetch channel.
 // Runs concurrently with HTTP fetch workers for maximum throughput.
-// NXDOMAIN domains are filtered out. Timeout domains are still pushed
-// (HTTP transport will handle DNS inline for those).
+// NXDOMAIN and timeout domains are filtered out.
 //
 // In TwoPass mode, DNS-live domains get an additional HTTP HEAD probe:
 // only domains that respond to the probe have their URLs pushed to fetch.
-// This eliminates >99% of HTTP work when most domains are unreachable.
 func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURLs map[string][]SeedURL, urlCh chan<- SeedURL) {
 	defer close(urlCh)
 
@@ -320,8 +331,9 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 				}
 
 				if len(ips) == 0 {
-					// DNS timeout on ALL resolvers — skip these URLs
-					// (they'd just timeout in HTTP anyway without cached IPs)
+					// DNS timeout on ALL resolvers — mark dead, skip URLs
+					r.markDomainDead(domain)
+					r.stats.RecordDNSTimeout()
 					for range urls {
 						r.stats.RecordDomainSkip()
 					}
@@ -459,6 +471,8 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 	resp, err := client.Do(req)
 	if err != nil {
 		isTimeout := isTimeoutError(err)
+		// Mark domain dead on definitive connection failures only.
+		// Timeouts are NOT fatal — server may be slow but alive.
 		isFatal := isConnectionRefused(err) || isDNSError(err)
 		r.stats.RecordFailure(0, seed.Domain, isTimeout)
 		r.rdb.Add(Result{

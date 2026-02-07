@@ -21,8 +21,9 @@ type Stats struct {
 	fetchMs     atomic.Int64 // sum of fetch times for avg calculation
 
 	// DNS pipeline counters (domain-level, not URL-level)
-	dnsLive atomic.Int64
-	dnsDead atomic.Int64
+	dnsLive    atomic.Int64
+	dnsDead    atomic.Int64
+	dnsTimeout atomic.Int64
 
 	// Two-pass probe counters (domain-level)
 	probeReachable   atomic.Int64
@@ -151,6 +152,11 @@ func (s *Stats) RecordDNSLive() {
 // RecordDNSDead records a domain resolved as dead (NXDOMAIN).
 func (s *Stats) RecordDNSDead() {
 	s.dnsDead.Add(1)
+}
+
+// RecordDNSTimeout records a domain that timed out during DNS resolution.
+func (s *Stats) RecordDNSTimeout() {
+	s.dnsTimeout.Add(1)
 }
 
 // RecordProbeReachable records a domain that responded to the HTTP probe.
@@ -304,12 +310,13 @@ func (s *Stats) Render() string {
 	b.WriteString(fmt.Sprintf("  HTTP  %s\n", statusLine))
 	dnsLiveCount := s.dnsLive.Load()
 	dnsDeadCount := s.dnsDead.Load()
-	dnsTotal := dnsLiveCount + dnsDeadCount
+	dnsTimeoutCount := s.dnsTimeout.Load()
+	dnsTotal := dnsLiveCount + dnsDeadCount + dnsTimeoutCount
 	if dnsTotal > 0 {
-		b.WriteString(fmt.Sprintf("  DNS     %s/%s  │  %s live  │  %s dead (%4.1f%%)\n",
+		b.WriteString(fmt.Sprintf("  DNS     %s/%s  │  %s live  │  %s dead  │  %s timeout (%4.1f%%)\n",
 			fmtInt64(dnsTotal), fmtInt(s.UniqueDomains),
-			fmtInt64(dnsLiveCount), fmtInt64(dnsDeadCount),
-			safePct(dnsDeadCount, dnsTotal)))
+			fmtInt64(dnsLiveCount), fmtInt64(dnsDeadCount), fmtInt64(dnsTimeoutCount),
+			safePct(dnsDeadCount+dnsTimeoutCount, dnsTotal)))
 	}
 	probeOK := s.probeReachable.Load()
 	probeFail := s.probeUnreachable.Load()
