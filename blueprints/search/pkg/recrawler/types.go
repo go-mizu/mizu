@@ -50,8 +50,9 @@ type Config struct {
 	BatchSize            int           // DB write batch size (default: 5000)
 	Resume               bool          // Skip already-crawled URLs
 	DNSPrefetch          bool          // Pre-resolve DNS for all domains
-	DomainFailThreshold  int           // Failures before marking domain dead (default: 1)
+	DomainFailThreshold  int           // Failures before marking domain dead (default: 3)
 	TransportShards      int           // Number of HTTP transport shards (default: 64)
+	MaxConnsPerDomain    int           // Max concurrent connections per domain (0=unlimited, default: 8)
 	TwoPass              bool          // Enable two-pass: probe domains before full fetch
 }
 
