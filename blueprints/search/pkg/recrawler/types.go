@@ -27,6 +27,7 @@ type Result struct {
 	StatusCode    int
 	ContentType   string
 	ContentLength int64
+	Body          string // HTML body (full content mode)
 	Title         string
 	Description   string
 	Language      string

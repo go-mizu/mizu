@@ -30,6 +30,9 @@ type Recrawler struct {
 	// Cached DNS: pre-resolved domain → IP for direct dialing
 	dnsCache   map[string][]string
 	dnsCacheMu sync.RWMutex
+
+	// DNS resolver for pipelined mode (resolve + fetch concurrently)
+	dnsResolver *DNSResolver
 }
 
 // New creates a recrawler optimized for maximum throughput.
@@ -153,6 +156,31 @@ func (r *Recrawler) SetDNSCache(resolved map[string][]string) {
 	r.dnsCacheMu.Unlock()
 }
 
+// SetDNSResolver enables pipelined mode: DNS resolution and HTTP fetching
+// happen concurrently, partitioned by domain. As each domain resolves,
+// its URLs immediately enter the fetch pipeline.
+func (r *Recrawler) SetDNSResolver(dns *DNSResolver) {
+	r.dnsResolver = dns
+	// Pre-populate dnsCache with already-cached entries from the resolver
+	resolved := dns.ResolvedIPs()
+	if len(resolved) > 0 {
+		r.dnsCacheMu.Lock()
+		for domain, ips := range resolved {
+			r.dnsCache[domain] = ips
+		}
+		r.dnsCacheMu.Unlock()
+	}
+	// Pre-populate dead domains from cached dead entries
+	dead := dns.DeadDomains()
+	if len(dead) > 0 {
+		r.deadDomainsMu.Lock()
+		for d := range dead {
+			r.deadDomains[d] = true
+		}
+		r.deadDomainsMu.Unlock()
+	}
+}
+
 func (r *Recrawler) isDomainDead(domain string) bool {
 	r.deadDomainsMu.RLock()
 	dead := r.deadDomains[domain]
@@ -179,58 +207,169 @@ func (r *Recrawler) clientForWorker(workerID int) *http.Client {
 }
 
 // Run executes the recrawl on the given URL set.
+// If a DNS resolver is set (via SetDNSResolver), uses a domain-partitioned pipeline
+// where DNS resolution and HTTP fetching happen concurrently.
 func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bool) error {
-	var urls []SeedURL
+	// Group URLs by domain, filtering skipped URLs
+	domainURLs := make(map[string][]SeedURL, len(seeds)/2)
+	totalLive := 0
 	for _, s := range seeds {
 		if skip != nil && skip[s.URL] {
 			r.stats.RecordSkip()
 			continue
 		}
-		urls = append(urls, s)
+		domainURLs[s.Domain] = append(domainURLs[s.Domain], s)
+		totalLive++
 	}
 
-	if len(urls) == 0 {
+	if totalLive == 0 {
 		return nil
 	}
 
-	// Pre-filter dead-domain URLs before entering the worker pipeline
-	var liveURLs []SeedURL
-	for _, u := range urls {
-		if r.isDomainDead(u.Domain) {
-			r.stats.RecordDomainSkip()
-		} else {
-			liveURLs = append(liveURLs, u)
-		}
+	// Shuffle domains for load distribution (Fisher-Yates)
+	domains := make([]string, 0, len(domainURLs))
+	for d := range domainURLs {
+		domains = append(domains, d)
+	}
+	rand.Shuffle(len(domains), func(i, j int) {
+		domains[i], domains[j] = domains[j], domains[i]
+	})
+
+	// Create URL channel for fetch workers
+	urlCh := make(chan SeedURL, min(totalLive, r.config.Workers*4))
+
+	// Create a cancelable context so we can stop the pipeline on return
+	pipeCtx, pipeCancel := context.WithCancel(ctx)
+
+	if r.dnsResolver != nil {
+		// Pipelined: DNS workers resolve domains and feed URLs to fetch pipeline
+		go r.dnsPipeline(pipeCtx, domains, domainURLs, urlCh)
+	} else {
+		// Direct: pre-filter dead domains, shuffle, and feed URLs
+		go r.directFeed(pipeCtx, domains, domainURLs, urlCh)
 	}
 
-	if len(liveURLs) == 0 {
-		return nil
+	// Launch HTTP fetch workers
+	nWorkers := min(r.config.Workers, totalLive)
+	g, gCtx := errgroup.WithContext(pipeCtx)
+	for workerID := range nWorkers {
+		client := r.clientForWorker(workerID)
+		g.Go(func() error {
+			return r.worker(gCtx, client, urlCh)
+		})
 	}
 
-	shuffleURLs(liveURLs)
+	err := g.Wait()
+	pipeCancel() // ensure DNS pipeline stops if still running
+	return err
+}
 
-	urlCh := make(chan SeedURL, min(len(liveURLs), r.config.Workers*4))
+// dnsPipeline resolves domains and pushes their URLs to the fetch channel.
+// Runs concurrently with HTTP fetch workers for maximum throughput.
+// NXDOMAIN domains are filtered out. Timeout domains are still pushed
+// (HTTP transport will handle DNS inline for those).
+func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURLs map[string][]SeedURL, urlCh chan<- SeedURL) {
+	defer close(urlCh)
+
+	domainCh := make(chan string, min(len(domains), 10000))
+
+	// Feed domains
 	go func() {
-		defer close(urlCh)
-		for _, u := range liveURLs {
+		defer close(domainCh)
+		for _, d := range domains {
 			select {
-			case urlCh <- u:
+			case domainCh <- d:
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
-	nWorkers := min(r.config.Workers, len(liveURLs))
-	g, ctx := errgroup.WithContext(ctx)
-	for workerID := range nWorkers {
-		client := r.clientForWorker(workerID)
-		g.Go(func() error {
-			return r.worker(ctx, client, urlCh)
-		})
+	// DNS workers: resolve each domain, push its URLs
+	dnsWorkers := min(5000, len(domains))
+	var wg sync.WaitGroup
+	for range dnsWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for domain := range domainCh {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				urls := domainURLs[domain]
+
+				ips, dead, _ := r.dnsResolver.ResolveOne(ctx, domain)
+
+				if dead {
+					r.markDomainDead(domain)
+					r.stats.RecordDNSDead()
+					for range urls {
+						r.stats.RecordDomainSkip()
+					}
+					continue
+				}
+
+				if len(ips) == 0 {
+					// DNS timeout on ALL resolvers — skip these URLs
+					// (they'd just timeout in HTTP anyway without cached IPs)
+					for range urls {
+						r.stats.RecordDomainSkip()
+					}
+					continue
+				}
+
+				// DNS resolved — cache IPs and push URLs to fetch pipeline
+				r.stats.RecordDNSLive()
+				r.dnsCacheMu.Lock()
+				r.dnsCache[domain] = ips
+				r.dnsCacheMu.Unlock()
+
+				for _, u := range urls {
+					select {
+					case urlCh <- u:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
 	}
 
-	return g.Wait()
+	wg.Wait()
+}
+
+// directFeed pushes URLs to the fetch channel without DNS resolution.
+// Pre-filters dead-domain URLs and shuffles the rest.
+func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs map[string][]SeedURL, urlCh chan<- SeedURL) {
+	defer close(urlCh)
+
+	var liveURLs []SeedURL
+	for _, d := range domains {
+		if r.isDomainDead(d) {
+			for range domainURLs[d] {
+				r.stats.RecordDomainSkip()
+			}
+			continue
+		}
+		liveURLs = append(liveURLs, domainURLs[d]...)
+	}
+
+	if len(liveURLs) == 0 {
+		return
+	}
+
+	shuffleURLs(liveURLs)
+
+	for _, u := range liveURLs {
+		select {
+		case urlCh <- u:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan SeedURL) error {
@@ -314,32 +453,25 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 		return
 	}
 
-	// Full fetch mode: extract metadata and drain body
-	var (
-		title       string
-		description string
-		language    string
-		bodySize    int64
-	)
-
+	// Full fetch mode: read body, extract metadata
 	ct := resp.Header.Get("Content-Type")
 	isHTML := strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
 
-	if !r.config.HeadOnly && resp.StatusCode == 200 && isHTML {
-		limited := io.LimitReader(resp.Body, 128*1024)
-		extracted := crawler.Extract(limited, seed.URL)
+	// Read body (up to 512KB for full content capture)
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	resp.Body.Close()
+	bodySize := int64(len(bodyBytes))
+	if resp.ContentLength > bodySize {
+		bodySize = resp.ContentLength
+	}
+
+	var title, description, language, body string
+	if resp.StatusCode == 200 && isHTML && len(bodyBytes) > 0 {
+		body = string(bodyBytes)
+		extracted := crawler.Extract(strings.NewReader(body), seed.URL)
 		title = extracted.Title
 		description = extracted.Description
 		language = extracted.Language
-	}
-
-	n, _ := io.CopyN(io.Discard, resp.Body, 256*1024)
-	resp.Body.Close()
-
-	if resp.ContentLength > 0 {
-		bodySize = resp.ContentLength
-	} else if n > 0 {
-		bodySize = n
 	}
 
 	fetchMs := time.Since(start).Milliseconds()
@@ -358,8 +490,9 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 	r.rdb.Add(Result{
 		URL:           seed.URL,
 		StatusCode:    resp.StatusCode,
-		ContentType:   resp.Header.Get("Content-Type"),
+		ContentType:   ct,
 		ContentLength: bodySize,
+		Body:          body,
 		Title:         title,
 		Description:   description,
 		Language:      language,
