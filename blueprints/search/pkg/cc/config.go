@@ -67,3 +67,14 @@ func (c Config) CDXJDir() string {
 func (c Config) WARCDir() string {
 	return filepath.Join(c.CrawlDir(), "warc")
 }
+
+// RecrawlDir returns the directory for recrawl result shard files.
+// Separate from ResultDir (WARC fetch results) to avoid confusion.
+func (c Config) RecrawlDir() string {
+	return filepath.Join(c.CrawlDir(), "recrawl")
+}
+
+// DNSCachePath returns the path to the shared DNS cache.
+func (c Config) DNSCachePath() string {
+	return filepath.Join(c.CrawlDir(), "dns.duckdb")
+}
