@@ -1,6 +1,7 @@
 package dcrawler
 
 import (
+	"bufio"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,15 +23,14 @@ import (
 
 // Crawler is a high-throughput single-domain web crawler.
 type Crawler struct {
-	config    Config
-	client    *http.Client
-	transport *http.Transport
-	frontier  *Frontier
-	resultDB  *ResultDB
-	stateDB   *StateDB
-	stats     *Stats
-	robots    *RobotsChecker
-	limiter   *rate.Limiter
+	config   Config
+	clients  []*http.Client
+	frontier *Frontier
+	resultDB *ResultDB
+	stateDB  *StateDB
+	stats    *Stats
+	robots   *RobotsChecker
+	limiter  *rate.Limiter
 }
 
 // New creates a new Crawler with the given config.
@@ -76,6 +77,9 @@ func New(cfg Config) (*Crawler, error) {
 	if cfg.BloomFPR <= 0 {
 		cfg.BloomFPR = d.BloomFPR
 	}
+	if cfg.TransportShards <= 0 {
+		cfg.TransportShards = d.TransportShards
+	}
 	if len(cfg.SeedURLs) == 0 {
 		cfg.SeedURLs = []string{fmt.Sprintf("https://%s/", cfg.Domain)}
 	}
@@ -104,37 +108,47 @@ func (c *Crawler) setupTransport() {
 	}
 	var ipIdx atomic.Uint64
 
-	c.transport = &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if len(cachedIPs) > 0 {
-				_, port, _ := net.SplitHostPort(addr)
-				ip := cachedIPs[ipIdx.Add(1)%uint64(len(cachedIPs))]
-				return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
-			}
-			return dialer.DialContext(ctx, network, addr)
-		},
-		ForceAttemptHTTP2:     !c.config.ForceHTTP1,
-		MaxIdleConnsPerHost:   c.config.MaxIdleConns,
-		MaxConnsPerHost:       c.config.MaxConns,
-		MaxIdleConns:          c.config.MaxIdleConns,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
-		ResponseHeaderTimeout: c.config.Timeout,
-		WriteBufferSize:       4096,
-		ReadBufferSize:        32768,
-		DisableCompression:    true,
-	}
+	shards := c.config.TransportShards
+	connsPerShard := max(c.config.MaxConns/shards, 1)
+	idlePerShard := max(c.config.MaxIdleConns/shards, 1)
 
-	c.client = &http.Client{
-		Transport: c.transport,
-		Timeout:   c.config.Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return http.ErrUseLastResponse
-			}
-			return nil
-		},
+	c.clients = make([]*http.Client, shards)
+	for i := range shards {
+		t := &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				if len(cachedIPs) > 0 {
+					_, port, _ := net.SplitHostPort(addr)
+					ip := cachedIPs[ipIdx.Add(1)%uint64(len(cachedIPs))]
+					return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+				}
+				return dialer.DialContext(ctx, network, addr)
+			},
+			ForceAttemptHTTP2:     !c.config.ForceHTTP1,
+			MaxIdleConnsPerHost:   idlePerShard,
+			MaxConnsPerHost:       connsPerShard,
+			MaxIdleConns:          idlePerShard,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: c.config.Timeout,
+			WriteBufferSize:       4096,
+			ReadBufferSize:        32768,
+			DisableCompression:    true,
+		}
+		c.clients[i] = &http.Client{
+			Transport: t,
+			Timeout:   c.config.Timeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 5 {
+					return http.ErrUseLastResponse
+				}
+				return nil
+			},
+		}
 	}
+}
+
+func (c *Crawler) clientForWorker(workerID int) *http.Client {
+	return c.clients[workerID%len(c.clients)]
 }
 
 // Run executes the crawl. Blocks until frontier drains or MaxPages reached.
@@ -145,7 +159,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	// robots.txt
 	if c.config.RespectRobots {
 		rctx, rc := context.WithTimeout(ctx, 10*time.Second)
-		if r, _ := FetchRobots(rctx, c.client, c.config.Domain); r != nil {
+		if r, _ := FetchRobots(rctx, c.clients[0], c.config.Domain); r != nil {
 			c.robots = r
 			c.frontier.SetRobots(r)
 		}
@@ -160,7 +174,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	c.stateDB = sdb
 	defer sdb.Close()
 
-	// Resume
+	// Resume: restore bloom/seen URLs only
 	if c.config.Resume {
 		c.restoreState()
 	}
@@ -178,18 +192,20 @@ func (c *Crawler) Run(ctx context.Context) error {
 	sdb.SetMeta("start_time", time.Now().UTC().Format(time.RFC3339))
 	rdb.SetMeta("domain", c.config.Domain)
 
-	// Seed URLs
-	for _, u := range c.config.SeedURLs {
-		c.frontier.TryAdd(u, 0)
-	}
+	// Seed loading (priority order):
+	// 1. --seed-file: load URLs from text file
+	// 2. State DB frontier: auto-load saved frontier entries
+	// 3. Fallback: config SeedURLs (domain root)
+	c.loadSeeds()
 	fmt.Printf("  Frontier: %s seed URLs\n\n", fmtInt(c.frontier.Len()))
 
 	// errgroup: workers + coordinator
 	g, gctx := errgroup.WithContext(ctx)
 
-	for range c.config.Workers {
+	for i := range c.config.Workers {
+		client := c.clientForWorker(i)
 		g.Go(func() error {
-			c.worker(gctx)
+			c.worker(gctx, client)
 			return nil
 		})
 	}
@@ -215,17 +231,6 @@ func (c *Crawler) restoreState() {
 		}
 		fmt.Printf("  Resume: %s seen URLs\n", fmtInt(len(seen)))
 	}
-	items, _ := c.stateDB.LoadFrontier()
-	if len(items) > 0 {
-		n := 0
-		for _, item := range items {
-			if c.frontier.PushDirect(item) {
-				n++
-			}
-		}
-		fmt.Printf("  Resume: %s frontier URLs\n", fmtInt(n))
-		return
-	}
 	// Fallback: load already-crawled URLs from result shards
 	rdb, err := NewResultDB(c.config.ResultDir(), c.config.ShardCount, c.config.BatchSize)
 	if err == nil {
@@ -235,6 +240,64 @@ func (c *Crawler) restoreState() {
 			fmt.Printf("  Resume: %s crawled URLs in bloom\n", fmtInt(cnt))
 		}
 	}
+}
+
+// loadSeeds populates the frontier with seed URLs in priority order:
+// 1. Seed file (--seed-file)
+// 2. State DB frontier (auto-load saved entries)
+// 3. Fallback: config SeedURLs (domain root)
+func (c *Crawler) loadSeeds() {
+	// Priority 1: seed file
+	if c.config.SeedFile != "" {
+		n := c.loadSeedFile(c.config.SeedFile)
+		if n > 0 {
+			fmt.Printf("  Seeds: %s URLs from file %s\n", fmtInt(n), c.config.SeedFile)
+			return
+		}
+	}
+
+	// Priority 2: state DB frontier (independent of --resume flag)
+	if c.stateDB != nil {
+		items, _ := c.stateDB.LoadFrontier()
+		if len(items) > 0 {
+			n := 0
+			for _, item := range items {
+				if c.frontier.PushDirect(item) {
+					n++
+				}
+			}
+			if n > 0 {
+				fmt.Printf("  Seeds: %s URLs from state DB frontier\n", fmtInt(n))
+				return
+			}
+		}
+	}
+
+	// Priority 3: fallback to config seed URLs
+	for _, u := range c.config.SeedURLs {
+		c.frontier.TryAdd(u, 0)
+	}
+}
+
+func (c *Crawler) loadSeedFile(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Printf("  Warning: cannot open seed file: %v\n", err)
+		return 0
+	}
+	defer f.Close()
+
+	n := 0
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		c.frontier.TryAdd(line, 0)
+		n++
+	}
+	return n
 }
 
 func (c *Crawler) saveState() {
@@ -282,7 +345,7 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 }
 
 // worker pulls from the frontier until ctx is cancelled.
-func (c *Crawler) worker(ctx context.Context) {
+func (c *Crawler) worker(ctx context.Context, client *http.Client) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -293,12 +356,12 @@ func (c *Crawler) worker(ctx context.Context) {
 					return
 				}
 			}
-			c.fetchAndProcess(ctx, item)
+			c.fetchAndProcess(ctx, client, item)
 		}
 	}
 }
 
-func (c *Crawler) fetchAndProcess(ctx context.Context, item CrawlItem) {
+func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item CrawlItem) {
 	c.stats.inFlight.Add(1)
 	defer c.stats.inFlight.Add(-1)
 
@@ -312,7 +375,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, item CrawlItem) {
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Encoding", "gzip")
 
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	fetchMs := time.Since(start).Milliseconds()
 	if err != nil {
 		c.recordError(item, err, fetchMs)
