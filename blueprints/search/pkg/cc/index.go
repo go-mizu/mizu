@@ -155,6 +155,73 @@ func DownloadIndex(ctx context.Context, client *Client, cfg Config, sampleSize i
 	return nil
 }
 
+// DownloadOneIndexFile downloads a single parquet file from the CC index manifest.
+// fileIndex == -1 downloads the last (latest) file; fileIndex >= 0 downloads that specific file.
+// Returns the local path to the downloaded parquet file.
+func DownloadOneIndexFile(ctx context.Context, client *Client, cfg Config, fileIndex int, progress ProgressFn) (string, error) {
+	warcPaths, err := IndexManifest(ctx, client, cfg)
+	if err != nil {
+		return "", err
+	}
+	if len(warcPaths) == 0 {
+		return "", fmt.Errorf("no warc subset parquet files found in manifest")
+	}
+
+	// Resolve file index
+	idx := fileIndex
+	if idx < 0 {
+		idx = len(warcPaths) - 1
+	}
+	if idx >= len(warcPaths) {
+		return "", fmt.Errorf("file index %d out of range (manifest has %d files)", idx, len(warcPaths))
+	}
+
+	remotePath := warcPaths[idx]
+	localName := filepath.Base(remotePath)
+
+	indexDir := cfg.IndexDir()
+	if err := os.MkdirAll(indexDir, 0755); err != nil {
+		return "", fmt.Errorf("creating index dir: %w", err)
+	}
+	localPath := filepath.Join(indexDir, localName)
+
+	// Skip if already downloaded
+	if fi, err := os.Stat(localPath); err == nil && fi.Size() > 0 {
+		if progress != nil {
+			progress(DownloadProgress{
+				File:       localName,
+				FileIndex:  1,
+				TotalFiles: 1,
+				Done:       true,
+			})
+		}
+		return localPath, nil
+	}
+
+	if progress != nil {
+		progress(DownloadProgress{
+			File:       localName,
+			FileIndex:  0,
+			TotalFiles: 1,
+		})
+	}
+
+	if err := client.DownloadFile(ctx, remotePath, localPath, nil); err != nil {
+		return "", fmt.Errorf("downloading %s: %w", remotePath, err)
+	}
+
+	if progress != nil {
+		progress(DownloadProgress{
+			File:       localName,
+			FileIndex:  1,
+			TotalFiles: 1,
+			Done:       true,
+		})
+	}
+
+	return localPath, nil
+}
+
 // QueryRemoteParquet queries parquet files directly from the CC S3 bucket via DuckDB's httpfs.
 // This avoids downloading any parquet files locally — ideal for quick lookups.
 // Note: slower than local queries but uses zero disk space.

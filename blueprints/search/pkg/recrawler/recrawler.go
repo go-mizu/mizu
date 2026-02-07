@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/crawler"
@@ -23,13 +24,22 @@ type Recrawler struct {
 	stats   *Stats
 	rdb     *ResultDB
 
-	// Per-domain failure tracking: once a domain fails, skip remaining URLs
-	deadDomainsMu sync.RWMutex
-	deadDomains   map[string]bool
+	// Dead domain tracking: sync.Map for lock-free reads in hot path (50K+ workers)
+	deadDomains sync.Map // domain → true
 
 	// Cached DNS: pre-resolved domain → IP for direct dialing
 	dnsCache   map[string][]string
 	dnsCacheMu sync.RWMutex
+
+	// Per-domain connection limiter: prevents flooding individual servers
+	// Pre-created in Run() to avoid mutex contention during fetch.
+	domainSems   map[string]chan struct{}
+	domainSemsMu sync.RWMutex
+
+	// Per-domain timeout tracking: kill domains that consistently time out
+	// sync.Map eliminates global mutex for 24K+ concurrent workers
+	domainFailCounts sync.Map // domain → *atomic.Int32
+	domainSucceeded  sync.Map // domain → true
 
 	// DNS resolver for pipelined mode (resolve + fetch concurrently)
 	dnsResolver *DNSResolver
@@ -53,18 +63,21 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 		cfg.BatchSize = 5000
 	}
 	if cfg.DomainFailThreshold == 0 {
-		cfg.DomainFailThreshold = 1
+		cfg.DomainFailThreshold = 3
 	}
 	if cfg.TransportShards < 1 {
 		cfg.TransportShards = 1
 	}
+	if cfg.MaxConnsPerDomain == 0 {
+		cfg.MaxConnsPerDomain = 8
+	}
 
 	r := &Recrawler{
-		config:      cfg,
-		deadDomains: make(map[string]bool),
-		stats:       stats,
-		rdb:         rdb,
-		dnsCache:    make(map[string][]string),
+		config:     cfg,
+		stats:      stats,
+		rdb:        rdb,
+		dnsCache:   make(map[string][]string),
+		domainSems: make(map[string]chan struct{}),
 	}
 
 	// Create sharded HTTP clients — each shard has its own transport+connection pool.
@@ -143,11 +156,9 @@ func (r *Recrawler) buildClient(shardID int) *http.Client {
 
 // SetDeadDomains pre-populates dead domains (e.g. from DNS pre-resolution).
 func (r *Recrawler) SetDeadDomains(domains map[string]bool) {
-	r.deadDomainsMu.Lock()
 	for d := range domains {
-		r.deadDomains[d] = true
+		r.deadDomains.Store(d, true)
 	}
-	r.deadDomainsMu.Unlock()
 }
 
 // SetDNSCache populates the cached DNS map for direct-IP dialing.
@@ -175,46 +186,50 @@ func (r *Recrawler) SetDNSResolver(dns *DNSResolver) {
 	}
 	// Pre-populate dead domains from cached dead + timeout entries
 	deadOrTimeout := dns.DeadOrTimeoutDomains()
-	if len(deadOrTimeout) > 0 {
-		r.deadDomainsMu.Lock()
-		for d := range deadOrTimeout {
-			r.deadDomains[d] = true
-		}
-		r.deadDomainsMu.Unlock()
+	for d := range deadOrTimeout {
+		r.deadDomains.Store(d, true)
 	}
 }
 
 func (r *Recrawler) isDomainDead(domain string) bool {
-	r.deadDomainsMu.RLock()
-	dead := r.deadDomains[domain]
-	r.deadDomainsMu.RUnlock()
+	_, dead := r.deadDomains.Load(domain)
 	return dead
 }
 
 func (r *Recrawler) markDomainDead(domain string) {
-	r.deadDomainsMu.Lock()
-	r.deadDomains[domain] = true
-	r.deadDomainsMu.Unlock()
+	r.deadDomains.Store(domain, true)
+}
+
+// recordDomainTimeout increments the failure counter for a domain.
+// If the domain has never succeeded and failures >= threshold, marks it dead.
+// Uses sync.Map + atomic for lock-free operation at 50K+ workers.
+func (r *Recrawler) recordDomainTimeout(domain string) {
+	if _, ok := r.domainSucceeded.Load(domain); ok {
+		return // domain has succeeded before, immune to timeout-kill
+	}
+	counter, _ := r.domainFailCounts.LoadOrStore(domain, &atomic.Int32{})
+	fails := counter.(*atomic.Int32).Add(1)
+	if int(fails) >= r.config.DomainFailThreshold {
+		r.markDomainDead(domain)
+	}
+}
+
+// recordDomainSuccess marks a domain as having succeeded at least once.
+// Succeeding domains are immune to timeout-based killing.
+func (r *Recrawler) recordDomainSuccess(domain string) {
+	r.domainSucceeded.Store(domain, true)
 }
 
 // HTTPDeadDomains returns domains marked dead during HTTP fetching.
 // These are domains where TCP connection was refused/reset (not timeouts).
 // Can be merged into DNS cache for reuse in subsequent runs.
 func (r *Recrawler) HTTPDeadDomains() map[string]bool {
-	r.deadDomainsMu.RLock()
-	result := make(map[string]bool, len(r.deadDomains))
-	for d := range r.deadDomains {
-		result[d] = true
-	}
-	r.deadDomainsMu.RUnlock()
-	return result
-}
-
-// shuffleURLs randomizes URL order using Fisher-Yates shuffle.
-func shuffleURLs(urls []SeedURL) {
-	rand.Shuffle(len(urls), func(i, j int) {
-		urls[i], urls[j] = urls[j], urls[i]
+	result := make(map[string]bool)
+	r.deadDomains.Range(func(key, _ any) bool {
+		result[key.(string)] = true
+		return true
 	})
+	return result
 }
 
 // clientForWorker returns the HTTP client for a worker ID (sharded).
@@ -240,6 +255,11 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 
 	if totalLive == 0 {
 		return nil
+	}
+
+	// Pre-create domain semaphores (avoids lock contention during fetch)
+	for d := range domainURLs {
+		r.domainSems[d] = make(chan struct{}, r.config.MaxConnsPerDomain)
 	}
 
 	// Shuffle domains for load distribution (Fisher-Yates)
@@ -403,35 +423,107 @@ func (r *Recrawler) probeDomain(ctx context.Context, _, probeURL string) bool {
 	return true
 }
 
-// directFeed pushes URLs to the fetch channel without DNS resolution.
-// Pre-filters dead-domain URLs and shuffles the rest.
+// probeDomainStrict sends a HEAD request with a strict timeout matching config.
+// Unlike probeDomain, this returns false on timeout too — used by directFeed
+// to aggressively skip slow/dead domains before the main fetch phase.
+// shardID distributes probes across all transport shards (was shard 0 only).
+func (r *Recrawler) probeDomainStrict(ctx context.Context, probeURL string, shardID int) bool {
+	// Use min(3s, config.Timeout) — aggressive enough to kill dead domains quickly,
+	// but not so short that slow-but-alive domains are killed.
+	probeTimeout := min(3*time.Second, r.config.Timeout)
+	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, probeURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", r.config.UserAgent)
+
+	client := r.clientForWorker(shardID) // distribute across all transport shards
+	resp, err := client.Do(req)
+	if err != nil {
+		return false // timeout, refused, DNS error — all dead
+	}
+	resp.Body.Close()
+	return true
+}
+
+// directFeed probes domains and streams their URLs to workers immediately.
+// Streaming: workers start fetching as soon as the first domain is probed alive,
+// overlapping the probe phase with the fetch phase for maximum throughput.
+// Probes are distributed across all transport shards (not just shard 0).
 func (r *Recrawler) directFeed(ctx context.Context, domains []string, domainURLs map[string][]SeedURL, urlCh chan<- SeedURL) {
 	defer close(urlCh)
 
-	var liveURLs []SeedURL
+	// Phase 1: bulk-skip DNS-dead domains
+	var probeDomains []string
 	for _, d := range domains {
 		if r.isDomainDead(d) {
-			for range domainURLs[d] {
-				r.stats.RecordDomainSkip()
-			}
+			r.stats.RecordDomainSkipBatch(len(domainURLs[d]))
 			continue
 		}
-		liveURLs = append(liveURLs, domainURLs[d]...)
+		probeDomains = append(probeDomains, d)
 	}
 
-	if len(liveURLs) == 0 {
+	if len(probeDomains) == 0 {
 		return
 	}
 
-	shuffleURLs(liveURLs)
-
-	for _, u := range liveURLs {
-		select {
-		case urlCh <- u:
-		case <-ctx.Done():
-			return
+	// Phase 2: streaming probe → immediate URL feed
+	// Probe domains in parallel. As each domain is confirmed alive,
+	// its URLs are pushed to workers immediately — no waiting for all probes.
+	// 5000 probe workers (up from 2000) × distributed across transport shards.
+	probeWorkers := min(len(probeDomains), 5000)
+	domainCh := make(chan string, len(probeDomains))
+	go func() {
+		defer close(domainCh)
+		for _, d := range probeDomains {
+			select {
+			case domainCh <- d:
+			case <-ctx.Done():
+				return
+			}
 		}
+	}()
+
+	var probeWg sync.WaitGroup
+	for i := range probeWorkers {
+		probeWg.Add(1)
+		go func(workerID int) {
+			defer probeWg.Done()
+			for domain := range domainCh {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				urls := domainURLs[domain]
+				if len(urls) == 0 {
+					continue
+				}
+
+				alive := r.probeDomainStrict(ctx, urls[0].URL, workerID)
+				if alive {
+					r.stats.RecordProbeReachable()
+					for _, u := range urls {
+						select {
+						case urlCh <- u:
+						case <-ctx.Done():
+							return
+						}
+					}
+				} else {
+					r.stats.RecordProbeUnreachable()
+					r.markDomainDead(domain)
+					r.stats.RecordDomainSkipBatch(len(urls))
+				}
+			}
+		}(i)
 	}
+
+	probeWg.Wait()
 }
 
 func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan SeedURL) error {
@@ -447,9 +539,37 @@ func (r *Recrawler) worker(ctx context.Context, client *http.Client, urls <-chan
 				r.stats.RecordDomainSkip()
 				continue
 			}
+			// Per-domain connection limit: prevents flooding individual servers
+			sem := r.domainSem(seed.Domain)
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			r.fetchOne(ctx, client, seed)
+			<-sem
 		}
 	}
+}
+
+// domainSem returns the per-domain semaphore channel.
+// Fast path: RLock read from pre-created map (zero contention during fetch).
+// Slow path: Lock + create for domains not in the initial seed set (rare).
+func (r *Recrawler) domainSem(domain string) chan struct{} {
+	r.domainSemsMu.RLock()
+	sem := r.domainSems[domain]
+	r.domainSemsMu.RUnlock()
+	if sem != nil {
+		return sem
+	}
+	r.domainSemsMu.Lock()
+	sem, ok := r.domainSems[domain]
+	if !ok {
+		sem = make(chan struct{}, r.config.MaxConnsPerDomain)
+		r.domainSems[domain] = sem
+	}
+	r.domainSemsMu.Unlock()
+	return sem
 }
 
 func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed SeedURL) {
@@ -484,9 +604,14 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 		})
 		if isFatal {
 			r.markDomainDead(seed.Domain)
+		} else if isTimeout {
+			r.recordDomainTimeout(seed.Domain)
 		}
 		return
 	}
+
+	// Any HTTP response means server is alive
+	r.recordDomainSuccess(seed.Domain)
 
 	// StatusOnly mode: close body immediately, only record status code
 	if r.config.StatusOnly {

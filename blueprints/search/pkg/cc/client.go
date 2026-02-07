@@ -198,7 +198,8 @@ func (c *Client) DownloadFile(ctx context.Context, remotePath, localPath string,
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", existingSize))
 	}
 
-	resp, err := c.apiClient.Do(req)
+	// Use dlClient for large file downloads (no overall timeout, only component timeouts)
+	resp, err := c.dlClients[0].Do(req)
 	if err != nil {
 		return fmt.Errorf("downloading %s: %w", remotePath, err)
 	}

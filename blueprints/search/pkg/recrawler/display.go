@@ -144,6 +144,11 @@ func (s *Stats) RecordDomainSkip() {
 	s.domainSkip.Add(1)
 }
 
+// RecordDomainSkipBatch records N URLs skipped for a dead domain (batch atomic).
+func (s *Stats) RecordDomainSkipBatch(n int) {
+	s.domainSkip.Add(int64(n))
+}
+
 // RecordDNSLive records a domain resolved with live IPs.
 func (s *Stats) RecordDNSLive() {
 	s.dnsLive.Add(1)

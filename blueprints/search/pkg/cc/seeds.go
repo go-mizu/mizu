@@ -17,7 +17,7 @@ type SeedStats struct {
 	UniqueDomains int
 }
 
-// ExtractSeedURLs queries the CC index and returns URLs as recrawler seeds.
+// ExtractSeedURLs queries the CC index DuckDB and returns URLs as recrawler seeds.
 // Applies the given filter (status, mime, language, domain, TLD, limit).
 // Returns the seed URLs, unique domain count, and any error.
 func ExtractSeedURLs(ctx context.Context, dbPath string, filter IndexFilter) ([]recrawler.SeedURL, int, error) {
@@ -27,15 +27,33 @@ func ExtractSeedURLs(ctx context.Context, dbPath string, filter IndexFilter) ([]
 	}
 	defer db.Close()
 
+	return extractSeeds(ctx, db, "ccindex", filter)
+}
+
+// ExtractSeedURLsFromParquet queries a parquet file directly (via in-memory DuckDB)
+// and returns URLs as recrawler seeds. Zero disk overhead — no import step needed.
+func ExtractSeedURLsFromParquet(ctx context.Context, parquetPath string, filter IndexFilter) ([]recrawler.SeedURL, int, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, 0, fmt.Errorf("opening in-memory duckdb: %w", err)
+	}
+	defer db.Close()
+
+	source := fmt.Sprintf("read_parquet('%s')", parquetPath)
+	return extractSeeds(ctx, db, source, filter)
+}
+
+// extractSeeds is the shared implementation for ExtractSeedURLs and ExtractSeedURLsFromParquet.
+func extractSeeds(ctx context.Context, db *sql.DB, source string, filter IndexFilter) ([]recrawler.SeedURL, int, error) {
 	// Count unique domains first
-	countQuery, countArgs := buildSeedCountQuery(filter)
+	countQuery, countArgs := buildSeedCountQuery(filter, source)
 	var uniqueDomains int
 	if err := db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&uniqueDomains); err != nil {
 		return nil, 0, fmt.Errorf("counting domains: %w", err)
 	}
 
 	// Extract URLs
-	query, args := buildSeedQuery(filter)
+	query, args := buildSeedQuery(filter, source)
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("querying seeds: %w", err)
@@ -65,7 +83,7 @@ func ExtractSeedStats(ctx context.Context, dbPath string, filter IndexFilter) (*
 	}
 	defer db.Close()
 
-	query, args := buildSeedStatsQuery(filter)
+	query, args := buildSeedStatsQuery(filter, "ccindex")
 	var total, domains int
 	if err := db.QueryRowContext(ctx, query, args...).Scan(&total, &domains); err != nil {
 		return nil, fmt.Errorf("querying stats: %w", err)
@@ -74,11 +92,11 @@ func ExtractSeedStats(ctx context.Context, dbPath string, filter IndexFilter) (*
 	return &SeedStats{TotalURLs: total, UniqueDomains: domains}, nil
 }
 
-func buildSeedQuery(f IndexFilter) (string, []any) {
+func buildSeedQuery(f IndexFilter, source string) (string, []any) {
 	var b strings.Builder
 	var args []any
 
-	b.WriteString(`SELECT url, COALESCE(url_host_registered_domain, '') as domain FROM ccindex`)
+	b.WriteString(fmt.Sprintf(`SELECT url, COALESCE(url_host_registered_domain, '') as domain FROM %s`, source))
 
 	conditions, condArgs := buildSeedConditions(f)
 	args = append(args, condArgs...)
@@ -98,45 +116,39 @@ func buildSeedQuery(f IndexFilter) (string, []any) {
 	return b.String(), args
 }
 
-func buildSeedCountQuery(f IndexFilter) (string, []any) {
+func buildSeedCountQuery(f IndexFilter, source string) (string, []any) {
 	var b strings.Builder
 	var args []any
 
-	b.WriteString(`SELECT COUNT(DISTINCT url_host_registered_domain) FROM ccindex`)
-
-	conditions, condArgs := buildSeedConditions(f)
-	args = append(args, condArgs...)
-
-	if len(conditions) > 0 {
-		b.WriteString(" WHERE ")
-		b.WriteString(strings.Join(conditions, " AND "))
-	}
-
-	// Apply limit via subquery if limit is set
 	if f.Limit > 0 {
-		inner := b.String()
-		b.Reset()
-		b.WriteString(
-			`SELECT COUNT(DISTINCT domain) FROM (SELECT url, COALESCE(url_host_registered_domain, '') as domain FROM ccindex`,
-		)
-		conditions2, condArgs2 := buildSeedConditions(f)
-		args = condArgs2
-		if len(conditions2) > 0 {
+		// Apply limit via subquery
+		b.WriteString(fmt.Sprintf(
+			`SELECT COUNT(DISTINCT domain) FROM (SELECT url, COALESCE(url_host_registered_domain, '') as domain FROM %s`, source))
+		conditions, condArgs := buildSeedConditions(f)
+		args = append(args, condArgs...)
+		if len(conditions) > 0 {
 			b.WriteString(" WHERE ")
-			b.WriteString(strings.Join(conditions2, " AND "))
+			b.WriteString(strings.Join(conditions, " AND "))
 		}
 		b.WriteString(fmt.Sprintf(" LIMIT %d) sub", f.Limit))
-		_ = inner
+	} else {
+		b.WriteString(fmt.Sprintf(`SELECT COUNT(DISTINCT url_host_registered_domain) FROM %s`, source))
+		conditions, condArgs := buildSeedConditions(f)
+		args = append(args, condArgs...)
+		if len(conditions) > 0 {
+			b.WriteString(" WHERE ")
+			b.WriteString(strings.Join(conditions, " AND "))
+		}
 	}
 
 	return b.String(), args
 }
 
-func buildSeedStatsQuery(f IndexFilter) (string, []any) {
+func buildSeedStatsQuery(f IndexFilter, source string) (string, []any) {
 	var b strings.Builder
 	var args []any
 
-	b.WriteString(`SELECT COUNT(*), COUNT(DISTINCT url_host_registered_domain) FROM ccindex`)
+	b.WriteString(fmt.Sprintf(`SELECT COUNT(*), COUNT(DISTINCT url_host_registered_domain) FROM %s`, source))
 
 	conditions, condArgs := buildSeedConditions(f)
 	args = append(args, condArgs...)
