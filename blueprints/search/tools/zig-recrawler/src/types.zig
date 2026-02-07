@@ -94,7 +94,11 @@ pub const FetchResult = struct {
     content_type: [128]u8,
     content_type_len: u8,
     content_length: i64,
+    body_len: u32 = 0, // actual body bytes received (both modes)
     fetch_time_ms: u32,
+    connect_ms: u32 = 0, // TCP connect time
+    tls_ms: u32 = 0, // TLS handshake time
+    ttfb_ms: u32 = 0, // time to first byte after request sent
     error_msg: [200]u8,
     error_len: u8,
     redirect_url: [256]u8,

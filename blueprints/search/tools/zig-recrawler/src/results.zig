@@ -54,9 +54,13 @@ pub const ResultDB = struct {
                 \\  status_code INTEGER,
                 \\  content_type VARCHAR,
                 \\  content_length BIGINT,
+                \\  body_len INTEGER,
                 \\  domain VARCHAR,
                 \\  redirect_url VARCHAR,
                 \\  fetch_time_ms BIGINT,
+                \\  connect_ms INTEGER,
+                \\  tls_ms INTEGER,
+                \\  ttfb_ms INTEGER,
                 \\  error VARCHAR
                 \\)
             , .{}) catch return error.CreateTableFailed;
@@ -88,9 +92,13 @@ pub const ResultDB = struct {
             @as(i32, @intCast(result.status_code)),
             result.contentTypeSlice(),
             result.content_length,
+            @as(i32, @intCast(result.body_len)),
             result.domain,
             result.redirectSlice(),
             @as(i64, @intCast(result.fetch_time_ms)),
+            @as(i32, @intCast(result.connect_ms)),
+            @as(i32, @intCast(result.tls_ms)),
+            @as(i32, @intCast(result.ttfb_ms)),
             result.errorSlice(),
         }) catch {
             // If append fails, try flushing and retrying
@@ -100,9 +108,13 @@ pub const ResultDB = struct {
                 @as(i32, @intCast(result.status_code)),
                 result.contentTypeSlice(),
                 result.content_length,
+                @as(i32, @intCast(result.body_len)),
                 result.domain,
                 result.redirectSlice(),
                 @as(i64, @intCast(result.fetch_time_ms)),
+                @as(i32, @intCast(result.connect_ms)),
+                @as(i32, @intCast(result.tls_ms)),
+                @as(i32, @intCast(result.ttfb_ms)),
                 result.errorSlice(),
             }) catch return;
         };
@@ -124,13 +136,26 @@ pub const ResultDB = struct {
         return self.total_written.load(.monotonic);
     }
 
-    /// Close: flush appenders, close connections.
+    /// Close: flush all appenders first (data safety), then close shards sequentially.
+    /// DuckDB can SEGFAULT/SIGABRT during concurrent shard close — we flush first
+    /// to ensure data is persisted, then close one at a time with error recovery.
     pub fn close(self: *ResultDB) void {
+        // Phase 1: Flush all appenders (data safety — ensures everything is on disk)
         for (self.shards) |*shard| {
+            shard.mutex.lock();
             shard.appender.flush() catch {};
+            shard.mutex.unlock();
+        }
+
+        // Phase 2: Sequential close with small delay between shards
+        for (self.shards, 0..) |*shard, i| {
             shard.appender.deinit();
             shard.conn.deinit();
             shard.db.deinit();
+            // Small delay between shards to avoid concurrent DuckDB internal cleanup
+            if (i + 1 < self.shards.len) {
+                std.Thread.sleep(5 * std.time.ns_per_ms);
+            }
         }
         self.allocator.free(self.shards);
     }
