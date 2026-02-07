@@ -63,6 +63,7 @@ Examples:
 	cmd.AddCommand(newCCWarc())
 	cmd.AddCommand(newCCURL())
 	cmd.AddCommand(newCCRecrawl())
+	cmd.AddCommand(newCCVerify())
 
 	return cmd
 }
@@ -1163,8 +1164,19 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		fmt.Println()
 	}
 
-	// ── Step 5: Open result DB + run recrawler ──────────────────
+	// ── Step 5: Open FailedDB + result DB + run recrawler ──────────────────
 	fmt.Println(infoStyle.Render("Recrawling from origin servers..."))
+
+	// Open FailedDB for logging failed domains + URLs
+	failedDBPath := ccCfg.FailedDBPath()
+	failedDB, err := recrawler.NewFailedDB(failedDBPath)
+	if err != nil {
+		return fmt.Errorf("opening failed db: %w", err)
+	}
+	defer failedDB.Close()
+	failedDB.SetMeta("crawl_id", opts.crawlID)
+	failedDB.SetMeta("started_at", time.Now().Format(time.RFC3339))
+	fmt.Println(successStyle.Render(fmt.Sprintf("  FailedDB → %s", failedDBPath)))
 
 	rdb, err := recrawler.NewResultDB(resultDir, 16, opts.batchSize)
 	if err != nil {
@@ -1177,6 +1189,38 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	rdb.SetMeta(ctx, "seed_source", "cc-index")
 	rdb.SetMeta(ctx, "started_at", time.Now().Format(time.RFC3339))
 	rdb.SetMeta(ctx, "workers", fmt.Sprintf("%d", opts.workers))
+
+	// Log DNS-dead domains to FailedDB (before recrawler runs)
+	if dnsResolver != nil {
+		// Build per-domain URL counts for metadata
+		domainCounts := make(map[string]int, uniqueDomains)
+		for _, s := range seeds {
+			domainCounts[s.Domain]++
+		}
+
+		for domain, errMsg := range dnsResolver.DeadDomainsWithErrors() {
+			reason := "dns_nxdomain"
+			if errMsg == "http_dead" {
+				reason = "http_dead"
+			}
+			failedDB.AddDomain(recrawler.FailedDomain{
+				Domain:   domain,
+				Reason:   reason,
+				Error:    errMsg,
+				URLCount: domainCounts[domain],
+				Stage:    "dns_batch",
+			})
+		}
+		for domain, errMsg := range dnsResolver.TimeoutDomainsWithErrors() {
+			failedDB.AddDomain(recrawler.FailedDomain{
+				Domain:   domain,
+				Reason:   "dns_timeout",
+				Error:    errMsg,
+				URLCount: domainCounts[domain],
+				Stage:    "dns_batch",
+			})
+		}
+	}
 
 	// Create stats + recrawler
 	label := fmt.Sprintf("cc-%s", opts.crawlID)
@@ -1197,26 +1241,21 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	fmt.Println()
 
 	r := recrawler.New(recrawlCfg, stats, rdb)
+	r.SetFailedDB(failedDB)
 
-	// Pre-populate DNS cache (use SetDNSCache + SetDeadDomains, NOT SetDNSResolver)
+	// Pre-populate DNS cache with reasons (use SetDNSCache + SetDeadDomains, NOT SetDNSResolver)
 	if dnsResolver != nil {
 		r.SetDNSCache(dnsResolver.ResolvedIPs())
-		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomains())
+		r.SetDeadDomains(dnsResolver.DeadOrTimeoutDomainsWithReasons())
 	}
 
 	err = recrawler.RunWithDisplay(ctx, r, seeds, skip, stats)
 
-	// ── Final: flush + save DNS cache ───────────────────────────
+	// ── Final: flush + save DNS cache + FailedDB summary ──────────
 	rdb.Flush(ctx)
 	rdb.SetMeta(ctx, "finished_at", time.Now().Format(time.RFC3339))
 
 	if dnsResolver != nil {
-		httpDead := r.HTTPDeadDomains()
-		merged := dnsResolver.MergeHTTPDead(httpDead)
-		if merged > 0 {
-			fmt.Println(infoStyle.Render(fmt.Sprintf("  Merged %d HTTP-dead domains into DNS cache", merged)))
-		}
-
 		fmt.Print(infoStyle.Render("  Saving DNS cache..."))
 		saveStart := time.Now()
 		if saveErr := dnsResolver.SaveCache(dnsPath); saveErr != nil {
@@ -1228,6 +1267,11 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 		}
 	}
 
+	// FailedDB summary
+	failedDB.SetMeta("finished_at", time.Now().Format(time.RFC3339))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  FailedDB: %s domains, %s URLs → %s",
+		ccFmtInt64(failedDB.DomainCount()), ccFmtInt64(failedDB.URLCount()), filepath.Base(failedDBPath))))
+
 	fmt.Println()
 	if err != nil {
 		fmt.Println(warningStyle.Render(fmt.Sprintf("Recrawl finished with error: %v", err)))
@@ -1238,6 +1282,133 @@ func runCCRecrawl(ctx context.Context, opts ccRecrawlOpts) error {
 	fmt.Println()
 
 	return err
+}
+
+// ── cc verify ──────────────────────────────────────────────
+
+func newCCVerify() *cobra.Command {
+	var (
+		crawlID     string
+		workers     int
+		dnsTimeout  int
+		httpTimeout int
+		limit       int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify failed domains from recrawl (slow, thorough)",
+		Long: `Slowly and thoroughly verify domains marked as dead during recrawl.
+
+For each failed domain:
+  1. DNS: tries system, Google 8.8.8.8, Cloudflare 1.1.1.1 (10s timeout each)
+  2. HTTP: tries https:// and http:// with GET (30s timeout each)
+  3. Verdict: truly dead (all fail) or false positive (any succeed)
+
+Use few workers (default 10) to avoid network rate-limiting.
+
+Examples:
+  search cc verify
+  search cc verify --workers 5 --dns-timeout 15000
+  search cc verify --limit 100`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCCVerify(cmd.Context(), crawlID, workers, dnsTimeout, httpTimeout, limit)
+		},
+	}
+
+	cmd.Flags().StringVar(&crawlID, "crawl", "CC-MAIN-2026-04", "Crawl ID")
+	cmd.Flags().IntVar(&workers, "workers", 10, "Verification workers (keep low for accuracy)")
+	cmd.Flags().IntVar(&dnsTimeout, "dns-timeout", 10000, "DNS timeout per resolver (ms)")
+	cmd.Flags().IntVar(&httpTimeout, "http-timeout", 30000, "HTTP timeout (ms)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Max domains to verify (0=all)")
+
+	return cmd
+}
+
+func runCCVerify(ctx context.Context, crawlID string, workers, dnsTimeout, httpTimeout, limit int) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Domain Verification (Slow, Thorough)"))
+	fmt.Println()
+
+	ccCfg := cc.DefaultConfig()
+	ccCfg.CrawlID = crawlID
+
+	failedPath := ccCfg.FailedDBPath()
+	if _, err := os.Stat(failedPath); err != nil {
+		return fmt.Errorf("failed DB not found: %s — run 'cc recrawl' first", failedPath)
+	}
+
+	// Show failure summary
+	summary, total, err := recrawler.FailedDomainSummary(failedPath)
+	if err != nil {
+		return fmt.Errorf("reading failed DB: %w", err)
+	}
+
+	fmt.Printf("  Failed domains: %s\n", ccFmtInt64(int64(total)))
+	for reason, count := range summary {
+		fmt.Printf("    %-25s %s\n", reason, ccFmtInt64(int64(count)))
+	}
+	fmt.Println()
+
+	if limit > 0 && limit < total {
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Verifying top %d domains (by URL count)...", limit)))
+	}
+
+	outputPath := ccCfg.VerifyDBPath()
+	fmt.Printf("  Output: %s\n", outputPath)
+	fmt.Printf("  Workers: %d  DNS timeout: %ds  HTTP timeout: %ds\n",
+		workers, dnsTimeout/1000, httpTimeout/1000)
+	fmt.Println()
+
+	cfg := recrawler.VerifyConfig{
+		Workers:     workers,
+		DNSTimeout:  time.Duration(dnsTimeout) * time.Millisecond,
+		HTTPTimeout: time.Duration(httpTimeout) * time.Millisecond,
+	}
+
+	var displayLines int
+	err = recrawler.VerifyFailedDomains(ctx, failedPath, outputPath, cfg, limit, func(p recrawler.VerifyProgress) {
+		if displayLines > 0 {
+			fmt.Printf("\033[%dA\033[J", displayLines)
+		}
+		pct := float64(0)
+		if p.Total > 0 {
+			pct = float64(p.Done) / float64(p.Total) * 100
+		}
+		output := fmt.Sprintf("  Verify %d/%d (%.1f%%)  │  %d alive  │  %d dead  │  %d false+  │  %.1f/s  │  %s\n",
+			p.Done, p.Total, pct, p.Alive, p.Dead, p.FalsePos, p.Speed, p.Elapsed.Truncate(time.Second))
+		fmt.Print(output)
+		displayLines = 1
+	})
+
+	if err != nil {
+		return fmt.Errorf("verification: %w", err)
+	}
+
+	// Print final results
+	fmt.Println()
+	vTotal, vAlive, vDead, vFP, fpRate, _ := recrawler.VerifySummary(outputPath)
+	fmt.Println(successStyle.Render("Verification complete!"))
+	fmt.Printf("  Total:           %s domains\n", ccFmtInt64(int64(vTotal)))
+	fmt.Printf("  Truly dead:      %s\n", ccFmtInt64(int64(vDead)))
+	fmt.Printf("  Actually alive:  %s (false positives)\n", ccFmtInt64(int64(vAlive)))
+	fmt.Printf("  False positive rate: %.2f%%\n", fpRate)
+	if vFP > 0 {
+		fmt.Println()
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  %d domains were incorrectly marked dead!", vFP)))
+		// Show some examples
+		fps, _ := recrawler.VerifyFalsePositives(outputPath, 10)
+		for _, fp := range fps {
+			fmt.Printf("    %-40s %s  DNS=%s  HTTP=%d  HTTPS=%d\n",
+				fp.Domain, fp.OriginalReason,
+				fp.DNSSystemIPs, fp.HTTPStatus, fp.HTTPSStatus)
+		}
+	}
+	fmt.Println()
+	fmt.Println(labelStyle.Render(fmt.Sprintf("  Results: %s", outputPath)))
+	fmt.Println()
+
+	return nil
 }
 
 // ── helpers ──────────────────────────────────────────────

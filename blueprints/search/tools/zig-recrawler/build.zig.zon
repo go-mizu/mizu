@@ -1,0 +1,11 @@
+.{
+    .name = .zig_recrawler,
+    .version = "0.1.0",
+    .fingerprint = 0x4c890973665792d,
+    .minimum_zig_version = "0.15.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

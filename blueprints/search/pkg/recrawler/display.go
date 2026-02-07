@@ -49,14 +49,21 @@ type Stats struct {
 	speedMu    sync.Mutex
 	speedTicks []speedTick
 
+	// Rolling speed values (updated by Speed())
+	rollingFetchSpeed float64
+	rollingDoneSpeed  float64
+	rollingByteSpeed  float64
+
 	// Frozen state for final display
 	frozen      bool
 	frozenAt    time.Duration
 }
 
 type speedTick struct {
-	time  time.Time
-	count int64
+	time    time.Time
+	fetched int64 // Fetched() — network I/O only
+	done    int64 // Done() — includes skips
+	bytes   int64 // total bytes received
 }
 
 // NewStats creates a new stats tracker.
@@ -184,14 +191,22 @@ func (s *Stats) Fetched() int64 {
 	return s.success.Load() + s.failed.Load() + s.timeout.Load()
 }
 
-// Speed returns the current fetched pages/sec (rolling 5-second window).
+// Speed returns the current fetched pages/sec (rolling 10-second window).
+// Also updates rollingDoneSpeed and rollingByteSpeed as side effects.
 // Only counts pages that required actual network I/O (excludes skips).
 func (s *Stats) Speed() float64 {
-	done := s.Fetched()
+	fetched := s.Fetched()
+	done := s.Done()
+	bytesTotal := s.bytes.Load()
 	now := time.Now()
 
 	s.speedMu.Lock()
-	s.speedTicks = append(s.speedTicks, speedTick{time: now, count: done})
+	s.speedTicks = append(s.speedTicks, speedTick{
+		time:    now,
+		fetched: fetched,
+		done:    done,
+		bytes:   bytesTotal,
+	})
 
 	// Keep only last 10 seconds for stable speed reading
 	cutoff := now.Add(-10 * time.Second)
@@ -203,21 +218,42 @@ func (s *Stats) Speed() float64 {
 		s.speedTicks = s.speedTicks[start:]
 	}
 
-	var speed float64
+	var fetchSpeed, doneSpeed, byteSpeed float64
 	if len(s.speedTicks) >= 2 {
 		first := s.speedTicks[0]
 		last := s.speedTicks[len(s.speedTicks)-1]
 		dt := last.time.Sub(first.time).Seconds()
 		if dt > 0 {
-			speed = float64(last.count-first.count) / dt
+			fetchSpeed = float64(last.fetched-first.fetched) / dt
+			doneSpeed = float64(last.done-first.done) / dt
+			byteSpeed = float64(last.bytes-first.bytes) / dt
 		}
 	}
+	s.rollingFetchSpeed = fetchSpeed
+	s.rollingDoneSpeed = doneSpeed
+	s.rollingByteSpeed = byteSpeed
 	s.speedMu.Unlock()
 
-	if speed > s.peakSpeed {
-		s.peakSpeed = speed
+	if fetchSpeed > s.peakSpeed {
+		s.peakSpeed = fetchSpeed
 	}
-	return speed
+	return fetchSpeed
+}
+
+// DoneSpeed returns the rolling done pages/sec (includes skips).
+func (s *Stats) DoneSpeed() float64 {
+	s.speedMu.Lock()
+	v := s.rollingDoneSpeed
+	s.speedMu.Unlock()
+	return v
+}
+
+// ByteSpeed returns the rolling bytes/sec.
+func (s *Stats) ByteSpeed() float64 {
+	s.speedMu.Lock()
+	v := s.rollingByteSpeed
+	s.speedMu.Unlock()
+	return v
 }
 
 // AvgSpeed returns the overall average fetched pages/sec.
@@ -256,13 +292,16 @@ func (s *Stats) Render() string {
 		pct = float64(done) / float64(total) * 100
 	}
 
-	// ETA based on overall average speed (stable, not jittery)
+	// ETA based on rolling done speed (responsive), fallback to overall average
 	eta := "---"
 	if elapsed.Seconds() > 2 && done > 0 {
-		avgSpeed := float64(done) / elapsed.Seconds()
+		doneSpeed := s.DoneSpeed()
+		if doneSpeed <= 0 {
+			doneSpeed = float64(done) / elapsed.Seconds()
+		}
 		remaining := total - done
-		if remaining > 0 {
-			etaDur := time.Duration(float64(remaining)/avgSpeed) * time.Second
+		if remaining > 0 && doneSpeed > 0 {
+			etaDur := time.Duration(float64(remaining)/doneSpeed) * time.Second
 			eta = formatDuration(etaDur)
 		} else {
 			eta = "0s"
@@ -293,18 +332,15 @@ func (s *Stats) Render() string {
 	b.WriteString(fmt.Sprintf("  %s  %5.1f%%  %s/%s\n",
 		bar, pct, fmtInt64(done), fmtInt(s.TotalURLs)))
 	b.WriteString("\n")
-	totalSpeed := float64(0)
+	rollingBW := s.ByteSpeed()
+	avgBW := float64(0)
 	if elapsed.Seconds() > 0 {
-		totalSpeed = float64(done) / elapsed.Seconds()
+		avgBW = float64(bytesTotal) / elapsed.Seconds()
 	}
-	bytesPerSec := float64(0)
-	if elapsed.Seconds() > 0 {
-		bytesPerSec = float64(bytesTotal) / elapsed.Seconds()
-	}
-	b.WriteString(fmt.Sprintf("  Fetch     %s/s  │  Peak %s/s  │  Avg %s/s  │  %s/s\n",
-		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtInt64(int64(totalSpeed)), fmtBytes(int64(bytesPerSec))))
-	b.WriteString(fmt.Sprintf("  Elapsed   %s  │  ETA  %s  │  Avg fetch %dms  │  Total %s\n",
-		formatDuration(elapsed), eta, int(s.AvgFetchMs()), fmtBytes(bytesTotal)))
+	b.WriteString(fmt.Sprintf("  Speed   %s/s  │  Peak %s/s  │  %s/s  │  Total %s\n",
+		fmtInt64(int64(speed)), fmtInt64(int64(s.peakSpeed)), fmtBytes(int64(rollingBW)), fmtBytes(bytesTotal)))
+	b.WriteString(fmt.Sprintf("  ETA     %s  │  Elapsed %s  │  Avg %dms/req  │  Avg %s/s\n",
+		eta, formatDuration(elapsed), int(s.AvgFetchMs()), fmtBytes(int64(avgBW))))
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  ✓ %s ok (%4.1f%%)  ✗ %s fail (%4.1f%%)  ⏱ %s timeout (%4.1f%%)\n",
 		fmtInt64(succ), safePct(succ, done), fmtInt64(fail), safePct(fail, done),
