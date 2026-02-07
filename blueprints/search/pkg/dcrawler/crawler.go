@@ -87,7 +87,7 @@ func New(cfg Config) (*Crawler, error) {
 	c := &Crawler{config: cfg}
 	c.setupTransport()
 	c.frontier = NewFrontier(cfg.Domain, cfg.FrontierSize, cfg.BloomCapacity, cfg.BloomFPR, cfg.IncludeSubdomain)
-	c.stats = NewStats(cfg.Domain, cfg.MaxPages)
+	c.stats = NewStats(cfg.Domain, cfg.MaxPages, cfg.Continuous)
 	c.stats.SetFrontierFuncs(c.frontier.Len, c.frontier.BloomCount)
 
 	if cfg.RateLimit > 0 {
@@ -322,6 +322,11 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	empty := 0
+	var lastReseed time.Time
+	reseedInterval := c.config.ReseedInterval
+	if reseedInterval <= 0 {
+		reseedInterval = 30 * time.Second
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -334,7 +339,22 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 		}
 		if c.frontier.Len() == 0 && c.stats.inFlight.Load() == 0 {
 			empty++
-			if empty >= 15 { // 3s sustained
+			if c.config.Continuous && empty >= 15 {
+				// Re-seed: fetch new URLs from sitemap + homepage
+				if time.Since(lastReseed) >= reseedInterval {
+					n := c.reseed(ctx)
+					lastReseed = time.Now()
+					if n > 0 {
+						c.stats.reseeds.Add(1)
+						empty = 0
+						continue
+					}
+				}
+				// No new URLs found, keep waiting (only stop on Ctrl+C)
+				empty = 15 // stay at threshold, re-check next tick
+				continue
+			}
+			if !c.config.Continuous && empty >= 15 { // 3s sustained
 				cancel()
 				return
 			}
@@ -342,6 +362,88 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 			empty = 0
 		}
 	}
+}
+
+// reseed discovers new URLs from sitemap and homepage. Returns count of new URLs added.
+func (c *Crawler) reseed(ctx context.Context) int {
+	added := 0
+
+	// Re-fetch sitemap for new URLs
+	if c.config.FollowSitemap {
+		var robotsSitemaps []string
+		if c.robots != nil {
+			robotsSitemaps = c.robots.Sitemaps()
+		}
+		sctx, sc := context.WithTimeout(ctx, 30*time.Second)
+		urls, _ := DiscoverSitemapURLs(sctx, c.clients[0], c.config.Domain, robotsSitemaps, 1_000_000)
+		sc()
+		for _, u := range urls {
+			if c.frontier.TryAdd(u, 0) {
+				added++
+			}
+		}
+	}
+
+	// Re-add homepage (may have new links)
+	homeURL := fmt.Sprintf("https://%s/", c.config.Domain)
+	// Fetch homepage and extract links directly (bypass bloom for the homepage itself)
+	hctx, hc := context.WithTimeout(ctx, 10*time.Second)
+	defer hc()
+	links := c.fetchLinksFrom(hctx, homeURL)
+	for _, link := range links {
+		if c.frontier.TryAdd(link, 1) {
+			added++
+		}
+	}
+
+	return added
+}
+
+// fetchLinksFrom fetches a page and returns discovered internal URLs.
+func (c *Crawler) fetchLinksFrom(ctx context.Context, pageURL string) []string {
+	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("User-Agent", c.config.UserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*")
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	resp, err := c.clients[0].Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+
+	var reader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		if gr, e := gzip.NewReader(resp.Body); e == nil {
+			reader = gr
+			defer gr.Close()
+		}
+	}
+	body, _ := io.ReadAll(io.LimitReader(reader, c.config.MaxBodySize))
+	if len(body) == 0 {
+		return nil
+	}
+
+	baseURL := resp.Request.URL
+	if baseURL == nil {
+		baseURL, _ = url.Parse(pageURL)
+	}
+	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain)
+
+	var urls []string
+	for _, link := range meta.Links {
+		if link.IsInternal {
+			urls = append(urls, link.TargetURL)
+		}
+	}
+	return urls
 }
 
 // worker pulls from the frontier until ctx is cancelled.

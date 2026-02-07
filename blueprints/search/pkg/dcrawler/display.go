@@ -44,6 +44,8 @@ type Stats struct {
 	frontierLen func() int
 	bloomCount  func() uint32
 	linksFound  atomic.Int64
+	reseeds    atomic.Int64
+	continuous bool
 
 	// Freeze
 	frozen   bool
@@ -57,13 +59,14 @@ type speedTick struct {
 }
 
 // NewStats creates a new stats tracker.
-func NewStats(label string, maxPages int) *Stats {
+func NewStats(label string, maxPages int, continuous bool) *Stats {
 	return &Stats{
-		statuses:  make(map[int]int),
-		depths:    make(map[int]int),
-		Label:     label,
-		MaxPages:  maxPages,
-		startTime: time.Now(),
+		statuses:   make(map[int]int),
+		depths:     make(map[int]int),
+		Label:      label,
+		MaxPages:   maxPages,
+		continuous: continuous,
+		startTime:  time.Now(),
 	}
 }
 
@@ -233,12 +236,18 @@ func (s *Stats) Render() string {
 				bar.WriteString("\u2591")
 			}
 		}
-		progressLine = fmt.Sprintf("  %s  %s pages", bar.String(), fmtInt64(done))
+		mode := ""
+		if s.continuous {
+			mode = " [continuous]"
+		}
+		progressLine = fmt.Sprintf("  %s  %s pages%s", bar.String(), fmtInt64(done), mode)
 	}
 
 	// ETA
 	eta := "---"
-	if s.MaxPages > 0 && elapsed.Seconds() > 2 && done > 0 && speed > 0 {
+	if s.continuous {
+		eta = "continuous"
+	} else if s.MaxPages > 0 && elapsed.Seconds() > 2 && done > 0 && speed > 0 {
 		remaining := int64(s.MaxPages) - done
 		if remaining > 0 {
 			etaDur := time.Duration(float64(remaining)/speed) * time.Second
@@ -293,8 +302,12 @@ func (s *Stats) Render() string {
 		fmtInt64(tout), safePct(tout, done)))
 
 	// === Frontier ===
-	b.WriteString(fmt.Sprintf("  Frontier  %s queued  \u2502  %s seen  \u2502  %s links found\n",
-		frontierQ, bloomN, fmtInt64(s.linksFound.Load())))
+	frontierLine := fmt.Sprintf("  Frontier  %s queued  \u2502  %s seen  \u2502  %s links found",
+		frontierQ, bloomN, fmtInt64(s.linksFound.Load()))
+	if reseeds := s.reseeds.Load(); reseeds > 0 {
+		frontierLine += fmt.Sprintf("  \u2502  %s reseeds", fmtInt64(reseeds))
+	}
+	b.WriteString(frontierLine + "\n")
 	b.WriteString("\n")
 
 	// === HTTP + Depth ===

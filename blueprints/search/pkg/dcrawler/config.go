@@ -35,6 +35,9 @@ type Config struct {
 	ForceHTTP1       bool
 	TransportShards  int
 	SeedFile         string
+	Continuous       bool          // Run non-stop, re-seed when frontier drains
+	ReseedInterval   time.Duration // Min interval between re-seeds (default 30s)
+
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.
