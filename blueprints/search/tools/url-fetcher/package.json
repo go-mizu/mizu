@@ -1,0 +1,17 @@
+{
+  "name": "url-fetcher",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.11.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260207.0",
+    "wrangler": "^4.63.0",
+    "typescript": "^5.9.3"
+  }
+}
