@@ -25,6 +25,7 @@ func NewCrawlDomain() *cobra.Command {
 		includeSubdomain bool
 		resume           bool
 		http1            bool
+		continuous       bool
 		crawlerDataDir   string
 		userAgent        string
 		seedFile         string
@@ -41,7 +42,7 @@ and sharded DuckDB storage for maximum throughput.
 Results are stored in $HOME/data/crawler/<domain>/results/
 
 Examples:
-  search crawl-domain dantri.com.vn
+  search crawl-domain kenh14.vn --continuous
   search crawl-domain dantri.com.vn --max-pages 100000 --workers 200
   search crawl-domain dantri.com.vn --store-body --max-depth 3
   search crawl-domain dantri.com.vn --resume`,
@@ -62,6 +63,7 @@ Examples:
 			cfg.IncludeSubdomain = includeSubdomain
 			cfg.Resume = resume
 			cfg.ForceHTTP1 = http1
+			cfg.Continuous = continuous
 			cfg.TransportShards = transportShards
 			cfg.SeedFile = seedFile
 			if crawlerDataDir != "" {
@@ -87,6 +89,7 @@ Examples:
 	cmd.Flags().BoolVar(&noSitemap, "no-sitemap", false, "Don't parse sitemap.xml")
 	cmd.Flags().BoolVar(&includeSubdomain, "include-subdomain", false, "Also crawl subdomains")
 	cmd.Flags().BoolVar(&resume, "resume", false, "Skip already-crawled URLs")
+	cmd.Flags().BoolVar(&continuous, "continuous", false, "Run non-stop, re-seed from sitemap when frontier drains (Ctrl+C to stop)")
 	cmd.Flags().BoolVar(&http1, "http1", false, "Force HTTP/1.1 (disable HTTP/2)")
 	cmd.Flags().IntVar(&transportShards, "transport-shards", 16, "Number of HTTP transport shards")
 	cmd.Flags().StringVar(&seedFile, "seed-file", "", "File with seed URLs (one per line)")
@@ -123,8 +126,12 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config) error {
 	if cfg.MaxPages > 0 {
 		maxPagesStr = fmt.Sprintf("%d", cfg.MaxPages)
 	}
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Depth:    %s  |  Max Pages: %s",
-		maxDepthStr, maxPagesStr)))
+	modeStr := ""
+	if cfg.Continuous {
+		modeStr = "  |  Mode: continuous"
+	}
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  Depth:    %s  |  Max Pages: %s%s",
+		maxDepthStr, maxPagesStr, modeStr)))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Data:     %s", c.DataDir())))
 	fmt.Println()
 
