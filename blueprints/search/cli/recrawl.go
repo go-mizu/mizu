@@ -20,6 +20,7 @@ func NewRecrawl() *cobra.Command {
 		dirPath         string
 		latest          bool
 		workers         int
+		dnsWorkers      int
 		timeout         int
 		headOnly        bool
 		statusOnly      bool
@@ -28,6 +29,7 @@ func NewRecrawl() *cobra.Command {
 		userAgent       string
 		dnsPrefetch     bool
 		transportShards int
+		twoPass         bool
 	)
 
 	cmd := &cobra.Command{
@@ -65,6 +67,7 @@ Examples:
 			}
 			return runRecrawl(cmd.Context(), dbPath, recrawler.Config{
 				Workers:         workers,
+				DNSWorkers:      dnsWorkers,
 				Timeout:         time.Duration(timeout) * time.Millisecond,
 				UserAgent:       userAgent,
 				HeadOnly:        headOnly,
@@ -73,6 +76,7 @@ Examples:
 				Resume:          resume,
 				DNSPrefetch:     dnsPrefetch,
 				TransportShards: transportShards,
+				TwoPass:        twoPass,
 			})
 		},
 	}
@@ -80,7 +84,8 @@ Examples:
 	cmd.Flags().StringVar(&dbPath, "db", "", "Path to seed DuckDB file")
 	cmd.Flags().StringVar(&dirPath, "dir", "", "Directory containing DuckDB files (use with --latest)")
 	cmd.Flags().BoolVar(&latest, "latest", false, "Auto-select highest-index DuckDB in --dir")
-	cmd.Flags().IntVar(&workers, "workers", 100000, "Number of concurrent workers")
+	cmd.Flags().IntVar(&workers, "workers", 100000, "Number of concurrent HTTP fetch workers")
+	cmd.Flags().IntVar(&dnsWorkers, "dns-workers", 5000, "Number of concurrent DNS pipeline workers")
 	cmd.Flags().IntVar(&timeout, "timeout", 1000, "Per-request timeout in milliseconds")
 	cmd.Flags().BoolVar(&headOnly, "head-only", false, "Only fetch headers, skip body")
 	cmd.Flags().BoolVar(&statusOnly, "status-only", false, "Only check HTTP status, close body immediately (fastest)")
@@ -89,6 +94,7 @@ Examples:
 	cmd.Flags().StringVar(&userAgent, "user-agent", "MizuCrawler/1.0", "User-Agent header")
 	cmd.Flags().BoolVar(&dnsPrefetch, "dns-prefetch", true, "Pre-resolve DNS for all domains")
 	cmd.Flags().IntVar(&transportShards, "transport-shards", 16, "Number of HTTP transport shards")
+	cmd.Flags().BoolVar(&twoPass, "two-pass", false, "Two-pass mode: probe domains before full fetch")
 
 	return cmd
 }
@@ -203,6 +209,9 @@ func runRecrawl(ctx context.Context, dbPath string, cfg recrawler.Config) error 
 	pipelineMode := "direct"
 	if dnsResolver != nil {
 		pipelineMode = "dns-pipeline"
+	}
+	if cfg.TwoPass {
+		pipelineMode = "two-pass"
 	}
 	fmt.Println()
 	fmt.Println(infoStyle.Render(fmt.Sprintf("Starting recrawl: %d workers, %v timeout, mode=%s, shards=%d, pipeline=%s",

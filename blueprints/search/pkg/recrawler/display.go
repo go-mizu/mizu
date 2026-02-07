@@ -24,6 +24,10 @@ type Stats struct {
 	dnsLive atomic.Int64
 	dnsDead atomic.Int64
 
+	// Two-pass probe counters (domain-level)
+	probeReachable   atomic.Int64
+	probeUnreachable atomic.Int64
+
 	// HTTP status code distribution
 	statusMu sync.Mutex
 	statuses map[int]int
@@ -147,6 +151,16 @@ func (s *Stats) RecordDNSLive() {
 // RecordDNSDead records a domain resolved as dead (NXDOMAIN).
 func (s *Stats) RecordDNSDead() {
 	s.dnsDead.Add(1)
+}
+
+// RecordProbeReachable records a domain that responded to the HTTP probe.
+func (s *Stats) RecordProbeReachable() {
+	s.probeReachable.Add(1)
+}
+
+// RecordProbeUnreachable records a domain that failed the HTTP probe.
+func (s *Stats) RecordProbeUnreachable() {
+	s.probeUnreachable.Add(1)
 }
 
 // Done returns the total number of processed URLs (including skips, for progress bar).
@@ -296,6 +310,15 @@ func (s *Stats) Render() string {
 			fmtInt64(dnsTotal), fmtInt(s.UniqueDomains),
 			fmtInt64(dnsLiveCount), fmtInt64(dnsDeadCount),
 			safePct(dnsDeadCount, dnsTotal)))
+	}
+	probeOK := s.probeReachable.Load()
+	probeFail := s.probeUnreachable.Load()
+	probeTotal := probeOK + probeFail
+	if probeTotal > 0 {
+		b.WriteString(fmt.Sprintf("  Probe   %s/%s  │  %s reachable  │  %s unreachable (%4.1f%%)\n",
+			fmtInt64(probeTotal), fmtInt64(dnsLiveCount),
+			fmtInt64(probeOK), fmtInt64(probeFail),
+			safePct(probeFail, probeTotal)))
 	}
 	b.WriteString(fmt.Sprintf("  Domains  %s reached  │  %s unreachable  │  %s avg/page\n",
 		fmtInt(domainsReached), fmtInt(domainsFailed), fmtBytes(avgBytes(bytesTotal, succ))))

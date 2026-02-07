@@ -70,9 +70,9 @@ func makeResolver(addr string, timeout time.Duration) *net.Resolver {
 func NewDNSResolver(timeout time.Duration) *DNSResolver {
 	d := &DNSResolver{
 		resolvers: []*net.Resolver{
-			makeResolver("", timeout),           // system DNS
-			makeResolver("8.8.8.8:53", timeout), // Google
-			makeResolver("1.1.1.1:53", timeout), // Cloudflare
+			makeResolver("", timeout),           // system DNS (fast for cached, leverages OS cache)
+			makeResolver("8.8.8.8:53", timeout), // Google (fallback, high-concurrency)
+			makeResolver("1.1.1.1:53", timeout), // Cloudflare (tertiary)
 		},
 		lookupTimeout: 3 * time.Second,
 	}
@@ -420,8 +420,8 @@ func truncateErr(err error) string {
 }
 
 // ResolveOne resolves a single domain, checking cache first.
-// Tries all configured resolvers sequentially (system → Google → Cloudflare)
-// with per-resolver timeout = lookupTimeout / len(resolvers).
+// Tries resolvers sequentially: Google 8.8.8.8 (primary, high-concurrency)
+// → Cloudflare 1.1.1.1 → system DNS, with per-resolver timeout.
 //
 // Returns (ips, false, nil) on cache hit or successful resolution.
 // Returns (nil, true, nil/err) on NXDOMAIN (definitive dead).

@@ -40,7 +40,8 @@ type Result struct {
 
 // Config holds configuration for high-throughput recrawling.
 type Config struct {
-	Workers              int           // Concurrent workers (default: 2000)
+	Workers              int           // Concurrent HTTP fetch workers (default: 2000)
+	DNSWorkers           int           // Concurrent DNS pipeline workers (default: 2000)
 	Timeout              time.Duration // Per-request timeout (default: 3s)
 	UserAgent            string        // User-Agent header
 	HeadOnly             bool          // Only fetch headers, skip body
@@ -50,6 +51,7 @@ type Config struct {
 	DNSPrefetch          bool          // Pre-resolve DNS for all domains
 	DomainFailThreshold  int           // Failures before marking domain dead (default: 1)
 	TransportShards      int           // Number of HTTP transport shards (default: 1)
+	TwoPass              bool          // Enable two-pass: probe domains before full fetch
 }
 
 // DefaultConfig returns optimal defaults for high throughput.

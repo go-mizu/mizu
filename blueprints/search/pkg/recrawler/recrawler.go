@@ -40,6 +40,9 @@ func New(cfg Config, stats *Stats, rdb *ResultDB) *Recrawler {
 	if cfg.Workers == 0 {
 		cfg.Workers = 2000
 	}
+	if cfg.DNSWorkers == 0 {
+		cfg.DNSWorkers = 5000
+	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 3 * time.Second
 	}
@@ -268,6 +271,10 @@ func (r *Recrawler) Run(ctx context.Context, seeds []SeedURL, skip map[string]bo
 // Runs concurrently with HTTP fetch workers for maximum throughput.
 // NXDOMAIN domains are filtered out. Timeout domains are still pushed
 // (HTTP transport will handle DNS inline for those).
+//
+// In TwoPass mode, DNS-live domains get an additional HTTP HEAD probe:
+// only domains that respond to the probe have their URLs pushed to fetch.
+// This eliminates >99% of HTTP work when most domains are unreachable.
 func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURLs map[string][]SeedURL, urlCh chan<- SeedURL) {
 	defer close(urlCh)
 
@@ -286,7 +293,7 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 	}()
 
 	// DNS workers: resolve each domain, push its URLs
-	dnsWorkers := min(5000, len(domains))
+	dnsWorkers := min(r.config.DNSWorkers, len(domains))
 	var wg sync.WaitGroup
 	for range dnsWorkers {
 		wg.Add(1)
@@ -321,11 +328,24 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 					continue
 				}
 
-				// DNS resolved — cache IPs and push URLs to fetch pipeline
+				// DNS resolved — cache IPs
 				r.stats.RecordDNSLive()
 				r.dnsCacheMu.Lock()
 				r.dnsCache[domain] = ips
 				r.dnsCacheMu.Unlock()
+
+				// Two-pass mode: probe domain before pushing URLs
+				if r.config.TwoPass {
+					if !r.probeDomain(ctx, domain, urls[0].URL) {
+						r.stats.RecordProbeUnreachable()
+						r.markDomainDead(domain)
+						for range urls {
+							r.stats.RecordDomainSkip()
+						}
+						continue
+					}
+					r.stats.RecordProbeReachable()
+				}
 
 				for _, u := range urls {
 					select {
@@ -339,6 +359,36 @@ func (r *Recrawler) dnsPipeline(ctx context.Context, domains []string, domainURL
 	}
 
 	wg.Wait()
+}
+
+// probeDomain sends a lightweight HEAD request to one URL on the domain
+// to check if the server is reachable. Returns true if the domain should
+// be fetched (server responded or timed out — conservative), false only
+// if the connection was definitively refused/reset.
+func (r *Recrawler) probeDomain(ctx context.Context, _, probeURL string) bool {
+	probeTimeout := 500 * time.Millisecond
+	probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, probeURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", r.config.UserAgent)
+
+	client := r.clientForWorker(0)
+	resp, err := client.Do(req)
+	if err != nil {
+		// Timeout → conservative: domain might be slow but alive, still fetch
+		if isTimeoutError(err) {
+			return true
+		}
+		// Connection refused/reset/no route → definitively unreachable
+		return false
+	}
+	resp.Body.Close()
+	// Any HTTP response (1xx-5xx) means the server is alive
+	return true
 }
 
 // directFeed pushes URLs to the fetch channel without DNS resolution.
@@ -409,7 +459,7 @@ func (r *Recrawler) fetchOne(ctx context.Context, client *http.Client, seed Seed
 	resp, err := client.Do(req)
 	if err != nil {
 		isTimeout := isTimeoutError(err)
-		isFatal := isTimeout || isConnectionRefused(err) || isDNSError(err)
+		isFatal := isConnectionRefused(err) || isDNSError(err)
 		r.stats.RecordFailure(0, seed.Domain, isTimeout)
 		r.rdb.Add(Result{
 			URL:         seed.URL,
