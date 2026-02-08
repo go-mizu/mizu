@@ -98,40 +98,61 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 
 	start := time.Now()
 
-	page, err := rp.getPage()
-	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
-		c.recordError(item, err, 0)
-		return
-	}
-	defer rp.putPage(page)
-
 	timeout := c.config.Timeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
 
-	err = page.Timeout(timeout).Navigate(item.URL)
-	if err != nil {
-		fetchMs := time.Since(start).Milliseconds()
+	// Retry navigation on transient Chrome errors (ERR_NETWORK_CHANGED, etc.)
+	const maxRetries = 3
+	var page *rod.Page
+	var navErr error
+	for attempt := range maxRetries {
 		if ctx.Err() != nil {
 			return
 		}
-		c.recordError(item, fmt.Errorf("navigate: %w", err), fetchMs)
-		return
-	}
+		var err error
+		page, err = rp.getPage()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			c.recordError(item, err, 0)
+			return
+		}
 
-	err = page.Timeout(timeout).WaitLoad()
-	if err != nil {
-		fetchMs := time.Since(start).Milliseconds()
+		err = page.Timeout(timeout).Navigate(item.URL)
+		if err == nil {
+			navErr = nil
+			break
+		}
+		navErr = err
+		rp.putPage(page)
+		page = nil
 		if ctx.Err() != nil {
 			return
 		}
-		c.recordError(item, fmt.Errorf("wait load: %w", err), fetchMs)
+		if attempt < maxRetries-1 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Duration(attempt+1) * time.Second):
+			}
+		}
+	}
+	if navErr != nil {
+		fetchMs := time.Since(start).Milliseconds()
+		c.recordError(item, fmt.Errorf("navigate (after %d retries): %w", maxRetries, navErr), fetchMs)
 		return
 	}
+	defer rp.putPage(page)
+
+	// Wait for DOM to be ready (DOMContentLoaded), NOT window.load which waits for
+	// all resources (ads, trackers, images). Ad-heavy sites never fire load in time.
+	_, _ = page.Timeout(timeout).Eval(`() => new Promise(r => {
+		if (document.readyState !== 'loading') r();
+		else document.addEventListener('DOMContentLoaded', r);
+	})`)
 
 	// Wait for Cloudflare challenge to resolve (title changes from "Just a moment...")
 	// Poll title for up to 15 seconds
