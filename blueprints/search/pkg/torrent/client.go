@@ -9,8 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"net/url"
+
 	"github.com/anacrolix/torrent"
-	"github.com/anacrolix/torrent/metainfo"
 )
 
 // Config configures the torrent client.
@@ -83,20 +84,13 @@ func (c *Client) addTorrent(ctx context.Context) error {
 		return nil
 	}
 
-	var ih metainfo.Hash
-	if err := ih.FromHexString(c.cfg.InfoHash); err != nil {
-		return fmt.Errorf("parse info hash: %w", err)
+	// Build magnet URI with trackers
+	magnetURI := fmt.Sprintf("magnet:?xt=urn:btih:%s", c.cfg.InfoHash)
+	for _, tr := range c.cfg.Trackers {
+		magnetURI += "&tr=" + url.QueryEscape(tr)
 	}
 
-	spec := &torrent.TorrentSpec{
-		InfoHash: ih,
-		Trackers: make([][]string, len(c.cfg.Trackers)),
-	}
-	for i, tr := range c.cfg.Trackers {
-		spec.Trackers[i] = []string{tr}
-	}
-
-	t, _, err := c.cl.AddTorrentSpec(spec)
+	t, err := c.cl.AddMagnet(magnetURI)
 	if err != nil {
 		return fmt.Errorf("add torrent: %w", err)
 	}
