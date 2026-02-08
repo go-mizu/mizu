@@ -3,23 +3,24 @@ module github.com/go-mizu/blueprints/localflare
 go 1.25
 
 require (
-	github.com/apache/arrow-go/v18 v18.5.0
+	github.com/apache/arrow-go/v18 v18.5.1
 	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
+	github.com/aws/smithy-go v1.24.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/fang v0.4.4
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/coder/hnsw v0.6.2-0.20250730165321-c271e58cdc9a
 	github.com/dop251/goja v0.0.0-20260106131823-651366fbe6e3
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
+	github.com/duckdb/duckdb-go/v2 v2.5.5
 	github.com/edsrzf/mmap-go v1.2.0
-	github.com/elastic/go-elasticsearch/v8 v8.19.1
+	github.com/elastic/go-elasticsearch/v8 v8.19.2
 	github.com/go-mizu/mizu v0.5.17
 	github.com/jackc/pgx/v5 v5.8.0
-	github.com/marcboeker/go-duckdb v1.8.5
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pgvector/pgvector-go v0.3.0
@@ -54,23 +55,28 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.13 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6 // indirect
-	github.com/aws/smithy-go v1.24.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260119114420-32357e088c3c // indirect
-	github.com/charmbracelet/x/ansi v0.11.4 // indirect
-	github.com/charmbracelet/x/cellbuf v0.0.14 // indirect
-	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260119114936-fd556377ea59 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260205113103-524a6607adb8 // indirect
+	github.com/charmbracelet/x/ansi v0.11.6 // indirect
+	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260204111555-7642919e0bee // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/chewxy/math32 v1.11.1 // indirect
-	github.com/clipperhouse/displaywidth v0.7.0 // indirect
+	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
-	github.com/clipperhouse/uax29/v2 v2.3.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -89,6 +95,7 @@ require (
 	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
+	github.com/lib/pq v1.11.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -107,15 +114,15 @@ require (
 	github.com/viterin/partial v1.1.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/zeebo/xxh3 v1.0.2 // indirect
+	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.40.0 // indirect
+	go.opentelemetry.io/otel/metric v1.40.0 // indirect
+	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260116145544-c6413dc483f5 // indirect
+	golang.org/x/telemetry v0.0.0-20260205145544-86a5c4bf3c8d // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect

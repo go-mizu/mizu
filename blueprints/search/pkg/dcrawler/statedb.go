@@ -44,9 +44,6 @@ func (s *StateDB) init() error {
 			url VARCHAR NOT NULL,
 			depth INTEGER NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS seen_urls (
-			url VARCHAR NOT NULL
-		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -115,61 +112,10 @@ func (s *StateDB) LoadFrontier() ([]CrawlItem, error) {
 	return items, nil
 }
 
-// SaveSeenURLs saves all seen URLs (bloom filter contents) for restart.
-// Uses batch inserts for speed.
-func (s *StateDB) SaveSeenURLs(urls []string) error {
-	s.db.Exec("DELETE FROM seen_urls")
-	if len(urls) == 0 {
-		return nil
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare("INSERT INTO seen_urls (url) VALUES (?)")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	for _, u := range urls {
-		stmt.Exec(u)
-	}
-	return tx.Commit()
-}
-
-// LoadSeenURLs reads saved seen URLs for bloom filter rebuild.
-func (s *StateDB) LoadSeenURLs() ([]string, error) {
-	rows, err := s.db.Query("SELECT url FROM seen_urls")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var urls []string
-	for rows.Next() {
-		var u string
-		if err := rows.Scan(&u); err == nil {
-			urls = append(urls, u)
-		}
-	}
-	return urls, nil
-}
-
 // FrontierCount returns the number of saved frontier URLs.
 func (s *StateDB) FrontierCount() int {
 	var count int
 	s.db.QueryRow("SELECT COUNT(*) FROM frontier").Scan(&count)
-	return count
-}
-
-// SeenCount returns the number of saved seen URLs.
-func (s *StateDB) SeenCount() int {
-	var count int
-	s.db.QueryRow("SELECT COUNT(*) FROM seen_urls").Scan(&count)
 	return count
 }
 

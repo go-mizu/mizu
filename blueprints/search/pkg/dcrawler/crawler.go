@@ -224,21 +224,25 @@ func (c *Crawler) Run(ctx context.Context) error {
 }
 
 func (c *Crawler) restoreState() {
-	seen, _ := c.stateDB.LoadSeenURLs()
-	if len(seen) > 0 {
-		for _, u := range seen {
-			c.frontier.MarkSeen(u)
-		}
-		fmt.Printf("  Resume: %s seen URLs\n", fmtInt(len(seen)))
-	}
-	// Fallback: load already-crawled URLs from result shards
 	rdb, err := NewResultDB(c.config.ResultDir(), c.config.ShardCount, c.config.BatchSize)
-	if err == nil {
-		cnt, _ := rdb.LoadExistingURLs(c.frontier.MarkSeen)
-		rdb.Close()
-		if cnt > 0 {
-			fmt.Printf("  Resume: %s crawled URLs in bloom\n", fmtInt(cnt))
-		}
+	if err != nil {
+		fmt.Printf("  Resume: failed to open result DB: %v\n", err)
+		return
+	}
+	defer rdb.Close()
+
+	// Phase 1: Mark all already-crawled URLs as seen in bloom
+	crawled, _ := rdb.LoadExistingURLs(c.frontier.MarkSeen)
+	if crawled > 0 {
+		fmt.Printf("  Resume: %s crawled URLs in bloom\n", fmtInt(crawled))
+	}
+
+	// Phase 2: Re-feed discovered-but-uncrawled internal links into frontier.
+	// These are links extracted from crawled pages that were never fetched
+	// (either due to frontier overflow, shutdown, or channel-full drops).
+	pending, _ := rdb.LoadPendingLinks(c.frontier.TryAdd)
+	if pending > 0 {
+		fmt.Printf("  Resume: %s pending links re-fed to frontier\n", fmtInt(pending))
 	}
 }
 
