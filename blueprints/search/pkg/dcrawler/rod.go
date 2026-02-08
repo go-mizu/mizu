@@ -175,6 +175,18 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 	// Brief wait for JS rendering after challenge resolves
 	page.Timeout(3 * time.Second).WaitRequestIdle(300*time.Millisecond, nil, nil, nil)()
 
+	// Scroll for infinite scroll pages (Pinterest, etc.)
+	if c.config.ScrollCount > 0 {
+		for range c.config.ScrollCount {
+			if ctx.Err() != nil {
+				return
+			}
+			_, _ = page.Eval(`() => window.scrollTo(0, document.body.scrollHeight)`)
+			page.Timeout(5 * time.Second).WaitRequestIdle(500*time.Millisecond, nil, nil, nil)()
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+
 	fetchMs := time.Since(start).Milliseconds()
 
 	pageInfo, err := page.Info()
@@ -222,7 +234,7 @@ func (c *Crawler) rodFetchAndProcess(ctx context.Context, rp *rodPool, item Craw
 		baseURL, _ = url.Parse(item.URL)
 	}
 
-	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain)
+	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
 	if meta.Description != "" {
 		result.Description = meta.Description
 	}
