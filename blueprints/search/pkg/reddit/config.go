@@ -60,8 +60,9 @@ func ParquetDir() string {
 }
 
 // RawPath returns the full path for a raw .zst file.
+// The torrent has a root folder "reddit/", so files land at raw/reddit/comments/RC_*.zst
 func RawPath(kind FileKind, name string) string {
-	return filepath.Join(RawDir(), string(kind), name+".zst")
+	return filepath.Join(RawDir(), "reddit", string(kind), name+".zst")
 }
 
 // DBPath returns the full path for a DuckDB file.
