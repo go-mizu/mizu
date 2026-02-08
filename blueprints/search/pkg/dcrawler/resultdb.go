@@ -234,16 +234,13 @@ func writePageBatch(db *sql.DB, batch []Result) {
 			}
 			b.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 			// Cast uint64 to int64: Go's database/sql rejects uint64 with high bit set.
-			// The bit pattern is preserved and DuckDB stores it correctly as UBIGINT.
 			args = append(args, r.URL, int64(r.URLHash), r.Depth, r.StatusCode,
 				r.ContentType, r.ContentLength, int64(r.BodyHash), r.BodyCompressed,
 				r.Title, r.Description, r.Language, r.Canonical,
 				r.ETag, r.LastModified, r.Server, r.RedirectURL,
 				r.LinkCount, r.FetchTimeMs, r.CrawledAt, r.Error)
 		}
-		if _, err := db.Exec(b.String(), args...); err != nil {
-			fmt.Fprintf(os.Stderr, "[ERR] writePageBatch(%d): %v\n", len(chunk), err)
-		}
+		db.Exec(b.String(), args...)
 	}
 }
 
@@ -310,44 +307,6 @@ func (rdb *ResultDB) LoadExistingURLs(markSeen func(string)) (int, error) {
 			if err := rows.Scan(&u); err == nil {
 				markSeen(u)
 				count++
-			}
-		}
-		rows.Close()
-		db.Close()
-	}
-	return count, nil
-}
-
-// LoadPendingLinks reads internal links that haven't been crawled yet (in links but not in pages).
-// Calls addFn for each pending URL. Used by resume to re-feed discovered-but-uncrawled links.
-func (rdb *ResultDB) LoadPendingLinks(addFn func(string, int) bool) (int, error) {
-	count := 0
-	for i := range len(rdb.shards) {
-		path := filepath.Join(rdb.dir, fmt.Sprintf("results_%03d.duckdb", i))
-		if _, err := os.Stat(path); err != nil {
-			continue
-		}
-		db, err := sql.Open("duckdb", path+"?access_mode=READ_ONLY")
-		if err != nil {
-			continue
-		}
-		// Links and pages are sharded by URL, so target_url and page url
-		// for the same URL always land in the same shard — this query is correct.
-		rows, err := db.Query(`
-			SELECT DISTINCT target_url FROM links
-			WHERE is_internal = true
-			AND target_url NOT IN (SELECT url FROM pages)
-		`)
-		if err != nil {
-			db.Close()
-			continue
-		}
-		for rows.Next() {
-			var u string
-			if err := rows.Scan(&u); err == nil {
-				if addFn(u, 1) {
-					count++
-				}
 			}
 		}
 		rows.Close()
