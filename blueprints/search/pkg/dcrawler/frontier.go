@@ -59,15 +59,20 @@ func (f *Frontier) TryAdd(rawURL string, depth int) bool {
 		f.mu.Unlock()
 		return false
 	}
-	f.filter.AddString(normalized)
+	// Don't add to bloom yet — wait for successful enqueue.
+	// Adding before enqueue permanently loses URLs when channel is full:
+	// URL is marked "seen" but never enqueued, and can never be re-discovered.
 	f.mu.Unlock()
 
 	select {
 	case f.ch <- CrawlItem{URL: normalized, Depth: depth}:
+		f.mu.Lock()
+		f.filter.AddString(normalized)
+		f.mu.Unlock()
 		f.added.Add(1)
 		return true
 	default:
-		return false // frontier full
+		return false // frontier full — URL NOT in bloom, can be re-discovered
 	}
 }
 
