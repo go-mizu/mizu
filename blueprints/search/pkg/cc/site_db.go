@@ -183,8 +183,16 @@ func (sdb *SiteDB) flusher() {
 	}
 }
 
+// sanitize removes null bytes that break go-duckdb parameter binding.
+func sanitize(s string) string {
+	if strings.IndexByte(s, 0) < 0 {
+		return s
+	}
+	return strings.ReplaceAll(s, "\x00", "")
+}
+
 func (sdb *SiteDB) writePageBatch(batch []SitePage) {
-	const maxPerStmt = 500
+	const maxPerStmt = 50
 
 	for i := 0; i < len(batch); i += maxPerStmt {
 		end := min(i+maxPerStmt, len(batch))
@@ -199,13 +207,23 @@ func (sdb *SiteDB) writePageBatch(batch []SitePage) {
 				b.WriteByte(',')
 			}
 			b.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-			args = append(args, p.URL, p.StatusCode, p.ContentType, p.ContentLength,
-				p.Title, p.Description, p.Language, p.CrawlID,
+			args = append(args, p.URL, p.StatusCode, sanitize(p.ContentType), p.ContentLength,
+				sanitize(p.Title), sanitize(p.Description), sanitize(p.Language), p.CrawlID,
 				p.CrawledAt, p.WARCFilename, p.WARCOffset, p.WARCLength,
-				p.Body, p.FetchTimeMs, p.Error)
+				sanitize(p.Body), p.FetchTimeMs, sanitize(p.Error))
 		}
 
-		sdb.db.Exec(b.String(), args...)
+		if _, err := sdb.db.Exec(b.String(), args...); err != nil {
+			// Fallback: insert rows one by one to avoid losing the whole batch
+			for _, p := range chunk {
+				sdb.db.Exec(
+					"INSERT OR REPLACE INTO pages (url, status_code, content_type, content_length, title, description, language, crawl_id, crawled_at, warc_filename, warc_offset, warc_length, body, fetch_time_ms, error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+					p.URL, p.StatusCode, sanitize(p.ContentType), p.ContentLength,
+					sanitize(p.Title), sanitize(p.Description), sanitize(p.Language), p.CrawlID,
+					p.CrawledAt, p.WARCFilename, p.WARCOffset, p.WARCLength,
+					sanitize(p.Body), p.FetchTimeMs, sanitize(p.Error))
+			}
+		}
 	}
 }
 
