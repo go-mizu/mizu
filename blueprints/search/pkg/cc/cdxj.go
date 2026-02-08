@@ -1,10 +1,12 @@
 package cc
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -12,6 +14,18 @@ import (
 	"sync"
 	"time"
 )
+
+// cdxClient is a shared HTTP client for CDX API requests.
+// Uses transport-level timeouts so large response bodies don't trigger deadline exceeded.
+var cdxClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:  15 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConnsPerHost:   10,
+	},
+}
 
 // LookupURL queries the CDX API for a specific URL in a crawl.
 func LookupURL(ctx context.Context, crawlID, targetURL string) ([]CDXJEntry, error) {
@@ -28,14 +42,38 @@ func LookupDomain(ctx context.Context, crawlID, domain string, limit int) ([]CDX
 }
 
 func fetchCDXJ(ctx context.Context, apiURL string) ([]CDXJEntry, error) {
-	client := &http.Client{Timeout: 60 * time.Second}
+	const maxRetries = 5
+	var lastErr error
+
+	for attempt := range maxRetries {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		entries, err := fetchCDXJOnce(ctx, apiURL)
+		if err == nil {
+			return entries, nil
+		}
+		lastErr = err
+		if attempt < maxRetries-1 {
+			backoff := time.Duration(attempt+1) * 10 * time.Second
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+	}
+	return nil, lastErr
+}
+
+func fetchCDXJOnce(ctx context.Context, apiURL string) ([]CDXJEntry, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := client.Do(req)
+	resp, err := cdxClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("CDX API request: %w", err)
 	}
@@ -49,23 +87,19 @@ func fetchCDXJ(ctx context.Context, apiURL string) ([]CDXJEntry, error) {
 		return nil, fmt.Errorf("CDX API: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading CDX response: %w", err)
-	}
-
+	// Stream-parse JSON lines instead of io.ReadAll to handle large responses
 	var entries []CDXJEntry
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		line = strings.TrimSpace(line)
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 256*1024), 1024*1024) // 1MB max line
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-
 		var raw map[string]string
 		if err := json.Unmarshal([]byte(line), &raw); err != nil {
 			continue
 		}
-
 		entries = append(entries, CDXJEntry{
 			URL:       raw["url"],
 			Mime:      raw["mime"],
@@ -79,6 +113,9 @@ func fetchCDXJ(ctx context.Context, apiURL string) ([]CDXJEntry, error) {
 			Timestamp: raw["timestamp"],
 		})
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading CDX response: %w", err)
+	}
 
 	return entries, nil
 }
@@ -88,14 +125,13 @@ func CDXJPageCount(ctx context.Context, crawlID, domain string) (int, error) {
 	apiURL := fmt.Sprintf("https://index.commoncrawl.org/%s-index?url=%s&matchType=domain&output=json&showNumPages=true",
 		crawlID, url.QueryEscape(domain))
 
-	client := &http.Client{Timeout: 60 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := client.Do(req)
+	resp, err := cdxClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("CDX page count: %w", err)
 	}

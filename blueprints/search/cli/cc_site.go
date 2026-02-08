@@ -103,7 +103,7 @@ func runCCSite(ctx context.Context, domain string, mode cc.SiteMode, crawlID str
 	fmt.Println(infoStyle.Render("Step 1: Discovering URLs via CDX API..."))
 
 	start := time.Now()
-	entries, err := cc.LookupDomainAll(ctx, crawlID, domain, 10, func(done, total int) {
+	entries, err := cc.LookupDomainAll(ctx, crawlID, domain, 2, func(done, total int) {
 		fmt.Printf("\r  CDX page %d/%d", done, total)
 	})
 	if err != nil {
