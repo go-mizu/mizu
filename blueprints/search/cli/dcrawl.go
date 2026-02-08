@@ -50,7 +50,11 @@ Examples:
   search crawl-domain kenh14.vn --continuous
   search crawl-domain dantri.com.vn --max-pages 100000 --workers 200
   search crawl-domain dantri.com.vn --store-body --max-depth 3
-  search crawl-domain dantri.com.vn --resume`,
+  search crawl-domain dantri.com.vn --resume
+
+Pinterest (auto-detected, uses internal API - no browser needed):
+  search crawl-domain 'https://www.pinterest.com/search/pins/?q=gouache' --download-images
+  search crawl-domain 'https://www.pinterest.com/search/pins/?q=watercolor' --max-pages 200`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := dcrawler.DefaultConfig()
@@ -128,6 +132,20 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 		return err
 	}
 
+	// Pinterest: use internal API instead of browser/HTTP crawl
+	if dcrawler.IsPinterestDomain(cfg.Domain) {
+		query := ""
+		for _, seed := range cfg.SeedURLs {
+			if q := dcrawler.ExtractPinterestQuery(seed); q != "" {
+				query = q
+				break
+			}
+		}
+		if query != "" {
+			return runPinterestSearch(cmd, c, cfg, query, downloadImages)
+		}
+	}
+
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Target:   %s", dcrawler.NormalizeDomain(cfg.Domain))))
 	if cfg.UseRod {
 		rodW := cfg.RodWorkers
@@ -172,6 +190,35 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Crawl complete in %s  |  %d pages",
 		c.Stats().Elapsed().Truncate(time.Second), c.Stats().Done())))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Results:  %s", c.ResultDB().Dir())))
+
+	if downloadImages {
+		fmt.Println()
+		fmt.Println(subtitleStyle.Render("Downloading Images"))
+		fmt.Println()
+		if dlErr := dcrawler.DownloadImages(cmd.Context(), cfg); dlErr != nil {
+			fmt.Println(errorStyle.Render(fmt.Sprintf("  Image download: %v", dlErr)))
+		}
+	}
+
+	return nil
+}
+
+func runPinterestSearch(cmd *cobra.Command, c *dcrawler.Crawler, cfg dcrawler.Config, query string, downloadImages bool) error {
+	fmt.Println(infoStyle.Render("  Target:   pinterest.com"))
+	fmt.Println(infoStyle.Render("  Mode:     Pinterest API (no browser)"))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  Data:     %s", c.DataDir())))
+	fmt.Println()
+
+	start := time.Now()
+	if err := dcrawler.RunPinterestSearch(cmd.Context(), c, query); err != nil {
+		fmt.Println()
+		fmt.Println(errorStyle.Render(fmt.Sprintf("  Pinterest search failed: %v", err)))
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Done in %s", time.Since(start).Truncate(time.Second))))
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  Results:  %s", cfg.ResultDir())))
 
 	if downloadImages {
 		fmt.Println()
