@@ -314,7 +314,7 @@ func (se *SiteExtractor) worker(ctx context.Context, id int, ptrCh <-chan WARCPo
 		var data []byte
 		var err error
 		start := time.Now()
-		const maxRetries = 3
+		const maxRetries = 4
 		for attempt := range maxRetries {
 			data, err = se.client.FetchWARCRecord(ctx, id, p)
 			if err == nil {
@@ -328,7 +328,7 @@ func (se *SiteExtractor) worker(ctx context.Context, id int, ptrCh <-chan WARCPo
 				break
 			}
 			if attempt < maxRetries-1 {
-				backoff := time.Duration(1<<uint(attempt)) * time.Second
+				backoff := time.Duration(2<<uint(attempt)) * time.Second // 2s, 4s, 8s
 				select {
 				case <-time.After(backoff):
 				case <-ctx.Done():
