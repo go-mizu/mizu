@@ -341,7 +341,7 @@ func (c *Client) doPost(ctx context.Context, rawURL string, body string) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	c.setHeaders(req)
+	c.setWebHeaders(req)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.http.Do(req)
@@ -362,8 +362,12 @@ func (c *Client) doPost(ctx context.Context, rawURL string, body string) ([]byte
 	return respBody, nil
 }
 
-// docIDQuery performs a doc_id-based GraphQL POST query.
+// docIDQuery performs a doc_id-based GraphQL POST query with rate limiting.
 func (c *Client) docIDQuery(ctx context.Context, docID string, variables map[string]any) ([]byte, error) {
+	if err := c.waitRate(ctx, queryTypeGraphQL, docID); err != nil {
+		return nil, err
+	}
+
 	varsJSON, err := json.Marshal(variables)
 	if err != nil {
 		return nil, err

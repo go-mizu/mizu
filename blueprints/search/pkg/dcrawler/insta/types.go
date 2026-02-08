@@ -344,3 +344,193 @@ type locationFeedResponse struct {
 	} `json:"data"`
 	Status string `json:"status"`
 }
+
+// ── Stories / Highlights ─────────────────────────────────
+
+// Story represents a user's story (collection of StoryItems).
+type Story struct {
+	UserID   string      `json:"user_id"`
+	Username string      `json:"username"`
+	Items    []StoryItem `json:"items"`
+}
+
+// StoryItem represents a single story media item.
+type StoryItem struct {
+	ID           string    `json:"id"`
+	TypeName     string    `json:"type_name"` // StoryImage, StoryVideo
+	DisplayURL   string    `json:"display_url"`
+	VideoURL     string    `json:"video_url"`
+	IsVideo      bool      `json:"is_video"`
+	Width        int       `json:"width"`
+	Height       int       `json:"height"`
+	TakenAt      time.Time `json:"taken_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	OwnerID      string    `json:"owner_id"`
+	OwnerName    string    `json:"owner_username"`
+}
+
+// Highlight represents a profile highlight reel.
+type Highlight struct {
+	ID           string      `json:"id"`
+	Title        string      `json:"title"`
+	CoverURL     string      `json:"cover_url"`
+	ItemCount    int         `json:"item_count"`
+	Items        []StoryItem `json:"items,omitempty"`
+}
+
+// ── Reels ────────────────────────────────────────────────
+
+// Reel represents a reel video post.
+type Reel struct {
+	ID           string    `json:"id"`
+	Shortcode    string    `json:"shortcode"`
+	Caption      string    `json:"caption"`
+	DisplayURL   string    `json:"display_url"`
+	VideoURL     string    `json:"video_url"`
+	Width        int       `json:"width"`
+	Height       int       `json:"height"`
+	LikeCount    int64     `json:"like_count"`
+	CommentCount int64     `json:"comment_count"`
+	ViewCount    int64     `json:"view_count"`
+	PlayCount    int64     `json:"play_count"`
+	TakenAt      time.Time `json:"taken_at"`
+	OwnerID      string    `json:"owner_id"`
+	OwnerName    string    `json:"owner_username"`
+}
+
+// ── Followers / Following ────────────────────────────────
+
+// FollowUser represents a user in a followers/following list.
+type FollowUser struct {
+	ID         string `json:"id"`
+	Username   string `json:"username"`
+	FullName   string `json:"full_name"`
+	IsPrivate  bool   `json:"is_private"`
+	IsVerified bool   `json:"is_verified"`
+	PicURL     string `json:"profile_pic_url"`
+}
+
+// ── iPhone API response types ────────────────────────────
+
+// storiesResponse for the iPhone API stories/reels_media endpoint.
+type storiesResponse struct {
+	ReelsMedia []reelMediaItem `json:"reels_media"`
+	Reels      map[string]struct {
+		Items []storyMediaItem `json:"items"`
+		User  struct {
+			PK       int64  `json:"pk"`
+			Username string `json:"username"`
+		} `json:"user"`
+	} `json:"reels"`
+	Status string `json:"status"`
+}
+
+type reelMediaItem struct {
+	ID    int64            `json:"id"`
+	Items []storyMediaItem `json:"items"`
+	User  struct {
+		PK       int64  `json:"pk"`
+		Username string `json:"username"`
+	} `json:"user"`
+}
+
+type storyMediaItem struct {
+	ID            string `json:"id"`
+	PK            int64  `json:"pk"`
+	MediaType     int    `json:"media_type"` // 1=image, 2=video
+	TakenAt       int64  `json:"taken_at"`
+	ExpiringAt    int64  `json:"expiring_at"`
+	OriginalWidth  int   `json:"original_width"`
+	OriginalHeight int   `json:"original_height"`
+	ImageVersions2 *imageVersions `json:"image_versions2"`
+	VideoVersions  []videoVersion `json:"video_versions"`
+	User           struct {
+		PK       int64  `json:"pk"`
+		Username string `json:"username"`
+	} `json:"user"`
+}
+
+// highlightsResponse from the GraphQL highlights query.
+type highlightsResponse struct {
+	Data struct {
+		User *struct {
+			EdgeHighlightReels *struct {
+				Edges []struct {
+					Node struct {
+						ID    string `json:"id"`
+						Title string `json:"title"`
+						Cover struct {
+							CroppedURL string `json:"cropped_image_version"`
+						} `json:"cover_media_cropped_thumbnail"`
+						EdgeHighlightItems struct {
+							Count int `json:"count"`
+						} `json:"edge_highlight_items"`
+					} `json:"node"`
+				} `json:"edges"`
+			} `json:"edge_highlight_reels"`
+		} `json:"user"`
+	} `json:"data"`
+}
+
+// followersResponse for the GraphQL followers/following query.
+type followersResponse struct {
+	Data struct {
+		User *struct {
+			EdgeFollowedBy *followConnection `json:"edge_followed_by"`
+			EdgeFollow     *followConnection `json:"edge_follow"`
+		} `json:"user"`
+	} `json:"data"`
+}
+
+type followConnection struct {
+	Count    int64      `json:"count"`
+	PageInfo pageInfo   `json:"page_info"`
+	Edges    []followEdge `json:"edges"`
+}
+
+type followEdge struct {
+	Node followNode `json:"node"`
+}
+
+type followNode struct {
+	ID         string `json:"id"`
+	Username   string `json:"username"`
+	FullName   string `json:"full_name"`
+	IsPrivate  bool   `json:"is_private"`
+	IsVerified bool   `json:"is_verified"`
+	PicURL     string `json:"profile_pic_url"`
+}
+
+// likesResponse for the GraphQL post/comment likes query.
+type likesResponse struct {
+	Data struct {
+		ShortcodeMedia *struct {
+			EdgeLikedBy *followConnection `json:"edge_liked_by"`
+		} `json:"shortcode_media"`
+	} `json:"data"`
+}
+
+// commentLikesResponse for comment likes.
+type commentLikesResponse struct {
+	Data struct {
+		Comment *struct {
+			EdgeLikedBy *followConnection `json:"edge_liked_by"`
+		} `json:"comment"`
+	} `json:"data"`
+}
+
+// reelsResponse for the doc_id profile reels query.
+type reelsResponse struct {
+	Data struct {
+		Conn *xdtConnection `json:"xdt_api__v1__clips__user__connection_v2"`
+	} `json:"data"`
+}
+
+// commentRepliesResponse for threaded comment replies.
+type commentRepliesResponse struct {
+	Data struct {
+		Comment *struct {
+			EdgeThreadedComments *mediaConnection `json:"edge_threaded_comments"`
+		} `json:"comment"`
+	} `json:"data"`
+}

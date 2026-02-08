@@ -37,6 +37,14 @@ Subcommands:
   location   Download posts for a location
   download   Download media files (images/videos)
   info       Show stored data statistics
+  stories    Fetch user stories (requires auth)
+  highlights Fetch user highlights (requires auth)
+  reels      Fetch user reels (requires auth)
+  followers  Fetch user followers (requires auth)
+  following  Fetch user following (requires auth)
+  tagged     Fetch posts user is tagged in (requires auth)
+  saved      Fetch saved posts (requires auth, own only)
+  likes      Fetch users who liked a post (requires auth)
 
 Examples:
   search insta login myuser
@@ -60,6 +68,14 @@ Examples:
 	cmd.AddCommand(newInstaLocation())
 	cmd.AddCommand(newInstaDownload())
 	cmd.AddCommand(newInstaInfo())
+	cmd.AddCommand(newInstaStories())
+	cmd.AddCommand(newInstaHighlights())
+	cmd.AddCommand(newInstaReels())
+	cmd.AddCommand(newInstaFollowers())
+	cmd.AddCommand(newInstaFollowing())
+	cmd.AddCommand(newInstaTagged())
+	cmd.AddCommand(newInstaSaved())
+	cmd.AddCommand(newInstaLikes())
 
 	return cmd
 }
@@ -209,6 +225,13 @@ func runInstaLogin(cmd *cobra.Command, username string) error {
 // errorAs is a type-safe wrapper for errors.As.
 func errorAs[T error](err error, target *T) bool {
 	return err != nil && errors.As(err, target)
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // ── import-session ──────────────────────────────────────
@@ -1228,6 +1251,625 @@ func runInstaInfo(username string) error {
 		}
 		fmt.Printf("  Media files: %d (%s)\n", len(entries), formatBytes(totalSize))
 		fmt.Printf("  Media dir:   %s\n", labelStyle.Render(mediaDir))
+	}
+
+	return nil
+}
+
+// ── stories ──────────────────────────────────────────────
+
+func newInstaStories() *cobra.Command {
+	var session string
+
+	cmd := &cobra.Command{
+		Use:   "stories <username>",
+		Short: "Fetch user stories (requires auth)",
+		Long: `Fetch current stories for an Instagram user.
+
+Requires authentication and uses the iPhone API for higher quality.
+
+Examples:
+  search insta stories natgeo --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaStories(cmd, username, session)
+		},
+	}
+
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaStories(cmd *cobra.Command, username, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Stories"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Fetching stories for %s\n", infoStyle.Render("@"+username))
+
+	story, err := client.GetStoriesByUsername(cmd.Context(), username)
+	if err != nil {
+		return err
+	}
+
+	if len(story.Items) == 0 {
+		fmt.Println(warningStyle.Render("  No active stories"))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Printf("  Stories: %d items\n\n", len(story.Items))
+	for i, item := range story.Items {
+		typeStr := "image"
+		if item.IsVideo {
+			typeStr = "video"
+		}
+		fmt.Printf("  %d. %s  %s (%dx%d)  %s\n",
+			i+1, infoStyle.Render(item.ID), typeStr,
+			item.Width, item.Height,
+			labelStyle.Render(item.TakenAt.Format("2006-01-02 15:04")))
+	}
+	fmt.Println()
+
+	return nil
+}
+
+// ── highlights ───────────────────────────────────────────
+
+func newInstaHighlights() *cobra.Command {
+	var session string
+
+	cmd := &cobra.Command{
+		Use:   "highlights <username>",
+		Short: "Fetch user highlights (requires auth)",
+		Long: `Fetch highlight reels for an Instagram user.
+
+Requires authentication.
+
+Examples:
+  search insta highlights natgeo --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaHighlights(cmd, username, session)
+		},
+	}
+
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaHighlights(cmd *cobra.Command, username, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Highlights"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	// Get user ID
+	profile, err := client.GetProfile(cmd.Context(), username)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Fetching highlights for %s\n", infoStyle.Render("@"+username))
+
+	highlights, err := client.GetHighlights(cmd.Context(), profile.ID)
+	if err != nil {
+		return err
+	}
+
+	if len(highlights) == 0 {
+		fmt.Println(warningStyle.Render("  No highlights found"))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Printf("  Highlights: %d\n\n", len(highlights))
+	for i, h := range highlights {
+		fmt.Printf("  %d. %s  (%d items)  ID: %s\n",
+			i+1, infoStyle.Render(h.Title), h.ItemCount, labelStyle.Render(h.ID))
+	}
+	fmt.Println()
+
+	return nil
+}
+
+// ── reels ────────────────────────────────────────────────
+
+func newInstaReels() *cobra.Command {
+	var (
+		maxReels int
+		delay    int
+		session  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "reels <username>",
+		Short: "Fetch user reels (requires auth)",
+		Long: `Fetch reels for an Instagram user.
+
+Requires authentication. Reels are short-form video posts.
+
+Examples:
+  search insta reels natgeo --session myuser
+  search insta reels natgeo --max-posts 50 --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaReels(cmd, username, maxReels, delay, session)
+		},
+	}
+
+	cmd.Flags().IntVar(&maxReels, "max-posts", 0, "Max reels to fetch (0=unlimited)")
+	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaReels(cmd *cobra.Command, username string, maxReels, delay int, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Reels"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	cfg.Delay = time.Duration(delay) * time.Second
+
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	// Get user ID
+	profile, err := client.GetProfile(cmd.Context(), username)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Fetching reels for %s\n", infoStyle.Render("@"+username))
+	fmt.Println()
+
+	start := time.Now()
+	reels, err := client.GetReels(cmd.Context(), profile.ID, maxReels, func(p insta.Progress) {
+		if !p.Done {
+			fmt.Printf("\r  Reels: %s",
+				infoStyle.Render(formatLargeNumber(p.Current)))
+		}
+	})
+
+	fmt.Println()
+	if err != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d reels)", err, len(reels))))
+	}
+
+	if len(reels) == 0 {
+		fmt.Println(warningStyle.Render("  No reels found"))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d reels in %s",
+		len(reels), time.Since(start).Truncate(time.Second))))
+
+	// Show top 5 reels
+	fmt.Println()
+	fmt.Println(subtitleStyle.Render("  Top reels by views:"))
+	showN := min(5, len(reels))
+	for i := range showN {
+		r := reels[i]
+		caption := r.Caption
+		if len(caption) > 50 {
+			caption = caption[:50] + "..."
+		}
+		caption = strings.ReplaceAll(caption, "\n", " ")
+		fmt.Printf("  %d. %s  %s views  %s\n",
+			i+1, infoStyle.Render(r.Shortcode),
+			labelStyle.Render(formatLargeNumber(r.ViewCount)),
+			caption)
+	}
+
+	return nil
+}
+
+// ── followers ────────────────────────────────────────────
+
+func newInstaFollowers() *cobra.Command {
+	var (
+		maxUsers int
+		delay    int
+		session  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "followers <username>",
+		Short: "Fetch user followers (requires auth)",
+		Long: `Fetch the follower list for an Instagram user.
+
+Requires authentication.
+
+Examples:
+  search insta followers natgeo --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaFollowList(cmd, username, "followers", maxUsers, delay, session)
+		},
+	}
+
+	cmd.Flags().IntVar(&maxUsers, "max-users", 0, "Max users to fetch (0=unlimited)")
+	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func newInstaFollowing() *cobra.Command {
+	var (
+		maxUsers int
+		delay    int
+		session  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "following <username>",
+		Short: "Fetch user following (requires auth)",
+		Long: `Fetch the following list for an Instagram user.
+
+Requires authentication.
+
+Examples:
+  search insta following natgeo --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaFollowList(cmd, username, "following", maxUsers, delay, session)
+		},
+	}
+
+	cmd.Flags().IntVar(&maxUsers, "max-users", 0, "Max users to fetch (0=unlimited)")
+	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaFollowList(cmd *cobra.Command, username, listType string, maxUsers, delay int, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram " + capitalizeFirst(listType)))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	cfg.Delay = time.Duration(delay) * time.Second
+
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	profile, err := client.GetProfile(cmd.Context(), username)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Fetching %s for %s\n", listType, infoStyle.Render("@"+username))
+	fmt.Println()
+
+	start := time.Now()
+	var users []insta.FollowUser
+	progressCb := func(p insta.Progress) {
+		if !p.Done {
+			fmt.Printf("\r  %s: %s / %s",
+				capitalizeFirst(listType),
+				infoStyle.Render(formatLargeNumber(p.Current)),
+				labelStyle.Render(formatLargeNumber(p.Total)))
+		}
+	}
+
+	if listType == "followers" {
+		users, err = client.GetFollowers(cmd.Context(), profile.ID, maxUsers, progressCb)
+	} else {
+		users, err = client.GetFollowing(cmd.Context(), profile.ID, maxUsers, progressCb)
+	}
+
+	fmt.Println()
+	if err != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d users)", err, len(users))))
+	}
+
+	if len(users) == 0 {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  No %s found", listType)))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d %s in %s",
+		len(users), listType, time.Since(start).Truncate(time.Second))))
+
+	// Show first 10
+	fmt.Println()
+	showN := min(10, len(users))
+	for i := range showN {
+		u := users[i]
+		verified := ""
+		if u.IsVerified {
+			verified = " [verified]"
+		}
+		fmt.Printf("  @%-20s %s%s\n",
+			infoStyle.Render(u.Username), u.FullName, verified)
+	}
+	if len(users) > showN {
+		fmt.Printf("  ... and %d more\n", len(users)-showN)
+	}
+
+	return nil
+}
+
+// ── tagged ───────────────────────────────────────────────
+
+func newInstaTagged() *cobra.Command {
+	var (
+		maxPosts int
+		delay    int
+		session  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "tagged <username>",
+		Short: "Fetch posts user is tagged in (requires auth)",
+		Long: `Fetch posts where a user is tagged.
+
+Requires authentication.
+
+Examples:
+  search insta tagged natgeo --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaTagged(cmd, username, maxPosts, delay, session)
+		},
+	}
+
+	cmd.Flags().IntVar(&maxPosts, "max-posts", 0, "Max posts to fetch (0=unlimited)")
+	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaTagged(cmd *cobra.Command, username string, maxPosts, delay int, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Tagged Posts"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	cfg.Delay = time.Duration(delay) * time.Second
+
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	profile, err := client.GetProfile(cmd.Context(), username)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Fetching tagged posts for %s\n", infoStyle.Render("@"+username))
+	fmt.Println()
+
+	start := time.Now()
+	posts, err := client.GetTaggedPosts(cmd.Context(), profile.ID, maxPosts, func(p insta.Progress) {
+		if !p.Done {
+			fmt.Printf("\r  Tagged posts: %s / %s",
+				infoStyle.Render(formatLargeNumber(p.Current)),
+				labelStyle.Render(formatLargeNumber(p.Total)))
+		}
+	})
+
+	fmt.Println()
+	if err != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d posts)", err, len(posts))))
+	}
+
+	if len(posts) == 0 {
+		fmt.Println(warningStyle.Render("  No tagged posts found"))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d tagged posts in %s",
+		len(posts), time.Since(start).Truncate(time.Second))))
+
+	return nil
+}
+
+// ── saved ────────────────────────────────────────────────
+
+func newInstaSaved() *cobra.Command {
+	var (
+		maxPosts int
+		delay    int
+		session  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "saved",
+		Short: "Fetch saved posts (requires auth, own only)",
+		Long: `Fetch the logged-in user's saved posts.
+
+Only works for the authenticated user's own saved posts.
+Requires authentication.
+
+Examples:
+  search insta saved --session myuser`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInstaSaved(cmd, maxPosts, delay, session)
+		},
+	}
+
+	cmd.Flags().IntVar(&maxPosts, "max-posts", 0, "Max posts to fetch (0=unlimited)")
+	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaSaved(cmd *cobra.Command, maxPosts, delay int, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Saved Posts"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	cfg.Delay = time.Duration(delay) * time.Second
+
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("  Fetching your saved posts...")
+	fmt.Println()
+
+	start := time.Now()
+	posts, err := client.GetSavedPosts(cmd.Context(), maxPosts, func(p insta.Progress) {
+		if !p.Done {
+			fmt.Printf("\r  Saved posts: %s / %s",
+				infoStyle.Render(formatLargeNumber(p.Current)),
+				labelStyle.Render(formatLargeNumber(p.Total)))
+		}
+	})
+
+	fmt.Println()
+	if err != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d posts)", err, len(posts))))
+	}
+
+	if len(posts) == 0 {
+		fmt.Println(warningStyle.Render("  No saved posts found"))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d saved posts in %s",
+		len(posts), time.Since(start).Truncate(time.Second))))
+
+	// Show top 5
+	showN := min(5, len(posts))
+	fmt.Println()
+	for i := range showN {
+		p := posts[i]
+		caption := p.Caption
+		if len(caption) > 50 {
+			caption = caption[:50] + "..."
+		}
+		caption = strings.ReplaceAll(caption, "\n", " ")
+		fmt.Printf("  %d. %s  @%s  %s\n",
+			i+1, infoStyle.Render(p.Shortcode), p.OwnerName, caption)
+	}
+
+	return nil
+}
+
+// ── likes ────────────────────────────────────────────────
+
+func newInstaLikes() *cobra.Command {
+	var (
+		maxUsers int
+		delay    int
+		session  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "likes <shortcode>",
+		Short: "Fetch users who liked a post (requires auth)",
+		Long: `Fetch the list of users who liked an Instagram post.
+
+Requires authentication.
+
+Examples:
+  search insta likes CxYzAbC --session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			shortcode := args[0]
+			if strings.Contains(shortcode, "instagram.com") {
+				parts := strings.Split(strings.Trim(shortcode, "/"), "/")
+				for i, p := range parts {
+					if (p == "p" || p == "reel") && i+1 < len(parts) {
+						shortcode = parts[i+1]
+						break
+					}
+				}
+			}
+			return runInstaLikes(cmd, shortcode, maxUsers, delay, session)
+		},
+	}
+
+	cmd.Flags().IntVar(&maxUsers, "max-users", 0, "Max users to fetch (0=unlimited)")
+	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
+	return cmd
+}
+
+func runInstaLikes(cmd *cobra.Command, shortcode string, maxUsers, delay int, session string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Post Likes"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+	cfg.Delay = time.Duration(delay) * time.Second
+
+	client, err := initClient(cmd, cfg, session)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("  Fetching likes for post %s\n", infoStyle.Render(shortcode))
+	fmt.Println()
+
+	start := time.Now()
+	users, err := client.GetPostLikes(cmd.Context(), shortcode, maxUsers, func(p insta.Progress) {
+		if !p.Done {
+			fmt.Printf("\r  Likes: %s / %s",
+				infoStyle.Render(formatLargeNumber(p.Current)),
+				labelStyle.Render(formatLargeNumber(p.Total)))
+		}
+	})
+
+	fmt.Println()
+	if err != nil {
+		fmt.Println(warningStyle.Render(fmt.Sprintf("  Warning: %v (got %d users)", err, len(users))))
+	}
+
+	if len(users) == 0 {
+		fmt.Println(warningStyle.Render("  No likes found"))
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render(fmt.Sprintf("  Fetched %d likes in %s",
+		len(users), time.Since(start).Truncate(time.Second))))
+
+	// Show first 10
+	fmt.Println()
+	showN := min(10, len(users))
+	for i := range showN {
+		u := users[i]
+		verified := ""
+		if u.IsVerified {
+			verified = " [verified]"
+		}
+		fmt.Printf("  @%-20s %s%s\n",
+			infoStyle.Render(u.Username), u.FullName, verified)
+	}
+	if len(users) > showN {
+		fmt.Printf("  ... and %d more\n", len(users)-showN)
 	}
 
 	return nil

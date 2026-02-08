@@ -472,6 +472,147 @@ func TestParseDocIDPostsResponse_Invalid(t *testing.T) {
 	}
 }
 
+func TestParseDocIDPostsResponse_XDTFormat(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"xdt_api__v1__feed__user_timeline_graphql_connection": {
+				"edges": [
+					{"cursor": "", "node": {
+						"id": "123_456", "pk": "123", "code": "ABC123",
+						"media_type": 1, "like_count": 500, "comment_count": 10,
+						"taken_at": 1700000000, "original_width": 1080, "original_height": 1080,
+						"caption": {"text": "Hello world"},
+						"image_versions2": {"candidates": [{"url": "https://example.com/1.jpg", "width": 1080, "height": 1080}]},
+						"user": {"pk": "456", "username": "testuser"},
+						"location": {"pk": "789", "name": "NYC"}
+					}},
+					{"cursor": "", "node": {
+						"id": "200_456", "pk": "200", "code": "VID456",
+						"media_type": 2, "like_count": 1000, "comment_count": 50,
+						"taken_at": 1700000100, "original_width": 1080, "original_height": 1920,
+						"video_versions": [{"url": "https://example.com/v.mp4", "width": 1080, "height": 1920}],
+						"image_versions2": {"candidates": [{"url": "https://example.com/thumb.jpg", "width": 1080, "height": 1920}]},
+						"user": {"pk": "456", "username": "testuser"}
+					}}
+				],
+				"page_info": {"has_next_page": true, "end_cursor": "200_456"}
+			}
+		}
+	}`)
+
+	posts, cursor, hasMore := parseDocIDPostsResponse(data)
+
+	if len(posts) != 2 {
+		t.Fatalf("posts = %d, want 2", len(posts))
+	}
+	if cursor != "200_456" {
+		t.Errorf("cursor = %q, want 200_456", cursor)
+	}
+	if !hasMore {
+		t.Error("hasMore should be true")
+	}
+
+	// First post: image
+	p := posts[0]
+	if p.Shortcode != "ABC123" {
+		t.Errorf("Shortcode = %q, want ABC123", p.Shortcode)
+	}
+	if p.TypeName != "GraphImage" {
+		t.Errorf("TypeName = %q, want GraphImage", p.TypeName)
+	}
+	if p.LikeCount != 500 {
+		t.Errorf("LikeCount = %d, want 500", p.LikeCount)
+	}
+	if p.Caption != "Hello world" {
+		t.Errorf("Caption = %q, want Hello world", p.Caption)
+	}
+	if p.OwnerName != "testuser" {
+		t.Errorf("OwnerName = %q, want testuser", p.OwnerName)
+	}
+	if p.OwnerID != "456" {
+		t.Errorf("OwnerID = %q, want 456", p.OwnerID)
+	}
+	if p.LocationName != "NYC" {
+		t.Errorf("LocationName = %q, want NYC", p.LocationName)
+	}
+	if p.DisplayURL != "https://example.com/1.jpg" {
+		t.Errorf("DisplayURL = %q", p.DisplayURL)
+	}
+	if p.Width != 1080 {
+		t.Errorf("Width = %d, want 1080", p.Width)
+	}
+
+	// Second post: video
+	v := posts[1]
+	if v.Shortcode != "VID456" {
+		t.Errorf("Shortcode = %q, want VID456", v.Shortcode)
+	}
+	if v.TypeName != "GraphVideo" {
+		t.Errorf("TypeName = %q, want GraphVideo", v.TypeName)
+	}
+	if !v.IsVideo {
+		t.Error("IsVideo should be true")
+	}
+	if v.VideoURL != "https://example.com/v.mp4" {
+		t.Errorf("VideoURL = %q", v.VideoURL)
+	}
+	if v.DisplayURL != "https://example.com/thumb.jpg" {
+		t.Errorf("DisplayURL = %q (should be thumbnail)", v.DisplayURL)
+	}
+}
+
+func TestParseDocIDPostsResponse_XDTCarousel(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"xdt_api__v1__feed__user_timeline_graphql_connection": {
+				"edges": [
+					{"cursor": "", "node": {
+						"id": "300_456", "pk": "300", "code": "CAR789",
+						"media_type": 8, "like_count": 2000, "comment_count": 100,
+						"taken_at": 1700000200, "original_width": 1080, "original_height": 1080,
+						"image_versions2": {"candidates": [{"url": "https://example.com/cover.jpg", "width": 1080, "height": 1080}]},
+						"carousel_media": [
+							{"id": "c1", "media_type": 1, "original_width": 1080, "original_height": 1080, "image_versions2": {"candidates": [{"url": "https://example.com/c1.jpg", "width": 1080, "height": 1080}]}},
+							{"id": "c2", "media_type": 2, "original_width": 1080, "original_height": 1920, "image_versions2": {"candidates": [{"url": "https://example.com/c2_thumb.jpg", "width": 1080, "height": 1920}]}, "video_versions": [{"url": "https://example.com/c2.mp4", "width": 1080, "height": 1920}]}
+						],
+						"user": {"pk": "456", "username": "testuser"}
+					}}
+				],
+				"page_info": {"has_next_page": false, "end_cursor": ""}
+			}
+		}
+	}`)
+
+	posts, _, hasMore := parseDocIDPostsResponse(data)
+
+	if len(posts) != 1 {
+		t.Fatalf("posts = %d, want 1", len(posts))
+	}
+	if hasMore {
+		t.Error("hasMore should be false")
+	}
+
+	p := posts[0]
+	if p.TypeName != "GraphSidecar" {
+		t.Errorf("TypeName = %q, want GraphSidecar", p.TypeName)
+	}
+	if len(p.Children) != 2 {
+		t.Fatalf("Children = %d, want 2", len(p.Children))
+	}
+	if p.Children[0].TypeName != "GraphImage" {
+		t.Errorf("Child 0 TypeName = %q, want GraphImage", p.Children[0].TypeName)
+	}
+	if p.Children[1].TypeName != "GraphVideo" {
+		t.Errorf("Child 1 TypeName = %q, want GraphVideo", p.Children[1].TypeName)
+	}
+	if !p.Children[1].IsVideo {
+		t.Error("Child 1 should be video")
+	}
+	if p.Children[1].VideoURL != "https://example.com/c2.mp4" {
+		t.Errorf("Child 1 VideoURL = %q", p.Children[1].VideoURL)
+	}
+}
+
 // Ensure time conversion works correctly
 func TestNodeToPost_TimestampConversion(t *testing.T) {
 	ts := int64(1700000000) // 2023-11-14 22:13:20 UTC

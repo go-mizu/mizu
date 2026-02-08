@@ -33,7 +33,7 @@ func (c *Client) GetLocationPosts(ctx context.Context, locationID string, maxPos
 			vars["after"] = cursor
 		}
 
-		data, err := c.graphQL(ctx, "1b84447a4d8b6d6d0426fefb34514485", vars)
+		data, err := c.graphQLWithAutoReduce(ctx, HashLocationFeed, vars)
 		if err != nil {
 			return allPosts, fmt.Errorf("fetch location %q: %w", locationID, err)
 		}
