@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/DataDog/zstd"
 	"github.com/cespare/xxhash/v2"
+	_ "github.com/duckdb/duckdb-go/v2"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )
@@ -174,7 +176,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	c.stateDB = sdb
 	defer sdb.Close()
 
-	// Resume: restore bloom/seen URLs only
+	// Resume: restore bloom from already-crawled URLs and re-feed pending links
 	if c.config.Resume {
 		c.restoreState()
 	}
@@ -224,15 +226,10 @@ func (c *Crawler) Run(ctx context.Context) error {
 }
 
 func (c *Crawler) restoreState() {
-	rdb, err := NewResultDB(c.config.ResultDir(), c.config.ShardCount, c.config.BatchSize)
-	if err != nil {
-		fmt.Printf("  Resume: failed to open result DB: %v\n", err)
-		return
-	}
-	defer rdb.Close()
+	dir := c.config.ResultDir()
 
 	// Phase 1: Mark all already-crawled URLs as seen in bloom
-	crawled, _ := rdb.LoadExistingURLs(c.frontier.MarkSeen)
+	crawled := c.restoreFromShards(dir, "SELECT url FROM pages", c.frontier.MarkSeen)
 	if crawled > 0 {
 		fmt.Printf("  Resume: %s crawled URLs in bloom\n", fmtInt(crawled))
 	}
@@ -240,10 +237,49 @@ func (c *Crawler) restoreState() {
 	// Phase 2: Re-feed discovered-but-uncrawled internal links into frontier.
 	// These are links extracted from crawled pages that were never fetched
 	// (either due to frontier overflow, shutdown, or channel-full drops).
-	pending, _ := rdb.LoadPendingLinks(c.frontier.TryAdd)
-	if pending > 0 {
-		fmt.Printf("  Resume: %s pending links re-fed to frontier\n", fmtInt(pending))
+	var pendingAdded int
+	c.restoreFromShards(dir,
+		"SELECT DISTINCT target_url FROM links WHERE is_internal = true AND target_url NOT IN (SELECT url FROM pages)",
+		func(u string) {
+			if c.frontier.TryAdd(u, 1) {
+				pendingAdded++
+			}
+		},
+	)
+	if pendingAdded > 0 {
+		fmt.Printf("  Resume: %s pending links re-fed to frontier\n", fmtInt(pendingAdded))
 	}
+}
+
+// restoreFromShards opens each result shard read-only and runs a query,
+// calling fn for each row's first VARCHAR column. Returns total count.
+func (c *Crawler) restoreFromShards(dir, query string, fn func(string)) int {
+	count := 0
+	for i := range c.config.ShardCount {
+		path := fmt.Sprintf("%s/results_%03d.duckdb", dir, i)
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		db, err := sql.Open("duckdb", path+"?access_mode=READ_ONLY")
+		if err != nil {
+			continue
+		}
+		rows, err := db.Query(query)
+		if err != nil {
+			db.Close()
+			continue
+		}
+		for rows.Next() {
+			var u string
+			if rows.Scan(&u) == nil {
+				fn(u)
+				count++
+			}
+		}
+		rows.Close()
+		db.Close()
+	}
+	return count
 }
 
 // loadSeeds populates the frontier with seed URLs in priority order:
