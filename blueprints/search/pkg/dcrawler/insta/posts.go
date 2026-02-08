@@ -76,7 +76,24 @@ type carouselItem struct {
 // With authentication: uses doc_id GraphQL for full pagination.
 // Without authentication: uses web_profile_info (up to 12 posts) + feed API fallback.
 func (c *Client) GetUserPosts(ctx context.Context, username string, maxPosts int, cb ProgressCallback) ([]Post, error) {
-	// Step 1: Get profile info (need ID, post count, privacy check)
+	if c.loggedIn {
+		// Authenticated: go directly to doc_id GraphQL pagination.
+		// Try getting profile for post count (best effort, not required).
+		var total int64
+		result, err := c.GetProfileWithPosts(ctx, username)
+		if err == nil {
+			if result.Profile.IsPrivate {
+				return nil, fmt.Errorf("@%s is a private account", username)
+			}
+			total = result.Profile.PostCount
+		}
+		if maxPosts > 0 && (total == 0 || int64(maxPosts) < total) {
+			total = int64(maxPosts)
+		}
+		return c.getUserPostsAuth(ctx, username, maxPosts, total, cb)
+	}
+
+	// Unauthenticated: use web_profile_info + feed fallback
 	result, err := c.GetProfileWithPosts(ctx, username)
 	if err != nil {
 		return nil, err
@@ -91,12 +108,6 @@ func (c *Client) GetUserPosts(ctx context.Context, username string, maxPosts int
 		total = int64(maxPosts)
 	}
 
-	if c.loggedIn {
-		// Authenticated: use doc_id GraphQL for full pagination from the start
-		return c.getUserPostsAuth(ctx, username, maxPosts, total, cb)
-	}
-
-	// Unauthenticated: use profile posts + feed fallback
 	allPosts := result.Posts
 	if cb != nil {
 		cb(Progress{Phase: "posts", Total: total, Current: int64(len(allPosts))})
@@ -279,12 +290,12 @@ type xdtNode struct {
 	ImageVersions2 *imageVersions `json:"image_versions2"`
 	VideoVersions  []videoVersion `json:"video_versions"`
 	CarouselMedia  []xdtCarousel  `json:"carousel_media"`
-	User           struct {
-		PK       int64  `json:"pk"`
+	User struct {
+		PK       string `json:"pk"`
 		Username string `json:"username"`
 	} `json:"user"`
 	Location *struct {
-		PK   int64  `json:"pk"`
+		PK   string `json:"pk"`
 		Name string `json:"name"`
 	} `json:"location"`
 	LikeAndViewCountsDisabled bool `json:"like_and_view_counts_disabled"`
@@ -308,7 +319,7 @@ func xdtNodeToPost(n xdtNode) Post {
 		CommentCount: n.CommentCount,
 		ViewCount:    n.ViewCount,
 		TakenAt:      time.Unix(n.TakenAt, 0),
-		OwnerID:      fmt.Sprintf("%d", n.User.PK),
+		OwnerID:      n.User.PK,
 		OwnerName:    n.User.Username,
 		Width:        n.OriginalWidth,
 		Height:       n.OriginalHeight,
@@ -319,7 +330,7 @@ func xdtNodeToPost(n xdtNode) Post {
 		post.Caption = n.Caption.Text
 	}
 	if n.Location != nil {
-		post.LocationID = fmt.Sprintf("%d", n.Location.PK)
+		post.LocationID = n.Location.PK
 		post.LocationName = n.Location.Name
 	}
 

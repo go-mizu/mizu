@@ -22,7 +22,7 @@ func (c *Client) GetComments(ctx context.Context, shortcode string, maxComments 
 	cursor := ""
 
 	for {
-		if err := c.delay(ctx); err != nil {
+		if err := c.doSleep(ctx); err != nil {
 			return allComments, err
 		}
 
@@ -34,7 +34,7 @@ func (c *Client) GetComments(ctx context.Context, shortcode string, maxComments 
 			vars["after"] = cursor
 		}
 
-		data, err := c.graphQL(ctx, HashComments, vars)
+		data, err := c.graphQLWithAutoReduce(ctx, HashComments, vars)
 		if err != nil {
 			return allComments, fmt.Errorf("fetch comments: %w", err)
 		}
@@ -105,4 +105,82 @@ func (c *Client) GetComments(ctx context.Context, shortcode string, maxComments 
 	}
 
 	return allComments, nil
+}
+
+// GetCommentReplies fetches threaded replies to a specific comment.
+// Requires authentication. Uses GraphQL query_hash pagination.
+func (c *Client) GetCommentReplies(ctx context.Context, commentID string, maxReplies int, cb ProgressCallback) ([]Comment, error) {
+	if !c.loggedIn {
+		return nil, fmt.Errorf("comment replies endpoint requires authentication")
+	}
+
+	if maxReplies <= 0 {
+		maxReplies = 500
+	}
+
+	var allReplies []Comment
+	cursor := ""
+
+	for {
+		if err := c.doSleep(ctx); err != nil {
+			return allReplies, err
+		}
+
+		vars := map[string]any{
+			"comment_id": commentID,
+			"first":      PostsPerPage,
+		}
+		if cursor != "" {
+			vars["after"] = cursor
+		}
+
+		data, err := c.graphQLWithAutoReduce(ctx, DocIDCommentReplies, vars)
+		if err != nil {
+			return allReplies, fmt.Errorf("fetch comment replies: %w", err)
+		}
+
+		var resp commentRepliesResponse
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return allReplies, fmt.Errorf("parse replies response: %w", err)
+		}
+
+		if resp.Data.Comment == nil || resp.Data.Comment.EdgeThreadedComments == nil {
+			break
+		}
+
+		conn := resp.Data.Comment.EdgeThreadedComments
+		for _, e := range conn.Edges {
+			reply := Comment{
+				ID:         e.Node.ID,
+				Text:       e.Node.Text,
+				AuthorID:   e.Node.Owner.ID,
+				AuthorName: e.Node.Owner.Username,
+				CreatedAt:  time.Unix(e.Node.CreatedAt, 0),
+				PostID:     commentID, // parent comment ID
+			}
+			if e.Node.EdgeLikedBy.Count > 0 {
+				reply.LikeCount = e.Node.EdgeLikedBy.Count
+			}
+			allReplies = append(allReplies, reply)
+		}
+
+		if cb != nil {
+			cb(Progress{Phase: "replies", Total: conn.Count, Current: int64(len(allReplies))})
+		}
+
+		if len(allReplies) >= maxReplies || !conn.PageInfo.HasNextPage || conn.PageInfo.EndCursor == "" {
+			break
+		}
+		cursor = conn.PageInfo.EndCursor
+	}
+
+	if maxReplies > 0 && len(allReplies) > maxReplies {
+		allReplies = allReplies[:maxReplies]
+	}
+
+	if cb != nil {
+		cb(Progress{Phase: "replies", Total: int64(len(allReplies)), Current: int64(len(allReplies)), Done: true})
+	}
+
+	return allReplies, nil
 }

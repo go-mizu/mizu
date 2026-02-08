@@ -21,7 +21,7 @@ func (c *Client) GetHashtagPosts(ctx context.Context, tag string, maxPosts int, 
 	cursor := ""
 
 	for {
-		if err := c.delay(ctx); err != nil {
+		if err := c.doSleep(ctx); err != nil {
 			return allPosts, err
 		}
 
@@ -33,7 +33,7 @@ func (c *Client) GetHashtagPosts(ctx context.Context, tag string, maxPosts int, 
 			vars["after"] = cursor
 		}
 
-		data, err := c.graphQL(ctx, HashHashtagFeed, vars)
+		data, err := c.graphQLWithAutoReduce(ctx, HashHashtagFeed, vars)
 		if err != nil {
 			return allPosts, fmt.Errorf("fetch hashtag %q: %w", tag, err)
 		}
