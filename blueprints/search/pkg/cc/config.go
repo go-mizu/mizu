@@ -88,3 +88,8 @@ func (c Config) FailedDBPath() string {
 func (c Config) VerifyDBPath() string {
 	return filepath.Join(c.RecrawlDir(), "verified.duckdb")
 }
+
+// SiteDir returns the directory for a specific domain's site extraction data.
+func (c Config) SiteDir(domain string) string {
+	return filepath.Join(c.DataDir, "site", domain)
+}

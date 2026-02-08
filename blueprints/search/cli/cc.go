@@ -64,6 +64,7 @@ Examples:
 	cmd.AddCommand(newCCURL())
 	cmd.AddCommand(newCCRecrawl())
 	cmd.AddCommand(newCCVerify())
+	cmd.AddCommand(newCCSite())
 
 	return cmd
 }
