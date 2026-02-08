@@ -139,6 +139,11 @@ func (c *ArcticClient) Download(ctx context.Context, target ArcticTarget, kind F
 	var totalBytes int64
 	var oldest, newest time.Time
 	currentAfter := afterEpoch
+	// Arctic Shift API requires epoch >= 1000000000 (2001-09-09).
+	// Use a date before Reddit existed (2005-01-01) as the minimum.
+	if currentAfter < 1104537600 {
+		currentAfter = 1104537600 // 2005-01-01 00:00:00 UTC
+	}
 	retries := 0
 	maxRetries := 10
 
@@ -324,10 +329,11 @@ func (c *ArcticClient) Download(ctx context.Context, target ArcticTarget, kind F
 }
 
 // Comment fields to request (reduces response size).
-const commentFields = "id,author,body,created_utc,score,subreddit,link_id,parent_id,edited,distinguished,controversiality,gilded,permalink,archived,locked,stickied,author_flair_text"
+// Only fields validated against the Arctic Shift API (invalid fields return 400).
+const commentFields = "id,author,body,created_utc,score,subreddit,link_id,parent_id,distinguished,author_flair_text"
 
 // Submission fields to request.
-const submissionFields = "id,title,selftext,author,created_utc,score,num_comments,subreddit,permalink,url,domain,is_self,over_18,edited,upvote_ratio,is_video,link_flair_text,author_flair_text,thumbnail"
+const submissionFields = "id,title,selftext,author,created_utc,score,num_comments,subreddit,url,over_18,link_flair_text,author_flair_text"
 
 // Progress file for resume support.
 type progressData struct {
