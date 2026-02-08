@@ -86,6 +86,10 @@ type ArcticProgress struct {
 	BatchSize int           // last batch size
 	Done      bool
 	Elapsed   time.Duration
+
+	// Chunk-based progress for ETA estimation
+	TotalChunks int // total monthly chunks
+	ChunksDone  int // chunks completed
 }
 
 // ArcticProgressCallback is called with download progress updates.
