@@ -11,6 +11,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,7 +20,22 @@ type Client struct {
 	http      *http.Client
 	cfg       Config
 	csrfToken string
+	username  string
+	userID    string
+	loggedIn  bool
+	rate      rateController
 }
+
+// rateController tracks request timestamps for rate limiting.
+type rateController struct {
+	mu         sync.Mutex
+	timestamps []time.Time // sliding window of request times
+}
+
+const (
+	rateWindow = 11 * time.Minute // 660 seconds
+	rateLimit  = 200              // max requests per window
+)
 
 // NewClient creates a new Instagram client.
 func NewClient(cfg Config) (*Client, error) {
@@ -54,32 +70,27 @@ func (c *Client) Init(ctx context.Context) error {
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
-	// Extract csrftoken from cookies
-	u, _ := url.Parse("https://www.instagram.com/")
-	for _, cookie := range c.http.Jar.Cookies(u) {
-		if cookie.Name == "csrftoken" {
-			c.csrfToken = cookie.Value
-			break
-		}
-	}
-
+	c.extractCSRF()
 	return nil
 }
 
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("User-Agent", c.cfg.UserAgent)
 	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.8")
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Referer", "https://www.instagram.com/")
+	req.Header.Set("Origin", "https://www.instagram.com")
 	req.Header.Set("X-IG-App-ID", WebAppID)
+	req.Header.Set("X-Instagram-AJAX", "1")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	if c.csrfToken != "" {
 		req.Header.Set("X-CSRFToken", c.csrfToken)
 	}
 }
 
-// doGet performs a GET request with standard headers and retry logic.
+// doGet performs a GET request with standard headers, rate limiting, and retry logic.
 func (c *Client) doGet(ctx context.Context, rawURL string) ([]byte, error) {
 	var lastErr error
 	for attempt := range c.cfg.MaxRetry {
@@ -90,6 +101,10 @@ func (c *Client) doGet(ctx context.Context, rawURL string) ([]byte, error) {
 				return nil, ctx.Err()
 			case <-time.After(backoff):
 			}
+		}
+
+		if err := c.waitRate(ctx); err != nil {
+			return nil, err
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
@@ -180,4 +195,59 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// waitRate blocks until the rate limiter allows a new request.
+func (c *Client) waitRate(ctx context.Context) error {
+	c.rate.mu.Lock()
+	now := time.Now()
+
+	// Remove timestamps outside the window
+	cutoff := now.Add(-rateWindow)
+	valid := c.rate.timestamps[:0]
+	for _, ts := range c.rate.timestamps {
+		if ts.After(cutoff) {
+			valid = append(valid, ts)
+		}
+	}
+	c.rate.timestamps = valid
+
+	if len(c.rate.timestamps) < rateLimit {
+		c.rate.timestamps = append(c.rate.timestamps, now)
+		c.rate.mu.Unlock()
+		return nil
+	}
+
+	// Calculate wait time: oldest timestamp + window duration
+	waitUntil := c.rate.timestamps[0].Add(rateWindow).Add(time.Second)
+	c.rate.mu.Unlock()
+
+	wait := time.Until(waitUntil)
+	if wait <= 0 {
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(wait):
+		return c.waitRate(ctx) // re-check after waiting
+	}
+}
+
+// DoGetRaw exposes doGet for debugging/testing.
+func (c *Client) DoGetRaw(ctx context.Context, rawURL string) ([]byte, error) {
+	return c.doGet(ctx, rawURL)
+}
+
+// DocIDQueryRaw exposes docIDQuery for debugging/testing.
+func (c *Client) DocIDQueryRaw(ctx context.Context, docID string, variables map[string]any) ([]byte, error) {
+	return c.docIDQuery(ctx, docID, variables)
+}
+
+// recordRequest adds a timestamp to the rate limiter.
+func (c *Client) recordRequest() {
+	c.rate.mu.Lock()
+	c.rate.timestamps = append(c.rate.timestamps, time.Now())
+	c.rate.mu.Unlock()
 }

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -14,15 +16,18 @@ import (
 func NewInsta() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "insta",
-		Short: "Instagram search and scrape (public data)",
-		Long: `Search and scrape public Instagram data using the web GraphQL API.
+		Short: "Instagram search and scrape",
+		Long: `Search and scrape Instagram data using the web API.
 
-No authentication required for public profiles, posts, hashtags, and locations.
-Rate-limited to ~200 requests/hour. Use --delay to adjust request spacing.
+Public profiles and first 12 posts work without authentication.
+For full pagination, comments, hashtags, and locations: login first.
+Rate-limited to ~200 requests/11min. Use --delay to adjust.
 
-Data is stored at $HOME/data/instagram/
+Data: $HOME/data/instagram/
+Sessions: $HOME/data/instagram/.sessions/
 
 Subcommands:
+  login      Login to Instagram (saves session)
   profile    Fetch and display user profile info
   posts      Download all posts for a user
   post       Fetch a single post by shortcode
@@ -34,18 +39,18 @@ Subcommands:
   info       Show stored data statistics
 
 Examples:
-  search insta profile natgeo
-  search insta posts natgeo --max-posts 100
-  search insta post CxYzAbC
-  search insta comments CxYzAbC
+  search insta login myuser
+  search insta profile natgeo --session myuser
+  search insta posts natgeo --max-posts 100 --session myuser
   search insta search "landscape photography"
-  search insta hashtag sunset --max-posts 50
   search insta download natgeo --workers 4`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
 
+	cmd.AddCommand(newInstaLogin())
+	cmd.AddCommand(newInstaImportSession())
 	cmd.AddCommand(newInstaProfile())
 	cmd.AddCommand(newInstaPosts())
 	cmd.AddCommand(newInstaPost())
@@ -59,10 +64,250 @@ Examples:
 	return cmd
 }
 
+// initClient creates and initializes an Instagram client, optionally loading a session.
+func initClient(cmd *cobra.Command, cfg insta.Config, session string) (*insta.Client, error) {
+	client, err := insta.NewClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(labelStyle.Render("  Initializing session..."))
+	if err := client.Init(cmd.Context()); err != nil {
+		return nil, fmt.Errorf("init session: %w", err)
+	}
+
+	if session != "" {
+		sessionPath := cfg.SessionPath(session)
+		if err := client.LoadSessionFile(sessionPath); err != nil {
+			return nil, fmt.Errorf("load session %q: %w", sessionPath, err)
+		}
+		fmt.Printf("  Logged in as %s\n", infoStyle.Render("@"+client.Username()))
+	}
+
+	return client, nil
+}
+
+// ── login ───────────────────────────────────────────────
+
+func newInstaLogin() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "login <username>",
+		Short: "Login to Instagram and save session",
+		Long: `Login to Instagram with username/password and save the session.
+
+The session is saved to $HOME/data/instagram/.sessions/{username}.json
+and can be loaded by other commands via --session flag.
+
+Examples:
+  search insta login myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaLogin(cmd, username)
+		},
+	}
+	return cmd
+}
+
+func runInstaLogin(cmd *cobra.Command, username string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Login"))
+	fmt.Println()
+
+	cfg := insta.DefaultConfig()
+
+	client, err := insta.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(labelStyle.Render("  Initializing..."))
+	if err := client.Init(cmd.Context()); err != nil {
+		return fmt.Errorf("init: %w", err)
+	}
+
+	// Get password from env or prompt
+	fmt.Printf("  Username: %s\n", infoStyle.Render("@"+username))
+	password := os.Getenv("INSTA_PWD")
+	if password == "" {
+		fmt.Print("  Password: ")
+		fmt.Scanln(&password)
+	} else {
+		fmt.Println("  Password: (from INSTA_PWD env)")
+	}
+
+	if password == "" {
+		return fmt.Errorf("password cannot be empty (set INSTA_PWD env or enter interactively)")
+	}
+
+	fmt.Println(labelStyle.Render("  Logging in..."))
+	err = client.Login(cmd.Context(), username, password)
+	if err != nil {
+		// Check for checkpoint
+		var checkpoint *insta.CheckpointError
+		if errorAs(err, &checkpoint) {
+			fmt.Println()
+			fmt.Println(warningStyle.Render("  Instagram requires identity verification."))
+			fmt.Println(labelStyle.Render("  Requesting verification code via email..."))
+
+			if err := client.ChallengeStart(cmd.Context(), checkpoint.URL, 1); err != nil {
+				fmt.Println(warningStyle.Render(fmt.Sprintf("  Auto-challenge failed: %v", err)))
+				fmt.Printf("  Visit: %s\n", urlStyle.Render("https://www.instagram.com"+checkpoint.URL))
+				fmt.Println(labelStyle.Render("  Complete verification in browser, then try login again."))
+				return nil
+			}
+
+			fmt.Println(successStyle.Render("  Verification code sent to your email!"))
+			code := os.Getenv("INSTA_CODE")
+			if code == "" {
+				fmt.Print("  Enter code: ")
+				fmt.Scanln(&code)
+			} else {
+				fmt.Printf("  Code: %s (from INSTA_CODE env)\n", code)
+			}
+			if code == "" {
+				return fmt.Errorf("verification code cannot be empty (set INSTA_CODE env or enter interactively)")
+			}
+
+			if err := client.ChallengeVerify(cmd.Context(), checkpoint.URL, code); err != nil {
+				return fmt.Errorf("challenge verification: %w", err)
+			}
+			client.SetUsername(username)
+		} else {
+			// Check for 2FA
+			var twoFA *insta.TwoFactorError
+			if errorAs(err, &twoFA) {
+				fmt.Print("  2FA Code: ")
+				var code string
+				fmt.Scanln(&code)
+				if code == "" {
+					return fmt.Errorf("2FA code cannot be empty")
+				}
+				if err := client.Login2FA(cmd.Context(), username, code, twoFA.Identifier); err != nil {
+					return fmt.Errorf("2FA login: %w", err)
+				}
+			} else {
+				return err
+			}
+		}
+	}
+
+	// Save session
+	sessionPath := cfg.SessionPath(username)
+	if err := client.SaveSession(sessionPath); err != nil {
+		return fmt.Errorf("save session: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render("  Login successful!"))
+	fmt.Printf("  Session saved to: %s\n", labelStyle.Render(sessionPath))
+	fmt.Printf("  Use with: %s\n", infoStyle.Render("--session "+username))
+
+	return nil
+}
+
+// errorAs is a type-safe wrapper for errors.As.
+func errorAs[T error](err error, target *T) bool {
+	return err != nil && errors.As(err, target)
+}
+
+// ── import-session ──────────────────────────────────────
+
+func newInstaImportSession() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import-session <username>",
+		Short: "Import session from browser cookies",
+		Long: `Import an Instagram session using cookies from your browser.
+
+Steps:
+  1. Login to Instagram in your browser
+  2. Open DevTools (F12) > Application > Cookies > instagram.com
+  3. Copy the values of: sessionid, csrftoken, ds_user_id
+  4. Set environment variables:
+     export INSTA_SESSION_ID="your_sessionid"
+     export INSTA_CSRF_TOKEN="your_csrftoken"
+     export INSTA_DS_USER_ID="your_ds_user_id"
+  5. Run: search insta import-session <username>
+
+Examples:
+  search insta import-session myuser`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimPrefix(args[0], "@")
+			return runInstaImportSession(username)
+		},
+	}
+	return cmd
+}
+
+func runInstaImportSession(username string) error {
+	fmt.Println(Banner())
+	fmt.Println(subtitleStyle.Render("Instagram Import Session"))
+	fmt.Println()
+
+	sessionID := os.Getenv("INSTA_SESSION_ID")
+	csrfToken := os.Getenv("INSTA_CSRF_TOKEN")
+	dsUserID := os.Getenv("INSTA_DS_USER_ID")
+
+	if sessionID == "" {
+		return fmt.Errorf("INSTA_SESSION_ID env not set (copy from browser DevTools > Application > Cookies)")
+	}
+	if csrfToken == "" {
+		return fmt.Errorf("INSTA_CSRF_TOKEN env not set")
+	}
+	if dsUserID == "" {
+		return fmt.Errorf("INSTA_DS_USER_ID env not set")
+	}
+
+	cfg := insta.DefaultConfig()
+	sess := &insta.Session{
+		Username: username,
+		UserID:   dsUserID,
+		Cookies: map[string]string{
+			"sessionid":  sessionID,
+			"csrftoken":  csrfToken,
+			"ds_user_id": dsUserID,
+		},
+	}
+
+	client, err := insta.NewClient(cfg)
+	if err != nil {
+		return err
+	}
+	if err := client.ApplySession(sess); err != nil {
+		return err
+	}
+
+	// Test session
+	fmt.Println(labelStyle.Render("  Testing session..."))
+	authUser, err := client.TestSession(context.Background())
+	if err != nil {
+		return fmt.Errorf("session invalid: %w", err)
+	}
+
+	fmt.Printf("  Authenticated as: %s\n", infoStyle.Render("@"+authUser))
+
+	// Save session
+	sessionPath := cfg.SessionPath(username)
+	if err := client.SaveSession(sessionPath); err != nil {
+		return fmt.Errorf("save session: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(successStyle.Render("  Session imported successfully!"))
+	fmt.Printf("  Session saved to: %s\n", labelStyle.Render(sessionPath))
+	fmt.Printf("  Use with: %s\n", infoStyle.Render("--session "+username))
+
+	return nil
+}
+
 // ── profile ──────────────────────────────────────────────
 
 func newInstaProfile() *cobra.Command {
-	var delay int
+	var (
+		delay   int
+		session string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "profile <username>",
@@ -74,19 +319,20 @@ Profile data is saved to $HOME/data/instagram/{username}/profile.json
 
 Examples:
   search insta profile natgeo
-  search insta profile nasa`,
+  search insta profile nasa --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
-			return runInstaProfile(cmd, username, delay)
+			return runInstaProfile(cmd, username, delay, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
 	return cmd
 }
 
-func runInstaProfile(cmd *cobra.Command, username string, delay int) error {
+func runInstaProfile(cmd *cobra.Command, username string, delay int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Profile"))
 	fmt.Println()
@@ -94,14 +340,9 @@ func runInstaProfile(cmd *cobra.Command, username string, delay int) error {
 	cfg := insta.DefaultConfig()
 	cfg.Delay = time.Duration(delay) * time.Second
 
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	fmt.Printf("  Fetching profile for %s\n", infoStyle.Render("@"+username))
@@ -160,6 +401,7 @@ func newInstaPosts() *cobra.Command {
 	var (
 		maxPosts int
 		delay    int
+		session  string
 	)
 
 	cmd := &cobra.Command{
@@ -168,25 +410,26 @@ func newInstaPosts() *cobra.Command {
 		Long: `Download all public posts for an Instagram user.
 
 Posts are stored in a DuckDB database at $HOME/data/instagram/{username}/posts.duckdb
-Includes image/video URLs, captions, like/comment counts, timestamps, and locations.
+Without auth: first 12 posts. With --session: full pagination.
 
 Examples:
   search insta posts natgeo
-  search insta posts natgeo --max-posts 100
+  search insta posts natgeo --max-posts 100 --session myuser
   search insta posts nasa --delay 5`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
-			return runInstaPosts(cmd, username, maxPosts, delay)
+			return runInstaPosts(cmd, username, maxPosts, delay, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&maxPosts, "max-posts", 0, "Max posts to fetch (0=unlimited)")
 	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
 	return cmd
 }
 
-func runInstaPosts(cmd *cobra.Command, username string, maxPosts, delay int) error {
+func runInstaPosts(cmd *cobra.Command, username string, maxPosts, delay int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Posts"))
 	fmt.Println()
@@ -194,14 +437,9 @@ func runInstaPosts(cmd *cobra.Command, username string, maxPosts, delay int) err
 	cfg := insta.DefaultConfig()
 	cfg.Delay = time.Duration(delay) * time.Second
 
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	fmt.Printf("  Fetching posts for %s\n", infoStyle.Render("@"+username))
@@ -276,6 +514,8 @@ func runInstaPosts(cmd *cobra.Command, username string, maxPosts, delay int) err
 // ── post ─────────────────────────────────────────────────
 
 func newInstaPost() *cobra.Command {
+	var session string
+
 	cmd := &cobra.Command{
 		Use:   "post <shortcode>",
 		Short: "Fetch a single post by shortcode",
@@ -299,27 +539,23 @@ Examples:
 					}
 				}
 			}
-			return runInstaPost(cmd, shortcode)
+			return runInstaPost(cmd, shortcode, session)
 		},
 	}
 
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
 	return cmd
 }
 
-func runInstaPost(cmd *cobra.Command, shortcode string) error {
+func runInstaPost(cmd *cobra.Command, shortcode, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Post"))
 	fmt.Println()
 
 	cfg := insta.DefaultConfig()
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	fmt.Printf("  Fetching post %s\n", infoStyle.Render(shortcode))
@@ -381,30 +617,33 @@ func newInstaComments() *cobra.Command {
 	var (
 		maxComments int
 		delay       int
+		session     string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "comments <shortcode>",
-		Short: "Download comments for a post",
+		Short: "Download comments for a post (requires auth)",
 		Long: `Download all comments for an Instagram post.
 
+Requires authentication. Use --session flag.
 Comments are stored in the post owner's DuckDB database.
 
 Examples:
-  search insta comments CxYzAbC
-  search insta comments CxYzAbC --max-comments 100`,
+  search insta comments CxYzAbC --session myuser
+  search insta comments CxYzAbC --max-comments 100 --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInstaComments(cmd, args[0], maxComments, delay)
+			return runInstaComments(cmd, args[0], maxComments, delay, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&maxComments, "max-comments", 0, "Max comments to fetch (0=unlimited)")
 	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
 	return cmd
 }
 
-func runInstaComments(cmd *cobra.Command, shortcode string, maxComments, delay int) error {
+func runInstaComments(cmd *cobra.Command, shortcode string, maxComments, delay int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Comments"))
 	fmt.Println()
@@ -412,14 +651,9 @@ func runInstaComments(cmd *cobra.Command, shortcode string, maxComments, delay i
 	cfg := insta.DefaultConfig()
 	cfg.Delay = time.Duration(delay) * time.Second
 
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	fmt.Printf("  Fetching comments for post %s\n", infoStyle.Render(shortcode))
@@ -480,40 +714,41 @@ func runInstaComments(cmd *cobra.Command, shortcode string, maxComments, delay i
 // ── search ───────────────────────────────────────────────
 
 func newInstaSearch() *cobra.Command {
-	var count int
+	var (
+		count   int
+		session string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Search users, hashtags, places",
 		Long: `Search Instagram for users, hashtags, and places.
 
+May require authentication. Use --session for better results.
+
 Examples:
   search insta search "landscape photography"
-  search insta search golang --count 20`,
+  search insta search golang --count 20 --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInstaSearch(cmd, args[0], count)
+			return runInstaSearch(cmd, args[0], count, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&count, "count", 50, "Number of results")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
 	return cmd
 }
 
-func runInstaSearch(cmd *cobra.Command, query string, count int) error {
+func runInstaSearch(cmd *cobra.Command, query string, count int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Search"))
 	fmt.Println()
 
 	cfg := insta.DefaultConfig()
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	fmt.Printf("  Searching for %s\n", infoStyle.Render(query))
@@ -594,31 +829,34 @@ func newInstaHashtag() *cobra.Command {
 	var (
 		maxPosts int
 		delay    int
+		session  string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "hashtag <tag>",
-		Short: "Download posts for a hashtag",
-		Long: `Download public posts for an Instagram hashtag.
+		Short: "Download posts for a hashtag (requires auth)",
+		Long: `Download posts for an Instagram hashtag.
 
+Requires authentication. Use --session flag.
 Posts are stored in a DuckDB database at $HOME/data/instagram/hashtag/{tag}/posts.duckdb
 
 Examples:
-  search insta hashtag sunset
-  search insta hashtag sunset --max-posts 50`,
+  search insta hashtag sunset --session myuser
+  search insta hashtag sunset --max-posts 50 --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			tag := strings.TrimPrefix(args[0], "#")
-			return runInstaHashtag(cmd, tag, maxPosts, delay)
+			return runInstaHashtag(cmd, tag, maxPosts, delay, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&maxPosts, "max-posts", 0, "Max posts to fetch (0=unlimited)")
 	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
 	return cmd
 }
 
-func runInstaHashtag(cmd *cobra.Command, tag string, maxPosts, delay int) error {
+func runInstaHashtag(cmd *cobra.Command, tag string, maxPosts, delay int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Hashtag"))
 	fmt.Println()
@@ -626,14 +864,9 @@ func runInstaHashtag(cmd *cobra.Command, tag string, maxPosts, delay int) error 
 	cfg := insta.DefaultConfig()
 	cfg.Delay = time.Duration(delay) * time.Second
 
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	maxStr := "all"
@@ -692,29 +925,32 @@ func newInstaLocation() *cobra.Command {
 	var (
 		maxPosts int
 		delay    int
+		session  string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "location <id>",
-		Short: "Download posts for a location",
-		Long: `Download public posts for an Instagram location.
+		Short: "Download posts for a location (requires auth)",
+		Long: `Download posts for an Instagram location.
 
+Requires authentication. Use --session flag.
 Location IDs can be found via 'search insta search' or from Instagram URLs.
 
 Examples:
-  search insta location 213385402`,
+  search insta location 213385402 --session myuser`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInstaLocation(cmd, args[0], maxPosts, delay)
+			return runInstaLocation(cmd, args[0], maxPosts, delay, session)
 		},
 	}
 
 	cmd.Flags().IntVar(&maxPosts, "max-posts", 0, "Max posts to fetch (0=unlimited)")
 	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load (required)")
 	return cmd
 }
 
-func runInstaLocation(cmd *cobra.Command, locationID string, maxPosts, delay int) error {
+func runInstaLocation(cmd *cobra.Command, locationID string, maxPosts, delay int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Location"))
 	fmt.Println()
@@ -722,14 +958,9 @@ func runInstaLocation(cmd *cobra.Command, locationID string, maxPosts, delay int
 	cfg := insta.DefaultConfig()
 	cfg.Delay = time.Duration(delay) * time.Second
 
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	fmt.Printf("  Location: %s\n", infoStyle.Render(locationID))
@@ -782,6 +1013,7 @@ func newInstaDownload() *cobra.Command {
 		noVideos bool
 		maxPosts int
 		delay    int
+		session  string
 	)
 
 	cmd := &cobra.Command{
@@ -791,16 +1023,17 @@ func newInstaDownload() *cobra.Command {
 
 First fetches all posts (or uses cached data), then downloads images and videos.
 Media is saved to $HOME/data/instagram/{username}/media/
+Use --session for full pagination (all posts).
 
 Examples:
   search insta download natgeo
-  search insta download natgeo --workers 4
+  search insta download natgeo --workers 4 --session myuser
   search insta download natgeo --no-videos
   search insta download natgeo --max-posts 50`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := strings.TrimPrefix(args[0], "@")
-			return runInstaDownload(cmd, username, workers, !noImages, !noVideos, maxPosts, delay)
+			return runInstaDownload(cmd, username, workers, !noImages, !noVideos, maxPosts, delay, session)
 		},
 	}
 
@@ -809,10 +1042,11 @@ Examples:
 	cmd.Flags().BoolVar(&noVideos, "no-videos", false, "Skip video downloads")
 	cmd.Flags().IntVar(&maxPosts, "max-posts", 0, "Max posts to fetch (0=unlimited)")
 	cmd.Flags().IntVar(&delay, "delay", 3, "Delay between API requests (seconds)")
+	cmd.Flags().StringVar(&session, "session", "", "Session username to load")
 	return cmd
 }
 
-func runInstaDownload(cmd *cobra.Command, username string, workers int, images, videos bool, maxPosts, delay int) error {
+func runInstaDownload(cmd *cobra.Command, username string, workers int, images, videos bool, maxPosts, delay int, session string) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Instagram Download"))
 	fmt.Println()
@@ -821,14 +1055,9 @@ func runInstaDownload(cmd *cobra.Command, username string, workers int, images, 
 	cfg.Delay = time.Duration(delay) * time.Second
 	cfg.Workers = workers
 
-	client, err := insta.NewClient(cfg)
+	client, err := initClient(cmd, cfg, session)
 	if err != nil {
 		return err
-	}
-
-	fmt.Println(labelStyle.Render("  Initializing session..."))
-	if err := client.Init(cmd.Context()); err != nil {
-		return fmt.Errorf("init session: %w", err)
 	}
 
 	// Fetch posts (also fetches profile internally)

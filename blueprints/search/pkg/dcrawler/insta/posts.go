@@ -71,13 +71,12 @@ type carouselItem struct {
 	VideoVersions  []videoVersion `json:"video_versions"`
 }
 
-// GetUserPosts fetches posts for a user using the profile endpoint (first 12 posts)
-// and optionally the feed API for additional posts.
+// GetUserPosts fetches posts for a user.
 //
-// Without authentication, typically only the first 12 posts (from profile) are available.
-// The feed API may return additional posts but rate-limits quickly.
+// With authentication: uses doc_id GraphQL for full pagination.
+// Without authentication: uses web_profile_info (up to 12 posts) + feed API fallback.
 func (c *Client) GetUserPosts(ctx context.Context, username string, maxPosts int, cb ProgressCallback) ([]Post, error) {
-	// Step 1: Get profile + first 12 posts from web_profile_info
+	// Step 1: Get profile info (need ID, post count, privacy check)
 	result, err := c.GetProfileWithPosts(ctx, username)
 	if err != nil {
 		return nil, err
@@ -87,17 +86,22 @@ func (c *Client) GetUserPosts(ctx context.Context, username string, maxPosts int
 		return nil, fmt.Errorf("@%s is a private account", username)
 	}
 
-	allPosts := result.Posts
 	total := result.Profile.PostCount
 	if maxPosts > 0 && int64(maxPosts) < total {
 		total = int64(maxPosts)
 	}
 
+	if c.loggedIn {
+		// Authenticated: use doc_id GraphQL for full pagination from the start
+		return c.getUserPostsAuth(ctx, username, maxPosts, total, cb)
+	}
+
+	// Unauthenticated: use profile posts + feed fallback
+	allPosts := result.Posts
 	if cb != nil {
 		cb(Progress{Phase: "posts", Total: total, Current: int64(len(allPosts))})
 	}
 
-	// If we have enough or no more available, return
 	if (maxPosts > 0 && len(allPosts) >= maxPosts) || !result.HasMore {
 		if maxPosts > 0 && len(allPosts) > maxPosts {
 			allPosts = allPosts[:maxPosts]
@@ -108,22 +112,19 @@ func (c *Client) GetUserPosts(ctx context.Context, username string, maxPosts int
 		return allPosts, nil
 	}
 
-	// Step 2: Try feed API for more posts (may fail with auth requirement)
-	if err := c.delay(ctx); err != nil {
-		return allPosts, err
+	// Try feed API for one more page
+	seen := make(map[string]bool, len(allPosts))
+	for _, p := range allPosts {
+		seen[p.ID] = true
 	}
-
-	feedPosts, feedErr := c.fetchFeedPage(ctx, result.Profile.ID)
-	if feedErr == nil && len(feedPosts) > 0 {
-		// Merge, avoiding duplicates
-		seen := make(map[string]bool, len(allPosts))
-		for _, p := range allPosts {
-			seen[p.ID] = true
-		}
-		for _, p := range feedPosts {
-			if !seen[p.ID] {
-				allPosts = append(allPosts, p)
-				seen[p.ID] = true
+	if err := c.delay(ctx); err == nil {
+		feedPosts, feedErr := c.fetchFeedPage(ctx, result.Profile.ID)
+		if feedErr == nil {
+			for _, p := range feedPosts {
+				if !seen[p.ID] {
+					allPosts = append(allPosts, p)
+					seen[p.ID] = true
+				}
 			}
 		}
 	}
@@ -137,6 +138,245 @@ func (c *Client) GetUserPosts(ctx context.Context, username string, maxPosts int
 	}
 
 	return allPosts, nil
+}
+
+// getUserPostsAuth fetches posts using authenticated doc_id pagination.
+func (c *Client) getUserPostsAuth(ctx context.Context, username string, maxPosts int, total int64, cb ProgressCallback) ([]Post, error) {
+	var allPosts []Post
+	seen := make(map[string]bool)
+	var cursor *string // nil for first page
+
+	for {
+		if maxPosts > 0 && len(allPosts) >= maxPosts {
+			break
+		}
+		if cursor != nil {
+			if err := c.delay(ctx); err != nil {
+				break
+			}
+		}
+
+		vars := map[string]any{
+			"data": map[string]any{
+				"count":                    PostsPerPage,
+				"include_relationship_info": true,
+				"latest_besties_reel_media": true,
+				"latest_reel_media":         true,
+			},
+			"username": username,
+			"after":    cursor,
+			"before":   nil,
+			"first":    PostsPerPage,
+			"last":     nil,
+			"__relay_internal__pv__PolarisFeedShareMenurelayprovider": false,
+		}
+
+		data, err := c.docIDQuery(ctx, DocIDProfilePostsAuth, vars)
+		if err != nil {
+			if len(allPosts) > 0 {
+				break // return what we have
+			}
+			return nil, fmt.Errorf("fetch posts: %w", err)
+		}
+
+		posts, nextCursor, hasMore := parseDocIDPostsResponse(data)
+		for _, p := range posts {
+			if !seen[p.ID] {
+				allPosts = append(allPosts, p)
+				seen[p.ID] = true
+			}
+		}
+
+		if cb != nil {
+			cb(Progress{Phase: "posts", Total: total, Current: int64(len(allPosts))})
+		}
+
+		if !hasMore || nextCursor == "" || len(posts) == 0 {
+			break
+		}
+		c := nextCursor
+		cursor = &c
+	}
+
+	if maxPosts > 0 && len(allPosts) > maxPosts {
+		allPosts = allPosts[:maxPosts]
+	}
+
+	if cb != nil {
+		cb(Progress{Phase: "posts", Total: int64(len(allPosts)), Current: int64(len(allPosts)), Done: true})
+	}
+
+	return allPosts, nil
+}
+
+// parseDocIDPostsResponse extracts posts from a doc_id GraphQL response.
+// Handles both classic GraphQL nodes (shortcode, edge_media_preview_like, display_url)
+// and XDTMediaDict nodes (code, like_count, image_versions2) from newer API.
+func parseDocIDPostsResponse(data []byte) (posts []Post, cursor string, hasMore bool) {
+	// Try XDT format first (newer API response)
+	var xdtResp struct {
+		Data struct {
+			Conn *xdtConnection `json:"xdt_api__v1__feed__user_timeline_graphql_connection"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &xdtResp); err == nil && xdtResp.Data.Conn != nil && len(xdtResp.Data.Conn.Edges) > 0 {
+		conn := xdtResp.Data.Conn
+		for _, e := range conn.Edges {
+			posts = append(posts, xdtNodeToPost(e.Node))
+		}
+		return posts, conn.PageInfo.EndCursor, conn.PageInfo.HasNextPage
+	}
+
+	// Fallback: classic GraphQL format
+	var resp struct {
+		Data struct {
+			User *struct {
+				EdgeOwnerToTimelineMedia *mediaConnection `json:"edge_owner_to_timeline_media"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, "", false
+	}
+
+	if resp.Data.User == nil || resp.Data.User.EdgeOwnerToTimelineMedia == nil {
+		return nil, "", false
+	}
+
+	conn := resp.Data.User.EdgeOwnerToTimelineMedia
+	for _, e := range conn.Edges {
+		posts = append(posts, nodeToPost(e.Node))
+	}
+	return posts, conn.PageInfo.EndCursor, conn.PageInfo.HasNextPage
+}
+
+// xdtConnection represents the connection wrapper for XDTMediaDict responses.
+type xdtConnection struct {
+	Edges    []xdtEdge `json:"edges"`
+	PageInfo pageInfo  `json:"page_info"`
+}
+
+type xdtEdge struct {
+	Cursor string  `json:"cursor"`
+	Node   xdtNode `json:"node"`
+}
+
+// xdtNode represents a media node in XDTMediaDict format (from doc_id queries).
+type xdtNode struct {
+	ID            string `json:"id"`
+	PK            string `json:"pk"`
+	Code          string `json:"code"`
+	MediaType     int    `json:"media_type"` // 1=image, 2=video, 8=carousel
+	LikeCount     int64  `json:"like_count"`
+	CommentCount  int64  `json:"comment_count"`
+	ViewCount     int64  `json:"view_count"`
+	TakenAt       int64  `json:"taken_at"`
+	OriginalWidth  int   `json:"original_width"`
+	OriginalHeight int   `json:"original_height"`
+	Caption       *struct {
+		Text string `json:"text"`
+	} `json:"caption"`
+	ImageVersions2 *imageVersions `json:"image_versions2"`
+	VideoVersions  []videoVersion `json:"video_versions"`
+	CarouselMedia  []xdtCarousel  `json:"carousel_media"`
+	User           struct {
+		PK       int64  `json:"pk"`
+		Username string `json:"username"`
+	} `json:"user"`
+	Location *struct {
+		PK   int64  `json:"pk"`
+		Name string `json:"name"`
+	} `json:"location"`
+	LikeAndViewCountsDisabled bool `json:"like_and_view_counts_disabled"`
+}
+
+type xdtCarousel struct {
+	ID             string         `json:"id"`
+	MediaType      int            `json:"media_type"`
+	ImageVersions2 *imageVersions `json:"image_versions2"`
+	VideoVersions  []videoVersion `json:"video_versions"`
+	OriginalWidth  int            `json:"original_width"`
+	OriginalHeight int            `json:"original_height"`
+}
+
+// xdtNodeToPost converts an XDTMediaDict node to a Post.
+func xdtNodeToPost(n xdtNode) Post {
+	post := Post{
+		ID:           n.ID,
+		Shortcode:    n.Code,
+		LikeCount:    n.LikeCount,
+		CommentCount: n.CommentCount,
+		ViewCount:    n.ViewCount,
+		TakenAt:      time.Unix(n.TakenAt, 0),
+		OwnerID:      fmt.Sprintf("%d", n.User.PK),
+		OwnerName:    n.User.Username,
+		Width:        n.OriginalWidth,
+		Height:       n.OriginalHeight,
+		FetchedAt:    time.Now(),
+	}
+
+	if n.Caption != nil {
+		post.Caption = n.Caption.Text
+	}
+	if n.Location != nil {
+		post.LocationID = fmt.Sprintf("%d", n.Location.PK)
+		post.LocationName = n.Location.Name
+	}
+
+	switch n.MediaType {
+	case 1:
+		post.TypeName = "GraphImage"
+		if n.ImageVersions2 != nil && len(n.ImageVersions2.Candidates) > 0 {
+			post.DisplayURL = n.ImageVersions2.Candidates[0].URL
+			if post.Width == 0 {
+				post.Width = n.ImageVersions2.Candidates[0].Width
+				post.Height = n.ImageVersions2.Candidates[0].Height
+			}
+		}
+	case 2:
+		post.TypeName = "GraphVideo"
+		post.IsVideo = true
+		if len(n.VideoVersions) > 0 {
+			post.VideoURL = n.VideoVersions[0].URL
+			if post.Width == 0 {
+				post.Width = n.VideoVersions[0].Width
+				post.Height = n.VideoVersions[0].Height
+			}
+		}
+		if n.ImageVersions2 != nil && len(n.ImageVersions2.Candidates) > 0 {
+			post.DisplayURL = n.ImageVersions2.Candidates[0].URL
+		}
+	case 8:
+		post.TypeName = "GraphSidecar"
+		for _, cm := range n.CarouselMedia {
+			child := Post{ID: cm.ID, FetchedAt: time.Now(), Width: cm.OriginalWidth, Height: cm.OriginalHeight}
+			if cm.MediaType == 2 && len(cm.VideoVersions) > 0 {
+				child.TypeName = "GraphVideo"
+				child.IsVideo = true
+				child.VideoURL = cm.VideoVersions[0].URL
+				if child.Width == 0 {
+					child.Width = cm.VideoVersions[0].Width
+					child.Height = cm.VideoVersions[0].Height
+				}
+			}
+			if cm.ImageVersions2 != nil && len(cm.ImageVersions2.Candidates) > 0 {
+				child.DisplayURL = cm.ImageVersions2.Candidates[0].URL
+				if !child.IsVideo {
+					child.TypeName = "GraphImage"
+					if child.Width == 0 {
+						child.Width = cm.ImageVersions2.Candidates[0].Width
+						child.Height = cm.ImageVersions2.Candidates[0].Height
+					}
+				}
+			}
+			post.Children = append(post.Children, child)
+		}
+		if n.ImageVersions2 != nil && len(n.ImageVersions2.Candidates) > 0 {
+			post.DisplayURL = n.ImageVersions2.Candidates[0].URL
+		}
+	}
+
+	return post
 }
 
 // fetchFeedPage fetches one page of posts from the feed/user/ endpoint.
