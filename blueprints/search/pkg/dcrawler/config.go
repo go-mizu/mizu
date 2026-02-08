@@ -41,6 +41,8 @@ type Config struct {
 	UseRod           bool          // Use headless Chrome via rod for JS-rendered pages
 	RodWorkers       int           // Number of browser pages (default 8)
 	RodHeadless      bool          // Run rod in headless mode (default true)
+	ScrollCount      int           // Browser mode: scroll N times for infinite scroll (0=no scroll)
+	ExtractImages    bool          // Extract <img> URLs and store in links table
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.

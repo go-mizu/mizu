@@ -31,6 +31,9 @@ func NewCrawlDomain() *cobra.Command {
 		seedFile         string
 		useRod           bool
 		rodWorkers       int
+		scrollCount      int
+		extractImages    bool
+		downloadImages   bool
 	)
 
 	cmd := &cobra.Command{
@@ -81,8 +84,10 @@ Examples:
 			cfg.UseRod = useRod
 			cfg.RodWorkers = rodWorkers
 			cfg.RodHeadless = true
+			cfg.ScrollCount = scrollCount
+			cfg.ExtractImages = extractImages || downloadImages
 
-			return runCrawlDomain(cmd, cfg)
+			return runCrawlDomain(cmd, cfg, downloadImages)
 		},
 	}
 
@@ -106,11 +111,14 @@ Examples:
 	cmd.Flags().StringVar(&userAgent, "user-agent", "", "User-Agent header")
 	cmd.Flags().BoolVar(&useRod, "browser", false, "Use headless Chrome for JS-rendered pages (bypasses Cloudflare)")
 	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 8, "Number of browser pages when using --browser")
+	cmd.Flags().IntVar(&scrollCount, "scroll", 0, "Scroll N times in browser mode for infinite scroll pages (Pinterest, etc.)")
+	cmd.Flags().BoolVar(&extractImages, "extract-images", false, "Extract <img> URLs and store in links table")
+	cmd.Flags().BoolVar(&downloadImages, "download-images", false, "Download discovered images after crawl (implies --extract-images)")
 
 	return cmd
 }
 
-func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config) error {
+func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config, downloadImages bool) error {
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("Domain Crawler"))
 	fmt.Println()
@@ -164,6 +172,15 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config) error {
 	fmt.Println(successStyle.Render(fmt.Sprintf("  Crawl complete in %s  |  %d pages",
 		c.Stats().Elapsed().Truncate(time.Second), c.Stats().Done())))
 	fmt.Println(infoStyle.Render(fmt.Sprintf("  Results:  %s", c.ResultDB().Dir())))
+
+	if downloadImages {
+		fmt.Println()
+		fmt.Println(subtitleStyle.Render("Downloading Images"))
+		fmt.Println()
+		if dlErr := dcrawler.DownloadImages(cmd.Context(), cfg); dlErr != nil {
+			fmt.Println(errorStyle.Render(fmt.Sprintf("  Image download: %v", dlErr)))
+		}
+	}
 
 	return nil
 }

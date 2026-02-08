@@ -495,7 +495,7 @@ func (c *Crawler) fetchLinksFrom(ctx context.Context, pageURL string) []string {
 	if baseURL == nil {
 		baseURL, _ = url.Parse(pageURL)
 	}
-	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain)
+	meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
 
 	var urls []string
 	for _, link := range meta.Links {
@@ -594,7 +594,7 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		if baseURL == nil {
 			baseURL, _ = url.Parse(item.URL)
 		}
-		meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain)
+		meta := ExtractLinksAndMeta(body, baseURL, c.config.Domain, c.config.ExtractImages)
 		result.Title = meta.Title
 		result.Description = meta.Description
 		result.Language = meta.Language
