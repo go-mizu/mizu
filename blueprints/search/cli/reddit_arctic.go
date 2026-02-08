@@ -434,8 +434,14 @@ func renderArcticProgress(p reddit.ArcticProgress, kindLabel string) {
 	if p.Done {
 		fmt.Printf("    %s download complete\n", successStyle.Render(kindLabel))
 	} else {
+		// Show items with estimated total based on chunk progress
+		itemsStr := formatNumber(p.Items)
+		if p.ChunksDone > 0 && p.TotalChunks > 0 && p.ChunksDone < p.TotalChunks {
+			estTotal := p.Items * int64(p.TotalChunks) / int64(p.ChunksDone)
+			itemsStr += " / ~" + formatNumber(estTotal)
+		}
 		fmt.Printf("    Items: %s   Size: %s\n",
-			infoStyle.Render(formatNumber(p.Items)),
+			infoStyle.Render(itemsStr),
 			infoStyle.Render(formatBytes(p.Bytes)))
 	}
 
@@ -449,9 +455,18 @@ func renderArcticProgress(p reddit.ArcticProgress, kindLabel string) {
 
 	if p.Items > 0 && p.Elapsed > 0 {
 		speed := float64(p.Items) / p.Elapsed.Seconds()
-		fmt.Printf("    Speed: %s items/s   Batch: %d   Elapsed: %s\n",
+		// ETA based on chunk progress
+		etaStr := "—"
+		if p.ChunksDone > 0 && p.TotalChunks > 0 && p.ChunksDone < p.TotalChunks {
+			remaining := p.TotalChunks - p.ChunksDone
+			perChunk := p.Elapsed / time.Duration(p.ChunksDone)
+			eta := perChunk * time.Duration(remaining)
+			etaStr = formatDuration(eta)
+		}
+		fmt.Printf("    Speed: %s items/s   Chunks: %s   ETA: %s   Elapsed: %s\n",
 			infoStyle.Render(fmt.Sprintf("%.0f", speed)),
-			p.BatchSize,
+			labelStyle.Render(fmt.Sprintf("%d/%d", p.ChunksDone, p.TotalChunks)),
+			infoStyle.Render(etaStr),
 			labelStyle.Render(formatDuration(p.Elapsed)))
 	} else {
 		fmt.Println()

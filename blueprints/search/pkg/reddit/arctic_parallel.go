@@ -247,11 +247,13 @@ func (c *ArcticClient) ParallelDownload(ctx context.Context, target ArcticTarget
 				// Progress callback
 				if cb != nil {
 					cb(ArcticProgress{
-						Kind:      kind,
-						Items:     totalItems.Load(),
-						Bytes:     totalBytes.Load(),
-						BatchSize: len(result.Data),
-						Elapsed:   time.Since(start),
+						Kind:        kind,
+						Items:       totalItems.Load(),
+						Bytes:       totalBytes.Load(),
+						BatchSize:   len(result.Data),
+						Elapsed:     time.Since(start),
+						TotalChunks: len(chunks),
+						ChunksDone:  int(chunksDone.Load()),
 					})
 				}
 			}
@@ -285,11 +287,13 @@ func (c *ArcticClient) ParallelDownload(ctx context.Context, target ArcticTarget
 	// Final progress
 	if cb != nil {
 		cb(ArcticProgress{
-			Kind:    kind,
-			Items:   totalItems.Load(),
-			Bytes:   totalBytes.Load(),
-			Done:    true,
-			Elapsed: time.Since(start),
+			Kind:        kind,
+			Items:       totalItems.Load(),
+			Bytes:       totalBytes.Load(),
+			Done:        true,
+			Elapsed:     time.Since(start),
+			TotalChunks: len(chunks),
+			ChunksDone:  len(chunks),
 		})
 	}
 
