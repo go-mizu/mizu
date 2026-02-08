@@ -29,6 +29,8 @@ func NewCrawlDomain() *cobra.Command {
 		crawlerDataDir   string
 		userAgent        string
 		seedFile         string
+		useRod           bool
+		rodWorkers       int
 	)
 
 	cmd := &cobra.Command{
@@ -49,6 +51,10 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := dcrawler.DefaultConfig()
+			// If user passed a full URL, use it as seed
+			if seedURL := dcrawler.ExtractSeedURL(args[0]); seedURL != "" {
+				cfg.SeedURLs = []string{seedURL}
+			}
 			cfg.Domain = args[0]
 			cfg.Workers = workers
 			cfg.MaxConns = maxConns
@@ -72,6 +78,9 @@ Examples:
 			if userAgent != "" {
 				cfg.UserAgent = userAgent
 			}
+			cfg.UseRod = useRod
+			cfg.RodWorkers = rodWorkers
+			cfg.RodHeadless = true
 
 			return runCrawlDomain(cmd, cfg)
 		},
@@ -95,6 +104,8 @@ Examples:
 	cmd.Flags().StringVar(&seedFile, "seed-file", "", "File with seed URLs (one per line)")
 	cmd.Flags().StringVar(&crawlerDataDir, "crawler-data", "", "Crawler data directory (default $HOME/data/crawler/)")
 	cmd.Flags().StringVar(&userAgent, "user-agent", "", "User-Agent header")
+	cmd.Flags().BoolVar(&useRod, "browser", false, "Use headless Chrome for JS-rendered pages (bypasses Cloudflare)")
+	cmd.Flags().IntVar(&rodWorkers, "browser-pages", 8, "Number of browser pages when using --browser")
 
 	return cmd
 }
@@ -109,14 +120,21 @@ func runCrawlDomain(cmd *cobra.Command, cfg dcrawler.Config) error {
 		return err
 	}
 
-	h2 := "enabled"
-	if cfg.ForceHTTP1 {
-		h2 = "disabled"
+	fmt.Println(infoStyle.Render(fmt.Sprintf("  Target:   %s", dcrawler.NormalizeDomain(cfg.Domain))))
+	if cfg.UseRod {
+		rodW := cfg.RodWorkers
+		if rodW <= 0 {
+			rodW = 8
+		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Mode:     headless Chrome (rod)  |  Pages: %d", rodW)))
+	} else {
+		h2 := "enabled"
+		if cfg.ForceHTTP1 {
+			h2 = "disabled"
+		}
+		fmt.Println(infoStyle.Render(fmt.Sprintf("  Workers:  %d  |  Max Conns: %d  |  Shards: %d  |  HTTP/2: %s",
+			cfg.Workers, cfg.MaxConns, cfg.TransportShards, h2)))
 	}
-
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Target:   %s", cfg.Domain)))
-	fmt.Println(infoStyle.Render(fmt.Sprintf("  Workers:  %d  |  Max Conns: %d  |  Shards: %d  |  HTTP/2: %s",
-		cfg.Workers, cfg.MaxConns, cfg.TransportShards, h2)))
 
 	maxDepthStr := "unlimited"
 	if cfg.MaxDepth > 0 {
