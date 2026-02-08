@@ -1,6 +1,7 @@
 package dcrawler
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,7 +38,9 @@ type Config struct {
 	SeedFile         string
 	Continuous       bool          // Run non-stop, re-seed when frontier drains
 	ReseedInterval   time.Duration // Min interval between re-seeds (default 30s)
-
+	UseRod           bool          // Use headless Chrome via rod for JS-rendered pages
+	RodWorkers       int           // Number of browser pages (default 8)
+	RodHeadless      bool          // Run rod in headless mode (default true)
 }
 
 // DefaultConfig returns optimal defaults for high-throughput single-domain crawling.
@@ -49,7 +52,7 @@ func DefaultConfig() Config {
 		MaxIdleConns:  500,
 		Timeout:       10 * time.Second,
 		MaxBodySize:   512 * 1024,    // 512KB
-		UserAgent:     "MizuCrawler/1.0",
+		UserAgent:     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 		DataDir:       defaultDataDir(),
 		ShardCount:    8,
 		BatchSize:     500,
@@ -68,14 +71,34 @@ func defaultDataDir() string {
 	return filepath.Join(home, "data", "crawler")
 }
 
-// NormalizeDomain strips www. prefix and lowercases the domain.
-func NormalizeDomain(domain string) string {
-	domain = strings.ToLower(strings.TrimSpace(domain))
-	domain = strings.TrimPrefix(domain, "http://")
-	domain = strings.TrimPrefix(domain, "https://")
-	domain = strings.TrimSuffix(domain, "/")
-	domain = strings.TrimPrefix(domain, "www.")
-	return domain
+// NormalizeDomain extracts and normalizes the domain from a URL or domain string.
+// Strips www. prefix, lowercases, and handles full URLs (extracts hostname only).
+func NormalizeDomain(input string) string {
+	input = strings.ToLower(strings.TrimSpace(input))
+	// If it looks like a URL, parse it to extract hostname
+	if strings.Contains(input, "/") || strings.HasPrefix(input, "http") {
+		if !strings.Contains(input, "://") {
+			input = "https://" + input
+		}
+		if u, err := url.Parse(input); err == nil && u.Hostname() != "" {
+			input = u.Hostname()
+		}
+	}
+	input = strings.TrimPrefix(input, "www.")
+	return input
+}
+
+// ExtractSeedURL extracts a seed URL from user input.
+// If input is a full URL, returns it as-is. Otherwise builds https://{domain}/.
+func ExtractSeedURL(input string) string {
+	input = strings.TrimSpace(input)
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		return input
+	}
+	if strings.Contains(input, "/") {
+		return "https://" + input
+	}
+	return ""
 }
 
 // DomainDir returns the directory for storing crawl data for a domain.

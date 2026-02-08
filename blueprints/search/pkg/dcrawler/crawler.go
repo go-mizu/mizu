@@ -33,6 +33,7 @@ type Crawler struct {
 	stats    *Stats
 	robots   *RobotsChecker
 	limiter  *rate.Limiter
+	claimed  atomic.Int64 // atomic slot counter for max-pages
 }
 
 // New creates a new Crawler with the given config.
@@ -158,8 +159,8 @@ func (c *Crawler) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// robots.txt
-	if c.config.RespectRobots {
+	// robots.txt (browser mode ignores robots.txt, like real browsers)
+	if c.config.RespectRobots && !c.config.UseRod {
 		rctx, rc := context.WithTimeout(ctx, 10*time.Second)
 		if r, _ := FetchRobots(rctx, c.clients[0], c.config.Domain); r != nil {
 			c.robots = r
@@ -204,12 +205,31 @@ func (c *Crawler) Run(ctx context.Context) error {
 	// errgroup: workers + coordinator
 	g, gctx := errgroup.WithContext(ctx)
 
-	for i := range c.config.Workers {
-		client := c.clientForWorker(i)
-		g.Go(func() error {
-			c.worker(gctx, client)
-			return nil
-		})
+	if c.config.UseRod {
+		rp, err := newRodPool(c.config)
+		if err != nil {
+			return fmt.Errorf("rod: %w", err)
+		}
+		defer rp.close()
+
+		workers := c.config.RodWorkers
+		if workers <= 0 {
+			workers = 8
+		}
+		for range workers {
+			g.Go(func() error {
+				c.rodWorker(gctx, rp)
+				return nil
+			})
+		}
+	} else {
+		for i := range c.config.Workers {
+			client := c.clientForWorker(i)
+			g.Go(func() error {
+				c.worker(gctx, client)
+				return nil
+			})
+		}
 	}
 
 	g.Go(func() error {
@@ -373,7 +393,7 @@ func (c *Crawler) coordinator(ctx context.Context, cancel context.CancelFunc) {
 			return
 		case <-tick.C:
 		}
-		if c.config.MaxPages > 0 && c.stats.success.Load() >= int64(c.config.MaxPages) {
+		if c.config.MaxPages > 0 && c.stats.Done() >= int64(c.config.MaxPages) {
 			cancel()
 			return
 		}
@@ -504,6 +524,9 @@ func (c *Crawler) worker(ctx context.Context, client *http.Client) {
 }
 
 func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item CrawlItem) {
+	if c.config.MaxPages > 0 && c.claimed.Add(1) > int64(c.config.MaxPages) {
+		return
+	}
 	c.stats.inFlight.Add(1)
 	defer c.stats.inFlight.Add(-1)
 
@@ -514,12 +537,16 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 		return
 	}
 	req.Header.Set("User-Agent", c.config.UserAgent)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Accept-Encoding", "gzip")
 
 	resp, err := client.Do(req)
 	fetchMs := time.Since(start).Milliseconds()
 	if err != nil {
+		if ctx.Err() != nil {
+			return // context cancelled, don't record
+		}
 		c.recordError(item, err, fetchMs)
 		return
 	}
@@ -593,7 +620,11 @@ func (c *Crawler) fetchAndProcess(ctx context.Context, client *http.Client, item
 	}
 
 	c.resultDB.AddPage(result)
-	c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
+	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		c.stats.RecordSuccess(result.StatusCode, int64(len(body)), fetchMs)
+	} else {
+		c.stats.RecordFailure(result.StatusCode, false)
+	}
 	c.stats.RecordDepth(item.Depth)
 }
 
