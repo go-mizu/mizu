@@ -9,6 +9,7 @@ import (
 )
 
 // Search performs a top search for users, hashtags, and places.
+// Uses enhanced params (context=blended, include_reel=false, __a=1) for better results.
 func (c *Client) Search(ctx context.Context, query string, count int) (*SearchResult, error) {
 	if count <= 0 {
 		count = 50
@@ -17,6 +18,9 @@ func (c *Client) Search(ctx context.Context, query string, count int) (*SearchRe
 	params := url.Values{}
 	params.Set("query", query)
 	params.Set("count", strconv.Itoa(count))
+	params.Set("context", "blended")
+	params.Set("include_reel", "false")
+	params.Set("__a", "1")
 	rawURL := TopSearchURL + "?" + params.Encode()
 
 	data, err := c.doGet(ctx, rawURL)
