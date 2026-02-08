@@ -52,6 +52,11 @@ func (t ArcticTarget) ParquetPath(kind FileKind) string {
 	return filepath.Join(t.Dir(), string(kind)+".parquet")
 }
 
+// PartitionDir returns the directory for partitioned JSONL files for a kind.
+func (t ArcticTarget) PartitionDir(kind FileKind) string {
+	return filepath.Join(t.Dir(), string(kind))
+}
+
 // ProgressPath returns the path to the progress file.
 func (t ArcticTarget) ProgressPath() string {
 	return filepath.Join(t.Dir(), ".progress")

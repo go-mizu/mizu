@@ -16,11 +16,12 @@ import (
 
 // Config configures the torrent client.
 type Config struct {
-	DataDir  string   // Where to save downloaded files
-	InfoHash string   // Torrent info hash (hex)
-	Trackers []string // Tracker URLs
-	NoUpload bool     // Disable seeding (default true)
-	MaxConns int      // Max connections per torrent (default 80)
+	DataDir     string   // Where to save downloaded files
+	InfoHash    string   // Torrent info hash (hex)
+	Trackers    []string // Tracker URLs
+	NoUpload    bool     // Disable seeding (default true)
+	MaxConns    int      // Max connections per torrent (default 80)
+	TorrentFile string   // Path to .torrent file (faster than magnet, skip if empty)
 }
 
 // File represents a file in the torrent.
@@ -82,6 +83,29 @@ func (c *Client) Close() {
 func (c *Client) addTorrent(ctx context.Context) error {
 	if c.t != nil {
 		return nil
+	}
+
+	// Try loading from .torrent file first (fast — metadata is local)
+	if c.cfg.TorrentFile != "" {
+		t, err := c.cl.AddTorrentFromFile(c.cfg.TorrentFile)
+		if err == nil {
+			// Add extra trackers for better peer discovery
+			if len(c.cfg.Trackers) > 0 {
+				trackerTiers := make([][]string, len(c.cfg.Trackers))
+				for i, tr := range c.cfg.Trackers {
+					trackerTiers[i] = []string{tr}
+				}
+				t.AddTrackers(trackerTiers)
+			}
+			select {
+			case <-t.GotInfo():
+				c.t = t
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		// Fall through to magnet if .torrent file fails
 	}
 
 	// Build magnet URI with trackers
